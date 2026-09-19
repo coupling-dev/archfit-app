@@ -36,12 +36,11 @@ architecturally sound". No interface can prove a reviewer paid attention.
 
 ## Status
 
-Engine prerequisites are partly implemented: `archfit.state.schema.json` exists
-and reports include `measurement.tool_versions`. The inspected engine still
-lacks the complete measurement-profile identity in comparison and persisted
-baselines, so the original Phase 0 requirement is not yet satisfied. The
-[closed-beta implementation plan](docs/plans/20260918-closed-beta-implementation.md)
-records the inspected revisions, integration gaps, dependencies, and exit checks.
+The [closed-beta implementation plan](docs/plans/closed-beta.md) records the
+18 September 2026 inspection of engine/Action prerequisites, pinned revisions,
+integration gaps, dependencies, and exit checks. That snapshot found a state
+schema and tool-version disclosure but incomplete measurement-profile comparison
+and baseline identity. Recheck sibling repositories before starting integration.
 
 This repository holds the designs, implementation plan, and a reporter skeleton.
 The ingest endpoint
@@ -50,25 +49,26 @@ implemented, and a report accepted without it is a report whose producer cannot
 be named. Accepting one now would make the first thing we ship the one thing the
 design forbids.
 
-Read [`docs/plans/20260916-github-app.md`](docs/plans/20260916-github-app.md)
-before writing code here. It records seven decisions, the corrections that peer
-review forced on them, and — explicitly — what the design does **not** deliver.
+## Documentation
 
-The [high-level product and service design](docs/design/20260918-high-level-design.md)
-records the subsequent owner interview, first-version scope, onboarding modes,
-governance, subscription decisions, and open research questions. It supplements
-the original trust model and is not an implementation plan.
+Start with the [documentation guide](docs/README.md). The canonical documents are:
 
-The [hosting research](docs/design/20260918-hosting-research.md) compares pilot
-options against the $100/month infrastructure budget. Its cost models and
-recommended experiment are not a deployment decision or measured SLA.
+- [Product design](docs/design/product.md) — first-version scope, user flows,
+  governance, privacy, subscriptions, and open decisions.
+- [Trust and reporting](docs/design/trust-and-reporting.md) — technical invariants,
+  measurement identity, eligibility, and gate behavior. Read before writing code.
+- [Closed-beta plan](docs/plans/closed-beta.md) — M0–M5 milestones and T01–T23 tasks.
+- [Hosting research](docs/research/20260918-hosting.md) — dated cost assumptions and
+  the owner-selected Cloud Run/PostgreSQL validation target, not a deployment
+  approval or measured SLA.
 
 ## Layout
 
-```
-cmd/reporter/      the report-ingest service: verify provenance, post the check
-docs/plans/        the design plan and its phases
-docs/design/       decisions that outlive a phase
+```text
+cmd/reporter/      report-ingest skeleton; refuses reports until verification exists
+docs/design/       product scope and technical requirements
+docs/plans/        one closed-beta implementation plan
+docs/research/     dated research and validation proposals
 ```
 
 The reporter is deliberately the smallest deployable piece and depends on
@@ -77,6 +77,12 @@ gate, so a failure in billing, dashboards or an LLM feature must not be able to
 take it down.
 
 ## Develop
+
+Enable the project hooks once per clone:
+
+```sh
+git config core.hooksPath scripts/git-hooks
+```
 
 ```sh
 make test     # race tests
@@ -87,8 +93,9 @@ make run      # serve locally on :8080
 
 No credentials are needed for any of that. Copy `.env.example` to `.env` when
 you reach the first real deploy; the placeholders there are the inputs only the
-owner can supply, and the plan's _Owner-supplied inputs_ section says which
-phase each one blocks.
+owner can supply. The plan's [owner-input checklist](docs/plans/closed-beta.md#owner-inputs-at-the-point-they-are-needed)
+states when they are needed. The current binary reads only `ARCHFIT_ADDR` and
+does not load `.env` automatically.
 
 ```sh
 curl -s localhost:8080/healthz

@@ -3,20 +3,25 @@
 Status: proposed execution plan, 18 September 2026. No implementation task below
 has been completed by writing this document.
 
-Inputs: the [high-level design](../design/20260918-high-level-design.md) and the
-[original trust design](20260916-github-app.md). The owner selected a closed beta:
-Pumba and Archfit first, then a few invited teams, before public paid self-service.
+Inputs: the [product design](../design/product.md) and
+[trust and reporting requirements](../design/trust-and-reporting.md).
+The owner selected a closed beta: Pumba and Archfit first, then a few invited
+teams, before public paid self-service.
 
 The plan orders work into reviewable changes with dependencies and exit checks.
 Read-only research can start now; live experiments and platform-dependent
-implementation wait for their stated prerequisites. Approval of a phase carries through its mechanical steps and
-validation. Do not cross an original design phase boundary without the owner's
-approval. This plan does not authorize deployment, repository installation,
-billing changes, or invitations to other people.
+implementation wait for their stated prerequisites. Approval of a milestone
+carries through its mechanical steps and validation. Do not cross the M0–M5
+milestone boundaries below without the owner's approval. This plan does not
+authorize deployment, repository installation, billing changes, or invitations
+to other people.
 
-## Starting point: verified local evidence
+## Starting point: dated local evidence
 
 Inspected on 18 September 2026; remote release availability was not verified.
+This is a pinned planning snapshot, not a live status report for sibling repos.
+Recheck it before starting the affected tasks. T05 has partial research evidence;
+no implementation task is marked complete.
 
 | Repository       | Local revision                             | Relevant state                                                                                                  |
 | ---------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
@@ -31,7 +36,7 @@ Material findings that affect task order:
   healthy/blocked/partial/unknown/incompatible-profile matrix.
 - `measurement.tool_versions` exists, but comparison and persisted baseline
   identity still use config/model/labels/rubric fingerprints. Tool versions
-  alone do not satisfy the original Phase 0 measurement-profile requirement.
+  alone do not satisfy the T01 measurement-profile requirement.
   Inspect `internal/model/report/state.go`, `internal/baseline/baseline.go`, and
   `internal/assessment/decision/state_comparison.go` in the engine.
 - Action `action.yml` runs `scripts/report.sh`, which expects an existing state
@@ -62,7 +67,7 @@ Action/engine/App combination interoperates.
   pushing. New behavior requires meaningful tests and manual/E2E evidence.
 - A change that first accepts reports must deliberately replace the 501 refusal
   test and demonstrate rejection of invalid provenance in the same review.
-- Every phase exit records what is supported, unsupported, and unverified.
+- Every milestone exit records what is supported, unsupported, and unverified.
   Missing evidence is not success; an unavailable optional LLM is not a gate
   failure.
 - Cross-repository tasks below identify coordination needs. Approval to work in
@@ -70,7 +75,7 @@ Action/engine/App combination interoperates.
 
 ## M0 — Resolve contracts and execution choices
 
-These tasks cover outstanding original Phases 0/0b and the decisions needed
+These tasks cover measurement identity, wire contracts, and the decisions needed
 before App integration. Research can proceed in parallel; mutations and
 implementation still follow their dependencies.
 
@@ -133,7 +138,7 @@ implementation still follow their dependencies.
 
 ### T05 — Research hosting, costs, and operating targets
 
-Initial [hosting research and cost model](../design/20260918-hosting-research.md)
+Initial [hosting research and cost model](../research/20260918-hosting.md)
 is available. The owner selected Cloud Run with PostgreSQL and managed GCP
 services as the primary validation target. A dedicated beta project is planned
 but does not exist yet. Project ID, region, database tier and the acceptance
@@ -178,7 +183,7 @@ These outputs are inputs to implementation, not prose substitutes for it.
 
 ## M1 — Verified advisory reporting on the pilot repositories
 
-Corresponds to the original advisory App/Action phase. No required gate yet.
+Advisory App/Action integration only. No required gate yet.
 
 ### T07 — GitHub installation, access, and event boundary
 
@@ -199,7 +204,8 @@ Corresponds to the original advisory App/Action phase. No required gate yet.
   versioned policy/baseline references, jobs, and check/comment reconciliation;
   migrations and bounded retry handling.
   Include tenant-bound report encryption and key-lifecycle requirements from
-  the original design; object-name scoping alone is not encryption or authorization.
+  the [technical design](../design/trust-and-reporting.md#7-service-and-wire-contract-boundaries);
+  object-name scoping alone is not encryption or authorization.
 - **Accept:** retries and duplicate webhooks/uploads are idempotent; restart does
   not lose accepted work; tenant-scoping tests cover queries, object access,
   cache keys, and workers. No provider-specific persistence type leaks into the
@@ -249,7 +255,8 @@ App registration block deployment only, not local implementation or fixtures.
 
 ## M2 — Trusted inputs and the required gate
 
-Corresponds to original Phase 2. Keep its disclosed customer-attested guarantee.
+Enforce approved policy over disclosed customer-attested evidence. The
+fabricated-report gap remains open; this is not independent measurement.
 
 ### T12 — Approved inputs and baseline lifecycle
 
@@ -292,7 +299,7 @@ adversarial-build protection certification.
 
 ## M3 — Architecture governance and strict exceptions
 
-This is the first-version subset of original Phase 3; omit the org policy floor.
+Implement repository-scoped governance; the organization policy floor is deferred.
 
 ### T14 — Owners and exact-version policy approval
 
@@ -465,7 +472,7 @@ launch plan. This sequencing does not change the agreed paid private-repo model.
 ## Owner inputs at the point they are needed
 
 - **Before implementing cross-repo prerequisites:** approval of the relevant
-  engine/Action scope and phase boundary.
+  engine/Action scope and milestone boundary.
 - **Before any GitHub experiment or deployment:** test App identity, secret/key
   references, authorized repositories, account/region choice, and public URL.
   No inline PEMs or credentials in documentation.

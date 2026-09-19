@@ -6,11 +6,11 @@ This document describes the intended product, its boundaries, and its main
 flows. It is not an implementation plan, a deployment decision, or a claim that
 these capabilities already exist.
 
-Read it alongside the [original technical design](../plans/20260916-github-app.md).
-That document remains the authority for its trust model and measurement
-constraints. This document records subsequent product decisions and identifies
-where they change the original product scope. Unresolved choices are explicit;
-they must not silently become implementation requirements.
+This is the canonical first-version product scope. Read it alongside
+[trust, measurement, and reporting](trust-and-reporting.md) for technical
+constraints and the [closed-beta plan](../plans/closed-beta.md) for execution
+order. Unresolved choices are explicit; they must not silently become
+implementation requirements.
 
 ## 1. Product and first customer
 
@@ -71,7 +71,7 @@ the required gate.
 
 This is the target product scope. It does not mean every feature must precede
 the first internal pilot, and it does not authorize implementation across the
-original phase boundaries without an agreed execution plan.
+milestone boundaries without an agreed execution plan.
 
 ### Deferred or conditional
 
@@ -81,11 +81,11 @@ original phase boundaries without an agreed execution plan.
 - Automatic LLM review of every PR and continuous AI suggestions while typing.
 - GitLab/Bitbucket integrations, an agent MCP channel, and enterprise deployment
   variants such as a customer-operated reporter.
-- Independent server-side enforcement from the original Phase 4: future work,
+- Independent server-side enforcement: future work,
   with a separate cost assessment and no applicability to a mode that forbids
   sending source to Archfit.
 
-The original prohibitions remain: no LLM on the gate path, no repository score,
+The technical prohibitions remain: no LLM on the gate path, no repository score,
 no blanket re-baselining, no origin filtering as the enforcement rule, and no
 claim that attested evidence is independently verified.
 
@@ -114,8 +114,8 @@ it does not automatically turn every current dependency into an approved one.
 | Contributor or coding agent           | Propose code and policy changes; consume feedback and suggestions                                   |
 | Billing administrator                 | Manage subscription; billing authority alone does not confer architecture approval authority        |
 
-Exact role mapping and bootstrap UX still need specification. The original
-design's protected policy path and CODEOWNERS provide the starting point.
+Exact role mapping and bootstrap UX still need specification. A protected
+policy path and CODEOWNERS provide the starting point.
 Authority must be resolved from trusted configuration, never from the PR's own
 edited ownership declarations. Administrative GitHub bypass remains a separate,
 explicit override, not an architecture approval.
@@ -267,7 +267,7 @@ comment. Feedback must be useful to both a developer and a coding agent:
 Ordinary PR feedback comes from the engine. LLM explanations and suggested
 solutions are explicitly requested extras and do not determine the verdict.
 
-Enforcement retains the original technical invariants:
+Enforcement retains these technical invariants:
 
 - One repository-wide assessment and authoritative gate; narrowing a view or
   assigning owners does not narrow the evidence boundary.
@@ -435,7 +435,7 @@ The Archfit requirement belongs in a separate ruleset so an override need not
 disable unrelated protections. An override is recorded as such and is never
 reported as a successful architecture assessment.
 
-The original multi-region aspiration is not an agreed pilot deployment or SLA.
+Multi-region deployment is not an agreed pilot requirement or SLA.
 Hosting research must establish what reliability, recovery, latency, and
 operational burden fit the budget. Availability and PR-feedback latency targets
 remain to be selected. Limits on reports or resources must produce explicit
@@ -479,26 +479,7 @@ Pilot acceptance must cover:
 Technical pilots do not establish willingness to pay, the acceptable support
 burden, or a public SLA. Recruit external product teams for those questions.
 
-## 12. Changes from the original design
-
-| Topic                        | Updated decision                                                                                         |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Private-repository free tier | Replaced by full trial followed by paid subscription, including advisory use                             |
-| Organization policy floor    | Deferred beyond the first version; repository policies are independent                                   |
-| Onboarding surfaces          | Both UI-led and GitHub-first paths are required                                                          |
-| Customer-executed discovery  | Required in the first version, alongside managed discovery                                               |
-| Customer model integration   | Direct calls from customer environment; no hosted custody of customer LLM keys required                  |
-| Policy editing               | YAML-first with validation and explicit AI assistance; general visual editing remains conditional        |
-| Customer-mode onboarding     | GitHub/CI first, one draft PR as a target, bootstrap PR accepted, CLI optional                           |
-| Exceptions                   | Explicit first-version requirement with strict expiry, including blocking unrelated PRs                  |
-| Budget                       | USD 100/month pilot infrastructure, separate capped managed-LLM budget                                   |
-| First external release       | Closed beta after internal Pumba/Archfit pilots; public paid self-service comes later                    |
-| Pricing unit                 | Repository bands remain a hypothesis contingent on measured costs, not an unconditional monorepo subsidy |
-
-The source/trust invariants, separate approval authority, repository-wide gate,
-baseline discipline, and exclusion of LLMs from enforcement remain unchanged.
-
-## 13. Open decisions and next artifacts
+## 12. Open decisions
 
 Resolve these through focused owner review, experiments, or research:
 
@@ -519,21 +500,20 @@ Resolve these through focused owner review, experiments, or research:
    costs, storage isolation, queues, ephemeral workers, provider data handling,
    and minimum operational controls.
 8. Current engine/Action contract coverage and required cross-repository work.
-   The inspected engine has a schema and tool-version reporting but lacks the
-   complete measurement-profile comparison requirement. The implementation plan
+   At the plan's dated inspection, the engine had a schema and tool-version
+   reporting but lacked complete measurement-profile comparison. The plan
    records pinned local revisions and remaining work; remote artifacts still
    need verification at execution time.
 
-The [closed-beta implementation plan](../plans/20260918-closed-beta-implementation.md)
-now defines phase boundaries, dependencies, and acceptance checks. The initial
-[hosting research](20260918-hosting-research.md) supplies options and cost
+The [closed-beta implementation plan](../plans/closed-beta.md) defines milestone
+boundaries, dependencies, and acceptance checks. The dated
+[hosting research](../research/20260918-hosting.md) supplies options and cost
 assumptions, with Cloud Run selected for validation and deployment details still
 open. Resolve the stated research and owner-decision gates before dependent
-implementation. These
-documents do not grant authorization to deploy, publish, or install an App into
-any pilot repo.
+implementation. These documents do not grant authorization to deploy, publish,
+or install an App into any pilot repo.
 
-## 14. Research anchors
+## 13. Research anchors
 
 These sources informed the interview. They are reference points, not promises
 that another vendor's guarantees or prices apply to Archfit.
