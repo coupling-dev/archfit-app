@@ -10,6 +10,8 @@ verification exists.
   governance, privacy, and commercial decisions.
 - [Trust and reporting](design/trust-and-reporting.md) — trusted inputs,
   measurement identity, producer eligibility, and gate behavior.
+- [First-version decisions](design/decisions.md) — closes the open design items;
+  overrides the two documents above on how things are built.
 - [Closed-beta plan](plans/closed-beta.md) — M0–M5 milestones and T01–T23
   implementation tasks.
 - [Hosting research](research/20260918-hosting.md) — dated provider, cost, and
