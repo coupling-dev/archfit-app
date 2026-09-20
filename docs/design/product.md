@@ -1,6 +1,8 @@
 # Archfit App — high-level product and service design
 
-Status: first review draft, based on the owner interview of 17–18 September 2026.
+Status: first review draft, based on the owner interview of 17–18 September 2026;
+engine/integration status refreshed for v2.3.1 on 20 September 2026. Product scope
+is unchanged.
 
 This document describes the intended product, its boundaries, and its main
 flows. It is not an implementation plan, a deployment decision, or a claim that
@@ -44,6 +46,11 @@ The service must address all four owner-selected scenarios:
 Actual engine coverage of these scenarios needs verification. In particular,
 an LLM's interpretation of business responsibility is never sufficient to fail
 the required gate.
+
+v2.3.1 release acceptance covers five supported language modes and the 11-project
+engine corpus. App acceptance still needs the paired scenario/workflow matrix in
+T02; those engine results do not establish trusted GitHub execution or customer
+fit.
 
 ## 2. Scope of the first product version
 
@@ -500,10 +507,12 @@ Resolve these through focused owner review, experiments, or research:
    costs, storage isolation, queues, ephemeral workers, provider data handling,
    and minimum operational controls.
 8. Current engine/Action contract coverage and required cross-repository work.
-   At the plan's dated inspection, the engine had a schema and tool-version
-   reporting but lacked complete measurement-profile comparison. The plan
-   records pinned local revisions and remaining work; remote artifacts still
-   need verification at execution time.
+   Released v2.3.1 supplies measurement-profile comparison and persistence,
+   explicit required-rule evidence states, waiver lifecycle safeguards and typed
+   agent repair tasks. The open work is adopting pinned artifacts and validating
+   App/Action conformance, producer eligibility, privacy-safe transport and
+   approved baseline migration. The plan records inspected revisions and the
+   advisory-first pilot; these capabilities are not yet implemented in the App.
 
 The [closed-beta implementation plan](../plans/closed-beta.md) defines milestone
 boundaries, dependencies, and acceptance checks. The dated

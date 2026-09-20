@@ -1,14 +1,15 @@
 # Trust, measurement, and reporting
 
-Status: retained technical requirements from the 16 September 2026 proposal,
-aligned with the subsequent [product design](product.md). These describe intended
-behavior, not implemented capabilities. The reporter still refuses ingestion.
+Status: technical requirements aligned with the [product design](product.md)
+and released Archfit v2.3.1 on 20 September 2026. Engine contracts identified below
+are shipped; App/Action behavior remains intended. The reporter still refuses
+ingestion pending provenance verification.
 
 This document owns the trust constraints and reporting contract. The product
 design owns first-version scope; the [closed-beta plan](../plans/closed-beta.md)
-owns task order, dependencies, and acceptance evidence. Engine observations below
-come from the dated inspection recorded in that plan and must be rechecked before
-implementation.
+owns task order, dependencies, and acceptance evidence. That plan pins the
+inspected revisions and release evidence. Recheck the selected artifact and
+consumer conformance before promoting a different engine or Action version.
 
 ## 1. Execution and trusted inputs
 
@@ -100,20 +101,38 @@ Two identities are needed:
 
 | Layer | Identity | Purpose |
 | --- | --- | --- |
-| Engine | Versioned measurement-profile fingerprint: engine, applicable extractors/tools, rule bundle, relevant target settings | Comparison and persisted-baseline compatibility, including CLI use |
+| Engine | `comparison.measurement_profile`: profile version, settings hash, producers and unknowns; alongside config/model/labels/rubric hashes | Comparison and persisted-baseline compatibility, including CLI use |
 | App | Approved image digest and platform, checked against a locked release manifest | Deployment identity without treating unrelated image rebuilds as new measurements |
 
-`measurement.tool_versions` is an input, not a complete profile definition.
-Missing identities must not compare equal because both say “unknown.” The dated
-engine inspection found tool-version disclosure but incomplete profile comparison
-and persistence. [T01/T02](../plans/closed-beta.md#m0--resolve-contracts-and-execution-choices)
-cover the remaining work; this document does not prescribe a release number.
-Unknown-profile behavior, old-baseline migration, and cross-platform equivalence
-need explicit decisions and tests.
+The initial integration target is the released v2.3.1 artifact pinned in
+[T01/T02](../plans/closed-beta.md#m0--resolve-contracts-and-execution-choices).
+Its profile contains `version`, `settings_hash`, `producers` and `unknowns`.
+Producer rows identify `tool`, `semantics_version`, `status`, and applicable
+`tool_version`/`partial_basis`. `measurement.tool_versions` alone is not this
+identity. Profile comparison and baseline persistence are shipped engine
+behavior; App adoption, approved runtime manifests and cross-platform equivalence
+still need conformance evidence.
+
+The profile is optional in the wire schema so older reports remain representable.
+Missing or unsupported identity cannot establish compatibility, including when
+both sides are unknown. Compare with the engine's semantics; an App release
+manifest does not turn unknown measurement evidence into known evidence.
+
+`comparison.status` describes report-only `--base` comparison. The separate
+`gate_reference` describes the persisted baseline used by the engine gate.
+Validate the issued baseline against `gate_reference`; selecting `--base` must
+never substitute another accepted-debt authority.
 
 On a profile change, replay the same approved source under old and new profiles,
 show the measurement-induced difference, and require baseline-migration approval.
 Do not silently accept newly exposed violations or discard accepted debt.
+
+The v2.3.1 deployment, Git-history and Python producer contracts advance to v2.
+Numerical snapshots from v2.3.0 are non-comparable under the new contract; older
+baselines without profiles also lack comparison evidence. Accepted finding
+fingerprints keep applying. Replacing the numerical snapshot is a reviewed
+operation: `archfit baseline` accepts current eligible debt and is not an
+automatic migration command.
 
 ### Packaging constraints
 
@@ -170,15 +189,27 @@ must not become the cheapest bypass.
 
 These mappings apply only after checking provenance, issued inputs, and evidence
 eligibility; an unverified producer's verdict or exit code is not authoritative.
+Exit numbers below refer to `archfit check`. Report creation/upload success is a
+separate outcome. T02 must test the mapping using structured decision fields.
 
 | Eligible run outcome | `archfit/gate` conclusion |
 | --- | --- |
 | Healthy (0) | `success` |
 | Blocked (1) | `failure`, with blocking findings and remediation tasks |
-| Non-comparable (2) | `action_required`, naming drift and required review/migration |
+| Warning/advisory-only attention (2), with passing hard gates and all approved evidence/reference requirements satisfied | `success`; retain the advisory and `needs_attention` in `archfit/state` |
+| Required gate reference non-comparable | `action_required`, naming drift and required review/migration |
 | Required coverage missing (2) | `action_required`, naming the missing facts |
 | Error (3), absent report, or ineligible evidence | `action_required` or explicit failure; never passing/neutral |
 | Independent-observation contradiction, if that future feature exists | `failure`, distinguished from architecture violations |
+
+Inspect `decision.hard_gates` and
+`decision.unevaluated_required_rules[{rule_id, reason}]`. The list is omitted when
+empty. A known blocker keeps `hard_gates: fail` even when other required rules
+are unevaluated; otherwise missing required evidence yields `unmeasured`.
+Empty findings never prove successful evaluation. Preserve missing-rule reasons
+in feedback even when a blocker determines the conclusion. A warning-only pass
+must not hide incomplete required coverage, an ineligible producer, or an
+incompatible required baseline; unresolved cases remain `action_required`.
 
 Policy/model changes need the relevant trusted authority's approval bound to the
 exact head SHA and snapshot, plus explicit baseline handling. Re-push invalidates
@@ -193,13 +224,26 @@ origin `unknown`. Origin sorts presentation; it never exempts a blocking finding
 
 Put verdict, reason, and next action first. Include:
 
-- Rule, modules, source locations, approved access path, and validation command.
+- Rule, modules, available source locations, a policy-permitted repair, and the
+  validation command. Do not invent a public access route for a forbidden edge.
 - Introduced findings separately from already accepted debt.
 - Meaningful dimension/coupling changes and a mandatory evidence-gap section.
 - Marker-delimited structured remediation data for coding agents, subject to the
   allowed-result/privacy contract; do not embed arbitrary source-bearing output.
 - Policy ref/digest, measurement profile, image digest, baseline reference, and
   per-fact measurement trust/completeness. Never invent independent evidence.
+
+Preserve `agent_tasks[].repair_kind`: `code_change` requests an implementation
+repair; `needs_owner_decision` identifies an architectural decision. Consume the
+engine's classification rather than inferring authority from prose. Baseline
+capture is not a routine agent repair. Replay the supplied validation command
+with its effective flags, including `--base`, `--lang` and `--require-tools` when
+present; `--refresh` is intentionally omitted from the replay contract.
+
+Conformance includes findings with `locations: []` and `matched_by: {}`, real
+Python file paths when resolvable, and no ID simultaneously reported as baseline
+and fixed. A missing location receives no invented annotation. See the pinned
+[v2.3.1 contracts and fixes](https://github.com/alexei-led/archfit/blob/f8877d25ba36d84d3780071580d23486e3d794d0/docs/guide/release-notes.md).
 
 Use available SARIF locations for annotations without requiring Advanced Security.
 Retry or duplicate delivery updates the existing comment, and stale runs must not
@@ -214,6 +258,23 @@ CODEOWNERS cannot grant approval rights. Strict, narrow, expiring exceptions
 follow the [product governance rules](product.md#3-architecture-policy-and-authority)
 and T14–T16, not an automatic accepted-debt refresh.
 
+### Engine waiver contract
+
+App approval produces a waiver valid under the pinned engine config schema:
+declared/supported `rule`, applicable `from`/`to` scope, nonempty `reason` and
+`approved_by`, and `expires` in valid `YYYY-MM-DD` form. The App binds its
+authenticated approval record to the exact exception version; the engine's
+`approved_by` string is descriptive metadata, not authentication.
+
+Matching is order-independent: an active match wins over an expired match.
+Baseline capture skips both `waived` and `expired_waiver` findings, preventing
+temporary exceptions from becoming permanent accepted debt. Edge-less `map/*`
+diagnostics use exact-rule waivers without endpoint selectors; the coupling gate
+is unwaivable. Test these boundaries in T02 and the scheduler/approval races in
+T16. An owner choosing permanent acceptance uses a separate reviewed debt change.
+
+### Preserve debt across model changes
+
 A policy diff does not prove a refactor is mechanical. A verified namespace
 relocation would need to preserve each file's logical module, public/internal
 classification, layer, ownership, deploy semantics, and applicable rules. Every
@@ -224,7 +285,10 @@ broadening permission for future paths. Equal file sets or counts prove neither.
 old policy can be stale for that tree; its output is disclosure, not proof of
 unchanged permission. Until a relocation proof exists, uncertain changes require
 architecture-owner review. Module-owner fast paths are not assumed implemented.
-Accepted debt survives only through explicit migration.
+Unchanged accepted fingerprints remain applicable across measurement-profile
+upgrades. Carrying acceptance to changed finding identities or model mappings
+requires explicit migration; numerical snapshot replacement does not authorize
+that transfer or acceptance of newly exposed debt.
 
 ## 7. Service and wire-contract boundaries
 
@@ -238,8 +302,8 @@ in one repository:
 
 Do not publish engine-internal Go DTOs to couple the App to implementation types.
 Generate transport types from versioned schemas; keep domain and storage types
-separate. The state schema exists in the dated inspection; remaining integration
-work is immutable artifacts, envelope schema, semantic conformance fixtures, and
+separate. State/config schemas ship in v2.3.1; remaining integration work is
+immutable artifacts, envelope schema, semantic conformance fixtures, and
 a supported-version matrix. Test candidate engine artifacts against consumer
 tests before promotion. Shape validation alone cannot detect semantic drift, and
 installed Actions, images, and stored baselines never upgrade atomically.
@@ -284,6 +348,7 @@ scope:
   features, and GitLab/Bitbucket need explicit future scope. No pilot multi-region,
   latency, or availability promise is inherited from the old proposal.
 
-Active unknowns—profile definition, fork acquisition, runtime separation,
-privacy-safe payloads, and approval/invalidation races—are acceptance gates in
-the closed-beta plan, not assumptions this cleanup resolves.
+Active unknowns—approved image/toolchain profiles and platform equivalence, fork
+acquisition, runtime separation, privacy-safe payloads, and approval/invalidation
+races—remain acceptance gates in the closed-beta plan. The released engine
+identity contract does not resolve those App integration decisions.

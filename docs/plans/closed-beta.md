@@ -1,7 +1,9 @@
 # Archfit App — closed-beta implementation plan
 
-Status: proposed execution plan, 18 September 2026. No implementation task below
-has been completed by writing this document.
+Status: execution plan refreshed against Archfit v2.3.1 on 20 September 2026.
+The engine prerequisite has shipped; App/Action adoption and the milestone
+acceptance checks below remain open. This documentation update completes none
+of those integration tasks.
 
 Inputs: the [product design](../design/product.md) and
 [trust and reporting requirements](../design/trust-and-reporting.md).
@@ -18,27 +20,36 @@ to other people.
 
 ## Starting point: dated local evidence
 
-Inspected on 18 September 2026; remote release availability was not verified.
+Inspected on 20 September 2026; the published
+[v2.3.1 release](https://github.com/alexei-led/archfit/releases/tag/v2.3.1)
+and its downloaded binaries were verified during engine release acceptance.
 This is a pinned planning snapshot, not a live status report for sibling repos.
 Recheck it before starting the affected tasks. T05 has partial research evidence;
-no implementation task is marked complete.
+no App/Action integration task is marked complete.
 
-| Repository       | Local revision                             | Relevant state                                                                                                  |
-| ---------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| `archfit-app`    | `0b186adb2e256ed2971f7d425257614f61299e70` | Go reporter skeleton; valid-shaped reports deliberately receive 501                                             |
-| `archfit`        | `e646078564a3274c344140190ebfdf9752595ad8` | Report/config schemas and discovery/AI building blocks exist; measurement-profile comparison remains incomplete |
-| `archfit-action` | `4759dd985bff385af5c2dee2c918a0eced59f4f3` | Builds an envelope around an existing report; obtains OIDC and optionally uploads it; does not run analysis     |
+| Repository | Pinned revision | Relevant state |
+| --- | --- | --- |
+| `archfit-app` | `1356a51446d98dcfaa5b1d68c8ad72316beee953` | Go reporter skeleton; valid-shaped reports deliberately receive 501 |
+| `archfit` | `f8877d25ba36d84d3780071580d23486e3d794d0` (`v2.3.1`) | Measurement profiles, required-rule evidence states, waiver lifecycle and typed repair tasks are shipped |
+| `archfit-action` | `4759dd985bff385af5c2dee2c918a0eced59f4f3` | Builds an envelope around an existing report; obtains OIDC and optionally uploads it; does not run analysis |
 
 Material findings that affect task order:
 
-- Engine `archfit.state.schema.json` and `internal/reportschema/schema_test.go`
-  exist. Current committed state fixtures do not establish the complete
-  healthy/blocked/partial/unknown/incompatible-profile matrix.
-- `measurement.tool_versions` exists, but comparison and persisted baseline
-  identity still use config/model/labels/rubric fingerprints. Tool versions
-  alone do not satisfy the T01 measurement-profile requirement.
-  Inspect `internal/model/report/state.go`, `internal/baseline/baseline.go`, and
-  `internal/assessment/decision/state_comparison.go` in the engine.
+- Engine state/config schemas and behavioral tests exist. The published binary
+  passed 141 real-tool assertions across Go, TypeScript, JavaScript, Python and
+  Rust. The release candidate passed contract validation on all 11 canonical
+  corpus repositories, with optional evidence gaps still disclosed. These are
+  engine receipts, not App conformance or proof of all four product scenarios.
+- `comparison.measurement_profile` is emitted, persisted and compared using
+  producer semantics, settings, status and tool identity. Unknown or incompatible
+  profiles abstain with named reasons. The persisted baseline's `gate_reference`
+  is separate from report-only `--base` comparison. T01 now verifies adoption;
+  T02 establishes the App/Action consumer matrix.
+- v2.3.1 advances deployment, Git-history and Python producer semantics to v2.
+  v2.3.0 numerical snapshots become non-comparable; accepted finding fingerprints
+  keep applying. Capturing a new baseline accepts current eligible debt and is
+  not a migration shortcut. See the pinned
+  [engine release notes](https://github.com/alexei-led/archfit/blob/f8877d25ba36d84d3780071580d23486e3d794d0/docs/guide/release-notes.md).
 - Action `action.yml` runs `scripts/report.sh`, which expects an existing state
   file. Its envelope has no standalone schema artifact and does not yet express
   every approved image/profile identity required by the design.
@@ -79,21 +90,28 @@ These tasks cover measurement identity, wire contracts, and the decisions needed
 before App integration. Research can proceed in parallel; mutations and
 implementation still follow their dependencies.
 
-### T01 — Finish measurement identity in the engine
+### T01 — Verify and adopt the released engine identity contract
 
-- **Owner/repository:** engine; comparison, baseline persistence, report schema.
-- **Depends on:** owner approval of the engine prerequisite scope.
-- **Deliver:** define the profile inputs and unknown-identity behavior; persist
-  and compare that identity; update the versioned schema and migration behavior.
+- **Owner/repository:** App/Action integration; engine changes only for a
+  separately scoped, reproduced contract gap.
+- **Depends on:** the refreshed inventory and v2.3.1 release evidence.
+- **Deliver:** adopt v2.3.1 as the initial integration target; pin source revision,
+  binary checksums and approved image/platform digests. Record the supported
+  producer/toolchain manifest and its relationship to `measurement_profile`.
+  Verify the shipped persistence/comparison contract rather than reimplementing
+  it in the App. Image/profile eligibility and cross-platform equivalence remain
+  integration acceptance work; published images alone do not establish them.
 - **Accept:** on one unchanged tree, changing a relevant analyzer/profile cannot
   be reported as code-induced erosion; unknown identity cannot compare equal
-  merely because both sides are unknown; old snapshots are explicitly
-  incompatible or migrated, never silently refreshed.
+  merely because both sides are unknown. A profile-less baseline and a v2.3.0
+  numerical snapshot are explicitly non-comparable with v2.3.1, while accepted
+  fingerprints remain applicable. Test the persisted `gate_reference` separately
+  from `--base`; reviewed replacement must not silently accept new debt.
 
 ### T02 — Pin wire contracts and conformance fixtures
 
 - **Owner/repository:** engine + Action + App consumer tests.
-- **Depends on:** T01 for profile-bearing state fixtures.
+- **Depends on:** T01's pinned artifact and supported-profile inventory.
 - **Deliver:** immutable schema/fixture sources, envelope schema ownership and
   versioning, generated App transport types, a supported-version matrix, and
   producer/consumer contract checks. Replace mutable-branch fixture inputs.
@@ -101,10 +119,18 @@ implementation still follow their dependencies.
   proposed supported languages/workflows, with paired forbidden and legitimate
   changes for each claimed capability. Distinguish deterministic enforcement,
   advisory-only interpretation, missing evidence, and unsupported cases.
-- **Accept:** named fixtures cover healthy, blocked, partial/missing evidence,
-  unknown identities, comparable and incompatible profiles, and invalid input.
+- **Accept:** named fixtures cover healthy, warning-only attention with passing
+  hard gates, blocked, missing required evidence, unknown identities, comparable
+  and incompatible profiles, and invalid input. Include a known blocker together
+  with an unevaluated required rule, and a proven non-applicable rule.
+  Cover comparable symmetric completed partials with a recognized `partial_basis`;
+  missing inputs, timeouts and opaque unknowns remain non-comparable.
   Test decision semantics as well as JSON shape. Every fixture records its
-  producer artifact and expected consumer outcome.
+  producer artifact and expected consumer outcome under the
+  [gate mapping](../design/trust-and-reporting.md#gate-outcomes).
+  Pin `decision.unevaluated_required_rules`, both repair kinds, validation-command
+  replay, `locations: []`, `matched_by: {}`, and unique finding lifecycle IDs.
+  Cover waiver expiry/order and baseline capture excluding waived findings.
   Each claimed erosion scenario has a passing positive/negative pair; gaps
   require an owner decision on scoped engine work or explicitly limited claims,
   not an assumption that the engine already detects them.
@@ -116,11 +142,16 @@ implementation still follow their dependencies.
 - **Deliver:** a documented trusted workflow path for Pumba/Archfit, authoritative
   repository/installation/run/attempt/PR/head/base/merge-base resolution, policy
   and image/profile binding, retry/replay rules, and explicit fork support limits.
+  Specify the first path end to end: PR revision, pinned analysis, separated
+  uploader credentials, authenticated report receipt, then advisory feedback.
+  Resolve `workflow_run` associations rather than choosing its first PR. Record
+  the producer command and exit semantics; report generation is not gate success.
 - **Accept:** fixture cases include PR, default-branch baseline, `workflow_run`,
   multi-PR/ambiguous association, re-push, stale result, wrong tenant, modified
   workflow, wrong image, and mismatched report digest. Self-reported envelope
   fields alone never establish eligibility. Document the remaining attested
-  report-forgery gap.
+  report-forgery gap. Test missing/cancelled runs and duplicate attempts without
+  allowing stale feedback or weakening the later required-gate lifecycle.
 
 ### T04 — Define the no-source result and AI-request contracts
 
@@ -130,6 +161,10 @@ implementation still follow their dependencies.
   metadata, customer-side AI request/response states, limits, and error/logging
   rules. Decide whether a separate/versioned transport is needed; do not remove
   required measurement evidence merely to make a report smaller.
+  Preserve approved decision/profile/reference fields and structured repair
+  tasks through that transport. File paths, rule reasons and remediation text
+  require an explicit metadata policy; schema-valid engine JSON is not itself a
+  no-source payload guarantee.
 - **Accept:** source snippets, raw prompt packs, arbitrary logs, and raw model
   responses are absent from outbound payloads, diagnostics, artifacts, and
   telemetry in this mode. Validate with seeded source-bearing/error fixtures.
@@ -242,16 +277,19 @@ Advisory App/Action integration only. No required gate yet.
 - **Owner:** reporter decision presentation and GitHub delivery.
 - **Depends on:** T09/T10.
 - **Deliver:** `archfit/state`, one updated PR comment, supported annotations,
-  provenance/evidence gaps, and structured remediation tasks. Handle pagination,
+  provenance/evidence gaps, and structured remediation tasks preserving
+  `repair_kind` and validation-command replay. Handle pagination,
   GitHub rate limits, retry, and stale/head-changed results.
-- **Accept:** healthy/blocked/partial cases are useful without an LLM; no score or
-  verified badge; repeated delivery does not spam comments; old runs cannot
+- **Accept:** healthy/blocked/partial cases are useful without an LLM; no score
+  or verified badge; repeated delivery does not spam comments; old runs cannot
   overwrite newer head feedback; missing data is explained rather than hidden.
 
 **M1 exit:** after explicit deployment/installation approval, an eligible real
-run on Pumba and Archfit produces correct advisory feedback. A tenant-isolation
-check and reporter restart/retry drill pass. Credentials, public URL, and actual
-App registration block deployment only, not local implementation or fixtures.
+PR on Pumba and Archfit completes pinned analysis, authenticated report intake,
+and one updated advisory comment. Required enforcement remains disabled until
+M2 acceptance. A tenant-isolation check and reporter restart/retry drill pass.
+Credentials, public URL, and actual App registration block deployment only, not
+local implementation or fixtures.
 
 ## M2 — Trusted inputs and the required gate
 
@@ -323,7 +361,9 @@ Implement repository-scoped governance; the organization policy floor is deferre
 - **Accept:** upgrades cannot silently accept newly exposed violations. A rename
   or changed module mapping cannot be declared mechanically equivalent merely
   from a config diff or matching file counts. Until a relocation proof is
-  implemented, uncertain cases require owner review.
+  implemented, uncertain cases require owner review. Distinguish preserved
+  accepted fingerprints from replaced numerical snapshots; include the concrete
+  v2.3.0-to-v2.3.1 transition from T01. Baseline capture is not automatic migration.
 
 ### T16 — Versioned exceptions, expiry, and invalidation
 
@@ -332,9 +372,14 @@ Implement repository-scoped governance; the organization policy floor is deferre
 - **Deliver:** narrow exception identity, reason, expiry, approval and renewal
   history; pre-expiry warnings; scheduled invalidation of affected open PRs;
   concurrency rules for policy/approval changes versus check publication.
+  Serialize and validate exceptions against the pinned
+  [engine waiver contract](../design/trust-and-reporting.md#engine-waiver-contract).
 - **Accept:** expiry makes the remaining violation blocking even for unrelated
   PRs without a new commit. No unrelated finding is waived; renewal requires
   owner approval; expired debt is not retained by an accidental baseline update.
+  Active matching exceptions win regardless of order, and baseline capture skips
+  both active and expired waived findings. Engine `approved_by` text alone never
+  establishes authenticated App approval.
   Measure and document reconciliation/race windows, not an untested zero-window
   promise. Test retries and missed scheduler delivery/recovery.
 
