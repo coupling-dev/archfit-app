@@ -80,6 +80,9 @@ Supporting. Volatility: moderate, tied to engine releases (pinned v2.3.1).
   are ignored. Names are at most 200 characters, at most 5 000 modules **[default]**; more is an error.
 - A duplicate module name is an error (the YAML library already rejects duplicate mapping keys).
 - Aliases and merge keys under `modules` are resolved by the library; `Line` is then the line of the key, not of the anchor.
+  Keys merged in with `<<` directly under `modules` follow the map's own keys, and the map's own keys win.
+- Input with a line break other than LF or CRLF (a lone CR, NEL, LS, PS) is an error when `modules` is a mapping:
+  the library counts those as lines, an LF split does not, so `Line` would be wrong **[default]**.
 
 ## Public Contract
 
@@ -267,7 +270,8 @@ Policy fixtures live in `internal/wire/testdata/policy/` and are read by relativ
   **Expected behavior**: never panics; every `Line` is between 1 and the number of input lines; names are unique.
 - **Test name**: `TestPackageImports`
   **Scenario**: `go list -deps` for the package.
-  **Expected behavior**: standard library plus the one YAML library; no internal package; no `net`, `os`, or `log` package.
+  **Expected behavior**: standard library plus the one YAML library; no internal package; no `net` or `log` package. `os` is
+  reachable through `fmt` and the YAML library, so it is banned as a direct import only.
 
 ### Behavior Tests
 

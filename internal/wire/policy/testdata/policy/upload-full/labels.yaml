@@ -1,0 +1,4 @@
+labels:
+  - path: pkg/a
+    label: core
+    approved_by: octo-owner

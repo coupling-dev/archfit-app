@@ -1,0 +1,14 @@
+version: 2
+modules:
+  a:
+    paths:
+      - pkg/a/**
+waivers:
+  - rule: no_direct_b_dependency
+    reason: active exception
+    approved_by: octo-owner
+    expires: 2027-06-30
+  - rule: no_direct_b_dependency
+    reason: expired exception
+    approved_by: octo-owner
+    expires: 2026-01-31
