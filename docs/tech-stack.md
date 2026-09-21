@@ -48,7 +48,7 @@ TDD: the tests named in a module's Test Specification are written first.
 | Store             | `store.NewMemory()`; failure cases use a small failing wrapper. Drivers run the shared `store/storetest` suite.                    |
 | Fixtures          | `internal/wire/testdata/` with `.expect.json` files, as the `wire` module defines. Seeded leakage fixtures are release tests.      |
 | Import rules      | Root tests run `go list -deps` to enforce the allowed-import matrix.                                                               |
-| Fuzzing           | `testing.F` for the strict decoders (`envelope`, `report`, `settings`). **[default]**                                              |
+| Fuzzing           | `testing.F` for the strict decoders (`envelope`, `report`, `settings`, `policy`). **[default]**                                    |
 
 ## Frontend
 

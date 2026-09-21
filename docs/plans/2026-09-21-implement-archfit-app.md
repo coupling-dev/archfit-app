@@ -118,75 +118,91 @@ alternative is an engine change.
 
 ### Task 3 [Wave 0a]: Implement internal/store/ (leaf, no internal imports)
 
-- [ ] read internal/store/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/store/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/store/...` and `golangci-lint run ./internal/store/...` — all green before the task is complete
+- [x] read internal/store/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/store/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/store/...` and `golangci-lint run ./internal/store/...` — all green before the task is complete
+
+⚠️ internal/store: `TestStoreImportsOnlyStdlib` lists `./...`; the task that adds a `store/<driver>` package with an SDK must narrow it or allow-list the driver. Input limits are unexported, so every driver re-implements them; `storetest` is the guard. Accepted.
 
 ### Task 4 [Wave 0a]: Implement internal/wire/envelope/ (leaf, no internal imports)
 
-- [ ] read internal/wire/envelope/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/wire/envelope/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/wire/envelope/...` and `golangci-lint run ./internal/wire/envelope/...` — all green before the task is complete
+- [x] read internal/wire/envelope/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/wire/envelope/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/wire/envelope/...` and `golangci-lint run ./internal/wire/envelope/...` — all green before the task is complete
+
+⚠️ internal/wire/envelope: an import test cannot forbid stdlib packages transitively (`go list -deps` always shows `os`); the module tests direct imports plus "no non-stdlib dependency". The root import-matrix tests must be written the same way. The decoder is stricter than the published JSON Schema can express (integer form and range, duplicate keys, raw size); the schema description documents it. Fixtures live in the module's own testdata until the wire parent task creates the shared folder. Accepted.
 
 ### Task 5 [Wave 0a]: Implement internal/wire/report/ (leaf, no internal imports)
 
-- [ ] read internal/wire/report/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/wire/report/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/wire/report/...` and `golangci-lint run ./internal/wire/report/...` — all green before the task is complete
+- [x] read internal/wire/report/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/wire/report/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/wire/report/...` and `golangci-lint run ./internal/wire/report/...` — all green before the task is complete
+
+⚠️ internal/wire/report: the pinned engine state schema (tag v2.3.1, SHA-256 `acd9a09eefe1f30227c0e62155d641925cdfd416e9007e99fea79293c8e387c6`) was vendored by the orchestrator into the module's testdata; `TestEngineSchemaKeySetIsCovered` now runs its schema walk and passes. The test skips when the file is absent and does not pin the SHA-256 yet: the wire parent task moves the schema to `internal/wire/testdata/schema/` and adds the pin. Fixture `.expect.json` shapes in wire children are provisional until the wire parent task defines the shared format.
 
 ### Task 6 [Wave 0a]: Implement internal/wire/settings/ (leaf, no internal imports)
 
-- [ ] read internal/wire/settings/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/wire/settings/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/wire/settings/...` and `golangci-lint run ./internal/wire/settings/...` — all green before the task is complete
+- [x] read internal/wire/settings/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/wire/settings/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/wire/settings/...` and `golangci-lint run ./internal/wire/settings/...` — all green before the task is complete
+
+⚠️ internal/wire/settings: import tests forbid `os` only as a direct import (same finding as envelope). A PostToolUse formatter rewrites `.yaml` fixtures on write, so hand-edited YAML forms are tested inline; later tasks that need exact YAML bytes must do the same. Accepted.
 
 ### Task 7 [Wave 0a]: Implement internal/wire/policy/ (leaf, no internal imports)
 
-- [ ] read internal/wire/policy/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/wire/policy/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/wire/policy/...` and `golangci-lint run ./internal/wire/policy/...` — all green before the task is complete
+- [x] read internal/wire/policy/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/wire/policy/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/wire/policy/...` and `golangci-lint run ./internal/wire/policy/...` — all green before the task is complete
+
+⚠️ internal/wire/policy: reading goes through `yaml.Node` (needed for `Line` and `expires`), so the module adds a full-document decode to get the library's duplicate-key, merge and alias-bomb checks; a duplicate key anywhere in the policy is therefore an error. `Modules` refuses input with line breaks other than LF/CRLF when `modules` is a mapping, because the library counts CR, NEL, LS and PS as lines and `Line` would drift (added to module.md as [default]). Both accepted. The two cross-module digest tests use the module's own fixtures until the wire parent task creates the shared folder.
 
 ### Task 8 [Wave 0a]: Implement internal/wire/manifest/ (leaf, no internal imports)
 
-- [ ] read internal/wire/manifest/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/wire/manifest/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/wire/manifest/...` and `golangci-lint run ./internal/wire/manifest/...` — all green before the task is complete
+- [x] read internal/wire/manifest/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/wire/manifest/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/wire/manifest/...` and `golangci-lint run ./internal/wire/manifest/...` — all green before the task is complete
+
+⚠️ internal/wire/manifest: `manifest.json` holds PLACEHOLDER image digests (`sha256:aaaa…`, `sha256:bbbb…`) and a PLACEHOLDER Action commit (`cccc…`); the real values need the published v2.3.1 images and the pinned archfit-action commit (decisions.md §12). `profile_version` is the real `archfit.measurement.v1`. Until they are replaced, a generated onboarding workflow pins an image and commit that do not exist: release blocker, not a build blocker. The module panics at package init on an invalid embedded manifest (module.md [default]), a deliberate exception to the tech-stack "no panics outside main" convention. Owner decision wanted on both.
 
 ### Task 9 [Wave 0a]: Implement internal/github/auth/ (leaf, no internal imports)
 
-- [ ] read internal/github/auth/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/github/auth/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/github/auth/...` and `golangci-lint run ./internal/github/auth/...` — all green before the task is complete
+- [x] read internal/github/auth/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/github/auth/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/github/auth/...` and `golangci-lint run ./internal/github/auth/...` — all green before the task is complete
+
+⚠️ internal/github/auth: the `RepoReadToken` name pattern admitted `../x` while its test requires refusal; the module.md rule now rejects an owner or name that is `.` or `..`. The stdlib list in Constraints was completed and the import test reworded (direct imports only). A caller that fetched its cache entry just before `Invalidate` can get the old token once; the api retry-after-401 absorbs it. All internal to the module, accepted.
 
 ### Task 10 [Wave 0a]: Implement internal/github/webhook/ (leaf, no internal imports)
 
-- [ ] read internal/github/webhook/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/github/webhook/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/github/webhook/...` and `golangci-lint run ./internal/github/webhook/...` — all green before the task is complete
+- [x] read internal/github/webhook/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/github/webhook/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/github/webhook/...` and `golangci-lint run ./internal/github/webhook/...` — all green before the task is complete
 
 ### Task 11 [Wave 0a]: Implement internal/github/oidc/ (leaf, no internal imports)
 
-- [ ] read internal/github/oidc/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/github/oidc/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/github/oidc/...` and `golangci-lint run ./internal/github/oidc/...` — all green before the task is complete
+- [x] read internal/github/oidc/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/github/oidc/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/github/oidc/...` and `golangci-lint run ./internal/github/oidc/...` — all green before the task is complete
+
+⚠️ internal/github/oidc: the contract fixes the sentinel text `oidc: signing keys unavailable` while the behavior rules want every error prefixed `github/oidc:`; reconciled by wrapping, `errors.Is` holds. The 1/min JWKS fetch bound covers every fetch attempt, so after a failed attempt `ErrUnavailable` can last up to 60 s after the issuer recovers (the producer retries on 503). A slow JWKS fetch stalls concurrent `Verify` calls up to the client timeout. Accepted.
 
 ### Task 12 [Wave 0b]: Implement internal/github/api/ (leaf, calls only wave 0a code or interfaces)
 
