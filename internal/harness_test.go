@@ -489,14 +489,6 @@ func installationPayload(action string, id int64) map[string]any {
 	return map[string]any{"action": action, "installation": map[string]any{"id": id}}
 }
 
-func pushPayload(installationID int64, fullName string, private bool, after string, changed ...string) map[string]any {
-	return map[string]any{
-		"ref": "refs/heads/main", "after": after, "installation": map[string]any{"id": installationID},
-		"repository": repoPayload(fullName, private),
-		"commits":    []map[string]any{{"added": []string{}, "modified": changed, "removed": []string{}}},
-	}
-}
-
 func sign(secret string, payload []byte) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(payload)
@@ -795,3 +787,23 @@ func (f *fakeProvider) count() int {
 }
 
 var errDown = errors.New("test: platform down")
+
+// discoveryUpload is a discovery result (a draft policy) produced by a workflow_dispatch run on main.
+func discoveryUpload(fullName string, repoID, runID int64, head string, policy []byte) upload {
+	now := time.Now()
+	return upload{
+		env: envelope{
+			SchemaVersion: "archfit.report-envelope.v1", Kind: "discovery", Repository: fullName, Event: "workflow_dispatch",
+			HeadSHA: head, RunID: runID, RunAttempt: 1, EngineVersion: "v2.3.1",
+			ImageDigest: "sha256:" + strings.Repeat("a", 64), Platform: "linux/amd64", PayloadDigest: "sha256:" + digest(policy),
+		},
+		body: policy,
+		claims: map[string]any{
+			"iss": oidcIssuer, "aud": baseURL, "iat": now.Add(-time.Minute).Unix(), "exp": now.Add(5 * time.Minute).Unix(),
+			"repository": fullName, "repository_id": fmt.Sprint(repoID), "run_id": fmt.Sprint(runID), "run_attempt": "1",
+			"sha": head, "ref": "refs/heads/main", "event_name": "workflow_dispatch", "runner_environment": "github-hosted",
+			"job_workflow_ref": fullName + "/" + workflowPath + "@refs/heads/main",
+		},
+		key: oidcKey(),
+	}
+}

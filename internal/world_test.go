@@ -248,20 +248,11 @@ func (w *world) edit(fullName string, f func(rp *repo)) {
 	f(rp)
 }
 
-// push points branch at commit id holding the branch's previous files overlaid with files (nil content deletes).
+// push points branch at commit id holding the branch's previous files overlaid with files.
 func (rp *repo) push(branch, id string, files map[string]string) {
 	snap := cloneSnap(rp.commits[rp.branches[branch]])
 	for p, c := range files {
 		snap[p] = []byte(c)
-	}
-	rp.commits[id] = snap
-	rp.branches[branch] = id
-}
-
-func (rp *repo) remove(branch, id string, paths ...string) {
-	snap := cloneSnap(rp.commits[rp.branches[branch]])
-	for _, p := range paths {
-		delete(snap, p)
 	}
 	rp.commits[id] = snap
 	rp.branches[branch] = id
@@ -385,12 +376,6 @@ func (w *world) dispatchesOf(fullName string) []dispatch {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return slices.Clone(w.repos[fullName].dispatches)
-}
-
-func (w *world) writeCount() int {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return len(w.writes)
 }
 
 func (w *world) requestCount() int {
@@ -1105,5 +1090,18 @@ func (w *world) routes() {
 func (rp *repo) userJSON(perm string) map[string]any {
 	out := rp.json()
 	out["permissions"] = map[string]bool{"admin": perm == "admin", "push": perm == "admin" || perm == "write", "pull": true}
+	return out
+}
+
+// publishingWrites are the write requests other than minting an installation token.
+func (w *world) publishingWrites() []string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	var out []string
+	for _, line := range w.writes {
+		if !strings.HasSuffix(line, "/access_tokens") {
+			out = append(out, line)
+		}
+	}
 	return out
 }
