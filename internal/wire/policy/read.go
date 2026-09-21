@@ -21,10 +21,12 @@ var (
 )
 
 // topLevel holds the only keys this module reads. Every other key is ignored. The values stay nodes because
-// `expires` needs the scalar text as written and module keys need their line.
+// `expires` needs the scalar text as written and module keys need their line. root is the whole mapping,
+// for Validate, which looks at every key but at no value.
 type topLevel struct {
 	Waivers yaml.Node `yaml:"waivers"`
 	Modules yaml.Node `yaml:"modules"`
+	root    *yaml.Node
 }
 
 // read applies the common reading rules. ok is false for empty input.
@@ -70,6 +72,7 @@ func read(policy []byte) (top topLevel, ok bool, err error) {
 	if err := doc.Decode(&top); err != nil {
 		return topLevel{}, false, errSyntax
 	}
+	top.root = doc.Content[0]
 	return top, true, nil
 }
 

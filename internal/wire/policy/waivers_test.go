@@ -213,7 +213,7 @@ func TestApprovedByIsNeverAuthority(t *testing.T) {
 	}
 
 	// The exported surface is the Public Contract and nothing that could act on ApprovedBy.
-	want := []string{"BaselinePath", "Digest", "LabelsPath", "ModuleDef", "Modules", "PolicyPath", "Schema", "Waiver", "Waivers"}
+	want := []string{"BaselinePath", "Digest", "LabelsPath", "ModuleDef", "Modules", "PolicyPath", "Schema", "Validate", "Waiver", "Waivers"}
 	if got := exportedNames(t); !slices.Equal(got, want) {
 		t.Errorf("exported identifiers = %v, want %v", got, want)
 	}

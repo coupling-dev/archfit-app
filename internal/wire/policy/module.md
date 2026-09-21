@@ -7,9 +7,10 @@
 ## Purpose
 
 The engine policy `.archfit.yaml`, the baseline `.archfit-baseline.json` and the labels file
-`.archfit-labels.yaml` belong to the Archfit engine, not to the App. The App needs five small things from them:
+`.archfit-labels.yaml` belong to the Archfit engine, not to the App. The App needs six small things from them:
 where they live, the digest rule that binds a report to them, the waiver expiry dates to schedule around, the
-declared modules for the graph view, and the engine's config JSON Schema for the editor. This module owns exactly
+declared modules for the graph view, the engine's config JSON Schema for the editor, and a structural check that
+a text is plausibly a policy before the App proposes or saves it. This module owns exactly
 that and deliberately nothing more. Without it, the digest rule would be re-derived in several places, and any
 drift between them would turn honest reports into `policy_mismatch`.
 
@@ -21,7 +22,11 @@ drift between them would turn honest reports into `policy_mismatch`.
 - `Waivers`: read the `waivers:` list of a policy file into `Waiver` values with parsed expiry instants.
 - `Modules`: list the names, layers and line numbers of the policy's `modules:` map, in file order.
 - `Schema`: the engine v2.3.1 config JSON Schema (`archfit.schema.json`), embedded unchanged.
-- Nothing else. It does not validate policies, match waivers to findings, parse baselines or labels, or enforce expiry.
+- `Validate`: a structural check that a text is plausibly an engine policy: one YAML mapping whose top-level keys
+  all belong to the schema's closed key set and include the required `version`. It keeps foreign text (a report,
+  a labels file, model prose) out of policy pull requests and saved drafts.
+- Nothing else. It does no engine validation of policies (no value, type or rule check), does not match waivers to
+  findings, parse baselines or labels, or enforce expiry.
 
 ## Subdomain Classification
 
@@ -46,18 +51,27 @@ Supporting. Volatility: moderate, tied to engine releases (pinned v2.3.1).
 - The embedded schema file and its provenance: `archfit.schema.json` copied unchanged from the engine repository
   at revision `f8877d25ba36d84d3780071580d23486e3d794d0` (tag `v2.3.1`). A sibling file `SCHEMA_SOURCE` records the
   source revision, the source path and the SHA-256 of the copy **[default]**.
+- The top-level key set of a policy. It is derived from the embedded schema's root `properties` and `required`,
+  read once lazily with `encoding/json`; there is never a second hand-written list. The derivation relies on the
+  root's `additionalProperties: false`; a schema without it has no closed key set and `Validate` then always fails.
+  In v2.3.1 the keys are `version`, `exclude`, `languages`, `analyzers`, `coverage`, `ai`, `coupling`, `layers`,
+  `modules`, `external_systems`, `rules`, `waivers`, `metrics`, `module_review`, `file_class`, `outputs`; only
+  `version` is required. This list is informative; the schema file is the source.
 - The YAML library: the same single third-party dependency as `wire/settings`
   (`go.yaml.in/yaml/v3` **[default]** until `docs/tech-stack.md` names one). `Modules` uses its node API for line numbers.
 - The baseline and labels files are opaque here. Only their paths and digests are known.
 
 ### Common reading rules
 
-`Waivers` and `Modules` share these:
+`Waivers`, `Modules` and `Validate` share one reader and these rules:
 
 - Input limit 1 048 576 bytes **[default]**; larger input is an error. Invalid UTF-8 or YAML that does not parse is an error.
-- Exactly one YAML document whose root is a mapping; otherwise an error. Empty input gives `nil, nil`.
-- Only the one top-level key is read. Every other key, known to the engine or not, is ignored. This is
-  deliberately not strict: the engine validates its own file, and a newer engine key must not break the App.
+- Exactly one YAML document whose root is a mapping; otherwise an error. Empty input gives `nil, nil` from
+  `Waivers` and `Modules`, and an error from `Validate`.
+- Duplicate mapping keys, alias cycles and alias-expansion bombs are errors (the library's full decode runs once).
+- `Waivers` and `Modules` read only their one top-level key. Every other key, known to the engine or not, is
+  ignored. This is deliberately not strict: the engine validates its own file, and a newer engine key must not
+  break these two readers. `Validate` is the strict one; see its rules below.
 - Any error returns a `nil` slice. There is no partial result.
 
 ### Waivers reading rules
@@ -83,6 +97,20 @@ Supporting. Volatility: moderate, tied to engine releases (pinned v2.3.1).
   Keys merged in with `<<` directly under `modules` follow the map's own keys, and the map's own keys win.
 - Input with a line break other than LF or CRLF (a lone CR, NEL, LS, PS) is an error when `modules` is a mapping:
   the library counts those as lines, an LF split does not, so `Line` would be wrong **[default]**.
+
+### Validate rules
+
+- The common reading rules apply first, with the same reader and the same errors.
+- An empty document (no bytes, white space only, comments only) is an error: `version` is required.
+- Every top-level key must be a name in the schema's root `properties`. The match is exact and case-sensitive.
+  A key that is not a plain string (a number, a null, a merge key `<<`) is not in the set and is an error, so keys
+  merged into the root are never considered.
+- Every name in the schema's root `required` must be present as a key. Presence is enough: `version:` with a null
+  value passes. No value is inspected, at any depth; a policy with a malformed waiver `expires` passes.
+- The first failure wins. An unknown key is reported by its 1-based position among the top-level keys, a missing
+  required key by its schema name. No key or value of the input appears in any error.
+- A policy written for a newer engine with a new top-level key is rejected until the embedded schema is replaced.
+  That is intended: the pinned engine would reject the file as well.
 
 ## Public Contract
 
@@ -131,6 +159,16 @@ type ModuleDef struct {
 func Modules(policy []byte) ([]ModuleDef, error)
 ```
 
+`Validate` is the structural gate for text that is about to be proposed or saved as a policy:
+
+```go
+// Validate reports whether policy is plausibly an engine policy file: a YAML document whose root is a
+// mapping, whose top-level keys all belong to the engine config schema's closed key set, and which has
+// the required `version` key. It is a structural check, not engine validation: the engine remains the
+// authority on the file's meaning. Errors never echo keys or values.
+func Validate(policy []byte) error
+```
+
 `PolicyPath` is the location of the engine policy on the protected ref. `BaselinePath` is the location of the
 persisted engine baseline and `LabelsPath` is the location of the approved labels file, both beside the policy.
 `ApprovedBy` is descriptive text copied from the file.
@@ -143,8 +181,11 @@ Semantics not visible in the signatures:
   must pass the same text it displays.
 - `Waivers` follows the reading rules above. A caller that gets an error proceeds with no waiver schedule (a zero
   earliest expiry) and logs the outcome only; the engine still enforces the waivers.
-- `Waivers` doubles as a syntax check for control-plane callers: `nil` error means one well-formed YAML mapping
-  document within the size limit, with readable waivers. It is not engine validation; the check run on the draft PR is.
+- `Validate` follows the Validate rules above. It is the check control-plane callers run before they propose or
+  save policy text: `nil` means one well-formed YAML mapping within the size limit, with only engine config keys
+  and with `version`. It is not engine validation; the check run on the draft PR is. `Validate` does not read
+  waivers: a caller that also needs readable waivers calls `Waivers` as well.
+- `Waivers` alone is not a policy check: it ignores unknown keys, so prose or JSON with a colon passes it.
 - `Schema` returns a fresh copy on every call. The bytes are the engine's file, not reformatted.
 
 ## Integrations
@@ -171,11 +212,12 @@ Shared knowledge, per counterpart:
   three files at the protected ref, digests them, digests an owner-approved head candidate, and takes the earliest
   `Expires`. The gate compares the policy digest with the report's `config_hash`, and the baseline and labels
   digests with the envelope's `baseline_digest` and `labels_digest`.
-- `internal/control/onboarding` holds `PolicyPath` to place the proposed policy of PR 2 and to derive the `policy_merged` stage.
-- `internal/control/assist` holds `PolicyPath`, `Schema` (rule descriptions for the prompt context) and `Waivers`,
-  which it calls as a YAML syntax check on model output: an error means the proposal is not valid policy YAML.
+- `internal/control/onboarding` holds `PolicyPath` to place the proposed policy of PR 2 and to derive the `policy_merged`
+  stage, and `Validate`, which it calls on an uploaded discovery draft: an error means no pull request is opened.
+- `internal/control/assist` holds `PolicyPath`, `Schema` (rule descriptions for the prompt context) and `Validate`,
+  which it calls on a provider answer: an error means the proposal is not a policy.
 - `internal/control/ui` holds `PolicyPath`, `Schema` for the editor's completion and in-browser validation, and
-  `Waivers` as the same server-side YAML syntax check before a draft is saved.
+  `Validate` as the server-side check before an editor draft is saved.
 - `internal/control/ui/graph` holds `Digest`, `ModuleDef` and `Modules`: nodes, layers and the policy line to jump to.
 - `archfit` engine config: this module holds the config schema file, the three file locations, the waiver keys,
   the shape of the `modules` map, and the hashing rule. The engine owns all of them; this module follows a pinned release. Contract coupling
@@ -204,7 +246,10 @@ No counterpart contract is used by this module, so nothing is restated here.
   gate refuse a run that says it used other bytes than the protected ref holds.
 - No I/O, no clock (expiry comparison with "now" is the caller's), no logging. Errors name the entry index and
   key, never values or reasons text.
-- `Waivers` and `Modules` are total: no input panics. Work is bounded by the input limit and the library's alias limits.
+- `Validate` uses the same input limit, the same reader and the same duplicate-key, alias and line-break handling
+  as `Waivers`. An empty or comment-only document is an error for `Validate` only, because `version` is required.
+- `Validate` is structural. It never replaces the engine's validation and never inspects a value.
+- `Waivers`, `Modules` and `Validate` are total: no input panics. Work is bounded by the input limit and the library's alias limits.
 - No other internal import, including `wire/settings` and `wire/report`.
 
 ## Test Specification
@@ -232,11 +277,22 @@ Policy fixtures live in `internal/wire/testdata/policy/` and are read by relativ
   **Expected behavior**: `nil, nil` for the first three; errors for rows four and five; the rest succeed with file order kept,
   duplicates kept, missing strings empty, the unknown key ignored.
 
+- **Test name**: `TestValidateKeySetComesFromSchema`
+  **Scenario**: derive the key set from the embedded schema and from a copy with one more root property, also listed as required;
+  schema bytes that are not JSON, have no root properties, or lack `additionalProperties: false`.
+  **Expected behavior**: the embedded schema's root is closed and rejects a policy with the new key; the copy accepts it and
+  names the new required key when it is absent; the broken schemas are errors.
+
 ### Integration Contract Tests
 
 - **Test name**: `TestWaiversIgnoresTheRestOfThePolicy`
   **Scenario**: a full engine v2.3.1 policy fixture with modules, rules and two waivers, plus a copy with an extra unknown top-level key.
   **Expected behavior**: both return the same two waivers with all six fields filled.
+- **Test name**: `TestValidateAcceptsRealPolicies`
+  **Scenario**: every policy fixture of this module, every `internal/wire/testdata/policy/*.yaml` and every
+  `internal/wire/testdata/report/*.policy.yaml`, including the real engine captures and the malformed-expiry policy that
+  `Waivers` rejects; table: `version` only; null `version`; all sixteen keys; CRLF with comments; JSON spelling; an alias below a key.
+  **Expected behavior**: `nil` error for all.
 - **Test name**: `TestDigestMatchesEngineConfigHash`
   **Scenario**: for each report fixture that ships its policy file, digest it; include the real engine capture `real-blocked-no-baseline`.
   **Expected behavior**: equals the fixture report's `comparison.config_hash` (for the real capture `4a18013b…c55574`).
@@ -259,6 +315,19 @@ Policy fixtures live in `internal/wire/testdata/policy/` and are read by relativ
 - **Test name**: `TestReadersRejectBadInput`
   **Scenario**: table, run for both `Waivers` and `Modules`: invalid YAML; invalid UTF-8; two documents; root is a list; 1 048 577 bytes; an alias-expansion bomb; empty input.
   **Expected behavior**: errors for all but empty input, which gives `nil, nil`; bounded time and memory; no panic.
+- **Test name**: `TestValidateRejectsForeignDocuments`
+  **Scenario**: table: the engine state report `real-healthy.json`; a labels file; `Sure! Here is the file: done`; prose without
+  a colon; a scalar root; a sequence root; a mapping without `version`; `{}`; one unknown top-level key; `Version`; an integer key,
+  a null key and a merge key; empty, white-space-only and comment-only input; a duplicate top-level key; two documents;
+  truncated YAML; invalid UTF-8; 1 048 577 bytes; an alias-expansion bomb.
+  **Expected behavior**: an error for every row; unknown keys are named by position, the missing key as `version`; no panic.
+- **Test name**: `TestValidateErrorsEchoNothing`
+  **Scenario**: the marker `LEAK-7f3a` as an unknown key and its value, as a duplicate key, below a valid key of a document
+  without `version`, as a scalar root, in prose, in broken YAML, as an anchor and alias name; the engine state report.
+  **Expected behavior**: every error is free of the marker and of every top-level key of the report.
+- **Test name**: `FuzzValidate`
+  **Scenario**: fuzz `Validate` seeded with the fixtures and the prose line.
+  **Expected behavior**: never panics; whatever `Validate` accepts, the common reader accepts.
 - **Test name**: `TestErrorsNeverEchoValues`
   **Scenario**: a waiver whose `reason` and malformed `expires` contain the marker `LEAK-7f3a`.
   **Expected behavior**: the error names entry index and key; it does not contain the marker.
@@ -285,7 +354,8 @@ Policy fixtures live in `internal/wire/testdata/policy/` and are read by relativ
   **Scenario**: a base policy and a head policy that differs by one waiver line or by whitespace only.
   **Expected behavior**: different digests in both cases; a whitespace-only edit is still a policy change needing approval.
 - **Test name**: `TestWaiversAsSyntaxCheck`
-  **Scenario**: table as assist and the editor would call it: a valid policy without waivers; prose text that is not a mapping; truncated YAML; a policy with an unclosed quote.
+  **Scenario**: table: a valid policy without waivers; prose text that is not a mapping; truncated YAML; a policy with an unclosed quote.
+  `Waivers` still rejects these, although control-plane callers now use `Validate` as their check.
   **Expected behavior**: `nil` error for the first; errors for the rest.
 - **Test name**: `TestApprovedByIsNeverAuthority`
   **Scenario**: a waiver with `approved_by` naming a real owner login.
