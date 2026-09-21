@@ -90,6 +90,12 @@ type Finding struct {
 	AllowedAlternatives []string   `json:"allowed_alternatives,omitempty"`
 }
 
+// Active reports whether the finding currently blocks: a gate finding that is new or whose waiver expired.
+// It is the single definition of "active gate finding" for every consumer.
+func (f Finding) Active() bool {
+	return f.Kind == "gate" && (f.Status == "new" || f.Status == "expired_waiver")
+}
+
 type Edge struct {
 	From Endpoint `json:"from"`
 	To   Endpoint `json:"to"`

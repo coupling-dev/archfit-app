@@ -7,7 +7,7 @@ import (
 )
 
 func TestBlockerKeepsUnevaluatedRules(t *testing.T) {
-	r := mustDecode(t, loadFixture(t, "report/blocker-plus-unevaluated.json"))
+	r := mustDecode(t, loadFixture(t, "report/blocker-and-unevaluated.json"))
 	if r.Decision.HardGates != "fail" || r.Decision.ActiveBlockers != 1 {
 		t.Errorf("decision %+v, want failing hard gates with one blocker", r.Decision)
 	}
@@ -54,7 +54,7 @@ func TestOriginNeverFilters(t *testing.T) {
 }
 
 func TestRepairKindsSurvive(t *testing.T) {
-	r := mustDecode(t, loadFixture(t, "report/both-repair-kinds.json"))
+	r := mustDecode(t, loadFixture(t, "report/repair-kinds.json"))
 	want := []AgentTask{
 		{
 			FindingID:  "ba3803eca947bf3c1b7efa8f37854d5e",
@@ -84,7 +84,7 @@ func TestRepairKindsSurvive(t *testing.T) {
 }
 
 func TestWaiverStatusesSurvive(t *testing.T) {
-	r := mustDecode(t, loadFixture(t, "report/waiver-expiry-and-order.json"))
+	r := mustDecode(t, loadFixture(t, "report/waiver-expiry-order.json"))
 	var got []string
 	for _, f := range r.Findings {
 		got = append(got, f.ID+" "+f.Status)

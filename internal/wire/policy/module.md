@@ -195,6 +195,7 @@ root coupling table.
 | Counterpart                      | Direction                       | Strength | LCA / Rank / Distance     | Volatility | Balanced? |
 | -------------------------------- | ------------------------------- | -------- | ------------------------- | ---------- | --------- |
 | `internal/gate/inputs`           | inputs depends on policy        | Contract | root / 2 / 2              | High       | Yes       |
+| `internal/gate`                  | gate depends on policy          | Contract | root / 2 / 2              | High       | Yes       |
 | `internal/control/onboarding`    | onboarding depends on policy    | Contract | root / 2 / 2              | High       | Yes       |
 | `internal/control/assist`        | assist depends on policy        | Contract | root / 2 / 2              | High       | Yes       |
 | `internal/control/ui`            | ui depends on policy            | Contract | root / 2 / 2              | High       | Yes       |
@@ -210,12 +211,15 @@ Shared knowledge, per counterpart:
   three files at the protected ref, digests them, digests an owner-approved head candidate, and takes the earliest
   `Expires`. The gate compares the policy digest with the report's `config_hash`, and the baseline and labels
   digests with the envelope's `baseline_digest` and `labels_digest`.
+- `internal/gate` holds `PolicyPath`, `BaselinePath` and `LabelsPath` only: the file locations it watches in events.
+  The digests and the earliest expiry reach it through `inputs.Trusted`, without a policy type.
 - `internal/control/onboarding` holds `PolicyPath` to place the proposed policy of PR 2 and to derive the `policy_merged`
-  stage, and `Validate`, which it calls on an uploaded discovery draft: an error means no pull request is opened.
+  stage, `BaselinePath` and `LabelsPath`, `Waivers`, and `Validate`, which it calls on an uploaded discovery draft: an
+  error means no pull request is opened.
 - `internal/control/assist` holds `PolicyPath`, `Schema` (rule descriptions for the prompt context) and `Validate`,
   which it calls on a provider answer: an error means the proposal is not a policy.
-- `internal/control/ui` holds `PolicyPath`, `Schema` for the editor's completion and in-browser validation, and
-  `Validate` as the server-side check before an editor draft is saved.
+- `internal/control/ui` holds `PolicyPath`, `Schema` for the editor's completion and in-browser validation,
+  `Validate` as the server-side check before an editor draft is saved, and `Modules` and `Waivers` for its pages.
 - `internal/control/ui/graph` holds `Digest`, `ModuleDef` and `Modules`: nodes, layers and the policy line to jump to.
 - `archfit` engine config: this module holds the config schema file, the three file locations, the waiver keys,
   the shape of the `modules` map, and the hashing rule. The engine owns all of them; this module follows a pinned release. Contract coupling
@@ -252,7 +256,14 @@ No counterpart contract is used by this module, so nothing is restated here.
 
 ## Test Specification
 
-Policy fixtures live in `internal/wire/testdata/policy/` and are read by relative path.
+Fixtures come from the shared corpus and are read by relative path: the policy fixtures in
+`internal/wire/testdata/policy/` (`<name>.yaml` with its `.expect.json`), and in `internal/wire/testdata/report/` the
+`.policy.yaml`, `.baseline.json`, `.labels.yaml` and `.envelope.json` siblings of the report fixtures. The parent
+document defines names, suffixes and the expectation format.
+
+One fixture is private, because the shared corpus has no equivalent: `testdata/policy/malformed-expiry.report.json`,
+the synthetic engine report for the shared `policy/malformed-expiry.yaml`. `TestMalformedExpiryNeedsNoSchedule` reads
+it and first checks that its `config_hash` is the digest of that policy.
 
 ### Unit Tests
 
@@ -287,16 +298,19 @@ Policy fixtures live in `internal/wire/testdata/policy/` and are read by relativ
   **Scenario**: a full engine v2.3.1 policy fixture with modules, rules and two waivers, plus a copy with an extra unknown top-level key.
   **Expected behavior**: both return the same two waivers with all six fields filled.
 - **Test name**: `TestValidateAcceptsRealPolicies`
-  **Scenario**: every policy fixture of this module, every `internal/wire/testdata/policy/*.yaml` and every
+  **Scenario**: every `internal/wire/testdata/policy/*.yaml` and every
   `internal/wire/testdata/report/*.policy.yaml`, including the real engine captures and the malformed-expiry policy that
   `Waivers` rejects; table: `version` only; null `version`; all sixteen keys; CRLF with comments; JSON spelling; an alias below a key.
   **Expected behavior**: `nil` error for all.
 - **Test name**: `TestDigestMatchesEngineConfigHash`
-  **Scenario**: for each report fixture that ships its policy file, digest it; include the real engine capture `real-blocked-no-baseline`.
+  **Scenario**: for each shared report fixture with a `.policy.yaml` sibling, digest the sibling; include the real engine capture
+  `real-blocked-no-baseline`.
   **Expected behavior**: equals the fixture report's `comparison.config_hash` (for the real capture `4a18013b…c55574`).
 - **Test name**: `TestDigestMatchesEnvelopeInputDigests`
-  **Scenario**: for each upload fixture that ships baseline and labels files with its envelope.
-  **Expected behavior**: `Digest` of each file equals the envelope's `baseline_digest` and `labels_digest`; a fixture without the file has `""` there.
+  **Scenario**: for each shared report fixture with an `.envelope.json` sibling: its `.baseline.json` and `.labels.yaml` siblings, when present.
+  **Expected behavior**: `Digest` of each file equals the envelope's `baseline_digest` and `labels_digest`; a fixture without the file has `""`
+  there. The exception is `baseline-tampered`, whose envelope must state a baseline digest different from its file's. At least one
+  baseline and one labels file are checked.
 - **Test name**: `TestModulesOnEnginePolicy`
   **Scenario**: the real capture's policy (modules `a` and `b`, no layers) and a full v2.3.1 policy fixture with layers, rules and waivers.
   **Expected behavior**: `a` at line 3 and `b` at line 6 for the capture; for the full fixture every module of the recorded expectation, in order.

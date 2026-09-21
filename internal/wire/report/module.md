@@ -61,14 +61,14 @@ The first failure is returned. No partial `Report` is ever returned.
 Known to the decoder, checked for JSON type, never copied into a `Report`. A key not in the Public Contract types
 and not in this list is a decode error.
 
-| Location                      | Dropped keys                                                                     |
-| ----------------------------- | -------------------------------------------------------------------------------- |
-| root                          | `measurement` (`source_ref`, `history_depth`, `history_window`, `tool_versions`) |
-| `findings[]`                  | `matched_by` (map of string to string; populated in real reports)                |
-| `agent_tasks[]`               | `declarations` (list of syntax facts, below)                                     |
-| `dimensions.*.metrics[]`      | `denominator` (`observed`, `total`), `provenance` (list of strings)              |
-| `gate_reference`              | every comparison key except `status`, `base_ref`, `reasons`                      |
-| `seams[]`                     | the seam keys listed below                                                       |
+| Location                 | Dropped keys                                                                     |
+| ------------------------ | -------------------------------------------------------------------------------- |
+| root                     | `measurement` (`source_ref`, `history_depth`, `history_window`, `tool_versions`) |
+| `findings[]`             | `matched_by` (map of string to string; populated in real reports)                |
+| `agent_tasks[]`          | `declarations` (list of syntax facts, below)                                     |
+| `dimensions.*.metrics[]` | `denominator` (`observed`, `total`), `provenance` (list of strings)              |
+| `gate_reference`         | every comparison key except `status`, `base_ref`, `reasons`                      |
+| `seams[]`                | the seam keys listed below                                                       |
 
 - A syntax fact has `language`, `file`, `module`, `kind`, `name`, `framework` (strings), `exported` (boolean),
   `start_line`, `end_line`, `count` (integers). `name` is a source identifier: the closest thing to source in a
@@ -97,43 +97,47 @@ and not in this list is a decode error.
 
 Values outside the set are decode errors. These are the enums the engine schema enforces:
 
-| Field                                  | Values                                          |
-| -------------------------------------- | ----------------------------------------------- |
-| `verdict`                              | `healthy`, `needs_attention`, `blocked`         |
-| `decision.hard_gates`                  | `pass`, `fail`, `unmeasured`                    |
-| `comparison.status`                    | `not_requested`, `comparable`, `non_comparable` |
-| `gate_reference.status`                | same three values                               |
-| `dimensions.*.status`                  | `measured`, `partial`, `unmeasured`             |
-| `agent_tasks[].repair_kind`            | `code_change`, `needs_owner_decision`           |
-| `producers[].partial_basis`, if given  | `unresolved_specifiers`, `degraded_precision`   |
+| Field                                 | Values                                          |
+| ------------------------------------- | ----------------------------------------------- |
+| `verdict`                             | `healthy`, `needs_attention`, `blocked`         |
+| `decision.hard_gates`                 | `pass`, `fail`, `unmeasured`                    |
+| `comparison.status`                   | `not_requested`, `comparable`, `non_comparable` |
+| `gate_reference.status`               | same three values                               |
+| `dimensions.*.status`                 | `measured`, `partial`, `unmeasured`             |
+| `agent_tasks[].repair_kind`           | `code_change`, `needs_owner_decision`           |
+| `producers[].partial_basis`, if given | `unresolved_specifiers`, `degraded_precision`   |
 
 Other value sets named in the type comments (`Finding.Status`, `Severity`, `Kind`, `Producer.Status`, `Dimension.Gate`,
 `AgentTask.Origin`) are plain strings in the engine schema. They are checked as tokens only **[default]**; a consumer
 that meets a value it does not know fails closed or shows it as text.
 
+An empty `partial_basis` (`""`) is accepted and means the same as an absent key: the enum is checked only for a
+non-empty value **[default]**.
+
 ### Collection caps
 
 All values **[default]**.
 
-| Collection                                                          | Maximum |
-| ------------------------------------------------------------------- | ------- |
-| `findings`                                                          | 10 000  |
-| `agent_tasks`                                                       | 10 000  |
-| `seams`                                                             | 50 000  |
-| `decision.unevaluated_required_rules`                               | 1 000   |
-| `locations` per finding                                             | 100     |
-| `allowed_alternatives` per finding                                  | 32      |
-| `constraints`, `validation` per task                                | 32 each |
-| `files` per task                                                    | 1 000   |
-| `metrics`, `unknown` per dimension                                  | 256     |
-| `findings` (references) per dimension                               | 10 000  |
-| `new_findings`, `resolved_findings` per delta                       | 10 000  |
-| `producers`, `unknowns`, `coverage.tools`, every `reasons` list     | 64 each |
+| Collection                                                      | Maximum |
+| --------------------------------------------------------------- | ------- |
+| `findings`                                                      | 10 000  |
+| `agent_tasks`                                                   | 10 000  |
+| `seams`                                                         | 50 000  |
+| `decision.unevaluated_required_rules`                           | 1 000   |
+| `locations` per finding                                         | 100     |
+| `allowed_alternatives` per finding                              | 32      |
+| `constraints`, `validation` per task                            | 32 each |
+| `files` per task                                                | 1 000   |
+| `metrics`, `unknown` per dimension; `metrics` per delta         | 256     |
+| `findings` (references) per dimension                           | 10 000  |
+| `new_findings`, `resolved_findings` per delta                   | 10 000  |
+| `producers`, `unknowns`, `coverage.tools`, every `reasons` list | 64 each |
 
 ### String rules
 
-Every kept string is valid UTF-8 without control characters (no CR, LF, tab, NUL). All lengths and character sets are
-**[default]**. Classes:
+Every kept string is valid UTF-8 without control characters (no CR, LF, tab, NUL) and without the Unicode line
+separators U+2028 and U+2029, which are not control characters but break a single line. All lengths and character
+sets are **[default]**. Classes:
 
 - Text, at most 500 characters, single line: `Finding.Why`, `Finding.Constraint`, `AllowedAlternatives[]`,
   `AgentTask.Goal`, `AgentTask.Constraints[]`, `UnknownFact.Fact`, `UnknownFact.Reason`, `UnevaluatedRule.Reason`,
@@ -375,6 +379,12 @@ type Seam struct {
 func Decode(payload []byte) (Report, error)
 ```
 
+```go
+// Active reports whether the finding currently blocks: a gate finding that is new or whose waiver expired.
+// It is the single definition of "active gate finding" for every consumer.
+func (f Finding) Active() bool
+```
+
 `StateSchemaV1` is the only state schema version accepted. `MaxBytes` is the payload cap. Reading the "5 MB" of
 decisions.md §3 as 5 MiB = 5 242 880 bytes is **[default]**; a payload of exactly `MaxBytes` is within the cap.
 `HardGates` and `RepairKind` are engine-authored values passed through unchanged.
@@ -391,6 +401,9 @@ Semantics not visible in the signatures:
 - `Reference` carries no digest. The baseline and labels digests the producer used are stated in the upload
   envelope and compared by the gate; this module knows nothing about them.
 - Everything in a decoded `Report` is still customer-attested. Decoding proves form, not truth.
+- `Active` is true exactly when `Kind` is `"gate"` and `Status` is `"new"` or `"expired_waiver"`. Every other
+  pair is false, including a status or kind this module does not know. It reads those two fields only. It is a
+  presentation predicate: the conclusion comes from `HardGates` and the gate, never from counting active findings.
 
 ## Integrations
 
@@ -403,7 +416,7 @@ table; the `internal/gate` row is computed (LCA root, deeper module two levels d
 | `internal/gate/ingest`           | ingest depends on report         | Contract (versioned schema)   | root / 2 / 2              | High       | Yes       |
 | `internal/gate/verdict`          | verdict depends on report        | Contract (published language) | root / 2 / 2              | High       | Yes       |
 | `internal/gate/feedback`         | feedback depends on report       | Contract (published language) | root / 2 / 2              | High       | Yes       |
-| `internal/gate`                  | gate depends on report           | Contract                      | root / 2 / 2              | High       | Yes       |
+| `internal/gate`                  | through gate/ingest, no import   | Contract                      | root / 2 / 2              | High       | Yes       |
 | `internal/control/ui`            | ui depends on report             | Contract                      | root / 2 / 2              | High       | Yes       |
 | `internal/control/ui/graph`      | graph depends on report          | Contract                      | root / 3 / 3              | Moderate   | Yes       |
 | `archfit` engine state (v2.3.1)  | report mirrors the engine schema | Contract (versioned schema)   | outside the tree; highest | Moderate   | Yes       |
@@ -417,11 +430,14 @@ Shared knowledge, per counterpart:
   `HardGates`, `UnevaluatedRequiredRules`, `ConfigHash` and `GateReference.Status`. It never filters by
   `AgentTask.Origin` or `Finding.Status`.
 - `internal/gate/feedback` holds all types: findings with edges and locations for annotations, dimensions with
-  status and confidence, agent tasks with `RepairKind` and `Validation`, the measurement profile, coverage.
-- `internal/gate` holds `Report`, `Comparison` and `MeasurementProfile`: a `nil` profile or a version different
-  from the manifest entry means the identity is not approved.
+  status and confidence, agent tasks with `RepairKind` and `Validation`, the measurement profile, coverage. It calls
+  `Finding.Active` to mark blocking findings.
+- `internal/gate` does not import this module. It reads `Report`, `Comparison` and `MeasurementProfile` through the
+  `Report` field of `ingest.Upload`: a `nil` profile or a version different from the manifest entry means the identity
+  is not approved. A change to those fields still reaches it.
 - `internal/control/ui` holds `Decode` and `MaxBytes` to read the `archfit-report` workflow artifact for the graph page.
-- `internal/control/ui/graph` holds `Report`, `Seam` and `Comparison.ConfigHash`.
+- `internal/control/ui/graph` holds `Report`, `Seam`, `Comparison.ConfigHash` and `Finding.Active`, which decides
+  the links it marks as active gate findings.
 - `archfit` engine state: this module holds the whole v2.3.1 state schema key set, its enums and required lists,
   pinned at revision `f8877d25ba36d84d3780071580d23486e3d794d0`. It holds no engine Go types (trust-and-reporting.md §7).
 - `archfit-action` uploads the engine's state file bytes as they are, or with dropped keys stripped. Contract
@@ -456,12 +472,14 @@ No counterpart contract is used by this module, so nothing is restated here.
 ## Test Specification
 
 Fixtures live in `internal/wire/testdata/report/` and `internal/wire/testdata/leakage/`, read by relative path.
-Each fixture has an `.expect.json` sibling recording its producer artifact and expected outcome (see the parent document).
+Each fixture has an `.expect.json` sibling recording its producer artifact and expected outcome (see the parent document);
+this module asserts its `decode` and `fields` keys. The pinned engine schema is `internal/wire/testdata/schema/archfit.state.schema.json`.
+This module has no private fixture and no `testdata` folder of its own.
 
 ### Unit Tests
 
 - **Test name**: `TestStringClassRules`
-  **Scenario**: table, one row per string class at its limit, one over it, one with LF, one with a tab, one with NUL; token rows
+  **Scenario**: table, one row per string class at its limit, one over it, one with LF, a tab, NUL, U+2028 and U+2029; token rows
   with a backtick and with `timed out`; `config_hash` rows: empty, 64 hex, uppercase, 63 hex, with a `sha256:` prefix.
   **Expected behavior**: at-limit rows, `timed out`, empty and 64-hex hashes decode; every other row is an error naming the JSON location.
 - **Test name**: `TestPathRules`
@@ -469,10 +487,12 @@ Each fixture has an `.expect.json` sibling recording its producer artifact and e
   `.`; `/etc/passwd`; `../x`; `a/../../x`; `a//b`; `a/./b`; `a\b`; `C:/x`; 513 characters.
   **Expected behavior**: the first three decode everywhere; empty decodes only for an endpoint path; the rest are errors.
 - **Test name**: `TestEnums`
-  **Scenario**: one row per schema enum with each allowed value and one unknown value; plus unknown values for `Finding.Status`, `Severity` and `Origin`.
-  **Expected behavior**: allowed values decode; unknown schema-enum values are errors; unknown plain-string values decode unchanged.
+  **Scenario**: one row per schema enum with each allowed value and one unknown value; an empty `partial_basis`; plus unknown
+  values for `Finding.Status`, `Severity` and `Origin`.
+  **Expected behavior**: allowed values and the empty `partial_basis` decode; unknown schema-enum values are errors; unknown
+  plain-string values decode unchanged.
 - **Test name**: `TestCollectionCaps`
-  **Scenario**: generated reports at each cap and one element over it.
+  **Scenario**: generated reports at each cap and one element over it, `delta.metrics` (256) included.
   **Expected behavior**: at-cap decodes; over-cap is an error naming the collection.
 - **Test name**: `TestPresenceRules`
   **Scenario**: table: each kept required key absent, at every level; each as `null`; `gate_reference` and `measurement_profile` absent;
@@ -485,6 +505,10 @@ Each fixture has an `.expect.json` sibling recording its producer artifact and e
 - **Test name**: `TestDuplicateFindingIDs`
   **Scenario**: the same `id` once as `baseline` and once as `fixed`; the same `id` twice as `new`.
   **Expected behavior**: both are errors.
+- **Test name**: `TestFindingActive`
+  **Scenario**: table over `Kind` and `Status`: `gate` with `new`, `expired_waiver`, `baseline`, `waived`, `fixed`, an unknown status
+  and an empty status; `advisory` with `new` and with `expired_waiver`; an unknown kind and an empty kind with `new`.
+  **Expected behavior**: true only for `gate` with `new` and `gate` with `expired_waiver`.
 - **Test name**: `TestValidationCommandRules`
   **Scenario**: `archfit check -c .archfit.yaml --base main --lang go --require-tools`; a command with `--refresh`; with `--refresh=true`;
   with `--refreshed`; 513 characters; a command with LF; 33 commands.
@@ -498,9 +522,9 @@ Each fixture has an `.expect.json` sibling recording its producer artifact and e
   **Expected behavior**: decodes; those values, the bare-hex `config_hash`, profile version `archfit.measurement.v1` and the task's
   validation command `archfit check -c .archfit.yaml` equal the recorded expectation.
 - **Test name**: `TestDecodeConformanceFixtures`
-  **Scenario**: every T02 fixture: healthy; warning-only attention with passing hard gates; blocked; missing required evidence;
-  unknown identity; comparable profile; incompatible profile; blocker plus unevaluated required rule; non-applicable rule;
-  `locations: []`; populated `matched_by`; both repair kinds; waiver expiry and order; invalid input.
+  **Scenario**: every fixture in `report/`; the T02 names must be present: `healthy`, `attention-pass`, `blocked`, `missing-evidence`,
+  `unknown-identity`, `profile-comparable`, `profile-incompatible`, `blocker-and-unevaluated`, `non-applicable-rule`,
+  `locations-empty`, `matched-by-populated`, `repair-kinds`, `waiver-expiry-order`, `invalid-input`.
   **Expected behavior**: each decodes or fails as its expectation says; for decoded ones `Verdict`, `HardGates`, unevaluated rule IDs,
   profile presence and version, and `GateReference.Status` equal the recorded values.
 - **Test name**: `TestMarshalledReportHasNoDroppedKey`
@@ -508,19 +532,23 @@ Each fixture has an `.expect.json` sibling recording its producer artifact and e
   **Expected behavior**: no `matched_by`, `declarations`, `measurement`, `provenance`, `denominator`, `hypothesis` or `scores` key anywhere;
   the second decode equals the first; counts of findings, tasks and seams equal the counts in the fixture file.
 - **Test name**: `TestEngineSchemaKeySetIsCovered`
-  **Scenario**: walk the pinned `archfit.state.schema.json` copy in `testdata/` and the shadow types by reflection.
-  **Expected behavior**: every schema property is a shadow field, and the reverse; kept plus dropped equals the schema key set.
+  **Scenario**: walk the pinned `internal/wire/testdata/schema/archfit.state.schema.json` and the shadow types by reflection.
+  **Expected behavior**: every schema property is a shadow field, and the reverse; kept plus dropped equals the schema key set. A
+  missing schema file fails the test; it never skips.
 - **Test name**: `TestSizeCap`
   **Scenario**: a valid report padded (inside a dropped string) to exactly `MaxBytes`, and to `MaxBytes + 1`.
   **Expected behavior**: the first decodes; the second fails before any parsing.
 - **Test name**: `TestWrongSchemaVersion`
   **Scenario**: `schema_version` empty, `archfit.architecture-state.v2`, and the envelope's version string.
   **Expected behavior**: errors.
+- **Test name**: `TestReportDoesNotAliasPayload`
+  **Scenario**: decode the all-keys fixture, marshal the `Report`, overwrite every byte of the payload, marshal again.
+  **Expected behavior**: both marshalled documents are equal: the `Report` owns its memory.
 
 ### Boundary Tests
 
 - **Test name**: `TestSeededLeakageFixturesFail` (release test, T04)
-  **Scenario**: every rejecting file in `testdata/leakage/`: a `snippet` key on a finding; a top-level `logs` blob; a `raw_response` key on
+  **Scenario**: every rejecting file in `internal/wire/testdata/leakage/`: a `snippet` key on a finding; a top-level `logs` blob; a `raw_response` key on
   an agent task; a multi-line `why` holding code; a 5 000-character `goal`; a `prompt` key in the profile. Each contains `LEAK-7f3a`.
   **Expected behavior**: every one fails to decode; no error string contains the marker.
 - **Test name**: `TestDeclarationsNeverSurvive` (release test, T04)

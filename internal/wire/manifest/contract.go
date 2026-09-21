@@ -5,7 +5,8 @@ import _ "embed"
 
 // PLACEHOLDER DATA: the image_digest and action_ref values in manifest.json are not the
 // published engine v2.3.1 release values (they were not available when this was written). Replace all
-// three from the engine release evidence before any release; the repeated-character values are fake.
+// of them from the engine release evidence before any release; the repeated-character values are fake.
+// TestManifestHasNoPlaceholdersInRelease fails a build tested with ARCHFIT_RELEASE=1 while they remain.
 //
 //go:embed manifest.json
 var manifestJSON []byte

@@ -12,7 +12,7 @@ import (
 var bareHex = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 func TestDigestKnownVectors(t *testing.T) {
-	base := fixture(t, "full.archfit.yaml")
+	base := fixture(t, fullPolicy)
 	if !bytes.HasSuffix(base, []byte("\n")) {
 		t.Fatal("fixture must end with a newline")
 	}
@@ -47,20 +47,21 @@ func TestDigestKnownVectors(t *testing.T) {
 }
 
 func TestDigestMatchesEngineConfigHash(t *testing.T) {
-	reports, err := filepath.Glob(filepath.Join(fixtureDir, "*.report.json"))
-	if err != nil || len(reports) == 0 {
-		t.Fatalf("no report fixtures: %v", err)
+	const policySuffix = ".policy.yaml"
+	policies, err := filepath.Glob(filepath.Join(sharedReportDir, "*"+policySuffix))
+	if err != nil || len(policies) == 0 {
+		t.Fatalf("no report fixtures with a policy sibling: %v", err)
 	}
-	for _, path := range reports {
-		name := strings.TrimSuffix(filepath.Base(path), ".report.json")
+	for _, path := range policies {
+		name := "report/" + strings.TrimSuffix(filepath.Base(path), policySuffix)
 		t.Run(name, func(t *testing.T) {
 			var report struct {
 				Comparison struct {
 					ConfigHash string `json:"config_hash"`
 				} `json:"comparison"`
 			}
-			fixtureJSON(t, name+".report.json", &report)
-			if got := Digest(fixture(t, name+".archfit.yaml")); got != report.Comparison.ConfigHash {
+			fixtureJSON(t, name+".json", &report)
+			if got := Digest(fixture(t, name+policySuffix)); got != report.Comparison.ConfigHash {
 				t.Errorf("Digest = %s, want config_hash %s", got, report.Comparison.ConfigHash)
 			}
 		})
@@ -68,39 +69,52 @@ func TestDigestMatchesEngineConfigHash(t *testing.T) {
 
 	// The real engine v2.3.1 capture, pinned independently of its report fixture.
 	const realCapture = "4a18013bab44d922fa67d9e8e699463b2b5284f1c2908b62d2b7c5f607c55574"
-	if got := Digest(fixture(t, "real-blocked-no-baseline.archfit.yaml")); got != realCapture {
+	if got := Digest(fixture(t, realCapturePolicy)); got != realCapture {
 		t.Errorf("real capture Digest = %s, want %s", got, realCapture)
 	}
 }
 
 func TestDigestMatchesEnvelopeInputDigests(t *testing.T) {
-	for _, upload := range []string{"upload-full", "upload-no-inputs"} {
-		t.Run(upload, func(t *testing.T) {
+	const envelopeSuffix = ".envelope.json"
+	// The one envelope that lies: it states a baseline digest other than the digest of its baseline file.
+	const tampered = "report/baseline-tampered"
+	envelopes, err := filepath.Glob(filepath.Join(sharedReportDir, "*"+envelopeSuffix))
+	if err != nil || len(envelopes) == 0 {
+		t.Fatalf("no report fixtures with an envelope sibling: %v", err)
+	}
+	withFile := map[string]int{}
+	for _, path := range envelopes {
+		name := "report/" + strings.TrimSuffix(filepath.Base(path), envelopeSuffix)
+		t.Run(name, func(t *testing.T) {
 			var envelope struct {
 				BaselineDigest string `json:"baseline_digest"`
 				LabelsDigest   string `json:"labels_digest"`
 			}
-			fixtureJSON(t, upload+"/envelope.json", &envelope)
-			files := []struct{ file, stated string }{
-				{"baseline.json", envelope.BaselineDigest},
-				{"labels.yaml", envelope.LabelsDigest},
+			fixtureJSON(t, name+envelopeSuffix, &envelope)
+			files := []struct{ suffix, stated string }{
+				{".baseline.json", envelope.BaselineDigest},
+				{".labels.yaml", envelope.LabelsDigest},
 			}
 			for _, f := range files {
-				raw, err := os.ReadFile(filepath.Join(fixtureDir, upload, f.file))
+				raw, err := os.ReadFile(filepath.Join(fixtureDir, name+f.suffix))
 				if os.IsNotExist(err) {
 					if f.stated != "" {
-						t.Errorf("%s: no file, envelope states %q, want \"\"", f.file, f.stated)
+						t.Errorf("%s: no file, envelope states %q, want \"\"", f.suffix, f.stated)
 					}
 					continue
 				}
 				if err != nil {
 					t.Fatal(err)
 				}
-				if got := Digest(raw); got != f.stated {
-					t.Errorf("%s: Digest = %s, envelope states %s", f.file, got, f.stated)
+				withFile[f.suffix]++
+				if lies := name == tampered && f.suffix == ".baseline.json"; (Digest(raw) == f.stated) == lies {
+					t.Errorf("%s: Digest = %s, envelope states %s, want equal = %v", f.suffix, Digest(raw), f.stated, !lies)
 				}
 			}
 		})
+	}
+	if withFile[".baseline.json"] == 0 || withFile[".labels.yaml"] == 0 {
+		t.Errorf("files checked: %v, want at least one baseline and one labels file", withFile)
 	}
 }
 
@@ -118,7 +132,7 @@ func TestPathConstants(t *testing.T) {
 }
 
 func TestPolicyEditChangesDigest(t *testing.T) {
-	base := fixture(t, "full.archfit.yaml")
+	base := fixture(t, fullPolicy)
 	tests := []struct {
 		name string
 		head []byte

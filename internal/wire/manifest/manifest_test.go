@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -123,6 +124,19 @@ func TestManifestValidationRules(t *testing.T) {
 			}
 		})
 	}
+
+	// Errors name the field and the rule, never the defective value.
+	for field, bad := range map[string]string{
+		"engine_version": "v9.9.9-LEAK",
+		"image_digest":   "sha256:LEAK",
+		"platform":       "LEAK/arm64",
+		"action_ref":     "LEAK",
+	} {
+		_, err := parse(doc(t, 1, edit(0, field, bad)(validRows())))
+		if err == nil || !strings.Contains(err.Error(), field) || strings.Contains(err.Error(), "LEAK") {
+			t.Errorf("%s: error %q, want it to name the field and not the value", field, err)
+		}
+	}
 }
 
 func TestLookupExactMatch(t *testing.T) {
@@ -212,44 +226,97 @@ func TestLookupReturnsProfileAndActionRef(t *testing.T) {
 }
 
 func TestManifestMatchesFixtureProducers(t *testing.T) {
-	paths, err := filepath.Glob(filepath.Join("testdata", "*.expect.json"))
+	const (
+		reportDir      = "../testdata/report"
+		envelopeSuffix = ".envelope.json"
+	)
+	paths, err := filepath.Glob(filepath.Join(reportDir, "*"+envelopeSuffix))
 	if err != nil {
 		t.Fatalf("glob: %v", err)
 	}
-	approved := 0
-	for _, path := range paths {
-		var fixture struct {
-			IdentityApproved bool `json:"identity_approved"`
-			Producer         struct {
-				EngineVersion string `json:"engine_version"`
-				ImageDigest   string `json:"image_digest"`
-				Platform      string `json:"platform"`
-			} `json:"producer"`
-			ProfileVersion string `json:"profile_version"`
-		}
+	readJSON := func(path string, into any) {
+		t.Helper()
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("read %s: %v", path, err)
 		}
-		if err := json.Unmarshal(data, &fixture); err != nil {
+		if err := json.Unmarshal(data, into); err != nil {
 			t.Fatalf("decode %s: %v", path, err)
 		}
-		if !fixture.IdentityApproved {
+	}
+	approved, unapproved := 0, 0
+	for _, path := range paths {
+		name := strings.TrimSuffix(filepath.Base(path), envelopeSuffix)
+		var envelope struct {
+			EngineVersion string `json:"engine_version"`
+			ImageDigest   string `json:"image_digest"`
+			Platform      string `json:"platform"`
+		}
+		readJSON(path, &envelope)
+		var expect struct {
+			Fields struct {
+				ProfileVersion string `json:"profile_version"`
+			} `json:"fields"`
+			Facts struct {
+				IdentityApproved *bool `json:"identity_approved"`
+			} `json:"facts"`
+		}
+		readJSON(filepath.Join(reportDir, name+".expect.json"), &expect)
+
+		id := Identity{EngineVersion: envelope.EngineVersion, ImageDigest: envelope.ImageDigest, Platform: envelope.Platform}
+		got, ok := Lookup(id)
+		if a := expect.Facts.IdentityApproved; a != nil && !*a {
+			unapproved++
+			if ok {
+				t.Errorf("%s: identity %+v hit, the expectation says it is not approved", name, id)
+			}
 			continue
 		}
 		approved++
-		p := fixture.Producer
-		got, ok := Lookup(Identity{EngineVersion: p.EngineVersion, ImageDigest: p.ImageDigest, Platform: p.Platform})
 		if !ok {
-			t.Errorf("%s: producer identity %+v missed", path, p)
+			t.Errorf("%s: envelope identity %+v missed", name, id)
 			continue
 		}
-		if got.ProfileVersion != fixture.ProfileVersion {
-			t.Errorf("%s: profile version %q, manifest has %q", path, fixture.ProfileVersion, got.ProfileVersion)
+		if got.ProfileVersion != expect.Fields.ProfileVersion {
+			t.Errorf("%s: profile version %q, manifest has %q", name, expect.Fields.ProfileVersion, got.ProfileVersion)
 		}
 	}
-	if approved == 0 {
-		t.Fatal("no approved fixture found")
+	if approved == 0 || unapproved == 0 {
+		t.Fatalf("approved fixtures = %d, unapproved = %d, want at least one of each", approved, unapproved)
+	}
+}
+
+func TestManifestHasNoPlaceholdersInRelease(t *testing.T) {
+	// The placeholders module.md documents, as "entry index field". Empty it in the commit that replaces them.
+	documented := []string{"0 action_ref", "0 image_digest", "1 action_ref", "1 image_digest"}
+
+	var file struct {
+		Entries []fileEntry `json:"entries"`
+	}
+	if err := json.Unmarshal(manifestJSON, &file); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	var found []string
+	for i, e := range file.Entries {
+		for field, hex := range map[string]string{
+			"image_digest": strings.TrimPrefix(e.ImageDigest, "sha256:"),
+			"action_ref":   e.ActionRef,
+		} {
+			if strings.Trim(hex, hex[:1]) == "" {
+				found = append(found, strconv.Itoa(i)+" "+field)
+			}
+		}
+	}
+	slices.Sort(found)
+
+	if os.Getenv("ARCHFIT_RELEASE") == "1" {
+		if len(found) != 0 {
+			t.Fatalf("a release ships placeholder values: %q", found)
+		}
+		return
+	}
+	if !slices.Equal(found, documented) {
+		t.Errorf("placeholders %q, documented %q: replace all of them, the fixture envelopes and the documented list together", found, documented)
 	}
 }
 

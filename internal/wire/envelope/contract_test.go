@@ -69,6 +69,18 @@ func TestDecodeAcceptsConformanceEnvelopes(t *testing.T) {
 }
 
 func TestSchemaAndDecoderAgree(t *testing.T) {
+	// The shared expectation format has no field key; the field each invalid fixture must name is stated here.
+	// "" means the error belongs to no single field.
+	rejectedField := map[string]string{
+		"invalid-extra-key":                "",
+		"invalid-top-level-array":          "",
+		"invalid-discovery-with-baseline":  "baseline_digest",
+		"invalid-missing-key":              "labels_digest",
+		"invalid-null-kind":                "kind",
+		"invalid-prefixed-baseline-digest": "baseline_digest",
+		"invalid-push-with-pull-request":   "pull_request",
+		"invalid-schema-version":           "schema_version",
+	}
 	for _, fx := range loadFixtures(t) {
 		t.Run(fx.name, func(t *testing.T) {
 			_, err := envelope.Decode(fx.raw)
@@ -76,7 +88,11 @@ func TestSchemaAndDecoderAgree(t *testing.T) {
 				t.Errorf("Decode accepts = %v, expectation says %q (err: %v)", decoded, fx.expect.Decode, err)
 			}
 			if !fx.ok() {
-				wantRejected(t, fx.raw, fx.expect.Field)
+				field, known := rejectedField[fx.name]
+				if !known {
+					t.Fatalf("no expected field recorded for the invalid fixture %q", fx.name)
+				}
+				wantRejected(t, fx.raw, field)
 			}
 			wantSchemaAgrees(t, fx.raw, err == nil)
 		})

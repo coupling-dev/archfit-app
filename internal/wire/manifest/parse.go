@@ -60,6 +60,7 @@ func mustParse(data []byte) table {
 }
 
 // parse strictly decodes a manifest data file and checks every row validity rule.
+// Validation errors name the entry, the field and the rule; they never quote a value.
 func parse(data []byte) (table, error) {
 	var file struct {
 		Version int         `json:"version"`
@@ -71,7 +72,7 @@ func parse(data []byte) (table, error) {
 		return table{}, fmt.Errorf("decode: %w", err)
 	}
 	if file.Version != fileVersion {
-		return table{}, fmt.Errorf("version %d: %w", file.Version, errVersion)
+		return table{}, errVersion
 	}
 	if len(file.Entries) == 0 {
 		return table{}, errNoEntries
@@ -113,15 +114,15 @@ func (e fileEntry) validate() error {
 	case e.EngineVersion == "" || e.ImageDigest == "" || e.Platform == "" || e.ProfileVersion == "" || e.ActionRef == "":
 		return errEmptyField
 	case e.EngineVersion != approvedEngineVersion:
-		return fmt.Errorf("%q: %w", e.EngineVersion, errEngineVersion)
+		return errEngineVersion
 	case !digestPattern.MatchString(e.ImageDigest):
-		return fmt.Errorf("%q: %w", e.ImageDigest, errDigest)
+		return errDigest
 	case e.ImageDigest == zeroDigest:
 		return errZeroDigest
 	case e.Platform != platformAMD64 && e.Platform != platformARM64:
-		return fmt.Errorf("%q: %w", e.Platform, errPlatform)
+		return errPlatform
 	case !actionRefPattern.MatchString(e.ActionRef):
-		return fmt.Errorf("%q: %w", e.ActionRef, errActionRef)
+		return errActionRef
 	}
 	return nil
 }

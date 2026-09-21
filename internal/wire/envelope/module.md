@@ -46,24 +46,24 @@ accepts (decisions.md §3: the verifier owns the envelope schema).
 
 The length limits and character sets below (100, 64, 32) are **[default]**; the SHA and digest shapes are GitHub's and SHA-256's.
 
-| JSON key          | Rule                                                                                          |
-| ----------------- | --------------------------------------------------------------------------------------------- |
-| `schema_version`  | equals `SchemaV1`                                                                             |
-| `kind`            | `report` or `discovery`                                                                       |
-| `repository`      | `^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$`                                               |
-| `event`           | `^[a-z_]{1,64}$` — format only **[default]**, see below                                       |
-| `pull_request`    | integer ≥ 0; > 0 if and only if `event` is `pull_request`                                     |
-| `head_sha`        | `^[0-9a-f]{40}$`                                                                              |
-| `base_sha`        | `^[0-9a-f]{40}$` when `event` is `pull_request`, otherwise exactly `""`                       |
-| `merge_base_sha`  | same rule as `base_sha`                                                                       |
-| `run_id`          | integer > 0, no fraction, no exponent                                                         |
-| `run_attempt`     | integer ≥ 1                                                                                   |
-| `engine_version`  | `^[A-Za-z0-9._+-]{1,64}$` — format only; approval is the manifest's job                       |
-| `image_digest`    | `^sha256:[0-9a-f]{64}$`                                                                       |
-| `platform`        | `^[a-z0-9]+/[a-z0-9]+(/[a-z0-9]+)?$`, at most 32 characters — format only                     |
-| `payload_digest`  | `^sha256:[0-9a-f]{64}$`                                                                       |
-| `baseline_digest` | `^[0-9a-f]{64}$` or exactly `""` (no file); bare hex; `""` when `kind` is `discovery`         |
-| `labels_digest`   | same rule as `baseline_digest`                                                                |
+| JSON key          | Rule                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------- |
+| `schema_version`  | equals `SchemaV1`                                                                     |
+| `kind`            | `report` or `discovery`                                                               |
+| `repository`      | `^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$`                                       |
+| `event`           | `^[a-z_]{1,64}$` — format only **[default]**, see below                               |
+| `pull_request`    | integer ≥ 0; > 0 if and only if `event` is `pull_request`                             |
+| `head_sha`        | `^[0-9a-f]{40}$`                                                                      |
+| `base_sha`        | `^[0-9a-f]{40}$` when `event` is `pull_request`, otherwise exactly `""`               |
+| `merge_base_sha`  | same rule as `base_sha`                                                               |
+| `run_id`          | integer > 0, no fraction, no exponent                                                 |
+| `run_attempt`     | integer ≥ 1                                                                           |
+| `engine_version`  | `^[A-Za-z0-9._+-]{1,64}$` — format only; approval is the manifest's job               |
+| `image_digest`    | `^sha256:[0-9a-f]{64}$`                                                               |
+| `platform`        | `^[a-z0-9]+/[a-z0-9]+(/[a-z0-9]+)?$`, at most 32 characters — format only             |
+| `payload_digest`  | `^sha256:[0-9a-f]{64}$`                                                               |
+| `baseline_digest` | `^[0-9a-f]{64}$` or exactly `""` (no file); bare hex; `""` when `kind` is `discovery` |
+| `labels_digest`   | same rule as `baseline_digest`                                                        |
 
 Two digest formats exist on purpose. `payload_digest` and `image_digest` keep the `sha256:` prefix **[default]**: they
 are envelope-native values in OCI style. `baseline_digest` and `labels_digest` are bare hex because they are compared
@@ -150,6 +150,7 @@ consumers (the consumer depends on this module) and its external counterpart. Va
 | Counterpart                      | Direction                          | Strength                    | LCA / Rank / Distance     | Volatility | Balanced? |
 | -------------------------------- | ---------------------------------- | --------------------------- | ------------------------- | ---------- | --------- |
 | `internal/gate/ingest`           | ingest depends on envelope         | Contract (versioned schema) | root / 2 / 2              | High       | Yes       |
+| `internal/gate`                  | gate depends on envelope           | Contract                    | root / 2 / 2              | High       | Yes       |
 | `internal/control/onboarding`    | onboarding depends on envelope     | Contract                    | root / 2 / 2              | High       | Yes       |
 | `archfit-action` (external repo) | the Action conforms to this schema | Contract (JSON Schema)      | outside the tree; highest | Moderate   | Yes       |
 
@@ -159,6 +160,8 @@ Shared knowledge, per counterpart:
   header value, checks `Kind` against the route, compares every identity field with authoritative GitHub data, and
   compares `PayloadDigest(body)` with `Envelope.PayloadDigest`. It passes `BaselineDigest` and `LabelsDigest` on for
   the gate to compare with the trusted digests of the protected ref. Nothing from ingest is known here.
+- `internal/gate` imports this module for `KindReport` only, to ask its receiver for a report upload. It reads
+  `BaselineDigest`, `LabelsDigest` and the three identity strings through `ingest.Upload`.
 - `internal/control/onboarding` holds `Kind` and `KindDiscovery` only, to ask the gate's receiver for a discovery upload.
 - `archfit-action` holds the schema document returned by `Schema` and the digest rule. It must send exactly the
   16 keys, and state the baseline and labels digests of the bytes it handed to the engine. Contract coupling tolerates the distance: separate repository, separate release cycle, versioned schema,
@@ -186,7 +189,10 @@ Shared knowledge, per counterpart:
 
 ## Test Specification
 
-Fixtures live in `internal/wire/testdata/envelope/` and are read by relative path. Each has an `.expect.json` sibling.
+Fixtures live in `internal/wire/testdata/envelope/` and are read by relative path. Each has an `.expect.json` sibling
+in the parent's format: `decode`, and for `ok` the whole decoded envelope under `fields`. This module has no private
+fixture and no `testdata` folder of its own. The shared format has no key for the field an invalid fixture must name,
+so `TestSchemaAndDecoderAgree` states that field per fixture name in the test.
 
 ### Unit Tests
 
@@ -214,13 +220,14 @@ Fixtures live in `internal/wire/testdata/envelope/` and are read by relative pat
 ### Integration Contract Tests
 
 - **Test name**: `TestDecodeAcceptsConformanceEnvelopes`
-  **Scenario**: every fixture in `testdata/envelope/` marked `decode: ok` (PR report, default-branch push report, discovery by `workflow_dispatch`).
+  **Scenario**: every fixture in `internal/wire/testdata/envelope/` marked `decode: ok` (PR report, default-branch push report, discovery by `workflow_dispatch`).
   **Expected behavior**: decodes; each `Envelope` field equals the value recorded in the fixture's expectation.
 - **Test name**: `TestSchemaAndDecoderAgree`
   **Scenario**: run every envelope fixture, valid and invalid, through `Decode` and through a test-local evaluator of `Schema()`
   that supports only the keywords the schema uses (`type`, `const`, `enum`, `pattern`, `minimum`, `maxLength`, `required`,
   `properties`, `additionalProperties`, `allOf`, `if`/`then`/`else`).
-  **Expected behavior**: both accept or both reject each fixture; the evaluator fails the test on any keyword it does not know.
+  **Expected behavior**: both accept or both reject each fixture; a rejection by `Decode` names the field the test records for that
+  fixture; the evaluator fails the test on any keyword it does not know.
 - **Test name**: `TestSchemaDocument`
   **Scenario**: parse `Schema()`.
   **Expected behavior**: valid JSON; `schema_version` is `const` `SchemaV1`; 16 required properties; `additionalProperties` is false; two calls return equal but independent slices.

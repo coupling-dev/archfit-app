@@ -11,8 +11,8 @@ import (
 	"github.com/alexei-led/archfit-app/internal/wire/envelope"
 )
 
-// fixtureDir is local until the shared internal/wire/testdata/envelope/ exists.
-const fixtureDir = "testdata/envelope"
+// fixtureDir is the shared corpus; its layout and expectation format are defined in internal/wire/module.md.
+const fixtureDir = "../testdata/envelope"
 
 const (
 	expectSuffix = ".expect.json"
@@ -131,8 +131,7 @@ func wantRejected(t *testing.T, raw []byte, field string) string {
 
 type expectation struct {
 	Decode   string            `json:"decode"`
-	Field    string            `json:"field"`
-	Envelope envelope.Envelope `json:"envelope"`
+	Envelope envelope.Envelope `json:"fields"`
 }
 
 type fixture struct {

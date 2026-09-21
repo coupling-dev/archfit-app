@@ -8,8 +8,20 @@ import (
 	"time"
 )
 
-// Fixtures live inside the module until the shared internal/wire/testdata/policy/ set exists.
-const fixtureDir = "testdata/policy"
+// The shared corpus; its layout, sibling suffixes and expectation format are defined in internal/wire/module.md.
+const (
+	fixtureDir      = "../testdata"
+	sharedPolicyDir = fixtureDir + "/policy"
+	sharedReportDir = fixtureDir + "/report"
+
+	fullPolicy            = "policy/full.yaml"
+	fullExpectation       = "policy/full.expect.json"
+	malformedExpiryPolicy = "policy/malformed-expiry.yaml"
+	realCapturePolicy     = "report/real-blocked-no-baseline.policy.yaml"
+)
+
+// The one private fixture: the shared corpus has no engine report for the malformed-expiry policy.
+const malformedExpiryReport = "testdata/policy/malformed-expiry.report.json"
 
 func fixture(t testing.TB, name string) []byte {
 	t.Helper()
@@ -27,15 +39,32 @@ func fixtureJSON(t testing.TB, name string, into any) {
 	}
 }
 
+// policyPaths lists every policy file of the shared corpus: the policy fixtures and the report fixtures' siblings.
+func policyPaths(t testing.TB) []string {
+	t.Helper()
+	var paths []string
+	for _, pattern := range []string{
+		filepath.Join(sharedPolicyDir, "*.yaml"),
+		filepath.Join(sharedReportDir, "*.policy.yaml"),
+	} {
+		found, err := filepath.Glob(pattern)
+		if err != nil || len(found) == 0 {
+			t.Fatalf("no fixtures for %s: %v", pattern, err)
+		}
+		paths = append(paths, found...)
+	}
+	return paths
+}
+
 func policyFixtures(t testing.TB) [][]byte {
 	t.Helper()
-	names, err := filepath.Glob(filepath.Join(fixtureDir, "*.archfit.yaml"))
-	if err != nil || len(names) == 0 {
-		t.Fatalf("no policy fixtures: %v", err)
-	}
 	var out [][]byte
-	for _, name := range names {
-		out = append(out, fixture(t, filepath.Base(name)))
+	for _, path := range policyPaths(t) {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read fixture: %v", err)
+		}
+		out = append(out, raw)
 	}
 	return out
 }

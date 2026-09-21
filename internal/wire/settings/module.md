@@ -119,6 +119,9 @@ below are its consumers (the consumer depends on this module). Values are from t
 | Counterpart                   | Direction                      | Strength | LCA / Rank / Distance | Volatility | Balanced? |
 | ----------------------------- | ------------------------------ | -------- | --------------------- | ---------- | --------- |
 | `internal/gate/inputs`        | inputs depends on settings     | Contract | root / 2 / 2          | High       | Yes       |
+| `internal/gate`               | gate depends on settings       | Contract | root / 2 / 2          | High       | Yes       |
+| `internal/gate/feedback`      | feedback depends on settings   | Contract | root / 2 / 2          | High       | Yes       |
+| `internal/gate/sweep`         | sweep depends on settings      | Contract | root / 2 / 2          | High       | Yes       |
 | `internal/control/onboarding` | onboarding depends on settings | Contract | root / 2 / 2          | High       | Yes       |
 | `internal/control/ui`         | ui depends on settings         | Contract | root / 2 / 2          | High       | Yes       |
 | `internal/control/assist`     | assist depends on settings     | Contract | root / 2 / 2          | High       | Yes       |
@@ -126,9 +129,13 @@ below are its consumers (the consumer depends on this module). Values are from t
 Shared knowledge, per counterpart:
 
 - `internal/gate/inputs` holds the whole Public Contract. It reads `Path` at the protected ref only, calls `Parse`,
-  and publishes the result inside its own `Trusted` value. Through that value the gate façade, `gate/feedback` and
-  `gate/sweep` read `Settings.Gate` and `Settings.Workflow`, and `gate/inputs` resolves `Settings.Owners`. They hold
-  the `Settings` type, nothing of the file format. Same LCA, rank and distance as the row above.
+  publishes the result inside its own `Trusted` value, and resolves `Settings.Owners`.
+- `internal/gate` imports this module for `GateRequired` and `Path`. It reads `Settings.Gate` and `Settings.Workflow`
+  through `inputs.Trusted`. It holds nothing of the file format.
+- `internal/gate/feedback` and `internal/gate/sweep` import this module for `GateRequired` only, and compare it
+  with `Settings.Gate` read through `inputs.Trusted`.
+- `internal/gate/verdict` does not import this module and reads no `Settings` field: it sees only the boolean
+  `SettingsFound` of `inputs.Trusted`. It is no consumer and has no row.
 - `internal/control/onboarding` holds `Settings`, `Path`, `Render` and `Parse`: it renders the file for PR 1 with the
   owners the administrator entered, and reads `Gate` for the onboarding stage.
 - `internal/control/ui` holds `Settings`, `Path`, `Parse` and `Render` for the settings editor and the repository page.
@@ -176,6 +183,18 @@ No counterpart contract is used by this module, so nothing is restated here.
 - **Test name**: `TestRenderIsCanonical`
   **Scenario**: render one value twice and compare with a golden file.
   **Expected behavior**: identical bytes; header comment first; key order fixed; `gate` and `data_mode` present; LF; one trailing newline.
+- **Test name**: `TestParseAcceptsHandEditedForms`
+  **Scenario**: one hand-edited file: a BOM, the `---` and `...` document markers, double and single quotes, a trailing comment,
+  a blank line, a flow list of owners holding `"123"` and `'true'`, keys out of order, and the explicit tags `!!int` and `!!str`.
+  **Expected behavior**: parses to the same `Settings` as the plain spelling; the quoted owners stay the strings `123` and `true`.
+- **Test name**: `TestParseAcceptsLimits`
+  **Scenario**: table of values exactly at a limit: 100 owners; a 39-character login; a 255-character workflow path; a 65 536-byte file.
+  **Expected behavior**: all parse.
+- **Test name**: `TestRenderNeverFails`
+  **Scenario**: table of invalid values: the zero `Settings`; invalid UTF-8 in an owner and the workflow; control characters, an empty
+  owner, a negative version, a `gate` of `x: y` and a workflow of `# no`.
+  **Expected behavior**: `Render` returns bytes that start with the header comment and never panics; `Parse` of the output is an
+  error, so an invalid value never becomes a valid file.
 
 ### Integration Contract Tests
 

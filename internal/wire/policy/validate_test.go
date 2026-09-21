@@ -9,11 +9,6 @@ import (
 	"testing"
 )
 
-const (
-	sharedPolicyDir = "../testdata/policy"
-	sharedReportDir = "../testdata/report"
-)
-
 func readFile(t *testing.T, path string) []byte {
 	t.Helper()
 	raw, err := os.ReadFile(path)
@@ -24,19 +19,7 @@ func readFile(t *testing.T, path string) []byte {
 }
 
 func TestValidateAcceptsRealPolicies(t *testing.T) {
-	var paths []string
-	for _, pattern := range []string{
-		filepath.Join(fixtureDir, "*.archfit.yaml"),
-		filepath.Join(sharedPolicyDir, "*.yaml"),
-		filepath.Join(sharedReportDir, "*.policy.yaml"),
-	} {
-		found, err := filepath.Glob(pattern)
-		if err != nil || len(found) == 0 {
-			t.Fatalf("no fixtures for %s: %v", pattern, err)
-		}
-		paths = append(paths, found...)
-	}
-	for _, path := range paths {
+	for _, path := range policyPaths(t) {
 		t.Run(path, func(t *testing.T) {
 			if err := Validate(readFile(t, path)); err != nil {
 				t.Errorf("Validate = %v, want nil", err)
@@ -45,7 +28,7 @@ func TestValidateAcceptsRealPolicies(t *testing.T) {
 	}
 
 	t.Run("structural only", func(t *testing.T) {
-		raw := fixture(t, "malformed-expiry.archfit.yaml")
+		raw := fixture(t, malformedExpiryPolicy)
 		if _, err := Waivers(raw); err == nil {
 			t.Fatal("fixture no longer has a malformed expiry")
 		}
@@ -78,7 +61,7 @@ func TestValidateRejectsForeignDocuments(t *testing.T) {
 		want   string
 	}{
 		"engine state report":   {readFile(t, filepath.Join(sharedReportDir, "real-healthy.json")), "key 1 is not"},
-		"labels file":           {fixture(t, "upload-full/labels.yaml"), "is not an engine config key"},
+		"labels file":           {fixture(t, "report/real-baselined-with-labels.labels.yaml"), "is not an engine config key"},
 		"prose with a colon":    {[]byte("Sure! Here is the file: done"), "key 1 is not"},
 		"prose without a colon": {[]byte("Sure! Here is the file"), errRootNotMapping.Error()},
 		"scalar root":           {[]byte("42\n"), errRootNotMapping.Error()},

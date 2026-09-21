@@ -19,7 +19,7 @@ func TestSeededLeakageFixturesFail(t *testing.T) {
 		}
 	}
 	for _, name := range names {
-		if loadExpectation(t, name).Outcome != "error" {
+		if loadExpectation(t, name).Decode != decodeError {
 			continue
 		}
 		t.Run(name, func(t *testing.T) {

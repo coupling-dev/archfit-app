@@ -11,12 +11,21 @@ import (
 const (
 	leakMarker  = "LEAK-7f3a"
 	baseFixture = "report/all-keys.json" // carries every key of the state schema, kept and dropped
+	decodeOK    = "ok"
+	decodeError = "error"
 )
 
-// expectation is the .expect.json sibling of a fixture.
+// fixtureRoot is the shared corpus; its layout and expectation format are defined in internal/wire/module.md.
+const fixtureRoot = "../testdata"
+
+// expectation is the .expect.json sibling of a fixture; this module asserts decode and fields only.
 type expectation struct {
-	Producer            string   `json:"producer"`
-	Outcome             string   `json:"outcome"` // "decode" | "error"
+	Producer json.RawMessage `json:"producer"` // an object for an engine capture, "synthetic: <reason>" otherwise
+	Decode   string          `json:"decode"`   // "ok" | "error"
+	Fields   expectedFields  `json:"fields"`
+}
+
+type expectedFields struct {
 	Verdict             string   `json:"verdict"`
 	HardGates           string   `json:"hard_gates"`
 	UnevaluatedRuleIDs  []string `json:"unevaluated_rule_ids"`
@@ -27,7 +36,7 @@ type expectation struct {
 
 func loadFixture(t testing.TB, rel string) []byte {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("testdata", rel))
+	b, err := os.ReadFile(filepath.Join(fixtureRoot, rel))
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
@@ -40,23 +49,24 @@ func loadExpectation(t testing.TB, rel string) expectation {
 	if err := json.Unmarshal(loadFixture(t, strings.TrimSuffix(rel, ".json")+".expect.json"), &e); err != nil {
 		t.Fatalf("expectation of %s: %v", rel, err)
 	}
-	if e.Producer == "" || (e.Outcome != "decode" && e.Outcome != "error") {
-		t.Fatalf("expectation of %s: producer and outcome are mandatory", rel)
+	if len(e.Producer) == 0 || (e.Decode != decodeOK && e.Decode != decodeError) {
+		t.Fatalf("expectation of %s: producer and decode are mandatory", rel)
 	}
 	return e
 }
 
-// fixtures lists the fixture files of one testdata folder, as paths relative to testdata.
+// fixtures lists the fixtures of one corpus folder, as paths relative to the corpus. A fixture name has no dot;
+// every other file is a sibling (.expect.json, .baseline.json, .envelope.json).
 func fixtures(t testing.TB, dir string) []string {
 	t.Helper()
-	all, err := filepath.Glob(filepath.Join("testdata", dir, "*.json"))
+	all, err := filepath.Glob(filepath.Join(fixtureRoot, dir, "*.json"))
 	if err != nil || len(all) == 0 {
 		t.Fatalf("no fixtures in %s: %v", dir, err)
 	}
 	var out []string
 	for _, p := range all {
-		if !strings.HasSuffix(p, ".expect.json") {
-			out = append(out, dir+"/"+filepath.Base(p))
+		if base := filepath.Base(p); !strings.Contains(strings.TrimSuffix(base, ".json"), ".") {
+			out = append(out, dir+"/"+base)
 		}
 	}
 	return out

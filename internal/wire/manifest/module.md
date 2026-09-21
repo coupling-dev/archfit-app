@@ -39,8 +39,21 @@ Volatility: moderate. It changes only with a reviewed engine, image or Action re
   - exactly one entry has `current: true`, and its platform is `linux/amd64` **[default]**.
 - An invalid embedded manifest panics at package initialization **[default]**. The binary cannot start with a
   broken manifest, and the unit test catches it before release.
-- The values come from the engine release evidence of plan task T01 (engine source revision
-  `f8877d25ba36d84d3780071580d23486e3d794d0`, tag `v2.3.1`). Placeholders are forbidden.
+- The values must come from the engine release evidence of plan task T01 (engine source revision
+  `f8877d25ba36d84d3780071580d23486e3d794d0`, tag `v2.3.1`). Today only `profile_version`
+  (`archfit.measurement.v1`) is real. The shipped image digests and the Action commit are placeholders: `sha256:`
+  plus 64 times `a` on `linux/amd64`, `sha256:` plus 64 times `b` on `linux/arm64`, and 40 times `c` as `action_ref` of
+  both rows. They wait for the published v2.3.1 image digests and the pinned `archfit-action` commit. This is a release
+  blocker recorded in `docs/plans/2026-09-21-implement-archfit-app.md`. Until it is resolved every real upload misses
+  `Lookup` and concludes `action_required`, and a generated workflow pins an image and a commit that do not exist.
+- A placeholder is an `image_digest` or `action_ref` whose hex part is one character repeated. Placeholders are
+  forbidden in a release: `TestManifestHasNoPlaceholdersInRelease` fails when the environment variable
+  `ARCHFIT_RELEASE=1` is set and any row carries one. The release pipeline must run the tests with that variable. The
+  variable is read by the test only; it never reaches `Lookup` or `Current`.
+- The synthetic `.envelope.json` siblings in `internal/wire/testdata/report/` state the `linux/amd64` row's identity.
+  Replacing the placeholders means editing `manifest.json`, those envelopes and the test's list of documented
+  placeholders in one commit.
+- Validation errors name the entry index, the field and the rule. They never quote a value.
 - "Locked" means: no environment variable, flag, file path, Store key, or network fetch can add or change a row.
   The only way to change it is a reviewed commit to `manifest.json`.
 - Decoding of the data file is strict: unknown keys are an error.
@@ -89,17 +102,24 @@ consumers (the consumer depends on this module) and its external counterparts. V
 | Counterpart                       | Direction                          | Strength | LCA / Rank / Distance     | Volatility | Balanced? |
 | --------------------------------- | ---------------------------------- | -------- | ------------------------- | ---------- | --------- |
 | `internal/gate`                   | gate depends on manifest           | Contract | root / 2 / 2              | High       | Yes       |
+| `internal/gate/ingest`            | ingest depends on manifest         | Contract | root / 2 / 2              | High       | Yes       |
+| `internal/gate/feedback`          | feedback depends on manifest       | Contract | root / 2 / 2              | High       | Yes       |
 | `internal/control/onboarding`     | onboarding depends on manifest     | Contract | root / 2 / 2              | High       | Yes       |
 | `archfit` engine release (v2.3.1) | manifest records released identity | Contract | outside the tree; highest | Moderate   | Yes       |
 | `archfit-action` (external repo)  | manifest pins one Action commit    | Contract | outside the tree; highest | Moderate   | Yes       |
 
-Rank for `internal/gate`: the LCA is the root, and the deeper module (`wire/manifest`) is two levels below it.
+Rank for `internal/gate`: the LCA is the root, and the deeper module (`wire/manifest`) is two levels below it. The
+same holds for every depth-2 consumer.
 
 Shared knowledge, per counterpart:
 
 - `internal/gate` holds `Identity`, `Entry` and `Lookup`. It builds an `Identity` from the upload's envelope
   strings and treats the identity as approved only when `Lookup` hits, the report carries a measurement profile,
   and that profile's version equals `Entry.ProfileVersion`. A miss becomes `action_required`, never a rejection.
+- `internal/gate/ingest` holds `Identity` only: it builds the value from the three envelope strings and publishes
+  it in its `Upload`. It never calls `Lookup`.
+- `internal/gate/feedback` holds `Identity` only: the claimed identity is a field of its publish request and is
+  printed in the evidence block. It never calls `Lookup`.
 - `internal/control/onboarding` holds `Entry` and `Current`. It writes `ActionRef` and `ImageDigest` into the
   generated workflow file, and passes `ImageDigest` to managed discovery.
 - `archfit` engine release: this module holds the released version string, the published image digests per
@@ -137,7 +157,14 @@ tolerates the distance of separate repositories and release cycles.
   **Scenario**: table of in-memory manifests, one defect per row: no entries; empty `profile_version`; digest with 63 hex
   characters; all-zero digest; platform `darwin/arm64`; `action_ref` `v1`; duplicate identity; no current row; two current rows;
   current row on `linux/arm64`; unknown key `notes`; `version: 2`.
-  **Expected behavior**: each row fails validation with an error naming the rule; the valid base passes.
+  **Expected behavior**: each row fails validation with an error naming the field and the rule; no error text contains the
+  defective value; the valid base passes.
+- **Test name**: `TestManifestHasNoPlaceholdersInRelease`
+  **Scenario**: collect every placeholder value of the embedded rows, as `entry index, field`; read `ARCHFIT_RELEASE`. The
+  test never skips.
+  **Expected behavior**: with `ARCHFIT_RELEASE=1`, no placeholder is left. Without it, the placeholders found are exactly
+  the documented ones (both image digests, both `action_ref` values), so a partial replacement fails; once all are
+  replaced the documented list is emptied in the same commit.
 - **Test name**: `TestLookupExactMatch`
   **Scenario**: table against a known row: exact identity; digest uppercased; version without the `v`; platform
   `linux/arm64` when only `linux/amd64` is listed for that digest; leading space in each field.
@@ -152,8 +179,11 @@ tolerates the distance of separate repositories and release cycles.
   **Scenario**: look up every embedded row by its identity.
   **Expected behavior**: each hits and returns that row's `ProfileVersion` and `ActionRef` unchanged.
 - **Test name**: `TestManifestMatchesFixtureProducers`
-  **Scenario**: for every report fixture in `internal/wire/testdata/` whose expectation says the identity is approved.
-  **Expected behavior**: the recorded producer identity hits `Lookup`, and the fixture's profile version equals `Entry.ProfileVersion`.
+  **Scenario**: every report fixture in `internal/wire/testdata/report/` with an `.envelope.json` sibling. The identity is the
+  envelope's `engine_version`, `image_digest` and `platform`; the `producer` object of an expectation carries no image
+  digest or platform. A fixture is approved unless its expectation has `facts.identity_approved: false`.
+  **Expected behavior**: an approved identity hits `Lookup`, and the expectation's `fields.profile_version` equals
+  `Entry.ProfileVersion`; an unapproved one (`unlisted-image`) misses. At least one fixture of each kind exists.
 
 ### Boundary Tests
 

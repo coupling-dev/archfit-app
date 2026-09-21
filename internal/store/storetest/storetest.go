@@ -346,6 +346,8 @@ func testAddRejectsNonCounterAndOverflow(t *testing.T, s store.Store) {
 		{"", 1},
 		{"+7", 1},
 		{"007", 1},
+		{"-0", 1},
+		{" 7", 1},
 		{strconv.FormatInt(math.MaxInt64, 10), 1},
 		{strconv.FormatInt(math.MinInt64, 10), -1},
 	}

@@ -98,6 +98,8 @@ with `errors.Is`. `NewMemory` is the only constructor in this package.
 - `Delete`: missing key → `nil`.
 - `Add`: a missing key counts as 0. Atomic against concurrent `Add` on the same key. `delta` may be negative
   or 0. Overflow of `int64` → error, value unchanged. Non-counter bytes at the key → error, value unchanged.
+  A counter is only the canonical decimal form that `Add` itself writes: an optional `-`, then digits without a
+  leading zero. `+7`, `007`, `-0`, a space or an empty value are non-counter bytes, even though they parse as a number.
 - `Tenants`: every tenant that owns at least one key at the time of the call, `SystemTenant` never included,
   ascending, no duplicates **[default: sorted]**. No keys → empty slice, `nil` error. A tenant whose last key was
   deleted, or that was removed by `DeleteTenant`, is no longer listed. It returns tenant IDs only, never keys or
@@ -150,7 +152,9 @@ knowledge of every entry below; nothing is restated because this file is the nor
 - **LCA / Rank / Distance**: root / 1 / 1
 - **Volatility**: High (`gate`), Moderate (`control`)
 - **Balanced?**: Yes
-- **Shared knowledge**: the `Store` interface type only. The gate path only ever calls `Get`.
+- **Shared knowledge**: the `Store` interface type. The gate path only ever calls `Get`. The control façade also
+  calls `Tenants` in its sweep and reads the `SystemTenant` constant, which it skips before it compares the tenants
+  with GitHub's installation list.
 
 ### app
 
@@ -253,7 +257,8 @@ All cases live in `storetest.Run` and run against `NewMemory` and every driver.
   **Scenario**: table: empty key; 513-byte key; key with NUL; negative tenant; 64 KiB + 1 value; applied to every operation that takes the input.
   **Expected behavior**: an error for each; no key is created or changed.
 - **Test name**: `TestConformance/AddRejectsNonCounterAndOverflow`
-  **Scenario**: `Put(k, "abc")` then `Add(k, 1)`; `Put(k, "9223372036854775807")` then `Add(k, 1)`; same with the minimum and −1.
+  **Scenario**: `Put(k, "abc")` then `Add(k, 1)`; the same with an empty value and with the non-canonical `+7`, `007`, `-0` and ` 7`;
+  `Put(k, "9223372036854775807")` then `Add(k, 1)`; same with the minimum and −1.
   **Expected behavior**: error each time; `Get` returns the bytes put.
 - **Test name**: `TestConformance/DeleteSystemTenantRefused`
   **Scenario**: `Add(SystemTenant, "llm-budget/2026-09", 10)`, then `DeleteTenant(SystemTenant)`.

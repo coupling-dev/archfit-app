@@ -112,7 +112,7 @@ func TestModulesShapes(t *testing.T) {
 
 func TestModulesOnEnginePolicy(t *testing.T) {
 	t.Run("real capture", func(t *testing.T) {
-		got := mustModules(t, fixture(t, "real-blocked-no-baseline.archfit.yaml"))
+		got := mustModules(t, fixture(t, realCapturePolicy))
 		want := []ModuleDef{{"a", "", 3}, {"b", "", 6}}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("got %+v, want %+v", got, want)
@@ -121,18 +121,20 @@ func TestModulesOnEnginePolicy(t *testing.T) {
 
 	t.Run("full policy", func(t *testing.T) {
 		var expect struct {
-			Modules []struct {
-				Name  string `json:"name"`
-				Layer string `json:"layer"`
-				Line  int    `json:"line"`
-			} `json:"modules"`
+			Fields struct {
+				Modules []struct {
+					Name  string `json:"name"`
+					Layer string `json:"layer"`
+					Line  int    `json:"line"`
+				} `json:"modules"`
+			} `json:"fields"`
 		}
-		fixtureJSON(t, "full.expect.json", &expect)
+		fixtureJSON(t, fullExpectation, &expect)
 		var want []ModuleDef
-		for _, m := range expect.Modules {
+		for _, m := range expect.Fields.Modules {
 			want = append(want, ModuleDef{m.Name, m.Layer, m.Line})
 		}
-		got := mustModules(t, fixture(t, "full.archfit.yaml"))
+		got := mustModules(t, fixture(t, fullPolicy))
 		if len(want) == 0 || !reflect.DeepEqual(got, want) {
 			t.Errorf("got %+v, want %+v", got, want)
 		}

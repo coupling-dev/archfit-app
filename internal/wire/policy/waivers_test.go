@@ -2,6 +2,7 @@ package policy
 
 import (
 	"bytes"
+	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -123,18 +124,20 @@ func TestWaiversShapes(t *testing.T) {
 
 func TestWaiversIgnoresTheRestOfThePolicy(t *testing.T) {
 	var expect struct {
-		Waivers []struct {
-			Rule       string    `json:"rule"`
-			From       string    `json:"from"`
-			To         string    `json:"to"`
-			Reason     string    `json:"reason"`
-			ApprovedBy string    `json:"approved_by"`
-			Expires    time.Time `json:"expires"`
-		} `json:"waivers"`
+		Fields struct {
+			Waivers []struct {
+				Rule       string    `json:"rule"`
+				From       string    `json:"from"`
+				To         string    `json:"to"`
+				Reason     string    `json:"reason"`
+				ApprovedBy string    `json:"approved_by"`
+				Expires    time.Time `json:"expires"`
+			} `json:"waivers"`
+		} `json:"fields"`
 	}
-	fixtureJSON(t, "full.expect.json", &expect)
+	fixtureJSON(t, fullExpectation, &expect)
 	var want []Waiver
-	for _, w := range expect.Waivers {
+	for _, w := range expect.Fields.Waivers {
 		want = append(want, Waiver{w.Rule, w.From, w.To, w.Reason, w.ApprovedBy, w.Expires.UTC()})
 	}
 	if len(want) != 2 {
@@ -146,7 +149,7 @@ func TestWaiversIgnoresTheRestOfThePolicy(t *testing.T) {
 		}
 	}
 
-	full := fixture(t, "full.archfit.yaml")
+	full := fixture(t, fullPolicy)
 	extra := append(bytes.Clone(full), "x_future_engine_key:\n  nested: [1, 2]\n"...)
 	for name, policy := range map[string][]byte{"full": full, "extra top-level key": extra} {
 		t.Run(name, func(t *testing.T) {
@@ -159,7 +162,7 @@ func TestWaiversIgnoresTheRestOfThePolicy(t *testing.T) {
 
 func TestEarliestExpiryIsSchedulable(t *testing.T) {
 	expired, active := endOfDay(2026, time.January, 31), endOfDay(2027, time.June, 30)
-	for _, name := range []string{"waivers-expired-first.archfit.yaml", "waivers-active-first.archfit.yaml"} {
+	for _, name := range []string{"policy/waivers-expired-first.yaml", "policy/waivers-active-first.yaml"} {
 		t.Run(name, func(t *testing.T) {
 			got := mustWaivers(t, fixture(t, name))
 			if len(got) != 2 {
@@ -191,7 +194,7 @@ func TestWaiversAsSyntaxCheck(t *testing.T) {
 		in      string
 		wantErr bool
 	}{
-		{"valid policy without waivers", string(fixture(t, "real-blocked-no-baseline.archfit.yaml")), false},
+		{"valid policy without waivers", string(fixture(t, realCapturePolicy)), false},
 		{"prose", "Here is the policy you asked for. It forbids a to b.\n", true},
 		{"truncated", "version: 2\nmodules:\n  a:\n    paths: [pkg/a/**, pkg", true},
 		{"unclosed quote", "version: 2\nrules:\n  - id: \"no_direct\n    type: forbidden_dependency\n", true},
@@ -258,7 +261,7 @@ func exportedNames(t *testing.T) []string {
 }
 
 func TestMalformedExpiryNeedsNoSchedule(t *testing.T) {
-	policy := fixture(t, "malformed-expiry.archfit.yaml")
+	policy := fixture(t, malformedExpiryPolicy)
 	if !bytes.Contains(policy, []byte("expires: 2026-13-40")) {
 		t.Fatal("fixture lost its malformed expires")
 	}
@@ -267,11 +270,23 @@ func TestMalformedExpiryNeedsNoSchedule(t *testing.T) {
 	}
 
 	var report struct {
+		Comparison struct {
+			ConfigHash string `json:"config_hash"`
+		} `json:"comparison"`
 		Findings []struct {
 			Status string `json:"status"`
 		} `json:"findings"`
 	}
-	fixtureJSON(t, "malformed-expiry.report.json", &report)
+	raw, err := os.ReadFile(malformedExpiryReport)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &report); err != nil {
+		t.Fatal(err)
+	}
+	if got := Digest(policy); got != report.Comparison.ConfigHash {
+		t.Fatalf("the report is not the run of this policy: Digest = %s, config_hash %s", got, report.Comparison.ConfigHash)
+	}
 	if len(report.Findings) != 1 || report.Findings[0].Status != "expired_waiver" {
 		t.Errorf("report findings = %+v, want the finding already reported as expired_waiver", report.Findings)
 	}

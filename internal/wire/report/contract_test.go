@@ -3,15 +3,13 @@ package report
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
-	"os"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
 )
 
-func checkExpectation(t *testing.T, r Report, want expectation) {
+func checkExpectation(t *testing.T, r Report, want expectedFields) {
 	t.Helper()
 	if r.Verdict != want.Verdict {
 		t.Errorf("verdict %q, want %q", r.Verdict, want.Verdict)
@@ -45,7 +43,7 @@ func checkExpectation(t *testing.T, r Report, want expectation) {
 func TestDecodeRealEngineReport(t *testing.T) {
 	const fixture = "report/real-blocked-no-baseline.json"
 	r := mustDecode(t, loadFixture(t, fixture))
-	checkExpectation(t, r, loadExpectation(t, fixture))
+	checkExpectation(t, r, loadExpectation(t, fixture).Fields)
 
 	if r.SchemaVersion != StateSchemaV1 || r.Verdict != "blocked" || r.Decision.HardGates != "fail" || r.Decision.ActiveBlockers != 1 {
 		t.Errorf("schema %q, verdict %q, decision %+v", r.SchemaVersion, r.Verdict, r.Decision)
@@ -76,9 +74,9 @@ func TestDecodeRealEngineReport(t *testing.T) {
 func TestDecodeConformanceFixtures(t *testing.T) {
 	names := fixtures(t, "report")
 	for _, required := range []string{
-		"healthy", "attention-warning-only", "blocked", "missing-required-evidence", "unknown-identity",
-		"comparable-profile", "incompatible-profile", "blocker-plus-unevaluated", "non-applicable-rule",
-		"locations-empty", "matched-by-populated", "both-repair-kinds", "waiver-expiry-and-order", "invalid-input",
+		"healthy", "attention-pass", "blocked", "missing-evidence", "unknown-identity",
+		"profile-comparable", "profile-incompatible", "blocker-and-unevaluated", "non-applicable-rule",
+		"locations-empty", "matched-by-populated", "repair-kinds", "waiver-expiry-order", "invalid-input",
 	} {
 		if !slices.Contains(names, "report/"+required+".json") {
 			t.Errorf("fixture %s is missing", required)
@@ -88,7 +86,7 @@ func TestDecodeConformanceFixtures(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			want := loadExpectation(t, name)
 			r, err := Decode(loadFixture(t, name))
-			if want.Outcome == "error" {
+			if want.Decode == decodeError {
 				if err == nil {
 					t.Fatal("decoded, want an error")
 				}
@@ -97,7 +95,7 @@ func TestDecodeConformanceFixtures(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Decode: %v", err)
 			}
-			checkExpectation(t, r, want)
+			checkExpectation(t, r, want.Fields)
 		})
 	}
 }
@@ -107,7 +105,7 @@ func validFixtures(t testing.TB) []string {
 	t.Helper()
 	var out []string
 	for _, name := range append(fixtures(t, "report"), fixtures(t, "leakage")...) {
-		if loadExpectation(t, name).Outcome == "decode" {
+		if loadExpectation(t, name).Decode == decodeOK {
 			out = append(out, name)
 		}
 	}
@@ -262,14 +260,7 @@ func TestEngineSchemaKeySetIsCovered(t *testing.T) {
 	mustDecode(t, loadFixture(t, "report/real-blocked-no-baseline.json"))
 	mustDecode(t, loadFixture(t, baseFixture))
 
-	raw, err := os.ReadFile("testdata/archfit.state.schema.json")
-	if errors.Is(err, os.ErrNotExist) {
-		t.Skip("testdata/archfit.state.schema.json (engine revision f8877d25ba36d84d3780071580d23486e3d794d0) is not vendored yet")
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
-	w := schemaWalker{t: t, root: parseDoc(t, raw)}
+	w := schemaWalker{t: t, root: parseDoc(t, loadFixture(t, "schema/archfit.state.schema.json"))}
 	w.check("report", w.root, reflect.TypeFor[shadowReport]())
 }
 

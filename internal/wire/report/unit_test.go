@@ -31,6 +31,8 @@ func TestStringClassRules(t *testing.T) {
 			mutation{c.class + " with LF", setter("a\nb", c.steps...), c.loc},
 			mutation{c.class + " with tab", setter("a\tb", c.steps...), c.loc},
 			mutation{c.class + " with NUL", setter("a\x00b", c.steps...), c.loc},
+			mutation{c.class + " with U+2028", setter("a\u2028b", c.steps...), c.loc},
+			mutation{c.class + " with U+2029", setter("a\u2029b", c.steps...), c.loc},
 		)
 	}
 	producerStatus := []any{"comparison", "measurement_profile", "producers", 0, "status"}
@@ -119,6 +121,7 @@ func TestEnums(t *testing.T) {
 		}
 		rows = append(rows, mutation{e.loc + " unknown value", setter("sometimes", e.steps...), e.loc})
 	}
+	rows = append(rows, mutation{"producers[0].partial_basis empty", setter("", enums[len(enums)-1].steps...), ""})
 	runMutations(t, rows)
 
 	t.Run("unknown plain-string values decode unchanged", func(t *testing.T) {
@@ -355,6 +358,32 @@ func TestDuplicateFindingIDs(t *testing.T) {
 			set(t, doc, []any{first, second}, "findings")
 			_, err := Decode(encode(t, doc))
 			wantError(t, err, "findings[1].id")
+		})
+	}
+}
+
+func TestFindingActive(t *testing.T) {
+	tests := []struct {
+		kind, status string
+		want         bool
+	}{
+		{"gate", "new", true},
+		{"gate", "expired_waiver", true},
+		{"gate", "baseline", false},
+		{"gate", "waived", false},
+		{"gate", "fixed", false},
+		{"gate", "reopened", false},
+		{"gate", "", false},
+		{"advisory", "new", false},
+		{"advisory", "expired_waiver", false},
+		{"blocker", "new", false},
+		{"", "new", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.kind+"/"+tt.status, func(t *testing.T) {
+			if got := (Finding{Kind: tt.kind, Status: tt.status}).Active(); got != tt.want {
+				t.Errorf("Active() = %v, want %v", got, tt.want)
+			}
 		})
 	}
 }
