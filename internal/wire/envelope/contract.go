@@ -1,9 +1,12 @@
 // Package envelope is the report-envelope v1 wire contract: what a producer states about a payload.
 package envelope
 
-import "errors"
-
-var errNotImplemented = errors.New("envelope: not implemented")
+import (
+	"bytes"
+	"crypto/sha256"
+	_ "embed" // the published schema document
+	"encoding/hex"
+)
 
 // SchemaV1 is the only envelope schema version accepted.
 const SchemaV1 = "archfit.report-envelope.v1"
@@ -37,18 +40,16 @@ type Envelope struct {
 	LabelsDigest   string `json:"labels_digest"`   // bare hex SHA-256 of the labels file the engine loaded; "" = none
 }
 
-// Decode parses and validates raw against the v1 JSON Schema. Unknown fields,
-// a wrong schema_version, malformed SHAs or digests are errors.
-func Decode(raw []byte) (Envelope, error) {
-	return Envelope{}, errNotImplemented
-}
+//go:embed envelope.v1.schema.json
+var schemaV1 []byte
 
 // PayloadDigest returns "sha256:<hex>" of payload.
 func PayloadDigest(payload []byte) string {
-	return ""
+	sum := sha256.Sum256(payload)
+	return sha256Prefix + hex.EncodeToString(sum[:])
 }
 
 // Schema returns the published JSON Schema document for SchemaV1.
 func Schema() []byte {
-	return nil
+	return bytes.Clone(schemaV1)
 }

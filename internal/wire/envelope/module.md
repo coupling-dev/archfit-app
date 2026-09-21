@@ -238,8 +238,9 @@ Fixtures live in `internal/wire/testdata/envelope/` and are read by relative pat
   **Scenario**: fuzz `Decode` seeded with the fixtures.
   **Expected behavior**: never panics; any accepted input re-marshals to JSON that decodes to an equal `Envelope`.
 - **Test name**: `TestPackageImportsStdlibOnly`
-  **Scenario**: `go list -deps` for the package.
-  **Expected behavior**: no internal package, no third-party package, no `net`, `os`, or `log` package.
+  **Scenario**: `go list -deps` and the direct import list for the package.
+  **Expected behavior**: no internal package and no third-party package among all dependencies; no `net`, `os`, or `log`
+  package among the direct imports. The transitive check cannot cover `os`: `encoding/json` and `crypto/sha256` depend on it.
 
 ### Behavior Tests
 
