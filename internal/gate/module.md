@@ -892,6 +892,8 @@ type Store interface {
 `inputs.New(d.GitHub, d.GitHub, d.Store)`, `feedback.New(d.GitHub, d.GitHub, d.GitHub, d.Now)`, and
 `sweep.New(d.GitHub, d.GitHub, d.GitHub, resolver, publisher, d.Sweep)`. `verdict` has no constructor.
 `NewReceiver` is `ingest.New` with the same argument pattern. A nil `Deps.Now` means `time.Now` **[default]**.
+`New` delegates to the unexported `compose`, which takes the five `github/api` roles as one interface, and
+`compose` to `newGate`, which takes the children as interfaces; both exist so that tests can replace GitHub or a child.
 
 | Child      | Contributes                                             | Depends on siblings                                           |
 | ---------- | ------------------------------------------------------- | ------------------------------------------------------------- |
@@ -1025,9 +1027,13 @@ An error is returned to `app` (which logs it); the sweep repairs what a failed o
 
 ## Test Specification
 
-Composition tests use a fake GitHub HTTP server behind a real `*Client`, a stub `Verifier`, `store.NewMemory`
-(`NewMemory` is the in-process Store constructor of `internal/store`), a failing Store stub, a fixed clock, and the
-`internal/wire/testdata` fixtures. Child internals are tested in the children.
+Composition tests wire the real children through the unexported `compose` (the body of `New`, taking the
+`github/api` role interfaces instead of the concrete `*Client`) over an in-memory fake of those role interfaces, a
+stub `Verifier`, `store.NewMemory` (`NewMemory` is the in-process Store constructor of `internal/store`) behind a
+wrapper that panics on every write, a failing Store stub, a fixed clock, and report fixtures copied into
+`internal/gate/testdata/report/`. The pipeline, the HTTP mapping, the receipt and the `HandleEvent` rules are also
+tested over hand-written fakes of the children through the unexported `newGate`. `New` and `NewReceiver` themselves
+are driven only as far as they go without GitHub. Child internals are tested in the children.
 
 ### Unit Tests
 

@@ -3,21 +3,17 @@
 package gate
 
 import (
-	"context"
-	"errors"
 	"net/http"
 	"time"
 
+	"github.com/alexei-led/archfit-app/internal/gate/feedback"
 	"github.com/alexei-led/archfit-app/internal/gate/ingest"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
 	"github.com/alexei-led/archfit-app/internal/gate/sweep"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/oidc"
-	"github.com/alexei-led/archfit-app/internal/github/webhook"
 	"github.com/alexei-led/archfit-app/internal/store"
 )
-
-var errNotImplemented = errors.New("gate: not implemented")
 
 // Deps are the only things the gate path may touch: GitHub, OIDC, the Store (read-only) and a clock.
 type Deps struct {
@@ -29,33 +25,58 @@ type Deps struct {
 	Now      func() time.Time
 }
 
-type Gate struct{}
+// Gate composes the five children. It holds no state of its own: GitHub holds the dedup keys.
+type Gate struct {
+	receiver  ingest.Receiver
+	resolver  inputs.Resolver
+	publisher feedback.Publisher
+	sweeper   sweep.Sweeper
+	actions   api.Actions
+	now       func() time.Time
+}
+
+// github is every role of github/api the gate path uses. *api.Client implements it; the façade
+// hands the same client to each child under the role it needs.
+type github interface {
+	api.Repos
+	api.Pulls
+	api.Actions
+	api.Checks
+	api.Comments
+}
 
 func New(d Deps) *Gate {
-	return nil
+	return compose(d.GitHub, d.OIDC, d.Store, d.Audience, d.Sweep, d.Now)
+}
+
+// compose wires the children once. A nil clock means time.Now.
+func compose(gh github, v oidc.Verifier, s store.Store, audience string, c Config, now func() time.Time) *Gate {
+	if now == nil {
+		now = time.Now
+	}
+	resolver := inputs.New(gh, gh, s)
+	publisher := feedback.New(gh, gh, gh, now)
+	return newGate(newReceiver(gh, v, audience), resolver, publisher,
+		sweep.New(gh, gh, gh, resolver, publisher, c), gh, now)
+}
+
+func newGate(rc ingest.Receiver, rs inputs.Resolver, p feedback.Publisher, sw sweep.Sweeper, a api.Actions, now func() time.Time) *Gate {
+	return &Gate{receiver: rc, resolver: rs, publisher: p, sweeper: sw, actions: a, now: now}
 }
 
 // UploadHandler serves POST /v1/reports.
 func (g *Gate) UploadHandler() http.Handler {
-	return nil
-}
-
-// HandleEvent reacts to a verified webhook event: pending check on a new head, fork refusal,
-// re-run on a review change when the last receipt was owner_approval_missing, and a one-repository
-// sweep when a default-branch push changes a protected path.
-func (g *Gate) HandleEvent(ctx context.Context, e webhook.Event) error {
-	return errNotImplemented
-}
-
-// Sweep runs one reconciliation pass.
-func (g *Gate) Sweep(ctx context.Context) (Summary, error) {
-	return Summary{}, errNotImplemented
+	return http.HandlerFunc(g.serveUpload)
 }
 
 // NewReceiver exposes the upload authentication and binding step so that the discovery
 // upload endpoint reuses exactly the same provenance checks as the report endpoint.
 func NewReceiver(gh *api.Client, v oidc.Verifier, audience string) Receiver {
-	return nil
+	return newReceiver(gh, v, audience)
+}
+
+func newReceiver(gh github, v oidc.Verifier, audience string) Receiver {
+	return ingest.New(gh, gh, gh, v, audience)
 }
 
 // Re-published child contracts. The owning child's module.md is normative.
