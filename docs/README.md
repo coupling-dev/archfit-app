@@ -12,6 +12,9 @@ verification exists.
   measurement identity, producer eligibility, and gate behavior.
 - [First-version decisions](design/decisions.md) — closes the open design items;
   overrides the two documents above on how things are built.
+- [Module design](../internal/module.md) — architecture overview and the root of
+  the fractal design tree; every package folder under `internal/` holds its own
+  `module.md` specification.
 - [Closed-beta plan](plans/closed-beta.md) — M0–M5 milestones and T01–T23
   implementation tasks.
 - [Hosting research](research/20260918-hosting.md) — dated provider, cost, and

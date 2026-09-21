@@ -1,0 +1,675 @@
+# Gate Sweep
+
+**Path**: internal/gate/sweep/
+**Parent**: internal/gate/ (gate façade)
+**Submodules**: none (leaf)
+
+## Purpose
+
+`sweep` is the single recovery mechanism of the gate. One pass re-derives, from GitHub alone, what the
+gate check of every open pull request should say, and repairs the difference. Without it, a lost webhook
+would leave a PR without a pending check, a workflow that never uploaded would leave it pending forever,
+and a changed base policy, an expired waiver or a restored subscription would never reach open PRs that get no new commit.
+
+## Functional Responsibilities
+
+- Walk installations → repositories → open pull requests (drafts included) whose base has a settings file.
+- In required mode: ensure fork PRs show `fork_unsupported` and suspended repositories show
+  `subscription_suspended`. In advisory mode only the waiver warning runs.
+- Create the missing pending gate check; turn a pending check into `missing_upload` after `MissingUploadAfter` (60 minutes).
+- Detect receipts whose policy or baseline digest no longer matches the protected ref; publish
+  `stale_inputs` and re-run the customer's workflow.
+- Warn 7 days before the earliest waiver expiry; after expiry publish `waiver_expired` and re-run.
+- Re-run after a restored entitlement or a late owner approval.
+- Run the same pass for one repository on request (`RunRepo`), used when the protected ref changes.
+- Stop cleanly on GitHub rate-limit exhaustion; the next pass continues.
+- Return counts only, including the number of skipped units.
+
+## Subdomain Classification
+
+Core. Reconciliation is what makes "fail closed" livable. Volatility: high; rules and thresholds will be
+tuned against rate limits and pilot behavior.
+
+## Encapsulated Knowledge
+
+- The rule order per pull request and which rule ends the evaluation.
+- What "stale" means for a receipt, and the expiry test based on the check's `StartedAt`.
+- The re-run guard that keeps re-runs to one per receipt.
+- How a `Without` publication keeps the previous run identity so that feedback updates in place.
+- The traversal order and its rotation.
+- Which errors stop the pass and which are skipped.
+
+## Public Contract
+
+```go
+type Config struct {
+    MissingUploadAfter time.Duration // 60 minutes
+    WaiverWarnBefore   time.Duration // 7 days
+}
+
+// Summary holds counts only; it is safe to log.
+type Summary struct {
+    Repos, Pulls                         int
+    Pended, TimedOut, Rerun, Warned      int
+    Suspended                            int
+    Errors                               int  // repositories or pulls skipped after an error; details are in the log
+    RateLimited                          bool // sweep stopped early; the next sweep continues
+}
+
+type Sweeper interface {
+    // Run re-derives the expected check state of every open PR from GitHub and repairs differences.
+    Run(ctx context.Context, now time.Time) (Summary, error)
+    // RunRepo is the same pass limited to one repository (used when the protected ref changes).
+    RunRepo(ctx context.Context, r Repo, now time.Time) (Summary, error)
+}
+```
+
+```go
+func New(repos Repos, pulls Pulls, actions Actions, r Resolver, p Publisher, c Config) Sweeper
+```
+
+Zero `Config` durations are replaced by 60 minutes and 7 days **[default]**.
+
+### Traversal
+
+1. `Repos.ListInstallations`. An error here is returned; nothing was done.
+2. Installations are visited in ID order, starting at index `(now.Unix() / 3600) mod len` **[default]**, so a
+   pass that stops early does not starve the same tail every hour. No cursor is stored.
+3. Per installation `Repos.ListRepos`; per repository `Pulls.OpenPulls`. `Summary.Repos` counts repositories visited.
+4. Per pull: `Target{Repo, PullRequest: Number, HeadSHA, BaseRef, Fork: pull.HeadRepo != Repo.FullName}`, then
+   `Resolver.Resolve(target, now)`. `!SettingsFound` → skip (not onboarded); the miss is remembered per
+   `(repository, BaseRef)` for the rest of the pass. Otherwise `Summary.Pulls++` and the rules below run.
+5. Sequential, one pull at a time **[default]**.
+
+`RunRepo(ctx, r, now)` is steps 3 to 5 for the one repository `r`: same rules, same guards, same error
+handling, `Summary.Repos == 1`. The caller supplies `r` from a verified webhook; only `r.RepoRef` and
+`r.Private` are needed. It exists so that a default-branch push that changes a protected path reaches the
+repository's open PRs at once; the hourly `Run` stays the recovery path when that event is lost.
+
+### Rules per pull request
+
+`state` is `Publisher.State(target)`, `rc` is `state.Receipt`, "has receipt" means `state.Exists && !state.Pending`.
+The first rule that acts ends the evaluation of that pull, except rule 6a, which never ends it.
+
+| #   | Condition                                                                       | Action                                                                                                 | Counter     |
+| --- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ----------- |
+| 0   | `Settings.Gate != GateRequired` (advisory) **[default]**                        | only rule 6a with `Trusted.EarliestWaiverExpiry`; no `State` call                                      | `Warned`    |
+| 1   | `target.Fork`                                                                   | unless `rc.Reason == fork_unsupported`: publish `Without(ReasonForkUnsupported)`                       | —           |
+| 2   | `Trusted.Suspended`                                                             | unless `rc.Reason == subscription_suspended`: publish `Without(ReasonSuspended)`                       | `Suspended` |
+| 3   | `!state.Exists`                                                                 | `Publisher.Pending(target)`                                                                            | `Pended`    |
+| 4   | `state.Pending`                                                                 | if `now − state.StartedAt ≥ MissingUploadAfter`: publish `Without(ReasonMissingUpload)`                | `TimedOut`  |
+| 5   | has receipt and it is stale (below)                                             | publish `Without(ReasonStaleInputs)`, then re-run                                                      | `Rerun`     |
+| 6a  | expiry `e` set, `now < e` and `e − now ≤ WaiverWarnBefore`                      | `Publisher.Warn(target, e)`                                                                            | `Warned`    |
+| 6b  | expiry `e` set, `now ≥ e` and `state.StartedAt < e`                             | publish `Without(ReasonWaiverExpired)`, then re-run                                                    | `Rerun`     |
+| 7a  | `rc.Reason == subscription_suspended` and `!Trusted.Suspended`                  | re-run; if no re-run is possible publish `Without(ReasonMissingUpload)`                                | `Rerun`     |
+| 7b  | `rc.Reason == owner_approval_missing` and `Trusted.Approval == ApprovalGranted` | re-run; if no re-run is possible publish `Without(ReasonMissingUpload)`                                | `Rerun`     |
+| 7c  | `rc.Reason` is `stale_inputs` or `waiver_expired`                               | re-run (retries a re-run request that failed in an earlier pass; the guard makes it a no-op otherwise) | `Rerun`     |
+
+Definitions:
+
+- Stale receipt, any of three clauses:
+  - policy: `Trusted.PolicyDigests` is empty and `rc.PolicyDigest != ""`; or it is not empty and `rc.PolicyDigest`
+    is not in it;
+  - baseline: `Trusted.BaselineDigests` is empty and `rc.BaselineDigest != ""`; or it is not empty and
+    `rc.BaselineDigest` is not in it;
+  - unreadable: `rc.Reason == ""`. A readable receipt always has a reason, so this is exactly the zero receipt that
+    feedback returns for a missing or broken marker.
+- "Empty list and empty digest" is fresh. In the no-policy window (settings merged, no policy on the protected ref,
+  or the policy deleted from the base) the receipt says `policy_missing` with `PolicyDigest == ""`, the trusted list
+  is empty, and nothing fires: no write, no re-run, the `policy_missing` feedback stays. When the policy merges, the
+  list is no longer empty, `""` is not in it, and rule 5 fires once.
+- Bound of the unreadable clause: the zero receipt has `RunID == 0`, so rule 5 makes one `Without` publication and
+  the guard allows no re-run; the new receipt is readable and carries the current digests, so the next pass is fresh.
+- Expiry `e`: `rc.EarliestWaiverExpiry`; when that is zero, `Trusted.EarliestWaiverExpiry`. `state.StartedAt` is the
+  time of the last publication (feedback sets it), so `StartedAt < e ≤ now` means "evaluated before the waiver
+  expired". The expired waiver may belong to an unrelated finding; the PR is still re-evaluated without a new commit.
+- `Suspended` counts pull requests found suspended, whether or not a publication was needed.
+- "No re-run is possible" in rules 7a and 7b: `rc.RunID == 0`, the run is gone, or the run already has a newer
+  completed attempt that uploaded nothing. The reason then becomes `missing_upload`, which is true and names the recovery.
+
+### Without publications
+
+`Publication{Target, Identity: zero, Outcome: verdict.Without(code), Receipt, Report: nil, Trusted}`. The zero
+`Identity` makes feedback print "no upload". The receipt:
+
+| Field                                 | Value                                       |
+| ------------------------------------- | ------------------------------------------- |
+| `RunID`, `RunAttempt`, `ReportDigest` | copied from `rc` (zero when there is none)  |
+| `PolicyDigest`                        | `Trusted.PolicyDigests[0]`, or `""`         |
+| `BaselineDigest`                      | `Trusted.BaselineDigests[0]`, or `""`       |
+| `EarliestWaiverExpiry`                | `Trusted.EarliestWaiverExpiry`              |
+| `Conclusion`, `Reason`                | from the outcome (`ActionRequired`, `code`) |
+
+Copying the run identity keeps the `external_id`, so feedback updates the existing check in place instead
+of refusing the write as "older". Writing the current digests and the new reason is the de-duplication:
+the next pass finds the receipt neither stale nor expired.
+
+### Re-run guard
+
+`rerun(rc)`: skip when `rc.RunID == 0`. `Actions.Run(repo, rc.RunID)`; `api.ErrNotFound` → skip. Call
+`Actions.Rerun` only when `run.Status == "completed"` and `run.Attempt == rc.RunAttempt`. A run that is
+queued or in progress, or whose attempt already advanced, is not re-run again. `Summary.Rerun` counts
+requested re-runs. If a re-run produces no upload, the check keeps its `action_required` reason with the
+recovery text "re-run the Archfit workflow"; the sweep does not loop.
+
+Termination: what changes in GitHub state after each re-run site, so the next pass does not fire again.
+
+| Site                         | Why it does not fire again                                                                                                                                                            |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rule 5                       | the `Without` receipt carries the current digests (or `""` for an empty list), so no stale clause holds; the reason is `stale_inputs`, which leaves only rule 7c                      |
+| Rule 6b                      | the publication sets `StartedAt ≥ e`, and the new receipt carries the next unexpired expiry from `Trusted`, so `StartedAt < e ≤ now` is false                                         |
+| Rules 7a, 7b                 | a successful `Rerun` advances the run's attempt, so the guard blocks; an upload then replaces the reason; no upload → the next pass publishes `missing_upload`, which no rule re-runs |
+| Rule 7c                      | guard only: it fires while the run is still completed at the receipt's attempt (the earlier `Rerun` failed) and stops once the attempt advances                                       |
+| `HandleEvent(ReviewChanged)` | the same guard, in `gate`; a redelivered event finds the run queued, in progress, or at a newer attempt                                                                               |
+
+A `Rerun` call that keeps failing (for example a revoked `actions: write` permission) is retried once per pass and
+counted in `Summary.Errors`; it costs one API call and no CI minutes.
+
+### Errors
+
+| Error                                                   | Effect                                                                    |
+| ------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `api.ErrRateLimited` from any call (`errors.Is`)        | stop the pass; `Summary.RateLimited = true`; return the summary and `nil` |
+| `ctx` cancelled                                         | return the partial summary and `ctx.Err()`                                |
+| `ListInstallations` fails                               | return the error                                                          |
+| any other error for an installation, repository or pull | log IDs and outcome, `Summary.Errors++`, skip that unit, continue         |
+
+`Errors` counts skipped units; the details are in the log. `RunRepo` follows the same table (no `ListInstallations` row).
+
+## Integrations
+
+### gate/inputs
+
+- **Counterpart**: internal/gate/inputs
+- **Direction**: sweep depends on inputs
+- **Strength**: contract (`Resolver`), reading `Trusted` fields
+- **LCA / Rank / Distance**: gate / 1 / 1
+- **Volatility**: high
+- **Balanced?**: yes
+- **Shared knowledge**: `Resolve` is fork-safe and reads only the protected ref; it returns an error on GitHub
+  failures and never on Store failures. `Trusted.EarliestWaiverExpiry` is the earliest expiry not before `now`.
+  `Entitlement` is an opaque part of `Trusted` for this module.
+
+<!-- contract: Target, Trusted, Approval — restated from internal/gate/inputs/module.md -->
+```go
+// Target is the pull request (or default-branch push) whose trusted inputs are resolved.
+type Target struct {
+    Repo        Repo
+    PullRequest int // 0 for a default-branch push
+    HeadSHA     string
+    BaseRef     string // protected ref; the default branch for a push
+    Fork        bool
+}
+
+type Approval string
+
+const (
+    ApprovalNotRequired Approval = "not_required" // no protected path changed
+    ApprovalGranted     Approval = "granted"      // a base-version owner approved this exact head SHA
+    ApprovalMissing     Approval = "missing"
+)
+
+// Trusted is everything the gate believes, all read from the protected ref or GitHub itself.
+type Trusted struct {
+    Settings             Settings
+    SettingsFound        bool
+    PolicyDigests        []string // base digest, plus the head digest when Approval == ApprovalGranted
+    BaselineDigests      []string // same rule; empty = no baseline on the protected ref
+    ProtectedPaths       []string // protected paths this PR changes
+    Approval             Approval
+    ApprovedBy           string
+    EarliestWaiverExpiry time.Time // zero = no waivers
+    Suspended            bool
+    Entitlement          Entitlement
+}
+```
+
+<!-- contract: Resolver — restated from internal/gate/inputs/module.md -->
+```go
+type Resolver interface {
+    // Resolve reads the protected ref and reviews. It never reads policy, settings, baseline,
+    // owners, or CODEOWNERS from the head tree, except to hash an owner-approved candidate.
+    Resolve(ctx context.Context, t Target, now time.Time) (Trusted, error)
+}
+```
+
+### gate/feedback
+
+- **Counterpart**: internal/gate/feedback
+- **Direction**: sweep depends on feedback
+- **Strength**: contract (`Publisher`), reading `Receipt` and `CheckState` fields
+- **LCA / Rank / Distance**: gate / 1 / 1
+- **Volatility**: high
+- **Balanced?**: yes
+- **Shared knowledge**: `State` reads the `archfit/gate` check of the head SHA; `StartedAt` is the time of the
+  last publication; `Publish` never overwrites a receipt with a higher `(RunID, RunAttempt)`; `Pending` and
+  `Warn` are idempotent; a `Report` of nil is a valid publication. `Identity` is an opaque part of `Publication`
+  for this module; the sweep always leaves it zero.
+
+<!-- contract: Receipt — restated from internal/gate/feedback/module.md -->
+```go
+// Receipt is what a published gate check says about itself. It is stored only in GitHub:
+// the check run external_id is "v1:<run_id>:<attempt>:<report_digest>", the rest is a hidden
+// JSON marker in the check summary. The check is its own receipt.
+type Receipt struct {
+    RunID                int64      `json:"run_id"`
+    RunAttempt           int        `json:"run_attempt"`
+    ReportDigest         string     `json:"report_digest"`
+    PolicyDigest         string     `json:"policy_digest"`
+    BaselineDigest       string     `json:"baseline_digest"`
+    EarliestWaiverExpiry time.Time  `json:"earliest_waiver_expiry"`
+    Conclusion           Conclusion `json:"conclusion"`
+    Reason               ReasonCode `json:"reason"`
+}
+```
+
+<!-- contract: Publication, Publisher, CheckState — restated from internal/gate/feedback/module.md -->
+```go
+// Publication is one complete piece of feedback for one head SHA.
+type Publication struct {
+    Target   Target
+    Identity Identity // claimed engine and image identity; zero when there was no upload
+    Outcome  Outcome
+    Receipt  Receipt
+    Report   *Report // nil when there is no usable report
+    Trusted  Trusted
+}
+
+// CheckState is the gate check currently on a head SHA.
+type CheckState struct {
+    Exists    bool
+    Pending   bool      // in_progress, no upload yet
+    StartedAt time.Time
+    Receipt   Receipt   // zero when Pending
+}
+
+type Publisher interface {
+    // Publish writes archfit/state, archfit/gate (only when Settings.Gate is required) and the
+    // single PR comment. It is idempotent per Receipt and never overwrites feedback of a newer head or run.
+    Publish(ctx context.Context, p Publication) error
+    // Pending creates the in_progress gate check if none exists on the head SHA.
+    Pending(ctx context.Context, t Target) error
+    State(ctx context.Context, t Target) (CheckState, error)
+    // Warn adds or refreshes the waiver-expiry notice in the PR comment. Idempotent.
+    Warn(ctx context.Context, t Target, expiry time.Time) error
+}
+```
+
+### gate/verdict
+
+- **Counterpart**: internal/gate/verdict
+- **Direction**: sweep depends on verdict
+- **Strength**: contract (`Without`, `ReasonCode` constants)
+- **LCA / Rank / Distance**: gate / 1 / 1
+- **Volatility**: high
+- **Balanced?**: yes
+- **Shared knowledge**: `Without` always returns `ActionRequired`; the sweep never calls `Decide` and never
+  produces `Success`. `Facts` is not used here. `Problem` is an opaque part of `Facts` for this module, and
+  `Report` is always nil in a sweep publication.
+
+<!-- contract: Conclusion, Category, ReasonCode, Reason, Outcome — restated from internal/gate/verdict/module.md -->
+```go
+// Conclusion is the only vocabulary the gate can publish. neutral and skipped are not representable.
+type Conclusion string
+
+const (
+    Success        Conclusion = "success"
+    Failure        Conclusion = "failure"
+    ActionRequired Conclusion = "action_required"
+)
+
+// Category keeps architecture, evidence, governance and subscription outcomes from masquerading as each other.
+type Category string
+
+const (
+    CategoryArchitecture Category = "architecture"
+    CategoryEvidence     Category = "evidence"
+    CategoryGovernance   Category = "governance"
+    CategorySubscription Category = "subscription"
+)
+
+type ReasonCode string
+
+const (
+    ReasonHealthy             ReasonCode = "healthy"
+    ReasonBlockingFindings    ReasonCode = "blocking_findings"
+    ReasonEngineError         ReasonCode = "engine_error"
+    ReasonMissingCoverage     ReasonCode = "missing_required_coverage"
+    ReasonBaselineNotComparable ReasonCode = "baseline_not_comparable"
+    ReasonBaselineMismatch    ReasonCode = "baseline_mismatch"
+    ReasonPolicyMismatch      ReasonCode = "policy_mismatch"
+    ReasonPolicyMissing       ReasonCode = "policy_missing" // settings merged, no policy on the protected ref yet
+    ReasonUnknownIdentity     ReasonCode = "unknown_engine_identity"
+    ReasonProfileMissing      ReasonCode = "measurement_profile_missing"
+    ReasonWorkflowNotApproved ReasonCode = "workflow_not_approved"
+    ReasonOwnerApprovalMissing ReasonCode = "owner_approval_missing"
+    ReasonSettingsMissing     ReasonCode = "settings_missing"
+    ReasonForkUnsupported     ReasonCode = "fork_unsupported"
+    ReasonUnsupportedEvent    ReasonCode = "unsupported_event"
+    ReasonEnvelopeMismatch    ReasonCode = "envelope_mismatch"
+    ReasonReportInvalid       ReasonCode = "report_invalid"
+    ReasonMissingUpload       ReasonCode = "missing_upload"
+    ReasonStaleInputs         ReasonCode = "stale_inputs"
+    ReasonWaiverExpired       ReasonCode = "waiver_expired"
+    ReasonSuspended           ReasonCode = "subscription_suspended"
+)
+
+type Reason struct {
+    Code     ReasonCode
+    Category Category
+    Detail   string // IDs and digests only
+    Next     string // the recovery action
+}
+
+// Outcome is the gate decision. Reasons[0] determines Conclusion; the rest are preserved for feedback.
+type Outcome struct {
+    Conclusion Conclusion
+    Reasons    []Reason
+}
+```
+
+<!-- contract: Facts, Decide, Without — restated from internal/gate/verdict/module.md -->
+```go
+// Facts is the closed input of the decision. Report is nil when no usable report exists.
+type Facts struct {
+    Problems         []Problem
+    Report           *Report
+    IdentityApproved bool
+    WorkflowApproved bool
+    Trusted          Trusted
+}
+
+// Decide is a pure function. It checks, in order: subscription, settings, source and producer eligibility,
+// governance (owner approval), input integrity, evidence completeness, then the engine decision.
+// The step table of gate/verdict is the normative order.
+func Decide(f Facts) Outcome
+
+// Without returns the fixed outcome for a target that has no report: code is one of
+// ReasonMissingUpload, ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended.
+func Without(code ReasonCode) Outcome
+```
+
+### wire/settings
+
+- **Counterpart**: internal/wire/settings
+- **Direction**: sweep depends on wire/settings (types only)
+- **Strength**: contract
+- **LCA / Rank / Distance**: root / 2 / 2
+- **Volatility**: high (sweep side); the file format is moderate
+- **Balanced?**: yes
+- **Shared knowledge**: only `Trusted.Settings.Gate` and `GateRequired` are read.
+
+<!-- contract: Settings, GateMode, DataMode, Path — restated from internal/wire/settings/module.md -->
+```go
+// Path is the App settings file on the protected ref, beside the engine policy.
+const Path = ".archfit-app.yaml"
+
+type GateMode string
+
+const (
+    GateAdvisory GateMode = "advisory" // publish archfit/state and the comment only
+    GateRequired GateMode = "required" // also publish archfit/gate, fail closed
+)
+
+type DataMode string
+
+const (
+    DataCustomer DataMode = "customer" // source never reaches Archfit
+    DataManaged  DataMode = "managed"  // managed discovery and managed LLM allowed after consent
+)
+
+// Settings is the App-owned file. The engine policy schema is untouched by it.
+type Settings struct {
+    Version  int      `yaml:"version"`   // must be 1
+    Owners   []string `yaml:"owners"`    // GitHub logins, or "org/team-slug"; at least one
+    Gate     GateMode `yaml:"gate"`      // default advisory
+    Workflow string   `yaml:"workflow"`  // e.g. ".github/workflows/archfit.yaml"
+    DataMode DataMode `yaml:"data_mode"` // default customer
+}
+```
+
+### github/api
+
+- **Counterpart**: internal/github/api
+- **Direction**: sweep depends on github/api (role interfaces `Repos`, `Pulls`, `Actions`)
+- **Strength**: contract
+- **LCA / Rank / Distance**: root / 2 / 2
+- **Volatility**: high (sweep side); the client is low
+- **Balanced?**: yes
+- **Shared knowledge**: `OpenPulls` includes drafts. `Run` returns the latest attempt. `Rerun` needs the App's
+  `actions: write` permission and spends the customer's CI minutes. `ErrRateLimited` is the sentinel returned
+  after bounded backoff; `ErrNotFound` is the sentinel for a missing object. Conditional requests make repeated
+  reads cheap. Used methods: `Repos.ListInstallations`, `Repos.ListRepos`, `Pulls.OpenPulls`, `Actions.Run`,
+  `Actions.Rerun`. `Review` is not used here.
+
+<!-- contract: RepoRef, Repo, ErrNotFound, ErrRateLimited — restated from internal/github/api/module.md -->
+```go
+// RepoRef addresses a repository inside an authenticated installation.
+// Callers build it only from a verified webhook, verified OIDC claims, or an authorized session.
+type RepoRef struct {
+    InstallationID int64
+    FullName       string // "owner/name"
+}
+
+type Repo struct {
+    RepoRef
+    ID            int64
+    Private       bool
+    DefaultBranch string
+}
+
+var (
+    ErrNotFound    = errors.New("github: not found")
+    ErrRateLimited = errors.New("github: rate limit exhausted") // returned after bounded backoff
+)
+```
+
+<!-- contract: Repos, Installation — restated from internal/github/api/module.md -->
+```go
+type Installation struct {
+    ID      int64
+    Account string // organization or user login
+}
+
+// Repos reads installations, repositories and file contents.
+type Repos interface {
+    ListInstallations(ctx context.Context) ([]Installation, error)
+    ListRepos(ctx context.Context, installationID int64) ([]Repo, error)
+    // ResolveRepo finds the installation that covers fullName using the App JWT.
+    ResolveRepo(ctx context.Context, fullName string) (Repo, error)
+    // File returns the raw bytes and git blob SHA of path at ref. ErrNotFound if absent.
+    File(ctx context.Context, r RepoRef, ref, path string) (content []byte, blobSHA string, err error)
+    // BranchHead returns the head commit SHA of branch. ErrNotFound if the branch does not exist.
+    BranchHead(ctx context.Context, r RepoRef, branch string) (string, error)
+}
+```
+
+<!-- contract: Pulls, Pull, Review — restated from internal/github/api/module.md -->
+```go
+type Pull struct {
+    Number       int
+    State        string // "open" | "closed"
+    Merged       bool
+    Draft        bool
+    Body         string
+    URL          string // html_url
+    HeadSHA      string
+    HeadRef      string
+    HeadRepo     string // "owner/name"; differs from the base repository for forks
+    BaseRef      string
+    BaseSHA      string
+    MergeBaseSHA string
+    UpdatedAt    time.Time
+}
+
+type Review struct {
+    Reviewer  string // login
+    State     string // "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED"
+    CommitSHA string // the head SHA the review was submitted on
+}
+
+type Pulls interface {
+    Pull(ctx context.Context, r RepoRef, number int) (Pull, error)
+    OpenPulls(ctx context.Context, r RepoRef) ([]Pull, error)
+    // PullByHead returns the newest PR, in any state, whose head is branch in this repository. ErrNotFound if none.
+    PullByHead(ctx context.Context, r RepoRef, branch string) (Pull, error)
+    // ChangedFiles lists changed paths; a rename lists both the old and the new path.
+    // truncated is true when GitHub's file list was cut off: callers must assume any path changed.
+    ChangedFiles(ctx context.Context, r RepoRef, number int) (paths []string, truncated bool, err error)
+    Reviews(ctx context.Context, r RepoRef, number int) ([]Review, error)
+    // TeamMember reports whether login belongs to "org/team-slug".
+    TeamMember(ctx context.Context, r RepoRef, team, login string) (bool, error)
+}
+```
+
+<!-- contract: Actions, WorkflowRun — restated from internal/github/api/module.md -->
+```go
+type WorkflowRun struct {
+    ID           int64
+    Attempt      int
+    Event        string
+    HeadSHA      string
+    HeadRepo     string
+    WorkflowPath string // e.g. ".github/workflows/archfit.yaml"
+    Status       string
+    Conclusion   string
+    PullRequests []int // PR numbers GitHub associates with the run
+}
+
+type Actions interface {
+    Run(ctx context.Context, r RepoRef, runID int64) (WorkflowRun, error)
+    Rerun(ctx context.Context, r RepoRef, runID int64) error
+    Dispatch(ctx context.Context, r RepoRef, workflowPath, ref string, inputs map[string]string) error
+    LatestRun(ctx context.Context, r RepoRef, workflowPath, branch string) (WorkflowRun, error)
+    // Artifact downloads the named artifact of a run, capped at maxBytes.
+    Artifact(ctx context.Context, r RepoRef, runID int64, name string, maxBytes int64) ([]byte, error)
+}
+```
+
+### Consumers (inbound)
+
+- **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Constructs the sweeper with `Deps.Sweep`,
+  calls `Run(ctx, Deps.Now())` from `Gate.Sweep` and `RunRepo` from `HandleEvent` on a protected default-branch push, re-publishes `Sweeper`, `Summary` and `Config` to `app`.
+
+## Change Vectors
+
+- New repair rules or thresholds; a per-repository threshold.
+- Bounded parallelism, or a stored cursor, if rate limits demand it.
+- More triggers for `RunRepo` (for example after an entitlement change).
+
+## Constraints and Invariants
+
+- The sweep never produces `Success`. It only creates pending checks, publishes `Without` outcomes
+  (`action_required`), warns, and re-runs. Green comes only from a fresh report through the upload path.
+- Re-run is the single re-evaluation mechanism; the App stores no report to re-evaluate.
+- Everything is derived from GitHub and the protected ref on every pass. No state between passes, no cursor, no job table.
+- Trusted inputs are resolved at the pull's `BaseRef`; the head tree is never read here.
+- Idempotent: a second pass over unchanged GitHub state makes no write and no re-run, except retrying a re-run
+  request that failed in the prior pass (rule 7c).
+- At most one re-run request per receipt (the guard); a re-run in flight is never doubled.
+- Rate-limit exhaustion leaves checks pending or unchanged; it never produces green. The pass ends with
+  `RateLimited` and a nil error so the scheduler does not treat it as a failure.
+- A failure for one installation, repository or pull never aborts the pass.
+- Reconciliation window (stated, not zero): a missed event or an expiry is repaired within one sweep interval
+  (hourly **[default]**) plus the customer's CI time. During that window the old check result stands.
+- A Store outage inside `Resolve` means "not suspended"; the sweep never suspends on missing data.
+- Logs (`log/slog` default logger **[default]**): installation ID, repository ID, PR number, head SHA, rule
+  number, action, digests, timings, and the `Summary`. Never paths, messages, owner or reviewer names.
+- Imports: standard library, `gate/inputs`, `gate/feedback`, `gate/verdict`, `wire/settings`, `github/api`.
+  Never `control`, `app`, `store`, LLM or UI packages.
+- `now` is a parameter; the sweep never reads the clock.
+
+## Test Specification
+
+Fakes: in-memory `Repos`, `Pulls`, `Actions`; a scripted `Resolver`; an in-memory `Publisher` that records
+calls and serves `State` from what was published; injectable errors. Time is the `now` argument.
+
+### Unit Tests
+
+- **Test name**: `TestStaleReceipt`
+  **Scenario**: table: policy digest equal to base; equal to approved head digest; different; trusted policy list empty with receipt digest `""`; trusted policy list empty with a receipt digest; policy `""` with a trusted policy; baseline `""` with no trusted baseline; baseline `""` with a trusted baseline; baseline set with none trusted; zero receipt (empty reason) with empty trusted lists.
+  **Expected behavior**: fresh, fresh, stale, fresh, stale, stale, fresh, stale, stale, stale.
+- **Test name**: `TestNoPolicyWindowIsQuiet`
+  **Scenario**: required mode, no policy on the base, a pull whose receipt is `policy_missing` with `PolicyDigest == ""` from run 9 attempt 1; two passes; then the policy merges (trusted list = one digest) and two more passes; the same start with the policy deleted from the base.
+  **Expected behavior**: passes 1 and 2 make no `Publish`, no `Rerun`, and leave the `policy_missing` feedback; pass 3 publishes `stale_inputs` and requests exactly one re-run of run 9; pass 4 is quiet. `RunRepo` from the push trigger gives the same single repair as pass 3.
+- **Test name**: `TestUnreadableReceiptIsBounded`
+  **Scenario**: a completed gate check whose summary has no receipt marker; two passes.
+  **Expected behavior**: pass 1 publishes `stale_inputs` once with a zero run identity and calls neither `Run` nor `Rerun`; pass 2 makes no write.
+- **Test name**: `TestExpiryRule`
+  **Scenario**: table over `now` relative to `e` (8 days before, 7 days before, 1 second before, equal, after) × `StartedAt` before or after `e`; receipt expiry zero with a trusted expiry.
+  **Expected behavior**: nothing; warn; warn; expired only when `StartedAt < e`; the trusted expiry is used when the receipt has none.
+- **Test name**: `TestRerunGuard`
+  **Scenario**: `RunID` 0; run not found; run queued; run in progress; run completed at the receipt's attempt; run completed at a later attempt.
+  **Expected behavior**: `Rerun` is called only in the fifth case.
+- **Test name**: `TestWithoutReceipt`
+  **Scenario**: build the publication for each `Without` code with and without a previous receipt.
+  **Expected behavior**: run identity copied; digests and expiry from `Trusted`; conclusion `action_required`; `Report` nil.
+- **Test name**: `TestTraversalRotation`
+  **Scenario**: three installations; `now` at three consecutive hours.
+  **Expected behavior**: the start index rotates; every installation is visited each pass.
+
+### Integration Contract Tests
+
+- **Test name**: `TestRunRepairsEachRule`
+  **Scenario**: one repository with one pull per rule row (fork, suspended, no check, pending 59 minutes, pending 60 minutes, stale policy, stale baseline, waiver in 3 days, waiver expired, restored entitlement, late approval) plus a healthy one.
+  **Expected behavior**: the action of each row and nothing else; the healthy pull gets no write; `Summary` counters match.
+- **Test name**: `TestSecondPassIsQuiet`
+  **Scenario**: run twice with unchanged fakes (the publisher reflects the first pass); every `Rerun` of the first pass succeeded, so those runs are queued or at a newer attempt.
+  **Expected behavior**: the second pass makes no `Publish`, `Pending`, `Warn` with a new date, or `Rerun` call.
+- **Test name**: `TestFailedRerunIsRetriedOnce`
+  **Scenario**: first pass publishes `stale_inputs` but `Actions.Rerun` returns an error; second pass with `Rerun` working; third pass.
+  **Expected behavior**: first pass counts the pull in `Errors` and keeps the `stale_inputs` publication; the second pass makes no `Publish` and exactly one `Rerun` (rule 7c, run still completed at the receipt's attempt); the third pass makes no call.
+- **Test name**: `TestAdvisoryRepositories`
+  **Scenario**: advisory settings with a waiver expiring in 2 days, no gate check, a fork pull.
+  **Expected behavior**: one `Warn`; no `State`, `Pending`, `Publish` or `Rerun` call.
+- **Test name**: `TestNotOnboardedIsSkipped`
+  **Scenario**: repositories without a settings file on the base; two pulls on the same base.
+  **Expected behavior**: no publisher call; `Resolve` called once for that base; `Summary.Pulls` does not count them.
+- **Test name**: `TestRunRepoIsTheSamePassForOneRepository`
+  **Scenario**: two repositories with stale receipts; `RunRepo` for the first; then `Run`.
+  **Expected behavior**: `RunRepo` repairs only the first repository, never calls `ListInstallations` or `ListRepos`, returns `Repos == 1`; the following `Run` repairs the second and makes no write for the first.
+- **Test name**: `TestDraftsAreIncluded`
+  **Scenario**: a draft pull without a check in required mode.
+  **Expected behavior**: a pending check is created.
+
+### Boundary Tests
+
+- **Test name**: `TestRateLimitStopsThePass`
+  **Scenario**: `ErrRateLimited` from `ListRepos`, `OpenPulls`, `Resolve`, `State`, `Publish`, `Run` and `Rerun`, each at the second repository.
+  **Expected behavior**: the pass stops; `RateLimited` true; nil error; the first repository's repairs are kept; no check turned `success`.
+- **Test name**: `TestUnitErrorsAreSkipped`
+  **Scenario**: a generic error for one installation, one repository and one pull.
+  **Expected behavior**: the others are processed; nil error; `Summary.Errors == 3`; one log line per skipped unit with IDs only. The same pull error inside `RunRepo` gives `Errors == 1` and a nil error.
+- **Test name**: `TestListInstallationsFailure`
+  **Scenario**: `ListInstallations` returns an error; `ctx` cancelled mid-pass.
+  **Expected behavior**: the error is returned; the partial summary and `ctx.Err()` for cancellation.
+- **Test name**: `TestSweepNeverPublishesSuccess`
+  **Scenario**: every scenario of this specification with a recording publisher.
+  **Expected behavior**: every published conclusion is `action_required`.
+- **Test name**: `TestLogsCarryOnlyIdentifiers`
+  **Scenario**: fakes with marker strings in branch names, logins and paths.
+  **Expected behavior**: no marker string in logs.
+
+### Behavior Tests
+
+- **Test name**: `TestMissedWebhookAndMissingUpload` (T13)
+  **Scenario**: the PR-opened webhook was lost; then the workflow is queued, fails, is cancelled or times out without an upload.
+  **Expected behavior**: first pass creates the pending check; a pass 60 minutes later publishes `missing_upload`; at no time is the gate check `success`, `neutral` or `skipped`.
+- **Test name**: `TestForksStayBlocked` (T13)
+  **Scenario**: a fork pull in required mode with no check, and one that already shows `fork_unsupported`.
+  **Expected behavior**: `fork_unsupported` published once; the second is left alone; no re-run.
+- **Test name**: `TestBasePolicyChangeRerunsOpenPulls` (T12, T16)
+  **Scenario**: three open pulls with `success` receipts; the base policy digest changes.
+  **Expected behavior**: each shows `stale_inputs` and one re-run is requested per pull; the next pass does nothing more.
+- **Test name**: `TestExpiryBlocksUnrelatedPullsWithoutNewCommit` (T16)
+  **Scenario**: a `success` receipt published before a waiver's expiry; passes 8 days before, 3 days before, and after the expiry; the scheduler then misses a delivery and runs a day late; `Rerun` fails once.
+  **Expected behavior**: nothing; one warning (idempotent on repeat); `waiver_expired` plus a re-run; the late pass performs the same repair; the failed re-run is retried by rule 7c on the next pass because the run is still completed at the receipt's attempt, and is not repeated once the attempt advanced.
+- **Test name**: `TestRestoredEntitlementNeedsFreshEvidence` (T21)
+  **Scenario**: a suspended pull whose receipt came from an upload; the entitlement is restored; then the same for a pull suspended before any upload.
+  **Expected behavior**: a re-run is requested and the check stays `action_required` until a new upload; the second becomes `missing_upload`; no old receipt is turned into `success`.
+- **Test name**: `TestLateOwnerApproval` (T14)
+  **Scenario**: receipt `owner_approval_missing`; an owner approves the head but the review webhook was lost.
+  **Expected behavior**: one re-run; nothing when the approval is for an older SHA.
+- **Test name**: `TestStoreOutageDoesNotSuspend` (T21)
+  **Scenario**: the resolver reports `Suspended` false because the Store failed, for a pull with a `success` receipt.
+  **Expected behavior**: no publication; the receipt stands.
