@@ -5,13 +5,9 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"time"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/github/auth"
 )
-
-var errNotImplemented = errors.New("session: not implemented")
 
 type User struct {
 	Login  string
@@ -36,9 +32,4 @@ var ErrForbidden = errors.New("session: not permitted")
 type Config struct {
 	CookieKey []byte // 32 bytes, from a secret reference
 	BaseURL   string
-}
-
-// New fails unless CookieKey is 32 bytes and BaseURL is an absolute https URL (http allowed for localhost).
-func New(c Config, o auth.OAuth, u api.Users, repos api.Repos, now func() time.Time) (Sessions, error) {
-	return nil, errNotImplemented
 }
