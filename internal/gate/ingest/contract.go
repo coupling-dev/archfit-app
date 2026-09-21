@@ -3,6 +3,7 @@ package ingest
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -38,6 +39,9 @@ const (
 	ProblemReportInvalid    Problem = "report_invalid" // payload failed no-source decoding
 )
 
+// problemOrder is the constant declaration order; Upload.Problems follows it.
+var problemOrder = []Problem{ProblemEnvelopeMismatch, ProblemUnsupportedEvent, ProblemFork, ProblemReportInvalid}
+
 type Upload struct {
 	Binding        Binding
 	Identity       manifest.Identity // claimed engine/image identity from the envelope
@@ -57,7 +61,7 @@ type Rejection struct {
 }
 
 func (r *Rejection) Error() string {
-	return ""
+	return fmt.Sprintf("ingest: upload rejected: %d %s", r.Status, r.Code)
 }
 
 type Receiver interface {
@@ -67,5 +71,5 @@ type Receiver interface {
 }
 
 func New(repos api.Repos, pulls api.Pulls, actions api.Actions, v oidc.Verifier, audience string) Receiver {
-	return nil
+	return &receiver{repos: repos, pulls: pulls, actions: actions, verifier: v, audience: audience}
 }
