@@ -1,0 +1,12 @@
+{
+  "producer": "hand-edited from report/real-blocked-no-baseline.json (engine v2.3.1) with jq: .decision={hard_gates:\"unmeasured\",unevaluated_required_rules:[{rule_id:\"no_direct_b_dependency\",reason:\"required tool `go/packages` was absent\"}],active_blockers:0,attention_dimensions:2,unknown_dimensions:5} | .findings |= [.[1]] | .agent_tasks=[] | .dimensions.structure.findings=[] | .dimensions.structure.status=\"unmeasured\"",
+  "outcome": "decode",
+  "verdict": "blocked",
+  "hard_gates": "unmeasured",
+  "unevaluated_rule_ids": [
+    "no_direct_b_dependency"
+  ],
+  "has_profile": true,
+  "profile_version": "archfit.measurement.v1",
+  "gate_reference_status": "non_comparable"
+}

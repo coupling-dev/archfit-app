@@ -1,0 +1,10 @@
+{
+  "producer": "hand-edited from report/real-blocked-no-baseline.json (engine v2.3.1) with jq: .comparison.status=\"comparable\" | .comparison.base_ref=\"main\" | .comparison.labels_hash=\"9f2c1e7a\" | .dimensions.drift.delta={status:\"comparable\",metrics:[{name:\"forbidden_edges\",before:0,after:1,change:1}],new_findings:[\"ba3803eca947bf3c1b7efa8f37854d5e\"],resolved_findings:[\"5d1c0b7e2f3a4d5e8f9a0b1c2d3e4f50\"]}",
+  "outcome": "decode",
+  "verdict": "blocked",
+  "hard_gates": "fail",
+  "unevaluated_rule_ids": [],
+  "has_profile": true,
+  "profile_version": "archfit.measurement.v1",
+  "gate_reference_status": "non_comparable"
+}

@@ -1,10 +1,6 @@
 // Package report is the no-source transport form of an engine state report.
 package report
 
-import "errors"
-
-var errNotImplemented = errors.New("report: not implemented")
-
 // StateSchemaV1 is the engine state contract accepted (engine v2.3.1, archfit.state.schema.json).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
@@ -200,11 +196,4 @@ type Seam struct {
 	Distance   string `json:"distance"`
 	Volatility string `json:"volatility"`
 	Severity   string `json:"severity,omitempty"`
-}
-
-// Decode strictly parses payload as the no-source transport. It fails on: size over MaxBytes, a key the
-// v2.3.1 state schema does not define, wrong schema_version, an enum value outside its set, strings over
-// the per-field caps, absolute or parent-escaping paths, multi-line text, or duplicate finding IDs.
-func Decode(payload []byte) (Report, error) {
-	return Report{}, errNotImplemented
 }

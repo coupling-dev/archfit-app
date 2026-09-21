@@ -38,9 +38,14 @@ Volatility: moderate. It changes with a versioned engine release; the caps are *
   keys included, with `DisallowUnknownFields`. That gives "unknown key is an error" and the JSON type check of
   dropped keys for free. It then copies the kept fields into the public types. Dropped values never leave the function.
 - `encoding/json` alone matches keys case-insensitively, keeps the last duplicate key and accepts trailing data.
-  A generic token pre-pass runs first: every object key of a schema-defined object must match `^[a-z][a-z0-9_]*$`,
+  A token pre-pass runs first: every object key of a schema-defined object must match `^[a-z][a-z0-9_]*$`,
   no object repeats a key, nesting depth is at most 16 **[default]**, and input ends after the top-level object.
   Keys of the two free maps (`matched_by`, `measurement.tool_versions`) are exempt from the key pattern, not from the duplicate rule.
+- The pre-pass walks the token stream next to the shadow types (by reflection), because `encoding/json` errors
+  carry no list index and the unknown-key error carries no location. It requires each key to equal a shadow key
+  exactly, which implies the key pattern, and also checks `null`, JSON types and the integer form, so every
+  structural error names its exact location. The typed decode that follows stays strict as a second guard.
+  Input-controlled names (unknown keys, map keys) are never echoed: a map key is written `*`, except the nine dimension names.
 - The caps below, all unexported. Every number in the collection caps, string rules, path rules and number
   ranges is **[default]**: decisions.md fixes only the 5 MB upload cap.
 - Error text policy: an error names the JSON location (for example `findings[12].why`) and the rule, never the value.

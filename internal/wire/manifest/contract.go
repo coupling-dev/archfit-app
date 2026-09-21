@@ -3,7 +3,7 @@ package manifest
 
 import _ "embed"
 
-// PLACEHOLDER DATA: the image_digest, profile_version and action_ref values in manifest.json are not the
+// PLACEHOLDER DATA: the image_digest and action_ref values in manifest.json are not the
 // published engine v2.3.1 release values (they were not available when this was written). Replace all
 // three from the engine release evidence before any release; the repeated-character values are fake.
 //

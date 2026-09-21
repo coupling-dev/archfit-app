@@ -1,0 +1,4 @@
+{
+  "producer": "hand-edited from report/real-blocked-no-baseline.json (engine v2.3.1) with jq: .findings[0].snippet=\"func LEAK-7f3a() { return secret }\"",
+  "outcome": "error"
+}
