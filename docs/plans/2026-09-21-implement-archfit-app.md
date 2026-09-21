@@ -49,37 +49,37 @@
 
 ## Waves
 
-| Wave | Module | Submodules it composes |
-| ---- | ------ | ---------------------- |
-| 0a | internal/store/ | — (leaf) |
-| 0a | internal/wire/envelope/ | — (leaf) |
-| 0a | internal/wire/report/ | — (leaf) |
-| 0a | internal/wire/settings/ | — (leaf) |
-| 0a | internal/wire/policy/ | — (leaf) |
-| 0a | internal/wire/manifest/ | — (leaf) |
-| 0a | internal/github/auth/ | — (leaf) |
-| 0a | internal/github/webhook/ | — (leaf) |
-| 0a | internal/github/oidc/ | — (leaf) |
-| 0b | internal/github/api/ | — (leaf) |
-| 0b | internal/gate/ingest/ | — (leaf) |
-| 0b | internal/gate/inputs/ | — (leaf) |
-| 0b | internal/gate/verdict/ | — (leaf) |
-| 0b | internal/gate/feedback/ | — (leaf) |
-| 0b | internal/control/account/ | — (leaf) |
-| 0b | internal/control/proposal/ | — (leaf) |
-| 0b | internal/control/onboarding/ | — (leaf) |
-| 0b | internal/control/assist/anthropic/ | — (leaf) |
-| 0b | internal/control/ui/session/ | — (leaf) |
-| 0b | internal/control/ui/graph/ | — (leaf) |
-| 0c | internal/gate/sweep/ | — (leaf) |
-| 1 | internal/wire/ | envelope, report, settings, policy, manifest |
-| 1 | internal/github/ | auth, api, webhook, oidc |
-| 1 | internal/gate/ | ingest, inputs, verdict, feedback, sweep |
-| 1 | internal/control/assist/ | anthropic |
-| 1 | internal/control/ui/ | session, graph |
-| 2 | internal/control/ | account, proposal, onboarding, assist, ui |
-| 3 | internal/app/ | — (leaf; wires gate, control, store, github) |
-| 4 | internal/ (root) | app, wire, github, store, gate, control |
+| Wave | Module                             | Submodules it composes                       |
+| ---- | ---------------------------------- | -------------------------------------------- |
+| 0a   | internal/store/                    | — (leaf)                                     |
+| 0a   | internal/wire/envelope/            | — (leaf)                                     |
+| 0a   | internal/wire/report/              | — (leaf)                                     |
+| 0a   | internal/wire/settings/            | — (leaf)                                     |
+| 0a   | internal/wire/policy/              | — (leaf)                                     |
+| 0a   | internal/wire/manifest/            | — (leaf)                                     |
+| 0a   | internal/github/auth/              | — (leaf)                                     |
+| 0a   | internal/github/webhook/           | — (leaf)                                     |
+| 0a   | internal/github/oidc/              | — (leaf)                                     |
+| 0b   | internal/github/api/               | — (leaf)                                     |
+| 0b   | internal/gate/ingest/              | — (leaf)                                     |
+| 0b   | internal/gate/inputs/              | — (leaf)                                     |
+| 0b   | internal/gate/verdict/             | — (leaf)                                     |
+| 0b   | internal/gate/feedback/            | — (leaf)                                     |
+| 0b   | internal/control/account/          | — (leaf)                                     |
+| 0b   | internal/control/proposal/         | — (leaf)                                     |
+| 0b   | internal/control/onboarding/       | — (leaf)                                     |
+| 0b   | internal/control/assist/anthropic/ | — (leaf)                                     |
+| 0b   | internal/control/ui/session/       | — (leaf)                                     |
+| 0b   | internal/control/ui/graph/         | — (leaf)                                     |
+| 0c   | internal/gate/sweep/               | — (leaf)                                     |
+| 1    | internal/wire/                     | envelope, report, settings, policy, manifest |
+| 1    | internal/github/                   | auth, api, webhook, oidc                     |
+| 1    | internal/gate/                     | ingest, inputs, verdict, feedback, sweep     |
+| 1    | internal/control/assist/           | anthropic                                    |
+| 1    | internal/control/ui/               | session, graph                               |
+| 2    | internal/control/                  | account, proposal, onboarding, assist, ui    |
+| 3    | internal/app/                      | — (leaf; wires gate, control, store, github) |
+| 4    | internal/ (root)                   | app, wire, github, store, gate, control      |
 
 Modules in the same wave run in parallel. Wave 0a has 9 modules, 0b has 11, 0c has 1, wave 1 has 5.
 
@@ -332,7 +332,7 @@ alternative is an engine change.
 - [x] implement the module's own code and wire its submodules (envelope, report, settings, policy, manifest) per its Internal Design, inside internal/wire/, replacing the Task 2 skeleton, until all its tests pass
 - [x] run `go test -race ./internal/wire/...` and `golangci-lint run ./internal/wire/...` — all green before the task is complete
 
-⚠️ internal/wire: shared corpus built (127 files) with ten unmodified captures from the rebuilt engine v2.3.1, including a genuinely healthy report, a comparable persisted baseline, and forbidden-plus-allowed. Findings: (1) the engine's `fixture-go` can never be `healthy` — zero findings gives `needs_attention`, because healthy needs all nine dimensions measured; (2) outside a git repository the engine reports `hard_gates: unmeasured` ("rule scope cannot be established"), a real missing-coverage path customers can hit; (3) a `profile-comparable` capture with a recognized `partial_basis` cannot be produced from v2.3.1 on these fixtures, so that fixture records the truth (blocked, non-comparable) and none was faked; (4) the children and gate/verdict, gate/feedback keep their own fixture copies under old names and an older `facts` shape — ➕ follow-up: repoint them at `internal/wire/testdata` (list in the task report); (5) the capture scripts hard-code local paths and live in the session scratchpad only; each fixture's `producer.command` is the in-repo record. The engine schema SHA-256 is pinned in a test that fails when the file is missing or changed. Accepted.
+⚠️ internal/wire: shared corpus built (127 files) with ten unmodified captures from the rebuilt engine v2.3.1, including a genuinely healthy report, a comparable persisted baseline, and forbidden-plus-allowed. Findings: (1) the engine's `fixture-go` can never be `healthy` — zero findings gives `needs_attention`, because healthy needs all nine dimensions measured; (2) outside a git repository the engine reports `hard_gates: unmeasured` ("rule scope cannot be established"), a real missing-coverage path customers can hit; (3) a `profile-comparable` capture with a recognized `partial_basis` cannot be produced from v2.3.1 on these fixtures, so that fixture records the truth (blocked, non-comparable) and none was faked; (4) the children and gate/verdict, gate/feedback keep their own fixture copies (a consumer of the shared corpus must derive clean facts from the `.baseline.json` / `.labels.yaml` sibling files, not assume an empty trusted list) under old names and an older `facts` shape — ➕ follow-up: repoint them at `internal/wire/testdata` (list in the task report); (5) the capture scripts hard-code local paths and live in the session scratchpad only; each fixture's `producer.command` is the in-repo record. The engine schema SHA-256 is pinned in a test that fails when the file is missing or changed. Accepted.
 
 ### Task 25 [Wave 1]: Implement internal/github/ (parent)
 
@@ -386,36 +386,52 @@ alternative is an engine change.
 
 ### Task 30 [Wave 3]: Implement internal/app/ (composition root)
 
-- [ ] read internal/app/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/app/, wiring the real gate, control, store and github packages, until all its tests pass
-- [ ] run `go test -race ./internal/app/...` and `golangci-lint run ./internal/app/...` — all green before the task is complete
+- [x] read internal/app/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/app/, wiring the real gate, control, store and github packages, until all its tests pass
+- [x] run `go test -race ./internal/app/...` and `golangci-lint run ./internal/app/...` — all green before the task is complete
+
+⚠️ internal/app: (1) DESIGN TENSION, owner decision wanted: the webhook fan-out is synchronous (decisions.md §2 "handlers do their work in the request"), but GitHub drops a delivery after 10 s while the gate and control halves may each take up to 55 s (a default-branch push triggers a one-repository sweep in the request). The work still completes on a detached context; only the 202 is lost and GitHub marks the delivery failed. Options: accept, or answer 202 first and finish in a goroutine. (2) internal/github/api retries transport errors with backoff (~7 s per call), so a sweep with GitHub unreachable took 14 s in a probe; production sweeps are slow, not wrong, when GitHub is down. (3) `/internal/sweep` encodes `gate.Summary` as-is, so JSON keys are Go field names (`Repos`, `Pulls`, …) because the contract has no JSON tags. (4) UI requests carry two request IDs in the log (app's and ui's). (5) A signed but unparsable webhook answers 400; secrets files are trimmed text; OAuth client, OAuth secret and cookie key are required at startup; `Run` contacts no remote service at startup (asserted with a counting transport). Accepted except item 1.
 
 ### Task 31 [Wave 4]: Implement internal/ (root) and the entry point
 
-- [ ] read internal/module.md and internal/app/module.md in full
-- [ ] write the root Test Specification tests: the import-matrix tests (`go list -deps`), the upload-protocol
+- [x] read internal/module.md and internal/app/module.md in full
+- [x] write the root Test Specification tests: the import-matrix tests (`go list -deps`), the upload-protocol
       contract tests, the boundary tests, and the behavior tests, in a root-level test package under internal/
-- [ ] replace cmd/reporter with the thin entry point the app module describes, and replace
+- [x] replace cmd/reporter with the thin entry point the app module describes, and replace
       `TestReportIngestRefusesEveryReport` in the same change, as the root Test Specification requires
-- [ ] fix whatever the composed tests expose in the owning module (update its module.md first if the design was wrong)
-- [ ] run `make all` — all green before the task is complete
+- [x] fix whatever the composed tests expose in the owning module (update its module.md first if the design was wrong)
+- [x] run `make all` — all green before the task is complete
+
+⚠️ internal/ (root): the composed tests found one REAL module defect that every per-module suite missed: `POST /v1/discoveries` accepted any short-lined text as a draft policy (all seven shared leakage fixtures, an engine report with seeded source strings included) and committed it to a pull request. Fixed before this task was closed: `wire/policy` gained the structural `Validate` (closed top-level key set derived from the embedded engine schema, `version` required), and control/onboarding (discovery and managed drafts), control/assist (provider answers) and control/ui (editor save) now require it; this also closes the weak-check finding of Task 27. Behavior change: assist no longer rejects a malformed waiver date, because Validate inspects no values; the engine check on the draft PR stays the authority. Other findings: (1) `app.Run` has no seam for the outbound HTTP client, port, clock or Store, so the root tests drive it by swapping `http.DefaultTransport` and reading the port from its log record, and every clock- or Store-dependent root test recomposes the packages as app.go does — app's own wiring of clock and Store is not covered by them (owner decision: add an unexported-to-exported seam or accept); (2) CODEOWNERS is not a protected path — the tampering row tests that a head-edited CODEOWNERS confers no approval rights; making it a sixth protected path is an owner decision; (3) unauthenticated UI GETs answer 303 to the login page, not 401/403 as the root spec words it; (4) `measurement_profile: null` decodes as `report_invalid` while an absent key gives `measurement_profile_missing` (both action_required); (5) control "proposal" log lines carry the repository full name and "assist: propose" the login, outside the strict "IDs only" wording. ➕ The capture of "UI handler panicking" is substituted by "UI failing with 5xx" because a panic cannot be provoked from outside the package.
 
 ### Task 32: Verify acceptance criteria
 
-- [ ] run the full test suite — all modules, all four test categories, must pass (`make test`)
-- [ ] run the validator in tree mode over internal/ — module.md edits made during implementation must have left the
+- [x] run the full test suite — all modules, all four test categories, must pass (`make test`)
+- [x] run the validator in tree mode over internal/ — module.md edits made during implementation must have left the
       tree defect-free
-- [ ] run linter — all issues fixed (`make lint`)
+- [x] run linter — all issues fixed (`make lint`)
 - [ ] build the image (`docker build`) and start it with the `memory` store and no sandbox: `/healthz` answers
 - [ ] verify every ⚠️ noted during implementation is resolved or explicitly accepted by the user
 
+⚠️ Task 32 is NOT complete. Done on 2026-09-21: `make all` green (31 packages, race tests, 0 lint issues), design
+validator clean on 29 documents, and a smoke run of the built binary with the `memory` store and no sandbox
+(`/healthz` answers, `/internal/sweep` refuses a missing token with 401, graceful stop on SIGTERM). Not done: the
+Docker image build — the Docker daemon was not running in the build session; the Dockerfile now copies `go.sum`
+with `go.mod`, because the module has a dependency. Not done: the ⚠️ audit — the items marked "owner decision" in
+Tasks 1, 8, 17, 19, 20, 27, 28, 29, 30 and 31 are open until the owner accepts or changes them.
+
+
 ### Task 33: [Final] Update documentation
 
-- [ ] update README.md, docs/README.md and .env.example for the new configuration and the end of the 501 skeleton
+- [x] update README.md, docs/README.md and .env.example for the new configuration and the end of the 501 skeleton
 - [ ] verify each implemented module.md still matches what was built (spot check; /modularity:fractal-align does this
       rigorously)
+
+⚠️ Task 33: documentation is updated. The module.md spot check is left to `/modularity:fractal-align`, which does it
+rigorously; during the build every module.md was validated on each change and every test named in a Test
+Specification was checked to exist.
 
 ## Post-Completion
 

@@ -14,9 +14,19 @@ The three repositories are split by responsibility:
 
 ## Status
 
-The reporter is a skeleton. It validates request shape, then returns `501` for
-valid reports because provenance verification is not implemented yet. See
-[`cmd/reporter/main_test.go`](cmd/reporter/main_test.go).
+The service is implemented as one Go binary (`cmd/reporter` → `internal/app`) and
+covered by tests, but it is **not deployed and not release-ready**:
+
+- It runs with the in-memory `Store` and no sandbox driver; the container host,
+  KV, and sandbox are not chosen ([tech stack](docs/tech-stack.md)).
+- `internal/wire/manifest` still holds placeholder image digests and a
+  placeholder Action commit.
+- The Monaco editor bundle is not built; the policy editor is a plain textarea.
+- No GitHub App is registered and `archfit-action` has not adopted the envelope
+  schema owned here.
+
+Open findings and owner decisions are marked ⚠️ and ➕ in the
+[implementation plan](docs/plans/2026-09-21-implement-archfit-app.md).
 
 ## Documentation
 
@@ -24,6 +34,9 @@ See the [documentation index](docs/README.md):
 
 - [Product design](docs/design/product.md)
 - [Trust and reporting](docs/design/trust-and-reporting.md)
+- [Module design](internal/module.md) — every package under `internal/` has a `module.md` spec
+- [Tech stack](docs/tech-stack.md)
+- [Implementation plan](docs/plans/2026-09-21-implement-archfit-app.md)
 - [Closed-beta plan](docs/plans/closed-beta.md)
 - [Hosting research](docs/research/20260918-hosting.md)
 
@@ -42,7 +55,9 @@ make build    # .bin/reporter
 make run      # :8080
 ```
 
-The reporter reads `ARCHFIT_ADDR` only; it does not load `.env` automatically.
+Configuration is environment variables; secrets are file paths (`*_FILE`), never
+values. See [`.env.example`](.env.example). The binary does not load `.env`
+itself. `make all` runs format, lint, tests, and build; run it before pushing.
 Health check:
 
 ```sh

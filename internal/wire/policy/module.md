@@ -54,9 +54,7 @@ Supporting. Volatility: moderate, tied to engine releases (pinned v2.3.1).
 - The top-level key set of a policy. It is derived from the embedded schema's root `properties` and `required`,
   read once lazily with `encoding/json`; there is never a second hand-written list. The derivation relies on the
   root's `additionalProperties: false`; a schema without it has no closed key set and `Validate` then always fails.
-  In v2.3.1 the keys are `version`, `exclude`, `languages`, `analyzers`, `coverage`, `ai`, `coupling`, `layers`,
-  `modules`, `external_systems`, `rules`, `waivers`, `metrics`, `module_review`, `file_class`, `outputs`; only
-  `version` is required. This list is informative; the schema file is the source.
+  In v2.3.1 the root has sixteen properties and requires only `version`; the schema file is the one source.
 - The YAML library: the same single third-party dependency as `wire/settings`
   (`go.yaml.in/yaml/v3` **[default]** until `docs/tech-stack.md` names one). `Modules` uses its node API for line numbers.
 - The baseline and labels files are opaque here. Only their paths and digests are known.

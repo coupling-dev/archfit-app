@@ -1,8 +1,8 @@
 # Documentation
 
-These documents describe the product and its target behavior. The current
-reporter is only a skeleton: valid reports return `501` until provenance
-verification exists.
+These documents describe the product, its design, and how it was built. The
+service is implemented and tested but not deployed; the root
+[README](../README.md) lists what is still missing for a release.
 
 ## Documents
 
