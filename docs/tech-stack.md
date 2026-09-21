@@ -10,18 +10,18 @@ Principle: simple, reliable, predictable. Standard library first. Rows marked
 
 ## Language and build
 
-| Item          | Choice                                                                                              |
-| ------------- | --------------------------------------------------------------------------------------------------- |
-| Language      | Go, version from `go.mod` (1.27). Module path `github.com/alexei-led/archfit-app`.                  |
-| Packages      | One package per module folder under `internal/`. Package name = folder name.                        |
-| Entry point   | `cmd/reporter`: logger, `app.Load`, `app.Run`. Nothing else.                                        |
-| Build         | `CGO_ENABLED=0`, static binary, existing `Dockerfile` (distroless, non-root).                       |
-| Commands      | `make fmt`, `make lint`, `make test`, `make build`; `make all` before pushing.                      |
-| Format, lint  | `gofmt -s`, `goimports -local github.com/alexei-led/archfit-app`, `golangci-lint` v2 defaults.      |
-| Logging       | `log/slog`, JSON to stdout. IDs, digests, outcomes, timings only.                                   |
-| HTTP          | `net/http` with the Go 1.22+ `ServeMux` patterns. No router library.                                |
-| Crypto        | Standard library only: RS256 JWT and JWKS, HMAC-SHA256, AES-GCM cookies, SHA-256 digests.           |
-| Embedded data | `go:embed` for JSON Schemas, the locked manifest, the Anthropic price table, templates, and assets. |
+| Item          | Choice                                                                                                                                                                                                                                                                 |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Language      | Go, version from `go.mod` (1.27). Module path `github.com/alexei-led/archfit-app`.                                                                                                                                                                                     |
+| Packages      | One package per module folder under `internal/`. Package name = folder name.                                                                                                                                                                                           |
+| Entry point   | `cmd/reporter`: logger, `app.Load`, `app.Run`. Nothing else.                                                                                                                                                                                                           |
+| Build         | `CGO_ENABLED=0`, static binary, existing `Dockerfile` (distroless, non-root).                                                                                                                                                                                          |
+| Commands      | `make fmt`, `make lint`, `make test`, `make build`; `make all` before pushing.                                                                                                                                                                                         |
+| Format, lint  | `gofmt -s`, `goimports -local github.com/alexei-led/archfit-app`, `golangci-lint` v2 defaults.                                                                                                                                                                         |
+| Logging       | `log/slog`, JSON to stdout. IDs, digests, outcomes, timings only. No constructor takes a logger: modules log through `slog.Default()` and `app` installs the JSON handler with `slog.SetDefault`. Tests that capture logs swap the default and do not run in parallel. |
+| HTTP          | `net/http` with the Go 1.22+ `ServeMux` patterns. No router library.                                                                                                                                                                                                   |
+| Crypto        | Standard library only: RS256 JWT and JWKS, HMAC-SHA256, AES-GCM cookies, SHA-256 digests.                                                                                                                                                                              |
+| Embedded data | `go:embed` for JSON Schemas, the locked manifest, the Anthropic price table, templates, and assets.                                                                                                                                                                    |
 
 ## Dependencies
 

@@ -206,91 +206,113 @@ alternative is an engine change.
 
 ### Task 12 [Wave 0b]: Implement internal/github/api/ (leaf, calls only wave 0a code or interfaces)
 
-- [ ] read internal/github/api/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/github/api/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/github/api/...` and `golangci-lint run ./internal/github/api/...` — all green before the task is complete
+- [x] read internal/github/api/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/github/api/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/github/api/...` and `golangci-lint run ./internal/github/api/...` — all green before the task is complete
+
+⚠️ internal/github/api: no design findings. Notable internal rules now in its module.md: empty, `.` and `..` path segments are rejected before any request; automatic redirects are disabled and the artifact redirect is followed without credentials; consumers must fake the role interfaces, never `*Client`.
 
 ### Task 13 [Wave 0b]: Implement internal/gate/ingest/ (leaf, calls only wave 0a code or interfaces)
 
-- [ ] read internal/gate/ingest/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/gate/ingest/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/gate/ingest/...` and `golangci-lint run ./internal/gate/ingest/...` — all green before the task is complete
+- [x] read internal/gate/ingest/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/gate/ingest/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/gate/ingest/...` and `golangci-lint run ./internal/gate/ingest/...` — all green before the task is complete
+
+⚠️ internal/gate/ingest: the `X-Archfit-Envelope` header carries the compact envelope JSON verbatim, no base64 — an obligation on archfit-action. A head repository different from the base repository sets `Fork` and `ProblemFork` for every event, not only pull_request. A PR number that GitHub does not know is `envelope_mismatch`, not a retryable error. The `TestPullRequestResolution` row "empty list and no hint" is reachable only through an envelope claiming another event, because `envelope.Decode` ties pull_request fields to the event. Accepted.
 
 ### Task 14 [Wave 0b]: Implement internal/gate/inputs/ (leaf, calls only wave 0a code or interfaces)
 
-- [ ] read internal/gate/inputs/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/gate/inputs/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/gate/inputs/...` and `golangci-lint run ./internal/gate/inputs/...` — all green before the task is complete
+- [x] read internal/gate/inputs/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/gate/inputs/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/gate/inputs/...` and `golangci-lint run ./internal/gate/inputs/...` — all green before the task is complete
+
+⚠️ internal/gate/inputs: `policy.Waivers` is all-or-nothing, so one malformed `expires` zeroes the whole expiry schedule for that policy (the engine still enforces waivers; the App only loses its warning and re-run timing). module.md names "the client's oversize error" but github/api exposes no such sentinel; inputs treats every non-`ErrNotFound` error as fail-closed, which covers it. `entitlementTimeout` is an unexported package variable so the timeout test runs in milliseconds. Accepted.
 
 ### Task 15 [Wave 0b]: Implement internal/gate/verdict/ (leaf, calls only wave 0a code or interfaces)
 
-- [ ] read internal/gate/verdict/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/gate/verdict/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/gate/verdict/...` and `golangci-lint run ./internal/gate/verdict/...` — all green before the task is complete
+- [x] read internal/gate/verdict/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/gate/verdict/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/gate/verdict/...` and `golangci-lint run ./internal/gate/verdict/...` — all green before the task is complete
+
+⚠️ internal/gate/verdict: the `comparable-profile` report fixture copied from wire/report is really a blocked report with a non-comparable gate reference, so its expectation is `failure`, not the `success` the spec row names; the wire parent task (Task 24) must supply healthy and comparable-baseline captures from the real engine and the shared `.expect.json` files, after which verdict's fixtures move there. `TestOriginNeverExempts` sets origin and status in memory because no fixture has them. With a suspended installation and a healthy report, Reasons holds only `subscription_suspended` (the step table is normative; the architecture reason is kept second only for a blocked report). Step 5 fails closed on any unknown Approval value. Accepted.
 
 ### Task 16 [Wave 0b]: Implement internal/gate/feedback/ (leaf, calls only wave 0a code or interfaces)
 
-- [ ] read internal/gate/feedback/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/gate/feedback/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/gate/feedback/...` and `golangci-lint run ./internal/gate/feedback/...` — all green before the task is complete
+- [x] read internal/gate/feedback/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/gate/feedback/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/gate/feedback/...` and `golangci-lint run ./internal/gate/feedback/...` — all green before the task is complete
+
+⚠️ internal/gate/feedback: the spec's truncation order left the validation-commands block unbounded, so the module gives it its own budget (4 096 bytes, 20 commands) [default, in module.md]. Following the spec order literally, a very large findings block drops every agent task before any finding is cut; a fairer split is a design change, left for the owner. "The pending check is unchanged" cannot hold when `CreateComment` is rate-limited, because the gate check is written first; the test asserts never-green and a duplicate-free retry instead. A validation command containing marker sequences or a newline is omitted and counted, never altered. Fixtures are copies of wire/report fixtures until the wire parent task creates the shared folder. Accepted.
 
 ### Task 17 [Wave 0b]: Implement internal/control/account/ (leaf, calls only wave 0a code or interfaces)
 
-- [ ] read internal/control/account/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/control/account/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/control/account/...` and `golangci-lint run ./internal/control/account/...` — all green before the task is complete
+- [x] read internal/control/account/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/control/account/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/control/account/...` and `golangci-lint run ./internal/control/account/...` — all green before the task is complete
+
+⚠️ internal/control/account: `Grant` audit lines reach the JSON log only if `app` calls `slog.SetDefault` before constructing control (tech-stack logging convention). `supportContact` is the PLACEHOLDER `support@archfit.example` (owner input wanted before launch). `Observe(false)` on a missing record writes only the zero Entitlement, so `TestObserveBackfillsMissingRecord` holds for `Observe(true)` only. A failed compensating budget `Add` returns `errors.Join(ErrBudgetExhausted, storeErr)`; consumers must use `errors.Is`. Accepted.
 
 ### Task 18 [Wave 0b]: Implement internal/control/proposal/ (leaf, calls only wave 0a code or interfaces)
 
-- [ ] read internal/control/proposal/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/control/proposal/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/control/proposal/...` and `golangci-lint run ./internal/control/proposal/...` — all green before the task is complete
+- [x] read internal/control/proposal/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/control/proposal/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/control/proposal/...` and `golangci-lint run ./internal/control/proposal/...` — all green before the task is complete
+
+⚠️ internal/control/proposal: no constructor in the design takes a logger, so modules log through `slog.Default()`; `app` must install the JSON logger with `slog.SetDefault` (tests that capture logs cannot run in parallel). `PullByHead` returning not-found with `expectHeadSHA` set is `ErrStale`, not `ErrNotFound` (the Public Contract wins over the test row). With `expectHeadSHA` set on a branch that does not exist yet, `EnsureBranch` still runs first, so an empty `archfit/` branch can be left behind. No timings are logged ("no clock"). Accepted.
 
 ### Task 19 [Wave 0b]: Implement internal/control/onboarding/ (leaf, calls only wave 0a code or interfaces)
 
-- [ ] read internal/control/onboarding/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/control/onboarding/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/control/onboarding/...` and `golangci-lint run ./internal/control/onboarding/...` — all green before the task is complete
+- [x] read internal/control/onboarding/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/control/onboarding/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/control/onboarding/...` and `golangci-lint run ./internal/control/onboarding/...` — all green before the task is complete
+
+⚠️ internal/control/onboarding: the generated workflow uses `alexei-led/archfit-action@<ActionRef>` with inputs `endpoint`, `audience`, `engine-version`, `image-digest`, `discover` — names chosen here because nothing pins them; archfit-action must adopt them (same release obligation as the placeholder manifest values). `Consents` exposes only `Has`, so the PR body shows the consent kind and the time it was checked, not the recorded consent time. `StartManaged` reuses an open customer-mode onboarding PR as-is, so `data_mode: customer` stays on the branch while a managed job runs (spec-mandated; owner decision wanted). "already onboarded" and "busy" are unexported errors the UI can match only by text; exporting sentinels is a contract change for the ui parent task to request if needed. The module's tests use hand fakes for Proposals and Consents, because the real ones would import packages outside its Integrations. Accepted.
 
 ### Task 20 [Wave 0b]: Implement internal/control/assist/anthropic/ (leaf, calls only wave 0a code or interfaces)
 
-- [ ] read internal/control/assist/anthropic/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/control/assist/anthropic/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/control/assist/anthropic/...` and `golangci-lint run ./internal/control/assist/anthropic/...` — all green before the task is complete
+- [x] read internal/control/assist/anthropic/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/control/assist/anthropic/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/control/assist/anthropic/...` and `golangci-lint run ./internal/control/assist/anthropic/...` — all green before the task is complete
+
+⚠️ internal/control/assist/anthropic: the embedded price table (`prices.json`: sonnet 2/10, opus 5/25 micro-USD per input/output token) comes from the design document, not from a checked vendor price list; verify it and the default model ID against Anthropic's current pricing before managed LLM is enabled, because the USD 20 hard cap is computed from it. An empty `Prompt.System` is sent as `"system": ""`; if the live API rejects that, module.md changes to "omit when empty" (one-line `omitempty`). Neither blocks the build; both block enabling managed LLM.
 
 ### Task 21 [Wave 0b]: Implement internal/control/ui/session/ (leaf, calls only wave 0a code or interfaces)
 
-- [ ] read internal/control/ui/session/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/control/ui/session/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/control/ui/session/...` and `golangci-lint run ./internal/control/ui/session/...` — all green before the task is complete
+- [x] read internal/control/ui/session/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/control/ui/session/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/control/ui/session/...` and `golangci-lint run ./internal/control/ui/session/...` — all green before the task is complete
+
+⚠️ internal/control/ui/session: no design findings. Redirects set Location and 303 by hand, because `http.Redirect` writes an HTML body that would repeat the OAuth state. Keeping the user token out of wrapped GitHub errors is github/api's responsibility (its errors carry no URL or token).
 
 ### Task 22 [Wave 0b]: Implement internal/control/ui/graph/ (leaf, calls only wave 0a code or interfaces)
 
-- [ ] read internal/control/ui/graph/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/control/ui/graph/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/control/ui/graph/...` and `golangci-lint run ./internal/control/ui/graph/...` — all green before the task is complete
+- [x] read internal/control/ui/graph/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/control/ui/graph/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/control/ui/graph/...` and `golangci-lint run ./internal/control/ui/graph/...` — all green before the task is complete
+
+⚠️ internal/control/ui/graph: no wire fixture has the shape the spec scenarios name (one forbidden dependency observed twice plus one allowed dependency; a healthy report with its own policy file), so the tests extend the real capture in Go; the wire parent task (Task 24) should add such fixtures to the shared corpus. `Build`'s second parameter is named `policyText` because `policy` collides with the imported package; the signature is unchanged for callers. Accepted.
 
 ### Task 23 [Wave 0c]: Implement internal/gate/sweep/ (leaf, calls wave 0b code)
 

@@ -1,3 +1,6 @@
 # Fractal design docs: a contract marker must sit directly above its code fence.
 # Prettier inserts a blank line there, which the module.md validator rejects.
 internal/**/module.md
+
+# Test fixtures and golden files are compared byte for byte; never reformat them.
+**/testdata/**
