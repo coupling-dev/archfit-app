@@ -4,6 +4,8 @@ package account
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/store"
@@ -73,5 +75,16 @@ type Budget interface {
 }
 
 func New(s store.Store) (Account, Consents, Budget) {
-	return nil, nil, nil
+	return newWithLogger(s, slog.Default())
+}
+
+func newWithLogger(s store.Store, log *slog.Logger) (Account, Consents, Budget) {
+	return &accounts{s: s, log: log}, &consents{s: s}, &budget{s: s, log: log}
+}
+
+func tenantOf(installationID int64) (store.Tenant, error) {
+	if installationID <= 0 {
+		return 0, fmt.Errorf("account: invalid installation ID %d", installationID)
+	}
+	return store.Tenant(installationID), nil
 }
