@@ -30,8 +30,3 @@ type Store interface {
 	// Used only by the sweep to forget installations whose uninstall webhook was missed.
 	Tenants(ctx context.Context) ([]Tenant, error)
 }
-
-// NewMemory returns an in-process Store for tests and local runs. Data is lost on exit.
-func NewMemory() Store {
-	return nil
-}
