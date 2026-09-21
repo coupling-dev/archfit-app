@@ -49,5 +49,5 @@ type Proposals interface {
 var ErrStale = errors.New("proposal: branch head changed")
 
 func New(gh api.Changes, pulls api.Pulls) Proposals {
-	return nil
+	return &service{gh: gh, pulls: pulls}
 }
