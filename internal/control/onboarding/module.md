@@ -111,6 +111,17 @@ type Deps struct {
 func New(d Deps) Onboarding
 ```
 
+```go
+// ErrAlreadyOnboarded is returned by StartCustomer and StartManaged when Progress is past StageInstalled.
+var ErrAlreadyOnboarded = errors.New("onboarding: already onboarded")
+
+// ErrBusy is returned by StartManaged when this process already runs its maximum of managed jobs.
+var ErrBusy = errors.New("onboarding: busy, retry later")
+```
+
+`ErrAlreadyOnboarded` and `ErrBusy` are sentinels for `errors.Is`; nothing was written when either is returned. The
+caller shows them as a state of the repository (`control/ui`: `409`), not as an upstream failure.
+
 `ErrNoSandbox` is the sentinel for "managed discovery is not available". `Deps.Sandbox == nil` (or `Deps.Tokens == nil`)
 means the default Sandbox: `StartManaged` then returns `ErrNoSandbox` before it opens anything.
 `Deps.BaseURL` is the App URL; it is written into the generated workflow as upload endpoint and OIDC audience.
@@ -140,7 +151,7 @@ parse counts as stalled.
 ### PR 1 content (StartCustomer and StartManaged)
 
 - `owners` must be non-empty and pass `settings.Parse(settings.Render(s))`; otherwise error, no GitHub write.
-- If `Progress` is past `installed` → error "already onboarded"; nothing is written.
+- If `Progress` is past `installed` → `ErrAlreadyOnboarded`; nothing is written.
 - `.archfit-app.yaml` = `settings.Render(Settings{Version: 1, Owners: owners, Gate: GateAdvisory, Workflow: <workflow path>, DataMode: DataCustomer | DataManaged})`.
 - Workflow file from the template with `manifest.Current()`: Action pinned to `ActionRef` (commit SHA), `EngineVersion`,
   `ImageDigest`; triggers `pull_request`, `push` to `r.DefaultBranch`, `workflow_dispatch` with boolean input `discover`;
@@ -189,7 +200,7 @@ measurement evidence. The handler never creates or updates a check run or commen
 1. `Consents.Has(ctx, r.InstallationID, ConsentSourceProcessing)` false → `ErrNoConsent`. Nothing else happens.
 2. `Deps.Sandbox == nil` or `Deps.Tokens == nil` → `ErrNoSandbox`.
 3. The onboarding PR is open and its marker says `running` and is younger than 11 min **[default]** → return its `Draft`; no second job
-   (holds across instances). Two jobs **[default]** already running in this process → error "busy, retry later".
+   (holds across instances). Two jobs **[default]** already running in this process → `ErrBusy`.
 4. Open draft exists (`Get`) → reuse it; else PR 1 content with `DataManaged`. `SetBody`: "Managed discovery running since `<Now()>`"
    plus the marker line `<!-- archfit:managed state=running started=<RFC 3339 UTC> -->`.
 5. Start one goroutine with `context.WithTimeout(context.Background(), 10*time.Minute)` **[default]** (not the request context):
@@ -197,7 +208,8 @@ measurement evidence. The handler never creates or updates a check run or commen
    `Sandbox.Discover(DiscoveryJob{CloneURL: "https://github.com/<FullName>.git", Token, Ref: r.DefaultBranch, ImageDigest: manifest.Current().ImageDigest, Timeout: 10 min})`.
 6. Success: run the draft checks of the discovery upload on `DraftPolicy` — the same function, so size, shape, `policy.Validate` and
    zero waivers; a result that fails any of them ends in the failure state `invalid_draft` of step 7 with no policy commit. Else `Propose` the policy onto the same branch;
-   `SetBody` with marker `state=complete`, "discovery complete", the consent record reference (kind, time), and up to 20 **[default]** `Notes` that pass the line checks.
+   `SetBody` with marker `state=complete`, "discovery complete", the consent reference (kind, and the time step 1 CHECKED the
+   consent with `Deps.Now`, worded "checked at": `Consents` exposes only `Has`, so the time the consent was recorded is not available here), and up to 20 **[default]** `Notes` that pass the line checks.
 7. Failure: `SetBody` with marker `state=failed code=<code>` and one code — `token_error`, `sandbox_unavailable`, `timeout`, `sandbox_failed`, `invalid_draft`, `github_error` — and "retry from the Archfit UI".
    The sandbox error text is never copied anywhere. Return the `Draft` from step 4 immediately; the job outcome is read through `Progress`.
 
@@ -787,6 +799,18 @@ type TokenSource interface {
 - The sandbox token is minted per job, after the consent check, passed only in `DiscoveryJob.Token`, and never stored or logged.
 - Failure is always a visible, resumable state: a code in the PR body plus the `Progress` diagnostic. Sandbox error text is never shown or logged.
 - Logs: installation ID, repository ID, run ID, digest, PR number, stage, outcome, timings. Never payload bytes, paths, notes, owners' file content or tokens.
+- Declared restatement: `CloneURL` is built from the literal host `https://github.com/`. `internal/github` owns the
+  knowledge of GitHub hosts and publishes no URL builder; `control/assist` and `control/ui` restate the same host for
+  links. On drift the sandbox clones from the wrong host and the job ends in `sandbox_failed`; nothing is published.
+  Removal trigger: GitHub Enterprise host support, when `internal/github` publishes the clone base URL.
+- Declared restatement: the check name `archfit/state` is a literal here (`Progress` reads it). `internal/gate`
+  (feedback) owns and publishes the check names but exports no constant, and control imports only the gate façade.
+  `control/ui` restates `archfit/state` and `archfit/gate` too. On drift `Progress` never reaches `report_received`; no
+  gate result changes. Removal trigger: a rename of a check, at which point gate exports the names.
+- Declared restatement: the 1 MB size limit of a discovery draft equals the input limit of `wire/policy`
+  (`Validate`, `Waivers` refuse more than 1 MiB), which owns it and exports no constant. The copy exists to answer
+  `413 discovery_too_large` instead of `400`. On drift a draft between the two limits gets the other status; it is
+  refused either way. Removal trigger: wire/policy exports its limit, or the two limits are meant to differ.
 - Standard library only (`text/template`, `embed`, `unicode/utf8`, `net/http`, `encoding/json`).
 
 ## Test Specification
@@ -844,10 +868,10 @@ Test doubles only at boundaries: in-memory GitHub roles (`Repos`, `Actions`, `Ch
   **Expected behavior**: body marker `state=failed` with codes `token_error`, `sandbox_unavailable`, `sandbox_failed`, `timeout`, `invalid_draft` ×2, `github_error`; no policy commit; the seeded string appears in no body or log; context is cancelled at the timeout; a retry reuses the same PR (T19 resumable state).
 - **Test name**: `TestManagedJobLimits`
   **Scenario**: `StartManaged` twice for one repository while the marker says `running` (second call on a fresh `Onboarding` value); a third repository while two jobs run; request context cancelled right after the call.
-  **Expected behavior**: one sandbox call per repository; third gets "busy"; the job survives request cancellation.
+  **Expected behavior**: one sandbox call per repository; third gets `ErrBusy`; the job survives request cancellation.
 - **Test name**: `TestAlreadyOnboardedRefusesStart`
   **Scenario**: settings and workflow already on the default branch; call both start methods.
-  **Expected behavior**: error; no `Propose`.
+  **Expected behavior**: `ErrAlreadyOnboarded` from both; no `Propose`.
 - **Test name**: `TestDiscoveryNeverTouchesChecks`
   **Scenario**: run every handler path against recording fakes.
   **Expected behavior**: `CreateCheckRun`, `UpdateCheckRun`, `Rerun`, `Dispatch` are never called.

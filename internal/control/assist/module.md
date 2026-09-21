@@ -33,7 +33,7 @@ workflow inputs will be tuned with every pilot. The `Provider` seam itself is st
 - The prompt: system text, how schema and policy are framed, the instruction to answer with one complete YAML file.
 - The permitted-context rule and its limits: policy at most 16 KB **[default]**, instruction at most 2 000 bytes **[default]**,
   answer at most 64 KB **[default]**, `MaxTokens` 8 192 **[default]**.
-- Output normalization and validation (code-fence stripping, UTF-8, YAML syntax, "must differ").
+- Output normalization and validation (code-fence stripping, UTF-8, `policy.Validate`, "must differ").
 - The order of checks, chosen so that nothing is spent before every free check has passed.
 - The reservation protocol against `Budget` and the rule that settlement survives request cancellation.
 - The in-flight guard: one managed request per repository and branch at a time **[default]**.
@@ -117,9 +117,11 @@ sending). Assist always settles with that value, so the monthly cap cannot be ex
 
 All are sentinels for `errors.Is` **[default names]**. Messages carry no user text.
 
-- `ErrInvalidRequest` — unknown mode; empty or oversized instruction; branch not under `archfit/` or equal to the
-  default branch; `HeadSHA` not 40 hex characters; empty `By`.
-- `ErrNoDraft` — the branch has no open draft PR (`DraftNone`, `DraftMerged`, `DraftClosed`) or no policy file.
+- `ErrInvalidRequest` — unknown mode; empty or oversized instruction; a branch that `proposal.ValidBranch` refuses or
+  that equals the default branch; empty `By`; and, once the draft is known to be open, a `HeadSHA` that
+  `proposal.ValidHeadSHA` refuses.
+- `ErrNoDraft` — the branch has no open draft PR (`DraftNone`, `DraftMerged`, `DraftClosed`) or no policy file. It
+  wins over the `HeadSHA` shape: a caller that has no draft yet has no head to send, and sends `""`.
 - `ErrStale` (owned by `proposal`, passed through) — the branch head is not `Request.HeadSHA`. Nothing was written.
 - `ErrManagedUnavailable` — managed mode and `Deps.Provider` is nil.
 - `ErrNoConsent` (owned by `account`, returned by assist's guard) — managed mode and `Consents.Has(ConsentManagedLLM)` is false.
@@ -174,7 +176,8 @@ Managed: `Mode`, and `Draft` as returned by `Proposals.Propose` (new `HeadSHA`).
 - **Shared knowledge**: assist calls `Consents.Has(installationID, ConsentManagedLLM)`, `Budget.Reserve` and
   `Budget.Settle` only. `Has` is false on any error, so a Store outage means "no consent, no call".
   `ErrNoConsent` is the sentinel account owns for that guard; assist returns it when `Has` is false.
-  `ErrBudgetExhausted` is the sentinel `Reserve` returns when the cap would be exceeded.
+  `ErrBudgetExhausted` is the sentinel `Reserve` returns when the cap would be exceeded. `Reserve` and `Settle` of one
+  request carry the same `now`: account keys the counter by the UTC month of `now`.
 
 <!-- contract: Consents, Consent, ConsentKind, ErrNoConsent — restated from internal/control/account/module.md -->
 ```go
@@ -226,6 +229,8 @@ type Budget interface {
 - **Shared knowledge**: `Get` to read the draft and its head; `Propose` with `expectHeadSHA = Request.HeadSHA` to write.
   Assist never calls `Ready` or `SetBody`. `ErrStale` is the sentinel meaning the branch moved. `Changes` is restated
   below with github/api; `Pulls` is the github/api pull-request role interface that only proposal's constructor takes.
+  proposal owns the branch-name and head-SHA rules: assist calls `ValidBranch` and `ValidHeadSHA` and holds no pattern
+  of its own.
 
 <!-- contract: Proposals, Change, Draft, DraftState — restated from internal/control/proposal/module.md -->
 ```go
@@ -273,6 +278,17 @@ type Proposals interface {
 var ErrStale = errors.New("proposal: branch head changed")
 
 func New(gh Changes, pulls Pulls) Proposals
+```
+
+<!-- contract: ValidBranch, ValidHeadSHA — restated from internal/control/proposal/module.md -->
+```go
+// ValidBranch reports whether branch is a legal draft branch name: it matches
+// ^archfit/[A-Za-z0-9._/-]+$, has no empty, "." or ".." path segment (so no "//" and no trailing "/").
+func ValidBranch(branch string) bool
+
+// ValidHeadSHA reports whether sha is a full commit SHA: exactly 40 lowercase hex characters.
+// "" is not valid; a caller whose own contract allows "no draft yet" checks for "" itself.
+func ValidHeadSHA(sha string) bool
 ```
 
 ### internal/github/api
@@ -489,11 +505,13 @@ works unchanged.
 
 ### Checks common to both modes, in order
 
-1. Validate the request (see `ErrInvalidRequest`). Branch pattern `^archfit/[A-Za-z0-9._/-]+$` **[default]** with no empty,
-   `.` or `..` path segment (the pattern alone accepts `archfit/../x`), never the default branch.
+1. Validate mode, instruction, branch and `By` (see `ErrInvalidRequest`). The branch must pass `proposal.ValidBranch`
+   and must not be the default branch. No dependency is called for a request that fails here.
 2. Managed only, before reading the draft branch: `Provider != nil`, then `Consents.Has`, then settings at the default branch.
-3. `Proposals.Get(Repo.RepoRef, Branch)`: state must be `DraftOpen` or `DraftInReview`, else `ErrNoDraft`;
-   `Draft.HeadSHA != Request.HeadSHA` is `ErrStale` now, before anything is spent.
+3. `Proposals.Get(Repo.RepoRef, Branch)`: state must be `DraftOpen` or `DraftInReview`, else `ErrNoDraft`; then
+   `proposal.ValidHeadSHA(Request.HeadSHA)`, else `ErrInvalidRequest`; then `Draft.HeadSHA != Request.HeadSHA` is
+   `ErrStale` now, before anything is spent. The shape check comes after the state check so that a request without a
+   draft, which carries an empty `HeadSHA`, gets `ErrNoDraft`.
 
 ### Managed flow
 
@@ -502,8 +520,10 @@ works unchanged.
 3. Build the prompt. System: fixed instructions ("answer with the complete updated YAML file and nothing else") plus the
    whole `policy.Schema()` document, which carries the rule descriptions **[default]**. User: the instruction, then the
    policy between fixed delimiters. `MaxTokens` 8 192 **[default]**.
-4. `max = Provider.MaxCostMicroUSD(prompt)`; `Budget.Reserve(max, now)`. Any error stops here; no call is made.
-5. `Provider.Complete` under a 150 second deadline **[default]**. Then always `Budget.Settle(max, completion.CostMicroUSD, now)`,
+4. `max = Provider.MaxCostMicroUSD(prompt)`; read the clock once: `now`; `Budget.Reserve(max, now)`. Any error stops
+   here; no call is made.
+5. `Provider.Complete` under a 150 second deadline **[default]**. Then always `Budget.Settle(max, completion.CostMicroUSD, now)`
+   with the same `now` value as step 4, never a second clock read (see Constraints),
    in a context detached from request cancellation with its own 5 second timeout **[default]**. A failed settle is logged and keeps
    the full reservation: the error is on the safe side of the cap.
 6. Normalize: trim; strip one surrounding Markdown code fence; end with one newline. Validate: UTF-8, no NUL, at most
@@ -550,10 +570,19 @@ customer's environment toward Archfit, and no Archfit money is spent. The workfl
 - The installation ID comes from `Request.Repo`, which the caller obtained from an authorized session. Assist takes no ID from text.
 - Failure isolation: any failure here (provider, budget, Store, GitHub) returns an error to the caller and changes
   nothing else. Editing, schema completion, checks and the gate do not depend on assist.
+- One budget instant per request: the clock is read once before `Reserve`, and `Settle` gets that same value, as
+  account's Operation rules require. The provider call between them can take 150 seconds. With two clock reads a call
+  that crosses a UTC month end would leave the whole reservation in the old month and book a negative delta in the new
+  month, which raises the hard cap. The clock reads for the logged duration are separate and never reach the budget.
 - Bounded work: one provider call per request (the provider may retry once), 150 second deadline **[default]**, one request per
   repository and branch at a time, cancellation honored at every step except settlement.
 - Logs: installation ID, repository ID, mode, user ID or login, outcome, policy and instruction byte lengths, cost,
   duration. No instruction text, no policy text, no answer text.
+- Declared restatement: the customer-mode `RunURL` is built from the literal host `https://github.com/` here.
+  `internal/github` owns the knowledge of GitHub hosts and publishes no URL builder. Also restated in
+  `control/ui` (runs page, pulls and commits links) and `control/onboarding` (`CloneURL`). On drift the link opens the
+  wrong host; no write and no check depends on it. Removal trigger: GitHub Enterprise host support, when
+  `internal/github` publishes the web base URL.
 - The in-flight guard is per process. With several replicas a second request can run in parallel; the head binding
   still prevents a double write and the budget still bounds cost. Upgrade trigger: more than one replica in production.
 
@@ -567,7 +596,14 @@ roles at their interfaces. The clock is injected. No test calls a real model.
 - **Test name**: `TestValidateRequest`
   **Scenario**: table: empty instruction; 2 001-byte instruction; branch `main`; branch equal to the default branch;
   branch `archfit/../x`; branch with a space; 39-character SHA; upper-case SHA; empty `By`; unknown mode; a valid request.
-  **Expected behavior**: `ErrInvalidRequest` for all but the last; no dependency is called for invalid rows.
+  **Expected behavior**: `ErrInvalidRequest` for all but the last; no dependency is called for invalid rows, except
+  that the two SHA rows have read settings and the draft (`Consents.Has`, `Repos.File`, `Proposals.Get`) and nothing else.
+- **Test name**: `TestBranchAndHeadRulesAreProposals`
+  **Scenario**: table of branches and head SHAs on an open draft, among them `archfit/./x`, `archfit/a//b`, `archfit/a/` and a 7-character SHA.
+  **Expected behavior**: `Propose` answers `ErrInvalidRequest` exactly when `proposal.ValidBranch` or `proposal.ValidHeadSHA` is false.
+- **Test name**: `TestNoDraftWinsOverHeadSHA`
+  **Scenario**: both modes; the branch has no pull request, a merged one, a closed one; `HeadSHA` is `""`.
+  **Expected behavior**: `ErrNoDraft` in every row, never `ErrInvalidRequest`; nothing is reserved, dispatched or written.
 - **Test name**: `TestPromptContainsOnlyPermittedContext` (T20)
   **Scenario**: build the prompt for a policy, an instruction and a schema; the fakes also hold a report, findings and
   source-like strings that assist could reach if it tried.
@@ -589,6 +625,9 @@ roles at their interfaces. The clock is injected. No test calls a real model.
   no draft; merged draft; policy missing; policy of 17 KB.
   **Expected behavior**: `ErrManagedUnavailable`, `ErrNoConsent` (twice), `ErrNotManaged` (four times), `ErrNoDraft` (three
   times), `ErrPolicyTooLarge`; in every row `Reserve`, `Complete` and `Propose` are never called.
+- **Test name**: `TestManagedPolicyAtTheLimitIsAccepted`
+  **Scenario**: the draft policy is exactly 16 KB (16 384 bytes).
+  **Expected behavior**: the request succeeds; `ErrPolicyTooLarge` starts at 16 385 bytes.
 - **Test name**: `TestCustomerProposeDispatchesWorkflow`
   **Scenario**: customer mode on a valid draft; then the same with `Dispatch` returning `ErrNotFound`.
   **Expected behavior**: one `Dispatch` of `.github/workflows/archfit-assist.yaml` on the branch with inputs `branch`,
@@ -604,6 +643,11 @@ roles at their interfaces. The clock is injected. No test calls a real model.
   provider times out with cost = max; provider succeeds but the answer is invalid; request context cancelled during `Complete`; `Settle` fails.
   **Expected behavior**: no provider call in the first two rows; in all others exactly one `Settle(max, returned cost)`,
   also after cancellation; a failed settle surfaces only in the log; `Propose` is never called in any row.
+- **Test name**: `TestSettleUsesTheReserveInstant`
+  **Scenario**: the fake clock stands at 30 September 23:59:30 UTC; the provider's `Complete` advances it by 60 seconds
+  into October; the fake `Budget` records every `now` and keeps one counter per UTC month.
+  **Expected behavior**: `Reserve` and `Settle` carry the same instant; the September counter holds the actual cost;
+  no October counter exists.
 - **Test name**: `TestRawOutputNeverLeaves` (T20)
   **Scenario**: the provider returns recognizable text: once valid YAML, once prose, once an oversize blob; capturing
   logger; recording GitHub fakes.

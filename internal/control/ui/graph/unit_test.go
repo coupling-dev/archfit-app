@@ -135,6 +135,12 @@ func TestPermittedFollowsActiveGateFindings(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if len(tt.findings) == 1 {
+				f := tt.findings[0]
+				if onPair := f.Edge.From.Module == "api" && f.Edge.To.Module == "db"; onPair && tt.permitted == f.Active() {
+					t.Fatalf("the table disagrees with report.Finding.Active() = %v", f.Active())
+				}
+			}
 			rep := reportFor(threeModules, []report.Seam{seam("api", "db", 1)}, tt.findings)
 			got := Build(rep, []byte(threeModules))
 			for _, l := range got.Links {

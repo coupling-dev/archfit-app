@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -20,11 +19,9 @@ const (
 	modeCustomer = "customer"
 	modeManaged  = "managed"
 
-	maxOwners = 100
+	// probeWorkflow only completes the settings document that checks the owners; it is never written.
+	probeWorkflow = ".github/workflows/probe.yaml"
 )
-
-// A GitHub login, or "org/team-slug".
-var ownerPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:/[A-Za-z0-9][A-Za-z0-9._-]{0,99})?$`)
 
 // stageOrder is the onboarding path; discovery needs the workflow on the default branch.
 var stageOrder = []onboarding.Stage{
@@ -77,21 +74,18 @@ func (s *server) status(w http.ResponseWriter, r *http.Request, sc scope) {
 	s.render(w, r, http.StatusOK, "status", s.newPage(r, sc, sc.repo.FullName, body))
 }
 
-// parseOwners reads one owner per line; blank lines are skipped, anything malformed refuses the whole form.
+// parseOwners reads one owner per line; blank lines are skipped. wire/settings owns the owner rule, so the
+// list is checked the way onboarding checks it. The wording is fixed: Parse's error text is never shown.
 func parseOwners(text string) ([]string, error) {
 	var owners []string
 	for line := range strings.Lines(text) {
-		owner := strings.TrimSpace(line)
-		if owner == "" {
-			continue
+		if owner := strings.TrimSpace(line); owner != "" {
+			owners = append(owners, owner)
 		}
-		if !ownerPattern.MatchString(owner) {
-			return nil, invalid("Owners are GitHub logins or org/team-slug, one per line.")
-		}
-		owners = append(owners, owner)
 	}
-	if len(owners) == 0 || len(owners) > maxOwners {
-		return nil, invalid("Name at least one owner, one per line.")
+	probe := settings.Settings{Version: 1, Owners: owners, Gate: settings.GateAdvisory, Workflow: probeWorkflow, DataMode: settings.DataCustomer}
+	if _, err := settings.Parse(settings.Render(probe)); err != nil {
+		return nil, invalid("Name at least one owner. Owners are GitHub logins or org/team-slug, one per line, each named once.")
 	}
 	return owners, nil
 }

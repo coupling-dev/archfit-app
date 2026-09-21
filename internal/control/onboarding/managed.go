@@ -34,7 +34,7 @@ func (s *service) StartManaged(ctx context.Context, r api.Repo, owners []string)
 		return proposal.Draft{}, err
 	}
 	if st.stage != StageInstalled {
-		return proposal.Draft{}, errAlreadyOnboarded
+		return proposal.Draft{}, ErrAlreadyOnboarded
 	}
 	now := s.now()
 	if m, found := parseMarker(st.pull.Body); st.draft != nil && found && m.running(now) {
@@ -44,7 +44,7 @@ func (s *service) StartManaged(ctx context.Context, r api.Repo, owners []string)
 	select {
 	case s.slots <- struct{}{}:
 	default:
-		return proposal.Draft{}, errBusy
+		return proposal.Draft{}, ErrBusy
 	}
 	draft, err := s.openManaged(ctx, r, owners, st.draft, now)
 	if err != nil {

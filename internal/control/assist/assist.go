@@ -150,6 +150,10 @@ func (s *service) openDraft(ctx context.Context, r Request) (proposal.Draft, err
 	if draft.State != proposal.DraftOpen && draft.State != proposal.DraftInReview {
 		return proposal.Draft{}, fmt.Errorf("%w: state %s", ErrNoDraft, draft.State)
 	}
+	// After the state check: a caller without a draft has no head to send and must get ErrNoDraft.
+	if !proposal.ValidHeadSHA(r.HeadSHA) {
+		return proposal.Draft{}, fmt.Errorf("%w: head_sha", ErrInvalidRequest)
+	}
 	if draft.HeadSHA != r.HeadSHA {
 		return proposal.Draft{}, fmt.Errorf("assist: %w", proposal.ErrStale)
 	}
@@ -223,7 +227,10 @@ func (s *service) managed(ctx context.Context, r Request, st *stats) (Result, er
 // the cost the provider reports, whatever happened to the call or to the request.
 func (s *service) complete(ctx context.Context, p Prompt, st *stats) (string, error) {
 	reserved := s.provider.MaxCostMicroUSD(p)
-	if err := s.budget.Reserve(ctx, reserved, s.now()); err != nil {
+	// One instant for Reserve and Settle: account keys the counter by the UTC month of now, and a
+	// second read after the provider call could land in the next month.
+	now := s.now()
+	if err := s.budget.Reserve(ctx, reserved, now); err != nil {
 		return "", fmt.Errorf("assist: reserve budget: %w", err)
 	}
 
@@ -234,7 +241,7 @@ func (s *service) complete(ctx context.Context, p Prompt, st *stats) (string, er
 
 	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), settleTimeout)
 	defer cancel()
-	if err := s.budget.Settle(settleCtx, reserved, completion.CostMicroUSD, s.now()); err != nil {
+	if err := s.budget.Settle(settleCtx, reserved, completion.CostMicroUSD, now); err != nil {
 		// The full reservation stays booked: the error is on the safe side of the cap.
 		slog.Default().ErrorContext(settleCtx, "assist: settle budget failed",
 			"reserved_micro_usd", reserved, "actual_micro_usd", completion.CostMicroUSD, "error", err)

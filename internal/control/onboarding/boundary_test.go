@@ -193,8 +193,8 @@ func TestManagedJobLimits(t *testing.T) {
 	receive(t, f.sandbox.started)
 
 	_, err = f.svc.StartManaged(context.Background(), repoC, owners)
-	if err == nil || !strings.Contains(err.Error(), "busy") {
-		t.Errorf("third repository: err = %v, want busy", err)
+	if !errors.Is(err, ErrBusy) {
+		t.Errorf("third repository: err = %v, want ErrBusy", err)
 	}
 	if n := f.hub.prCount(repoC, ""); n != 0 {
 		t.Errorf("busy start opened %d pull requests", n)
@@ -233,8 +233,8 @@ func TestAlreadyOnboardedRefusesStart(t *testing.T) {
 	_, errManaged := f.svc.StartManaged(ctx, f.repo, owners)
 	f.svc.jobs.Wait()
 	for _, err := range []error{errCustomer, errManaged} {
-		if err == nil || !strings.Contains(err.Error(), "already onboarded") {
-			t.Errorf("err = %v, want already onboarded", err)
+		if !errors.Is(err, ErrAlreadyOnboarded) {
+			t.Errorf("err = %v, want ErrAlreadyOnboarded", err)
 		}
 	}
 	if f.hub.count("Propose") != 0 || f.hub.count("SetBody") != 0 || len(f.sandbox.calls()) != 0 {

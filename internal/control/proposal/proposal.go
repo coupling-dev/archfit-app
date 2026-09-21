@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"regexp"
 	"strings"
-	"unicode"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
 )
@@ -15,6 +15,11 @@ import (
 const (
 	branchPrefix = "archfit/"
 	pullOpen     = "open"
+)
+
+var (
+	branchPattern  = regexp.MustCompile(`^archfit/[A-Za-z0-9._/-]+$`)
+	headSHAPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 )
 
 type service struct {
@@ -106,10 +111,8 @@ func validate(c Change) error {
 		return errors.New("proposal: invalid change: installation ID must be positive")
 	case !ok || owner == "" || name == "" || strings.Contains(name, "/"):
 		return errors.New("proposal: invalid change: repository must be owner/name")
-	case !strings.HasPrefix(c.Branch, branchPrefix) || c.Branch == branchPrefix:
-		return errors.New("proposal: invalid change: branch must start with " + branchPrefix)
-	case strings.Contains(c.Branch, "..") || strings.ContainsFunc(c.Branch, invalidBranchRune):
-		return errors.New("proposal: invalid change: branch has .., a space or a control character")
+	case !ValidBranch(c.Branch):
+		return errors.New("proposal: invalid change: branch must be a plain name under " + branchPrefix)
 	case c.Base == "":
 		return errors.New("proposal: invalid change: base is empty")
 	case c.Branch == c.Base:
@@ -133,10 +136,6 @@ func validate(c Change) error {
 		seen[f.Path] = true
 	}
 	return nil
-}
-
-func invalidBranchRune(r rune) bool {
-	return r == ' ' || unicode.IsControl(r)
 }
 
 // logOutcome logs identifiers and an outcome class only. Error text stays out: a counterpart error

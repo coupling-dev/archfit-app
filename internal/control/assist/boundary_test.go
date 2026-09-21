@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
 	"github.com/alexei-led/archfit-app/internal/wire/policy"
@@ -91,6 +93,38 @@ func TestBudgetProtocol(t *testing.T) {
 				t.Errorf("Proposals.Propose called %d times, want 0", fx.proposals.attemptCount())
 			}
 		})
+	}
+}
+
+func TestSettleUsesTheReserveInstant(t *testing.T) {
+	t.Parallel()
+	var mu sync.Mutex
+	clock := time.Date(2026, 9, 30, 23, 59, 30, 0, time.UTC)
+	fx := newFixture()
+	fx.now = func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		return clock
+	}
+	fx.provider.complete = func(context.Context, Prompt) (Completion, error) {
+		mu.Lock()
+		clock = clock.Add(time.Minute)
+		mu.Unlock()
+		return Completion{Text: editedYAML, CostMicroUSD: testActualCost}, nil
+	}
+
+	if _, err := fx.assist().Propose(context.Background(), ModeManaged, validRequest()); err != nil {
+		t.Fatalf("Propose() error = %v", err)
+	}
+
+	if len(fx.budget.times) != 2 || !fx.budget.times[0].Equal(fx.budget.times[1]) {
+		t.Fatalf("budget instants = %v, want Reserve and Settle at the same instant", fx.budget.times)
+	}
+	if got := fx.budget.months["2026-09"]; got != testActualCost {
+		t.Errorf("September counter = %d, want the actual cost %d", got, testActualCost)
+	}
+	if got, touched := fx.budget.months["2026-10"]; touched {
+		t.Errorf("October counter = %d, want it untouched", got)
 	}
 }
 

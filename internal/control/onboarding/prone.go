@@ -27,7 +27,7 @@ func (s *service) StartCustomer(ctx context.Context, r api.Repo, owners []string
 		return proposal.Draft{}, err
 	}
 	if st.stage != StageInstalled {
-		return proposal.Draft{}, errAlreadyOnboarded
+		return proposal.Draft{}, ErrAlreadyOnboarded
 	}
 	return s.proposeOnboarding(ctx, r, set)
 }

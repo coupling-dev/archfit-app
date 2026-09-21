@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alexei-led/archfit-app/internal/control/proposal"
 	"github.com/alexei-led/archfit-app/internal/wire/policy"
 )
 
@@ -17,27 +18,28 @@ func TestValidateRequest(t *testing.T) {
 		return r
 	}
 	tests := []struct {
-		name    string
-		mode    Mode
-		req     Request
-		wantErr bool
+		name       string
+		mode       Mode
+		req        Request
+		wantErr    bool
+		readsDraft bool
 	}{
-		{"empty instruction", ModeManaged, edit(func(r *Request) { r.Instruction = "" }), true},
-		{"2001-byte instruction", ModeManaged, edit(func(r *Request) { r.Instruction = strings.Repeat("x", 2001) }), true},
-		{"branch main", ModeManaged, edit(func(r *Request) { r.Branch = "main" }), true},
+		{"empty instruction", ModeManaged, edit(func(r *Request) { r.Instruction = "" }), true, false},
+		{"2001-byte instruction", ModeManaged, edit(func(r *Request) { r.Instruction = strings.Repeat("x", 2001) }), true, false},
+		{"branch main", ModeManaged, edit(func(r *Request) { r.Branch = "main" }), true, false},
 		{"branch equal to the default branch", ModeManaged, edit(func(r *Request) {
 			r.Repo.DefaultBranch = "archfit/trunk"
 			r.Branch = "archfit/trunk"
-		}), true},
-		{"branch with dot-dot", ModeManaged, edit(func(r *Request) { r.Branch = "archfit/../x" }), true},
-		{"branch with a space", ModeManaged, edit(func(r *Request) { r.Branch = "archfit/my draft" }), true},
-		{"39-character SHA", ModeManaged, edit(func(r *Request) { r.HeadSHA = strings.Repeat("a", 39) }), true},
-		{"upper-case SHA", ModeManaged, edit(func(r *Request) { r.HeadSHA = strings.Repeat("A", 40) }), true},
-		{"empty By", ModeManaged, edit(func(r *Request) { r.By = "" }), true},
-		{"unknown mode", Mode("auto"), validRequest(), true},
-		{"invalid customer request", ModeCustomer, edit(func(r *Request) { r.Instruction = "" }), true},
-		{"2000-byte instruction", ModeManaged, edit(func(r *Request) { r.Instruction = strings.Repeat("x", 2000) }), false},
-		{"valid request", ModeManaged, validRequest(), false},
+		}), true, false},
+		{"branch with dot-dot", ModeManaged, edit(func(r *Request) { r.Branch = "archfit/../x" }), true, false},
+		{"branch with a space", ModeManaged, edit(func(r *Request) { r.Branch = "archfit/my draft" }), true, false},
+		{"39-character SHA", ModeManaged, edit(func(r *Request) { r.HeadSHA = strings.Repeat("a", 39) }), true, true},
+		{"upper-case SHA", ModeManaged, edit(func(r *Request) { r.HeadSHA = strings.Repeat("A", 40) }), true, true},
+		{"empty By", ModeManaged, edit(func(r *Request) { r.By = "" }), true, false},
+		{"unknown mode", Mode("auto"), validRequest(), true, false},
+		{"invalid customer request", ModeCustomer, edit(func(r *Request) { r.Instruction = "" }), true, false},
+		{"2000-byte instruction", ModeManaged, edit(func(r *Request) { r.Instruction = strings.Repeat("x", 2000) }), false, false},
+		{"valid request", ModeManaged, validRequest(), false, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -53,11 +55,57 @@ func TestValidateRequest(t *testing.T) {
 			if !errors.Is(err, ErrInvalidRequest) {
 				t.Fatalf("Propose() error = %v, want ErrInvalidRequest", err)
 			}
-			if fx.consents.calls != 0 || len(fx.repos.reads) != 0 || fx.proposals.attemptCount() != 0 ||
-				fx.budget.reserveCount() != 0 || fx.provider.callCount() != 0 || len(fx.actions.calls) != 0 {
+			// The head SHA is checked once the draft is known to be open: those rows have read settings and the draft.
+			if !tt.readsDraft && (fx.consents.calls != 0 || len(fx.repos.reads) != 0) {
 				t.Errorf("a dependency was called for an invalid request")
 			}
+			if fx.proposals.attemptCount() != 0 || fx.budget.reserveCount() != 0 || fx.provider.callCount() != 0 ||
+				len(fx.actions.calls) != 0 {
+				t.Errorf("an invalid request reserved, called the provider, dispatched or wrote")
+			}
 		})
+	}
+}
+
+func TestBranchAndHeadRulesAreProposals(t *testing.T) {
+	t.Parallel()
+	branches := []string{testBranch, "archfit/a/b.c_d", "archfit/./x", "archfit/a//b", "archfit/a/", "archfit/ä", "feature/x"}
+	heads := []string{headA, "aaaaaaa", strings.Repeat("a", 64), strings.Repeat("A", 40)}
+	for _, branch := range branches {
+		for _, head := range heads {
+			fx := newFixture()
+			fx.proposals.setDraft(branch, proposal.Draft{Number: 9, State: proposal.DraftOpen, HeadSHA: headA})
+			req := validRequest()
+			req.Branch, req.HeadSHA = branch, head
+
+			_, err := fx.assist().Propose(context.Background(), ModeCustomer, req)
+
+			want := proposal.ValidBranch(branch) && proposal.ValidHeadSHA(head)
+			if got := !errors.Is(err, ErrInvalidRequest); got != want {
+				t.Errorf("Propose(%q, %q) error = %v, want accepted = %v", branch, head, err, want)
+			}
+		}
+	}
+}
+
+func TestNoDraftWinsOverHeadSHA(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []Mode{ModeManaged, ModeCustomer} {
+		for _, state := range []proposal.DraftState{proposal.DraftNone, proposal.DraftMerged, proposal.DraftClosed} {
+			fx := newFixture()
+			fx.proposals.setDraft(testBranch, proposal.Draft{State: state})
+			req := validRequest()
+			req.HeadSHA = ""
+
+			_, err := fx.assist().Propose(context.Background(), mode, req)
+
+			if !errors.Is(err, ErrNoDraft) || errors.Is(err, ErrInvalidRequest) {
+				t.Errorf("%s, draft %s: error = %v, want ErrNoDraft", mode, state, err)
+			}
+			if fx.budget.reserveCount() != 0 || len(fx.actions.calls) != 0 || fx.proposals.attemptCount() != 0 {
+				t.Errorf("%s, draft %s: reserved, dispatched or wrote without a draft", mode, state)
+			}
+		}
 	}
 }
 

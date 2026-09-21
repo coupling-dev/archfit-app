@@ -124,26 +124,26 @@ this module returns it.
 
 All times UTC. `R` is the private record; a missing record is the zero record.
 
-| Derived value  | Rule                                                                      |
-| -------------- | ------------------------------------------------------------------------- |
-| `TrialEnds`    | zero if `R.first_private_at` is zero, else `first_private_at + 30 d`      |
-| grace end      | `TrialEnds + 7 d`                                                         |
-| `SuspendAfter` | zero if `first_private_at` is zero, else `max(grace end, R.grant_until)`  |
-| paid-through   | `max(TrialEnds, R.grant_until)`                                           |
-| `WarnFrom`     | zero if `SuspendAfter` is zero, else paid-through `− 7 d` **[default]**   |
+| Derived value  | Rule                                                                     |
+| -------------- | ------------------------------------------------------------------------ |
+| `TrialEnds`    | zero if `R.first_private_at` is zero, else `first_private_at + 30 d`     |
+| grace end      | `TrialEnds + 7 d`                                                        |
+| `SuspendAfter` | zero if `first_private_at` is zero, else `max(grace end, R.grant_until)` |
+| paid-through   | `max(TrialEnds, R.grant_until)`                                          |
+| `WarnFrom`     | zero if `SuspendAfter` is zero, else paid-through `− 7 d` **[default]**  |
 
 A lapsed grant gets no second grace period. **[default]**
 
 `Plan`, first match: `first_private_at` zero → `public`; `now < grant_until` → `granted`;
 `now < TrialEnds` → `trial`; `now < SuspendAfter` → `grace`; else `suspended`.
 
-| Plan      | `Entitlement.Notice` written (dates `YYYY-MM-DD`)                                                                 |
-| --------- | ----------------------------------------------------------------------------------------------------------------- |
-| public    | `""`                                                                                                              |
-| trial     | `"Trial ends <TrialEnds>"`; inside the last 24 h: `"Trial ends <TrialEnds> — 1 day left"`                         |
-| granted   | `"Archfit beta access ends <GrantUntil>"`; same 1-day suffix. See the priority rule below                         |
-| grace     | `"Trial ended <TrialEnds>. Archfit checks suspend on <SuspendAfter>"`                                             |
-| suspended | `"Archfit subscription inactive since <SuspendAfter>"`                                                            |
+| Plan      | `Entitlement.Notice` written (dates `YYYY-MM-DD`)                                         |
+| --------- | ----------------------------------------------------------------------------------------- |
+| public    | `""`                                                                                      |
+| trial     | `"Trial ends <TrialEnds>"`; inside the last 24 h: `"Trial ends <TrialEnds> — 1 day left"` |
+| granted   | `"Archfit beta access ends <GrantUntil>"`; same 1-day suffix. See the priority rule below |
+| grace     | `"Trial ended <TrialEnds>. Archfit checks suspend on <SuspendAfter>"`                     |
+| suspended | `"Archfit subscription inactive since <SuspendAfter>"`                                    |
 
 Priority rule: while `granted`, if `SuspendAfter > GrantUntil` (the grant ends before the grace period does), the trial or
 grace text is written instead of the grant text. **[default]** The texts themselves are **[default]**.
@@ -168,7 +168,8 @@ The gate decides suspension itself from `SuspendAfter`, repository privacy and i
 - `Record` rejects an unknown `Kind`, empty `By`, or zero `At`. `Revoke` deletes the key; revoking a missing consent is not an error.
 - `Reserve`: `maxCostMicroUSD <= 0` is an error. `Add(+max)`; if the result exceeds the cap, `Add(−max)` and return `ErrBudgetExhausted`.
   A Store error is returned as is (not `ErrBudgetExhausted`); the caller makes no LLM call either way.
-- `Settle`: `Add(actual − reserved)`. The caller passes the `now` it used for `Reserve`, so both hit the same month key.
+- `Settle`: `reserved <= 0` or `actual < 0` is an error and nothing is booked; `actual == 0` is valid (the vendor rejected the call).
+  Else `Add(actual − reserved)`. The caller passes the `now` it used for `Reserve`, so both hit the same month key.
   The caller settles every reservation, also after a failed `Complete`, with the cost the `Provider` reported for that outcome
   (it may be 0, usage-based, or the full reservation when the outcome is unknown). `account` only does the arithmetic and never
   guesses a cost. `actual > reserved` is booked as is **[default]**.

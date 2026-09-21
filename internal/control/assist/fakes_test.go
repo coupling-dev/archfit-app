@@ -143,6 +143,14 @@ type fakeBudget struct {
 	reserves   []int64
 	settles    []settleCall
 	times      []time.Time
+	months     map[string]int64 // one counter per UTC month of now, as account keeps them
+}
+
+func (f *fakeBudget) book(now time.Time, delta int64) {
+	if f.months == nil {
+		f.months = map[string]int64{}
+	}
+	f.months[now.UTC().Format("2006-01")] += delta
 }
 
 func (f *fakeBudget) Reserve(_ context.Context, maxCost int64, now time.Time) error {
@@ -150,6 +158,7 @@ func (f *fakeBudget) Reserve(_ context.Context, maxCost int64, now time.Time) er
 	defer f.mu.Unlock()
 	f.reserves = append(f.reserves, maxCost)
 	f.times = append(f.times, now)
+	f.book(now, maxCost)
 	return f.reserveErr
 }
 
@@ -159,6 +168,7 @@ func (f *fakeBudget) Settle(ctx context.Context, reserved, actual int64, now tim
 	_, hasDeadline := ctx.Deadline()
 	f.settles = append(f.settles, settleCall{reserved, actual, ctx.Err(), hasDeadline})
 	f.times = append(f.times, now)
+	f.book(now, actual-reserved)
 	return f.settleErr
 }
 
@@ -281,6 +291,7 @@ type fixture struct {
 	provider   *fakeProvider
 	proposals  *fakeProposals
 	noProvider bool
+	now        func() time.Time // nil: the clock stands at testNow
 }
 
 func newFixture() *fixture {
@@ -305,11 +316,15 @@ func newFixture() *fixture {
 }
 
 func (f *fixture) assist() Assist {
+	now := f.now
+	if now == nil {
+		now = func() time.Time { return testNow }
+	}
 	d := Deps{
 		Consents:  f.consents,
 		Budget:    f.budget,
 		Proposals: f.proposals,
-		Now:       func() time.Time { return testNow },
+		Now:       now,
 	}
 	if !f.noProvider {
 		d.Provider = f.provider

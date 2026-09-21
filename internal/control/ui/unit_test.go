@@ -83,6 +83,15 @@ func TestEditBranchName(t *testing.T) {
 			wantStatus(t, res, http.StatusUnprocessableEntity)
 		})
 	}
+
+	t.Run("the rule is proposal's", func(t *testing.T) {
+		for _, requested := range []string{"archfit/policy", "archfit/a/b.c_d", "archfit/./x", "archfit/a//b", "archfit/a/", "archfit/ä", "archfit"} {
+			_, err := editBranch("alice", requested)
+			if got, want := err == nil, proposal.ValidBranch(requested); got != want {
+				t.Errorf("editBranch(%q) accepted = %v, want proposal.ValidBranch = %v", requested, got, want)
+			}
+		}
+	})
 }
 
 func TestStatusMapping(t *testing.T) {
@@ -121,6 +130,14 @@ func TestStatusMapping(t *testing.T) {
 			e.onb.startErr = onboarding.ErrNoSandbox
 			_ = e.consents.Record(t.Context(), installA, account.Consent{Kind: account.ConsentSourceProcessing})
 		}, "/onboarding", url.Values{"mode": {"managed"}, "owners": {"alice"}}, 409, false, false},
+		{"already onboarded", func(e *env) { e.onb.startErr = fmt.Errorf("wrapped: %w", onboarding.ErrAlreadyOnboarded) },
+			"/onboarding", url.Values{"mode": {"customer"}, "owners": {"alice"}}, 409, false, false},
+		{"onboarding busy", func(e *env) {
+			e.onb.startErr = onboarding.ErrBusy
+			_ = e.consents.Record(t.Context(), installA, account.Consent{Kind: account.ConsentSourceProcessing})
+		}, "/onboarding", url.Values{"mode": {"managed"}, "owners": {"alice"}}, 409, false, false},
+		{"not found at GitHub", func(e *env) { e.onb.startErr = fmt.Errorf("wrapped: %w", api.ErrNotFound) },
+			"/onboarding", url.Values{"mode": {"customer"}, "owners": {"alice"}}, 404, false, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

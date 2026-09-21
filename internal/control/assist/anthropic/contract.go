@@ -36,11 +36,14 @@ func New(c Config, hc *http.Client) (assist.Provider, error) {
 		return nil, errors.New("anthropic: Config.Model has no embedded price")
 	}
 
-	// A copy, so the caller's client keeps its own redirect policy.
+	// A copy, so the caller's client keeps its own redirect policy and timeout.
 	client := http.Client{}
 	if hc != nil {
 		client = *hc
 	}
+	// The per-attempt context is the only deadline: a shorter client timeout would cut a call
+	// that assist then settles at the full reservation.
+	client.Timeout = 0
 	// The key must never follow a redirect to another host.
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 

@@ -93,6 +93,7 @@ func TestValidateChange(t *testing.T) {
 		{"branch main", func(c *Change) { c.Branch = "main" }, true},
 		{"branch outside namespace", func(c *Change) { c.Branch = "feature/x" }, true},
 		{"branch with dot-dot", func(c *Change) { c.Branch = "archfit/../x" }, true},
+		{"branch with dot segment", func(c *Change) { c.Branch = "archfit/./x" }, true},
 		{"branch with space", func(c *Change) { c.Branch = "archfit/a b" }, true},
 		{"branch with control character", func(c *Change) { c.Branch = "archfit/a\tb" }, true},
 		{"branch is only the namespace", func(c *Change) { c.Branch = "archfit/" }, true},
@@ -123,6 +124,52 @@ func TestValidateChange(t *testing.T) {
 				t.Errorf("GitHub calls = %v, want none", f.calls)
 			}
 		})
+	}
+}
+
+func TestValidBranchAndHeadSHA(t *testing.T) {
+	t.Parallel()
+	branches := []struct {
+		branch string
+		want   bool
+	}{
+		{"archfit/onboarding", true},
+		{"archfit/edit-alice", true},
+		{"archfit/a/b.c_d", true},
+		{"main", false},
+		{"archfit/", false},
+		{"archfit", false},
+		{"archfit/../x", false},
+		{"archfit/./x", false},
+		{"archfit/a//b", false},
+		{"archfit/a/", false},
+		{"archfit/a b", false},
+		{"archfit/a\tb", false},
+		{"archfit/ä", false},
+		{"Archfit/x", false},
+		{"", false},
+	}
+	for _, tt := range branches {
+		if got := ValidBranch(tt.branch); got != tt.want {
+			t.Errorf("ValidBranch(%q) = %v, want %v", tt.branch, got, tt.want)
+		}
+	}
+	shas := []struct {
+		sha  string
+		want bool
+	}{
+		{strings.Repeat("a1", 20), true},
+		{strings.Repeat("a", 39), false},
+		{strings.Repeat("a", 41), false},
+		{strings.Repeat("A", 40), false},
+		{"abc1234", false},
+		{"HEAD~1", false},
+		{"", false},
+	}
+	for _, tt := range shas {
+		if got := ValidHeadSHA(tt.sha); got != tt.want {
+			t.Errorf("ValidHeadSHA(%q) = %v, want %v", tt.sha, got, tt.want)
+		}
 	}
 }
 

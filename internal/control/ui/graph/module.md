@@ -29,7 +29,8 @@ Layout, colors and interaction are not here; they are the parent's templates and
 
 ## Encapsulated Knowledge
 
-- Which findings make a link "not permitted": `Kind == "gate"` and `Status` `new` or `expired_waiver` **[default]**.
+- That a link is "not permitted" when an active gate finding names its pair. Which findings are active is not graph's
+  knowledge: `report.Finding.Active()` of wire/report decides, the same rule the gate's feedback uses.
 - How duplicate seams, seams to undeclared modules, and findings without a seam are normalized.
 - The ordering rule of the output.
 - The meaning of `Stale`: a digest comparison plus "the text parses", not a YAML comparison.
@@ -58,7 +59,7 @@ type View struct {
 }
 
 // Build is pure. Nodes come from the policy's modules, links from the report's seams; a link is not
-// Permitted when a gate finding with status "new" or "expired_waiver" names that module pair.
+// Permitted when an Active finding (wire/report `Finding.Active`) names that module pair.
 func Build(rep Report, policy []byte) View
 ```
 
@@ -68,9 +69,10 @@ func Build(rep Report, policy []byte) View
    On a duplicate name the first wins.
 2. Links: one per distinct `(FromModule, ToModule)` of `rep.Seams`. Duplicates merge **[default]**: `Count` is the sum
    of `Edges`. A seam with an empty endpoint is dropped. `Observed` is true for every link: a seam is an observation.
-3. `Permitted` is false when a finding with `Kind == "gate"` and `Status` `new` or `expired_waiver` has
-   `Edge.From.Module == From` and `Edge.To.Module == To` **[default]**; otherwise true. Findings with status `baseline`,
-   `waived` or `fixed`, advisory findings, and findings with an empty module on either side do not change it.
+3. `Permitted` is false when a finding for which `Finding.Active()` is true (the rule wire/report owns: today a gate
+   finding with status `new` or `expired_waiver`) has `Edge.From.Module == From` and `Edge.To.Module == To`; otherwise
+   true. graph holds no status or kind list of its own. Findings that are not active, and findings with an empty module
+   on either side, do not change it.
 4. Such an active gate finding whose pair has no seam still yields a link, `Count` 0, `Permitted` false **[default]**:
    a violation is never hidden because the seam list is incomplete.
 5. A link endpoint that the policy does not declare gets a node with that name, empty `Layer`, `PolicyLine` 0.
@@ -108,7 +110,7 @@ as permitted; the PR comment, not the graph, is where debt is listed.
 - **Volatility**: moderate
 - **Balanced?**: yes — contract coupling tolerates the distance
 - **Shared knowledge**: graph reads `Seams` (`FromModule`, `ToModule`, `Edges`), `Findings` (`Kind`, `Status`,
-  `Edge.From.Module`, `Edge.To.Module`) and `Comparison.ConfigHash`, nothing else. `Decision` is an opaque part of `Report`
+  `Edge.From.Module`, `Edge.To.Module`) and `Comparison.ConfigHash`, and calls `Finding.Active()`, nothing else. `Decision` is an opaque part of `Report`
   for this module. `Reference`, `Dimension`, `Coverage`, `AgentTask` and the other types in the fences below are restated
   only because they share a fence with a type graph reads; graph never touches them. `StateSchemaV1` is the constant
   wire/report checks at decode time; `MaxBytes` is the constant that caps a payload; graph uses neither.
@@ -221,6 +223,13 @@ type AgentTask struct {
     Validation  []string `json:"validation"`       // shell command strings, replayed verbatim; never contain --refresh
     Origin      string   `json:"origin,omitempty"` // "introduced" | "pre_existing" | "unknown"; presentation only
 }
+```
+
+<!-- contract: Active, Finding — restated from internal/wire/report/module.md -->
+```go
+// Active reports whether the finding currently blocks: a gate finding that is new or whose waiver expired.
+// It is the single definition of "active gate finding" for every consumer.
+func (f Finding) Active() bool
 ```
 
 <!-- contract: Dimension, DimensionCoverage, Metric, FindingRef, UnknownFact, Delta, MetricDelta, Coverage, ToolCoverage, Seam — restated from internal/wire/report/module.md -->
@@ -386,7 +395,8 @@ Nothing is mocked.
 - **Test name**: `TestPermittedFollowsActiveGateFindings`
   **Scenario**: one seam `api → db` and a table of findings on that pair: gate/new; gate/expired_waiver; gate/baseline;
   gate/waived; gate/fixed; advisory/new; gate/new on `db → api`; gate/new with an empty `To.Module`; no finding.
-  **Expected behavior**: `Permitted` false for the first two rows only; direction matters.
+  **Expected behavior**: `Permitted` false for the first two rows only; direction matters. For every row with one
+  finding on `api → db`, `Permitted` equals `!Finding.Active()`: the rule is wire/report's.
 - **Test name**: `TestActiveFindingWithoutSeamStillDraws`
   **Scenario**: a gate/new finding on `ui → db` with no seam for that pair.
   **Expected behavior**: a link `ui → db`, `Count` 0, `Observed` true, `Permitted` false.

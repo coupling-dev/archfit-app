@@ -37,6 +37,12 @@ type DiscoveryResult struct {
 // ErrNoSandbox is returned by the default Sandbox until a platform implementation is configured.
 var ErrNoSandbox = errors.New("onboarding: managed discovery is not available")
 
+// ErrAlreadyOnboarded is returned by StartCustomer and StartManaged when Progress is past StageInstalled.
+var ErrAlreadyOnboarded = errors.New("onboarding: already onboarded")
+
+// ErrBusy is returned by StartManaged when this process already runs its maximum of managed jobs.
+var ErrBusy = errors.New("onboarding: busy, retry later")
+
 type Stage string
 
 const (

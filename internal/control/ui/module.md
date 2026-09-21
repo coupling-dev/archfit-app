@@ -82,11 +82,15 @@ Minimum repository permission in brackets. `{o}/{n}` is only a lookup key for `S
 
 - Not signed in: `303` to `/auth/login?return=<path>` for `GET`, `401` for `POST`.
 - `ErrForbidden` from `Authorize`: `404` **[default]**, so that repository names are not confirmed to outsiders.
+  `api.ErrNotFound` from any GitHub call a page does not handle itself: `404` with the same "Not found." wording.
 - Missing or wrong CSRF token: `403`. Body over 512 KB **[default]**: `413`.
 - `ErrStale`, or a `head_sha` that is not the draft head: `409`, the user's text kept in the editor, nothing written.
 - Invalid form, unparseable YAML, a text `policy.Validate` refuses, `ErrInvalidRequest`, `ErrInvalidProposal`: `422`, text kept.
 - Assist preconditions (`ErrNoDraft`, `ErrNoConsent`, `ErrNotManaged`, `ErrPolicyTooLarge`, `ErrNoAssistWorkflow`): `409` with a clear state.
-  `ErrBusy`: `429`. `ErrManagedUnavailable`, `ErrBudgetExhausted`, `ErrProvider`: `503` with a clear state; the editor stays usable.
+  `assist.ErrBusy`: `429`. `ErrManagedUnavailable`, `ErrBudgetExhausted`, `ErrProvider`: `503` with a clear state; the editor stays usable.
+- Onboarding states, each `409` with fixed wording: `onboarding.ErrNoSandbox` "Managed discovery is not available.",
+  `onboarding.ErrAlreadyOnboarded` "This repository is already onboarded. Reload the page to see its state.",
+  `onboarding.ErrBusy` "Managed discovery is busy with other repositories. Try again in a few minutes."
 - `ErrRateLimited`: `503` with `Retry-After: 60` **[default]**. Any other upstream error: `502`. Panic: `500`.
 - Every successful `POST` answers `303` to the page that shows the result.
 
@@ -174,7 +178,7 @@ type View struct {
 }
 
 // Build is pure. Nodes come from the policy's modules, links from the report's seams; a link is not
-// Permitted when a gate finding with status "new" or "expired_waiver" names that module pair.
+// Permitted when an Active finding (wire/report `Finding.Active`) names that module pair.
 func Build(rep Report, policy []byte) View
 ```
 
@@ -259,7 +263,8 @@ type Consents interface {
 - **Shared knowledge**: `Progress`, `StartCustomer`, `StartManaged`. ui never mounts `DiscoveryHandler` (the façade does).
   Before `StartManaged` ui checks `Consents.Has(ConsentSourceProcessing)` and sends the administrator to the consent page
   when it is false **[default]**. `ErrNoSandbox` is the sentinel onboarding returns when managed discovery is not
-  configured; ui shows "managed discovery is not available".
+  configured; ui shows "managed discovery is not available". `ErrAlreadyOnboarded` and `ErrBusy` are the sentinels
+  of a refused start; ui maps all three to `409` (Status mapping), never to the `502` of an upstream failure.
 
 <!-- contract: Onboarding, Stage, Progress — restated from internal/control/onboarding/module.md -->
 ```go
@@ -290,6 +295,15 @@ type Onboarding interface {
     // DiscoveryHandler serves POST /v1/discoveries and opens PR 2 with the proposed policy.
     DiscoveryHandler() http.Handler
 }
+```
+
+<!-- contract: ErrAlreadyOnboarded, ErrBusy — restated from internal/control/onboarding/module.md -->
+```go
+// ErrAlreadyOnboarded is returned by StartCustomer and StartManaged when Progress is past StageInstalled.
+var ErrAlreadyOnboarded = errors.New("onboarding: already onboarded")
+
+// ErrBusy is returned by StartManaged when this process already runs its maximum of managed jobs.
+var ErrBusy = errors.New("onboarding: busy, retry later")
 ```
 
 ### internal/control/assist
@@ -346,7 +360,9 @@ type Assist interface {
 - **Balanced?**: yes
 - **Shared knowledge**: `Get` to load a draft and its head, `Propose` to save, `Ready` to ask for review. ui never calls
   `SetBody`. `ErrStale` is the sentinel meaning the branch moved since the editor loaded it. `Pulls` is the github/api
-  pull-request role interface that only proposal's constructor takes.
+  pull-request role interface that only proposal's constructor takes. proposal owns the branch-name and head-SHA
+  rules: ui checks `?branch=`, the form `branch`, the form `head_sha` (when not empty) and `?since=` with `ValidBranch`
+  and `ValidHeadSHA` and holds no pattern of its own, so ui never saves on a branch that assist or proposal then refuses.
 
 <!-- contract: Proposals, Change, Draft, DraftState — restated from internal/control/proposal/module.md -->
 ```go
@@ -394,6 +410,17 @@ type Proposals interface {
 var ErrStale = errors.New("proposal: branch head changed")
 
 func New(gh Changes, pulls Pulls) Proposals
+```
+
+<!-- contract: ValidBranch, ValidHeadSHA — restated from internal/control/proposal/module.md -->
+```go
+// ValidBranch reports whether branch is a legal draft branch name: it matches
+// ^archfit/[A-Za-z0-9._/-]+$, has no empty, "." or ".." path segment (so no "//" and no trailing "/").
+func ValidBranch(branch string) bool
+
+// ValidHeadSHA reports whether sha is a full commit SHA: exactly 40 lowercase hex characters.
+// "" is not valid; a caller whose own contract allows "no draft yet" checks for "" itself.
+func ValidHeadSHA(sha string) bool
 ```
 
 ### internal/github/api
@@ -636,6 +663,8 @@ func Validate(policy []byte) error
 - **Shared knowledge**: ui reads `Path` at the default branch and calls `Parse` to learn `Workflow` (which run holds the
   report, which workflow to dispatch for discovery), `Gate` and `DataMode` (which assist mode to offer). ui does not edit
   the settings file: wire/settings publishes no schema, and settings change through the onboarding PR or GitHub **[default]**.
+  wire/settings owns the owner-entry rule (login or `org/team-slug`, the cap, no duplicate ignoring case): ui validates
+  the submitted owners with `Parse(Render(Settings{…}))`, the way onboarding does, and holds no owner pattern or cap.
 
 <!-- contract: Settings, GateMode, DataMode, Path — restated from internal/wire/settings/module.md -->
 ```go
@@ -803,10 +832,20 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
 - Status: `Onboarding.Progress(repo)` (stage, diagnostic, open draft link), `Account.Status(repo.InstallationID, now)` banner:
   trial end date, grace, suspended with the recovery sentence; nothing for `public` and `granted`. A `Status` error hides the
   banner and is logged; it never fails the page. History is a link to the repository's pull requests from `archfit/` branches
-  and to its check runs **[default]**: report history is what GitHub keeps.
+  and to its check runs **[default]**: report history is what GitHub keeps. The route needs `read`; the page calls
+  `Sessions.Authorize(user, "{o}/{n}", "admin")` a second time and shows the onboarding, discover and consent controls
+  only when it succeeds. Its error is not an error of the page; the `POST` routes enforce `admin` themselves.
+- Onboarding start: `owners` is split into lines, each trimmed, blank lines dropped: that is all ui decides. The list
+  is valid when `settings.Parse(settings.Render(Settings{Version: 1, Owners, Gate: GateAdvisory, Workflow, DataMode:
+  DataCustomer}))` succeeds; `Gate`, `Workflow` (a fixed placeholder path) and `DataMode` only make the probe document
+  complete and are never written. Any error, an empty list included, is `422` with the fixed wording "Name at least one
+  owner. Owners are GitHub logins or org/team-slug, one per line, each named once." **[default]**, never `Parse`'s error
+  text, and onboarding is not called. Then `mode`: `customer` → `StartCustomer`; `managed` → consent check →
+  `StartManaged`; anything else `422`.
 - Discover: requires stage `workflow_merged` or later; `Actions.Dispatch(Settings.Workflow, DefaultBranch, {"discover": "true"})`.
-- Editor: branch is `archfit/edit-<lower-case login>`, or `?branch=` matching `^archfit/[A-Za-z0-9._/-]+$` with no `..`, no
-  `//` and no trailing `/`. `Proposals.Get`:
+- Editor: branch is `archfit/edit-<lower-case login>`, or a `?branch=` that `proposal.ValidBranch` accepts, else `422`.
+  A form `head_sha` is empty (no open draft was loaded) or passes `proposal.ValidHeadSHA`, else `422`; a `?since=` that
+  fails `ValidHeadSHA` is ignored. `Proposals.Get`:
   when the draft is `DraftOpen` or `DraftInReview`, load `PolicyPath` at `Draft.HeadSHA` and set `head_sha` to it; otherwise load
   from the default branch with `head_sha` empty. The page shows the draft state in the words draft / awaiting review /
   published (and closed), the draft's check conclusions (engine validation is the check on the draft PR), and the PR link. The
@@ -878,6 +917,15 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   policy text, no instruction, no report content, no cookie or token.
 - Inherited: control-plane code. The gate never calls ui; a panic or outage here changes no check. Standard library only
   on the Go side; vendored browser assets are files, not Go dependencies.
+- Declared restatement: three kinds of link are built from the literal host `https://github.com/`: the assist
+  workflow's runs page, the pull-request search and the default-branch commits page. `internal/github` owns the
+  knowledge of GitHub hosts and publishes no URL builder; `control/assist` (`RunURL`) and `control/onboarding`
+  (`CloneURL`) restate the same host. On drift a link opens the wrong host; no write and no check depends on it.
+  Removal trigger: GitHub Enterprise host support, when `internal/github` publishes the web base URL.
+- Declared restatement: the check names `archfit/state` and `archfit/gate` are literals here. `internal/gate`
+  (feedback) owns and publishes them but exports no constant, and control imports only the gate façade;
+  `control/onboarding` restates `archfit/state` too. On drift the overview and the editor show "no state yet" for every
+  repository; no gate result changes. Removal trigger: a rename of a check, at which point gate exports the names.
 - Bounded work per request, each **[default]** except the last: 100 repositories, 8 parallel GitHub lookups, 512 KB bodies;
   5 MB artifact (`report.MaxBytes`).
 
@@ -893,11 +941,15 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Scenario**: table: token of user A checked for A; for B; empty; truncated; A after re-login with a new OAuth token.
   **Expected behavior**: only the first row passes; comparison is constant-time.
 - **Test name**: `TestEditBranchName`
-  **Scenario**: table: login `Alice`; login with a hyphen; `?branch=archfit/policy`; `?branch=main`; `?branch=archfit/../main`; `?branch=archfit/a b`.
-  **Expected behavior**: `archfit/edit-alice`; hyphen kept; accepted; the last three are `422`.
+  **Scenario**: table: login `Alice`; login with a hyphen; `?branch=archfit/policy`; `?branch=main`; `?branch=archfit/../main`; `?branch=archfit/a b`;
+  then every branch of a list that includes `archfit/./x`, `archfit/a//b` and `archfit/a/`, against `proposal.ValidBranch`.
+  **Expected behavior**: `archfit/edit-alice`; hyphen kept; accepted; the next three are `422`; for the list ui answers
+  `422` exactly when `ValidBranch` is false, so ui delegates the rule.
 - **Test name**: `TestStatusMapping`
   **Scenario**: table of every error in the Status mapping list, injected through the fakes.
   **Expected behavior**: the documented status; `Retry-After` on `503` for rate limits; the editor text is echoed back on `409` and `422`.
+  The rows include `api.ErrNotFound` → `404` and the three onboarding sentinels `ErrNoSandbox`, `ErrAlreadyOnboarded`,
+  `ErrBusy` → `409`, none of them `502`.
 - **Test name**: `TestWording`
   **Scenario**: table of `DraftState`, `Plan`, check conclusions and assist sentinels.
   **Expected behavior**: draft / awaiting review / published / closed; a banner only for trial, grace, suspended; one distinct sentence per sentinel.
@@ -927,6 +979,11 @@ their interfaces except where a test says otherwise. The clock is injected.
 - **Test name**: `TestConsentRecordAndRevoke`
   **Scenario**: an administrator records `managed_llm`, then revokes it.
   **Expected behavior**: `Consents.Has` is true then false for the installation of the authorized `Repo`; `By` is the session login.
+- **Test name**: `TestOwnersRuleIsSettings`
+  **Scenario**: table of submitted owners: `-alice` (a leading hyphen, which wire/settings accepts); a team; `alice` and
+  `Alice`; `not a login!`; 101 owners; only blank lines. Each row is also run through `settings.Parse(settings.Render(…))`.
+  **Expected behavior**: ui starts onboarding with the trimmed owners exactly when settings accepts them; every other
+  row is `422` with ui's fixed wording, without settings' error text, and with no onboarding call.
 - **Test name**: `TestOnboardingAndDiscoverActions`
   **Scenario**: start customer onboarding with two owners; start managed without consent; dispatch discovery before and after `workflow_merged`.
   **Expected behavior**: `StartCustomer` gets the parsed owners; managed without consent redirects to the consent page and never calls
@@ -949,7 +1006,8 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Scenario**: every `POST` route, logout included, without a token and with another user's token.
   **Expected behavior**: `403`; no sibling module or GitHub write is called.
 - **Test name**: `TestOversizedAndInvalidInput`
-  **Scenario**: table: 600 KB body; 300 KB policy; invalid UTF-8; YAML with a tab indent; 50 owners lines with one malformed.
+  **Scenario**: table: 600 KB body; 300 KB policy; invalid UTF-8; YAML with a tab indent; 50 owners lines with one malformed;
+  a `head_sha` that is not hex; a 7-character hex `head_sha` (`proposal.ValidHeadSHA` refuses both).
   **Expected behavior**: `413` for the first, `422` for the rest; nothing is written.
 - **Test name**: `TestSaveRejectsForeignDocuments`
   **Scenario**: table, through save and through assist: one line of prose with a colon; a JSON object with foreign keys; a
@@ -1003,3 +1061,6 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Scenario**: customer-mode request; the fake run is queued, then failed; a second run succeeds and pushes a commit.
   **Expected behavior**: pending with the run link; failed; completed with a reload offer; no Store key is written and no credential field
   exists on the form.
+- **Test name**: `TestGraphWithoutAReport`
+  **Scenario**: the graph page with no workflow run; then with an `archfit-report` artifact that `report.Decode` refuses.
+  **Expected behavior**: `200` "No report available"; then `200` "Report unavailable" and no `graph-data` element: never a partial graph.

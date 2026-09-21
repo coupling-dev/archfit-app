@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -32,18 +31,12 @@ const (
 	runCompleted = "completed"
 )
 
-var (
-	branchPattern = regexp.MustCompile(`^archfit/[A-Za-z0-9._/-]+$`)
-	shaPattern    = regexp.MustCompile(`^[0-9a-f]{7,64}$`)
-)
-
 // editBranch is the user's own edit branch, or a requested branch under archfit/.
 func editBranch(login, requested string) (string, error) {
 	if requested == "" {
 		return editBranchPrefix + strings.ToLower(login), nil
 	}
-	if !branchPattern.MatchString(requested) || strings.Contains(requested, "..") ||
-		strings.Contains(requested, "//") || strings.HasSuffix(requested, "/") {
+	if !proposal.ValidBranch(requested) {
 		return "", invalid("The branch must be a branch under archfit/.")
 	}
 	return requested, nil
@@ -123,7 +116,7 @@ func (s *server) editor(w http.ResponseWriter, r *http.Request, sc scope) {
 	if set, err := s.settings(r.Context(), sc.repo); err == nil && set.DataMode == settings.DataManaged {
 		body.OfferManaged = s.consents.Has(r.Context(), sc.repo.InstallationID, account.ConsentManagedLLM)
 	}
-	if since := query.Get("since"); shaPattern.MatchString(since) {
+	if since := query.Get("since"); proposal.ValidHeadSHA(since) {
 		body.RunState = s.assistRun(r.Context(), sc.repo, branch, draft, since)
 		body.RunURL = "https://github.com/" + sc.repo.FullName + "/actions/workflows/" + path.Base(assist.AssistWorkflowPath)
 		body.ReloadURL = editorURL(sc, body.BranchQuery, nil)
@@ -185,7 +178,7 @@ func readEditForm(r *http.Request, sc scope) (editForm, error) {
 	if f.branch, err = editBranch(sc.user.Login, f.branchQuery); err != nil {
 		return f, err
 	}
-	if f.headSHA != "" && !shaPattern.MatchString(f.headSHA) {
+	if f.headSHA != "" && !proposal.ValidHeadSHA(f.headSHA) {
 		return f, invalid("The form is not valid. Reload the page.")
 	}
 	return f, nil

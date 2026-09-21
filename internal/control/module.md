@@ -149,13 +149,13 @@ type Completion struct {
 
 ### Children (composition)
 
-| Counterpart                       | Direction                    | Strength   | LCA / Rank / Distance | Volatility | Balanced? |
-| --------------------------------- | ---------------------------- | ---------- | --------------------- | ---------- | --------- |
-| `internal/control/account/`       | `control` constructs, calls  | Functional | control / 1 / 1       | High       | Yes       |
-| `internal/control/proposal/`      | `control` constructs         | Functional | control / 1 / 1       | High       | Yes       |
-| `internal/control/onboarding/`    | `control` constructs, mounts | Functional | control / 1 / 1       | High       | Yes       |
-| `internal/control/assist/`        | `control` constructs         | Functional | control / 1 / 1       | High       | Yes       |
-| `internal/control/ui/`            | `control` constructs, mounts | Functional | control / 1 / 1       | High       | Yes       |
+| Counterpart                    | Direction                    | Strength   | LCA / Rank / Distance | Volatility | Balanced? |
+| ------------------------------ | ---------------------------- | ---------- | --------------------- | ---------- | --------- |
+| `internal/control/account/`    | `control` constructs, calls  | Functional | control / 1 / 1       | High       | Yes       |
+| `internal/control/proposal/`   | `control` constructs         | Functional | control / 1 / 1       | High       | Yes       |
+| `internal/control/onboarding/` | `control` constructs, mounts | Functional | control / 1 / 1       | High       | Yes       |
+| `internal/control/assist/`     | `control` constructs         | Functional | control / 1 / 1       | High       | Yes       |
+| `internal/control/ui/`         | `control` constructs, mounts | Functional | control / 1 / 1       | High       | Yes       |
 
 Shared knowledge: the constructors and the few methods the façade calls.
 
@@ -485,13 +485,18 @@ func New(ts TokenSource, hc *http.Client) *Client
 4. `assist.New(Deps{GitHub, Provider, Consents, Budget, Proposals, Now})` → `Assist`.
 5. `ui.New(Deps{OAuth, CookieKey, BaseURL, GitHub, Account, Consents, Onboarding, Assist, Proposals, Now})` → the UI handler, or an error that `New` returns.
 
-| Child        | Contributes                                                          | Depends on siblings                           |
-| ------------ | -------------------------------------------------------------------- | --------------------------------------------- |
-| `account`    | all KV state: entitlement writer, consent, LLM budget                | none                                          |
-| `proposal`   | a change as branch + draft PR, idempotent, stale-safe                | none                                          |
-| `onboarding` | stages, PR 1, discovery upload → PR 2, managed job, `Sandbox` seam   | `proposal`, `account` (`Consents`)            |
-| `assist`     | explicit AI proposals, `Provider` seam, budget use                   | `proposal`, `account` (`Consents`, `Budget`)  |
-| `ui`         | pages, editor, graph, consent screens; owns `session` and `graph`    | all four                                      |
+| Child        | Contributes                                                        | Depends on siblings                          |
+| ------------ | ------------------------------------------------------------------ | -------------------------------------------- |
+| `account`    | all KV state: entitlement writer, consent, LLM budget              | none                                         |
+| `proposal`   | a change as branch + draft PR, idempotent, stale-safe              | none                                         |
+| `onboarding` | stages, PR 1, discovery upload → PR 2, managed job, `Sandbox` seam | `proposal`, `account` (`Consents`)           |
+| `assist`     | explicit AI proposals, `Provider` seam, budget use                 | `proposal`, `account` (`Consents`, `Budget`) |
+| `ui`         | pages, editor, graph, consent screens; owns `session` and `graph`  | all four                                     |
+
+`Control` also keeps four unexported fields that the façade itself never calls: `consents`, `budget`, `onboarding` and
+`assist`, the values built in steps 1, 3 and 4. They exist only so that the package's own composition tests can reach
+the wired children (record a consent, exhaust the budget, start onboarding, ask assist) without a second wiring in the
+test harness. They are not part of the Public Contract and no code outside the tests reads them.
 
 Sibling dependencies form a DAG: `account`, `proposal` ← `onboarding`, `assist` ← `ui`. All sibling links are contract
 strength through interfaces, so each child is tested with fakes of the others.

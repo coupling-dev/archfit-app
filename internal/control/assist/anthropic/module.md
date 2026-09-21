@@ -49,8 +49,10 @@ func New(c Config, hc *http.Client) (Provider, error)
 
 ### Rules
 
-- `Model` empty means `claude-sonnet-5`. `hc` nil means a new `http.Client` with no global timeout; the per-attempt
-  timeout comes from a context either way.
+- `Model` empty means `claude-sonnet-5`. `hc` nil means a new `http.Client`. `New` works on a copy of
+  `hc` and sets the copy's `Timeout` to zero: a caller-set `Client.Timeout` is ignored; the per-attempt timeout comes
+  from the context and is the only deadline. A shorter client timeout would cut a call that assist then settles at the
+  full reservation. The caller's own client is not changed.
 - `New` returns an error when `APIKey` is empty or `Model` is not in the price table: an unpriced model would make the
   budget meaningless. The error names the field, never its value. `internal/app` calls `New` only when a key is
   configured, and treats the error as a start-up failure.
@@ -167,6 +169,12 @@ calls the real API.
 - **Test name**: `TestCostFromUsage`
   **Scenario**: table of usage objects, with and without cache token fields, for both priced models.
   **Expected behavior**: `CostMicroUSD` equals input-side tokens × input price + output tokens × output price.
+- **Test name**: `TestCallerClientTimeoutIsIgnored`
+  **Scenario**: `New` with an `http.Client` whose `Timeout` is 1 ms.
+  **Expected behavior**: the provider's client has `Timeout` 0 and keeps the caller's transport; the caller's client still has 1 ms.
+- **Test name**: `TestPriceTable`
+  **Scenario**: load the embedded price table.
+  **Expected behavior**: exactly the models and the input and output prices of Encapsulated Knowledge; a changed or added row fails the test.
 - **Test name**: `TestRetryDelay`
   **Scenario**: table of `retry-after` values: absent, `1`, `7`, `600`, `abc`, negative.
   **Expected behavior**: 2 s, 1 s, 7 s, 10 s, 2 s, 2 s.

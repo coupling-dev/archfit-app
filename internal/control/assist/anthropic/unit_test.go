@@ -1,6 +1,7 @@
 package anthropic
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -109,5 +110,23 @@ func TestPriceTable(t *testing.T) {
 		if got[model] != p {
 			t.Errorf("price of %s = %+v, want %+v", model, got[model], p)
 		}
+	}
+}
+
+func TestCallerClientTimeoutIsIgnored(t *testing.T) {
+	caller := &http.Client{Timeout: time.Millisecond, Transport: http.DefaultTransport}
+	got, err := New(Config{APIKey: secretKey}, caller)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	p := got.(*provider)
+	if p.hc.Timeout != 0 {
+		t.Errorf("provider client Timeout = %v, want 0: the per-attempt context is the only deadline", p.hc.Timeout)
+	}
+	if p.hc.Transport != caller.Transport {
+		t.Error("the provider client lost the caller's transport")
+	}
+	if caller.Timeout != time.Millisecond {
+		t.Errorf("caller client Timeout = %v, want it unchanged", caller.Timeout)
 	}
 }

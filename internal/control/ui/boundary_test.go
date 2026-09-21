@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
 	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
 // noWrites fails the test if any sibling module or GitHub write was reached.
@@ -232,6 +234,7 @@ func TestOversizedAndInvalidInput(t *testing.T) {
 		{"no owner", "/onboarding", url.Values{"mode": {"customer"}, "owners": {" \n"}}, http.StatusUnprocessableEntity},
 		{"unknown mode", "/onboarding", url.Values{"mode": {"magic"}, "owners": {"alice"}}, http.StatusUnprocessableEntity},
 		{"malformed head_sha", "/policy", formOf("", "HEAD~1", policyText+"# x\n"), http.StatusUnprocessableEntity},
+		{"7-character head_sha", "/policy", formOf("", "abc1234", policyText+"# x\n"), http.StatusUnprocessableEntity},
 		{"unknown assist mode", "/assist", url.Values{"mode": {"magic"}, "content": {policyText}}, http.StatusUnprocessableEntity},
 	}
 	for _, tt := range tests {
@@ -240,6 +243,53 @@ func TestOversizedAndInvalidInput(t *testing.T) {
 			c := e.as("alice", permAdmin)
 			wantStatus(t, c.post("/r/"+repoName+tt.path, tt.form), tt.want)
 			e.noWrites(t)
+		})
+	}
+}
+
+func TestOwnersRuleIsSettings(t *testing.T) {
+	const wording = "Name at least one owner. Owners are GitHub logins or org/team-slug, one per line, each named once."
+	many := make([]string, 101)
+	for i := range many {
+		many[i] = fmt.Sprintf("owner-%d", i)
+	}
+	tests := []struct {
+		name   string
+		owners []string
+	}{
+		{"leading hyphen", []string{"-alice"}},
+		{"team", []string{"acme/platform-team"}},
+		{"duplicate ignoring case", []string{"alice", "Alice"}},
+		{"not a login", []string{"not a login!"}},
+		{"101 owners", many},
+		{"only blank lines", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, settingsErr := settings.Parse(settings.Render(settings.Settings{
+				Version: 1, Owners: tt.owners, Gate: settings.GateAdvisory, Workflow: workflow, DataMode: settings.DataCustomer,
+			}))
+			e := newEnv(t)
+			e.onb.progress = onboarding.Progress{Stage: onboarding.StageInstalled}
+			form := url.Values{"mode": {"customer"}, "owners": {"  " + strings.Join(tt.owners, " \r\n\r\n ") + "\n"}}
+
+			res := e.as("alice", permAdmin).post("/r/"+repoName+"/onboarding", form)
+
+			if settingsErr == nil {
+				wantStatus(t, res, http.StatusSeeOther)
+				if len(e.onb.customer) != 1 || !reflect.DeepEqual(e.onb.customer[0].owners, tt.owners) {
+					t.Errorf("StartCustomer calls = %+v, want one with %v", e.onb.customer, tt.owners)
+				}
+				return
+			}
+			wantStatus(t, res, http.StatusUnprocessableEntity)
+			wantContains(t, res.Body.String(), wording)
+			if strings.Contains(res.Body.String(), "settings:") {
+				t.Error("the page shows settings' error text")
+			}
+			if len(e.onb.customer) != 0 {
+				t.Error("onboarding was called with owners that settings refuses")
+			}
 		})
 	}
 }

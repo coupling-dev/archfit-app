@@ -9,12 +9,6 @@ import (
 	"github.com/alexei-led/archfit-app/internal/wire/report"
 )
 
-const (
-	kindGate            = "gate"
-	statusNew           = "new"
-	statusExpiredWaiver = "expired_waiver"
-)
-
 type Node struct {
 	Name       string
 	Layer      string
@@ -38,7 +32,7 @@ type View struct {
 type pair struct{ from, to string }
 
 // Build is pure. Nodes come from the policy's modules, links from the report's seams; a link is not
-// Permitted when a gate finding with status "new" or "expired_waiver" names that module pair.
+// Permitted when an Active finding (wire/report `Finding.Active`) names that module pair.
 func Build(rep report.Report, policyText []byte) View {
 	defs, err := policy.Modules(policyText)
 	if err != nil {
@@ -61,7 +55,7 @@ func Build(rep report.Report, policyText []byte) View {
 		}
 	}
 	for _, f := range rep.Findings {
-		if from, to := f.Edge.From.Module, f.Edge.To.Module; isActiveGate(f) && from != "" && to != "" {
+		if from, to := f.Edge.From.Module, f.Edge.To.Module; f.Active() && from != "" && to != "" {
 			link(from, to).Permitted = false
 		}
 	}
@@ -93,8 +87,4 @@ func Build(rep report.Report, policyText []byte) View {
 		return cmp.Or(cmp.Compare(a.From, b.From), cmp.Compare(a.To, b.To))
 	})
 	return v
-}
-
-func isActiveGate(f report.Finding) bool {
-	return f.Kind == kindGate && (f.Status == statusNew || f.Status == statusExpiredWaiver)
 }

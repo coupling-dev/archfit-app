@@ -29,7 +29,8 @@ draft states are decisions.md §6 ("Draft, awaiting review, published is the PR 
 - The order of GitHub writes that makes `Propose` idempotent: ensure branch → stale check → commit → ensure PR.
 - The branch name as the idempotency key; no state of its own.
 - How a `Pull` maps to a `DraftState`.
-- The branch namespace rule: every branch starts with `archfit/`.
+- The branch namespace rule: every branch starts with `archfit/`. The full name rule and the head-SHA shape are
+  published as `ValidBranch` and `ValidHeadSHA`, so that no consumer writes them again.
 
 ## Public Contract
 
@@ -79,7 +80,21 @@ var ErrStale = errors.New("proposal: branch head changed")
 func New(gh Changes, pulls Pulls) Proposals
 ```
 
+```go
+// ValidBranch reports whether branch is a legal draft branch name: it matches
+// ^archfit/[A-Za-z0-9._/-]+$, has no empty, "." or ".." path segment (so no "//" and no trailing "/").
+func ValidBranch(branch string) bool
+
+// ValidHeadSHA reports whether sha is a full commit SHA: exactly 40 lowercase hex characters.
+// "" is not valid; a caller whose own contract allows "no draft yet" checks for "" itself.
+func ValidHeadSHA(sha string) bool
+```
+
 `ErrStale` is the sentinel for an optimistic-concurrency refusal; test it with `errors.Is`.
+
+`ValidBranch` and `ValidHeadSHA` are the only statement of the branch-name and head-SHA rules in the control plane.
+`ui` and `assist` call them on user input before they call `Propose` or `Get`; `Propose` applies `ValidBranch` itself.
+`expectHeadSHA` is not shape-checked here: a malformed value never equals a branch head, so it ends in `ErrStale`.
 
 ### Propose
 
@@ -119,7 +134,7 @@ After a merge or close, the next `Propose` on the same branch opens a new PR (`E
 
 ### Validation
 
-`Branch` starts with `archfit/`, has no `..`, space or control character, and differs from `Base`.
+`ValidBranch(Branch)` holds (so no space, control or non-ASCII character either), and `Branch` differs from `Base`.
 `Base`, `Title`, `Message` non-empty. `Files` non-empty; every `Path` is a relative slash path
 without `..` or a leading `/`; no duplicate paths. `Repo.InstallationID > 0` and `FullName` is `owner/name`.
 
@@ -233,12 +248,12 @@ non-force commit on top of the branch head.
 
 ### Consumers (inbound, contract strength, all balanced)
 
-| Counterpart                    | Uses                                  | LCA / Rank / Distance | Volatility |
-| ------------------------------ | ------------------------------------- | --------------------- | ---------- |
-| `internal/control/`            | `New`                                 | control / 1 / 1       | High       |
-| `internal/control/onboarding/` | `Propose`, `Get`, `SetBody`           | control / 1 / 1       | High       |
-| `internal/control/assist/`     | `Propose` with `expectHeadSHA`, `Get` | control / 1 / 1       | High       |
-| `internal/control/ui/`         | `Propose`, `Get`, `Ready`             | control / 1 / 1       | High       |
+| Counterpart                    | Uses                                                                 | LCA / Rank / Distance | Volatility |
+| ------------------------------ | -------------------------------------------------------------------- | --------------------- | ---------- |
+| `internal/control/`            | `New`                                                                | control / 1 / 1       | High       |
+| `internal/control/onboarding/` | `Propose`, `Get`, `SetBody`                                          | control / 1 / 1       | High       |
+| `internal/control/assist/`     | `Propose` with `expectHeadSHA`, `Get`, `ValidBranch`, `ValidHeadSHA` | control / 1 / 1       | High       |
+| `internal/control/ui/`         | `Propose`, `Get`, `Ready`, `ValidBranch`, `ValidHeadSHA`             | control / 1 / 1       | High       |
 
 ## Change Vectors
 
@@ -271,8 +286,13 @@ Fakes implement `Changes` and `Pulls` in memory (branches, commits, pulls) and r
   **Scenario**: table over `Pull{State, Draft, Merged}`: open+draft, open+ready, closed+merged, closed, and no pull.
   **Expected behavior**: `DraftOpen`, `DraftInReview`, `DraftMerged`, `DraftClosed`, `DraftNone`.
 - **Test name**: `TestValidateChange`
-  **Scenario**: table: branch `main`, `feature/x`, `archfit/../x`, branch equal to base, empty base, empty title, empty message, no files, path `/etc/x`, path `a/../../b`, duplicate path, `InstallationID` 0, `FullName` without slash; one valid change.
+  **Scenario**: table: branch `main`, `feature/x`, `archfit/../x`, `archfit/./x`, branch equal to base, empty base, empty title, empty message, no files, path `/etc/x`, path `a/../../b`, duplicate path, `InstallationID` 0, `FullName` without slash; one valid change.
   **Expected behavior**: every invalid row errors with zero GitHub calls; the valid row passes.
+- **Test name**: `TestValidBranchAndHeadSHA`
+  **Scenario**: table for `ValidBranch`: `archfit/onboarding`, `archfit/edit-alice`, `archfit/a/b.c_d`; `main`, `archfit/`,
+  `archfit`, `archfit/../x`, `archfit/./x`, `archfit/a//b`, `archfit/a/`, `archfit/a b`, `archfit/a\tb`, `archfit/ä`, `Archfit/x`, empty.
+  Table for `ValidHeadSHA`: 40 lowercase hex; 39 and 41 characters; upper case; a 7-character prefix; `HEAD~1`; empty.
+  **Expected behavior**: the first three branches and the first SHA are valid; every other row is not.
 - **Test name**: `TestDraftCarriesPullURL`
   **Scenario**: `Pull{URL: "https://ghe.example/acme/shop/pull/12"}` from `EnsurePull` and from `PullByHead`.
   **Expected behavior**: `Draft.URL` equals `Pull.URL` verbatim; no URL is composed here.

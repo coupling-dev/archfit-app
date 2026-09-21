@@ -4,6 +4,7 @@ package proposal
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
 )
@@ -47,6 +48,26 @@ type Proposals interface {
 
 // ErrStale means the branch moved since the caller read it; the caller must reload and re-apply.
 var ErrStale = errors.New("proposal: branch head changed")
+
+// ValidBranch reports whether branch is a legal draft branch name: it matches
+// ^archfit/[A-Za-z0-9._/-]+$, has no empty, "." or ".." path segment (so no "//" and no trailing "/").
+func ValidBranch(branch string) bool {
+	if !branchPattern.MatchString(branch) {
+		return false
+	}
+	for seg := range strings.SplitSeq(strings.TrimPrefix(branch, branchPrefix), "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			return false
+		}
+	}
+	return true
+}
+
+// ValidHeadSHA reports whether sha is a full commit SHA: exactly 40 lowercase hex characters.
+// "" is not valid; a caller whose own contract allows "no draft yet" checks for "" itself.
+func ValidHeadSHA(sha string) bool {
+	return headSHAPattern.MatchString(sha)
+}
 
 func New(gh api.Changes, pulls api.Pulls) Proposals {
 	return &service{gh: gh, pulls: pulls}

@@ -25,11 +25,7 @@ const (
 	maxManagedJobs = 2           // per process; ceiling: one instance (see module.md, Change Vectors)
 )
 
-var (
-	errAlreadyOnboarded = errors.New("onboarding: already onboarded")
-	errBusy             = errors.New("onboarding: busy, retry later")
-	errNoOwners         = errors.New("onboarding: at least one owner is required")
-)
+var errNoOwners = errors.New("onboarding: at least one owner is required")
 
 // roles are the GitHub role interfaces this module reads through; *api.Client implements all of them.
 type roles struct {
