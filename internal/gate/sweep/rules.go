@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"slices"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate/feedback"
@@ -83,7 +82,7 @@ func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted)
 			rule = "7b"
 		}
 		res, err := p.rerun(ctx, rule, t, rc)
-		if err != nil || res != rerunImpossible {
+		if err != nil || res != RerunImpossible {
 			return err
 		}
 		// Only a new workflow run can bring evidence now; missing_upload is true and names that recovery.
@@ -99,17 +98,9 @@ func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted)
 // or cannot be read at all (a readable receipt always has a reason).
 func stale(rc feedback.Receipt, tr inputs.Trusted) bool {
 	return rc.Reason == "" ||
-		digestStale(tr.PolicyDigests, rc.PolicyDigest) ||
-		digestStale(tr.BaselineDigests, rc.BaselineDigest) ||
-		digestStale(tr.LabelsDigests, rc.LabelsDigest)
-}
-
-// digestStale treats "nothing trusted, nothing claimed" as fresh: that keeps the no-policy window quiet.
-func digestStale(trusted []string, claimed string) bool {
-	if len(trusted) == 0 {
-		return claimed != ""
-	}
-	return !slices.Contains(trusted, claimed)
+		!inputs.Accepts(tr.PolicyDigests, rc.PolicyDigest) ||
+		!inputs.Accepts(tr.BaselineDigests, rc.BaselineDigest) ||
+		!inputs.Accepts(tr.LabelsDigests, rc.LabelsDigest)
 }
 
 // expiry is the waiver expiry the receipt was evaluated against, or the trusted one when it has none.
@@ -133,11 +124,17 @@ func (p *pass) warn(ctx context.Context, t inputs.Target, e time.Time) error {
 	return nil
 }
 
-// without builds the publication for a target that has no report. Keeping the previous run identity
-// keeps the check's external_id, so feedback updates in place; the current digests and the new reason
-// are what makes the next pass find nothing to do.
-func without(code verdict.ReasonCode, t inputs.Target, tr inputs.Trusted, rc feedback.Receipt) feedback.Publication {
+// Without builds the publication for a target that has no report: verdict.Without(code), or
+// verdict.Suspended(tr.Entitlement) for ReasonSuspended, with the run identity of rc (zero when there
+// is no previous receipt) and the current digests of tr.
+//
+// Keeping the previous run identity keeps the check's external_id, so feedback updates in place; the
+// current digests and the new reason are what makes the next pass find nothing to do.
+func Without(code verdict.ReasonCode, t inputs.Target, tr inputs.Trusted, rc feedback.Receipt) feedback.Publication {
 	out := verdict.Without(code)
+	if code == verdict.ReasonSuspended {
+		out = verdict.Suspended(tr.Entitlement)
+	}
 	return feedback.Publication{
 		Target:  t,
 		Outcome: out,
@@ -145,9 +142,9 @@ func without(code verdict.ReasonCode, t inputs.Target, tr inputs.Trusted, rc fee
 			RunID:                rc.RunID,
 			RunAttempt:           rc.RunAttempt,
 			ReportDigest:         rc.ReportDigest,
-			PolicyDigest:         first(tr.PolicyDigests),
-			BaselineDigest:       first(tr.BaselineDigests),
-			LabelsDigest:         first(tr.LabelsDigests),
+			PolicyDigest:         inputs.First(tr.PolicyDigests),
+			BaselineDigest:       inputs.First(tr.BaselineDigests),
+			LabelsDigest:         inputs.First(tr.LabelsDigests),
 			EarliestWaiverExpiry: tr.EarliestWaiverExpiry,
 			Conclusion:           out.Conclusion,
 			Reason:               code,
@@ -156,15 +153,8 @@ func without(code verdict.ReasonCode, t inputs.Target, tr inputs.Trusted, rc fee
 	}
 }
 
-func first(digests []string) string {
-	if len(digests) == 0 {
-		return ""
-	}
-	return digests[0]
-}
-
 func (p *pass) publish(ctx context.Context, rule string, t inputs.Target, tr inputs.Trusted, rc feedback.Receipt, code verdict.ReasonCode) error {
-	pub := without(code, t, tr, rc)
+	pub := Without(code, t, tr, rc)
 	if err := p.publisher.Publish(ctx, pub); err != nil {
 		return err
 	}
@@ -177,39 +167,49 @@ func (p *pass) publish(ctx context.Context, rule string, t inputs.Target, tr inp
 	return nil
 }
 
-type rerunResult int
+// RerunResult is what the re-run guard found or did. It is meaningful only with a nil error.
+type RerunResult int
 
 const (
-	rerunInFlight   rerunResult = iota // queued or in progress: wait for its upload
-	rerunRequested                     // Actions.Rerun accepted the request
-	rerunImpossible                    // no run, run gone, or a newer attempt completed without an upload
+	RerunInFlight   RerunResult = iota // the run is queued or in progress: wait for its upload
+	RerunRequested                     // Actions.Rerun accepted the request
+	RerunImpossible                    // rc.RunID is 0, the run is gone, or a newer attempt already completed
 )
 
-// rerun is the guard that keeps re-runs to one per receipt: GitHub advances the attempt on every
-// accepted request, so a receipt's (run, attempt) can be re-run only while it is still the latest.
-func (p *pass) rerun(ctx context.Context, rule string, t inputs.Target, rc feedback.Receipt) (rerunResult, error) {
+// Rerun is the re-run guard, the only caller of Actions.Rerun on the gate path. It requests a re-run of
+// rc.RunID only while that run is completed and still at rc.RunAttempt, so a receipt is re-run at most once.
+// rc.RunID == 0 and ErrNotFound from Actions.Run are RerunImpossible with a nil error.
+func Rerun(ctx context.Context, actions api.Actions, r api.RepoRef, rc feedback.Receipt) (RerunResult, error) {
 	if rc.RunID == 0 {
-		return rerunImpossible, nil
+		return RerunImpossible, nil
 	}
-	run, err := p.actions.Run(ctx, t.Repo.RepoRef, rc.RunID)
+	run, err := actions.Run(ctx, r, rc.RunID)
 	if errors.Is(err, api.ErrNotFound) {
-		return rerunImpossible, nil
+		return RerunImpossible, nil
 	}
 	if err != nil {
-		return rerunInFlight, err
+		return RerunInFlight, err
 	}
 	if run.Status != runCompleted {
-		return rerunInFlight, nil
+		return RerunInFlight, nil
 	}
 	if run.Attempt != rc.RunAttempt {
-		return rerunImpossible, nil
+		return RerunImpossible, nil
 	}
-	if err := p.actions.Rerun(ctx, t.Repo.RepoRef, rc.RunID); err != nil {
-		return rerunInFlight, err
+	if err := actions.Rerun(ctx, r, rc.RunID); err != nil {
+		return RerunInFlight, err
 	}
-	p.sum.Rerun++
-	p.logAction(t, rule, "rerun", "run_id", rc.RunID, "run_attempt", rc.RunAttempt)
-	return rerunRequested, nil
+	return RerunRequested, nil
+}
+
+// rerun counts and logs what Rerun requested.
+func (p *pass) rerun(ctx context.Context, rule string, t inputs.Target, rc feedback.Receipt) (RerunResult, error) {
+	res, err := Rerun(ctx, p.actions, t.Repo.RepoRef, rc)
+	if err == nil && res == RerunRequested {
+		p.sum.Rerun++
+		p.logAction(t, rule, "rerun", "run_id", rc.RunID, "run_attempt", rc.RunAttempt)
+	}
+	return res, err
 }
 
 func (p *pass) logAction(t inputs.Target, rule, action string, attrs ...any) {

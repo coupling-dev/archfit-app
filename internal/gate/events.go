@@ -5,23 +5,14 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-	"strings"
 
 	"github.com/alexei-led/archfit-app/internal/gate/feedback"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
+	"github.com/alexei-led/archfit-app/internal/gate/sweep"
 	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/webhook"
-	"github.com/alexei-led/archfit-app/internal/wire/policy"
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
-)
-
-const (
-	// workflowsDir stands in for Settings.Workflow, which lives on the protected ref: wire/settings only
-	// accepts a workflow under it, so matching the directory is a superset that needs no file read.
-	workflowsDir = ".github/workflows/"
-
-	runCompleted = "completed"
 )
 
 // Reactions, as logged.
@@ -88,7 +79,8 @@ func (g *Gate) newHead(ctx context.Context, t inputs.Target) (string, error) {
 	case !trusted.SettingsFound:
 		return reactionNotOnboarded, nil
 	case t.Fork:
-		if err := g.publisher.Publish(ctx, forkRefusal(t, trusted)); err != nil {
+		// The zero receipt: no workflow run reported for this head, so any later upload replaces it.
+		if err := g.publisher.Publish(ctx, sweep.Without(verdict.ReasonForkUnsupported, t, trusted, feedback.Receipt{})); err != nil {
 			return reactionForkRefused, fmt.Errorf("gate: publish fork refusal: %w", err)
 		}
 		return reactionForkRefused, nil
@@ -99,24 +91,6 @@ func (g *Gate) newHead(ctx context.Context, t inputs.Target) (string, error) {
 		return reactionPending, nil
 	}
 	return reactionNone, nil
-}
-
-// forkRefusal has a zero run: no workflow run reported for this head, so any later upload replaces it.
-func forkRefusal(t inputs.Target, trusted inputs.Trusted) feedback.Publication {
-	outcome := verdict.Without(verdict.ReasonForkUnsupported)
-	return feedback.Publication{
-		Target:  t,
-		Outcome: outcome,
-		Receipt: feedback.Receipt{
-			PolicyDigest:         acceptedDigest(trusted.PolicyDigests, ""),
-			BaselineDigest:       acceptedDigest(trusted.BaselineDigests, ""),
-			LabelsDigest:         acceptedDigest(trusted.LabelsDigests, ""),
-			EarliestWaiverExpiry: trusted.EarliestWaiverExpiry,
-			Conclusion:           outcome.Conclusion,
-			Reason:               verdict.ReasonForkUnsupported,
-		},
-		Trusted: trusted,
-	}
 }
 
 // reviewChanged re-runs the workflow once an owner's review arrives after owner_approval_missing.
@@ -137,21 +111,13 @@ func (g *Gate) reviewChanged(ctx context.Context, t inputs.Target) (string, erro
 		return reactionNone, nil // no re-run for a review that grants nothing
 	}
 
-	// The guard of the sweep: GitHub advances the attempt on every accepted re-run, so a receipt's
-	// (run, attempt) can be re-run only while it is still the latest and completed.
-	rc := state.Receipt
-	if rc.RunID == 0 {
-		return reactionNone, nil
-	}
-	run, err := g.actions.Run(ctx, t.Repo.RepoRef, rc.RunID)
+	// The sweep owns the guard. A receipt without a run and a run that is gone are skipped, not errors.
+	res, err := sweep.Rerun(ctx, g.actions, t.Repo.RepoRef, state.Receipt)
 	if err != nil {
-		return reactionNone, fmt.Errorf("gate: read run: %w", err)
-	}
-	if run.Status != runCompleted || run.Attempt != rc.RunAttempt {
-		return reactionNone, nil
-	}
-	if err := g.actions.Rerun(ctx, t.Repo.RepoRef, rc.RunID); err != nil {
 		return reactionNone, fmt.Errorf("gate: re-run: %w", err)
+	}
+	if res != sweep.RerunRequested {
+		return reactionNone, nil
 	}
 	return reactionRerun, nil
 }
@@ -162,13 +128,7 @@ func protectedPush(paths []string) bool {
 	if len(paths) == 0 {
 		return true
 	}
-	return slices.ContainsFunc(paths, func(p string) bool {
-		switch p {
-		case policy.PolicyPath, policy.BaselinePath, policy.LabelsPath, settings.Path:
-			return true
-		}
-		return strings.HasPrefix(p, workflowsDir)
-	})
+	return slices.ContainsFunc(paths, inputs.MayBeProtected)
 }
 
 // Sweep runs one reconciliation pass.

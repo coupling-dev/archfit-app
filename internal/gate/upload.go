@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"slices"
 	"strconv"
 	"time"
 
@@ -147,16 +146,13 @@ func receipt(u Upload, t inputs.Trusted, o verdict.Outcome) feedback.Receipt {
 	}
 }
 
-// acceptedDigest is the claim when the trusted list holds it, else the first trusted digest, else "".
+// acceptedDigest is the claim when gate/inputs accepts it, else the first trusted digest.
 // A receipt therefore only ever names digests of the protected ref or of an owner-approved head.
 func acceptedDigest(trusted []string, claim string) string {
-	switch {
-	case len(trusted) == 0:
-		return ""
-	case slices.Contains(trusted, claim):
+	if inputs.Accepts(trusted, claim) {
 		return claim
 	}
-	return trusted[0]
+	return inputs.First(trusted)
 }
 
 func (g *Gate) logUpload(ctx context.Context, u Upload, o verdict.Outcome, status int, elapsed time.Duration) {

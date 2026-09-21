@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -352,6 +353,7 @@ func gapReport(withGaps bool) *report.Report {
 		Dimensions:    map[string]report.Dimension{"coupling": {Status: "measured"}},
 	}
 	if !withGaps {
+		r.GateReference = &report.Reference{Status: "comparable", BaseRef: "baseline"} // the trusted baseline was compared
 		r.Comparison.MeasurementProfile.Producers = []report.Producer{{Tool: "go/packages", Status: "ok"}}
 		r.Coverage.Tools = []report.ToolCoverage{{Tool: "go/packages", Status: "ok"}}
 		return r
@@ -394,6 +396,83 @@ func TestEvidenceGapSources(t *testing.T) {
 	p.Report = nil
 	mustContain(t, gaps(p), "No usable report")
 	mustContain(t, section(renderState(p), headGaps), "No usable report")
+
+	// The note and verdict step 7a are one rule: present exactly when Decide reports baseline_not_comparable.
+	references := map[string]*report.Reference{
+		"nil":                          nil,
+		"comparable":                   {Status: "comparable"},
+		"not_requested":                {Status: "not_requested"},
+		"non_comparable":               {Status: "non_comparable", Reasons: []string{"measurement profile changed"}},
+		"non_comparable without cause": {Status: "non_comparable"},
+	}
+	for name, ref := range references {
+		for _, baseline := range [][]string{{baselineDigest}, nil} {
+			p := base
+			p.Report = gapReport(false)
+			p.Report.GateReference = ref
+			p.Trusted.BaselineDigests = baseline
+			o := verdict.Decide(verdict.Facts{Report: p.Report, Trusted: p.Trusted})
+			want := slices.ContainsFunc(o.Reasons, func(r verdict.Reason) bool { return r.Code == verdict.ReasonBaselineNotComparable })
+			if got := strings.Contains(gaps(p), "Baseline comparison"); got != want {
+				t.Errorf("%s, trusted baseline %v: comparison note = %v, verdict not comparable = %v", name, baseline != nil, got, want)
+			}
+		}
+	}
+	p = base
+	p.Report = gapReport(false)
+	p.Report.GateReference = nil
+	mustContain(t, gaps(p), "Baseline comparison: the report has no gate reference")
+	p.Report.GateReference = &report.Reference{Status: "not_requested"}
+	mustContain(t, gaps(p), "Baseline comparison not_requested: no reason given")
+}
+
+func TestDigestSourceLabels(t *testing.T) {
+	const producer, protected, noUpload = "(stated by the producer)", "(from the protected ref)", "(from the protected ref; no upload)"
+	line := func(body, prefix string) string {
+		t.Helper()
+		for _, l := range strings.Split(section(body, headInputs), "\n") {
+			if strings.HasPrefix(l, prefix) {
+				return l
+			}
+		}
+		t.Fatalf("no %q line", prefix)
+		return ""
+	}
+	mismatch := func(code verdict.ReasonCode) verdict.Reason {
+		return verdict.Reason{Code: code, Category: verdict.CategoryEvidence, Detail: "ff99", Next: "Run the workflow with the file from the base branch."}
+	}
+	tests := []struct {
+		name             string
+		change           func(*Publication)
+		baseline, labels string
+	}{
+		{"claims accepted", func(*Publication) {}, producer, producer},
+		{"baseline mismatch", func(p *Publication) {
+			p.Outcome = outcome(verdict.ActionRequired, mismatch(verdict.ReasonBaselineMismatch), reasonBlocking)
+		}, protected, producer},
+		{"labels mismatch, not first", func(p *Publication) {
+			p.Outcome = outcome(verdict.Failure, reasonBlocking, mismatch(verdict.ReasonLabelsMismatch))
+		}, producer, protected},
+		{"no upload", func(p *Publication) { p.Identity, p.Report = manifest.Identity{}, nil }, noUpload, noUpload},
+		{"nothing on the protected ref", func(p *Publication) {
+			p.Identity, p.Receipt.BaselineDigest, p.Receipt.LabelsDigest = manifest.Identity{}, "", ""
+		}, "no baseline", "no labels file"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p := blockedPublication(t, headB, 7, 1)
+			tc.change(&p)
+			for _, body := range []string{renderComment(p, t0, ""), renderGate(p), renderState(p)} {
+				baseline, labels := line(body, "- Baseline digest"), line(body, "- Labels digest")
+				if !strings.HasSuffix(baseline, tc.baseline) || !strings.HasSuffix(labels, tc.labels) {
+					t.Errorf("lines:\n%s\n%s\nwant the endings %q and %q", baseline, labels, tc.baseline, tc.labels)
+				}
+				if p.Identity == (manifest.Identity{}) {
+					mustNotContain(t, body, "stated by the producer")
+				}
+			}
+		})
+	}
 }
 
 func producerLine(t *testing.T, body string) string {

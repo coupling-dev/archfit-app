@@ -8,6 +8,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/gate/ingest"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
 	"github.com/alexei-led/archfit-app/internal/wire/report"
+	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
 type decideCase struct {
@@ -165,7 +166,10 @@ func TestDigestPredicate(t *testing.T) {
 	for _, k := range kinds {
 		for listName, trusted := range lists {
 			for claimName, claimed := range claims {
-				mismatch := (len(trusted) == 0 && claimed != "") || (len(trusted) > 0 && claimName != match)
+				mismatch := !inputs.Accepts(trusted, claimed)
+				if want := (len(trusted) == 0 && claimed != "") || (len(trusted) > 0 && claimName != match); mismatch != want {
+					t.Fatalf("inputs.Accepts(%s, %s) = %v", listName, claimName, !mismatch)
+				}
 				for _, withReport := range []bool{true, false} {
 					name := k.name + "/" + listName + "/" + claimName
 					if !withReport {
@@ -364,6 +368,30 @@ func TestReasonCatalogComplete(t *testing.T) {
 	}
 	if _, ok := lookup("neutral"); ok {
 		t.Errorf("catalog knows a code outside the contract")
+	}
+	for _, code := range []ReasonCode{ReasonWorkflowNotApproved, ReasonSettingsMissing} {
+		if e, _ := lookup(code); !strings.Contains(e.next, "`"+settings.Path+"`") {
+			t.Errorf("%q next = %q, want it to name %s", code, e.next, settings.Path)
+		}
+	}
+}
+
+func TestSuspended(t *testing.T) {
+	for _, e := range []inputs.Entitlement{{Reason: "Trial ended. Open the Archfit App settings to subscribe."}, {}} {
+		o := Suspended(e)
+		checkInvariants(t, o)
+		wantCodes(t, o, ActionRequired, ReasonSuspended)
+		wantNext := e.Reason
+		if wantNext == "" {
+			wantNext = Without(ReasonSuspended).Reasons[0].Next
+		}
+		if r := o.Reasons[0]; r.Category != CategorySubscription || r.Next != wantNext {
+			t.Errorf("Suspended(%+v) = %+v", e, r)
+		}
+		decided := decide(t, with(func(f *Facts) { f.Trusted.Suspended, f.Trusted.Entitlement = true, e }))
+		if decided.Reasons[0] != o.Reasons[0] {
+			t.Errorf("Decide gives %+v, Suspended gives %+v", decided.Reasons[0], o.Reasons[0])
+		}
 	}
 }
 

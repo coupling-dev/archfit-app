@@ -152,8 +152,18 @@ adds `ProblemUnsupportedEvent`. `Binding.Event` is `run.Event` verbatim; for a d
 3. One candidate → `Pulls.Pull`. `pull.HeadSHA != run.HeadSHA` → 409 `stale_head`.
 4. Several candidates → `Pulls.Pull` each; keep those with `HeadSHA == run.HeadSHA`. Exactly one → it is the
    pull request. None or several → `ProblemEnvelopeMismatch` (ambiguous association is not eligible), `PullRequest` stays 0.
+   In steps 3 and 4, `api.ErrNotFound` from `Pulls.Pull` means GitHub does not know that number: the candidate is
+   dropped and is "no association". When no candidate is left, the result is `ProblemEnvelopeMismatch` with
+   `PullRequest` 0; it is never `stale_head` and never an error. Every other `Pulls.Pull` error ends `Receive`
+   (429 for the rate limit, a plain error otherwise).
 5. `pull.State != "open"` → `ProblemEnvelopeMismatch`.
 6. `Fork = pull.HeadRepo != Repo.FullName`. A fork adds `ProblemFork`. A run with `run.HeadRepo != Repo.FullName` is a fork too.
+   ingest owns this rule; `gate` and `gate/sweep` restate it for targets that come from a webhook or from
+   `OpenPulls` (declared in their Constraints).
+
+Body read (step 2): only the size cap is a rejection. When `http.MaxBytesReader` stops the read, the answer is 413
+`payload_too_large`. Any other read error (the client went away, a broken chunk) is a plain error, not a
+`*Rejection`: `gate` answers 503 `unavailable` and the Action retries.
 
 ### Binding values
 
@@ -522,6 +532,12 @@ type Actions interface {
   (it could quote payload content); only the fact is.
 - No retries inside `Receive`; the API client owns backoff. The Action retries on 429, 503 and other 5xx.
 - Stateless and safe for concurrent use.
+- Declared knowledge of GitHub formats: the ref prefix `refs/heads/` (the form of `Claims.Ref` for a branch) and the
+  event names `pull_request`, `push` and `workflow_dispatch` (the values of `WorkflowRun.Event` and
+  `Envelope.Event`) are literals here. Their owners are `github/oidc` and `github/api`, whose documents state the
+  formats and export no constants for them. If GitHub changed a format, the owners' documents and these literals
+  change together; until then a drift shows as `ProblemUnsupportedEvent` on every upload, which fails closed.
+  Remove a literal when its owner exports a constant.
 - Imports: standard library, `wire/envelope`, `wire/report`, `wire/manifest`, `github/oidc`, `github/api`.
   Never `control`, `app`, `store`, LLM or UI packages.
 
@@ -539,8 +555,8 @@ requests built with `httptest.NewRequest`. No network.
   **Scenario**: requests that violate two steps at once (oversized and unauthenticated; bad envelope and bad token; stale head and digest mismatch).
   **Expected behavior**: the earlier step's rejection wins.
 - **Test name**: `TestPullRequestResolution`
-  **Scenario**: table: one associated PR with matching head; one with a moved head; two PRs, one matching; two PRs, both matching; two PRs, none matching; empty list with a valid envelope hint; empty list with hint whose head differs; empty list and no hint; eleven candidates; a closed PR.
-  **Expected behavior**: bound; 409; bound to the match; `envelope_mismatch`; `envelope_mismatch`; bound; 409; `envelope_mismatch`; `envelope_mismatch`; `envelope_mismatch`.
+  **Scenario**: table: one associated PR with matching head; one with a moved head; two PRs, one matching; two PRs, both matching; two PRs, none matching; empty list with a valid envelope hint; empty list with hint whose head differs; empty list and no hint; eleven candidates; a closed PR; an empty list with a hint GitHub does not know (`api.ErrNotFound`).
+  **Expected behavior**: bound; 409; bound to the match; `envelope_mismatch`; `envelope_mismatch`; bound; 409; `envelope_mismatch`; `envelope_mismatch`; `envelope_mismatch`; `envelope_mismatch` with `PullRequest` 0 (no association, not an error).
 - **Test name**: `TestEnvelopeComparison`
   **Scenario**: flip one envelope field at a time: event, PR number, head, base, merge-base, run ID, attempt; then change only `baseline_digest` and `labels_digest`.
   **Expected behavior**: `Upload` returned with `ProblemEnvelopeMismatch`; binding still holds the authoritative values. The two claimed digests cause no problem here; they are passed on for `gate/verdict`.
@@ -566,8 +582,8 @@ requests built with `httptest.NewRequest`. No network.
 ### Boundary Tests
 
 - **Test name**: `TestBodyIsCapped`
-  **Scenario**: a body of exactly `MaxBytes`, one byte more, and an endless reader.
-  **Expected behavior**: accepted; 413; 413 after reading at most `MaxBytes + 1` bytes.
+  **Scenario**: a body of exactly `MaxBytes`, one byte more, an endless reader, and a reader that fails with another error.
+  **Expected behavior**: accepted; 413; 413 after reading at most `MaxBytes + 1` bytes; a plain error that wraps the read error and is not a `*Rejection`.
 - **Test name**: `TestClientSuppliedTenantIsIgnored`
   **Scenario**: another installation's ID in headers, query string and extra envelope-like headers; envelope repository of another tenant with a valid token for tenant A.
   **Expected behavior**: the first is bound to the claim's tenant; the second is 403 `repository_mismatch`; no API call addressed the other tenant.

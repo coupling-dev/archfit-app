@@ -121,6 +121,12 @@ func Decide(f Facts) Outcome
 func Without(code ReasonCode) Outcome
 ```
 
+```go
+// Suspended is Without(ReasonSuspended) for a caller that holds the entitlement record: Next is
+// e.Reason when it is not empty, exactly as step 1 of Decide sets it.
+func Suspended(e Entitlement) Outcome
+```
+
 ### What the two booleans mean
 
 `gate` computes them; `Decide` only reads them.
@@ -149,11 +155,11 @@ func Without(code ReasonCode) Outcome
 | 4a   | `!WorkflowApproved`                                                                                             | `workflow_not_approved`       | no             |
 | 4b   | `!IdentityApproved` and `Comparison.MeasurementProfile == nil`                                                  | `measurement_profile_missing` | yes            |
 | 4c   | `!IdentityApproved` and the profile is present                                                                  | `unknown_engine_identity`     | yes            |
-| 5    | `Trusted.Approval == ApprovalMissing`                                                                           | `owner_approval_missing`      | no             |
+| 5    | `Trusted.Approval` is neither `ApprovalNotRequired` nor `ApprovalGranted`                                       | `owner_approval_missing`      | no             |
 | 6a   | `len(Trusted.PolicyDigests) == 0` (settings merged, no policy on the protected ref yet)                         | `policy_missing`              | no             |
-| 6b   | `PolicyDigests` not empty and `Comparison.ConfigHash` is not in it                                              | `policy_mismatch`             | yes            |
-| 6c   | digest predicate (below) for `Facts.BaselineDigest` and `Trusted.BaselineDigests`                               | `baseline_mismatch`           | no             |
-| 6d   | digest predicate (below) for `Facts.LabelsDigest` and `Trusted.LabelsDigests`                                   | `labels_mismatch`             | no             |
+| 6b   | `PolicyDigests` not empty and `!Accepts(PolicyDigests, Comparison.ConfigHash)`                                  | `policy_mismatch`             | yes            |
+| 6c   | `!Accepts(Trusted.BaselineDigests, Facts.BaselineDigest)` (digest predicate, below)                             | `baseline_mismatch`           | no             |
+| 6d   | `!Accepts(Trusted.LabelsDigests, Facts.LabelsDigest)`                                                           | `labels_mismatch`             | no             |
 | 7a   | `Trusted.BaselineDigests` not empty and not (`GateReference != nil` and `GateReference.Status == "comparable"`) | `baseline_not_comparable`     | yes            |
 | 7b   | `Verdict` or `HardGates` holds a value outside its enum                                                         | `engine_error`                | yes            |
 | 7c   | `HardGates == "unmeasured"`, or unevaluated rules exist and `HardGates != "fail"`                               | `missing_required_coverage`   | yes            |
@@ -166,10 +172,12 @@ Rules of the table:
 - Steps marked "yes" are skipped when `Report == nil`.
 - When step 2 hits, steps 4 to 8 are skipped **[default]**: there are no trusted inputs to compare with.
 - Problems are read as a set; order and duplicates in `Facts.Problems` do not matter. An unknown `Problem` value counts as `envelope_mismatch` **[default]**.
-- Digest predicate, for a claimed digest `c` and a trusted list `T`: mismatch iff
-  `(len(T) == 0 && c != "") || (len(T) > 0 && c not in T)`. Both empty is a match: no baseline (or no labels file)
-  on the protected ref and none used by the producer is allowed. `c == ""` against a non-empty `T` is a mismatch: a
-  trusted baseline exists and the producer did not use it (no blanket re-baseline).
+- Step 5 fails closed: only the two known passing values of `Approval` clear it. `ApprovalMissing`, the zero value
+  and any value a later version of `gate/inputs` adds all give `owner_approval_missing`.
+- Digest predicate: `gate/inputs` owns it as `Accepts(trusted, claim)`; verdict has no comparison of its own. A
+  mismatch is `!Accepts`. Both empty is a match: no baseline (or no labels file) on the protected ref and none used
+  by the producer is allowed. `""` against a list with entries is a mismatch: a trusted baseline exists and the
+  producer did not use it (no blanket re-baseline).
 - The engine hashes only the policy (`Comparison.ConfigHash`). It reports no digest for the baseline or the labels
   file (`Comparison.LabelsHash` is a canonical hash, not reproducible from raw bytes, and is not compared). The
   baseline and labels digests are stated by the producer in the envelope. They are exactly as trustworthy as the
@@ -265,7 +273,7 @@ Categories of integrity, comparability and `Without` codes are **[default]**. `N
 | `missing_upload`              | evidence     | `action_required`     | empty                                                                                                 | "No report arrived. Check the Archfit workflow run and re-run it."                                                    |
 | `stale_inputs`                | evidence     | `action_required`     | empty                                                                                                 | "Policy or baseline changed on the base branch. A re-run was requested; re-run the Archfit workflow if none appears." |
 | `waiver_expired`              | governance   | `action_required`     | empty                                                                                                 | "A waiver expired. A re-run was requested; renew the waiver by owner-approved PR or fix the finding."                 |
-| `subscription_suspended`      | subscription | `action_required`     | empty                                                                                                 | `Trusted.Entitlement.Reason` in `Decide` when not empty; else "Archfit subscription inactive."                        |
+| `subscription_suspended`      | subscription | `action_required`     | empty                                                                                                 | `Entitlement.Reason` in `Decide` and `Suspended` when not empty; else "Archfit subscription inactive."                |
 
 `Detail` carries protected path names for `owner_approval_missing`; these are the five fixed protected
 paths, not customer source paths. The one engine-authored text in a `Detail` is the capped reason list of
@@ -347,7 +355,20 @@ type Upload struct {
 - **Balanced?**: yes
 - **Shared knowledge**: `Trusted` fields `Suspended`, `SettingsFound`, `PolicyDigests`, `BaselineDigests`, `LabelsDigests`,
   `ProtectedPaths`, `Approval`, and `Entitlement.Reason`. `Target` is not used here. `Settings` is an
-  opaque part of `Trusted` for this module.
+  opaque part of `Trusted` for this module. Steps 6b to 6d call `Accepts`; `First`, `ProtectedPaths` and
+  `MayBeProtected` are not used here.
+
+<!-- contract: Accepts, First — restated from internal/gate/inputs/module.md -->
+```go
+// Accepts is the digest predicate of the gate: whether claim is acceptable for one digest list of Trusted.
+// An empty list accepts only the empty claim ("nothing trusted, nothing claimed"). A list with entries
+// accepts only a claim that is not empty and is in the list, by exact string equality.
+func Accepts(trusted []string, claim string) bool
+
+// First returns the first digest of a list of Trusted, or "" for an empty list.
+// For every list that Resolve builds, Accepts(trusted, First(trusted)) is true.
+func First(trusted []string) string
+```
 
 <!-- contract: Entitlement, EntitlementKey — restated from internal/gate/inputs/module.md -->
 ```go
@@ -501,9 +522,9 @@ type Producer struct {
 
 ### Consumers (inbound)
 
-- **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Builds `Facts`, calls `Decide`, calls `Without` for fork refusal.
+- **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Builds `Facts`, calls `Decide`. The fork refusal reaches `Without` through `sweep.Without`.
 - **internal/gate/feedback**: model, gate / 1 / 1, high, balanced. Renders `Outcome`; `Receipt` stores `Conclusion` and `ReasonCode`.
-- **internal/gate/sweep**: contract, gate / 1 / 1, high, balanced. Calls `Without`; compares receipt `ReasonCode` values.
+- **internal/gate/sweep**: contract, gate / 1 / 1, high, balanced. Calls `Without` and `Suspended`; compares receipt `ReasonCode` values.
 
 ## Change Vectors
 
@@ -524,6 +545,11 @@ type Producer struct {
 - Never trust head-tree data: verdict reads only `Trusted` for policy, baseline, owners and settings facts.
 - Never filter by task `origin` or finding `status`; erosion-only adoption is the baseline's job inside the engine.
 - Suspension is category `subscription`: never an architecture failure, never a success.
+- Declared restatement: the `Next` texts of `workflow_not_approved` and `settings_missing` hold the literal
+  `.archfit-app.yaml`. The owner is `wire/settings` (`Path`). verdict does not import `wire/settings`, so that its
+  import set stays the three packages above; `TestReasonCatalogComplete` compares the texts with `settings.Path`,
+  so a renamed settings file fails that test instead of misleading a reader. Remove the literal if verdict ever
+  imports `wire/settings` for another reason.
 - `Detail` holds IDs and digests only, so an `Outcome` is safe to log.
 - No panic on any input, including nil `Report`, nil slices and nil pointers inside `Comparison`.
 
@@ -542,7 +568,7 @@ type Producer struct {
   **Expected behavior**: the listed reasons in the listed order; unknown values give `engine_error`.
 - **Test name**: `TestDigestPredicate`
   **Scenario**: table over (trusted list empty / one / two digests) × (claimed digest `""` / matching / other), once for `BaselineDigest` and once for `LabelsDigest`; a claimed digest with a `sha256:` prefix.
-  **Expected behavior**: `baseline_mismatch` or `labels_mismatch` exactly when the predicate is true; both empty is a match; `""` against a non-empty list is a mismatch; the prefixed digest never matches (bare hex only); neither step needs a report.
+  **Expected behavior**: `baseline_mismatch` or `labels_mismatch` exactly when `inputs.Accepts` is false for the same pair; both empty is a match; `""` against a non-empty list is a mismatch; the prefixed digest never matches (bare hex only); neither step needs a report.
 - **Test name**: `TestComparabilityRule`
   **Scenario**: a trusted baseline exists × `GateReference` nil / `comparable` / `non_comparable` / `not_requested`; no trusted baseline and no claimed baseline with `non_comparable` "no baseline file was loaded"; `Comparison.Status` set to `non_comparable` while the gate reference is comparable.
   **Expected behavior**: `baseline_not_comparable` for nil, `non_comparable` and `not_requested`, with at most three reasons and 200 characters in `Detail`; nothing for `comparable`; the no-baseline case is ignored and can be `success`; `Comparison.Status` changes nothing.
@@ -557,16 +583,19 @@ type Producer struct {
   **Expected behavior**: `measurement_profile_missing`, `unknown_engine_identity`, and only `report_invalid` respectively.
 - **Test name**: `TestReasonCatalogComplete`
   **Scenario**: iterate every `ReasonCode` constant of the contract (twenty-two).
-  **Expected behavior**: each has the catalog category; every code except `healthy` has a non-empty `Next`.
+  **Expected behavior**: each has the catalog category; every code except `healthy` has a non-empty `Next`; the `Next` texts of `workflow_not_approved` and `settings_missing` name `settings.Path`.
 - **Test name**: `TestWithout`
   **Scenario**: the five allowed codes, then `ReasonHealthy` and an unknown code.
   **Expected behavior**: `ActionRequired` with one reason each; the last two give `engine_error`.
+- **Test name**: `TestSuspended`
+  **Scenario**: an entitlement with a `Reason`; the zero entitlement; `Decide` for suspended facts with the same two records.
+  **Expected behavior**: `ActionRequired`, one reason `subscription_suspended` in category `subscription`; `Next` is the record's `Reason`, or the catalog text for the zero record; `Reasons[0]` equals the one `Decide` gives.
 
 ### Integration Contract Tests
 
 - **Test name**: `TestDecideWireFixtures`
-  **Scenario**: table over the `internal/wire/testdata` fixtures (engine v2.3.1), each decoded with `report.Decode` and combined with otherwise clean facts: matching trusted digests, approved workflow and identity, no problems, not suspended. "Otherwise clean" excludes the one eligibility fact a fixture exercises (the unknown-identity fixture is evaluated with `IdentityApproved == false`). Fixtures: healthy; warning-only attention with passing hard gates; blocked; missing required evidence; unknown identity (no profile); comparable profiles; incompatible profiles (`gate_reference.status: non_comparable` with a trusted baseline); blocker plus unevaluated required rule; non-applicable rule; `locations: []`; `matched_by: {}`; both repair kinds; waiver expiry and order.
-  **Expected behavior**: each fixture's `.expect.json` holds `gate: {conclusion, reasons}` with `reasons` as the reason codes in order; `Decide` must return exactly that conclusion and that code sequence. For the named fixtures: `success`, `success`, `failure`, `action_required`/`missing_required_coverage`, `action_required`/`measurement_profile_missing`, `success`, `action_required`/`baseline_not_comparable`, `failure` with `missing_required_coverage` as second reason, `success`, and the fixture's own decision for the rest.
+  **Scenario**: every report fixture of the shared corpus `internal/wire/testdata/report` (names and `.expect.json` format per `internal/wire/module.md`; verdict keeps no copy). A fixture with `decode: "ok"` is decoded with `report.Decode`; one with `decode: "error"` gives a nil `Report`. The facts are the clean facts of that document: identity and workflow approved, settings found, no approval needed, not suspended, no problems, trusted policy digests = the report's `config_hash`, trusted baseline and labels digests = `policy.Digest` of the `.baseline.json` and `.labels.yaml` siblings (an empty list when there is no sibling), and the same digests as the envelope's claims. The fixture's `facts` object then overrides single facts; an unknown key in `facts` or in the expectation fails the test. The corpus must hold the required fixtures: `healthy`, `attention-pass`, `blocked`, `missing-evidence`, `unknown-identity`, `profile-comparable`, `profile-incompatible`, `invalid-input`, `blocker-and-unevaluated`, `non-applicable-rule`, `locations-empty`, `matched-by-populated`, `repair-kinds`, `waiver-expiry-order`.
+  **Expected behavior**: `Decide` returns exactly `gate.conclusion` and the code sequence `gate.reasons` of each fixture. For the named fixtures the document also fixes the first reason: `success` for `healthy`, `attention-pass` and `non-applicable-rule`; `failure`/`blocking_findings` for `blocked`; `action_required`/`missing_required_coverage` for `missing-evidence`; `action_required`/`measurement_profile_missing` for `unknown-identity`; `action_required`/`baseline_not_comparable` for `profile-incompatible`; `action_required`/`report_invalid` for `invalid-input`; `failure` with `missing_required_coverage` second for `blocker-and-unevaluated`.
 - **Test name**: `TestReasonsZeroDeterminesConclusion`
   **Scenario**: all outcomes produced by the other tests.
   **Expected behavior**: `Conclusion` equals the catalog conclusion of `Reasons[0].Code`; `Reasons` is never empty.

@@ -138,24 +138,21 @@ func noticeLine(e inputs.Entitlement, now time.Time) string {
 	return "> " + sanitize(e.Notice)
 }
 
-// blocking is a display heuristic only. The conclusion always comes from the Outcome.
-func blocking(f report.Finding) bool {
-	return f.Kind == "gate" && (f.Status == "new" || f.Status == "expired_waiver")
-}
-
+// findingsBlock shows Finding.Active findings as blocking. That is a display heuristic only:
+// the conclusion always comes from the Outcome.
 func findingsBlock(r *report.Report) string {
 	if r == nil {
 		return ""
 	}
 	var introduced, debt, fixed []report.Finding
 	for _, f := range r.Findings {
-		if blocking(f) {
+		if f.Active() {
 			introduced = append(introduced, f)
 		}
 	}
 	for _, f := range r.Findings {
 		switch {
-		case blocking(f):
+		case f.Active():
 		case f.Status == "baseline" || f.Status == "waived":
 			debt = append(debt, f)
 		case f.Status == "fixed":
@@ -194,7 +191,7 @@ func findingsBlock(r *report.Report) string {
 
 func writeFinding(b *strings.Builder, f report.Finding) {
 	b.WriteString("\n- ")
-	if blocking(f) {
+	if f.Active() {
 		b.WriteString("**blocking** ")
 	}
 	fmt.Fprintf(b, "%s (%s, %s): %s → %s", code(f.RuleID), text(f.Severity), text(f.Status), endpoint(f.Edge.From), endpoint(f.Edge.To))
@@ -337,7 +334,9 @@ func gapsBlock(p Publication) string {
 	switch ref := r.GateReference; {
 	case len(p.Trusted.BaselineDigests) == 0:
 		lines = append(lines, "- No baseline: every current violation blocks.")
-	case ref != nil && ref.Status != "comparable" && ref.Status != "not_requested":
+	case ref == nil: // verdict step 7a: with a trusted baseline, no reference is not comparable
+		lines = append(lines, "- Baseline comparison: the report has no gate reference")
+	case ref.Status != "comparable":
 		reasons := []string{"no reason given"}
 		if len(ref.Reasons) > 0 {
 			reasons = ref.Reasons
@@ -358,12 +357,12 @@ func gapsBlock(p Publication) string {
 func inputsBlock(p Publication) string {
 	lines := []string{"- Policy digest: " + code(p.Receipt.PolicyDigest)}
 	if p.Receipt.BaselineDigest != "" {
-		lines = append(lines, "- Baseline digest: "+code(p.Receipt.BaselineDigest)+" (stated by the producer)")
+		lines = append(lines, "- Baseline digest: "+code(p.Receipt.BaselineDigest)+digestSource(p, verdict.ReasonBaselineMismatch))
 	} else {
 		lines = append(lines, "- Baseline digest: no baseline")
 	}
 	if p.Receipt.LabelsDigest != "" {
-		lines = append(lines, "- Labels digest: "+code(p.Receipt.LabelsDigest)+" (stated by the producer)")
+		lines = append(lines, "- Labels digest: "+code(p.Receipt.LabelsDigest)+digestSource(p, verdict.ReasonLabelsMismatch))
 	} else {
 		lines = append(lines, "- Labels digest: no labels file")
 	}
@@ -377,6 +376,21 @@ func inputsBlock(p Publication) string {
 		lines = append(lines, "- Protected path change: owner approval by "+code(p.Trusted.ApprovedBy))
 	}
 	return headInputs + "\n\n" + strings.Join(lines, "\n") + "\n\n" + fixedTrustSentence
+}
+
+// digestSource labels a receipt digest. The receipt does not carry its source, but the publication implies it:
+// without an upload the App wrote the trusted digest, and gate writes the envelope's claim only when verdict
+// reported no mismatch for it.
+func digestSource(p Publication, mismatch verdict.ReasonCode) string {
+	if p.Identity == (manifest.Identity{}) {
+		return " (from the protected ref; no upload)"
+	}
+	for _, r := range p.Outcome.Reasons {
+		if r.Code == mismatch {
+			return " (from the protected ref)"
+		}
+	}
+	return " (stated by the producer)"
 }
 
 func identityLine(id manifest.Identity) string {
@@ -453,7 +467,7 @@ func annotations(p Publication) []api.Annotation {
 	var out []api.Annotation
 	for _, wantBlocking := range []bool{true, false} {
 		for _, f := range p.Report.Findings {
-			if blocking(f) != wantBlocking {
+			if f.Active() != wantBlocking {
 				continue
 			}
 			level := "warning"

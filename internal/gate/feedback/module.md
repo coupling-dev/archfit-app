@@ -174,8 +174,9 @@ Comment, in order. Check summaries use the same blocks: gate = 1, 2, 8, receipt 
 2. Further reasons, one line each (for example unevaluated rules beside a blocker).
 3. `Trusted.Entitlement.Notice`, when `WarnFrom` is set, `now()` is at or past it, and the notice is not empty.
 4. Waiver notice section (owned by `Warn`).
-5. Findings: blocking first. A finding is shown as blocking when `Kind == "gate"` and `Status` is `new` or
-   `expired_waiver` **[default, display only: the verdict never reads findings]**. Groups by `Status`: "Introduced"
+5. Findings: blocking first. A finding is shown as blocking when `Finding.Active()` of `wire/report` is true
+   (that package owns the status vocabulary; feedback has no formula of its own) **[default, display only: the
+   verdict never reads findings]**. Groups by `Status`: "Introduced"
    (`new`, `expired_waiver`), "Accepted debt — display only" (`baseline`, `waived`), "Fixed" (`fixed`). Per finding:
    rule ID, severity, `Edge.From.Module` → `Edge.To.Module` (with `Path` when set), locations as `file:line`, `Why`,
    then the policy-permitted repair: `Constraint` and `AllowedAlternatives`. feedback adds no repair of its own and
@@ -190,9 +191,13 @@ Comment, in order. Check summaries use the same blocks: gate = 1, 2, 8, receipt 
    whose `Status` is not `ok`, every `Dimension.Unknown` fact with its reason, the measurement profile's `Unknowns`, and
    producers whose `Status` is not `ok`. When the protected ref has no baseline (`Trusted.BaselineDigests` empty):
    the line "No baseline: every current violation blocks." When a baseline exists and the gate reference is not
-   comparable: its `Reasons`. "None reported" when empty; "No usable report" when `Report == nil`.
+   comparable, by the rule of `gate/verdict` step 7a (a nil `GateReference`, or any `Status` other than
+   `comparable`, `not_requested` included): one line per entry of its `Reasons`, "no reason given" when it has none,
+   and for a nil reference the line "Baseline comparison: the report has no gate reference". The note therefore
+   appears exactly when verdict reports `baseline_not_comparable`. "None reported" when empty; "No usable report"
+   when `Report == nil`.
 8. Inputs and identity: `Receipt.PolicyDigest`, `Receipt.BaselineDigest` (or "no baseline"), `Receipt.LabelsDigest`
-   (or "no labels file"), all bare hex; baseline and labels digests are labeled "stated by the producer"; measurement profile
+   (or "no labels file"), all bare hex; the baseline and labels digests carry their source (table below); measurement profile
    version and settings hash (or "missing"), the claimed producer identity from `Publication.Identity` as
    "engine <version>, image <digest>, <platform>" (or "no upload" when it is zero; labeled "claimed", because
    only the manifest check in `gate` judges it), `ApprovedBy` when approval was granted, and the fixed sentence
@@ -204,6 +209,19 @@ Comment, in order. Check summaries use the same blocks: gate = 1, 2, 8, receipt 
     `constraints`, `files`, `validation`, `origin`, as decoded (`repair_kind` preserved), whole tasks only; tasks that
     do not fit are counted in a line below the block.
 
+Source label of the baseline and labels digests in block 8. The receipt does not carry the source; it follows from
+fields the publication already has, by the receipt rule of `gate` (the claim when `inputs.Accepts` takes it, else the
+first trusted digest) and of `gate/sweep` (always the first trusted digest):
+
+| Publication                                                                  | Label                               |
+| ---------------------------------------------------------------------------- | ----------------------------------- |
+| `Identity` is zero (no upload: a sweep publication or a fork refusal)        | "from the protected ref; no upload" |
+| an upload, and `Outcome.Reasons` holds the mismatch code of that digest      | "from the protected ref"            |
+| an upload without that code (the envelope's claim was accepted and is shown) | "stated by the producer"            |
+
+The mismatch codes are `baseline_mismatch` and `labels_mismatch`. "stated by the producer" is never printed for a
+digest the App wrote itself. An upload always has an identity: the envelope decoder requires every identity field.
+
 When `Reasons[0].Category` is `subscription`, blocks 5 to 7, 9 and 10 are omitted **[default]**: paid output is suspended, the reason and recovery stay.
 
 Annotations: only on `archfit/state`; from `Finding.Locations{File, Line}` only; findings shown as blocking first,
@@ -211,8 +229,11 @@ report order; level `failure` for those, `warning` otherwise; message = rule ID 
 **[default]**. A finding with `locations: []` gets no annotation.
 
 Size: summaries and the comment stay at or under 65 535 bytes. The receipt marker and blocks 1, 2, 7, 8 are
-budgeted first and never cut. Then block 10 shrinks by whole tasks, then block 5 is cut at a line end and
-ends with "Output truncated." Cuts never split a UTF-8 sequence or a marker.
+budgeted first and never cut. Of the rest, the budget is handed out in this order: block 6, block 9, block 5, block
+10. Block 6 is cut at a line end, like block 5, when the never-cut blocks leave it too little room; block 9 takes
+at most its own budget (below) before block 5 gets anything, so a long finding list cannot push the validation
+commands out. Then block 5 is cut at a line end and ends with "Output truncated.", and block 10 shrinks by whole
+tasks into what is left, so tasks give way first and findings second. Cuts never split a UTF-8 sequence or a marker.
 Block 9 has its own budget of 4 096 bytes and 20 commands, whole commands only, then "N more commands are not
 shown." **[default]**; a command that contains `<!--`, `-->` or a code fence is counted, not printed. The comment
 budget keeps room for the waiver notice section, so `Warn` never needs a size check. Display caps, each ending with
@@ -406,6 +427,15 @@ type Settings struct {
   decoder, yet still untrusted for Markdown. `Origin` sorts presentation only. `Locations` may be empty.
   A report has no exit code, no `needs_attention` flag, no per-dimension trust and no single validation command.
   `Seam` is an opaque part of `Report` for this module and is not rendered. `Metric` values are shown only through `Delta`. `StateSchemaV1` is the schema constant the decoder enforced.
+  `Finding.Active()` is the single definition of "active gate finding"; feedback calls it for the "blocking" label,
+  the group order and the annotation level.
+
+<!-- contract: Active, Finding — restated from internal/wire/report/module.md -->
+```go
+// Active reports whether the finding currently blocks: a gate finding that is new or whose waiver expired.
+// It is the single definition of "active gate finding" for every consumer.
+func (f Finding) Active() bool
+```
 
 <!-- contract: Report, StateSchemaV1, MaxBytes — restated from internal/wire/report/module.md -->
 ```go
@@ -794,8 +824,12 @@ type Comments interface {
 - Never print "verified", a score, a grade or a percentage of health. Trust is "customer-attested".
   Provenance is necessary, not sufficient.
 - Never invent a location, a repair route or independent evidence. No annotation without a `Location`.
+- Declared restatement: the nine dimension names and their order (block 6) are a literal list in `render.go`. The
+  owner is `wire/report`, whose decoder accepts exactly these keys and exports no list of them. If the two drift, a
+  new engine dimension decodes but is not printed, and a removed one prints "not reported". Trigger to change: a new
+  engine dimension; remove the list when `wire/report` exports the keys in order.
 - Task origin and finding status are presentation only; grouping never hides a blocking finding. The "blocking" label
-  is a display heuristic; the conclusion always comes from `Outcome`.
+  is `Finding.Active()` of `wire/report`, a display heuristic here; the conclusion always comes from `Outcome`.
 - Engine-authored strings are sanitized before rendering: `<!--`, `-->` and backticks are removed, `<` and `>`
   HTML-escaped, newlines dropped. The agent task JSON is encoded with HTML escaping (`<`). So no report
   content can forge a marker; `State` still reads only the last receipt marker.
@@ -834,8 +868,11 @@ Golden files hold rendered bodies for the wire fixtures.
   **Scenario**: 10 000 findings with maximum-length messages and 2 000 agent tasks; multi-byte module names at the cut point.
   **Expected behavior**: summary and comment ≤ 65 535 bytes; receipt marker, verdict, evidence gaps and inputs block intact; valid UTF-8; valid JSON in the task block; "Output truncated." present.
 - **Test name**: `TestEvidenceGapSources`
-  **Scenario**: a report with one unevaluated rule, a `Coverage.Tools` entry with status `timed out`, a `Dimension.Unknown` fact, a profile `Unknowns` entry, a `partial` producer; the same with none of them; no baseline on the protected ref; a baseline with a `non_comparable` reference.
-  **Expected behavior**: each item appears in the evidence-gap section with its reason; "None reported"; the line "No baseline: every current violation blocks."; the reference reasons.
+  **Scenario**: a report with one unevaluated rule, a `Coverage.Tools` entry with status `timed out`, a `Dimension.Unknown` fact, a profile `Unknowns` entry, a `partial` producer; the same with none of them; no baseline on the protected ref; a trusted baseline with a `non_comparable` reference, a `not_requested` reference, a nil reference and a `comparable` one; the same four without a trusted baseline.
+  **Expected behavior**: each item appears in the evidence-gap section with its reason; "None reported"; the line "No baseline: every current violation blocks."; the reference reasons, "no reason given" for `not_requested` without reasons, and the no-gate-reference line for nil. With a trusted baseline a comparison line is present exactly when `verdict.Decide` reports `baseline_not_comparable` for the same report; without one it is never present.
+- **Test name**: `TestDigestSourceLabels`
+  **Scenario**: an upload whose claims were accepted; an upload with `baseline_mismatch`; one with `labels_mismatch`; the zero `Identity` (a `sweep.Without` publication); no baseline and no labels file; rendered as comment, gate summary and state summary.
+  **Expected behavior**: "stated by the producer" on both lines; "from the protected ref" on the mismatched line only; "from the protected ref; no upload" on both lines; "no baseline" and "no labels file" without a label. "stated by the producer" never appears without an upload.
 - **Test name**: `TestIdentityLine`
   **Scenario**: a full `Identity`; the zero `Identity` (sweep publication); an identity whose fields contain marker text.
   **Expected behavior**: "claimed: engine v2.3.1, image sha256:…, linux/amd64"; "no upload"; sanitized text; never the word "approved" or "verified".

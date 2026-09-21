@@ -1,6 +1,8 @@
 package sweep
 
 import (
+	"context"
+	"errors"
 	"reflect"
 	"slices"
 	"testing"
@@ -50,6 +52,28 @@ func TestStaleReceipt(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("agrees with inputs.Accepts", func(t *testing.T) {
+		for _, list := range [][]string{nil, {"d1"}, {"d1", "d2"}} {
+			for _, digest := range []string{"", "d1", "d2", "d9"} {
+				want := !inputs.Accepts(list, digest)
+				fields := map[string]struct {
+					tr inputs.Trusted
+					rc feedback.Receipt
+				}{
+					"policy":   {inputs.Trusted{PolicyDigests: list}, feedback.Receipt{PolicyDigest: digest}},
+					"baseline": {inputs.Trusted{BaselineDigests: list}, feedback.Receipt{BaselineDigest: digest}},
+					"labels":   {inputs.Trusted{LabelsDigests: list}, feedback.Receipt{LabelsDigest: digest}},
+				}
+				for field, f := range fields {
+					f.rc.Reason = verdict.ReasonHealthy
+					if got := stale(f.rc, f.tr); got != want {
+						t.Errorf("%s: stale(%q against %v) = %v, want %v", field, digest, list, got, want)
+					}
+				}
+			}
+		}
+	})
 }
 
 func TestNoPolicyWindowIsQuiet(t *testing.T) {
@@ -261,6 +285,41 @@ func TestRerunGuard(t *testing.T) {
 			}
 		})
 	}
+
+	failed := errors.New("boom")
+	direct := []struct {
+		name               string
+		runID              int64
+		run                *api.WorkflowRun
+		runErr, rerunErr   error
+		want               RerunResult
+		wantErr            error
+		wantRuns, wantReqs int
+	}{
+		{name: "run ID 0", want: RerunImpossible},
+		{name: "run not found", runID: 9, want: RerunImpossible, wantRuns: 1},
+		{name: "run queued", runID: 9, run: &api.WorkflowRun{ID: 9, Attempt: 1, Status: "queued"}, want: RerunInFlight, wantRuns: 1},
+		{name: "run in progress", runID: 9, run: &api.WorkflowRun{ID: 9, Attempt: 1, Status: "in_progress"}, want: RerunInFlight, wantRuns: 1},
+		{name: "completed at the receipt's attempt", runID: 9, run: &api.WorkflowRun{ID: 9, Attempt: 1, Status: "completed"}, want: RerunRequested, wantRuns: 1, wantReqs: 1},
+		{name: "completed at a later attempt", runID: 9, run: &api.WorkflowRun{ID: 9, Attempt: 2, Status: "completed"}, want: RerunImpossible, wantRuns: 1},
+		{name: "Run fails", runID: 9, runErr: failed, wantErr: failed, wantRuns: 1},
+		{name: "Rerun fails", runID: 9, run: &api.WorkflowRun{ID: 9, Attempt: 1, Status: "completed"}, rerunErr: failed, wantErr: failed, wantRuns: 1, wantReqs: 1},
+	}
+	for _, tc := range direct {
+		t.Run("exported/"+tc.name, func(t *testing.T) {
+			actions := &fakeActions{runs: map[int64]*api.WorkflowRun{}, runErrs: map[int64]error{9: tc.runErr}, rerunErrs: map[int64]error{9: tc.rerunErr}}
+			if tc.run != nil {
+				actions.runs[9] = tc.run
+			}
+			got, err := Rerun(context.Background(), actions, api.RepoRef{InstallationID: 1, FullName: "acme/shop"}, receipt(tc.runID, verdict.ReasonOwnerApprovalMissing))
+			if !errors.Is(err, tc.wantErr) || (err == nil && got != tc.want) {
+				t.Errorf("Rerun = %v, %v; want %v, %v", got, err, tc.want, tc.wantErr)
+			}
+			if len(actions.runCalls) != tc.wantRuns || len(actions.rerunCalls) != tc.wantReqs {
+				t.Errorf("Run calls %v, Rerun calls %v", actions.runCalls, actions.rerunCalls)
+			}
+		})
+	}
 }
 
 func TestWithoutReceipt(t *testing.T) {
@@ -296,9 +355,12 @@ func TestWithoutReceipt(t *testing.T) {
 		}
 		for _, tc := range tests {
 			t.Run(string(code)+"/"+tc.name, func(t *testing.T) {
-				p := without(code, tg, tc.trusted, tc.rc)
+				p := Without(code, tg, tc.trusted, tc.rc)
 				if p.Receipt != tc.want {
 					t.Errorf("receipt = %+v, want %+v", p.Receipt, tc.want)
+				}
+				if stale(p.Receipt, tc.trusted) {
+					t.Errorf("the receipt %+v is stale for its own trusted inputs", p.Receipt)
 				}
 				if !reflect.DeepEqual(p.Outcome, verdict.Without(code)) || p.Outcome.Conclusion != verdict.ActionRequired {
 					t.Errorf("outcome = %+v", p.Outcome)
@@ -311,6 +373,22 @@ func TestWithoutReceipt(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestWithoutShowsTheEntitlementReason(t *testing.T) {
+	tr := trusted()
+	tr.Suspended, tr.Entitlement = true, inputs.Entitlement{Reason: "Trial ended. Subscribe in the Archfit App settings."}
+	p := Without(verdict.ReasonSuspended, inputs.Target{}, tr, feedback.Receipt{})
+	if !reflect.DeepEqual(p.Outcome, verdict.Suspended(tr.Entitlement)) || p.Outcome.Reasons[0].Next != tr.Entitlement.Reason {
+		t.Errorf("outcome = %+v", p.Outcome)
+	}
+	if p.Receipt.Reason != verdict.ReasonSuspended || p.Receipt.Conclusion != verdict.ActionRequired {
+		t.Errorf("receipt = %+v", p.Receipt)
+	}
+	// The reason of another code is never replaced.
+	if p := Without(verdict.ReasonMissingUpload, inputs.Target{}, tr, feedback.Receipt{}); !reflect.DeepEqual(p.Outcome, verdict.Without(verdict.ReasonMissingUpload)) {
+		t.Errorf("missing_upload outcome = %+v", p.Outcome)
 	}
 }
 

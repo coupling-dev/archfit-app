@@ -89,7 +89,7 @@ func (r *resolver) Resolve(ctx context.Context, t Target, now time.Time) (Truste
 	if err != nil {
 		return Trusted{}, fmt.Errorf("inputs: changed files: %w", err)
 	}
-	out.ProtectedPaths = protectedPaths(changed, truncated, s.Workflow)
+	out.ProtectedPaths = protectedPaths(changed, truncated, s)
 	if len(out.ProtectedPaths) == 0 {
 		return out, nil
 	}
@@ -188,9 +188,9 @@ func suspended(private bool, e Entitlement, now time.Time) bool {
 
 // protectedPaths returns the protected paths among changed, in fixed order.
 // A truncated list fails closed: any path may have changed.
-func protectedPaths(changed []string, truncated bool, workflow string) []string {
+func protectedPaths(changed []string, truncated bool, s settings.Settings) []string {
 	var out []string
-	for _, p := range []string{policy.PolicyPath, policy.BaselinePath, policy.LabelsPath, settings.Path, workflow} {
+	for _, p := range ProtectedPaths(s) {
 		if truncated || slices.Contains(changed, p) {
 			out = append(out, p)
 		}

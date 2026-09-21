@@ -193,8 +193,7 @@ func poison(v reflect.Value) {
 }
 
 func TestDetailCarriesOnlyIdentifiers(t *testing.T) {
-	poisoned := func(name string) *report.Report {
-		r := loadReport(t, name)
+	poisoned := func(r *report.Report, name string) *report.Report {
 		if len(r.Findings) == 0 || len(r.AgentTasks) == 0 || len(r.Dimensions) == 0 {
 			t.Fatalf("%s has nothing to poison", name)
 		}
@@ -210,15 +209,15 @@ func TestDetailCarriesOnlyIdentifiers(t *testing.T) {
 		c.Reasons, c.TaskOriginReasons = []string{marker}, []string{marker}
 		return r
 	}
-	for _, name := range []string{"all-keys", "blocked", "blocker-plus-unevaluated"} {
+	for _, name := range []string{"all-keys", "blocked", "blocker-and-unevaluated"} {
 		for _, mutate := range []func(*Facts){
 			func(*Facts) {},
 			func(f *Facts) {
 				*f = with(nonComparable, approvalMissing, baselineMismatch, labelsMismatch, identityOff, workflowOff, suspended)
 			},
 		} {
-			f := cleanFacts(poisoned(name), fixtureFacts{})
-			poisonedReport := f.Report
+			f, _ := fixtureCase(t, name)
+			poisonedReport := poisoned(f.Report, name)
 			mutate(&f)
 			f.Report = poisonedReport
 			o := decide(t, f)

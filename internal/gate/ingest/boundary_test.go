@@ -4,8 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
 	"strings"
 	"testing"
+	"testing/iotest"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/report"
@@ -50,6 +53,16 @@ func TestBodyIsCapped(t *testing.T) {
 			t.Errorf("read %d bytes, want at most %d", endless.n, report.MaxBytes+1)
 		}
 		wantCalls(t, s)
+	})
+
+	t.Run("a read error that is not the cap is a plain error", func(t *testing.T) {
+		s := discoveryScenario(t)
+		s.reader = iotest.ErrReader(io.ErrUnexpectedEOF)
+		_, err := s.receive(t)
+		var rejection *Rejection
+		if !errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &rejection) {
+			t.Errorf("err = %v, want a plain error that wraps the read error", err)
+		}
 	})
 }
 

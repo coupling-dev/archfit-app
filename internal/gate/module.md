@@ -231,6 +231,10 @@ func New(repos Repos, pulls Pulls, actions Actions, v Verifier, audience string)
   error on GitHub failures and never on Store failures. `SettingsFound == false` means "not onboarded".
   `PolicyDigests[0]` and `BaselineDigests[0]` are the first accepted digests: the base digest when the file exists on
   the protected ref, otherwise the owner-approved head digest; the lists are empty when neither exists. The inputs constructor is `New(repos Repos, pulls Pulls, s Store) Resolver`.
+  `inputs` owns the digest predicate and the protected path set. The façade compares no digest and names no
+  protected path: a receipt digest is the claim when `Accepts` takes it and `First` of the list otherwise, and the
+  `DefaultBranchPush` trigger asks `MayBeProtected` for every changed path. `ProtectedPaths` is not called here
+  (a push event carries no settings); the tests iterate it.
 
 <!-- contract: Target, Trusted, Approval — restated from internal/gate/inputs/module.md -->
 ```go
@@ -276,6 +280,30 @@ type Resolver interface {
 }
 ```
 
+<!-- contract: Accepts, First — restated from internal/gate/inputs/module.md -->
+```go
+// Accepts is the digest predicate of the gate: whether claim is acceptable for one digest list of Trusted.
+// An empty list accepts only the empty claim ("nothing trusted, nothing claimed"). A list with entries
+// accepts only a claim that is not empty and is in the list, by exact string equality.
+func Accepts(trusted []string, claim string) bool
+
+// First returns the first digest of a list of Trusted, or "" for an empty list.
+// For every list that Resolve builds, Accepts(trusted, First(trusted)) is true.
+func First(trusted []string) string
+```
+
+<!-- contract: ProtectedPaths, MayBeProtected — restated from internal/gate/inputs/module.md -->
+```go
+// ProtectedPaths returns the protected path set for the settings of the protected ref, in fixed order:
+// PolicyPath, BaselinePath, LabelsPath, Path (the settings file), s.Workflow. An empty s.Workflow is left out.
+func ProtectedPaths(s Settings) []string
+
+// MayBeProtected is the same rule for a caller that has not read the settings file (a push event):
+// true for every path of ProtectedPaths(Settings{}) and for every path under ".github/workflows/",
+// the only directory wire/settings accepts a workflow in. It is a superset of ProtectedPaths(s) for every parsed s.
+func MayBeProtected(path string) bool
+```
+
 ### gate/verdict (child)
 
 - **Counterpart**: internal/gate/verdict
@@ -284,7 +312,8 @@ type Resolver interface {
 - **LCA / Rank / Distance**: gate / 1 / 1
 - **Volatility**: high
 - **Balanced?**: yes
-- **Shared knowledge**: `Decide` is pure and total; `Reasons[0]` sets the conclusion; `Without` always returns `ActionRequired`.
+- **Shared knowledge**: `Decide` is pure and total; `Reasons[0]` sets the conclusion; `Without` always returns `ActionRequired` (the façade does not call it: the fork
+  refusal goes through `sweep.Without`). `Decide` never returns an empty `Reasons`; the façade still checks it, see "Report upload flow" step 6.
   A `ReasonCode` appears at most once. `owner_approval_missing` precedes `policy_mismatch` and `baseline_mismatch`, so an
   unapproved code-and-policy PR carries the receipt reason `owner_approval_missing`, which is what `HandleEvent` and the
   sweep key their re-run on. `engine_error` precedes `missing_required_coverage`.
@@ -451,10 +480,38 @@ type Publisher interface {
 - **Shared knowledge**: `Sweeper`, `Summary`, `Config` (restated in Public Contract above). `Run` returns a nil
   error with `RateLimited` set when GitHub's rate limit stopped the pass. `RunRepo` is the same pass for one
   repository; it needs only `RepoRef` and `Private` of the `Repo` it is given. `Errors` counts skipped units.
+  The sweep owns two rules the façade also needs, and exports both: the re-run guard (`Rerun`, called for
+  `ReviewChanged`) and the publication for a target without a report (`Without`, called for the fork refusal of a
+  new head). The façade has no copy of either.
 
 <!-- contract: New — restated from internal/gate/sweep/module.md -->
 ```go
 func New(repos Repos, pulls Pulls, actions Actions, r Resolver, p Publisher, c Config) Sweeper
+```
+
+<!-- contract: RerunResult, Rerun — restated from internal/gate/sweep/module.md -->
+```go
+// RerunResult is what the re-run guard found or did. It is meaningful only with a nil error.
+type RerunResult int
+
+const (
+    RerunInFlight   RerunResult = iota // the run is queued or in progress: wait for its upload
+    RerunRequested                     // Actions.Rerun accepted the request
+    RerunImpossible                    // rc.RunID is 0, the run is gone, or a newer attempt already completed
+)
+
+// Rerun is the re-run guard, the only caller of Actions.Rerun on the gate path. It requests a re-run of
+// rc.RunID only while that run is completed and still at rc.RunAttempt, so a receipt is re-run at most once.
+// rc.RunID == 0 and ErrNotFound from Actions.Run are RerunImpossible with a nil error.
+func Rerun(ctx context.Context, actions Actions, r RepoRef, rc Receipt) (RerunResult, error)
+```
+
+<!-- contract: Without — restated from internal/gate/sweep/module.md -->
+```go
+// Without builds the publication for a target that has no report: verdict.Without(code), or
+// verdict.Suspended(tr.Entitlement) for ReasonSuspended, with the run identity of rc (zero when there
+// is no previous receipt) and the current digests of tr.
+func Without(code ReasonCode, t Target, tr Trusted, rc Receipt) Publication
 ```
 
 ### wire/manifest
@@ -494,13 +551,15 @@ func Current() Entry
 ### wire/report
 
 - **Counterpart**: internal/wire/report
-- **Direction**: gate depends on wire/report (types only)
+- **Direction**: gate depends on wire/report (field reads through `ingest.Upload.Report`; the façade does not import the package)
 - **Strength**: contract (published language)
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high (gate side); the schema is moderate
 - **Balanced?**: yes
-- **Shared knowledge**: the façade reads `Comparison.ConfigHash` (bare hex) and
-  `Comparison.MeasurementProfile.Version`; the rest of the report passes through to verdict and feedback. A report has
+- **Shared knowledge**: the façade reads exactly two values, `Comparison.ConfigHash` (bare hex) and
+  `Comparison.MeasurementProfile.Version`, and tests `Upload.Report` and `MeasurementProfile` for nil. It reaches them
+  through `ingest.Upload.Report` and has no import of `wire/report`: a renamed field breaks the build of `gate`, which
+  is why the integration is listed. The rest of the report passes through to verdict and feedback unread. A report has
   no exit code and no baseline or labels digest; `GateReference` is a top-level status that only verdict and feedback read.
   `Decision` is an opaque part of `Report` for this module. `Finding` is an opaque part of `Report` for this module.
   `Dimension` is an opaque part of `Report` for this module. `AgentTask` is an opaque part of `Report` for this module.
@@ -573,33 +632,6 @@ type Producer struct {
 }
 ```
 
-### wire/policy
-
-- **Counterpart**: internal/wire/policy
-- **Direction**: gate depends on wire/policy (path constants only)
-- **Strength**: contract
-- **LCA / Rank / Distance**: root / 2 / 2
-- **Volatility**: high (gate side); the engine file contract is moderate
-- **Balanced?**: yes
-- **Shared knowledge**: the façade compares `DefaultBranchPush.ChangedPaths` with `PolicyPath`, `BaselinePath` and `LabelsPath`.
-  All digests on the gate path are bare lowercase hex as `Digest` returns them.
-  `Digest` is not called here; digests are computed inside `gate/inputs`.
-
-<!-- contract: PolicyPath, BaselinePath, LabelsPath, Digest — restated from internal/wire/policy/module.md -->
-```go
-// The engine's three trusted input files on the protected ref. Baseline and labels sit beside the policy.
-const (
-    PolicyPath   = ".archfit.yaml"
-    BaselinePath = ".archfit-baseline.json"
-    LabelsPath   = ".archfit-labels.yaml"
-)
-
-// Digest returns the bare lowercase hex SHA-256 of the raw file bytes. For the policy file it equals the
-// engine's comparison.config_hash. The engine reports no digest for baseline or labels; for those the
-// producer states Digest of the bytes it used in the envelope, and the App compares it with the protected ref.
-func Digest(raw []byte) string
-```
-
 ### wire/envelope
 
 - **Counterpart**: internal/wire/envelope
@@ -653,8 +685,8 @@ type Envelope struct {
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high (gate side); the file format is moderate
 - **Balanced?**: yes
-- **Shared knowledge**: the façade reads `Trusted.Settings.Workflow` and `Trusted.Settings.Gate`, and uses the
-  `Path` constant (`.archfit-app.yaml`) in the `DefaultBranchPush` protected-path match.
+- **Shared knowledge**: the façade reads `Trusted.Settings.Workflow` and `Trusted.Settings.Gate`. It does not use
+  `Path`: the protected path set, the settings file included, belongs to `gate/inputs`.
 
 <!-- contract: Settings, GateMode, DataMode, Path — restated from internal/wire/settings/module.md -->
 ```go
@@ -895,13 +927,13 @@ type Store interface {
 `New` delegates to the unexported `compose`, which takes the five `github/api` roles as one interface, and
 `compose` to `newGate`, which takes the children as interfaces; both exist so that tests can replace GitHub or a child.
 
-| Child      | Contributes                                             | Depends on siblings                                           |
-| ---------- | ------------------------------------------------------- | ------------------------------------------------------------- |
-| `ingest`   | authenticated, bound `Upload` or a `Rejection`          | none                                                          |
-| `inputs`   | `Trusted` for a `Target`; owns the `Entitlement` record | none                                                          |
-| `verdict`  | `Outcome` from `Facts`; `Without`                       | `ingest` (`Problem`), `inputs` (`Trusted`) — model            |
-| `feedback` | checks, comment, receipt; `State`, `Pending`, `Warn`    | `verdict` (`Outcome`), `inputs` (`Target`, `Trusted`) — model |
-| `sweep`    | reconciliation of open PRs                              | `inputs`, `feedback`, `verdict` — contract                    |
+| Child      | Contributes                                                                                              | Depends on siblings                                           |
+| ---------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `ingest`   | authenticated, bound `Upload` or a `Rejection`                                                           | none                                                          |
+| `inputs`   | `Trusted` for a `Target`; owns the `Entitlement` record, the digest predicate and the protected path set | none                                                          |
+| `verdict`  | `Outcome` from `Facts`; `Without`, `Suspended`                                                           | `ingest` (`Problem`), `inputs` (`Trusted`) — model            |
+| `feedback` | checks, comment, receipt; `State`, `Pending`, `Warn`                                                     | `verdict` (`Outcome`), `inputs` (`Target`, `Trusted`) — model |
+| `sweep`    | reconciliation of open PRs; owns `Rerun` and `Without`                                                   | `inputs`, `feedback`, `verdict` — contract                    |
 
 ### Report upload flow
 
@@ -910,26 +942,33 @@ type Store interface {
    upload (`PullRequest == 0`) `Target.BaseRef` is `Repo.DefaultBranch`, not `Binding.BaseRef`: the binding names the
    branch the run executed on, which is a protected ref only when it is the default branch.
 3. `trusted, err := resolver.Resolve(ctx, target, now)`. Error → 503; the pending check stays.
-4. `IdentityApproved` = `manifest.Lookup(u.Identity)` hits **and** `u.Report.Comparison.MeasurementProfile != nil` **and**
-   its `Version == entry.ProfileVersion` (for engine v2.3.1 the manifest holds `archfit.measurement.v1`). False when `u.Report == nil`.
+4. `IdentityApproved` = `manifest.Lookup(u.Identity)` hits **and** `entry.ProfileVersion != ""` **and**
+   `u.Report.Comparison.MeasurementProfile != nil` **and** its `Version == entry.ProfileVersion`. A manifest row
+   without a profile version approves nothing, so two empty versions never compare equal (for engine v2.3.1 the manifest holds `archfit.measurement.v1`). False when `u.Report == nil`.
 5. `WorkflowApproved` = `trusted.SettingsFound` **and** `u.Binding.WorkflowPath != ""` **and** it equals
    `trusted.Settings.Workflow`. A workflow file changed by the PR is a protected path; `inputs` then demands owner approval.
 6. `outcome = verdict.Decide(Facts{Problems: u.Problems, BaselineDigest: u.BaselineDigest, LabelsDigest: u.LabelsDigest,
    Report: u.Report, IdentityApproved, WorkflowApproved, Trusted: trusted})`. The two digests are the envelope's claims,
-   copied unchanged; they are customer-attested like the report.
+   copied unchanged; they are customer-attested like the report. A decision without a reason cannot come from
+   `Decide`; if one ever does, the façade treats it as a failed step: 503 `unavailable`, nothing published, the
+   pending check stays. It never reads `Reasons[0]` of an empty list and never invents a reason.
 7. Receipt (table below); `publisher.Publish(ctx, Publication{target, u.Identity, outcome, receipt, u.Report, trusted})`.
    `Identity` is the envelope's claim; feedback prints it as claimed.
 8. Answer 200 with conclusion and reason.
 
-| `Receipt` field        | Value                                                                                               |
-| ---------------------- | --------------------------------------------------------------------------------------------------- |
-| `RunID`, `RunAttempt`  | from `Binding`                                                                                      |
-| `ReportDigest`         | `Upload.Digest`                                                                                     |
-| `PolicyDigest`         | the report's `ConfigHash` when it is in `Trusted.PolicyDigests`; else `PolicyDigests[0]`; else `""` |
-| `BaselineDigest`       | `Upload.BaselineDigest` when it is in `BaselineDigests`; else `BaselineDigests[0]`; else `""`       |
-| `LabelsDigest`         | `Upload.LabelsDigest` when it is in `LabelsDigests`; else `LabelsDigests[0]`; else `""`             |
-| `EarliestWaiverExpiry` | `Trusted.EarliestWaiverExpiry`                                                                      |
-| `Conclusion`, `Reason` | `outcome.Conclusion`, `outcome.Reasons[0].Code`                                                     |
+| `Receipt` field        | Value                                                                                            |
+| ---------------------- | ------------------------------------------------------------------------------------------------ |
+| `RunID`, `RunAttempt`  | from `Binding`                                                                                   |
+| `ReportDigest`         | `Upload.Digest`                                                                                  |
+| `PolicyDigest`         | the report's `ConfigHash` when `Accepts(PolicyDigests, ConfigHash)`; else `First(PolicyDigests)` |
+| `BaselineDigest`       | `Upload.BaselineDigest` when `Accepts(BaselineDigests, it)`; else `First(BaselineDigests)`       |
+| `LabelsDigest`         | `Upload.LabelsDigest` when `Accepts(LabelsDigests, it)`; else `First(LabelsDigests)`             |
+| `EarliestWaiverExpiry` | `Trusted.EarliestWaiverExpiry`                                                                   |
+| `Conclusion`, `Reason` | `outcome.Conclusion`, `outcome.Reasons[0].Code`                                                  |
+
+`Accepts` and `First` are the digest predicate of `gate/inputs`. A receipt therefore only names digests that
+`Accepts` takes for the current lists, so the sweep (which tests a receipt with the same function) never finds a
+fresh receipt stale. A nil report has the claim `""` for the policy.
 
 Special targets, all through the same flow:
 
@@ -952,38 +991,39 @@ Special targets, all through the same flow:
 `Target.Repo` is built from the verified event: `Repo{RepoRef{e.InstallationID, e.Repo}, Private: e.RepoPrivate}`;
 `ID` and `DefaultBranch` stay zero and are not needed for pull request targets **[default: saves one API call]**.
 
-| `Event.Kind`                     | Reaction                                                                                                                                                                                                                                         |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `PullOpened`, `PullSynchronized` | `Resolve`. `!SettingsFound` → nothing. Fork → `Publish(Without(ReasonForkUnsupported))` with a zero-run receipt carrying the base digests. Else `Settings.Gate == GateRequired` → `publisher.Pending(target)`. Advisory → nothing.               |
-| `ReviewChanged`                  | `State(target)`; only when its receipt reason is `owner_approval_missing`: `Resolve`; when `Approval == ApprovalGranted` **[default: no re-run for a review that grants nothing]** → re-run `receipt.RunID` under the guard below.               |
-| `DefaultBranchPush`              | `ChangedPaths` empty (= unknown), or it contains `policy.PolicyPath`, `policy.BaselinePath`, `policy.LabelsPath`, `settings.Path`, or any path under `.github/workflows/` → `sweeper.RunRepo(ctx, repo, now)` in the request. Otherwise nothing. |
-| `PullClosed`                     | nothing.                                                                                                                                                                                                                                         |
-| installation kinds, `Ignored`    | nothing; `control` handles installations.                                                                                                                                                                                                        |
+| `Event.Kind`                     | Reaction                                                                                                                                                                                                                                                         |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PullOpened`, `PullSynchronized` | `Resolve`. `!SettingsFound` → nothing. Fork → `Publish(sweep.Without(ReasonForkUnsupported, target, trusted, Receipt{}))`: a zero-run receipt carrying the base digests. Else `Settings.Gate == GateRequired` → `publisher.Pending(target)`. Advisory → nothing. |
+| `ReviewChanged`                  | `State(target)`; only when its receipt reason is `owner_approval_missing`: `Resolve`; when `Approval == ApprovalGranted` **[default: no re-run for a review that grants nothing]** → `sweep.Rerun(ctx, actions, repo, receipt)`, the re-run guard of the sweep.  |
+| `DefaultBranchPush`              | `ChangedPaths` empty (= unknown), or `inputs.MayBeProtected(path)` for any changed path → `sweeper.RunRepo(ctx, repo, now)` in the request. Otherwise nothing.                                                                                                   |
+| `PullClosed`                     | nothing.                                                                                                                                                                                                                                                         |
+| installation kinds, `Ignored`    | nothing; `control` handles installations.                                                                                                                                                                                                                        |
 
-Protected default-branch push: the exact fifth protected path is `Settings.Workflow`, which lives on the protected
-ref. The façade matches the whole `.github/workflows/` directory instead **[default]**: `wire/settings` only accepts
-a workflow path under it, so this is a superset, it needs no file read, and an extra `RunRepo` is harmless because the
-pass is idempotent. `RunRepo` re-resolves every open PR of the repository, so a changed base policy or baseline shows
+Protected default-branch push: `gate/inputs` owns the protected path set, and `MayBeProtected` is its form for a
+caller without settings. The exact fifth protected path is `Settings.Workflow`, which lives on the protected ref, so
+`MayBeProtected` takes the whole `.github/workflows/` directory instead **[default]**: a superset that needs no file
+read; an extra `RunRepo` is harmless because the pass is idempotent. The façade names no path and no directory. `RunRepo` re-resolves every open PR of the repository, so a changed base policy or baseline shows
 as `stale_inputs` (plus a re-run) within the webhook request instead of within the hour. The hourly sweep stays the
 recovery path when the push event is lost or `RunRepo` stops on a rate limit.
 
-Fork refusal publication: `Publication{target, Identity: zero, Outcome: verdict.Without(ReasonForkUnsupported),
-Receipt, Report: nil, trusted}` with this receipt (the same construction the sweep uses for a target without a prior receipt):
+Fork refusal publication: `sweep.Without(ReasonForkUnsupported, target, trusted, Receipt{})`. The sweep owns the
+construction (its "Without publications" table); the zero previous receipt gives a zero run identity, because no
+workflow run reported for this head, and the digests are `First` of each trusted list. The sweep's rule 1 builds the
+same publication for a fork it finds unmarked, so the two paths cannot differ. The `external_id` is then `v1:0:0:`.
+Any later upload for the head has a higher run pair and replaces it.
 
-| `Receipt` field                       | Value                                        |
-| ------------------------------------- | -------------------------------------------- |
-| `RunID`, `RunAttempt`, `ReportDigest` | zero: no workflow run reported for this head |
-| `PolicyDigest`                        | `trusted.PolicyDigests[0]`, or `""`          |
-| `BaselineDigest`                      | `trusted.BaselineDigests[0]`, or `""`        |
-| `LabelsDigest`                        | `trusted.LabelsDigests[0]`, or `""`          |
-| `EarliestWaiverExpiry`                | `trusted.EarliestWaiverExpiry`               |
-| `Conclusion`, `Reason`                | `ActionRequired`, `ReasonForkUnsupported`    |
+Re-run guard: `sweep.Rerun` is the only implementation; the façade has none. Its single behavior, for this reaction:
 
-The `external_id` is then `v1:0:0:`. Any later upload for the head has a higher run pair and replaces it.
+| `Rerun` gives                                                                   | Reaction of `HandleEvent`                                                      |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `RerunRequested`                                                                | logged as `rerun`; nil                                                         |
+| `RerunInFlight` (queued or in progress)                                         | nothing; nil. A redelivered event lands here                                   |
+| `RerunImpossible`: `receipt.RunID == 0`                                         | nothing; nil; no GitHub call                                                   |
+| `RerunImpossible`: `Actions.Run` returned `api.ErrNotFound`, or a newer attempt | nothing; nil (skip). Rule 7b of the next sweep pass publishes `missing_upload` |
+| an error (any other `Actions.Run` failure, or a failed `Actions.Rerun`)         | the wrapped error                                                              |
 
-Re-run guard (same rule as the sweep): `Actions.Run(receipt.RunID)`; call `Actions.Rerun` only when the run is
-`completed` and `run.Attempt == receipt.RunAttempt`. The handler is idempotent; a redelivered event changes nothing.
-An error is returned to `app` (which logs it); the sweep repairs what a failed or lost event left undone.
+The handler is idempotent. An error is returned to `app` (which logs it); the sweep repairs what a failed or lost
+event left undone.
 
 ### Sweep
 
@@ -1024,6 +1064,16 @@ An error is returned to `app` (which logs it); the sweep repairs what a failed o
 - Logs (`log/slog` default logger **[default]**, because `Deps` carries none): installation ID, repository ID, PR number,
   head SHA, run ID, attempt, digests, conclusion, reason codes, HTTP status, timings. Never report bodies, paths, messages, tokens.
 - Standard library first; the gate adds no third-party dependency.
+- One owner per rule inside the gate. The digest predicate and the protected path set belong to `gate/inputs`; the
+  re-run guard and the publication without a report belong to `gate/sweep`. The façade calls them and holds no digest
+  comparison, no protected path, no `Actions.Rerun` call and no `verdict.Without` call of its own.
+- Declared restatement, the fork rule: "a pull request is a fork when its head repository is not the base repository"
+  is computed three times, because each path gets the two names from a different source. The owner is `gate/ingest`
+  (`Binding.Fork`, from the verified OIDC claims and `Pulls.Pull`); `gate` restates it in `eventTarget` from the signed
+  webhook payload (`Event.HeadRepo != Event.Repo`), and `gate/sweep` from `OpenPulls` (`Pull.HeadRepo != Repo.FullName`).
+  All three treat an empty head repository (a deleted fork) as a fork. If they drift, a fork is refused on one path
+  and judged on another; `TestHandleEventRules`, the ingest binding tests and `TestForksStayBlocked` pin each copy.
+  Remove the copies when `inputs.Target` gains a constructor that takes the two names.
 
 ## Test Specification
 
@@ -1052,9 +1102,25 @@ are driven only as far as they go without GitHub. Child internals are tested in 
 - **Test name**: `TestReceiptConstruction`
   **Scenario**: matching policy, baseline and labels digests; approved head policy digest; mismatching `config_hash`; a claimed baseline digest not on the protected ref; no baseline and no labels file anywhere; nil report.
   **Expected behavior**: the values of the receipt table, all bare hex; the first accepted digest when a claim does not match; `""` when both sides are empty.
+- **Test name**: `TestReceiptDigestsAreAlwaysAccepted`
+  **Scenario**: every combination of a trusted list (empty, one digest, two digests) and a claim (`""`, each entry, an unknown digest, a `sha256:`-prefixed entry), for the policy (as the report's `ConfigHash`), the baseline and the labels.
+  **Expected behavior**: the receipt digest is the claim exactly when `inputs.Accepts(list, claim)`, and `inputs.First(list)` otherwise; `inputs.Accepts(list, receipt digest)` is true in every case, which is the sweep's "not stale". `verdict.Decide` reports `baseline_mismatch` (or `labels_mismatch`, `policy_mismatch`) for exactly the combinations where the receipt digest is not the claim.
+- **Test name**: `TestProtectedPushFollowsInputs`
+  **Scenario**: iterate `inputs.ProtectedPaths` for a parsed `Settings`; one push per path; a push with only unprotected paths; a push with no paths.
+  **Expected behavior**: `RunRepo` is called for every path of the set and for the empty list, never for the unprotected push. The test names no path, so a sixth path in `gate/inputs` needs no edit here.
 - **Test name**: `TestHTTPMapping`
   **Scenario**: every row of "Upload answers", with each rejection status once.
   **Expected behavior**: the listed status, JSON body and `Retry-After`; no body ever contains report content.
+
+- **Test name**: `TestUploadPipeline`
+  **Scenario**: hand-written fakes of the children through `newGate`: a clean pull request upload; a non-PR upload with `ProblemUnsupportedEvent` and `ProblemFork` whose binding names a feature branch; an upload whose claimed baseline digest is not trusted.
+  **Expected behavior**: `Receive` gets `KindReport` under a deadline of about 50 seconds; `Resolve` gets the target of the binding and the clock; the `Publication` equals the one built from `verdict.Decide` and the receipt table. The non-PR target has `BaseRef` = the default branch and keeps `Fork`; the answer is `fork_unsupported`. The claimed digest reaches `Decide` unchanged: `baseline_mismatch`.
+- **Test name**: `TestHandleEventRules`
+  **Scenario**: the `HandleEvent` table over fakes of the children: a new head in required mode; a fork of a repository that is not onboarded; a deleted fork repository (`HeadRepo == ""`); a review against each row of the re-run guard table (receipt without a run, run not found, in progress, newer attempt, completed at the receipt's attempt), with approval still missing, with another receipt reason, with a pending check and with no check; an error from each child call (`Resolve`, `Pending`, `State`, `Actions.Run`, `Actions.Rerun`, `RunRepo`); `Sweep`.
+  **Expected behavior**: the target is built from the verified event; the not-onboarded fork gets nothing; the deleted fork gets the `sweep.Without(ReasonForkUnsupported, …)` publication with a zero run and the first trusted digests; `Actions.Rerun` is called only for the completed run at the receipt's attempt; a receipt without a run makes no GitHub call; a run that is not found is a nil error without a re-run; a review event never writes feedback; every child error is returned and nothing is published; `Sweep` passes the clock and the summary through.
+- **Test name**: `TestNewComposesTheChildren`
+  **Scenario**: `New` with a real `*api.Client` that has no transport, a stub verifier and a nil `Deps.Now`; one `POST /v1/reports` without an envelope.
+  **Expected behavior**: a nil `Deps.Now` means `time.Now`; the composed handler answers 400 with an error code, so the real children are wired as far as they go without GitHub.
 
 ### Integration Contract Tests
 
@@ -1097,6 +1163,10 @@ are driven only as far as they go without GitHub. Child internals are tested in 
 - **Test name**: `TestLogsCarryOnlyIdentifiers`
   **Scenario**: upload, webhook and sweep flows with marker strings in paths and messages, capturing logger.
   **Expected behavior**: IDs, digests, outcomes, timings only.
+
+- **Test name**: `TestStoreIsOnlyRead`
+  **Scenario**: a Store wrapper that panics on every write and on `Tenants`; a private repository with an entitlement; drive every façade entry point over it: `HandleEvent` (`PullOpened`, `ReviewChanged`, `DefaultBranchPush`), an upload, `Sweep`.
+  **Expected behavior**: no panic; the Store was read at least once; every read is `Get` of `EntitlementKey` under the installation's tenant, never `SystemTenant`.
 
 ### Behavior Tests
 

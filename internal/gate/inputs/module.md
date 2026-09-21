@@ -30,7 +30,9 @@ rules and the protected path set will change with pilots.
 
 ## Encapsulated Knowledge
 
-- The protected path set and how a changed path is detected.
+- The protected path set and how a changed path is detected, for a caller that has the settings of the
+  protected ref (`ProtectedPaths`) and for one that has not read them (`MayBeProtected`).
+- The digest predicate: what a trusted digest list accepts (`Accepts`), and which digest stands for a list (`First`).
 - The approval algorithm: which reviews count, how owners and teams are matched, latest-review-wins.
 - The exception rule for owner-approved head policy, baseline and labels digests.
 - Bootstrap behavior when no settings file exists.
@@ -100,6 +102,56 @@ type Resolver interface {
 func New(repos Repos, pulls Pulls, s Store) Resolver
 ```
 
+```go
+// Accepts is the digest predicate of the gate: whether claim is acceptable for one digest list of Trusted.
+// An empty list accepts only the empty claim ("nothing trusted, nothing claimed"). A list with entries
+// accepts only a claim that is not empty and is in the list, by exact string equality.
+func Accepts(trusted []string, claim string) bool
+
+// First returns the first digest of a list of Trusted, or "" for an empty list.
+// For every list that Resolve builds, Accepts(trusted, First(trusted)) is true.
+func First(trusted []string) string
+```
+
+```go
+// ProtectedPaths returns the protected path set for the settings of the protected ref, in fixed order:
+// PolicyPath, BaselinePath, LabelsPath, Path (the settings file), s.Workflow. An empty s.Workflow is left out.
+func ProtectedPaths(s Settings) []string
+
+// MayBeProtected is the same rule for a caller that has not read the settings file (a push event):
+// true for every path of ProtectedPaths(Settings{}) and for every path under ".github/workflows/",
+// the only directory wire/settings accepts a workflow in. It is a superset of ProtectedPaths(s) for every parsed s.
+func MayBeProtected(path string) bool
+```
+
+### Digest predicate
+
+`Accepts` is the only implementation of the digest rule on the gate path. `gate/verdict` reports a mismatch when it
+is false for the envelope's claim, `gate/sweep` calls a receipt stale when it is false for the receipt's digest, and
+`gate` writes into a receipt the claim when it is true and `First` otherwise. Because a receipt therefore always
+holds a digest that `Accepts` takes, a fresh receipt is never stale; the sweep's no-re-run-loop guarantee rests on
+this one function.
+
+| `trusted` | `claim`       | `Accepts` |
+| --------- | ------------- | --------- |
+| empty     | `""`          | true      |
+| empty     | anything else | false     |
+| not empty | `""`          | false     |
+| not empty | an entry      | true      |
+| not empty | anything else | false     |
+
+Digests are bare lowercase hex; a `sha256:` prefix or another letter case is "anything else".
+
+### Protected paths
+
+`ProtectedPaths` is the only list of the protected paths. `Resolve` step 8 intersects it with the changed files.
+`MayBeProtected` is the push form of the same rule: a default-branch push carries changed paths but no settings, and
+`Settings.Workflow` lives on the protected ref, so the exact fifth path is unknown without a file read. Matching the
+whole `.github/workflows/` directory is a superset **[default]**: it needs no read, and the caller's reaction (a
+one-repository sweep) is idempotent, so a false positive costs API calls only. A sixth fixed path is one edit, in
+`ProtectedPaths`; `MayBeProtected` and `Resolve` follow. A sixth path that comes from `Settings` also needs its
+superset stated in `MayBeProtected`.
+
 ### Resolve, step by step
 
 1. Entitlement (always first, never fails the call): `Store.Get(Tenant(t.Repo.InstallationID), EntitlementKey)`
@@ -119,9 +171,9 @@ func New(repos Repos, pulls Pulls, s Store) Resolver
 6. Waivers: `policy.Waivers(basePolicy)`. An error gives no waivers and one log line with the outcome;
    the engine enforces waivers anyway.
 7. `t.PullRequest == 0` (push): stop. `ProtectedPaths` empty, `ApprovalNotRequired`.
-8. `ProtectedPaths` = `Pulls.ChangedFiles` ∩ {`policy.PolicyPath`, `policy.BaselinePath`, `policy.LabelsPath`,
-   `settings.Path`, `Settings.Workflow`}, in that fixed order. When `ChangedFiles` reports `truncated == true`, any
-   path may have changed: all five paths count as changed (fail closed).
+8. `Trusted.ProtectedPaths` = `Pulls.ChangedFiles` ∩ `ProtectedPaths(settings)` ({`policy.PolicyPath`,
+   `policy.BaselinePath`, `policy.LabelsPath`, `settings.Path`, `Settings.Workflow`}), in that fixed order. When
+   `ChangedFiles` reports `truncated == true`, any path may have changed: all five paths count as changed (fail closed).
 9. `ProtectedPaths` empty → `ApprovalNotRequired`. Stop.
 10. `t.Fork` → `ApprovalMissing`. Stop. No head file is read for a fork.
 11. Approval from `Pulls.Reviews` (algorithm below). Not granted → `ApprovalMissing`. Stop.
@@ -393,10 +445,12 @@ type Pulls interface {
 ### Consumers (inbound)
 
 - **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Constructs the resolver, calls `Resolve`
-  per upload and per webhook, re-publishes `Entitlement` and `EntitlementKey` to `control/account`.
-- **internal/gate/verdict**: model, gate / 1 / 1, high, balanced. Reads `Trusted`.
+  per upload and per webhook, builds receipt digests with `Accepts` and `First`, decides the protected-push trigger
+  with `MayBeProtected`, re-publishes `Entitlement` and `EntitlementKey` to `control/account`.
+- **internal/gate/verdict**: model, gate / 1 / 1, high, balanced. Reads `Trusted`; calls `Accepts` for the digest checks.
 - **internal/gate/feedback**: model, gate / 1 / 1, high, balanced. Reads `Target` and `Trusted`.
-- **internal/gate/sweep**: contract, gate / 1 / 1, high, balanced. Calls `Resolver.Resolve`.
+- **internal/gate/sweep**: contract, gate / 1 / 1, high, balanced. Calls `Resolver.Resolve`; calls `Accepts` for the
+  stale test and `First` for the receipt of a publication without a report.
 - **internal/control/account** (through the gate façade): contract, root / 2 / 2, moderate, balanced.
   Writes the JSON of `Entitlement` under `EntitlementKey`.
 
@@ -414,6 +468,11 @@ type Pulls interface {
   SHA a base-version owner approved. CODEOWNERS is never read.
 - For a fork, no head file is read and approval is never granted.
 - Approval is bound to `t.HeadSHA`. Any new commit invalidates it.
+- One digest predicate and one protected path list. No other gate module compares a digest with a trusted list or
+  names a protected path; they call `Accepts`, `First`, `ProtectedPaths` and `MayBeProtected`. The literal
+  `.github/workflows/` exists here only; it restates the directory rule of `wire/settings` (owner: `wire/settings`,
+  which exports no constant for it). If the two drift, `MayBeProtected` stops being a superset and a workflow push
+  is noticed by the hourly sweep instead of at once. Remove the literal when `wire/settings` exports the directory.
 - The App never writes the baseline or the policy; inputs is read-only on GitHub and on the Store.
 - A Store outage, missing record, or malformed record never means non-payment: `Suspended` is false.
 - Public repositories are never suspended.
@@ -436,6 +495,12 @@ failing `Store` stub. `NewMemory` is the in-process Store constructor of `intern
 - **Test name**: `TestProtectedPathsIntersection`
   **Scenario**: table of changed-file lists: none protected; policy only; baseline and workflow; settings; a custom `Settings.Workflow` path; a policy file renamed away (old path listed); a list without a protected path but `truncated == true`.
   **Expected behavior**: `ProtectedPaths` in fixed order; the policy path for the rename; all five for the truncated list, so approval is required. A changed `.archfit-labels.yaml` is listed like the other four.
+- **Test name**: `TestAcceptsTruthTable`
+  **Scenario**: every combination of the lists empty, one digest, two digests and a list holding `""` with the claims `""`, the first entry, the second entry, an unknown digest, a `sha256:`-prefixed entry and an upper-case entry.
+  **Expected behavior**: the table of "Digest predicate"; a list holding `""` does not accept `""`. `First` is `""` for the empty list and entry 0 otherwise, and `Accepts(list, First(list))` is true for every list without an empty entry.
+- **Test name**: `TestProtectedPathSet`
+  **Scenario**: iterate `ProtectedPaths(s)` for a parsed `Settings`; the zero `Settings`; paths under `.github/workflows/`; near misses (`docs/.archfit.yaml`, `.github/workflows`, `.github/dependabot.yml`, `""`).
+  **Expected behavior**: five paths in fixed order, four for the zero `Settings`; `MayBeProtected` is true for every path of the set and for every workflow file, false for the near misses; a pull request that changes any single path of the set gets exactly that path in `Trusted.ProtectedPaths` and `ApprovalMissing`. The test names no path itself, so a sixth path in `ProtectedPaths` is covered without a test edit.
 - **Test name**: `TestApprovalAlgorithm`
   **Scenario**: table: owner approved head; owner approved an older SHA; non-owner approved head; owner approved then requested changes; owner approved then commented; owner approval dismissed; login case differs; team owner with member and with non-member; two owners, second approves.
   **Expected behavior**: granted, missing, missing, missing, granted, missing, granted, granted, missing, granted with the second owner as `ApprovedBy`.
@@ -481,6 +546,10 @@ failing `Store` stub. `NewMemory` is the in-process Store constructor of `intern
 - **Test name**: `TestLogsCarryOnlyIdentifiers`
   **Scenario**: files with marker strings in owners, waiver reasons and policy text.
   **Expected behavior**: no marker string in any log line.
+
+- **Test name**: `TestImportsStayInsideAllowedSet`
+  **Scenario**: `go list` the imports of the package's non-test files.
+  **Expected behavior**: only the standard library, `wire/settings`, `wire/policy`, `github/api` and `store`.
 
 ### Behavior Tests
 

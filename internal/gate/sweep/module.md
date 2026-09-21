@@ -70,6 +70,29 @@ func New(repos Repos, pulls Pulls, actions Actions, r Resolver, p Publisher, c C
 
 Zero `Config` durations are replaced by 60 minutes and 7 days **[default]**.
 
+```go
+// RerunResult is what the re-run guard found or did. It is meaningful only with a nil error.
+type RerunResult int
+
+const (
+    RerunInFlight   RerunResult = iota // the run is queued or in progress: wait for its upload
+    RerunRequested                     // Actions.Rerun accepted the request
+    RerunImpossible                    // rc.RunID is 0, the run is gone, or a newer attempt already completed
+)
+
+// Rerun is the re-run guard, the only caller of Actions.Rerun on the gate path. It requests a re-run of
+// rc.RunID only while that run is completed and still at rc.RunAttempt, so a receipt is re-run at most once.
+// rc.RunID == 0 and ErrNotFound from Actions.Run are RerunImpossible with a nil error.
+func Rerun(ctx context.Context, actions Actions, r RepoRef, rc Receipt) (RerunResult, error)
+```
+
+```go
+// Without builds the publication for a target that has no report: verdict.Without(code), or
+// verdict.Suspended(tr.Entitlement) for ReasonSuspended, with the run identity of rc (zero when there
+// is no previous receipt) and the current digests of tr.
+func Without(code ReasonCode, t Target, tr Trusted, rc Receipt) Publication
+```
+
 ### Traversal
 
 1. `Repos.ListInstallations`. An error here is returned; nothing was done.
@@ -107,13 +130,11 @@ The first rule whose condition holds ends the evaluation of that pull, whether o
 
 Definitions:
 
-- Stale receipt, any of four clauses (digests are bare hex strings, compared exactly):
-  - policy: `Trusted.PolicyDigests` is empty and `rc.PolicyDigest != ""`; or it is not empty and `rc.PolicyDigest`
-    is not in it;
-  - baseline: `Trusted.BaselineDigests` is empty and `rc.BaselineDigest != ""`; or it is not empty and
-    `rc.BaselineDigest` is not in it;
-  - labels: `Trusted.LabelsDigests` is empty and `rc.LabelsDigest != ""`; or it is not empty and
-    `rc.LabelsDigest` is not in it;
+- Stale receipt, any of four clauses. The digest clauses are the digest predicate of `gate/inputs`
+  (`inputs.Accepts`); the sweep has no comparison of its own:
+  - policy: `!Accepts(Trusted.PolicyDigests, rc.PolicyDigest)`;
+  - baseline: `!Accepts(Trusted.BaselineDigests, rc.BaselineDigest)`;
+  - labels: `!Accepts(Trusted.LabelsDigests, rc.LabelsDigest)`;
   - unreadable: `rc.Reason == ""`. A readable receipt always has a reason, so this is exactly the zero receipt that
     feedback returns for a missing or broken marker.
 - "Empty list and empty digest" is fresh. In the no-policy window (settings merged, no policy on the protected ref,
@@ -133,15 +154,19 @@ Definitions:
 
 ### Without publications
 
-`Publication{Target, Identity: zero, Outcome: verdict.Without(code), Receipt, Report: nil, Trusted}`. The zero
-`Identity` makes feedback print "no upload". The receipt:
+`Without(code, target, trusted, rc)` is exported: the sweep owns the construction, and `gate` calls it for the fork
+refusal of a new head with the zero `rc`. It returns
+`Publication{Target, Identity: zero, Outcome, Receipt, Report: nil, Trusted}`. `Outcome` is `verdict.Without(code)`;
+for `ReasonSuspended` it is `verdict.Suspended(Trusted.Entitlement)`, so a suspension published by the sweep shows
+`Entitlement.Reason` as its recovery, the same text an upload gets from `Decide`. The zero `Identity` makes feedback
+print "no upload" and label the digests "from the protected ref". The receipt:
 
 | Field                                 | Value                                       |
 | ------------------------------------- | ------------------------------------------- |
 | `RunID`, `RunAttempt`, `ReportDigest` | copied from `rc` (zero when there is none)  |
-| `PolicyDigest`                        | `Trusted.PolicyDigests[0]`, or `""`         |
-| `BaselineDigest`                      | `Trusted.BaselineDigests[0]`, or `""`       |
-| `LabelsDigest`                        | `Trusted.LabelsDigests[0]`, or `""`         |
+| `PolicyDigest`                        | `inputs.First(Trusted.PolicyDigests)`       |
+| `BaselineDigest`                      | `inputs.First(Trusted.BaselineDigests)`     |
+| `LabelsDigest`                        | `inputs.First(Trusted.LabelsDigests)`       |
 | `EarliestWaiverExpiry`                | `Trusted.EarliestWaiverExpiry`              |
 | `Conclusion`, `Reason`                | from the outcome (`ActionRequired`, `code`) |
 
@@ -151,10 +176,23 @@ the next pass finds the receipt neither stale nor expired.
 
 ### Re-run guard
 
-`rerun(rc)`: skip when `rc.RunID == 0`. `Actions.Run(repo, rc.RunID)`; `api.ErrNotFound` → skip. Call
-`Actions.Rerun` only when `run.Status == "completed"` and `run.Attempt == rc.RunAttempt`. A run that is
-queued or in progress, or whose attempt already advanced, is not re-run again. `Summary.Rerun` counts
-requested re-runs. If a re-run produces no upload, the check keeps its `action_required` reason with the
+`Rerun(ctx, actions, repo, rc)` is exported: the sweep owns the guard, and `gate` calls it for `ReviewChanged`.
+There is one behavior for every caller:
+
+| Situation                                                 | Calls          | Result            | Error     |
+| --------------------------------------------------------- | -------------- | ----------------- | --------- |
+| `rc.RunID == 0` (no workflow run reported for this head)  | none           | `RerunImpossible` | nil       |
+| `Actions.Run` returns `api.ErrNotFound` (the run is gone) | `Run`          | `RerunImpossible` | nil       |
+| `Actions.Run` returns another error                       | `Run`          | not meaningful    | the error |
+| `run.Status != "completed"` (queued or in progress)       | `Run`          | `RerunInFlight`   | nil       |
+| completed and `run.Attempt != rc.RunAttempt`              | `Run`          | `RerunImpossible` | nil       |
+| completed and `run.Attempt == rc.RunAttempt`              | `Run`, `Rerun` | `RerunRequested`  | nil       |
+| the same, and `Actions.Rerun` fails                       | `Run`, `Rerun` | not meaningful    | the error |
+
+A missing run and `RunID == 0` are never errors: nobody can re-run them, so the caller skips. In the sweep, rules
+7a and 7b then publish `missing_upload`; a `ReviewChanged` reaction in `gate` does nothing and leaves that
+publication to rule 7b of the next pass. `Rerun` writes no log and counts nothing; the pass counts
+`Summary.Rerun` for every `RerunRequested` and logs it with the rule number. If a re-run produces no upload, the check keeps its `action_required` reason with the
 recovery text "re-run the Archfit workflow"; the sweep does not loop.
 
 Termination: what changes in GitHub state after each re-run site, so the next pass does not fire again.
@@ -165,7 +203,7 @@ Termination: what changes in GitHub state after each re-run site, so the next pa
 | Rule 6b                      | the publication sets `StartedAt ≥ e`, and the new receipt carries the next unexpired expiry from `Trusted`, so `StartedAt < e ≤ now` is false                                         |
 | Rules 7a, 7b                 | a successful `Rerun` advances the run's attempt, so the guard blocks; an upload then replaces the reason; no upload → the next pass publishes `missing_upload`, which no rule re-runs |
 | Rule 7c                      | guard only: it fires while the run is still completed at the receipt's attempt (the earlier `Rerun` failed) and stops once the attempt advances                                       |
-| `HandleEvent(ReviewChanged)` | the same guard, in `gate`; a redelivered event finds the run queued, in progress, or at a newer attempt                                                                               |
+| `HandleEvent(ReviewChanged)` | the same `Rerun` function, called by `gate`; a redelivered event finds the run queued, in progress, or at a newer attempt                                                             |
 
 A `Rerun` call that keeps failing (for example a revoked `actions: write` permission) is retried once per pass and
 counted in `Summary.Errors`; it costs one API call and no CI minutes.
@@ -193,7 +231,8 @@ counted in `Summary.Errors`; it costs one API call and no CI minutes.
 - **Balanced?**: yes
 - **Shared knowledge**: `Resolve` is fork-safe and reads only the protected ref; it returns an error on GitHub
   failures and never on Store failures. `Trusted.EarliestWaiverExpiry` is the earliest expiry not before `now`.
-  `Entitlement` is an opaque part of `Trusted` for this module.
+  `Entitlement` is an opaque part of `Trusted` for this module; `Without` hands it to `verdict.Suspended` unread.
+  The stale test calls `Accepts`; `Without` calls `First`. `ProtectedPaths` and `MayBeProtected` are not used here.
 
 <!-- contract: Target, Trusted, Approval — restated from internal/gate/inputs/module.md -->
 ```go
@@ -237,6 +276,18 @@ type Resolver interface {
     // owners, or CODEOWNERS from the head tree, except to hash an owner-approved candidate.
     Resolve(ctx context.Context, t Target, now time.Time) (Trusted, error)
 }
+```
+
+<!-- contract: Accepts, First — restated from internal/gate/inputs/module.md -->
+```go
+// Accepts is the digest predicate of the gate: whether claim is acceptable for one digest list of Trusted.
+// An empty list accepts only the empty claim ("nothing trusted, nothing claimed"). A list with entries
+// accepts only a claim that is not empty and is in the list, by exact string equality.
+func Accepts(trusted []string, claim string) bool
+
+// First returns the first digest of a list of Trusted, or "" for an empty list.
+// For every list that Resolve builds, Accepts(trusted, First(trusted)) is true.
+func First(trusted []string) string
 ```
 
 ### gate/feedback
@@ -399,6 +450,13 @@ func Decide(f Facts) Outcome
 func Without(code ReasonCode) Outcome
 ```
 
+<!-- contract: Suspended — restated from internal/gate/verdict/module.md -->
+```go
+// Suspended is Without(ReasonSuspended) for a caller that holds the entitlement record: Next is
+// e.Reason when it is not empty, exactly as step 1 of Decide sets it.
+func Suspended(e Entitlement) Outcome
+```
+
 ### wire/settings
 
 - **Counterpart**: internal/wire/settings
@@ -559,7 +617,8 @@ type Actions interface {
 ### Consumers (inbound)
 
 - **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Constructs the sweeper with `Deps.Sweep`,
-  calls `Run(ctx, Deps.Now())` from `Gate.Sweep` and `RunRepo` from `HandleEvent` on a protected default-branch push, re-publishes `Sweeper`, `Summary` and `Config` to `app`.
+  calls `Run(ctx, Deps.Now())` from `Gate.Sweep` and `RunRepo` from `HandleEvent` on a protected default-branch push,
+  calls `Rerun` for `ReviewChanged` and `Without` for the fork refusal of a new head, re-publishes `Sweeper`, `Summary` and `Config` to `app`.
 
 ## Change Vectors
 
@@ -576,7 +635,12 @@ type Actions interface {
 - Trusted inputs are resolved at the pull's `BaseRef`; the head tree is never read here.
 - Idempotent: a second pass over unchanged GitHub state makes no write and no re-run, except retrying a re-run
   request that failed in the prior pass (rule 7c).
-- At most one re-run request per receipt (the guard); a re-run in flight is never doubled.
+- At most one re-run request per receipt (the guard); a re-run in flight is never doubled. `Rerun` is the only
+  code on the gate path that calls `Actions.Rerun`, and `Without` the only construction of a publication without a report.
+- Declared restatement: the fork rule `pull.HeadRepo != repo.FullName` is computed here for every open pull, because
+  `OpenPulls` returns raw pulls. The owner of the rule is `gate/ingest` (`Binding.Fork`); `gate` computes it a third
+  time from the webhook payload. If they drift, a fork is refused on one path and judged on another. It stays while
+  `inputs.Target.Fork` is a plain boolean each caller fills; remove it when `github/api` or `gate/ingest` publishes a predicate.
 - Rate-limit exhaustion leaves checks pending or unchanged; it never produces green. The pass ends with
   `RateLimited` and a nil error so the scheduler does not treat it as a failure.
 - A failure for one installation, repository or pull never aborts the pass.
@@ -598,7 +662,7 @@ calls and serves `State` from what was published; injectable errors. Time is the
 
 - **Test name**: `TestStaleReceipt`
   **Scenario**: table: policy digest equal to base; equal to approved head digest; different; trusted policy list empty with receipt digest `""`; trusted policy list empty with a receipt digest; policy `""` with a trusted policy; baseline `""` with no trusted baseline; baseline `""` with a trusted baseline; baseline set with none trusted; zero receipt (empty reason) with empty trusted lists.
-  **Expected behavior**: fresh, fresh, stale, fresh, stale, stale, fresh, stale, stale, stale.
+  **Expected behavior**: fresh, fresh, stale, fresh, stale, stale, fresh, stale, stale, stale. For every combination of a trusted list (empty, one, two digests) and a receipt digest (`""`, each entry, an unknown one), in each of the three digest fields, a receipt with a reason is stale exactly when `inputs.Accepts` is false.
 - **Test name**: `TestNoPolicyWindowIsQuiet`
   **Scenario**: required mode, no policy on the base, a pull whose receipt is `policy_missing` with `PolicyDigest == ""` from run 9 attempt 1; two passes; then the policy merges (trusted list = one digest) and two more passes; the same start with the policy deleted from the base.
   **Expected behavior**: passes 1 and 2 make no `Publish`, no `Rerun`, and leave the `policy_missing` feedback; pass 3 publishes `stale_inputs` and requests exactly one re-run of run 9; pass 4 is quiet. `RunRepo` from the push trigger gives the same single repair as pass 3.
@@ -609,11 +673,14 @@ calls and serves `State` from what was published; injectable errors. Time is the
   **Scenario**: table over `now` relative to `e` (8 days before, 7 days before, 1 second before, equal, after) × `StartedAt` before or after `e`; receipt expiry zero with a trusted expiry.
   **Expected behavior**: nothing; warn; warn; expired only when `StartedAt < e`; the trusted expiry is used when the receipt has none.
 - **Test name**: `TestRerunGuard`
-  **Scenario**: `RunID` 0; run not found; run queued; run in progress; run completed at the receipt's attempt; run completed at a later attempt.
-  **Expected behavior**: `Rerun` is called only in the fifth case.
+  **Scenario**: `RunID` 0; run not found; run queued; run in progress; run completed at the receipt's attempt; run completed at a later attempt; `Actions.Run` fails; `Actions.Rerun` fails. Each once through a pass (rule 7c) and once through the exported `Rerun`.
+  **Expected behavior**: `Actions.Rerun` is called only in the fifth and the last case. `Rerun` returns `RerunImpossible`, `RerunImpossible`, `RerunInFlight`, `RerunInFlight`, `RerunRequested`, `RerunImpossible` with a nil error, and the error in the last two cases. `RunID` 0 calls nothing.
 - **Test name**: `TestWithoutReceipt`
   **Scenario**: build the publication for each `Without` code with and without a previous receipt.
-  **Expected behavior**: run identity copied; digests and expiry from `Trusted`; conclusion `action_required`; `Report` nil.
+  **Expected behavior**: run identity copied; digests and expiry from `Trusted`, and every digest passes `inputs.Accepts` for its list; conclusion `action_required`; `Report` nil; the outcome is `verdict.Without(code)`, and for `ReasonSuspended` with an `Entitlement.Reason` it is `verdict.Suspended(Entitlement)`, whose `Next` is that reason.
+- **Test name**: `TestWithoutShowsTheEntitlementReason`
+  **Scenario**: `Without(ReasonSuspended, …)` for trusted inputs whose `Entitlement.Reason` is set; `Without(ReasonMissingUpload, …)` for the same inputs.
+  **Expected behavior**: the first outcome equals `verdict.Suspended(Entitlement)` and its `Next` is the record's reason; the second equals `verdict.Without(ReasonMissingUpload)`.
 - **Test name**: `TestTraversalRotation`
   **Scenario**: three installations; `now` at three consecutive hours.
   **Expected behavior**: the start index rotates; every installation is visited each pass.

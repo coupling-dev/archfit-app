@@ -46,7 +46,7 @@ func TestProtectedPathsIntersection(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			wantStrings(t, "protectedPaths", protectedPaths(tt.changed, tt.truncated, tt.workflow), tt.want)
+			wantStrings(t, "protectedPaths", protectedPaths(tt.changed, tt.truncated, settings.Settings{Workflow: tt.workflow}), tt.want)
 		})
 	}
 
@@ -195,6 +195,64 @@ func TestEarliestWaiverExpiry(t *testing.T) {
 				t.Errorf("waiver log lines = %d, want %d:\n%s", n, tt.wantLogs, logs)
 			}
 			wantStrings(t, "PolicyDigests", got.PolicyDigests, []string{policy.Digest([]byte(tt.policy))})
+		})
+	}
+}
+
+func TestAcceptsTruthTable(t *testing.T) {
+	const a, b = "aaaa", "bbbb"
+	lists := map[string][]string{"empty": nil, "one": {a}, "two": {a, b}, "holds empty": {""}}
+	claims := []string{"", a, b, "cccc", "sha256:" + a, "AAAA"}
+	for name, list := range lists {
+		for _, claim := range claims {
+			want := len(list) == 0 && claim == "" ||
+				name == "one" && claim == a ||
+				name == "two" && (claim == a || claim == b)
+			if got := Accepts(list, claim); got != want {
+				t.Errorf("Accepts(%s, %q) = %v, want %v", name, claim, got, want)
+			}
+		}
+		wantFirst := ""
+		if len(list) > 0 {
+			wantFirst = list[0]
+		}
+		if got := First(list); got != wantFirst {
+			t.Errorf("First(%s) = %q, want %q", name, got, wantFirst)
+		}
+		if name != "holds empty" && !Accepts(list, First(list)) {
+			t.Errorf("Accepts(%s, First) = false", name)
+		}
+	}
+}
+
+// The test names no protected path: a sixth path in ProtectedPaths is covered as it is.
+func TestProtectedPathSet(t *testing.T) {
+	set := ProtectedPaths(settings.Settings{Workflow: workflowPath})
+	if len(set) < 5 || set[len(set)-1] != workflowPath {
+		t.Fatalf("ProtectedPaths = %v, want at least five paths ending with the workflow", set)
+	}
+	wantStrings(t, "zero settings", ProtectedPaths(settings.Settings{}), set[:len(set)-1])
+
+	for _, p := range append(set, ".github/workflows/other.yml", ".github/workflows/nested/x.yaml") {
+		if !MayBeProtected(p) {
+			t.Errorf("MayBeProtected(%q) = false", p)
+		}
+	}
+	for _, p := range []string{"", "main.go", "docs/.archfit.yaml", ".github/workflows", ".github/dependabot.yml"} {
+		if MayBeProtected(p) {
+			t.Errorf("MayBeProtected(%q) = true", p)
+		}
+	}
+
+	for _, p := range set {
+		t.Run(p, func(t *testing.T) {
+			f := newFixture()
+			f.pulls.changed = []string{"main.go", p}
+			got := f.mustResolve(t, pullTarget())
+			wantStrings(t, "ProtectedPaths", got.ProtectedPaths, []string{p})
+			if got.Approval != ApprovalMissing {
+				t.Errorf("Approval = %q, want %q", got.Approval, ApprovalMissing)
+			}
 		})
 	}
 }

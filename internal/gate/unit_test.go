@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os/exec"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -288,6 +289,74 @@ func postMarker() *http.Request {
 	return httptest.NewRequest(http.MethodPost, "/v1/reports", strings.NewReader(reportMarker))
 }
 
+// The receipt is what the sweep later tests with inputs.Accepts, and verdict reports a mismatch with the
+// same function: the three sites must agree for every combination.
+func TestReceiptDigestsAreAlwaysAccepted(t *testing.T) {
+	lists := [][]string{nil, {"aa11"}, {"aa11", "bb22"}}
+	claims := []string{"", "aa11", "bb22", "ff99", "sha256:aa11"}
+	mismatch := func(o verdict.Outcome, code verdict.ReasonCode) bool {
+		return slices.ContainsFunc(o.Reasons, func(r verdict.Reason) bool { return r.Code == code })
+	}
+	for _, list := range lists {
+		for _, claim := range claims {
+			u := Upload{
+				BaselineDigest: claim, LabelsDigest: claim,
+				Report: &report.Report{Comparison: report.Comparison{ConfigHash: claim}},
+			}
+			tr := inputs.Trusted{SettingsFound: true, PolicyDigests: list, BaselineDigests: list, LabelsDigests: list}
+			o := verdict.Decide(verdict.Facts{BaselineDigest: claim, LabelsDigest: claim, Report: u.Report, Trusted: tr})
+			rc := receipt(u, tr, o)
+
+			want := inputs.First(list)
+			if inputs.Accepts(list, claim) {
+				want = claim
+			}
+			for field, got := range map[string]string{"policy": rc.PolicyDigest, "baseline": rc.BaselineDigest, "labels": rc.LabelsDigest} {
+				if got != want || !inputs.Accepts(list, got) {
+					t.Errorf("%s: receipt digest for claim %q against %v = %q, want %q", field, claim, list, got, want)
+				}
+			}
+			for _, code := range []verdict.ReasonCode{verdict.ReasonBaselineMismatch, verdict.ReasonLabelsMismatch} {
+				if got := mismatch(o, code); got != !inputs.Accepts(list, claim) {
+					t.Errorf("%s for claim %q against %v = %v", code, claim, list, got)
+				}
+			}
+			// An empty policy list is policy_missing, never policy_mismatch.
+			if got := mismatch(o, verdict.ReasonPolicyMismatch); got != (len(list) > 0 && !inputs.Accepts(list, claim)) {
+				t.Errorf("policy_mismatch for claim %q against %v = %v", claim, list, got)
+			}
+		}
+	}
+}
+
+// gate/inputs owns the protected path set. No path is named here, so a sixth one is covered as it is.
+func TestProtectedPushFollowsInputs(t *testing.T) {
+	push := func(paths ...string) int {
+		t.Helper()
+		f := newPipelineFakes()
+		e := webhook.Event{Kind: webhook.DefaultBranchPush, InstallationID: 11, Repo: shopName, ChangedPaths: paths}
+		if err := f.gate.HandleEvent(context.Background(), e); err != nil {
+			t.Fatal(err)
+		}
+		return len(f.sweeper.repos)
+	}
+	set := inputs.ProtectedPaths(settings.Settings{Workflow: testWorkflow})
+	if len(set) < 5 {
+		t.Fatalf("ProtectedPaths = %v", set)
+	}
+	for _, path := range set {
+		if got := push("pkg/a/a.go", path); got != 1 {
+			t.Errorf("a push of %s swept %d repositories, want 1", path, got)
+		}
+	}
+	if got := push("pkg/a/a.go", "docs/readme.md"); got != 0 {
+		t.Errorf("an unprotected push swept %d repositories", got)
+	}
+	if got := push(); got != 1 {
+		t.Errorf("a push without paths swept %d repositories, want 1", got)
+	}
+}
+
 func TestHTTPMapping(t *testing.T) {
 	// The fakes return a zero Upload and a zero Trusted: not onboarded.
 	published := `{"conclusion":"action_required","reason":"settings_missing"}`
@@ -499,6 +568,7 @@ func TestHandleEventRules(t *testing.T) {
 		}
 	})
 
+	noRun := feedback.CheckState{Exists: true, Receipt: feedback.Receipt{Reason: verdict.ReasonOwnerApprovalMissing}}
 	rerun := []struct {
 		name    string
 		state   feedback.CheckState
@@ -506,6 +576,7 @@ func TestHandleEventRules(t *testing.T) {
 		run     api.WorkflowRun
 		reran   bool
 	}{
+		{"receipt without a run", noRun, granted, api.WorkflowRun{Status: runCompleted}, false},
 		{"completed run at the receipt's attempt", missing, granted, api.WorkflowRun{Status: runCompleted, Attempt: 2}, true},
 		{"run in progress", missing, granted, api.WorkflowRun{Status: runInProgress, Attempt: 2}, false},
 		{"newer attempt already ran", missing, granted, api.WorkflowRun{Status: runCompleted, Attempt: 3}, false},
@@ -530,8 +601,24 @@ func TestHandleEventRules(t *testing.T) {
 			if len(f.publisher.published)+len(f.publisher.pended) != 0 {
 				t.Error("a review event wrote feedback")
 			}
+			if tc.state.Receipt.RunID == 0 && len(f.actions.ran) != 0 {
+				t.Errorf("a receipt without a run read runs %v", f.actions.ran)
+			}
 		})
 	}
+
+	// One behavior with the sweep: a run that is gone is skipped, and rule 7b of the next pass repairs it.
+	t.Run("review: run not found is skipped", func(t *testing.T) {
+		f := newPipelineFakes()
+		f.publisher.state, f.resolver.trusted = missing, granted
+		f.actions.runErr = fmt.Errorf("run 9: %w", api.ErrNotFound)
+		if err := f.gate.HandleEvent(ctx, pullEvent(webhook.ReviewChanged)); err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		if len(f.actions.ran) != 1 || len(f.actions.reran) != 0 || len(f.publisher.published) != 0 {
+			t.Errorf("ran %v, reran %v, published %d", f.actions.ran, f.actions.reran, len(f.publisher.published))
+		}
+	})
 
 	errs := []struct {
 		name  string

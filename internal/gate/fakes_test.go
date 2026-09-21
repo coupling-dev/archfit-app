@@ -22,6 +22,7 @@ const (
 	stateCheckName = "archfit/state"
 
 	runInProgress = "in_progress"
+	runCompleted  = "completed"
 )
 
 // fakeGitHub is an in-memory GitHub behind every role interface the gate path uses.

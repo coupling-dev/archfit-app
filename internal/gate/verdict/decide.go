@@ -40,10 +40,7 @@ func Decide(f Facts) Outcome {
 
 	// Step 1.
 	if t.Suspended {
-		rs.add(ReasonSuspended, "")
-		if t.Entitlement.Reason != "" {
-			rs[0].Next = t.Entitlement.Reason
-		}
+		rs.suspend(t.Entitlement)
 	}
 	// Step 2.
 	if !t.SettingsFound {
@@ -90,6 +87,22 @@ func Without(code ReasonCode) Outcome {
 	return rs.outcome()
 }
 
+// Suspended is Without(ReasonSuspended) for a caller that holds the entitlement record: Next is
+// e.Reason when it is not empty, exactly as step 1 of Decide sets it.
+func Suspended(e inputs.Entitlement) Outcome {
+	var rs reasons
+	rs.suspend(e)
+	return rs.outcome()
+}
+
+// suspend is step 1. It is always the first reason.
+func (rs *reasons) suspend(e inputs.Entitlement) {
+	rs.add(ReasonSuspended, "")
+	if e.Reason != "" {
+		(*rs)[0].Next = e.Reason
+	}
+}
+
 // eligibility is step 3. Problems are a set; a value outside the ingest constants is an envelope mismatch.
 func eligibility(rs *reasons, f Facts) {
 	var fork, event, envelope, invalid bool
@@ -125,13 +138,13 @@ func integrity(rs *reasons, f Facts) {
 	switch {
 	case len(t.PolicyDigests) == 0:
 		rs.add(ReasonPolicyMissing, "")
-	case f.Report != nil && !trusted(t.PolicyDigests, f.Report.Comparison.ConfigHash):
+	case f.Report != nil && !inputs.Accepts(t.PolicyDigests, f.Report.Comparison.ConfigHash):
 		rs.add(ReasonPolicyMismatch, f.Report.Comparison.ConfigHash)
 	}
-	if mismatch(t.BaselineDigests, f.BaselineDigest) {
+	if !inputs.Accepts(t.BaselineDigests, f.BaselineDigest) {
 		rs.add(ReasonBaselineMismatch, claimed(f.BaselineDigest))
 	}
-	if mismatch(t.LabelsDigests, f.LabelsDigest) {
+	if !inputs.Accepts(t.LabelsDigests, f.LabelsDigest) {
 		rs.add(ReasonLabelsMismatch, claimed(f.LabelsDigest))
 	}
 }
@@ -160,19 +173,6 @@ func evidence(rs *reasons, r *report.Report, baselineTrusted bool) {
 	if len(*rs) == 0 {
 		rs.add(ReasonHealthy, "")
 	}
-}
-
-// trusted reports whether digest is in list. Exact string equality; an empty digest never matches.
-func trusted(list []string, digest string) bool {
-	return digest != "" && slices.Contains(list, digest)
-}
-
-// mismatch is the digest predicate for a producer-claimed digest. Both sides empty is a match.
-func mismatch(list []string, digest string) bool {
-	if len(list) == 0 {
-		return digest != ""
-	}
-	return !trusted(list, digest)
 }
 
 func claimed(digest string) string {

@@ -104,7 +104,8 @@ func TestNonComparableBaselineNeedsOwnerPR(t *testing.T) {
 }
 
 func TestBlockerKeepsUnevaluatedRules(t *testing.T) {
-	o := decide(t, cleanFacts(loadReport(t, "blocker-plus-unevaluated"), fixtureFacts{}))
+	f, _ := fixtureCase(t, "blocker-and-unevaluated")
+	o := decide(t, f)
 	wantCodes(t, o, Failure, ReasonBlockingFindings, ReasonMissingCoverage)
 	if r, _ := find(o, ReasonMissingCoverage); r.Detail != "layers/no_upward_imports" {
 		t.Errorf("detail = %q, want the rule ID", r.Detail)
@@ -112,7 +113,8 @@ func TestBlockerKeepsUnevaluatedRules(t *testing.T) {
 }
 
 func TestOriginNeverExempts(t *testing.T) {
-	r := loadReport(t, "real-blocked-no-baseline")
+	f, _ := fixtureCase(t, "real-blocked-no-baseline")
+	r := f.Report
 	if len(r.AgentTasks) != 1 || len(r.Findings) == 0 {
 		t.Fatalf("fixture has %d tasks and %d findings", len(r.AgentTasks), len(r.Findings))
 	}
@@ -120,7 +122,7 @@ func TestOriginNeverExempts(t *testing.T) {
 	for i := range r.Findings {
 		r.Findings[i].Status = "baseline"
 	}
-	wantCodes(t, decide(t, cleanFacts(r, fixtureFacts{})), Failure, ReasonBlockingFindings)
+	wantCodes(t, decide(t, f), Failure, ReasonBlockingFindings)
 }
 
 func TestSuspensionIsItsOwnCategory(t *testing.T) {

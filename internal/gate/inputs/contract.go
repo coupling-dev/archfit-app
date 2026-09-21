@@ -3,11 +3,17 @@ package inputs
 
 import (
 	"context"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/alexei-led/archfit-app/internal/wire/policy"
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
+
+// workflowsDir restates the directory rule of wire/settings, which exports no constant for it.
+const workflowsDir = ".github/workflows/"
 
 // EntitlementKey is the Store key, under the installation tenant, of the JSON-encoded Entitlement.
 const EntitlementKey = "entitlement"
@@ -57,4 +63,40 @@ type Resolver interface {
 	// Resolve reads the protected ref and reviews. It never reads policy, settings, baseline,
 	// owners, or CODEOWNERS from the head tree, except to hash an owner-approved candidate.
 	Resolve(ctx context.Context, t Target, now time.Time) (Trusted, error)
+}
+
+// Accepts is the digest predicate of the gate: whether claim is acceptable for one digest list of Trusted.
+// An empty list accepts only the empty claim ("nothing trusted, nothing claimed"). A list with entries
+// accepts only a claim that is not empty and is in the list, by exact string equality.
+func Accepts(trusted []string, claim string) bool {
+	if len(trusted) == 0 {
+		return claim == ""
+	}
+	return claim != "" && slices.Contains(trusted, claim)
+}
+
+// First returns the first digest of a list of Trusted, or "" for an empty list.
+// For every list that Resolve builds, Accepts(trusted, First(trusted)) is true.
+func First(trusted []string) string {
+	if len(trusted) == 0 {
+		return ""
+	}
+	return trusted[0]
+}
+
+// ProtectedPaths returns the protected path set for the settings of the protected ref, in fixed order:
+// PolicyPath, BaselinePath, LabelsPath, Path (the settings file), s.Workflow. An empty s.Workflow is left out.
+func ProtectedPaths(s settings.Settings) []string {
+	paths := []string{policy.PolicyPath, policy.BaselinePath, policy.LabelsPath, settings.Path}
+	if s.Workflow != "" {
+		paths = append(paths, s.Workflow)
+	}
+	return paths
+}
+
+// MayBeProtected is the same rule for a caller that has not read the settings file (a push event):
+// true for every path of ProtectedPaths(Settings{}) and for every path under ".github/workflows/",
+// the only directory wire/settings accepts a workflow in. It is a superset of ProtectedPaths(s) for every parsed s.
+func MayBeProtected(path string) bool {
+	return slices.Contains(ProtectedPaths(settings.Settings{}), path) || strings.HasPrefix(path, workflowsDir)
 }
