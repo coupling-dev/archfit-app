@@ -25,11 +25,16 @@ const (
 	maxGrantBody   = 4 << 10
 
 	uploadTimeout  = 55 * time.Second // target: feedback within 60 seconds
-	controlTimeout = 55 * time.Second // stays under the server write timeout
+	controlTimeout = 55 * time.Second
+	// assistTimeout covers control's measured worst case of the managed assist route, about 285 s
+	// (the provider call alone may take 150 s). A shorter deadline cancels the provider call and
+	// the full budget reservation is settled for nothing.
+	assistTimeout = 300 * time.Second
 
-	headerEvent     = "X-GitHub-Event"
-	headerDelivery  = "X-GitHub-Delivery"
-	headerSignature = "X-Hub-Signature-256"
+	// assistRoute restates one row of control/ui's route table: UIHandler is one opaque handler
+	// and only this route needs the long deadline.
+	assistRoute = "POST /r/{owner}/{name}/assist"
+
 	headerRequestID = "X-Request-Id"
 	bearerPrefix    = "Bearer "
 
@@ -72,7 +77,9 @@ func newHandler(d handlerDeps) http.Handler {
 	mux.HandleFunc("POST /webhooks/github", s.webhook)
 	mux.Handle("POST /internal/sweep", s.operator(s.sweep))
 	mux.Handle("POST /internal/grants", s.operator(s.grant))
-	mux.Handle("/", http.TimeoutHandler(d.control.UIHandler(), controlTimeout, ""))
+	ui := d.control.UIHandler()
+	mux.Handle(assistRoute, http.TimeoutHandler(ui, assistTimeout, ""))
+	mux.Handle("/", http.TimeoutHandler(ui, controlTimeout, ""))
 	return s.logged(mux)
 }
 
@@ -188,7 +195,7 @@ func isolate(f func() error) (err error) {
 // is 202 whatever the handlers return: GitHub redelivery and the sweep are the recovery path.
 func (s *server) webhook(w http.ResponseWriter, r *http.Request) {
 	ri := info(r)
-	ri.deliveryID = r.Header.Get(headerDelivery)
+	ri.deliveryID = r.Header.Get(webhook.HeaderDelivery)
 	if len(ri.deliveryID) > maxLoggedIDLen {
 		ri.deliveryID = ri.deliveryID[:maxLoggedIDLen]
 	}
@@ -204,12 +211,12 @@ func (s *server) webhook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if err := webhook.Verify(s.webhookSecret, r.Header.Get(headerSignature), body); err != nil {
+	if err := webhook.Verify(s.webhookSecret, r.Header.Get(webhook.HeaderSignature), body); err != nil {
 		ri.outcome = "bad_signature"
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	e, err := webhook.Parse(r.Header.Get(headerEvent), r.Header.Get(headerDelivery), body)
+	e, err := webhook.Parse(r.Header.Get(webhook.HeaderEvent), r.Header.Get(webhook.HeaderDelivery), body)
 	if err != nil {
 		ri.outcome = "unparsable"
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -286,23 +293,30 @@ func (s *server) sweep(w http.ResponseWriter, r *http.Request) {
 func (s *server) grant(w http.ResponseWriter, r *http.Request) {
 	ri := info(r)
 	var req struct {
-		InstallationID int64     `json:"installation_id"`
-		Until          time.Time `json:"until"`
+		InstallationID int64      `json:"installation_id"`
+		Until          *time.Time `json:"until"` // null or omitted: clear the grant
 	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxGrantBody))
 	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil || req.InstallationID <= 0 || !req.Until.After(s.now()) {
+	if err := dec.Decode(&req); err != nil || req.InstallationID <= 0 || (req.Until != nil && !req.Until.After(s.now())) {
 		ri.outcome = "invalid_grant"
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 	ri.installationID = req.InstallationID
-	if err := s.control.Grant(r.Context(), req.InstallationID, req.Until); err != nil {
+	var until time.Time // the zero time clears the grant
+	if req.Until != nil {
+		until = *req.Until
+	}
+	if err := s.control.Grant(r.Context(), req.InstallationID, until); err != nil {
 		ri.outcome = "grant_error"
 		s.log.Error("operator grant failed", "installation_id", req.InstallationID, "error", err.Error())
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	ri.outcome = "granted"
+	if req.Until == nil {
+		ri.outcome = "grant_cleared"
+	}
 	w.WriteHeader(http.StatusNoContent)
 }

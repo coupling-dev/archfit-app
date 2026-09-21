@@ -17,13 +17,20 @@ single place where it is enforced at runtime.
 - `Load`: read `Config` from the environment; fail with a message naming the variable; never read a secret value from the environment itself, only a file path.
 - `Run`: build the dependency graph, start one `http.Server`, shut down gracefully on context cancellation.
 - Route table (normative, below), one `http.ServeMux`.
-- Webhook endpoint: read the body (25 MB cap, GitHub's own maximum **[default]**), `webhook.Verify`, `webhook.Parse`, then call
-  `gate.HandleEvent` and `control.HandleEvent` independently. Respond `202` when the signature is valid, whatever the handlers return; handler errors are logged by delivery ID. GitHub redelivery plus the sweep are the recovery path.
+- Webhook endpoint: read the body (25 MB cap, GitHub's own maximum **[default]**), read the three delivery headers under
+  `webhook.HeaderEvent`, `webhook.HeaderDelivery` and `webhook.HeaderSignature`, `webhook.Verify`, `webhook.Parse`, then call
+  `gate.HandleEvent` and `control.HandleEvent` independently. Respond `202` when the signature is valid and the payload parses, whatever the handlers return; handler errors are logged by delivery ID. GitHub redelivery plus the sweep are the recovery path.
+  A delivery with a valid signature that `webhook.Parse` refuses answers `400` and reaches no handler.
 - Operator endpoints: constant-time bearer comparison with the operator token. `POST /internal/sweep` runs
-  `control.Sweep` then `gate.Sweep`, each isolated; responds with the gate `Summary` counts as JSON.
-  `POST /internal/grants` takes JSON `{"installation_id": <int>, "until": "<RFC 3339>"}` and calls `control.Grant`.
-- Isolation at runtime: every `control` handler is wrapped with panic recovery and a per-request timeout; a panic
-  or timeout there never reaches the gate routes. The gate upload route has its own timeout of 55 seconds **[default]** (target: feedback within 60 seconds).
+  `control.Sweep` then `gate.Sweep`, each isolated; responds with the gate `Summary` counts as JSON (rules under Operator endpoints below).
+  `POST /internal/grants` sets or clears the manual beta grant through `control.Grant` (body rules under Operator endpoints below).
+- Isolation at runtime: the two `control` HTTP handlers are wrapped with panic recovery and a per-request timeout; a panic
+  or timeout there never reaches the gate routes. The deadline of every route is in the Timeouts table below: 55 seconds
+  **[default]** for the control routes, 300 seconds **[default]** for the managed assist route only, and the gate upload route
+  has its own 55 seconds **[default]** (target: feedback within 60 seconds).
+- Secret files: every `*_FILE` variable names a text file. `app` reads it, trims leading and trailing white space, and
+  refuses an empty result at startup. The cookie key is the trimmed raw bytes of its file, not an encoding of them, and
+  `control.New` requires exactly 32 of them.
 - Platform selection: `StoreDriver` `"memory"` → `store.NewMemory()`; `SandboxDriver` `"none"` → nil `Sandbox`
   (managed discovery reports "not available"); `AnthropicKeyFile` empty → nil `Provider`. `control.New` and `anthropic.New` return errors; both are startup errors (a configured but invalid LLM key must not start silently). `app` passes the same `TokenSource` to `api.New` and to `control.Deps.Tokens`. Unknown driver names are a startup error. New drivers are added here and nowhere else.
 - Structured logging with `log/slog`, JSON to stdout: request ID, route, status, duration, installation ID, outcome. Never bodies, paths, messages, tokens.
@@ -39,7 +46,8 @@ Supporting. Wiring has no business rules and changes only when a module or platf
 - The route table and which module owns each route.
 - The webhook fan-out order (gate first) and the rule that handler errors do not change the HTTP answer.
 - The operator token scheme for `/internal/*`.
-- Server settings: read timeout 15 s, write timeout 60 s, idle 60 s, shutdown grace 10 s **[default]**.
+- Server settings: read timeout 15 s, write timeout 310 s, idle 60 s, shutdown grace 10 s **[default]**. The write timeout
+  is above the longest route deadline (300 s), so a route's own deadline always answers before the server cuts the connection.
 
 ## Public Contract
 
@@ -68,15 +76,51 @@ func Run(ctx context.Context, c Config, log *slog.Logger) error
 
 ### Routes
 
-| Method and path         | Handler                                           | Authentication done by                      |
-| ----------------------- | ------------------------------------------------- | ------------------------------------------- |
-| `GET /healthz`          | `app`: `{"status":"ok"}`; no dependency is probed | none                                        |
-| `POST /v1/reports`      | `gate.UploadHandler()`                            | gate (OIDC)                                 |
-| `POST /v1/discoveries`  | `control.DiscoveryHandler()`                      | control, through the gate `Receiver` (OIDC) |
-| `POST /webhooks/github` | `app` fan-out                                     | `app` (`webhook.Verify`)                    |
-| `POST /internal/sweep`  | `app`                                             | `app` (operator bearer token)               |
-| `POST /internal/grants` | `app`                                             | `app` (operator bearer token)               |
-| `/` and everything else | `control.UIHandler()`                             | control (session)                           |
+| Method and path                 | Handler                                           | Authentication done by                      |
+| ------------------------------- | ------------------------------------------------- | ------------------------------------------- |
+| `GET /healthz`                  | `app`: `{"status":"ok"}`; no dependency is probed | none                                        |
+| `POST /v1/reports`              | `gate.UploadHandler()`                            | gate (OIDC)                                 |
+| `POST /v1/discoveries`          | `control.DiscoveryHandler()`                      | control, through the gate `Receiver` (OIDC) |
+| `POST /webhooks/github`         | `app` fan-out                                     | `app` (`webhook.Verify`)                    |
+| `POST /internal/sweep`          | `app`                                             | `app` (operator bearer token)               |
+| `POST /internal/grants`         | `app`                                             | `app` (operator bearer token)               |
+| `POST /r/{owner}/{name}/assist` | `control.UIHandler()`, under the long deadline    | control (session)                           |
+| `/` and everything else         | `control.UIHandler()`                             | control (session)                           |
+
+### Timeouts
+
+The deadline is the one the handler sees on its request context. `http.TimeoutHandler` answers `503` when it passes.
+
+| Route                           | Deadline | Why                                                                                                          |
+| ------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------ |
+| `GET /healthz`                  | none     | answers from memory                                                                                          |
+| `POST /v1/reports`              | 55 s     | gate upload; target: feedback within 60 seconds                                                              |
+| `POST /v1/discoveries`          | 55 s     | control per-request timeout                                                                                  |
+| `POST /webhooks/github`         | none     | each half of the fan-out runs detached from the request under its own deadline: gate 55 s, then control 55 s |
+| `POST /internal/sweep`          | none     | operator call; no deadline of its own                                                                        |
+| `POST /internal/grants`         | none     | operator call; no deadline of its own                                                                        |
+| `POST /r/{owner}/{name}/assist` | 300 s    | managed assist; the sum below                                                                                |
+| `/` and everything else         | 55 s     | control per-request timeout                                                                                  |
+
+`control` measured the managed assist route end to end at about 285 seconds worst case: ui save 60 s, assist pre-checks
+30 s, provider 150 s, settle 5 s (detached), propose 40 s. A shorter route deadline cancels the provider call and the
+full budget reservation is settled for nothing, so this route, and only this route, gets 300 seconds.
+
+The shared outbound `http.Client` timeout of 30 seconds does not bound the provider call: `anthropic.New` copies
+the client and clears `Timeout` on its copy, so the 150 second deadline of `control/assist` is the one that applies.
+
+### Operator endpoints
+
+- `POST /internal/grants` takes JSON `{"installation_id": <int>, "until": "<RFC 3339>"}`; unknown fields and bodies over
+  4 KB are refused. A future `until` sets the grant. `"until": null` or an omitted `until` clears the grant: `app` calls
+  `control.Grant` with the zero `time.Time`. An `until` that is present and not after now answers `400` and calls
+  nothing: a past time is far more likely a typo than a wish to clear, and clearing has its own spelling.
+  Success answers `204`, logged with the installation ID and the outcome `granted` or `grant_cleared`; an error from
+  `control.Grant` answers `500`.
+- `POST /internal/sweep` answers `200` with the gate `Summary` when `gate.Sweep` succeeds, also when `control.Sweep`
+  failed or panicked (that failure is only logged). When `gate.Sweep` fails it answers `500` with the partial `Summary`.
+  The `Summary` is encoded by `encoding/json` with the Go field names (`Repos`, `Pulls`, `Pended`, `TimedOut`, `Rerun`,
+  `Warned`, `Suspended`, `Errors`, `RateLimited`); there are no JSON tags.
 
 `cmd/reporter` builds a JSON `slog.Logger`, calls `Load(os.Getenv)`, then `Run` with a context cancelled on
 SIGINT or SIGTERM, and exits non-zero on error. It contains nothing else. The skeleton's handler code and its
@@ -273,6 +317,7 @@ type Completion struct {
 - **Volatility**: moderate (provider may change)
 - **Balanced?**: yes — contract coupling tolerates any distance
 - **Shared knowledge**: `app` reads the key file and leaves `Model` empty for the default. In this block `Config` means `anthropic.Config`.
+  `app` passes the shared `http.Client`; `anthropic.New` clears `Timeout` on its own copy, so the 30-second value never cuts a provider call.
 
 <!-- contract: New, Config — restated from internal/control/assist/anthropic/module.md -->
 ```go
@@ -342,8 +387,8 @@ func NewMemory() Store
 - **LCA / Rank / Distance**: internal (root) / 2 / 2
 - **Volatility**: low
 - **Balanced?**: yes
-- **Shared knowledge**: constructors, plus the webhook functions and event type used by the fan-out. `app` uses one
-  shared `http.Client` with a 30-second timeout **[default]**. `Claims` is an opaque result of `Verifier` for this module.
+- **Shared knowledge**: constructors, plus the webhook functions, header names and event type used by the fan-out. `app` uses one
+  shared `http.Client` with a 30-second timeout **[default]**; it bounds the GitHub and OIDC calls. `Claims` is an opaque result of `Verifier` for this module.
 
 <!-- contract: Credentials, TokenSource — restated from internal/github/auth/module.md -->
 ```go
@@ -434,6 +479,16 @@ func Verify(secret []byte, signatureHeader string, body []byte) error
 func Parse(eventType, deliveryID string, body []byte) (Event, error)
 ```
 
+<!-- contract: HeaderEvent, HeaderDelivery, HeaderSignature — restated from internal/github/webhook/module.md -->
+```go
+// Header names of a GitHub webhook delivery. Callers read these headers and pass their values to Verify and Parse.
+const (
+    HeaderEvent     = "X-GitHub-Event"
+    HeaderDelivery  = "X-GitHub-Delivery"
+    HeaderSignature = "X-Hub-Signature-256"
+)
+```
+
 <!-- contract: Claims, Verifier, ErrUnavailable — restated from internal/github/oidc/module.md -->
 ```go
 // Claims are the verified GitHub Actions OIDC claims the App uses.
@@ -482,6 +537,14 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
 - Secrets arrive as file paths; their contents are never logged, never placed in `Config` string form, never echoed in errors.
 - Tenant identity is never taken from a request here. `/internal/grants` is operator-authenticated and is the single place an installation ID arrives in a body; it is logged with the operator action.
 - Webhook body cap 25 MB **[default]**; bodies are never logged. Unknown events answer `202` and do nothing.
+- The server write timeout is greater than every route deadline. Raising a route deadline means raising the write timeout with it.
+- Declared restatement: the mux pattern `POST /r/{owner}/{name}/assist` repeats one row of the route table of
+  `internal/control/ui` (there `POST /r/{o}/{n}/assist`), because `control.UIHandler()` is one opaque handler and only
+  this route needs the long deadline. Owner of the rule: `control/ui`. If ui renames or moves the route, requests still
+  reach ui through `/`, but under 55 seconds: the provider call is cancelled and the full reservation is settled for
+  nothing. Remove the restatement when `control` publishes the assist route as its own handler or publishes the pattern.
+- Known ceiling: the shutdown grace of 10 seconds is shorter than the assist deadline, so a managed assist request in
+  flight at shutdown is cancelled. Upgrade trigger: managed assist traffic that makes deploy-time cancellations visible.
 - No queues, no background job tables. The only goroutines `app` starts are the HTTP server and its shutdown watcher.
 - Standard library only.
 - Logs: IDs, digests, outcomes, timings.
@@ -512,8 +575,20 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   **Scenario**: authorized `POST /internal/sweep` with a gate fake returning counts.
   **Expected behavior**: `200` with the counts as JSON; control sweep was called first.
 - **Test name**: `TestGrantEndpoint`
-  **Scenario**: authorized valid body; malformed JSON; `until` in the past; user session cookie instead of the operator token.
-  **Expected behavior**: `204` and `control.Grant` called; `400`; `400`; `401`.
+  **Scenario**: authorized body with a future `until`; `"until": null`; `until` omitted; `until` in the past or equal to now; malformed JSON,
+  unknown field, missing or negative installation ID, oversized body; user session cookie instead of the operator token.
+  **Expected behavior**: `204` and `control.Grant` called with that time; `204` and `control.Grant` called with the zero time, twice;
+  `400` and no call; `400` and no call; `401`.
+- **Test name**: `TestRouteDeadlines`
+  **Scenario**: table over the route classes with fake handlers that record `ctx.Deadline()` and return at once: `POST /v1/reports`,
+  `POST /v1/discoveries`, `GET /`, `POST /r/o/n/policy`, `GET /r/o/n/assist`, `POST /r/o/n/assist`, `POST /r/o/n/assist/x`; the two webhook halves;
+  the operator routes. No sleeping.
+  **Expected behavior**: 55 s for every row except `POST /r/o/n/assist`, which sees 300 s; the webhook halves each see 55 s although the
+  request has no deadline; the operator routes see no deadline; the server write timeout is greater than every one of them.
+
+- **Test name**: `TestImportsStayInsideTheDesign`
+  **Scenario**: list the package's imports with `go list`.
+  **Expected behavior**: every import outside the standard library is a module listed under Integrations; anything else fails the test.
 
 ### Boundary Tests
 

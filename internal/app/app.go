@@ -19,8 +19,10 @@ import (
 )
 
 const (
-	readTimeout   = 15 * time.Second
-	writeTimeout  = 60 * time.Second
+	readTimeout = 15 * time.Second
+	// writeTimeout stays above the longest route deadline (assistTimeout), so a route's own
+	// deadline answers before the server cuts the connection.
+	writeTimeout  = 310 * time.Second
 	idleTimeout   = 60 * time.Second
 	shutdownGrace = 10 * time.Second
 	clientTimeout = 30 * time.Second

@@ -114,6 +114,52 @@ func TestRouteTable(t *testing.T) {
 	})
 }
 
+func TestRouteDeadlines(t *testing.T) {
+	const short, long = 55 * time.Second, 300 * time.Second
+	body := []byte(pullOpenedBody)
+	post := func(target string) *http.Request { return httptest.NewRequest(http.MethodPost, target, nil) }
+	tests := []struct {
+		name    string
+		request *http.Request
+		want    []time.Duration // one per fake reached, in order; 0 means no deadline
+	}{
+		{"gate upload", post("/v1/reports"), []time.Duration{short}},
+		{"discovery upload", post("/v1/discoveries"), []time.Duration{short}},
+		{"UI page", httptest.NewRequest(http.MethodGet, "/", nil), []time.Duration{short}},
+		{"UI save", post("/r/octo/repo/policy"), []time.Duration{short}},
+		{"GET on the assist path", httptest.NewRequest(http.MethodGet, "/r/octo/repo/assist", nil), []time.Duration{short}},
+		{"below the assist path", post("/r/octo/repo/assist/x"), []time.Duration{short}},
+		{"another path that ends in assist", post("/r/octo/assist"), []time.Duration{short}},
+		{"managed assist", post("/r/octo/repo/assist"), []time.Duration{long}},
+		{"webhook halves", webhookRequest("/webhooks/github", "pull_request", "d-1", body, sign(testWebhookSecret, body)), []time.Duration{short, short}},
+		{"sweep", operatorRequest("/internal/sweep", testOperatorToken, ""), []time.Duration{0, 0}},
+		{"grant", operatorRequest("/internal/grants", testOperatorToken, `{"installation_id": 42}`), []time.Duration{0}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture()
+			if rec := f.do(tt.request); rec.Code >= http.StatusBadRequest {
+				t.Fatalf("status = %d", rec.Code)
+			}
+			got := f.calls.deadlines()
+			if len(got) != len(tt.want) {
+				t.Fatalf("deadlines = %v, want %v", got, tt.want)
+			}
+			for i, want := range tt.want {
+				// The fake is reached well within a second of the deadline being set.
+				if got[i] > want || got[i] < want-time.Second || (want == 0) != (got[i] == 0) {
+					t.Errorf("fake %d saw %v left, want %v", i+1, got[i], want)
+				}
+			}
+			for _, d := range tt.want {
+				if writeTimeout <= d {
+					t.Errorf("server write timeout %v does not exceed the route deadline %v", writeTimeout, d)
+				}
+			}
+		})
+	}
+}
+
 func TestWebhookFanOut(t *testing.T) {
 	body := []byte(pullOpenedBody)
 	want, err := webhook.Parse("pull_request", "d-1", body)
@@ -258,11 +304,14 @@ func TestGrantEndpoint(t *testing.T) {
 		want int
 	}{
 		{"valid", valid, http.StatusNoContent},
+		{"until is null clears the grant", `{"installation_id": 42, "until": null}`, http.StatusNoContent},
+		{"until omitted clears the grant", `{"installation_id": 42}`, http.StatusNoContent},
 		{"malformed JSON", `{"installation_id": 42, "until": `, http.StatusBadRequest},
 		{"until in the past", `{"installation_id": 42, "until": "2026-09-20T00:00:00Z"}`, http.StatusBadRequest},
 		{"until is now", `{"installation_id": 42, "until": "` + testNow.Format(time.RFC3339) + `"}`, http.StatusBadRequest},
 		{"until is not RFC 3339", `{"installation_id": 42, "until": "next month"}`, http.StatusBadRequest},
-		{"missing until", `{"installation_id": 42}`, http.StatusBadRequest},
+		{"until is the zero time", `{"installation_id": 42, "until": "0001-01-01T00:00:00Z"}`, http.StatusBadRequest},
+		{"until is empty", `{"installation_id": 42, "until": ""}`, http.StatusBadRequest},
 		{"missing installation ID", `{"until": "` + until.Format(time.RFC3339) + `"}`, http.StatusBadRequest},
 		{"negative installation ID", `{"installation_id": -1, "until": "` + until.Format(time.RFC3339) + `"}`, http.StatusBadRequest},
 		{"unknown field", `{"installation_id": 42, "until": "` + until.Format(time.RFC3339) + `", "plan": "pro"}`, http.StatusBadRequest},
@@ -278,9 +327,12 @@ func TestGrantEndpoint(t *testing.T) {
 			wantGrants := []grantCall(nil)
 			if tt.want == http.StatusNoContent {
 				wantGrants = []grantCall{{42, until}}
+				if tt.body != valid {
+					wantGrants = []grantCall{{42, time.Time{}}}
+				}
 			}
 			if len(f.control.grants) != len(wantGrants) || (len(wantGrants) == 1 &&
-				(f.control.grants[0].installationID != 42 || !f.control.grants[0].until.Equal(until))) {
+				(f.control.grants[0].installationID != 42 || !f.control.grants[0].until.Equal(wantGrants[0].until))) {
 				t.Errorf("grants = %+v, want %+v", f.control.grants, wantGrants)
 			}
 		})
@@ -304,6 +356,10 @@ func TestGrantEndpoint(t *testing.T) {
 		if logs := f.logs.String(); !strings.Contains(logs, `"installation_id":42`) || !strings.Contains(logs, `"outcome":"granted"`) {
 			t.Errorf("operator action not logged: %s", logs)
 		}
+		f.do(operatorRequest("/internal/grants", testOperatorToken, `{"installation_id": 42}`))
+		if logs := f.logs.String(); !strings.Contains(logs, `"outcome":"grant_cleared"`) {
+			t.Errorf("cleared grant not logged: %s", logs)
+		}
 	})
 }
 
@@ -322,9 +378,9 @@ func TestWebhookBodyCap(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			f := newFixture()
 			r := httptest.NewRequest(http.MethodPost, "/webhooks/github", tt.body)
-			r.Header.Set(headerEvent, "pull_request")
-			r.Header.Set(headerDelivery, "d-big")
-			r.Header.Set(headerSignature, sign(testWebhookSecret, over))
+			r.Header.Set(webhook.HeaderEvent, "pull_request")
+			r.Header.Set(webhook.HeaderDelivery, "d-big")
+			r.Header.Set(webhook.HeaderSignature, sign(testWebhookSecret, over))
 			if rec := f.do(r); rec.Code != http.StatusRequestEntityTooLarge {
 				t.Fatalf("status = %d, want 413", rec.Code)
 			}

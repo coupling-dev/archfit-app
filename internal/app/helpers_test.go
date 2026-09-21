@@ -44,8 +44,25 @@ var testNow = time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)
 
 // callLog records the order in which the fakes were reached.
 type callLog struct {
-	mu    sync.Mutex
-	calls []string
+	mu        sync.Mutex
+	calls     []string
+	remaining []time.Duration // time left on each fake's context when it was reached; 0 means no deadline
+}
+
+func (l *callLog) sawContext(ctx context.Context) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	var left time.Duration
+	if d, ok := ctx.Deadline(); ok {
+		left = time.Until(d)
+	}
+	l.remaining = append(l.remaining, left)
+}
+
+func (l *callLog) deadlines() []time.Duration {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]time.Duration(nil), l.remaining...)
 }
 
 func (l *callLog) add(name string) {
@@ -61,8 +78,9 @@ func (l *callLog) get() []string {
 }
 
 func namedHandler(l *callLog, name string, status int) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		l.add(name)
+		l.sawContext(r.Context())
 		w.WriteHeader(status)
 	})
 }
@@ -83,15 +101,17 @@ func newFakeGate(l *callLog) *fakeGate {
 
 func (g *fakeGate) UploadHandler() http.Handler { return g.upload }
 
-func (g *fakeGate) HandleEvent(_ context.Context, e webhook.Event) error {
+func (g *fakeGate) HandleEvent(ctx context.Context, e webhook.Event) error {
 	g.log.add("gate.HandleEvent")
+	g.log.sawContext(ctx)
 	g.events = append(g.events, e)
 	g.pending[e.HeadSHA] = true
 	return g.eventErr
 }
 
-func (g *fakeGate) Sweep(context.Context) (gate.Summary, error) {
+func (g *fakeGate) Sweep(ctx context.Context) (gate.Summary, error) {
 	g.log.add("gate.Sweep")
+	g.log.sawContext(ctx)
 	return g.summary, g.sweepErr
 }
 
@@ -121,8 +141,9 @@ func (c *fakeControl) DiscoveryHandler() http.Handler {
 	return namedHandler(c.log, "control.Discovery", http.StatusAccepted)
 }
 
-func (c *fakeControl) HandleEvent(_ context.Context, e webhook.Event) error {
+func (c *fakeControl) HandleEvent(ctx context.Context, e webhook.Event) error {
 	c.log.add("control.HandleEvent")
+	c.log.sawContext(ctx)
 	c.events = append(c.events, e)
 	if c.eventPanic {
 		panic("control event panic")
@@ -130,16 +151,18 @@ func (c *fakeControl) HandleEvent(_ context.Context, e webhook.Event) error {
 	return c.eventErr
 }
 
-func (c *fakeControl) Sweep(context.Context) error {
+func (c *fakeControl) Sweep(ctx context.Context) error {
 	c.log.add("control.Sweep")
+	c.log.sawContext(ctx)
 	if c.sweepPanic {
 		panic("control sweep panic")
 	}
 	return c.sweepErr
 }
 
-func (c *fakeControl) Grant(_ context.Context, installationID int64, until time.Time) error {
+func (c *fakeControl) Grant(ctx context.Context, installationID int64, until time.Time) error {
 	c.log.add("control.Grant")
+	c.log.sawContext(ctx)
 	c.grants = append(c.grants, grantCall{installationID, until})
 	return nil
 }
@@ -204,9 +227,9 @@ func sign(secret string, body []byte) string {
 
 func webhookRequest(target, event, delivery string, body []byte, signature string) *http.Request {
 	r := httptest.NewRequest(http.MethodPost, target, bytes.NewReader(body))
-	r.Header.Set(headerEvent, event)
-	r.Header.Set(headerDelivery, delivery)
-	r.Header.Set(headerSignature, signature)
+	r.Header.Set(webhook.HeaderEvent, event)
+	r.Header.Set(webhook.HeaderDelivery, delivery)
+	r.Header.Set(webhook.HeaderSignature, signature)
 	return r
 }
 
