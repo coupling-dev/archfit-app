@@ -1,0 +1,207 @@
+package webhook
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"slices"
+	"strings"
+)
+
+const (
+	typePullRequest       = "pull_request"
+	typePullRequestReview = "pull_request_review"
+	typePush              = "push"
+	typeInstallation      = "installation"
+	typeInstallationRepos = "installation_repositories"
+
+	branchRefPrefix = "refs/heads/"
+	shaLen          = 40
+
+	// GitHub truncates the commits of a push payload at this count.
+	commitsTruncatedAt = 2048
+	// Our cap: above it a full rescan is cheaper to reason about than a huge path list.
+	maxChangedPaths = 3000
+)
+
+var (
+	errNoDeliveryID   = errors.New("webhook: empty delivery ID")
+	errMalformedBody  = errors.New("webhook: malformed payload")
+	errNoInstallation = errors.New("webhook: payload has no installation ID")
+	errNoRepository   = errors.New("webhook: payload has no repository name")
+	errNoPullRequest  = errors.New("webhook: payload has no pull request number")
+	errBadHeadSHA     = errors.New("webhook: payload has no valid head SHA")
+)
+
+// actionKinds is the Mapping table for every known event type except push, which has no action.
+var actionKinds = map[string]map[string]EventKind{
+	typePullRequest: {
+		"opened":           PullOpened,
+		"reopened":         PullOpened,
+		"ready_for_review": PullOpened,
+		"synchronize":      PullSynchronized,
+		"closed":           PullClosed,
+	},
+	typePullRequestReview: {
+		"submitted": ReviewChanged,
+		"edited":    ReviewChanged,
+		"dismissed": ReviewChanged,
+	},
+	typeInstallation: {
+		"created": InstallationAdded,
+		"deleted": InstallationRemoved,
+	},
+	typeInstallationRepos: {
+		"added":   InstallationAdded,
+		"removed": ReposRemoved,
+	},
+}
+
+// payload holds the only fields read from any delivery. Unknown fields are ignored on purpose.
+type payload struct {
+	Action       string `json:"action"`
+	Installation struct {
+		ID int64 `json:"id"`
+	} `json:"installation"`
+	Repository struct {
+		FullName      string `json:"full_name"`
+		Private       bool   `json:"private"`
+		DefaultBranch string `json:"default_branch"`
+	} `json:"repository"`
+	PullRequest struct {
+		Number int `json:"number"`
+		Head   struct {
+			SHA  string `json:"sha"`
+			Repo *struct {
+				FullName string `json:"full_name"`
+			} `json:"repo"`
+		} `json:"head"`
+		Base struct {
+			Ref string `json:"ref"`
+		} `json:"base"`
+	} `json:"pull_request"`
+	Ref     string `json:"ref"`
+	After   string `json:"after"`
+	Deleted bool   `json:"deleted"`
+	Forced  bool   `json:"forced"`
+	Commits []struct {
+		Added    []string `json:"added"`
+		Modified []string `json:"modified"`
+		Removed  []string `json:"removed"`
+	} `json:"commits"`
+}
+
+// Parse normalizes a verified delivery. Unknown event types yield Kind == Ignored, not an error.
+func Parse(eventType, deliveryID string, body []byte) (Event, error) {
+	if deliveryID == "" {
+		return Event{}, errNoDeliveryID
+	}
+	ev := Event{Kind: Ignored, DeliveryID: deliveryID}
+	if _, known := actionKinds[eventType]; !known && eventType != typePush {
+		return ev, nil
+	}
+
+	// json.Unmarshal accepts "null" into a struct; only an object is a payload.
+	if !bytes.HasPrefix(bytes.TrimSpace(body), []byte("{")) {
+		return Event{}, errMalformedBody
+	}
+	var p payload
+	if err := json.Unmarshal(body, &p); err != nil {
+		// The json error quotes payload bytes; it is dropped on purpose.
+		return Event{}, errMalformedBody
+	}
+
+	// The default branch is named by the repository object: without one a push cannot be classified.
+	if eventType == typePush && !strings.Contains(p.Repository.FullName, "/") {
+		return Event{}, errNoRepository
+	}
+	kind := p.kind(eventType)
+	if kind == Ignored {
+		ev.InstallationID = max(p.Installation.ID, 0)
+		return ev, nil
+	}
+	if p.Installation.ID <= 0 {
+		return Event{}, errNoInstallation
+	}
+	ev.Kind = kind
+	ev.InstallationID = p.Installation.ID
+	if kind == InstallationAdded || kind == InstallationRemoved || kind == ReposRemoved {
+		return ev, nil
+	}
+
+	if !strings.Contains(p.Repository.FullName, "/") {
+		return Event{}, errNoRepository
+	}
+	ev.Repo = p.Repository.FullName
+	ev.RepoPrivate = p.Repository.Private
+
+	if kind == DefaultBranchPush {
+		ev.HeadSHA = p.After
+		ev.HeadRepo = ev.Repo
+		ev.BaseRef = p.Repository.DefaultBranch
+		ev.ChangedPaths = p.changedPaths()
+	} else {
+		if p.PullRequest.Number <= 0 {
+			return Event{}, errNoPullRequest
+		}
+		ev.PullRequest = p.PullRequest.Number
+		ev.HeadSHA = p.PullRequest.Head.SHA
+		if p.PullRequest.Head.Repo != nil {
+			ev.HeadRepo = p.PullRequest.Head.Repo.FullName
+		}
+		ev.BaseRef = p.PullRequest.Base.Ref
+	}
+	if !isSHA(ev.HeadSHA) {
+		return Event{}, errBadHeadSHA
+	}
+	return ev, nil
+}
+
+func (p *payload) kind(eventType string) EventKind {
+	if eventType == typePush {
+		if p.Repository.DefaultBranch != "" && p.Ref == branchRefPrefix+p.Repository.DefaultBranch && !p.Deleted {
+			return DefaultBranchPush
+		}
+		return Ignored
+	}
+	if kind, ok := actionKinds[eventType][p.Action]; ok {
+		return kind
+	}
+	return Ignored
+}
+
+// changedPaths returns nil for "unknown, treat as everything changed".
+func (p *payload) changedPaths() []string {
+	if p.Forced || len(p.Commits) == 0 || len(p.Commits) >= commitsTruncatedAt {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	for _, c := range p.Commits {
+		for _, files := range [][]string{c.Added, c.Modified, c.Removed} {
+			for _, f := range files {
+				seen[f] = struct{}{}
+			}
+		}
+	}
+	if len(seen) > maxChangedPaths {
+		return nil
+	}
+	paths := make([]string, 0, len(seen))
+	for f := range seen {
+		paths = append(paths, f)
+	}
+	slices.Sort(paths)
+	return paths
+}
+
+func isSHA(s string) bool {
+	if len(s) != shaLen {
+		return false
+	}
+	for i := range len(s) {
+		if c := s[i]; (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}

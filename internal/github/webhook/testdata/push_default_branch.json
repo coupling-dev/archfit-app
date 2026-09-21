@@ -1,0 +1,72 @@
+{
+  "ref": "refs/heads/trunk",
+  "before": "5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7081",
+  "after": "6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192",
+  "created": false,
+  "deleted": false,
+  "forced": false,
+  "base_ref": null,
+  "compare": "https://github.com/acme/lib/compare/5e6f70819...6f708192a",
+  "commits": [
+    {
+      "id": "7081708170817081708170817081708170817081",
+      "message": "Add policy",
+      "timestamp": "2026-09-01T09:00:00Z",
+      "distinct": true,
+      "added": [
+        ".archfit.yaml"
+      ],
+      "removed": [],
+      "modified": [
+        "internal/api/handler.go",
+        "go.mod"
+      ]
+    },
+    {
+      "id": "8192819281928192819281928192819281928192",
+      "message": "Drop legacy",
+      "timestamp": "2026-09-01T09:05:00Z",
+      "distinct": true,
+      "added": [],
+      "removed": [
+        "legacy/old.go"
+      ],
+      "modified": [
+        "go.mod"
+      ]
+    }
+  ],
+  "head_commit": {
+    "id": "6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192",
+    "message": "Drop legacy"
+  },
+  "repository": {
+    "id": 5550123,
+    "node_id": "R_kgDOAB",
+    "name": "lib",
+    "full_name": "acme/lib",
+    "private": false,
+    "owner": {
+      "login": "acme",
+      "id": 583231,
+      "type": "Organization"
+    },
+    "html_url": "https://github.com/acme/lib",
+    "fork": false,
+    "default_branch": "trunk",
+    "visibility": "public"
+  },
+  "pusher": {
+    "name": "octocat",
+    "email": "octocat@example.com"
+  },
+  "sender": {
+    "login": "octocat",
+    "id": 1,
+    "type": "User"
+  },
+  "installation": {
+    "id": 5002,
+    "node_id": "MDIzOkludGVncmF0aW9uSW5zdGFsbGF0aW9u"
+  }
+}

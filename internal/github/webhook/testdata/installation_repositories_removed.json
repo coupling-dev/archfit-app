@@ -1,0 +1,27 @@
+{
+  "action": "removed",
+  "installation": {
+    "id": 6002,
+    "account": {
+      "login": "acme",
+      "id": 583231
+    },
+    "repository_selection": "selected"
+  },
+  "repository_selection": "selected",
+  "repositories_added": [],
+  "repositories_removed": [
+    {
+      "id": 5550123,
+      "name": "lib",
+      "full_name": "acme/lib",
+      "private": false
+    }
+  ],
+  "requester": null,
+  "sender": {
+    "login": "octocat",
+    "id": 1,
+    "type": "User"
+  }
+}

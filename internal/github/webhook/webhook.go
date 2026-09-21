@@ -1,9 +1,13 @@
 // Package webhook verifies and normalizes GitHub webhook deliveries.
 package webhook
 
-import "errors"
-
-var errNotImplemented = errors.New("webhook: not implemented")
+import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"strings"
+)
 
 type EventKind string
 
@@ -33,12 +37,32 @@ type Event struct {
 	ChangedPaths   []string // default_branch_push only
 }
 
+const signaturePrefix = "sha256="
+
+// Fixed texts only: an error never holds the secret, a digest, or payload bytes.
+var (
+	errNoSecret           = errors.New("webhook: empty secret")
+	errSignatureMalformed = errors.New("webhook: malformed signature header")
+	errSignatureMismatch  = errors.New("webhook: signature mismatch")
+)
+
 // Verify checks X-Hub-Signature-256 over body in constant time.
 func Verify(secret []byte, signatureHeader string, body []byte) error {
-	return errNotImplemented
-}
-
-// Parse normalizes a verified delivery. Unknown event types yield Kind == Ignored, not an error.
-func Parse(eventType, deliveryID string, body []byte) (Event, error) {
-	return Event{}, errNotImplemented
+	if len(secret) == 0 {
+		return errNoSecret
+	}
+	digest, ok := strings.CutPrefix(signatureHeader, signaturePrefix)
+	if !ok || len(digest) != hex.EncodedLen(sha256.Size) {
+		return errSignatureMalformed
+	}
+	got, err := hex.DecodeString(digest)
+	if err != nil {
+		return errSignatureMalformed
+	}
+	mac := hmac.New(sha256.New, secret)
+	mac.Write(body)
+	if !hmac.Equal(got, mac.Sum(nil)) {
+		return errSignatureMismatch
+	}
+	return nil
 }

@@ -1,0 +1,113 @@
+{
+  "action": "submitted",
+  "review": {
+    "id": 80,
+    "node_id": "PRR_kw",
+    "user": {
+      "login": "octocat",
+      "id": 1,
+      "type": "User"
+    },
+    "body": "Looks right.",
+    "state": "approved",
+    "commit_id": "4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70",
+    "submitted_at": "2026-09-01T10:00:00Z"
+  },
+  "pull_request": {
+    "url": "https://api.github.com/repos/acme/lib/pulls/45",
+    "id": 279147437,
+    "number": 45,
+    "state": "open",
+    "locked": false,
+    "title": "Tighten module boundaries",
+    "user": {
+      "login": "octocat",
+      "id": 1,
+      "type": "User"
+    },
+    "body": "Moves the parser behind the wire seam.",
+    "draft": false,
+    "merged": false,
+    "head": {
+      "label": "octo:fix/cycle",
+      "ref": "fix/cycle",
+      "sha": "4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70",
+      "user": {
+        "login": "octocat",
+        "id": 1,
+        "type": "User"
+      },
+      "repo": {
+        "id": 5550123,
+        "node_id": "R_kgDOAB",
+        "name": "lib",
+        "full_name": "acme/lib",
+        "private": false,
+        "owner": {
+          "login": "acme",
+          "id": 583231,
+          "type": "Organization"
+        },
+        "html_url": "https://github.com/acme/lib",
+        "fork": false,
+        "default_branch": "trunk",
+        "visibility": "public"
+      }
+    },
+    "base": {
+      "label": "acme:trunk",
+      "ref": "trunk",
+      "sha": "ffffffffffffffffffffffffffffffffffffffff",
+      "user": {
+        "login": "octocat",
+        "id": 1,
+        "type": "User"
+      },
+      "repo": {
+        "id": 5550123,
+        "node_id": "R_kgDOAB",
+        "name": "lib",
+        "full_name": "acme/lib",
+        "private": false,
+        "owner": {
+          "login": "acme",
+          "id": 583231,
+          "type": "Organization"
+        },
+        "html_url": "https://github.com/acme/lib",
+        "fork": false,
+        "default_branch": "trunk",
+        "visibility": "public"
+      }
+    },
+    "commits": 3,
+    "additions": 120,
+    "deletions": 14,
+    "changed_files": 5
+  },
+  "repository": {
+    "id": 5550123,
+    "node_id": "R_kgDOAB",
+    "name": "lib",
+    "full_name": "acme/lib",
+    "private": false,
+    "owner": {
+      "login": "acme",
+      "id": 583231,
+      "type": "Organization"
+    },
+    "html_url": "https://github.com/acme/lib",
+    "fork": false,
+    "default_branch": "trunk",
+    "visibility": "public"
+  },
+  "sender": {
+    "login": "octocat",
+    "id": 1,
+    "type": "User"
+  },
+  "installation": {
+    "id": 5002,
+    "node_id": "MDIzOkludGVncmF0aW9uSW5zdGFsbGF0aW9u"
+  }
+}

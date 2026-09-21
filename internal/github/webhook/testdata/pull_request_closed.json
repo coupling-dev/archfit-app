@@ -1,0 +1,86 @@
+{
+  "action": "closed",
+  "number": 44,
+  "pull_request": {
+    "url": "https://api.github.com/repos/acme/shop/pulls/44",
+    "id": 279147437,
+    "number": 44,
+    "state": "closed",
+    "locked": false,
+    "title": "Tighten module boundaries",
+    "user": {
+      "login": "octocat",
+      "id": 1,
+      "type": "User"
+    },
+    "body": "Moves the parser behind the wire seam.",
+    "draft": false,
+    "merged": true,
+    "head": {
+      "label": "octo:patch-2",
+      "ref": "patch-2",
+      "sha": "3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f",
+      "user": {
+        "login": "octocat",
+        "id": 1,
+        "type": "User"
+      },
+      "repo": null
+    },
+    "base": {
+      "label": "acme:release/1.x",
+      "ref": "release/1.x",
+      "sha": "ffffffffffffffffffffffffffffffffffffffff",
+      "user": {
+        "login": "octocat",
+        "id": 1,
+        "type": "User"
+      },
+      "repo": {
+        "id": 1296269,
+        "node_id": "R_kgDOAB",
+        "name": "shop",
+        "full_name": "acme/shop",
+        "private": true,
+        "owner": {
+          "login": "acme",
+          "id": 583231,
+          "type": "Organization"
+        },
+        "html_url": "https://github.com/acme/shop",
+        "fork": false,
+        "default_branch": "main",
+        "visibility": "private"
+      }
+    },
+    "commits": 3,
+    "additions": 120,
+    "deletions": 14,
+    "changed_files": 5
+  },
+  "repository": {
+    "id": 1296269,
+    "node_id": "R_kgDOAB",
+    "name": "shop",
+    "full_name": "acme/shop",
+    "private": true,
+    "owner": {
+      "login": "acme",
+      "id": 583231,
+      "type": "Organization"
+    },
+    "html_url": "https://github.com/acme/shop",
+    "fork": false,
+    "default_branch": "main",
+    "visibility": "private"
+  },
+  "sender": {
+    "login": "octocat",
+    "id": 1,
+    "type": "User"
+  },
+  "installation": {
+    "id": 5001,
+    "node_id": "MDIzOkludGVncmF0aW9uSW5zdGFsbGF0aW9u"
+  }
+}

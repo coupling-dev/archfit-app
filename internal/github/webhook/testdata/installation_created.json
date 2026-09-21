@@ -1,0 +1,38 @@
+{
+  "action": "created",
+  "installation": {
+    "id": 6001,
+    "account": {
+      "login": "acme",
+      "id": 583231,
+      "type": "Organization"
+    },
+    "repository_selection": "selected",
+    "app_id": 1234,
+    "target_type": "Organization",
+    "permissions": {
+      "checks": "write",
+      "contents": "read",
+      "pull_requests": "read"
+    },
+    "events": [
+      "pull_request",
+      "pull_request_review",
+      "push"
+    ]
+  },
+  "repositories": [
+    {
+      "id": 1296269,
+      "name": "shop",
+      "full_name": "acme/shop",
+      "private": true
+    }
+  ],
+  "requester": null,
+  "sender": {
+    "login": "octocat",
+    "id": 1,
+    "type": "User"
+  }
+}
