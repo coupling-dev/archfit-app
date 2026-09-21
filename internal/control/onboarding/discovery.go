@@ -109,8 +109,9 @@ func (s *service) checkUpload(ctx context.Context, up gate.Upload) (status int, 
 	return http.StatusBadRequest, code
 }
 
-// checkDraft returns "" for no-source policy text. These are shape checks, not a classifier:
-// stricter checks wait for a validator in wire/policy.
+// checkDraft returns "" for a draft that may become a pull request. The size and line checks are shape
+// checks, not a classifier: policy.Validate is what keeps a foreign document (an engine report, prose, JSON)
+// out. Its error text is dropped, never echoed or logged.
 func checkDraft(draft []byte) string {
 	switch {
 	case len(draft) > maxDraftBytes:
@@ -122,6 +123,9 @@ func checkDraft(draft []byte) string {
 		if !cleanLine(strings.TrimSuffix(string(line), "\n")) {
 			return codeInvalid
 		}
+	}
+	if policy.Validate(draft) != nil {
+		return codeInvalid
 	}
 	if waivers, err := policy.Waivers(draft); err != nil || len(waivers) > 0 {
 		return codeInvalid // discovery never proposes exceptions

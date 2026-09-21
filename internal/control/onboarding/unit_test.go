@@ -319,6 +319,9 @@ func TestDraftChecks(t *testing.T) {
 		{"501-byte line", []byte("version: 1\n# " + strings.Repeat("x", 499) + "\n"), "discovery_invalid"},
 		{"malformed YAML", []byte("modules: [core\n"), "discovery_invalid"},
 		{"one waiver", []byte(waiverPolicy), "discovery_invalid"},
+		{"JSON report", []byte("{\"verdict\": \"blocked\", \"logs\": \"seeded-log-line\"}\n"), "discovery_invalid"},
+		{"no version", []byte("modules: {}\n"), "discovery_invalid"},
+		{"unknown top-level key", []byte("version: 1\nsource: seeded\n"), "discovery_invalid"},
 		{"source snippet block", []byte(sourceSnippet), "discovery_invalid"},
 		{"log blob", []byte(logBlob), "discovery_invalid"},
 	}

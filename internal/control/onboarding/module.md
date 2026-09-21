@@ -168,9 +168,15 @@ Statuses stay inside the producer's no-retry set (`400 401 403 409 413`) for per
    `workflow_dispatch` or `push` (so also `pull_request`) as `ProblemUnsupportedEvent` → `400 unsupported_event`.
 3. `Binding.BaseRef != Binding.Repo.DefaultBranch` → `403 not_default_branch`.
 4. Settings at the default branch: absent or invalid → `403 settings_missing`; `Binding.WorkflowPath != Settings.Workflow` → `403 workflow_not_approved`.
-5. Draft checks on `Upload.Payload` → `413 discovery_too_large` over 1 MB **[default]**, else `400 discovery_invalid`: valid UTF-8; no control
-   character except `\n`; every line ≤ 500 bytes **[default]**; `policy.Waivers(payload)` returns no error and zero waivers
-   (discovery never proposes exceptions). **[default]** `control` packages import no YAML library; `Waivers` is the parse check.
+5. Draft checks on `Upload.Payload`, in this order; the first failure decides and nothing is proposed:
+   1. Size: over 1 MB **[default]** → `413 discovery_too_large`; empty → `400 discovery_invalid`.
+   2. Shape: valid UTF-8; no control character except `\n`; every line ≤ 500 bytes **[default]** → else `400 discovery_invalid`.
+   3. `policy.Validate(payload)` returns an error → `400 discovery_invalid`. The error text is dropped: never echoed in the response, never logged.
+   4. `policy.Waivers(payload)` returns an error or any waiver → `400 discovery_invalid` (discovery never proposes exceptions).
+
+   The shape checks are not a classifier: any short-lined text passes them. `Validate` is what keeps a foreign document (an engine
+   report, prose, JSON) from becoming a pull request. Residual exposure: free-text fields inside a structurally valid policy (for example
+   a waiver `reason`) are the customer's own authored policy text. **[default]** `control` packages import no YAML library; `wire/policy` parses.
 6. `Proposals.Propose(Change{Branch: "archfit/policy", Base: DefaultBranch, Files: [{PolicyPath, payload}], …}, "")`.
    `ErrRateLimited` → `503`; other error → `500`.
 7. `200` with `{"pull_request": <number>, "url": "<url>"}`.
@@ -189,7 +195,8 @@ measurement evidence. The handler never creates or updates a check run or commen
 5. Start one goroutine with `context.WithTimeout(context.Background(), 10*time.Minute)` **[default]** (not the request context):
    `Tokens.RepoReadToken(ctx, r.InstallationID, r.FullName)` → `Token` (uncached, `contents: read`, this repository only; never logged), then
    `Sandbox.Discover(DiscoveryJob{CloneURL: "https://github.com/<FullName>.git", Token, Ref: r.DefaultBranch, ImageDigest: manifest.Current().ImageDigest, Timeout: 10 min})`.
-6. Success: run the draft checks of the discovery upload on `DraftPolicy`; `Propose` the policy onto the same branch;
+6. Success: run the draft checks of the discovery upload on `DraftPolicy` — the same function, so size, shape, `policy.Validate` and
+   zero waivers; a result that fails any of them ends in the failure state `invalid_draft` of step 7 with no policy commit. Else `Propose` the policy onto the same branch;
    `SetBody` with marker `state=complete`, "discovery complete", the consent record reference (kind, time), and up to 20 **[default]** `Notes` that pass the line checks.
 7. Failure: `SetBody` with marker `state=failed code=<code>` and one code — `token_error`, `sandbox_unavailable`, `timeout`, `sandbox_failed`, `invalid_draft`, `github_error` — and "retry from the Archfit UI".
    The sandbox error text is never copied anywhere. Return the `Draft` from step 4 immediately; the job outcome is read through `Progress`.
@@ -469,8 +476,9 @@ the workflow path must be under `.github/workflows/` and end in `.yml` or `.yaml
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high
 - **Balanced?**: yes
-- **Shared knowledge**: the three engine file paths (protected paths in CODEOWNERS and the PR body), and `Waivers` as the YAML
-  parse check of a draft. `Digest` (bare lowercase hex, no `sha256:` prefix) is never called here.
+- **Shared knowledge**: the three engine file paths (protected paths in CODEOWNERS and the PR body), `Validate` as the structural
+  check of a draft, and `Waivers` as its zero-exceptions check. `Validate`'s error text is never echoed or logged.
+  `Digest` (bare lowercase hex, no `sha256:` prefix) is never called here.
 
 <!-- contract: PolicyPath, BaselinePath, LabelsPath, Digest — restated from internal/wire/policy/module.md -->
 ```go
@@ -500,6 +508,15 @@ type Waiver struct {
 
 // Waivers extracts the waivers of a policy file. It ignores every other key.
 func Waivers(policy []byte) ([]Waiver, error)
+```
+
+<!-- contract: Validate — restated from internal/wire/policy/module.md -->
+```go
+// Validate reports whether policy is plausibly an engine policy file: a YAML document whose root is a
+// mapping, whose top-level keys all belong to the engine config schema's closed key set, and which has
+// the required `version` key. It is a structural check, not engine validation: the engine remains the
+// authority on the file's meaning. Errors never echo keys or values.
+func Validate(policy []byte) error
 ```
 
 ### internal/wire/manifest
@@ -754,7 +771,6 @@ type TokenSource interface {
 - The one-draft-PR flow (deferred, decisions.md §5): a new start method; the two-PR flow stays.
 - A real sandbox: a platform package `control/onboarding/<driver>` implementing `Sandbox`, chosen in `app`.
 - A cross-instance concurrency quota for managed jobs, if more than one instance runs.
-- Stricter draft checks once `wire/policy` offers a validator.
 
 ## Constraints and Invariants
 
@@ -794,7 +810,7 @@ Test doubles only at boundaries: in-memory GitHub roles (`Repos`, `Actions`, `Ch
   **Scenario**: table: no file; file in `.github/`; file at root only; file without trailing newline; entries already present; team owner.
   **Expected behavior**: original bytes are a prefix of the result; five lines added once (policy, baseline, labels, settings, workflow); second run adds nothing; location precedence honored; `@org/team` form used.
 - **Test name**: `TestDraftChecks`
-  **Scenario**: table: valid policy; 1 MB + 1 byte; invalid UTF-8; NUL byte; carriage return; 501-byte line; malformed YAML; policy with one waiver; seeded leakage fixtures (source snippet block, log blob).
+  **Scenario**: table: valid policy; 1 MB + 1 byte; invalid UTF-8; NUL byte; carriage return; 501-byte line; malformed YAML; policy with one waiver; a JSON report; a mapping without `version`; an unknown top-level key; seeded leakage fixtures (source snippet block, log blob).
   **Expected behavior**: only the first passes; size → `discovery_too_large`; all others → `discovery_invalid`.
 - **Test name**: `TestOwnersValidation`
   **Scenario**: empty list; `bad owner`; `org/team/extra`; valid login; valid team.
@@ -824,8 +840,8 @@ Test doubles only at boundaries: in-memory GitHub roles (`Repos`, `Actions`, `Ch
   **Scenario**: `Has` false; `Has` false because the Store fails; consent revoked between two calls.
   **Expected behavior**: `ErrNoConsent` each time; zero sandbox calls, zero `Propose` calls, no token requested (T19).
 - **Test name**: `TestManagedFailureStates`
-  **Scenario**: table: `RepoReadToken` fails; sandbox returns `ErrNoSandbox`; generic error containing a seeded source string; blocks past the timeout; returns an invalid draft; `Propose` of the policy fails.
-  **Expected behavior**: body marker `state=failed` with codes `token_error`, `sandbox_unavailable`, `sandbox_failed`, `timeout`, `invalid_draft`, `github_error`; the seeded string appears in no body or log; context is cancelled at the timeout; a retry reuses the same PR (T19 resumable state).
+  **Scenario**: table: `RepoReadToken` fails; sandbox returns `ErrNoSandbox`; generic error containing a seeded source string; blocks past the timeout; returns an invalid draft; returns a foreign document (JSON with a seeded string) as the draft; `Propose` of the policy fails.
+  **Expected behavior**: body marker `state=failed` with codes `token_error`, `sandbox_unavailable`, `sandbox_failed`, `timeout`, `invalid_draft` ×2, `github_error`; no policy commit; the seeded string appears in no body or log; context is cancelled at the timeout; a retry reuses the same PR (T19 resumable state).
 - **Test name**: `TestManagedJobLimits`
   **Scenario**: `StartManaged` twice for one repository while the marker says `running` (second call on a fresh `Onboarding` value); a third repository while two jobs run; request context cancelled right after the call.
   **Expected behavior**: one sandbox call per repository; third gets "busy"; the job survives request cancellation.
@@ -841,6 +857,9 @@ Test doubles only at boundaries: in-memory GitHub roles (`Repos`, `Actions`, `Ch
 - **Test name**: `TestLogsAndBodiesCarryNoPayload`
   **Scenario**: drafts, notes and errors with marker strings through all flows; capture logs and PR bodies.
   **Expected behavior**: markers appear only in the committed policy file and in accepted notes; never in logs or error responses.
+- **Test name**: `TestDiscoveryRejectsForeignDocuments`
+  **Scenario**: table of uploads that all pass the shape checks, each foreign row carrying a seeded marker string: an engine state report JSON; one-line prose with a colon; a YAML sequence; a mapping without `version`; a mapping with an unknown top-level key; and a real engine policy (`version`, `modules`, `rules`).
+  **Expected behavior**: every foreign row → `400 discovery_invalid`, zero `Propose` calls, no PR, and the marker in no log line and no response body; the real policy → `200`, one `Propose`, committed bytes equal the upload.
 - **Test name**: `TestProgressErrors`
   **Scenario**: `File` returns `ErrRateLimited`; `LatestRun` returns `ErrNotFound`; `CheckRuns` fails.
   **Expected behavior**: error returned; "not reported" without error; error returned. No stage is guessed.

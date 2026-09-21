@@ -95,6 +95,11 @@ func TestManagedFailureStates(t *testing.T) {
 				return DiscoveryResult{DraftPolicy: []byte("notes: |\n\t" + seeded + "\n")}, nil
 			}
 		}, "invalid_draft"},
+		{"foreign document as draft", func(f *fixture) {
+			f.sandbox.fn = func(context.Context, DiscoveryJob) (DiscoveryResult, error) {
+				return DiscoveryResult{DraftPolicy: []byte(`{"verdict": "blocked", "logs": "` + seeded + `"}` + "\n")}, nil
+			}
+		}, "invalid_draft"},
 		{"Propose of the policy fails", func(f *fixture) {
 			f.hub.failWhen(func(op, detail string) error {
 				if op == "Propose" && strings.HasSuffix(detail, " "+policy.PolicyPath) {
@@ -372,6 +377,98 @@ func TestLogsAndBodiesCarryNoPayload(t *testing.T) {
 	}
 	if got, _ := m.hub.file(m.repo, onboardingBranch, policy.PolicyPath); !strings.Contains(string(got), draftMark) {
 		t.Error("the managed draft was not committed")
+	}
+}
+
+func TestDiscoveryRejectsForeignDocuments(t *testing.T) {
+	const seeded = "LEAK-7f3a"
+	// An engine state report with a seeded source string, pretty-printed so every line passes the shape checks.
+	report := `{
+  "schema_version": "archfit.architecture-state.v1",
+  "verdict": "blocked",
+  "decision": {
+    "hard_gates": "fail",
+    "active_blockers": 1
+  },
+  "findings": [
+    {
+      "rule": "no_direct_b_dependency",
+      "snippet": "func Pay(c Card) error { return ` + seeded + ` }"
+    }
+  ],
+  "logs": "2026-09-21 build log ` + seeded + `"
+}
+`
+	// The text of internal/wire/testdata/report/real-blocked-no-baseline.policy.yaml.
+	realPolicy := `version: 2
+modules:
+  a:
+    paths:
+      - pkg/a/**
+  b:
+    paths:
+      - pkg/b/**
+    public:
+      - pkg/b/b.go
+    internal:
+      - pkg/b/internal/**
+rules:
+  - id: no_direct_b_dependency
+    type: forbidden_dependency
+    from: pkg/a/**
+    to: pkg/b
+    gate: fail
+`
+	tests := []struct {
+		name     string
+		payload  string
+		accepted bool
+	}{
+		{name: "engine state report", payload: report},
+		{name: "one-line prose", payload: "note: the card check in " + seeded + " looks fine\n"},
+		{name: "sequence", payload: "- version: 2\n- " + seeded + "\n"},
+		{name: "mapping without version", payload: "modules:\n  core:\n    paths:\n      - " + seeded + "/**\n"},
+		{name: "unknown top-level key", payload: validPolicy + "source:\n  - " + seeded + "\n"},
+		{name: "real policy", payload: realPolicy, accepted: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			for line := range strings.SplitSeq(tc.payload, "\n") {
+				if !cleanLine(line) {
+					t.Fatalf("the row must pass the shape checks, line %q does not", line)
+				}
+			}
+			logs := captureLogs(t)
+			f := newFixture(t)
+			f.onboard(f.repo, settings.GateAdvisory)
+			f.receiver.upload = discoveryUpload(f.repo, "workflow_dispatch", []byte(tc.payload))
+			res := f.post(t)
+
+			if tc.accepted {
+				if res.status != 200 || f.hub.count("Propose") != 1 {
+					t.Fatalf("got %d %q with %d Propose calls, want 200 and one", res.status, res.Error, f.hub.count("Propose"))
+				}
+				if got, _ := f.hub.file(f.repo, policyBranch, policy.PolicyPath); string(got) != tc.payload {
+					t.Errorf("committed policy:\n%s", got)
+				}
+				return
+			}
+			if res.status != 400 || res.Error != "discovery_invalid" {
+				t.Errorf("got %d %q, want 400 discovery_invalid", res.status, res.Error)
+			}
+			if n := f.hub.count("Propose"); n != 0 {
+				t.Errorf("%d Propose calls, want 0", n)
+			}
+			if n := f.hub.prCount(f.repo, ""); n != 0 {
+				t.Errorf("%d pull requests opened", n)
+			}
+			if logs.String() == "" {
+				t.Error("the refusal was not logged")
+			}
+			if strings.Contains(res.raw, seeded) || strings.Contains(logs.String(), seeded) {
+				t.Errorf("%s leaked:\nresponse: %s\nlogs: %s", seeded, res.raw, logs.String())
+			}
+		})
 	}
 }
 

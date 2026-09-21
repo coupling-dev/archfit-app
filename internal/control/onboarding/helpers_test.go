@@ -155,6 +155,11 @@ func receive(t *testing.T, ch <-chan DiscoveryJob) DiscoveryJob {
 
 func checkFixtures(t *testing.T) {
 	t.Helper()
+	for name, fixture := range map[string]string{"validPolicy": validPolicy, "waiverPolicy": waiverPolicy} {
+		if err := policy.Validate([]byte(fixture)); err != nil {
+			t.Fatalf("%s fixture: %v", name, err)
+		}
+	}
 	if w, err := policy.Waivers([]byte(validPolicy)); err != nil || len(w) != 0 {
 		t.Fatalf("validPolicy fixture: %v, %v", w, err)
 	}
