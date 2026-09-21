@@ -316,59 +316,73 @@ alternative is an engine change.
 
 ### Task 23 [Wave 0c]: Implement internal/gate/sweep/ (leaf, calls wave 0b code)
 
-- [ ] read internal/gate/sweep/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/gate/sweep/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/gate/sweep/...` and `golangci-lint run ./internal/gate/sweep/...` — all green before the task is complete
+- [x] read internal/gate/sweep/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module per its Functional Responsibilities, Public Contract, and Constraints and Invariants, inside internal/gate/sweep/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/gate/sweep/...` and `golangci-lint run ./internal/gate/sweep/...` — all green before the task is complete
+
+⚠️ internal/gate/sweep: module.md said "the first rule that acts ends the evaluation"; read literally a fresh pending check falls through to rule 5 and every new PR is published as stale. Corrected in module.md to "the first rule whose condition holds" (as implemented). A generic error from `Actions.Run` is a skipped unit, never "no re-run possible", so a transient API error cannot publish `missing_upload`. Skip log lines carry IDs only (GitHub error text quotes names and paths), which makes a persistent skip such as a revoked `actions: write` hard to diagnose; a safe error kind from github/api would fix it (contract change, deferred). Eight hand mutations of the re-run guards were each caught by tests. Accepted.
 
 ### Task 24 [Wave 1]: Implement internal/wire/ (parent)
 
-- [ ] read internal/wire/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module's own code and wire its submodules (envelope, report, settings, policy, manifest) per its Internal Design, inside internal/wire/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/wire/...` and `golangci-lint run ./internal/wire/...` — all green before the task is complete
+- [x] read internal/wire/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module's own code and wire its submodules (envelope, report, settings, policy, manifest) per its Internal Design, inside internal/wire/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/wire/...` and `golangci-lint run ./internal/wire/...` — all green before the task is complete
+
+⚠️ internal/wire: shared corpus built (127 files) with ten unmodified captures from the rebuilt engine v2.3.1, including a genuinely healthy report, a comparable persisted baseline, and forbidden-plus-allowed. Findings: (1) the engine's `fixture-go` can never be `healthy` — zero findings gives `needs_attention`, because healthy needs all nine dimensions measured; (2) outside a git repository the engine reports `hard_gates: unmeasured` ("rule scope cannot be established"), a real missing-coverage path customers can hit; (3) a `profile-comparable` capture with a recognized `partial_basis` cannot be produced from v2.3.1 on these fixtures, so that fixture records the truth (blocked, non-comparable) and none was faked; (4) the children and gate/verdict, gate/feedback keep their own fixture copies under old names and an older `facts` shape — ➕ follow-up: repoint them at `internal/wire/testdata` (list in the task report); (5) the capture scripts hard-code local paths and live in the session scratchpad only; each fixture's `producer.command` is the in-repo record. The engine schema SHA-256 is pinned in a test that fails when the file is missing or changed. Accepted.
 
 ### Task 25 [Wave 1]: Implement internal/github/ (parent)
 
-- [ ] read internal/github/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module's own code and wire its submodules (auth, api, webhook, oidc) per its Internal Design, inside internal/github/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/github/...` and `golangci-lint run ./internal/github/...` — all green before the task is complete
+- [x] read internal/github/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module's own code and wire its submodules (auth, api, webhook, oidc) per its Internal Design, inside internal/github/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/github/...` and `golangci-lint run ./internal/github/...` — all green before the task is complete
+
+⚠️ internal/github: a rate-limited installation-token MINT surfaces as a plain error, not `api.ErrRateLimited` (auth has no rate-limit sentinel), so "rate-limit exhaustion surfaces as ErrRateLimited" holds only once a token is cached. It still fails closed and returns no data; gate callers answer 503 for any plain error, so the producer retries and the sweep repairs. A sentinel in auth is a contract change, deferred. Accepted.
 
 ### Task 26 [Wave 1]: Implement internal/gate/ (parent)
 
-- [ ] read internal/gate/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module's own code and wire its submodules (ingest, inputs, verdict, feedback, sweep) per its Internal Design, inside internal/gate/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/gate/...` and `golangci-lint run ./internal/gate/...` — all green before the task is complete
+- [x] read internal/gate/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module's own code and wire its submodules (ingest, inputs, verdict, feedback, sweep) per its Internal Design, inside internal/gate/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/gate/...` and `golangci-lint run ./internal/gate/...` — all green before the task is complete
+
+⚠️ internal/gate: the façade is tested with the REAL children over role-interface fakes; the exported `New(Deps)` and `NewReceiver` are exercised only up to the first GitHub call, because a real `*api.Client` needs a `TokenSource` from github/auth, which is outside gate's Integrations — ➕ the root task (Task 31) must drive the full upload path through `app` with a fake GitHub HTTP server behind the real client. A fork is exactly `HeadRepo != Repo` (a deleted fork has an empty head repository and must still be refused). A decision with no reasons is a 503, nothing published. When a missing-upload timeout and a waiver notice apply to the same PR, the notice lands on the second sweep pass (rule 4 ends the evaluation first); from the third pass nothing changes. `app` may pass a zero `Deps.Sweep` (sweep defaults to 60 min / 7 days) and must call `gate.HandleEvent` before `control.HandleEvent`. Twelve hand mutations of the upload and event paths were killed. The non-standard dependency closure of `./internal/gate/...` is wire, github, store, gate and the YAML library only. Accepted.
 
 ### Task 27 [Wave 1]: Implement internal/control/assist/ (parent)
 
-- [ ] read internal/control/assist/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module's own code and wire its submodules (anthropic) per its Internal Design, inside internal/control/assist/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/control/assist/...` and `golangci-lint run ./internal/control/assist/...` — all green before the task is complete
+- [x] read internal/control/assist/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module's own code and wire its submodules (anthropic) per its Internal Design, inside internal/control/assist/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/control/assist/...` and `golangci-lint run ./internal/control/assist/...` — all green before the task is complete
+
+⚠️ internal/control/assist: `policy.Waivers` is a weak "is this a policy file" check for a provider answer — one-line prose with a colon parses as a mapping and would be committed to the draft branch. Harm is bounded (a reviewable diff on a draft PR, bound to the head SHA), but a real fix needs wire/policy to publish a validation function (known top-level keys or the schema); contract change, owner decision wanted. Nine exported sentinel errors were added with the names module.md lists as [default]. `ErrProvider` carries only a kind (timeout, cancelled, error), never provider text. Accepted.
 
 ### Task 28 [Wave 1]: Implement internal/control/ui/ (parent)
 
-- [ ] read internal/control/ui/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module's own code and wire its submodules (session, graph) per its Internal Design, inside internal/control/ui/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/control/ui/...` and `golangci-lint run ./internal/control/ui/...` — all green before the task is complete
+- [x] read internal/control/ui/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module's own code and wire its submodules (session, graph) per its Internal Design, inside internal/control/ui/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/control/ui/...` and `golangci-lint run ./internal/control/ui/...` — all green before the task is complete
+
+⚠️ internal/control/ui: ➕ FOLLOW-UP the Monaco + monaco-yaml bundle is NOT built (no Node or network in the build session). The editor ships as a plain `<textarea>` that saves without JavaScript, and the page loads `static/vendor/monaco.bundle.js` only when it exists; `static/vendor/README.md` has the one manual esbuild step, file names and mount contract. Schema completion (product.md §5) is therefore not delivered until that step runs. Other findings: onboarding's "already onboarded" and "busy" errors are unexported, so both answer a generic 502 — exporting two sentinels from onboarding would let ui answer 409 (contract change, owner decision). `assist.Result.RunURL` cannot survive the mandated 303 without state, so ui rebuilds the workflow runs URL from the authorized repository and redirects with `?since=<head_sha>`. The status mapping had no row for `api.ErrNotFound` (→ 404) or `onboarding.ErrNoSandbox` (→ 409); both chosen here. The spec's branch pattern accepted `archfit/../main`; tightened in module.md. Per the orchestrator's instruction the sibling modules are hand fakes in ui's tests; the composed behavior is proven in the control parent and root tasks. Accepted.
 
 ### Task 29 [Wave 2]: Implement internal/control/ (parent)
 
-- [ ] read internal/control/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
-- [ ] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
-- [ ] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
-- [ ] implement the module's own code and wire its submodules (account, proposal, onboarding, assist, ui) per its Internal Design, inside internal/control/, replacing the Task 2 skeleton, until all its tests pass
-- [ ] run `go test -race ./internal/control/...` and `golangci-lint run ./internal/control/...` — all green before the task is complete
+- [x] read internal/control/module.md in full — with docs/tech-stack.md it is the complete and only spec for this task
+- [x] write the tests named in its Test Specification: Unit Tests and Boundary Tests (TDD — failing first is expected)
+- [x] write the tests named in its Test Specification: Integration Contract Tests and Behavior Tests
+- [x] implement the module's own code and wire its submodules (account, proposal, onboarding, assist, ui) per its Internal Design, inside internal/control/, replacing the Task 2 skeleton, until all its tests pass
+- [x] run `go test -race ./internal/control/...` and `golangci-lint run ./internal/control/...` — all green before the task is complete
+
+⚠️ internal/control: composition tests run the REAL children over a fake GitHub HTTP server behind a real `*api.Client` and a memory Store (the pattern `app` and root tests reuse). Findings: (1) account binds `slog.Default()` when it is constructed, so `app` must call `slog.SetDefault` BEFORE `control.New` or Grant audit lines are lost; (2) ➕ onboarding edge case: if the managed onboarding PR is merged while the sandbox goroutine is still finishing, its late `Propose` opens a second PR for the already-merged branch; (3) ui/session caches an authorization per user and repository for 60 s, so a fresh sign-in right after an uninstall still reads pages until the cache expires (reads only; the "short cache" of decisions.md §6); (4) the spec's import test (`go list -deps` with no gate child) cannot pass because the gate façade imports its children; reworded in module.md to direct imports; (5) `assist.Propose` validates the request before the nil-Provider check, so `ErrInvalidRequest` wins over `ErrManagedUnavailable`. Accepted; item 2 is a follow-up for the owner.
 
 ### Task 30 [Wave 3]: Implement internal/app/ (composition root)
 
