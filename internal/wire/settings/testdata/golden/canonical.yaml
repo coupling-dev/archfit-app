@@ -1,0 +1,8 @@
+# Archfit App settings. Changes need architecture-owner approval.
+version: 1
+owners:
+  - alice
+  - acme/architects
+gate: required
+workflow: .github/workflows/archfit.yaml
+data_mode: managed

@@ -28,6 +28,9 @@ Volatility: moderate. Fields follow product decisions (decisions.md §2, §4); e
 - The YAML keys and their order: `version`, `owners`, `gate`, `workflow`, `data_mode`.
 - The YAML library. It is the single third-party dependency allowed here: the one named in `docs/tech-stack.md`;
   until then `go.yaml.in/yaml/v3` **[default]**, decoded with known-fields checking on. `wire/policy` uses the same library.
+  The file is decoded to YAML nodes, not to `Settings`: only nodes show aliases, a key that is present but empty, and
+  `1` versus `"1"`. The unknown-key and duplicate-key checks are therefore this module's own walk over the root mapping.
+  Library error text quotes the file, so it is never passed on.
 - The validation rules below and the canonical output form. All limits are unexported. Every numeric limit is
   **[default]**: 100 owners, 39-character login (GitHub's login limit), 255-character workflow path, 65 536-byte (64 KiB) file.
 
@@ -199,8 +202,10 @@ No counterpart contract is used by this module, so nothing is restated here.
   **Scenario**: fuzz `Parse` seeded with the fixtures.
   **Expected behavior**: never panics; every accepted input satisfies all field rules and survives the round trip.
 - **Test name**: `TestPackageImports`
-  **Scenario**: `go list -deps` for the package.
-  **Expected behavior**: standard library plus the one YAML library; no internal package; no `net`, `os`, or `log` package.
+  **Scenario**: `go list -deps` and the direct imports of the package.
+  **Expected behavior**: standard library plus the one YAML library; no internal package; no `net` or `log` package
+  anywhere in the dependencies; no direct import of `os` (the YAML library reaches `os` through `fmt`, so a
+  transitive ban cannot hold).
 
 ### Behavior Tests
 

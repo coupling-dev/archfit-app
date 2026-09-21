@@ -1,0 +1,11 @@
+---
+# Keys in another order, comments and quoted owners are all fine.
+data_mode: customer
+workflow: .github/workflows/arch_fit-2.check.yaml # approved by the owners
+owners:
+  - "123"
+  - "true"
+  - Bob-Smith
+  - acme/team.one_two
+version: 1
+gate: advisory

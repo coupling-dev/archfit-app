@@ -1,10 +1,6 @@
 // Package settings is the App-owned settings file on the protected ref.
 package settings
 
-import "errors"
-
-var errNotImplemented = errors.New("settings: not implemented")
-
 // Path is the App settings file on the protected ref, beside the engine policy.
 const Path = ".archfit-app.yaml"
 
@@ -31,12 +27,11 @@ type Settings struct {
 	DataMode DataMode `yaml:"data_mode"` // default customer
 }
 
-// Parse strictly decodes and validates a settings file. Unknown keys are errors.
-func Parse(raw []byte) (Settings, error) {
-	return Settings{}, errNotImplemented
-}
-
-// Render returns canonical YAML for s. For any s returned by Parse, Parse(Render(s)) == s.
-func Render(s Settings) []byte {
-	return nil
-}
+// The YAML keys of version 1, in canonical order (the order of the Settings fields).
+const (
+	keyVersion  = "version"
+	keyOwners   = "owners"
+	keyGate     = "gate"
+	keyWorkflow = "workflow"
+	keyDataMode = "data_mode"
+)
