@@ -422,7 +422,6 @@ Docker image build — the Docker daemon was not running in the build session; t
 with `go.mod`, because the module has a dependency. Not done: the ⚠️ audit — the items marked "owner decision" in
 Tasks 1, 8, 17, 19, 20, 27, 28, 29, 30 and 31 are open until the owner accepts or changes them.
 
-
 ### Task 33: [Final] Update documentation
 
 - [x] update README.md, docs/README.md and .env.example for the new configuration and the end of the 501 skeleton
