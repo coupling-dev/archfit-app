@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/store"
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
@@ -58,8 +57,4 @@ type Resolver interface {
 	// Resolve reads the protected ref and reviews. It never reads policy, settings, baseline,
 	// owners, or CODEOWNERS from the head tree, except to hash an owner-approved candidate.
 	Resolve(ctx context.Context, t Target, now time.Time) (Trusted, error)
-}
-
-func New(repos api.Repos, pulls api.Pulls, s store.Store) Resolver {
-	return nil
 }
