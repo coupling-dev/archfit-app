@@ -495,7 +495,8 @@ works unchanged.
 
 ### Checks common to both modes, in order
 
-1. Validate the request (see `ErrInvalidRequest`). Branch pattern `^archfit/[A-Za-z0-9._/-]+$` **[default]**, never the default branch.
+1. Validate the request (see `ErrInvalidRequest`). Branch pattern `^archfit/[A-Za-z0-9._/-]+$` **[default]** with no empty,
+   `.` or `..` path segment (the pattern alone accepts `archfit/../x`), never the default branch.
 2. Managed only, before reading the draft branch: `Provider != nil`, then `Consents.Has`, then settings at the default branch.
 3. `Proposals.Get(Repo.RepoRef, Branch)`: state must be `DraftOpen` or `DraftInReview`, else `ErrNoDraft`;
    `Draft.HeadSHA != Request.HeadSHA` is `ErrStale` now, before anything is spent.
@@ -512,7 +513,8 @@ works unchanged.
    in a context detached from request cancellation with its own 5 second timeout **[default]**. A failed settle is logged and keeps
    the full reservation: the error is on the safe side of the cap.
 6. Normalize: trim; strip one surrounding Markdown code fence; end with one newline. Validate: UTF-8, no NUL, at most
-   64 KB **[default]**, `policy.Waivers` accepts it, bytes differ from the input. Else `ErrInvalidProposal`; the text is discarded.
+   64 KB **[default]**, no fence line left over (prose around a fence, an unclosed fence), `policy.Waivers` accepts it,
+   bytes differ from the input apart from surrounding white space. Else `ErrInvalidProposal`; the text is discarded.
 7. `Proposals.Propose(Change{Repo, Branch, Base: Repo.DefaultBranch, Message, Files: [{PolicyPath, answer}]}, Request.HeadSHA)`.
    `Message` is `"archfit: AI proposal requested by @<By>"` **[default]**. `Title` and `Body` are set to the same fixed
    text and matter only if the PR had to be recreated. `ErrStale` here means that during the provider call someone pushed to the branch, or the

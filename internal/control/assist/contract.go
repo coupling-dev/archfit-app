@@ -3,6 +3,7 @@ package assist
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
@@ -67,6 +68,20 @@ type Deps struct {
 	Now       func() time.Time
 }
 
+// Errors of Propose. proposal.ErrStale, account.ErrNoConsent, account.ErrBudgetExhausted and
+// api.ErrRateLimited keep their owners' identity. Messages carry no user text.
+var (
+	ErrInvalidRequest     = errors.New("assist: invalid request")
+	ErrNoDraft            = errors.New("assist: no open draft with a policy file")
+	ErrManagedUnavailable = errors.New("assist: managed mode is not configured")
+	ErrNotManaged         = errors.New("assist: repository settings are not data_mode managed")
+	ErrPolicyTooLarge     = errors.New("assist: draft policy too large for managed mode")
+	ErrBusy               = errors.New("assist: a request for this branch is still running")
+	ErrProvider           = errors.New("assist: provider call failed")
+	ErrInvalidProposal    = errors.New("assist: provider answer is not a usable policy")
+	ErrNoAssistWorkflow   = errors.New("assist: assist workflow not found on the branch")
+)
+
 func New(d Deps) Assist {
-	return nil
+	return newService(d, github{repos: d.GitHub, actions: d.GitHub})
 }
