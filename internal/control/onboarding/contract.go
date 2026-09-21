@@ -76,6 +76,7 @@ type Deps struct {
 	Now       func() time.Time
 }
 
+// New builds the Onboarding over the role interfaces of d.GitHub.
 func New(d Deps) Onboarding {
-	return nil
+	return newService(d, roles{repos: d.GitHub, actions: d.GitHub, checks: d.GitHub, pulls: d.GitHub})
 }
