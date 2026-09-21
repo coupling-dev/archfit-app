@@ -593,8 +593,9 @@ fake `Sandbox` and `Provider`, and a fixed clock.
   **Scenario**: a UI dependency panics during a request.
   **Expected behavior**: `500`; the process and the other handlers keep working.
 - **Test name**: `TestControlImportsOnlyAllowedPackages`
-  **Scenario**: `go list -deps ./internal/control/...`.
-  **Expected behavior**: no `internal/gate/<child>`, no `internal/app`; YAML library only through `wire/*`.
+  **Scenario**: direct imports from `go list ./internal/control/...`; `go list -deps` for the YAML library only.
+  **Expected behavior**: no package imports `internal/gate/<child>` or `internal/app` directly (the `gate` façade reaches its
+  children transitively); the façade imports no grandchild; YAML library only through `wire/*`.
 
 ### Behavior Tests
 
