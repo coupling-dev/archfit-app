@@ -1,0 +1,9 @@
+{
+  "identity_approved": true,
+  "producer": {
+    "engine_version": "v2.3.1",
+    "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "platform": "linux/amd64"
+  },
+  "profile_version": "archfit.measurement.v1"
+}
