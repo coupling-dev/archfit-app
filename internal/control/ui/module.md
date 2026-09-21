@@ -84,7 +84,7 @@ Minimum repository permission in brackets. `{o}/{n}` is only a lookup key for `S
 - `ErrForbidden` from `Authorize`: `404` **[default]**, so that repository names are not confirmed to outsiders.
 - Missing or wrong CSRF token: `403`. Body over 512 KB **[default]**: `413`.
 - `ErrStale`, or a `head_sha` that is not the draft head: `409`, the user's text kept in the editor, nothing written.
-- Invalid form, unparseable YAML, `ErrInvalidRequest`, `ErrInvalidProposal`: `422`, text kept.
+- Invalid form, unparseable YAML, a text `policy.Validate` refuses, `ErrInvalidRequest`, `ErrInvalidProposal`: `422`, text kept.
 - Assist preconditions (`ErrNoDraft`, `ErrNoConsent`, `ErrNotManaged`, `ErrPolicyTooLarge`, `ErrNoAssistWorkflow`): `409` with a clear state.
   `ErrBusy`: `429`. `ErrManagedUnavailable`, `ErrBudgetExhausted`, `ErrProvider`: `503` with a clear state; the editor stays usable.
 - `ErrRateLimited`: `503` with `Retry-After: 60` **[default]**. Any other upstream error: `502`. Panic: `500`.
@@ -561,8 +561,9 @@ func New(ts TokenSource, hc *http.Client) *Client
 - **Balanced?**: yes — contract coupling
 - **Shared knowledge**: `PolicyPath` is the constant naming the file the editor loads and saves. `Schema()` is served
   unchanged at `/schema/policy.json` for `monaco-yaml`. `Waivers` is the server-side YAML syntax check of a save
-  **[default]**: only `wire/*` may import a YAML library and wire/policy publishes no plain validation function.
-  `Modules` is the second half of that check and the graph page's test for "this text parses". `Digest` is used only
+  **[default]**: only `wire/*` may import a YAML library. `Modules` is the second half of that check and the graph
+  page's test for "this text parses". Both ignore unknown keys, so `Validate` is the third check of a save: it refuses
+  a text that is not an engine policy (prose with a colon, a JSON report). ui never shows `Validate`'s error text. `Digest` is used only
   inside `graph`. `BaselinePath` and `LabelsPath` are the constants naming `.archfit-baseline.json` and
   `.archfit-labels.yaml`; ui never reads or writes either.
 
@@ -613,6 +614,15 @@ type ModuleDef struct {
 
 // Modules lists the modules declared under the policy's `modules:` map, in file order. It ignores every other key.
 func Modules(policy []byte) ([]ModuleDef, error)
+```
+
+<!-- contract: Validate — restated from internal/wire/policy/module.md -->
+```go
+// Validate reports whether policy is plausibly an engine policy file: a YAML document whose root is a
+// mapping, whose top-level keys all belong to the engine config schema's closed key set, and which has
+// the required `version` key. It is a structural check, not engine validation: the engine remains the
+// authority on the file's meaning. Errors never echo keys or values.
+func Validate(policy []byte) error
 ```
 
 ### internal/wire/settings
@@ -803,7 +813,10 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   form is a plain `textarea` that Monaco upgrades; saving works without JavaScript. The script marks the graph link "stale"
   as soon as the buffer differs from the loaded text or has diagnostics.
 - Save: checks in order: size ≤ 256 KB **[default]** and valid UTF-8; `policy.Waivers(content)` and `policy.Modules(content)`
-  succeed, else `422`; `Proposals.Get`; content
+  succeed, else `422` "not valid YAML"; `policy.Validate(content)` succeeds, else `422` with the editor re-rendered from the
+  form and the fixed wording "The text is not an Archfit policy: it has an unknown top-level key, has no version key, or
+  is not a mapping. Nothing was saved." **[default]**, never `Validate`'s error text and never the content outside the
+  editor; `Proposals.Get`; content
   equal to the file currently on the branch (at `Draft.HeadSHA` for an open draft, else on the default branch) is a no-op with
   a notice, whatever `head_sha` says, so a retried save never conflicts with itself; then an open draft whose head differs
   from `head_sha` (including an empty `head_sha`) is `409`; then `Proposals.Propose(Change{Repo: repo.RepoRef, Branch, Base: repo.DefaultBranch, Title, Body, Message,
@@ -852,8 +865,9 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
 - No repository score, no aggregate, no ranking, anywhere.
 - Draft, awaiting review and published are pull-request states read from GitHub. ui stores no draft, no version, no lock.
 - Stale drafts are refused, not merged: every save, ready and assist carries the loaded `head_sha`.
-- Invalid YAML is never saved by ui and marks the graph stale. Schema validity is not engine validity: the page says that
-  the check on the draft PR is the authoritative validation.
+- Invalid YAML, and a text `policy.Validate` refuses, is never saved by ui: not by save, and not by the save that
+  precedes an assist request, so assist is never handed such a text. Ready sends no text. Invalid YAML marks the graph
+  stale. Schema validity is not engine validity: the page says that the check on the draft PR is the authoritative validation.
 - ui never rewrites policy text: it saves the user's bytes as they are. Comments and YAML constructs the App does not
   understand survive every round trip. The graph never writes.
 - AI only on an explicit `POST` by a user with `write`. Nothing is auto-published. Model text is never rendered by ui; users
@@ -937,6 +951,11 @@ their interfaces except where a test says otherwise. The clock is injected.
 - **Test name**: `TestOversizedAndInvalidInput`
   **Scenario**: table: 600 KB body; 300 KB policy; invalid UTF-8; YAML with a tab indent; 50 owners lines with one malformed.
   **Expected behavior**: `413` for the first, `422` for the rest; nothing is written.
+- **Test name**: `TestSaveRejectsForeignDocuments`
+  **Scenario**: table, through save and through assist: one line of prose with a colon; a JSON object with foreign keys; a
+  mapping without `version`; a mapping with one unknown top-level key; then a valid policy.
+  **Expected behavior**: `422` for the first four, no `Propose` and no assist call, the editor re-rendered with the text kept and
+  the fixed "not an Archfit policy" wording and nothing of `Validate`'s error text; the valid policy saves with `303`.
 - **Test name**: `TestNoScoreAnywhere` (T17)
   **Scenario**: render every page with healthy, blocked and attention fixtures.
   **Expected behavior**: no number that aggregates findings or dimensions, no grade, no percentage, no sort by health.
@@ -969,7 +988,8 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Expected behavior**: both are commits on a PR against the default branch; the editor shows the GitHub-pushed head after reload and
   refuses to save over it from an older load; ui offers no merge or approval action.
 - **Test name**: `TestUnknownYAMLConstructsSurviveASave` (T17)
-  **Scenario**: a policy with comments, anchors and keys the schema does not know; change one line and save.
+  **Scenario**: a valid policy with comments, anchors, merge keys and, below a schema top-level key, a key and tags the App
+  does not know; change one line and save. (An unknown top-level key is refused: `TestSaveRejectsForeignDocuments`.)
   **Expected behavior**: the committed bytes equal the submitted bytes; nothing is reformatted or dropped.
 - **Test name**: `TestAssistIsExplicitAndReviewable` (T20)
   **Scenario**: real `assist` with a fake `Provider`; load pages, save, open the graph; then one assist `POST`.

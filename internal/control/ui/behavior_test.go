@@ -214,9 +214,10 @@ func TestUIAndGitHubFirstEditsShareOnePath(t *testing.T) {
 
 func TestUnknownYAMLConstructsSurviveASave(t *testing.T) {
 	const exotic = "# Policy of acme/app — keep this comment.\n" +
-		"defaults: &defaults\n  layer: core   # trailing comment\n\n" +
-		"modules:\n  a:\n    <<: *defaults\n    paths: ['pkg/a/**']\n  b: {layer: edge, paths: [\"pkg/b/**\"]}\n" +
-		"x-unknown-to-the-schema:\n  - !!binary aGVsbG8=\n  - |\n    block text\n\n"
+		"version: 2\n\n" +
+		"modules:\n  a: &defaults\n    layer: core   # trailing comment\n    paths: ['pkg/a/**']\n" +
+		"  b:\n    <<: *defaults\n    paths: [\"pkg/b/**\"]\n  c: {layer: edge, paths: [\"pkg/c/**\"]}\n" +
+		"metrics:\n  x-unknown-to-the-app:\n    - !!binary aGVsbG8=\n    - |\n      block text\n\n"
 	tests := []struct {
 		name, onMain, submitted, committed string
 	}{

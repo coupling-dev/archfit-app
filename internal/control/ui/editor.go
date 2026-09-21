@@ -229,6 +229,11 @@ func (s *server) saveDraft(ctx context.Context, sc scope, f editForm) (draft pro
 	if _, err := policy.Modules([]byte(f.content)); err != nil {
 		return draft, false, invalid("The policy is not valid YAML. Nothing was saved.")
 	}
+	// Waivers and Modules ignore unknown keys. The wording is fixed: Validate's error text is never shown.
+	if err := policy.Validate([]byte(f.content)); err != nil {
+		return draft, false, invalid("The text is not an Archfit policy: it has an unknown top-level key, " +
+			"has no version key, or is not a mapping. Nothing was saved.")
+	}
 	draft, onBranch, err := s.current(ctx, sc.repo, f.branch)
 	if err != nil {
 		return draft, false, err

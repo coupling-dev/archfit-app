@@ -3,6 +3,7 @@ package ui
 import (
 	"bytes"
 	"fmt"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -240,6 +241,46 @@ func TestOversizedAndInvalidInput(t *testing.T) {
 			wantStatus(t, c.post("/r/"+repoName+tt.path, tt.form), tt.want)
 			e.noWrites(t)
 		})
+	}
+}
+
+func TestSaveRejectsForeignDocuments(t *testing.T) {
+	const notPolicy = "The text is not an Archfit policy"
+	tests := []struct {
+		name, content string
+		want          int
+	}{
+		{"prose with a colon", "Reminder: ask Bob about the layers", http.StatusUnprocessableEntity},
+		{"JSON with foreign keys", `{"schema_version": 3, "findings": []}`, http.StatusUnprocessableEntity},
+		{"mapping without version", "modules:\n  a:\n    layer: core\n", http.StatusUnprocessableEntity},
+		{"one unknown top-level key", policyText + "reminder: true\n", http.StatusUnprocessableEntity},
+		{"valid policy", policyText + "# edit\n", http.StatusSeeOther},
+	}
+	for _, tt := range tests {
+		for _, route := range []struct {
+			path string
+			form url.Values
+		}{{"/policy", formOf("", "", tt.content)}, {"/assist", assistForm(tt.content)}} {
+			t.Run(tt.name+" "+route.path, func(t *testing.T) {
+				e := newEnv(t)
+				res := e.as("alice", permAdmin).post("/r/"+repoName+route.path, route.form)
+				wantStatus(t, res, tt.want)
+				if tt.want == http.StatusSeeOther {
+					if n := len(e.props.proposes); n != 1 {
+						t.Errorf("Propose calls = %d, want 1", n)
+					}
+					return
+				}
+				e.noWrites(t)
+				body := res.Body.String()
+				wantContains(t, body, notPolicy, html.EscapeString(tt.content))
+				for _, leak := range []string{"engine config key", "is absent", "document is empty"} {
+					if strings.Contains(body, leak) {
+						t.Errorf("page echoes Validate's error text %q", leak)
+					}
+				}
+			})
+		}
 	}
 }
 
