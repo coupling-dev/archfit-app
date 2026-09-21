@@ -130,7 +130,7 @@ Shared knowledge, per counterpart:
 
 - `internal/gate/inputs` holds the whole Public Contract. It reads `Path` at the protected ref only, calls `Parse`,
   publishes the result inside its own `Trusted` value, and resolves `Settings.Owners`.
-- `internal/gate` imports this module for `GateRequired` and `Path`. It reads `Settings.Gate` and `Settings.Workflow`
+- `internal/gate` imports this module for `GateRequired` only (the `Path` constant is used by `internal/gate/inputs`, which owns the protected-path set). It reads `Settings.Gate` and `Settings.Workflow`
   through `inputs.Trusted`. It holds nothing of the file format.
 - `internal/gate/feedback` and `internal/gate/sweep` import this module for `GateRequired` only, and compare it
   with `Settings.Gate` read through `inputs.Trusted`.

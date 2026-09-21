@@ -195,7 +195,6 @@ root coupling table.
 | Counterpart                      | Direction                       | Strength | LCA / Rank / Distance     | Volatility | Balanced? |
 | -------------------------------- | ------------------------------- | -------- | ------------------------- | ---------- | --------- |
 | `internal/gate/inputs`           | inputs depends on policy        | Contract | root / 2 / 2              | High       | Yes       |
-| `internal/gate`                  | gate depends on policy          | Contract | root / 2 / 2              | High       | Yes       |
 | `internal/control/onboarding`    | onboarding depends on policy    | Contract | root / 2 / 2              | High       | Yes       |
 | `internal/control/assist`        | assist depends on policy        | Contract | root / 2 / 2              | High       | Yes       |
 | `internal/control/ui`            | ui depends on policy            | Contract | root / 2 / 2              | High       | Yes       |
@@ -211,7 +210,7 @@ Shared knowledge, per counterpart:
   three files at the protected ref, digests them, digests an owner-approved head candidate, and takes the earliest
   `Expires`. The gate compares the policy digest with the report's `config_hash`, and the baseline and labels
   digests with the envelope's `baseline_digest` and `labels_digest`.
-- `internal/gate` holds `PolicyPath`, `BaselinePath` and `LabelsPath` only: the file locations it watches in events.
+- `internal/gate` (the façade) no longer imports this module: the protected-path set is owned by `internal/gate/inputs`, which holds the three path constants.
   The digests and the earliest expiry reach it through `inputs.Trusted`, without a policy type.
 - `internal/control/onboarding` holds `PolicyPath` to place the proposed policy of PR 2 and to derive the `policy_merged`
   stage, `BaselinePath` and `LabelsPath`, `Waivers`, and `Validate`, which it calls on an uploaded discovery draft: an
