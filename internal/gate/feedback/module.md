@@ -213,6 +213,12 @@ report order; level `failure` for those, `warning` otherwise; message = rule ID 
 Size: summaries and the comment stay at or under 65 535 bytes. The receipt marker and blocks 1, 2, 7, 8 are
 budgeted first and never cut. Then block 10 shrinks by whole tasks, then block 5 is cut at a line end and
 ends with "Output truncated." Cuts never split a UTF-8 sequence or a marker.
+Block 9 has its own budget of 4 096 bytes and 20 commands, whole commands only, then "N more commands are not
+shown." **[default]**; a command that contains `<!--`, `-->` or a code fence is counted, not printed. The comment
+budget keeps room for the waiver notice section, so `Warn` never needs a size check. Display caps, each ending with
+"and N more" **[default]**: 50 further reasons, 50 evidence gaps per source, 10 locations per finding, 10 metric
+changes per dimension. Last resort, only when the never-cut blocks alone exceed the limit: block 7 is cut at a
+line end.
 
 ## Integrations
 

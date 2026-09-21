@@ -56,6 +56,7 @@ type Publisher interface {
 	Warn(ctx context.Context, t inputs.Target, expiry time.Time) error
 }
 
+// New returns a Publisher that keeps no state between calls and is safe for concurrent use.
 func New(checks api.Checks, comments api.Comments, pulls api.Pulls, now func() time.Time) Publisher {
-	return nil
+	return &publisher{checks: checks, comments: comments, pulls: pulls, now: now}
 }
