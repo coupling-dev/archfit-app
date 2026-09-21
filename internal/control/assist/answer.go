@@ -32,7 +32,7 @@ func normalizeAnswer(text string, draftPolicy []byte) ([]byte, error) {
 	case bytes.Equal(bytes.TrimSpace(answer), bytes.TrimSpace(draftPolicy)):
 		reason = "identical to the draft"
 	default:
-		if _, err := policy.Waivers(answer); err != nil {
+		if err := policy.Validate(answer); err != nil {
 			reason = "not a valid policy"
 		}
 	}

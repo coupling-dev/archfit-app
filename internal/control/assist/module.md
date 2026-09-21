@@ -128,7 +128,7 @@ All are sentinels for `errors.Is` **[default names]**. Messages carry no user te
 - `ErrBusy` — a managed request for the same repository and branch is still running.
 - `ErrBudgetExhausted` (owned by `account`, passed through) — the monthly cap would be exceeded. No call was made.
 - `ErrProvider` — the provider call failed or timed out. Wraps status information only.
-- `ErrInvalidProposal` — the answer is empty, too large, not YAML, or identical to the input. Nothing was written.
+- `ErrInvalidProposal` — the answer is empty, too large, not a policy file (`policy.Validate` refuses it), or identical to the input. Nothing was written.
 - `ErrNoAssistWorkflow` — customer mode and the workflow file does not exist on the branch.
 - Any other GitHub or Store error is returned wrapped. `ErrRateLimited` stays testable with `errors.Is`.
 
@@ -396,9 +396,9 @@ func New(ts TokenSource, hc *http.Client) *Client
 - **Volatility**: high (this side), moderate (wire/policy)
 - **Balanced?**: yes — contract coupling
 - **Shared knowledge**: `PolicyPath` is the constant naming the file assist reads and writes. `Schema()` is the prompt's
-  rule reference. `Waivers` is used as the YAML syntax check of an answer **[default]**: only `wire/settings` and
-  `wire/policy` may import a YAML library, and wire/policy publishes no plain validation function. A malformed waiver
-  date also fails it, which is wanted. `BaselinePath` and `LabelsPath` are the constants naming the baseline and labels files; assist never touches either, and never calls `Digest`.
+  rule reference. `Validate` is the structural check of an answer: only `wire/settings` and `wire/policy` may import a
+  YAML library. It inspects no value, so a malformed waiver date passes it; the engine check on the draft PR is the
+  authority on the file's meaning. Assist drops `Validate`'s error text. `BaselinePath` and `LabelsPath` are the constants naming the baseline and labels files; assist never touches either, and never calls `Digest`.
 
 <!-- contract: PolicyPath, BaselinePath, LabelsPath, Digest — restated from internal/wire/policy/module.md -->
 ```go
@@ -415,19 +415,13 @@ const (
 func Digest(raw []byte) string
 ```
 
-<!-- contract: Waiver, Waivers — restated from internal/wire/policy/module.md -->
+<!-- contract: Validate — restated from internal/wire/policy/module.md -->
 ```go
-// Waiver is the subset of an engine waiver the App reads. The engine enforces it; the App only schedules around Expires.
-type Waiver struct {
-    Rule       string    // engine rule ID
-    From, To   string    // endpoint selectors, may be ""
-    Reason     string
-    ApprovedBy string    // descriptive only, never authentication
-    Expires    time.Time // end of the YYYY-MM-DD day, UTC
-}
-
-// Waivers extracts the waivers of a policy file. It ignores every other key.
-func Waivers(policy []byte) ([]Waiver, error)
+// Validate reports whether policy is plausibly an engine policy file: a YAML document whose root is a
+// mapping, whose top-level keys all belong to the engine config schema's closed key set, and which has
+// the required `version` key. It is a structural check, not engine validation: the engine remains the
+// authority on the file's meaning. Errors never echo keys or values.
+func Validate(policy []byte) error
 ```
 
 <!-- contract: Schema — restated from internal/wire/policy/module.md -->
@@ -513,8 +507,11 @@ works unchanged.
    in a context detached from request cancellation with its own 5 second timeout **[default]**. A failed settle is logged and keeps
    the full reservation: the error is on the safe side of the cap.
 6. Normalize: trim; strip one surrounding Markdown code fence; end with one newline. Validate: UTF-8, no NUL, at most
-   64 KB **[default]**, no fence line left over (prose around a fence, an unclosed fence), `policy.Waivers` accepts it,
-   bytes differ from the input apart from surrounding white space. Else `ErrInvalidProposal`; the text is discarded.
+   64 KB **[default]**, no fence line left over (prose around a fence, an unclosed fence), bytes differ from the input
+   apart from surrounding white space, and the answer passes `policy.Validate`: prose with a colon, a JSON document, a
+   mapping without `version` or with a foreign top-level key is not a policy. Else `ErrInvalidProposal`: nothing is
+   proposed, the text is discarded, and the budget stays settled by step 5 exactly as for any other invalid answer.
+   Neither the answer nor `Validate`'s error text is logged or returned; the error names the failed check only.
 7. `Proposals.Propose(Change{Repo, Branch, Base: Repo.DefaultBranch, Message, Files: [{PolicyPath, answer}]}, Request.HeadSHA)`.
    `Message` is `"archfit: AI proposal requested by @<By>"` **[default]**. `Title` and `Body` are set to the same fixed
    text and matter only if the PR had to be recreated. `ErrStale` here means that during the provider call someone pushed to the branch, or the
@@ -577,7 +574,7 @@ roles at their interfaces. The clock is injected. No test calls a real model.
   **Expected behavior**: the prompt contains the three permitted texts and none of the other marker strings; `MaxTokens` is 8 192.
 - **Test name**: `TestNormalizeAndValidateAnswer`
   **Scenario**: table: plain YAML; YAML inside one code fence; prose before a fence; empty; identical to input; 65 KB;
-  invalid UTF-8; a tab-indented mapping (not YAML); a malformed waiver date.
+  invalid UTF-8; a tab-indented mapping (not YAML).
   **Expected behavior**: the first two are accepted and equal the bare YAML with one trailing newline; all others are `ErrInvalidProposal`.
 
 ### Integration Contract Tests
@@ -612,6 +609,12 @@ roles at their interfaces. The clock is injected. No test calls a real model.
   logger; recording GitHub fakes.
   **Expected behavior**: the marker never appears in a log line or error; for prose and blob nothing is written anywhere;
   for valid YAML it appears only as the `.archfit.yaml` file content, not in commit message, title or body.
+- **Test name**: `TestForeignAnswerIsNotAProposal`
+  **Scenario**: table: the provider returns one-line prose with a colon; a JSON object with foreign keys; a YAML mapping
+  without `version`; a mapping with one unknown top-level key; a valid edited policy. Every answer carries a seeded
+  marker string; capturing logger.
+  **Expected behavior**: `ErrInvalidProposal` and zero `Propose` calls for all but the last, which is proposed as
+  `.archfit.yaml`; in every row exactly one `Settle(max, returned cost)`; the marker never appears in a log line or error.
 - **Test name**: `TestInstructionIsNotLogged`
   **Scenario**: both modes with a recognizable instruction.
   **Expected behavior**: the logs hold its length only; in customer mode it appears only in the `Dispatch` inputs.

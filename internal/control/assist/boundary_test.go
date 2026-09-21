@@ -153,6 +153,61 @@ func TestRawOutputNeverLeaves(t *testing.T) {
 	}
 }
 
+func TestForeignAnswerIsNotAProposal(t *testing.T) {
+	const marker = "FOREIGN-ANSWER-MARKER-9f3a"
+	validPolicy := "version: 2\nmodules:\n  core:\n    path: internal/core\n# " + marker + "\n"
+	tests := []struct {
+		name      string
+		text      string
+		want      error
+		wantFiles string
+	}{
+		{"one-line prose with a colon", "Sure! Here is the file: " + marker, ErrInvalidProposal, ""},
+		{"JSON object with foreign keys", `{"answer": "` + marker + `", "ok": true}`, ErrInvalidProposal, ""},
+		{"mapping without version", "modules:\n  core:\n    path: " + marker + "\n", ErrInvalidProposal, ""},
+		{"one unknown top-level key", "version: 2\nmodules: {}\nextra: " + marker + "\n", ErrInvalidProposal, ""},
+		{"valid edited policy", validPolicy, nil, validPolicy},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logs := captureLogs(t)
+			fx := newFixture()
+			fx.provider.complete = answers(tt.text, testActualCost)
+
+			_, err := fx.assist().Propose(context.Background(), ModeManaged, validRequest())
+
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("Propose() error = %v, want %v", err, tt.want)
+			}
+			if err != nil && strings.Contains(err.Error(), marker) {
+				t.Errorf("error carries raw model output: %q", err)
+			}
+			if strings.Contains(logs.String(), marker) {
+				t.Errorf("log carries raw model output")
+			}
+			if len(fx.budget.settles) != 1 {
+				t.Fatalf("settles = %+v, want 1", fx.budget.settles)
+			}
+			if s := fx.budget.settles[0]; s.reserved != testMaxCost || s.actual != testActualCost {
+				t.Errorf("Settle(%d, %d), want Settle(%d, %d)", s.reserved, s.actual, testMaxCost, testActualCost)
+			}
+			if tt.wantFiles == "" {
+				if got := fx.proposals.attemptCount(); got != 0 {
+					t.Errorf("Proposals.Propose called %d times, want 0", got)
+				}
+				return
+			}
+			if len(fx.proposals.commits) != 1 {
+				t.Fatalf("commits = %d, want 1", len(fx.proposals.commits))
+			}
+			c := fx.proposals.commits[0].change
+			if len(c.Files) != 1 || c.Files[0].Path != policy.PolicyPath || string(c.Files[0].Content) != tt.wantFiles {
+				t.Errorf("files = %+v, want only %s with the answer", c.Files, policy.PolicyPath)
+			}
+		})
+	}
+}
+
 func TestInstructionIsNotLogged(t *testing.T) {
 	const marker = "INSTRUCTION-MARKER-7be2"
 	for _, mode := range []Mode{ModeManaged, ModeCustomer} {

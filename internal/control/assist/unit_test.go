@@ -142,8 +142,7 @@ func TestNormalizeAndValidateAnswer(t *testing.T) {
 		{"65 KB", "version: 1\n# " + strings.Repeat("x", 65<<10) + "\n", ""},
 		{"invalid UTF-8", "version: 1\nname: \xff\xfe\n", ""},
 		{"NUL byte", "version: 1\nname: a\x00b\n", ""},
-		{"tab-indented mapping", "rules:\n\tmax_fan_out: 7\n", ""},
-		{"malformed waiver date", "version: 1\nwaivers:\n  - rule: no-cycles\n    reason: legacy\n    expires: 2026-13-45\n", ""},
+		{"tab-indented mapping", "version: 1\nrules:\n\tmax_fan_out: 7\n", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
