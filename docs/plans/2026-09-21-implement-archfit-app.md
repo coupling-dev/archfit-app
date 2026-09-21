@@ -425,12 +425,18 @@ Tasks 1, 8, 17, 19, 20, 27, 28, 29, 30 and 31 are open until the owner accepts o
 ### Task 33: [Final] Update documentation
 
 - [x] update README.md, docs/README.md and .env.example for the new configuration and the end of the 501 skeleton
-- [ ] verify each implemented module.md still matches what was built (spot check; /modularity:fractal-align does this
+- [x] verify each implemented module.md still matches what was built (spot check; /modularity:fractal-align does this
       rigorously)
 
 ⚠️ Task 33: documentation is updated. The module.md spot check is left to `/modularity:fractal-align`, which does it
 rigorously; during the build every module.md was validated on each change and every test named in a Test
 Specification was checked to exist.
+
+⚠️ Alignment (2026-09-21): `/modularity:fractal-align` found 1 Critical, 12 Significant and about 34 Minor
+divergences; all Significant ones are fixed and the rest resolved or recorded, see
+[the alignment review](../reviews/2026-09-21-fractal-align.md). ➕ Still open from it: gate/feedback keeps private
+golden and fixture copies; the wire/settings and wire/policy import tests skip when the go tool is missing; the
+shutdown grace (10 s) is shorter than the managed assist deadline (300 s).
 
 ## Post-Completion
 
