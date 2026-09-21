@@ -1,0 +1,11 @@
+{
+  "gate": {
+    "conclusion": "failure",
+    "reasons": [
+      "blocking_findings"
+    ],
+    "facts": {
+      "trusted_baseline": true
+    }
+  }
+}

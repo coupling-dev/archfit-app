@@ -1,0 +1,9 @@
+{
+  "gate": {
+    "conclusion": "action_required",
+    "reasons": [
+      "missing_required_coverage",
+      "blocking_findings"
+    ]
+  }
+}

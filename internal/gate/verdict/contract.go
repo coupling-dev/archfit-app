@@ -76,16 +76,3 @@ type Facts struct {
 	WorkflowApproved bool
 	Trusted          inputs.Trusted
 }
-
-// Decide is a pure function. It checks, in order: subscription, settings, source and producer eligibility,
-// governance (owner approval), input integrity, evidence completeness, then the engine decision.
-// The step table of gate/verdict is the normative order.
-func Decide(f Facts) Outcome {
-	return Outcome{}
-}
-
-// Without returns the fixed outcome for a target that has no report: code is one of
-// ReasonMissingUpload, ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended.
-func Without(code ReasonCode) Outcome {
-	return Outcome{}
-}

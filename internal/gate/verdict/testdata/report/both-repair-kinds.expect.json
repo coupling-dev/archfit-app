@@ -1,0 +1,8 @@
+{
+  "gate": {
+    "conclusion": "failure",
+    "reasons": [
+      "blocking_findings"
+    ]
+  }
+}

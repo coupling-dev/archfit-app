@@ -1,0 +1,12 @@
+{
+  "gate": {
+    "conclusion": "action_required",
+    "reasons": [
+      "measurement_profile_missing",
+      "blocking_findings"
+    ],
+    "facts": {
+      "identity_unapproved": true
+    }
+  }
+}
