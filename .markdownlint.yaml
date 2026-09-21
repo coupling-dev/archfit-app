@@ -1,0 +1,2 @@
+# No line-length limit: prose is one sentence per line, tables are as wide as they need.
+MD013: false

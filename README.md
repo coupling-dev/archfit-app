@@ -1,63 +1,62 @@
 # archfit-app
 
-Private Go service for approved architecture policy, baselines, and PR feedback.
-See [LICENSE](LICENSE). Analysis runs in customer CI; this service owns the
-trusted policy, report intake, gate, and feedback.
+Archfit finds pull requests that break the architecture rules of a repository.
+This service is the trusted part of Archfit. It is a private Go service. See [LICENSE](LICENSE).
 
-The three repositories are split by responsibility:
+The analysis runs in customer CI. This service does the rest:
 
-- [`archfit`](https://github.com/alexei-led/archfit): engine, CLI, images, and
-  wire contracts.
-- [`archfit-action`](https://github.com/alexei-led/archfit-action): execution and
-  upload adapter.
-- `archfit-app`: tenancy, approved policy, baselines, and PR feedback.
+- It keeps the approved policy under review, like code.
+- It verifies each uploaded report against the approved policy.
+- It publishes the result on the pull request: one or two checks and one comment.
+- It fails closed. A report that it cannot verify never passes the gate.
+
+Archfit has three repositories:
+
+| Repository                                                       | Responsibility                                     |
+| ---------------------------------------------------------------- | -------------------------------------------------- |
+| [`archfit`](https://github.com/alexei-led/archfit)               | Engine, CLI, images, and report schemas            |
+| [`archfit-action`](https://github.com/alexei-led/archfit-action) | Runs the engine in CI and uploads the report       |
+| `archfit-app`                                                    | Approved policy, report intake, gate, and feedback |
 
 ## Status
 
-The service is implemented as one Go binary (`cmd/reporter` → `internal/app`) and
-covered by tests, but it is **not deployed and not release-ready**:
+The service is complete as code and has tests. It is **not deployed and not ready for release**.
 
-- It runs with the in-memory `Store` and no sandbox driver; the container host,
-  KV, and sandbox are not chosen ([tech stack](docs/tech-stack.md)).
-- `internal/wire/manifest` still holds placeholder image digests and a
-  placeholder Action commit.
-- The Monaco editor bundle is not built; the policy editor is a plain textarea.
-- No GitHub App is registered and `archfit-action` has not adopted the envelope
-  schema owned here.
+- Hosting is not decided. The service runs with an in-memory store.
+- The engine manifest contains placeholder digests.
+- No GitHub App is registered.
 
-Open findings and owner decisions are marked ⚠️ and ➕ in the
-[implementation plan](docs/plans/2026-09-21-implement-archfit-app.md).
+[Release blockers](docs/architecture.md#release-blockers) gives the full list.
 
 ## Documentation
 
-See the [documentation index](docs/README.md):
-
-- [Product design](docs/design/product.md)
-- [Trust and reporting](docs/design/trust-and-reporting.md)
-- [Module design](internal/module.md) — every package under `internal/` has a `module.md` spec
-- [Tech stack](docs/tech-stack.md)
-- [Implementation plan](docs/plans/2026-09-21-implement-archfit-app.md)
-- [Closed-beta plan](docs/plans/closed-beta.md)
-- [Hosting research](docs/research/20260918-hosting.md)
+| Document                                    | Read it to                                      |
+| ------------------------------------------- | ----------------------------------------------- |
+| [Architecture](docs/architecture.md)        | Understand how the service works, with diagrams |
+| [User guide](docs/user-guide.md)            | Onboard a repository and read the feedback      |
+| [Documentation index](docs/README.md)       | Find the design documents, plans, and research  |
+| [Module specifications](internal/module.md) | Read the detailed specification of each package |
 
 ## Development
 
-Enable hooks once per clone:
+Enable the Git hooks one time for each clone:
 
 ```sh
 git config core.hooksPath scripts/git-hooks
 ```
 
 ```sh
+make all      # format, lint, test, build. Run it before you push
 make test     # race tests
 make lint     # golangci-lint
 make build    # .bin/reporter
 make run      # :8080
 ```
 
-Configuration is environment variables; secrets are file paths (`*_FILE`), never
-values. See [`.env.example`](.env.example). The binary does not load `.env`
-itself. `make all` runs format, lint, tests, and build; run it before pushing.
+The configuration is environment variables. Each secret is a file path (`*_FILE`), never a value.
+The binary does not read a `.env` file. See [`.env.example`](.env.example) and the
+[configuration table](docs/architecture.md#configuration).
+
 Health check:
 
 ```sh
