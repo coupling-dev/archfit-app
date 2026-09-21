@@ -1,94 +1,55 @@
 package main
 
 import (
-	"io"
+	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"log/slog"
-	"net/http"
-	"net/http/httptest"
-	"strings"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
-// TestReportIngestRefusesEveryReport pins the state this service ships in: the
-// wire contract is checked, and then the report is refused because its producer
-// cannot be verified yet. A test that accepted one would be pinning the
-// behaviour the design forbids.
-func TestReportIngestRefusesEveryReport(t *testing.T) {
-	t.Parallel()
-	const validEnvelope = `{"schema_version":"archfit.report-envelope.v1","repository":"o/r"}`
-	const validReport = `{"schema_version":"archfit.architecture-state.v1","verdict":"blocked"}`
-
-	tests := []struct {
-		name       string
-		envelope   string
-		body       string
-		wantStatus int
-		wantIn     string
-	}{
-		{
-			name:       "a well-formed report is refused, not accepted",
-			envelope:   validEnvelope,
-			body:       validReport,
-			wantStatus: http.StatusNotImplemented,
-			wantIn:     "provenance verification is not implemented",
-		},
-		{
-			name:       "no envelope",
-			body:       validReport,
-			wantStatus: http.StatusBadRequest,
-			wantIn:     "missing X-Archfit-Envelope",
-		},
-		{
-			name:       "envelope from another contract",
-			envelope:   `{"schema_version":"archfit.report-envelope.v99"}`,
-			body:       validReport,
-			wantStatus: http.StatusBadRequest,
-			wantIn:     "this service accepts",
-		},
-		{
-			name:       "report from another contract",
-			envelope:   validEnvelope,
-			body:       `{"schema_version":"archfit.architecture-state.v9"}`,
-			wantStatus: http.StatusBadRequest,
-			wantIn:     "this service accepts",
-		},
-		{
-			name:       "unparseable envelope",
-			envelope:   `{`,
-			body:       validReport,
-			wantStatus: http.StatusBadRequest,
-			wantIn:     "not valid JSON",
-		},
-	}
-	h := &reportHandler{log: slog.New(slog.NewJSONHandler(io.Discard, nil))}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			req := httptest.NewRequest(http.MethodPost, "/v1/reports", strings.NewReader(tc.body))
-			if tc.envelope != "" {
-				req.Header.Set(envelopeHeader, tc.envelope)
-			}
-			rec := httptest.NewRecorder()
-			h.ServeHTTP(rec, req)
-
-			if rec.Code != tc.wantStatus {
-				t.Errorf("status = %d, want %d (body: %s)", rec.Code, tc.wantStatus, rec.Body.String())
-			}
-			if !strings.Contains(rec.Body.String(), tc.wantIn) {
-				t.Errorf("body = %s, want it to mention %q", rec.Body.String(), tc.wantIn)
-			}
-		})
+func TestRunFailsWithoutConfiguration(t *testing.T) {
+	err := run(context.Background(), func(string) string { return "" }, slog.New(slog.DiscardHandler))
+	if err == nil {
+		t.Fatal("run with an empty environment returned nil; want a configuration error")
 	}
 }
 
-func TestHealth(t *testing.T) {
-	t.Parallel()
-	rec := httptest.NewRecorder()
-	handleHealth(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
+func TestRunServesUntilCancelled(t *testing.T) {
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(rec.Body.String(), `"ok"`) {
-		t.Errorf("body = %s, want status ok", rec.Body.String())
+	dir := t.TempDir()
+	file := func(name string, content []byte) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	env := map[string]string{
+		"ARCHFIT_ADDR":                       "127.0.0.1:0",
+		"ARCHFIT_BASE_URL":                   "https://archfit.example",
+		"ARCHFIT_GITHUB_APP_ID":              "1",
+		"ARCHFIT_GITHUB_PRIVATE_KEY_FILE":    file("key.pem", pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})),
+		"ARCHFIT_GITHUB_WEBHOOK_SECRET_FILE": file("webhook", []byte("webhook-secret")),
+		"ARCHFIT_GITHUB_OAUTH_CLIENT_ID":     "Iv1.client",
+		"ARCHFIT_GITHUB_OAUTH_SECRET_FILE":   file("oauth", []byte("oauth-secret")),
+		"ARCHFIT_COOKIE_KEY_FILE":            file("cookie", []byte("0123456789abcdef0123456789abcdef")),
+		"ARCHFIT_OPERATOR_TOKEN_FILE":        file("operator", []byte("operator-token")),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // a cancelled context is the SIGTERM path: start, then shut down cleanly
+	if err := run(ctx, func(k string) string { return env[k] }, slog.New(slog.DiscardHandler)); err != nil {
+		t.Fatalf("run with a valid environment and a cancelled context: %v", err)
 	}
 }
