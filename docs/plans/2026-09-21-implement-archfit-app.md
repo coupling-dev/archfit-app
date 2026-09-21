@@ -109,12 +109,12 @@ alternative is an engine change.
 
 ### Task 2: Create the compiling contract skeleton
 
-- [ ] add the dependencies docs/tech-stack.md allows to go.mod; add nothing else
-- [ ] for every module under internal/, create its package with exactly the exported identifiers of its
+- [x] add the dependencies docs/tech-stack.md allows to go.mod; add nothing else
+- [x] for every module under internal/, create its package with exactly the exported identifiers of its
       `## Public Contract` section: types, constants, sentinel errors, interfaces, and function signatures whose
       bodies return a "not implemented" error (façades alias the child types they re-publish)
-- [ ] write no behavior and no tests in this task; do not touch cmd/reporter
-- [ ] run `go build ./...` and `go vet ./...` — every package compiles; `make all` stays green
+- [x] write no behavior and no tests in this task; do not touch cmd/reporter
+- [x] run `go build ./...` and `go vet ./...` — every package compiles; `make all` stays green
 
 ### Task 3 [Wave 0a]: Implement internal/store/ (leaf, no internal imports)
 
