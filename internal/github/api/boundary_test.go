@@ -394,15 +394,38 @@ func TestErrorsCarryNoSecretsOrContent(t *testing.T) {
 	})
 }
 
+func TestGraphQLRateLimitIsImmediate(t *testing.T) {
+	env := newEnv(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/graphql" {
+			writeJSON(w, http.StatusOK, map[string]any{"errors": []map[string]any{{"type": "RATE_LIMITED"}}})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"number": 1, "node_id": "PR_1", "draft": true})
+	}))
+	err := env.c.MarkReady(context.Background(), repoA, 1)
+	if !errors.Is(err, ErrRateLimited) {
+		t.Errorf("MarkReady() error = %v, want ErrRateLimited", err)
+	}
+	mutations := 0
+	for _, r := range env.gh.requests() {
+		if r.Path == "/graphql" {
+			mutations++
+		}
+	}
+	if mutations != 1 {
+		t.Errorf("GraphQL requests = %d, want 1", mutations)
+	}
+	if sleeps := env.clock.slept(); len(sleeps) != 0 {
+		t.Errorf("slept %v, want no backoff", sleeps)
+	}
+}
+
 func TestAPIImportsOnlyStdlibAndAuth(t *testing.T) {
 	const (
 		module = "github.com/alexei-led/archfit-app/"
 		self   = module + "internal/github/api"
 		auth   = module + "internal/github/auth"
 	)
-	if _, err := exec.LookPath("go"); err != nil {
-		t.Skip("go tool not found")
-	}
 	list := func(args ...string) []string {
 		out, err := exec.Command("go", append([]string{"list"}, args...)...).Output()
 		if err != nil {

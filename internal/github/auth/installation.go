@@ -126,7 +126,7 @@ func (s *source) mint(ctx context.Context, installationID int64, body []byte) (m
 	}
 	resp, err := s.hc.Do(req)
 	if err != nil {
-		return mintResponse{}, fmt.Errorf(errPrefix+"installation %d: token request: %w", installationID, err)
+		return mintResponse{}, fmt.Errorf(errPrefix+"installation %d: token request: %w", installationID, transportCause(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusCreated {

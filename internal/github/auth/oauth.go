@@ -70,7 +70,7 @@ func (s *source) Exchange(ctx context.Context, code string) (UserToken, error) {
 func (s *source) doJSON(req *http.Request, what string, v any) error {
 	resp, err := s.hc.Do(req)
 	if err != nil {
-		return fmt.Errorf(errPrefix+"%s: %w", what, err)
+		return fmt.Errorf(errPrefix+"%s: %w", what, transportCause(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
@@ -80,4 +80,13 @@ func (s *source) doJSON(req *http.Request, what string, v any) error {
 		return fmt.Errorf(errPrefix+"%s: status %d with a malformed body", what, resp.StatusCode)
 	}
 	return nil
+}
+
+// transportCause strips the *url.Error of http.Client.Do: it carries the full URL; only its cause is kept.
+func transportCause(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return ue.Err
+	}
+	return err
 }

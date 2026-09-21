@@ -125,6 +125,10 @@ func New(c Credentials, hc *http.Client) (TokenSource, OAuth, error)
 - Both interfaces are safe for concurrent use.
 - Errors start with `github/auth:` and hold status codes and installation IDs only: never a token, JWT, code,
   client secret, key material, or response body.
+- A transport error (no response) is wrapped by its cause only. The `*url.Error` that `http.Client` returns
+  carries the method and the full URL; it is stripped to its `Err`, exactly as `github/api` does, so no error
+  text holds a URL or a host name. The cause stays in the chain: `errors.Is(err, context.DeadlineExceeded)` and
+  `errors.Is(err, context.Canceled)` work.
 
 ## Integrations
 
@@ -284,6 +288,13 @@ GitHub is faked with an `http.RoundTripper` inside the `*http.Client`; the clock
   **Scenario**: trigger every error path with marker strings as key bytes, client secret, code, token, and response body;
   also format the returned values with `%v` and `%+v`.
   **Expected behavior**: no marker appears in any error text or formatted `TokenSource`/`OAuth` value.
+- **Test name**: `TestTransportErrorsCarryNoURL`
+  **Scenario**: table over `InstallationToken`, `RepoReadToken`, `Exchange` (failing at the code exchange and at
+  `GET /user`), each with a transport that fails with a plain error and with one that fails with
+  `context.DeadlineExceeded`.
+  **Expected behavior**: an error starting with `github/auth:` for each; no `https://`, `github.com` or request
+  path in any text; `errors.Is(err, context.DeadlineExceeded)` holds for the timeout rows and the plain cause is
+  reachable with `errors.Is` for the others.
 - **Test name**: `TestAuthImportsOnlyStdlib`
   **Scenario**: `go list -deps ./internal/github/auth`.
   **Expected behavior**: no internal or third-party package; `log`, `log/slog` and `os` are not direct imports.

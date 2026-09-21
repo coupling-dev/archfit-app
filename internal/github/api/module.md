@@ -68,6 +68,9 @@ needs one. It is a wide leaf on purpose: role interfaces keep each consumer's kn
 - `502`, `503`, `504` and transport errors are retried for `GET` only, after 1 s, 2 s, 4 s **[default]**, inside the same 30 s
   budget **[default]**. Writes are never blindly repeated; `Ensure*` semantics and the sweep make the caller's retry safe.
 - `ctx` cancellation ends any wait immediately with `ctx.Err()`.
+- GraphQL reports a rate limit inside a `200` body, as an error of type `RATE_LIMITED`, with no `Retry-After`
+  and no usable reset header. `MarkReady` maps it to `ErrRateLimited` at once: no backoff, no retry, no sleep.
+  The caller's retry is safe because an already ready pull is success.
 
 ### Conditional requests
 
@@ -118,7 +121,8 @@ a `truncated` result: it returns the paths read so far with `truncated` true.
   annotation maps to `start_line = end_line = Line`, and `Line` 0 to line 1. GitHub appends annotations on update.
 - `AppComments`: `GET /repos/{r}/issues/{n}/comments`, kept when `user.login` is the bot login.
   `CreateComment`: `POST` there; `UpdateComment`: `PATCH /repos/{r}/issues/comments/{id}`.
-- `Run`: `GET /repos/{r}/actions/runs/{id}`; `WorkflowPath` = `path` unchanged; `PullRequests` =
+- `Run`: `GET /repos/{r}/actions/runs/{id}`; `WorkflowPath` = `path` unchanged; `Event` = `event` unchanged;
+  `PullRequests` =
   `pull_requests[].number` (GitHub leaves it empty for fork PRs). `Rerun`: `POST .../runs/{id}/rerun`.
 - `Dispatch`: `POST /repos/{r}/actions/workflows/{file name}/dispatches` with `ref` and `inputs`.
 - `LatestRun`: `GET .../workflows/{file name}/runs?branch=&per_page=1`; none → `ErrNotFound`.
@@ -136,7 +140,9 @@ a `truncated` result: it returns the paths read so far with `truncated` true.
 - `EnsurePull`: `GET .../pulls?state=open&head={owner}:{Head}&base={Base}`; first hit wins; else `POST .../pulls`;
   a `422` "already exists" race → list again; the `422` stands if the list is still empty.
 - `UpdatePullBody`: `PATCH .../pulls/{n}`. `MarkReady`: REST cannot leave draft state, so one GraphQL mutation
-  `markPullRequestReadyForReview` on the pull's `node_id`; an already ready pull is success.
+  `markPullRequestReadyForReview` on the pull's `node_id`; an already ready pull is success. An `errors` entry
+  of type `RATE_LIMITED` → `ErrRateLimited` at once, without backoff; any other entry → an error that names the
+  route only, never the GraphQL message (it can quote content).
 - `Permission`: `GET /repos/{fullName}` with the user token; `permissions.admin` → `admin`, `.push` → `write`,
   `.pull` → `read`; `404` → `none` with `nil` error.
 - `UserRepos`: `GET /user/installations`, then `GET /user/installations/{id}/repositories` for each; the cap
@@ -328,8 +334,14 @@ type Client struct{ /* unexported */ }
 func New(ts TokenSource, hc *http.Client) *Client
 ```
 
+`WorkflowRun.Event` is GitHub's event name for the run (`pull_request`, `push`, `workflow_dispatch`,
+`workflow_run`, `schedule`, …), the run's `event` field passed through unchanged: not mapped, not lowercased,
+not checked against a list. Consumers compare it with GitHub's literal names; it is the same vocabulary as the
+`event_name` claim of an Actions OIDC token.
+
 `ErrNotFound` is the sentinel for "absent, or not accessible to this credential". `ErrRateLimited` is the
-sentinel returned when the 30 s **[default]** backoff budget cannot cover the wait GitHub asks for. Both are tested with
+sentinel returned when the 30 s **[default]** backoff budget cannot cover the wait GitHub asks for, and at once when the
+GraphQL mutation of `MarkReady` answers `RATE_LIMITED`. Both are tested with
 `errors.Is`. `TokenSource` is restated under Integrations, from `github/auth`. `OAuth` is the user login flow
 of `github/auth`; `api` only receives its result, a user token string, in the `Users` methods.
 
@@ -548,12 +560,16 @@ One test per role interface; each asserts method, route, credential, request bod
 - **Test name**: `TestCrossInstallationRepoRef` (T07)
   **Scenario**: `RepoRef{InstallationID: A, FullName: repository of B}` on every role interface.
   **Expected behavior**: A's token is used, GitHub's `404` becomes `ErrNotFound`; B's token is never requested.
+- **Test name**: `TestGraphQLRateLimitIsImmediate`
+  **Scenario**: `MarkReady` on a draft pull; the GraphQL endpoint answers `200` with an error of type `RATE_LIMITED`.
+  **Expected behavior**: `ErrRateLimited` by `errors.Is`; exactly one GraphQL request; no sleep.
 - **Test name**: `TestErrorsCarryNoSecretsOrContent`
   **Scenario**: every error path with marker strings in tokens, file paths, bodies and response bodies.
   **Expected behavior**: no marker in any error text.
 - **Test name**: `TestAPIImportsOnlyStdlibAndAuth`
   **Scenario**: `go list -deps ./internal/github/api`.
-  **Expected behavior**: the only internal import is `internal/github/auth`; no third-party module.
+  **Expected behavior**: the only internal import is `internal/github/auth`; no third-party module. A missing
+  `go` tool fails the test; it never skips.
 
 ### Behavior Tests
 

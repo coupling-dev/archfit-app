@@ -2,7 +2,9 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os/exec"
 	"strconv"
@@ -355,6 +357,82 @@ func TestErrorsAndStringsCarryNoSecrets(t *testing.T) {
 		}
 		if strings.Contains(text, privateExponent) || strings.Contains(text, "client-secret") {
 			t.Errorf("credential leaked in %q", text)
+		}
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+func TestTransportErrorsCarryNoURL(t *testing.T) {
+	errBoom := errors.New("connection refused by the test")
+
+	failAll := func(cause error) http.RoundTripper {
+		return roundTripFunc(func(*http.Request) (*http.Response, error) { return nil, cause })
+	}
+	// Answers the code exchange, then fails at GET /user.
+	failUserLookup := func(cause error) http.RoundTripper {
+		return roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method == http.MethodPost {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": {"application/json"}},
+					Body:       io.NopCloser(strings.NewReader(`{"access_token":"ghu_user"}`)),
+				}, nil
+			}
+			return nil, cause
+		})
+	}
+
+	calls := []struct {
+		name      string
+		transport func(error) http.RoundTripper
+		call      func(context.Context, TokenSource, OAuth) error
+	}{
+		{"InstallationToken", failAll, func(ctx context.Context, ts TokenSource, _ OAuth) error {
+			_, err := ts.InstallationToken(ctx, 77)
+			return err
+		}},
+		{"RepoReadToken", failAll, func(ctx context.Context, ts TokenSource, _ OAuth) error {
+			_, err := ts.RepoReadToken(ctx, 77, "octo/repo")
+			return err
+		}},
+		{"Exchange", failAll, func(ctx context.Context, _ TokenSource, oa OAuth) error {
+			_, err := oa.Exchange(ctx, "code")
+			return err
+		}},
+		{"Exchange at the user lookup", failUserLookup, func(ctx context.Context, _ TokenSource, oa OAuth) error {
+			_, err := oa.Exchange(ctx, "code")
+			return err
+		}},
+	}
+	// What a transport returns when the request deadline passes, and a plain failure.
+	causes := map[string]error{"timeout": context.DeadlineExceeded, "plain failure": errBoom}
+	for _, c := range calls {
+		for name, cause := range causes {
+			t.Run(c.name+"/"+name, func(t *testing.T) {
+				ts, oa, err := New(validCredentials(), &http.Client{Transport: c.transport(cause)})
+				if err != nil {
+					t.Fatal(err)
+				}
+				err = c.call(t.Context(), ts, oa)
+				if err == nil {
+					t.Fatal("call succeeded")
+				}
+				if !errors.Is(err, cause) {
+					t.Errorf("errors.Is(%q, %v) = false", err, cause)
+				}
+				text := err.Error()
+				if !strings.HasPrefix(text, "github/auth:") {
+					t.Errorf("error %q lacks the github/auth: prefix", text)
+				}
+				for _, leak := range []string{"https://", "github.com", "/app/installations", "/login/oauth", "/user"} {
+					if strings.Contains(text, leak) {
+						t.Errorf("error %q contains %q", text, leak)
+					}
+				}
+			})
 		}
 	}
 }

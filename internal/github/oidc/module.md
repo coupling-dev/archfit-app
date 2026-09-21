@@ -33,13 +33,20 @@ Generic. OIDC token verification is a standard; GitHub's claim set is documented
 - JWK use: `kty` `RSA`; `use` absent or `sig`; `alg` absent or `RS256`; `n`, `e` base64url; modulus at least
   2048 bits **[default]**. Other keys in the set are skipped. Verification is `rsa.VerifyPKCS1v15` with SHA-256 over
   `header.payload`.
-- Key cache: the key set is kept for 1 hour **[default]**. An unknown `kid` triggers one refetch, at most once per minute
-  across all callers **[default]**, so a flood of random `kid` values cannot become a fetch flood. Fetches are
+- Key cache: the key set is kept for 1 hour **[default]**. An unknown `kid` triggers one refetch. Every key fetch,
+  whatever its reason (cold cache, the retry after a failed cold fetch, the hourly refresh, an unknown `kid`),
+  shares one bound: at most one fetch attempt per minute across all callers **[default]**, so neither a flood of
+  random `kid` values nor an outage becomes a fetch flood. Consequence: after a failed fetch the next attempt
+  is up to 60 s away, so `ErrUnavailable` can last up to 60 s after the issuer recovers. Fetches are
   single-flight under one mutex. If a refetch fails and a cached set exists, the cached set stays in use for up
   to 24 hours **[default]**; with no usable set, every token is rejected with `ErrUnavailable`. A JWKS response that is non-`200`, malformed,
-  or over 1 MiB **[default]** counts as a failed fetch.
+  or over 1 MiB **[default]** counts as a failed fetch. So does a well-formed key set with no usable key (see JWK
+  use): it never replaces a cached set.
+- A fetch that ends because the caller's `ctx` was cancelled or timed out says nothing about the issuer. It
+  marks the last fetch as failed (that caller gets `ErrUnavailable` unless a cached key matches) but does not
+  use the once-per-minute slot: the next caller may fetch at once.
 - Claims read: `iss`, `aud`, `exp`, `nbf`, `iat`, `repository`, `repository_id`, `run_id`, `run_attempt`, `sha`,
-  `ref`, `event_name`, `job_workflow_ref`, `runner_environment`. GitHub sends `repository_id`, `run_id` and
+  `ref`, `event_name`, `job_workflow_ref`, `runner_environment`. `ref` and `event_name` are copied unchanged. GitHub sends `repository_id`, `run_id` and
   `run_attempt` as JSON strings; a JSON number is accepted too **[default]**. Non-numeric or non-positive → error.
 - `aud` may be a JSON string or an array; the required audience must be one of its values, compared exactly
   (case and trailing slash matter).
@@ -88,6 +95,12 @@ func New(hc *http.Client) Verifier
 func WorkflowPath(jobWorkflowRef, fullName string) string
 ```
 
+`Claims.Ref` is the full git ref of the run, exactly as GitHub's `ref` claim states it, never a short branch
+name: `refs/heads/<branch>` for a branch, `refs/pull/<n>/merge` for a pull request run, `refs/tags/<tag>` for a
+tag. `Claims.EventName` is GitHub's event name (`pull_request`, `push`, `workflow_dispatch`, …), the same
+vocabulary as the `event` field of a workflow run. Both are passed through unchanged; `oidc` checks only that
+they are not empty.
+
 ### Behavior rules
 
 - `New` makes no network call; the first `Verify` fetches the keys. A `nil` client means a client with a 10 s
@@ -105,6 +118,9 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   ordinary verification error (`401` at the caller): a bad token never becomes `ErrUnavailable` while keys are
   available, and an unknown `kid` after a successful fetch is an ordinary error. Shape, size and `alg` checks run
   before any key lookup, so a malformed token is never `ErrUnavailable`.
+- The once-per-minute bound covers every fetch, so `ErrUnavailable` can outlast an outage by up to 60 s. A fetch
+  cut short by the caller's `ctx` counts as the failed most recent attempt without using the slot; a key set
+  with no usable key is a failed fetch.
 - A `Verifier` is safe for concurrent use.
 - `WorkflowPath` is pure. It returns `""` for: a ref of another repository (a reusable workflow elsewhere),
   no `@`, an empty path, an empty argument. Stated limits: a branch name containing `@` yields `""` (pull
@@ -228,11 +244,19 @@ comes from `newWithClock`.
   **Scenario**: 1 000 tokens with random `kid` values within one minute.
   **Expected behavior**: at most one refetch in that minute; all rejected; a valid token still verifies.
 - **Test name**: `TestJWKSFailureModes`
-  **Scenario**: table: cold cache and fetch `500`; cold cache and malformed JSON; oversized response; warm cache and
-  refetch failing at 61 minutes; warm cache, fetch failing, clock at 25 hours; warm cache, unknown `kid`, refetch
-  failing; warm cache, unknown `kid`, refetch succeeding without that key.
-  **Expected behavior**: `ErrUnavailable` by `errors.Is` for the first three; ok from the cached set;
-  `ErrUnavailable`; `ErrUnavailable`; an ordinary error that is not `ErrUnavailable`.
+  **Scenario**: table: cold cache and fetch `500`; cold cache and malformed JSON; oversized response; cold cache
+  and a key set with no usable key; warm cache and a refetch at 61 minutes that returns no usable key; warm
+  cache and refetch failing at 61 minutes; warm cache, fetch failing, clock at 25 hours; warm cache, unknown
+  `kid`, refetch failing; warm cache, unknown `kid`, refetch succeeding without that key.
+  **Expected behavior**: `ErrUnavailable` by `errors.Is` for the first four; ok from the cached set for the next
+  two; `ErrUnavailable`; `ErrUnavailable`; an ordinary error that is not `ErrUnavailable`.
+- **Test name**: `TestFetchBoundCoversEveryFetch`
+  **Scenario**: cold cache and a failed fetch; the issuer recovers; verify at +59 s and at +60 s.
+  **Expected behavior**: `ErrUnavailable` at +59 s with no second fetch attempt; success at +60 s.
+- **Test name**: `TestCancelledFetchDoesNotUseTheFetchSlot`
+  **Scenario**: cold cache; a `Verify` whose `ctx` is already cancelled while the fetch fails; then, with no clock
+  advance, a `Verify` with a live `ctx` and the issuer serving keys.
+  **Expected behavior**: `ErrUnavailable` for the first; the second fetches at once and verifies.
 - **Test name**: `TestHeaderKeyHintsAreIgnored`
   **Scenario**: a token signed by an attacker key that carries `jwk`, `jku` and `x5u` headers pointing at it.
   **Expected behavior**: rejected; no request leaves the fixed issuer host.
@@ -260,5 +284,8 @@ comes from `newWithClock`.
   **Expected behavior**: `ErrUnavailable`; an ordinary error (checked before key lookup); an ordinary error, not
   `ErrUnavailable`. No case returns `Claims`.
 - **Test name**: `TestIssuerOutageFailsClosedThenRecovers`
-  **Scenario**: cold start with the JWKS endpoint down, then up.
+  **Scenario**: cold start with the JWKS endpoint down, then up; the clock moves past the one-minute fetch bound.
   **Expected behavior**: `ErrUnavailable` while down; success after recovery without a restart.
+- **Test name**: `TestNewUsesTenSecondClientByDefault`
+  **Scenario**: `New(nil)`, then `Verify` with an empty token.
+  **Expected behavior**: the verifier's client has a 10 s timeout; the empty token is an error without a fetch.

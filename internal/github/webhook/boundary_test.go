@@ -73,6 +73,38 @@ func TestParseRejectsIncompleteIdentity(t *testing.T) {
 	}
 }
 
+func TestPushWithoutRepositoryIsAnError(t *testing.T) {
+	pushes := map[string]func() obj{
+		"feature branch": func() obj { return pushPayload("refs/heads/feature", "main") },
+		"tag":            func() obj { return pushPayload("refs/tags/v1.0.0", "main") },
+		"branch deletion": func() obj {
+			return set(pushPayload("refs/heads/main", "main"), "deleted", true)
+		},
+	}
+	breaks := map[string]func(obj){
+		"missing repository":        func(p obj) { delete(p, "repository") },
+		"empty full_name":           func(p obj) { set(p, "repository.full_name", "") },
+		"full_name without a slash": func(p obj) { set(p, "repository.full_name", "shop") },
+	}
+	for pushName, push := range pushes {
+		t.Run(pushName+"/unbroken", func(t *testing.T) {
+			if ev := mustParse(t, "push", push()); ev.Kind != Ignored {
+				t.Errorf("Kind = %q, want %q", ev.Kind, Ignored)
+			}
+		})
+		for name, mutate := range breaks {
+			t.Run(pushName+"/"+name, func(t *testing.T) {
+				payload := push()
+				mutate(payload)
+				got, err := Parse("push", testDelivery, body(t, payload))
+				if err == nil || !reflect.DeepEqual(got, Event{}) {
+					t.Errorf("Parse() = %+v, %v; want the zero Event and an error", got, err)
+				}
+			})
+		}
+	}
+}
+
 func TestParseMalformedJSON(t *testing.T) {
 	valid := string(body(t, prPayload("opened", shaA)))
 	bodies := map[string]string{

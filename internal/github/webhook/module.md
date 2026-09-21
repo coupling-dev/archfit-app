@@ -16,7 +16,8 @@ parse GitHub payloads themselves, and a forged delivery could schedule work or n
 - Map GitHub event types and actions to the closed `EventKind` set; everything else is `Ignored`.
 - Extract identity (installation, repository, pull request, head, base) from the signed body only.
 - Detect forks: `HeadRepo` differs from `Repo`.
-- Compute `ChangedPaths` for a push to the default branch, or report "unknown" as an empty list.
+- Compute `ChangedPaths` for a push to the default branch, or report "unknown" as a `nil` list.
+- Publish the three delivery header names as constants, so no caller spells them.
 - Surface `DeliveryID` for logs.
 
 Not here: HTTP handling, reading the secret file, fan-out to `gate` and `control` (all `app`); any reaction to
@@ -61,9 +62,12 @@ delivery ID header are not covered by the signature; only the body is.
 
 ### ChangedPaths
 
-Union of `added`, `modified`, `removed` over `commits[]`, deduplicated, sorted. The list is empty, meaning
+Union of `added`, `modified`, `removed` over `commits[]`, deduplicated, sorted. The list is `nil`, meaning
 "unknown, treat as everything changed", when any of these holds **[default]**: `forced` is true; `commits` has
-2 048 entries or more (GitHub truncates there); the union exceeds 3 000 paths (the cap is ours); `commits` is absent.
+2 048 entries or more (GitHub truncates there); the union exceeds 3 000 paths (the cap is ours); `commits` is
+absent, `null`, or present but empty (`"commits": []`). Unknown is `nil`; consumers test
+`len(ChangedPaths) == 0`, never `== nil`. Commits that name no file (an empty commit) yield an empty non-`nil`
+list, which that test reads as unknown too: the safe direction, a full rescan.
 
 ### Decoding
 
@@ -110,11 +114,25 @@ func Verify(secret []byte, signatureHeader string, body []byte) error
 func Parse(eventType, deliveryID string, body []byte) (Event, error)
 ```
 
+```go
+// Header names of a GitHub webhook delivery. Callers read these headers and pass their values to Verify and Parse.
+const (
+    HeaderEvent     = "X-GitHub-Event"
+    HeaderDelivery  = "X-GitHub-Delivery"
+    HeaderSignature = "X-Hub-Signature-256"
+)
+```
+
 `PullOpened` is the kind for a pull request that needs a first look. `PullSynchronized` is the kind for a new
 head SHA. `PullClosed` is the kind for a closed or merged pull request. `ReviewChanged` is the kind for any
 review change. `DefaultBranchPush` is the kind for a push to the default branch. `InstallationAdded` is the
 kind for a new installation or added repositories. `InstallationRemoved` is the kind for an uninstall.
 `ReposRemoved` is the kind for repositories taken out of an installation.
+
+`HeaderEvent` names the header whose value is `Parse`'s `eventType`. `HeaderDelivery` names the header whose
+value is `Parse`'s `deliveryID`. `HeaderSignature` names the header whose value is `Verify`'s `signatureHeader`.
+They are untyped string constants and the only spelling of these names outside tests: the caller owns
+the `http.Request`, this package owns what the headers are called.
 
 ### Behavior rules
 
@@ -124,6 +142,9 @@ kind for a new installation or added repositories. `InstallationRemoved` is the 
 - `Parse` errors on: empty `deliveryID`; malformed JSON for a known event type; a mapped kind whose identity is
   incomplete (`installation.id` ≤ 0; empty or slash-less `repository.full_name` for repository kinds;
   `pull_request.number` ≤ 0; a head SHA that is not 40 lowercase hex). An error means "answer `400`, do nothing".
+- A `push` needs `repository.full_name` with a slash before it is classified: the repository object names the
+  default branch. Without it `Parse` errors, even for a push that would map to `Ignored` (another branch, a
+  tag, a deletion). This is the one case where an ignorable delivery of a known type is an error.
 - A known event type with an unmapped action is `Ignored`, not an error.
 - Because the event type header is unsigned, a body presented under the wrong type either fails the identity
   checks or is `Ignored`. It can never name a repository or installation that the signed body does not contain.
@@ -142,8 +163,8 @@ home of `Event`, so nothing is restated for the consumers below.
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: Low
 - **Balanced?**: Yes
-- **Shared knowledge**: `Verify`, `Parse`, `Event`. `app` reads the secret file, the three headers and the body,
-  answers `401` on a `Verify` error and `400` on a `Parse` error, then hands the `Event` to `gate.HandleEvent`
+- **Shared knowledge**: `Verify`, `Parse`, `Event`, `HeaderEvent`, `HeaderDelivery`, `HeaderSignature`. `app` reads
+  the secret file, the three headers (by these constants) and the body, answers `401` on a `Verify` error and `400` on a `Parse` error, then hands the `Event` to `gate.HandleEvent`
   and afterwards to `control.HandleEvent`.
 
 ### gate
@@ -225,9 +246,9 @@ Payload fixtures are trimmed copies of real GitHub deliveries under `testdata/`,
   **Expected behavior**: every `Event` field equals the Field sources rule; unused fields are zero.
 - **Test name**: `TestChangedPaths`
   **Scenario**: table: three commits with overlapping files; a file added then removed; `forced: true`; 2 048 commits;
-  3 001 distinct paths; exactly 3 000 paths; no `commits` key.
-  **Expected behavior**: sorted deduplicated union (the removed file included); empty list for forced, truncated,
-  over-cap and absent; 3 000 paths returned for the exact cap.
+  3 001 distinct paths; exactly 3 000 paths; no `commits` key; `"commits": []`; `"commits": null`.
+  **Expected behavior**: sorted deduplicated union (the removed file included); a `nil` list for forced, truncated,
+  over-cap, absent, empty and `null`; 3 000 paths returned for the exact cap.
 
 ### Integration Contract Tests
 
@@ -237,6 +258,11 @@ Payload fixtures are trimmed copies of real GitHub deliveries under `testdata/`,
 - **Test name**: `TestUnknownEventTypeIsIgnoredNotError`
   **Scenario**: event types `star`, `workflow_run`, `check_run`, with valid JSON, with `{}` and with non-JSON bodies.
   **Expected behavior**: `Kind == Ignored`, `nil` error in all rows; the body is not parsed.
+- **Test name**: `TestHeaderNames`
+  **Scenario**: a request built with `http.Header.Set` under GitHub's literal header names, read back with
+  `Header.Get` under the three constants, then passed through `Verify` and `Parse`.
+  **Expected behavior**: the constants equal `X-GitHub-Event`, `X-GitHub-Delivery`, `X-Hub-Signature-256`; the
+  delivery verifies and parses.
 - **Test name**: `TestForkDetectionFields`
   **Scenario**: same-repository PR; fork PR; fork PR whose head repository was deleted (`head.repo: null`).
   **Expected behavior**: `HeadRepo == Repo`; `HeadRepo != Repo`; `HeadRepo == ""` and therefore `!= Repo`.
@@ -247,6 +273,10 @@ Payload fixtures are trimmed copies of real GitHub deliveries under `testdata/`,
   **Scenario**: table over mapped kinds: missing `installation`; `installation.id` 0; missing `repository`;
   `full_name` without a slash; PR number 0; head SHA of 39 characters, uppercase, or empty; empty `deliveryID`.
   **Expected behavior**: an error for each; no `Event` with a non-`Ignored` kind is returned.
+- **Test name**: `TestPushWithoutRepositoryIsAnError`
+  **Scenario**: table of pushes that would map to `Ignored` (feature branch, tag, branch deletion), each with
+  `repository` missing, `full_name` empty, and `full_name` without a slash; the same pushes unbroken.
+  **Expected behavior**: an error and the zero `Event` for each broken row; `Ignored` and no error unbroken.
 - **Test name**: `TestParseMalformedJSON`
   **Scenario**: truncated JSON, a JSON array, and `null` for each known event type.
   **Expected behavior**: error.

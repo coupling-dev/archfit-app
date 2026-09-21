@@ -35,6 +35,11 @@ Owned by the branch as a whole; no module outside `internal/github/` may hold an
 - Which credential each endpoint needs.
 - The App permissions and event subscriptions the children rely on.
 
+One published exception: the three webhook delivery header names. `app` owns the `http.Request`, and `Verify`
+and `Parse` take header values, so `app` must read those headers. `webhook` exports the names as the constants
+`HeaderEvent`, `HeaderDelivery`, `HeaderSignature`; `app` uses the constants and no module outside the branch
+spells the strings. Nothing else in the list above is published.
+
 The parent itself owns only the decomposition: four leaves, one internal edge (`api` → `auth`).
 
 ## Public Contract
@@ -49,7 +54,8 @@ owner of what they restate. The parent package exports no identifier.
 - `internal/github/api`: `RepoRef`, `Repo`, `Installation`, the role interfaces `Repos`, `Pulls`, `Checks`,
   `Comments`, `Actions`, `Changes`, `Users` with their data types, `Client`, `New`, and the sentinels
   `ErrNotFound`, `ErrRateLimited`.
-- `internal/github/webhook`: `Event`, `EventKind` and its constants, `Verify`, `Parse`.
+- `internal/github/webhook`: `Event`, `EventKind` and its constants, `Verify`, `Parse`, and the header name
+  constants `HeaderEvent`, `HeaderDelivery`, `HeaderSignature`.
 - `internal/github/oidc`: `Claims`, `Verifier`, `New`, `WorkflowPath`, and the sentinel `ErrUnavailable`.
 
 ### Rules that hold for every child
@@ -84,7 +90,8 @@ deeper module.
 - **Volatility**: High (`gate`), Moderate (`control`), Low (`app`)
 - **Balanced?**: Yes
 - **Shared knowledge**: `gate`: `api.Client`, `Actions`, `oidc.Verifier`, `webhook.Event`. `control`: `api.Client`,
-  `Repos`, `auth.OAuth`, `auth.TokenSource`, `webhook.Event`. `app`: the four constructors, `webhook.Verify`, `webhook.Parse`.
+  `Repos`, `auth.OAuth`, `auth.TokenSource`, `webhook.Event`. `app`: the four constructors, `webhook.Verify`, `webhook.Parse`,
+  and the three `webhook.Header*` constants.
 
 ### Consumers below the siblings
 
@@ -144,7 +151,8 @@ github/
 - `webhook` and `oidc` are pure inbound verifiers. They share nothing with each other or with `api`: a webhook
   secret, a JWKS and an App key are three different trust roots, and no child sees another's.
 - `app` wires the branch: `auth.New` → `api.New(tokenSource, client)`, `oidc.New(client)`, and calls
-  `webhook.Verify` and `webhook.Parse` in its webhook handler. `OAuth` from `auth.New` goes to `control`.
+  `webhook.Verify` and `webhook.Parse` in its webhook handler, reading the headers by `webhook.HeaderEvent`,
+  `webhook.HeaderDelivery` and `webhook.HeaderSignature`. `OAuth` from `auth.New` goes to `control`.
 - Typical inbound flow: a delivery is verified and parsed by `webhook`; the consumer builds a `RepoRef` from
   the event's installation ID and repository; `api` fetches an installation token through `auth` and calls GitHub.
 - Typical upload flow: `oidc` verifies the token; the consumer resolves `Claims.Repository` with

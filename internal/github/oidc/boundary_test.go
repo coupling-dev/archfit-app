@@ -162,6 +162,14 @@ func TestJWKSFailureModes(t *testing.T) {
 			body := jwksBody(t, rsaJWK(testKid, &h.keys.valid.PublicKey))
 			h.issuer.serve(http.StatusOK, strings.TrimSuffix(body, "}")+`,"pad":"`+strings.Repeat("a", 1<<20)+`"}`)
 		}, good, "unavailable"},
+		{"cold cache and a key set with no usable key", func(_ *testing.T, h *harness) {
+			h.issuer.serve(http.StatusOK, `{"keys":[{"kty":"EC","kid":"`+testKid+`","crv":"P-256"}]}`)
+		}, good, "unavailable"},
+		{"warm cache and refetch at 61 minutes without a usable key", func(t *testing.T, h *harness) {
+			h.warm(t)
+			h.issuer.serve(http.StatusOK, `{"keys":[]}`)
+			h.clock.Set(testStart.Add(61 * time.Minute))
+		}, good, "ok"},
 		{"warm cache and refetch failing at 61 minutes", func(t *testing.T, h *harness) {
 			h.warm(t)
 			h.issuer.serve(http.StatusInternalServerError, "")
@@ -202,6 +210,42 @@ func TestJWKSFailureModes(t *testing.T) {
 				t.Errorf("fetch attempts = %d, want 1", h.issuer.fetches()-before)
 			}
 		})
+	}
+}
+
+func TestFetchBoundCoversEveryFetch(t *testing.T) {
+	h := newHarness(t)
+	h.issuer.down()
+	got, err := h.verify(h.goodToken(t))
+	wantUnavailable(t, got, err)
+
+	// The issuer is back, but the failed cold fetch used this minute's slot.
+	h.issuer.serve(http.StatusOK, jwksBody(t, rsaJWK(testKid, &h.keys.valid.PublicKey)))
+	h.clock.Advance(59 * time.Second)
+	got, err = h.verify(h.goodToken(t))
+	wantUnavailable(t, got, err)
+	if n := h.issuer.fetches(); n != 1 {
+		t.Errorf("fetch attempts inside the minute = %d, want 1", n)
+	}
+
+	h.clock.Advance(time.Second)
+	if _, err := h.verify(h.goodToken(t)); err != nil {
+		t.Errorf("after the minute: %v", err)
+	}
+}
+
+func TestCancelledFetchDoesNotUseTheFetchSlot(t *testing.T) {
+	h := newHarness(t)
+	h.issuer.down()
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	got, err := h.v.Verify(cancelled, h.goodToken(t), testAudience)
+	wantUnavailable(t, got, err)
+
+	// No clock advance: a failed fetch would block this one for a minute, a cancelled one must not.
+	h.issuer.serve(http.StatusOK, jwksBody(t, rsaJWK(testKid, &h.keys.valid.PublicKey)))
+	if _, err := h.verify(h.goodToken(t)); err != nil {
+		t.Errorf("next caller: %v", err)
 	}
 }
 

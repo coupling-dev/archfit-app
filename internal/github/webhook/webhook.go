@@ -37,6 +37,13 @@ type Event struct {
 	ChangedPaths   []string // default_branch_push only
 }
 
+// Header names of a GitHub webhook delivery. Callers read these headers and pass their values to Verify and Parse.
+const (
+	HeaderEvent     = "X-GitHub-Event"
+	HeaderDelivery  = "X-GitHub-Delivery"
+	HeaderSignature = "X-Hub-Signature-256"
+)
+
 const signaturePrefix = "sha256="
 
 // Fixed texts only: an error never holds the secret, a digest, or payload bytes.

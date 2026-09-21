@@ -244,6 +244,8 @@ func TestChangedPaths(t *testing.T) {
 		{"exactly 3000 paths", func(p obj) { p["commits"] = []any{commit(distinctPaths(3000), nil, nil)} },
 			distinctPaths(3000)},
 		{"no commits key", func(p obj) { delete(p, "commits") }, nil},
+		{"empty commits list", func(p obj) { p["commits"] = []any{} }, nil},
+		{"null commits", func(p obj) { p["commits"] = nil }, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -255,6 +257,9 @@ func TestChangedPaths(t *testing.T) {
 			}
 			if len(ev.ChangedPaths) != len(tt.want) || (len(tt.want) > 0 && !reflect.DeepEqual(ev.ChangedPaths, tt.want)) {
 				t.Errorf("ChangedPaths has %d entries, want %d: %v", len(ev.ChangedPaths), len(tt.want), ev.ChangedPaths)
+			}
+			if tt.want == nil && ev.ChangedPaths != nil {
+				t.Errorf("ChangedPaths = %#v, want nil for unknown", ev.ChangedPaths)
 			}
 		})
 	}

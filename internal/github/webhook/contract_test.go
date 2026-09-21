@@ -1,6 +1,7 @@
 package webhook
 
 import (
+	"net/http"
 	"reflect"
 	"testing"
 )
@@ -47,6 +48,36 @@ func TestUnknownEventTypeIsIgnoredNotError(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestHeaderNames(t *testing.T) {
+	secret := []byte(testSecret)
+	payload := fixture(t, "pull_request_opened.json")
+	// Spelled out once here, as GitHub sends them: the constants must match the wire, not each other.
+	h := http.Header{}
+	h.Set("X-GitHub-Event", "pull_request")
+	h.Set("X-GitHub-Delivery", testDelivery)
+	h.Set("X-Hub-Signature-256", sign(secret, payload))
+
+	for name, want := range map[string]string{
+		HeaderEvent:     "X-GitHub-Event",
+		HeaderDelivery:  "X-GitHub-Delivery",
+		HeaderSignature: "X-Hub-Signature-256",
+	} {
+		if name != want {
+			t.Errorf("header constant = %q, want %q", name, want)
+		}
+	}
+	if err := Verify(secret, h.Get(HeaderSignature), payload); err != nil {
+		t.Fatalf("Verify() error = %v", err)
+	}
+	ev, err := Parse(h.Get(HeaderEvent), h.Get(HeaderDelivery), payload)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if ev.Kind != PullOpened || ev.DeliveryID != testDelivery {
+		t.Errorf("Parse() = %+v, want %q with delivery %q", ev, PullOpened, testDelivery)
 	}
 }
 
