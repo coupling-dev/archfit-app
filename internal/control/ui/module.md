@@ -777,8 +777,10 @@ type OAuth interface {
 3. `http.MaxBytesReader` at 512 KB **[default]** on every `POST`.
 4. `Sessions.User`. Missing → login redirect or `401`.
 5. `POST` only: constant-time compare of form field `csrf` with the token derived from `User.Token`.
-6. Repository routes: `Sessions.Authorize(user, "{o}/{n}", min)`. The returned `Repo` is placed in the request context and
-   is the only repository identity a page may use.
+6. Repository routes: `Sessions.Authorize(user, "{o}/{n}", min)`. The returned `Repo` is handed to the page handler as an
+   argument and is the only repository identity a page may use.
+
+Every response carries an `X-Request-Id` header with the request ID of its log line **[default]**.
 
 ### Pages
 
@@ -793,7 +795,8 @@ type OAuth interface {
   banner and is logged; it never fails the page. History is a link to the repository's pull requests from `archfit/` branches
   and to its check runs **[default]**: report history is what GitHub keeps.
 - Discover: requires stage `workflow_merged` or later; `Actions.Dispatch(Settings.Workflow, DefaultBranch, {"discover": "true"})`.
-- Editor: branch is `archfit/edit-<lower-case login>`, or `?branch=` matching `^archfit/[A-Za-z0-9._/-]+$`. `Proposals.Get`:
+- Editor: branch is `archfit/edit-<lower-case login>`, or `?branch=` matching `^archfit/[A-Za-z0-9._/-]+$` with no `..`, no
+  `//` and no trailing `/`. `Proposals.Get`:
   when the draft is `DraftOpen` or `DraftInReview`, load `PolicyPath` at `Draft.HeadSHA` and set `head_sha` to it; otherwise load
   from the default branch with `head_sha` empty. The page shows the draft state in the words draft / awaiting review /
   published (and closed), the draft's check conclusions (engine validation is the check on the draft PR), and the PR link. The
@@ -805,7 +808,9 @@ type OAuth interface {
   a notice, whatever `head_sha` says, so a retried save never conflicts with itself; then an open draft whose head differs
   from `head_sha` (including an empty `head_sha`) is `409`; then `Proposals.Propose(Change{Repo: repo.RepoRef, Branch, Base: repo.DefaultBranch, Title, Body, Message,
   Files: [{PolicyPath, content}]}, head_sha)`. Title `"Archfit policy edit by @<login>"`, fixed body, message
-  `"archfit: edit policy (@<login>)"` **[default]**.
+  `"archfit: edit policy (@<login>)"` **[default]**. A browser submits every `textarea` with CRLF line ends: before the
+  comparison ui turns CRLF back into LF unless the file on the branch already uses CRLF **[default]**. Nothing else in the
+  text is touched. A refused save, ready or assist re-renders the editor from the form alone and asks GitHub nothing.
 - Ready: `Proposals.Get`; head must equal `head_sha`, state must be `DraftOpen`; then `Proposals.Ready(number)`. ui never merges:
   publication is the merge on GitHub under the customer's ruleset and owner approval, the same path as a GitHub-first edit.
 - Graph: settings → `LatestRun(Settings.Workflow, DefaultBranch)` → `Artifact(run.ID, "archfit-report", report.MaxBytes)` →
@@ -818,9 +823,12 @@ type OAuth interface {
 - Assist: authorize `write`; if `content` differs from the file at `head_sha`, save it first (same rules as Save) and use the
   new head; then `Assist.Propose(mode, Request{Repo, Branch, HeadSHA, Instruction, By: login})`. Managed is offered only when
   settings say `managed` and `Consents.Has(ConsentManagedLLM)`; assist enforces both anyway. Managed success: redirect to the
-  editor on the new head with a link to the PR diff. Customer success: the editor shows the run state from
-  `Actions.LatestRun(AssistWorkflowPath, branch)`: not completed → pending with `RunURL`; completed and not `success` → failed;
-  completed and the draft head moved → completed, reload offered. `WorkflowRun` has no timestamps, so latency is visible as
+  editor on the new head with a link to the PR diff. Customer success: redirect to the editor with `?since=<head_sha>`, the
+  head the request was bound to; with `since` the editor shows the run state from
+  `Actions.LatestRun(AssistWorkflowPath, branch)`: no run yet or not completed → pending; completed and not `success` → failed;
+  completed and the draft head differs from `since` → completed, reload offered; completed with the head still at `since` →
+  pending (that run is an older one). ui keeps no state, so the link beside the state is the workflow's runs page built from
+  the authorized repository name and `AssistWorkflowPath`, the same page `Result.RunURL` names **[default]**. `WorkflowRun` has no timestamps, so latency is visible as
   the pending state and the link, not as a duration. Stated limit.
 - Consent: `GET` shows both kinds with `Consents.Has` and a plain disclosure of what leaves the customer's environment.
   `POST record` → `Consents.Record(repo.InstallationID, Consent{Kind, By: login, At: now})`; `revoke` → `Consents.Revoke`. Consent

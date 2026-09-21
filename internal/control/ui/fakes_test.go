@@ -1,0 +1,401 @@
+package ui
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"sync"
+	"time"
+
+	"github.com/alexei-led/archfit-app/internal/control/account"
+	"github.com/alexei-led/archfit-app/internal/control/assist"
+	"github.com/alexei-led/archfit-app/internal/control/onboarding"
+	"github.com/alexei-led/archfit-app/internal/control/proposal"
+	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/alexei-led/archfit-app/internal/github/auth"
+)
+
+func sha(n int) string { return fmt.Sprintf("%040x", n) }
+
+// ghCall is one call that reached the fake GitHub.
+type ghCall struct {
+	method         string
+	installationID int64
+	fullName       string
+	detail         string
+}
+
+// fakeGH is GitHub as ui and session see it: the role-interface methods they call, over maps.
+type fakeGH struct {
+	mu        sync.Mutex
+	repos     map[string]api.Repo        // installed repositories by full name
+	perms     map[string]string          // token + " " + full name → permission
+	listed    map[string][]string        // token → full names UserRepos returns
+	files     map[string][]byte          // full name + "@" + ref + ":" + path
+	heads     map[string]string          // full name + "@" + branch
+	checks    map[string][]api.CheckRun  // full name + "@" + sha + "#" + check name
+	runs      map[string]api.WorkflowRun // full name + "@" + workflow + "@" + branch
+	artifacts map[int64][]byte
+	fail      map[string]error // method, or method + " " + full name
+	calls     []ghCall
+}
+
+func newFakeGH() *fakeGH {
+	return &fakeGH{
+		repos: map[string]api.Repo{}, perms: map[string]string{}, listed: map[string][]string{},
+		files: map[string][]byte{}, heads: map[string]string{}, checks: map[string][]api.CheckRun{},
+		runs: map[string]api.WorkflowRun{}, artifacts: map[int64][]byte{}, fail: map[string]error{},
+	}
+}
+
+func (g *fakeGH) record(method string, r api.RepoRef, detail string) error {
+	g.calls = append(g.calls, ghCall{method, r.InstallationID, r.FullName, detail})
+	if err := g.fail[method+" "+r.FullName]; err != nil {
+		return err
+	}
+	return g.fail[method]
+}
+
+func (g *fakeGH) called(method string) []ghCall {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	var out []ghCall
+	for _, c := range g.calls {
+		if c.method == method {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func (g *fakeGH) setFile(fullName, ref, path, content string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.files[fullName+"@"+ref+":"+path] = []byte(content)
+}
+
+func (g *fakeGH) Permission(_ context.Context, userToken, fullName string) (string, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if err := g.fail["Permission"]; err != nil {
+		return "", err
+	}
+	if p, ok := g.perms[userToken+" "+fullName]; ok {
+		return p, nil
+	}
+	return "none", nil
+}
+
+func (g *fakeGH) UserRepos(_ context.Context, userToken string) ([]api.Repo, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if err := g.record("UserRepos", api.RepoRef{}, ""); err != nil {
+		return nil, err
+	}
+	var out []api.Repo
+	for _, name := range g.listed[userToken] {
+		if r, ok := g.repos[name]; ok && g.perms[userToken+" "+name] != "" && g.perms[userToken+" "+name] != "none" {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
+func (g *fakeGH) ListInstallations(context.Context) ([]api.Installation, error) { return nil, nil }
+func (g *fakeGH) ListRepos(context.Context, int64) ([]api.Repo, error)          { return nil, nil }
+
+func (g *fakeGH) ResolveRepo(_ context.Context, fullName string) (api.Repo, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if r, ok := g.repos[fullName]; ok {
+		return r, nil
+	}
+	return api.Repo{}, api.ErrNotFound
+}
+
+func (g *fakeGH) File(_ context.Context, r api.RepoRef, ref, path string) ([]byte, string, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if err := g.record("File", r, ref+":"+path); err != nil {
+		return nil, "", err
+	}
+	if sha, ok := g.heads[r.FullName+"@"+ref]; ok {
+		if c, ok := g.files[r.FullName+"@"+sha+":"+path]; ok {
+			return c, "blob", nil
+		}
+	}
+	c, ok := g.files[r.FullName+"@"+ref+":"+path]
+	if !ok {
+		return nil, "", api.ErrNotFound
+	}
+	return c, "blob", nil
+}
+
+func (g *fakeGH) BranchHead(_ context.Context, r api.RepoRef, branch string) (string, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if err := g.record("BranchHead", r, branch); err != nil {
+		return "", err
+	}
+	head, ok := g.heads[r.FullName+"@"+branch]
+	if !ok {
+		return "", api.ErrNotFound
+	}
+	return head, nil
+}
+
+func (g *fakeGH) CheckRuns(_ context.Context, r api.RepoRef, headSHA, name string) ([]api.CheckRun, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if err := g.record("CheckRuns", r, headSHA+"#"+name); err != nil {
+		return nil, err
+	}
+	return g.checks[r.FullName+"@"+headSHA+"#"+name], nil
+}
+
+func (g *fakeGH) Dispatch(_ context.Context, r api.RepoRef, workflowPath, ref string, inputs map[string]string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.record("Dispatch", r, fmt.Sprintf("%s@%s %v", workflowPath, ref, inputs))
+}
+
+func (g *fakeGH) LatestRun(_ context.Context, r api.RepoRef, workflowPath, branch string) (api.WorkflowRun, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if err := g.record("LatestRun", r, workflowPath+"@"+branch); err != nil {
+		return api.WorkflowRun{}, err
+	}
+	run, ok := g.runs[r.FullName+"@"+workflowPath+"@"+branch]
+	if !ok {
+		return api.WorkflowRun{}, api.ErrNotFound
+	}
+	return run, nil
+}
+
+func (g *fakeGH) Artifact(_ context.Context, r api.RepoRef, runID int64, name string, maxBytes int64) ([]byte, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if err := g.record("Artifact", r, fmt.Sprintf("%d %s %d", runID, name, maxBytes)); err != nil {
+		return nil, err
+	}
+	a, ok := g.artifacts[runID]
+	if !ok {
+		return nil, api.ErrNotFound
+	}
+	return a, nil
+}
+
+type proposeCall struct {
+	change     proposal.Change
+	expectHead string
+}
+
+// fakeProposals keeps branches and draft pull requests in the fake GitHub, like proposal does on the real one.
+type fakeProposals struct {
+	mu       sync.Mutex
+	gh       *fakeGH
+	drafts   map[string]*proposal.Draft // full name + "@" + branch
+	proposes []proposeCall
+	readied  []int
+	commits  int
+	gets     int
+	fail     map[string]error
+}
+
+func newFakeProposals(gh *fakeGH) *fakeProposals {
+	return &fakeProposals{gh: gh, drafts: map[string]*proposal.Draft{}, fail: map[string]error{}}
+}
+
+// commit puts files on the branch as a new head; with no open draft it opens one.
+func (p *fakeProposals) commit(fullName, branch string, files []api.FileChange) proposal.Draft {
+	p.commits++
+	head := sha(0xc0000 + p.commits)
+	d := p.drafts[fullName+"@"+branch]
+	if d == nil || !isOpen(*d) {
+		d = &proposal.Draft{Number: len(p.drafts) + 1, State: proposal.DraftOpen}
+		d.URL = fmt.Sprintf("https://github.com/%s/pull/%d", fullName, d.Number)
+		p.drafts[fullName+"@"+branch] = d
+	}
+	d.HeadSHA = head
+	p.gh.mu.Lock()
+	p.gh.heads[fullName+"@"+branch] = head
+	for _, f := range files {
+		p.gh.files[fullName+"@"+head+":"+f.Path] = f.Content
+	}
+	p.gh.mu.Unlock()
+	return *d
+}
+
+// push is a commit made on GitHub, outside ui.
+func (p *fakeProposals) push(fullName, branch, policyText string) proposal.Draft {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.commit(fullName, branch, []api.FileChange{{Path: ".archfit.yaml", Content: []byte(policyText)}})
+}
+
+func (p *fakeProposals) Propose(_ context.Context, c proposal.Change, expectHeadSHA string) (proposal.Draft, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.proposes = append(p.proposes, proposeCall{c, expectHeadSHA})
+	if err := p.fail["Propose"]; err != nil {
+		return proposal.Draft{}, err
+	}
+	if d := p.drafts[c.Repo.FullName+"@"+c.Branch]; d != nil && expectHeadSHA != "" && d.HeadSHA != expectHeadSHA {
+		return proposal.Draft{}, proposal.ErrStale
+	}
+	return p.commit(c.Repo.FullName, c.Branch, c.Files), nil
+}
+
+func (p *fakeProposals) Get(_ context.Context, r api.RepoRef, branch string) (proposal.Draft, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.gets++
+	if err := p.fail["Get"]; err != nil {
+		return proposal.Draft{}, err
+	}
+	if d := p.drafts[r.FullName+"@"+branch]; d != nil {
+		return *d, nil
+	}
+	return proposal.Draft{State: proposal.DraftNone}, nil
+}
+
+func (p *fakeProposals) SetBody(context.Context, api.RepoRef, int, string) error {
+	return errors.New("ui must never call SetBody")
+}
+
+func (p *fakeProposals) Ready(_ context.Context, r api.RepoRef, number int) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if err := p.fail["Ready"]; err != nil {
+		return err
+	}
+	p.readied = append(p.readied, number)
+	for _, d := range p.drafts {
+		if d.Number == number {
+			d.State = proposal.DraftInReview
+		}
+	}
+	return nil
+}
+
+func (p *fakeProposals) writes() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.proposes) + len(p.readied)
+}
+
+type fakeAccount struct {
+	account.Account // ui calls Status only; any other method panics on the nil embedded interface
+	status          account.Status
+	err             error
+	installations   []int64
+}
+
+func (a *fakeAccount) Status(_ context.Context, installationID int64, _ time.Time) (account.Status, error) {
+	a.installations = append(a.installations, installationID)
+	return a.status, a.err
+}
+
+type fakeConsents struct {
+	recorded map[int64]map[account.ConsentKind]account.Consent
+	touched  []int64 // installation of every call
+	writes   int
+}
+
+func newFakeConsents() *fakeConsents {
+	return &fakeConsents{recorded: map[int64]map[account.ConsentKind]account.Consent{}}
+}
+
+func (c *fakeConsents) Record(_ context.Context, installationID int64, consent account.Consent) error {
+	c.touched = append(c.touched, installationID)
+	c.writes++
+	if c.recorded[installationID] == nil {
+		c.recorded[installationID] = map[account.ConsentKind]account.Consent{}
+	}
+	c.recorded[installationID][consent.Kind] = consent
+	return nil
+}
+
+func (c *fakeConsents) Revoke(_ context.Context, installationID int64, k account.ConsentKind) error {
+	c.touched = append(c.touched, installationID)
+	c.writes++
+	delete(c.recorded[installationID], k)
+	return nil
+}
+
+func (c *fakeConsents) Has(_ context.Context, installationID int64, k account.ConsentKind) bool {
+	c.touched = append(c.touched, installationID)
+	_, ok := c.recorded[installationID][k]
+	return ok
+}
+
+type startCall struct {
+	repo   api.Repo
+	owners []string
+}
+
+type fakeOnboarding struct {
+	progress onboarding.Progress
+	err      error // of Progress
+	panics   bool  // Progress panics
+	startErr error
+	customer []startCall
+	managed  []startCall
+}
+
+func (o *fakeOnboarding) Progress(context.Context, api.Repo) (onboarding.Progress, error) {
+	if o.panics {
+		panic("boom")
+	}
+	return o.progress, o.err
+}
+
+func (o *fakeOnboarding) StartCustomer(_ context.Context, r api.Repo, owners []string) (proposal.Draft, error) {
+	o.customer = append(o.customer, startCall{r, owners})
+	return proposal.Draft{}, o.startErr
+}
+
+func (o *fakeOnboarding) StartManaged(_ context.Context, r api.Repo, owners []string) (proposal.Draft, error) {
+	o.managed = append(o.managed, startCall{r, owners})
+	return proposal.Draft{}, o.startErr
+}
+
+func (o *fakeOnboarding) DiscoveryHandler() http.Handler {
+	panic("ui must never mount DiscoveryHandler")
+}
+
+type assistCall struct {
+	mode assist.Mode
+	req  assist.Request
+}
+
+type fakeAssist struct {
+	calls   []assistCall
+	propose func(mode assist.Mode, r assist.Request) (assist.Result, error)
+}
+
+func (a *fakeAssist) Propose(_ context.Context, mode assist.Mode, r assist.Request) (assist.Result, error) {
+	a.calls = append(a.calls, assistCall{mode, r})
+	if a.propose == nil {
+		return assist.Result{Mode: mode}, nil
+	}
+	return a.propose(mode, r)
+}
+
+// fakeOAuth exchanges the code "code-<login>" for that login's token.
+type fakeOAuth struct {
+	tokens map[string]auth.UserToken
+}
+
+func (o *fakeOAuth) AuthorizeURL(state, redirectURL string) string {
+	return "https://github.example/login/oauth/authorize?state=" + state + "&redirect_uri=" + redirectURL
+}
+
+func (o *fakeOAuth) Exchange(_ context.Context, code string) (auth.UserToken, error) {
+	t, ok := o.tokens[code]
+	if !ok {
+		return auth.UserToken{}, errors.New("bad code")
+	}
+	return t, nil
+}

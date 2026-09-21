@@ -1,0 +1,43 @@
+{{define "content"}}
+<h1>{{.Repo}}</h1>
+{{with .Body}}
+{{if .Banner}}<p class="banner">{{.Banner}}</p>{{end}}
+<section>
+  <h2>Onboarding</h2>
+  <p><strong>{{.Stage}}</strong></p>
+  {{if .Diagnostic}}<p>{{.Diagnostic}}</p>{{end}}
+  {{if .DraftURL}}<p>Open pull request ({{.DraftState}}): <a href="{{.DraftURL}}" rel="noreferrer">{{.DraftURL}}</a></p>{{end}}
+</section>
+{{if .Admin}}
+{{if .CanStart}}
+<section>
+  <h2>Start onboarding</h2>
+  <form method="post" action="/r/{{$.Repo}}/onboarding">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <label>Policy owners, one GitHub login or org/team-slug per line
+      <textarea name="owners" rows="4" required></textarea>
+    </label>
+    <label><input type="radio" name="mode" value="customer" checked> Customer mode: source code never leaves your CI</label>
+    <label><input type="radio" name="mode" value="managed"> Managed discovery: needs recorded consent</label>
+    <button type="submit">Open the onboarding pull request</button>
+  </form>
+</section>
+{{end}}
+{{if .CanDiscover}}
+<section>
+  <h2>Discovery</h2>
+  <form method="post" action="/r/{{$.Repo}}/discover">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <button type="submit">Run discovery in your workflow</button>
+  </form>
+</section>
+{{end}}
+{{end}}
+<section>
+  <h2>History</h2>
+  <p>GitHub keeps the history:
+    <a href="{{.PullsURL}}" rel="noreferrer">Archfit pull requests</a> and
+    <a href="{{.ChecksURL}}" rel="noreferrer">check runs on the default branch</a>.</p>
+</section>
+{{end}}
+{{end}}

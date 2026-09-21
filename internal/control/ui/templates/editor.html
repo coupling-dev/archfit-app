@@ -1,0 +1,47 @@
+{{define "content"}}
+<h1>Policy</h1>
+{{with .Body}}
+<p>Branch <code>{{.Branch}}</code>{{if .DraftState}} · <strong class="draft-state">{{.DraftState}}</strong>{{end}}
+  {{if .DraftURL}} · <a href="{{.DraftURL}}" rel="noreferrer">pull request</a>{{end}}</p>
+{{if .ReloadURL}}<p><a href="{{.ReloadURL}}">Reload the draft</a></p>{{end}}
+{{if .RunState}}
+<p class="run">AI proposal in your CI: <strong>{{.RunState}}</strong> ·
+  <a href="{{.RunURL}}" rel="noreferrer">workflow runs</a></p>
+{{end}}
+{{if .Checks}}
+<ul class="checks">
+  {{range .Checks}}<li><code>{{.Name}}</code>: {{.State}}{{if .Reason}} — {{.Reason}}{{end}}</li>{{end}}
+</ul>
+{{end}}
+<p class="hint">Editor validation follows the schema only. The Archfit check on the draft pull request is the
+authoritative validation, and merging that pull request on GitHub is what publishes the policy.</p>
+<form method="post" action="/r/{{$.Repo}}/policy" id="editor-form">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <input type="hidden" name="branch" value="{{.Branch}}">
+  <input type="hidden" name="head_sha" value="{{.HeadSHA}}">
+  <textarea name="content" id="policy" rows="30" spellcheck="false" data-schema="/schema/policy.json">{{.Content}}</textarea>
+  <div id="monaco" hidden></div>
+  <p>
+    <button type="submit">Save to the draft pull request</button>
+    {{if .CanReady}}<button type="submit" formaction="/r/{{$.Repo}}/policy/ready">Mark ready for review</button>{{end}}
+  </p>
+  <fieldset>
+    <legend>Ask AI for a proposal</legend>
+    <p class="hint">The proposal arrives as a commit on the draft pull request. Nothing is published.</p>
+    <label>Instruction <input type="text" name="instruction" maxlength="2000"></label>
+    <label>Mode
+      <select name="mode">
+        <option value="customer">customer: runs in your CI</option>
+        {{if .OfferManaged}}<option value="managed">managed: Archfit calls the AI provider</option>{{end}}
+      </select>
+    </label>
+    <button type="submit" formaction="/r/{{$.Repo}}/assist">Propose</button>
+  </fieldset>
+</form>
+{{end}}
+{{if .Monaco}}
+<link rel="stylesheet" href="/static/vendor/monaco.bundle.css">
+<script src="/static/vendor/monaco.bundle.js" defer></script>
+{{end}}
+<script src="/static/editor.js" defer></script>
+{{end}}

@@ -1,0 +1,22 @@
+{{define "content"}}
+<h1>Repositories</h1>
+{{with .Body}}
+{{if .Rows}}
+<table>
+  <thead><tr><th>Repository</th><th>State of the default branch</th><th>Reason</th></tr></thead>
+  <tbody>
+  {{range .Rows}}
+  <tr>
+    <td><a href="/r/{{.FullName}}">{{.FullName}}</a></td>
+    <td>{{.State}}</td>
+    <td>{{.Reason}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+{{if .Truncated}}<p class="hint">Only the first repositories by name are listed.</p>{{end}}
+{{else}}
+<p>No repository is available to you through an Archfit installation yet.</p>
+{{end}}
+{{end}}
+{{end}}
