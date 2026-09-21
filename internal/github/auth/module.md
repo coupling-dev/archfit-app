@@ -41,11 +41,13 @@ GitHub deprecations. It is kept as its own leaf because it is the only package t
 - Repository read token: the same endpoint with the JSON body
   `{"repositories": ["<name>"], "permissions": {"contents": "read"}}`, `<name>` being the part of `fullName` after
   the slash. The response must list exactly one repository whose `full_name` equals `fullName` (ASCII
-  case-insensitive) and permissions no wider than `contents: read` plus the `metadata: read` GitHub always adds;
+  case-insensitive) and permissions that include `contents: read` and are no wider than it plus the
+  `metadata: read` GitHub always adds;
   otherwise the token is discarded and the call fails **[default]**. Never cached, never stored.
 - Cache: `map[int64]*entry` under one mutex; each entry has its own mutex held while minting
   **[default: mutex per installation]**. A cached token is served while `now < expires_at − 5 min` **[default: 5 min]**. A failed mint
-  is never cached. Entries leave the cache only through `Invalidate`: one small entry per installation is the accepted ceiling; revisit
+  is never cached. Entries leave the cache only through `Invalidate`; a mint in flight at that moment puts its
+  entry back when it completes: one small entry per installation is the accepted ceiling; revisit
   above ~100 000 installations.
 - OAuth endpoints: authorize `https://github.com/login/oauth/authorize` with `client_id`, `redirect_uri`, `state`;
   no `scope` (a GitHub App's user token is limited by App permissions). Exchange
@@ -111,8 +113,9 @@ func New(c Credentials, hc *http.Client) (TokenSource, OAuth, error)
 - `Invalidate` drops the cached token of one installation and nothing else. It never fails, makes no request,
   and is a no-op for an unknown or non-positive ID. The next `InstallationToken` mints. A mint already in flight
   for that installation still completes and its token is cached: it is newer than the one that drew the `401`.
-- `RepoReadToken`: `installationID` ≤ 0 or a `fullName` not matching `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$` → error
-  without a request. Every call mints; nothing is cached and the installation cache is neither read nor changed.
+- `RepoReadToken`: `installationID` ≤ 0, a `fullName` not matching `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`, or an owner
+  or name that is `.` or `..` (the pattern alone admits `../x`) → error without a request. Every call mints;
+  nothing is cached and the installation cache is neither read nor changed.
   Non-`201` (a `422` when the repository is not in the installation) → error with the status only. A token wider
   than asked for is never returned.
 - `AuthorizeURL` is pure. It query-escapes `state` and `redirectURL`. The caller generates, stores and compares
@@ -204,8 +207,9 @@ this file is its normative home, so nothing is restated for them.
   caller's request timeout; the lock wait itself is not cancellable (accepted ceiling).
 - No retries here. Rate limits and backoff belong to `github/api`; a failed mint is simply an error.
 - No domain decision lives here: nothing about gates, entitlements, or permissions.
-- Standard library only: `crypto/rsa`, `crypto/sha256`, `crypto/x509`, `encoding/pem`, `encoding/base64`,
-  `encoding/json`, `net/http`, `net/url`, `sync`, `time`.
+- Standard library only: `crypto`, `crypto/rsa`, `crypto/sha256`, `crypto/x509`, `encoding/pem`, `encoding/base64`,
+  `encoding/json`, `net/http`, `net/url`, `sync`, `time`, and the plain helpers `bytes`, `context`, `errors`,
+  `fmt`, `io`, `regexp`, `strconv`, `strings`. No `log`, `log/slog` or `os`.
 
 ## Test Specification
 
@@ -282,7 +286,7 @@ GitHub is faked with an `http.RoundTripper` inside the `*http.Client`; the clock
   **Expected behavior**: no marker appears in any error text or formatted `TokenSource`/`OAuth` value.
 - **Test name**: `TestAuthImportsOnlyStdlib`
   **Scenario**: `go list -deps ./internal/github/auth`.
-  **Expected behavior**: no internal or third-party package.
+  **Expected behavior**: no internal or third-party package; `log`, `log/slog` and `os` are not direct imports.
 
 ### Behavior Tests
 
