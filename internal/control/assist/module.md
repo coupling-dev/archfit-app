@@ -398,18 +398,20 @@ func New(ts TokenSource, hc *http.Client) *Client
 - **Shared knowledge**: `PolicyPath` is the constant naming the file assist reads and writes. `Schema()` is the prompt's
   rule reference. `Waivers` is used as the YAML syntax check of an answer **[default]**: only `wire/settings` and
   `wire/policy` may import a YAML library, and wire/policy publishes no plain validation function. A malformed waiver
-  date also fails it, which is wanted. `BaselinePath` is the constant naming the baseline file; assist never touches it.
+  date also fails it, which is wanted. `BaselinePath` and `LabelsPath` are the constants naming the baseline and labels files; assist never touches either, and never calls `Digest`.
 
-<!-- contract: PolicyPath, BaselinePath, Digest — restated from internal/wire/policy/module.md -->
+<!-- contract: PolicyPath, BaselinePath, LabelsPath, Digest — restated from internal/wire/policy/module.md -->
 ```go
-// PolicyPath and BaselinePath are the engine files on the protected ref. [default]
+// The engine's three trusted input files on the protected ref. Baseline and labels sit beside the policy.
 const (
     PolicyPath   = ".archfit.yaml"
-    BaselinePath = ".archfit/baseline.json"
+    BaselinePath = ".archfit-baseline.json"
+    LabelsPath   = ".archfit-labels.yaml"
 )
 
-// Digest returns "sha256:<hex>" of the raw file bytes. It is the value the engine reports as
-// comparison.config_hash (policy) and gate_reference.digest (baseline).
+// Digest returns the bare lowercase hex SHA-256 of the raw file bytes. For the policy file it equals the
+// engine's comparison.config_hash. The engine reports no digest for baseline or labels; for those the
+// producer states Digest of the bytes it used in the envelope, and the App compares it with the protected ref.
 func Digest(raw []byte) string
 ```
 

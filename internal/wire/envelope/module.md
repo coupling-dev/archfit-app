@@ -17,6 +17,8 @@ and "the bytes are what the producer stated" could not be checked.
 - Publish the `archfit.report-envelope.v1` JSON Schema as an embedded artifact (`Schema`).
 - Decode envelope JSON strictly into `Envelope` (`Decode`): exact keys, all keys required, formats checked.
 - Compute the payload digest, `sha256:<hex>` of the exact payload bytes (`PayloadDigest`).
+- Carry the producer's statement of which baseline and labels bytes the engine loaded (`baseline_digest`,
+  `labels_digest`), because the engine report itself contains no digest of those files.
 - Nothing else. It does not read HTTP requests, compare fields with GitHub data, or decide eligibility.
 
 ## Subdomain Classification
@@ -34,7 +36,7 @@ accepts (decisions.md §3: the verifier owns the envelope schema).
   artifact; the decoder is the enforcement. A test proves both agree on the fixtures.
 - The strict JSON technique. `encoding/json` alone is not strict enough: it matches keys case-insensitively,
   keeps the last of duplicate keys, turns `null` into a zero value, and ignores absent keys. The decoder
-  therefore runs a token pre-pass over the top-level object first: every key must be one of the 14 exact
+  therefore runs a token pre-pass over the top-level object first: every key must be one of the 16 exact
   lowercase names, appear exactly once, and carry a non-null value. Then it decodes with
   `DisallowUnknownFields`, requires end of input after the object, and applies the field rules below.
 - Size limit of the raw envelope: 8 192 bytes **[default]**, unexported.
@@ -60,6 +62,14 @@ The length limits and character sets below (100, 64, 32) are **[default]**; the 
 | `image_digest`    | `^sha256:[0-9a-f]{64}$`                                                                       |
 | `platform`        | `^[a-z0-9]+/[a-z0-9]+(/[a-z0-9]+)?$`, at most 32 characters — format only                     |
 | `payload_digest`  | `^sha256:[0-9a-f]{64}$`                                                                       |
+| `baseline_digest` | `^[0-9a-f]{64}$` or exactly `""` (no file); bare hex; `""` when `kind` is `discovery`         |
+| `labels_digest`   | same rule as `baseline_digest`                                                                |
+
+Two digest formats exist on purpose. `payload_digest` and `image_digest` keep the `sha256:` prefix **[default]**: they
+are envelope-native values in OCI style. `baseline_digest` and `labels_digest` are bare hex because they are compared
+with the engine-style digest of the protected-ref files, which is bare hex like the engine's `config_hash`. A prefixed
+value in a bare field, or the reverse, is a decode error, so the two can never be confused silently. A discovery
+upload runs before any policy exists, so both input digests must be `""` there **[default]**.
 
 `event` is checked as a format, not as the three supported names **[default]**. Reason: an honest upload from an
 unsupported trigger (`workflow_run`) must pass decoding so that the gate can publish `action_required` with
@@ -96,7 +106,9 @@ type Envelope struct {
     EngineVersion string `json:"engine_version"` // e.g. "v2.3.1"
     ImageDigest   string `json:"image_digest"`   // "sha256:<64 hex>"
     Platform      string `json:"platform"`       // e.g. "linux/amd64"
-    PayloadDigest string `json:"payload_digest"` // "sha256:<64 hex>" of the exact payload bytes
+    PayloadDigest  string `json:"payload_digest"`  // "sha256:<64 hex>" of the exact payload bytes
+    BaselineDigest string `json:"baseline_digest"` // bare hex SHA-256 of the baseline file the engine loaded; "" = none
+    LabelsDigest   string `json:"labels_digest"`   // bare hex SHA-256 of the labels file the engine loaded; "" = none
 }
 ```
 
@@ -123,6 +135,10 @@ Semantics not visible in the signatures:
 - `PayloadDigest` is lowercase hex of SHA-256 over the bytes as given. Empty input is valid and yields the digest
   of empty input. No normalization of any kind.
 - `Schema` returns a fresh copy on every call; callers may not mutate embedded data.
+- `BaselineDigest` and `LabelsDigest` are bare lowercase hex SHA-256 of the raw file bytes the engine loaded, the same
+  rule the App applies to the protected-ref files; `""` means the engine loaded no such file. They are self-reported
+  like every other field: a match with the protected ref is necessary, never sufficient. This module does not
+  compute them and imports nothing to check them.
 - The three fields `EngineVersion`, `ImageDigest`, `Platform` have the same meaning as the manifest's identity,
   but `Envelope` does not reference any manifest type. The consumer copies the three strings.
 
@@ -141,10 +157,11 @@ Shared knowledge, per counterpart:
 
 - `internal/gate/ingest` holds the whole Public Contract above. It calls `Decode` on the `X-Archfit-Envelope`
   header value, checks `Kind` against the route, compares every identity field with authoritative GitHub data, and
-  compares `PayloadDigest(body)` with `Envelope.PayloadDigest`. Nothing from ingest is known here.
+  compares `PayloadDigest(body)` with `Envelope.PayloadDigest`. It passes `BaselineDigest` and `LabelsDigest` on for
+  the gate to compare with the trusted digests of the protected ref. Nothing from ingest is known here.
 - `internal/control/onboarding` holds `Kind` and `KindDiscovery` only, to ask the gate's receiver for a discovery upload.
 - `archfit-action` holds the schema document returned by `Schema` and the digest rule. It must send exactly the
-  14 keys. Contract coupling tolerates the distance: separate repository, separate release cycle, versioned schema,
+  16 keys, and state the baseline and labels digests of the bytes it handed to the engine. Contract coupling tolerates the distance: separate repository, separate release cycle, versioned schema,
   strict decoding. The Action ships after the App for any additive change (see the parent's versioning rule).
 
 ## Change Vectors
@@ -183,6 +200,10 @@ Fixtures live in `internal/wire/testdata/envelope/` and are read by relative pat
   **Scenario**: table: `pull_request` event with `pull_request: 0`; `push` with `pull_request: 7`; `push` with a non-empty
   `base_sha`; `pull_request` event with empty `merge_base_sha`; valid `push`; valid `workflow_dispatch`; valid `pull_request`.
   **Expected behavior**: the first four fail; the last three decode with the fields unchanged.
+- **Test name**: `TestInputDigestFormats`
+  **Scenario**: table for `baseline_digest` and `labels_digest`: 64 lowercase hex; `""`; `sha256:` plus 64 hex; uppercase hex; 63 hex;
+  key absent; `null`; a non-empty value with `kind: discovery`. Plus `payload_digest` as bare 64 hex.
+  **Expected behavior**: only the first two decode; a bare `payload_digest` is an error too.
 - **Test name**: `TestPayloadDigestKnownVectors`
   **Scenario**: table: empty input; `"abc"`; a 5 MB buffer; the same text with LF and with CRLF.
   **Expected behavior**: empty gives `sha256:e3b0c442…b855`; `"abc"` gives `sha256:ba7816bf…15ad`; LF and CRLF differ; output always matches `^sha256:[0-9a-f]{64}$`.
@@ -202,7 +223,7 @@ Fixtures live in `internal/wire/testdata/envelope/` and are read by relative pat
   **Expected behavior**: both accept or both reject each fixture; the evaluator fails the test on any keyword it does not know.
 - **Test name**: `TestSchemaDocument`
   **Scenario**: parse `Schema()`.
-  **Expected behavior**: valid JSON; `schema_version` is `const` `SchemaV1`; 14 required properties; `additionalProperties` is false; two calls return equal but independent slices.
+  **Expected behavior**: valid JSON; `schema_version` is `const` `SchemaV1`; 16 required properties; `additionalProperties` is false; two calls return equal but independent slices.
 
 ### Boundary Tests
 
@@ -231,3 +252,7 @@ Fixtures live in `internal/wire/testdata/envelope/` and are read by relative pat
 - **Test name**: `TestUnknownIdentityStillDecodes`
   **Scenario**: well-formed envelope with `engine_version: "v9.9.9"` and an image digest the manifest does not list (T03: wrong image).
   **Expected behavior**: decodes; this module makes no approval decision.
+- **Test name**: `TestProducerStatesTheInputsItUsed`
+  **Scenario**: the upload fixture of the real engine capture (no baseline, no labels) and a fixture with both files.
+  **Expected behavior**: the first decodes with both digests `""`; the second with two bare-hex digests, unchanged, for the gate to
+  compare with the protected ref. A run that used a head-edited baseline states a digest the protected ref does not have.

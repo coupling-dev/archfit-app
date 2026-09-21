@@ -83,8 +83,9 @@ on any non-2xx except `400`, `401`, `403`, `409`, `413`.
 
 ### Files on the protected ref
 
-Customer-approved state: `.archfit.yaml` (engine policy with waivers),
-`.archfit/baseline.json` **[default path]**, `.archfit-app.yaml` (App settings).
+Customer-approved state: `.archfit.yaml` (engine policy with waivers), `.archfit-baseline.json`,
+`.archfit-labels.yaml` (the engine's own file names, beside the policy), and `.archfit-app.yaml` (App settings).
+With the workflow file these are the five protected paths.
 
 ### GitHub objects
 
@@ -202,7 +203,7 @@ verifies the OIDC token, resolves repository, installation, run, PR, head, base 
 API, compares them with the envelope, checks the payload digest and decodes the no-source report. A request
 whose tenant cannot be authenticated, or that is stale, is rejected with an HTTP status and nothing is
 published. After authentication every defect becomes a `Problem`, not a rejection. `gate/inputs` reads
-settings, policy and baseline from the protected ref, computes digests, finds changed protected paths and the
+settings, policy, baseline and labels from the protected ref, computes digests, finds changed protected paths and the
 owner approval on the exact head SHA, and reads the cached `Entitlement`. `gate` checks the manifest identity
 and the workflow path. `gate/verdict` maps the facts to an outcome. `gate/feedback` publishes. All in the request.
 
@@ -308,12 +309,10 @@ and child (distance 1). Everything that crosses the root is contract coupling, w
 
 ### Defaults chosen here
 
-Beyond the **[default]** rows of decisions.md: file paths `.archfit-app.yaml` and `.archfit/baseline.json`;
+Beyond the **[default]** rows of decisions.md: file path `.archfit-app.yaml`;
 envelope in the `X-Archfit-Envelope` header; operator bearer token for `/internal/*`; artifact name
-`archfit-report`; `config_hash` and `gate_reference.digest` equal `sha256` of the raw file bytes (to be
-confirmed against engine v2.3.1 in the first plan task); the App-side field names of the engine report in
-`wire/report` (to be pinned against the released schema, plan task T02); head baseline accepted under the
-same owner-approval rule as head policy; `Store` tenant `0` for the App-wide budget counter; session
+`archfit-report`; head baseline and head labels accepted under the same owner-approval rule as head policy;
+baseline and labels integrity through producer-stated envelope digests (below); `Store` tenant `0` for the App-wide budget counter; session
 permission cache of 60 seconds; Anthropic model `claude-sonnet-5`.
 
 Readings of decisions.md adopted here, to be confirmed by the owner: §3 "Supported triggers" governs report
@@ -323,6 +322,23 @@ to the PR branch (a new head SHA); a default-branch push gets `archfit/state` on
 commit on the draft PR, not a GitHub review suggestion. Supported languages are whatever engine v2.3.1 supports;
 the App has no language-specific logic, so no module owns that list. "Checked by Archfit on this repository"
 needs this repository's own `.archfit.yaml`, which is a plan task; until then the root import tests are the enforcement.
+
+### Pinned against engine v2.3.1
+
+`wire/report` mirrors `archfit.state.schema.json` at the pinned revision; the guessed field names of the first
+draft are gone. What the real engine changed in this design:
+
+- A report has no exit code. The decision reads `verdict`, `decision.hard_gates` and
+  `decision.unevaluated_required_rules`. An engine error produces no report, so it surfaces as a missing upload.
+- `comparison.config_hash` is the bare hex SHA-256 of the raw policy bytes, so the policy is verified by digest
+  exactly as decisions.md §3 says.
+- The engine hashes neither the baseline nor the labels file; `gate_reference` says only whether the baseline it
+  loaded was comparable. decisions.md §3 ("rejects a report whose `gate_reference` differs") cannot be met by
+  the report alone. **[default]** The envelope carries `baseline_digest` and `labels_digest`, stated by the
+  producer and compared with the protected ref. That is as trustworthy as the report itself (customer-attested)
+  and needs no engine change. An engine-side digest would be stronger; it is a cross-repository follow-up.
+- A report lists no modules or edges. The graph takes nodes from the policy file and links from `seams[]`.
+- `agent_tasks[].declarations` carries source identifiers; the no-source decoder always drops it.
 
 ### Minor issues (accepted)
 
@@ -404,7 +420,7 @@ needs this repository's own `.archfit.yaml`, which is a plan task; until then th
 
 - **Test name**: `TestLegitimateChangePassesAndViolationFails`
   **Scenario**: paired healthy and blocked fixtures for each claimed erosion scenario.
-  **Expected behavior**: `success` and `failure` respectively, with rule, modules, locations and the validation command in the feedback.
+  **Expected behavior**: `success` and `failure` respectively; the failure feedback carries rule, modules, locations and the validation commands of its agent tasks (a healthy report has no task and therefore no command).
 - **Test name**: `TestTamperingNeverYieldsSuccess`
   **Scenario**: head-edited policy, baseline, settings, workflow, CODEOWNERS; stale approval after re-push; unknown image; missing profile; fork PR; `workflow_run` upload.
   **Expected behavior**: each ends `action_required` with its own reason; none is `success`, `neutral`, or `skipped`.

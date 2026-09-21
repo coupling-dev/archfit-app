@@ -87,14 +87,25 @@ Modules in the same wave run in parallel. Wave 0a has 9 modules, 0b has 11, 0c h
 
 ### Task 1: Pin the engine contracts the design assumed
 
-- [ ] fetch the archfit v2.3.1 state and config JSON Schemas at the revision pinned in internal/wire/module.md, and
+- [x] fetch the archfit v2.3.1 state and config JSON Schemas at the revision pinned in internal/wire/module.md, and
       one real state report produced by that release
-- [ ] compare them with the transport types in internal/wire/report/module.md and the waiver keys in
+- [x] compare them with the transport types in internal/wire/report/module.md and the waiver keys in
       internal/wire/policy/module.md; confirm that `comparison.config_hash` and `gate_reference` are what the design
       marks as **[default]** (SHA-256 of the raw policy and baseline bytes)
-- [ ] where they differ, update the owner module.md first, then every marked restatement of the changed fence; run
+- [x] where they differ, update the owner module.md first, then every marked restatement of the changed fence; run
       the validator in tree mode until it reports no defects
-- [ ] record each difference in this plan with ⚠️, or write "none found" here
+- [x] record each difference in this plan with ⚠️, or write "none found" here
+
+⚠️ The guessed report contract did not match the engine (local checkout at tag v2.3.1; real report generated from
+its `testdata/fixture-go`). Differences and the design changes they forced are recorded in internal/module.md,
+"Pinned against engine v2.3.1": no exit code in a report; `gate_reference` is top-level and has no digest; the
+engine hashes only the policy file, as bare hex; real file names `.archfit-baseline.json` and
+`.archfit-labels.yaml`; dimensions are an object of nine keys; findings, agent tasks and seams have different
+fields; no modules or edges list; `declarations` carries source identifiers. The waiver keys were right.
+
+⚠️ Owner decision wanted: baseline and labels integrity now rests on producer-stated envelope digests
+(`baseline_digest`, `labels_digest`) because the engine exposes none. Accepted as **[default]**; the stronger
+alternative is an engine change.
 
 ### Task 2: Create the compiling contract skeleton
 

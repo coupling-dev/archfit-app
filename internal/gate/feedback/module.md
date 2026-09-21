@@ -19,7 +19,8 @@ could paint over a newer head, and the App would need a database to remember wha
 - Add or refresh the waiver-expiry notice in the comment.
 - Render feedback that is useful without an LLM: verdict, reason and next action first; findings with rule,
   modules and locations; introduced versus accepted debt; dimensions; a mandatory evidence-gap section;
-  input digests and measurement identity; per-dimension trust and completeness; validation command replay;
+  input digests and measurement identity; per-dimension completeness and the customer-attested trust statement;
+  validation command replay;
   a marker-delimited JSON block of agent tasks.
 - Keep every write idempotent and never let an older run or head overwrite newer feedback.
 - Stay under GitHub size limits with safe truncation.
@@ -50,6 +51,7 @@ type Receipt struct {
     ReportDigest         string     `json:"report_digest"`
     PolicyDigest         string     `json:"policy_digest"`
     BaselineDigest       string     `json:"baseline_digest"`
+    LabelsDigest         string     `json:"labels_digest"`
     EarliestWaiverExpiry time.Time  `json:"earliest_waiver_expiry"`
     Conclusion           Conclusion `json:"conclusion"`
     Reason               ReasonCode `json:"reason"`
@@ -118,8 +120,9 @@ marker and an `external_id` with run ID, attempt and report digest exist.
 | Pull request, `!Trusted.SettingsFound`        | yes             | no                                             | no      |
 | Push (`Target.PullRequest == 0`)              | yes             | no                                             | no      |
 
-`archfit/state` conclusion: `success` when `Outcome.Conclusion == Success` and the report's
-`NeedsAttention` is false; otherwise the literal `neutral` **[default]**. The state check is never
+`archfit/state` conclusion: `success` when `Outcome.Conclusion == Success` and `Report.Verdict == "healthy"`;
+otherwise the literal `neutral` **[default]**. A `needs_attention` report that passes the gate is therefore `success` on
+`archfit/gate` and `neutral` on `archfit/state`, which keeps the attention visible. The state check is never
 required, so `neutral` is allowed here and only here. It is a string literal in this package and never a `Conclusion` value.
 
 ### Publish algorithm
@@ -171,26 +174,40 @@ Comment, in order. Check summaries use the same blocks: gate = 1, 2, 8, receipt 
 2. Further reasons, one line each (for example unevaluated rules beside a blocker).
 3. `Trusted.Entitlement.Notice`, when `WarnFrom` is set, `now()` is at or past it, and the notice is not empty.
 4. Waiver notice section (owned by `Warn`).
-5. Findings: blocking first. Group "Introduced" (`introduced`, `expired_waiver`), "Accepted debt — display
-   only" (`baseline`, `waived`), "Fixed" (`fixed`). Per finding: rule ID, `From` → `To`, locations as
-   `path:line`, message. At most 50 per group, then "and N more" **[default]**. Grouping never changes the verdict.
-6. Dimensions: name, status, confidence, coverage, delta, trust, completeness. Trust prints
-   "customer-attested" for `customer_attested` and "unknown" for anything else **[default]**.
-7. Evidence gaps, always present: unevaluated required rules with their reasons, dimensions not `complete`,
-   profile `Unknowns`, producers whose status is not complete. "None reported" when empty; "No usable report" when `Report == nil`.
-8. Inputs and identity: `Receipt.PolicyDigest`, `Receipt.BaselineDigest` (or "no baseline"), measurement profile
+5. Findings: blocking first. A finding is shown as blocking when `Kind == "gate"` and `Status` is `new` or
+   `expired_waiver` **[default, display only: the verdict never reads findings]**. Groups by `Status`: "Introduced"
+   (`new`, `expired_waiver`), "Accepted debt — display only" (`baseline`, `waived`), "Fixed" (`fixed`). Per finding:
+   rule ID, severity, `Edge.From.Module` → `Edge.To.Module` (with `Path` when set), locations as `file:line`, `Why`,
+   then the policy-permitted repair: `Constraint` and `AllowedAlternatives`. feedback adds no repair of its own and
+   invents no access route. At most 50 per group, then "and N more" **[default]**. Grouping never changes the verdict.
+6. Dimensions: the nine engine keys of `Report.Dimensions` in the engine's fixed order (`intent`, `structure`,
+   `modularity`, `coupling`, `change_locality`, `complexity`, `testability`, `operations`, `drift`). Per dimension:
+   completeness = `Status` (`measured`, `partial`, `unmeasured`) with `Coverage` as "observed/total (basis)",
+   `Confidence`, `Gate`, and the change from `Delta` (status, metric changes, counts of new and resolved findings)
+   when present. Measurement trust is not an engine field: the constant "customer-attested" is printed once for the
+   block. A missing key is printed as "not reported"; keys outside the nine cannot pass the decoder.
+7. Evidence gaps, always present: `Decision.UnevaluatedRequiredRules` with their reasons, `Coverage.Tools` entries
+   whose `Status` is not `ok`, every `Dimension.Unknown` fact with its reason, the measurement profile's `Unknowns`, and
+   producers whose `Status` is not `ok`. When the protected ref has no baseline (`Trusted.BaselineDigests` empty):
+   the line "No baseline: every current violation blocks." When a baseline exists and the gate reference is not
+   comparable: its `Reasons`. "None reported" when empty; "No usable report" when `Report == nil`.
+8. Inputs and identity: `Receipt.PolicyDigest`, `Receipt.BaselineDigest` (or "no baseline"), `Receipt.LabelsDigest`
+   (or "no labels file"), all bare hex; baseline and labels digests are labeled "stated by the producer"; measurement profile
    version and settings hash (or "missing"), the claimed producer identity from `Publication.Identity` as
    "engine <version>, image <digest>, <platform>" (or "no upload" when it is zero; labeled "claimed", because
    only the manifest check in `gate` judges it), `ApprovedBy` when approval was granted, and the fixed sentence
    "Measurement is customer-attested: the producer is authenticated, the report content is not independently checked."
-9. Validation command: `Report.ValidationCommand` joined with shell quoting, verbatim; an argument `--refresh` is dropped if ever present.
-10. Agent task block: the JSON array of `AgentTask` exactly as decoded (`repair_kind` preserved), whole tasks
-    only; tasks that do not fit are counted in a line below the block.
+9. Validation commands: the union of `AgentTasks[].Validation`, de-duplicated in first-seen order, each printed
+   verbatim as one shell line in a code block. They are engine-authored shell strings; feedback neither builds nor edits
+   them. The decoder guarantees none contains `--refresh`. No task → the block is omitted.
+10. Agent task block: a JSON array with exactly the keys `finding_id`, `rule_id`, `repair_kind`, `goal`,
+    `constraints`, `files`, `validation`, `origin`, as decoded (`repair_kind` preserved), whole tasks only; tasks that
+    do not fit are counted in a line below the block.
 
 When `Reasons[0].Category` is `subscription`, blocks 5 to 7, 9 and 10 are omitted **[default]**: paid output is suspended, the reason and recovery stay.
 
-Annotations: only on `archfit/state`; from `Finding.Locations` only; blocking findings first, report order;
-level `failure` for blocking, `warning` otherwise; `Line == 0` is sent as line 1; at most 50 per update
+Annotations: only on `archfit/state`; from `Finding.Locations{File, Line}` only; findings shown as blocking first,
+report order; level `failure` for those, `warning` otherwise; message = rule ID and `Why`; `Line == 0` is sent as line 1; at most 50 per update
 **[default]**. A finding with `locations: []` gets no annotation.
 
 Size: summaries and the comment stay at or under 65 535 bytes. The receipt marker and blocks 1, 2, 7, 8 are
@@ -239,6 +256,7 @@ const (
     ReasonMissingCoverage     ReasonCode = "missing_required_coverage"
     ReasonBaselineNotComparable ReasonCode = "baseline_not_comparable"
     ReasonBaselineMismatch    ReasonCode = "baseline_mismatch"
+    ReasonLabelsMismatch      ReasonCode = "labels_mismatch"
     ReasonPolicyMismatch      ReasonCode = "policy_mismatch"
     ReasonPolicyMissing       ReasonCode = "policy_missing" // settings merged, no policy on the protected ref yet
     ReasonUnknownIdentity     ReasonCode = "unknown_engine_identity"
@@ -321,6 +339,7 @@ type Trusted struct {
     SettingsFound        bool
     PolicyDigests        []string // base digest, plus the head digest when Approval == ApprovalGranted
     BaselineDigests      []string // same rule; empty = no baseline on the protected ref
+    LabelsDigests        []string // same rule; empty = no labels file on the protected ref
     ProtectedPaths       []string // protected paths this PR changes
     Approval             Approval
     ApprovedBy           string
@@ -379,42 +398,45 @@ type Settings struct {
 - **Balanced?**: yes
 - **Shared knowledge**: every string in a `Report` is engine-authored, single-line and length-capped by the
   decoder, yet still untrusted for Markdown. `Origin` sorts presentation only. `Locations` may be empty.
-  `Module` is an opaque part of `Report` for this module. `Edge` is an opaque part of `Report` for this module;
-  neither is rendered. `StateSchemaV1` is the schema constant the decoder enforced.
+  A report has no exit code, no `needs_attention` flag, no per-dimension trust and no single validation command.
+  `Seam` is an opaque part of `Report` for this module and is not rendered. `Metric` values are shown only through `Delta`. `StateSchemaV1` is the schema constant the decoder enforced.
 
 <!-- contract: Report, StateSchemaV1, MaxBytes — restated from internal/wire/report/module.md -->
 ```go
-// StateSchemaV1 is the engine state contract accepted (engine v2.3.1).
+// StateSchemaV1 is the engine state contract accepted (engine v2.3.1, archfit.state.schema.json).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
-// Report is the no-source transport form of an engine state report: only allowlisted
-// fields exist, so anything else in the payload is a decode error. One exception: a finding
-// may carry "matched_by" as an empty object, which is accepted and dropped.
+// Report is the no-source transport form of an engine state report. The decoder knows every key of the
+// v2.3.1 state schema: keys listed here are kept (length-capped), the other known keys are validated and
+// dropped (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores),
+// and any key the schema does not define is a decode error.
 type Report struct {
-    SchemaVersion     string      `json:"schema_version"` // must equal StateSchemaV1
-    Decision          Decision    `json:"decision"`
-    Comparison        Comparison  `json:"comparison"`
-    Findings          []Finding   `json:"findings"`
-    Dimensions        []Dimension `json:"dimensions"`
-    AgentTasks        []AgentTask `json:"agent_tasks"`
-    Modules           []Module    `json:"modules"`
-    Edges             []Edge      `json:"edges"`
-    ValidationCommand []string    `json:"validation_command"` // argv, replayed verbatim; never contains --refresh
+    SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
+    Verdict       string               `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
+    Decision      Decision             `json:"decision"`
+    Comparison    Comparison           `json:"comparison"`
+    GateReference *Reference           `json:"gate_reference,omitempty"` // persisted-baseline comparison; nil = engine emitted none
+    Dimensions    map[string]Dimension `json:"dimensions"`               // exactly the nine engine dimension keys
+    Coverage      Coverage             `json:"coverage"`
+    Findings      []Finding            `json:"findings"`
+    AgentTasks    []AgentTask          `json:"agent_tasks"`
+    Seams         []Seam               `json:"seams"`
 }
 ```
 
 <!-- contract: Decision, UnevaluatedRule — restated from internal/wire/report/module.md -->
 ```go
-// Decision carries the engine's structured gate decision. ExitCode follows `archfit check`:
-// 0 healthy, 1 blocked, 2 attention, 3 error.
+// Decision is the engine's structured gate decision. The process exit code is not part of a report:
+// healthy, needs_attention and blocked are Report.Verdict; an engine error produces no report at all.
 type Decision struct {
-    ExitCode                 int               `json:"exit_code"`
     HardGates                string            `json:"hard_gates"` // "pass" | "fail" | "unmeasured"
-    NeedsAttention           bool              `json:"needs_attention"`
     UnevaluatedRequiredRules []UnevaluatedRule `json:"unevaluated_required_rules,omitempty"`
+    ActiveBlockers           int               `json:"active_blockers"`
+    AttentionDimensions      int               `json:"attention_dimensions"`
+    UnknownDimensions        int               `json:"unknown_dimensions"`
 }
 
 type UnevaluatedRule struct {
@@ -423,16 +445,28 @@ type UnevaluatedRule struct {
 }
 ```
 
-<!-- contract: Comparison, MeasurementProfile, Producer, GateReference — restated from internal/wire/report/module.md -->
+<!-- contract: Comparison, Reference, MeasurementProfile, Producer — restated from internal/wire/report/module.md -->
 ```go
-// Comparison binds the report to the inputs the engine actually used.
+// Comparison binds the report to the inputs the engine actually used (report-only --base comparison).
 type Comparison struct {
-    ConfigHash         string              `json:"config_hash"` // "sha256:<hex>" of the raw policy bytes
-    ModelHash          string              `json:"model_hash"`
-    LabelsHash         string              `json:"labels_hash"`
-    RubricHash         string              `json:"rubric_hash"`
+    Status             string              `json:"status"` // "not_requested" | "comparable" | "non_comparable"
+    BaseRef            string              `json:"base_ref,omitempty"`
+    ConfigHash         string              `json:"config_hash,omitempty"` // bare lowercase hex SHA-256 of the raw policy bytes
+    ModelHash          string              `json:"model_hash,omitempty"`
+    LabelsHash         string              `json:"labels_hash,omitempty"` // canonical hash of approved labels; not reproducible from raw bytes
+    RubricVersion      string              `json:"rubric_version,omitempty"`
     MeasurementProfile *MeasurementProfile `json:"measurement_profile,omitempty"` // nil = unknown identity
-    GateReference      *GateReference      `json:"gate_reference,omitempty"`      // nil = no persisted baseline used
+    Reasons            []string            `json:"reasons"`
+    TaskOriginStatus   string              `json:"task_origin_status,omitempty"`
+    TaskOriginReasons  []string            `json:"task_origin_reasons,omitempty"`
+}
+
+// Reference is the engine gate's comparison with the persisted baseline (top-level gate_reference).
+// The engine exposes no baseline digest: only whether the baseline it loaded was comparable, and why not.
+type Reference struct {
+    Status  string   `json:"status"`             // "comparable" | "non_comparable" | "not_requested"
+    BaseRef string   `json:"base_ref,omitempty"` // "baseline"
+    Reasons []string `json:"reasons"`            // e.g. "no baseline file was loaded"
 }
 
 type MeasurementProfile struct {
@@ -445,55 +479,137 @@ type MeasurementProfile struct {
 type Producer struct {
     Tool             string `json:"tool"`
     SemanticsVersion string `json:"semantics_version"`
-    Status           string `json:"status"`
+    Status           string `json:"status"` // "ok" | "partial" | "absent" | "disabled" | "timed out"
     ToolVersion      string `json:"tool_version,omitempty"`
-    PartialBasis     string `json:"partial_basis,omitempty"`
-}
-
-// GateReference describes the persisted baseline the engine gate used.
-type GateReference struct {
-    Digest     string   `json:"digest"`     // "sha256:<hex>" of the raw baseline bytes
-    Comparable bool     `json:"comparable"` // false = non-comparable; Reasons says why
-    Reasons    []string `json:"reasons,omitempty"`
+    PartialBasis     string `json:"partial_basis,omitempty"` // "unresolved_specifiers" | "degraded_precision"
 }
 ```
 
-<!-- contract: Finding, Location, Dimension, AgentTask — restated from internal/wire/report/module.md -->
+<!-- contract: Finding, Edge, Endpoint, Location, AgentTask — restated from internal/wire/report/module.md -->
 ```go
 type Finding struct {
-    ID        string     `json:"id"`        // unique per report across lifecycles
-    RuleID    string     `json:"rule_id"`
-    Lifecycle string     `json:"lifecycle"` // "introduced" | "baseline" | "fixed" | "waived" | "expired_waiver"
-    Blocking  bool       `json:"blocking"`
-    From      string     `json:"from"` // module name, may be ""
-    To        string     `json:"to"`   // module name, may be ""
-    Message   string     `json:"message"` // engine-authored, length-capped
-    Locations []Location `json:"locations"` // may be empty; never invent one
+    ID                  string     `json:"id"`        // 32-hex fingerprint, unique per report
+    Kind                string     `json:"kind"`      // "gate" | "advisory"
+    RuleID              string     `json:"rule_id"`
+    Status              string     `json:"status"`    // "new" | "baseline" | "waived" | "expired_waiver" | "fixed"
+    Severity            string     `json:"severity"`  // "critical" | "high" | "medium" | "low"
+    Confidence          string     `json:"confidence"`
+    Edge                Edge       `json:"edge"`
+    Locations           []Location `json:"locations"` // may be empty; never invent one
+    Why                 string     `json:"why"`        // engine-authored, single line, length-capped
+    Constraint          string     `json:"constraint"` // engine-authored, single line, length-capped
+    AllowedAlternatives []string   `json:"allowed_alternatives,omitempty"`
+}
+
+type Edge struct {
+    From Endpoint `json:"from"`
+    To   Endpoint `json:"to"`
+    Kind string   `json:"kind"`
+}
+
+type Endpoint struct {
+    Module string `json:"module"` // may be ""
+    Path   string `json:"path"`   // may be ""
 }
 
 type Location struct {
-    Path string `json:"path"`
+    File string `json:"file"`
     Line int    `json:"line"` // 0 = whole file
 }
 
-// Dimension mirrors the engine's per-dimension status; trust and completeness stay separate.
+type AgentTask struct {
+    FindingID   string   `json:"finding_id"`
+    RuleID      string   `json:"rule_id"`
+    RepairKind  string   `json:"repair_kind"` // "code_change" | "needs_owner_decision"
+    Goal        string   `json:"goal"`
+    Constraints []string `json:"constraints"`
+    Files       []string `json:"files"`
+    Validation  []string `json:"validation"`       // shell command strings, replayed verbatim; never contain --refresh
+    Origin      string   `json:"origin,omitempty"` // "introduced" | "pre_existing" | "unknown"; presentation only
+}
+```
+
+<!-- contract: Dimension, DimensionCoverage, Metric, FindingRef, UnknownFact, Delta, MetricDelta, Coverage, ToolCoverage, Seam — restated from internal/wire/report/module.md -->
+```go
+// Dimension mirrors the engine's per-dimension state. Completeness is Status; measurement trust is not an
+// engine field: in v1 every fact is customer-attested and feedback says so.
 type Dimension struct {
-    Name         string  `json:"name"`
-    Status       string  `json:"status"`
-    Confidence   string  `json:"confidence"`
-    Coverage     float64 `json:"coverage"`
-    Delta        float64 `json:"delta"`
-    Trust        string  `json:"trust"`        // "customer_attested" in v1
-    Completeness string  `json:"completeness"` // "complete" | "partial" | "missing"
+    Name       string            `json:"name"`
+    Owner      string            `json:"owner"`
+    Status     string            `json:"status"` // "measured" | "partial" | "unmeasured"
+    Confidence string            `json:"confidence"`
+    Gate       string            `json:"gate"` // "pass" | "warn" | "fail" | "not_applicable"
+    Coverage   DimensionCoverage `json:"coverage"`
+    Metrics    []Metric          `json:"metrics"`
+    Findings   []FindingRef      `json:"findings"`
+    Unknown    []UnknownFact     `json:"unknown"`
+    Delta      *Delta            `json:"delta,omitempty"`
 }
 
-type AgentTask struct {
-    ID         string   `json:"id"`
-    RuleID     string   `json:"rule_id"`
-    RepairKind string   `json:"repair_kind"` // "code_change" | "needs_owner_decision"
-    Origin     string   `json:"origin"`      // presentation only; never exempts a finding
-    Summary    string   `json:"summary"`
-    FindingIDs []string `json:"finding_ids"`
+type DimensionCoverage struct {
+    Basis    string `json:"basis"`
+    Observed int    `json:"observed"`
+    Total    int    `json:"total"`
+}
+
+type Metric struct {
+    Name  string  `json:"name"`
+    Value float64 `json:"value"`
+    Unit  string  `json:"unit"`
+}
+
+type FindingRef struct {
+    ID       string `json:"id"`
+    RuleID   string `json:"rule_id"`
+    Kind     string `json:"kind"`
+    Severity string `json:"severity"`
+    Status   string `json:"status"`
+}
+
+type UnknownFact struct {
+    Fact   string `json:"fact"`
+    Reason string `json:"reason"`
+    Owner  string `json:"owner"`
+}
+
+type Delta struct {
+    Status           string        `json:"status"`
+    Reasons          []string      `json:"reasons,omitempty"`
+    Metrics          []MetricDelta `json:"metrics,omitempty"`
+    NewFindings      []string      `json:"new_findings,omitempty"`
+    ResolvedFindings []string      `json:"resolved_findings,omitempty"`
+}
+
+type MetricDelta struct {
+    Name   string  `json:"name"`
+    Before float64 `json:"before"`
+    After  float64 `json:"after"`
+    Change float64 `json:"change"`
+}
+
+type Coverage struct {
+    Measured   int            `json:"measured"`
+    Partial    int            `json:"partial"`
+    Unmeasured int            `json:"unmeasured"`
+    Tools      []ToolCoverage `json:"tools"`
+}
+
+type ToolCoverage struct {
+    Tool   string `json:"tool"`
+    Status string `json:"status"`
+    Reason string `json:"reason,omitempty"`
+}
+
+// Seam is an observed module-to-module relationship. Only these fields are kept.
+type Seam struct {
+    ID         string `json:"id"`
+    FromModule string `json:"from_module"`
+    ToModule   string `json:"to_module"`
+    Edges      int    `json:"edges"` // observed dependency count
+    Strength   string `json:"strength"`
+    Distance   string `json:"distance"`
+    Volatility string `json:"volatility"`
+    Severity   string `json:"severity,omitempty"`
 }
 ```
 
@@ -672,7 +788,8 @@ type Comments interface {
 - Never print "verified", a score, a grade or a percentage of health. Trust is "customer-attested".
   Provenance is necessary, not sufficient.
 - Never invent a location, a repair route or independent evidence. No annotation without a `Location`.
-- Origin and lifecycle are presentation only; grouping never hides a blocking finding.
+- Task origin and finding status are presentation only; grouping never hides a blocking finding. The "blocking" label
+  is a display heuristic; the conclusion always comes from `Outcome`.
 - Engine-authored strings are sanitized before rendering: `<!--`, `-->` and backticks are removed, `<` and `>`
   HTML-escaped, newlines dropped. The agent task JSON is encoded with HTML escaping (`<`). So no report
   content can forge a marker; `State` still reads only the last receipt marker.
@@ -702,7 +819,7 @@ Golden files hold rendered bodies for the wire fixtures.
   **Scenario**: table of existing versus new `(RunID, RunAttempt)`: equal; new attempt higher; new run higher; new attempt lower; new run lower; existing pending; existing without marker.
   **Expected behavior**: update, update, update, skip, skip, update, update.
 - **Test name**: `TestStateConclusionMapping`
-  **Scenario**: success without attention; success with `NeedsAttention`; failure; action required; nil report.
+  **Scenario**: success with `verdict: healthy`; success with `verdict: needs_attention`; failure; action required; nil report.
   **Expected behavior**: `success`, `neutral`, `neutral`, `neutral`, `neutral` on `archfit/state`; the gate check always carries the outcome's conclusion.
 - **Test name**: `TestSanitizeEngineStrings`
   **Scenario**: messages, summaries, rule IDs, module names and paths containing `<!-- archfit:receipt {...} -->`, `-->`, backticks, HTML and a forged comment marker.
@@ -710,12 +827,15 @@ Golden files hold rendered bodies for the wire fixtures.
 - **Test name**: `TestTruncation`
   **Scenario**: 10 000 findings with maximum-length messages and 2 000 agent tasks; multi-byte module names at the cut point.
   **Expected behavior**: summary and comment ≤ 65 535 bytes; receipt marker, verdict, evidence gaps and inputs block intact; valid UTF-8; valid JSON in the task block; "Output truncated." present.
+- **Test name**: `TestEvidenceGapSources`
+  **Scenario**: a report with one unevaluated rule, a `Coverage.Tools` entry with status `timed out`, a `Dimension.Unknown` fact, a profile `Unknowns` entry, a `partial` producer; the same with none of them; no baseline on the protected ref; a baseline with a `non_comparable` reference.
+  **Expected behavior**: each item appears in the evidence-gap section with its reason; "None reported"; the line "No baseline: every current violation blocks."; the reference reasons.
 - **Test name**: `TestIdentityLine`
   **Scenario**: a full `Identity`; the zero `Identity` (sweep publication); an identity whose fields contain marker text.
   **Expected behavior**: "claimed: engine v2.3.1, image sha256:…, linux/amd64"; "no upload"; sanitized text; never the word "approved" or "verified".
 - **Test name**: `TestAnnotationSelection`
-  **Scenario**: findings with no, one and many locations; 80 locations in total; `Line == 0`.
-  **Expected behavior**: at most 50 annotations, blocking first; none for `locations: []`; line 1 for whole-file; only on `archfit/state`.
+  **Scenario**: findings with no, one and many locations; 80 locations in total; `Line == 0`; an `advisory` finding and a `gate` finding with status `baseline`.
+  **Expected behavior**: at most 50 annotations, `gate` findings with status `new` or `expired_waiver` first as `failure`, the rest `warning`; none for `locations: []`; line 1 for whole-file; path from `Location.File`; only on `archfit/state`.
 
 ### Integration Contract Tests
 
@@ -733,7 +853,7 @@ Golden files hold rendered bodies for the wire fixtures.
   **Expected behavior**: one comment created; no call; section replaced; section kept; section dropped; no call.
 - **Test name**: `TestGoldenFeedback` (T02, T11)
   **Scenario**: render every wire fixture: healthy, warning-only attention, blocked, missing required evidence, unknown identity, incompatible profile, invalid input (nil report), blocker plus unevaluated rule, non-applicable rule, `locations: []`, `matched_by: {}`, both repair kinds, waiver expiry.
-  **Expected behavior**: golden bodies match; verdict, reason and next action come first; the evidence-gap section exists in each; `repair_kind` values appear unchanged in the JSON block; the validation command is replayed verbatim with `--base`, `--lang`, `--require-tools` when present and never `--refresh`.
+  **Expected behavior**: golden bodies match; verdict, reason and next action come first; the evidence-gap section exists in each; `repair_kind` values appear unchanged in the JSON block, whose objects have exactly the eight task keys; validation commands from `AgentTasks[].Validation` are de-duplicated and printed verbatim with `--base`, `--lang`, `--require-tools` when present and never `--refresh`; dimensions appear in the engine's fixed order of nine.
 
 ### Boundary Tests
 
@@ -771,8 +891,8 @@ Golden files hold rendered bodies for the wire fixtures.
   **Scenario**: the blocker-plus-unevaluated fixture.
   **Expected behavior**: conclusion `failure`; the unevaluated rule and its reason appear in reasons and in the evidence-gap section.
 - **Test name**: `TestAcceptedDebtIsDisplayOnly`
-  **Scenario**: blocked report whose blocking finding has lifecycle `baseline` and whose task origin is `unknown`.
-  **Expected behavior**: the finding is listed first as blocking; nothing in the text says it is exempt.
+  **Scenario**: blocked report (`hard_gates: fail`) whose only `gate` finding has status `baseline` and whose task origin is `unknown`.
+  **Expected behavior**: conclusion `failure` from the outcome; the finding is listed under accepted debt without any text that says it is exempt or that the PR is clean; the reason block still says blocking findings exist.
 - **Test name**: `TestSuspensionFeedback` (T21)
   **Scenario**: suspended outcome with a report; entitlement with `WarnFrom` in the past and not suspended; `WarnFrom` in the future.
   **Expected behavior**: subscription reason with `Entitlement.Reason` as next action and no findings; the notice line appears; no notice.

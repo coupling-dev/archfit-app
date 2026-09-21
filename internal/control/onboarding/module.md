@@ -10,7 +10,7 @@
 modes, using only pull requests a human merges. Customer mode is always two PRs: PR 1 adds the workflow,
 the App settings file and CODEOWNERS entries; PR 2 carries the policy that discovery in the customer's
 CI proposed. Managed mode runs one ephemeral sandbox job after recorded consent and puts the policy on
-the onboarding PR. Without this module a customer would hand-write four files and nobody could tell
+the onboarding PR. Without this module a customer would hand-write the workflow, settings, CODEOWNERS and policy files and nobody could tell
 which step is missing.
 
 ## Functional Responsibilities
@@ -146,12 +146,17 @@ parse counts as stalled.
   `ImageDigest`; triggers `pull_request`, `push` to `r.DefaultBranch`, `workflow_dispatch` with boolean input `discover`;
   `permissions: contents: read, id-token: write`; no secrets; no step runs repository scripts.
   `Deps.BaseURL` is written as the Action's upload endpoint and OIDC audience. **[default: Action input names pinned in the plan]**
+  Action obligation, stated in the workflow's header comment and the PR body: the Action runs the engine with the base-ref
+  `.archfit.yaml`, `.archfit-baseline.json` and `.archfit-labels.yaml`, and fills the envelope's `baseline_digest` and `labels_digest`
+  (bare hex SHA-256, `""` when the file is absent) from exactly those files. Onboarding computes no digest.
 - CODEOWNERS: the first existing of `.github/CODEOWNERS`, `CODEOWNERS`, `docs/CODEOWNERS`, else a new `.github/CODEOWNERS`.
-  Append, under the line `# Archfit protected paths`, one line per protected path (`/.archfit.yaml`,
-  `/.archfit/baseline.json`, `/.archfit-app.yaml`, `/<workflow path>`) with the owners as `@login` / `@org/team`.
+  Append, under the line `# Archfit protected paths`, one line per protected path — the five are `/` + `PolicyPath`, `BaselinePath`,
+  `LabelsPath`, `settings.Path` and the workflow path: `/.archfit.yaml`, `/.archfit-baseline.json`, `/.archfit-labels.yaml`,
+  `/.archfit-app.yaml`, `/<workflow path>` — with the owners as `@login` / `@org/team`.
   Existing bytes are kept unchanged; a line already present is not added again.
 - `Proposals.Propose(Change{Branch: "archfit/onboarding", Base: r.DefaultBranch, …}, "")`.
-- PR body: what each file does; that Archfit belongs in its own ruleset with a documented bypass, and that a bypass is
+- PR body: what each file does; the five protected paths and that a change to any of them needs an architecture owner's approval
+  on the exact head SHA; that Archfit belongs in its own ruleset with a documented bypass, and that a bypass is
   never reported as success; "enable automatic deletion of head branches"; next step (run discovery).
 
 ### Discovery upload (`POST /v1/discoveries`)
@@ -257,13 +262,16 @@ type Upload struct {
     Binding  Binding
     Identity Identity // claimed engine/image identity from the envelope
     Digest   string   // payload digest, verified against the envelope
+    BaselineDigest string // claimed by the envelope; "" = the producer used no baseline
+    LabelsDigest   string // claimed by the envelope; "" = the producer used no labels file
     Payload  []byte   // the exact verified bytes; the only content for KindDiscovery
     Report   *Report  // nil for KindDiscovery and when ProblemReportInvalid
     Problems []Problem
 }
 ```
 
-`Report` is an opaque part of `Upload` for this module; it is always nil for `KindDiscovery`.
+`Report` is an opaque part of `Upload` for this module; it is always nil for `KindDiscovery`. Discovery uploads leave
+`BaselineDigest` and `LabelsDigest` empty; this module never reads them.
 For discovery, `Binding.Event` may also be `workflow_dispatch`; for non-PR events `Binding.BaseRef` is the branch the run executed on.
 
 ### internal/control/proposal
@@ -396,7 +404,9 @@ type Envelope struct {
     EngineVersion string `json:"engine_version"` // e.g. "v2.3.1"
     ImageDigest   string `json:"image_digest"`   // "sha256:<64 hex>"
     Platform      string `json:"platform"`       // e.g. "linux/amd64"
-    PayloadDigest string `json:"payload_digest"` // "sha256:<64 hex>" of the exact payload bytes
+    PayloadDigest  string `json:"payload_digest"`  // "sha256:<64 hex>" of the exact payload bytes
+    BaselineDigest string `json:"baseline_digest"` // bare hex SHA-256 of the baseline file the engine loaded; "" = none
+    LabelsDigest   string `json:"labels_digest"`   // bare hex SHA-256 of the labels file the engine loaded; "" = none
 }
 ```
 
@@ -459,18 +469,21 @@ the workflow path must be under `.github/workflows/` and end in `.yml` or `.yaml
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high
 - **Balanced?**: yes
-- **Shared knowledge**: the policy path, and `Waivers` as the YAML parse check of a draft.
+- **Shared knowledge**: the three engine file paths (protected paths in CODEOWNERS and the PR body), and `Waivers` as the YAML
+  parse check of a draft. `Digest` (bare lowercase hex, no `sha256:` prefix) is never called here.
 
-<!-- contract: PolicyPath, BaselinePath, Digest — restated from internal/wire/policy/module.md -->
+<!-- contract: PolicyPath, BaselinePath, LabelsPath, Digest — restated from internal/wire/policy/module.md -->
 ```go
-// PolicyPath and BaselinePath are the engine files on the protected ref. [default]
+// The engine's three trusted input files on the protected ref. Baseline and labels sit beside the policy.
 const (
     PolicyPath   = ".archfit.yaml"
-    BaselinePath = ".archfit/baseline.json"
+    BaselinePath = ".archfit-baseline.json"
+    LabelsPath   = ".archfit-labels.yaml"
 )
 
-// Digest returns "sha256:<hex>" of the raw file bytes. It is the value the engine reports as
-// comparison.config_hash (policy) and gate_reference.digest (baseline).
+// Digest returns the bare lowercase hex SHA-256 of the raw file bytes. For the policy file it equals the
+// engine's comparison.config_hash. The engine reports no digest for baseline or labels; for those the
+// producer states Digest of the bytes it used in the envelope, and the App compares it with the protected ref.
 func Digest(raw []byte) string
 ```
 
@@ -776,10 +789,10 @@ Test doubles only at boundaries: in-memory GitHub roles (`Repos`, `Actions`, `Ch
   **Expected behavior**: no managed diagnostic; running; stalled; failed with the code; review PR; stalled; no managed diagnostic. Render then parse round-trips.
 - **Test name**: `TestWorkflowTemplate`
   **Scenario**: render with a manifest entry and default branch `trunk`.
-  **Expected behavior**: Action pinned by 40-hex `ActionRef`; image digest and engine version present; `Deps.BaseURL` as endpoint and audience; triggers `pull_request`, `push` on `trunk`, `workflow_dispatch` input `discover`; `id-token: write`, `contents: read`; no `secrets.`, no `run:` step, no `workflow_run`, no `pull_request_target`.
+  **Expected behavior**: Action pinned by 40-hex `ActionRef`; image digest and engine version present; `Deps.BaseURL` as endpoint and audience; triggers `pull_request`, `push` on `trunk`, `workflow_dispatch` input `discover`; `id-token: write`, `contents: read`; the header comment names the base-ref files and the two digests the Action reports; no `secrets.`, no `run:` step, no `workflow_run`, no `pull_request_target`.
 - **Test name**: `TestCodeownersAppend`
   **Scenario**: table: no file; file in `.github/`; file at root only; file without trailing newline; entries already present; team owner.
-  **Expected behavior**: original bytes are a prefix of the result; four lines added once; second run adds nothing; location precedence honored; `@org/team` form used.
+  **Expected behavior**: original bytes are a prefix of the result; five lines added once (policy, baseline, labels, settings, workflow); second run adds nothing; location precedence honored; `@org/team` form used.
 - **Test name**: `TestDraftChecks`
   **Scenario**: table: valid policy; 1 MB + 1 byte; invalid UTF-8; NUL byte; carriage return; 501-byte line; malformed YAML; policy with one waiver; seeded leakage fixtures (source snippet block, log blob).
   **Expected behavior**: only the first passes; size → `discovery_too_large`; all others → `discovery_invalid`.
@@ -794,7 +807,7 @@ Test doubles only at boundaries: in-memory GitHub roles (`Repos`, `Actions`, `Ch
   **Expected behavior**: one `Propose` on `archfit/onboarding` against the default branch with exactly three files; settings parse back with `gate: advisory`, `data_mode: customer`; returned `Draft` is the proposal's.
 - **Test name**: `TestDiscoveryUploadOpensPRTwo`
   **Scenario**: `Receiver` returns an upload: event `workflow_dispatch`, default branch, approved workflow path, valid draft.
-  **Expected behavior**: `200` with the PR number; one `Propose` on `archfit/policy` with one file at `PolicyPath` whose bytes equal `Upload.Payload`; no check or comment call.
+  **Expected behavior**: `200` with the PR number; one `Propose` on `archfit/policy` with one file at `PolicyPath` whose bytes equal `Upload.Payload`; empty `BaselineDigest` and `LabelsDigest` are accepted and ignored; no check or comment call.
 - **Test name**: `TestDiscoveryStatusMapping`
   **Scenario**: table: `*Rejection` 401/403/409/413; `ErrRateLimited`; generic error; each `Problem` (including `ProblemUnsupportedEvent` for a `pull_request` discovery); non-default branch; settings missing; other workflow path; oversized; invalid draft; `Propose` rate limited.
   **Expected behavior**: rejection status and code; 503; 500; `400` with the problem code; `403 not_default_branch`, `403 settings_missing`, `403 workflow_not_approved`; 413; 400; 503. No `Propose` call except in the last row. Every permanent error is inside `400 401 403 409 413`.

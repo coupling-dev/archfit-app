@@ -71,6 +71,8 @@ type Upload struct {
     Binding  Binding
     Identity Identity // claimed engine/image identity from the envelope
     Digest   string   // payload digest, verified against the envelope
+    BaselineDigest string // claimed by the envelope; "" = the producer used no baseline
+    LabelsDigest   string // claimed by the envelope; "" = the producer used no labels file
     Payload  []byte   // the exact verified bytes; the only content for KindDiscovery
     Report   *Report  // nil for KindDiscovery and when ProblemReportInvalid
     Problems []Problem
@@ -172,6 +174,10 @@ is not a protected ref by itself, and `gate` resolves trusted inputs of non-PR t
 Envelope comparison (step 15): `Event`, `PullRequest`, `HeadSHA`, `BaseSHA`, `MergeBaseSHA`, `RunID`,
 `RunAttempt` must equal the binding. `Repository` was compared in step 7. `EngineVersion`, `ImageDigest`
 and `Platform` have no authoritative source; they are copied to `Upload.Identity` as a claim for the manifest check in `gate`.
+`Envelope.BaselineDigest` and `Envelope.LabelsDigest` (bare hex, `""` = none used; format already checked by
+`envelope.Decode`) have no authoritative source either: the engine reports no digest for those files. They are copied
+unchanged to `Upload.BaselineDigest` and `Upload.LabelsDigest` as producer claims; `gate/verdict` compares them with
+the protected ref. They are as trustworthy as the report itself (customer-attested), not more.
 
 `Upload.Digest` is the computed digest. `Upload.Payload` is always the verified body. `Upload.Problems`
 is de-duplicated and in the constant declaration order.
@@ -218,7 +224,9 @@ type Envelope struct {
     EngineVersion string `json:"engine_version"` // e.g. "v2.3.1"
     ImageDigest   string `json:"image_digest"`   // "sha256:<64 hex>"
     Platform      string `json:"platform"`       // e.g. "linux/amd64"
-    PayloadDigest string `json:"payload_digest"` // "sha256:<64 hex>" of the exact payload bytes
+    PayloadDigest  string `json:"payload_digest"`  // "sha256:<64 hex>" of the exact payload bytes
+    BaselineDigest string `json:"baseline_digest"` // bare hex SHA-256 of the baseline file the engine loaded; "" = none
+    LabelsDigest   string `json:"labels_digest"`   // bare hex SHA-256 of the labels file the engine loaded; "" = none
 }
 ```
 
@@ -247,37 +255,40 @@ func Schema() []byte
   ingest never inspects report content. `Decision` is an opaque part of `Report` for this module.
   `Comparison` is an opaque part of `Report` for this module. `Finding` is an opaque part of `Report` for this module.
   `Dimension` is an opaque part of `Report` for this module. `AgentTask` is an opaque part of `Report` for this module.
-  `Module` is an opaque part of `Report` for this module. `Edge` is an opaque part of `Report` for this module.
+  `Coverage` is an opaque part of `Report` for this module. `Seam` is an opaque part of `Report` for this module.
+  `Reference` is an opaque part of `Report` for this module.
 
 <!-- contract: Report, StateSchemaV1, MaxBytes — restated from internal/wire/report/module.md -->
 ```go
-// StateSchemaV1 is the engine state contract accepted (engine v2.3.1).
+// StateSchemaV1 is the engine state contract accepted (engine v2.3.1, archfit.state.schema.json).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
-// Report is the no-source transport form of an engine state report: only allowlisted
-// fields exist, so anything else in the payload is a decode error. One exception: a finding
-// may carry "matched_by" as an empty object, which is accepted and dropped.
+// Report is the no-source transport form of an engine state report. The decoder knows every key of the
+// v2.3.1 state schema: keys listed here are kept (length-capped), the other known keys are validated and
+// dropped (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores),
+// and any key the schema does not define is a decode error.
 type Report struct {
-    SchemaVersion     string      `json:"schema_version"` // must equal StateSchemaV1
-    Decision          Decision    `json:"decision"`
-    Comparison        Comparison  `json:"comparison"`
-    Findings          []Finding   `json:"findings"`
-    Dimensions        []Dimension `json:"dimensions"`
-    AgentTasks        []AgentTask `json:"agent_tasks"`
-    Modules           []Module    `json:"modules"`
-    Edges             []Edge      `json:"edges"`
-    ValidationCommand []string    `json:"validation_command"` // argv, replayed verbatim; never contains --refresh
+    SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
+    Verdict       string               `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
+    Decision      Decision             `json:"decision"`
+    Comparison    Comparison           `json:"comparison"`
+    GateReference *Reference           `json:"gate_reference,omitempty"` // persisted-baseline comparison; nil = engine emitted none
+    Dimensions    map[string]Dimension `json:"dimensions"`               // exactly the nine engine dimension keys
+    Coverage      Coverage             `json:"coverage"`
+    Findings      []Finding            `json:"findings"`
+    AgentTasks    []AgentTask          `json:"agent_tasks"`
+    Seams         []Seam               `json:"seams"`
 }
 ```
 
 <!-- contract: Decode — restated from internal/wire/report/module.md -->
 ```go
-// Decode strictly parses payload as the no-source transport. It fails on: size over MaxBytes,
-// unknown fields, wrong schema_version, strings over the per-field caps, absolute or
-// parent-escaping paths, multi-line messages, or duplicate finding IDs.
+// Decode strictly parses payload as the no-source transport. It fails on: size over MaxBytes, a key the
+// v2.3.1 state schema does not define, wrong schema_version, an enum value outside its set, strings over
+// the per-field caps, absolute or parent-escaping paths, multi-line text, or duplicate finding IDs.
 func Decode(payload []byte) (Report, error)
 ```
 
@@ -531,8 +542,8 @@ requests built with `httptest.NewRequest`. No network.
   **Scenario**: table: one associated PR with matching head; one with a moved head; two PRs, one matching; two PRs, both matching; two PRs, none matching; empty list with a valid envelope hint; empty list with hint whose head differs; empty list and no hint; eleven candidates; a closed PR.
   **Expected behavior**: bound; 409; bound to the match; `envelope_mismatch`; `envelope_mismatch`; bound; 409; `envelope_mismatch`; `envelope_mismatch`; `envelope_mismatch`.
 - **Test name**: `TestEnvelopeComparison`
-  **Scenario**: flip one envelope field at a time: event, PR number, head, base, merge-base, run ID, attempt.
-  **Expected behavior**: `Upload` returned with `ProblemEnvelopeMismatch`; binding still holds the authoritative values.
+  **Scenario**: flip one envelope field at a time: event, PR number, head, base, merge-base, run ID, attempt; then change only `baseline_digest` and `labels_digest`.
+  **Expected behavior**: `Upload` returned with `ProblemEnvelopeMismatch`; binding still holds the authoritative values. The two claimed digests cause no problem here; they are passed on for `gate/verdict`.
 - **Test name**: `TestWorkflowPathBinding`
   **Scenario**: `job_workflow_ref` in the same repository; in another repository (reusable workflow).
   **Expected behavior**: the path; `""`.
@@ -541,7 +552,7 @@ requests built with `httptest.NewRequest`. No network.
 
 - **Test name**: `TestReceivePullRequestReport`
   **Scenario**: the healthy fixture with matching claims, run, pull and envelope.
-  **Expected behavior**: no error, no problems; `Binding` fully filled from GitHub; `Identity` from the envelope; `Digest` equals `envelope.PayloadDigest(body)`; `Report` decoded.
+  **Expected behavior**: no error, no problems; `Binding` fully filled from GitHub; `Identity`, `BaselineDigest` and `LabelsDigest` copied from the envelope (also when they are `""`); `Digest` equals `envelope.PayloadDigest(body)`; `Report` decoded.
 - **Test name**: `TestReceiveDefaultBranchPush`
   **Scenario**: `push` run on the default branch.
   **Expected behavior**: `PullRequest` 0, `BaseRef` = default branch, no `Pulls` call, no problems. A push to `feature/x` gives `BaseRef` `feature/x` plus `ProblemUnsupportedEvent`; an unbound `pull_request` run (`refs/pull/7/merge`) gives the default branch.

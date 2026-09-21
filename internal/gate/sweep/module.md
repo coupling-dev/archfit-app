@@ -17,7 +17,7 @@ and a changed base policy, an expired waiver or a restored subscription would ne
 - In required mode: ensure fork PRs show `fork_unsupported` and suspended repositories show
   `subscription_suspended`. In advisory mode only the waiver warning runs.
 - Create the missing pending gate check; turn a pending check into `missing_upload` after `MissingUploadAfter` (60 minutes).
-- Detect receipts whose policy or baseline digest no longer matches the protected ref; publish
+- Detect receipts whose policy, baseline or labels digest no longer matches the protected ref; publish
   `stale_inputs` and re-run the customer's workflow.
 - Warn 7 days before the earliest waiver expiry; after expiry publish `waiver_expired` and re-run.
 - Re-run after a restored entitlement or a late owner approval.
@@ -107,11 +107,13 @@ The first rule that acts ends the evaluation of that pull, except rule 6a, which
 
 Definitions:
 
-- Stale receipt, any of three clauses:
+- Stale receipt, any of four clauses (digests are bare hex strings, compared exactly):
   - policy: `Trusted.PolicyDigests` is empty and `rc.PolicyDigest != ""`; or it is not empty and `rc.PolicyDigest`
     is not in it;
   - baseline: `Trusted.BaselineDigests` is empty and `rc.BaselineDigest != ""`; or it is not empty and
     `rc.BaselineDigest` is not in it;
+  - labels: `Trusted.LabelsDigests` is empty and `rc.LabelsDigest != ""`; or it is not empty and
+    `rc.LabelsDigest` is not in it;
   - unreadable: `rc.Reason == ""`. A readable receipt always has a reason, so this is exactly the zero receipt that
     feedback returns for a missing or broken marker.
 - "Empty list and empty digest" is fresh. In the no-policy window (settings merged, no policy on the protected ref,
@@ -124,6 +126,8 @@ Definitions:
   time of the last publication (feedback sets it), so `StartedAt < e ≤ now` means "evaluated before the waiver
   expired". The expired waiver may belong to an unrelated finding; the PR is still re-evaluated without a new commit.
 - `Suspended` counts pull requests found suspended, whether or not a publication was needed.
+- Rule 4 is also the only place an engine error surfaces: `archfit check` exiting 3 writes no report, so no upload
+  arrives and the pending check ends `missing_upload`.
 - "No re-run is possible" in rules 7a and 7b: `rc.RunID == 0`, the run is gone, or the run already has a newer
   completed attempt that uploaded nothing. The reason then becomes `missing_upload`, which is true and names the recovery.
 
@@ -137,6 +141,7 @@ Definitions:
 | `RunID`, `RunAttempt`, `ReportDigest` | copied from `rc` (zero when there is none)  |
 | `PolicyDigest`                        | `Trusted.PolicyDigests[0]`, or `""`         |
 | `BaselineDigest`                      | `Trusted.BaselineDigests[0]`, or `""`       |
+| `LabelsDigest`                        | `Trusted.LabelsDigests[0]`, or `""`         |
 | `EarliestWaiverExpiry`                | `Trusted.EarliestWaiverExpiry`              |
 | `Conclusion`, `Reason`                | from the outcome (`ActionRequired`, `code`) |
 
@@ -215,6 +220,7 @@ type Trusted struct {
     SettingsFound        bool
     PolicyDigests        []string // base digest, plus the head digest when Approval == ApprovalGranted
     BaselineDigests      []string // same rule; empty = no baseline on the protected ref
+    LabelsDigests        []string // same rule; empty = no labels file on the protected ref
     ProtectedPaths       []string // protected paths this PR changes
     Approval             Approval
     ApprovedBy           string
@@ -257,6 +263,7 @@ type Receipt struct {
     ReportDigest         string     `json:"report_digest"`
     PolicyDigest         string     `json:"policy_digest"`
     BaselineDigest       string     `json:"baseline_digest"`
+    LabelsDigest         string     `json:"labels_digest"`
     EarliestWaiverExpiry time.Time  `json:"earliest_waiver_expiry"`
     Conclusion           Conclusion `json:"conclusion"`
     Reason               ReasonCode `json:"reason"`
@@ -337,6 +344,7 @@ const (
     ReasonMissingCoverage     ReasonCode = "missing_required_coverage"
     ReasonBaselineNotComparable ReasonCode = "baseline_not_comparable"
     ReasonBaselineMismatch    ReasonCode = "baseline_mismatch"
+    ReasonLabelsMismatch      ReasonCode = "labels_mismatch"
     ReasonPolicyMismatch      ReasonCode = "policy_mismatch"
     ReasonPolicyMissing       ReasonCode = "policy_missing" // settings merged, no policy on the protected ref yet
     ReasonUnknownIdentity     ReasonCode = "unknown_engine_identity"
@@ -373,6 +381,8 @@ type Outcome struct {
 // Facts is the closed input of the decision. Report is nil when no usable report exists.
 type Facts struct {
     Problems         []Problem
+    BaselineDigest   string // claimed by the envelope; "" = none used
+    LabelsDigest     string // claimed by the envelope; "" = none used
     Report           *Report
     IdentityApproved bool
     WorkflowApproved bool
@@ -611,7 +621,7 @@ calls and serves `State` from what was published; injectable errors. Time is the
 ### Integration Contract Tests
 
 - **Test name**: `TestRunRepairsEachRule`
-  **Scenario**: one repository with one pull per rule row (fork, suspended, no check, pending 59 minutes, pending 60 minutes, stale policy, stale baseline, waiver in 3 days, waiver expired, restored entitlement, late approval) plus a healthy one.
+  **Scenario**: one repository with one pull per rule row (fork, suspended, no check, pending 59 minutes, pending 60 minutes, stale policy, stale baseline, stale labels, waiver in 3 days, waiver expired, restored entitlement, late approval) plus a healthy one.
   **Expected behavior**: the action of each row and nothing else; the healthy pull gets no write; `Summary` counters match.
 - **Test name**: `TestSecondPassIsQuiet`
   **Scenario**: run twice with unchanged fakes (the publisher reflects the first pass); every `Rerun` of the first pass succeeded, so those runs are queued or at a newer attempt.

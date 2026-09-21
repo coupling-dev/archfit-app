@@ -173,7 +173,8 @@ type View struct {
     Stale bool
 }
 
-// Build is pure: report modules and edges plus the current policy text.
+// Build is pure. Nodes come from the policy's modules, links from the report's seams; a link is not
+// Permitted when a gate finding with status "new" or "expired_waiver" names that module pair.
 func Build(rep Report, policy []byte) View
 ```
 
@@ -561,18 +562,22 @@ func New(ts TokenSource, hc *http.Client) *Client
 - **Shared knowledge**: `PolicyPath` is the constant naming the file the editor loads and saves. `Schema()` is served
   unchanged at `/schema/policy.json` for `monaco-yaml`. `Waivers` is the server-side YAML syntax check of a save
   **[default]**: only `wire/*` may import a YAML library and wire/policy publishes no plain validation function.
-  `BaselinePath` is the constant naming the baseline file; ui never reads or writes it.
+  `Modules` is the second half of that check and the graph page's test for "this text parses". `Digest` is used only
+  inside `graph`. `BaselinePath` and `LabelsPath` are the constants naming `.archfit-baseline.json` and
+  `.archfit-labels.yaml`; ui never reads or writes either.
 
-<!-- contract: PolicyPath, BaselinePath, Digest — restated from internal/wire/policy/module.md -->
+<!-- contract: PolicyPath, BaselinePath, LabelsPath, Digest — restated from internal/wire/policy/module.md -->
 ```go
-// PolicyPath and BaselinePath are the engine files on the protected ref. [default]
+// The engine's three trusted input files on the protected ref. Baseline and labels sit beside the policy.
 const (
     PolicyPath   = ".archfit.yaml"
-    BaselinePath = ".archfit/baseline.json"
+    BaselinePath = ".archfit-baseline.json"
+    LabelsPath   = ".archfit-labels.yaml"
 )
 
-// Digest returns "sha256:<hex>" of the raw file bytes. It is the value the engine reports as
-// comparison.config_hash (policy) and gate_reference.digest (baseline).
+// Digest returns the bare lowercase hex SHA-256 of the raw file bytes. For the policy file it equals the
+// engine's comparison.config_hash. The engine reports no digest for baseline or labels; for those the
+// producer states Digest of the bytes it used in the envelope, and the App compares it with the protected ref.
 func Digest(raw []byte) string
 ```
 
@@ -595,6 +600,19 @@ func Waivers(policy []byte) ([]Waiver, error)
 ```go
 // Schema returns the engine v2.3.1 config JSON Schema, embedded unchanged, for the editor.
 func Schema() []byte
+```
+
+<!-- contract: ModuleDef, Modules — restated from internal/wire/policy/module.md -->
+```go
+// ModuleDef is the subset of a policy module the App displays.
+type ModuleDef struct {
+    Name  string
+    Layer string // may be ""
+    Line  int    // 1-based line of the module key in the policy text
+}
+
+// Modules lists the modules declared under the policy's `modules:` map, in file order. It ignores every other key.
+func Modules(policy []byte) ([]ModuleDef, error)
 ```
 
 ### internal/wire/settings
@@ -656,44 +674,50 @@ func Render(s Settings) []byte
 - **Volatility**: high (this side), moderate (wire/report)
 - **Balanced?**: yes — contract coupling
 - **Shared knowledge**: ui downloads the artifact with `MaxBytes` as the cap, calls `Decode`, and hands the `Report` to
-  `graph.Build` unread. `StateSchemaV1` is the constant `Decode` checks. For this module each nested type is opaque:
+  `graph.Build` unread. The artifact holds the raw engine state JSON; `Decode` validates it against the v2.3.1 state
+  schema and reduces it to the no-source form, so fields the decoder drops (measurement, `matched_by`, task declarations,
+  metric provenance, seam scores) never reach a template and ui never renders them. ui parses the artifact in no other way.
+  `StateSchemaV1` is the constant `Decode` checks. For this module each nested type is opaque:
   - `Decision` is an opaque part of `Report` for this module.
   - `Comparison` is an opaque part of `Report` for this module.
-  - `Finding` is an opaque part of `Report` for this module.
+  - `Reference` is an opaque part of `Report` for this module.
   - `Dimension` is an opaque part of `Report` for this module.
+  - `Coverage` is an opaque part of `Report` for this module.
+  - `Finding` is an opaque part of `Report` for this module.
   - `AgentTask` is an opaque part of `Report` for this module.
-  - `Module` is an opaque part of `Report` for this module.
-  - `Edge` is an opaque part of `Report` for this module.
+  - `Seam` is an opaque part of `Report` for this module.
 
 <!-- contract: Report, StateSchemaV1, MaxBytes — restated from internal/wire/report/module.md -->
 ```go
-// StateSchemaV1 is the engine state contract accepted (engine v2.3.1).
+// StateSchemaV1 is the engine state contract accepted (engine v2.3.1, archfit.state.schema.json).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
-// Report is the no-source transport form of an engine state report: only allowlisted
-// fields exist, so anything else in the payload is a decode error. One exception: a finding
-// may carry "matched_by" as an empty object, which is accepted and dropped.
+// Report is the no-source transport form of an engine state report. The decoder knows every key of the
+// v2.3.1 state schema: keys listed here are kept (length-capped), the other known keys are validated and
+// dropped (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores),
+// and any key the schema does not define is a decode error.
 type Report struct {
-    SchemaVersion     string      `json:"schema_version"` // must equal StateSchemaV1
-    Decision          Decision    `json:"decision"`
-    Comparison        Comparison  `json:"comparison"`
-    Findings          []Finding   `json:"findings"`
-    Dimensions        []Dimension `json:"dimensions"`
-    AgentTasks        []AgentTask `json:"agent_tasks"`
-    Modules           []Module    `json:"modules"`
-    Edges             []Edge      `json:"edges"`
-    ValidationCommand []string    `json:"validation_command"` // argv, replayed verbatim; never contains --refresh
+    SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
+    Verdict       string               `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
+    Decision      Decision             `json:"decision"`
+    Comparison    Comparison           `json:"comparison"`
+    GateReference *Reference           `json:"gate_reference,omitempty"` // persisted-baseline comparison; nil = engine emitted none
+    Dimensions    map[string]Dimension `json:"dimensions"`               // exactly the nine engine dimension keys
+    Coverage      Coverage             `json:"coverage"`
+    Findings      []Finding            `json:"findings"`
+    AgentTasks    []AgentTask          `json:"agent_tasks"`
+    Seams         []Seam               `json:"seams"`
 }
 ```
 
 <!-- contract: Decode — restated from internal/wire/report/module.md -->
 ```go
-// Decode strictly parses payload as the no-source transport. It fails on: size over MaxBytes,
-// unknown fields, wrong schema_version, strings over the per-field caps, absolute or
-// parent-escaping paths, multi-line messages, or duplicate finding IDs.
+// Decode strictly parses payload as the no-source transport. It fails on: size over MaxBytes, a key the
+// v2.3.1 state schema does not define, wrong schema_version, an enum value outside its set, strings over
+// the per-field caps, absolute or parent-escaping paths, multi-line text, or duplicate finding IDs.
 func Decode(payload []byte) (Report, error)
 ```
 
@@ -775,7 +799,8 @@ type OAuth interface {
   published (and closed), the draft's check conclusions (engine validation is the check on the draft PR), and the PR link. The
   form is a plain `textarea` that Monaco upgrades; saving works without JavaScript. The script marks the graph link "stale"
   as soon as the buffer differs from the loaded text or has diagnostics.
-- Save: checks in order: size ≤ 256 KB **[default]** and valid UTF-8; `policy.Waivers(content)` succeeds, else `422`; `Proposals.Get`; content
+- Save: checks in order: size ≤ 256 KB **[default]** and valid UTF-8; `policy.Waivers(content)` and `policy.Modules(content)`
+  succeed, else `422`; `Proposals.Get`; content
   equal to the file currently on the branch (at `Draft.HeadSHA` for an open draft, else on the default branch) is a no-op with
   a notice, whatever `head_sha` says, so a retried save never conflicts with itself; then an open draft whose head differs
   from `head_sha` (including an empty `head_sha`) is `409`; then `Proposals.Propose(Change{Repo: repo.RepoRef, Branch, Base: repo.DefaultBranch, Title, Body, Message,
@@ -784,9 +809,12 @@ type OAuth interface {
 - Ready: `Proposals.Get`; head must equal `head_sha`, state must be `DraftOpen`; then `Proposals.Ready(number)`. ui never merges:
   publication is the merge on GitHub under the customer's ruleset and owner approval, the same path as a GitHub-first edit.
 - Graph: settings → `LatestRun(Settings.Workflow, DefaultBranch)` → `Artifact(run.ID, "archfit-report", report.MaxBytes)` →
-  `report.Decode` → policy text (open draft of the user, else default branch) → `graph.Build`. No run or artifact (GitHub
-  retention): "no report available". Decode error: "report unavailable"; never a partial graph. The `View` is embedded as
-  JSON in a `script type="application/json"` element.
+  `report.Decode` → policy text (open draft of the user, else default branch) → `graph.Build`. The artifact is the raw engine
+  state JSON; only the decoded no-source `Report` is used. When the chosen policy text fails `policy.Modules` (a broken draft
+  pushed on GitHub), ui builds from the default-branch policy instead, the last valid text, and forces the stale banner with
+  "the draft does not parse" **[default]**. No run or artifact (GitHub retention): "no report available". Decode error:
+  "report unavailable"; never a partial graph. The `View` is embedded as JSON in a `script type="application/json"` element.
+  Links with `Permitted` false are drawn as violations.
 - Assist: authorize `write`; if `content` differs from the file at `head_sha`, save it first (same rules as Save) and use the
   new head; then `Assist.Propose(mode, Request{Repo, Branch, HeadSHA, Instruction, By: login})`. Managed is offered only when
   settings say `managed` and `Consents.Has(ConsentManagedLLM)`; assist enforces both anyway. Managed success: redirect to the
@@ -872,7 +900,8 @@ their interfaces except where a test says otherwise. The clock is injected.
   no-op with a notice, not a `409`; the same retry with different content is `409`.
 - **Test name**: `TestGraphPageBuildsFromArtifact`
   **Scenario**: the healthy wire fixture as the `archfit-report` artifact of the latest default-branch run.
-  **Expected behavior**: the embedded JSON equals `graph.Build(report, policy)`; node links point to `#L<line>`; no stale banner.
+  **Expected behavior**: the embedded JSON equals `graph.Build(report, policy)`; node links point to `#L<line>`; no stale banner;
+  marker strings placed in fields the decoder drops (`matched_by`, measurement, task declarations) appear nowhere in the page.
 - **Test name**: `TestConsentRecordAndRevoke`
   **Scenario**: an administrator records `managed_llm`, then revokes it.
   **Expected behavior**: `Consents.Has` is true then false for the installation of the authorized `Repo`; `By` is the session login.
@@ -925,7 +954,8 @@ their interfaces except where a test says otherwise. The clock is injected.
   commit; the PR is not marked ready.
 - **Test name**: `TestInvalidYAMLIsRefusedAndGraphGoesStale` (T17)
   **Scenario**: save broken YAML; then open the graph while the draft differs from the report's policy.
-  **Expected behavior**: `422` and no commit; the graph page shows the stale banner and still draws the report.
+  **Expected behavior**: `422` and no commit; the graph page shows the stale banner and still draws the report. Then a broken
+  draft is pushed on GitHub: the graph page draws from the default-branch policy with the stale banner and "the draft does not parse".
 - **Test name**: `TestUIAndGitHubFirstEditsShareOnePath` (T17)
   **Scenario**: one policy edit through the editor, one pushed directly to the draft branch on GitHub.
   **Expected behavior**: both are commits on a PR against the default branch; the editor shows the GitHub-pushed head after reload and

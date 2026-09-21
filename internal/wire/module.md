@@ -46,9 +46,9 @@ child is normative in the child's own `module.md`; it is not restated here.
 | Package                  | Owns                                                                                         |
 | ------------------------ | -------------------------------------------------------------------------------------------- |
 | `internal/wire/envelope` | report-envelope v1: `Envelope`, `Kind`, `Decode`, `PayloadDigest`, `Schema`                  |
-| `internal/wire/report`   | engine state v1 as no-source allowlist transport: `Report` and its parts, `Decode`, size cap |
+| `internal/wire/report`   | engine state v1 as no-source transport: `Report` and its parts, `Decode`, size cap           |
 | `internal/wire/settings` | `.archfit-app.yaml`: `Settings`, modes, `Parse`, `Render`, file location                     |
-| `internal/wire/policy`   | engine file locations, raw-byte `Digest`, `Waivers` reader, engine config `Schema`           |
+| `internal/wire/policy`   | engine file locations, bare-hex `Digest`, `Waivers` and `Modules` readers, config `Schema`   |
 | `internal/wire/manifest` | locked approved identities: `Identity`, `Entry`, `Lookup`, `Current`                         |
 
 ### Versioning rule
@@ -56,8 +56,12 @@ child is normative in the child's own `module.md`; it is not restated here.
 - Every contract carries a version identifier: envelope `archfit.report-envelope.v1`; report
   `archfit.architecture-state.v1`; settings file `version: 1`; manifest data `version: 1`; policy follows the pinned
   engine release v2.3.1.
-- Unknown fields are rejected by every decoder here. The one deliberate exception is the policy waiver reader,
-  which ignores engine-owned keys it does not read.
+- Unknown fields are rejected by every decoder here. Two deliberate nuances: the policy readers ignore
+  engine-owned keys they do not read; the report decoder knows every key of the engine's v2.3.1 state schema and
+  drops the known keys that are not allowlisted, while a key the schema does not define is still an error.
+- Two digest formats exist and are never compared with each other: engine-style bare lowercase hex (`policy.Digest`,
+  the report's `config_hash`, the envelope's `baseline_digest` and `labels_digest`) and the prefixed `sha256:<hex>`
+  form of envelope-native values (`payload_digest`, `image_digest`) **[default]**.
 - A wrong or unknown version identifier is a decode error, never a best-effort parse.
 - A breaking change means a new version constant and a new package-level decode path next to the old one. The old
   path stays until no approved producer emits the old version. Breaking: removing or renaming a field, changing a
@@ -70,12 +74,15 @@ child is normative in the child's own `module.md`; it is not restated here.
 
 `internal/wire/testdata/` is read by tests through relative paths. It is test data, not an import. Layout **[default]**:
 
-| Folder      | Content                                                              |
-| ----------- | -------------------------------------------------------------------- |
-| `envelope/` | envelope JSON documents, valid and invalid                           |
-| `report/`   | state report payloads; optional sibling policy and baseline files    |
-| `policy/`   | engine policy files, including waiver expiry and order cases         |
-| `leakage/`  | seeded source-bearing payloads; each contains the marker `LEAK-7f3a` |
+| Folder      | Content                                                                             |
+| ----------- | ----------------------------------------------------------------------------------- |
+| `envelope/` | envelope JSON documents, valid and invalid                                          |
+| `report/`   | state report payloads; optional sibling policy, baseline, labels and envelope files |
+| `policy/`   | engine policy files, including waiver expiry and order cases                        |
+| `leakage/`  | seeded source-bearing payloads; each contains the marker `LEAK-7f3a`                |
+| `schema/`   | pinned copy of the engine's `archfit.state.schema.json` with its source revision    |
+
+Files in `schema/` are reference data, not fixtures, and have no expectation sibling.
 
 Every fixture `<name>.<ext>` has a sibling `<name>.expect.json` with these keys and no others:
 
@@ -91,19 +98,41 @@ Every fixture `<name>.<ext>` has a sibling `<name>.expect.json` with these keys 
 reasons the gate preserves, in order. Example: the `blocker-and-unevaluated` fixture expects `failure` with
 `["blocking_findings", "missing_required_coverage"]`.
 
-The expected outcome holds under clean facts except the one eligibility fact the fixture exercises. Clean facts are:
-identity approved, workflow approved, settings found, policy and baseline digests matching the report, no approval
-needed, not suspended, no problems. `facts` lists the overrides with these keys, all optional: `identity_approved`
-(boolean), `workflow_approved` (boolean), `problems` (list of problem codes). Example: `unknown-identity` carries no
-measurement profile, so its expectation has `"facts": {"identity_approved": false}` and `gate.reasons`
-`["measurement_profile_missing"]`. `invalid-input` has `decode: "error"`, `"facts": {"problems": ["report_invalid"]}` and
-`gate.reasons` `["report_invalid"]`. Any other key in `facts` fails the corpus test.
+Outcomes are driven by the report's `verdict`, `decision.hard_gates` and `gate_reference.status`, together with the
+facts. A report has no exit code. The expected outcome holds under clean facts except the one eligibility fact the
+fixture exercises. Clean facts are: identity approved, workflow approved, settings found, no approval needed, not
+suspended, no problems, and consistent digests: the trusted policy digests are exactly the report's `config_hash`;
+the trusted baseline and labels digests are `policy.Digest` of the sibling files (empty list when there is no
+sibling file); the envelope states those same baseline and labels digests (`""` when there is no file).
 
-Fixtures captured from the engine use revision `f8877d25…`; fixtures from a mutable branch are not allowed. Required report fixtures (plan T02): `healthy`, `attention-pass` (warning-only attention with
-passing hard gates), `blocked`, `missing-evidence`, `unknown-identity`, `profile-comparable` (symmetric partial
-with a recognized `partial_basis`), `profile-incompatible`, `invalid-input`, `blocker-and-unevaluated`,
-`non-applicable-rule`, `locations-empty`, `matched-by-empty`, `repair-kinds`, `waiver-expiry-order`, plus the
-`leakage/` set (snippet field, log blob, raw model output, multi-line message).
+`facts` lists overrides with these keys, all optional:
+
+- `identity_approved`, `workflow_approved`: booleans.
+- `problems`: list of problem codes.
+- `baseline_digest`, `labels_digest`: what the envelope states, bare hex or `""`.
+- `trusted_policy_digests`, `trusted_baseline_digests`, `trusted_labels_digests`: lists of bare-hex digests the
+  protected ref yields.
+
+Examples: `unknown-identity` carries no measurement profile, so its expectation has
+`"facts": {"identity_approved": false}` and `gate.reasons` `["measurement_profile_missing"]`. `invalid-input` has
+`decode: "error"`, `"facts": {"problems": ["report_invalid"]}` and `gate.reasons` `["report_invalid"]`. A baseline
+tampering fixture overrides `baseline_digest` with a value outside `trusted_baseline_digests`. Any other key in
+`facts` fails the corpus test.
+
+Fixtures captured from the engine use revision `f8877d25…`; fixtures from a mutable branch are not allowed.
+Required report fixtures (plan T02): `healthy`, `attention-pass` (verdict `needs_attention` with passing hard
+gates), `blocked`, `missing-evidence` (`hard_gates: unmeasured`), `unknown-identity`, `profile-comparable` (symmetric
+partial with a recognized `partial_basis`), `profile-incompatible` (`gate_reference.status: non_comparable`),
+`invalid-input`, `blocker-and-unevaluated`, `non-applicable-rule`, `locations-empty`, `matched-by-populated`
+(decodes; `matched_by` is dropped and never in any output), `repair-kinds`, `waiver-expiry-order`, and
+`real-blocked-no-baseline`. The last one is captured unmodified from the real engine v2.3.1 on a two-module Go
+repository: verdict `blocked`, `hard_gates: fail`, no baseline file, so `gate_reference` is `non_comparable` with
+reason `no baseline file was loaded`; its policy file ships beside it and its facts have empty trusted baseline and
+labels lists. Its `gate` expectation is recorded from the gate verdict rules when the fixture is added.
+
+The `leakage/` set has two groups. Rejecting fixtures (`decode: "error"`): snippet field, log blob, raw model output
+key, multi-line text, oversized text. One surviving fixture (`decode: "ok"`): a marker identifier inside
+`agent_tasks[].declarations`, `matched_by` and a seam `hypothesis`; it must decode, and the marker must be gone.
 
 ## Integrations
 
@@ -120,9 +149,10 @@ External counterparts, reached only through these contracts:
 | `archfit-action` (external repo)  | the Action conforms to envelope and report      | Contract (JSON Schema)      | outside the tree; highest | Moderate   | Yes       |
 | customer repositories (the files) | customers write settings and policy files       | Contract (versioned file)   | outside the tree; highest | Moderate   | Yes       |
 
-Shared knowledge: with the engine, the state v1 field names and decision semantics, the config schema, waiver keys,
-the hashing rule and released identities; with the Action, the envelope schema, the digest rule and the no-source
-transport; with customers, the settings field rules. Separate repositories and release cycles are the highest
+Shared knowledge: with the engine, the complete v2.3.1 state schema key set, its enums and decision semantics, the
+config schema, waiver keys, the `modules` map shape, the three input file names, the bare-hex hashing rule and
+released identities, all pinned at revision `f8877d25ba36d84d3780071580d23486e3d794d0` and verified against a real
+report; with the Action, the envelope schema, both digest rules and the no-source transport; with customers, the settings field rules. Separate repositories and release cycles are the highest
 distance the system has. Contract coupling with explicit versions, strict decoding and a shared fixture corpus is
 what keeps it balanced. Installed Actions, images and stored baselines never upgrade atomically, so old decode
 paths stay until retired.
@@ -143,10 +173,11 @@ Rules between children:
 
 - Children never import each other and never import the parent. Shared meaning is carried by plain strings, and
   the consumer does the mapping. Examples: the envelope's three identity strings become a manifest `Identity` in the
-  gate; `policy.Digest` output is compared with `report` digest fields in the gate's inputs and verdict.
+  gate; `policy.Digest` output is compared with the report's `config_hash` and with the envelope's `baseline_digest`
+  and `labels_digest` in the gate.
 - Two small duplications are accepted to keep that rule **[default]**: the strict-JSON pre-pass exists in both
-  `envelope` and `report`; `sha256:<hex>` formatting exists in `envelope` and `policy`. Each is a few lines, and the
-  two digests have different meanings that may diverge.
+  `envelope` and `report`; SHA-256 hex formatting exists in `envelope` (prefixed) and `policy` (bare). Each is a few
+  lines, and the two digests have different formats and meanings.
 - `doc.go` in the parent states the placement rule and the versioning rule for Go readers.
 - Fan-out is five, within the 4±1 guidance.
 
@@ -188,13 +219,20 @@ Parent tests live in package `wire_test` and exercise the children together and 
   **Expected behavior**: engine-captured fixtures cite revision `f8877d25ba36d84d3780071580d23486e3d794d0`; synthetic ones give a reason; none cites a branch name.
 - **Test name**: `TestLeakageFixturesCarryTheMarker`
   **Scenario**: read every file in `testdata/leakage/`.
-  **Expected behavior**: each contains `LEAK-7f3a` and has `decode: "error"`.
+  **Expected behavior**: each contains `LEAK-7f3a`; all have `decode: "error"` except the one surviving declarations fixture, which has `decode: "ok"`.
+- **Test name**: `TestPinnedEngineSchemaIsRecorded`
+  **Scenario**: read `testdata/schema/`.
+  **Expected behavior**: `archfit.state.schema.json` is present with a source note citing revision `f8877d25ba36d84d3780071580d23486e3d794d0` and its SHA-256; the hash matches.
 
 ### Integration Contract Tests
 
 - **Test name**: `TestEveryFixtureDecodesAsRecorded`
-  **Scenario**: route each fixture to its child decoder by folder (`envelope.Decode`, `report.Decode`, `policy.Waivers`).
+  **Scenario**: route each fixture to its child decoder by folder (`envelope.Decode`, `report.Decode`, `policy.Waivers` and `policy.Modules`).
   **Expected behavior**: `ok` fixtures decode and match `fields`; `error` fixtures fail.
+- **Test name**: `TestRealEngineCaptureDecodes`
+  **Scenario**: `report/real-blocked-no-baseline` with its policy file, as captured from engine v2.3.1.
+  **Expected behavior**: `report.Decode` succeeds on the unmodified bytes; verdict `blocked`; `gate_reference.status` `non_comparable`;
+  `policy.Digest` of the policy equals `config_hash`; `policy.Modules` lists `a` and `b`, matching the seam's modules.
 - **Test name**: `TestPublishedPackagesExist`
   **Scenario**: `go list ./internal/wire/...`.
   **Expected behavior**: exactly the parent and the five published packages; the parent exports no identifiers.
@@ -213,6 +251,9 @@ Parent tests live in package `wire_test` and exercise the children together and 
 - **Test name**: `TestDecodersNeverEchoSeededValues`
   **Scenario**: feed every `leakage/` fixture and every invalid fixture to its decoder and collect the error strings.
   **Expected behavior**: no error string contains `LEAK-7f3a`.
+- **Test name**: `TestSourceIdentifiersNeverSurviveDecoding` (release test, T04)
+  **Scenario**: decode the surviving leakage fixture (marker in `declarations`, `matched_by`, seam `hypothesis`) and marshal the result.
+  **Expected behavior**: decodes; `LEAK-7f3a` is absent from the `Report`, from its JSON and from its formatted dump.
 
 ### Behavior Tests
 
@@ -226,5 +267,8 @@ Parent tests live in package `wire_test` and exercise the children together and 
   **Scenario**: for each report fixture that ships an envelope, compute `envelope.PayloadDigest` of the report bytes and look up the envelope identity in the manifest.
   **Expected behavior**: the digest equals the envelope's `payload_digest`; fixtures marked approved hit `manifest.Lookup`; a fixture with an unlisted image digest misses.
 - **Test name**: `TestPolicyDigestBindsReportToPolicy`
-  **Scenario**: for each report fixture with sibling policy and baseline files, apply `policy.Digest`.
-  **Expected behavior**: equals the report's `config_hash` and `gate_reference.digest`; after a one-byte policy edit it no longer does.
+  **Scenario**: for each report fixture with a sibling policy file, apply `policy.Digest`.
+  **Expected behavior**: equals the report's bare-hex `config_hash`; after a one-byte policy edit it no longer does.
+- **Test name**: `TestInputDigestsBindUploadToProtectedFiles`
+  **Scenario**: for each report fixture with an envelope and sibling baseline or labels files, apply `policy.Digest` to the files.
+  **Expected behavior**: equals the envelope's `baseline_digest` and `labels_digest`; a fixture without the file has `""`; no value carries a `sha256:` prefix.

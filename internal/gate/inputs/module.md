@@ -6,19 +6,19 @@
 
 ## Purpose
 
-`inputs` resolves everything the gate is allowed to believe about a pull request: settings, policy and
-baseline digests from the protected ref, the changed protected paths, the architecture owner's approval
+`inputs` resolves everything the gate is allowed to believe about a pull request: settings, policy,
+baseline and labels digests from the protected ref, the changed protected paths, the architecture owner's approval
 on the exact head SHA, the earliest waiver expiry, and the cached entitlement. Without it, the gate would
 compare a report with whatever the head tree says, and a contributor could weaken the gate in the same
 PR that violates it.
 
 ## Functional Responsibilities
 
-- Read `.archfit-app.yaml`, `.archfit.yaml` and `.archfit/baseline.json` at the target's `BaseRef`.
-- Compute raw-byte digests of policy and baseline.
+- Read `.archfit-app.yaml`, `.archfit.yaml`, `.archfit-baseline.json` and `.archfit-labels.yaml` at the target's `BaseRef`.
+- Compute raw-byte digests (bare lowercase hex SHA-256) of policy, baseline and labels.
 - Find which protected paths the PR changes.
 - Decide `Approval`: a base-version owner approved this exact head SHA, or not.
-- When approved, also accept the head digest of a changed policy or baseline, for this PR only.
+- When approved, also accept the head digest of a changed policy, baseline or labels file, for this PR only.
 - Report the earliest upcoming waiver expiry.
 - Read the cached `Entitlement` from the Store and derive `Suspended`.
 - Own the `Entitlement` record shape and its Store key, so the gate never imports billing code.
@@ -32,7 +32,7 @@ rules and the protected path set will change with pilots.
 
 - The protected path set and how a changed path is detected.
 - The approval algorithm: which reviews count, how owners and teams are matched, latest-review-wins.
-- The exception rule for owner-approved head policy and baseline digests.
+- The exception rule for owner-approved head policy, baseline and labels digests.
 - Bootstrap behavior when no settings file exists.
 - How a Store failure, a missing record, or a malformed record maps to "not suspended".
 - The suspension formula and the rule that public repositories are never suspended.
@@ -78,6 +78,7 @@ type Trusted struct {
     SettingsFound        bool
     PolicyDigests        []string // base digest, plus the head digest when Approval == ApprovalGranted
     BaselineDigests      []string // same rule; empty = no baseline on the protected ref
+    LabelsDigests        []string // same rule; empty = no labels file on the protected ref
     ProtectedPaths       []string // protected paths this PR changes
     Approval             Approval
     ApprovedBy           string
@@ -114,18 +115,19 @@ func New(repos Repos, pulls Pulls, s Store) Resolver
 4. Policy: `Repos.File(t.BaseRef, policy.PolicyPath)`. Found → `PolicyDigests = [policy.Digest(raw)]`.
    Absent (`api.ErrNotFound` only) → empty list; the verdict then reports `policy_missing`.
 5. Baseline: `Repos.File(t.BaseRef, policy.BaselinePath)`. Found → `BaselineDigests = [policy.Digest(raw)]`. Absent → empty.
+   Labels: the same with `policy.LabelsPath` and `LabelsDigests`. inputs never parses either file.
 6. Waivers: `policy.Waivers(basePolicy)`. An error gives no waivers and one log line with the outcome;
    the engine enforces waivers anyway.
 7. `t.PullRequest == 0` (push): stop. `ProtectedPaths` empty, `ApprovalNotRequired`.
-8. `ProtectedPaths` = `Pulls.ChangedFiles` ∩ {`policy.PolicyPath`, `policy.BaselinePath`, `settings.Path`,
-   `Settings.Workflow`}, in that fixed order. When `ChangedFiles` reports `truncated == true`, any path may
-   have changed: all four paths count as changed (fail closed).
+8. `ProtectedPaths` = `Pulls.ChangedFiles` ∩ {`policy.PolicyPath`, `policy.BaselinePath`, `policy.LabelsPath`,
+   `settings.Path`, `Settings.Workflow`}, in that fixed order. When `ChangedFiles` reports `truncated == true`, any
+   path may have changed: all five paths count as changed (fail closed).
 9. `ProtectedPaths` empty → `ApprovalNotRequired`. Stop.
 10. `t.Fork` → `ApprovalMissing`. Stop. No head file is read for a fork.
 11. Approval from `Pulls.Reviews` (algorithm below). Not granted → `ApprovalMissing`. Stop.
 12. Granted → `ApprovedBy` = the approving login. If the policy path is in `ProtectedPaths`: read it at
     `ref = t.HeadSHA`, append its digest to `PolicyDigests` (absent at head → nothing appended). Same for
-    the baseline. Head waivers are parsed from the approved head policy.
+    the baseline and the labels file. Head waivers are parsed from the approved head policy.
 13. `EarliestWaiverExpiry` = the earliest `Waiver.Expires` that is not before `now`, over the base policy
     and the approved head policy; zero when there is none **[default: expired waivers are skipped so that
     an old expiry does not hide the next one]**.
@@ -257,20 +259,24 @@ func Render(s Settings) []byte
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high (inputs side); the engine file contract is moderate
 - **Balanced?**: yes
-- **Shared knowledge**: the two engine file paths; `Digest` is `sha256` of the raw bytes and equals what the
-  engine reports as `comparison.config_hash` and `gate_reference.digest`; `Waiver.Expires` is the end of the
+- **Shared knowledge**: the three engine file paths; `Digest` is the bare lowercase hex SHA-256 of the raw bytes
+  (no `sha256:` prefix). For the policy it equals the engine's `comparison.config_hash`. The engine reports no digest
+  for baseline or labels; the producer states those in the envelope and `gate/verdict` compares them with the lists
+  built here; `Waiver.Expires` is the end of the
   day, UTC; `ApprovedBy` text in a waiver is descriptive and never authentication.
 
-<!-- contract: PolicyPath, BaselinePath, Digest — restated from internal/wire/policy/module.md -->
+<!-- contract: PolicyPath, BaselinePath, LabelsPath, Digest — restated from internal/wire/policy/module.md -->
 ```go
-// PolicyPath and BaselinePath are the engine files on the protected ref. [default]
+// The engine's three trusted input files on the protected ref. Baseline and labels sit beside the policy.
 const (
     PolicyPath   = ".archfit.yaml"
-    BaselinePath = ".archfit/baseline.json"
+    BaselinePath = ".archfit-baseline.json"
+    LabelsPath   = ".archfit-labels.yaml"
 )
 
-// Digest returns "sha256:<hex>" of the raw file bytes. It is the value the engine reports as
-// comparison.config_hash (policy) and gate_reference.digest (baseline).
+// Digest returns the bare lowercase hex SHA-256 of the raw file bytes. For the policy file it equals the
+// engine's comparison.config_hash. The engine reports no digest for baseline or labels; for those the
+// producer states Digest of the bytes it used in the envelope, and the App compares it with the protected ref.
 func Digest(raw []byte) string
 ```
 
@@ -404,7 +410,7 @@ type Pulls interface {
 ## Constraints and Invariants
 
 - Never trust the head tree. Settings, owners, policy, baseline and the workflow path come from
-  `BaseRef` only. The single exception: the digest of a head policy or baseline for a PR whose exact head
+  `BaseRef` only. The single exception: the digest of a head policy, baseline or labels file for a PR whose exact head
   SHA a base-version owner approved. CODEOWNERS is never read.
 - For a fork, no head file is read and approval is never granted.
 - Approval is bound to `t.HeadSHA`. Any new commit invalidates it.
@@ -429,7 +435,7 @@ failing `Store` stub. `NewMemory` is the in-process Store constructor of `intern
 
 - **Test name**: `TestProtectedPathsIntersection`
   **Scenario**: table of changed-file lists: none protected; policy only; baseline and workflow; settings; a custom `Settings.Workflow` path; a policy file renamed away (old path listed); a list without a protected path but `truncated == true`.
-  **Expected behavior**: `ProtectedPaths` in fixed order; the policy path for the rename; all four for the truncated list, so approval is required.
+  **Expected behavior**: `ProtectedPaths` in fixed order; the policy path for the rename; all five for the truncated list, so approval is required. A changed `.archfit-labels.yaml` is listed like the other four.
 - **Test name**: `TestApprovalAlgorithm`
   **Scenario**: table: owner approved head; owner approved an older SHA; non-owner approved head; owner approved then requested changes; owner approved then commented; owner approval dismissed; login case differs; team owner with member and with non-member; two owners, second approves.
   **Expected behavior**: granted, missing, missing, missing, granted, missing, granted, granted, missing, granted with the second owner as `ApprovedBy`.
@@ -444,10 +450,10 @@ failing `Store` stub. `NewMemory` is the in-process Store constructor of `intern
 
 - **Test name**: `TestResolveCleanPullRequest`
   **Scenario**: settings, policy and baseline on base; PR changes only code.
-  **Expected behavior**: `SettingsFound`, one policy digest equal to `policy.Digest(raw)`, one baseline digest, no protected paths, `ApprovalNotRequired`; `Reviews` was never called.
+  **Expected behavior**: `SettingsFound`, one policy digest equal to `policy.Digest(raw)` (bare hex), one baseline digest, one labels digest, no protected paths, `ApprovalNotRequired`; `Reviews` was never called.
 - **Test name**: `TestResolveApprovedPolicyChange`
   **Scenario**: PR changes `.archfit.yaml`; an owner approved the head SHA.
-  **Expected behavior**: `ApprovalGranted`, `ApprovedBy` set, `PolicyDigests` = base digest then head digest; `BaselineDigests` unchanged.
+  **Expected behavior**: `ApprovalGranted`, `ApprovedBy` set, `PolicyDigests` = base digest then head digest; `BaselineDigests` and `LabelsDigests` unchanged. The same PR changing only the labels file gives two labels digests and one policy digest.
 - **Test name**: `TestResolvePushTarget`
   **Scenario**: `PullRequest == 0`, `BaseRef` = default branch.
   **Expected behavior**: digests from that branch; no `ChangedFiles` or `Reviews` call; `ApprovalNotRequired`.
@@ -462,7 +468,7 @@ failing `Store` stub. `NewMemory` is the in-process Store constructor of `intern
 
 - **Test name**: `TestHeadTreeIsNeverRead`
   **Scenario**: every unapproved and fork scenario with a recording `Repos` fake.
-  **Expected behavior**: no `File` call with `ref == HeadSHA`; in the approved scenario only the changed policy or baseline path is read at head.
+  **Expected behavior**: no `File` call with `ref == HeadSHA`; in the approved scenario only the changed policy, baseline or labels path is read at head.
 - **Test name**: `TestStoreFailureIsNotSuspension` (T21)
   **Scenario**: Store returns `ErrNotFound`, a generic error, blocks past the timeout, returns invalid JSON.
   **Expected behavior**: zero `Entitlement`, `Suspended` false, `Resolve` succeeds; one log line with the outcome and no payload.
@@ -480,7 +486,7 @@ failing `Store` stub. `NewMemory` is the in-process Store constructor of `intern
 
 - **Test name**: `TestHeadEditsCannotWeakenInputs` (T12)
   **Scenario**: the PR edits policy, baseline, settings (adds the author as owner, switches to advisory) and the workflow, with no owner approval.
-  **Expected behavior**: digests, owners, gate mode and workflow path are the base values; `ApprovalMissing`; all four paths listed; the head baseline digest is never accepted (no blanket re-baseline).
+  **Expected behavior**: digests, owners, gate mode and workflow path are the base values; `ApprovalMissing`; all changed protected paths listed; the head baseline and labels digests are never accepted (no blanket re-baseline, no head-edited labels).
 - **Test name**: `TestOrdinaryReviewConfersNothing` (T14)
   **Scenario**: a non-owner approves; the head adds that reviewer to `owners` and to CODEOWNERS.
   **Expected behavior**: `ApprovalMissing`; head digests not accepted.
@@ -488,7 +494,7 @@ failing `Store` stub. `NewMemory` is the in-process Store constructor of `intern
   **Scenario**: an owner approves SHA 1; the PR is re-pushed to SHA 2; then the owner approves SHA 2.
   **Expected behavior**: missing for SHA 2 until the second approval; then granted with the SHA 2 policy digest.
 - **Test name**: `TestOwnerApprovedBaselinePullRequest` (T15)
-  **Scenario**: a PR that replaces `.archfit/baseline.json`, approved by an owner on its head.
+  **Scenario**: a PR that replaces `.archfit-baseline.json`, approved by an owner on its head.
   **Expected behavior**: `BaselineDigests` holds base and head digests; without the approval only the base digest.
 - **Test name**: `TestForkNeverGetsHeadInputs`
   **Scenario**: fork target that changes the policy, with an owner approval present.

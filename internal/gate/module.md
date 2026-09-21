@@ -126,6 +126,8 @@ type Upload struct {
     Binding  Binding
     Identity Identity // claimed engine/image identity from the envelope
     Digest   string   // payload digest, verified against the envelope
+    BaselineDigest string // claimed by the envelope; "" = the producer used no baseline
+    LabelsDigest   string // claimed by the envelope; "" = the producer used no labels file
     Payload  []byte   // the exact verified bytes; the only content for KindDiscovery
     Report   *Report  // nil for KindDiscovery and when ProblemReportInvalid
     Problems []Problem
@@ -255,6 +257,7 @@ type Trusted struct {
     SettingsFound        bool
     PolicyDigests        []string // base digest, plus the head digest when Approval == ApprovalGranted
     BaselineDigests      []string // same rule; empty = no baseline on the protected ref
+    LabelsDigests        []string // same rule; empty = no labels file on the protected ref
     ProtectedPaths       []string // protected paths this PR changes
     Approval             Approval
     ApprovedBy           string
@@ -316,6 +319,7 @@ const (
     ReasonMissingCoverage     ReasonCode = "missing_required_coverage"
     ReasonBaselineNotComparable ReasonCode = "baseline_not_comparable"
     ReasonBaselineMismatch    ReasonCode = "baseline_mismatch"
+    ReasonLabelsMismatch      ReasonCode = "labels_mismatch"
     ReasonPolicyMismatch      ReasonCode = "policy_mismatch"
     ReasonPolicyMissing       ReasonCode = "policy_missing" // settings merged, no policy on the protected ref yet
     ReasonUnknownIdentity     ReasonCode = "unknown_engine_identity"
@@ -352,6 +356,8 @@ type Outcome struct {
 // Facts is the closed input of the decision. Report is nil when no usable report exists.
 type Facts struct {
     Problems         []Problem
+    BaselineDigest   string // claimed by the envelope; "" = none used
+    LabelsDigest     string // claimed by the envelope; "" = none used
     Report           *Report
     IdentityApproved bool
     WorkflowApproved bool
@@ -395,6 +401,7 @@ type Receipt struct {
     ReportDigest         string     `json:"report_digest"`
     PolicyDigest         string     `json:"policy_digest"`
     BaselineDigest       string     `json:"baseline_digest"`
+    LabelsDigest         string     `json:"labels_digest"`
     EarliestWaiverExpiry time.Time  `json:"earliest_waiver_expiry"`
     Conclusion           Conclusion `json:"conclusion"`
     Reason               ReasonCode `json:"reason"`
@@ -492,46 +499,62 @@ func Current() Entry
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high (gate side); the schema is moderate
 - **Balanced?**: yes
-- **Shared knowledge**: the façade reads `Comparison.ConfigHash`, `Comparison.GateReference.Digest` and
-  `Comparison.MeasurementProfile.Version`; the rest of the report passes through to verdict and feedback.
+- **Shared knowledge**: the façade reads `Comparison.ConfigHash` (bare hex) and
+  `Comparison.MeasurementProfile.Version`; the rest of the report passes through to verdict and feedback. A report has
+  no exit code and no baseline or labels digest; `GateReference` is a top-level status that only verdict and feedback read.
   `Decision` is an opaque part of `Report` for this module. `Finding` is an opaque part of `Report` for this module.
   `Dimension` is an opaque part of `Report` for this module. `AgentTask` is an opaque part of `Report` for this module.
-  `Module` is an opaque part of `Report` for this module. `Edge` is an opaque part of `Report` for this module. `StateSchemaV1` is the schema constant the decoder enforced.
+  `Coverage` is an opaque part of `Report` for this module. `Seam` is an opaque part of `Report` for this module.
+  `Reference` is an opaque part of `Report` for this module. `StateSchemaV1` is the schema constant the decoder enforced.
 
 <!-- contract: Report, StateSchemaV1, MaxBytes — restated from internal/wire/report/module.md -->
 ```go
-// StateSchemaV1 is the engine state contract accepted (engine v2.3.1).
+// StateSchemaV1 is the engine state contract accepted (engine v2.3.1, archfit.state.schema.json).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
-// Report is the no-source transport form of an engine state report: only allowlisted
-// fields exist, so anything else in the payload is a decode error. One exception: a finding
-// may carry "matched_by" as an empty object, which is accepted and dropped.
+// Report is the no-source transport form of an engine state report. The decoder knows every key of the
+// v2.3.1 state schema: keys listed here are kept (length-capped), the other known keys are validated and
+// dropped (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores),
+// and any key the schema does not define is a decode error.
 type Report struct {
-    SchemaVersion     string      `json:"schema_version"` // must equal StateSchemaV1
-    Decision          Decision    `json:"decision"`
-    Comparison        Comparison  `json:"comparison"`
-    Findings          []Finding   `json:"findings"`
-    Dimensions        []Dimension `json:"dimensions"`
-    AgentTasks        []AgentTask `json:"agent_tasks"`
-    Modules           []Module    `json:"modules"`
-    Edges             []Edge      `json:"edges"`
-    ValidationCommand []string    `json:"validation_command"` // argv, replayed verbatim; never contains --refresh
+    SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
+    Verdict       string               `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
+    Decision      Decision             `json:"decision"`
+    Comparison    Comparison           `json:"comparison"`
+    GateReference *Reference           `json:"gate_reference,omitempty"` // persisted-baseline comparison; nil = engine emitted none
+    Dimensions    map[string]Dimension `json:"dimensions"`               // exactly the nine engine dimension keys
+    Coverage      Coverage             `json:"coverage"`
+    Findings      []Finding            `json:"findings"`
+    AgentTasks    []AgentTask          `json:"agent_tasks"`
+    Seams         []Seam               `json:"seams"`
 }
 ```
 
-<!-- contract: Comparison, MeasurementProfile, Producer, GateReference — restated from internal/wire/report/module.md -->
+<!-- contract: Comparison, Reference, MeasurementProfile, Producer — restated from internal/wire/report/module.md -->
 ```go
-// Comparison binds the report to the inputs the engine actually used.
+// Comparison binds the report to the inputs the engine actually used (report-only --base comparison).
 type Comparison struct {
-    ConfigHash         string              `json:"config_hash"` // "sha256:<hex>" of the raw policy bytes
-    ModelHash          string              `json:"model_hash"`
-    LabelsHash         string              `json:"labels_hash"`
-    RubricHash         string              `json:"rubric_hash"`
+    Status             string              `json:"status"` // "not_requested" | "comparable" | "non_comparable"
+    BaseRef            string              `json:"base_ref,omitempty"`
+    ConfigHash         string              `json:"config_hash,omitempty"` // bare lowercase hex SHA-256 of the raw policy bytes
+    ModelHash          string              `json:"model_hash,omitempty"`
+    LabelsHash         string              `json:"labels_hash,omitempty"` // canonical hash of approved labels; not reproducible from raw bytes
+    RubricVersion      string              `json:"rubric_version,omitempty"`
     MeasurementProfile *MeasurementProfile `json:"measurement_profile,omitempty"` // nil = unknown identity
-    GateReference      *GateReference      `json:"gate_reference,omitempty"`      // nil = no persisted baseline used
+    Reasons            []string            `json:"reasons"`
+    TaskOriginStatus   string              `json:"task_origin_status,omitempty"`
+    TaskOriginReasons  []string            `json:"task_origin_reasons,omitempty"`
+}
+
+// Reference is the engine gate's comparison with the persisted baseline (top-level gate_reference).
+// The engine exposes no baseline digest: only whether the baseline it loaded was comparable, and why not.
+type Reference struct {
+    Status  string   `json:"status"`             // "comparable" | "non_comparable" | "not_requested"
+    BaseRef string   `json:"base_ref,omitempty"` // "baseline"
+    Reasons []string `json:"reasons"`            // e.g. "no baseline file was loaded"
 }
 
 type MeasurementProfile struct {
@@ -544,16 +567,9 @@ type MeasurementProfile struct {
 type Producer struct {
     Tool             string `json:"tool"`
     SemanticsVersion string `json:"semantics_version"`
-    Status           string `json:"status"`
+    Status           string `json:"status"` // "ok" | "partial" | "absent" | "disabled" | "timed out"
     ToolVersion      string `json:"tool_version,omitempty"`
-    PartialBasis     string `json:"partial_basis,omitempty"`
-}
-
-// GateReference describes the persisted baseline the engine gate used.
-type GateReference struct {
-    Digest     string   `json:"digest"`     // "sha256:<hex>" of the raw baseline bytes
-    Comparable bool     `json:"comparable"` // false = non-comparable; Reasons says why
-    Reasons    []string `json:"reasons,omitempty"`
+    PartialBasis     string `json:"partial_basis,omitempty"` // "unresolved_specifiers" | "degraded_precision"
 }
 ```
 
@@ -565,19 +581,22 @@ type GateReference struct {
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high (gate side); the engine file contract is moderate
 - **Balanced?**: yes
-- **Shared knowledge**: the façade compares `DefaultBranchPush.ChangedPaths` with `PolicyPath` and `BaselinePath`.
+- **Shared knowledge**: the façade compares `DefaultBranchPush.ChangedPaths` with `PolicyPath`, `BaselinePath` and `LabelsPath`.
+  All digests on the gate path are bare lowercase hex as `Digest` returns them.
   `Digest` is not called here; digests are computed inside `gate/inputs`.
 
-<!-- contract: PolicyPath, BaselinePath, Digest — restated from internal/wire/policy/module.md -->
+<!-- contract: PolicyPath, BaselinePath, LabelsPath, Digest — restated from internal/wire/policy/module.md -->
 ```go
-// PolicyPath and BaselinePath are the engine files on the protected ref. [default]
+// The engine's three trusted input files on the protected ref. Baseline and labels sit beside the policy.
 const (
     PolicyPath   = ".archfit.yaml"
-    BaselinePath = ".archfit/baseline.json"
+    BaselinePath = ".archfit-baseline.json"
+    LabelsPath   = ".archfit-labels.yaml"
 )
 
-// Digest returns "sha256:<hex>" of the raw file bytes. It is the value the engine reports as
-// comparison.config_hash (policy) and gate_reference.digest (baseline).
+// Digest returns the bare lowercase hex SHA-256 of the raw file bytes. For the policy file it equals the
+// engine's comparison.config_hash. The engine reports no digest for baseline or labels; for those the
+// producer states Digest of the bytes it used in the envelope, and the App compares it with the protected ref.
 func Digest(raw []byte) string
 ```
 
@@ -620,7 +639,9 @@ type Envelope struct {
     EngineVersion string `json:"engine_version"` // e.g. "v2.3.1"
     ImageDigest   string `json:"image_digest"`   // "sha256:<64 hex>"
     Platform      string `json:"platform"`       // e.g. "linux/amd64"
-    PayloadDigest string `json:"payload_digest"` // "sha256:<64 hex>" of the exact payload bytes
+    PayloadDigest  string `json:"payload_digest"`  // "sha256:<64 hex>" of the exact payload bytes
+    BaselineDigest string `json:"baseline_digest"` // bare hex SHA-256 of the baseline file the engine loaded; "" = none
+    LabelsDigest   string `json:"labels_digest"`   // bare hex SHA-256 of the labels file the engine loaded; "" = none
 }
 ```
 
@@ -887,23 +908,26 @@ type Store interface {
    upload (`PullRequest == 0`) `Target.BaseRef` is `Repo.DefaultBranch`, not `Binding.BaseRef`: the binding names the
    branch the run executed on, which is a protected ref only when it is the default branch.
 3. `trusted, err := resolver.Resolve(ctx, target, now)`. Error → 503; the pending check stays.
-4. `IdentityApproved` = `manifest.Lookup(u.Identity)` hits **and** the report carries a measurement profile **and**
-   `profile.Version == entry.ProfileVersion`. False when `u.Report == nil`.
+4. `IdentityApproved` = `manifest.Lookup(u.Identity)` hits **and** `u.Report.Comparison.MeasurementProfile != nil` **and**
+   its `Version == entry.ProfileVersion` (for engine v2.3.1 the manifest holds `archfit.measurement.v1`). False when `u.Report == nil`.
 5. `WorkflowApproved` = `trusted.SettingsFound` **and** `u.Binding.WorkflowPath != ""` **and** it equals
    `trusted.Settings.Workflow`. A workflow file changed by the PR is a protected path; `inputs` then demands owner approval.
-6. `outcome = verdict.Decide(Facts{u.Problems, u.Report, IdentityApproved, WorkflowApproved, trusted})`.
+6. `outcome = verdict.Decide(Facts{Problems: u.Problems, BaselineDigest: u.BaselineDigest, LabelsDigest: u.LabelsDigest,
+   Report: u.Report, IdentityApproved, WorkflowApproved, Trusted: trusted})`. The two digests are the envelope's claims,
+   copied unchanged; they are customer-attested like the report.
 7. Receipt (table below); `publisher.Publish(ctx, Publication{target, u.Identity, outcome, receipt, u.Report, trusted})`.
    `Identity` is the envelope's claim; feedback prints it as claimed.
 8. Answer 200 with conclusion and reason.
 
-| `Receipt` field        | Value                                                                                                     |
-| ---------------------- | --------------------------------------------------------------------------------------------------------- |
-| `RunID`, `RunAttempt`  | from `Binding`                                                                                            |
-| `ReportDigest`         | `Upload.Digest`                                                                                           |
-| `PolicyDigest`         | the report's `ConfigHash` when it is in `Trusted.PolicyDigests`; else `PolicyDigests[0]`; else `""`       |
-| `BaselineDigest`       | the report's `GateReference.Digest` when it is in `BaselineDigests`; else `BaselineDigests[0]`; else `""` |
-| `EarliestWaiverExpiry` | `Trusted.EarliestWaiverExpiry`                                                                            |
-| `Conclusion`, `Reason` | `outcome.Conclusion`, `outcome.Reasons[0].Code`                                                           |
+| `Receipt` field        | Value                                                                                               |
+| ---------------------- | --------------------------------------------------------------------------------------------------- |
+| `RunID`, `RunAttempt`  | from `Binding`                                                                                      |
+| `ReportDigest`         | `Upload.Digest`                                                                                     |
+| `PolicyDigest`         | the report's `ConfigHash` when it is in `Trusted.PolicyDigests`; else `PolicyDigests[0]`; else `""` |
+| `BaselineDigest`       | `Upload.BaselineDigest` when it is in `BaselineDigests`; else `BaselineDigests[0]`; else `""`       |
+| `LabelsDigest`         | `Upload.LabelsDigest` when it is in `LabelsDigests`; else `LabelsDigests[0]`; else `""`             |
+| `EarliestWaiverExpiry` | `Trusted.EarliestWaiverExpiry`                                                                      |
+| `Conclusion`, `Reason` | `outcome.Conclusion`, `outcome.Reasons[0].Code`                                                     |
 
 Special targets, all through the same flow:
 
@@ -916,21 +940,25 @@ Special targets, all through the same flow:
 - An upload that could not be bound to a pull request (`unsupported_event`, ambiguous association): `PullRequest == 0`,
   so it is published on the run's head SHA as `archfit/state` only. The PR's own gate check stays pending and the sweep times it out.
 - Fork: `ProblemFork` → `fork_unsupported`; `inputs` reads nothing from the head.
+- Engine error: `archfit check` exits 3 and writes no report, so nothing is uploaded. The pending gate check stays
+  and the sweep ends it as `missing_upload`. The upload path never sees an exit code.
+- No baseline anywhere (none on the protected ref, none claimed): allowed **[default]**. The engine's `non_comparable`
+  reference ("no baseline file was loaded") is ignored by verdict, and feedback discloses that every current violation blocks.
 
 ### HandleEvent
 
 `Target.Repo` is built from the verified event: `Repo{RepoRef{e.InstallationID, e.Repo}, Private: e.RepoPrivate}`;
 `ID` and `DefaultBranch` stay zero and are not needed for pull request targets **[default: saves one API call]**.
 
-| `Event.Kind`                     | Reaction                                                                                                                                                                                                                           |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PullOpened`, `PullSynchronized` | `Resolve`. `!SettingsFound` → nothing. Fork → `Publish(Without(ReasonForkUnsupported))` with a zero-run receipt carrying the base digests. Else `Settings.Gate == GateRequired` → `publisher.Pending(target)`. Advisory → nothing. |
-| `ReviewChanged`                  | `State(target)`; only when its receipt reason is `owner_approval_missing`: `Resolve`; when `Approval == ApprovalGranted` **[default: no re-run for a review that grants nothing]** → re-run `receipt.RunID` under the guard below. |
-| `DefaultBranchPush`              | `ChangedPaths` empty (= unknown), or it contains `policy.PolicyPath`, `policy.BaselinePath`, `settings.Path`, or any path under `.github/workflows/` → `sweeper.RunRepo(ctx, repo, now)` in the request. Otherwise nothing.        |
-| `PullClosed`                     | nothing.                                                                                                                                                                                                                           |
-| installation kinds, `Ignored`    | nothing; `control` handles installations.                                                                                                                                                                                          |
+| `Event.Kind`                     | Reaction                                                                                                                                                                                                                                         |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PullOpened`, `PullSynchronized` | `Resolve`. `!SettingsFound` → nothing. Fork → `Publish(Without(ReasonForkUnsupported))` with a zero-run receipt carrying the base digests. Else `Settings.Gate == GateRequired` → `publisher.Pending(target)`. Advisory → nothing.               |
+| `ReviewChanged`                  | `State(target)`; only when its receipt reason is `owner_approval_missing`: `Resolve`; when `Approval == ApprovalGranted` **[default: no re-run for a review that grants nothing]** → re-run `receipt.RunID` under the guard below.               |
+| `DefaultBranchPush`              | `ChangedPaths` empty (= unknown), or it contains `policy.PolicyPath`, `policy.BaselinePath`, `policy.LabelsPath`, `settings.Path`, or any path under `.github/workflows/` → `sweeper.RunRepo(ctx, repo, now)` in the request. Otherwise nothing. |
+| `PullClosed`                     | nothing.                                                                                                                                                                                                                                         |
+| installation kinds, `Ignored`    | nothing; `control` handles installations.                                                                                                                                                                                                        |
 
-Protected default-branch push: the exact fourth protected path is `Settings.Workflow`, which lives on the protected
+Protected default-branch push: the exact fifth protected path is `Settings.Workflow`, which lives on the protected
 ref. The façade matches the whole `.github/workflows/` directory instead **[default]**: `wire/settings` only accepts
 a workflow path under it, so this is a superset, it needs no file read, and an extra `RunRepo` is harmless because the
 pass is idempotent. `RunRepo` re-resolves every open PR of the repository, so a changed base policy or baseline shows
@@ -945,6 +973,7 @@ Receipt, Report: nil, trusted}` with this receipt (the same construction the swe
 | `RunID`, `RunAttempt`, `ReportDigest` | zero: no workflow run reported for this head |
 | `PolicyDigest`                        | `trusted.PolicyDigests[0]`, or `""`          |
 | `BaselineDigest`                      | `trusted.BaselineDigests[0]`, or `""`        |
+| `LabelsDigest`                        | `trusted.LabelsDigests[0]`, or `""`          |
 | `EarliestWaiverExpiry`                | `trusted.EarliestWaiverExpiry`               |
 | `Conclusion`, `Reason`                | `ActionRequired`, `ReasonForkUnsupported`    |
 
@@ -1015,8 +1044,8 @@ Composition tests use a fake GitHub HTTP server behind a real `*Client`, a stub 
   **Scenario**: binding path equals settings; differs; empty binding path with empty settings (not onboarded); reusable workflow from another repository (`""`).
   **Expected behavior**: true, false, false, false.
 - **Test name**: `TestReceiptConstruction`
-  **Scenario**: matching digests; approved head policy digest; mismatching `config_hash`; no baseline; nil report.
-  **Expected behavior**: the values of the receipt table; base digests when the report's do not match.
+  **Scenario**: matching policy, baseline and labels digests; approved head policy digest; mismatching `config_hash`; a claimed baseline digest not on the protected ref; no baseline and no labels file anywhere; nil report.
+  **Expected behavior**: the values of the receipt table, all bare hex; the first accepted digest when a claim does not match; `""` when both sides are empty.
 - **Test name**: `TestHTTPMapping`
   **Scenario**: every row of "Upload answers", with each rejection status once.
   **Expected behavior**: the listed status, JSON body and `Retry-After`; no body ever contains report content.
@@ -1036,8 +1065,8 @@ Composition tests use a fake GitHub HTTP server behind a real `*Client`, a stub 
   **Scenario**: `PullOpened` in required mode, in advisory mode, without settings, from a fork; `PullSynchronized`; `ReviewChanged` with and without an `owner_approval_missing` receipt and with and without a granting review; `PullClosed`; `DefaultBranchPush` touching only code; `InstallationAdded`; the same delivery twice.
   **Expected behavior**: pending check; nothing; nothing; `fork_unsupported` published; pending check on the new head; one re-run only for the receipt-plus-granted case; nothing for the rest; redelivery changes nothing.
 - **Test name**: `TestProtectedPushTriggersRepoSweep`
-  **Scenario**: table of `DefaultBranchPush.ChangedPaths`: `.archfit.yaml`; `.archfit/baseline.json`; `.archfit-app.yaml`; `.github/workflows/archfit.yaml`; another workflow file; only source files; empty list (unknown); each with a second repository that has stale PRs.
-  **Expected behavior**: `RunRepo` for the pushed repository in the first five rows and for the empty list; no call for source-only pushes; the other repository is never touched; a `RateLimited` summary is not an error.
+  **Scenario**: table of `DefaultBranchPush.ChangedPaths`: `.archfit.yaml`; `.archfit-baseline.json`; `.archfit-labels.yaml`; `.archfit-app.yaml`; `.github/workflows/archfit.yaml`; another workflow file; only source files; empty list (unknown); each with a second repository that has stale PRs.
+  **Expected behavior**: `RunRepo` for the pushed repository in the first six rows and for the empty list; no call for source-only pushes; the other repository is never touched; a `RateLimited` summary is not an error.
 - **Test name**: `TestNewReceiverIsTheSameReceiver`
   **Scenario**: run the ingest rejection table through `NewReceiver(...)` with `KindDiscovery`.
   **Expected behavior**: identical rejections; a discovery `Upload` carries `Payload` and a nil `Report`; no check is written.
@@ -1067,15 +1096,15 @@ Composition tests use a fake GitHub HTTP server behind a real `*Client`, a stub 
 
 - **Test name**: `TestLegitimateChangePassesAndViolationFails` (T02)
   **Scenario**: the paired healthy and blocked fixtures of each claimed erosion scenario; the warning-only attention fixture.
-  **Expected behavior**: `success`, `failure`, `success` with `needs_attention` visible on `archfit/state`; feedback names rule, modules, locations and the validation command.
+  **Expected behavior**: `success`, `failure`, `success` on `archfit/gate` with `archfit/state` `neutral` for the `needs_attention` verdict; feedback names rule, modules, locations and the validation command.
 - **Test name**: `TestTamperingNeverYieldsSuccess` (T12, T14)
-  **Scenario**: head-edited policy, baseline, settings (owners, gate mode), workflow and CODEOWNERS; an ordinary non-owner approval; an owner approval followed by a new commit; a report without `gate_reference` while a baseline exists.
-  **Expected behavior**: `policy_mismatch`, `baseline_mismatch` or `owner_approval_missing`; never `success`; after the owner approves the new head, the same upload re-run passes.
+  **Scenario**: head-edited policy, baseline, settings (owners, gate mode), workflow and CODEOWNERS; an ordinary non-owner approval; an owner approval followed by a new commit; a head-edited labels file; an envelope that claims no baseline while a baseline exists; a report whose `gate_reference` is missing or `non_comparable` while a baseline exists.
+  **Expected behavior**: `policy_mismatch`, `baseline_mismatch`, `labels_mismatch`, `baseline_not_comparable` or `owner_approval_missing`; never `success`; after the owner approves the new head, the same upload re-run passes.
 - **Test name**: `TestAtomicCodeAndPolicyPullRequest` (T14)
   **Scenario**: a PR changes code and policy; the engine ran with the head policy; an owner approved the exact head.
   **Expected behavior**: before approval `owner_approval_missing` (and `policy_mismatch`); after approval and re-run `success`; a further commit returns it to `action_required`.
 - **Test name**: `TestNonComparableBaselineRecovery` (T15)
-  **Scenario**: profile upgrade makes `gate_reference` non-comparable; then an owner-approved baseline PR merges and the workflow re-runs.
+  **Scenario**: profile upgrade makes `gate_reference.status` `non_comparable` while `verdict` is `healthy`; then an owner-approved baseline PR merges and the workflow re-runs.
   **Expected behavior**: `baseline_not_comparable` with the baseline-PR recovery text; `success` only after the new baseline is on the protected ref.
 - **Test name**: `TestDuplicateAndOutOfOrderDelivery` (T03, T11)
   **Scenario**: the same upload twice; an older attempt after a newer one; an upload for a superseded head.
