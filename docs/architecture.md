@@ -1,22 +1,21 @@
 # Architecture
 
-This page shows how `archfit-app` works and how the code is organized.
-Each package has a detailed specification in a `module.md` file.
-Start at [`internal/module.md`](../internal/module.md) when you need more detail.
+This page explains the App boundary, the main request flows, and the Go package structure.
+Read the [module specifications](../internal/module.md) for package contracts and test specifications.
 
 ## The main idea
 
-The Archfit engine runs in the CI of the customer. The engine writes a report.
-A report from customer CI is only a claim. The App does not trust it by default.
+The Archfit engine runs in customer CI and writes a report. The report is customer-attested evidence.
+The App does not trust the report until it verifies the sender, revision, policy, and other gate inputs.
 
-The App does three things with each report:
+For each report, the App:
 
-1. It verifies who sent the report, with a GitHub Actions OIDC token.
-2. It compares the report with the approved policy on the protected ref.
-3. It publishes the result on the pull request.
+1. Verifies the GitHub Actions OIDC token and the upload envelope.
+2. Reads policy, baseline, labels, and settings from the protected ref.
+3. Compares the report with those trusted inputs.
+4. Publishes feedback on the pull request.
 
-The protected ref is the base branch of the pull request.
-For a push, the protected ref is the default branch.
+The protected ref is the base branch of a pull request. For a default-branch push, it is the default branch.
 
 ## System context
 
@@ -25,12 +24,12 @@ flowchart LR
     USER(["Repository admin<br/>or policy owner"])
     SCHED(["External scheduler"])
 
-    subgraph CI["Customer CI · not trusted"]
+    subgraph CI["Customer CI · report producer"]
         ACT["archfit-action<br/>runs the engine"]
     end
 
-    subgraph GH["GitHub · source of truth"]
-        PR["Pull request<br/>checks and one comment"]
+    subgraph GH["GitHub · trusted source"]
+        PR["Pull request<br/>checks and comment"]
         REF["Protected ref<br/>policy, baseline, labels,<br/>settings, workflow"]
         OIDC["Actions OIDC keys"]
     end
@@ -38,287 +37,307 @@ flowchart LR
     APP["archfit-app<br/>one Go binary"]
     LLM["Anthropic API<br/>optional"]
 
-    ACT -- "POST /v1/reports<br/>report + OIDC token" --> APP
-    PR -- "POST /webhooks/github" --> APP
-    APP -- "reads trusted inputs" --> REF
-    APP -- "verifies the token" --> OIDC
-    APP -- "publishes checks<br/>and the comment" --> PR
-    USER -- "browser + GitHub OAuth" --> APP
-    SCHED -- "POST /internal/sweep" --> APP
-    APP -. "AI proposal, on request" .-> LLM
+    ACT -->|"report + OIDC token"| APP
+    PR -->|"webhook"| APP
+    APP -->|"read trusted inputs"| REF
+    APP -->|"verify token keys"| OIDC
+    APP -->|"publish checks and comment"| PR
+    USER -->|"OAuth browser session"| APP
+    SCHED -->|"operator request"| APP
+    APP -.->|"proposal on request"| LLM
 
-    classDef untrusted fill:#fff4d6,stroke:#b7791f,color:#1a202c
-    classDef github fill:#e8eef7,stroke:#4a6fa5,color:#1a202c
-    classDef app fill:#2f855a,stroke:#22543d,color:#ffffff
+    classDef core fill:#2f855a,stroke:#22543d,color:#ffffff
+    classDef control fill:#e8eef7,stroke:#4a6fa5,color:#1a202c
+    classDef nottrusted fill:#fff4d6,stroke:#b7791f,color:#1a202c
     classDef optional fill:#f3e8ff,stroke:#6b46c1,color:#1a202c,stroke-dasharray:4 3
-    classDef actor fill:#ffffff,stroke:#4a5568,color:#1a202c
+    classDef neutral fill:#edf2f7,stroke:#718096,color:#1a202c
 
-    class ACT untrusted
-    class PR,REF,OIDC github
-    class APP app
+    class APP core
+    class PR,REF,OIDC control
+    class ACT nottrusted
     class LLM optional
-    class USER,SCHED actor
+    class USER,SCHED neutral
 
-    style CI fill:#fffbeb,stroke:#b7791f,color:#1a202c
-    style GH fill:#f7fafc,stroke:#4a6fa5,color:#1a202c
+    style CI fill:#fff4d6,stroke:#b7791f,color:#1a202c
+    style GH fill:#e8eef7,stroke:#4a6fa5,color:#1a202c
 ```
 
-The work is divided between three repositories:
+Solid arrows show request, read, or publication flow. The dotted arrow shows an optional AI proposal.
 
-| Repository       | Responsibility                                     |
-| ---------------- | -------------------------------------------------- |
-| `archfit`        | Engine, CLI, images, and report schemas            |
-| `archfit-action` | Runs the engine in CI and uploads the report       |
-| `archfit-app`    | Approved policy, report intake, gate, and feedback |
+The App stores no report or source code. GitHub stores checks, comments, workflow runs, and the no-source
+report artifact that the Graph page reads. The App stores entitlements, consent records, and an LLM budget
+counter in a key-value store.
 
-GitHub is the database. The App keeps only a small key-value store.
-This store holds entitlements, consent records, and the LLM budget counter.
-The App does not keep reports or source code.
+The repository split is:
+
+- `archfit` owns the engine, CLI, images, and report schemas.
+- `archfit-action` runs the engine in customer CI and uploads the report.
+- `archfit-app` owns approved policy, report intake, the gate, and feedback.
 
 ## Packages
 
-All code is in one Go binary. Each folder below `internal/` is one Go package.
+The App is one Go binary. The main internal packages are shown below.
 
 ```mermaid
 flowchart TB
-    CMD["cmd/reporter<br/>entry point"]
-    APP["app<br/>configuration, routes, wiring"]
+    APP["app<br/>config, wiring, routes"]
+    CONTROL["control<br/>UI, onboarding,<br/>proposals, account, assist"]
+    GATE["gate<br/>upload, verdict,<br/>feedback, sweep"]
+    BASE["Shared packages<br/>wire · github · store"]
 
-    subgraph CONTROL["control · control plane"]
-        direction LR
-        UI["ui<br/>session, graph"]
-        ONB["onboarding"]
-        ASSIST["assist<br/>anthropic"]
-        PROP["proposal"]
-        ACC["account"]
-        UI ~~~ ONB ~~~ ASSIST ~~~ PROP ~~~ ACC
-    end
-
-    subgraph GATE["gate · gate path (core)"]
-        direction LR
-        ING["ingest"] --> INP["inputs"] --> VER["verdict"] --> FB["feedback"]
-        FB ~~~ SW["sweep"]
-    end
-
-    subgraph BASE["shared packages"]
-        direction LR
-        WIRE["wire<br/>envelope, report, settings,<br/>policy, manifest"]
-        GHUB["github<br/>auth, api, webhook, oidc"]
-        STORE["store<br/>key-value interface"]
-        WIRE ~~~ GHUB ~~~ STORE
-    end
-
-    CMD --> APP
     APP --> CONTROL
     APP --> GATE
-    CONTROL -- "facade only" --> GATE
+    APP --> BASE
+    CONTROL -->|"gate facade"| GATE
     CONTROL --> BASE
     GATE --> BASE
 
-    classDef entry fill:#ffffff,stroke:#4a5568,color:#1a202c
     classDef core fill:#2f855a,stroke:#22543d,color:#ffffff
-    classDef ctrl fill:#e8eef7,stroke:#4a6fa5,color:#1a202c
-    classDef base fill:#edf2f7,stroke:#718096,color:#1a202c
+    classDef control fill:#e8eef7,stroke:#4a6fa5,color:#1a202c
+    classDef neutral fill:#edf2f7,stroke:#718096,color:#1a202c
 
-    class CMD,APP entry
-    class ING,INP,VER,FB,SW core
-    class UI,ONB,ASSIST,PROP,ACC ctrl
-    class WIRE,GHUB,STORE base
-
-    style CONTROL fill:#f7fafc,stroke:#4a6fa5,color:#1a202c
-    style GATE fill:#f0fff4,stroke:#2f855a,color:#1a202c
-    style BASE fill:#f7fafc,stroke:#718096,color:#1a202c
+    class GATE core
+    class CONTROL control
+    class APP,BASE neutral
 ```
 
-Arrows inside `gate` show the order of the upload flow. Arrows between groups show the permitted imports.
+Arrows show permitted import groups. The `gate` arrow from `control` is a facade call.
+The shared group contains `wire`, `github`, and `store`.
 
-| Package   | Function                                                                         |
-| --------- | -------------------------------------------------------------------------------- |
-| `app`     | Reads the configuration, builds all packages, and registers the HTTP routes      |
-| `gate`    | Verifies a report, decides the outcome, and publishes the feedback               |
-| `control` | Onboarding, the web UI, the policy editor, AI proposals, and entitlements        |
-| `wire`    | Versioned file and message formats. These packages contain no domain logic       |
-| `github`  | All GitHub API knowledge: App tokens, REST client, webhook parser, OIDC verifier |
-| `store`   | The key-value interface and an in-memory driver                                  |
+| Package   | Main responsibility                                                            | Child packages                                         |
+| --------- | ------------------------------------------------------------------------------ | ------------------------------------------------------ |
+| `app`     | Loads environment settings, builds packages, and registers routes              | none                                                   |
+| `gate`    | Verifies uploads, decides outcomes, publishes feedback, and runs the sweep     | `ingest`, `inputs`, `verdict`, `feedback`, `sweep`     |
+| `control` | Serves the UI and manages onboarding, proposals, AI requests, and entitlements | `account`, `assist`, `onboarding`, `proposal`, `ui`    |
+| `wire`    | Defines versioned file and message formats                                     | `envelope`, `manifest`, `policy`, `report`, `settings` |
+| `github`  | Holds GitHub API, authentication, webhook, and OIDC knowledge                  | `api`, `auth`, `oidc`, `webhook`                       |
+| `store`   | Defines the tenant key-value interface and the memory driver                   | none                                                   |
 
-The import rules are strict:
+The import rules keep the gate independent:
 
 - `gate` never imports `control`, `app`, UI code, or LLM code.
-- `control` imports only the facade of `gate`, not its child packages.
+- `control` uses only the `gate` facade.
 - `wire` and `store` import no other internal package.
-- A child package never imports its parent.
-
-Tests in `internal/` run `go list -deps` and fail when an import breaks these rules.
+- A seam implementation can import the package that defines its interface.
+- Tests run `go list -deps` to enforce the allowed imports.
 
 ## Report upload
 
-This flow is the most important flow in the service.
-All steps run in one HTTP request. The target is feedback in 60 seconds.
+The upload path accepts a report, verifies it, and publishes feedback in one request.
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    participant A as archfit-action
-    participant I as gate/ingest
-    participant N as gate/inputs
-    participant V as gate/verdict
-    participant F as gate/feedback
-    participant G as GitHub
+flowchart LR
+    ACTION["archfit-action<br/>customer CI"]
+    INGEST["gate/ingest<br/>authenticate and bind"]
+    AUTH{"Sender and revision<br/>verified?"}
+    REJECT["HTTP error<br/>nothing published"]
+    INPUTS["gate/inputs<br/>read protected-ref inputs"]
+    VERDICT["gate/verdict<br/>pure decision"]
+    FEEDBACK["gate/feedback<br/>checks and comment"]
+    GITHUB["GitHub<br/>checks, comment, receipt"]
 
-    A->>I: POST /v1/reports (report, envelope, OIDC token)
-    I->>G: Get OIDC keys, run, pull request, head, base
-    Note over I: Verify the token, the envelope,<br/>the payload digest, and the report format
-    break Sender not authenticated, or the head is stale
-        I-->>A: 4xx. Nothing is published
-    end
-    I->>N: Upload and its problems
-    N->>G: Read settings, policy, baseline, labels from the protected ref
-    Note over N: Compute digests. Find changed protected paths.<br/>Find the owner approval on the exact head SHA
-    N->>V: Trusted facts
-    Note over V: Pure function. No I/O, no LLM
-    V->>F: Outcome and reasons
-    F->>G: Update archfit/state, archfit/gate, and the comment
-    F-->>A: 2xx
+    ACTION -->|"POST /v1/reports"| INGEST
+    INGEST --> AUTH
+    AUTH -->|"no"| REJECT
+    AUTH -->|"yes"| INPUTS
+    INPUTS -->|"trusted facts"| VERDICT
+    VERDICT -->|"success, failure, or action_required"| FEEDBACK
+    FEEDBACK -->|"publish"| GITHUB
+
+    classDef core fill:#2f855a,stroke:#22543d,color:#ffffff
+    classDef control fill:#e8eef7,stroke:#4a6fa5,color:#1a202c
+    classDef nottrusted fill:#fff4d6,stroke:#b7791f,color:#1a202c
+    classDef neutral fill:#edf2f7,stroke:#718096,color:#1a202c
+
+    class INGEST,INPUTS,VERDICT,FEEDBACK core
+    class GITHUB control
+    class ACTION nottrusted
+    class AUTH,REJECT neutral
 ```
 
-Two rules control this flow:
+Arrows show the order of the upload request. Authentication defects return an HTTP status.
+After authentication, defects become gate reasons and appear in GitHub feedback.
 
-- **Before authentication, the answer is an HTTP status.** The App publishes nothing for an unknown sender.
-- **After authentication, each defect is visible.** The defect becomes `action_required` with a reason on the pull request.
-
-The `gate` package also verifies that the engine identity is in the locked manifest.
-It also verifies that the upload comes from the workflow that the settings file names.
+`gate/ingest` verifies the token, envelope, payload digest, report format, run, pull request, and revision.
+`gate/inputs` reads the protected-ref files and owner approval. `gate/verdict` performs no I/O and no AI call.
+The upload handler has a 55-second deadline. The target is feedback within 60 seconds.
 
 ## Gate outcomes
 
-The `verdict` package can return only three conclusions.
-The type has no `neutral` and no `skipped` value, so the gate cannot pass by accident.
+The `verdict` package has three conclusions. It cannot represent `neutral` or `skipped`.
+The first reason sets the conclusion. Later reasons remain in feedback.
 
-| Conclusion        | Meaning                                                 | Category                                 |
-| ----------------- | ------------------------------------------------------- | ---------------------------------------- |
-| `success`         | The report is trusted and has no blocking finding       | `architecture`                           |
-| `failure`         | The report is trusted and has blocking findings         | `architecture`                           |
-| `action_required` | The App cannot trust the evidence, or a person must act | `evidence`, `governance`, `subscription` |
+| Conclusion        | Use                                                | Categories                               |
+| ----------------- | -------------------------------------------------- | ---------------------------------------- |
+| `success`         | Trusted evidence has no blocking finding           | `architecture`                           |
+| `failure`         | Trusted evidence has a blocking finding            | `architecture`                           |
+| `action_required` | Evidence, governance, or subscription needs action | `evidence`, `governance`, `subscription` |
 
-The [user guide](user-guide.md#reason-codes) lists each reason code.
+The App publishes two checks:
 
-The App publishes two check runs:
+- `archfit/state` is advisory. It is published for each accepted report upload and can use `neutral`.
+- `archfit/gate` is the blocking check. It is published only when the settings file contains `gate: required`.
 
-- `archfit/state` is advisory. The App publishes it for each accepted upload.
-- `archfit/gate` is the blocking check. The App publishes it only when the settings file contains `gate: required`.
-
-The check run is also the receipt. It holds the run ID, the report digest, and the policy digests.
-The sweep compares these values with the protected ref.
+Each published check carries a receipt with the run ID, report digest, policy digest, baseline digest, and
+labels digest. The sweep compares the receipt with the protected ref. See the [reason catalog](user-guide.md#reason-codes)
+for recovery actions.
 
 ## Webhooks and the sweep
 
-The App receives GitHub events on `POST /webhooks/github`.
-First, `app` verifies the signature. Then `gate` handles the event. Then `control` handles the event.
-An error in `control` never changes the result of `gate`.
+A webhook starts immediate work. The sweep repairs work after a lost webhook or a changed protected ref.
 
-| Event                                                    | Action                                                          |
-| -------------------------------------------------------- | --------------------------------------------------------------- |
-| New head commit on a pull request                        | `gate` sets a pending gate check, or refuses a fork             |
-| Push to the default branch that changes a protected path | `gate` runs a sweep of that repository                          |
-| Review change                                            | `gate` re-runs the workflow when the owner approval was missing |
-| Installation added or removed                            | `control` starts the trial, or deletes the tenant data          |
+```mermaid
+flowchart LR
+    EVENT["Webhook or scheduler"]
+    READ["Read receipt and<br/>protected-ref inputs"]
+    FRESH{"Receipt is current?"}
+    KEEP["Keep feedback"]
+    ACTION["Set pending or<br/>action_required"]
+    RERUN["Request workflow rerun<br/>when recovery allows"]
+    UPLOAD["New report upload"]
+    UPDATE["Update checks and comment"]
 
-Webhooks can get lost. The sweep (`POST /internal/sweep`) repairs the state.
-An external scheduler calls this route. The planned interval is one hour.
+    EVENT --> READ
+    READ --> FRESH
+    FRESH -->|"yes"| KEEP
+    FRESH -->|"no or missing"| ACTION
+    ACTION --> RERUN
+    RERUN --> UPLOAD
+    UPLOAD --> UPDATE
 
-The sweep finds these conditions on open pull requests:
+    classDef core fill:#2f855a,stroke:#22543d,color:#ffffff
+    classDef control fill:#e8eef7,stroke:#4a6fa5,color:#1a202c
+    classDef nottrusted fill:#fff4d6,stroke:#b7791f,color:#1a202c
+    classDef neutral fill:#edf2f7,stroke:#718096,color:#1a202c
 
-- The pending check is missing.
-- No report arrived in 60 minutes.
-- The policy or the baseline changed on the protected ref.
-- A waiver expired, or expires in 7 days.
+    class READ,ACTION,RERUN core
+    class UPDATE,KEEP neutral
+    class EVENT,UPLOAD control
+    class FRESH nottrusted
+```
+
+The arrows show recovery flow. The sweep does not compute a new report because the App stores no report.
+
+| Event                                                    | Gate action                                             | Control action                        |
+| -------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------- |
+| New pull request head                                    | Set a pending required check or refuse a fork           | None                                  |
+| Push to the default branch that changes a protected path | Sweep that repository                                   | None                                  |
+| Review change                                            | Rerun when the last reason was `owner_approval_missing` | None                                  |
+| Installation added or removed                            | None                                                    | Start the trial or delete tenant data |
+
+The app handler runs gate and control webhook work independently. A control error does not change gate work.
+
+The sweep inspects open pull requests for these conditions:
+
+- A pending required check is missing.
+- No report arrived within 60 minutes.
+- The policy, baseline, or labels changed on the protected ref.
+- A waiver expires within seven days or has expired.
 - The subscription changed.
 
-The App stores no report. Thus the sweep cannot calculate a new result.
-It re-runs the workflow of the customer, and the new report gives the new result.
+The sweep reruns the customer workflow after stale inputs, an expired waiver, late owner approval, or restored
+subscription. A missing upload becomes `action_required`. A fresh report is required for a new `success` result.
 
 ## Trust rules
 
-These rules are the invariants of the design. [`AGENTS.md`](../AGENTS.md) gives the short form.
+These invariants keep repository authors from weakening the gate:
 
-- **Trusted inputs come only from the protected ref.** The App verifies them by digest.
-  A head-branch policy is accepted only when an owner approved the exact head SHA.
-- **The gate fails closed.** Missing or incompatible evidence is never `success`.
-- **The feedback says "customer-attested".** The App never says that a report is "verified".
-- **No LLM output is on the gate path.** The import rules and the tests enforce this.
-- **The tenant identity comes from a verified source.** The sources are the webhook signature, the OIDC claims, or the OAuth session.
-- **Logs contain only IDs, digests, outcomes, and timings.**
+- Read policy, baseline, labels, settings, owners, and workflow from the protected ref.
+- Verify the policy digest against the report.
+- Accept a head policy only when an architecture owner approved the exact head SHA.
+- Treat missing, incompatible, or unverifiable evidence as not successful.
+- Describe report provenance as `customer-attested`, never as `verified`.
+- Keep LLM output, billing, and UI code off the gate path.
+- Resolve tenant identity from a verified webhook, OIDC claim, or OAuth session.
+- Log IDs, digests, outcomes, and timings only.
 
-Five paths are protected. A change to one of them needs the approval of a policy owner:
+The protected paths are:
 
-- `.archfit.yaml` (the policy)
+- `.archfit.yaml`
 - `.archfit-baseline.json`
 - `.archfit-labels.yaml`
-- `.archfit-app.yaml` (the settings file)
-- The workflow file that the settings file names
+- `.archfit-app.yaml`
+- The workflow file named by `.archfit-app.yaml`
+
+A change to a protected path needs approval from an architecture owner on the exact head SHA.
 
 ## HTTP routes
 
-Source: [`internal/app/handler.go`](../internal/app/handler.go) and [`internal/control/ui/ui.go`](../internal/control/ui/ui.go).
+The routes come from [`internal/app/handler.go`](../internal/app/handler.go) and
+[`internal/control/ui/ui.go`](../internal/control/ui/ui.go).
 
-| Route                   | Owner     | Authentication              |
-| ----------------------- | --------- | --------------------------- |
-| `GET /healthz`          | `app`     | None                        |
-| `POST /v1/reports`      | `gate`    | GitHub Actions OIDC token   |
-| `POST /v1/discoveries`  | `control` | The same OIDC checks        |
-| `POST /webhooks/github` | `app`     | `X-Hub-Signature-256`       |
-| `POST /internal/sweep`  | `app`     | Operator bearer token       |
-| `POST /internal/grants` | `app`     | Operator bearer token       |
-| All other routes        | `control` | GitHub OAuth session cookie |
+### Service routes
+
+| Method and route        | Owner     | Authentication             |
+| ----------------------- | --------- | -------------------------- |
+| `GET /healthz`          | `app`     | None                       |
+| `POST /v1/reports`      | `gate`    | GitHub Actions OIDC token  |
+| `POST /v1/discoveries`  | `control` | GitHub Actions OIDC checks |
+| `POST /webhooks/github` | `app`     | `X-Hub-Signature-256`      |
+| `POST /internal/sweep`  | `app`     | Operator bearer token      |
+| `POST /internal/grants` | `app`     | Operator bearer token      |
+
+### UI routes
+
+| Method and route                                      | Authentication                                  |
+| ----------------------------------------------------- | ----------------------------------------------- |
+| `GET /`                                               | None. Shows the landing page or repository list |
+| `GET /auth/login` and `GET /auth/callback`            | None                                            |
+| `POST /auth/logout`                                   | GitHub OAuth session and CSRF token             |
+| `GET /static/{path}` and `GET /schema/policy.json`    | None                                            |
+| `GET /r/{o}/{n}`                                      | Session with repository `read` permission       |
+| `POST /r/{o}/{n}/onboarding`, `/discover`, `/consent` | Session with repository `admin` permission      |
+| `GET /r/{o}/{n}/policy` and `/graph`                  | Session with repository `read` permission       |
+| `POST /r/{o}/{n}/policy` and `/policy/ready`          | Session with repository `write` permission      |
+| `POST /r/{o}/{n}/assist`                              | Session with repository `write` permission      |
 
 ## Platform seams
 
-Three interfaces isolate the parts that depend on the hosting platform.
-A new platform adds a driver package. It does not change the other packages.
+The App keeps platform-dependent code behind three interfaces.
 
-| Seam       | Interface owner      | Driver today                                      |
-| ---------- | -------------------- | ------------------------------------------------- |
-| `Store`    | `store`              | `memory`. The data is lost when the process stops |
-| `Sandbox`  | `control/onboarding` | `none`. Managed discovery is not available        |
-| `Provider` | `control/assist`     | `anthropic`, optional                             |
+| Seam       | Current driver                       | Current behavior                    |
+| ---------- | ------------------------------------ | ----------------------------------- |
+| `Store`    | `memory`                             | Data is lost when the process stops |
+| `Sandbox`  | `none`                               | Managed discovery is not available  |
+| `Provider` | `anthropic` when a key is configured | Managed AI is optional              |
+
+A new driver changes the composition in `app`. The gate contracts do not change.
 
 ## Deployment
 
-Hosting is not decided. The candidates are Cloudflare and Google Cloud.
-See the [hosting research](research/20260918-hosting.md) and the [tech stack](tech-stack.md#platform-seams).
+Hosting is not decided. This page does not select a provider or give deployment steps.
+A host must provide these runtime capabilities:
 
-The service needs these items from a host:
-
-- A container host for one static Go binary. The [`Dockerfile`](../Dockerfile) builds a distroless image.
-- A key-value driver that passes the `store/storetest` test suite.
-- A scheduler that calls `POST /internal/sweep`.
-- A sandbox for container jobs. Only managed discovery needs it.
+- Run one static Go binary in a container.
+- Provide a key-value driver that passes the `store/storetest` suite.
+- Call `POST /internal/sweep` with an external scheduler.
+- Provide a sandbox driver before managed discovery is enabled.
 
 ### Configuration
 
-The service reads environment variables. It does not read a `.env` file.
-Each secret is a file path (`*_FILE`), never a value. See [`.env.example`](../.env.example).
+The App reads environment variables. It does not read a `.env` file.
+Secret variables name files. They do not contain secret values.
+See [`.env.example`](../.env.example).
 
-| Variable                             | Function                                  |
-| ------------------------------------ | ----------------------------------------- |
-| `ARCHFIT_ADDR`                       | Listen address. The default is `:8080`    |
-| `ARCHFIT_BASE_URL`                   | Public URL. It is also the OIDC audience  |
-| `ARCHFIT_GITHUB_APP_ID`              | GitHub App ID                             |
-| `ARCHFIT_GITHUB_PRIVATE_KEY_FILE`    | Private key of the GitHub App             |
-| `ARCHFIT_GITHUB_WEBHOOK_SECRET_FILE` | Webhook secret                            |
-| `ARCHFIT_GITHUB_OAUTH_CLIENT_ID`     | OAuth client ID for the UI login          |
-| `ARCHFIT_GITHUB_OAUTH_SECRET_FILE`   | OAuth client secret                       |
-| `ARCHFIT_COOKIE_KEY_FILE`            | 32-byte key for the session cookie        |
-| `ARCHFIT_OPERATOR_TOKEN_FILE`        | Bearer token for the `/internal/*` routes |
-| `ARCHFIT_ANTHROPIC_KEY_FILE`         | Optional. When empty, managed AI is off   |
-| `ARCHFIT_STORE`                      | Store driver. Only `memory` exists        |
-| `ARCHFIT_SANDBOX`                    | Sandbox driver. Only `none` exists        |
+| Variable                             | Function                                               |
+| ------------------------------------ | ------------------------------------------------------ |
+| `ARCHFIT_ADDR`                       | Listen address. Default `:8080`                        |
+| `ARCHFIT_BASE_URL`                   | Public URL and OIDC audience                           |
+| `ARCHFIT_GITHUB_APP_ID`              | GitHub App ID                                          |
+| `ARCHFIT_GITHUB_PRIVATE_KEY_FILE`    | GitHub App private-key file                            |
+| `ARCHFIT_GITHUB_WEBHOOK_SECRET_FILE` | Webhook secret file                                    |
+| `ARCHFIT_GITHUB_OAUTH_CLIENT_ID`     | OAuth client ID                                        |
+| `ARCHFIT_GITHUB_OAUTH_SECRET_FILE`   | OAuth client secret file                               |
+| `ARCHFIT_COOKIE_KEY_FILE`            | 32-byte session-cookie key file                        |
+| `ARCHFIT_OPERATOR_TOKEN_FILE`        | Bearer token file for `/internal/*`                    |
+| `ARCHFIT_ANTHROPIC_KEY_FILE`         | Optional Anthropic key file. Empty disables managed AI |
+| `ARCHFIT_STORE`                      | Store driver. Only `memory` exists                     |
+| `ARCHFIT_SANDBOX`                    | Sandbox driver. Only `none` exists                     |
 
 ### Release blockers
 
-- [`internal/wire/manifest`](../internal/wire/manifest/module.md) contains placeholder image digests and a placeholder Action commit.
-  With these values, each real upload ends in `action_required`.
-  A test fails on the placeholders when `ARCHFIT_RELEASE=1` is set.
+- The locked manifest contains placeholder image digests and an Action commit. A real upload ends in
+  `action_required` while these values remain. `ARCHFIT_RELEASE=1` makes the release test fail.
 - No GitHub App is registered.
 - `archfit-action` does not send the envelope format of this service yet.
-- The Monaco editor bundle is not built. The policy editor is a plain text area.
+- The Monaco editor bundle is not built. The policy editor uses a plain text area.

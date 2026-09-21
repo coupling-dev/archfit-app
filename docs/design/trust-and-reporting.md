@@ -6,7 +6,7 @@ are shipped; App/Action behavior remains intended. The reporter still refuses
 ingestion pending provenance verification.
 
 This document owns the trust constraints and reporting contract. The product
-design owns first-version scope; the [closed-beta plan](../plans/closed-beta.md)
+design owns first-version scope; the [closed-beta plan](../archive/plans/closed-beta.md)
 owns task order, dependencies, and acceptance evidence. That plan pins the
 inspected revisions and release evidence. Recheck the selected artifact and
 consumer conformance before promoting a different engine or Action version.
@@ -76,13 +76,13 @@ what each enforced rule relies on. Never print a report-wide “verified” badg
 
 ### Derive eligibility from separate facts
 
-| Fact | Constraint |
-| --- | --- |
-| Approving authority | Authenticated authority from trusted policy |
-| Approved producer/workflow | Scoped to installation and repository; protected definition |
-| Runner environment | GitHub-hosted or approved self-hosted group; a label alone proves nothing |
-| Source origin | Base-owned or fork-authored, independent of producer and runner |
-| Measurement profile | Approved and compatible with the baseline |
+| Fact                       | Constraint                                                                |
+| -------------------------- | ------------------------------------------------------------------------- |
+| Approving authority        | Authenticated authority from trusted policy                               |
+| Approved producer/workflow | Scoped to installation and repository; protected definition               |
+| Runner environment         | GitHub-hosted or approved self-hosted group; a label alone proves nothing |
+| Source origin              | Base-owned or fork-authored, independent of producer and runner           |
+| Measurement profile        | Approved and compatible with the baseline                                 |
 
 An organization may approve its own self-hosted runners. This does not upgrade
 customer-attested measurements to independently measured facts.
@@ -99,13 +99,13 @@ required gate: obtain approved measurement or use the explicit GitHub bypass.
 
 Two identities are needed:
 
-| Layer | Identity | Purpose |
-| --- | --- | --- |
-| Engine | `comparison.measurement_profile`: profile version, settings hash, producers and unknowns; alongside config/model/labels/rubric hashes | Comparison and persisted-baseline compatibility, including CLI use |
-| App | Approved image digest and platform, checked against a locked release manifest | Deployment identity without treating unrelated image rebuilds as new measurements |
+| Layer  | Identity                                                                                                                              | Purpose                                                                           |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Engine | `comparison.measurement_profile`: profile version, settings hash, producers and unknowns; alongside config/model/labels/rubric hashes | Comparison and persisted-baseline compatibility, including CLI use                |
+| App    | Approved image digest and platform, checked against a locked release manifest                                                         | Deployment identity without treating unrelated image rebuilds as new measurements |
 
 The initial integration target is the released v2.3.1 artifact pinned in
-[T01/T02](../plans/closed-beta.md#m0--resolve-contracts-and-execution-choices).
+[T01/T02](../archive/plans/closed-beta.md#m0--resolve-contracts-and-execution-choices).
 Its profile contains `version`, `settings_hash`, `producers` and `unknowns`.
 Producer rows identify `tool`, `semantics_version`, `status`, and applicable
 `tool_version`/`partial_basis`. `measurement.tool_versions` alone is not this
@@ -177,10 +177,10 @@ revision; a historical clean scan or team declaration is insufficient.
 
 ## 5. Checks and PR feedback
 
-| Check | Required | Purpose |
-| --- | --- | --- |
-| `archfit/gate` | When explicitly enabled | Approved-policy findings, input integrity, evidence eligibility; always conclude, never `neutral` or `skipped` |
-| `archfit/state` | Never | Dimension status, coverage, seams, drift, deltas, and `agent_tasks[]` |
+| Check           | Required                | Purpose                                                                                                        |
+| --------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `archfit/gate`  | When explicitly enabled | Approved-policy findings, input integrity, evidence eligibility; always conclude, never `neutral` or `skipped` |
+| `archfit/state` | Never                   | Dimension status, coverage, seams, drift, deltas, and `agent_tasks[]`                                          |
 
 `neutral` and `skipped` do not block a GitHub required check. Missing uploads
 must not become the cheapest bypass.
@@ -192,15 +192,15 @@ eligibility; an unverified producer's verdict or exit code is not authoritative.
 Exit numbers below refer to `archfit check`. Report creation/upload success is a
 separate outcome. T02 must test the mapping using structured decision fields.
 
-| Eligible run outcome | `archfit/gate` conclusion |
-| --- | --- |
-| Healthy (0) | `success` |
-| Blocked (1) | `failure`, with blocking findings and remediation tasks |
+| Eligible run outcome                                                                                                    | `archfit/gate` conclusion                                               |
+| ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Healthy (0)                                                                                                             | `success`                                                               |
+| Blocked (1)                                                                                                             | `failure`, with blocking findings and remediation tasks                 |
 | Warning/advisory-only attention (2), with passing hard gates and all approved evidence/reference requirements satisfied | `success`; retain the advisory and `needs_attention` in `archfit/state` |
-| Required gate reference non-comparable | `action_required`, naming drift and required review/migration |
-| Required coverage missing (2) | `action_required`, naming the missing facts |
-| Error (3), absent report, or ineligible evidence | `action_required` or explicit failure; never passing/neutral |
-| Independent-observation contradiction, if that future feature exists | `failure`, distinguished from architecture violations |
+| Required gate reference non-comparable                                                                                  | `action_required`, naming drift and required review/migration           |
+| Required coverage missing (2)                                                                                           | `action_required`, naming the missing facts                             |
+| Error (3), absent report, or ineligible evidence                                                                        | `action_required` or explicit failure; never passing/neutral            |
+| Independent-observation contradiction, if that future feature exists                                                    | `failure`, distinguished from architecture violations                   |
 
 Inspect `decision.hard_gates` and
 `decision.unevaluated_required_rules[{rule_id, reason}]`. The list is omitted when
@@ -314,7 +314,7 @@ approvals, entitlements, and background work. Tenant identity comes from
 authenticated installation/repository context, not client-supplied IDs. Enforce
 scope in database access, objects, caches, and workers; include tenant-bound report
 encryption and key lifecycle. Store size-capped reports/baselines, never source
-archives. The [hosting research](../research/20260918-hosting.md) describes the
+archives. The [hosting research](../archive/research/20260918-hosting.md) describes the
 selected validation target, not a deployed topology or SLA.
 
 Fail-closed makes the reporter part of the merge path. Pre-issued tokens or

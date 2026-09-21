@@ -71,26 +71,26 @@ The owner chose "apply the proposals and fix the code too". Applied on 21 Septem
 then a failing test, then the code; verified by `make all` (30 packages, race tests, 0 lint issues), the design
 validator (29 documents, no defects) and a re-run of the scripted pass.
 
-| Finding | Status |
-| --- | --- |
-| C1 | Accepted and guarded: the manifest doc states the placeholders and the release blocker; `TestManifestHasNoPlaceholdersInRelease` fails under `ARCHFIT_RELEASE=1`. Real values are still owed by the owner. |
-| S1 | Fixed: assist reads the clock once per provider call (`TestSettleUsesTheReserveInstant`). |
-| S2 | Fixed: the managed assist route has a 300 s deadline, every other control route 55 s, server write timeout 310 s; `anthropic.New` ignores a caller `Client.Timeout`. |
-| S3 | Fixed: `sweep.Rerun` is the one guard; a missing run and `RunID == 0` are skips in both places. |
-| S4 | Fixed: `inputs.Accepts` and `inputs.First` are the one digest predicate. |
-| S5 | Fixed: `inputs.ProtectedPaths` and `inputs.MayBeProtected`; the gate façade no longer imports wire/policy. |
-| S6 | Fixed: `proposal.ValidBranch` and `proposal.ValidHeadSHA`; ui and assist delegate. |
-| S7 | Fixed: ui validates owners through `settings.Parse(settings.Render(…))`. |
-| S8 | Fixed: `report.Finding.Active()`; gate/feedback and ui/graph call it. |
-| S9 | Fixed for the wire children and gate/verdict: they read `internal/wire/testdata`; private copies deleted. Open: gate/feedback keeps its goldens and fixture copies. |
-| S10 | Fixed: the manifest fixture test reads identities from the shared envelope fixtures. |
-| S11 | Fixed: consumer tables rebuilt from real importers. |
-| S12 | Fixed: `webhook.HeaderEvent`, `HeaderDelivery`, `HeaderSignature`; app uses them. |
-| M1 | Done: lagging rules documented in their modules, with characterization tests where none existed. |
-| M2 | Accepted: each small duplicate is recorded in the owning module's Constraints as a declared restatement with owner, drift consequence and removal trigger. One deliberate literal remains in gate/verdict (`.archfit-app.yaml`), pinned by a test against `settings.Path`. |
-| M3 | Fixed: honest digest labels and suspension reason in feedback; onboarding exports `ErrAlreadyOnboarded` and `ErrBusy`, ui answers 409. |
-| M4 | Fixed: `POST /internal/grants` clears a grant with a null or omitted `until`; assist checks the draft before the SHA; auth errors carry no URL; manifest errors quote no value. |
-| M5 | Done: stale skips removed in wire/report and github/api; unnamed tests added to their specs. Open: wire/settings and wire/policy import tests still skip when the go tool is missing. |
+| Finding | Status                                                                                                                                                                                                                                                                     |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1      | Accepted and guarded: the manifest doc states the placeholders and the release blocker; `TestManifestHasNoPlaceholdersInRelease` fails under `ARCHFIT_RELEASE=1`. Real values are still owed by the owner.                                                                 |
+| S1      | Fixed: assist reads the clock once per provider call (`TestSettleUsesTheReserveInstant`).                                                                                                                                                                                  |
+| S2      | Fixed: the managed assist route has a 300 s deadline, every other control route 55 s, server write timeout 310 s; `anthropic.New` ignores a caller `Client.Timeout`.                                                                                                       |
+| S3      | Fixed: `sweep.Rerun` is the one guard; a missing run and `RunID == 0` are skips in both places.                                                                                                                                                                            |
+| S4      | Fixed: `inputs.Accepts` and `inputs.First` are the one digest predicate.                                                                                                                                                                                                   |
+| S5      | Fixed: `inputs.ProtectedPaths` and `inputs.MayBeProtected`; the gate façade no longer imports wire/policy.                                                                                                                                                                 |
+| S6      | Fixed: `proposal.ValidBranch` and `proposal.ValidHeadSHA`; ui and assist delegate.                                                                                                                                                                                         |
+| S7      | Fixed: ui validates owners through `settings.Parse(settings.Render(…))`.                                                                                                                                                                                                   |
+| S8      | Fixed: `report.Finding.Active()`; gate/feedback and ui/graph call it.                                                                                                                                                                                                      |
+| S9      | Fixed for the wire children and gate/verdict: they read `internal/wire/testdata`; private copies deleted. Open: gate/feedback keeps its goldens and fixture copies.                                                                                                        |
+| S10     | Fixed: the manifest fixture test reads identities from the shared envelope fixtures.                                                                                                                                                                                       |
+| S11     | Fixed: consumer tables rebuilt from real importers.                                                                                                                                                                                                                        |
+| S12     | Fixed: `webhook.HeaderEvent`, `HeaderDelivery`, `HeaderSignature`; app uses them.                                                                                                                                                                                          |
+| M1      | Done: lagging rules documented in their modules, with characterization tests where none existed.                                                                                                                                                                           |
+| M2      | Accepted: each small duplicate is recorded in the owning module's Constraints as a declared restatement with owner, drift consequence and removal trigger. One deliberate literal remains in gate/verdict (`.archfit-app.yaml`), pinned by a test against `settings.Path`. |
+| M3      | Fixed: honest digest labels and suspension reason in feedback; onboarding exports `ErrAlreadyOnboarded` and `ErrBusy`, ui answers 409.                                                                                                                                     |
+| M4      | Fixed: `POST /internal/grants` clears a grant with a null or omitted `until`; assist checks the draft before the SHA; auth errors carry no URL; manifest errors quote no value.                                                                                            |
+| M5      | Done: stale skips removed in wire/report and github/api; unnamed tests added to their specs. Open: wire/settings and wire/policy import tests still skip when the go tool is missing.                                                                                      |
 
 Known ceilings recorded, not fixed: the shutdown grace (10 s) is shorter than the assist deadline (300 s), so an
 in-flight managed assist is cancelled at shutdown and its reservation is settled; an import-based check cannot see

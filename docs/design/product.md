@@ -10,7 +10,7 @@ these capabilities already exist.
 
 This is the canonical first-version product scope. Read it alongside
 [trust, measurement, and reporting](trust-and-reporting.md) for technical
-constraints and the [closed-beta plan](../plans/closed-beta.md) for execution
+constraints and the [closed-beta plan](../archive/plans/closed-beta.md) for execution
 order. Unresolved choices are explicit; they must not silently become
 implementation requirements.
 
@@ -514,9 +514,9 @@ Resolve these through focused owner review, experiments, or research:
    approved baseline migration. The plan records inspected revisions and the
    advisory-first pilot; these capabilities are not yet implemented in the App.
 
-The [closed-beta implementation plan](../plans/closed-beta.md) defines milestone
+The [closed-beta implementation plan](../archive/plans/closed-beta.md) defines milestone
 boundaries, dependencies, and acceptance checks. The dated
-[hosting research](../research/20260918-hosting.md) supplies options and cost
+[hosting research](../archive/research/20260918-hosting.md) supplies options and cost
 assumptions, with Cloud Run selected for validation and deployment details still
 open. Resolve the stated research and owner-decision gates before dependent
 implementation. These documents do not grant authorization to deploy, publish,

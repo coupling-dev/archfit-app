@@ -1,41 +1,47 @@
 # Documentation
 
-The service is complete as code, but it is not deployed.
-The [release blockers](architecture.md#release-blockers) list what is missing.
+This index helps each reader choose a short path through the repository.
+The [README](../README.md) owns release status and release blockers.
 
-## Read first
+## Choose a path
 
-| Document                        | Content                                                           |
-| ------------------------------- | ----------------------------------------------------------------- |
-| [Architecture](architecture.md) | How the service works: diagrams, packages, flows, configuration   |
-| [User guide](user-guide.md)     | How to onboard a repository, read the feedback, change the policy |
+| Reader                           | Read next                                                         |
+| -------------------------------- | ----------------------------------------------------------------- |
+| New developer                    | [Architecture](architecture.md), then [tech stack](tech-stack.md) |
+| Repository admin or policy owner | [User guide](user-guide.md)                                       |
+| Operator                         | [User guide operator section](user-guide.md#for-the-operator)     |
+| Design reader                    | [Design records](#design-records)                                 |
 
-## For developers
+## Current behavior
 
-| Document                                       | Content                                                                       |
-| ---------------------------------------------- | ----------------------------------------------------------------------------- |
-| [Module specifications](../internal/module.md) | The root of the design tree. Each package below `internal/` has a `module.md` |
-| [Tech stack](tech-stack.md)                    | Technology choices, test rules, and the open platform seams                   |
-| [`AGENTS.md`](../AGENTS.md)                    | The short rules for coding agents                                             |
+| Document                                       | Use it for                                                                            |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------- |
+| [Architecture](architecture.md)                | Product boundary, request flows, package boundaries, routes, and runtime requirements |
+| [User guide](user-guide.md)                    | Onboarding, policy changes, feedback, plans, and operator requests                    |
+| [Tech stack](tech-stack.md)                    | Language, dependencies, tests, frontend, and platform seams                           |
+| [Module specifications](../internal/module.md) | Package contracts, invariants, and test specifications                                |
+| [`AGENTS.md`](../AGENTS.md)                    | Repository rules for contributors and coding agents                                   |
 
-## Design history
+## Design records
 
-These documents record why the service is built this way.
-For the current behavior, read [Architecture](architecture.md) and the `module.md` files.
+These files explain intended scope and decisions. They are not a second source of
+current behavior. For current behavior, read [Architecture](architecture.md),
+[User guide](user-guide.md), and the `module.md` files.
 
-| Document                                                         | Content                                                                    |
-| ---------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| [Product design](design/product.md)                              | Scope, user flows, governance, privacy, and commercial decisions           |
-| [Trust and reporting](design/trust-and-reporting.md)             | Trusted inputs, producer eligibility, and gate behavior                    |
-| [First-version decisions](design/decisions.md)                   | Closes the open design items. It overrides the two documents above         |
-| [Implementation plan](plans/2026-09-21-implement-archfit-app.md) | One task for each module, with open findings                               |
-| [Closed-beta plan](plans/closed-beta.md)                         | Milestones M0–M5 and tasks T01–T23                                         |
-| [Alignment review](reviews/2026-09-21-fractal-align.md)          | Differences between design and code on 21 September 2026, with resolutions |
-| [Hosting research](research/20260918-hosting.md)                 | Provider and cost research. It is not a deployment approval                |
+| Document                                             | Use it for                                                               |
+| ---------------------------------------------------- | ------------------------------------------------------------------------ |
+| [Product design](design/product.md)                  | Product scope, user flows, governance, privacy, and commercial decisions |
+| [Trust and reporting](design/trust-and-reporting.md) | Trusted inputs, producer eligibility, and reporting constraints          |
+| [First-version decisions](design/decisions.md)       | Decisions that close open design items                                   |
 
-## Rules for these documents
+## Archived records
 
-- Product design owns the scope. Trust and reporting owns the technical invariants.
-- A plan sequences the work. It does not add scope.
-- Research has a date. Do the research again before you use it.
-- Keep the links current. Use the Git history for replaced text.
+Read the [archive index](archive/README.md) for implemented plans, dated reviews, and hosting research.
+These records preserve history. They are not current status or operating instructions.
+
+## Reading rules
+
+- Code and the `module.md` contracts own current behavior.
+- Design files record decisions and scope. They do not grant release or deployment approval.
+- Dated research needs a new review before use.
+- Use Git history for replaced text.

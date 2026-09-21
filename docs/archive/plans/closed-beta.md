@@ -5,8 +5,8 @@ The engine prerequisite has shipped; App/Action adoption and the milestone
 acceptance checks below remain open. This documentation update completes none
 of those integration tasks.
 
-Inputs: the [product design](../design/product.md) and
-[trust and reporting requirements](../design/trust-and-reporting.md).
+Inputs: the [product design](../../design/product.md) and
+[trust and reporting requirements](../../design/trust-and-reporting.md).
 The owner selected a closed beta: Pumba and Archfit first, then a few invited
 teams, before public paid self-service.
 
@@ -27,11 +27,11 @@ This is a pinned planning snapshot, not a live status report for sibling repos.
 Recheck it before starting the affected tasks. T05 has partial research evidence;
 no App/Action integration task is marked complete.
 
-| Repository | Pinned revision | Relevant state |
-| --- | --- | --- |
-| `archfit-app` | `1356a51446d98dcfaa5b1d68c8ad72316beee953` | Go reporter skeleton; valid-shaped reports deliberately receive 501 |
-| `archfit` | `f8877d25ba36d84d3780071580d23486e3d794d0` (`v2.3.1`) | Measurement profiles, required-rule evidence states, waiver lifecycle and typed repair tasks are shipped |
-| `archfit-action` | `4759dd985bff385af5c2dee2c918a0eced59f4f3` | Builds an envelope around an existing report; obtains OIDC and optionally uploads it; does not run analysis |
+| Repository       | Pinned revision                                       | Relevant state                                                                                              |
+| ---------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `archfit-app`    | `1356a51446d98dcfaa5b1d68c8ad72316beee953`            | Go reporter skeleton; valid-shaped reports deliberately receive 501                                         |
+| `archfit`        | `f8877d25ba36d84d3780071580d23486e3d794d0` (`v2.3.1`) | Measurement profiles, required-rule evidence states, waiver lifecycle and typed repair tasks are shipped    |
+| `archfit-action` | `4759dd985bff385af5c2dee2c918a0eced59f4f3`            | Builds an envelope around an existing report; obtains OIDC and optionally uploads it; does not run analysis |
 
 Material findings that affect task order:
 
@@ -127,7 +127,7 @@ implementation still follow their dependencies.
   missing inputs, timeouts and opaque unknowns remain non-comparable.
   Test decision semantics as well as JSON shape. Every fixture records its
   producer artifact and expected consumer outcome under the
-  [gate mapping](../design/trust-and-reporting.md#gate-outcomes).
+  [gate mapping](../../design/trust-and-reporting.md#gate-outcomes).
   Pin `decision.unevaluated_required_rules`, both repair kinds, validation-command
   replay, `locations: []`, `matched_by: {}`, and unique finding lifecycle IDs.
   Cover waiver expiry/order and baseline capture excluding waived findings.
@@ -239,7 +239,7 @@ Advisory App/Action integration only. No required gate yet.
   versioned policy/baseline references, jobs, and check/comment reconciliation;
   migrations and bounded retry handling.
   Include tenant-bound report encryption and key-lifecycle requirements from
-  the [technical design](../design/trust-and-reporting.md#7-service-and-wire-contract-boundaries);
+  the [technical design](../../design/trust-and-reporting.md#7-service-and-wire-contract-boundaries);
   object-name scoping alone is not encryption or authorization.
 - **Accept:** retries and duplicate webhooks/uploads are idempotent; restart does
   not lose accepted work; tenant-scoping tests cover queries, object access,
@@ -373,7 +373,7 @@ Implement repository-scoped governance; the organization policy floor is deferre
   history; pre-expiry warnings; scheduled invalidation of affected open PRs;
   concurrency rules for policy/approval changes versus check publication.
   Serialize and validate exceptions against the pinned
-  [engine waiver contract](../design/trust-and-reporting.md#engine-waiver-contract).
+  [engine waiver contract](../../design/trust-and-reporting.md#engine-waiver-contract).
 - **Accept:** expiry makes the remaining violation blocking even for unrelated
   PRs without a new commit. No unrelated finding is waived; renewal requires
   owner approval; expired debt is not retained by an accidental baseline update.
