@@ -41,7 +41,9 @@ needs one. It is a wide leaf on purpose: role interfaces keep each consumer's kn
   the installation token of `RepoRef.InstallationID` for every `RepoRef` method; the caller's token for `Users`.
 - `GET /app` is called once and kept for the process: App ID (check-run filter) and bot login `<slug>[bot]`.
 - Input guards before any request: `InstallationID` > 0; `FullName` matches `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`;
-  refs, branches and paths are escaped per path segment. No caller string can change the route.
+  refs, branches and paths are escaped per path segment, and an empty, `.` or `..` segment (also as owner or
+  name) is an error before any request. No caller string can change the route.
+- Redirects are never followed automatically; a `3xx` is an error. `Artifact` follows its one redirect itself.
 - Response JSON is decoded leniently (unknown fields ignored); each body is read through a 10 MiB limit **[default]**.
 - Unexported `now` and `sleep` hooks exist for same-package tests **[default]**.
 
@@ -50,6 +52,7 @@ needs one. It is a wide leaf on purpose: role interfaces keep each consumer's kn
 - `404`, `410` → `ErrNotFound`. GitHub answers `404` for a repository removed from the installation, an
   installation that lost access, a deleted branch, file, run or comment. All of these are `ErrNotFound`.
 - Rate limit: `429`, or `403` with `x-ratelimit-remaining: 0` or a `Retry-After` header (secondary limit).
+  `x-ratelimit-reset` is used for the wait only when `x-ratelimit-remaining` is `0`.
 - `401` on a call made with an installation token: call `TokenSource.Invalidate(installationID)`, fetch a fresh
   token, and repeat the request exactly once, for any method (a `401` request did not execute). A second `401`
   is an error. `401` on an App JWT or user-token call is an error at once.
@@ -92,10 +95,11 @@ a `truncated` result: it returns the paths read so far with `truncated` true.
   submodule → error. Consequence for an oversized settings, policy or baseline file: the caller fails closed,
   the gate check stays pending and ends `action_required` through the sweep; it is never green.
 - `Pull`: `GET /repos/{r}/pulls/{n}`, then `GET /repos/{r}/compare/{base_sha}...{head_sha}` for
-  `merge_base_commit.sha`. Only `Pull` fills `MergeBaseSHA`; `OpenPulls`, `PullByHead` and `EnsurePull` leave it `""` **[default]**.
+  `merge_base_commit.sha` (sent with `per_page=1` to keep the commit list out of the answer). Only `Pull` fills `MergeBaseSHA`; `OpenPulls`, `PullByHead` and `EnsurePull` leave it `""` **[default]**.
 - `OpenPulls`: `GET /repos/{r}/pulls?state=open`, drafts included.
 - `PullByHead`: `GET /repos/{r}/pulls?state=all&head={owner}:{branch}&sort=created&direction=desc&per_page=1`,
-  `{owner}` being the owner of `r`, so fork heads never match; first hit; none → `ErrNotFound`.
+  `{owner}` being the owner of `r`, so fork heads never match; first hit; none → `ErrNotFound`. A hit whose
+  `head.repo.full_name` is not `r` or whose `head.ref` is not the branch is dropped (also in `EnsurePull`).
 - Pull mapping, everywhere: `Merged` = `merged_at` is set **[default: list responses carry no `merged` flag]**;
   `Body` = `body` (`null` → `""`); `URL` = `html_url`; `State` as GitHub gives it (a merged pull is `closed`).
 - `BranchHead`: `GET /repos/{r}/git/ref/heads/{branch}` → `object.sha`; `404` → `ErrNotFound`.
@@ -107,8 +111,9 @@ a `truncated` result: it returns the paths read so far with `truncated` true.
   reviews are dropped; `CommitSHA` = `commit_id`.
 - `TeamMember`: `GET /orgs/{org}/teams/{slug}/memberships/{login}`; `state: active` → true; `pending` or `404` →
   false with `nil` error; a team string without exactly one `/` → error.
-- `CheckRuns`: `GET /repos/{r}/commits/{sha}/check-runs?check_name=&app_id=<own>`: only this App's check runs,
-  so another app's check of the same name is never seen; latest per name; annotations are not read back.
+- `CheckRuns`: `GET /repos/{r}/commits/{sha}/check-runs?check_name=&app_id=<own>&filter=latest`: only this
+  App's check runs, so another app's check of the same name is never seen (a run whose `app.id` is not the
+  App's is dropped as well); latest per name is GitHub's `filter=latest`; annotations are not read back.
 - `CreateCheckRun`: `POST /repos/{r}/check-runs`; `UpdateCheckRun`: `PATCH /repos/{r}/check-runs/{id}`. An
   annotation maps to `start_line = end_line = Line`, and `Line` 0 to line 1. GitHub appends annotations on update.
 - `AppComments`: `GET /repos/{r}/issues/{n}/comments`, kept when `user.login` is the bot login.
@@ -120,14 +125,16 @@ a `truncated` result: it returns the paths read so far with `truncated` true.
 - `Artifact`: `GET .../runs/{id}/artifacts?name=` (newest unexpired; none → `ErrNotFound`), then
   `GET .../artifacts/{id}/zip`, which redirects to blob storage; the `Authorization` header is not forwarded
   across hosts. The zip must hold exactly one regular file; its declared size and the bytes actually read
-  (through a limited reader) must both be ≤ `maxBytes`, else error.
-- `EnsureBranch`: `GET .../git/ref/heads/{branch}`; if missing, `POST .../git/refs` at the SHA of `fromRef`; a
-  `422` "already exists" race is success.
+  (through a limited reader) must both be ≤ `maxBytes`, else error. The zip itself is read through a limit of
+  `maxBytes` + 1 MiB **[default]**; any second entry, even a directory, is an error.
+- `EnsureBranch`: `GET .../git/ref/heads/{branch}`; if missing, `POST .../git/refs` at the SHA of `fromRef`
+  (a 40-hex commit SHA is used as is, anything else is a branch name **[default]**); a `422` "already exists"
+  race is success: after any `422` the ref is read again, and the `422` stands if it is still missing.
 - `Commit`: Git Data API: blobs → tree with `base_tree` → commit with the branch head as parent → `PATCH` the ref
   with `force: false`. No files → error. A tree equal to the parent's → the current head SHA, no new commit
   **[default]**. A non-fast-forward is an error; the caller reloads.
 - `EnsurePull`: `GET .../pulls?state=open&head={owner}:{Head}&base={Base}`; first hit wins; else `POST .../pulls`;
-  a `422` "already exists" race → list again.
+  a `422` "already exists" race → list again; the `422` stands if the list is still empty.
 - `UpdatePullBody`: `PATCH .../pulls/{n}`. `MarkReady`: REST cannot leave draft state, so one GraphQL mutation
   `markPullRequestReadyForReview` on the pull's `node_id`; an already ready pull is success.
 - `Permission`: `GET /repos/{fullName}` with the user token; `permissions.admin` → `admin`, `.push` → `write`,
@@ -452,8 +459,9 @@ type TokenSource interface {
 
 ## Test Specification
 
-GitHub is a fake `http.RoundTripper` with scripted responses; the clock and sleep are the unexported hooks;
-`TokenSource` is a stub. No test touches the network.
+GitHub is a local `httptest` server with scripted responses, reached through a fake `http.RoundTripper` that
+routes every host to it; the clock and sleep are the unexported hooks; `TokenSource` is a stub. No test touches
+the network.
 
 ### Unit Tests
 
@@ -480,9 +488,10 @@ GitHub is a fake `http.RoundTripper` with scripted responses; the clock and slee
   **Expected behavior**: second call sends `If-None-Match` and returns the cached body; evicted entry refetches;
   large body not cached; no entry is shared between principals; the entry is removed and `ErrNotFound` returned.
 - **Test name**: `TestInputGuards`
-  **Scenario**: `FullName` values `a/b/c`, `../x`, `a`, `a/b?x=1`, empty; `InstallationID` 0; path `a/../b`;
-  branch `feat/x y`.
-  **Expected behavior**: error without a request for the bad names and ID; path and branch are escaped per segment.
+  **Scenario**: `FullName` values `a/b/c`, `../x`, `a`, `a/b?x=1`, empty; `InstallationID` 0; paths `a/../b`
+  and `a//b`; branch `feat/x y`; path `dir/a b/c?d#e%f.yaml`.
+  **Expected behavior**: error without a request for the bad names, the ID and the dot or empty segments; the
+  branch and the last path are escaped per segment.
 - **Test name**: `TestZipExtraction`
   **Scenario**: one file under the cap; one file over; declared size small but content large; two files; a
   directory entry only; not a zip.

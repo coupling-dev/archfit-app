@@ -4,13 +4,8 @@ package api
 import (
 	"context"
 	"errors"
-	"net/http"
 	"time"
-
-	"github.com/alexei-led/archfit-app/internal/github/auth"
 )
-
-var errNotImplemented = errors.New("api: not implemented")
 
 // RepoRef addresses a repository inside an authenticated installation.
 // Callers build it only from a verified webhook, verified OIDC claims, or an authorized session.
@@ -173,14 +168,6 @@ type Users interface {
 	UserRepos(ctx context.Context, userToken string) ([]Repo, error)
 }
 
-// Client implements every role interface. Consumers depend on the role interfaces they need.
-type Client struct { /* unexported */
-}
-
-func New(ts auth.TokenSource, hc *http.Client) *Client {
-	return nil
-}
-
 var (
 	_ Repos    = (*Client)(nil)
 	_ Pulls    = (*Client)(nil)
@@ -190,119 +177,3 @@ var (
 	_ Changes  = (*Client)(nil)
 	_ Users    = (*Client)(nil)
 )
-
-func (*Client) ListInstallations(ctx context.Context) ([]Installation, error) {
-	return nil, errNotImplemented
-}
-
-func (*Client) ListRepos(ctx context.Context, installationID int64) ([]Repo, error) {
-	return nil, errNotImplemented
-}
-
-func (*Client) ResolveRepo(ctx context.Context, fullName string) (Repo, error) {
-	return Repo{}, errNotImplemented
-}
-
-func (*Client) File(ctx context.Context, r RepoRef, ref, path string) (content []byte, blobSHA string, err error) {
-	return nil, "", errNotImplemented
-}
-
-func (*Client) BranchHead(ctx context.Context, r RepoRef, branch string) (string, error) {
-	return "", errNotImplemented
-}
-
-func (*Client) Pull(ctx context.Context, r RepoRef, number int) (Pull, error) {
-	return Pull{}, errNotImplemented
-}
-
-func (*Client) OpenPulls(ctx context.Context, r RepoRef) ([]Pull, error) {
-	return nil, errNotImplemented
-}
-
-func (*Client) PullByHead(ctx context.Context, r RepoRef, branch string) (Pull, error) {
-	return Pull{}, errNotImplemented
-}
-
-func (*Client) ChangedFiles(ctx context.Context, r RepoRef, number int) (paths []string, truncated bool, err error) {
-	return nil, false, errNotImplemented
-}
-
-func (*Client) Reviews(ctx context.Context, r RepoRef, number int) ([]Review, error) {
-	return nil, errNotImplemented
-}
-
-func (*Client) TeamMember(ctx context.Context, r RepoRef, team, login string) (bool, error) {
-	return false, errNotImplemented
-}
-
-func (*Client) CheckRuns(ctx context.Context, r RepoRef, headSHA, name string) ([]CheckRun, error) {
-	return nil, errNotImplemented
-}
-
-func (*Client) CreateCheckRun(ctx context.Context, r RepoRef, c CheckRun) (CheckRun, error) {
-	return CheckRun{}, errNotImplemented
-}
-
-func (*Client) UpdateCheckRun(ctx context.Context, r RepoRef, c CheckRun) error {
-	return errNotImplemented
-}
-
-func (*Client) AppComments(ctx context.Context, r RepoRef, pull int) ([]Comment, error) {
-	return nil, errNotImplemented
-}
-
-func (*Client) CreateComment(ctx context.Context, r RepoRef, pull int, body string) (Comment, error) {
-	return Comment{}, errNotImplemented
-}
-
-func (*Client) UpdateComment(ctx context.Context, r RepoRef, id int64, body string) error {
-	return errNotImplemented
-}
-
-func (*Client) Run(ctx context.Context, r RepoRef, runID int64) (WorkflowRun, error) {
-	return WorkflowRun{}, errNotImplemented
-}
-
-func (*Client) Rerun(ctx context.Context, r RepoRef, runID int64) error {
-	return errNotImplemented
-}
-
-func (*Client) Dispatch(ctx context.Context, r RepoRef, workflowPath, ref string, inputs map[string]string) error {
-	return errNotImplemented
-}
-
-func (*Client) LatestRun(ctx context.Context, r RepoRef, workflowPath, branch string) (WorkflowRun, error) {
-	return WorkflowRun{}, errNotImplemented
-}
-
-func (*Client) Artifact(ctx context.Context, r RepoRef, runID int64, name string, maxBytes int64) ([]byte, error) {
-	return nil, errNotImplemented
-}
-
-func (*Client) EnsureBranch(ctx context.Context, r RepoRef, branch, fromRef string) error {
-	return errNotImplemented
-}
-
-func (*Client) Commit(ctx context.Context, r RepoRef, branch, message string, files []FileChange) (sha string, err error) {
-	return "", errNotImplemented
-}
-
-func (*Client) EnsurePull(ctx context.Context, r RepoRef, p NewPull) (Pull, error) {
-	return Pull{}, errNotImplemented
-}
-
-func (*Client) UpdatePullBody(ctx context.Context, r RepoRef, number int, body string) error {
-	return errNotImplemented
-}
-
-func (*Client) MarkReady(ctx context.Context, r RepoRef, number int) error {
-	return errNotImplemented
-}
-
-func (*Client) Permission(ctx context.Context, userToken, fullName string) (string, error) {
-	return "", errNotImplemented
-}
-
-func (*Client) UserRepos(ctx context.Context, userToken string) ([]Repo, error) {
-	return nil, errNotImplemented
-}
