@@ -10,6 +10,11 @@ import (
 	"github.com/alexei-led/archfit-app/internal/github/api"
 )
 
+const (
+	defaultMissingUploadAfter = 60 * time.Minute
+	defaultWaiverWarnBefore   = 7 * 24 * time.Hour
+)
+
 type Config struct {
 	MissingUploadAfter time.Duration // 60 minutes
 	WaiverWarnBefore   time.Duration // 7 days
@@ -32,5 +37,11 @@ type Sweeper interface {
 }
 
 func New(repos api.Repos, pulls api.Pulls, actions api.Actions, r inputs.Resolver, p feedback.Publisher, c Config) Sweeper {
-	return nil
+	if c.MissingUploadAfter == 0 {
+		c.MissingUploadAfter = defaultMissingUploadAfter
+	}
+	if c.WaiverWarnBefore == 0 {
+		c.WaiverWarnBefore = defaultWaiverWarnBefore
+	}
+	return &sweeper{repos: repos, pulls: pulls, actions: actions, resolver: r, publisher: p, cfg: c}
 }

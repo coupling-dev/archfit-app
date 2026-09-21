@@ -89,7 +89,7 @@ repository's open PRs at once; the hourly `Run` stays the recovery path when tha
 ### Rules per pull request
 
 `state` is `Publisher.State(target)`, `rc` is `state.Receipt`, "has receipt" means `state.Exists && !state.Pending`.
-The first rule that acts ends the evaluation of that pull, except rule 6a, which never ends it.
+The first rule whose condition holds ends the evaluation of that pull, whether or not it had to write anything (a fork already marked, a pending check younger than the limit), except rule 6a, which never ends it. Otherwise a fresh pending check would fall through to rule 5 and read as a stale zero receipt.
 
 | #   | Condition                                                                       | Action                                                                                                 | Counter     |
 | --- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ----------- |
