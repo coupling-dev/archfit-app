@@ -1,0 +1,18 @@
+{
+  "producer": "synthetic: hand-edited from report/real-blocked-no-baseline.json (engine v2.3.1) with jq: .verdict=\"healthy\" | .decision={hard_gates:\"pass\",active_blockers:0,attention_dimensions:0,unknown_dimensions:4} | .findings=[] | .agent_tasks=[] | .dimensions |= map_values(.findings=[] | .gate |= (if .==\"fail\" or .==\"warn\" then \"pass\" else . end))",
+  "decode": "ok",
+  "fields": {
+    "verdict": "healthy",
+    "hard_gates": "pass",
+    "unevaluated_rule_ids": [],
+    "has_profile": true,
+    "profile_version": "archfit.measurement.v1",
+    "gate_reference_status": "non_comparable"
+  },
+  "gate": {
+    "conclusion": "success",
+    "reasons": [
+      "healthy"
+    ]
+  }
+}

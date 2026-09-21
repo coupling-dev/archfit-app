@@ -1,0 +1,15 @@
+{
+  "producer": "synthetic: hand-edited from report/real-blocked-no-baseline.json (engine v2.3.1) with jq: .decision.exit_code=2",
+  "decode": "error",
+  "gate": {
+    "conclusion": "action_required",
+    "reasons": [
+      "report_invalid"
+    ]
+  },
+  "facts": {
+    "problems": [
+      "report_invalid"
+    ]
+  }
+}

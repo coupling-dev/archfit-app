@@ -1,0 +1,517 @@
+{
+  "schema_version": "archfit.baseline.v2",
+  "accepted": [
+    {
+      "fingerprint": "bbfef70e56238f045372915151e3c40c",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    }
+  ],
+  "metrics": {
+    "blast_radius": {
+      "value": 1,
+      "version": "blast_radius.v2"
+    },
+    "coverage": {
+      "value": 1,
+      "version": "coverage.v1"
+    },
+    "cycle": {
+      "value": 0,
+      "version": "cycle.v1"
+    },
+    "encapsulation": {
+      "value": 0,
+      "version": "encapsulation.v1"
+    },
+    "unbalanced_edge": {
+      "value": 0,
+      "version": "unbalanced_edge.v2"
+    }
+  },
+  "state": {
+    "config_hash": "bc4efce404f15fe09fb9c4f1e0e8b5d92691afa63ba1d667b73de6c77f478ea6",
+    "model_hash": "a670a6189c9cd13dd54c7e991f5422b0313da4f5515ea7a77528887e9dd36326",
+    "labels_hash": "",
+    "rubric_version": "bc_score.v6",
+    "measurement_profile": {
+      "version": "archfit.measurement.v1",
+      "settings_hash": "843b155ad8ca22055a035e10acb6b2a6d104969f630deb834d06a1c6b217fa75",
+      "producers": [
+        {
+          "tool": "ast-grep",
+          "semantics_version": "ast-grep.v1",
+          "status": "disabled"
+        },
+        {
+          "tool": "ast-grep/syntax",
+          "semantics_version": "ast-grep/syntax.v1",
+          "status": "disabled"
+        },
+        {
+          "tool": "cargo",
+          "semantics_version": "cargo.v1",
+          "status": "absent"
+        },
+        {
+          "tool": "cargo-modules",
+          "semantics_version": "cargo-modules.v1",
+          "status": "absent"
+        },
+        {
+          "tool": "dependency-cruiser",
+          "semantics_version": "dependency-cruiser.v1",
+          "status": "absent"
+        },
+        {
+          "tool": "deploy-unit",
+          "semantics_version": "deploy-unit.v2",
+          "status": "ok"
+        },
+        {
+          "tool": "git-history",
+          "semantics_version": "git-history.recent500-full-fallback.v2",
+          "tool_version": "git version 2.55.0",
+          "status": "ok"
+        },
+        {
+          "tool": "go/packages",
+          "semantics_version": "go/packages.v1",
+          "tool_version": "go1.27.1",
+          "status": "ok"
+        },
+        {
+          "tool": "grimp",
+          "semantics_version": "grimp.v2",
+          "status": "absent"
+        },
+        {
+          "tool": "jscpd",
+          "semantics_version": "jscpd.v1",
+          "status": "disabled"
+        },
+        {
+          "tool": "loc",
+          "semantics_version": "loc.v1",
+          "status": "ok"
+        },
+        {
+          "tool": "scip",
+          "semantics_version": "scip.v1",
+          "status": "disabled"
+        },
+        {
+          "tool": "supplied-coverage",
+          "semantics_version": "supplied-coverage.v1",
+          "tool_version": "coverage-parser.go-coverprofile.v1",
+          "status": "ok"
+        }
+      ],
+      "unknowns": []
+    },
+    "hard_gate_finding_ids": [],
+    "qualifying_seam_ids": [
+      "7e859b879504643019e66c2dd45c110d1298c13792fa29557c0f12880fda7d03"
+    ],
+    "dimensions": [
+      {
+        "name": "intent",
+        "status": "measured",
+        "gate": "pass",
+        "coverage": {
+          "basis": "declared rules evaluated",
+          "observed": 1,
+          "total": 1
+        },
+        "metrics": [
+          {
+            "name": "declared_modules",
+            "value": 2,
+            "unit": "count"
+          },
+          {
+            "name": "declared_layers",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "declared_rules",
+            "value": 1,
+            "unit": "count"
+          },
+          {
+            "name": "declared_waivers",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "waivers_used",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "expired_waivers",
+            "value": 0,
+            "unit": "count"
+          }
+        ]
+      },
+      {
+        "name": "structure",
+        "status": "measured",
+        "gate": "pass",
+        "coverage": {
+          "basis": "discovered dependencies resolved inside the declared module map",
+          "observed": 1,
+          "total": 1
+        },
+        "metrics": [
+          {
+            "name": "internal_edges",
+            "value": 1,
+            "unit": "count"
+          },
+          {
+            "name": "external_edges",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "same_module_edges",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "connected_modules",
+            "value": 2,
+            "unit": "count"
+          },
+          {
+            "name": "cycle",
+            "value": 0,
+            "unit": "count"
+          }
+        ]
+      },
+      {
+        "name": "modularity",
+        "status": "measured",
+        "gate": "pass",
+        "coverage": {
+          "basis": "declared modules with a declared public surface",
+          "observed": 2,
+          "total": 2
+        },
+        "metrics": [
+          {
+            "name": "declared_modules",
+            "value": 2,
+            "unit": "count"
+          },
+          {
+            "name": "public_surface_entries",
+            "value": 2,
+            "unit": "count"
+          },
+          {
+            "name": "local_coupling_modules",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "blast_radius",
+            "value": 1,
+            "unit": "count"
+          }
+        ]
+      },
+      {
+        "name": "coupling",
+        "status": "measured",
+        "gate": "warn",
+        "coverage": {
+          "basis": "cross-boundary edges scored",
+          "observed": 1,
+          "total": 1
+        },
+        "metrics": [
+          {
+            "name": "scored_edges",
+            "value": 1,
+            "unit": "count"
+          },
+          {
+            "name": "abstained_edges",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "declared_external_edges",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "clone_only_seams",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "critical_band_edges",
+            "value": 1,
+            "unit": "count"
+          },
+          {
+            "name": "high_or_worse_edges",
+            "value": 1,
+            "unit": "count"
+          },
+          {
+            "name": "critical_high_distance_edges",
+            "value": 1,
+            "unit": "count"
+          },
+          {
+            "name": "seams",
+            "value": 1,
+            "unit": "count"
+          },
+          {
+            "name": "distributed_monolith_seams",
+            "value": 1,
+            "unit": "count"
+          },
+          {
+            "name": "tight_seams",
+            "value": 1,
+            "unit": "count"
+          },
+          {
+            "name": "unrated_seams",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "unbalanced_edge",
+            "value": 0,
+            "unit": "count"
+          }
+        ]
+      },
+      {
+        "name": "change_locality",
+        "status": "measured",
+        "gate": "pass",
+        "coverage": {
+          "basis": "declared modules touched in the scanned history window",
+          "observed": 2,
+          "total": 2
+        },
+        "metrics": [
+          {
+            "name": "commits_scanned",
+            "value": 1,
+            "unit": "count"
+          },
+          {
+            "name": "modules_touched",
+            "value": 2,
+            "unit": "count"
+          }
+        ]
+      },
+      {
+        "name": "complexity",
+        "status": "measured",
+        "gate": "pass",
+        "coverage": {
+          "basis": "declared modules with complete dependency-chain and degree values",
+          "observed": 2,
+          "total": 2
+        },
+        "metrics": [
+          {
+            "name": "max_dependency_chain",
+            "value": 1,
+            "unit": "count"
+          },
+          {
+            "name": "module_fan_in_p90",
+            "value": 1,
+            "unit": "count"
+          },
+          {
+            "name": "module_fan_out_p90",
+            "value": 1,
+            "unit": "count"
+          },
+          {
+            "name": "production_files",
+            "value": 4,
+            "unit": "count"
+          },
+          {
+            "name": "production_loc",
+            "value": 27,
+            "unit": "count"
+          },
+          {
+            "name": "largest_production_file_loc",
+            "value": 13,
+            "unit": "count"
+          }
+        ]
+      },
+      {
+        "name": "testability",
+        "status": "measured",
+        "gate": "pass",
+        "coverage": {
+          "basis": "declared modules represented by attributed supplied coverage",
+          "observed": 2,
+          "total": 2
+        },
+        "metrics": [
+          {
+            "name": "test_files",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "production_files",
+            "value": 4,
+            "unit": "count"
+          },
+          {
+            "name": "test_to_production_files",
+            "value": 0,
+            "unit": "ratio"
+          },
+          {
+            "name": "covered_units",
+            "value": 0,
+            "unit": "statements"
+          },
+          {
+            "name": "total_units",
+            "value": 4,
+            "unit": "statements"
+          },
+          {
+            "name": "coverage_ratio",
+            "value": 0,
+            "unit": "ratio"
+          },
+          {
+            "name": "modules_with_coverage",
+            "value": 2,
+            "unit": "count"
+          },
+          {
+            "name": "unresolved_coverage_paths",
+            "value": 0,
+            "unit": "count"
+          }
+        ]
+      },
+      {
+        "name": "operations",
+        "status": "measured",
+        "gate": "pass",
+        "coverage": {
+          "basis": "declared modules with a corroborated deploy unit and qualifying owner",
+          "observed": 2,
+          "total": 2
+        },
+        "metrics": [
+          {
+            "name": "modules_with_owner",
+            "value": 2,
+            "unit": "count"
+          },
+          {
+            "name": "distinct_owners",
+            "value": 2,
+            "unit": "count"
+          },
+          {
+            "name": "owners_from_declared",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "owners_from_codeowners",
+            "value": 2,
+            "unit": "count"
+          },
+          {
+            "name": "owners_from_git_author_fallback",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "declared_deploy_units",
+            "value": 2,
+            "unit": "count"
+          },
+          {
+            "name": "corroborated_deploy_units",
+            "value": 2,
+            "unit": "count"
+          },
+          {
+            "name": "modules_with_corroborated_deploy_unit",
+            "value": 2,
+            "unit": "count"
+          },
+          {
+            "name": "matching_declared_deploy_units",
+            "value": 2,
+            "unit": "count"
+          },
+          {
+            "name": "mismatched_declared_deploy_units",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "declared_external_systems",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "analyzers_reporting_coverage",
+            "value": 4,
+            "unit": "count"
+          },
+          {
+            "name": "coverage_gaps",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "analyzers_not_applicable",
+            "value": 8,
+            "unit": "count"
+          },
+          {
+            "name": "coverage",
+            "value": 1,
+            "unit": "ratio"
+          }
+        ]
+      },
+      {
+        "name": "drift",
+        "status": "unmeasured",
+        "gate": "not_applicable",
+        "coverage": {
+          "basis": "",
+          "observed": 0,
+          "total": 0
+        },
+        "metrics": []
+      }
+    ]
+  }
+}

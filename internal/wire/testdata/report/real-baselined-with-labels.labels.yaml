@@ -1,0 +1,9 @@
+version: 1
+labels:
+  - from: a
+    to: b
+    strength: contract
+    rationale: a calls the published Hello function of b only
+    evidence_hash: ""
+    status: approved
+    provenance: human

@@ -1,0 +1,31 @@
+{
+  "producer": "synthetic: hand-written by the policy module against the engine v2.3.1 config schema; waiver file order is kept",
+  "decode": "ok",
+  "fields": {
+    "modules": [
+      {
+        "name": "a",
+        "layer": "",
+        "line": 3
+      }
+    ],
+    "waivers": [
+      {
+        "rule": "no_direct_b_dependency",
+        "from": "",
+        "to": "",
+        "reason": "expired exception",
+        "approved_by": "octo-owner",
+        "expires": "2026-01-31T23:59:59Z"
+      },
+      {
+        "rule": "no_direct_b_dependency",
+        "from": "",
+        "to": "",
+        "reason": "active exception",
+        "approved_by": "octo-owner",
+        "expires": "2027-06-30T23:59:59Z"
+      }
+    ]
+  }
+}

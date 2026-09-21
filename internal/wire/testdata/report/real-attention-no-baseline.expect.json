@@ -1,0 +1,23 @@
+{
+  "producer": {
+    "repository": "github.com/alexei-led/archfit",
+    "revision": "f8877d25ba36d84d3780071580d23486e3d794d0",
+    "engine_version": "v2.3.1",
+    "command": "archfit check --json -c .archfit.yaml -q --refresh; on a scratch copy of the engine testdata/fixture-go (git init, untracked files) with the import of pkg/b removed from pkg/a/a.go"
+  },
+  "decode": "ok",
+  "fields": {
+    "verdict": "needs_attention",
+    "hard_gates": "pass",
+    "unevaluated_rule_ids": [],
+    "has_profile": true,
+    "profile_version": "archfit.measurement.v1",
+    "gate_reference_status": "non_comparable"
+  },
+  "gate": {
+    "conclusion": "success",
+    "reasons": [
+      "healthy"
+    ]
+  }
+}

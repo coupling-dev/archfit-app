@@ -82,7 +82,22 @@ child is normative in the child's own `module.md`; it is not restated here.
 | `leakage/`  | seeded source-bearing payloads; each contains the marker `LEAK-7f3a`                |
 | `schema/`   | pinned copy of the engine's `archfit.state.schema.json` with its source revision    |
 
-Files in `schema/` are reference data, not fixtures, and have no expectation sibling.
+Files in `schema/` are reference data, not fixtures, and have no expectation sibling. The folder holds the schema
+and `SCHEMA_SOURCE`, a `key: value` note with `repository`, `tag`, `revision`, `path` and `sha256`.
+
+The four fixture folders are flat. A fixture is `<name>.<ext>`; `<name>` has no dot and is unique in its folder.
+Every other file is a sibling of a fixture, named `<name>` plus one of these suffixes **[default]**:
+
+| Suffix           | Content                                                                        |
+| ---------------- | ------------------------------------------------------------------------------ |
+| `.expect.json`   | the expectation; required for every fixture                                    |
+| `.policy.yaml`   | `report/`: the policy file the engine read; its digest is `config_hash`        |
+| `.baseline.json` | `report/`: the baseline file the engine loaded                                 |
+| `.labels.yaml`   | `report/`: the labels file the engine loaded                                   |
+| `.envelope.json` | `report/`: the envelope a producer sends with this report; synthetic           |
+| `.payload`       | `envelope/`: the exact payload bytes that `payload_digest` was taken from      |
+
+A sibling without its fixture fails the corpus test. Siblings have no expectation of their own.
 
 Every fixture `<name>.<ext>` has a sibling `<name>.expect.json` with these keys and no others:
 
@@ -93,6 +108,13 @@ Every fixture `<name>.<ext>` has a sibling `<name>.expect.json` with these keys 
 | `fields`   | for `ok`: the decision and identity values the child's contract test asserts                           |
 | `gate`     | report fixtures only: object with `conclusion` and `reasons`, the ordered list of reason codes         |
 | `facts`    | optional, report fixtures only: object of overrides to the clean facts; absent means all clean         |
+
+A synthetic `producer` is one string, `"synthetic: <reason>"`; for a hand-edited report the reason records the
+source capture and the exact `jq` edit **[default]**. `fields` by folder: `envelope/` holds the whole decoded
+envelope; `report/` and `leakage/` hold `verdict`, `hard_gates`, `unevaluated_rule_ids`, `has_profile`,
+`profile_version` and `gate_reference_status`; `policy/` holds `modules` (`name`, `layer`, `line`) and `waivers`
+(`rule`, `from`, `to`, `reason`, `approved_by`, `expires`). A `policy/` fixture is `ok` only when both readers
+succeed. `fields` is absent for `error`.
 
 `gate.reasons` is never empty, and `reasons[0]` is the code that determines `conclusion`. Later codes are the extra
 reasons the gate preserves, in order. Example: the `blocker-and-unevaluated` fixture expects `failure` with
@@ -114,7 +136,8 @@ sibling file); the envelope states those same baseline and labels digests (`""` 
   protected ref yields.
 
 Examples: `unknown-identity` carries no measurement profile, so its expectation has
-`"facts": {"identity_approved": false}` and `gate.reasons` `["measurement_profile_missing"]`. `invalid-input` has
+`"facts": {"identity_approved": false}` and `gate.reasons` `["measurement_profile_missing", "blocking_findings"]`
+(its report is also blocked, and the gate keeps every reason that applies). `invalid-input` has
 `decode: "error"`, `"facts": {"problems": ["report_invalid"]}` and `gate.reasons` `["report_invalid"]`. A baseline
 tampering fixture overrides `baseline_digest` with a value outside `trusted_baseline_digests`. Any other key in
 `facts` fails the corpus test.
@@ -128,7 +151,22 @@ partial with a recognized `partial_basis`), `profile-incompatible` (`gate_refere
 `real-blocked-no-baseline`. The last one is captured unmodified from the real engine v2.3.1 on a two-module Go
 repository: verdict `blocked`, `hard_gates: fail`, no baseline file, so `gate_reference` is `non_comparable` with
 reason `no baseline file was loaded`; its policy file ships beside it and its facts have empty trusted baseline and
-labels lists. Its `gate` expectation is recorded from the gate verdict rules when the fixture is added.
+labels lists. Its `gate` expectation is `failure` with `["blocking_findings"]`: with no trusted baseline the gate
+ignores the engine's `non_comparable`.
+
+All required fixtures except the last are hand-edited from that capture, so they inherit its `non_comparable`
+`gate_reference`. `blocked` and `profile-incompatible` exercise comparability through `facts`
+(`trusted_baseline_digests` with a matching `baseline_digest`). `profile-comparable` does not yet have the symmetric
+partial its name promises: its bytes are a blocked report with a `non_comparable` reference, and its expectation
+records that.
+
+Further engine captures, unmodified, each with its policy file and the baseline or labels file the engine loaded:
+`real-healthy` (verdict `healthy`, comparable baseline; the engine reaches `healthy` only when all nine dimensions
+are measured, so it is captured on the engine's reachability fixture), `real-attention-baseline`,
+`real-attention-no-baseline`, `real-baselined-comparable` (finding status `baseline`), `real-baselined-with-labels`,
+`real-blocked-forbidden-and-allowed` (one forbidden and one allowed dependency, comparable baseline, finding status
+`new`), `real-unmeasured-no-inventory`, `real-waiver-expired` and `real-waiver-active`. Two byte copies of captures
+ship a synthetic envelope: `unlisted-image` (image digest outside the manifest) and `baseline-tampered`.
 
 The `leakage/` set has two groups. Rejecting fixtures (`decode: "error"`): snippet field, log blob, raw model output
 key, multi-line text, oversized text. One surviving fixture (`decode: "ok"`): a marker identifier inside

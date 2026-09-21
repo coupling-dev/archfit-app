@@ -1,0 +1,21 @@
+version: 2
+modules:
+  a:
+    paths:
+      - pkg/a/**
+  b:
+    paths:
+      - pkg/b/**
+    public:
+      - pkg/b/b.go
+    internal:
+      - pkg/b/internal/**
+  c:
+    paths:
+      - pkg/c/**
+rules:
+  - id: no_direct_b_dependency
+    type: forbidden_dependency
+    from: pkg/a/**
+    to: pkg/b
+    gate: fail

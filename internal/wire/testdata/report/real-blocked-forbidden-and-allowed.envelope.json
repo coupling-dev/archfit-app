@@ -1,0 +1,18 @@
+{
+  "schema_version": "archfit.report-envelope.v1",
+  "kind": "report",
+  "repository": "alexei-led/archfit-demo",
+  "event": "pull_request",
+  "pull_request": 42,
+  "head_sha": "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f",
+  "base_sha": "2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e",
+  "merge_base_sha": "3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d",
+  "run_id": 17654321098,
+  "run_attempt": 1,
+  "engine_version": "v2.3.1",
+  "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "platform": "linux/amd64",
+  "payload_digest": "sha256:51bbfebe422417d7615883d99f54bc987e6a4c6d2bc880a1609977f8e607e082",
+  "baseline_digest": "ddcd13bcce05b7c8ef22fe9a32a2ae804ab157000412006026583e929634ca8d",
+  "labels_digest": ""
+}

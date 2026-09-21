@@ -1,0 +1,4 @@
+{
+  "producer": "synthetic: hand-edited from report/real-blocked-no-baseline.json (engine v2.3.1) with jq: .agent_tasks[0].goal=(\"LEAK-7f3a \" * 500)",
+  "decode": "error"
+}

@@ -1,0 +1,12 @@
+{
+  "producer": "synthetic: hand-edited from report/real-blocked-no-baseline.json (engine v2.3.1) with jq: .agent_tasks[0].declarations=[{language:\"go\",file:\"pkg/b/b.go\",module:\"b\",kind:\"function\",name:\"LEAK-7f3a_handler\",framework:\"\",exported:true,start_line:3,end_line:9,count:1}]\n  | .findings[0].matched_by.from_glob=\"pkg/LEAK-7f3a/**\" | .findings[1].matched_by.group_members=\"LEAK-7f3a\"\n  | .seams[0].hypothesis=\"LEAK-7f3a shares a database handle\"",
+  "decode": "ok",
+  "fields": {
+    "verdict": "blocked",
+    "hard_gates": "fail",
+    "unevaluated_rule_ids": [],
+    "has_profile": true,
+    "profile_version": "archfit.measurement.v1",
+    "gate_reference_status": "non_comparable"
+  }
+}

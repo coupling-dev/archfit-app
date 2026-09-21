@@ -1,0 +1,50 @@
+# Full engine v2.3.1 policy fixture: layers, modules, rules and two waivers.
+version: 2
+layers:
+  - domain
+  - app
+  - infra
+modules:
+  # core domain
+  orders:
+    paths:
+      - internal/orders/**
+    public:
+      - internal/orders/api.go
+    layer: domain
+    owner: team-orders
+  billing:
+    layer: app
+    paths:
+      - internal/billing/**
+  shared-kit:
+    paths:
+      - pkg/kit/**
+  storage:
+    paths:
+      - internal/storage/**
+    internal:
+      - internal/storage/sql/**
+    layer: infra
+rules:
+  - id: no_billing_to_storage
+    type: forbidden_dependency
+    from: internal/billing/**
+    to: internal/storage
+    gate: fail
+  - id: layers_point_down
+    type: layer_order
+    gate: warn
+waivers:
+  - rule: no_billing_to_storage
+    from: internal/billing/ledger
+    to: internal/storage/sql
+    reason: ledger migration in progress
+    approved_by: octo-owner
+    expires: 2026-12-31
+  - rule: layers_point_down
+    from: internal/orders
+    to: internal/billing
+    reason: temporary callback until events land
+    approved_by: second-owner
+    expires: "2026-10-20"

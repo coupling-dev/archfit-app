@@ -1,0 +1,22 @@
+{
+  "producer": "synthetic: hand-edited from report/real-blocked-no-baseline.json (engine v2.3.1) with jq: del(.comparison.measurement_profile)",
+  "decode": "ok",
+  "fields": {
+    "verdict": "blocked",
+    "hard_gates": "fail",
+    "unevaluated_rule_ids": [],
+    "has_profile": false,
+    "profile_version": "",
+    "gate_reference_status": "non_comparable"
+  },
+  "gate": {
+    "conclusion": "action_required",
+    "reasons": [
+      "measurement_profile_missing",
+      "blocking_findings"
+    ]
+  },
+  "facts": {
+    "identity_approved": false
+  }
+}

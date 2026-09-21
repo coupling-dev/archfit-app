@@ -1,0 +1,25 @@
+version: 2
+modules:
+  a:
+    paths:
+      - pkg/a/**
+  b:
+    paths:
+      - pkg/b/**
+    public:
+      - pkg/b/b.go
+    internal:
+      - pkg/b/internal/**
+rules:
+  - id: no_direct_b_dependency
+    type: forbidden_dependency
+    from: pkg/a/**
+    to: pkg/b
+    gate: fail
+waivers:
+  - rule: no_direct_b_dependency
+    from: pkg/a/**
+    to: pkg/b
+    reason: migration in progress
+    approved_by: octo-owner
+    expires: 2099-12-31

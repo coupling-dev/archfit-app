@@ -1,0 +1,23 @@
+{
+  "producer": {
+    "repository": "github.com/alexei-led/archfit",
+    "revision": "f8877d25ba36d84d3780071580d23486e3d794d0",
+    "engine_version": "v2.3.1",
+    "command": "archfit baseline -c .archfit.yaml --refresh; archfit check -c .archfit.yaml --refresh --progress=none --json; on a scratch copy of the engine testdata/fixtures/reachability materialized as cmd/archfit/integration_reachability_test.go does (one commit, go coverprofile with sidecar, rendered config)"
+  },
+  "decode": "ok",
+  "fields": {
+    "verdict": "healthy",
+    "hard_gates": "pass",
+    "unevaluated_rule_ids": [],
+    "has_profile": true,
+    "profile_version": "archfit.measurement.v1",
+    "gate_reference_status": "comparable"
+  },
+  "gate": {
+    "conclusion": "success",
+    "reasons": [
+      "healthy"
+    ]
+  }
+}

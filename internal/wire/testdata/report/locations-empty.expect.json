@@ -1,0 +1,18 @@
+{
+  "producer": "synthetic: hand-edited from report/real-blocked-no-baseline.json (engine v2.3.1) with jq: .findings[1].locations=[]",
+  "decode": "ok",
+  "fields": {
+    "verdict": "blocked",
+    "hard_gates": "fail",
+    "unevaluated_rule_ids": [],
+    "has_profile": true,
+    "profile_version": "archfit.measurement.v1",
+    "gate_reference_status": "non_comparable"
+  },
+  "gate": {
+    "conclusion": "failure",
+    "reasons": [
+      "blocking_findings"
+    ]
+  }
+}

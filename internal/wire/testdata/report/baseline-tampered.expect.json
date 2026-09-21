@@ -1,0 +1,21 @@
+{
+  "producer": "synthetic: byte copy of real-baselined-comparable with its policy and baseline; the case is its envelope, which states a baseline digest other than the digest of the baseline file",
+  "decode": "ok",
+  "fields": {
+    "verdict": "needs_attention",
+    "hard_gates": "pass",
+    "unevaluated_rule_ids": [],
+    "has_profile": true,
+    "profile_version": "archfit.measurement.v1",
+    "gate_reference_status": "comparable"
+  },
+  "gate": {
+    "conclusion": "action_required",
+    "reasons": [
+      "baseline_mismatch"
+    ]
+  },
+  "facts": {
+    "baseline_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  }
+}
