@@ -64,15 +64,15 @@ syntax completion and diagnostics. The text area remains the working fallback.
 
 The design isolates platform-dependent code behind three interfaces.
 
-| Seam       | Current driver                                             | Later choice                                                                        |
-| ---------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `Store`    | `memory`. Data is lost when the process exits              | Add a driver under `internal/store/<driver>/`. It must pass `store/storetest`       |
-| `Sandbox`  | `none`. Managed discovery reports that it is not available | Add an ephemeral container-job driver under `internal/control/onboarding/<driver>/` |
-| `Provider` | `internal/control/assist/anthropic` over `net/http`        | Add another provider as a sibling package                                           |
-| Host       | Not chosen. Any container host fits the interface          | Select a host after the real-world checks in [decisions §12](design/decisions.md)   |
-| Scheduler  | Any external scheduler calls `POST /internal/sweep`        | Select it with the host                                                             |
+| Seam       | Current driver                                             | Later choice                                                                                               |
+| ---------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `Store`    | `memory`. Data is lost when the process exits              | Chosen, not built: Firestore over REST. See [cloud design](design/cloud/architecture.md#state)             |
+| `Sandbox`  | `none`. Managed discovery reports that it is not available | Add an ephemeral container-job driver under `internal/control/onboarding/<driver>/`                        |
+| `Provider` | `internal/control/assist/anthropic` over `net/http`        | Add another provider as a sibling package                                                                  |
+| Host       | Not deployed                                               | Chosen, not built: two Cloud Run services. See [cloud design](design/cloud/architecture.md)                |
+| Scheduler  | Any external scheduler calls `POST /internal/sweep`        | Chosen, not built: Cloud Scheduler and Cloud Tasks. See [cloud design](design/cloud/architecture.md#flows) |
 
-Host, key-value, and sandbox choices do not change existing module contracts.
+The cloud design adds `Store.Update` to the `Store` contract and a `Queue` seam. The sandbox choice is still open.
 The [hosting research](archive/research/20260918-hosting.md) is dated research, not a deployment decision.
 
 ## Conventions

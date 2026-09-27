@@ -33,6 +33,9 @@ current behavior. For current behavior, read [Architecture](architecture.md),
 | [Product design](design/product.md)                  | Product scope, user flows, governance, privacy, and commercial decisions |
 | [Trust and reporting](design/trust-and-reporting.md) | Trusted inputs, producer eligibility, and reporting constraints          |
 | [First-version decisions](design/decisions.md)       | Decisions that close open design items                                   |
+| [Cloud architecture](design/cloud/architecture.md)   | Google Cloud direction: components, flows, state, cost, open decisions   |
+| [Cloud security](design/cloud/security.md)           | Assets, boundaries, identities, secrets, supply chain, incident response |
+| [Cloud operations](design/cloud/operations.md)       | Delivery, rollback, observability, and routine work                      |
 
 ## Archived records
 

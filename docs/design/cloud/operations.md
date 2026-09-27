@@ -1,0 +1,136 @@
+# Operations
+
+This page sets the direction for delivering, observing, and running the [cloud architecture](architecture.md).
+The implementation owns the concrete files, commands, metric names, thresholds, and runbooks.
+Security rules for identities, secrets, and incidents are in [Security](security.md).
+
+## Environments
+
+- **Production:** one Google Cloud project.
+- **Local:** one process with every route, the memory store, and inline webhook processing. Local webhook tests use a
+  separate development GitHub App and a tunnel. The production App never points at a tunnel.
+- **Staging:** none for the beta. A staging pair of services with a second GitHub App costs about $0 at zero instances.
+  It is the only way to test real webhooks, uploads, and the OIDC audience before production.
+  See the trigger in [Options](architecture.md#options).
+
+## Infrastructure as code
+
+- Terraform (or OpenTofu) owns every cloud resource, IAM binding, and service setting.
+- Long-lived data and identities (Firestore, logs, secrets, service accounts) live apart from the runtime (services,
+  queues, Scheduler, monitors). A routine runtime change then cannot destroy data.
+- CI owns only the image and the traffic of the two services. Terraform ignores those fields.
+- Secret values never enter Terraform. The owner adds them directly to Secret Manager.
+- The owner applies infrastructure changes. An infrastructure change never runs at the same time as a release.
+
+## First deployment
+
+The order matters:
+
+1. Create the data and identity resources. Add every secret value before any service exists,
+   because a revision cannot start without its secrets.
+2. Choose and verify the final domain before the GitHub App is registered. The domain is the OIDC audience.
+3. Register the App with its webhook inactive, and install it nowhere yet.
+4. Create the services with a placeholder image, and the queues and the Scheduler paused.
+   The placeholder answers every request with success and does nothing.
+5. Deploy the first real image through CI.
+6. Resume the queues and the Scheduler. Activate the webhook. Install the App on one test repository.
+   Follow one pull request from webhook to check. Then install it on the invited repositories.
+
+## Release
+
+- Build one image for each commit on `main`. Deploy by digest. Keep the last few images for rollbacks.
+- Deploy the worker first, because a new worker route must exist before anything sends to it.
+- Deploy the public service as a tagged canary without traffic. The canary must pass a readiness check:
+  the App key works with GitHub, and the store answers.
+- Promote the exact revisions that CI deployed, never "latest". A revision that another change created stays without traffic.
+- After promotion, check the worker's exposure and the queue routing. See [Worker protection](security.md#worker-protection).
+- Record the image digest and the revision names of each release. A rollback needs them.
+- Releases never overlap.
+
+Canary limits: the canary gets no real webhooks and no uploads. GitHub calls the main domain, and an Actions token
+names the main domain as its audience. The worker has no canary. For the beta, fast rollback covers the gap.
+
+## Roll back
+
+- **Traffic rollback.** Move traffic back to the previous revisions. If the worker does harm, pause the webhook queue
+  first. The previous revisions use their own pinned secret versions, so those versions must still exist.
+- **Image rollback.** After a secret was destroyed, an old revision cannot start. Redeploy the last good image with
+  the current secrets through the release pipeline.
+- **What is recovered.** Tasks that the worker answered with 5xx retry. See [Failure handling](architecture.md#failure-handling). Tasks that a bad worker
+  answered with success are gone. The sweep repairs gate and control state for those.
+- A rollback does not undo stored data. The format rule in [State](architecture.md#state) keeps old revisions working.
+- After a rollback, do not release again until the cause is fixed.
+
+## Observability
+
+### Logs
+
+- Both services write one JSON line for each event to stdout. The App already writes a request line and event lines
+  with IDs, digests, outcomes, and timings. The verdict line records each gate decision.
+- Cloud Logging reads severity and message only from its own key names. The App must write those keys, or error
+  alerts cannot match.
+- Each line carries the trace, the role, and the revision. Then one request can be followed from intake to worker.
+- Logs never contain source, report content, tokens, headers, bodies, URL paths, or user names.
+- The default log bucket keeps 30 days. Request and verdict lines also go to a long-retention bucket with Log Analytics.
+  That bucket answers product questions with SQL, without a pipeline.
+
+To follow a webhook, start from the delivery ID in the GitHub App settings. The same ID is on the intake line, in the
+task names, and on the worker lines. To follow an upload, start from the request ID that the App returns to the Action.
+
+### Metrics and traces
+
+- Use the built-in Cloud Run and Cloud Tasks metrics for traffic, errors, latency, instances, and queue depth.
+- Add a few log-based counters: requests by outcome, verdicts by conclusion, inline fallbacks, and sweep passes.
+- Labels must have few values. Never label a metric with an installation, repository, commit, or delivery ID.
+- Cloud Run traces incoming requests without code. OpenTelemetry waits until a slow request needs a breakdown by call.
+
+### Targets
+
+These targets come from the code deadlines. Validate them after the first month.
+
+- Upload feedback: 99% of uploads finish in less than 60 s.
+- Webhook intake: 99% of intake requests finish in less than 1 s.
+- Availability: 99.5% of public requests are not 5xx.
+- Sweep: one finished pass at least every 2 hours.
+
+### Alerts
+
+Alerts go to email and the Google Cloud mobile app. The set must cover:
+
+- the public health check failing.
+- 5xx responses on the public service. At this traffic, a count works better than a ratio.
+- any error line on either service.
+- a missing sweep.
+- a growing webhook queue, and task dispatches that fail, including 401 and 403 that never reach the App.
+- inline fallbacks.
+- the budget thresholds.
+
+Alerting is free at design time. Pick thresholds during the implementation, and trigger each alert once before launch.
+
+## Routine work
+
+These procedures must exist before launch. Each one follows the rules on this page and in [Security](security.md).
+
+| Procedure             | Rule                                                                                                           |
+| --------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Grant or clear access | Through the operator queue only. The token never appears on a command line                                     |
+| Run the sweep now     | Trigger the Scheduler job                                                                                      |
+| Pause processing      | Pause the webhook queue. Intake continues and tasks wait                                                       |
+| Stop all intake       | Deactivate the App webhook and close the public service's ingress. The sweep repairs the gap later             |
+| Rotate a secret       | Follow the [rotation rules](security.md#secrets). Check that no release runs and that no rollback pins traffic |
+| Replay webhook work   | Run the sweep. Inside 24 hours, a GitHub redelivery is rejected as a duplicate task                            |
+| Restore Firestore     | Restore a backup into a new database. Fix single keys with grants, or switch the services to it                |
+| Change scale or cost  | Warm instance, instance cap, queue rate, and log exclusions are the knobs                                      |
+
+Routine checks: open alerts daily. Weekly, check the dashboard, failed deliveries in the GitHub App settings,
+the billing report, and dependency updates. Monthly, check the backups and the serving revisions.
+
+## Before launch
+
+Run each drill once before the first invited installation:
+
+- Roll back each service, by traffic and by image.
+- Restore a backup into a scratch database and read one entitlement.
+- Rotate the webhook secret and the App private key.
+- Trigger each alert.
+- Send a task at another URL through each queue, and check that it still reaches the pinned route.

@@ -305,7 +305,8 @@ A new driver changes the composition in `app`. The gate contracts do not change.
 
 ## Deployment
 
-Hosting is not decided. This page does not select a provider or give deployment steps.
+The App is not deployed. The target is Google Cloud. The [cloud design](design/cloud/architecture.md) owns the deployment design.
+This page lists only what any host must provide.
 A host must provide these runtime capabilities:
 
 - Run one static Go binary in a container.
