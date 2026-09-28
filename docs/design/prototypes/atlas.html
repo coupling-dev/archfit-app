@@ -1,0 +1,876 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Archfit Atlas</title>
+<link rel="stylesheet" href="archfit.css">
+<style>
+  [hidden] { display: none !important; }
+  /* ---- map (SVG) — every color reads a token ---- */
+  #map-svg { width: 100%; min-width: 760px; height: auto; }
+  .band { fill: var(--bg-subtle); stroke: var(--border-muted); }
+  .lane { fill: none; stroke: var(--border); stroke-dasharray: 4 4; }
+  .band-name { font: 600 11px var(--font); letter-spacing: 0.06em; fill: var(--fg-muted); }
+  .band-rule { font: 11px var(--font); fill: var(--fg-muted); }
+  .node rect { fill: var(--bg); stroke: var(--border); stroke-width: 1; }
+  .node:hover rect, .node:focus-visible rect { stroke: var(--accent); }
+  .node.selected rect { stroke: var(--accent); stroke-width: 2; }
+  .node .n-name { font: 600 13px var(--font); fill: var(--fg); }
+  .node .n-meta { font: 11px var(--font); fill: var(--fg-muted); }
+  .node .n-flag { font: 11px var(--font); fill: var(--attention); }
+  .node { cursor: pointer; outline: none; }
+  .edge { cursor: pointer; outline: none; }
+  .edge .hit { stroke: transparent; stroke-width: 16; fill: none; }
+  .edge .line { fill: none; stroke: var(--fg-muted); opacity: 0.7; }
+  .edge.violation .line { stroke: var(--danger); opacity: 1; }
+  .edge.waived .line { stroke: var(--attention); stroke-dasharray: 6 4; opacity: 1; }
+  .edge.coupling .line { stroke: var(--done); opacity: 1; }
+  .edge.new .line { stroke: var(--accent); opacity: 1; stroke-dasharray: none; }
+  .edge:hover .line, .edge:focus-visible .line, .edge.selected .line { opacity: 1; stroke-width: 3; }
+  .edge .count { font: 600 11px var(--font); fill: var(--fg-muted); paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }
+  .pill rect { fill: var(--bg); stroke-width: 1; }
+  .pill text { font: 600 11px var(--font); }
+  .pill.violation rect { stroke: var(--danger); } .pill.violation text { fill: var(--danger); }
+  .pill.waived rect { stroke: var(--attention); } .pill.waived text { fill: var(--attention); }
+  .pill.coupling rect { stroke: var(--done); } .pill.coupling text { fill: var(--done); }
+  .pill.new rect { stroke: var(--accent); fill: var(--accent-subtle); } .pill.new text { fill: var(--accent); }
+  .vol text { font: 600 11px var(--font); fill: var(--accent); }
+  .vol path { fill: var(--accent); }
+  .dim { opacity: 0.18; }
+  .arrow-fill-muted { fill: var(--fg-muted); } .arrow-fill-danger { fill: var(--danger); }
+  .arrow-fill-attention { fill: var(--attention); } .arrow-fill-done { fill: var(--done); } .arrow-fill-accent { fill: var(--accent); }
+
+  .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .toolbar label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--fg-muted); }
+  select, textarea, input[type="text"] {
+    font: 14px var(--font); color: var(--fg); background: var(--bg); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 4px 8px;
+  }
+  textarea { width: 100%; resize: vertical; font-size: 13px; }
+  .status-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; font-size: 13px; }
+  .status-strip .k { color: var(--fg-muted); }
+  .bc { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .bc td { padding: 6px 0; border-top: 1px solid var(--border-muted); vertical-align: top; }
+  .bc td:first-child { color: var(--fg-muted); width: 76px; }
+  .scale { display: flex; flex-wrap: wrap; gap: 4px; }
+  .scale span { padding: 0 6px; border-radius: 999px; border: 1px solid var(--border-muted); color: var(--fg-muted); font-family: var(--mono); font-size: 11px; }
+  .scale span.on { border-color: var(--done-border); background: var(--done-subtle); color: var(--done); font-weight: 600; }
+  .result { font-size: 12px; padding: 8px 10px; border-radius: var(--radius); background: var(--bg-subtle); }
+  .fixes { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+  .linklike { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-align: left; }
+  .linklike:hover { text-decoration: underline; }
+  .dims td, .dims th { padding: 4px 8px !important; }
+  .code-ph { display: block; height: 8px; margin: 6px 0; border-radius: 4px; background: var(--neutral-subtle); }
+  .strip svg { width: 100%; height: auto; display: block; }
+  .strip .axis { stroke: var(--border); }
+  .strip .tick { font: 11px var(--font); fill: var(--fg-muted); }
+  .strip .m-att { fill: var(--attention); } .strip .m-acc { fill: var(--accent); }
+  .strip .m-label { font: 600 11px var(--font); fill: var(--fg); }
+  .tray-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .step-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 4px; }
+  .impact svg { display: block; width: 360px; max-width: 100%; height: auto; }
+  .impact .i-node { fill: var(--bg); stroke: var(--border); }
+  .impact .i-text { font: 600 11px var(--font); fill: var(--fg); }
+  .impact .i-new { stroke: var(--accent); stroke-width: 2; fill: none; }
+  .impact .i-cpl { stroke: var(--done); stroke-width: 2; fill: none; }
+  .impact .i-lab { font: 11px var(--font); fill: var(--fg-muted); }
+  .repo-name { font-weight: 600; font-size: 14px; }
+  .stages { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+  .stages li { display: flex; align-items: center; gap: 8px; }
+  .stages .ok { color: var(--success); font-weight: 700; width: 14px; text-align: center; }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <a class="brand" href="explorations.html" title="Earlier explorations"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="4.5" rx="1.5" fill="var(--fg)"/><rect x="3" y="9.75" width="18" height="4.5" rx="1.5" fill="var(--fg)" opacity=".65"/><rect x="3" y="16.5" width="18" height="4.5" rx="1.5" fill="var(--accent)"/></svg> Archfit</a>
+  <nav class="crumbs" aria-label="Repository"><span>acme</span><span class="sep">/</span><strong>checkout</strong></nav>
+  <span class="proto-tag">Prototype A · Atlas · illustrative data</span>
+  <span class="header-spacer"></span>
+  <span class="user-chip"><span class="avatar">b</span>bob · write · not a policy owner</span>
+  <div class="theme-toggle" role="group" aria-label="Theme">
+    <button type="button" data-theme-set="light">Light</button><button type="button" data-theme-set="auto">Auto</button><button type="button" data-theme-set="dark">Dark</button>
+  </div>
+  <button type="button" class="btn sm" data-open-notes>Design notes</button>
+</header>
+
+<nav class="unav" role="tablist" aria-label="Views">
+  <button role="tab" id="tab-map" aria-controls="map" aria-selected="true">Map</button>
+  <button role="tab" id="tab-repos" aria-controls="repos" aria-selected="false">Repositories <span class="counter">4</span></button>
+  <button role="tab" id="tab-pr" aria-controls="pr" aria-selected="false">Pull request <span class="counter">#412</span></button>
+  <button role="tab" id="tab-policy" aria-controls="policy" aria-selected="false">Change the policy</button>
+  <button role="tab" id="tab-debt" aria-controls="debt" aria-selected="false">Exceptions &amp; debt <span class="counter">2</span></button>
+</nav>
+
+<main class="page">
+
+<!-- ================= MAP ================= -->
+<section role="tabpanel" id="map" aria-labelledby="tab-map">
+  <div class="stack">
+    <div class="page-head">
+      <div>
+        <h1>Architecture map</h1>
+        <p class="lede">Intended structure from the policy on <code>main</code>, with the links observed in the latest default-branch report.</p>
+      </div>
+      <div class="row">
+        <button type="button" class="btn" data-goto="policy">Propose a change</button>
+      </div>
+    </div>
+
+    <div class="box">
+      <div class="box-row status-strip">
+        <span><span class="k">main</span> <span class="status danger">failure</span> <code>blocking_findings</code></span>
+        <span><span class="k">Gate</span> <span class="label accent">required</span></span>
+        <span><span class="k">Plan</span> trial · 22 days left</span>
+        <span><span class="k">Engine</span> v2.3.1</span>
+        <span><span class="k">Evidence</span> customer-attested</span>
+        <span><span class="k">Policy</span> <code>1111…1111</code></span>
+      </div>
+    </div>
+
+    <div class="flash warn" id="stale-flash" hidden>
+      <div><strong>Stale.</strong> The policy on <code>main</code> changed after the latest report. Links show the old report until the next default-branch run. Links come from the report artifact, which GitHub keeps for a limited time.</div>
+    </div>
+    <div class="flash" id="lens-flash" hidden>
+      <div><strong>PR #412 lens.</strong> Blue marks what the pull request adds: one new import from <code>billing</code> into <code>storage/sql</code> at <code>retry.go:41</code>, and a new coupling finding on <code>orders</code> → <code>pricing</code>. The rest is dimmed.</div>
+    </div>
+
+    <div class="layout wide-side">
+      <div class="stack">
+        <div class="toolbar">
+          <div class="btn-group" role="group" aria-label="Show links">
+            <button type="button" class="btn sm" data-filter="all" aria-pressed="true">All</button>
+            <button type="button" class="btn sm" data-filter="violation" aria-pressed="false">Violations</button>
+            <button type="button" class="btn sm" data-filter="waived" aria-pressed="false">Waived</button>
+            <button type="button" class="btn sm" data-filter="coupling" aria-pressed="false">Coupling</button>
+          </div>
+          <div class="row">
+            <label for="focus-select">Focus</label>
+            <select id="focus-select">
+              <option value="">No focus</option>
+              <option>orders</option><option>pricing</option><option>billing</option><option>checkout-api</option>
+              <option>storage</option><option>payments-gw</option><option>shared-kit</option>
+            </select>
+            <button type="button" class="btn sm" id="lens-btn" aria-pressed="false">PR lens #412</button>
+            <label><input type="checkbox" id="stale-toggle"> Stale example</label>
+          </div>
+        </div>
+
+        <div class="graph-wrap"><svg id="map-svg" viewBox="0 0 900 560" role="img" aria-label="Architecture map of acme/checkout. Select a module or a link for details."></svg></div>
+
+        <div class="legend" aria-label="Legend">
+          <span class="key"><span class="swatch"></span>permitted</span>
+          <span class="key"><span class="swatch violation"></span>violation, blocks merge</span>
+          <span class="key"><span class="swatch waived"></span>waived until a date</span>
+          <span class="key"><span class="swatch coupling"></span>coupling finding</span>
+          <span class="key"><span class="swatch new"></span>added by the PR (lens)</span>
+          <span class="key">◆ declared volatility · number = observed dependencies · * illustrative module</span>
+        </div>
+
+        <details class="disclosure">
+          <summary>Links as a table</summary>
+          <div class="details-body table-wrap">
+            <table class="data" id="links-table">
+              <thead><tr><th>From</th><th>To</th><th class="num">Deps</th><th>Strength</th><th>Distance</th><th>Volatility</th><th>Policy</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </details>
+      </div>
+
+      <aside class="side" aria-label="Inspector">
+        <div id="inspector" class="stack-sm"></div>
+        <details class="disclosure">
+          <summary>About this view</summary>
+          <div class="details-body">
+            <div class="side-title">What you can do here</div>
+            <ul><li>See where the code breaks the intended layers and rules.</li><li>Open a module or a link to see why.</li><li>Overlay a pull request with the PR lens.</li></ul>
+            <div class="side-title">Why it looks like this</div>
+            <p>Architects reason in pictures. Intent (layers, rules) and evidence (observed links) share one drawing, so erosion shows where it happens.</p>
+            <div class="side-title">Data</div>
+            <p><span class="data-tag today">EXISTS TODAY</span> Policy on <code>main</code>, links from the latest default-branch report artifact.</p>
+            <p><span class="data-tag new">NEW</span> The PR lens needs the PR run's report artifact. Stable positions need a stored or deterministic layout.</p>
+          </div>
+        </details>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<!-- ================= REPOSITORIES ================= -->
+<section role="tabpanel" id="repos" aria-labelledby="tab-repos" hidden>
+  <div class="stack">
+    <div class="page-head">
+      <div><h1>Repositories</h1><p class="lede">Every repository you can see through an Archfit installation, with the next step for each.</p></div>
+    </div>
+    <div class="layout">
+      <div class="stack">
+        <div class="box">
+          <div class="box-head"><h3>acme</h3><span class="muted small">4 repositories</span></div>
+          <div class="box-row">
+            <div class="row-between"><span class="repo-name"><a href="#map" data-goto="map">acme/checkout</a></span><span class="row"><span class="label accent">gate required</span><span class="status danger">failure</span></span></div>
+            <p class="small muted"><code>blocking_findings</code> · Fix the blocking findings and run the validation command.</p>
+          </div>
+          <div class="box-row">
+            <div class="row-between"><span class="repo-name"><a href="#repos">acme/catalog</a></span><span class="row"><span class="label">gate advisory</span><span class="status success">success</span></span></div>
+            <p class="small muted"><code>healthy</code> · Nothing to do.</p>
+          </div>
+          <div class="box-row">
+            <div class="row-between"><span class="repo-name"><a href="#repos">acme/identity</a></span><span class="row"><span class="label">onboarding</span><span class="status neutral">First report received</span></span></div>
+            <p class="small muted">Next: review and merge the policy pull request.</p>
+            <div class="step-actions"><button type="button" class="btn sm" disabled>Run discovery</button><span class="disabled-reason">Admins only. You have write on acme/identity.</span></div>
+          </div>
+          <div class="box-row">
+            <div class="row-between"><span class="repo-name"><a href="#repos">acme/legacy-erp</a></span><span class="row"><span class="label">gate advisory</span><span class="status attention">action required</span></span></div>
+            <p class="small muted"><code>stale_inputs</code> · The policy or baseline changed on the base branch. Run the workflow again if no rerun appears.</p>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="box">
+            <div class="box-head"><h4>acme/checkout · onboarding</h4><span class="label success">done</span></div>
+            <div class="box-body">
+              <ol class="stages">
+                <li><span class="ok">✓</span>App installed</li>
+                <li><span class="ok">✓</span>Workflow merged</li>
+                <li><span class="ok">✓</span>First report received</li>
+                <li><span class="ok">✓</span>Policy merged</li>
+                <li><span class="ok">✓</span>Gate is advisory</li>
+                <li><span class="ok">✓</span>Gate is required</li>
+              </ol>
+            </div>
+          </div>
+          <div class="box">
+            <div class="box-head"><h4>Plan</h4><span class="label attention">trial</span></div>
+            <div class="box-body stack-sm">
+              <p><strong>22 days left</strong> of the trial. A notice appears in feedback 7 days before the end.</p>
+              <p class="small muted">After the trial, 7 days of grace. Then the gate reports <code>subscription_suspended</code>, which never becomes success.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <aside class="side" aria-label="About this view">
+        <div class="side-section"><div class="side-title">What you can do here</div><ul><li>See which repositories need you.</li><li>Follow the recovery text of each reason.</li></ul></div>
+        <div class="side-section"><div class="side-title">Why it looks like this</div><p>A GitHub-style list: one row per repository, state and next step on the same line. The map opens from the name.</p></div>
+        <div class="side-section"><div class="side-title">Data</div><p><span class="data-tag today">EXISTS TODAY</span> State from the check runs, stage derived from GitHub on each read, plan from the account record.</p></div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PULL REQUEST (MOCK) ================= -->
+<section role="tabpanel" id="pr" aria-labelledby="tab-pr" hidden>
+  <div class="stack">
+    <div class="page-head">
+      <div>
+        <div class="row"><span class="mock-flag">Mock · GitHub pull request</span></div>
+        <h1 style="margin-top:8px">Charge retries through ledger <span class="muted">#412</span></h1>
+        <p class="lede"><span class="label success">Open</span> <strong>bob</strong> wants to merge into <code>main</code> · head <code>9f3c2e1</code></p>
+      </div>
+      <div class="row"><button type="button" class="btn sm" data-goto="map" id="to-lens">Show on the map</button></div>
+    </div>
+
+    <div class="layout">
+      <div class="stack">
+        <div class="checks" aria-label="Checks">
+          <div class="check-row"><span class="status danger">failure</span><span class="name">archfit/gate</span><span class="label">required</span><span class="desc">Blocked by architecture findings</span></div>
+          <div class="check-row"><span class="status danger">failure</span><span class="name">archfit/state</span><span class="label">advisory</span><span class="desc">1 blocking finding · 2 annotations</span></div>
+          <div class="box-foot">Merging is blocked. The required check <code>archfit/gate</code> failed.</div>
+        </div>
+
+        <div class="comment">
+          <div class="comment-head"><span class="avatar" style="background:var(--done)">A</span><strong>archfit</strong><span class="label">App</span> commented · updated after run 7.1</div>
+          <div class="comment-body">
+            <h3>Blocked by architecture findings</h3>
+            <dl class="kv">
+              <dt>Gate</dt><dd><span class="state danger">failure</span></dd>
+              <dt>Reason</dt><dd><code>blocking_findings</code> (architecture)</dd>
+              <dt>Next</dt><dd>Fix the blocking findings, then push.</dd>
+              <dt>This PR</dt><dd>2 introduced · 2 accepted debt (display only)</dd>
+            </dl>
+
+            <div class="impact">
+              <svg viewBox="0 0 360 120" role="img" aria-label="Impact of PR 412: billing to storage new, orders to pricing coupling">
+                <text x="0" y="12" class="i-lab">Impact of #412 (static image option)</text>
+                <rect x="10" y="26" width="92" height="30" rx="6" class="i-node"/><text x="56" y="45" text-anchor="middle" class="i-text">billing</text>
+                <rect x="250" y="26" width="92" height="30" rx="6" class="i-node"/><text x="296" y="45" text-anchor="middle" class="i-text">storage</text>
+                <path d="M102 41 H246" class="i-new"/><text x="174" y="36" text-anchor="middle" class="i-lab">+1 · retry.go:41</text>
+                <rect x="10" y="80" width="92" height="30" rx="6" class="i-node"/><text x="56" y="99" text-anchor="middle" class="i-text">orders</text>
+                <rect x="250" y="80" width="92" height="30" rx="6" class="i-node"/><text x="296" y="99" text-anchor="middle" class="i-text">pricing</text>
+                <path d="M102 95 H246" class="i-cpl"/><text x="174" y="90" text-anchor="middle" class="i-lab">coupling · quote.go:18</text>
+              </svg>
+            </div>
+
+            <details class="disclosure" open>
+              <summary>Findings introduced by this PR (2)</summary>
+              <div class="details-body">
+                <div><span class="label solid danger">blocking</span> <code>no_billing_to_storage</code> <span class="muted">medium · new</span><br>
+                  <code>billing</code> → <code>storage</code> at <code>internal/billing/retry.go:41</code><br>
+                  <span class="small muted">Import from internal/billing/** to internal/storage is explicitly forbidden. Remove the dependency or move the code.</span></div>
+                <div><span class="label done">owner decision</span> <code>bc/imbalanced_coupling</code> <span class="muted">medium · new</span><br>
+                  <code>orders</code> → <code>pricing</code> at <code>internal/orders/quote.go:18</code><br>
+                  <span class="small muted">Functional strength × same-owner distance × undeclared volatility → medium. Declare volatility or restructure. Do not baseline without an owner decision.</span></div>
+              </div>
+            </details>
+            <details class="disclosure">
+              <summary>Accepted debt, display only (2)</summary>
+              <div class="details-body small">
+                <div><code>no_billing_to_storage</code> waived: <code>billing/ledger</code> → <code>storage/sql</code>, until 2026-12-31</div>
+                <div><code>layers_point_down</code> waived: <code>orders</code> → <code>billing</code>, until 2026-10-20</div>
+              </div>
+            </details>
+            <details class="disclosure">
+              <summary>Dimensions</summary>
+              <div class="details-body table-wrap"><table class="data dims" id="dims-pr"><tbody></tbody></table></div>
+            </details>
+            <details class="disclosure">
+              <summary>Evidence gaps (5)</summary>
+              <div class="details-body small muted">
+                <div><code>jscpd</code> disabled: clone detection is off.</div>
+                <div><code>scip</code> disabled: opt-in.</div>
+                <div><code>testability</code>: no coverage supplied.</div>
+                <div><code>operations</code>: some modules lack a declared or CODEOWNERS owner.</div>
+                <div><code>drift</code>: no admissible persisted reference.</div>
+              </div>
+            </details>
+            <details class="disclosure">
+              <summary>Inputs and identity</summary>
+              <div class="details-body small">
+                <dl class="kv"><dt>Policy</dt><dd><code>1111…1111</code></dd><dt>Baseline</dt><dd><code>2222…2222</code></dd><dt>Labels</dt><dd><code>3333…3333</code></dd><dt>Engine</dt><dd>v2.3.1, claimed by the producer</dd></dl>
+                <p class="muted">Measurement is customer-attested: the producer is authenticated, the report content is not independently checked.</p>
+              </div>
+            </details>
+            <details class="disclosure">
+              <summary>Validate locally</summary>
+              <div class="details-body"><pre><code>archfit check -c .archfit.yaml
+archfit check -c .archfit.yaml --base main --lang go --require-tools</code></pre></div>
+            </details>
+            <details class="disclosure">
+              <summary>Agent tasks (2)</summary>
+              <div class="details-body small">
+                <div><span class="label">code_change</span> Remove the forbidden dependency from <code>retry.go</code> on <code>storage</code>.</div>
+                <div><span class="label done">needs_owner_decision</span> Decide whether <code>orders</code> → <code>pricing</code> is intended.</div>
+              </div>
+            </details>
+          </div>
+        </div>
+
+        <div>
+          <div class="side-title" style="margin-bottom:8px">Files changed · annotation from <code>archfit/state</code></div>
+          <div class="annot">
+            <div class="annot-file">internal/billing/retry.go</div>
+            <div class="line"><span class="ln">40</span><span><span class="code-ph" style="width:40%"></span></span></div>
+            <div class="line added"><span class="ln">41</span><span><span class="code-ph" style="width:62%"></span></span></div>
+            <div class="note"><strong>no_billing_to_storage</strong> · Import from internal/billing/** to internal/storage is explicitly forbidden.</div>
+            <div class="line"><span class="ln">42</span><span><span class="code-ph" style="width:28%"></span></span></div>
+          </div>
+          <p class="small muted" style="margin-top:6px">Code lines are placeholders. The App stores no source.</p>
+        </div>
+
+        <div class="box">
+          <div class="box-head"><h4>Also open: #415 Declare volatility for pricing</h4><span class="state attention">action required</span></div>
+          <div class="box-row small">
+            <p><code>owner_approval_missing</code> (governance). The PR edits protected paths.</p>
+            <p class="muted">Get a policy owner to approve the exact commit <code>7a1d0c4</code>. A new push cancels the approval.</p>
+          </div>
+        </div>
+      </div>
+
+      <aside class="side" aria-label="About this view">
+        <div class="side-section"><div class="side-title">What you can do here</div><ul><li>See what a developer sees on GitHub.</li><li>Read the verdict, the reason, and the next step first.</li></ul></div>
+        <div class="side-section"><div class="side-title">Why it looks like this</div><p>One comment, verdict on top, everything else collapsed. The map idea travels into the comment as a small impact image.</p></div>
+        <div class="side-section"><div class="side-title">Data</div>
+          <p><span class="data-tag today">EXISTS TODAY</span> Both checks, the comment, and line annotations on <code>archfit/state</code> (up to 50).</p>
+          <p><span class="data-tag new">NEW</span> The impact image needs image hosting. Comment layout changes are gate-side work in <code>gate/feedback</code>.</p>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<!-- ================= CHANGE THE POLICY ================= -->
+<section role="tabpanel" id="policy" aria-labelledby="tab-policy" hidden>
+  <div class="stack">
+    <div class="page-head">
+      <div><h1>Change the policy</h1><p class="lede">Collect changes from the map, review the text they produce, and save them to a draft pull request. Merging on GitHub publishes them.</p></div>
+    </div>
+    <div class="layout">
+      <div class="stack">
+        <div class="box">
+          <div class="box-head"><h3>Pending changes</h3><span class="counter" id="tray-count">1</span></div>
+          <div id="tray"></div>
+          <div class="box-foot">
+            <div class="row"><span>Add:</span>
+              <button type="button" class="linklike" data-add="vol-pricing">volatility of <code>pricing</code></button>
+              <button type="button" class="linklike" data-add="pub-billing">public surface of <code>billing</code></button>
+              <button type="button" class="linklike" data-add="renew-ob">renew the <code>orders</code> → <code>billing</code> waiver</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="box">
+          <div class="box-head"><h3>Text of the change</h3><span class="muted small">generated from the pending changes</span></div>
+          <div class="box-body"><pre id="diff"></pre></div>
+          <div class="box-foot">Field names in <code>.archfit-labels.yaml</code> are placeholders. The engine owns that schema.</div>
+        </div>
+
+        <div class="row">
+          <button type="button" class="btn primary" id="save-btn">Save to draft pull request</button>
+          <span class="disabled-reason" id="save-note">Opens draft PR #415. Nothing reaches <code>main</code> until a merge on GitHub.</span>
+        </div>
+
+        <div class="box" id="flow-box" hidden>
+          <div class="box-head"><h3>Draft PR #415 · Declare volatility for pricing</h3><span class="label">draft</span></div>
+          <div class="box-body">
+            <div class="timeline" id="timeline">
+              <div class="tl-item success"><span class="tl-badge">✓</span><strong>Saved to the draft pull request</strong><span class="small muted">Head <code>7a1d0c4</code>. The change is a commit on a branch.</span></div>
+              <div class="tl-item attention"><span class="tl-badge">!</span><strong>Archfit check on the draft</strong><span class="small muted"><code>action_required</code> · <code>owner_approval_missing</code>. Expected for a protected path.</span></div>
+              <div class="tl-item" id="step-ready"><span class="tl-badge">3</span><strong>Mark ready for review</strong>
+                <div class="step-actions"><button type="button" class="btn sm" id="ready-btn">Mark ready for review</button></div></div>
+              <div class="tl-item" id="step-approve"><span class="tl-badge">4</span><strong>Policy owner approves the exact commit <code id="head-sha">7a1d0c4</code></strong>
+                <div class="step-actions"><button type="button" class="btn sm" disabled>Approve</button><span class="disabled-reason">Only policy owners approve, on GitHub. You have write.</span></div>
+                <div class="step-actions"><button type="button" class="btn sm" id="sim-approve">Simulate: alice approves</button><button type="button" class="btn sm" id="sim-push">Simulate: new push</button></div>
+                <span class="small" id="approve-state"></span></div>
+              <div class="tl-item pending" id="step-merge"><span class="tl-badge">5</span><strong>Merge on GitHub</strong><span class="small muted">The merge publishes the policy. There is no publish button here.</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="box">
+          <div class="box-head"><h3>Ask AI for a proposal</h3><span class="label">optional</span></div>
+          <div class="box-body stack-sm">
+            <label for="ai-text" class="small muted">Instruction</label>
+            <textarea id="ai-text" rows="2">Tighten the public surface of billing without breaking checkout-api.</textarea>
+            <div class="row">
+              <label for="ai-mode" class="small muted">Mode</label>
+              <select id="ai-mode"><option value="customer">customer · runs in your CI</option><option value="managed" disabled>managed · needs consent</option></select>
+              <button type="button" class="btn sm" id="ai-btn">Propose</button>
+            </div>
+            <p class="small muted" id="ai-note">The proposal arrives as a commit on the draft PR. It never affects the gate. Managed mode needs <code>data_mode: managed</code> and consent that an admin records.</p>
+          </div>
+        </div>
+
+        <details class="disclosure">
+          <summary>Edit the source instead</summary>
+          <div class="details-body"><textarea id="yaml-src" rows="10" readonly>version: 2
+layers: [domain, app, infra]
+modules:
+  orders: { paths: [internal/orders/**], public: [internal/orders/api.go], layer: domain, owner: team-orders }
+  billing: { paths: [internal/billing/**], layer: app }
+  storage: { paths: [internal/storage/**], internal: [internal/storage/sql/**], layer: infra }
+rules:
+  - { id: no_billing_to_storage, type: forbidden_dependency, from: internal/billing/**, to: internal/storage, gate: fail }
+  - { id: layers_point_down, type: layer_order, gate: warn }</textarea>
+            <p class="small muted">The text editor stays for precise edits, such as complex globs.</p></div>
+        </details>
+      </div>
+
+      <aside class="side" aria-label="About this view">
+        <div class="side-section"><div class="side-title">What you can do here</div><ul><li>Turn map actions into one policy change.</li><li>Save it as a draft PR and follow it to the merge.</li></ul></div>
+        <div class="side-section"><div class="side-title">Why it looks like this</div><p>People change what they see. The YAML is derived and shown, so reviewers read the exact text that will merge.</p></div>
+        <div class="side-section"><div class="side-title">Rules</div><ul><li>Every change is a pull request.</li><li>Approval is for the exact head commit. A new push cancels it.</li><li>AI output is a commit, never a verdict.</li></ul></div>
+        <div class="side-section"><div class="side-title">Data</div><p><span class="data-tag today">EXISTS TODAY</span> Draft PR, draft check, owner approval, merge.</p><p><span class="data-tag new">NEW</span> Structured edits that generate the YAML diff.</p></div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<!-- ================= EXCEPTIONS & DEBT ================= -->
+<section role="tabpanel" id="debt" aria-labelledby="tab-debt" hidden>
+  <div class="stack">
+    <div class="page-head">
+      <div><h1>Exceptions &amp; debt</h1><p class="lede">Waivers accept a finding until a date. Baseline debt is accepted until someone fixes it.</p></div>
+    </div>
+    <div class="layout">
+      <div class="stack">
+        <div class="box strip">
+          <div class="box-head"><h4>Next 100 days</h4><span class="muted small">today is 2026-09-28</span></div>
+          <div class="box-body">
+            <svg viewBox="0 0 640 74" role="img" aria-label="Timeline: waiver orders to billing ends in 22 days, trial ends in 22 days, waiver billing ledger to storage ends in 94 days">
+              <line x1="20" y1="40" x2="620" y2="40" class="axis" stroke-width="2"/>
+              <text x="20" y="64" class="tick">today</text>
+              <text x="320" y="64" class="tick" text-anchor="middle">+50 d</text>
+              <text x="620" y="64" class="tick" text-anchor="end">+100 d</text>
+              <circle cx="152" cy="40" r="6" class="m-att"/><text x="152" y="24" class="m-label" text-anchor="middle">Oct 20 · waiver + trial end</text>
+              <circle cx="584" cy="40" r="6" class="m-acc"/><text x="584" y="24" class="m-label" text-anchor="end">Dec 31 · waiver ends</text>
+            </svg>
+          </div>
+        </div>
+
+        <div class="box">
+          <div class="box-head"><h3>Waivers</h3><span class="counter">2</span></div>
+          <div class="box-row">
+            <div class="row-between"><span><code>layers_point_down</code> · <code>orders</code> → <code>billing</code></span><span class="label solid attention">22 days left</span></div>
+            <p class="small muted">“temporary callback until events land” · approved by second-owner · expires 2026-10-20 · notice from Oct 13</p>
+            <div class="step-actions"><button type="button" class="btn sm" data-renew="renew-ob">Prepare renewal draft</button><button type="button" class="btn sm" disabled>Approve renewal</button><span class="disabled-reason">Policy owners approve on GitHub.</span></div>
+          </div>
+          <div class="box-row">
+            <div class="row-between"><span><code>no_billing_to_storage</code> · <code>billing/ledger</code> → <code>storage/sql</code></span><span class="label">94 days left</span></div>
+            <p class="small muted">“ledger migration in progress” · approved by octo-owner · expires 2026-12-31</p>
+          </div>
+          <div class="box-foot">When a waiver expires, its findings block again with <code>waiver_expired</code>. Renewing is an owner-approved pull request.</div>
+        </div>
+
+        <div class="box">
+          <div class="box-head"><h3>Baseline debt</h3><span class="counter">6</span></div>
+          <div class="box-row small"><code>layers_point_down</code> · <code>storage</code> → <code>checkout-api</code> <span class="label">low</span></div>
+          <div class="box-row small"><code>bc/imbalanced_coupling</code> · <code>billing</code> → <code>shared-kit</code> <span class="label">low</span></div>
+          <div class="box-foot">4 more in <code>.archfit-baseline.json</code>. Baseline findings show as display-only debt and never block.</div>
+        </div>
+      </div>
+      <aside class="side" aria-label="About this view">
+        <div class="side-section"><div class="side-title">What you can do here</div><ul><li>See every exception and when it ends.</li><li>Start a renewal as a draft PR.</li></ul></div>
+        <div class="side-section"><div class="side-title">Why it looks like this</div><p>On the map a waiver is a dashed amber link with a countdown. Here the same waivers are a list with dates, so nothing expires unseen.</p></div>
+        <div class="side-section"><div class="side-title">Data</div><p><span class="data-tag today">EXISTS TODAY</span> Waivers in the policy, baseline file, expiry notices in feedback.</p></div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<div id="notes-backdrop" class="drawer-backdrop" hidden></div>
+<aside id="notes-drawer" class="drawer" hidden aria-label="Design notes">
+  <div class="row-between"><h2>Atlas · design notes</h2><button type="button" class="btn sm" data-close-notes>Close</button></div>
+  <div class="stack-sm"><h4>Who it suits</h4><p class="muted">Architects who think in diagrams, teams onboarding new engineers, and small or medium repositories.</p></div>
+  <div class="stack-sm"><h4>Core bet</h4><p class="muted">If intent and evidence share one picture, people notice erosion without reading reports.</p></div>
+  <div class="stack-sm"><h4>What gets easy</h4><ul class="fixes muted"><li>Seeing where a rule breaks and which modules it involves.</li><li>Explaining the architecture to a newcomer.</li><li>Starting a policy change from the thing you look at.</li></ul></div>
+  <div class="stack-sm"><h4>What gets hard</h4><ul class="fixes muted"><li>Readability at 50+ modules. Mitigate with layer bands, grouping by owner, focus mode, filters, and the table twin.</li><li>Stable layout across reports: positions must not jump.</li><li>Precise edits such as globs still need text.</li></ul></div>
+  <div class="stack-sm"><h4>Data it needs</h4><p class="muted"><span class="data-tag today">EXISTS TODAY</span> Policy, latest default-branch report artifact (limited retention), checks, comment, annotations.</p><p class="muted"><span class="data-tag new">NEW</span> PR report artifact for the lens, stored layout, image hosting for the comment image.</p></div>
+  <div class="stack-sm"><h4>Build cost</h4><p class="muted">Medium to large. <code>control/ui</code>: layout, interaction, structured edits. <code>gate/feedback</code> only for the optional image.</p></div>
+  <div class="stack-sm"><h4>Risks and mitigations</h4><p class="muted">A beautiful hairball. Keep filters, focus, and the table one click away, and default to showing only what needs attention on large repositories.</p></div>
+</aside>
+
+<script src="archfit.js"></script>
+<script>
+(function () {
+  "use strict";
+  var NS = "http://www.w3.org/2000/svg";
+  var W = 168, WS = 140, H = 56;
+  var MODULES = {
+    "orders":       { layer: "domain", x: 190, y: 462, owner: "team-orders", paths: "internal/orders/**", pub: "internal/orders/api.go", internal: "—" },
+    "pricing":      { layer: "domain", x: 540, y: 462, owner: "team-orders", paths: "internal/pricing/**", pub: "internal/pricing/api.go", internal: "—", illus: true },
+    "billing":      { layer: "app", x: 330, y: 282, owner: null, paths: "internal/billing/**", pub: null, internal: "—" },
+    "checkout-api": { layer: "app", x: 610, y: 282, owner: "team-web", paths: "internal/checkout/**", pub: "internal/checkout/handler.go", internal: "—", illus: true },
+    "storage":      { layer: "infra", x: 150, y: 102, owner: null, paths: "internal/storage/**", pub: null, internal: "internal/storage/sql/**" },
+    "payments-gw":  { layer: "infra", x: 500, y: 102, owner: "team-payments", paths: "internal/payments/**", pub: "internal/payments/client.go", internal: "—", illus: true },
+    "shared-kit":   { layer: null, x: 815, y: 200, owner: null, paths: "pkg/kit/**", pub: null, internal: "—" }
+  };
+  var EDGES = [
+    { id: "e1", from: "checkout-api", to: "orders", n: 12, s: "contract", d: "cross_module", v: "undeclared", st: "ok", bend: 40,
+      why: "Contract strength across modules. A balanced seam.", fixes: [] },
+    { id: "e2", from: "checkout-api", to: "billing", n: 5, s: "functional", d: "cross_module", v: "undeclared", st: "ok", bend: 0,
+      why: "Functional strength across modules. No finding while volatility is undeclared.", fixes: ["Declare the public surface of billing so this seam can be checked."] },
+    { id: "e3", from: "billing", to: "orders", n: 7, s: "contract", d: "cross_module", v: "undeclared", st: "ok", bend: 28,
+      why: "billing uses the orders contract. Permitted: app depends down on domain.", fixes: [] },
+    { id: "e4", from: "billing", to: "storage", n: 3, s: "functional", d: "cross_module", v: "undeclared", st: "violation", bend: 0,
+      rule: "no_billing_to_storage", type: "forbidden_dependency", gate: "fail", waived: "1 edge (billing/ledger → storage/sql) until 2026-12-31", pr: "+1 · retry.go:41",
+      why: "Import from internal/billing/** to internal/storage is explicitly forbidden.",
+      fixes: ["Remove the dependency or move the code (code_change).", "Keep the ledger edge waived until the migration ends."] },
+    { id: "e5", from: "orders", to: "billing", n: 2, s: "functional", d: "cross_module_same_owner", v: "undeclared", st: "waived", bend: 28,
+      rule: "layers_point_down", type: "layer_order", gate: "warn", waiver: "temporary callback until events land · second-owner · until 2026-10-20 (22 days)",
+      why: "domain → app points up. Waived while the callback exists.",
+      fixes: ["Replace the callback with an event: orders publishes, billing subscribes.", "Renew the waiver with an owner-approved PR."], renew: true },
+    { id: "e6", from: "orders", to: "pricing", n: 9, s: "functional", d: "cross_module_same_owner", v: "undeclared", st: "coupling", bend: 0,
+      finding: "bc/imbalanced_coupling", sev: "medium", hyp: "declare_volatility", pr: "+ finding · quote.go:18",
+      why: "Functional strength × same-owner distance × undeclared volatility → medium. Unbalanced coupling raises maintenance effort.",
+      fixes: ["Declare the volatility of pricing (policy PR). The engine re-rates the seam.", "Reduce strength: call a pricing contract instead of its internals (code change).", "Do not baseline it without an owner decision."], propose: "vol-pricing" },
+    { id: "e7", from: "storage", to: "orders", n: 4, s: "model", d: "cross_module", v: "undeclared", st: "ok", bend: -20,
+      why: "storage maps the orders model. Permitted: infra depends down on domain.", fixes: [] },
+    { id: "e8", from: "payments-gw", to: "billing", n: 6, s: "contract", d: "cross_deploy_unit", v: "high", vDeclared: true, st: "ok", bend: 0,
+      why: "Contract strength across a deploy boundary with declared high volatility: the balanced shape for a long distance.", fixes: [] },
+    { id: "e9", from: "billing", to: "shared-kit", n: 11, s: "functional", d: "cross_module", v: "undeclared", st: "ok", bend: -50,
+      why: "Permitted. A low bc/imbalanced_coupling finding is accepted in the baseline.", fixes: ["Pay the debt down when shared-kit gets an owner."] }
+  ];
+  var RULES = {
+    "billing": ["no_billing_to_storage (from)", "layers_point_down"], "storage": ["no_billing_to_storage (to)", "layers_point_down"],
+    "orders": ["layers_point_down (waived edge)"], "pricing": ["layers_point_down"], "checkout-api": ["layers_point_down"],
+    "payments-gw": ["layers_point_down"], "shared-kit": ["none: no layer"]
+  };
+  var DIMS = [["intent","measured","2/2","high"],["structure","measured","9/9","high"],["modularity","measured","4/7","low"],["coupling","measured","9/9","high"],["change_locality","unmeasured","0/0","unrated"],["complexity","measured","7/7","high"],["testability","partial","3/3","medium"],["operations","partial","2/7","medium"],["drift","unmeasured","—","unrated"]];
+  var STRENGTH = ["intrusive","functional","model","contract"];
+  var DISTANCE = ["cross_module_same_owner","cross_module","cross_deploy_unit"];
+
+  var state = { filter: "all", focus: "", lens: false, sel: null, tray: ["vol-pricing"] };
+
+  function el(tag, attrs, parent, text) {
+    var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (text != null) e.textContent = text;
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function h(html) { var t = document.createElement("template"); t.innerHTML = html.trim(); return t.content; }
+  function wOf(id) { return id === "shared-kit" ? WS : W; }
+  function border(cx, cy, tx, ty, w) {
+    var dx = tx - cx, dy = ty - cy;
+    var s = Math.min((w / 2 + 4) / Math.max(Math.abs(dx), 1e-6), (H / 2 + 4) / Math.max(Math.abs(dy), 1e-6));
+    return [cx + dx * s, cy + dy * s];
+  }
+  function geom(e) {
+    var a = MODULES[e.from], b = MODULES[e.to];
+    var mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+    var cx = mx - dy / len * e.bend, cy = my + dx / len * e.bend;
+    var p0 = border(a.x, a.y, cx, cy, wOf(e.from)), p2 = border(b.x, b.y, cx, cy, wOf(e.to));
+    return {
+      d: "M" + p0[0].toFixed(1) + "," + p0[1].toFixed(1) + " Q" + cx.toFixed(1) + "," + cy.toFixed(1) + " " + p2[0].toFixed(1) + "," + p2[1].toFixed(1),
+      mid: [0.25 * p0[0] + 0.5 * cx + 0.25 * p2[0], 0.25 * p0[1] + 0.5 * cy + 0.25 * p2[1]]
+    };
+  }
+  function visible(e) {
+    if (state.lens) return !!e.pr;
+    if (state.focus && e.from !== state.focus && e.to !== state.focus) return false;
+    if (state.filter !== "all" && e.st !== state.filter) return false;
+    return true;
+  }
+  function nodeVisible(id) {
+    if (state.lens) return EDGES.some(function (e) { return e.pr && (e.from === id || e.to === id); });
+    if (!state.focus) return true;
+    return id === state.focus || EDGES.some(function (e) { return (e.from === state.focus && e.to === id) || (e.to === state.focus && e.from === id); });
+  }
+  function arrowFor(e) {
+    if (state.lens && e.pr) return "accent";
+    return { ok: "muted", violation: "danger", waived: "attention", coupling: "done" }[e.st];
+  }
+
+  function drawMap() {
+    var svg = document.getElementById("map-svg");
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    var defs = el("defs", {}, svg);
+    ["muted", "danger", "attention", "done", "accent"].forEach(function (c) {
+      var m = el("marker", { id: "arr-" + c, viewBox: "0 0 10 10", refX: "9", refY: "5", markerWidth: "8", markerHeight: "8", markerUnits: "userSpaceOnUse", orient: "auto" }, defs);
+      el("path", { d: "M0,0 L10,5 L0,10 z", class: "arrow-fill-" + c }, m);
+    });
+    [["INFRA", "may use app and domain", 18], ["APP", "may use domain", 198], ["DOMAIN", "uses nothing above", 378]].forEach(function (b) {
+      el("rect", { x: 10, y: b[2], width: 712, height: 168, rx: 8, class: "band" }, svg);
+      el("text", { x: 24, y: b[2] + 22, class: "band-name" }, svg, b[0]);
+      el("text", { x: 24 + b[0].length * 8 + 12, y: b[2] + 22, class: "band-rule" }, svg, b[1]);
+    });
+    el("rect", { x: 738, y: 18, width: 152, height: 528, rx: 8, class: "lane" }, svg);
+    el("text", { x: 752, y: 40, class: "band-name" }, svg, "NO LAYER");
+
+    var gE = el("g", {}, svg);
+    EDGES.forEach(function (e) {
+      var g = geom(e), show = visible(e);
+      var cls = "edge " + e.st + (state.lens && e.pr ? " new" : "") + (state.sel === e.id ? " selected" : "") + (show ? "" : " dim");
+      var grp = el("g", { class: cls, "data-edge": e.id, tabindex: "0", role: "button", "aria-label": e.from + " to " + e.to + ", " + e.n + " dependencies, " + (e.st === "ok" ? "permitted" : e.st) }, gE);
+      el("title", {}, grp, e.from + " → " + e.to + " · " + e.n + " dependencies");
+      el("path", { d: g.d, class: "hit" }, grp);
+      var w = (1.2 + Math.min(e.n, 12) * 0.22).toFixed(2);
+      el("path", { d: g.d, class: "line", "stroke-width": e.st === "coupling" ? 3.5 : w, "marker-end": "url(#arr-" + arrowFor(e) + ")" }, grp);
+      var pill = null;
+      if (state.lens && e.pr) pill = { c: "new", t: e.pr };
+      else if (e.st === "violation") pill = { c: "violation", t: e.n + " · blocks" };
+      else if (e.st === "waived") pill = { c: "waived", t: e.n + " · waived 22d" };
+      else if (e.st === "coupling") pill = { c: "coupling", t: e.n + " · coupling" };
+      if (pill) {
+        var tw = pill.t.length * 6.2 + 14, pg = el("g", { class: "pill " + pill.c }, grp);
+        el("rect", { x: (g.mid[0] - tw / 2).toFixed(1), y: (g.mid[1] - 10).toFixed(1), width: tw.toFixed(1), height: 20, rx: 10 }, pg);
+        el("text", { x: g.mid[0].toFixed(1), y: (g.mid[1] + 4).toFixed(1), "text-anchor": "middle" }, pg, pill.t);
+      } else {
+        el("text", { x: g.mid[0].toFixed(1), y: (g.mid[1] + 4).toFixed(1), "text-anchor": "middle", class: "count" }, grp, String(e.n));
+      }
+      if (e.vDeclared && !state.lens) {
+        var vx = g.mid[0] + 16, vy = g.mid[1];
+        var vg = el("g", { class: "vol" }, grp);
+        el("path", { d: "M" + vx + "," + (vy - 6) + " l6,6 l-6,6 l-6,-6 z" }, vg);
+        el("text", { x: vx + 10, y: vy + 4 }, vg, "volatility high");
+      }
+    });
+
+    var gN = el("g", {}, svg);
+    Object.keys(MODULES).forEach(function (id) {
+      var m = MODULES[id], w = wOf(id);
+      var g = el("g", { class: "node" + (state.sel === id ? " selected" : "") + (nodeVisible(id) ? "" : " dim"), "data-node": id, tabindex: "0", role: "button", "aria-label": "Module " + id }, gN);
+      el("rect", { x: m.x - w / 2, y: m.y - H / 2, width: w, height: H, rx: 8 }, g);
+      el("text", { x: m.x - w / 2 + 12, y: m.y - 8, class: "n-name" }, g, id + (m.illus ? " *" : ""));
+      if (m.owner) el("text", { x: m.x - w / 2 + 12, y: m.y + 8, class: "n-meta" }, g, m.owner);
+      else el("text", { x: m.x - w / 2 + 12, y: m.y + 8, class: "n-flag" }, g, "no owner");
+      el("text", { x: m.x - w / 2 + 12, y: m.y + 22, class: m.pub ? "n-meta" : "n-flag" }, g, m.pub ? "public surface declared" : "no public surface");
+    });
+  }
+
+  function scale(values, on) {
+    return '<div class="scale">' + values.map(function (v) { return '<span class="' + (v === on ? "on" : "") + '">' + v + "</span>"; }).join("") + "</div>";
+  }
+  function stLabel(e) {
+    return { ok: '<span class="label">permitted</span>', violation: '<span class="label solid danger">violation · blocks merge</span>',
+      waived: '<span class="label solid attention">waived · 22 days left</span>', coupling: '<span class="label solid done">coupling finding · medium</span>' }[e.st];
+  }
+  function defaultInspector() {
+    var dims = DIMS.map(function (d) {
+      var c = d[1] === "measured" ? "success" : d[1] === "partial" ? "attention" : "";
+      return '<tr><td><code>' + d[0] + '</code></td><td><span class="label ' + c + '">' + d[1] + '</span></td><td class="num">' + d[2] + '</td><td class="muted">' + d[3] + "</td></tr>";
+    }).join("");
+    return '<div class="side-title">Inspector</div><p class="small muted">Select a module or a link on the map.</p>' +
+      '<div class="side-title" style="margin-top:8px">Look first</div>' +
+      '<ul class="fixes"><li><button type="button" class="linklike" data-pick="e4"><code>billing</code> → <code>storage</code></button> · violation</li>' +
+      '<li><button type="button" class="linklike" data-pick="e6"><code>orders</code> → <code>pricing</code></button> · owner decision</li>' +
+      '<li><button type="button" class="linklike" data-pick="e5"><code>orders</code> → <code>billing</code></button> · waiver ends in 22 days</li></ul>' +
+      '<div class="side-title" style="margin-top:8px">Latest report</div>' +
+      '<div class="table-wrap"><table class="data dims"><thead><tr><th>Dimension</th><th>Status</th><th class="num">Cov.</th><th>Conf.</th></tr></thead><tbody>' + dims + "</tbody></table></div>" +
+      '<p class="small muted">No single score. Coverage and confidence stay next to each dimension.</p>';
+  }
+  function edgeInspector(e) {
+    var s = '<div class="row-between"><div class="side-title"><code>' + e.from + "</code> → <code>" + e.to + '</code></div><button type="button" class="btn sm" data-clear>Clear</button></div>' +
+      stLabel(e) +
+      '<dl class="kv"><dt>Observed</dt><dd>' + e.n + " dependencies</dd>";
+    if (e.rule) s += "<dt>Rule</dt><dd><code>" + e.rule + "</code> · " + e.type + " · gate " + e.gate + "</dd>";
+    if (e.waived) s += "<dt>Waived</dt><dd>" + e.waived + "</dd>";
+    if (e.waiver) s += "<dt>Waiver</dt><dd>" + e.waiver + "</dd>";
+    if (e.finding) s += "<dt>Finding</dt><dd><code>" + e.finding + "</code> · " + e.sev + "</dd><dt>Hypothesis</dt><dd><code>" + e.hyp + "</code></dd>";
+    s += "</dl>";
+    s += '<div class="side-title" style="margin-top:4px">Balanced Coupling</div><table class="bc"><tr><td>Strength</td><td>' + scale(STRENGTH, e.s) +
+      "</td></tr><tr><td>Distance</td><td>" + scale(DISTANCE, e.d) + "</td></tr><tr><td>Volatility</td><td>" + scale(["undeclared", "low", "high"], e.v) +
+      (e.vDeclared ? ' <span class="small muted">declared</span>' : ' <span class="small muted">not declared</span>') + "</td></tr></table>";
+    s += '<div class="result">' + e.why + "</div>";
+    if (e.fixes.length) s += '<div class="side-title" style="margin-top:4px">Ways to fix</div><ul class="fixes">' + e.fixes.map(function (f) { return "<li>" + f + "</li>"; }).join("") + "</ul>";
+    if (e.propose) s += '<div class="step-actions"><button type="button" class="btn sm" data-add="' + e.propose + '" data-then="policy">Add “declare volatility” to a change</button></div>';
+    if (e.renew) s += '<div class="step-actions"><button type="button" class="btn sm" data-add="renew-ob" data-then="policy">Add waiver renewal to a change</button></div>';
+    return s;
+  }
+  function moduleInspector(id) {
+    var m = MODULES[id];
+    var ins = EDGES.filter(function (e) { return e.to === id; }), outs = EDGES.filter(function (e) { return e.from === id; });
+    function list(arr, dir) {
+      if (!arr.length) return '<span class="muted">none</span>';
+      return arr.map(function (e) { return '<button type="button" class="linklike" data-pick="' + e.id + '"><code>' + (dir === "in" ? e.from : e.to) + "</code></button> " + e.n; }).join(" · ");
+    }
+    var flags = [];
+    if (!m.owner) flags.push('<span class="label attention">no owner</span>');
+    if (!m.pub) flags.push('<span class="label attention">no public surface</span>');
+    if (!m.layer) flags.push('<span class="label">no layer</span>');
+    var s = '<div class="row-between"><div class="side-title"><code>' + id + '</code></div><button type="button" class="btn sm" data-clear>Clear</button></div>' +
+      '<div class="row">' + (m.layer ? '<span class="label accent">' + m.layer + "</span>" : "") + flags.join("") + "</div>" +
+      '<dl class="kv"><dt>Owner</dt><dd>' + (m.owner || "not declared") + "</dd><dt>Paths</dt><dd><code>" + m.paths + "</code></dd><dt>Public</dt><dd>" +
+      (m.pub ? "<code>" + m.pub + "</code>" : "not declared") + "</dd><dt>Internal</dt><dd>" + (m.internal === "—" ? "—" : "<code>" + m.internal + "</code>") +
+      "</dd><dt>Rules</dt><dd>" + RULES[id].map(function (r) { return "<code>" + r.split(" ")[0] + "</code>" + r.slice(r.split(" ")[0].length); }).join("<br>") +
+      "</dd><dt>Uses</dt><dd>" + list(outs, "out") + "</dd><dt>Used by</dt><dd>" + list(ins, "in") + "</dd></dl>";
+    if (!m.owner || !m.pub) s += '<p class="small muted">Missing owner and public surface lower the coverage of <code>operations</code> and <code>modularity</code>.</p>';
+    if (id === "billing") s += '<div class="step-actions"><button type="button" class="btn sm" data-add="pub-billing" data-then="policy">Add “declare public surface” to a change</button></div>';
+    if (m.illus) s += '<p class="small muted">* Illustrative module.</p>';
+    return s;
+  }
+  function renderInspector() {
+    var box = document.getElementById("inspector");
+    var sel = state.sel;
+    box.innerHTML = !sel ? defaultInspector() : MODULES[sel] ? moduleInspector(sel) : edgeInspector(EDGES.filter(function (e) { return e.id === sel; })[0]);
+  }
+  function renderAll() { drawMap(); renderInspector(); }
+
+  // links table + dimensions in the PR comment
+  (function () {
+    var tb = document.querySelector("#links-table tbody");
+    EDGES.forEach(function (e) {
+      var pol = { ok: "permitted", violation: "violation", waived: "waived", coupling: "coupling finding" }[e.st];
+      tb.appendChild(h("<table><tbody><tr><td><code>" + e.from + "</code></td><td><code>" + e.to + '</code></td><td class="num">' + e.n + "</td><td>" + e.s + "</td><td>" + e.d + "</td><td>" + e.v + "</td><td>" + pol + "</td></tr></tbody></table>").querySelector("tr"));
+    });
+    var dp = document.querySelector("#dims-pr tbody");
+    DIMS.forEach(function (d) {
+      var c = d[1] === "measured" ? "success" : d[1] === "partial" ? "attention" : "";
+      dp.appendChild(h('<table><tbody><tr><td><code>' + d[0] + '</code></td><td><span class="label ' + c + '">' + d[1] + '</span></td><td class="num">' + d[2] + '</td><td class="muted">' + d[3] + "</td></tr></tbody></table>").querySelector("tr"));
+    });
+  })();
+
+  // map interaction
+  var svg = document.getElementById("map-svg");
+  function pickFrom(target) {
+    var n = target.closest("[data-node]"), e = target.closest("[data-edge]");
+    if (n) return n.getAttribute("data-node");
+    if (e) return e.getAttribute("data-edge");
+    return null;
+  }
+  svg.addEventListener("click", function (ev) { var id = pickFrom(ev.target); if (id) { state.sel = id; renderAll(); } });
+  svg.addEventListener("keydown", function (ev) {
+    if (ev.key !== "Enter" && ev.key !== " ") return;
+    var id = pickFrom(ev.target); if (!id) return;
+    ev.preventDefault(); state.sel = id; renderAll();
+    var again = svg.querySelector('[data-node="' + id + '"], [data-edge="' + id + '"]'); if (again) again.focus();
+  });
+  document.querySelectorAll("[data-filter]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      state.filter = b.getAttribute("data-filter");
+      document.querySelectorAll("[data-filter]").forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); });
+      drawMap();
+    });
+  });
+  document.getElementById("focus-select").addEventListener("change", function (ev) { state.focus = ev.target.value; drawMap(); });
+  function setLens(on) {
+    state.lens = on;
+    document.getElementById("lens-btn").setAttribute("aria-pressed", String(on));
+    document.getElementById("lens-flash").hidden = !on;
+    drawMap();
+  }
+  document.getElementById("lens-btn").addEventListener("click", function () { setLens(!state.lens); });
+  document.getElementById("to-lens").addEventListener("click", function () { setLens(true); });
+  document.getElementById("stale-toggle").addEventListener("change", function (ev) { document.getElementById("stale-flash").hidden = !ev.target.checked; });
+
+  // tray, diff, flow
+  var CHANGES = {
+    "vol-pricing": { title: "Declare volatility <code>high</code> for <code>pricing</code>", diff:
+      "--- a/.archfit-labels.yaml\n+++ b/.archfit-labels.yaml\n@@ modules @@\n+  pricing:\n+    volatility: high   # placeholder field names\n" },
+    "pub-billing": { title: "Declare the public surface of <code>billing</code>", diff:
+      "--- a/.archfit.yaml\n+++ b/.archfit.yaml\n@@ modules.billing @@\n   billing:\n     layer: app\n     paths:\n       - internal/billing/**\n+    public:\n+      - internal/billing/api.go\n" },
+    "renew-ob": { title: "Renew the <code>orders</code> → <code>billing</code> waiver to 2026-12-31", diff:
+      "--- a/.archfit.yaml\n+++ b/.archfit.yaml\n@@ waivers @@\n   - rule: layers_point_down\n     from: internal/orders\n     to: internal/billing\n-    expires: \"2026-10-20\"\n+    expires: \"2026-12-31\"\n" }
+  };
+  function renderTray() {
+    var tray = document.getElementById("tray");
+    tray.innerHTML = state.tray.length ? "" : '<div class="box-row muted small">No pending changes. Add one from the map or below.</div>';
+    state.tray.forEach(function (id) {
+      tray.appendChild(h('<div class="box-row tray-item"><span>' + CHANGES[id].title + '</span><button type="button" class="btn sm invisible" data-remove="' + id + '">Remove</button></div>'));
+    });
+    document.getElementById("tray-count").textContent = String(state.tray.length);
+    document.getElementById("diff").textContent = state.tray.map(function (id) { return CHANGES[id].diff; }).join("\n") || "# nothing to change yet";
+    document.getElementById("save-btn").disabled = !state.tray.length;
+  }
+  document.addEventListener("click", function (ev) {
+    var add = ev.target.closest("[data-add], [data-renew]");
+    if (add) {
+      var id = add.getAttribute("data-add") || add.getAttribute("data-renew");
+      if (state.tray.indexOf(id) < 0) state.tray.push(id);
+      renderTray();
+      if (add.hasAttribute("data-then") || add.hasAttribute("data-renew")) window.archfitShowTab("policy");
+      return;
+    }
+    var rm = ev.target.closest("[data-remove]");
+    if (rm) { state.tray = state.tray.filter(function (x) { return x !== rm.getAttribute("data-remove"); }); renderTray(); return; }
+    var pick = ev.target.closest("[data-pick]");
+    if (pick) { state.sel = pick.getAttribute("data-pick"); renderAll(); return; }
+    if (ev.target.closest("[data-clear]")) { state.sel = null; renderAll(); }
+  });
+  document.getElementById("save-btn").addEventListener("click", function () {
+    document.getElementById("flow-box").hidden = false;
+    document.getElementById("save-note").textContent = "Saved to draft PR #415. Follow it below.";
+  });
+  document.getElementById("ready-btn").addEventListener("click", function (ev) {
+    var s = document.getElementById("step-ready");
+    s.className = "tl-item success"; s.querySelector(".tl-badge").textContent = "✓";
+    ev.target.disabled = true; ev.target.textContent = "Ready for review";
+  });
+  var sha = "7a1d0c4";
+  document.getElementById("sim-approve").addEventListener("click", function () {
+    var s = document.getElementById("step-approve");
+    s.className = "tl-item success"; s.querySelector(".tl-badge").textContent = "✓";
+    document.getElementById("approve-state").innerHTML = '<span class="status success">alice approved <code>' + sha + "</code>. The draft check reruns.</span>";
+    var m = document.getElementById("step-merge"); m.className = "tl-item"; m.querySelector(".tl-badge").textContent = "5";
+  });
+  document.getElementById("sim-push").addEventListener("click", function () {
+    sha = sha === "7a1d0c4" ? "b83e5f2" : "7a1d0c4";
+    document.getElementById("head-sha").textContent = sha;
+    var s = document.getElementById("step-approve");
+    s.className = "tl-item attention"; s.querySelector(".tl-badge").textContent = "!";
+    document.getElementById("approve-state").innerHTML = '<span class="status attention">A new push moved the head to <code>' + sha + "</code>. The approval is cancelled.</span>";
+    var m = document.getElementById("step-merge"); m.className = "tl-item pending";
+  });
+  document.getElementById("ai-btn").addEventListener("click", function () {
+    document.getElementById("ai-note").innerHTML = "Requested. The customer workflow will add the proposal as a commit on draft PR #415. It never affects the gate.";
+  });
+
+  renderTray();
+  renderAll();
+})();
+</script>
+</body>
+</html>

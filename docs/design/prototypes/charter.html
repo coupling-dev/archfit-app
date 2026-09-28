@@ -1,0 +1,918 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Archfit Charter</title>
+<link rel="stylesheet" href="archfit.css">
+<style>
+  /* Charter-specific pieces. Colors come from archfit.css tokens only. */
+  [hidden] { display: none !important; }
+  .sec { scroll-margin-top: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .sec-title { display: flex; align-items: baseline; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border-muted); }
+  .sec-title .anchor { color: var(--fg-muted); font-weight: 400; }
+  .sec-title .anchor:hover { color: var(--accent); text-decoration: none; }
+  .clause { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 4px 8px; }
+  .clause-no { color: var(--fg-muted); font-variant-numeric: tabular-nums; padding-top: 1px; }
+  .clause-text { font-size: 15px; }
+  .clause .row { grid-column: 2; }
+  .readme { display: flex; flex-direction: column; gap: 32px; }
+
+  .layers { display: flex; flex-direction: column; gap: 0; }
+  .layer-row { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 12px; align-items: center; padding: 10px 16px; }
+  .layer-row + .layer-row { border-top: 1px solid var(--border-muted); }
+  .layer-name { font-weight: 600; }
+  .layer-arrow { text-align: center; font-size: 12px; color: var(--fg-muted); padding: 2px 0; background: var(--bg-subtle); border-top: 1px solid var(--border-muted); }
+
+  .mod-row { display: grid; grid-template-columns: 180px minmax(0, 1fr) minmax(0, 320px); gap: 8px 16px; align-items: center; }
+  .mod-row > .row { justify-content: flex-end; }
+  @media (max-width: 1012px) { .mod-row { grid-template-columns: 160px minmax(0, 1fr); } .mod-row > .row { grid-column: 1 / -1; justify-content: flex-start; } }
+  .mod-row .who { font-size: 12px; color: var(--fg-muted); }
+  .mod-row button.linklike { all: unset; cursor: pointer; font-weight: 600; color: var(--accent); }
+  .mod-row button.linklike:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+  /* Dependency structure matrix */
+  .dsm { border-collapse: separate; border-spacing: 3px; font-size: 12px; }
+  .dsm th { font-weight: 600; color: var(--fg-muted); white-space: nowrap; }
+  .dsm thead th { height: 110px; vertical-align: bottom; padding: 0 0 6px; }
+  .dsm thead th span { display: inline-block; writing-mode: vertical-rl; transform: rotate(180deg); }
+  .dsm tbody th { text-align: right; padding-right: 8px; }
+  .dsm .layer-tag { font-weight: 400; color: var(--fg-muted); font-size: 11px; margin-left: 6px; }
+  .dsm td { padding: 0; }
+  .cell {
+    width: 44px; height: 36px; display: grid; place-items: center; border-radius: 4px; font: 600 12px var(--font);
+    font-variant-numeric: tabular-nums; border: 1px solid transparent; background: var(--bg-subtle); color: var(--fg-muted);
+  }
+  button.cell { cursor: pointer; }
+  button.cell:hover { border-color: var(--fg-muted); }
+  .cell.self { background: var(--bg-inset); }
+  .cell.empty { background: transparent; border: 1px dashed var(--border-muted); }
+  .cell.upper-empty { background: var(--success-subtle); opacity: 0.35; }
+  .cell.ok { background: var(--neutral-subtle); color: var(--fg); border-color: var(--border); }
+  .cell.violation { background: var(--danger-subtle); color: var(--danger); border-color: var(--danger-border); }
+  .cell.waived { background: var(--attention-subtle); color: var(--attention); border: 1px dashed var(--attention); }
+  .cell.coupling { background: var(--done-subtle); color: var(--done); border-color: var(--done-border); }
+  .cell.declared { box-shadow: inset 0 -3px 0 var(--accent); }
+  .cell[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .cell .sym { font-size: 10px; margin-left: 2px; }
+  .legend .chip { width: 16px; height: 12px; border-radius: 3px; border: 1px solid var(--border); background: var(--neutral-subtle); }
+  .legend .chip.violation { background: var(--danger-subtle); border-color: var(--danger-border); }
+  .legend .chip.waived { background: var(--attention-subtle); border: 1px dashed var(--attention); }
+  .legend .chip.coupling { background: var(--done-subtle); border-color: var(--done-border); }
+  .legend .chip.upper { background: var(--success-subtle); border-color: var(--success-border); }
+
+  /* Balanced Coupling mini table */
+  .bc { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .bc td { padding: 4px 0; border-bottom: 1px solid var(--border-muted); vertical-align: top; }
+  .bc td:first-child { color: var(--fg-muted); width: 88px; }
+  .bc tr:last-child td { border-bottom: 0; }
+  .scale { display: flex; gap: 2px; margin-top: 4px; }
+  .scale span { flex: 1; height: 4px; border-radius: 2px; background: var(--border-muted); }
+  .scale span.on { background: var(--done); }
+
+  /* Diff */
+  .diff { padding: 0; }
+  .diff .l { display: block; padding: 0 16px; white-space: pre; }
+  .diff .l.add { background: var(--success-subtle); color: var(--fg); }
+  .diff .l.del { background: var(--danger-subtle); color: var(--fg); }
+  .diff .l.hunk { color: var(--fg-muted); background: var(--accent-subtle); }
+  .diff .l.c { color: var(--fg-muted); }
+
+  .choice { display: flex; gap: 10px; align-items: flex-start; padding: 12px 16px; cursor: pointer; }
+  .choice + .choice { border-top: 1px solid var(--border-muted); }
+  .choice input { margin-top: 3px; }
+  .choice:has(input:checked) { background: var(--accent-subtle); }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-weight: 600; font-size: 13px; }
+  .input, select.input, textarea.input {
+    font: 14px var(--font); color: var(--fg); background: var(--bg); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 5px 12px; line-height: 20px; width: 100%;
+  }
+  textarea.input { min-height: 72px; resize: vertical; }
+  .input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+
+  /* Expiry strip */
+  .strip svg { width: 100%; height: auto; min-width: 560px; display: block; }
+  .strip .axis { stroke: var(--border); stroke-width: 1; }
+  .strip .tick { stroke: var(--border-muted); stroke-width: 1; }
+  .strip .today { stroke: var(--accent); stroke-width: 2; }
+  .strip .notice { fill: var(--attention-subtle); stroke: none; }
+  .strip .exp { fill: var(--attention); }
+  .strip .trial { fill: var(--fg-muted); }
+  .strip text { font: 11px var(--font); fill: var(--fg-muted); }
+  .strip text.strong { fill: var(--fg); font-weight: 600; }
+
+  .pr-title { font-size: 20px; font-weight: 400; }
+  .pr-title .num { color: var(--fg-muted); font-weight: 300; }
+  .count-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .count-row .box-body { padding: 10px 12px; }
+  .count-row .n { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .side-select[hidden] { display: none; }
+  .source textarea { min-height: 280px; font: 12px/1.6 var(--mono); }
+  @media (max-width: 640px) {
+    .mod-row { grid-template-columns: minmax(0, 1fr); }
+    .layer-row { grid-template-columns: 72px minmax(0, 1fr); }
+    .count-row { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <a class="brand" href="explorations.html" title="Earlier explorations">
+    <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="4.5" rx="1.5" fill="var(--fg)"/><rect x="3" y="9.75" width="18" height="4.5" rx="1.5" fill="var(--fg)" opacity=".65"/><rect x="3" y="16.5" width="18" height="4.5" rx="1.5" fill="var(--accent)"/></svg>
+    Archfit
+  </a>
+  <nav class="crumbs" aria-label="Repository"><span>acme</span><span class="sep">/</span><strong>checkout</strong></nav>
+  <span class="proto-tag">Prototype B · Charter · illustrative data</span>
+  <span class="header-spacer"></span>
+  <span class="user-chip"><span class="avatar">a</span>alice · write · policy owner</span>
+  <div class="theme-toggle" role="group" aria-label="Theme">
+    <button type="button" data-theme-set="light">Light</button><button type="button" data-theme-set="auto">Auto</button><button type="button" data-theme-set="dark">Dark</button>
+  </div>
+  <button type="button" class="btn sm" data-open-notes>Design notes</button>
+</header>
+
+<nav class="unav" role="tablist" aria-label="Views">
+  <button role="tab" id="tab-charter" aria-controls="charter" aria-selected="true">Charter</button>
+  <button role="tab" id="tab-matrix" aria-controls="matrix" aria-selected="false">Dependency matrix <span class="counter">9</span></button>
+  <button role="tab" id="tab-amend" aria-controls="amend" aria-selected="false">Propose an amendment</button>
+  <button role="tab" id="tab-pr" aria-controls="pr" aria-selected="false">Pull request (mock) <span class="counter">2</span></button>
+  <button role="tab" id="tab-debt" aria-controls="debt" aria-selected="false">Exceptions &amp; debt <span class="counter">2</span></button>
+  <button role="tab" id="tab-repos" aria-controls="repos" aria-selected="false">Repositories <span class="counter">4</span></button>
+</nav>
+
+<main class="page">
+
+<!-- ================= CHARTER ================= -->
+<section role="tabpanel" id="charter" aria-labelledby="tab-charter" class="stack">
+  <div class="page-head">
+    <div>
+      <h1>Architecture charter</h1>
+      <p class="lede">How <code>acme/checkout</code> is meant to be built, written as sentences from <code>.archfit.yaml</code> on <code>main</code>. Owners change it only by pull request.</p>
+    </div>
+    <div class="row">
+      <button type="button" class="btn" id="toggle-stale" aria-pressed="false">Show stale state</button>
+      <button type="button" class="btn primary" data-goto="amend">Propose an amendment</button>
+    </div>
+  </div>
+
+  <div class="flash warn" id="stale-flash" hidden>
+    <strong>Stale.</strong>
+    <span>The charter changed after the latest default-branch report. Compliance marks below describe the previous text until the next run on <code>main</code>.</span>
+  </div>
+
+  <div class="layout">
+    <div class="readme">
+
+      <div class="box">
+        <div class="box-body">
+          <dl class="kv">
+            <dt>Gate</dt><dd><span class="label accent">required</span> <span class="muted small">archfit/gate can block merges</span></dd>
+            <dt>Default branch</dt><dd><span class="status danger">failure</span> <code>blocking_findings</code></dd>
+            <dt>Policy owners</dt><dd><code>alice</code>, <code>acme/architects</code></dd>
+            <dt>Evidence</dt><dd>Engine v2.3.1 · customer-attested · policy <code>1111…1111</code></dd>
+            <dt>Plan</dt><dd>Trial · 22 days left</dd>
+          </dl>
+        </div>
+        <div class="box-foot">Compliance marks come from the latest default-branch report. The producer is authenticated. The report content is not independently checked.</div>
+      </div>
+
+      <!-- §1 -->
+      <section class="sec" id="s1" aria-labelledby="s1-h">
+        <h2 class="sec-title" id="s1-h"><a class="anchor" href="#s1" aria-label="Link to section 1">§1</a> Layers</h2>
+        <div class="clause">
+          <span class="clause-no">1.1</span>
+          <p class="clause-text">Dependencies point down toward <code>domain</code>. <code>infra</code> may use <code>app</code> and <code>domain</code>. <code>app</code> may use <code>domain</code>.</p>
+          <div class="row"><span class="label attention">Warns</span><code>layers_point_down</code><span class="label attention">1 waived</span><span class="label">1 in baseline</span></div>
+        </div>
+        <div class="box layers" aria-label="Layer order">
+          <div class="layer-row"><span class="layer-name">infra</span><span class="row"><code>storage</code><code>payments-gw</code></span></div>
+          <div class="layer-arrow">may depend on ↓</div>
+          <div class="layer-row"><span class="layer-name">app</span><span class="row"><code>billing</code><code>checkout-api</code></span></div>
+          <div class="layer-arrow">may depend on ↓</div>
+          <div class="layer-row"><span class="layer-name">domain</span><span class="row"><code>orders</code><code>pricing</code></span></div>
+          <div class="layer-row" style="background:var(--bg-subtle)"><span class="layer-name muted">no layer</span><span class="row"><code>shared-kit</code><span class="small muted">not checked by the layer rule</span></span></div>
+        </div>
+      </section>
+
+      <!-- §2 -->
+      <section class="sec" id="s2" aria-labelledby="s2-h">
+        <h2 class="sec-title" id="s2-h"><a class="anchor" href="#s2" aria-label="Link to section 2">§2</a> Modules</h2>
+        <p class="muted">Each module is a contract: where its code lives, what others may import, who owns it. Select a module for its full contract.</p>
+        <div class="box" id="module-list"></div>
+      </section>
+
+      <!-- §3 -->
+      <section class="sec" id="s3" aria-labelledby="s3-h">
+        <h2 class="sec-title" id="s3-h"><a class="anchor" href="#s3" aria-label="Link to section 3">§3</a> Rules</h2>
+        <div class="clause">
+          <span class="clause-no">3.1</span>
+          <p class="clause-text"><code>billing</code> must not depend on <code>storage</code>.</p>
+          <div class="row"><span class="label solid danger">Blocks merge</span><code>no_billing_to_storage</code><span class="label danger">1 violation</span><span class="label attention">1 waived</span></div>
+        </div>
+        <div class="clause">
+          <span class="clause-no">3.2</span>
+          <p class="clause-text">Layers point down, as stated in §1.1.</p>
+          <div class="row"><span class="label solid attention">Warns</span><code>layers_point_down</code><span class="label attention">1 waived</span><span class="label">1 in baseline</span></div>
+        </div>
+        <div class="clause">
+          <span class="clause-no">3.3</span>
+          <p class="clause-text">Coupling between modules stays balanced: strong coupling only across short distance, or toward stable code.</p>
+          <div class="row"><span class="label solid done">Engine rule</span><code>bc/imbalanced_coupling</code><span class="label done">1 finding · orders → pricing</span><span class="label">1 in baseline</span></div>
+        </div>
+      </section>
+
+      <!-- §4 -->
+      <section class="sec" id="s4" aria-labelledby="s4-h">
+        <h2 class="sec-title" id="s4-h"><a class="anchor" href="#s4" aria-label="Link to section 4">§4</a> Exceptions</h2>
+        <p class="muted">An exception accepts one known break until a date. After that date its findings block again.</p>
+        <div class="box">
+          <div class="box-row stack-sm">
+            <div class="row-between"><strong>4.1 · <code>internal/billing/ledger</code> → <code>internal/storage/sql</code></strong><span class="label">94 days left</span></div>
+            <div class="small muted">Exempts §3.1 · “ledger migration in progress” · approved by <code>octo-owner</code> · expires 2026-12-31</div>
+          </div>
+          <div class="box-row stack-sm">
+            <div class="row-between"><strong>4.2 · <code>internal/orders</code> → <code>internal/billing</code></strong><span class="label solid attention">22 days left</span></div>
+            <div class="small muted">Exempts §3.2 · “temporary callback until events land” · approved by <code>second-owner</code> · expires 2026-10-20</div>
+          </div>
+        </div>
+        <p><a href="#debt" data-goto="debt">Exceptions and debt in detail →</a></p>
+      </section>
+
+      <!-- §5 -->
+      <section class="sec" id="s5" aria-labelledby="s5-h">
+        <h2 class="sec-title" id="s5-h"><a class="anchor" href="#s5" aria-label="Link to section 5">§5</a> Accepted debt</h2>
+        <p class="muted">Six findings existed when the charter was adopted. They are recorded in <code>.archfit-baseline.json</code>, shown in feedback, and never block. New findings of the same kind do block.</p>
+      </section>
+
+      <!-- §6 -->
+      <section class="sec" id="s6" aria-labelledby="s6-h">
+        <h2 class="sec-title" id="s6-h"><a class="anchor" href="#s6" aria-label="Link to section 6">§6</a> Amendments</h2>
+        <div class="box table-wrap">
+          <table class="data">
+            <thead><tr><th>Pull request</th><th>Amendment</th><th>Approved by</th><th>State</th></tr></thead>
+            <tbody>
+              <tr><td class="num">#415</td><td>Declare volatility for <code>pricing</code></td><td class="muted">waiting for an owner</td><td><span class="label solid attention">open</span></td></tr>
+              <tr><td class="num">#388</td><td>Add §4.2, exception for <code>orders</code> → <code>billing</code></td><td><code>second-owner</code></td><td><span class="label done">merged</span></td></tr>
+              <tr><td class="num">#301</td><td>Add §3.1, <code>billing</code> must not depend on <code>storage</code></td><td><code>octo-owner</code></td><td><span class="label done">merged</span></td></tr>
+              <tr><td class="num">#212</td><td>Adopt the charter (onboarding policy PR)</td><td><code>alice</code></td><td><span class="label done">merged</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="small muted">History comes from merged pull requests that touch protected paths, read from GitHub. PR numbers other than #415 are illustrative.</p>
+      </section>
+
+      <details class="disclosure source">
+        <summary>Source: <code>.archfit.yaml</code> on <code>main</code></summary>
+        <div class="details-body">
+<pre id="policy-source"></pre>
+          <p class="small muted">The charter text is generated from this file. To change it, propose an amendment.</p>
+        </div>
+      </details>
+    </div>
+
+    <aside class="side" aria-label="About this view">
+      <div class="side-section side-select" id="module-detail" hidden></div>
+      <div class="side-section"><div class="side-title">What you can do here</div>
+        <ul><li>Read the intended architecture as numbered clauses.</li><li>See where the latest report agrees with each clause.</li><li>Select a module for its contract and seams.</li><li>Start a change with “Propose an amendment”.</li></ul></div>
+      <div class="side-section"><div class="side-title">Why it looks like this</div>
+        <p>Architects agree on sentences, not on YAML indentation. Each clause maps to one policy entry, and the chips under it keep the text honest.</p></div>
+      <div class="side-section"><div class="side-title">Data</div>
+        <p><span class="data-tag today">EXISTS TODAY</span> Policy and settings on <code>main</code>. Compliance from the latest default-branch report artifact.</p>
+        <p><span class="data-tag new">NEW</span> Sentence templates per rule type. Amendment history from merged PRs.</p></div>
+    </aside>
+  </div>
+</section>
+
+<!-- ================= MATRIX ================= -->
+<section role="tabpanel" id="matrix" aria-labelledby="tab-matrix" class="stack" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Dependency matrix</h1>
+      <p class="lede">Each row uses the modules in its columns. Modules are ordered by layer, so allowed dependencies sit above the diagonal and upward ones below it.</p>
+    </div>
+  </div>
+  <div class="layout">
+    <div class="stack">
+      <div class="graph-wrap" style="padding:16px">
+        <table class="dsm" id="dsm" aria-label="Dependency structure matrix"></table>
+      </div>
+      <div class="legend" aria-label="Legend">
+        <span class="key"><span class="chip"></span>permitted · count = observed dependencies</span>
+        <span class="key"><span class="chip violation"></span>violation</span>
+        <span class="key"><span class="chip waived"></span>waived (exception)</span>
+        <span class="key"><span class="chip coupling"></span>coupling finding</span>
+        <span class="key"><span class="chip upper"></span>allowed direction</span>
+      </div>
+      <p class="small muted">Links come from the latest default-branch report artifact. GitHub keeps artifacts for a limited time. Run Archfit on <code>main</code> when none is available.</p>
+      <div class="box">
+        <div class="box-head"><h3>What the matrix shows right now</h3></div>
+        <div class="box-row small"><span class="status danger">1 violation</span> <code>billing</code> → <code>storage</code>, below the diagonal and forbidden by §3.1.</div>
+        <div class="box-row small"><span class="status attention">1 upward link, waived</span> <code>orders</code> → <code>billing</code> mirrors <code>billing</code> → <code>orders</code>: a cycle that §4.2 accepts until 2026-10-20.</div>
+        <div class="box-row small"><span class="status done">1 coupling finding</span> <code>orders</code> → <code>pricing</code> inside <code>domain</code>. It needs an owner decision.</div>
+      </div>
+    </div>
+    <aside class="side" aria-label="About this view">
+      <div class="side-section" id="seam-detail">
+        <div class="side-title">Seam detail</div>
+        <p>Select a filled cell to see its rule verdict and the Balanced Coupling breakdown.</p>
+      </div>
+      <div class="side-section"><div class="side-title">Why a matrix</div>
+        <p>A node graph turns into a tangle past 20 modules. A matrix keeps one cell per pair, so 50 modules stay readable, and a layer break is a cell below the diagonal.</p></div>
+      <div class="side-section"><div class="side-title">Data</div>
+        <p><span class="data-tag today">EXISTS TODAY</span> Seams with strength, distance, and volatility from the latest default-branch report. Modules and layers from the policy.</p></div>
+    </aside>
+  </div>
+</section>
+
+<!-- ================= AMEND ================= -->
+<section role="tabpanel" id="amend" aria-labelledby="tab-amend" class="stack" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Propose an amendment</h1>
+      <p class="lede">An amendment is a pull request against a protected file. The App prepares the draft. Owners approve and merge it on GitHub.</p>
+    </div>
+  </div>
+  <div class="layout">
+    <div class="stack">
+      <div class="box">
+        <div class="box-head"><h3>1 · Choose a change</h3></div>
+        <label class="choice"><input type="radio" name="kind" value="volatility" id="kind-volatility" checked><span><strong>Declare volatility for <code>pricing</code></strong><br><span class="small muted">Answers the coupling decision in §3.3. File: <code>.archfit-labels.yaml</code></span></span></label>
+        <label class="choice"><input type="radio" name="kind" value="surface" id="kind-surface"><span><strong>Declare a public surface for <code>billing</code></strong><br><span class="small muted">Raises <code>modularity</code> coverage. File: <code>.archfit.yaml</code></span></span></label>
+        <label class="choice"><input type="radio" name="kind" value="renew" id="kind-renew"><span><strong>Renew exception §4.2</strong><br><span class="small muted">Moves the expiry date. File: <code>.archfit.yaml</code></span></span></label>
+      </div>
+
+      <div class="box">
+        <div class="box-head"><h3>2 · Details</h3></div>
+        <div class="box-body stack" id="amend-fields"></div>
+      </div>
+
+      <div class="box">
+        <div class="box-head"><h3>3 · Amendment text</h3><span class="small muted" id="amend-file"></span></div>
+        <pre class="diff" id="amend-diff" aria-label="Proposed diff"></pre>
+      </div>
+
+      <div class="row">
+        <button type="button" class="btn primary" id="save-draft">Save to draft PR</button>
+        <span class="small muted">Creates or updates a draft pull request. Nothing reaches <code>main</code> until an owner-approved merge on GitHub.</span>
+      </div>
+
+      <div class="box" id="flow-box" hidden>
+        <div class="box-head"><h3>4 · Pull request <span id="flow-pr">#418</span></h3><button type="button" class="btn sm" id="sim-push">Simulate a new push</button></div>
+        <div class="box-body"><div class="timeline" id="flow"></div></div>
+      </div>
+
+      <details class="disclosure">
+        <summary>Ask AI for a proposal (optional)</summary>
+        <div class="details-body stack">
+          <div class="field"><label for="ai-text">Instruction</label>
+            <textarea class="input" id="ai-text">Propose a public surface for billing that keeps ledger internals private.</textarea></div>
+          <div class="row">
+            <label class="row small"><input type="radio" name="ai-mode" id="ai-customer" checked> customer · runs in your CI</label>
+            <label class="row small muted"><input type="radio" name="ai-mode" id="ai-managed" disabled> managed · needs <code>data_mode: managed</code> and consent</label>
+          </div>
+          <div class="row"><button type="button" class="btn" id="ai-go">Propose</button><button type="button" class="btn" disabled>Record managed AI consent</button></div>
+          <p class="disabled-reason">Consent is admin-only. You have write.</p>
+          <p class="small muted" id="ai-result">The proposal arrives as a commit on the draft pull request. It never affects the gate.</p>
+        </div>
+      </details>
+
+      <details class="disclosure">
+        <summary>Edit source instead</summary>
+        <div class="details-body stack">
+          <textarea class="input" id="source-edit" style="min-height:220px;font:12px/1.6 var(--mono)"></textarea>
+          <div class="row"><button type="button" class="btn" id="source-save">Save to draft PR</button><span class="small muted">The editor checks YAML and the policy schema. The Archfit check on the draft checks engine rules.</span></div>
+        </div>
+      </details>
+    </div>
+    <aside class="side" aria-label="About this view">
+      <div class="side-section"><div class="side-title">What you can do here</div>
+        <ul><li>Pick a typed change, fill two fields, read the diff.</li><li>Save it to a draft pull request.</li><li>Follow it to an owner approval and a merge on GitHub.</li></ul></div>
+      <div class="side-section"><div class="side-title">Why it looks like this</div>
+        <p>Most amendments are small and typed: a surface, a volatility label, a date. A form prevents schema errors. The diff is shown before saving because owners approve text.</p></div>
+      <div class="side-section"><div class="side-title">Rules that always hold</div>
+        <ul><li>No publish button. The merge on GitHub publishes.</li><li>Approval counts only on the exact head commit. A new push cancels it.</li><li>GitHub does not let the author approve their own pull request.</li></ul></div>
+      <div class="side-section"><div class="side-title">Data</div>
+        <p><span class="data-tag today">EXISTS TODAY</span> Draft PR save, schema check, Archfit check on the draft, AI proposal as a commit.</p>
+        <p><span class="data-tag new">NEW</span> Typed amendment forms that write YAML.</p></div>
+    </aside>
+  </div>
+</section>
+
+<!-- ================= PR (mock) ================= -->
+<section role="tabpanel" id="pr" aria-labelledby="tab-pr" class="stack" hidden>
+  <div class="page-head">
+    <div>
+      <span class="mock-flag">Mock · GitHub pull request</span>
+      <h1 style="margin-top:8px">What people see on GitHub</h1>
+      <p class="lede">Most people meet Archfit on the pull request: two checks and one comment that updates after each run.</p>
+    </div>
+    <div class="btn-group" role="group" aria-label="Pull request">
+      <button type="button" class="btn sm" data-pr="412" aria-pressed="true">#412 · blocked</button>
+      <button type="button" class="btn sm" data-pr="415" aria-pressed="false">#415 · approval missing</button>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div class="stack" id="pr-412">
+      <div class="stack-sm">
+        <div class="pr-title">Charge retries through ledger <span class="num">#412</span></div>
+        <div class="row small muted"><span class="state success" style="font-size:12px;padding:2px 10px">Open</span><span><strong style="color:var(--fg)">bob</strong> wants to merge 1 commit into <code>main</code> · head <code>9f3c2e1</code></span></div>
+      </div>
+
+      <div class="checks">
+        <div class="check-row"><span class="status danger">Failing</span><span class="name">archfit/gate</span><span class="desc">Blocked: breaks §3.1 <code>no_billing_to_storage</code></span><span class="label">Required</span></div>
+        <div class="check-row"><span class="status danger">Failing</span><span class="name">archfit/state</span><span class="desc">1 blocking, 1 coupling finding · 2 annotations</span><span class="label">Advisory</span></div>
+      </div>
+
+      <div class="comment">
+        <div class="comment-head"><span class="avatar" style="background:var(--done)">A</span><strong>archfit</strong><span class="label">bot</span><span>commented · updated after run 7.1</span></div>
+        <div class="comment-body">
+          <h3>Blocked: breaks §3.1 <code>no_billing_to_storage</code></h3>
+          <dl class="kv">
+            <dt>Reason</dt><dd><code>blocking_findings</code> · architecture</dd>
+            <dt>Next</dt><dd>Fix the blocking findings, then push.</dd>
+          </dl>
+          <div class="count-row">
+            <div class="box"><div class="box-body"><div class="n">2</div><div class="small muted">introduced by this PR</div></div></div>
+            <div class="box"><div class="box-body"><div class="n">2</div><div class="small muted">accepted debt, display only</div></div></div>
+          </div>
+
+          <details class="disclosure" open>
+            <summary>Introduced (2)</summary>
+            <div class="details-body">
+              <div class="stack-sm">
+                <div class="row"><span class="label solid danger">blocking</span><code>no_billing_to_storage</code><span class="small muted">medium · new · breaks §3.1</span></div>
+                <div class="small"><code>billing</code> → <code>storage</code> at <code>internal/billing/retry.go:41</code>. Remove the dependency or move the code.</div>
+              </div>
+              <div class="stack-sm">
+                <div class="row"><span class="label done">owner decision</span><code>bc/imbalanced_coupling</code><span class="small muted">medium · new · §3.3</span></div>
+                <div class="small"><code>orders</code> → <code>pricing</code> at <code>internal/orders/quote.go:18</code>. Functional strength × same-owner distance × undeclared volatility. Declare volatility or restructure.</div>
+              </div>
+            </div>
+          </details>
+          <details class="disclosure">
+            <summary>Accepted debt (2)</summary>
+            <div class="details-body small">
+              <div><code>no_billing_to_storage</code> · <code>billing/ledger</code> → <code>storage/sql</code> · waived by §4.1 until 2026-12-31</div>
+              <div><code>layers_point_down</code> · <code>orders</code> → <code>billing</code> · waived by §4.2 until 2026-10-20 · <span class="label attention">22 days left</span></div>
+            </div>
+          </details>
+          <details class="disclosure">
+            <summary>Dimensions</summary>
+            <div class="details-body"><div class="table-wrap"><table class="data" id="dims"></table></div></div>
+          </details>
+          <details class="disclosure">
+            <summary>Evidence gaps (5)</summary>
+            <div class="details-body small">
+              <div><code>jscpd</code> disabled: clone detection is off</div>
+              <div><code>scip</code> disabled: opt-in analyzer</div>
+              <div><code>testability</code>: no coverage supplied</div>
+              <div><code>operations</code>: modules lack a declared or CODEOWNERS owner</div>
+              <div><code>drift</code>: no persisted reference to compare with</div>
+            </div>
+          </details>
+          <details class="disclosure">
+            <summary>Inputs and identity</summary>
+            <div class="details-body small">
+              <div>Policy <code>1111…1111</code> · baseline <code>2222…2222</code> · labels <code>3333…3333</code></div>
+              <div>Engine v2.3.1, image pinned by the onboarding workflow</div>
+              <div>Customer-attested: the producer is authenticated. The report content is not independently checked.</div>
+            </div>
+          </details>
+          <details class="disclosure">
+            <summary>Validate locally</summary>
+            <div class="details-body"><pre>archfit check -c .archfit.yaml
+archfit check -c .archfit.yaml --base main --lang go --require-tools</pre></div>
+          </details>
+          <details class="disclosure">
+            <summary>Agent tasks (2)</summary>
+            <div class="details-body small">
+              <div><span class="label">code_change</span> Remove the forbidden dependency from <code>retry.go</code>.</div>
+              <div><span class="label done">needs_owner_decision</span> Decide whether <code>orders</code> → <code>pricing</code> is intended.</div>
+            </div>
+          </details>
+        </div>
+      </div>
+
+      <div class="annot" aria-label="Line annotation">
+        <div class="annot-file"><code>internal/billing/retry.go</code> · Files changed</div>
+        <div class="line added"><span class="ln">41</span><span class="muted">diff line rendered by GitHub</span></div>
+        <div class="note"><strong>archfit/state</strong> · <code>no_billing_to_storage</code>: billing must not depend on storage (§3.1).</div>
+      </div>
+    </div>
+
+    <div class="stack" id="pr-415" hidden>
+      <div class="stack-sm">
+        <div class="pr-title">Declare volatility for pricing <span class="num">#415</span></div>
+        <div class="row small muted"><span class="state success" style="font-size:12px;padding:2px 10px">Open</span><span><strong style="color:var(--fg)">carol</strong> wants to merge 1 commit into <code>main</code> · head <code>7a1d0c4</code></span></div>
+      </div>
+      <div class="checks">
+        <div class="check-row"><span class="status attention">Action required</span><span class="name">archfit/gate</span><span class="desc">Amendment waits for a policy owner</span><span class="label">Required</span></div>
+        <div class="check-row"><span class="status success">Passing</span><span class="name">archfit/state</span><span class="desc">No new findings</span><span class="label">Advisory</span></div>
+      </div>
+      <div class="comment">
+        <div class="comment-head"><span class="avatar" style="background:var(--done)">A</span><strong>archfit</strong><span class="label">bot</span><span>commented</span></div>
+        <div class="comment-body">
+          <h3>Charter amendment waits for an owner</h3>
+          <dl class="kv">
+            <dt>Reason</dt><dd><code>owner_approval_missing</code> · governance</dd>
+            <dt>Next</dt><dd>Get a policy owner to approve the exact commit <code>7a1d0c4</code>.</dd>
+            <dt>Protected path</dt><dd><code>.archfit-labels.yaml</code></dd>
+          </dl>
+          <div class="flash"><span>A new push cancels the approval. The sweep reruns the workflow after a late approval.</span></div>
+          <details class="disclosure"><summary>Amendment text</summary>
+            <div class="details-body"><pre class="diff"><span class="l hunk">@@ .archfit-labels.yaml @@</span><span class="l c">  modules:</span><span class="l add">+   pricing:</span><span class="l add">+     volatility: high</span></pre>
+            <p class="small muted">Label field names are illustrative. The engine owns this schema.</p></div></details>
+        </div>
+      </div>
+      <div class="row"><button type="button" class="btn" disabled>Approve here</button><span class="disabled-reason">Approval happens in GitHub's review, on the exact commit.</span></div>
+    </div>
+
+    <aside class="side" aria-label="About this view">
+      <div class="side-section"><div class="side-title">What you can do here</div>
+        <ul><li>Read the verdict, the first reason, and the next step first.</li><li>Open details only when you need them.</li><li>Jump from the annotation to the clause it breaks.</li></ul></div>
+      <div class="side-section"><div class="side-title">Why it looks like this</div>
+        <p>The comment speaks in charter terms: it names the clause a change breaks, so the review is about the agreement, not about tool output.</p></div>
+      <div class="side-section"><div class="side-title">Gate outcomes</div>
+        <ul><li><span class="status success">success</span></li><li><span class="status danger">failure</span></li><li><span class="status attention">action required</span></li></ul>
+        <p>The gate has no neutral or skipped state. A missing report never passes.</p></div>
+      <div class="side-section"><div class="side-title">Data</div>
+        <p><span class="data-tag today">EXISTS TODAY</span> Both checks, one comment, line annotations on <code>archfit/state</code>.</p>
+        <p><span class="data-tag new">NEW</span> Clause references and collapsed sections. Rendered in <code>gate/feedback</code>.</p></div>
+    </aside>
+  </div>
+</section>
+
+<!-- ================= DEBT ================= -->
+<section role="tabpanel" id="debt" aria-labelledby="tab-debt" class="stack" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Exceptions and debt</h1>
+      <p class="lede">What the charter accepts today, and until when.</p>
+    </div>
+  </div>
+  <div class="layout">
+    <div class="stack">
+      <div class="box">
+        <div class="box-head"><h3>Next 90 days</h3><span class="small muted">from 2026-09-28</span></div>
+        <div class="box-body strip table-wrap">
+          <svg viewBox="0 0 720 96" role="img" aria-label="Expiry calendar: exception 4.2 notice from October 13, expiry October 20, trial ends October 20, exception 4.1 expires December 31, after this window">
+            <line class="axis" x1="20" y1="56" x2="700" y2="56"/>
+            <line class="tick" x1="20" y1="50" x2="20" y2="62"/><text x="20" y="80" text-anchor="start">Sep 28</text>
+            <line class="tick" x1="42.7" y1="52" x2="42.7" y2="60"/><text x="42.7" y="92" text-anchor="middle">Oct 1</text>
+            <line class="tick" x1="276.7" y1="52" x2="276.7" y2="60"/><text x="276.7" y="80" text-anchor="middle">Nov 1</text>
+            <line class="tick" x1="503.3" y1="52" x2="503.3" y2="60"/><text x="503.3" y="80" text-anchor="middle">Dec 1</text>
+            <line class="tick" x1="700" y1="50" x2="700" y2="62"/><text x="700" y="80" text-anchor="end">Dec 27</text>
+            <rect class="notice" x="133.3" y="40" width="52.9" height="16" rx="2"/>
+            <text x="133.3" y="34" text-anchor="start">4.2 notice</text>
+            <line class="today" x1="20" y1="30" x2="20" y2="62"/><text class="strong" x="24" y="24">today</text>
+            <circle class="exp" cx="186.2" cy="56" r="6"/><text class="strong" x="192" y="34" text-anchor="start">4.2 expires · Oct 20</text>
+            <rect class="trial" x="182.2" y="64" width="8" height="8" transform="rotate(45 186.2 68)"/>
+            <text x="200" y="92" text-anchor="start">trial ends · Oct 20</text>
+            <text x="700" y="34" text-anchor="end">4.1 expires Dec 31 →</text>
+          </svg>
+        </div>
+      </div>
+
+      <div class="box">
+        <div class="box-head"><h3>Exceptions (§4)</h3><span class="small muted">in <code>.archfit.yaml</code></span></div>
+        <div class="box-row stack-sm">
+          <div class="row-between"><strong>4.2 · <code>orders</code> → <code>billing</code></strong><span class="label solid attention">22 days left</span></div>
+          <div class="small muted">Rule <code>layers_point_down</code> (warns) · “temporary callback until events land” · <code>second-owner</code> · expires 2026-10-20</div>
+          <div class="small">At expiry: the finding blocks again with <code>waiver_expired</code>, and the sweep reruns open PRs.</div>
+          <div class="row"><button type="button" class="btn sm" data-goto="amend" data-preset="renew">Prepare renewal</button><span class="small muted">Or fix it: publish an event instead of the callback.</span></div>
+        </div>
+        <div class="box-row stack-sm">
+          <div class="row-between"><strong>4.1 · <code>billing/ledger</code> → <code>storage/sql</code></strong><span class="label">94 days left</span></div>
+          <div class="small muted">Rule <code>no_billing_to_storage</code> (blocks) · “ledger migration in progress” · <code>octo-owner</code> · expires 2026-12-31</div>
+        </div>
+        <div class="box-foot">A renewal is an amendment: a pull request with an owner approval on the exact commit.</div>
+      </div>
+
+      <div class="box">
+        <div class="box-head"><h3>Accepted debt (§5)</h3><span class="small muted">6 findings in <code>.archfit-baseline.json</code></span></div>
+        <div class="box-row small row-between"><span><code>layers_point_down</code> · <code>storage</code> → <code>checkout-api</code></span><span class="label">low · baseline</span></div>
+        <div class="box-row small row-between"><span><code>bc/imbalanced_coupling</code> · <code>billing</code> → <code>shared-kit</code></span><span class="label">low · baseline</span></div>
+        <div class="box-foot">4 more. Baseline changes are protected: they need an owner approval like any amendment.</div>
+      </div>
+    </div>
+    <aside class="side" aria-label="About this view">
+      <div class="side-section"><div class="side-title">What you can do here</div>
+        <ul><li>See every accepted break and its end date.</li><li>Prepare a renewal, or plan the fix.</li><li>Read what stays as debt from adoption.</li></ul></div>
+      <div class="side-section"><div class="side-title">Why it looks like this</div>
+        <p>Exceptions are part of the agreement, so they are listed with reasons and dates, not hidden in a config file. The calendar makes the next deadline hard to miss.</p></div>
+      <div class="side-section"><div class="side-title">Data</div>
+        <p><span class="data-tag today">EXISTS TODAY</span> Waivers and dates from the policy. Baseline from <code>.archfit-baseline.json</code>. Expiry notices in feedback 7 days ahead.</p></div>
+    </aside>
+  </div>
+</section>
+
+<!-- ================= REPOS ================= -->
+<section role="tabpanel" id="repos" aria-labelledby="tab-repos" class="stack" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Repositories</h1>
+      <p class="lede">Repositories with an Archfit installation that you can read.</p>
+    </div>
+  </div>
+  <div class="layout">
+    <div class="stack">
+      <div class="box">
+        <div class="box-row stack-sm">
+          <div class="row-between"><strong><a href="#charter" data-goto="charter">acme/checkout</a></strong><span class="row"><span class="label accent">gate required</span><span class="status danger">failure</span></span></div>
+          <div class="small"><code>blocking_findings</code> · Fix the blocking findings and run the validation command.</div>
+        </div>
+        <div class="box-row stack-sm">
+          <div class="row-between"><strong>acme/catalog</strong><span class="row"><span class="label">gate advisory</span><span class="status success">success</span></span></div>
+          <div class="small"><code>healthy</code> · Nothing to do.</div>
+        </div>
+        <div class="box-row stack-sm">
+          <div class="row-between"><strong>acme/identity</strong><span class="row"><span class="label">onboarding</span><span class="status neutral">no gate yet</span></span></div>
+          <div class="small">Stage <code>report_received</code> · Review and merge the policy pull request.</div>
+        </div>
+        <div class="box-row stack-sm">
+          <div class="row-between"><strong>acme/legacy-erp</strong><span class="row"><span class="label">gate advisory</span><span class="status attention">action required</span></span></div>
+          <div class="small"><code>stale_inputs</code> · The policy or baseline changed on the base branch. Run the workflow again if no rerun appears.</div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="box">
+          <div class="box-head"><h3>acme/checkout onboarding</h3><span class="label success">6 of 6</span></div>
+          <div class="box-body">
+            <div class="timeline">
+              <div class="tl-item success"><span class="tl-badge">✓</span><strong>App installed</strong></div>
+              <div class="tl-item success"><span class="tl-badge">✓</span><strong>Workflow merged</strong><span class="small muted">PR 1: workflow, settings, CODEOWNERS</span></div>
+              <div class="tl-item success"><span class="tl-badge">✓</span><strong>First report received</strong></div>
+              <div class="tl-item success"><span class="tl-badge">✓</span><strong>Charter merged</strong><span class="small muted">PR 2: the first policy</span></div>
+              <div class="tl-item success"><span class="tl-badge">✓</span><strong>Gate advisory</strong></div>
+              <div class="tl-item success"><span class="tl-badge">✓</span><strong>Gate required</strong></div>
+            </div>
+          </div>
+        </div>
+        <div class="box">
+          <div class="box-head"><h3>Plan</h3><span class="label attention">trial</span></div>
+          <div class="box-body stack-sm">
+            <p><strong>22 days left</strong> in the trial for private repositories.</p>
+            <p class="small muted">A notice appears 7 days before the end. After a 7-day grace period without a grant, the gate reports <code>subscription_suspended</code>. That is never an architecture failure and never a pass.</p>
+            <div class="row"><button type="button" class="btn sm" disabled>Start onboarding</button><span class="disabled-reason">Admin-only. You have write.</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <aside class="side" aria-label="About this view">
+      <div class="side-section"><div class="side-title">What you can do here</div>
+        <ul><li>See each repository's gate, state, and first reason.</li><li>Read the recovery step without opening the PR.</li><li>Follow onboarding and the plan.</li></ul></div>
+      <div class="side-section"><div class="side-title">Why it looks like this</div>
+        <p>The first reason sets the conclusion, so each row shows it with its recovery text. The list grows from the current Repositories page.</p></div>
+      <div class="side-section"><div class="side-title">Data</div>
+        <p><span class="data-tag today">EXISTS TODAY</span> State of the default branch from check runs. Stage derived from GitHub on each read.</p></div>
+    </aside>
+  </div>
+</section>
+
+</main>
+
+<div id="notes-backdrop" class="drawer-backdrop" hidden></div>
+<aside id="notes-drawer" class="drawer" hidden aria-label="Design notes">
+  <div class="row-between"><h2>Design notes · Charter</h2><button type="button" class="btn sm" data-close-notes>Close</button></div>
+  <div class="stack-sm"><h4>Who it suits</h4><p class="muted">Architecture owners and governance: teams that must agree on an architecture, keep a record of changes, and explain decisions to others. Long-lived and regulated systems.</p></div>
+  <div class="stack-sm"><h4>Core bet</h4><p class="muted">The product is the agreement. If the intended architecture reads like a short, numbered document that people sign off, then every finding, exception, and PR can refer to a clause, and review becomes a conversation about the agreement.</p></div>
+  <div class="stack-sm"><h4>What gets easy</h4><ul class="muted"><li>Defining the architecture with owners, clause by clause.</li><li>Explaining a blocked PR: “breaks §3.1”.</li><li>Auditing exceptions and their end dates.</li><li>Scaling past 50 modules with the matrix.</li></ul></div>
+  <div class="stack-sm"><h4>What gets hard</h4><ul class="muted"><li>Less instant visual intuition than a map.</li><li>The charter can read like documentation and be opened rarely.</li><li>Sentence templates must cover every rule type the engine adds.</li></ul></div>
+  <div class="stack-sm"><h4>Data it needs</h4><p class="muted"><span class="data-tag today">EXISTS TODAY</span> Policy, settings, labels, baseline on <code>main</code>. Compliance and seams from the latest default-branch report artifact, which GitHub keeps for a limited time. Checks and comments on PRs.</p><p class="muted"><span class="data-tag new">NEW</span> Sentence templates per rule type (UI only). Typed amendment forms. Amendment history from merged PRs via the GitHub API, no storage.</p></div>
+  <div class="stack-sm"><h4>Build cost</h4><p class="muted"><strong>Medium.</strong> <code>control/ui</code>: charter rendering, matrix as server-rendered HTML, amendment forms that write YAML diffs. <code>gate/feedback</code>: clause references and collapsed sections in the comment. No engine change.</p></div>
+  <div class="stack-sm"><h4>Risks and mitigations</h4><ul class="muted"><li>Text drifts from meaning → text is generated from the policy, never written twice.</li><li>Nobody opens it → compliance chips and the PR comment link back to clauses.</li><li>Matrix is unfamiliar → legend, direct counts in cells, and a “what it shows now” list.</li></ul></div>
+</aside>
+
+<script src="archfit.js"></script>
+<script>
+(function () {
+  "use strict";
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+
+  var MODULES = [
+    { id: "storage", layer: "infra", paths: ["internal/storage/**"], pub: [], internal: ["internal/storage/sql/**"], owner: null },
+    { id: "payments-gw", layer: "infra", paths: ["internal/payments/**"], pub: ["internal/payments/client.go"], internal: [], owner: "team-payments", illus: true },
+    { id: "billing", layer: "app", paths: ["internal/billing/**"], pub: [], internal: [], owner: null },
+    { id: "checkout-api", layer: "app", paths: ["internal/checkout/**"], pub: ["internal/checkout/handler.go"], internal: [], owner: "team-web", illus: true },
+    { id: "orders", layer: "domain", paths: ["internal/orders/**"], pub: ["internal/orders/api.go"], internal: [], owner: "team-orders" },
+    { id: "pricing", layer: "domain", paths: ["internal/pricing/**"], pub: ["internal/pricing/api.go"], internal: [], owner: "team-orders", illus: true },
+    { id: "shared-kit", layer: null, paths: ["pkg/kit/**"], pub: [], internal: [], owner: null }
+  ];
+  var SEAMS = [
+    { f: "checkout-api", t: "orders", n: 12, s: "contract", d: "cross_module", v: "undeclared", st: "ok" },
+    { f: "checkout-api", t: "billing", n: 5, s: "functional", d: "cross_module", v: "undeclared", st: "ok" },
+    { f: "billing", t: "orders", n: 7, s: "contract", d: "cross_module", v: "undeclared", st: "ok" },
+    { f: "billing", t: "storage", n: 3, s: "functional", d: "cross_module", v: "undeclared", st: "violation", rule: "no_billing_to_storage", clause: "§3.1", gate: "blocks merge", waived: "1 of 3 edges waived by §4.1 (ledger → storage/sql)" },
+    { f: "orders", t: "billing", n: 2, s: "functional", d: "cross_module_same_owner", v: "undeclared", st: "waived", rule: "layers_point_down", clause: "§3.2", gate: "warns", waived: "Waived by §4.2 until 2026-10-20 (22 days)" },
+    { f: "orders", t: "pricing", n: 9, s: "functional", d: "cross_module_same_owner", v: "undeclared", st: "coupling", rule: "bc/imbalanced_coupling", clause: "§3.3", sev: "medium", hyp: ["declare_volatility", "reduce_strength"] },
+    { f: "storage", t: "orders", n: 4, s: "model", d: "cross_module", v: "undeclared", st: "ok" },
+    { f: "payments-gw", t: "billing", n: 6, s: "contract", d: "cross_deploy_unit", v: "high", vDecl: true, st: "ok" },
+    { f: "billing", t: "shared-kit", n: 11, s: "functional", d: "cross_module", v: "undeclared", st: "ok", note: "Accepted debt: bc/imbalanced_coupling (low, baseline)" }
+  ];
+  var STRENGTH = ["contract", "model", "functional", "intrusive"];
+  var DISTANCE = ["same_module", "cross_module_same_owner", "cross_module", "cross_deploy_unit"];
+
+  // ---------- modules list (§2) ----------
+  function flags(m) {
+    var out = [];
+    out.push(m.pub.length ? '<span class="label success">public surface</span>' : '<span class="label attention">no public surface</span>');
+    if (!m.owner) out.push('<span class="label attention">no owner</span>');
+    if (m.internal.length) out.push('<span class="label">internal paths</span>');
+    if (m.illus) out.push('<span class="label">illustrative</span>');
+    return out.join("");
+  }
+  $("module-list").innerHTML = MODULES.map(function (m) {
+    return '<div class="box-row mod-row">' +
+      '<div><button type="button" class="linklike" data-module="' + m.id + '">' + m.id + '</button><div class="who">' + (m.layer ? m.layer + " layer" : "no layer") + " · " + (m.owner ? esc(m.owner) : "no owner") + '</div></div>' +
+      '<div class="small muted"><code>' + esc(m.paths[0]) + '</code></div>' +
+      '<div class="row">' + flags(m) + '</div></div>';
+  }).join("");
+
+  function showModule(id) {
+    var m = MODULES.filter(function (x) { return x.id === id; })[0];
+    if (!m) return;
+    var ins = SEAMS.filter(function (s) { return s.t === id; }), outs = SEAMS.filter(function (s) { return s.f === id; });
+    var rules = SEAMS.filter(function (s) { return (s.f === id || s.t === id) && s.rule; }).map(function (s) { return '<li>' + s.clause + ' <code>' + s.rule + '</code> · ' + s.f + ' → ' + s.t + '</li>'; });
+    var d = $("module-detail");
+    d.hidden = false;
+    d.innerHTML = '<div class="row-between"><div class="side-title">Module <code>' + m.id + '</code></div><button type="button" class="btn sm invisible" id="close-mod">Close</button></div>' +
+      '<dl class="kv"><dt>Layer</dt><dd>' + (m.layer || "none") + '</dd><dt>Owner</dt><dd>' + (m.owner ? '<code>' + m.owner + '</code>' : '<span class="label attention">not declared</span>') + '</dd>' +
+      '<dt>Paths</dt><dd><code>' + m.paths.join(", ") + '</code></dd>' +
+      '<dt>Public</dt><dd>' + (m.pub.length ? '<code>' + m.pub.join(", ") + '</code>' : '<span class="label attention">not declared</span>') + '</dd>' +
+      (m.internal.length ? '<dt>Internal</dt><dd><code>' + m.internal.join(", ") + '</code></dd>' : '') +
+      '<dt>Uses</dt><dd>' + (outs.map(function (s) { return '<code>' + s.t + '</code> ' + s.n; }).join(", ") || "none") + '</dd>' +
+      '<dt>Used by</dt><dd>' + (ins.map(function (s) { return '<code>' + s.f + '</code> ' + s.n; }).join(", ") || "none") + '</dd></dl>' +
+      (rules.length ? '<div class="small"><strong>Clauses that apply</strong><ul>' + rules.join("") + '</ul></div>' : '') +
+      (!m.pub.length ? '<p><a href="#amend" data-goto="amend" data-preset="surface">Declare a public surface →</a></p>' : '');
+    $("close-mod").addEventListener("click", function () { d.hidden = true; });
+  }
+  document.addEventListener("click", function (ev) {
+    var b = ev.target.closest("[data-module]");
+    if (b) showModule(b.getAttribute("data-module"));
+  });
+
+  // ---------- policy source ----------
+  var SOURCE = [
+    "version: 2", "layers:", "  - domain", "  - app", "  - infra", "modules:",
+    "  orders:", "    paths: [internal/orders/**]", "    public: [internal/orders/api.go]", "    layer: domain", "    owner: team-orders",
+    "  billing:", "    layer: app", "    paths: [internal/billing/**]",
+    "  shared-kit:", "    paths: [pkg/kit/**]",
+    "  storage:", "    paths: [internal/storage/**]", "    internal: [internal/storage/sql/**]", "    layer: infra",
+    "  # pricing, checkout-api, payments-gw: illustrative, omitted",
+    "rules:", "  - id: no_billing_to_storage", "    type: forbidden_dependency", "    from: internal/billing/**", "    to: internal/storage", "    gate: fail",
+    "  - id: layers_point_down", "    type: layer_order", "    gate: warn",
+    "waivers:", "  - rule: no_billing_to_storage", "    from: internal/billing/ledger", "    to: internal/storage/sql", "    reason: ledger migration in progress", "    approved_by: octo-owner", "    expires: 2026-12-31",
+    "  - rule: layers_point_down", "    from: internal/orders", "    to: internal/billing", "    reason: temporary callback until events land", "    approved_by: second-owner", '    expires: "2026-10-20"'
+  ].join("\n");
+  $("policy-source").textContent = SOURCE;
+  $("source-edit").value = SOURCE;
+
+  // ---------- stale toggle ----------
+  $("toggle-stale").addEventListener("click", function () {
+    var on = this.getAttribute("aria-pressed") !== "true";
+    this.setAttribute("aria-pressed", String(on));
+    this.textContent = on ? "Hide stale state" : "Show stale state";
+    $("stale-flash").hidden = !on;
+  });
+
+  // ---------- matrix ----------
+  var order = MODULES.map(function (m) { return m.id; });
+  function seam(f, t) { return SEAMS.filter(function (s) { return s.f === f && s.t === t; })[0]; }
+  var head = '<thead><tr><th></th>' + MODULES.map(function (m) { return '<th scope="col"><span>' + m.id + '</span></th>'; }).join("") + '</tr></thead>';
+  var body = '<tbody>' + MODULES.map(function (r, i) {
+    return '<tr><th scope="row">' + r.id + '<span class="layer-tag">' + (r.layer || "—") + '</span></th>' + MODULES.map(function (c, j) {
+      if (i === j) return '<td><span class="cell self" aria-hidden="true"></span></td>';
+      var s = seam(r.id, c.id);
+      if (!s) {
+        var down = r.layer && c.layer && order.indexOf(r.id) < order.indexOf(c.id) && r.layer !== c.layer;
+        return '<td><span class="cell ' + (down ? "upper-empty" : "empty") + '" aria-hidden="true"></span></td>';
+      }
+      var sym = s.st === "violation" ? "✕" : s.st === "waived" ? "~" : s.st === "coupling" ? "!" : "";
+      var lbl = r.id + " uses " + c.id + ", " + s.n + " dependencies, " + (s.st === "ok" ? "permitted" : s.st);
+      return '<td><button type="button" class="cell ' + s.st + (s.vDecl ? " declared" : "") + '" data-seam="' + r.id + '|' + c.id + '" aria-pressed="false" aria-label="' + lbl + '">' + s.n + (sym ? '<span class="sym" aria-hidden="true">' + sym + '</span>' : '') + '</button></td>';
+    }).join("") + '</tr>';
+  }).join("") + '</tbody>';
+  $("dsm").innerHTML = head + body;
+
+  function scaleBar(list, val) {
+    var i = list.indexOf(val);
+    return '<div class="scale" aria-hidden="true">' + list.map(function (_, k) { return '<span class="' + (k <= i ? "on" : "") + '"></span>'; }).join("") + '</div>';
+  }
+  function showSeam(key) {
+    var p = key.split("|"), s = seam(p[0], p[1]);
+    document.querySelectorAll("#dsm .cell[aria-pressed]").forEach(function (c) { c.setAttribute("aria-pressed", String(c.getAttribute("data-seam") === key)); });
+    var verdict = s.st === "violation" ? '<span class="status danger">Violation</span> ' + s.clause + ' <code>' + s.rule + '</code> · ' + s.gate
+      : s.st === "waived" ? '<span class="status attention">Waived</span> ' + s.clause + ' <code>' + s.rule + '</code> · ' + s.gate
+      : s.st === "coupling" ? '<span class="status done">Coupling finding</span> ' + s.clause + ' <code>' + s.rule + '</code> · ' + s.sev
+      : '<span class="status success">Permitted</span>';
+    var why = s.st === "coupling"
+      ? '<p class="small">Functional strength across a same-owner module boundary, toward code whose volatility nobody declared → medium severity. Unbalanced coupling raises maintenance effort.</p>'
+      : s.s === "contract" ? '<p class="small">Contract strength: the modules share only a published interface. That stays balanced across this distance.</p>' : '';
+    var hyp = s.hyp ? '<div class="small"><strong>Engine hypotheses</strong><ul><li><code>declare_volatility</code>: if <code>pricing</code> changes often, say so, and the severity follows. <a href="#amend" data-goto="amend" data-preset="volatility">Propose →</a></li><li><code>reduce_strength</code>: call <code>pricing</code> through its public API only.</li></ul><p class="muted">Needs an owner decision. Do not baseline this seam without one.</p></div>' : '';
+    $("seam-detail").innerHTML = '<div class="side-title"><code>' + s.f + '</code> → <code>' + s.t + '</code></div>' +
+      '<div>' + verdict + '</div>' +
+      '<table class="bc"><tr><td>Edges</td><td class="num">' + s.n + ' observed</td></tr>' +
+      '<tr><td>Strength</td><td><code>' + s.s + '</code>' + scaleBar(STRENGTH, s.s) + '</td></tr>' +
+      '<tr><td>Distance</td><td><code>' + s.d + '</code>' + scaleBar(DISTANCE, s.d) + '</td></tr>' +
+      '<tr><td>Volatility</td><td><code>' + s.v + '</code> <span class="muted">' + (s.vDecl ? "declared" : "not declared") + '</span></td></tr></table>' +
+      why + (s.waived ? '<p class="small"><span class="label attention">exception</span> ' + s.waived + '</p>' : '') +
+      (s.note ? '<p class="small muted">' + s.note + '</p>' : '') + hyp;
+  }
+  document.addEventListener("click", function (ev) {
+    var c = ev.target.closest("[data-seam]");
+    if (c) showSeam(c.getAttribute("data-seam"));
+  });
+
+  // ---------- amendments ----------
+  var KINDS = {
+    volatility: {
+      file: ".archfit-labels.yaml · field names illustrative",
+      fields: '<div class="field"><label for="f-vol">Volatility of <code>pricing</code></label><select class="input" id="f-vol"><option value="high">high · changes often</option><option value="medium">medium</option><option value="low">low · stable</option></select></div>' +
+        '<div class="field"><label for="f-why">Rationale</label><input class="input" id="f-why" value="pricing rules change every sprint"></div>',
+      diff: function () { return [["hunk", "@@ .archfit-labels.yaml @@"], ["c", "  modules:"], ["add", "+   pricing:"], ["add", "+     volatility: " + ($("f-vol") ? $("f-vol").value : "high")], ["add", '+     rationale: "' + ($("f-why") ? $("f-why").value : "") + '"']]; }
+    },
+    surface: {
+      file: ".archfit.yaml",
+      fields: '<div class="field"><label for="f-pub">Public files of <code>billing</code></label><input class="input" id="f-pub" value="internal/billing/api.go"></div>' +
+        '<div class="field"><label for="f-int">Internal paths (optional)</label><input class="input" id="f-int" value="internal/billing/ledger/**"></div>',
+      diff: function () { var i = $("f-int") ? $("f-int").value : ""; var l = [["hunk", "@@ modules.billing @@"], ["c", "    billing:"], ["c", "      layer: app"], ["c", "      paths:"], ["c", "        - internal/billing/**"], ["add", "+     public:"], ["add", "+       - " + ($("f-pub") ? $("f-pub").value : "")]]; if (i) { l.push(["add", "+     internal:"], ["add", "+       - " + i]); } return l; }
+    },
+    renew: {
+      file: ".archfit.yaml",
+      fields: '<div class="field"><label for="f-exp">New expiry for §4.2</label><input class="input" type="date" id="f-exp" value="2026-12-15"></div>' +
+        '<div class="field"><label for="f-rsn">Reason</label><input class="input" id="f-rsn" value="events land in the December release"></div>',
+      diff: function () { return [["hunk", "@@ waivers[1] @@"], ["c", "    - rule: layers_point_down"], ["c", "      from: internal/orders"], ["c", "      to: internal/billing"], ["del", "-     reason: temporary callback until events land"], ["add", "+     reason: " + ($("f-rsn") ? $("f-rsn").value : "")], ["del", "-     approved_by: second-owner"], ["add", "+     approved_by: alice"], ["del", '-     expires: "2026-10-20"'], ["add", '+     expires: "' + ($("f-exp") ? $("f-exp").value : "") + '"']]; }
+    }
+  };
+  var kind = "volatility";
+  function renderDiff() {
+    $("amend-diff").innerHTML = KINDS[kind].diff().map(function (l) { return '<span class="l ' + l[0] + '">' + esc(l[1]) + '</span>'; }).join("");
+  }
+  function setKind(k) {
+    kind = k;
+    var r = $("kind-" + k); if (r) r.checked = true;
+    $("amend-fields").innerHTML = KINDS[k].fields;
+    $("amend-file").textContent = KINDS[k].file;
+    renderDiff();
+  }
+  document.querySelectorAll('input[name="kind"]').forEach(function (r) { r.addEventListener("change", function () { setKind(r.value); }); });
+  $("amend-fields").addEventListener("input", renderDiff);
+  $("amend-fields").addEventListener("change", renderDiff);
+  document.addEventListener("click", function (ev) {
+    var p = ev.target.closest("[data-preset]");
+    if (p) setKind(p.getAttribute("data-preset"));
+  });
+  setKind("volatility");
+
+  var flowState = { approved: false, pushed: false, ready: false };
+  function renderFlow() {
+    var sha = flowState.pushed ? "c4e19b2" : "5b2e8d0";
+    var items = [
+      ["success", "✓", "Saved to draft PR #418", "Commit <code>5b2e8d0</code> on <code>archfit/amend-" + kind + "</code>."],
+      flowState.pushed ? ["attention", "↻", "New push <code>c4e19b2</code>", "The previous approval no longer counts."] : null,
+      ["attention", "!", "Archfit check on the draft: action required", "<code>owner_approval_missing</code> on <code>" + sha + "</code>. Expected for a protected file."],
+      [flowState.ready ? "success" : "pending", flowState.ready ? "✓" : "·", "Ready for review", flowState.ready ? "Marked ready." : '<button type="button" class="btn sm" id="mark-ready">Mark ready for review</button>'],
+      [flowState.approved ? "success" : "pending", flowState.approved ? "✓" : "·", "Owner approval on the exact commit", flowState.approved ? "Approved by <code>acme/architects</code> on <code>" + sha + "</code>." : 'Another owner approves <code>' + sha + '</code> on GitHub. You opened this PR, so you cannot approve it. ' + (flowState.ready ? '<button type="button" class="btn sm" id="sim-approve">Simulate an approval</button>' : '')],
+      ["pending", "·", "Merge on GitHub", "The merge publishes the amendment. The charter then shows the new text."]
+    ].filter(Boolean);
+    $("flow").innerHTML = items.map(function (it) { return '<div class="tl-item ' + it[0] + '"><span class="tl-badge" aria-hidden="true">' + it[1] + '</span><strong>' + it[2] + '</strong><span class="small muted">' + it[3] + '</span></div>'; }).join("");
+    var mr = $("mark-ready"); if (mr) mr.addEventListener("click", function () { flowState.ready = true; renderFlow(); });
+    var sa = $("sim-approve"); if (sa) sa.addEventListener("click", function () { flowState.approved = true; renderFlow(); });
+  }
+  $("save-draft").addEventListener("click", function () {
+    flowState = { approved: false, pushed: false, ready: false };
+    $("flow-box").hidden = false; renderFlow();
+    this.textContent = "Update draft PR #418";
+  });
+  $("source-save").addEventListener("click", function () { $("flow-box").hidden = false; renderFlow(); $("flow-box").scrollIntoView({ block: "nearest" }); });
+  $("sim-push").addEventListener("click", function () { flowState.pushed = true; flowState.approved = false; renderFlow(); });
+  $("ai-go").addEventListener("click", function () { $("ai-result").innerHTML = '<span class="status success">Requested</span> The assist workflow runs in your CI and pushes a commit to draft PR #418. Review it like any commit. It never affects the gate.'; });
+
+  // ---------- PR switch ----------
+  document.querySelectorAll("[data-pr]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var id = b.getAttribute("data-pr");
+      document.querySelectorAll("[data-pr]").forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); });
+      $("pr-412").hidden = id !== "412"; $("pr-415").hidden = id !== "415";
+    });
+  });
+
+  // ---------- dimensions ----------
+  var DIMS = [
+    ["intent", "measured", "2/2", "high", "pass"], ["structure", "measured", "9/9", "high", "fail"], ["modularity", "measured", "4/7", "low", "pass"],
+    ["coupling", "measured", "9/9", "high", "warn"], ["change_locality", "unmeasured", "0/0", "unrated", "n/a"], ["complexity", "measured", "7/7", "high", "pass"],
+    ["testability", "partial", "3/3", "medium", "pass"], ["operations", "partial", "2/7", "medium", "pass"], ["drift", "unmeasured", "—", "unrated", "n/a"]
+  ];
+  var cls = { measured: "success", partial: "attention", unmeasured: "" };
+  var gcls = { pass: "success", fail: "danger", warn: "attention", "n/a": "" };
+  $("dims").innerHTML = '<thead><tr><th>Dimension</th><th>Status</th><th class="num">Coverage</th><th>Confidence</th><th>Gate</th></tr></thead><tbody>' +
+    DIMS.map(function (d) { return '<tr><td><code>' + d[0] + '</code></td><td><span class="label ' + cls[d[1]] + '">' + d[1] + '</span></td><td class="num">' + d[2] + '</td><td>' + d[3] + '</td><td><span class="label ' + gcls[d[4]] + '">' + d[4] + '</span></td></tr>'; }).join("") + '</tbody>';
+})();
+</script>
+</body>
+</html>

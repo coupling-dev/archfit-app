@@ -1,0 +1,1057 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Archfit Radar</title>
+<link rel="stylesheet" href="archfit.css">
+<style>
+  /* Radar-specific. Colors come only from archfit.css tokens. */
+  [hidden] { display: none !important; }
+  .filters { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .filters .btn-group { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .inbox-row { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 12px; align-items: start; }
+  .inbox-row .dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; }
+  .dot.success { background: var(--success); } .dot.danger { background: var(--danger); }
+  .dot.attention { background: var(--attention); } .dot.done { background: var(--done); }
+  .inbox-title { font-weight: 600; color: var(--fg); }
+  .inbox-meta { font-size: 12px; color: var(--fg-muted); }
+  .inbox-next { font-size: 13px; }
+  .inbox-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; text-align: right; max-width: 220px; }
+  .opt { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+  .opt[aria-pressed="true"] { background: var(--accent-subtle); box-shadow: inset 2px 0 0 var(--accent); }
+  .opt .ends { font-size: 12px; color: var(--fg-muted); }
+  .scale { display: inline-flex; gap: 2px; }
+  .scale span { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--neutral-subtle); color: var(--fg-muted); white-space: nowrap; }
+  .scale span.on { background: var(--done-subtle); color: var(--done); font-weight: 600; box-shadow: inset 0 0 0 1px var(--done-border); }
+  .finding { display: flex; flex-direction: column; gap: 4px; }
+  .finding .why { font-size: 12px; color: var(--fg-muted); }
+  .spark-card { display: flex; flex-direction: column; gap: 8px; }
+  .spark .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .spark .area { fill: var(--accent); opacity: 0.12; }
+  .spark .grid { stroke: var(--border-muted); stroke-width: 1; }
+  .spark .end { fill: var(--accent); stroke: var(--bg); stroke-width: 2; }
+  .spark .hit { fill: transparent; }
+  .spark .hit:hover + .pt { opacity: 1; }
+  .spark .pt { fill: var(--accent); opacity: 0; }
+  .spark text { font-size: 11px; fill: var(--fg-muted); }
+  .spark text.val { fill: var(--fg); font-weight: 600; }
+  .tl-axis { stroke: var(--border); }
+  .tl-tick text { font-size: 11px; fill: var(--fg-muted); }
+  .tl-tick line { stroke: var(--border-muted); }
+  .tl-notice { fill: var(--attention); opacity: 0.16; }
+  .tl-mark { fill: var(--attention); }
+  .tl-mark.later { fill: var(--fg-muted); }
+  .tl-label { font-size: 12px; fill: var(--fg); }
+  .tl-label.muted { fill: var(--fg-muted); }
+  .band { fill: var(--bg-subtle); stroke: var(--border-muted); }
+  .band-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; fill: var(--fg-muted); }
+  .node rect { fill: var(--bg); stroke: var(--border); stroke-width: 1; }
+  .node text { font-size: 12px; fill: var(--fg); }
+  .node text.sub { font-size: 10px; fill: var(--fg-muted); }
+  .node.touched rect { stroke: var(--accent); stroke-width: 1.5; }
+  .node:focus-visible rect, .edge-hit:focus-visible { outline: none; stroke: var(--accent); stroke-width: 2; }
+  .edge { fill: none; stroke: var(--fg-muted); stroke-width: 1.5; opacity: 0.55; }
+  .edge.violation { stroke: var(--danger); opacity: 1; stroke-width: 2; }
+  .edge.waived { stroke: var(--attention); stroke-dasharray: 5 4; opacity: 1; }
+  .edge.coupling { stroke: var(--done); stroke-width: 3; opacity: 0.9; }
+  .edge.new { stroke: var(--accent); stroke-width: 3; opacity: 1; }
+  .m-muted { fill: var(--fg-muted); } .m-danger { fill: var(--danger); } .m-attention { fill: var(--attention); }
+  .m-done { fill: var(--done); } .m-accent { fill: var(--accent); }
+  .edge-label { font-size: 11px; font-weight: 600; }
+  .edge-label.danger { fill: var(--danger); } .edge-label.attention { fill: var(--attention); }
+  .edge-label.done { fill: var(--done); } .edge-label.accent { fill: var(--accent); } .edge-label.muted { fill: var(--fg-muted); font-weight: 400; }
+  .edge-pill { fill: var(--bg); stroke: var(--border-muted); }
+  .sim { border: 1px dashed var(--border); border-radius: var(--radius); padding: 8px 12px; }
+  .diff { font: 12px/1.7 var(--mono); border: 1px solid var(--border); border-radius: var(--radius); overflow-x: auto; }
+  .diff div { padding: 0 12px; white-space: pre; }
+  .diff .add { background: var(--success-subtle); }
+  .diff .ctx { color: var(--fg-muted); }
+  .diff .hdr { background: var(--bg-subtle); border-bottom: 1px solid var(--border); padding: 6px 12px; font-family: var(--font); }
+  .summary-table td:first-child { color: var(--fg-muted); width: 120px; white-space: nowrap; }
+  .steps { display: flex; flex-wrap: wrap; gap: 6px; }
+  .drawer h2 { font-size: 18px; }
+  .drawer section { display: flex; flex-direction: column; gap: 6px; }
+  .drawer p, .drawer li { color: var(--fg-muted); }
+  .drawer ul { margin: 0; padding-left: 18px; }
+  textarea.input, select.input {
+    width: 100%; font: 14px var(--font); color: var(--fg); background: var(--bg);
+    border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 10px;
+  }
+  textarea.input { min-height: 64px; resize: vertical; }
+  @media (max-width: 640px) {
+    .inbox-row { grid-template-columns: 12px minmax(0, 1fr); }
+    .inbox-side { grid-column: 2; align-items: flex-start; text-align: left; max-width: none; }
+    .opt { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <a class="brand" href="explorations.html" title="Earlier explorations">
+    <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="4.5" rx="1.5" fill="var(--fg)"/><rect x="3" y="9.75" width="18" height="4.5" rx="1.5" fill="var(--fg)" opacity=".65"/><rect x="3" y="16.5" width="18" height="4.5" rx="1.5" fill="var(--accent)"/></svg>
+    Archfit
+  </a>
+  <nav class="crumbs" aria-label="Installation"><strong>acme</strong><span class="sep">/</span><span class="muted">4 repositories</span></nav>
+  <span class="proto-tag">Prototype C · Radar · illustrative data</span>
+  <span class="header-spacer"></span>
+  <span class="user-chip"><span class="avatar" style="background: var(--done)">c</span>carol · policy owner (acme/architects)</span>
+  <div class="theme-toggle" role="group" aria-label="Theme">
+    <button type="button" data-theme-set="light">Light</button><button type="button" data-theme-set="auto">Auto</button><button type="button" data-theme-set="dark">Dark</button>
+  </div>
+  <button type="button" class="btn sm" data-open-notes>Design notes</button>
+</header>
+
+<nav class="unav" role="tablist" aria-label="Views">
+  <button type="button" role="tab" id="tab-inbox" aria-controls="inbox" aria-selected="true">Inbox <span class="counter">4</span></button>
+  <button type="button" role="tab" id="tab-decisions" aria-controls="decisions" aria-selected="false">Decisions <span class="counter">2</span></button>
+  <button type="button" role="tab" id="tab-pr" aria-controls="pr" aria-selected="false">PR #412</button>
+  <button type="button" role="tab" id="tab-erosion" aria-controls="erosion" aria-selected="false">Erosion</button>
+  <button type="button" role="tab" id="tab-policy" aria-controls="policy" aria-selected="false">Policy change #415</button>
+  <button type="button" role="tab" id="tab-github" aria-controls="github" aria-selected="false">Pull request (mock)</button>
+  <button type="button" role="tab" id="tab-repos" aria-controls="repos" aria-selected="false">Repositories</button>
+</nav>
+
+<main class="page">
+
+<!-- ============================ INBOX ============================ -->
+<section role="tabpanel" id="inbox" aria-labelledby="tab-inbox" class="stack">
+  <div class="page-head">
+    <div>
+      <h1>Architecture inbox</h1>
+      <p class="lede">Open pull requests in <code>acme</code> that change the architecture, ordered by what needs a person first.</p>
+    </div>
+  </div>
+  <div class="layout">
+    <div class="stack">
+      <div class="filters">
+        <div class="btn-group" role="group" aria-label="Filter pull requests" id="inbox-filter">
+          <button type="button" class="btn sm" data-filter="all" aria-pressed="true">All <span class="counter">4</span></button>
+          <button type="button" class="btn sm" data-filter="decision" aria-pressed="false">Needs decision <span class="counter">2</span></button>
+          <button type="button" class="btn sm" data-filter="blocked" aria-pressed="false">Blocked <span class="counter">2</span></button>
+          <button type="button" class="btn sm" data-filter="policy" aria-pressed="false">Policy changes <span class="counter">1</span></button>
+          <button type="button" class="btn sm" data-filter="healthy" aria-pressed="false">Healthy <span class="counter">1</span></button>
+        </div>
+        <span class="small muted">Sorted by: needs a person</span>
+      </div>
+
+      <div class="box" id="inbox-list">
+        <div class="box-row inbox-row" data-cat="decision blocked">
+          <span class="dot danger" aria-hidden="true"></span>
+          <div class="stack-sm">
+            <div><a class="inbox-title" href="#pr" data-goto="pr">Charge retries through ledger</a> <span class="muted">acme/checkout #412</span></div>
+            <div class="row">
+              <span class="label solid danger">gate: failure</span>
+              <code>blocking_findings</code>
+              <span class="label danger">+1 blocking</span>
+              <span class="label done">needs decision</span>
+            </div>
+            <div class="inbox-meta">bob · head <code>9f3c2e1</code> → <code>main</code> · gate required</div>
+            <div class="inbox-next"><strong>Next:</strong> bob fixes <code>no_billing_to_storage</code>. You decide on <code>orders</code> → <code>pricing</code>.</div>
+          </div>
+          <div class="inbox-side">
+            <span class="label">you: admin · owner</span>
+            <button type="button" class="btn sm primary" data-goto="pr">Open impact</button>
+          </div>
+        </div>
+
+        <div class="box-row inbox-row" data-cat="decision policy">
+          <span class="dot attention" aria-hidden="true"></span>
+          <div class="stack-sm">
+            <div><a class="inbox-title" href="#policy" data-goto="policy">Declare volatility for pricing</a> <span class="muted">acme/checkout #415</span></div>
+            <div class="row">
+              <span class="label solid attention">gate: action required</span>
+              <code>owner_approval_missing</code>
+              <span class="label accent">policy change</span>
+            </div>
+            <div class="inbox-meta">carol · head <code>7a1d0c4</code> · edits <code>.archfit-labels.yaml</code> (protected)</div>
+            <div class="inbox-next"><strong>Next:</strong> another policy owner approves commit <code>7a1d0c4</code>. You opened it, so you cannot.</div>
+          </div>
+          <div class="inbox-side">
+            <span class="label">you: admin · owner</span>
+            <button type="button" class="btn sm" data-goto="policy">Open change</button>
+          </div>
+        </div>
+
+        <div class="box-row inbox-row" data-cat="blocked">
+          <span class="dot attention" aria-hidden="true"></span>
+          <div class="stack-sm">
+            <div><span class="inbox-title">Bump invoice template</span> <span class="muted">acme/legacy-erp #1203</span></div>
+            <div class="row">
+              <span class="label solid attention">state: action required</span>
+              <code>stale_inputs</code>
+            </div>
+            <div class="inbox-meta">dave · head <code>41be77a</code> · gate advisory</div>
+            <div class="inbox-next"><strong>Recovery:</strong> the policy or baseline changed on the base branch. Run the workflow again if no rerun appears.</div>
+          </div>
+          <div class="inbox-side">
+            <span class="label">you: read</span>
+            <button type="button" class="btn sm" disabled>Open policy draft</button>
+            <span class="disabled-reason">Drafts need write. You have read.</span>
+          </div>
+        </div>
+
+        <div class="box-row inbox-row" data-cat="healthy">
+          <span class="dot success" aria-hidden="true"></span>
+          <div class="stack-sm">
+            <div><span class="inbox-title">Split search facets</span> <span class="muted">acme/catalog #88</span></div>
+            <div class="row">
+              <span class="label solid success">state: success</span>
+              <code>healthy</code>
+              <span class="label">0 new findings</span>
+            </div>
+            <div class="inbox-meta">erin · head <code>c07f1d2</code> · gate advisory</div>
+          </div>
+          <div class="inbox-side">
+            <span class="label">you: write</span>
+            <span class="small muted">No action</span>
+          </div>
+        </div>
+        <div class="box-foot">The first reason sets each conclusion. A missing report never counts as success.</div>
+      </div>
+    </div>
+
+    <aside class="side" aria-label="About this view">
+      <div class="side-section">
+        <div class="side-title">What you can do here</div>
+        <ul>
+          <li>See which open changes add architectural risk.</li>
+          <li>Open a change to see its impact.</li>
+          <li>Jump to the decisions that wait for a policy owner.</li>
+        </ul>
+      </div>
+      <div class="side-section">
+        <div class="side-title">Why it looks like this</div>
+        <p>Erosion enters one pull request at a time. An inbox puts each change next to the decision it needs, before the merge.</p>
+      </div>
+      <div class="side-section">
+        <div class="side-title">Data</div>
+        <p><span class="data-tag today">EXISTS TODAY</span> Check runs and the App comment on each open pull request, read from GitHub on page load.</p>
+        <p><span class="data-tag new">NEW</span> A list of open pull requests across the installation.</p>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ============================ DECISIONS ============================ -->
+<section role="tabpanel" id="decisions" aria-labelledby="tab-decisions" class="stack" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Decisions</h1>
+      <p class="lede">Questions that only a policy owner can answer. Every choice ends as a pull request or a code change.</p>
+    </div>
+  </div>
+  <div class="layout">
+    <div class="stack">
+      <div class="box" data-decision="coupling">
+        <div class="box-head">
+          <div class="stack-sm">
+            <h3>Is the coupling between <code>orders</code> and <code>pricing</code> intended?</h3>
+            <div class="row small muted">
+              <span class="label solid done">needs owner decision</span>
+              from <a href="#pr" data-goto="pr">acme/checkout #412</a> · <code>bc/imbalanced_coupling</code> · medium · new
+            </div>
+          </div>
+        </div>
+        <div class="box-row small">
+          <span class="muted">Why the engine flags it:</span> functional strength × <code>cross_module_same_owner</code> distance × undeclared volatility → medium.
+          Constraint: do not baseline the seam without an owner decision.
+        </div>
+        <div class="box-row opt clickable" role="button" tabindex="0" aria-pressed="false">
+          <div class="stack-sm">
+            <strong>Declare volatility for <code>pricing</code></strong>
+            <span class="small muted">Records that pricing changes often. The engine then rates the seam against a declared value.</span>
+            <span class="ends">Ends as: policy PR on <code>.archfit-labels.yaml</code>, approved by another owner.</span>
+          </div>
+          <button type="button" class="btn sm" data-goto="policy">Continue in #415</button>
+        </div>
+        <div class="box-row opt clickable" role="button" tabindex="0" aria-pressed="false">
+          <div class="stack-sm">
+            <strong>Restructure: depend on the <code>pricing</code> contract</strong>
+            <span class="small muted">Engine hypothesis <code>reduce_strength</code>: use <code>internal/pricing/api.go</code> instead of internals.</span>
+            <span class="ends">Ends as: code change by the author of #412.</span>
+          </div>
+          <button type="button" class="btn sm">Ask bob on #412</button>
+        </div>
+        <div class="box-row opt clickable" role="button" tabindex="0" aria-pressed="false">
+          <div class="stack-sm">
+            <strong>Accept as baseline debt</strong>
+            <span class="small muted">The seam stops blocking and stays visible as accepted debt.</span>
+            <span class="ends">Ends as: baseline PR on <code>.archfit-baseline.json</code>, approved by another owner.</span>
+          </div>
+          <button type="button" class="btn sm">Prepare baseline PR</button>
+        </div>
+      </div>
+
+      <div class="box" data-decision="waiver">
+        <div class="box-head">
+          <div class="stack-sm">
+            <h3>Waiver for <code>orders</code> → <code>billing</code> ends in 22 days</h3>
+            <div class="row small muted">
+              <span class="label solid attention">expires 2026-10-20</span>
+              <code>layers_point_down</code> · approved by second-owner · "temporary callback until events land"
+            </div>
+          </div>
+        </div>
+        <div class="box-row small">
+          <span class="muted">At expiry:</span> the waived finding blocks again, and the gate reports <code>waiver_expired</code>. Notices start on 2026-10-13.
+        </div>
+        <div class="box-row opt clickable" role="button" tabindex="0" aria-pressed="false">
+          <div class="stack-sm">
+            <strong>Renew the waiver</strong>
+            <span class="small muted">Set a new expiry date and reason.</span>
+            <span class="ends">Ends as: policy PR on <code>.archfit.yaml</code>, approved by another owner.</span>
+          </div>
+          <button type="button" class="btn sm">Prepare renewal PR</button>
+        </div>
+        <div class="box-row opt clickable" role="button" tabindex="0" aria-pressed="false">
+          <div class="stack-sm">
+            <strong>Fix the dependency</strong>
+            <span class="small muted">Replace the callback, for example with an event that <code>billing</code> consumes.</span>
+            <span class="ends">Ends as: code change by team-orders. The waiver can then be removed.</span>
+          </div>
+          <button type="button" class="btn sm">Open an issue</button>
+        </div>
+        <div class="box-row opt clickable" role="button" tabindex="0" aria-pressed="false">
+          <div class="stack-sm">
+            <strong>Let it expire</strong>
+            <span class="small muted">Nothing changes until 2026-10-20. After that, pull requests that keep the edge fail.</span>
+            <span class="ends">Ends as: no pull request.</span>
+          </div>
+          <span class="small muted">No action</span>
+        </div>
+      </div>
+    </div>
+
+    <aside class="side" aria-label="About this view">
+      <div class="side-section">
+        <div class="side-title">What you can do here</div>
+        <ul>
+          <li>Answer one question at a time.</li>
+          <li>See where each answer ends before you choose it.</li>
+        </ul>
+      </div>
+      <div class="side-section">
+        <div class="side-title">Why it looks like this</div>
+        <p>The engine marks some repairs as <code>needs_owner_decision</code>. They are choices, not errors, so they sit in their own queue with plain options.</p>
+      </div>
+      <div class="side-section">
+        <div class="side-title">Data</div>
+        <p><span class="data-tag today">EXISTS TODAY</span> Agent tasks with their repair kind, and waiver dates from the policy.</p>
+        <p><span class="data-tag new">NEW</span> None. The App publishes nothing here. It opens drafts only when you choose.</p>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ============================ PR #412 ============================ -->
+<section role="tabpanel" id="pr" aria-labelledby="tab-pr" class="stack" hidden>
+  <div class="page-head">
+    <div class="stack-sm">
+      <h1>Charge retries through ledger <span class="muted">#412</span></h1>
+      <div class="row small">
+        <span class="state danger">Failure</span>
+        <span class="muted">acme/checkout · bob wants to merge <code>retry-ledger</code> into <code>main</code> · head <code>9f3c2e1</code></span>
+      </div>
+    </div>
+    <div class="row">
+      <button type="button" class="btn" data-goto="github">See it on GitHub</button>
+      <button type="button" class="btn primary" data-goto="decisions">Decide</button>
+    </div>
+  </div>
+  <div class="layout">
+    <div class="stack">
+      <div class="flash error">
+        <div class="stack-sm">
+          <strong>Blocked by architecture findings</strong>
+          <span>First reason <code>blocking_findings</code> (architecture). Next: fix the blocking findings, then push.</span>
+        </div>
+      </div>
+
+      <div class="box">
+        <div class="box-head"><h3>Impact</h3><span class="small muted">Only the modules this change touches</span></div>
+        <div class="box-body stack">
+          <div class="graph-wrap">
+            <svg viewBox="0 0 600 300" style="width:100%;height:auto;min-width:560px" role="img" aria-labelledby="impact-title">
+              <title id="impact-title">Impact of PR #412: a new billing to storage import and a new coupling finding between orders and pricing</title>
+              <defs>
+                <marker id="ia-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-muted"/></marker>
+                <marker id="ia-new" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-accent"/></marker>
+                <marker id="ia-attention" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-attention"/></marker>
+                <marker id="ia-done" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-done"/></marker>
+              </defs>
+              <rect class="band" x="8" y="8" width="584" height="84" rx="6"/><text class="band-label" x="20" y="26">INFRA</text>
+              <rect class="band" x="8" y="104" width="584" height="84" rx="6"/><text class="band-label" x="20" y="122">APP</text>
+              <rect class="band" x="8" y="200" width="584" height="92" rx="6"/><text class="band-label" x="20" y="218">DOMAIN</text>
+
+              <path class="edge new" d="M200 138 L200 74" marker-end="url(#ia-new)"/>
+              <rect class="edge-pill" x="208" y="92" width="150" height="20" rx="10"/>
+              <text class="edge-label accent" x="216" y="106">+1 new · retry.go:41 · fail</text>
+              <path class="edge" d="M232 172 C 250 205, 250 215, 232 238" marker-end="url(#ia-muted)"/>
+              <text class="edge-label muted" x="252" y="210">7</text>
+              <path class="edge waived" d="M168 238 C 150 215, 150 205, 168 172" marker-end="url(#ia-attention)"/>
+              <text class="edge-label attention" x="96" y="210">2 · waived · 22d</text>
+              <path class="edge coupling" d="M270 256 L398 256" marker-end="url(#ia-done)"/>
+              <rect class="edge-pill" x="286" y="264" width="98" height="20" rx="10"/>
+              <text class="edge-label done" x="294" y="278">coupling · new</text>
+
+              <g class="node touched" tabindex="0" aria-label="storage, infra, no owner declared"><rect x="140" y="34" width="120" height="40" rx="6"/><text x="152" y="52">storage</text><text class="sub" x="152" y="66">no owner</text></g>
+              <g class="node touched" tabindex="0" aria-label="billing, app, no owner declared"><rect x="140" y="138" width="120" height="40" rx="6"/><text x="152" y="156">billing</text><text class="sub" x="152" y="170">no owner</text></g>
+              <g class="node touched" tabindex="0" aria-label="orders, domain, team-orders"><rect x="140" y="238" width="130" height="40" rx="6"/><text x="152" y="256">orders</text><text class="sub" x="152" y="270">team-orders</text></g>
+              <g class="node touched" tabindex="0" aria-label="pricing, domain, team-orders"><rect x="400" y="238" width="130" height="40" rx="6"/><text x="412" y="256">pricing</text><text class="sub" x="412" y="270">team-orders</text></g>
+            </svg>
+          </div>
+          <div class="legend">
+            <span class="key"><span class="swatch new"></span>new in this PR</span>
+            <span class="key"><span class="swatch violation"></span>violation</span>
+            <span class="key"><span class="swatch waived"></span>waived</span>
+            <span class="key"><span class="swatch coupling"></span>coupling finding</span>
+            <span class="key"><span class="swatch"></span>permitted</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="box">
+        <div class="box-head"><h3>Findings</h3><span class="small muted">2 introduced · 2 accepted debt</span></div>
+        <div class="box-row" style="background: var(--bg-subtle)"><h4>Introduced</h4></div>
+        <div class="box-row finding">
+          <div class="row"><span class="label solid danger">blocking</span><code>no_billing_to_storage</code><span class="small muted">medium · new · code change</span></div>
+          <div><code>billing</code> → <code>storage</code> at <code>internal/billing/retry.go:41</code></div>
+          <div class="why">Import from <code>internal/billing/**</code> to <code>internal/storage</code> is explicitly forbidden. Remove the dependency or move the code.</div>
+        </div>
+        <div class="box-row finding">
+          <div class="row"><span class="label solid done">owner decision</span><code>bc/imbalanced_coupling</code><span class="small muted">medium · new</span></div>
+          <div><code>orders</code> → <code>pricing</code> at <code>internal/orders/quote.go:18</code></div>
+          <div class="why">Unbalanced coupling raises maintenance effort. <a href="#decisions" data-goto="decisions">Decide in the queue</a>.</div>
+        </div>
+        <div class="box-row" style="background: var(--bg-subtle)"><h4>Accepted debt <span class="small muted">· display only</span></h4></div>
+        <div class="box-row finding">
+          <div class="row"><span class="label attention">waived</span><code>no_billing_to_storage</code><span class="small muted">medium · until 2026-12-31</span></div>
+          <div><code>internal/billing/ledger</code> → <code>internal/storage/sql</code></div>
+        </div>
+        <div class="box-row finding">
+          <div class="row"><span class="label attention">waived</span><code>layers_point_down</code><span class="small muted">low · until 2026-10-20</span></div>
+          <div><code>orders</code> → <code>billing</code></div>
+        </div>
+      </div>
+
+      <div class="box">
+        <div class="box-head"><h3>Balanced Coupling · <code>orders</code> → <code>pricing</code></h3><span class="label solid done">medium</span></div>
+        <div class="table-wrap">
+          <table class="data">
+            <thead><tr><th>Factor</th><th>Value</th><th>Scale</th></tr></thead>
+            <tbody>
+              <tr><td>Integration strength</td><td><code>functional</code></td>
+                <td><span class="scale"><span>intrusive</span><span class="on">functional</span><span>model</span><span>contract</span></span></td></tr>
+              <tr><td>Distance</td><td><code>cross_module_same_owner</code></td>
+                <td><span class="scale"><span class="on">same owner</span><span>cross module</span><span>cross deploy unit</span></span></td></tr>
+              <tr><td>Volatility</td><td><code>undeclared</code></td>
+                <td><span class="scale"><span>low</span><span>high</span><span class="on">undeclared</span></span></td></tr>
+              <tr><td>Observed edges</td><td>9</td><td class="small muted">from the latest report</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="box-foot">Hypotheses: <code>declare_volatility</code>, <code>reduce_strength</code>. Strong coupling over distance is balanced only when the target is stable.</div>
+      </div>
+
+      <div class="box">
+        <div class="box-head"><h3>Dimensions</h3><span class="small muted">No single score. Unmeasured stays visible.</span></div>
+        <div class="table-wrap">
+          <table class="data">
+            <thead><tr><th>Dimension</th><th>Status</th><th class="num">Coverage</th><th>Confidence</th><th>Gate</th></tr></thead>
+            <tbody id="dims"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="box">
+        <div class="box-body">
+          <details class="disclosure">
+            <summary>Evidence gaps <span class="counter">5</span></summary>
+            <div class="details-body small">
+              <div><code>jscpd</code> disabled: clone detection is off in the policy.</div>
+              <div><code>scip</code> disabled: opt-in analyzer.</div>
+              <div><code>testability</code>: no coverage supplied.</div>
+              <div><code>operations</code>: modules lack a declared or CODEOWNERS-backed owner.</div>
+              <div><code>drift</code>: no admissible persisted reference.</div>
+            </div>
+          </details>
+          <details class="disclosure">
+            <summary>Inputs and identity</summary>
+            <div class="details-body">
+              <dl class="kv">
+                <dt>Policy digest</dt><dd><code>1111…1111</code></dd>
+                <dt>Baseline digest</dt><dd><code>2222…2222</code> (stated by the producer)</dd>
+                <dt>Labels digest</dt><dd><code>3333…3333</code> (stated by the producer)</dd>
+                <dt>Producer, claimed</dt><dd>engine v2.3.1</dd>
+              </dl>
+              <p class="small muted">Customer-attested: the producer is authenticated, the report content is not independently checked.</p>
+            </div>
+          </details>
+          <details class="disclosure">
+            <summary>Validation commands</summary>
+            <div class="details-body"><pre><code>archfit check -c .archfit.yaml
+archfit check -c .archfit.yaml --base main --lang go --require-tools</code></pre></div>
+          </details>
+        </div>
+      </div>
+    </div>
+
+    <aside class="side" aria-label="About this view">
+      <div class="side-section">
+        <div class="side-title">What you can do here</div>
+        <ul>
+          <li>See what this change adds to the architecture.</li>
+          <li>Tell new findings from accepted debt.</li>
+          <li>Read why a seam is unbalanced.</li>
+        </ul>
+      </div>
+      <div class="side-section">
+        <div class="side-title">Why it looks like this</div>
+        <p>The verdict comes first. The graph shows only the four modules this change touches, so the new edge stands out.</p>
+      </div>
+      <div class="side-section">
+        <div class="side-title">Data</div>
+        <p><span class="data-tag today">EXISTS TODAY</span> Findings, seams, dimensions, and identity from the report of this run.</p>
+        <p><span class="data-tag new">NEW</span> Reading the pull request report artifact to draw the impact graph.</p>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ============================ EROSION ============================ -->
+<section role="tabpanel" id="erosion" aria-labelledby="tab-erosion" class="stack" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Erosion <span class="muted">· acme/checkout</span></h1>
+      <p class="lede">Where the intended architecture gives way, by module, and what expires soon.</p>
+    </div>
+    <label class="row small"><input type="checkbox" id="stale-toggle"> Show the stale state</label>
+  </div>
+  <div class="layout">
+    <div class="stack">
+      <div class="flash warn" id="stale-banner" hidden>
+        <span>Stale: the policy on <code>main</code> differs from the policy of the latest report. Run Archfit on the default branch to refresh the links.</span>
+      </div>
+
+      <div class="box">
+        <div class="box-head"><h3>Hotspots</h3><span class="small muted">Counted on the source module of each finding</span></div>
+        <div class="table-wrap">
+          <table class="data">
+            <thead><tr><th>Module</th><th>Layer</th><th class="num">Violations</th><th class="num">Waived</th><th class="num">Coupling</th><th class="num">Baseline</th><th>Owner</th></tr></thead>
+            <tbody>
+              <tr><td><code>billing</code></td><td>app</td><td class="num"><span class="status danger">1</span></td><td class="num">1</td><td class="num">0</td><td class="num">2</td><td><span class="label attention">none declared</span></td></tr>
+              <tr><td><code>orders</code></td><td>domain</td><td class="num">0</td><td class="num">1</td><td class="num"><span class="status done">1</span></td><td class="num">1</td><td>team-orders</td></tr>
+              <tr><td><code>storage</code></td><td>infra</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td class="num">2</td><td><span class="label attention">none declared</span></td></tr>
+              <tr><td><code>checkout-api</code></td><td>app</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td class="num">1</td><td>team-web</td></tr>
+              <tr><td><code>pricing</code></td><td>domain</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td>team-orders</td></tr>
+              <tr><td><code>payments-gw</code></td><td>infra</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td>team-payments</td></tr>
+              <tr><td><code>shared-kit</code></td><td class="muted">none</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td class="muted">none</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="box-foot">Total baseline debt: 6 findings from <code>.archfit-baseline.json</code>.</div>
+      </div>
+
+      <div class="box">
+        <div class="box-head"><h3>Waiver expiry</h3><span class="small muted">Next 100 days · notice starts 7 days before</span></div>
+        <div class="box-body graph-wrap" style="border: 0; border-radius: 0">
+          <svg viewBox="0 0 640 110" style="width:100%;height:auto;min-width:560px" role="img" aria-labelledby="exp-title">
+            <title id="exp-title">Waiver expiry: orders to billing on 2026-10-20, billing ledger on 2026-12-31</title>
+            <rect class="tl-notice" x="104" y="30" width="39.2" height="30"/>
+            <line class="tl-axis" x1="20" y1="60" x2="620" y2="60"/>
+            <g class="tl-tick"><line x1="20" y1="60" x2="20" y2="66"/><text x="20" y="80" text-anchor="middle">Sep 28</text></g>
+            <g class="tl-tick"><line x1="188" y1="60" x2="188" y2="66"/><text x="188" y="80" text-anchor="middle">Oct 28</text></g>
+            <g class="tl-tick"><line x1="356" y1="60" x2="356" y2="66"/><text x="356" y="80" text-anchor="middle">Nov 27</text></g>
+            <g class="tl-tick"><line x1="524" y1="60" x2="524" y2="66"/><text x="524" y="80" text-anchor="middle">Dec 27</text></g>
+            <circle class="tl-mark" cx="143.2" cy="60" r="6"><title>orders → billing · layers_point_down · 2026-10-20</title></circle>
+            <text class="tl-label" x="143.2" y="22" text-anchor="middle">orders → billing · Oct 20 · 22 days</text>
+            <circle class="tl-mark later" cx="546.4" cy="60" r="6"><title>billing/ledger → storage/sql · no_billing_to_storage · 2026-12-31</title></circle>
+            <text class="tl-label muted" x="546.4" y="22" text-anchor="middle">ledger → storage/sql · Dec 31</text>
+            <text class="tl-label muted" x="20" y="102">today</text>
+          </svg>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="box">
+          <div class="box-head"><h4>Baseline debt, last 12 merges</h4><span class="label solid attention">Needs new data</span></div>
+          <div class="box-body spark-card">
+            <svg class="spark" id="spark-debt" viewBox="0 0 280 72" width="100%" height="72" role="img" aria-label="Baseline debt over the last 12 merges, from 3 to 6"></svg>
+            <span class="small muted">Illustrative values.</span>
+          </div>
+        </div>
+        <div class="box">
+          <div class="box-head"><h4>Blocking findings introduced, per week</h4><span class="label solid attention">Needs new data</span></div>
+          <div class="box-body spark-card">
+            <svg class="spark" id="spark-blocking" viewBox="0 0 280 72" width="100%" height="72" role="img" aria-label="Blocking findings introduced per week over 8 weeks, latest 1"></svg>
+            <span class="small muted">Illustrative values.</span>
+          </div>
+        </div>
+      </div>
+      <div class="flash warn">
+        <div class="stack-sm">
+          <strong>Trends need history that the App does not keep.</strong>
+          <span class="small">Three possible sources: small per-run summaries in Firestore (a privacy and product decision), <code>gate upload</code> lines in Log Analytics, or the receipts in past check runs. <code>drift</code> stays unmeasured until a persisted reference exists.</span>
+        </div>
+      </div>
+
+      <details class="box" id="fullmap-box">
+        <summary class="box-head" style="cursor: pointer; list-style: none"><h3>Full map</h3><span class="small muted">Secondary view · latest default-branch report</span></summary>
+        <div class="box-body stack">
+          <div class="graph-wrap">
+            <svg viewBox="0 0 780 380" width="780" height="380" role="img" aria-labelledby="map-title">
+              <title id="map-title">Full module map of acme/checkout by layer</title>
+              <defs>
+                <marker id="fm-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-muted"/></marker>
+                <marker id="fm-danger" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-danger"/></marker>
+                <marker id="fm-attention" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-attention"/></marker>
+                <marker id="fm-done" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="m-done"/></marker>
+              </defs>
+              <rect class="band" x="8" y="8" width="600" height="112" rx="6"/><text class="band-label" x="20" y="26">INFRA · may use app and domain</text>
+              <rect class="band" x="8" y="132" width="600" height="112" rx="6"/><text class="band-label" x="20" y="150">APP · may use domain</text>
+              <rect class="band" x="8" y="256" width="600" height="116" rx="6"/><text class="band-label" x="20" y="274">DOMAIN</text>
+              <rect class="band" x="620" y="8" width="152" height="364" rx="6"/><text class="band-label" x="632" y="26">UNLAYERED</text>
+
+              <!-- edges -->
+              <path class="edge violation" d="M170 172 L170 92" marker-end="url(#fm-danger)"/>
+              <text class="edge-label danger" x="178" y="136">3 · fail · 1 waived</text>
+              <path class="edge" d="M110 92 C 20 180, 20 250, 110 296" marker-end="url(#fm-muted)"/>
+              <text class="edge-label muted" x="24" y="200">4</text>
+              <path class="edge" d="M380 92 L 250 172" marker-end="url(#fm-muted)"/>
+              <text class="edge-label muted" x="322" y="128">6 · vol high</text>
+              <path class="edge" d="M390 192 L 252 192" marker-end="url(#fm-muted)"/>
+              <text class="edge-label muted" x="316" y="186">5</text>
+              <path class="edge" d="M420 212 C 360 260, 300 280, 252 300" marker-end="url(#fm-muted)"/>
+              <text class="edge-label muted" x="350" y="262">12</text>
+              <path class="edge" d="M200 212 C 212 240, 212 270, 200 296" marker-end="url(#fm-muted)"/>
+              <text class="edge-label muted" x="214" y="258">7</text>
+              <path class="edge waived" d="M150 296 C 138 270, 138 240, 150 212" marker-end="url(#fm-attention)"/>
+              <text class="edge-label attention" x="72" y="246">2 · waived</text>
+              <path class="edge coupling" d="M252 316 L 388 316" marker-end="url(#fm-done)"/>
+              <text class="edge-label done" x="292" y="308">9 · coupling</text>
+              <path class="edge" d="M252 180 C 400 150, 560 170, 640 186" marker-end="url(#fm-muted)"/>
+              <text class="edge-label muted" x="520" y="160">11</text>
+
+              <!-- nodes -->
+              <g class="node" tabindex="0" aria-label="storage, infra"><rect x="100" y="52" width="140" height="40" rx="6"/><text x="112" y="70">storage</text><text class="sub" x="112" y="84">no owner · internal</text></g>
+              <g class="node" tabindex="0" aria-label="payments-gw, infra"><rect x="360" y="52" width="150" height="40" rx="6"/><text x="372" y="70">payments-gw</text><text class="sub" x="372" y="84">team-payments</text></g>
+              <g class="node" tabindex="0" aria-label="billing, app"><rect x="110" y="172" width="142" height="40" rx="6"/><text x="122" y="190">billing</text><text class="sub" x="122" y="204">no owner · no public</text></g>
+              <g class="node" tabindex="0" aria-label="checkout-api, app"><rect x="390" y="172" width="150" height="40" rx="6"/><text x="402" y="190">checkout-api</text><text class="sub" x="402" y="204">team-web</text></g>
+              <g class="node" tabindex="0" aria-label="orders, domain"><rect x="110" y="296" width="142" height="40" rx="6"/><text x="122" y="314">orders</text><text class="sub" x="122" y="328">team-orders</text></g>
+              <g class="node" tabindex="0" aria-label="pricing, domain"><rect x="390" y="296" width="150" height="40" rx="6"/><text x="402" y="314">pricing</text><text class="sub" x="402" y="328">team-orders</text></g>
+              <g class="node" tabindex="0" aria-label="shared-kit, unlayered"><rect x="640" y="172" width="120" height="40" rx="6"/><text x="652" y="190">shared-kit</text><text class="sub" x="652" y="204">no owner</text></g>
+            </svg>
+          </div>
+          <div class="legend">
+            <span class="key"><span class="swatch violation"></span>violation</span>
+            <span class="key"><span class="swatch waived"></span>waived</span>
+            <span class="key"><span class="swatch coupling"></span>coupling finding</span>
+            <span class="key"><span class="swatch"></span>permitted · number = observed edges</span>
+          </div>
+          <p class="small muted">Links come from the latest default-branch report artifact. GitHub keeps artifacts for a limited time.</p>
+        </div>
+      </details>
+    </div>
+
+    <aside class="side" aria-label="About this view">
+      <div class="side-section">
+        <div class="side-title">What you can do here</div>
+        <ul>
+          <li>Find the modules where debt collects.</li>
+          <li>See which waivers end soon.</li>
+          <li>Open the full map when you need context.</li>
+        </ul>
+      </div>
+      <div class="side-section">
+        <div class="side-title">Why it looks like this</div>
+        <p>A table ranks modules faster than a graph. The map is one click away, not the home.</p>
+      </div>
+      <div class="side-section">
+        <div class="side-title">Data</div>
+        <p><span class="data-tag today">EXISTS TODAY</span> Hotspots, waivers, and the map from the policy and the latest default-branch report.</p>
+        <p><span class="data-tag new">NEW</span> Both trends. They need stored history per run.</p>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ============================ POLICY CHANGE #415 ============================ -->
+<section role="tabpanel" id="policy" aria-labelledby="tab-policy" class="stack" hidden>
+  <div class="page-head">
+    <div class="stack-sm">
+      <h1>Declare volatility for pricing <span class="muted">#415</span></h1>
+      <div class="row small">
+        <span class="state attention" id="p415-state">Action required</span>
+        <code id="p415-reason">owner_approval_missing</code>
+        <span class="muted">draft started from the decision on <code>orders</code> → <code>pricing</code></span>
+      </div>
+    </div>
+    <div class="row">
+      <a class="btn" href="#github" data-goto="github">Open on GitHub</a>
+    </div>
+  </div>
+  <div class="layout">
+    <div class="stack">
+      <div class="box">
+        <div class="box-head"><h3>Change</h3><span class="small muted">No publish button. The merge on GitHub publishes the policy.</span></div>
+        <div class="box-body">
+          <div class="diff" role="img" aria-label="Diff of .archfit-labels.yaml">
+            <div class="hdr">.archfit-labels.yaml · protected path</div>
+            <div class="ctx">  modules:</div>
+            <div class="add">+   pricing:</div>
+            <div class="add">+     volatility: high</div>
+            <div class="add">+     reason: "tax rules and promotions change every sprint"</div>
+          </div>
+          <p class="small muted" style="margin-top: 8px">Field names are placeholders. The labels file schema belongs to the engine.</p>
+        </div>
+      </div>
+
+      <div class="box">
+        <div class="box-head"><h3>Path to merge</h3><span class="small muted">Approval counts only on the exact head commit</span></div>
+        <div class="box-body">
+          <div class="timeline">
+            <div class="tl-item success"><span class="tl-badge"><svg viewBox="0 0 16 16"><path d="M3 8.5l3 3 7-7" fill="none" stroke="currentColor" stroke-width="2"/></svg></span>
+              <strong>Draft pull request opened</strong><span class="small muted">carol saved the change to draft #415.</span></div>
+            <div class="tl-item attention"><span class="tl-badge"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="3" fill="currentColor"/></svg></span>
+              <strong>Archfit check on the draft</strong><span class="small muted">Engine rules pass. The gate asks for owner approval because a protected path changed.</span></div>
+            <div class="tl-item success"><span class="tl-badge"><svg viewBox="0 0 16 16"><path d="M3 8.5l3 3 7-7" fill="none" stroke="currentColor" stroke-width="2"/></svg></span>
+              <strong>Marked ready for review</strong></div>
+            <div class="tl-item pending" id="tl-approval"><span class="tl-badge"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="3" fill="currentColor"/></svg></span>
+              <strong>Policy owner approval on <code id="head-sha">7a1d0c4</code></strong>
+              <span class="small muted" id="approval-text">Waiting. You opened this change, so another policy owner approves it.</span>
+              <div class="row">
+                <button type="button" class="btn sm" disabled>Approve here</button>
+                <span class="disabled-reason">Approval happens on GitHub, by an owner who is not the author.</span>
+              </div>
+            </div>
+            <div class="tl-item pending" id="tl-merge"><span class="tl-badge"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="3" fill="currentColor"/></svg></span>
+              <strong>Merge on GitHub</strong><span class="small muted">The merge publishes the change. The App never writes to <code>main</code>.</span></div>
+          </div>
+        </div>
+        <div class="box-foot row">
+          <span>Try it:</span>
+          <button type="button" class="btn sm" id="sim-approve">Simulate: alice approves</button>
+          <button type="button" class="btn sm" id="sim-push">Simulate: new push</button>
+        </div>
+      </div>
+
+      <form class="box" id="ai-form">
+        <div class="box-head"><h3>Ask AI for a proposal</h3><span class="label">optional</span></div>
+        <div class="box-body stack-sm">
+          <label for="ai-text" class="small">Instruction</label>
+          <textarea class="input" id="ai-text">Suggest a reason text for the pricing volatility label.</textarea>
+          <label for="ai-mode" class="small">Mode</label>
+          <select class="input" id="ai-mode">
+            <option value="customer">customer: runs in your CI</option>
+            <option value="managed" disabled>managed: needs data_mode managed and consent</option>
+          </select>
+          <div class="row"><button type="submit" class="btn sm">Propose</button><span class="small muted" id="ai-result">The proposal arrives as a commit on draft #415. It never affects the gate.</span></div>
+        </div>
+      </form>
+    </div>
+
+    <aside class="side" aria-label="About this view">
+      <div class="side-section">
+        <div class="side-title">What you can do here</div>
+        <ul>
+          <li>Follow a policy change from draft to merge.</li>
+          <li>See what still blocks it, and who can unblock it.</li>
+        </ul>
+      </div>
+      <div class="side-section">
+        <div class="side-title">Why it looks like this</div>
+        <p>A policy change is a pull request like any other. The timeline shows the one rule people forget: a new push cancels the approval.</p>
+      </div>
+      <div class="side-section">
+        <div class="side-title">Data</div>
+        <p><span class="data-tag today">EXISTS TODAY</span> Draft pull requests, the Archfit check, and reviews, read from GitHub.</p>
+        <p><span class="data-tag new">NEW</span> Starting a draft from a decision in the queue.</p>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ============================ GITHUB MOCK ============================ -->
+<section role="tabpanel" id="github" aria-labelledby="tab-github" class="stack" hidden>
+  <div class="page-head">
+    <div class="stack-sm">
+      <span class="mock-flag">Mock · GitHub pull request</span>
+      <h1>Charge retries through ledger <span class="muted">#412</span></h1>
+      <div class="row small"><span class="state done">Open</span><span class="muted">bob wants to merge 3 commits into <code>main</code> from <code>retry-ledger</code></span></div>
+    </div>
+  </div>
+  <div class="layout">
+    <div class="stack">
+      <div class="checks">
+        <div class="check-row"><span class="status danger">Failure</span><span class="name">archfit/gate</span><span class="label">required</span><span class="desc">Blocked by architecture findings</span></div>
+        <div class="check-row"><span class="status danger">Failure</span><span class="name">archfit/state</span><span class="label">advisory</span><span class="desc">1 blocking, 1 coupling finding · 2 annotations</span></div>
+      </div>
+
+      <div class="comment">
+        <div class="comment-head"><span class="avatar">A</span><strong>archfit</strong><span class="label">app</span><span>commented · updated after run 7.1</span></div>
+        <div class="comment-body">
+          <h3>Archfit: blocked by architecture findings</h3>
+          <div class="table-wrap">
+            <table class="data summary-table">
+              <tbody>
+                <tr><td>Verdict</td><td><span class="status danger">failure</span></td></tr>
+                <tr><td>Reason</td><td><code>blocking_findings</code> (architecture)</td></tr>
+                <tr><td>Next</td><td>Fix the blocking findings, then push.</td></tr>
+                <tr><td>Introduced</td><td>1 blocking · 1 needs an owner decision</td></tr>
+                <tr><td>Accepted debt</td><td>2 waived · display only</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <details class="disclosure">
+            <summary>Findings</summary>
+            <div class="details-body small">
+              <div><strong>blocking</strong> <code>no_billing_to_storage</code> · <code>billing</code> → <code>storage</code> · <code>internal/billing/retry.go:41</code></div>
+              <div><code>bc/imbalanced_coupling</code> · <code>orders</code> → <code>pricing</code> · <code>internal/orders/quote.go:18</code> · owner decision</div>
+              <div class="muted">Accepted debt: <code>no_billing_to_storage</code> (waived until 2026-12-31), <code>layers_point_down</code> (waived until 2026-10-20)</div>
+            </div>
+          </details>
+          <details class="disclosure">
+            <summary>Dimensions</summary>
+            <div class="details-body small">
+              <div>structure <strong>fail</strong> · coupling <strong>warn</strong> · 5 pass · change_locality and drift unmeasured</div>
+              <div class="muted">Each line in the full comment carries coverage and confidence.</div>
+            </div>
+          </details>
+          <details class="disclosure">
+            <summary>Evidence gaps, inputs, and identity</summary>
+            <div class="details-body small">
+              <div>5 evidence gaps. Policy <code>1111…1111</code> · baseline <code>2222…2222</code> · labels <code>3333…3333</code> · engine v2.3.1, claimed.</div>
+              <div class="muted">Customer-attested: the producer is authenticated, the report content is not independently checked.</div>
+            </div>
+          </details>
+          <details class="disclosure">
+            <summary>Validation commands and agent tasks</summary>
+            <div class="details-body"><pre><code>archfit check -c .archfit.yaml</code></pre>
+              <span class="small muted">2 agent tasks: <code>code_change</code> for the import, <code>needs_owner_decision</code> for the seam.</span></div>
+          </details>
+        </div>
+      </div>
+
+      <div class="stack-sm">
+        <h4>Files changed</h4>
+        <div class="annot">
+          <div class="annot-file">internal/billing/retry.go</div>
+          <div class="line"><span class="ln">40</span><span>    "acme/checkout/internal/billing/ledger"</span></div>
+          <div class="line added"><span class="ln">41</span><span>+   "acme/checkout/internal/storage/sql"</span></div>
+          <div class="note"><strong>archfit/state</strong> · <code>no_billing_to_storage</code>: import from <code>internal/billing/**</code> to <code>internal/storage</code> is forbidden.</div>
+        </div>
+        <span class="small muted">Line annotations come from engine locations. They exist today, up to 50 for each check.</span>
+      </div>
+
+      <div class="box">
+        <div class="box-head"><h4>Other pull request · #415 Declare volatility for pricing</h4></div>
+        <div class="check-row"><span class="status attention">Action required</span><span class="name">archfit/gate</span><span class="desc"><code>owner_approval_missing</code>: get a policy owner to approve commit <code>7a1d0c4</code>.</span></div>
+      </div>
+    </div>
+
+    <aside class="side" aria-label="About this view">
+      <div class="side-section">
+        <div class="side-title">What you can do here</div>
+        <ul>
+          <li>See what a developer sees on the pull request.</li>
+          <li>Read the verdict in five lines.</li>
+        </ul>
+      </div>
+      <div class="side-section">
+        <div class="side-title">Why it looks like this</div>
+        <p>Developers meet Archfit in the pull request, not in the App. The comment answers "what now" first and folds the evidence.</p>
+      </div>
+      <div class="side-section">
+        <div class="side-title">Data</div>
+        <p><span class="data-tag today">EXISTS TODAY</span> Both checks, the annotations, and one updated comment.</p>
+        <p><span class="data-tag new">NEW</span> The compact comment layout. It is a change in <code>gate/feedback</code>.</p>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ============================ REPOSITORIES ============================ -->
+<section role="tabpanel" id="repos" aria-labelledby="tab-repos" class="stack" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Repositories</h1>
+      <p class="lede">Every repository in <code>acme</code> that has the App, with the state of its default branch.</p>
+    </div>
+  </div>
+  <div class="layout">
+    <div class="stack">
+      <div class="flash warn">
+        <span>Trial ends in 22 days, on 2026-10-20. Feedback shows a notice from 2026-10-13. After a 7-day grace period without a grant, the gate reports <code>subscription_suspended</code>.</span>
+      </div>
+      <div class="box">
+        <div class="table-wrap">
+          <table class="data">
+            <thead><tr><th>Repository</th><th>Gate</th><th>Default branch</th><th>Reason and recovery</th><th>You</th></tr></thead>
+            <tbody>
+              <tr><td><strong>acme/checkout</strong></td><td>required</td><td><span class="status danger">failure</span></td>
+                <td><code>blocking_findings</code><div class="small muted">Fix the blocking findings and run the validation command.</div></td><td><span class="label">admin · owner</span></td></tr>
+              <tr><td><strong>acme/catalog</strong></td><td>advisory</td><td><span class="status success">success</span></td>
+                <td><code>healthy</code><div class="small muted">Nothing to do.</div></td><td><span class="label">write</span></td></tr>
+              <tr><td><strong>acme/identity</strong></td><td class="muted">not yet</td><td><span class="status neutral">no report yet</span></td>
+                <td>Onboarding: first report received<div class="small muted">Review and merge the policy pull request.</div></td><td><span class="label">admin</span></td></tr>
+              <tr><td><strong>acme/legacy-erp</strong></td><td>advisory</td><td><span class="status attention">action required</span></td>
+                <td><code>stale_inputs</code><div class="small muted">The policy or baseline changed on the base branch. Run the workflow again.</div></td><td><span class="label">read</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="box">
+        <div class="box-head"><h4>acme/identity · onboarding</h4><span class="small muted">Stage 3 of 6</span></div>
+        <div class="box-body steps">
+          <span class="label success">App installed</span>
+          <span class="label success">Workflow merged</span>
+          <span class="label solid accent">First report received</span>
+          <span class="label">Policy merged</span>
+          <span class="label">Gate advisory</span>
+          <span class="label">Gate required</span>
+        </div>
+      </div>
+    </div>
+
+    <aside class="side" aria-label="About this view">
+      <div class="side-section">
+        <div class="side-title">What you can do here</div>
+        <ul>
+          <li>Check each repository at a glance.</li>
+          <li>See the next onboarding step.</li>
+        </ul>
+      </div>
+      <div class="side-section">
+        <div class="side-title">Why it looks like this</div>
+        <p>This is the page the App has today, with the recovery text added under each reason.</p>
+      </div>
+      <div class="side-section">
+        <div class="side-title">Data</div>
+        <p><span class="data-tag today">EXISTS TODAY</span> The check on each default-branch head, the onboarding stage, and the plan.</p>
+      </div>
+    </aside>
+  </div>
+</section>
+
+</main>
+
+<div id="notes-backdrop" class="drawer-backdrop" hidden></div>
+<aside id="notes-drawer" class="drawer" hidden aria-label="Design notes">
+  <div class="row-between"><h2>Design notes · Radar</h2><button type="button" class="btn sm" data-close-notes>Close</button></div>
+  <section><h4>Who it suits</h4><p>Policy owners who look after several repositories, and teams with many open pull requests.</p></section>
+  <section><h4>Core bet</h4><p>Architecture erodes one pull request at a time. The App's home is the stream of changes and the decisions they need, not a picture of the system.</p></section>
+  <section><h4>What gets easy</h4><ul><li>Seeing risk before the merge.</li><li>Finding the decisions that wait for an owner.</li><li>Acting on waivers before they expire.</li></ul></section>
+  <section><h4>What gets hard</h4><ul><li>Defining the architecture. The model is a secondary view here.</li><li>Trends: they need history that the App does not store.</li><li>Metric-watching instead of design thinking.</li></ul></section>
+  <section><h4>Data it needs</h4>
+    <p><span class="data-tag today">EXISTS TODAY</span> Check runs, comments, the policy, the latest default-branch report, agent tasks.</p>
+    <p><span class="data-tag new">NEW</span> A cross-repository pull request list, the pull request report for the impact graph, and per-run summaries for trends.</p></section>
+  <section><h4>Build cost</h4><p>Medium in <code>control/ui</code>. A change in <code>gate/feedback</code> for the compact comment. Trends add a storage decision.</p></section>
+  <section><h4>Risks and mitigations</h4><ul><li>Scores replace judgment: show decisions, not scores, and keep coverage and confidence next to every dimension.</li><li>Noise: order the inbox by what needs a person.</li></ul></section>
+</aside>
+
+<script src="archfit.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // Inbox filter
+  var filter = document.getElementById("inbox-filter");
+  filter.addEventListener("click", function (ev) {
+    var b = ev.target.closest("[data-filter]");
+    if (!b) return;
+    var f = b.getAttribute("data-filter");
+    filter.querySelectorAll("[data-filter]").forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); });
+    document.querySelectorAll("#inbox-list [data-cat]").forEach(function (row) {
+      row.hidden = !(f === "all" || row.getAttribute("data-cat").split(" ").indexOf(f) >= 0);
+    });
+  });
+
+  // Decision options: one selected per decision
+  function pick(row) {
+    var box = row.closest("[data-decision]");
+    box.querySelectorAll(".opt").forEach(function (o) { o.setAttribute("aria-pressed", String(o === row)); });
+  }
+  document.querySelectorAll(".opt").forEach(function (row) {
+    row.addEventListener("click", function (ev) { if (!ev.target.closest("button")) pick(row); });
+    row.addEventListener("keydown", function (ev) { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); pick(row); } });
+  });
+
+  // Dimensions table
+  var dims = [
+    ["intent", "measured", "2/2", "high", "pass"],
+    ["structure", "measured", "9/9", "high", "fail"],
+    ["modularity", "measured", "4/7", "low", "pass"],
+    ["coupling", "measured", "9/9", "high", "warn"],
+    ["change_locality", "unmeasured", "0/0", "unrated", "not applicable"],
+    ["complexity", "measured", "7/7", "high", "pass"],
+    ["testability", "partial", "3/3", "medium", "pass"],
+    ["operations", "partial", "2/7", "medium", "pass"],
+    ["drift", "unmeasured", "—", "unrated", "not applicable"]
+  ];
+  var statusClass = { measured: "success", partial: "attention", unmeasured: "" };
+  var gateClass = { pass: "success", fail: "danger", warn: "attention" };
+  document.getElementById("dims").innerHTML = dims.map(function (d) {
+    return "<tr><td><code>" + d[0] + "</code></td>" +
+      "<td><span class=\"label " + statusClass[d[1]] + "\">" + d[1] + "</span></td>" +
+      "<td class=\"num\">" + d[2] + "</td><td>" + d[3] + "</td>" +
+      "<td>" + (gateClass[d[4]] ? "<span class=\"status " + gateClass[d[4]] + "\">" + d[4] + "</span>" : "<span class=\"muted\">" + d[4] + "</span>") + "</td></tr>";
+  }).join("");
+
+  // Sparklines: one series, area + faint grid + emphasized endpoint + end value.
+  function spark(id, values, unit) {
+    var svg = document.getElementById(id);
+    var W = 280, H = 72, padL = 8, padR = 40, padT = 10, padB = 12;
+    var max = Math.max.apply(null, values), min = 0;
+    var x = function (i) { return padL + i * (W - padL - padR) / (values.length - 1); };
+    var y = function (v) { return padT + (1 - (v - min) / (max - min || 1)) * (H - padT - padB); };
+    var pts = values.map(function (v, i) { return x(i).toFixed(1) + "," + y(v).toFixed(1); });
+    var base = y(0).toFixed(1);
+    var html = "<line class=\"grid\" x1=\"" + padL + "\" x2=\"" + (W - padR) + "\" y1=\"" + base + "\" y2=\"" + base + "\"/>" +
+      "<line class=\"grid\" x1=\"" + padL + "\" x2=\"" + (W - padR) + "\" y1=\"" + y(max).toFixed(1) + "\" y2=\"" + y(max).toFixed(1) + "\" stroke-dasharray=\"2 3\"/>" +
+      "<polygon class=\"area\" points=\"" + padL + "," + base + " " + pts.join(" ") + " " + x(values.length - 1).toFixed(1) + "," + base + "\"/>" +
+      "<polyline class=\"line\" points=\"" + pts.join(" ") + "\"/>";
+    values.forEach(function (v, i) {
+      html += "<g><rect class=\"hit\" x=\"" + (x(i) - 8).toFixed(1) + "\" y=\"0\" width=\"16\" height=\"" + H + "\"><title>" + unit + " " + (i + 1) + ": " + v + "</title></rect>" +
+        "<circle class=\"pt\" cx=\"" + x(i).toFixed(1) + "\" cy=\"" + y(v).toFixed(1) + "\" r=\"3\"/></g>";
+    });
+    var last = values.length - 1;
+    html += "<circle class=\"end\" cx=\"" + x(last).toFixed(1) + "\" cy=\"" + y(values[last]).toFixed(1) + "\" r=\"4\"/>" +
+      "<text class=\"val\" x=\"" + (x(last) + 10).toFixed(1) + "\" y=\"" + (y(values[last]) + 4).toFixed(1) + "\">" + values[last] + "</text>";
+    svg.innerHTML = html;
+  }
+  spark("spark-debt", [3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 6, 6], "Merge");
+  spark("spark-blocking", [0, 1, 0, 0, 2, 0, 1, 1], "Week");
+
+  // Stale banner
+  var stale = document.getElementById("stale-toggle");
+  stale.addEventListener("change", function () { document.getElementById("stale-banner").hidden = !stale.checked; });
+
+  // Approval simulation: approval counts only on the exact head SHA.
+  var approval = document.getElementById("tl-approval"), merge = document.getElementById("tl-merge");
+  var sha = document.getElementById("head-sha"), text = document.getElementById("approval-text");
+  var state = document.getElementById("p415-state"), reason = document.getElementById("p415-reason");
+  document.getElementById("sim-approve").addEventListener("click", function () {
+    approval.className = "tl-item success";
+    text.textContent = "Approved by alice on " + sha.textContent + ". The gate can now pass.";
+    merge.className = "tl-item";
+    state.className = "state success"; state.textContent = "Success"; reason.textContent = "healthy";
+  });
+  document.getElementById("sim-push").addEventListener("click", function () {
+    sha.textContent = sha.textContent === "7a1d0c4" ? "b41e0d2" : "7a1d0c4";
+    approval.className = "tl-item pending";
+    text.textContent = "A new push moved the head to " + sha.textContent + ". The earlier approval no longer counts.";
+    merge.className = "tl-item pending";
+    state.className = "state attention"; state.textContent = "Action required"; reason.textContent = "owner_approval_missing";
+  });
+
+  // AI proposal: explicit request only, arrives as a commit, never affects the gate.
+  document.getElementById("ai-form").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    document.getElementById("ai-result").textContent = "Requested. The customer workflow will push one commit to draft #415. The gate result does not change.";
+  });
+})();
+</script>
+</body>
+</html>

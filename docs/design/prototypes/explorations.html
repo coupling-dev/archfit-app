@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Archfit Explorations</title>
+
+<link rel="stylesheet" href="archfit.css">
+<style>
+  .dir-card { display: flex; flex-direction: column; }
+  .dir-card .box-body { display: flex; flex-direction: column; gap: 12px; flex: 1 1 auto; }
+  .dir-card .glyph { border: 1px solid var(--border-muted); border-radius: var(--radius); background: var(--bg-subtle); }
+  .dir-card .glyph svg { display: block; width: 100%; height: auto; }
+  .dir-card ul { margin: 0; padding-left: 18px; color: var(--fg-muted); display: flex; flex-direction: column; gap: 4px; }
+  .dir-card .actions { margin-top: auto; }
+  .letter {
+    width: 24px; height: 24px; border-radius: 6px; display: inline-grid; place-items: center; flex: none;
+    font-weight: 600; font-size: 13px; color: var(--fg-onEmphasis); background: var(--fg-muted);
+  }
+  .g-band { fill: var(--bg); stroke: var(--border-muted); }
+  .g-node { fill: var(--bg); stroke: var(--border); }
+  .g-line { stroke: var(--fg-muted); stroke-width: 1.5; fill: none; }
+  .g-bad { stroke: var(--danger); stroke-width: 1.8; fill: none; }
+  .g-wav { stroke: var(--attention); stroke-width: 1.5; stroke-dasharray: 4 3; fill: none; }
+  .g-cpl { stroke: var(--done); stroke-width: 3; fill: none; }
+  .g-text { fill: var(--fg-muted); font: 9px var(--mono); }
+  .g-ink { fill: var(--fg); }
+  .g-mute { fill: var(--border); }
+  .g-okc { fill: var(--neutral-subtle); }
+  .g-badc { fill: var(--danger); }
+  .g-wavc { fill: var(--attention); }
+  .g-cplc { fill: var(--done); }
+  .g-acc { fill: var(--accent); }
+  table.cmp th[scope="row"] { color: var(--fg); background: var(--bg); font-size: 13px; white-space: normal; width: 160px; }
+  table.cmp td { min-width: 200px; }
+  .howto { counter-reset: step; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .howto li { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 8px; color: var(--fg-muted); font-size: 13px; }
+  .howto li::before {
+    counter-increment: step; content: counter(step); width: 20px; height: 20px; border-radius: 50%;
+    display: grid; place-items: center; font-size: 11px; font-weight: 600; background: var(--neutral-subtle); color: var(--fg);
+  }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <a class="brand" href="index.html" title="All prototypes">
+    <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="4.5" rx="1.5" fill="var(--fg)"/><rect x="3" y="9.75" width="18" height="4.5" rx="1.5" fill="var(--fg)" opacity=".65"/><rect x="3" y="16.5" width="18" height="4.5" rx="1.5" fill="var(--accent)"/></svg>
+    Archfit
+  </a>
+  <nav class="crumbs" aria-label="Location"><a href="index.html">Guardrails</a><span class="sep">/</span><strong>Earlier explorations</strong></nav>
+  <span class="proto-tag">Illustrative data</span>
+  <span class="header-spacer"></span>
+  <div class="theme-toggle" role="group" aria-label="Theme">
+    <button type="button" data-theme-set="light">Light</button><button type="button" data-theme-set="auto">Auto</button><button type="button" data-theme-set="dark">Dark</button>
+  </div>
+</header>
+
+<main class="page">
+  <div class="stack" style="gap:24px">
+    <div class="page-head">
+      <div>
+        <h1>Earlier explorations</h1>
+        <p class="lede"><strong>Superseded by <a href="index.html">Archfit Guardrails</a>,</strong> which is built on the product's real job: the loop between coding agents and the gate, and the decisions only owners can make. These three directions explored how to display the architecture. They stay here for comparison. Archfit keeps a repository's architecture from eroding: owners define layers, module contracts, and
+          rules, and every pull request is checked against them. These prototypes show three ways to present that to
+          people who think in modules and coupling. Same data, same jobs, different primary surface.</p>
+      </div>
+    </div>
+
+    <div class="layout">
+      <div class="stack" style="gap:24px">
+        <div class="grid-3">
+          <article class="box dir-card">
+            <div class="box-head"><div class="row"><span class="letter">A</span><h3>Atlas</h3></div><span class="label">map-first</span></div>
+            <div class="box-body">
+              <div class="glyph" aria-hidden="true">
+                <svg viewBox="0 0 220 120">
+                  <rect class="g-band" x="8" y="8" width="204" height="30" rx="4"/>
+                  <rect class="g-band" x="8" y="45" width="204" height="30" rx="4"/>
+                  <rect class="g-band" x="8" y="82" width="204" height="30" rx="4"/>
+                  <path class="g-bad" d="M104 52 L80 31"/>
+                  <path class="g-line" d="M164 31 L136 52"/>
+                  <path class="g-line" d="M114 68 L94 89"/>
+                  <path class="g-wav" d="M80 89 Q92 76 106 68"/>
+                  <path class="g-cpl" d="M112 97 L152 97"/>
+                  <rect class="g-node" x="54" y="15" width="48" height="16" rx="3"/>
+                  <rect class="g-node" x="142" y="15" width="48" height="16" rx="3"/>
+                  <rect class="g-node" x="96" y="52" width="48" height="16" rx="3"/>
+                  <rect class="g-node" x="62" y="89" width="48" height="16" rx="3"/>
+                  <rect class="g-node" x="152" y="89" width="48" height="16" rx="3"/>
+                  <text class="g-text" x="14" y="26">infra</text><text class="g-text" x="14" y="63">app</text><text class="g-text" x="14" y="100">domain</text>
+                </svg>
+              </div>
+              <p>The living architecture map is home. Layers are bands, links show what the code does, and colors show where it breaks the intent.</p>
+              <ul>
+                <li>Click a module or a link to inspect it</li>
+                <li>PR lens overlays a change on the map</li>
+                <li>Policy changes start from the map</li>
+              </ul>
+              <div class="actions"><a class="btn primary" href="atlas.html">Open Atlas</a></div>
+            </div>
+          </article>
+
+          <article class="box dir-card">
+            <div class="box-head"><div class="row"><span class="letter">B</span><h3>Charter</h3></div><span class="label">policy-first</span></div>
+            <div class="box-body">
+              <div class="glyph" aria-hidden="true">
+                <svg viewBox="0 0 220 120">
+                  <rect class="g-ink" x="14" y="12" width="70" height="7" rx="2"/>
+                  <rect class="g-mute" x="14" y="26" width="92" height="4" rx="2"/>
+                  <rect class="g-mute" x="14" y="34" width="80" height="4" rx="2"/>
+                  <rect class="g-ink" x="14" y="50" width="54" height="6" rx="2" opacity=".8"/>
+                  <rect class="g-mute" x="14" y="62" width="88" height="4" rx="2"/>
+                  <rect class="g-badc" x="14" y="72" width="26" height="7" rx="3.5"/>
+                  <rect class="g-wavc" x="44" y="72" width="26" height="7" rx="3.5"/>
+                  <rect class="g-mute" x="14" y="88" width="84" height="4" rx="2"/>
+                  <rect class="g-mute" x="14" y="96" width="70" height="4" rx="2"/>
+                  <g transform="translate(124 18)">
+                    <rect class="g-okc" x="0" y="0" width="84" height="84" rx="3"/>
+                    <rect class="g-okc" x="14" y="14" width="14" height="14" style="fill:var(--border)"/>
+                    <rect class="g-badc" x="42" y="14" width="14" height="14"/>
+                    <rect class="g-wavc" x="14" y="42" width="14" height="14"/>
+                    <rect class="g-cplc" x="56" y="56" width="14" height="14"/>
+                    <rect class="g-okc" x="28" y="56" width="14" height="14" style="fill:var(--border)"/>
+                    <path class="g-line" d="M0 0 L84 84" style="stroke:var(--border);stroke-width:1"/>
+                  </g>
+                </svg>
+              </div>
+              <p>The intended architecture as a readable charter that owners agree on. Rules read as sentences, and each shows whether the code complies.</p>
+              <ul>
+                <li>Module contracts, rules, exceptions, debt</li>
+                <li>A dependency matrix scales past 50 modules</li>
+                <li>Changes are amendments made through a PR</li>
+              </ul>
+              <div class="actions"><a class="btn primary" href="charter.html">Open Charter</a></div>
+            </div>
+          </article>
+
+          <article class="box dir-card">
+            <div class="box-head"><div class="row"><span class="letter">C</span><h3>Radar</h3></div><span class="label">change-first</span></div>
+            <div class="box-body">
+              <div class="glyph" aria-hidden="true">
+                <svg viewBox="0 0 220 120">
+                  <g>
+                    <circle class="g-badc" cx="20" cy="20" r="4"/><rect class="g-ink" x="32" y="16" width="86" height="6" rx="2"/>
+                    <rect class="g-badc" x="126" y="15" width="30" height="8" rx="4"/><rect class="g-cplc" x="160" y="15" width="40" height="8" rx="4"/>
+                    <circle class="g-cplc" cx="20" cy="46" r="4"/><rect class="g-ink" x="32" y="42" width="72" height="6" rx="2"/>
+                    <rect class="g-wavc" x="126" y="41" width="52" height="8" rx="4"/>
+                    <circle class="g-wavc" cx="20" cy="72" r="4"/><rect class="g-ink" x="32" y="68" width="92" height="6" rx="2"/>
+                    <rect class="g-mute" x="126" y="67" width="40" height="8" rx="4"/>
+                    <path d="M14 104 L50 100 L86 102 L122 94 L158 96 L194 88" class="g-line" style="stroke:var(--accent);stroke-width:2"/>
+                    <circle class="g-acc" cx="194" cy="88" r="3.5"/>
+                  </g>
+                </svg>
+              </div>
+              <p>Architecture erodes one pull request at a time. Home is the stream of open changes and the decisions owners must make.</p>
+              <ul>
+                <li>Inbox of PRs with their architectural impact</li>
+                <li>Decision queue for policy owners</li>
+                <li>Hotspots and erosion trends</li>
+              </ul>
+              <div class="actions"><a class="btn primary" href="radar.html">Open Radar</a></div>
+            </div>
+          </article>
+        </div>
+
+        <section class="box">
+          <div class="box-head"><h3>Compare the directions</h3><span class="muted small">Same repository, same findings</span></div>
+          <div class="table-wrap">
+            <table class="data cmp">
+              <thead><tr><th scope="col">Question</th><th scope="col">A · Atlas</th><th scope="col">B · Charter</th><th scope="col">C · Radar</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">Primary question</th><td>What does the system look like, and where does it break the intent?</td><td>What did we agree, and does the code still follow it?</td><td>Which changes erode it now, and what must an owner decide?</td></tr>
+                <tr><th scope="row">Best for</th><td>Visual thinkers, onboarding, small and medium repositories</td><td>Architecture owners, governance, long-lived systems</td><td>Owners of several repositories, busy teams</td></tr>
+                <tr><th scope="row">Define the architecture</th><td><span class="status success">Good</span> Propose changes from the map</td><td><span class="status success">Strongest</span> Reads like a document people sign off</td><td><span class="status attention">Weak</span> Changes start from decisions</td></tr>
+                <tr><th scope="row">Keep it from eroding</th><td><span class="status success">Good</span> New links show on the map</td><td><span class="status success">Good</span> Compliance per rule, exception countdowns</td><td><span class="status success">Strongest</span> Every PR's impact in one queue</td></tr>
+                <tr><th scope="row">50+ modules</th><td><span class="status attention">Hard</span> Needs grouping and focus mode</td><td><span class="status success">Good</span> The matrix stays readable</td><td><span class="status success">Good</span> Shows only what a PR touches</td></tr>
+                <tr><th scope="row">Data it needs</th><td><span class="status success">Today</span> Policy and the latest default-branch report. The PR lens needs the PR report</td><td><span class="status success">Today</span> Amendment history comes from Git</td><td><span class="status attention">New</span> Trends need stored per-run summaries</td></tr>
+                <tr><th scope="row">Build cost</th><td>Medium to large: graph layout and interaction</td><td>Medium: server-rendered pages and forms</td><td>Medium, plus a data decision for trends</td></tr>
+                <tr><th scope="row">Main risk</th><td>A readable map turns into a hairball</td><td>Reads like documentation, so it is opened rarely</td><td>Watching metrics instead of design</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="flash success" aria-labelledby="lean-title">
+          <div class="stack-sm">
+            <h3 id="lean-title">Where this led</h3>
+            <p>The approved policy is the product's core contract, so a repository's home is the charter: layers, module
+              contracts, rules with compliance, exceptions, and debt. Show the same model two ways: the Atlas map for small
+              repositories and for explaining, the Charter matrix past about 20 modules. Give policy owners Radar's
+              decision queue as their entry point, and use Radar's compact comment on GitHub. Leave trends out until the
+              product decides to store per-run summaries.</p>
+            <p class="muted small">Guardrails keeps this: its Architecture tab switches between charter text, map, matrix, and YAML.</p>
+          </div>
+        </section>
+      </div>
+
+      <aside class="side" aria-label="About this page">
+        <div class="side-section">
+          <div class="side-title">How to read a prototype</div>
+          <ol class="howto">
+            <li><span>Start on the first tab. It is the direction's home.</span></li>
+            <li><span>The sidebar on each view explains what you can do there, why it looks that way, and which data it needs.</span></li>
+            <li><span>Open <strong>Design notes</strong> in the header for the full case: who it suits, costs, and risks.</span></li>
+            <li><span>Switch Light and Dark in the header. Both are designed.</span></li>
+          </ol>
+        </div>
+        <div class="side-section">
+          <div class="side-title">Six jobs in every prototype</div>
+          <ul>
+            <li>Repositories and status</li>
+            <li>The architecture map</li>
+            <li>Module and seam detail</li>
+            <li>Change the policy through a draft PR</li>
+            <li>The PR on GitHub: two checks and one comment</li>
+            <li>Waivers and debt</li>
+          </ul>
+        </div>
+        <div class="side-section">
+          <div class="side-title">Rules every prototype keeps</div>
+          <ul>
+            <li>Reports are customer-attested, never "verified"</li>
+            <li>The gate is success, failure, or action required</li>
+            <li>No publish button. Every change is a PR merged on GitHub</li>
+            <li>Owner approval is for the exact commit</li>
+            <li>AI proposals never change the gate</li>
+            <li>No single health score</li>
+          </ul>
+        </div>
+        <div class="side-section">
+          <div class="side-title">Sample data</div>
+          <p>Repository <code>acme/checkout</code>, seven modules in three layers, two rules, two waivers, and pull requests #412 and #415. The data is illustrative and follows the engine's real report format.</p>
+        </div>
+      </aside>
+    </div>
+  </div>
+</main>
+<script src="archfit.js"></script>
+
+</body>
+</html>
