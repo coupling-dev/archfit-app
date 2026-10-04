@@ -84,9 +84,9 @@
     var x1 = right ? a.x + W : a.x, x2 = into ? b.x : b.x + W;
     var d = "M" + x1 + "," + a.y + " C" + (x1 + (right ? BEND : -BEND)) + "," + a.y + " " +
       (x2 + (into ? -BEND : BEND)) + "," + b.y + " " + x2 + "," + b.y;
-    var cls = (l.Permitted ? "" : "violation") + (l.Observed ? "" : " unobserved");
-    var p = el("path", { d: d, "class": cls.trim(), "marker-end": "url(#arrow)" });
-    p.appendChild(el("title", {}, l.From + " → " + l.To + (l.Permitted ? "" : " (not permitted)")));
+    // Status is violation, accepted, advisory or observed; it doubles as the CSS class.
+    var p = el("path", { d: d, "class": l.Status, "marker-end": "url(#arrow)" });
+    p.appendChild(el("title", {}, l.From + " → " + l.To + " (" + l.Status + ")"));
     linkLayer.appendChild(p);
   });
 

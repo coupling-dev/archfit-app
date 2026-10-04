@@ -4,6 +4,10 @@
 - Detail: 1 blocking finding
 - Next: Fix the blocking findings, then push.
 
+### Blocking findings
+
+- No active gate finding is listed. The engine blocked on a hard gate without one, for example a metric ratchet; read the archfit/state check.
+
 ### Inputs and identity
 
 - Policy digest: `1111111111111111111111111111111111111111111111111111111111111111`

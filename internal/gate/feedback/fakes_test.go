@@ -3,12 +3,16 @@ package feedback
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
 )
 
-var errSummaryTooLarge = errors.New("fake: summary over 65535 bytes")
+var (
+	errSummaryTooLarge    = errors.New("fake: summary over 65535 bytes")
+	errTooManyAnnotations = errors.New("fake: more than 50 annotations in one request")
+)
 
 // failures holds one-shot injected errors, keyed by method name.
 type failures struct {
@@ -39,6 +43,8 @@ type fakeChecks struct {
 	runs   []api.CheckRun
 	calls  []string
 	lastID int64
+	// annotationRequests is the number of annotations each create or update carried, in call order.
+	annotationRequests []int
 }
 
 func (f *fakeChecks) record(call string) {
@@ -68,34 +74,49 @@ func (f *fakeChecks) CreateCheckRun(_ context.Context, _ api.RepoRef, c api.Chec
 	if err := f.take("CreateCheckRun"); err != nil {
 		return api.CheckRun{}, err
 	}
-	if len(c.Summary) > maxBody {
-		return api.CheckRun{}, errSummaryTooLarge
+	if err := requestLimits(c); err != nil {
+		return api.CheckRun{}, err
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.annotationRequests = append(f.annotationRequests, len(c.Annotations))
 	f.lastID++
 	c.ID = f.lastID
 	f.runs = append(f.runs, c)
 	return c, nil
 }
 
+// UpdateCheckRun appends the annotations of the request to the run, as GitHub does.
 func (f *fakeChecks) UpdateCheckRun(_ context.Context, _ api.RepoRef, c api.CheckRun) error {
 	f.record("UpdateCheckRun")
 	if err := f.take("UpdateCheckRun"); err != nil {
 		return err
 	}
-	if len(c.Summary) > maxBody {
-		return errSummaryTooLarge
+	if err := requestLimits(c); err != nil {
+		return err
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for i := range f.runs {
 		if f.runs[i].ID == c.ID {
+			f.annotationRequests = append(f.annotationRequests, len(c.Annotations))
+			c.Annotations = append(slices.Clone(f.runs[i].Annotations), c.Annotations...)
 			f.runs[i] = c
 			return nil
 		}
 	}
 	return api.ErrNotFound
+}
+
+// requestLimits rejects what the real client rejects before sending.
+func requestLimits(c api.CheckRun) error {
+	switch {
+	case len(c.Summary) > maxBody:
+		return errSummaryTooLarge
+	case len(c.Annotations) > 50:
+		return errTooManyAnnotations
+	}
+	return nil
 }
 
 func (f *fakeChecks) named(headSHA, name string) []api.CheckRun {
@@ -193,11 +214,14 @@ func (f *fakeComments) count(call string) int {
 	return n
 }
 
-// fakePulls answers Pull with a fixed head SHA; the other methods are unused by feedback.
+// fakePulls answers Pull with a fixed head SHA and ChangedFiles with a fixed list; feedback uses no other method.
 type fakePulls struct {
 	failures
-	mu      sync.Mutex
-	headSHA string
+	mu        sync.Mutex
+	headSHA   string
+	changed   []string
+	truncated bool
+	listed    int // ChangedFiles calls
 }
 
 func (f *fakePulls) Pull(_ context.Context, _ api.RepoRef, number int) (api.Pull, error) {
@@ -216,7 +240,15 @@ func (f *fakePulls) PullByHead(context.Context, api.RepoRef, string) (api.Pull, 
 }
 
 func (f *fakePulls) ChangedFiles(context.Context, api.RepoRef, int) ([]string, bool, error) {
-	return nil, false, nil
+	f.mu.Lock()
+	f.listed++
+	f.mu.Unlock()
+	if err := f.take("ChangedFiles"); err != nil {
+		return nil, false, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.changed), f.truncated, nil
 }
 
 func (f *fakePulls) Reviews(context.Context, api.RepoRef, int) ([]api.Review, error) {

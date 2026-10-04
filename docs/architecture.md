@@ -179,8 +179,12 @@ The first reason sets the conclusion. Later reasons remain in feedback.
 
 The App publishes two checks:
 
-- `archfit/state` is advisory. It is published for each accepted report upload and can use `neutral`.
+- `archfit/state` is advisory. It is published for each accepted report upload. It uses `neutral` for advisory
+  attention and for findings it does not enforce, and `action_required` whenever the gate result is
+  `action_required`. Errors and unverifiable evidence are never `neutral` or `skipped`.
 - `archfit/gate` is the blocking check. It is published only when the settings file contains `gate: required`.
+- A `needs_attention` verdict with nothing else to act on is `success` with the reason `attention_only`, never
+  `healthy`. A required rule whose selector matches nothing is `action_required` with `policy_defect`.
 
 Each published check carries a receipt with the run ID, report digest, policy digest, baseline digest, and
 labels digest. The sweep compares the receipt with the protected ref. See the [reason catalog](user-guide.md#reason-codes)

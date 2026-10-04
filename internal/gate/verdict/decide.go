@@ -2,6 +2,7 @@ package verdict
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/alexei-led/archfit-app/internal/gate/ingest"
@@ -20,11 +21,24 @@ const (
 	gatesUnmeasured = "unmeasured"
 
 	refComparable = "comparable"
+
+	// deadSelectorPrefix starts the engine's unevaluated-rule reason for a required rule whose selector matches
+	// nothing: a defect of the approved policy, not missing evidence.
+	deadSelectorPrefix = "selector matches nothing"
+)
+
+// Engine values that only the attention_only Detail reads; the conclusion never depends on them.
+const (
+	dimensionMeasured   = "measured"
+	kindAdvisory        = "advisory"
+	statusNew           = "new"
+	statusExpiredWaiver = "expired_waiver"
 )
 
 const (
 	noDigest        = "none"
 	noGateReference = "no gate reference"
+	noDimension     = "none"
 
 	engineValueCap      = 32
 	referenceReasonsCap = 3
@@ -152,7 +166,7 @@ func integrity(rs *reasons, f Facts) {
 // evidence is steps 7 and 8: comparability, coverage, then the engine decision.
 func evidence(rs *reasons, r *report.Report, baselineTrusted bool) {
 	verdict, gates := r.Verdict, r.Decision.HardGates
-	rules := r.Decision.UnevaluatedRequiredRules
+	defects, missing := splitRules(r.Decision.UnevaluatedRequiredRules)
 
 	if baselineTrusted && (r.GateReference == nil || r.GateReference.Status != refComparable) {
 		rs.add(ReasonBaselineNotComparable, referenceDetail(r.GateReference))
@@ -161,18 +175,57 @@ func evidence(rs *reasons, r *report.Report, baselineTrusted bool) {
 		!slices.Contains([]string{gatesPass, gatesFail, gatesUnmeasured}, gates) {
 		rs.add(ReasonEngineError, "verdict="+cut(verdict, engineValueCap)+" hard_gates="+cut(gates, engineValueCap))
 	}
-	if gates == gatesUnmeasured || (len(rules) > 0 && gates != gatesFail) {
-		rs.add(ReasonMissingCoverage, ruleIDs(rules))
+	if gates != gatesFail {
+		if len(defects) > 0 {
+			rs.add(ReasonPolicyDefect, ruleIDs(defects))
+		}
+		// Unmeasured gates that no listed rule explains still lack evidence.
+		if len(missing) > 0 || (gates == gatesUnmeasured && len(defects) == 0) {
+			rs.add(ReasonMissingCoverage, ruleIDs(missing))
+		}
 	}
 	if gates == gatesFail || verdict == verdictBlocked {
 		rs.add(ReasonBlockingFindings, "")
-		if len(rules) > 0 {
-			rs.add(ReasonMissingCoverage, ruleIDs(rules)) // no repeat when step 7c already hit
+		// No repeat when step 7 already hit.
+		if len(defects) > 0 {
+			rs.add(ReasonPolicyDefect, ruleIDs(defects))
+		}
+		if len(missing) > 0 {
+			rs.add(ReasonMissingCoverage, ruleIDs(missing))
 		}
 	}
-	if len(*rs) == 0 {
+	switch {
+	case len(*rs) > 0:
+	case verdict == verdictAttention:
+		rs.add(ReasonAttentionOnly, attentionDetail(r))
+	default:
 		rs.add(ReasonHealthy, "")
 	}
+}
+
+// attentionDetail names what needs attention: the dimensions the report does not show as measured, in the
+// engine's fixed order of its nine keys, and the count of active diagnostics (advisories that are new or whose
+// waiver expired). Only those fixed keys and a count are written, so the Detail stays identifiers only.
+func attentionDetail(r *report.Report) string {
+	var dims []string
+	for _, key := range [...]string{
+		"intent", "structure", "modularity", "coupling", "change_locality", "complexity", "testability", "operations", "drift",
+	} {
+		if d, ok := r.Dimensions[key]; !ok || d.Status != dimensionMeasured {
+			dims = append(dims, key)
+		}
+	}
+	diagnostics := 0
+	for _, f := range r.Findings {
+		if f.Kind == kindAdvisory && (f.Status == statusNew || f.Status == statusExpiredWaiver) {
+			diagnostics++
+		}
+	}
+	listed := noDimension
+	if len(dims) > 0 {
+		listed = strings.Join(dims, ", ")
+	}
+	return "dimensions not fully measured: " + listed + "; active diagnostics: " + strconv.Itoa(diagnostics)
 }
 
 func claimed(digest string) string {
@@ -180,6 +233,19 @@ func claimed(digest string) string {
 		return noDigest
 	}
 	return digest
+}
+
+// splitRules separates the unevaluated required rules whose selector matches nothing (a policy defect) from the
+// rest (missing evidence). Only the exact engine prefix counts; every other reason fails closed as missing evidence.
+func splitRules(rules []report.UnevaluatedRule) (defects, missing []report.UnevaluatedRule) {
+	for _, r := range rules {
+		if strings.HasPrefix(r.Reason, deadSelectorPrefix) {
+			defects = append(defects, r)
+		} else {
+			missing = append(missing, r)
+		}
+	}
+	return defects, missing
 }
 
 func ruleIDs(rules []report.UnevaluatedRule) string {

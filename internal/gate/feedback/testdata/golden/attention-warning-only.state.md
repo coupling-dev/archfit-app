@@ -1,8 +1,8 @@
 ## Archfit: Passed
 
-- Reason: `healthy` (architecture)
-- Detail: report 4444444444444444444444444444444444444444444444444444444444444444
-- Next: Nothing to do.
+- Reason: `attention_only` (architecture)
+- Detail: dimensions not fully measured: change_locality, testability, operations, drift; active diagnostics: 1
+- Next: Advisories never block. Review the listed dimensions and diagnostics on the archfit/state check.
 
 ### Findings
 
@@ -27,14 +27,7 @@ Measurement trust: customer-attested.
 
 ### Evidence gaps
 
-- Tool `dependency-cruiser`: absent
-- Tool `grimp`: absent
-- Tool `cargo`: absent
-- Tool `jscpd`: disabled (clone detection disabled by config — set analyzers.clones.enabled: true in .archfit.yaml to enable)
-- Tool `scip`: disabled (opt-in: analyzers.scip.enabled)
-- Tool `ast-grep/syntax`: disabled (opt-in: analyzers.syntax.enabled)
-- Tool `ast-grep`: disabled
-- Tool `cargo-modules`: absent
+- Analyzers that did not run (absent or disabled): `dependency-cruiser`, `grimp`, `cargo`, `jscpd`, `scip`, `ast-grep/syntax`, `ast-grep`, `cargo-modules`
 - Dimension `change_locality`, unknown fact: eligible commit sample — the history scan returned no eligible commit (ok), so co-change cannot be distinguished from a stable tree
 - Dimension `change_locality`, unknown fact: commit-to-module attribution — the history scan is incomplete, so not every eligible commit has a complete module attribution
 - Dimension `complexity`, unknown fact: function length distribution — ast-grep supplied no complete function or method extent for part or all of the out-of-claim size distribution
@@ -49,14 +42,6 @@ Measurement trust: customer-attested.
 - Dimension `operations`, unknown fact: supply-chain inventory — SBOM and vulnerability facts are a separate report family and have no collector in v1
 - Dimension `drift`, unknown fact: admissible persisted reference — no comparable architecture-state reference is stored
 - Dimension `drift`, unknown fact: complete two-sided seam identity — two-sided seam identity cannot be compared without an admissible persisted reference
-- Producer `ast-grep`: disabled
-- Producer `ast-grep/syntax`: disabled
-- Producer `cargo`: absent
-- Producer `cargo-modules`: absent
-- Producer `dependency-cruiser`: absent
-- Producer `grimp`: absent
-- Producer `jscpd`: disabled
-- Producer `scip`: disabled
 - Baseline comparison non_comparable: no baseline file was loaded
 
 ### Inputs and identity
@@ -69,4 +54,4 @@ Measurement trust: customer-attested.
 
 Measurement is customer-attested: the producer is authenticated, the report content is not independently checked.
 
-<!-- archfit:receipt {"run_id":7,"run_attempt":1,"report_digest":"4444444444444444444444444444444444444444444444444444444444444444","policy_digest":"1111111111111111111111111111111111111111111111111111111111111111","baseline_digest":"2222222222222222222222222222222222222222222222222222222222222222","labels_digest":"3333333333333333333333333333333333333333333333333333333333333333","earliest_waiver_expiry":"0001-01-01T00:00:00Z","conclusion":"success","reason":"healthy"} -->
+<!-- archfit:receipt {"run_id":7,"run_attempt":1,"report_digest":"4444444444444444444444444444444444444444444444444444444444444444","policy_digest":"1111111111111111111111111111111111111111111111111111111111111111","baseline_digest":"2222222222222222222222222222222222222222222222222222222222222222","labels_digest":"3333333333333333333333333333333333333333333333333333333333333333","earliest_waiver_expiry":"0001-01-01T00:00:00Z","conclusion":"success","reason":"attention_only"} -->

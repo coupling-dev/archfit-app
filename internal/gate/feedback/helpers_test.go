@@ -119,6 +119,10 @@ var (
 	reasonProfile  = verdict.Reason{Code: verdict.ReasonBaselineNotComparable, Category: verdict.CategoryEvidence, Detail: "measurement profile differs", Next: "Refresh the baseline on the protected branch."}
 	reasonWaiver   = verdict.Reason{Code: verdict.ReasonWaiverExpired, Category: verdict.CategoryGovernance, Detail: "no_direct_b_dependency", Next: "Renew the waiver or fix the finding."}
 	reasonSuspend  = verdict.Reason{Code: verdict.ReasonSuspended, Category: verdict.CategorySubscription, Detail: "installation 1", Next: "Trial ended. Choose a plan to resume the gate."}
+
+	reasonAttention = verdict.Reason{Code: verdict.ReasonAttentionOnly, Category: verdict.CategoryArchitecture,
+		Detail: "dimensions not fully measured: change_locality, testability, operations, drift; active diagnostics: 1",
+		Next:   "Advisories never block. Review the listed dimensions and diagnostics on the archfit/state check."}
 )
 
 // fixtureCase is one wire fixture with the outcome the gate would hand to feedback.
@@ -133,7 +137,7 @@ func fixtureCases() []fixtureCase {
 	id := fullIdentity()
 	return []fixtureCase{
 		{name: "healthy", outcome: outcome(verdict.Success, reasonHealthy), identity: id},
-		{name: "attention-warning-only", outcome: outcome(verdict.Success, reasonHealthy), identity: id},
+		{name: "attention-warning-only", outcome: outcome(verdict.Success, reasonAttention), identity: id},
 		{name: "blocked", outcome: outcome(verdict.Failure, reasonBlocking), identity: id},
 		{name: "missing-required-evidence", outcome: outcome(verdict.ActionRequired, reasonCoverage), identity: id},
 		{name: "unknown-identity", outcome: outcome(verdict.ActionRequired, reasonIdentity), identity: manifest.Identity{EngineVersion: "v0.0.0", ImageDigest: "sha256:0000", Platform: "linux/amd64"}},

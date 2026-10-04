@@ -21,7 +21,9 @@ could paint over a newer head, and the App would need a database to remember wha
   modules and locations; introduced versus accepted debt; dimensions; a mandatory evidence-gap section;
   input digests and measurement identity; per-dimension completeness and the customer-attested trust statement;
   validation command replay;
-  a marker-delimited JSON block of agent tasks.
+  a marker-delimited JSON block of agent tasks that a coding agent on the PR can act on.
+- Name the blocking findings in the `archfit/gate` summary, so the required check says what blocks.
+- Annotate live findings on the files the pull request changed, at most 50 per request.
 - Keep every write idempotent and never let an older run or head overwrite newer feedback.
 - Stay under GitHub size limits with safe truncation.
 
@@ -37,7 +39,8 @@ wording, layout and limits will be tuned with every pilot.
 - The idempotency and ordering rules (run ordering, head ordering).
 - The mapping of `Outcome` to the `archfit/state` conclusion, including the only use of `neutral`.
 - Sanitizing of engine-authored strings before they enter Markdown.
-- Annotation selection and the cap.
+- Annotation selection (live findings, files the PR changed), the caps and the batching.
+- Which coverage and producer rows are evidence gaps, which are folded into one line, and which repeat each other.
 
 ## Public Contract
 
@@ -120,15 +123,27 @@ marker and an `external_id` with run ID, attempt and report digest exist.
 | Pull request, `!Trusted.SettingsFound`        | yes             | no                                             | no      |
 | Push (`Target.PullRequest == 0`)              | yes             | no                                             | no      |
 
-`archfit/state` conclusion: `success` when `Outcome.Conclusion == Success` and `Report.Verdict == "healthy"`;
-otherwise the literal `neutral` **[default]**. A `needs_attention` report that passes the gate is therefore `success` on
-`archfit/gate` and `neutral` on `archfit/state`, which keeps the attention visible. The state check is never
-required, so `neutral` is allowed here and only here. It is a string literal in this package and never a `Conclusion` value.
+`archfit/state` conclusion:
+
+| `Outcome.Conclusion` | `Report.Verdict`   | `archfit/state`                          |
+| -------------------- | ------------------ | ---------------------------------------- |
+| `action_required`    | any, or no report  | `action_required`                        |
+| `success`            | `healthy`          | `success`                                |
+| `success`            | `needs_attention`  | `neutral` (reason `attention_only`)      |
+| `failure`            | any                | `neutral` **[default]**                  |
+
+The state check fails closed like the gate: an outcome that asks for action (an error, missing, unverifiable or
+ineligible evidence, governance, subscription) is `action_required` there too, never `neutral` or `skipped`, so a
+ruleset that requires the state check by mistake cannot be passed by bad evidence. A `needs_attention` report that
+passes the gate is `success` on `archfit/gate` and `neutral` on `archfit/state`, which keeps the attention visible;
+architecture findings are `neutral` there because this check never enforces them. The state check is never
+required, so `neutral` is allowed here and only here. It is a string literal in this package and never a
+`Conclusion` value.
 
 ### Publish algorithm
 
-Order: gate check, state check, comment **[default: the required check first]**. Any error ends the call;
-a retry repeats the whole call safely.
+Order: the changed-file list (pull requests with a possible annotation only), gate check, state check, comment
+**[default: the required check first]**. Any error ends the call; a retry repeats the whole call safely.
 
 For each check to write:
 
@@ -140,7 +155,8 @@ For each check to write:
 
 Every create and update sets `Status = "completed"`, `ExternalID`, `StartedAt = now()` **[default: the
 check's `StartedAt` is the time of the last publication; the sweep relies on it]**, title, summary and,
-for `archfit/state`, annotations.
+for `archfit/state`, up to 50 annotations. More annotations follow in further `UpdateCheckRun` calls on the same
+run, 50 each, with the same fields (see Annotations below).
 
 Comment (pull requests with settings only):
 
@@ -167,11 +183,22 @@ comment marker and the section. No-op for `Target.PullRequest == 0`.
 
 ### Layout
 
-Comment, in order. Check summaries use the same blocks: gate = 1, 2, 8, receipt marker; state = 1, 2, 5, 6, 7, 8, receipt marker.
+Comment, in order. Check summaries use the same blocks: gate = 1, 2, G, 8, receipt marker; state = 1, 2, 5, 6, 7, 8,
+receipt marker. Block G is in the gate summary only.
 
 1. Markers, then the verdict line: "Passed", "Blocked by architecture findings", or "Action required" **[default]**,
    then `Reasons[0]`: code, category, `Detail`, `Next`.
 2. Further reasons, one line each (for example unevaluated rules beside a blocker).
+
+   G. Blocking findings (gate summary only), so the required check names what blocks: every finding for which
+   `Finding.Active()` is true, in report order, one line each: rule ID, `Edge.From.Module` → `Edge.To.Module`
+   ("(no module)" when empty), the first location as `file:line` (the file alone for line 0; "no location reported"
+   when `locations: []`), the first 8 characters of the finding ID (the prefix the engine prints), and the `Goal` of
+   the first agent task with that `FindingID` ("none reported" without one). At most 20, then "and N more blocking
+   findings" **[default]**. When no finding is active but `Outcome.Reasons` holds `blocking_findings` (a hard gate
+   that failed without a finding, for example a metric ratchet), the block is the line "No active gate finding is
+   listed…" instead; otherwise, without a report, or when suspended, it is omitted. Display only: the conclusion
+   still comes from `Outcome`.
 3. `Trusted.Entitlement.Notice`, when `WarnFrom` is set, `now()` is at or past it, and the notice is not empty.
 4. Waiver notice section (owned by `Warn`).
 5. Findings: blocking first. A finding is shown as blocking when `Finding.Active()` of `wire/report` is true
@@ -187,9 +214,16 @@ Comment, in order. Check summaries use the same blocks: gate = 1, 2, 8, receipt 
    `Confidence`, `Gate`, and the change from `Delta` (status, metric changes, counts of new and resolved findings)
    when present. Measurement trust is not an engine field: the constant "customer-attested" is printed once for the
    block. A missing key is printed as "not reported"; keys outside the nine cannot pass the decoder.
-7. Evidence gaps, always present: `Decision.UnevaluatedRequiredRules` with their reasons, `Coverage.Tools` entries
-   whose `Status` is not `ok`, every `Dimension.Unknown` fact with its reason, the measurement profile's `Unknowns`, and
-   producers whose `Status` is not `ok`. When the protected ref has no baseline (`Trusted.BaselineDigests` empty):
+7. Evidence gaps, always present: `Decision.UnevaluatedRequiredRules` with their reasons (a dead selector shows its
+   engine reason, `selector matches nothing: <side> <glob>`, here); `Coverage.Tools` entries whose `Status` is not
+   `ok`, except that the rows that did not run, `disabled` ones and `absent` ones without a `Reason`, are folded into
+   the one line "Analyzers that did not run (absent or disabled): …" naming each tool in report order; every
+   `Dimension.Unknown` fact with its reason; the measurement profile's `Unknowns`; and producers whose `Status` is not
+   `ok`, except a producer whose tool and status repeat a coverage row. The fold drops noise, not facts: an `absent`
+   row with a reason is a full line, and what a missing analyzer leaves unmeasured stays visible as dimension
+   unknowns and unevaluated rules. The App cannot tell from a row alone whether the language is present (an absent
+   tool over a present language and a language that is not there look the same), so the line claims neither.
+   When the protected ref has no baseline (`Trusted.BaselineDigests` empty):
    the line "No baseline: every current violation blocks." When a baseline exists and the gate reference is not
    comparable, by the rule of `gate/verdict` step 7a (a nil `GateReference`, or any `Status` other than
    `comparable`, `not_requested` included): one line per entry of its `Reasons`, "no reason given" when it has none,
@@ -222,15 +256,22 @@ first trusted digest) and of `gate/sweep` (always the first trusted digest):
 The mismatch codes are `baseline_mismatch` and `labels_mismatch`. "stated by the producer" is never printed for a
 digest the App wrote itself. An upload always has an identity: the envelope decoder requires every identity field.
 
-When `Reasons[0].Category` is `subscription`, blocks 5 to 7, 9 and 10 are omitted **[default]**: paid output is suspended, the reason and recovery stay.
+When `Reasons[0].Category` is `subscription`, blocks G, 5 to 7, 9 and 10 are omitted **[default]**: paid output is suspended, the reason and recovery stay.
 
-Annotations: only on `archfit/state`; from `Finding.Locations{File, Line}` only; findings shown as blocking first,
-report order; level `failure` for those, `warning` otherwise; message = rule ID and `Why`; `Line == 0` is sent as line 1; at most 50 per update
-**[default]**. A finding with `locations: []` gets no annotation.
+Annotations: only on `archfit/state`; from `Finding.Locations{File, Line}` only; live findings only (accepted debt,
+`baseline` and `waived`, and `fixed` findings get none; a status this version does not know is live); findings shown
+as blocking first, then report order; level `failure` for those, `warning` otherwise; message = rule ID and `Why`;
+`Line == 0` is sent as line 1. A finding with `locations: []` gets no annotation. On a pull request only locations in
+files the PR changed are annotated: `Publish` calls `Pulls.ChangedFiles` once, before any write, and only when some
+annotation is possible; a `truncated` list means any file may have changed, so every location counts; its error is
+returned unchanged and nothing is written. A push annotates every location. At most 150 annotations in total
+**[default]**, sent 50 per request (GitHub's limit): the create or update of the check carries the first 50, and
+further updates of the same run carry the rest, each with the same title and summary. GitHub appends the
+annotations of each request.
 
 Size: summaries and the comment stay at or under 65 535 bytes. The receipt marker and blocks 1, 2, 7, 8 are
 budgeted first and never cut. Of the rest, the budget is handed out in this order: block 6, block 9, block 5, block
-10. Block 6 is cut at a line end, like block 5, when the never-cut blocks leave it too little room; block 9 takes
+10. Block G takes the place of block 5 in the gate summary and is cut the same way. Block 6 is cut at a line end, like block 5, when the never-cut blocks leave it too little room; block 9 takes
 at most its own budget (below) before block 5 gets anything, so a long finding list cannot push the validation
 commands out. Then block 5 is cut at a line end and ends with "Output truncated.", and block 10 shrinks by whole
 tasks into what is left, so tasks give way first and findings second. Cuts never split a UTF-8 sequence or a marker.
@@ -278,6 +319,7 @@ type ReasonCode string
 
 const (
     ReasonHealthy             ReasonCode = "healthy"
+    ReasonAttentionOnly       ReasonCode = "attention_only" // needs_attention, and nothing blocks
     ReasonBlockingFindings    ReasonCode = "blocking_findings"
     ReasonEngineError         ReasonCode = "engine_error"
     ReasonMissingCoverage     ReasonCode = "missing_required_coverage"
@@ -286,6 +328,7 @@ const (
     ReasonLabelsMismatch      ReasonCode = "labels_mismatch"
     ReasonPolicyMismatch      ReasonCode = "policy_mismatch"
     ReasonPolicyMissing       ReasonCode = "policy_missing" // settings merged, no policy on the protected ref yet
+    ReasonPolicyDefect        ReasonCode = "policy_defect"  // a required rule's selector matches nothing
     ReasonUnknownIdentity     ReasonCode = "unknown_engine_identity"
     ReasonProfileMissing      ReasonCode = "measurement_profile_missing"
     ReasonWorkflowNotApproved ReasonCode = "workflow_not_approved"
@@ -428,7 +471,10 @@ type Settings struct {
   A report has no exit code, no `needs_attention` flag, no per-dimension trust and no single validation command.
   `Seam` is an opaque part of `Report` for this module and is not rendered. `Metric` values are shown only through `Delta`. `StateSchemaV1` is the schema constant the decoder enforced.
   `Finding.Active()` is the single definition of "active gate finding"; feedback calls it for the "blocking" label,
-  the group order and the annotation level.
+  the group order, block G and the annotation level. For display feedback also reads the finding statuses
+  `baseline`, `waived` and `fixed` (debt and fixed groups; no annotation) and the coverage statuses `ok`, `absent` and
+  `disabled` (block 7), as named constants in `render.go`; `wire/report` owns both vocabularies, and a value outside
+  them is shown, never hidden. `AgentTask.FindingID` and `Goal` name the repair goal in block G.
 
 <!-- contract: Active, Finding — restated from internal/wire/report/module.md -->
 ```go
@@ -690,10 +736,12 @@ func Current() Entry
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high (feedback side); the client is low
 - **Balanced?**: yes
-- **Shared knowledge**: a `Summary` over 65 535 bytes is an error from the client, so feedback truncates first.
+- **Shared knowledge**: a `Summary` over 65 535 bytes, or more than 50 `Annotations` in one request, is an error from
+  the client, so feedback truncates and batches first; GitHub appends the annotations of each update.
   `AppComments` returns only comments authored by the App's bot user. `ErrRateLimited` is the sentinel
   returned after bounded backoff; feedback passes it up unchanged. `ErrNotFound` is the sentinel for a
-  missing object. Used methods: all of `Checks` and `Comments`, and `Pulls.Pull`. `Review` is not used here.
+  missing object. `ChangedFiles` lists the old and the new path of a rename and sets `truncated` when GitHub cut the
+  list off. Used methods: all of `Checks` and `Comments`, `Pulls.Pull` and `Pulls.ChangedFiles`. `Review` is not used here.
 
 <!-- contract: RepoRef, Repo, ErrNotFound, ErrRateLimited — restated from internal/github/api/module.md -->
 ```go
@@ -815,12 +863,17 @@ type Comments interface {
 ## Constraints and Invariants
 
 - The gate check conclusion is always `string(Outcome.Conclusion)`: `success`, `failure` or `action_required`.
-  feedback never downgrades, upgrades or skips it. `neutral` is written only to `archfit/state`.
+  feedback never downgrades, upgrades or skips it. `neutral` is written only to `archfit/state`, and never for an
+  outcome that asks for action: that is `action_required` on both checks.
 - In advisory mode no `archfit/gate` check is written. A ruleset that requires it then stays blocked: closed, never green.
 - An older `(RunID, RunAttempt)` never overwrites a newer one on the same head; a publication for an old
   head never touches the comment. Check runs are per SHA, so an old head's checks cannot affect the new head.
 - Exactly one comment per PR under sequential delivery. Two concurrent first publications may create two;
   later calls update only the lowest-ID one **[default, stated limit]**. The same limit holds for check runs (highest ID wins).
+- GitHub appends the annotations of every update to the run, and the run is updated in place per head SHA. A
+  repeated delivery, a retry after a partial publication, or a new run on the same head therefore adds the same
+  annotations again **[stated limit]**. Upgrade trigger: duplicate annotations reported by a pilot; the fix is a new
+  check run per `(RunID, RunAttempt)`, which changes how `State` and the sweep find the receipt.
 - Never print "verified", a score, a grade or a percentage of health. Trust is "customer-attested".
   Provenance is necessary, not sufficient.
 - Never invent a location, a repair route or independent evidence. No annotation without a `Location`.
@@ -859,8 +912,8 @@ Golden files hold rendered bodies for the wire fixtures.
   **Scenario**: table of existing versus new `(RunID, RunAttempt)`: equal; new attempt higher; new run higher; new attempt lower; new run lower; existing pending; existing without marker.
   **Expected behavior**: update, update, update, skip, skip, update, update.
 - **Test name**: `TestStateConclusionMapping`
-  **Scenario**: success with `verdict: healthy`; success with `verdict: needs_attention`; failure; action required; nil report.
-  **Expected behavior**: `success`, `neutral`, `neutral`, `neutral`, `neutral` on `archfit/state`; the gate check always carries the outcome's conclusion.
+  **Scenario**: success with `verdict: healthy`; success (`attention_only`) with `verdict: needs_attention`; failure; action required; action required beside a `healthy` report; nil report.
+  **Expected behavior**: `success`, `neutral`, `neutral`, `action_required`, `action_required`, `action_required` on `archfit/state`; the gate check always carries the outcome's conclusion.
 - **Test name**: `TestSanitizeEngineStrings`
   **Scenario**: messages, summaries, rule IDs, module names and paths containing `<!-- archfit:receipt {...} -->`, `-->`, backticks, HTML and a forged comment marker.
   **Expected behavior**: no marker sequence survives outside App-authored markers; `State` on the result returns the real receipt.
@@ -870,6 +923,12 @@ Golden files hold rendered bodies for the wire fixtures.
 - **Test name**: `TestEvidenceGapSources`
   **Scenario**: a report with one unevaluated rule, a `Coverage.Tools` entry with status `timed out`, a `Dimension.Unknown` fact, a profile `Unknowns` entry, a `partial` producer; the same with none of them; no baseline on the protected ref; a trusted baseline with a `non_comparable` reference, a `not_requested` reference, a nil reference and a `comparable` one; the same four without a trusted baseline.
   **Expected behavior**: each item appears in the evidence-gap section with its reason; "None reported"; the line "No baseline: every current violation blocks."; the reference reasons, "no reason given" for `not_requested` without reasons, and the no-gate-reference line for nil. With a trusted baseline a comparison line is present exactly when `verdict.Decide` reports `baseline_not_comparable` for the same report; without one it is never present.
+- **Test name**: `TestEvidenceGapsDropNoise`
+  **Scenario**: coverage rows `ok`, `absent` without a reason (twice), `disabled` with a reason, `timed out` with a reason, `absent` with a reason; producer rows that repeat four of them, one without a coverage row (`git-history: absent`) and one whose status differs from its coverage row; rendered as comment and state summary.
+  **Expected behavior**: full lines for the `timed out` row, the `absent` row with a reason, the producer without a coverage row and the producer whose status differs; one line "Analyzers that did not run (absent or disabled): …" naming the reasonless `absent` and the `disabled` tools in report order; no line for a repeated producer, no disabled reason text, no "None reported".
+- **Test name**: `TestGateSummaryNamesBlockers`
+  **Scenario**: a report with an advisory, an accepted gate finding and three active gate findings (one located with two locations and two agent tasks, one whole-file with no source module and no task, one without a location); 25 active findings; a blocking outcome without an active finding; a healthy outcome, a suspended outcome and a nil report.
+  **Expected behavior**: block G in the gate summary only, in report order, with rule, module pair, first location, 8-character ID prefix and the first task's goal, "(no module)", "no location reported" and "Goal: none reported" where they apply; never the advisory or the accepted finding; the receipt marker stays last; 20 lines then "and 5 more blocking findings"; the "No active gate finding is listed" line; no block in the last three.
 - **Test name**: `TestDigestSourceLabels`
   **Scenario**: an upload whose claims were accepted; an upload with `baseline_mismatch`; one with `labels_mismatch`; the zero `Identity` (a `sweep.Without` publication); no baseline and no labels file; rendered as comment, gate summary and state summary.
   **Expected behavior**: "stated by the producer" on both lines; "from the protected ref" on the mismatched line only; "from the protected ref; no upload" on both lines; "no baseline" and "no labels file" without a label. "stated by the producer" never appears without an upload.
@@ -877,8 +936,8 @@ Golden files hold rendered bodies for the wire fixtures.
   **Scenario**: a full `Identity`; the zero `Identity` (sweep publication); an identity whose fields contain marker text.
   **Expected behavior**: "claimed: engine v2.3.1, image sha256:…, linux/amd64"; "no upload"; sanitized text; never the word "approved" or "verified".
 - **Test name**: `TestAnnotationSelection`
-  **Scenario**: findings with no, one and many locations; 80 locations in total; `Line == 0`; an `advisory` finding and a `gate` finding with status `baseline`.
-  **Expected behavior**: at most 50 annotations, `gate` findings with status `new` or `expired_waiver` first as `failure`, the rest `warning`; none for `locations: []`; line 1 for whole-file; path from `Location.File`; only on `archfit/state`.
+  **Scenario**: findings with no, one and many locations, `Line == 0`, live `advisory` and `gate` findings, `baseline`, `waived` and `fixed` findings, and a finding in a file the PR did not change; published on a pull request whose file list names four files, with a truncated list, on a push, with 200 live locations, and with no live located finding. The fake rejects more than 50 annotations in one request, as the client does.
+  **Expected behavior**: on the PR only the changed files: whole-file first as `failure` on line 1, then the blocking findings, then the advisory in report order as `warning`; no annotation for `locations: []`, accepted debt, fixed findings or the unchanged file; requests of 50 then 21 on the state check (none on the gate check); one file-list call. The truncated list and the push annotate every file, and the push lists none. 200 locations give 150 annotations, blocking first, in requests of 50. Without a possible annotation the file list is not read.
 
 ### Integration Contract Tests
 
@@ -904,10 +963,10 @@ Golden files hold rendered bodies for the wire fixtures.
   **Scenario**: scan every golden body and every title for App-authored text.
   **Expected behavior**: no "verified" (any case), no "score", no grade; "customer-attested" present whenever a report is rendered.
 - **Test name**: `TestGateCheckNeverNeutral` (T13)
-  **Scenario**: publish every `Outcome` the verdict tests produce, in required mode.
-  **Expected behavior**: `archfit/gate` conclusion is one of `success`, `failure`, `action_required`, equal to the outcome.
+  **Scenario**: publish an outcome for every reason code, with and without a report, in required mode.
+  **Expected behavior**: `archfit/gate` conclusion is one of `success`, `failure`, `action_required`, equal to the outcome; `archfit/state` is `action_required` whenever the outcome is.
 - **Test name**: `TestRateLimitLeavesPendingAlone`
-  **Scenario**: `ErrRateLimited` from `CheckRuns`, from `UpdateCheckRun`, from `CreateComment`.
+  **Scenario**: `ErrRateLimited` from `CheckRuns`, from `ChangedFiles`, from `UpdateCheckRun`, from `CreateComment`.
   **Expected behavior**: the error is returned with `errors.Is` intact; the pending check is unchanged; a retry completes the publication without duplicates.
 - **Test name**: `TestSummaryLimitIsRespected`
   **Scenario**: the fake `Checks` rejects summaries over 65 535 bytes, as the real client does.
@@ -934,8 +993,8 @@ Golden files hold rendered bodies for the wire fixtures.
   **Scenario**: the blocker-plus-unevaluated fixture.
   **Expected behavior**: conclusion `failure`; the unevaluated rule and its reason appear in reasons and in the evidence-gap section.
 - **Test name**: `TestAcceptedDebtIsDisplayOnly`
-  **Scenario**: blocked report (`hard_gates: fail`) whose only `gate` finding has status `baseline` and whose task origin is `unknown`.
-  **Expected behavior**: conclusion `failure` from the outcome; the finding is listed under accepted debt without any text that says it is exempt or that the PR is clean; the reason block still says blocking findings exist.
+  **Scenario**: blocked report (`hard_gates: fail`) whose only `gate` finding has status `baseline` and whose task origin is `unknown`, on a PR that changed the finding's file.
+  **Expected behavior**: conclusion `failure` from the outcome; the finding is listed under accepted debt without any text that says it is exempt or that the PR is clean; the reason block still says blocking findings exist, and block G says no active gate finding is listed; the accepted finding gets no annotation, the live advisory on the same line one `warning`.
 - **Test name**: `TestSuspensionFeedback` (T21)
   **Scenario**: suspended outcome with a report; entitlement with `WarnFrom` in the past and not suspended; `WarnFrom` in the future.
   **Expected behavior**: subscription reason with `Entitlement.Reason` as next action and no findings; the notice line appears; no notice.

@@ -390,6 +390,7 @@ type ReasonCode string
 
 const (
     ReasonHealthy             ReasonCode = "healthy"
+    ReasonAttentionOnly       ReasonCode = "attention_only" // needs_attention, and nothing blocks
     ReasonBlockingFindings    ReasonCode = "blocking_findings"
     ReasonEngineError         ReasonCode = "engine_error"
     ReasonMissingCoverage     ReasonCode = "missing_required_coverage"
@@ -398,6 +399,7 @@ const (
     ReasonLabelsMismatch      ReasonCode = "labels_mismatch"
     ReasonPolicyMismatch      ReasonCode = "policy_mismatch"
     ReasonPolicyMissing       ReasonCode = "policy_missing" // settings merged, no policy on the protected ref yet
+    ReasonPolicyDefect        ReasonCode = "policy_defect"  // a required rule's selector matches nothing
     ReasonUnknownIdentity     ReasonCode = "unknown_engine_identity"
     ReasonProfileMissing      ReasonCode = "measurement_profile_missing"
     ReasonWorkflowNotApproved ReasonCode = "workflow_not_approved"

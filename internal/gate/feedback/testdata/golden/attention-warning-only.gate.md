@@ -1,8 +1,8 @@
 ## Archfit: Passed
 
-- Reason: `healthy` (architecture)
-- Detail: report 4444444444444444444444444444444444444444444444444444444444444444
-- Next: Nothing to do.
+- Reason: `attention_only` (architecture)
+- Detail: dimensions not fully measured: change_locality, testability, operations, drift; active diagnostics: 1
+- Next: Advisories never block. Review the listed dimensions and diagnostics on the archfit/state check.
 
 ### Inputs and identity
 
@@ -14,4 +14,4 @@
 
 Measurement is customer-attested: the producer is authenticated, the report content is not independently checked.
 
-<!-- archfit:receipt {"run_id":7,"run_attempt":1,"report_digest":"4444444444444444444444444444444444444444444444444444444444444444","policy_digest":"1111111111111111111111111111111111111111111111111111111111111111","baseline_digest":"2222222222222222222222222222222222222222222222222222222222222222","labels_digest":"3333333333333333333333333333333333333333333333333333333333333333","earliest_waiver_expiry":"0001-01-01T00:00:00Z","conclusion":"success","reason":"healthy"} -->
+<!-- archfit:receipt {"run_id":7,"run_attempt":1,"report_digest":"4444444444444444444444444444444444444444444444444444444444444444","policy_digest":"1111111111111111111111111111111111111111111111111111111111111111","baseline_digest":"2222222222222222222222222222222222222222222222222222222222222222","labels_digest":"3333333333333333333333333333333333333333333333333333333333333333","earliest_waiver_expiry":"0001-01-01T00:00:00Z","conclusion":"success","reason":"attention_only"} -->

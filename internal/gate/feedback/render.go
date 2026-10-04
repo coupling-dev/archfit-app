@@ -15,6 +15,7 @@ import (
 )
 
 const (
+	headBlocking   = "### Blocking findings"
 	headFindings   = "### Findings"
 	headDimensions = "### Dimensions"
 	headGaps       = "### Evidence gaps"
@@ -23,17 +24,38 @@ const (
 	headTasks      = "### Agent tasks"
 
 	fixedTrustSentence = "Measurement is customer-attested: the producer is authenticated, the report content is not independently checked."
+	noActiveBlocker    = "- No active gate finding is listed. The engine blocked on a hard gate without one, for example a metric ratchet; read the archfit/state check."
 )
 
 // Display caps. Each capped list ends with "and N more".
 const (
-	reasonCap     = 50
-	groupCap      = 50
-	locationCap   = 10
-	gapCap        = 50
-	metricCap     = 10
-	annotationCap = 50
+	reasonCap   = 50
+	groupCap    = 50
+	locationCap = 10
+	gapCap      = 50
+	metricCap   = 10
+	blockerCap  = 20 // findings named in the gate summary
 )
+
+// Annotation caps: GitHub takes at most 50 annotations in one check-run request; more go in further updates.
+const (
+	annotationsPerRequest = 50
+	annotationCap         = 150 // in total, so one publication makes at most three requests per check
+)
+
+// Engine finding vocabulary that feedback reads for display; wire/report owns it.
+const (
+	statusBaseline = "baseline"
+	statusWaived   = "waived"
+	statusFixed    = "fixed"
+
+	toolOK       = "ok"
+	toolAbsent   = "absent"
+	toolDisabled = "disabled"
+)
+
+// shortIDLen is the length of a finding ID prefix, as the engine prints it.
+const shortIDLen = 8
 
 // dimensionOrder is the engine's fixed order of its nine dimension keys.
 var dimensionOrder = [...]string{
@@ -70,8 +92,78 @@ func suspended(o verdict.Outcome) bool {
 }
 
 func renderGate(p Publication) string {
-	l := layout{head: headBlock(p, false), inputs: inputsBlock(p), receipt: receiptMarker(p.Receipt)}
+	l := layout{head: headBlock(p, false), findings: blockersBlock(p), inputs: inputsBlock(p), receipt: receiptMarker(p.Receipt)}
 	return l.assemble(maxBody)
+}
+
+// blockersBlock names, in the gate summary, the findings shown as blocking (Finding.Active): rule, module pair,
+// first location, finding ID prefix and the goal of its agent task, in report order. Display only, like block 5.
+func blockersBlock(p Publication) string {
+	if p.Report == nil || suspended(p.Outcome) {
+		return ""
+	}
+	var active []report.Finding
+	for _, f := range p.Report.Findings {
+		if f.Active() {
+			active = append(active, f)
+		}
+	}
+	if len(active) == 0 {
+		for _, r := range p.Outcome.Reasons {
+			if r.Code == verdict.ReasonBlockingFindings {
+				return headBlocking + "\n\n" + noActiveBlocker
+			}
+		}
+		return ""
+	}
+	goals := map[string]string{}
+	for _, t := range p.Report.AgentTasks {
+		if _, seen := goals[t.FindingID]; !seen {
+			goals[t.FindingID] = t.Goal
+		}
+	}
+	var b strings.Builder
+	b.WriteString(headBlocking + "\n")
+	for i, f := range active {
+		if i == blockerCap {
+			fmt.Fprintf(&b, "\n- and %d more blocking findings", len(active)-blockerCap)
+			break
+		}
+		where := ", no location reported"
+		if len(f.Locations) > 0 {
+			where = " at " + location(f.Locations[0])
+		}
+		goal := "none reported"
+		if g, ok := goals[f.ID]; ok {
+			goal = text(g)
+		}
+		fmt.Fprintf(&b, "\n- %s: %s → %s%s, finding %s. Goal: %s",
+			code(f.RuleID), module(f.Edge.From), module(f.Edge.To), where, code(shortID(f.ID)), goal)
+	}
+	return b.String()
+}
+
+func module(e report.Endpoint) string {
+	if e.Module == "" {
+		return "(no module)"
+	}
+	return code(e.Module)
+}
+
+// location is file:line, or the file alone for a whole-file location.
+func location(loc report.Location) string {
+	if loc.Line > 0 {
+		return code(loc.File + ":" + strconv.Itoa(loc.Line))
+	}
+	return code(loc.File)
+}
+
+// shortID is the finding ID prefix the engine prints and `archfit explain` accepts.
+func shortID(id string) string {
+	if r := []rune(id); len(r) > shortIDLen {
+		return string(r[:shortIDLen])
+	}
+	return id
 }
 
 func renderState(p Publication) string {
@@ -153,9 +245,9 @@ func findingsBlock(r *report.Report) string {
 	for _, f := range r.Findings {
 		switch {
 		case f.Active():
-		case f.Status == "baseline" || f.Status == "waived":
+		case f.Status == statusBaseline || f.Status == statusWaived:
 			debt = append(debt, f)
-		case f.Status == "fixed":
+		case f.Status == statusFixed:
 			fixed = append(fixed, f)
 		default: // never hide a finding whose status this version does not know
 			introduced = append(introduced, f)
@@ -205,11 +297,7 @@ func writeFinding(b *strings.Builder, f report.Finding) {
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			if loc.Line > 0 {
-				b.WriteString(code(loc.File + ":" + strconv.Itoa(loc.Line)))
-			} else {
-				b.WriteString(code(loc.File))
-			}
+			b.WriteString(location(loc))
 		}
 	} else {
 		b.WriteString("\n  - Locations: none reported")
@@ -228,14 +316,10 @@ func writeFinding(b *strings.Builder, f report.Finding) {
 }
 
 func endpoint(e report.Endpoint) string {
-	module := "(no module)"
-	if e.Module != "" {
-		module = code(e.Module)
-	}
 	if e.Path == "" {
-		return module
+		return module(e)
 	}
-	return module + " (" + code(e.Path) + ")"
+	return module(e) + " (" + code(e.Path) + ")"
 }
 
 func dimensionsBlock(r *report.Report) string {
@@ -303,14 +387,26 @@ func gapsBlock(p Publication) string {
 		lines = append(lines, source...)
 	}
 
-	var rules, tools, facts, unknowns, producers []string
+	var rules, tools, idle, facts, unknowns, producers []string
 	for _, u := range r.Decision.UnevaluatedRequiredRules {
 		rules = append(rules, fmt.Sprintf("- Required rule %s was not evaluated: %s", code(u.RuleID), text(u.Reason)))
 	}
+	reported := map[[2]string]bool{} // (tool, status) of every coverage row
+	var notRun []string
 	for _, t := range r.Coverage.Tools {
-		if t.Status != "ok" {
+		reported[[2]string{t.Tool, t.Status}] = true
+		switch {
+		case t.Status == toolOK:
+		case t.Status == toolDisabled || t.Status == toolAbsent && t.Reason == "":
+			// Switched off, or nothing to run on or with: one line names them all. What their absence leaves
+			// unmeasured stays visible as dimension unknowns and unevaluated rules.
+			notRun = append(notRun, code(t.Tool))
+		default:
 			tools = append(tools, fmt.Sprintf("- Tool %s: %s%s", code(t.Tool), text(t.Status), parens(t.Reason)))
 		}
+	}
+	if len(notRun) > 0 {
+		idle = []string{"- Analyzers that did not run (absent or disabled): " + strings.Join(notRun, ", ")}
 	}
 	for _, key := range dimensionOrder {
 		for _, u := range r.Dimensions[key].Unknown {
@@ -322,13 +418,13 @@ func gapsBlock(p Publication) string {
 			unknowns = append(unknowns, "- Measurement profile unknown: "+text(u))
 		}
 		for _, pr := range mp.Producers {
-			if pr.Status == "ok" {
-				continue
+			if pr.Status == toolOK || reported[[2]string{pr.Tool, pr.Status}] {
+				continue // a producer row that repeats its coverage row adds nothing
 			}
 			producers = append(producers, fmt.Sprintf("- Producer %s: %s%s", code(pr.Tool), text(pr.Status), parens(pr.PartialBasis)))
 		}
 	}
-	for _, source := range [][]string{rules, tools, facts, unknowns, producers} {
+	for _, source := range [][]string{rules, tools, idle, facts, unknowns, producers} {
 		add(source)
 	}
 	switch ref := r.GateReference; {
@@ -459,15 +555,17 @@ func encodeTasks(tasks []report.AgentTask) []string {
 	return out
 }
 
-// annotations are for archfit/state only, and only from locations the engine reported.
-func annotations(p Publication) []api.Annotation {
+// annotations are for archfit/state only, and only from locations the engine reported in files changed reports
+// true for. Live findings only: accepted debt and fixed findings are not annotated. Blocking findings come first,
+// then report order; at most annotationCap.
+func annotations(p Publication, changed func(path string) bool) []api.Annotation {
 	if p.Report == nil || suspended(p.Outcome) {
 		return nil
 	}
 	var out []api.Annotation
 	for _, wantBlocking := range []bool{true, false} {
 		for _, f := range p.Report.Findings {
-			if f.Active() != wantBlocking {
+			if f.Active() != wantBlocking || !live(f) {
 				continue
 			}
 			level := "warning"
@@ -475,6 +573,9 @@ func annotations(p Publication) []api.Annotation {
 				level = "failure"
 			}
 			for _, loc := range f.Locations {
+				if !changed(loc.File) {
+					continue
+				}
 				if len(out) == annotationCap {
 					return out
 				}
@@ -484,3 +585,15 @@ func annotations(p Publication) []api.Annotation {
 	}
 	return out
 }
+
+// live is false for accepted debt (baseline, waived) and fixed findings. A status this version does not know is
+// live, as in block 5: a finding is never hidden for an unknown status.
+func live(f report.Finding) bool {
+	switch f.Status {
+	case statusBaseline, statusWaived, statusFixed:
+		return false
+	}
+	return true
+}
+
+func anyPath(string) bool { return true }

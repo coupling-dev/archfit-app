@@ -7,16 +7,19 @@
 ## Purpose
 
 Graph turns one engine report plus the current policy text into a read-only picture of modules and
-dependencies that the UI can draw. It keeps three product promises in one pure function: observed
-dependencies that violate the policy are told apart from permitted ones, a module can be found in the
-YAML, and a picture that no longer matches the policy text is marked stale instead of looking current.
-Without it this logic would sit in templates and JavaScript where it cannot be tested.
+dependencies that the UI can draw. It keeps three product promises in one pure function: each observed
+dependency carries what the report's findings say about it (a violation, accepted debt, an advisory, or nothing),
+a module can be found in the YAML, and a picture that no longer matches the policy text is marked stale instead of
+looking current. Graph never infers "permitted" from the policy text: a baselined forbidden edge is accepted debt,
+not a permitted dependency. Without it this logic would sit in templates and JavaScript where it cannot be tested.
 
 ## Functional Responsibilities
 
 - Build one `Node` per module declared in the policy, with its layer and its line in the YAML.
-- Build one `Link` per observed module-to-module seam of the report, in a stable order.
-- Mark a link as not permitted when an active gate finding of the report names that module pair.
+- Build one `Link` per observed module-to-module seam of the report, and per module pair a current finding names, in
+  a stable order.
+- Give each link its `Status` from the report's findings on that module pair: `violation`, `accepted`, `advisory`, or
+  `observed`.
 - Set `Stale` when the policy text is not the policy the report was computed from, or does not parse.
 
 Graph never edits YAML and never proposes a change. Visual edits are deferred (decisions.md §6).
@@ -29,8 +32,10 @@ Layout, colors and interaction are not here; they are the parent's templates and
 
 ## Encapsulated Knowledge
 
-- That a link is "not permitted" when an active gate finding names its pair. Which findings are active is not graph's
-  knowledge: `report.Finding.Active()` of wire/report decides, the same rule the gate's feedback uses.
+- The status a finding gives its pair, and the precedence when several findings name it. Which findings are active
+  (a violation) is not graph's knowledge: `report.Finding.Active()` of wire/report decides, the same rule the gate's
+  feedback uses. Graph knows only the accepted statuses (`baseline`, `waived`), the `fixed` status and the `gate`
+  kind, the display vocabulary feedback reads too.
 - How duplicate seams, seams to undeclared modules, and findings without a seam are normalized.
 - The ordering rule of the output.
 - The meaning of `Stale`: a digest comparison plus "the text parses", not a YAML comparison.
@@ -44,11 +49,20 @@ type Node struct {
     PolicyLine int // 1-based line of the module in the policy YAML; 0 if not found
 }
 
+// LinkStatus is what the report's findings say about a module pair. It is a display fact, never a check input.
+type LinkStatus string
+
+const (
+    StatusViolation LinkStatus = "violation" // an active gate finding (wire/report Finding.Active) names the pair
+    StatusAccepted  LinkStatus = "accepted"  // a gate finding accepted by the baseline or a waiver names the pair
+    StatusAdvisory  LinkStatus = "advisory"  // another finding that is not fixed names the pair
+    StatusObserved  LinkStatus = "observed"  // a seam that no current finding names
+)
+
 type Link struct {
-    From, To  string
-    Observed  bool // seen in the report
-    Permitted bool // allowed by policy
-    Count     int
+    From, To string
+    Status   LinkStatus
+    Count    int // observed dependencies of the pair's seams; 0 when only a finding names the pair
 }
 
 // View is a read-only picture. Stale is true when the policy text no longer matches the report's config_hash.
@@ -58,8 +72,8 @@ type View struct {
     Stale bool
 }
 
-// Build is pure. Nodes come from the policy's modules, links from the report's seams; a link is not
-// Permitted when an Active finding (wire/report `Finding.Active`) names that module pair.
+// Build is pure. Nodes come from the policy's modules, links from the report's seams and findings; a link's
+// Status comes from the findings that name its module pair, never from the policy text.
 func Build(rep Report, policy []byte) View
 ```
 
@@ -68,13 +82,16 @@ func Build(rep Report, policy []byte) View
 1. Modules: `defs, err := policy.Modules(policyText)`. One node per `ModuleDef`: `Name`, `Layer`, `PolicyLine = Line`.
    On a duplicate name the first wins.
 2. Links: one per distinct `(FromModule, ToModule)` of `rep.Seams`. Duplicates merge **[default]**: `Count` is the sum
-   of `Edges`. A seam with an empty endpoint is dropped. `Observed` is true for every link: a seam is an observation.
-3. `Permitted` is false when a finding for which `Finding.Active()` is true (the rule wire/report owns: today a gate
-   finding with status `new` or `expired_waiver`) has `Edge.From.Module == From` and `Edge.To.Module == To`; otherwise
-   true. graph holds no status or kind list of its own. Findings that are not active, and findings with an empty module
-   on either side, do not change it.
-4. Such an active gate finding whose pair has no seam still yields a link, `Count` 0, `Permitted` false **[default]**:
-   a violation is never hidden because the seam list is incomplete.
+   of `Edges`. A seam with an empty endpoint is dropped. A seam alone gives `observed`.
+3. `Status` comes from the findings with `Edge.From.Module == From` and `Edge.To.Module == To`. Each finding gives one
+   status: `violation` when `Finding.Active()` is true (the rule wire/report owns: today a gate finding with status `new`
+   or `expired_waiver`); none when its status is `fixed` (it says nothing about the current tree); `accepted` for a
+   `gate` finding with status `baseline` or `waived`; `advisory` for every other finding, an advisory of any status and
+   a kind or status this version does not know included, so a finding is never drawn as a plain observation. The
+   strongest wins: `violation` > `accepted` > `advisory` > `observed`. Findings with an empty module on either side do
+   not change a link. The policy text never sets a status: graph does not evaluate rules.
+4. A finding that gives a status to a pair without a seam still yields a link, `Count` 0 **[default]**: a violation or
+   accepted debt is never hidden because the seam list is incomplete. A fixed finding yields no link.
 5. A link endpoint that the policy does not declare gets a node with that name, empty `Layer`, `PolicyLine` 0.
 6. `Stale = policy.Digest(policyText) != rep.Comparison.ConfigHash`. Both are bare lower-case hex; the comparison is
    exact. An empty `ConfigHash` or empty policy text is stale.
@@ -83,9 +100,10 @@ func Build(rep Report, policy []byte) View
 8. Order: `Nodes` by `Name`, `Links` by `(From, To)`, byte-wise ascending. The same input always gives the same output.
 9. `Build` never fails and never panics. A zero `Report` with an empty policy gives an empty, stale `View`.
 
-Stated limits **[default]**: `Observed` is always true in v1, because a relationship the policy permits but the engine
-did not observe is not in a report and graph does not interpret policy rules. Accepted debt (baseline, waived) draws
-as permitted; the PR comment, not the graph, is where debt is listed.
+Stated limits **[default]**: no link says "permitted". A relationship the policy permits but the engine did not observe
+is not in a report, and graph does not interpret policy rules, so `observed` means only that no current finding names
+the pair. An engine-computed per-seam policy status (an additive `seams[].policy` key once allowlists exist) is the
+upgrade path; graph would read it then, never compute it.
 
 ## Integrations
 
@@ -358,7 +376,7 @@ func Modules(policy []byte) ([]ModuleDef, error)
 
 ## Change Vectors
 
-- The rule that makes a link "not permitted" (for example showing waived or baseline debt as its own state).
+- The status rule (for example an engine `seams[].policy` key that can say "permitted" once allowlists exist).
 - More per-node or per-link facts from the report (finding counts per module, seam strength or severity).
 - The merge rule for duplicate seams.
 - Bounded visual edits later: a new function that returns a proposed text patch. `Build` stays read-only.
@@ -373,7 +391,9 @@ func Modules(policy []byte) ([]ModuleDef, error)
 - No score, no aggregate health number. Seam `Strength`, `Distance`, `Volatility` and `Severity` are not shown in v1.
 - Cost is linear in modules + seams + findings. The report decoder caps findings and seams; the parent caps the policy
   text. Graph adds no cap of its own.
-- Inherited: control-plane code, never on the gate path. `Stale` and `Permitted` are display facts and never an input to a check.
+- Inherited: control-plane code, never on the gate path. `Stale` and `Status` are display facts and never an input to a check.
+- Never "permitted": no status claims that the policy allows a dependency. A finding is never drawn as a plain
+  observation, and a fixed finding never draws a link.
 
 ## Test Specification
 
@@ -391,22 +411,31 @@ Nothing is mocked.
   **Scenario**: table: single seam; duplicate seams with `Edges` 2 and 3; self seam; seam to a module the policy does not
   declare; seam with an empty `FromModule`.
   **Expected behavior**: one link per pair; `Count` 5 for the duplicate; the self seam is kept; a node with empty `Layer` and
-  `PolicyLine` 0 is added for the undeclared module; the empty-endpoint seam is dropped; `Observed` true everywhere.
-- **Test name**: `TestPermittedFollowsActiveGateFindings`
+  `PolicyLine` 0 is added for the undeclared module; the empty-endpoint seam is dropped; `observed` everywhere.
+- **Test name**: `TestStatusFollowsFindings`
   **Scenario**: one seam `api → db` and a table of findings on that pair: gate/new; gate/expired_waiver; gate/baseline;
-  gate/waived; gate/fixed; advisory/new; gate/new on `db → api`; gate/new with an empty `To.Module`; no finding.
-  **Expected behavior**: `Permitted` false for the first two rows only; direction matters. For every row with one
-  finding on `api → db`, `Permitted` equals `!Finding.Active()`: the rule is wire/report's.
-- **Test name**: `TestActiveFindingWithoutSeamStillDraws`
-  **Scenario**: a gate/new finding on `ui → db` with no seam for that pair.
-  **Expected behavior**: a link `ui → db`, `Count` 0, `Observed` true, `Permitted` false.
+  gate/waived; gate/fixed; advisory/new; advisory/baseline; advisory/fixed; an unknown kind; a gate finding with an
+  unknown status; gate/new on `db → api`; gate/new with an empty `To.Module`; no finding; advisory, baseline and new
+  together; advisory and waived together.
+  **Expected behavior**: `violation` for the first two; `accepted` for baseline and waived; `observed` for fixed findings,
+  the other direction, the empty module and no finding; `advisory` for advisories and unknown kinds or statuses;
+  `violation` and `accepted` win the last two rows. Every active finding on the pair gives `violation`: the rule is wire/report's.
+- **Test name**: `TestFindingWithoutSeamStillDraws`
+  **Scenario**: gate/new on `ui → db`, gate/baseline on `api → ui`, advisory/new on `db → api` and gate/fixed on `db → ui`,
+  with no seams.
+  **Expected behavior**: three links with `Count` 0: `violation`, `accepted`, `advisory`; no link for the fixed finding.
 
 ### Integration Contract Tests
 
 - **Test name**: `TestBuildMapsReportToView`
   **Scenario**: the blocked wire fixture (engine v2.3.1 state JSON decoded by `report.Decode`) with the policy file it was computed from.
   **Expected behavior**: nodes equal the policy's modules with correct `Layer` and `PolicyLine`; links equal the fixture's
-  seams; exactly the pairs named by active gate findings are not permitted; `Stale` false.
+  seams; exactly the pairs named by active gate findings are violations; `Stale` false.
+- **Test name**: `TestStatusFromRealReports`
+  **Scenario**: engine captures of the shared corpus `internal/wire/testdata/report`: `real-blocked-forbidden-and-allowed`,
+  `real-baselined-comparable`, `real-waiver-active`, `real-waiver-expired`.
+  **Expected behavior**: `a → b` violation and `a → c` advisory; `a → b` accepted (a baselined forbidden edge is never
+  permitted); accepted; violation.
 - **Test name**: `TestBuildIsDeterministic`
   **Scenario**: build twice from the same input, and once with seams and findings shuffled.
   **Expected behavior**: three identical views, nodes sorted by name, links by `(From, To)`.
@@ -436,9 +465,12 @@ Nothing is mocked.
 - **Test name**: `TestUnsupportedYAMLConstructsAreUntouched` (T17)
   **Scenario**: a policy using anchors, aliases, flow style and comments; build the view.
   **Expected behavior**: the policy bytes are unchanged after `Build`; graph returns data only and has no function that writes text.
-- **Test name**: `TestViolationIsToldApartFromPermitted`
-  **Scenario**: the blocked fixture: one forbidden dependency observed twice, one allowed dependency observed once.
-  **Expected behavior**: the forbidden link is `Permitted` false with `Count` 2; the allowed link is `Permitted` true with `Count` 1.
+- **Test name**: `TestViolationIsToldApartFromObserved`
+  **Scenario**: the blocked fixture: one forbidden dependency observed twice, one dependency no finding names observed once.
+  **Expected behavior**: the forbidden link is `violation` with `Count` 2; the other is `observed` with `Count` 1.
+- **Test name**: `TestBaselinedViolationIsNeverPermitted`
+  **Scenario**: the blocked fixture with its gate finding set to `baseline`, then to `waived`.
+  **Expected behavior**: the forbidden link is `accepted` both times, never `observed`.
 - **Test name**: `TestSelectingANodeFindsItsYAML`
   **Scenario**: the healthy wire fixture with its policy file.
-  **Expected behavior**: every node of a declared module has the line of its key; that line of the policy text contains the module's name.
+  **Expected behavior**: every node of a declared module has the line of its key; that line of the policy text contains the module's name; every link is `observed`.

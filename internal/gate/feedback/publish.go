@@ -13,8 +13,8 @@ import (
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
-// stateNeutral is allowed on archfit/state only, which is never a required check.
-// It is deliberately not a verdict.Conclusion.
+// stateNeutral is allowed on archfit/state only, which is never a required check, and only for an outcome that
+// does not ask for action. It is deliberately not a verdict.Conclusion.
 const stateNeutral = "neutral"
 
 const (
@@ -57,6 +57,11 @@ func (s *publisher) Publish(ctx context.Context, p Publication) (err error) {
 			"failed", err != nil, "elapsed", s.now().Sub(now))
 	}()
 
+	// Read before any write, so that a failure leaves every check as it was.
+	changed, err := s.changedFiles(ctx, p)
+	if err != nil {
+		return err
+	}
 	isPull := p.Target.PullRequest != 0 && p.Trusted.SettingsFound
 	run := api.CheckRun{
 		HeadSHA:    p.Target.HeadSHA,
@@ -73,7 +78,7 @@ func (s *publisher) Publish(ctx context.Context, p Publication) (err error) {
 	}
 	run.Name, run.Conclusion = stateCheck, stateConclusion(p.Outcome, p.Report)
 	run.Title, run.Summary = stateTitle(p), renderState(p)
-	run.Annotations = annotations(p)
+	run.Annotations = annotations(p, changed)
 	if state, err = s.writeCheck(ctx, p.Target.Repo.RepoRef, run, p.Receipt); err != nil {
 		return err
 	}
@@ -83,8 +88,13 @@ func (s *publisher) Publish(ctx context.Context, p Publication) (err error) {
 	return err
 }
 
+// stateConclusion fails closed like the gate: missing, unverifiable or ineligible evidence asks for action and is
+// never neutral. Only advisory attention and architecture findings, which this check never enforces, are neutral.
 func stateConclusion(o verdict.Outcome, r *report.Report) string {
-	if o.Conclusion == verdict.Success && r != nil && r.Verdict == "healthy" {
+	switch {
+	case o.Conclusion == verdict.ActionRequired:
+		return string(verdict.ActionRequired)
+	case o.Conclusion == verdict.Success && r != nil && r.Verdict == "healthy":
 		return string(verdict.Success)
 	}
 	return stateNeutral
@@ -106,20 +116,56 @@ func (s *publisher) latestRun(ctx context.Context, r api.RepoRef, headSHA, name 
 	return latest, true, nil
 }
 
+// writeCheck creates or updates the run with the first annotationsPerRequest annotations, then sends the rest in
+// further updates of the same run: GitHub takes 50 per request and appends each batch.
 func (s *publisher) writeCheck(ctx context.Context, r api.RepoRef, run api.CheckRun, receipt Receipt) (string, error) {
 	existing, found, err := s.latestRun(ctx, r, run.HeadSHA, run.Name)
 	if err != nil {
 		return actionNone, err
 	}
-	if !found {
-		_, err := s.checks.CreateCheckRun(ctx, r, run)
-		return actionCreated, err
-	}
-	if supersedes(existing, receipt) {
+	if found && supersedes(existing, receipt) {
 		return actionSkippedNewer, nil
 	}
-	run.ID = existing.ID
-	return actionUpdated, s.checks.UpdateCheckRun(ctx, r, run)
+	var rest []api.Annotation
+	run.Annotations, rest = batch(run.Annotations)
+	action := actionUpdated
+	if found {
+		run.ID = existing.ID
+		err = s.checks.UpdateCheckRun(ctx, r, run)
+	} else {
+		var created api.CheckRun
+		action = actionCreated
+		created, err = s.checks.CreateCheckRun(ctx, r, run)
+		run.ID = created.ID
+	}
+	for err == nil && len(rest) > 0 {
+		run.Annotations, rest = batch(rest)
+		err = s.checks.UpdateCheckRun(ctx, r, run)
+	}
+	return action, err
+}
+
+// batch splits off the annotations of one request.
+func batch(all []api.Annotation) (now, later []api.Annotation) {
+	n := min(len(all), annotationsPerRequest)
+	return all[:n], all[n:]
+}
+
+// changedFiles is the annotation filter: on a pull request the files it changed, everywhere else every file.
+// GitHub's list is read only when some annotation is possible. A truncated list means any file may have changed.
+func (s *publisher) changedFiles(ctx context.Context, p Publication) (func(string) bool, error) {
+	if p.Target.PullRequest == 0 || len(annotations(p, anyPath)) == 0 {
+		return anyPath, nil
+	}
+	paths, truncated, err := s.pulls.ChangedFiles(ctx, p.Target.Repo.RepoRef, p.Target.PullRequest)
+	if err != nil || truncated {
+		return anyPath, err
+	}
+	set := make(map[string]bool, len(paths))
+	for _, path := range paths {
+		set[path] = true
+	}
+	return func(path string) bool { return set[path] }, nil
 }
 
 // findComment returns the lowest-ID App comment that starts with the comment marker.

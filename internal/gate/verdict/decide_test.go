@@ -68,7 +68,7 @@ func matrixCases() []decideCase {
 	missing := []ReasonCode{ReasonMissingCoverage}
 	cases := []decideCase{
 		{"healthy/pass/none", with(), Success, []ReasonCode{ReasonHealthy}},
-		{"needs_attention/pass/none", with(engine(verdictAttention, gatesPass)), Success, []ReasonCode{ReasonHealthy}},
+		{"needs_attention/pass/none", with(engine(verdictAttention, gatesPass)), Success, []ReasonCode{ReasonAttentionOnly}},
 		{"healthy/pass/some", with(unevaluated), ActionRequired, missing},
 		{"needs_attention/pass/some", with(engine(verdictAttention, gatesPass), unevaluated), ActionRequired, missing},
 		{"blocked/pass/none", with(engine(verdictBlocked, gatesPass)), Failure, blocking},
@@ -128,6 +128,127 @@ func TestEngineDecisionMatrix(t *testing.T) {
 		r, _ := find(decide(t, f), ReasonMissingCoverage)
 		if want := "layers/no_upward_imports, no_direct_b_dependency"; r.Detail != want {
 			t.Errorf("detail = %q, want %q", r.Detail, want)
+		}
+	})
+}
+
+func TestAttentionOnly(t *testing.T) {
+	measuredExcept := func(statuses map[string]string) map[string]report.Dimension {
+		dims := map[string]report.Dimension{}
+		for _, key := range []string{"intent", "structure", "modularity", "coupling", "change_locality", "complexity", "testability", "operations", "drift"} {
+			status := "measured"
+			if s, ok := statuses[key]; ok {
+				status = s
+			}
+			dims[key] = report.Dimension{Name: key, Status: status}
+		}
+		return dims
+	}
+	without := func(dims map[string]report.Dimension, key string) map[string]report.Dimension {
+		delete(dims, key)
+		return dims
+	}
+	finding := func(kind, status string) report.Finding {
+		return report.Finding{Kind: kind, Status: status, RuleID: marker, Why: marker}
+	}
+	cases := []struct {
+		name     string
+		dims     map[string]report.Dimension
+		findings []report.Finding
+		detail   string
+	}{
+		{"dimensions in engine order", measuredExcept(map[string]string{"drift": "unmeasured", "testability": "partial"}), nil,
+			"dimensions not fully measured: testability, drift; active diagnostics: 0"},
+		{"only live advisories count", measuredExcept(nil), []report.Finding{
+			finding("advisory", "new"), finding("advisory", "expired_waiver"), finding("advisory", "baseline"),
+			finding("advisory", "waived"), finding("advisory", "fixed"), finding("gate", "baseline"), finding(marker, "new"),
+		}, "dimensions not fully measured: none; active diagnostics: 2"},
+		{"a dimension the report lacks is not measured", without(measuredExcept(nil), "operations"), nil,
+			"dimensions not fully measured: operations; active diagnostics: 0"},
+		{"a key outside the nine is never named", func() map[string]report.Dimension {
+			dims := measuredExcept(map[string]string{"coupling": marker})
+			dims[marker] = report.Dimension{Status: "unmeasured"}
+			return dims
+		}(), nil, "dimensions not fully measured: coupling; active diagnostics: 0"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := with(engine(verdictAttention, gatesPass), func(f *Facts) {
+				f.Report.Dimensions, f.Report.Findings = c.dims, c.findings
+			})
+			o := decide(t, f)
+			wantCodes(t, o, Success, ReasonAttentionOnly)
+			r := o.Reasons[0]
+			if r.Category != CategoryArchitecture || r.Detail != c.detail {
+				t.Errorf("reason = %+v, want category architecture and detail %q", r, c.detail)
+			}
+			if !strings.Contains(r.Next, "Advisories never block") || strings.Contains(r.Detail+r.Next, marker) {
+				t.Errorf("next = %q", r.Next)
+			}
+
+			f.Report.Verdict = verdictHealthy
+			o = decide(t, f)
+			wantCodes(t, o, Success, ReasonHealthy)
+			if o.Reasons[0].Detail != "" {
+				t.Errorf("healthy detail = %q, want empty", o.Reasons[0].Detail)
+			}
+		})
+	}
+
+	t.Run("never beside another reason", func(t *testing.T) {
+		attention := engine(verdictAttention, gatesPass)
+		for _, muts := range [][]func(*Facts){{unevaluated}, {deadSelector}, {nonComparable}, {approvalMissing}, {suspended}} {
+			if _, hit := find(decide(t, with(append(muts, attention)...)), ReasonAttentionOnly); hit {
+				t.Errorf("attention_only beside an action")
+			}
+		}
+	})
+}
+
+func TestPolicyDefect(t *testing.T) {
+	unmeasured := engine(verdictAttention, gatesUnmeasured)
+	runCases(t, []decideCase{
+		{"dead selector only", with(unmeasured, deadSelector), ActionRequired, []ReasonCode{ReasonPolicyDefect}},
+		{"dead selector and missing evidence", with(unmeasured, unevaluated, deadSelector),
+			ActionRequired, []ReasonCode{ReasonPolicyDefect, ReasonMissingCoverage}},
+		{"passing gates with a dead selector", with(deadSelector), ActionRequired, []ReasonCode{ReasonPolicyDefect}},
+		{"blocker keeps the defect", with(engine(verdictBlocked, gatesFail), deadSelector),
+			Failure, []ReasonCode{ReasonBlockingFindings, ReasonPolicyDefect}},
+		{"blocker keeps both", with(engine(verdictBlocked, gatesFail), unevaluated, deadSelector),
+			Failure, []ReasonCode{ReasonBlockingFindings, ReasonPolicyDefect, ReasonMissingCoverage}},
+		{"blocked verdict, unmeasured gates", with(engine(verdictBlocked, gatesUnmeasured), deadSelector),
+			ActionRequired, []ReasonCode{ReasonPolicyDefect, ReasonBlockingFindings}},
+		{"engine error first", with(engine("error", gatesUnmeasured), deadSelector),
+			ActionRequired, []ReasonCode{ReasonEngineError, ReasonPolicyDefect}},
+		{"unmeasured without rules is missing evidence", with(unmeasured), ActionRequired, []ReasonCode{ReasonMissingCoverage}},
+	})
+
+	t.Run("each reason names its own rules", func(t *testing.T) {
+		second := func(f *Facts) {
+			f.Report.Decision.UnevaluatedRequiredRules = append(f.Report.Decision.UnevaluatedRequiredRules,
+				report.UnevaluatedRule{RuleID: "layers/no_upward_typo", Reason: "selector matches nothing: from layer api"})
+		}
+		o := decide(t, with(unmeasured, unevaluated, deadSelector, second))
+		defect, _ := find(o, ReasonPolicyDefect)
+		missing, _ := find(o, ReasonMissingCoverage)
+		if defect.Detail != "no_store_to_github, layers/no_upward_typo" || missing.Detail != "layers/no_upward_imports" {
+			t.Errorf("details = %q and %q", defect.Detail, missing.Detail)
+		}
+		if defect.Category != CategoryGovernance || !strings.Contains(defect.Next, "owner-approved policy PR") ||
+			!strings.Contains(defect.Next, "guard: true") || strings.Contains(defect.Detail+defect.Next, "gihub") {
+			t.Errorf("policy_defect = %+v", defect)
+		}
+	})
+
+	t.Run("near misses lack evidence", func(t *testing.T) {
+		for _, reason := range []string{
+			"Selector matches nothing: to internal/x/**", " selector matches nothing: to internal/x/**",
+			"the selector matches nothing", "rule scope cannot be established from the supported source inventory", "",
+		} {
+			f := with(unmeasured, func(f *Facts) {
+				f.Report.Decision.UnevaluatedRequiredRules = []report.UnevaluatedRule{{RuleID: "rule/a", Reason: reason}}
+			})
+			wantCodes(t, decide(t, f), ActionRequired, ReasonMissingCoverage)
 		}
 	})
 }
@@ -318,8 +439,8 @@ func TestIdentityReasons(t *testing.T) {
 
 func TestReasonCatalogComplete(t *testing.T) {
 	categories := map[Category][]ReasonCode{
-		CategoryArchitecture: {ReasonHealthy, ReasonBlockingFindings},
-		CategoryGovernance:   {ReasonPolicyMissing, ReasonOwnerApprovalMissing, ReasonSettingsMissing, ReasonWaiverExpired},
+		CategoryArchitecture: {ReasonHealthy, ReasonAttentionOnly, ReasonBlockingFindings},
+		CategoryGovernance:   {ReasonPolicyMissing, ReasonPolicyDefect, ReasonOwnerApprovalMissing, ReasonSettingsMissing, ReasonWaiverExpired},
 		CategorySubscription: {ReasonSuspended},
 	}
 	want := map[ReasonCode]Category{}
@@ -328,8 +449,8 @@ func TestReasonCatalogComplete(t *testing.T) {
 			want[code] = category
 		}
 	}
-	if len(allCodes) != 22 {
-		t.Fatalf("contract has %d reason codes, want 22", len(allCodes))
+	if len(allCodes) != 24 {
+		t.Fatalf("contract has %d reason codes, want 24", len(allCodes))
 	}
 	seen := map[ReasonCode]bool{}
 	for _, code := range allCodes {
@@ -354,7 +475,7 @@ func TestReasonCatalogComplete(t *testing.T) {
 		}
 		wantConclusion := ActionRequired
 		switch code {
-		case ReasonHealthy:
+		case ReasonHealthy, ReasonAttentionOnly:
 			wantConclusion = Success
 		case ReasonBlockingFindings:
 			wantConclusion = Failure

@@ -35,6 +35,10 @@ and every engine release. The contract (`Facts` in, `Outcome` out) is kept small
 - The rule that integrity failures cannot be cleared by approval.
 - The category of every reason code and the recovery text of every reason.
 - That task origin and finding status are never inputs of enforcement.
+- What a warning-only pass names (`attention_only`): the dimensions not fully measured and the count of active
+  diagnostics. That is display text; neither changes the conclusion.
+- Which unevaluated required rule is a policy defect (its engine reason starts with `selector matches nothing`) and
+  which lacks evidence.
 
 ## Public Contract
 
@@ -62,6 +66,7 @@ type ReasonCode string
 
 const (
     ReasonHealthy             ReasonCode = "healthy"
+    ReasonAttentionOnly       ReasonCode = "attention_only" // needs_attention, and nothing blocks
     ReasonBlockingFindings    ReasonCode = "blocking_findings"
     ReasonEngineError         ReasonCode = "engine_error"
     ReasonMissingCoverage     ReasonCode = "missing_required_coverage"
@@ -70,6 +75,7 @@ const (
     ReasonLabelsMismatch      ReasonCode = "labels_mismatch"
     ReasonPolicyMismatch      ReasonCode = "policy_mismatch"
     ReasonPolicyMissing       ReasonCode = "policy_missing" // settings merged, no policy on the protected ref yet
+    ReasonPolicyDefect        ReasonCode = "policy_defect"  // a required rule's selector matches nothing
     ReasonUnknownIdentity     ReasonCode = "unknown_engine_identity"
     ReasonProfileMissing      ReasonCode = "measurement_profile_missing"
     ReasonWorkflowNotApproved ReasonCode = "workflow_not_approved"
@@ -142,7 +148,8 @@ func Suspended(e Entitlement) Outcome
 ### Decision order
 
 `Decide` evaluates every step in order and appends every reason that applies. `Reasons[0]` sets
-`Conclusion`. `ReasonHealthy` is appended only when no other reason exists. `Reasons` is never empty.
+`Conclusion`. `ReasonAttentionOnly` and `ReasonHealthy` are appended only when no other reason exists. `Reasons` is
+never empty.
 
 | Step | Condition                                                                                                       | Reason appended               | Needs `Report` |
 | ---- | --------------------------------------------------------------------------------------------------------------- | ----------------------------- | -------------- |
@@ -162,10 +169,13 @@ func Suspended(e Entitlement) Outcome
 | 6d   | `!Accepts(Trusted.LabelsDigests, Facts.LabelsDigest)`                                                           | `labels_mismatch`             | no             |
 | 7a   | `Trusted.BaselineDigests` not empty and not (`GateReference != nil` and `GateReference.Status == "comparable"`) | `baseline_not_comparable`     | yes            |
 | 7b   | `Verdict` or `HardGates` holds a value outside its enum                                                         | `engine_error`                | yes            |
-| 7c   | `HardGates == "unmeasured"`, or unevaluated rules exist and `HardGates != "fail"`                               | `missing_required_coverage`   | yes            |
+| 7c   | `HardGates != "fail"` and a dead-selector rule exists (below)                                                   | `policy_defect`               | yes            |
+| 7d   | `HardGates != "fail"` and another unevaluated rule exists, or `HardGates == "unmeasured"` and 7c did not hit    | `missing_required_coverage`   | yes            |
 | 8a   | `HardGates == "fail"` or `Verdict == "blocked"`                                                                 | `blocking_findings`           | yes            |
-| 8b   | step 8a hit, unevaluated rules exist, and step 7c did not hit                                                   | `missing_required_coverage`   | yes            |
-| 8c   | no reason so far (then `Verdict` is `healthy` or `needs_attention` and `HardGates == "pass"`)                   | `healthy`                     | yes            |
+| 8b   | step 8a hit, a dead-selector rule exists, and step 7c did not hit                                               | `policy_defect`               | yes            |
+| 8c   | step 8a hit, another unevaluated rule exists, and step 7d did not hit                                           | `missing_required_coverage`   | yes            |
+| 8d   | no reason so far and `Verdict == "needs_attention"` (then `HardGates == "pass"`)                                | `attention_only`              | yes            |
+| 8e   | no reason so far (then `Verdict == "healthy"` and `HardGates == "pass"`)                                        | `healthy`                     | yes            |
 
 Rules of the table:
 
@@ -209,20 +219,34 @@ Rules of the table:
   and approval cannot clear it. Steps 6a to 6d never read `Approval`. The comment on `Decide` lists the concerns; this table is the
   normative order of `Reasons`.
 - Missing coverage is cleared by supplying the fact, never by approval.
-- `Findings`, `AgentTasks`, `Dimensions`, `Coverage`, `Seams`, finding `Status` and task `Origin` are never read.
-  Empty findings prove nothing. `Decision.ActiveBlockers`, `AttentionDimensions` and `UnknownDimensions` are counts for
-  display and are not read either. `Verdict == "needs_attention"` does not change the conclusion; feedback shows it on `archfit/state`.
+- Dead selector (7c, 8b): an unevaluated required rule whose `Reason` starts with the exact engine prefix
+  `selector matches nothing` (engine form `selector matches nothing: <side> <glob>`). Such a rule is a defect of the
+  approved policy, not missing evidence: the fix is an owner-approved policy PR, or `guard: true` for a rule that
+  matches nothing on purpose. Every other reason, a near miss included (other case, leading space), is missing
+  evidence (7d, 8c). Both reasons are `action_required` when first, so the split never opens a way to `success`.
+  `policy_defect` names only its rules and `missing_required_coverage` only the others; unmeasured hard gates that a
+  dead-selector rule explains give no empty `missing_required_coverage`.
+- `AgentTasks`, `Coverage`, `Seams` and task `Origin` are never read, and `Findings` and `Dimensions` are never read
+  for the conclusion. Empty findings prove nothing. `Decision.ActiveBlockers`, `AttentionDimensions` and
+  `UnknownDimensions` are counts for display and are not read either. `Verdict == "needs_attention"` does not change
+  the conclusion: it only selects `attention_only` instead of `healthy` in the last step.
+- The `attention_only` Detail is `dimensions not fully measured: <keys>; active diagnostics: <n>`. `<keys>` are those of
+  the nine engine dimension keys, in the engine's order, whose `Dimensions` entry is missing or whose `Status` is not
+  `measured`, or `none`; a map key outside the nine is never named. `<n>` counts findings of kind `advisory` with status
+  `new` or `expired_waiver`, the engine's active diagnostics. The `Next` text says that advisories never block.
 
-### Engine decision matrix (steps 7b to 8c)
+### Engine decision matrix (steps 7b to 8e)
 
 A report carries no exit code. The inputs are `Report.Verdict` (`healthy`, `needs_attention`, `blocked`),
 `Decision.HardGates` (`pass`, `fail`, `unmeasured`) and `Decision.UnevaluatedRequiredRules`. `engine_error` (7b)
-comes before `missing_required_coverage` (7c).
+comes before `missing_required_coverage` (7d). The rows below have no dead-selector rule; a dead-selector rule
+adds `policy_defect` just before the place `missing_required_coverage` takes in its row, and takes that place
+alone when every unevaluated rule is a dead selector.
 
 | `Verdict`                      | `HardGates`  | Unevaluated rules | Reasons from these steps                                         | Conclusion if first |
 | ------------------------------ | ------------ | ----------------- | ---------------------------------------------------------------- | ------------------- |
 | `healthy`                      | `pass`       | none              | `healthy`                                                        | `success`           |
-| `needs_attention`              | `pass`       | none              | `healthy` (warning-only attention)                               | `success`           |
+| `needs_attention`              | `pass`       | none              | `attention_only` (warning-only attention)                        | `success`           |
 | `healthy` or `needs_attention` | `pass`       | some              | `missing_required_coverage`                                      | `action_required`   |
 | any of the three               | `unmeasured` | any               | `missing_required_coverage` (+ `blocking_findings` if `blocked`) | `action_required`   |
 | any of the three               | `fail`       | none              | `blocking_findings`                                              | `failure`           |
@@ -240,8 +264,9 @@ The mapping applies only after steps 1 to 6 are clear.
 | ------------------------------------------------------------------------------------------------------------ | ----------------- | ------------------------------------------------------------------------------------- |
 | Healthy: `verdict: healthy`, `hard_gates: pass`                                                              | `success`         | `healthy`                                                                             |
 | Blocked: `verdict: blocked` or `hard_gates: fail`                                                            | `failure`         | `blocking_findings`; feedback adds findings and tasks                                 |
-| Warning-only attention: `verdict: needs_attention`, `hard_gates: pass`, all evidence and reference rules met | `success`         | `healthy`; `needs_attention` stays visible in `archfit/state`                         |
+| Warning-only attention: `verdict: needs_attention`, `hard_gates: pass`, all evidence and reference rules met | `success`         | `attention_only`, naming what needs attention; `archfit/state` stays `neutral`        |
 | Required gate reference non-comparable (a baseline exists on the protected ref)                              | `action_required` | `baseline_not_comparable`; recovery is an owner-approved baseline PR                  |
+| A required rule's selector matches nothing (engine dead-selector reason)                                     | `action_required` | `policy_defect`, naming the rule IDs; recovery is an owner-approved policy PR         |
 | Required coverage missing: `hard_gates: unmeasured` or unevaluated required rules                            | `action_required` | `missing_required_coverage`, naming the rule IDs                                      |
 | Engine error (exit 3, so no report), absent report, ineligible evidence                                      | `action_required` | `missing_upload` (sweep), `report_invalid`, `engine_error`, or the eligibility reason |
 | Independent-observation contradiction                                                                        | not in v1         | the feature does not exist                                                            |
@@ -253,6 +278,7 @@ Categories of integrity, comparability and `Without` codes are **[default]**. `N
 | Code                          | Category     | Conclusion when first | `Detail`                                                                                              | `Next`                                                                                                                |
 | ----------------------------- | ------------ | --------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `healthy`                     | architecture | `success`             | empty                                                                                                 | empty                                                                                                                 |
+| `attention_only`              | architecture | `success`             | `dimensions not fully measured: <keys or none>; active diagnostics: <count>`                          | "Advisories never block. Review the listed dimensions and diagnostics on the archfit/state check."                    |
 | `blocking_findings`           | architecture | `failure`             | empty                                                                                                 | "Fix the blocking findings and run the validation command."                                                           |
 | `engine_error`                | evidence     | `action_required`     | `verdict=<value> hard_gates=<value>`, each cut to 32 characters                                       | "Read the Archfit workflow log, use the pinned engine image, re-run the workflow."                                    |
 | `missing_required_coverage`   | evidence     | `action_required`     | rule IDs, comma separated                                                                             | "Supply the missing evidence for the listed rules. Approval cannot clear this."                                       |
@@ -261,6 +287,7 @@ Categories of integrity, comparability and `Without` codes are **[default]**. `N
 | `labels_mismatch`             | evidence     | `action_required`     | claimed digest or `none`                                                                              | "Run the workflow with the labels file from the base branch."                                                         |
 | `policy_mismatch`             | evidence     | `action_required`     | reported `config_hash`                                                                                | "Run the workflow with the policy from the base branch; re-run if the base changed."                                  |
 | `policy_missing`              | governance   | `action_required`     | empty                                                                                                 | "Merge the Archfit policy PR."                                                                                        |
+| `policy_defect`               | governance   | `action_required`     | rule IDs whose selector matches nothing, comma separated                                              | "Fix the selectors of the listed rules in an owner-approved policy PR, or mark an intentional guard rule guard: true." |
 | `unknown_engine_identity`     | evidence     | `action_required`     | empty                                                                                                 | "Use the engine image pinned by the Archfit onboarding workflow."                                                     |
 | `measurement_profile_missing` | evidence     | `action_required`     | empty                                                                                                 | "Use engine v2.3.1 or later; the report carries no measurement profile."                                              |
 | `workflow_not_approved`       | evidence     | `action_required`     | empty                                                                                                 | "Upload from the workflow named in `.archfit-app.yaml`."                                                              |
@@ -278,7 +305,9 @@ Categories of integrity, comparability and `Without` codes are **[default]**. `N
 `Detail` carries protected path names for `owner_approval_missing`; these are the five fixed protected
 paths, not customer source paths. The one engine-authored text in a `Detail` is the capped reason list of
 `baseline_not_comparable` (single-line, length-capped by the decoder, no source). No `Detail` carries a finding,
-a file path from the report, or a module name. `labels_mismatch` is category evidence **[default]**.
+a file path from the report, or a module name. The `attention_only` Detail holds only fixed dimension keys and a
+count; the `policy_defect` Detail holds rule IDs, never the dead glob (feedback shows the engine reason with the
+glob in the evidence-gap section). `labels_mismatch` is category evidence **[default]**.
 
 `Without(code)` returns `ActionRequired` with the single catalog reason of `code`. A code outside the
 five listed ones returns `ActionRequired` with `engine_error` **[default]**; `Without` can never return `Success`.
@@ -289,7 +318,8 @@ five listed ones returns `ActionRequired` with `engine_error` **[default]**; `Wi
   catalog column above; there is no conversion from a string.
 - `gate/feedback` writes `string(Outcome.Conclusion)` to `archfit/gate` and nothing else. The literal
   `neutral` exists only in feedback for the never-required `archfit/state` check and never passes through `Conclusion`.
-- `Success` has one producer: step 8c. It needs an empty reason list, so every earlier step must be clear.
+- `Success` has one producer: the last step (8d `attention_only` or 8e `healthy`). It needs an empty reason list, so
+  every earlier step must be clear.
 - A property test holds the set closed for arbitrary `Facts`.
 
 ## Integrations
@@ -428,12 +458,15 @@ type Trusted struct {
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high (verdict side); the wire contract itself is moderate
 - **Balanced?**: yes
-- **Shared knowledge**: `Report.Verdict`, `Decision.HardGates`, `Decision.UnevaluatedRequiredRules`,
-  `Comparison.ConfigHash`, `Comparison.MeasurementProfile` (nil or not) and `GateReference.Status` and `Reasons`;
-  nothing else of the report is read. Enum values arrive validated by the decoder; verdict still closes on any other value.
-  `Finding` is an opaque part of `Report` for this module. `Dimension` is an opaque part of `Report` for this module.
+- **Shared knowledge**: `Report.Verdict`, `Decision.HardGates`, `Decision.UnevaluatedRequiredRules` (`RuleID`,
+  and `Reason` for the dead-selector prefix), `Comparison.ConfigHash`, `Comparison.MeasurementProfile` (nil or not)
+  and `GateReference.Status` and `Reasons` decide. For the `attention_only` Detail only, verdict also reads
+  `Dimension.Status` of the nine engine keys and `Finding.Kind` and `Finding.Status`; nothing else of the report is
+  read. Enum values arrive validated by the decoder; verdict still closes on any other value.
   `AgentTask` is an opaque part of `Report` for this module. `Coverage` is an opaque part of `Report` for this module.
-  `Seam` is an opaque part of `Report` for this module.
+  `Seam` is an opaque part of `Report` for this module. `Edge`, `Endpoint`, `Location`, `DimensionCoverage`,
+  `Metric`, `FindingRef`, `UnknownFact`, `Delta`, `MetricDelta` and `ToolCoverage` are restated below only because
+  they share a fence with `Finding` or `Dimension`; verdict never reads them.
   `StateSchemaV1` is the schema constant already enforced by the decoder; verdict does not re-check it.
 
 <!-- contract: Report, StateSchemaV1, MaxBytes — restated from internal/wire/report/module.md -->
@@ -520,6 +553,134 @@ type Producer struct {
 }
 ```
 
+<!-- contract: Finding, Edge, Endpoint, Location, AgentTask — restated from internal/wire/report/module.md -->
+```go
+type Finding struct {
+    ID                  string     `json:"id"`        // 32-hex fingerprint, unique per report
+    Kind                string     `json:"kind"`      // "gate" | "advisory"
+    RuleID              string     `json:"rule_id"`
+    Status              string     `json:"status"`    // "new" | "baseline" | "waived" | "expired_waiver" | "fixed"
+    Severity            string     `json:"severity"`  // "critical" | "high" | "medium" | "low"
+    Confidence          string     `json:"confidence"`
+    Edge                Edge       `json:"edge"`
+    Locations           []Location `json:"locations"` // may be empty; never invent one
+    Why                 string     `json:"why"`        // engine-authored, single line, length-capped
+    Constraint          string     `json:"constraint"` // engine-authored, single line, length-capped
+    AllowedAlternatives []string   `json:"allowed_alternatives,omitempty"`
+}
+
+type Edge struct {
+    From Endpoint `json:"from"`
+    To   Endpoint `json:"to"`
+    Kind string   `json:"kind"`
+}
+
+type Endpoint struct {
+    Module string `json:"module"` // may be ""
+    Path   string `json:"path"`   // may be ""
+}
+
+type Location struct {
+    File string `json:"file"`
+    Line int    `json:"line"` // 0 = whole file
+}
+
+type AgentTask struct {
+    FindingID   string   `json:"finding_id"`
+    RuleID      string   `json:"rule_id"`
+    RepairKind  string   `json:"repair_kind"` // "code_change" | "needs_owner_decision"
+    Goal        string   `json:"goal"`
+    Constraints []string `json:"constraints"`
+    Files       []string `json:"files"`
+    Validation  []string `json:"validation"`       // shell command strings, replayed verbatim; never contain --refresh
+    Origin      string   `json:"origin,omitempty"` // "introduced" | "pre_existing" | "unknown"; presentation only
+}
+```
+
+<!-- contract: Dimension, DimensionCoverage, Metric, FindingRef, UnknownFact, Delta, MetricDelta, Coverage, ToolCoverage, Seam — restated from internal/wire/report/module.md -->
+```go
+// Dimension mirrors the engine's per-dimension state. Completeness is Status; measurement trust is not an
+// engine field: in v1 every fact is customer-attested and feedback says so.
+type Dimension struct {
+    Name       string            `json:"name"`
+    Owner      string            `json:"owner"`
+    Status     string            `json:"status"` // "measured" | "partial" | "unmeasured"
+    Confidence string            `json:"confidence"`
+    Gate       string            `json:"gate"` // "pass" | "warn" | "fail" | "not_applicable"
+    Coverage   DimensionCoverage `json:"coverage"`
+    Metrics    []Metric          `json:"metrics"`
+    Findings   []FindingRef      `json:"findings"`
+    Unknown    []UnknownFact     `json:"unknown"`
+    Delta      *Delta            `json:"delta,omitempty"`
+}
+
+type DimensionCoverage struct {
+    Basis    string `json:"basis"`
+    Observed int    `json:"observed"`
+    Total    int    `json:"total"`
+}
+
+type Metric struct {
+    Name  string  `json:"name"`
+    Value float64 `json:"value"`
+    Unit  string  `json:"unit"`
+}
+
+type FindingRef struct {
+    ID       string `json:"id"`
+    RuleID   string `json:"rule_id"`
+    Kind     string `json:"kind"`
+    Severity string `json:"severity"`
+    Status   string `json:"status"`
+}
+
+type UnknownFact struct {
+    Fact   string `json:"fact"`
+    Reason string `json:"reason"`
+    Owner  string `json:"owner"`
+}
+
+type Delta struct {
+    Status           string        `json:"status"`
+    Reasons          []string      `json:"reasons,omitempty"`
+    Metrics          []MetricDelta `json:"metrics,omitempty"`
+    NewFindings      []string      `json:"new_findings,omitempty"`
+    ResolvedFindings []string      `json:"resolved_findings,omitempty"`
+}
+
+type MetricDelta struct {
+    Name   string  `json:"name"`
+    Before float64 `json:"before"`
+    After  float64 `json:"after"`
+    Change float64 `json:"change"`
+}
+
+type Coverage struct {
+    Measured   int            `json:"measured"`
+    Partial    int            `json:"partial"`
+    Unmeasured int            `json:"unmeasured"`
+    Tools      []ToolCoverage `json:"tools"`
+}
+
+type ToolCoverage struct {
+    Tool   string `json:"tool"`
+    Status string `json:"status"`
+    Reason string `json:"reason,omitempty"`
+}
+
+// Seam is an observed module-to-module relationship. Only these fields are kept.
+type Seam struct {
+    ID         string `json:"id"`
+    FromModule string `json:"from_module"`
+    ToModule   string `json:"to_module"`
+    Edges      int    `json:"edges"` // observed dependency count
+    Strength   string `json:"strength"`
+    Distance   string `json:"distance"`
+    Volatility string `json:"volatility"`
+    Severity   string `json:"severity,omitempty"`
+}
+```
+
 ### Consumers (inbound)
 
 - **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Builds `Facts`, calls `Decide`. The fork refusal reaches `Without` through `sweep.Without`.
@@ -550,6 +711,15 @@ type Producer struct {
   import set stays the three packages above; `TestReasonCatalogComplete` compares the texts with `settings.Path`,
   so a renamed settings file fails that test instead of misleading a reader. Remove the literal if verdict ever
   imports `wire/settings` for another reason.
+- Declared restatement: the nine engine dimension keys and their order, read for the `attention_only` Detail, are a
+  literal list in `decide.go`, like the one in `gate/feedback`. The owner is `wire/report`, whose decoder accepts
+  exactly these keys and exports no list of them. If the lists drift, a new engine dimension is not named in the
+  Detail; the conclusion does not change. Trigger to change: a new engine dimension; remove the list when
+  `wire/report` exports the keys in order.
+- Declared restatement: the prefix `selector matches nothing` is the engine's dead-selector reason (engine Wave 0.3,
+  the form `selector matches nothing: <side> <glob>`). The engine owns the text and publishes no code for it. If the
+  engine changes it, a dead selector reads as missing evidence: still `action_required`, with the evidence recovery
+  text. Trigger to change: an engine release that changes the reason or adds a structured code.
 - `Detail` holds IDs and digests only, so an `Outcome` is safe to log.
 - No panic on any input, including nil `Report`, nil slices and nil pointers inside `Comparison`.
 
@@ -566,6 +736,12 @@ type Producer struct {
 - **Test name**: `TestEngineDecisionMatrix`
   **Scenario**: every row of the engine decision matrix, plus `Verdict` `""`, `"BLOCKED"` and `"error"`, and `HardGates` `""` and `"PASS"`.
   **Expected behavior**: the listed reasons in the listed order; unknown values give `engine_error`.
+- **Test name**: `TestAttentionOnly`
+  **Scenario**: `needs_attention` with `pass` and: two dimensions not measured (`drift` unmeasured, `testability` partial); all measured and advisories with every status plus a gate finding and a finding of an unknown kind; one dimension key missing; an extra map key and a dimension with an unknown status. Each once more with `verdict: healthy`. Then `needs_attention` beside an unevaluated rule, a dead selector, a non-comparable reference, missing approval, suspension.
+  **Expected behavior**: `success` with `attention_only` alone, category architecture; Detail `dimensions not fully measured: testability, drift; active diagnostics: 0`, then `none; active diagnostics: 2` (only advisories that are `new` or `expired_waiver` count), then the missing key, then only `coupling` (an extra key is never named); `Next` says advisories never block; no report text in Detail or `Next`. With `verdict: healthy` the reason is `healthy` with an empty Detail. Beside any other reason `attention_only` never appears.
+- **Test name**: `TestPolicyDefect`
+  **Scenario**: dead-selector rules (`selector matches nothing: …`) alone and beside other unevaluated rules, under `unmeasured`, `pass` and `fail` hard gates, with `verdict: blocked` and with an out-of-enum verdict; unmeasured hard gates without rules; near misses (other case, leading space, `the selector matches nothing`, other reasons, empty).
+  **Expected behavior**: `policy_defect` (governance, `action_required`) before `missing_required_coverage`, and after `blocking_findings` when the hard gates fail; each Detail names only its own rules and never the glob; `Next` names the owner-approved policy PR and `guard: true`; unmeasured gates explained only by dead selectors give no `missing_required_coverage`, and without rules they give it alone; every near miss is `missing_required_coverage`.
 - **Test name**: `TestDigestPredicate`
   **Scenario**: table over (trusted list empty / one / two digests) × (claimed digest `""` / matching / other), once for `BaselineDigest` and once for `LabelsDigest`; a claimed digest with a `sha256:` prefix.
   **Expected behavior**: `baseline_mismatch` or `labels_mismatch` exactly when `inputs.Accepts` is false for the same pair; both empty is a match; `""` against a non-empty list is a mismatch; the prefixed digest never matches (bare hex only); neither step needs a report.
@@ -582,8 +758,8 @@ type Producer struct {
   **Scenario**: `IdentityApproved` false with profile nil, with profile present, and with `Report` nil.
   **Expected behavior**: `measurement_profile_missing`, `unknown_engine_identity`, and only `report_invalid` respectively.
 - **Test name**: `TestReasonCatalogComplete`
-  **Scenario**: iterate every `ReasonCode` constant of the contract (twenty-two).
-  **Expected behavior**: each has the catalog category; every code except `healthy` has a non-empty `Next`; the `Next` texts of `workflow_not_approved` and `settings_missing` name `settings.Path`.
+  **Scenario**: iterate every `ReasonCode` constant of the contract (twenty-four).
+  **Expected behavior**: each has the catalog category and conclusion (`success` for `healthy` and `attention_only`); every code except `healthy` has a non-empty `Next`; the `Next` texts of `workflow_not_approved` and `settings_missing` name `settings.Path`.
 - **Test name**: `TestWithout`
   **Scenario**: the five allowed codes, then `ReasonHealthy` and an unknown code.
   **Expected behavior**: `ActionRequired` with one reason each; the last two give `engine_error`.
@@ -595,7 +771,7 @@ type Producer struct {
 
 - **Test name**: `TestDecideWireFixtures`
   **Scenario**: every report fixture of the shared corpus `internal/wire/testdata/report` (names and `.expect.json` format per `internal/wire/module.md`; verdict keeps no copy). A fixture with `decode: "ok"` is decoded with `report.Decode`; one with `decode: "error"` gives a nil `Report`. The facts are the clean facts of that document: identity and workflow approved, settings found, no approval needed, not suspended, no problems, trusted policy digests = the report's `config_hash`, trusted baseline and labels digests = `policy.Digest` of the `.baseline.json` and `.labels.yaml` siblings (an empty list when there is no sibling), and the same digests as the envelope's claims. The fixture's `facts` object then overrides single facts; an unknown key in `facts` or in the expectation fails the test. The corpus must hold the required fixtures: `healthy`, `attention-pass`, `blocked`, `missing-evidence`, `unknown-identity`, `profile-comparable`, `profile-incompatible`, `invalid-input`, `blocker-and-unevaluated`, `non-applicable-rule`, `locations-empty`, `matched-by-populated`, `repair-kinds`, `waiver-expiry-order`.
-  **Expected behavior**: `Decide` returns exactly `gate.conclusion` and the code sequence `gate.reasons` of each fixture. For the named fixtures the document also fixes the first reason: `success` for `healthy`, `attention-pass` and `non-applicable-rule`; `failure`/`blocking_findings` for `blocked`; `action_required`/`missing_required_coverage` for `missing-evidence`; `action_required`/`measurement_profile_missing` for `unknown-identity`; `action_required`/`baseline_not_comparable` for `profile-incompatible`; `action_required`/`report_invalid` for `invalid-input`; `failure` with `missing_required_coverage` second for `blocker-and-unevaluated`.
+  **Expected behavior**: `Decide` returns exactly `gate.conclusion` and the code sequence `gate.reasons` of each fixture. For the named fixtures the document also fixes the first reason: `success`/`healthy` for `healthy` and `non-applicable-rule`; `success`/`attention_only` for `attention-pass`; `failure`/`blocking_findings` for `blocked`; `action_required`/`missing_required_coverage` for `missing-evidence`; `action_required`/`measurement_profile_missing` for `unknown-identity`; `action_required`/`baseline_not_comparable` for `profile-incompatible`; `action_required`/`report_invalid` for `invalid-input`; `failure` with `missing_required_coverage` second for `blocker-and-unevaluated`.
 - **Test name**: `TestReasonsZeroDeterminesConclusion`
   **Scenario**: all outcomes produced by the other tests.
   **Expected behavior**: `Conclusion` equals the catalog conclusion of `Reasons[0].Code`; `Reasons` is never empty.
@@ -609,7 +785,7 @@ type Producer struct {
   **Scenario**: fuzz `Facts`: random problems (including unknown strings), nil and random reports, random booleans, random digests and approvals; also every `Without` input.
   **Expected behavior**: `Conclusion` is always one of the three constants; never `neutral`, `skipped`, or empty; no panic.
 - **Test name**: `TestSuccessRequiresEverything`
-  **Scenario**: start from the healthy facts; turn off one precondition at a time (suspended, settings missing, each problem, workflow, identity, policy digest, baseline digest, labels digest, approval missing, not comparable, unmeasured, unevaluated rule, `verdict: blocked`, out-of-enum verdict, nil report).
+  **Scenario**: start from the healthy facts; turn off one precondition at a time (suspended, settings missing, each problem, workflow, identity, policy digest, baseline digest, labels digest, approval missing, not comparable, unmeasured, unevaluated rule, dead-selector rule, `verdict: blocked`, out-of-enum verdict, nil report).
   **Expected behavior**: no variant is `Success`; the fuzz test asserts the same implication in reverse for every `Success` it sees.
 - **Test name**: `TestDecideIsPure`
   **Scenario**: call `Decide` twice on deep-copied facts; inspect the package import list.
