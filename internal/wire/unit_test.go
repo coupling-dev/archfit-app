@@ -85,8 +85,8 @@ func TestFixturesRecordPinnedProducers(t *testing.T) {
 			continue
 		}
 		captured++
-		if p.Revision != engineRevision {
-			t.Errorf("%s: revision = %q, want the pinned engine revision", f.id(), p.Revision)
+		if pinned, ok := pinnedRevisions[p.EngineVersion]; !ok || p.Revision != pinned {
+			t.Errorf("%s: release %q at revision %q, want a pinned release at its pinned revision", f.id(), p.EngineVersion, p.Revision)
 		}
 		if !revisionPattern.MatchString(p.Revision) {
 			t.Errorf("%s: revision is not a 40-hex commit, a branch name is not allowed", f.id())

@@ -51,6 +51,16 @@ Supporting. Volatility: moderate, tied to engine releases (pinned v2.3.1).
 - The embedded schema file and its provenance: `archfit.schema.json` copied unchanged from the engine repository
   at revision `f8877d25ba36d84d3780071580d23486e3d794d0` (tag `v2.3.1`). A sibling file `SCHEMA_SOURCE` records the
   source revision, the source path and the SHA-256 of the copy **[default]**.
+- One pinned schema, not one per engine release **[default]**. Its users are the editor (`GET /schema/policy.json`,
+  one route for every repository), `Validate` and the assist prompt. None of them knows which engine release a
+  repository runs: that pin is in the repository's workflow file, which the App does not parse. So the schema is
+  the one of the release new workflows pin, `manifest.Current().EngineVersion`, and the parent `wire` test
+  `TestPolicySchemaFollowsTheCurrentEngine` fails as soon as `current` moves until this file and `SCHEMA_SOURCE`
+  are re-pinned. v2.4.0 adds the rule key `guard` and rule types: optional keys and enum values inside config
+  schema v2, no top-level key. During an upgrade window a repository still on N-1 therefore gets a schema that
+  also accepts N's additions; its own engine rejects them on the draft pull request's check, which stays the
+  authority. `Validate` reads only the root key set, which v2.4.0 leaves unchanged. Per-release pins need a
+  per-repository engine release in the control plane first.
 - The top-level key set of a policy. It is derived from the embedded schema's root `properties` and `required`,
   read once lazily with `encoding/json`; there is never a second hand-written list. The derivation relies on the
   root's `additionalProperties: false`; a schema without it has no closed key set and `Validate` then always fails.
@@ -228,7 +238,9 @@ No counterpart contract is used by this module, so nothing is restated here.
 
 ## Change Vectors
 
-- A new engine release: replace the embedded schema and `SCHEMA_SOURCE`; adjust waiver keys if the waiver contract changed.
+- A new engine release: replace the embedded schema and `SCHEMA_SOURCE` in the change that moves the manifest's
+  `current` to it (the v2.4.0 release brings the rule key `guard`); adjust waiver keys if the waiver contract changed.
+- The control plane learns each repository's engine release: then the schema can be pinned per release.
 - The engine changes how it computes `config_hash`, or starts reporting baseline and labels digests: change `Digest` only.
 - Configurable file locations per repository: the constants become defaults; the settings file would carry overrides.
 - The App starts reading another policy key or module attribute (for example `owner`): extend `ModuleDef` or add a reader.

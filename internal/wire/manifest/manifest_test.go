@@ -54,8 +54,8 @@ func TestEmbeddedManifestIsValid(t *testing.T) {
 	}
 	current := 0
 	for id := range tbl.rows {
-		if id.EngineVersion != "v2.3.1" {
-			t.Errorf("row %+v: engine version is not v2.3.1", id)
+		if !slices.Contains(tbl.versions, id.EngineVersion) {
+			t.Errorf("row %+v: engine version missing from the version list", id)
 		}
 		if id.ImageDigest == "sha256:"+strings.Repeat("0", 64) {
 			t.Errorf("row %+v: all-zero digest", id)
@@ -95,7 +95,10 @@ func TestManifestValidationRules(t *testing.T) {
 		{"all-zero digest", 1, edit(0, "image_digest", "sha256:"+strings.Repeat("0", 64)), errZeroDigest},
 		{"platform darwin/arm64", 1, edit(1, "platform", "darwin/arm64"), errPlatform},
 		{"action_ref v1", 1, edit(0, "action_ref", "v1"), errActionRef},
-		{"engine version v2.3.0", 1, edit(1, "engine_version", "v2.3.0"), errEngineVersion},
+		{"engine version without the v", 1, edit(1, "engine_version", "2.3.1"), errEngineVersion},
+		{"engine version v2.3", 1, edit(1, "engine_version", "v2.3"), errEngineVersion},
+		{"engine version v2.4.0-rc.1", 1, edit(1, "engine_version", "v2.4.0-rc.1"), errEngineVersion},
+		{"engine version latest", 1, edit(1, "engine_version", "latest"), errEngineVersion},
 		{"duplicate identity", 1, func(rows []row) []row { return append(rows, rows[1]) }, errDuplicate},
 		{"no current row", 1, edit(0, "current", false), errNoCurrent},
 		{"two current rows", 1, func(rows []row) []row {
@@ -135,6 +138,56 @@ func TestManifestValidationRules(t *testing.T) {
 		_, err := parse(doc(t, 1, edit(0, field, bad)(validRows())))
 		if err == nil || !strings.Contains(err.Error(), field) || strings.Contains(err.Error(), "LEAK") {
 			t.Errorf("%s: error %q, want it to name the field and not the value", field, err)
+		}
+	}
+}
+
+// TestRowsOfSeveralEngineVersions: an upgrade window approves engine N-1 and N together. Rows are keyed by the
+// whole identity, so each release keeps its own images and profile version.
+func TestRowsOfSeveralEngineVersions(t *testing.T) {
+	rows := validRows()
+	rows[0]["current"] = false
+	newer := []row{
+		{
+			"engine_version": "v2.4.0", "image_digest": "sha256:" + strings.Repeat("5", 64), "platform": platformAMD64,
+			"profile_version": "p2", "action_ref": testActionRef, "current": true,
+		},
+		{
+			"engine_version": "v2.4.0", "image_digest": "sha256:" + strings.Repeat("6", 64), "platform": platformARM64,
+			"profile_version": "p2", "action_ref": testActionRef,
+		},
+	}
+	tbl, err := parse(doc(t, 1, append(rows, newer...)))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if want := []string{"v2.3.1", "v2.4.0"}; !slices.Equal(tbl.versions, want) {
+		t.Errorf("versions = %q, want %q", tbl.versions, want)
+	}
+	if tbl.current.EngineVersion != "v2.4.0" || len(tbl.rows) != 4 {
+		t.Errorf("current %+v, %d rows; want the v2.4.0 amd64 row current among 4", tbl.current.Identity, len(tbl.rows))
+	}
+	for _, r := range append(rows, newer...) {
+		id := Identity{EngineVersion: r["engine_version"].(string), ImageDigest: r["image_digest"].(string), Platform: r["platform"].(string)}
+		if got, ok := tbl.rows[id]; !ok || got.ProfileVersion != r["profile_version"] {
+			t.Errorf("row %+v: %+v, %v", id, got, ok)
+		}
+	}
+}
+
+// TestApprovedEngineVersions lists the shipped releases; change it with manifest.json.
+func TestApprovedEngineVersions(t *testing.T) {
+	got := EngineVersions()
+	if want := []string{"v2.3.1"}; !slices.Equal(got, want) {
+		t.Errorf("EngineVersions() = %q, want %q", got, want)
+	}
+	got[0] = "changed"
+	if EngineVersions()[0] == "changed" {
+		t.Error("EngineVersions() hands out the package's own list")
+	}
+	for _, v := range EngineVersions() {
+		if !engineVersionPattern.MatchString(v) {
+			t.Errorf("engine version %q is not a release tag", v)
 		}
 	}
 }
@@ -367,7 +420,7 @@ func TestNoRuntimeOverride(t *testing.T) {
 	}
 
 	exported := exportedDecls(t)
-	want := []string{"func Current", "func Lookup", "type Entry", "type Identity"}
+	want := []string{"func Current", "func EngineVersions", "func Lookup", "type Entry", "type Identity"}
 	if strings.Join(exported, ",") != strings.Join(want, ",") {
 		t.Errorf("exported API = %v, want %v", exported, want)
 	}

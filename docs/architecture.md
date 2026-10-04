@@ -159,8 +159,12 @@ Arrows show the order of the upload request. Authentication defects return an HT
 After authentication, defects become gate reasons and appear in GitHub feedback.
 
 `gate/ingest` verifies the token, envelope, payload digest, report format, run, pull request, and revision.
+It reads the report with the key set of the engine release that the envelope claims.
 `gate/inputs` reads the protected-ref files and owner approval. `gate/verdict` performs no I/O and no AI call.
 The upload handler has a 55-second deadline. The target is feedback within 60 seconds.
+
+The upload body is at most 5 MiB. A larger body gets `413 payload_too_large`, and the App publishes nothing.
+The App does not read part of a report.
 
 ## Gate outcomes
 
@@ -181,6 +185,23 @@ The App publishes two checks:
 Each published check carries a receipt with the run ID, report digest, policy digest, baseline digest, and
 labels digest. The sweep compares the receipt with the protected ref. See the [reason catalog](user-guide.md#reason-codes)
 for recovery actions.
+
+## Engine releases
+
+An engine upgrade needs no flag day. Three `wire` packages share the rule:
+
+- `wire/manifest` approves engine images by rows. Rows of two releases can exist together during an upgrade:
+  the release that new workflows pin and the release before it.
+- `wire/report` reads a report with the key set of its engine release. Each release has its own key set, and a
+  key of a later release is an unknown key. A release that is not in the list gives `report_invalid`.
+- The gate decides only from fields that every listed release defines: the verdict, the hard gates, the
+  unevaluated required rules, the config hash, the measurement-profile version, and the gate reference.
+- `wire/policy` keeps one engine config schema, the schema of the release that new workflows pin.
+
+The App reads v2.3.1 reports. It is ready for v2.4.0 reports, because v2.4.0 adds no report key. The manifest
+approves v2.3.1 only, until the v2.4.0 images are published.
+Tests in `internal/wire` stop a manifest row for a release that the decoder cannot read, that has no real capture
+in the fixture corpus, or whose config schema is not pinned when new workflows move to it.
 
 ## Webhooks and the sweep
 

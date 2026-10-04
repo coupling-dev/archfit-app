@@ -55,7 +55,7 @@ func loadReport(t *testing.T, name string) report.Report {
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
-	rep, err := report.Decode(raw)
+	rep, err := report.Decode(raw, "v2.3.1")
 	if err != nil {
 		t.Fatalf("decode fixture %s: %v", name, err)
 	}

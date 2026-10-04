@@ -1,0 +1,36 @@
+version: 2
+languages:
+  go:
+    enabled: auto
+  python:
+    enabled: auto
+  rust:
+    enabled: auto
+  typescript:
+    enabled: auto
+modules:
+  a:
+    paths:
+      - pkg/a/**
+  b:
+    paths:
+      - pkg/b/**
+    public:
+      - pkg/b/b.go
+    internal:
+      - pkg/b/internal/**
+rules:
+  - id: no_direct_b_dependency
+    type: forbidden_dependency
+    from: pkg/a/**
+    to: pkg/b
+    gate: fail
+analyzers:
+  syntax:
+    enabled: true
+  scip:
+    enabled: true
+  clones:
+    enabled: true
+  cargo_modules:
+    enabled: true

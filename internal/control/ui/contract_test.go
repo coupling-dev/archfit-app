@@ -244,7 +244,7 @@ func TestGraphPageBuildsFromArtifact(t *testing.T) {
 	if bytes.Count(payload, []byte("MARKER-")) < 2 {
 		t.Fatal("markers were not placed in the fixture")
 	}
-	rep, err := report.Decode(payload)
+	rep, err := report.Decode(payload, "v2.3.1")
 	if err != nil {
 		t.Fatalf("fixture does not decode: %v", err)
 	}

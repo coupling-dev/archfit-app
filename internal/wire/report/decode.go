@@ -4,20 +4,28 @@ import (
 	"bytes"
 	"encoding/json"
 	"math"
+	"reflect"
+	"slices"
 	"unicode/utf8"
 )
 
-// Decode strictly parses payload as the no-source transport. It fails on: size over MaxBytes, a key the
-// v2.3.1 state schema does not define, wrong schema_version, an enum value outside its set, strings over
-// the per-field caps, absolute or parent-escaping paths, multi-line text, or duplicate finding IDs.
-func Decode(payload []byte) (Report, error) {
+// Decode strictly parses payload as the no-source transport of the state document engineVersion emits. It
+// fails on: an engineVersion outside EngineVersions, size over MaxBytes, a key that release's state schema
+// does not define, wrong schema_version, an enum value outside its set, strings over the per-field caps,
+// absolute or parent-escaping paths, multi-line text, or duplicate finding IDs.
+func Decode(payload []byte, engineVersion string) (Report, error) {
+	version := slices.Index(engineVersions, engineVersion)
+	if version < 0 {
+		// The version is input: it is never echoed.
+		return Report{}, locError("engine_version", "is not a release this decoder reads")
+	}
 	if len(payload) > MaxBytes {
 		return Report{}, locError("payload", "is larger than MaxBytes")
 	}
 	if !utf8.Valid(payload) {
 		return Report{}, locError("payload", "is not valid UTF-8")
 	}
-	if err := prepass(payload); err != nil {
+	if err := prepass(payload, reflect.TypeFor[shadowReport](), version); err != nil {
 		return Report{}, err
 	}
 	var shadow shadowReport
@@ -103,7 +111,7 @@ func (c *checker) profile(s *shadowProfile) MeasurementProfile {
 				Tool:             c.str("tool", p.Tool, classIdentifier),
 				SemanticsVersion: c.str("semantics_version", p.SemanticsVersion, classVersion),
 				Status:           c.str("status", p.Status, classToken),
-				ToolVersion:      c.opt("tool_version", p.ToolVersion, classVersion),
+				ToolVersion:      c.opt("tool_version", p.ToolVersion, classToolVersion),
 				PartialBasis:     p.PartialBasis,
 			}
 			if p.PartialBasis != "" {
@@ -260,10 +268,10 @@ func (c *checker) task(s *shadowTask) AgentTask {
 		FindingID:   c.str("finding_id", s.FindingID, classIdentifier),
 		RuleID:      c.str("rule_id", s.RuleID, classIdentifier),
 		RepairKind:  c.enum("repair_kind", s.RepairKind, "code_change", "needs_owner_decision"),
-		Goal:        c.str("goal", s.Goal, classText),
-		Constraints: stringsOf(c, "constraints", s.Constraints, maxTaskStrings, true, classText),
+		Goal:        c.str("goal", s.Goal, classTaskText),
+		Constraints: stringsOf(c, "constraints", s.Constraints, maxTaskConstraints, true, classTaskText),
 		Files:       stringsOf(c, "files", s.Files, maxTaskFiles, true, classPath),
-		Validation:  stringsOf(c, "validation", s.Validation, maxTaskStrings, true, classCommand),
+		Validation:  stringsOf(c, "validation", s.Validation, maxTaskValidation, true, classCommand),
 		Origin:      c.opt("origin", s.Origin, classToken),
 	}
 }

@@ -17,12 +17,14 @@ identity could compare as equal to another unknown.
 - Embed the approved rows as data and validate them when the package loads.
 - `Lookup`: exact match of a claimed `Identity` against the rows.
 - `Current`: the row new workflows are generated against.
+- `EngineVersions`: the engine releases the rows approve.
 - Nothing else. It does not read reports, compare profiles, or decide outcomes.
 
 ## Subdomain Classification
 
 Published language (release identity shared with `archfit` and `archfit-action`). Supporting.
-Volatility: moderate. It changes only with a reviewed engine, image or Action release; v1 lists engine v2.3.1 only.
+Volatility: moderate. It changes only with a reviewed engine, image or Action release. The shipped rows are engine
+v2.3.1; an upgrade window holds the rows of two releases, N and N-1.
 
 ## Encapsulated Knowledge
 
@@ -31,7 +33,8 @@ Volatility: moderate. It changes only with a reviewed engine, image or Action re
   `image_digest`, `platform`, `profile_version`, `action_ref`, and an optional boolean `current`.
 - Row validity rules, checked once at package initialization and again by a unit test:
   - at least one entry; every string non-empty;
-  - `engine_version` is `v2.3.1` in this release;
+  - `engine_version` is a release tag `vMAJOR.MINOR.PATCH` (no pre-release, no build suffix); rows of several
+    releases may coexist, each release with its own image digests and profile version;
   - `image_digest` matches `^sha256:[0-9a-f]{64}$` and is not all zeros;
   - `platform` is `linux/amd64` or `linux/arm64`;
   - `action_ref` matches `^[0-9a-f]{40}$` (a commit SHA, never a tag or branch);
@@ -39,6 +42,10 @@ Volatility: moderate. It changes only with a reviewed engine, image or Action re
   - exactly one entry has `current: true`, and its platform is `linux/amd64` **[default]**.
 - An invalid embedded manifest panics at package initialization **[default]**. The binary cannot start with a
   broken manifest, and the unit test catches it before release.
+- What a release needs before its rows land, checked by the parent `wire` tests because the children never import
+  each other: `wire/report` lists the release (its state key set is known), the corpus holds an unmodified capture of
+  that release that decodes, and, when `current` moves to it, `wire/policy` embeds its config schema. The format
+  rule above is all this package can check alone; it is not an approval of any version string.
 - The values must come from the engine release evidence of plan task T01 (engine source revision
   `f8877d25ba36d84d3780071580d23486e3d794d0`, tag `v2.3.1`). Today only `profile_version`
   (`archfit.measurement.v1`) is real. The shipped image digests and the Action commit are placeholders: `sha256:`
@@ -82,6 +89,12 @@ func Lookup(id Identity) (Entry, bool)
 func Current() Entry
 ```
 
+```go
+// EngineVersions returns the engine releases the manifest approves, each once, in the order of their first row.
+// During an upgrade window it holds two: the release new workflows pin and the one before it.
+func EngineVersions() []string
+```
+
 Semantics not visible in the signatures:
 
 - `Lookup` compares all three `Identity` fields by exact, case-sensitive string equality. No trimming, no
@@ -93,6 +106,9 @@ Semantics not visible in the signatures:
 - `ProfileVersion` is the value the gate compares with the report's `measurement_profile.version`. This module
   does not know the report type; the consumer passes no report in.
 - `Identity` has no JSON tags: it is not a wire form. The consumer builds it from three envelope strings.
+- `EngineVersions` returns a fresh slice on every call, today `v2.3.1` only. It approves nothing by itself:
+  `Lookup` on the whole identity stays the only approval. The parent `wire` tests read it to tie every approved
+  release to the report decoder, to a real capture and, through `Current`, to the policy schema pin.
 
 ## Integrations
 
@@ -131,7 +147,10 @@ tolerates the distance of separate repositories and release cycles.
 
 ## Change Vectors
 
-- A new engine or image release: add rows to `manifest.json`, move `current`, relax the `v2.3.1` rule.
+- A new engine or image release: add its rows to `manifest.json` next to the current ones and move `current`. The
+  same App change lists the release in `wire/report` (with any key it adds), adds a real capture of it to the corpus,
+  and re-pins `wire/policy`'s config schema; the parent tests fail until all three are there.
+- Closing an upgrade window: delete the rows of release N-1; reports from it then conclude `action_required`.
 - Retiring an image: delete its row; reports from it then conclude `action_required`.
 - Image variants per language (trust-and-reporting.md §3 packaging): more rows per platform; `current` stays explicit.
 - A new pinned Action commit: edit `action_ref`.
@@ -152,13 +171,21 @@ tolerates the distance of separate repositories and release cycles.
 
 - **Test name**: `TestEmbeddedManifestIsValid`
   **Scenario**: load the embedded file through the same validation the package initialization uses.
-  **Expected behavior**: passes; every row is engine `v2.3.1`; exactly one `current` row on `linux/amd64`; no all-zero digest.
+  **Expected behavior**: passes; every row's engine version is in the version list; exactly one `current` row on `linux/amd64`;
+  no all-zero digest.
 - **Test name**: `TestManifestValidationRules`
   **Scenario**: table of in-memory manifests, one defect per row: no entries; empty `profile_version`; digest with 63 hex
-  characters; all-zero digest; platform `darwin/arm64`; `action_ref` `v1`; duplicate identity; no current row; two current rows;
-  current row on `linux/arm64`; unknown key `notes`; `version: 2`.
+  characters; all-zero digest; platform `darwin/arm64`; `action_ref` `v1`; engine version `2.3.1`, `v2.3`, `v2.4.0-rc.1` and
+  `latest`; duplicate identity; no current row; two current rows; current row on `linux/arm64`; unknown key `notes`; `version: 2`.
   **Expected behavior**: each row fails validation with an error naming the field and the rule; no error text contains the
   defective value; the valid base passes.
+- **Test name**: `TestRowsOfSeveralEngineVersions`
+  **Scenario**: an in-memory manifest with v2.3.1 rows on both platforms and v2.4.0 rows on both platforms, the v2.4.0
+  `linux/amd64` row current, another profile version for v2.4.0.
+  **Expected behavior**: valid; the version list is `v2.3.1`, `v2.4.0`; all four rows keep their own profile version.
+- **Test name**: `TestApprovedEngineVersions`
+  **Scenario**: call `EngineVersions`, change the returned slice, call it again.
+  **Expected behavior**: `v2.3.1` both times, a release tag; it changes only together with `manifest.json`.
 - **Test name**: `TestManifestHasNoPlaceholdersInRelease`
   **Scenario**: collect every placeholder value of the embedded rows, as `entry index, field`; read `ARCHFIT_RELEASE`. The
   test never skips.
@@ -192,7 +219,8 @@ tolerates the distance of separate repositories and release cycles.
   **Expected behavior**: all miss.
 - **Test name**: `TestNoRuntimeOverride`
   **Scenario**: set environment variables such as `ARCHFIT_MANIFEST` and `ARCHFIT_IMAGE_DIGEST`, then look up an unlisted identity.
-  **Expected behavior**: miss; the package API exposes no function that adds or replaces rows.
+  **Expected behavior**: miss; the package API is exactly `Lookup`, `Current`, `EngineVersions`, `Entry` and `Identity`, and
+  none of them adds or replaces rows.
 - **Test name**: `TestPackageImportsStdlibOnly`
   **Scenario**: `go list -deps` for the package.
   **Expected behavior**: no internal package, no third-party package, no `net`, `os`, or `log` package.
@@ -207,7 +235,7 @@ tolerates the distance of separate repositories and release cycles.
   **Expected behavior**: miss.
 - **Test name**: `TestOlderEngineIsNotApproved`
   **Scenario**: identity with `EngineVersion: "v2.3.0"` and a current image digest.
-  **Expected behavior**: miss; v2.3.0 snapshots are non-comparable and v1 approves v2.3.1 only.
+  **Expected behavior**: miss; v2.3.0 snapshots are non-comparable and the manifest holds no v2.3.0 row.
 - **Test name**: `TestGeneratedWorkflowInputsArePinned`
   **Scenario**: read `Current()` as onboarding would.
   **Expected behavior**: `ActionRef` is a commit SHA and `ImageDigest` a digest; neither is a tag, branch, or `latest`.

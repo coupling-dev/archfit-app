@@ -94,7 +94,7 @@ func TestSourceIdentifiersNeverSurviveDecoding(t *testing.T) {
 		t.Fatalf("marker occurrences = %d, want one per carrier at least", got)
 	}
 
-	r, err := report.Decode(raw)
+	r, err := report.Decode(raw, fixtureEngine)
 	if err != nil {
 		t.Fatalf("the surviving fixture must decode: %v", err)
 	}

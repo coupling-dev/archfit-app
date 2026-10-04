@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -47,22 +48,31 @@ func formatLoc(path []seg) string {
 
 // scanner is the token pre-pass. encoding/json alone matches keys case-insensitively, keeps the last duplicate
 // key, turns null into a zero value and drops list indexes from its errors. The pre-pass walks the token stream
-// next to the shadow types instead: keys must equal a schema key exactly (which implies ^[a-z][a-z0-9_]*$), no
-// object repeats a key, null is allowed for optInt only, every value has the JSON type of its shadow field, and
-// input ends after the top-level object. The keys of a map are free; its duplicates are not.
+// next to the shadow types instead: keys must equal a schema key exactly (which implies ^[a-z][a-z0-9_]*$) of
+// the selected release's key set, no object repeats a key, null is allowed for optInt only, every value has the
+// JSON type of its shadow field, and input ends after the top-level object. The keys of a map are free; its
+// duplicates are not.
 type scanner struct {
-	dec    *json.Decoder
-	path   []seg
-	fields map[reflect.Type]map[string]reflect.Type
+	dec     *json.Decoder
+	path    []seg
+	version int // index in engineVersions of the release whose key set applies
+	fields  map[reflect.Type]map[string]field
 }
 
-func prepass(payload []byte) error {
-	s := &scanner{dec: json.NewDecoder(bytes.NewReader(payload)), fields: map[reflect.Type]map[string]reflect.Type{}}
+// field is one key of a shadow struct: its type and the index in engineVersions of the release that added it.
+type field struct {
+	typ   reflect.Type
+	since int
+}
+
+// prepass scans payload against the shadow type root under the key set of engineVersions[version].
+func prepass(payload []byte, root reflect.Type, version int) error {
+	s := &scanner{dec: json.NewDecoder(bytes.NewReader(payload)), version: version, fields: map[reflect.Type]map[string]field{}}
 	s.dec.UseNumber()
 	if tok, err := s.dec.Token(); err != nil || tok != json.Delim('{') {
 		return s.fail("must be a JSON object")
 	}
-	if err := s.object(reflect.TypeFor[shadowReport](), 1); err != nil {
+	if err := s.object(root, 1); err != nil {
 		return err
 	}
 	if _, err := s.dec.Token(); err != io.EOF {
@@ -75,15 +85,23 @@ func (s *scanner) fail(rule string) error {
 	return locError(formatLoc(s.path), rule)
 }
 
-// fieldsOf maps the JSON keys of a shadow struct to the field types.
-func (s *scanner) fieldsOf(t reflect.Type) map[string]reflect.Type {
+// fieldsOf maps the JSON keys of a shadow struct to its fields. A since tag that names no listed release
+// makes the key unknown under every release.
+func (s *scanner) fieldsOf(t reflect.Type) map[string]field {
 	if f, ok := s.fields[t]; ok {
 		return f
 	}
-	f := make(map[string]reflect.Type, t.NumField())
+	f := make(map[string]field, t.NumField())
 	for i := range t.NumField() {
-		key, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ",")
-		f[key] = t.Field(i).Type
+		sf := t.Field(i)
+		key, _, _ := strings.Cut(sf.Tag.Get("json"), ",")
+		since := 0
+		if tag, ok := sf.Tag.Lookup("since"); ok {
+			if since = slices.Index(engineVersions, tag); since < 0 {
+				since = len(engineVersions)
+			}
+		}
+		f[key] = field{typ: sf.Type, since: since}
 	}
 	s.fields[t] = f
 	return f
@@ -109,10 +127,10 @@ func (s *scanner) object(t reflect.Type, depth int) error {
 			if isDimension(key) {
 				name = key
 			}
-		} else if child, ok = s.fieldsOf(t)[key]; ok {
-			name = key
+		} else if f, known := s.fieldsOf(t)[key]; known && f.since <= s.version {
+			child, name = f.typ, key
 		} else {
-			return s.fail("unknown key")
+			return s.fail("unknown key") // a key of a later release too: it is not in this release's key set
 		}
 		s.path = append(s.path, seg{name, -1})
 		if err := s.value(child, depth); err != nil {

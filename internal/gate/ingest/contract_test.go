@@ -43,12 +43,37 @@ func TestReceivePullRequestReport(t *testing.T) {
 			if !bytes.Equal(up.Payload, s.body) {
 				t.Error("payload differs from the body")
 			}
-			want, err := report.Decode(s.body)
+			want, err := report.Decode(s.body, s.env.EngineVersion)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if up.Report == nil || !reflect.DeepEqual(*up.Report, want) {
 				t.Errorf("report = %+v, want the decoded fixture", up.Report)
+			}
+		})
+	}
+}
+
+func TestReportKeySetFollowsTheClaimedEngine(t *testing.T) {
+	rows := []struct {
+		version  string
+		problems []Problem
+	}{
+		{"v2.3.1", nil},
+		{"v2.4.0", nil},
+		{"v9.9.9", []Problem{ProblemReportInvalid}}, // a release the decoder does not read
+	}
+	for _, row := range rows {
+		t.Run(row.version, func(t *testing.T) {
+			s := prScenario(t)
+			s.env.EngineVersion = row.version
+			up, err := s.receive(t)
+			wantProblems(t, up, err, row.problems...)
+			if (up.Report == nil) != (len(row.problems) > 0) {
+				t.Errorf("report nil = %v, want %v", up.Report == nil, len(row.problems) > 0)
+			}
+			if up.Identity.EngineVersion != row.version {
+				t.Errorf("identity engine version = %q, want the claimed %q", up.Identity.EngineVersion, row.version)
 			}
 		})
 	}

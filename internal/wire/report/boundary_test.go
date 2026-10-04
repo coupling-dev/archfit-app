@@ -27,7 +27,7 @@ func TestSeededLeakageFixturesFail(t *testing.T) {
 			if !strings.Contains(string(payload), leakMarker) {
 				t.Fatalf("fixture does not contain %s", leakMarker)
 			}
-			_, err := Decode(payload)
+			_, err := Decode(payload, fixtureEngine)
 			if err == nil {
 				t.Fatal("decoded, want an error")
 			}
@@ -85,7 +85,7 @@ func TestUnknownFieldAtEveryLevel(t *testing.T) {
 		t.Run(fmt.Sprint(steps...), func(t *testing.T) {
 			doc := baseDoc(t)
 			set(t, doc, 1, append(slices.Clone(steps), "zz_unknown")...)
-			_, err := Decode(encode(t, doc))
+			_, err := Decode(encode(t, doc), fixtureEngine)
 			if general == "dimensions" {
 				wantError(t, err, "dimensions")
 				return
@@ -139,7 +139,7 @@ func TestDecodeRejectsNonStrictJSON(t *testing.T) {
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
-			if r, err := Decode([]byte(row.payload)); err == nil || !isZero(r) {
+			if r, err := Decode([]byte(row.payload), fixtureEngine); err == nil || !isZero(r) {
 				t.Errorf("err=%v, zero report=%v; want an error and a zero Report", err, isZero(r))
 			}
 		})
@@ -151,7 +151,7 @@ func FuzzDecode(f *testing.F) {
 		f.Add(loadFixture(f, name))
 	}
 	f.Fuzz(func(t *testing.T, payload []byte) {
-		first, err := Decode(payload)
+		first, err := Decode(payload, fixtureEngine)
 		if err != nil {
 			if !isZero(first) {
 				t.Fatal("an error came with a non-zero Report")
@@ -159,7 +159,7 @@ func FuzzDecode(f *testing.F) {
 			return
 		}
 		// Re-decoding the marshalled Report re-checks every cap and rule on what was accepted.
-		second, err := Decode(encode(t, first))
+		second, err := Decode(encode(t, first), fixtureEngine)
 		if err != nil {
 			t.Fatalf("an accepted report fails its own rules: %v", err)
 		}

@@ -6,27 +6,28 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 )
 
 const (
-	fileVersion           = 1
-	approvedEngineVersion = "v2.3.1"
-	platformAMD64         = "linux/amd64"
-	platformARM64         = "linux/arm64"
+	fileVersion   = 1
+	platformAMD64 = "linux/amd64"
+	platformARM64 = "linux/arm64"
 )
 
 var (
-	digestPattern    = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
-	actionRefPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
-	zeroDigest       = "sha256:" + strings.Repeat("0", 64)
+	engineVersionPattern = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
+	digestPattern        = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	actionRefPattern     = regexp.MustCompile(`^[0-9a-f]{40}$`)
+	zeroDigest           = "sha256:" + strings.Repeat("0", 64)
 )
 
 var (
 	errVersion         = errors.New("version must be 1")
 	errNoEntries       = errors.New("at least one entry is required")
 	errEmptyField      = errors.New("every string field must be non-empty")
-	errEngineVersion   = errors.New("engine_version must be " + approvedEngineVersion)
+	errEngineVersion   = errors.New("engine_version must be a release tag vMAJOR.MINOR.PATCH")
 	errDigest          = errors.New("image_digest must match ^sha256:[0-9a-f]{64}$")
 	errZeroDigest      = errors.New("image_digest must not be all zeros")
 	errPlatform        = errors.New("platform must be linux/amd64 or linux/arm64")
@@ -47,8 +48,9 @@ type fileEntry struct {
 }
 
 type table struct {
-	rows    map[Identity]Entry
-	current Entry
+	rows     map[Identity]Entry
+	versions []string // the distinct engine versions of the rows, in file order
+	current  Entry
 }
 
 func mustParse(data []byte) table {
@@ -93,6 +95,9 @@ func parse(data []byte) (table, error) {
 			return table{}, fmt.Errorf("entry %d: %w", i, errDuplicate)
 		}
 		t.rows[entry.Identity] = entry
+		if !slices.Contains(t.versions, e.EngineVersion) {
+			t.versions = append(t.versions, e.EngineVersion)
+		}
 		if e.Current {
 			currents++
 			t.current = entry
@@ -113,7 +118,7 @@ func (e fileEntry) validate() error {
 	switch {
 	case e.EngineVersion == "" || e.ImageDigest == "" || e.Platform == "" || e.ProfileVersion == "" || e.ActionRef == "":
 		return errEmptyField
-	case e.EngineVersion != approvedEngineVersion:
+	case !engineVersionPattern.MatchString(e.EngineVersion):
 		return errEngineVersion
 	case !digestPattern.MatchString(e.ImageDigest):
 		return errDigest

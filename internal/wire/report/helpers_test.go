@@ -13,6 +13,9 @@ const (
 	baseFixture = "report/all-keys.json" // carries every key of the state schema, kept and dropped
 	decodeOK    = "ok"
 	decodeError = "error"
+
+	// fixtureEngine is the engine release every fixture of the corpus was captured with or derived from.
+	fixtureEngine = "v2.3.1"
 )
 
 // fixtureRoot is the shared corpus; its layout and expectation format are defined in internal/wire/module.md.
@@ -74,7 +77,7 @@ func fixtures(t testing.TB, dir string) []string {
 
 func mustDecode(t testing.TB, payload []byte) Report {
 	t.Helper()
-	r, err := Decode(payload)
+	r, err := Decode(payload, fixtureEngine)
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
@@ -166,7 +169,7 @@ func runMutations(t *testing.T, rows []mutation) {
 		t.Run(row.name, func(t *testing.T) {
 			doc := baseDoc(t)
 			row.edit(t, doc)
-			r, err := Decode(encode(t, doc))
+			r, err := Decode(encode(t, doc), fixtureEngine)
 			if row.wantLoc == "" {
 				if err != nil {
 					t.Fatalf("Decode: %v", err)

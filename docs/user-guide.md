@@ -199,6 +199,41 @@ The first reason controls the conclusion. The App keeps later reasons in the com
 The sweep requests a workflow rerun after stale inputs, an expired waiver, late owner approval, or restored subscription.
 A rerun uses customer CI minutes. A fresh report is required for a new `success` result.
 
+### Engine versions
+
+The App approves engine images in a locked manifest. It reads a report with the key set of the engine release
+that the upload names.
+
+- The manifest approves engine v2.3.1. The App is ready to read v2.4.0 reports, because v2.4.0 adds no report
+  key. It approves v2.4.0 after the v2.4.0 images are published.
+- During an upgrade the App approves two releases: the new release and the release before it. Change the pin
+  in your workflow by pull request.
+- A report from an engine release that the App cannot read gives `report_invalid`. A report from an image that
+  the manifest does not list gives `unknown_engine_identity`. Both end `action_required`. Use the engine image
+  that the onboarding workflow pins.
+- The policy editor validates with the config schema of the release that new workflows pin. If your repository
+  uses the release before it, the editor can accept a key that your engine rejects. The Archfit check on the draft
+  pull request shows that error.
+
+### Report limits
+
+The App reads a complete report or no report. It never shortens a report to make it fit.
+
+| Limit                         | Maximum                                       | Above the maximum                                  |
+| ----------------------------- | --------------------------------------------- | -------------------------------------------------- |
+| Upload body                   | 5 MiB                                         | `413 payload_too_large`; the App publishes nothing |
+| Findings, agent tasks         | 10 000 each                                   | `report_invalid`                                   |
+| Seams                         | 50 000                                        | `report_invalid`                                   |
+| Locations in one finding      | 10 000                                        | `report_invalid`                                   |
+| Files in one agent task       | 10 002                                        | `report_invalid`                                   |
+| Constraints in one agent task | 34, each at most 4 096 characters on one line | `report_invalid`                                   |
+| Goal of one agent task        | 4 096 characters on one line                  | `report_invalid`                                   |
+| Tool version of one producer  | 128 printable characters on one line          | `report_invalid`                                   |
+
+With `gate: required`, an upload over 5 MiB leaves the `archfit/gate` check pending. The sweep sets it to
+`action_required` with `missing_upload` after 60 minutes. A report of about 3 000 seams with one advisory each is
+larger than 5 MiB. The comment shows at most 10 locations for each finding and gives the count of the others.
+
 ## Change the policy
 
 All policy changes use a pull request. The App never writes to the default branch.

@@ -48,7 +48,7 @@ func loadReport(t *testing.T, name string) *report.Report {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := report.Decode(payload)
+	r, err := report.Decode(payload, "v2.3.1")
 	if err != nil {
 		t.Fatalf("decode %s: %v", name, err)
 	}

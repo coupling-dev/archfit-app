@@ -8,21 +8,24 @@ import (
 	"unicode/utf8"
 )
 
-// Caps. Every number is [default]: decisions.md fixes only MaxBytes.
+// Caps. Every number is [default]: decisions.md fixes only MaxBytes. module.md justifies each one against real
+// engine output; MaxBytes, not a list cap, is the limit a real report meets first.
 const (
 	maxFindings         = 10_000
 	maxAgentTasks       = 10_000
 	maxSeams            = 50_000
 	maxUnevaluatedRules = 1_000
-	maxLocations        = 100
+	maxLocations        = 10_000 // the engine lists one location per file of a module, unbounded
 	maxAlternatives     = 32
-	maxTaskStrings      = 32 // constraints, validation
-	maxTaskFiles        = 1_000
-	maxDimensionFacts   = 256 // metrics, unknown, delta metrics
+	maxTaskConstraints  = maxAlternatives + 2 // the finding constraint, one per alternative, the public surface
+	maxTaskValidation   = 32
+	maxTaskFiles        = maxLocations + 2 // every location file and both edge endpoints
+	maxDimensionFacts   = 256              // metrics, unknown, delta metrics
 	maxFindingRefs      = 10_000
 	maxSmallList        = 64 // producers, unknowns, coverage.tools, every reasons list
 
 	maxTextLen       = 500
+	maxTaskTextLen   = 4_096 // a task goal or constraint holds a why, two paths or a module's public globs
 	maxCommandLen    = 512
 	maxIdentifierLen = 200
 	maxTokenLen      = 64
@@ -50,11 +53,13 @@ const (
 type strClass int
 
 const (
-	classText strClass = iota
+	classText     strClass = iota
+	classTaskText          // a task goal or constraint: text with a larger cap
 	classCommand
 	classIdentifier
 	classToken
-	classVersion // also the model, labels and settings hashes
+	classVersion     // also the model, labels and settings hashes
+	classToolVersion // a tool's own version output: printable free text
 	classConfigHash
 	classPath
 	classEndpointPath // a path, or empty
@@ -186,12 +191,19 @@ func stringRule(s string, class strClass) (phase, string) {
 	switch class {
 	case classText:
 		return phaseString, tooLong(s, maxTextLen)
+	case classTaskText:
+		return phaseString, tooLong(s, maxTaskTextLen)
 	case classIdentifier:
 		return phaseString, tooLong(s, maxIdentifierLen)
 	case classToken:
 		return phaseString, tokenRule(s, maxTokenLen)
 	case classVersion:
 		return phaseString, tokenRule(s, maxVersionLen)
+	case classToolVersion:
+		if strings.ContainsFunc(s, func(r rune) bool { return !unicode.IsPrint(r) }) {
+			return phaseString, "must be printable text"
+		}
+		return phaseString, tooLong(s, maxVersionLen)
 	case classCommand:
 		if slices.ContainsFunc(strings.Fields(s), isRefreshFlag) {
 			return phaseString, "must not contain --refresh"

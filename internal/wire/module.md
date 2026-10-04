@@ -43,22 +43,29 @@ child is normative in the child's own `module.md`; it is not restated here.
 
 ### Published packages
 
-| Package                  | Owns                                                                                         |
-| ------------------------ | -------------------------------------------------------------------------------------------- |
-| `internal/wire/envelope` | report-envelope v1: `Envelope`, `Kind`, `Decode`, `PayloadDigest`, `Schema`                  |
-| `internal/wire/report`   | engine state v1 as no-source transport: `Report` and its parts, `Decode`, size cap           |
-| `internal/wire/settings` | `.archfit-app.yaml`: `Settings`, modes, `Parse`, `Render`, file location                     |
-| `internal/wire/policy`   | engine file locations, bare-hex `Digest`, `Waivers` and `Modules` readers, config `Schema`   |
-| `internal/wire/manifest` | locked approved identities: `Identity`, `Entry`, `Lookup`, `Current`                         |
+| Package                  | Owns                                                                                                 |
+| ------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `internal/wire/envelope` | report-envelope v1: `Envelope`, `Kind`, `Decode`, `PayloadDigest`, `Schema`                          |
+| `internal/wire/report`   | engine state v1 as no-source transport: `Report` and its parts, `Decode`, `EngineVersions`, size cap |
+| `internal/wire/settings` | `.archfit-app.yaml`: `Settings`, modes, `Parse`, `Render`, file location                             |
+| `internal/wire/policy`   | engine file locations, bare-hex `Digest`, `Waivers` and `Modules` readers, config `Schema`           |
+| `internal/wire/manifest` | locked approved identities: `Identity`, `Entry`, `Lookup`, `Current`, `EngineVersions`               |
 
 ### Versioning rule
 
 - Every contract carries a version identifier: envelope `archfit.report-envelope.v1`; report
-  `archfit.architecture-state.v1`; settings file `version: 1`; manifest data `version: 1`; policy follows the pinned
-  engine release v2.3.1.
+  `archfit.architecture-state.v1`; settings file `version: 1`; manifest data `version: 1`; policy follows the
+  engine release of the manifest's `current` row, v2.3.1 today.
 - Unknown fields are rejected by every decoder here. Two deliberate nuances: the policy readers ignore
-  engine-owned keys they do not read; the report decoder knows every key of the engine's v2.3.1 state schema and
-  drops the known keys that are not allowlisted, while a key the schema does not define is still an error.
+  engine-owned keys they do not read; the report decoder knows every key of each engine release it reads and
+  drops the known keys that are not allowlisted, while a key that release's schema does not define is still an error.
+- Engine releases evolve without a flag day. The manifest approves rows of several releases (N and N-1 during an
+  upgrade window). The report decoder reads the document of the release the upload envelope claims, with that
+  release's key set and nothing else; a release it does not list fails decoding, so the upload ends
+  `action_required`. The gate decides only from the frozen decision core, which every listed release defines (see
+  `report`). Release order: the engine tags N; one App change lists N in `report` with any key N adds, adds a real
+  capture of N to the corpus, adds the manifest rows and re-pins the policy schema when `current` moves; after the
+  App release, workflows move their pin; then N-1's rows go. The parent tests below hold the three together.
 - Two digest formats exist and are never compared with each other: engine-style bare lowercase hex (`policy.Digest`,
   the report's `config_hash`, the envelope's `baseline_digest` and `labels_digest`) and the prefixed `sha256:<hex>`
   form of envelope-native values (`payload_digest`, `image_digest`) **[default]**.
@@ -67,7 +74,8 @@ child is normative in the child's own `module.md`; it is not restated here.
   path stays until no approved producer emits the old version. Breaking: removing or renaming a field, changing a
   field's meaning or format, tightening a cap, making an optional field required.
 - Because unknown fields are rejected, a producer may send a new optional field only after an App release that
-  allows it. App first, then Action or engine **[default]**. Adding an optional allowlisted field this way keeps the version.
+  allows it. App first, then Action or engine **[default]**. Adding an optional allowlisted field this way keeps the
+  version. For the report, the field is allowed for the engine release that adds it and later ones only.
 - A version bump never changes a consumer's domain types; consumers map from the new transport type.
 
 ### Conformance fixtures
@@ -142,7 +150,9 @@ Examples: `unknown-identity` carries no measurement profile, so its expectation 
 tampering fixture overrides `baseline_digest` with a value outside `trusted_baseline_digests`. Any other key in
 `facts` fails the corpus test.
 
-Fixtures captured from the engine use revision `f8877d25…`; fixtures from a mutable branch are not allowed.
+Fixtures captured from the engine cite their engine release and that release's pinned revision (v2.3.1:
+`f8877d25…`); fixtures from a mutable branch are not allowed. Every fixture today is a v2.3.1 document, and the
+tests decode it as one.
 Required report fixtures (plan T02): `healthy`, `attention-pass` (verdict `needs_attention` with passing hard
 gates), `blocked`, `missing-evidence` (`hard_gates: unmeasured`), `unknown-identity`, `profile-comparable` (symmetric
 partial with a recognized `partial_basis`), `profile-incompatible` (`gate_reference.status: non_comparable`),
@@ -165,8 +175,16 @@ Further engine captures, unmodified, each with its policy file and the baseline 
 are measured, so it is captured on the engine's reachability fixture), `real-attention-baseline`,
 `real-attention-no-baseline`, `real-baselined-comparable` (finding status `baseline`), `real-baselined-with-labels`,
 `real-blocked-forbidden-and-allowed` (one forbidden and one allowed dependency, comparable baseline, finding status
-`new`), `real-unmeasured-no-inventory`, `real-waiver-expired` and `real-waiver-active`. Two byte copies of captures
-ship a synthetic envelope: `unlisted-image` (image digest outside the manifest) and `baseline-tampered`.
+`new`), `real-unmeasured-no-inventory`, `real-waiver-expired`, `real-waiver-active`, and `real-polyglot-blocked`:
+the engine fixture with a cargo crate, a Python and a TypeScript package added and every optional analyzer on, so
+its producer rows carry the real tool versions of cargo, cargo-modules, grimp, dependency-cruiser, scip, jscpd and
+ast-grep. Two byte copies of captures ship a synthetic envelope: `unlisted-image` (image digest outside the
+manifest) and `baseline-tampered`.
+
+Two hand-edited fixtures cover what real engine output reached the old App limits with: `producer-versions` (the
+remaining tool-version formats: grimp failing with `uv`, the macOS system git, two coverage parsers) and
+`large-module` (150 locations on one finding, 152 task files and a 906-character public-surface constraint).
+The captures, like the earlier ones, come from a development host, not from the pinned image.
 
 The `leakage/` set has two groups. Rejecting fixtures (`decode: "error"`): snippet field, log blob, raw model output
 key, multi-line text, oversized text. One surviving fixture (`decode: "ok"`): a marker identifier inside
@@ -254,7 +272,7 @@ Parent tests live in package `wire_test` and exercise the children together and 
   **Expected behavior**: every required named fixture exists; every fixture has an `.expect.json` with `producer` and `decode`, no unknown keys, and no unknown `facts` key; every report fixture has `gate` with a non-empty `reasons` list; no orphan expectation files.
 - **Test name**: `TestFixturesRecordPinnedProducers`
   **Scenario**: read every `producer` entry.
-  **Expected behavior**: engine-captured fixtures cite revision `f8877d25ba36d84d3780071580d23486e3d794d0`; synthetic ones give a reason; none cites a branch name.
+  **Expected behavior**: engine-captured fixtures cite a pinned release at its pinned revision (`v2.3.1` at `f8877d25ba36d84d3780071580d23486e3d794d0`); synthetic ones give a reason; none cites a branch name.
 - **Test name**: `TestLeakageFixturesCarryTheMarker`
   **Scenario**: read every file in `testdata/leakage/`.
   **Expected behavior**: each contains `LEAK-7f3a`; all have `decode: "error"` except the one surviving declarations fixture, which has `decode: "ok"`.
@@ -275,8 +293,18 @@ Parent tests live in package `wire_test` and exercise the children together and 
   **Scenario**: `go list ./internal/wire/...`.
   **Expected behavior**: exactly the parent and the five published packages; the parent exports no identifiers.
 - **Test name**: `TestUnknownVersionRejectedEverywhere`
-  **Scenario**: an envelope with `archfit.report-envelope.v2`, a report with `archfit.architecture-state.v2`, a settings file with `version: 2`.
-  **Expected behavior**: all three are errors.
+  **Scenario**: an envelope with `archfit.report-envelope.v2`, a report with `archfit.architecture-state.v2` under every listed engine
+  release, the real capture as a document of engine `v2.5.0`, a settings file with `version: 2`.
+  **Expected behavior**: all are errors.
+- **Test name**: `TestEveryApprovedEngineVersionIsReadable`
+  **Scenario**: every release of `manifest.EngineVersions`.
+  **Expected behavior**: `report.EngineVersions` lists it, and the real capture decodes as its document.
+- **Test name**: `TestEveryApprovedEngineVersionHasACapture`
+  **Scenario**: every release of `manifest.EngineVersions` against the engine-captured report fixtures that decode.
+  **Expected behavior**: each release has at least one.
+- **Test name**: `TestPolicySchemaFollowsTheCurrentEngine`
+  **Scenario**: read the `tag` of `policy/SCHEMA_SOURCE` and `manifest.Current`.
+  **Expected behavior**: the tag equals the current row's engine version, so moving `current` forces the config schema re-pin.
 
 ### Boundary Tests
 

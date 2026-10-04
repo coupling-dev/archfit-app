@@ -713,9 +713,11 @@ func Render(s Settings) []byte
 - **Volatility**: high (this side), moderate (wire/report)
 - **Balanced?**: yes — contract coupling
 - **Shared knowledge**: ui downloads the artifact with `MaxBytes` as the cap, calls `Decode`, and hands the `Report` to
-  `graph.Build` unread. The artifact holds the raw engine state JSON; `Decode` validates it against the v2.3.1 state
-  schema and reduces it to the no-source form, so fields the decoder drops (measurement, `matched_by`, task declarations,
-  metric provenance, seam scores) never reach a template and ui never renders them. ui parses the artifact in no other way.
+  `graph.Build` unread. The artifact holds the raw engine state JSON; `Decode` validates it against the state schema of
+  an engine release and reduces it to the no-source form, so fields the decoder drops (measurement, `matched_by`, task
+  declarations, metric provenance, seam scores) never reach a template and ui never renders them. ui parses the artifact
+  in no other way. The artifact comes without the envelope that names its release, so ui passes the last of
+  `EngineVersions`: the newest key set holds every older one, and the graph only displays what it reads.
   `StateSchemaV1` is the constant `Decode` checks. For this module each nested type is opaque:
   - `Decision` is an opaque part of `Report` for this module.
   - `Comparison` is an opaque part of `Report` for this module.
@@ -754,10 +756,18 @@ type Report struct {
 
 <!-- contract: Decode — restated from internal/wire/report/module.md -->
 ```go
-// Decode strictly parses payload as the no-source transport. It fails on: size over MaxBytes, a key the
-// v2.3.1 state schema does not define, wrong schema_version, an enum value outside its set, strings over
-// the per-field caps, absolute or parent-escaping paths, multi-line text, or duplicate finding IDs.
-func Decode(payload []byte) (Report, error)
+// Decode strictly parses payload as the no-source transport of the state document engineVersion emits. It
+// fails on: an engineVersion outside EngineVersions, size over MaxBytes, a key that release's state schema
+// does not define, wrong schema_version, an enum value outside its set, strings over the per-field caps,
+// absolute or parent-escaping paths, multi-line text, or duplicate finding IDs.
+func Decode(payload []byte, engineVersion string) (Report, error)
+```
+
+<!-- contract: EngineVersions — restated from internal/wire/report/module.md -->
+```go
+// EngineVersions returns the engine releases whose state document Decode reads, oldest first. Each emits
+// StateSchemaV1; a later release only adds optional keys, so the last key set holds every earlier one.
+func EngineVersions() []string
 ```
 
 ### internal/control (parent façade)

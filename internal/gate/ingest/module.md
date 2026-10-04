@@ -123,7 +123,7 @@ Steps run in this order. The first failing `Rejection` step ends the call with `
 | 14  | Pull request resolution (below), only for `pull_request` runs                                | 409 `stale_head`, `ProblemEnvelopeMismatch`, `ProblemFork` |
 | 15  | Envelope fields equal authoritative values (below)                                           | `ProblemEnvelopeMismatch`                                  |
 | 16  | `envelope.PayloadDigest(body) == Envelope.PayloadDigest`                                     | 400 `digest_mismatch`                                      |
-| 17  | `kind == KindReport`: `report.Decode(body)`                                                  | `ProblemReportInvalid`, `Report` nil                       |
+| 17  | `kind == KindReport`: `report.Decode(body, Envelope.EngineVersion)`                          | `ProblemReportInvalid`, `Report` nil                       |
 
 Any step: `api.ErrRateLimited` → 429 `rate_limited`. Any other GitHub API error → a plain error (not a
 `Rejection`); the caller answers 503 and publishes nothing. A `Verifier` error matching `oidc.ErrUnavailable`
@@ -262,7 +262,9 @@ func Schema() []byte
 - **Volatility**: high (ingest side); the schema is moderate
 - **Balanced?**: yes
 - **Shared knowledge**: `MaxBytes` is the upload cap for both kinds. `report.Decode` is the no-source boundary;
-  ingest never inspects report content. `Decision` is an opaque part of `Report` for this module.
+  ingest never inspects report content. It passes the envelope's `EngineVersion`, so the report must fit the key
+  set of the engine release the producer claims; a release the decoder does not read is `ProblemReportInvalid`.
+  The claim is checked against the manifest later, in `gate`. `Decision` is an opaque part of `Report` for this module.
   `Comparison` is an opaque part of `Report` for this module. `Finding` is an opaque part of `Report` for this module.
   `Dimension` is an opaque part of `Report` for this module. `AgentTask` is an opaque part of `Report` for this module.
   `Coverage` is an opaque part of `Report` for this module. `Seam` is an opaque part of `Report` for this module.
@@ -296,10 +298,11 @@ type Report struct {
 
 <!-- contract: Decode — restated from internal/wire/report/module.md -->
 ```go
-// Decode strictly parses payload as the no-source transport. It fails on: size over MaxBytes, a key the
-// v2.3.1 state schema does not define, wrong schema_version, an enum value outside its set, strings over
-// the per-field caps, absolute or parent-escaping paths, multi-line text, or duplicate finding IDs.
-func Decode(payload []byte) (Report, error)
+// Decode strictly parses payload as the no-source transport of the state document engineVersion emits. It
+// fails on: an engineVersion outside EngineVersions, size over MaxBytes, a key that release's state schema
+// does not define, wrong schema_version, an enum value outside its set, strings over the per-field caps,
+// absolute or parent-escaping paths, multi-line text, or duplicate finding IDs.
+func Decode(payload []byte, engineVersion string) (Report, error)
 ```
 
 ### wire/manifest
@@ -569,6 +572,9 @@ requests built with `httptest.NewRequest`. No network.
 - **Test name**: `TestReceivePullRequestReport`
   **Scenario**: the healthy fixture with matching claims, run, pull and envelope.
   **Expected behavior**: no error, no problems; `Binding` fully filled from GitHub; `Identity`, `BaselineDigest` and `LabelsDigest` copied from the envelope (also when they are `""`); `Digest` equals `envelope.PayloadDigest(body)`; `Report` decoded.
+- **Test name**: `TestReportKeySetFollowsTheClaimedEngine`
+  **Scenario**: the healthy pull request upload with the envelope claiming engine `v2.3.1`, `v2.4.0` and `v9.9.9`.
+  **Expected behavior**: the first two decode with no problem; `v9.9.9`, a release the decoder does not read, gives `ProblemReportInvalid` and a nil `Report`, never a rejection; `Identity.EngineVersion` is the claim in every row.
 - **Test name**: `TestReceiveDefaultBranchPush`
   **Scenario**: `push` run on the default branch.
   **Expected behavior**: `PullRequest` 0, `BaseRef` = default branch, no `Pulls` call, no problems. A push to `feature/x` gives `BaseRef` `feature/x` plus `ProblemUnsupportedEvent`; an unbound `pull_request` run (`refs/pull/7/merge`) gives the default branch.

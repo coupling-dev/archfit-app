@@ -97,7 +97,7 @@ func TestPolicyDigestBindsReportToPolicy(t *testing.T) {
 		if !ok {
 			continue
 		}
-		r, err := report.Decode(f.bytes(t))
+		r, err := report.Decode(f.bytes(t), fixtureEngine)
 		if err != nil {
 			t.Fatalf("%s: a report with a policy sibling must decode: %v", f.id(), err)
 		}

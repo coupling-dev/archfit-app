@@ -119,7 +119,7 @@ func TestInvalidYAMLIsRefusedAndGraphGoesStale(t *testing.T) {
 	c := e.as("alice", permWrite)
 	base := "/r/" + repoName
 	payload := artifact(t, "healthy")
-	rep, err := report.Decode(payload)
+	rep, err := report.Decode(payload, "v2.3.1")
 	if err != nil {
 		t.Fatal(err)
 	}
