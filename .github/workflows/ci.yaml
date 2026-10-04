@@ -26,3 +26,64 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t archfit-app:ci .
+
+  # The App owns the envelope schema; archfit-action vendors a copy (decisions.md §3). action-conformance checks the
+  # copy at the Action commit that generated workflows pin. While that commit is the manifest placeholder there is
+  # nothing to check: action-pin says so in a warning and the step summary, and action-conformance shows as skipped.
+  action-pin:
+    name: Pinned Action commit
+    runs-on: ubuntu-24.04
+    outputs:
+      placeholder: ${{ steps.pin.outputs.placeholder }}
+      ref: ${{ steps.pin.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: pin
+        name: Read the pinned Action commit
+        run: |
+          refs=$(jq -r '[.entries[].action_ref] | unique | .[]' internal/wire/manifest/manifest.json)
+          if [[ $(grep -c . <<<"$refs") -ne 1 ]]; then
+            echo "::error::manifest rows pin different action_ref values; the conformance check needs one Action commit"
+            exit 1
+          fi
+          ref=$refs
+          # A placeholder is one repeated character, the rule of TestManifestHasNoPlaceholdersInRelease.
+          if [[ -z $(tr -d "${ref:0:1}" <<<"$ref") ]]; then
+            echo "::warning title=Action conformance not verified::action_ref $ref is a placeholder; the vendored envelope schema of archfit-action was not compared"
+            {
+              echo "### Action envelope schema: not verified"
+              echo ""
+              echo "The manifest pins the placeholder action_ref \`$ref\`. No archfit-action commit was checked out and"
+              echo "\`schema/envelope.v1.schema.json\` was not compared with \`internal/wire/envelope/envelope.v1.schema.json\`."
+            } >>"$GITHUB_STEP_SUMMARY"
+            echo "placeholder=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "placeholder=false" >>"$GITHUB_OUTPUT"
+          fi
+          echo "ref=$ref" >>"$GITHUB_OUTPUT"
+
+  action-conformance:
+    name: Action envelope schema
+    needs: action-pin
+    if: needs.action-pin.outputs.placeholder == 'false'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      # ARCHFIT_ACTION_TOKEN is needed only while archfit-action is private; GITHUB_TOKEN reads a public repository.
+      - uses: actions/checkout@v4
+        with:
+          repository: alexei-led/archfit-action
+          ref: ${{ needs.action-pin.outputs.ref }}
+          path: archfit-action
+          token: ${{ secrets.ARCHFIT_ACTION_TOKEN || github.token }}
+          persist-credentials: false
+      - name: Compare the vendored envelope schema
+        env:
+          REF: ${{ needs.action-pin.outputs.ref }}
+        run: |
+          if ! cmp -s internal/wire/envelope/envelope.v1.schema.json archfit-action/schema/envelope.v1.schema.json; then
+            echo "::error::archfit-action@$REF vendors a different envelope schema; re-vendor schema/envelope.v1.schema.json there, then pin the new commit"
+            diff -u internal/wire/envelope/envelope.v1.schema.json archfit-action/schema/envelope.v1.schema.json || true
+            exit 1
+          fi
+          echo "### Action envelope schema: identical at archfit-action@\`$REF\`" >>"$GITHUB_STEP_SUMMARY"
