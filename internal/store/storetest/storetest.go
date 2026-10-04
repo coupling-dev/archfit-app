@@ -30,6 +30,8 @@ func Run(t *testing.T, newStore func() store.Store) {
 		{"GetPutDelete", testGetPutDelete},
 		{"Add", testAdd},
 		{"AddIsAtomic", testAddIsAtomic},
+		{"CompareAndSwap", testCompareAndSwap},
+		{"CompareAndSwapIsAtomic", testCompareAndSwapIsAtomic},
 		{"TenantIsolation", testTenantIsolation},
 		{"DeleteTenant", testDeleteTenant},
 		{"Tenants", testTenants},
@@ -108,6 +110,10 @@ func testGetPutDelete(t *testing.T, s store.Store) {
 		t.Fatalf("Put empty: %v", err)
 	}
 	wantValue(t, s, tn, "empty", "")
+	// A present empty value is a non-nil slice, so Get's result is a valid old for CompareAndSwap.
+	if got, err := s.Get(ctx, tn, "empty"); err != nil || got == nil {
+		t.Errorf("Get empty = %v, %v, want a non-nil empty slice", got, err)
+	}
 
 	if err := s.Delete(ctx, tn, "k"); err != nil {
 		t.Fatalf("Delete: %v", err)
@@ -170,6 +176,93 @@ func testAddIsAtomic(t *testing.T, s store.Store) {
 		}
 	}
 	wantValue(t, s, tn, "n", strconv.Itoa(workers*perWorker))
+}
+
+func testCompareAndSwap(t *testing.T, s store.Store) {
+	ctx := context.Background()
+	const tn = store.Tenant(1)
+	mustPut(t, s, tn, "held", "v1")
+	mustPut(t, s, tn, "empty", "")
+	steps := []struct {
+		name       string
+		key        string
+		old, value []byte
+		swapped    bool
+		want       *string // nil: the key must be missing afterwards
+	}{
+		{"nil old over a missing key creates it", "new", nil, []byte("v"), true, ptr("v")},
+		{"nil old over a present key", "held", nil, []byte("x"), false, ptr("v1")},
+		{"empty old over a missing key", "missing", []byte{}, []byte("x"), false, nil},
+		{"empty old over an empty value", "empty", []byte{}, []byte("e"), true, ptr("e")},
+		{"nil old over an empty value", "empty", nil, []byte("x"), false, ptr("e")},
+		{"mismatched old", "held", []byte("v0"), []byte("x"), false, ptr("v1")},
+		{"prefix of the value is not equal", "held", []byte("v"), []byte("x"), false, ptr("v1")},
+		{"matching old replaces", "held", []byte("v1"), []byte("v2"), true, ptr("v2")},
+		{"empty value is stored as empty", "held", []byte("v2"), []byte{}, true, ptr("")},
+		{"nil value deletes", "held", []byte{}, nil, true, nil},
+		{"nil value over a missing key", "held", []byte("v2"), nil, false, nil},
+		{"nil old and nil value over a missing key", "gone", nil, nil, true, nil},
+	}
+	for _, st := range steps {
+		swapped, err := s.CompareAndSwap(ctx, tn, st.key, st.old, st.value)
+		if err != nil || swapped != st.swapped {
+			t.Errorf("%s: CompareAndSwap = %v, %v, want %v, nil", st.name, swapped, err, st.swapped)
+		}
+		if st.want == nil {
+			wantNotFound(t, s, tn, st.key)
+		} else {
+			wantValue(t, s, tn, st.key, *st.want)
+		}
+	}
+
+	// The caller's slices are not aliased.
+	value := []byte("mine")
+	if ok, err := s.CompareAndSwap(ctx, tn, "alias", nil, value); err != nil || !ok {
+		t.Fatalf("CompareAndSwap alias = %v, %v", ok, err)
+	}
+	value[0] = 'X'
+	wantValue(t, s, tn, "alias", "mine")
+
+	// Another tenant's key is neither matched nor changed.
+	if ok, err := s.CompareAndSwap(ctx, 2, "alias", []byte("mine"), []byte("other")); err != nil || ok {
+		t.Errorf("CompareAndSwap under another tenant = %v, %v, want false, nil", ok, err)
+	}
+	if ok, err := s.CompareAndSwap(ctx, 2, "alias", nil, []byte("other")); err != nil || !ok {
+		t.Errorf("CompareAndSwap create under another tenant = %v, %v, want true, nil", ok, err)
+	}
+	wantValue(t, s, tn, "alias", "mine")
+	wantValue(t, s, 2, "alias", "other")
+}
+
+func ptr(s string) *string { return &s }
+
+// Exactly one of many concurrent creators wins, and each round of swaps from one value has exactly one winner.
+func testCompareAndSwapIsAtomic(t *testing.T, s store.Store) {
+	const workers, rounds = 20, 25
+	ctx := context.Background()
+	const tn = store.Tenant(1)
+	for round := range rounds {
+		var old []byte
+		if round > 0 {
+			old = []byte(strconv.Itoa(round - 1))
+		}
+		wins := make([]bool, workers)
+		errs := make([]error, workers)
+		var wg sync.WaitGroup
+		for w := range workers {
+			wg.Go(func() {
+				wins[w], errs[w] = s.CompareAndSwap(ctx, tn, "lease", old, []byte(strconv.Itoa(round)))
+			})
+		}
+		wg.Wait()
+		if err := errors.Join(errs...); err != nil {
+			t.Fatalf("round %d: CompareAndSwap: %v", round, err)
+		}
+		if n := len(slices.DeleteFunc(wins, func(won bool) bool { return !won })); n != 1 {
+			t.Fatalf("round %d: %d winners, want 1", round, n)
+		}
+	}
+	wantValue(t, s, tn, "lease", strconv.Itoa(rounds-1))
 }
 
 func testTenantIsolation(t *testing.T, s store.Store) {
@@ -292,6 +385,10 @@ func testInvalidInput(t *testing.T, s store.Store) {
 		"Put":    func(tn store.Tenant, k string) error { return s.Put(ctx, tn, k, []byte("x")) },
 		"Delete": func(tn store.Tenant, k string) error { return s.Delete(ctx, tn, k) },
 		"Add":    func(tn store.Tenant, k string) error { _, err := s.Add(ctx, tn, k, 1); return err },
+		"CompareAndSwap": func(tn store.Tenant, k string) error {
+			_, err := s.CompareAndSwap(ctx, tn, k, nil, []byte("x"))
+			return err
+		},
 	}
 	inputs := []struct {
 		name   string
@@ -322,6 +419,12 @@ func testInvalidInput(t *testing.T, s store.Store) {
 	}
 	if err := s.Put(ctx, tn, "new", big); err == nil {
 		t.Error("Put with a 64 KiB + 1 value: want an error")
+	}
+	if _, err := s.CompareAndSwap(ctx, tn, "k", []byte("v"), big); err == nil {
+		t.Error("CompareAndSwap with a 64 KiB + 1 value over a key: want an error")
+	}
+	if _, err := s.CompareAndSwap(ctx, tn, "new", nil, big); err == nil {
+		t.Error("CompareAndSwap with a 64 KiB + 1 value: want an error")
 	}
 
 	wantValue(t, s, tn, "k", "v")
@@ -376,13 +479,15 @@ func testCancelledContext(t *testing.T, s store.Store) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	ops := map[string]func() error{
-		"Get":          func() error { _, err := s.Get(ctx, tn, "k"); return err },
-		"Put":          func() error { return s.Put(ctx, tn, "k", []byte("changed")) },
-		"Put new":      func() error { return s.Put(ctx, 2, "k", []byte("created")) },
-		"Delete":       func() error { return s.Delete(ctx, tn, "k") },
-		"Add":          func() error { _, err := s.Add(ctx, tn, "n", 1); return err },
-		"DeleteTenant": func() error { return s.DeleteTenant(ctx, tn) },
-		"Tenants":      func() error { _, err := s.Tenants(ctx); return err },
+		"Get":            func() error { _, err := s.Get(ctx, tn, "k"); return err },
+		"Put":            func() error { return s.Put(ctx, tn, "k", []byte("changed")) },
+		"Put new":        func() error { return s.Put(ctx, 2, "k", []byte("created")) },
+		"Delete":         func() error { return s.Delete(ctx, tn, "k") },
+		"Add":            func() error { _, err := s.Add(ctx, tn, "n", 1); return err },
+		"CompareAndSwap": func() error { _, err := s.CompareAndSwap(ctx, tn, "k", []byte("v"), []byte("x")); return err },
+		"Swap delete":    func() error { _, err := s.CompareAndSwap(ctx, tn, "k", []byte("v"), nil); return err },
+		"DeleteTenant":   func() error { return s.DeleteTenant(ctx, tn) },
+		"Tenants":        func() error { _, err := s.Tenants(ctx); return err },
 	}
 	for name, op := range ops {
 		if err := op(); !errors.Is(err, context.Canceled) {

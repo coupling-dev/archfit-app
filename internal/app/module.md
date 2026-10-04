@@ -149,7 +149,8 @@ All integrations are constructor or handler calls: contract strength. `app` hold
 
 <!-- contract: Gate, Deps, New — restated from internal/gate/module.md -->
 ```go
-// Deps are the only things the gate path may touch: GitHub, OIDC, the Store (read-only) and a clock.
+// Deps are the only things the gate path may touch: GitHub, OIDC, the Store and a clock. On the Store the gate
+// path reads the entitlement and writes only gate/feedback's publication leases.
 type Deps struct {
     GitHub   *Client
     OIDC     Verifier
@@ -370,6 +371,9 @@ type Store interface {
     Delete(ctx context.Context, t Tenant, key string) error // deleting a missing key is not an error
     // Add atomically adds delta to the integer at key (missing = 0) and returns the new value.
     Add(ctx context.Context, t Tenant, key string, delta int64) (int64, error)
+    // CompareAndSwap atomically sets key to value when it currently holds exactly old, and reports whether it did.
+    // A nil old matches only a missing key; a nil value deletes the key. A false result changes nothing.
+    CompareAndSwap(ctx context.Context, t Tenant, key string, old, value []byte) (bool, error)
     // DeleteTenant removes every key of the tenant. Idempotent.
     DeleteTenant(ctx context.Context, t Tenant) error
     // Tenants lists every tenant that owns at least one key, SystemTenant excluded.

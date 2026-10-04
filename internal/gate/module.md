@@ -40,7 +40,8 @@ feedback are tuned with every pilot. The façade contract is kept small and stab
 ## Public Contract
 
 ```go
-// Deps are the only things the gate path may touch: GitHub, OIDC, the Store (read-only) and a clock.
+// Deps are the only things the gate path may touch: GitHub, OIDC, the Store and a clock. On the Store the gate
+// path reads the entitlement and writes only gate/feedback's publication leases.
 type Deps struct {
     GitHub   *Client
     OIDC     Verifier
@@ -871,14 +872,17 @@ type Verifier interface {
 ### store
 
 - **Counterpart**: internal/store
-- **Direction**: gate depends on store (passes `Deps.Store` to `gate/inputs`; read-only)
+- **Direction**: gate depends on store (passes `Deps.Store` to `gate/inputs`, which only reads, and to
+  `gate/feedback`, which holds the publication leases)
 - **Strength**: contract
 - **LCA / Rank / Distance**: root / 1 / 1
 - **Volatility**: high (gate side); store is low
 - **Balanced?**: yes
-- **Shared knowledge**: the gate path only ever calls `Get(Tenant(installationID), EntitlementKey)`, and only inside
-  `gate/inputs`. `ErrNotFound` is the store sentinel for a missing key; to the gate it means "not suspended".
-  `SystemTenant` is never used by the gate, and the gate never calls `Tenants`.
+- **Shared knowledge**: the gate path calls `Get(Tenant(installationID), EntitlementKey)` inside `gate/inputs`, and
+  `Get` and `CompareAndSwap` on `feedback/lease/<head_sha>` under the same tenant inside `gate/feedback`. It calls no
+  other Store operation. `ErrNotFound` is the store sentinel for a missing key; for the entitlement it means "not
+  suspended", for a lease that the lease is free. `SystemTenant` is never used by the gate, and the gate never
+  calls `Tenants`.
 
 <!-- contract: Tenant, SystemTenant — restated from internal/store/module.md -->
 ```go
@@ -903,6 +907,9 @@ type Store interface {
     Delete(ctx context.Context, t Tenant, key string) error // deleting a missing key is not an error
     // Add atomically adds delta to the integer at key (missing = 0) and returns the new value.
     Add(ctx context.Context, t Tenant, key string, delta int64) (int64, error)
+    // CompareAndSwap atomically sets key to value when it currently holds exactly old, and reports whether it did.
+    // A nil old matches only a missing key; a nil value deletes the key. A false result changes nothing.
+    CompareAndSwap(ctx context.Context, t Tenant, key string, old, value []byte) (bool, error)
     // DeleteTenant removes every key of the tenant. Idempotent.
     DeleteTenant(ctx context.Context, t Tenant) error
     // Tenants lists every tenant that owns at least one key, SystemTenant excluded.
@@ -1055,14 +1062,21 @@ event left undone.
   fabricated-report gap (a trusted workflow running a PR script that forges a clean report) is not closed and not claimed closed.
 - Unknown identity never compares equal: a manifest miss, a missing profile or a profile version mismatch is never approved.
 - The tenant comes from verified OIDC claims (`ResolveRepo`) or the verified webhook; never from the envelope or a client-supplied ID.
-- The Store is read-only on the gate path, and only for the `Entitlement` record. A Store outage or a missing
-  or unreadable record means "not suspended" **[default]**; it never establishes non-payment and never blocks the
-  pipeline or a merge (2 second read timeout in `inputs` **[default]**). Recovery of a missing record is not the gate's
-  job: `control`'s sweep backfills it (Observe + Refresh for every installation), so a missed installation webhook
-  delays the trial start by at most one sweep interval.
+- The gate path reads one Store record, the `Entitlement`, and writes only `gate/feedback`'s publication leases.
+  A missing or unreadable `Entitlement` means "not suspended" **[default]**; it never establishes non-payment and
+  never blocks a merge by itself (2 second read timeout in `inputs` **[default]**). Recovery of a missing record is
+  not the gate's job: `control`'s sweep backfills it (Observe + Refresh for every installation), so a missed
+  installation webhook delays the trial start by at most one sweep interval.
+- Every write to GitHub for one head SHA holds that head's publication lease in the Store (`gate/feedback`), so an
+  older publication cannot overwrite a newer one from a stale read, also across instances. When the lease cannot be
+  taken because the Store fails, nothing is written: the upload answers 503 `unavailable`, `HandleEvent` returns the
+  error and the sweep counts it, and the check stays as it was until the Store is back **[default: fail closed]**.
+  An unserialized write would reopen the overwrite. So a Store outage now blocks new verdicts, where before only
+  the entitlement read depended on it.
 - Suspension is `action_required` in category `subscription`: never an architecture failure, never a success.
   A restored entitlement re-runs the workflow; an old receipt is never promoted to `success`.
-- Nothing is persisted by the gate. Reports and payloads live in memory for one request and are dropped.
+- Nothing is persisted by the gate but the publication leases, which hold a token and an expiry only and are
+  deleted when the writes end. Reports and payloads live in memory for one request and are dropped.
 - Handlers do their work in the request and are idempotent; GitHub holds the dedup keys (`external_id`, comment marker).
 - GitHub rate-limit exhaustion yields 429 `rate_limited` during `Receive`, 503 with `Retry-After` after it, or a
   stopped sweep; the Action retries both statuses; checks stay pending; never green.
@@ -1169,9 +1183,9 @@ are driven only as far as they go without GitHub. Child internals are tested in 
   **Scenario**: upload, webhook and sweep flows with marker strings in paths and messages, capturing logger.
   **Expected behavior**: IDs, digests, outcomes, timings only.
 
-- **Test name**: `TestStoreIsOnlyRead`
-  **Scenario**: a Store wrapper that panics on every write and on `Tenants`; a private repository with an entitlement; drive every façade entry point over it: `HandleEvent` (`PullOpened`, `ReviewChanged`, `DefaultBranchPush`), an upload, `Sweep`.
-  **Expected behavior**: no panic; the Store was read at least once; every read is `Get` of `EntitlementKey` under the installation's tenant, never `SystemTenant`.
+- **Test name**: `TestStoreWritesOnlyPublicationLeases`
+  **Scenario**: a Store wrapper that panics on `Put`, `Delete`, `Add`, `DeleteTenant`, `Tenants` and on a `CompareAndSwap` outside `feedback/lease/`; a private repository with an entitlement; drive every façade entry point over it: `HandleEvent` (`PullOpened`, `ReviewChanged`, `DefaultBranchPush`), an upload, `Sweep`.
+  **Expected behavior**: no panic; the Store was read at least once; every read outside the leases is `Get` of `EntitlementKey` under the installation's tenant, never `SystemTenant`; every lease operation is under the installation's tenant; the pull's lease is gone afterwards.
 
 ### Behavior Tests
 
@@ -1195,10 +1209,13 @@ are driven only as far as they go without GitHub. Child internals are tested in 
   **Expected behavior**: one re-run; the check stays `action_required` until the new upload; the second delivery finds the run in progress and does nothing.
 - **Test name**: `TestSuspensionAndRestoration` (T21)
   **Scenario**: private repository past trial and grace; upload; then the record is replaced by a grant and the sweep runs; separately the Store fails during an upload.
-  **Expected behavior**: `action_required`/`subscription`, not `failure` and not `success`; after restoration a re-run is requested and only the fresh report turns the check green; with the Store down the upload is decided normally (outage is not non-payment).
+  **Expected behavior**: `action_required`/`subscription`, not `failure` and not `success`; after restoration a re-run is requested and only the fresh report turns the check green; with the entitlement unreadable the upload is decided normally (an unreadable record is not non-payment).
 - **Test name**: `TestGateSurvivesControlPlaneFailure`
-  **Scenario**: no `control` package wired at all; Store failing; `control.HandleEvent` returning errors after `gate.HandleEvent`.
+  **Scenario**: no `control` package wired at all; the entitlement unreadable while the publication leases work; `control.HandleEvent` returning errors after `gate.HandleEvent`.
   **Expected behavior**: uploads, pending checks and the sweep complete.
+- **Test name**: `TestStoreOutageFailsClosed`
+  **Scenario**: every Store operation fails, the leases included: a `PullOpened` event, an upload and a `Sweep`; then the Store recovers and the event and upload are repeated.
+  **Expected behavior**: `HandleEvent` returns an error; the upload answers 503 `unavailable` without a conclusion; the sweep counts errors; no check or comment is written and nothing is green. After recovery the pending check and then `success` are written.
 - **Test name**: `TestBasePolicyChangeReachesOpenPullsAtOnce` (T12, T16)
   **Scenario**: three open PRs with `success` receipts; a policy PR merges and the `DefaultBranchPush` event arrives; separately the same merge with the event lost, followed by the hourly `Gate.Sweep`.
   **Expected behavior**: within `HandleEvent` each PR shows `stale_inputs` and one re-run is requested per PR; with the event lost the sweep performs the same repair; in both cases nothing is green until a fresh report arrives, and a later sweep adds nothing.

@@ -286,7 +286,7 @@ creates or updates a check run or comment.
 6. Success: run the draft checks of the discovery upload on `DraftPolicy` — the same function, so size, shape, `policy.Validate` and
    zero waivers; a result that fails any of them ends in the failure state `invalid_draft` of step 7 with no policy commit. Else `Propose` the policy onto the same branch;
    `SetBody` with marker `state=complete`, "discovery complete", the consent reference (kind, and the time step 1 CHECKED the
-   consent with `Deps.Now`, worded "checked at": `Consents` exposes only `Has`, so the time the consent was recorded is not available here), and up to 20 **[default]** `Notes` that pass the line checks.
+   consent with `Deps.Now`, worded "checked at": `Consents` exposes only `Has`, so the time the consent was recorded is not available here), and up to 20 **[default]** `Notes` that pass the line checks, each sanitized (see Constraints).
 7. Failure: `SetBody` with marker `state=failed code=<code>` and one code — `token_error`, `sandbox_unavailable`, `timeout`, `sandbox_failed`, `invalid_draft`, `github_error` — and "retry from the Archfit UI".
    The sandbox error text is never copied anywhere. Return the `Draft` from step 4 immediately; the job outcome is read through `Progress`.
 
@@ -643,7 +643,8 @@ type Baseline struct {
 func ReadBaseline(raw []byte) (Baseline, error)
 ```
 
-Fingerprints and rule IDs are token classes after `ReadBaseline`, so the PR body renders them in code spans unescaped.
+Fingerprints and rule IDs are token classes after `ReadBaseline`, so the PR body's sanitizer (see Constraints) leaves
+them unchanged in their code spans.
 
 ### internal/wire/manifest
 
@@ -917,6 +918,13 @@ type TokenSource interface {
 - No persistent source: this module never clones, never writes source or draft bytes to disk, Store, logs or caches. `DraftPolicy` lives in memory until committed.
 - No repository scripts: the generated workflow runs only the pinned Action; the `Sandbox` contract forbids script execution and extra credentials. Customer LLM keys stay in the customer's CI; the App never receives them.
 - Tenant identity: `Repo` comes from `Sessions.Authorize` (UI) or `Upload.Binding.Repo` (upload). Never from the envelope, URL or form.
+- Strings the App does not control are sanitized before they enter a PR body, by the rule of `gate/feedback`:
+  `<!--`, `-->`, backticks and line breaks are removed, then `<` and `>` are HTML-escaped. Every code span of the
+  baseline PR body goes through it, so the default branch, which GitHub does not restrict to a token class and which
+  may hold a backtick, `<` or `>`, cannot leave its span; in the table its `|` is also written as `\|`. Engine notes
+  in the managed PR body go through it after the line checks. Inside a code span an escaped `<` shows as `&lt;`, a
+  cosmetic cost of one rule for every span. Logins in PR titles and commit messages (`control/assist`, `control/ui`)
+  are not sanitized here; they come from GitHub's user API, whose login rule allows only letters, digits and `-`.
 - Never trust head-tree settings: the discovery workflow check reads settings at the default branch only.
 - Managed job state lives in the PR body marker, so every instance and every restart reads the same state. A job lost with its process shows "stalled — retry" after 11 min; retry is idempotent on the same branch and PR. The 2-job quota is per process (ceiling: one instance).
 - The sandbox token is minted per job, after the consent check, passed only in `DiscoveryJob.Token`, and never stored or logged.
@@ -949,7 +957,10 @@ Test doubles only at boundaries: in-memory GitHub roles (`Repos`, `Actions`, `Ch
   **Expected behavior**: `installed` ×3, `workflow_merged` ×2, `report_received`, `policy_merged`, `gate_advisory`, `gate_required`; each with its diagnostic; `OpenDraft` set only when the matching branch has an open PR.
 - **Test name**: `TestManagedMarker`
   **Scenario**: table over PR bodies: no marker; `running` at −5 min; `running` at −12 min; `failed code=timeout`; `complete`; garbled marker; marker on a closed PR.
-  **Expected behavior**: no managed diagnostic; running; stalled; failed with the code; review PR; stalled; no managed diagnostic. Render then parse round-trips.
+  **Expected behavior**: no managed diagnostic; running; stalled; failed with the code; review PR; stalled; no managed diagnostic. Render then parse round-trips. A complete body keeps at most 20 notes and the marker last; a note with a backtick, `<img>` and `<details>` appears with the backtick removed and the angle brackets escaped, a note with `<!--` is dropped, and the body holds exactly one marker.
+- **Test name**: `TestSanitize`
+  **Scenario**: table: a branch name, a rule ID, a backtick, `<!--…-->`, angle brackets, line breaks, a pipe; then strings from which stripping could reassemble `<!--`.
+  **Expected behavior**: unchanged; unchanged; removed; removed; `&lt;`/`&gt;`; removed; unchanged; `mono` is the sanitized value in backticks; no reassembled string holds `<`, `>`, a backtick, a line break, `<!--` or `-->`.
 - **Test name**: `TestWorkflowTemplate`
   **Scenario**: render with a manifest entry and default branch `trunk`.
   **Expected behavior**: Action pinned by 40-hex `ActionRef`; image digest and engine version present; `Deps.BaseURL` as endpoint and audience; triggers exactly `pull_request`, `push` on `trunk` and `workflow_dispatch`; dispatch inputs `mode` (choice `report`, `discovery`, `baseline`, default `report`) and boolean `discover`, passed as `mode: ${{ inputs.discover && 'discovery' || inputs.mode }}` and `discover: ${{ inputs.discover }}`; `id-token: write`, `contents: read`; the header comment names the three files, says they are read per file (PR head when the PR changes the file, else the base branch tip), never "base-ref", and names the two digests the Action reports; no `secrets.`, no `run:` step, no `workflow_run`, no `pull_request_target`, no `merge_group`.
@@ -1025,6 +1036,9 @@ Test doubles only at boundaries: in-memory GitHub roles (`Repos`, `Actions`, `Ch
 - **Test name**: `TestBaselineBodyAndLogsCarryOnlyIDs`
   **Scenario**: a real capture with an unknown key whose value is a marker string.
   **Expected behavior**: the marker is committed in the file and appears in no PR body, response or log line.
+- **Test name**: `TestBaselineBodySanitizesDefaultBranch`
+  **Scenario**: the baseline PR body for default branches `main`, ``rel`ease``, `a<!--b`, `x-->y`, `<!<!---->--x`, `x<img src=y>` and `a|b`.
+  **Expected behavior**: the branch renders as `` `main` ``, `` `release` ``, `` `ab` ``, `` `xy` ``, an inert string, `` `x&lt;img src=y&gt;` `` and `` `a|b` ``; no `<!--`, `-->` or `<img` in the body; every line closes its code spans; every table row keeps exactly three cell borders.
 - **Test name**: `TestBaselineBodyStaysUnderGitHubLimit`
   **Scenario**: a protected baseline of 300 findings and a capture of 3 000 other findings, all with 128-character rule IDs.
   **Expected behavior**: the body counts 3 000 added and 300 removed, lists 150 of each with "and 2850 more" and

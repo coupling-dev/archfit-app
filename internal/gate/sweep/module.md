@@ -649,7 +649,9 @@ type Actions interface {
 - A failure for one installation, repository or pull never aborts the pass.
 - Reconciliation window (stated, not zero): a missed event or an expiry is repaired within one sweep interval
   (hourly **[default]**) plus the customer's CI time. During that window the old check result stands.
-- A Store outage inside `Resolve` means "not suspended"; the sweep never suspends on missing data.
+- A Store outage inside `Resolve` means "not suspended"; the sweep never suspends on missing data. The same outage
+  fails every `Publish`, `Pending` and `Warn`, which need `gate/feedback`'s publication lease: each such pull counts
+  as an error and its check stays as it was, never green, until a pass after the Store is back.
 - Logs (`log/slog` default logger **[default]**): installation ID, repository ID, PR number, head SHA, rule
   number, action, digests, timings, and the `Summary`. Never paths, messages, owner or reviewer names.
 - Imports: standard library, `gate/inputs`, `gate/feedback`, `gate/verdict`, `wire/settings`, `github/api`.

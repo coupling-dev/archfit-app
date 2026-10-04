@@ -514,9 +514,14 @@ Shared knowledge, per counterpart:
 - `internal/gate/ingest` holds `MaxBytes` (request size cap, `413`), `Decode` and `Report`. It decodes with the
   envelope's `engine_version`. A decode error, an unlisted release included, becomes the problem
   `report_invalid`, never a rejection.
-- `internal/gate/verdict` holds `Report`, `Decision`, `UnevaluatedRule`, `Comparison`, `Reference`. It reads `Verdict`,
-  `HardGates`, `UnevaluatedRequiredRules`, `ConfigHash` and `GateReference.Status`: the frozen decision core, which
-  every listed release defines. It never filters by `AgentTask.Origin` or `Finding.Status`.
+- `internal/gate/verdict` holds `Report`, `Decision`, `UnevaluatedRule`, `Comparison`, `Reference`, `Dimension`,
+  `Finding`. It decides only from the frozen decision core, which every listed release defines: `Verdict`,
+  `Decision.HardGates`, `Decision.UnevaluatedRequiredRules` (`RuleID`, and `Reason` for the dead-selector prefix),
+  `Comparison.ConfigHash`, `Comparison.MeasurementProfile` (nil or not), and `GateReference.Status` and `Reasons`.
+  For the display-only `Detail` of `attention_only` it also reads `Dimension.Status` of the nine engine keys and
+  `Finding.Kind` and `Finding.Status`, to name the dimensions not fully measured and count the active diagnostics.
+  Those reads never change the conclusion or the reason code. It never reads `AgentTask` (so never its `Origin`),
+  `Coverage` or `Seams`.
 - `internal/gate/feedback` holds all types: findings with edges and locations for annotations, dimensions with
   status and confidence, agent tasks with `RepairKind` and `Validation`, the measurement profile, coverage. It calls
   `Finding.Active` to mark blocking findings.

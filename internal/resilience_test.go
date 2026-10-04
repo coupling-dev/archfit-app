@@ -350,15 +350,14 @@ func TestGateSurvivesControlPlaneFailure(t *testing.T) {
 		if _, ctlErr := s.deliver("installation", installationPayload("created", demoInstallation)); ctlErr == nil {
 			t.Fatal("control handled an installation event without a Store; the failure is not being exercised")
 		}
-		if got := s.upload(demoUpload(f)); got.Status != http.StatusOK || got.Conclusion != "success" {
-			t.Errorf("upload answered %+v; a Store failure means not suspended, so want success", got)
+		// An unreadable entitlement alone means "not suspended", but without the Store no publication lease can be
+		// taken: the gate fails closed and writes nothing rather than publish unserialized.
+		if got := s.upload(demoUpload(f)); got.Status != http.StatusServiceUnavailable || got.Conclusion != "" {
+			t.Errorf("upload answered %+v; without a publication lease want 503 and no conclusion", got)
 		}
 		openSecondPull(w)
-		if gateErr, _ := s.deliver("pull_request", second); gateErr != nil {
-			t.Errorf("gate.HandleEvent: %v", gateErr)
-		}
-		if c := w.check(demoRepo, strings.Repeat("7c", 20), checkGate); c == nil || c.Status != "in_progress" {
-			t.Errorf("pending check = %+v; want in_progress", c)
+		if gateErr, _ := s.deliver("pull_request", second); gateErr == nil {
+			t.Error("gate.HandleEvent created the pending check without a publication lease")
 		}
 
 		// The control sweep fails on its first GitHub call; the gate sweep runs right after it, as in app.
@@ -366,11 +365,13 @@ func TestGateSurvivesControlPlaneFailure(t *testing.T) {
 		if err := s.ctl.Sweep(context.Background()); err == nil {
 			t.Fatal("the control sweep succeeded; the failure is not being exercised")
 		}
-		if sum := s.sweep(); sum.Errors != 0 || sum.Pulls != 2 {
-			t.Errorf("gate sweep summary = %+v; want both pull requests visited without errors", sum)
+		if sum := s.sweep(); sum.Errors != 2 || sum.Pulls != 2 {
+			t.Errorf("gate sweep summary = %+v; want both pull requests visited, each an error", sum)
 		}
-		if c := w.check(demoRepo, demoHead, checkGate); c.Conclusion != "success" {
-			t.Errorf("archfit/gate = %s after the sweep; want the uploaded success kept", c.Conclusion)
+		for _, head := range []string{demoHead, strings.Repeat("7c", 20)} {
+			if c := w.check(demoRepo, head, checkGate); c != nil {
+				t.Errorf("archfit/gate on %s = %s/%s; want no check written without the Store", head, c.Status, c.Conclusion)
+			}
 		}
 	})
 }

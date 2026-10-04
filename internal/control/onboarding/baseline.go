@@ -200,9 +200,12 @@ func sortAccepted(list []policy.Accepted) []policy.Accepted {
 
 // baselineBody is deterministic, so a retried upload rewrites the same text. It carries IDs, digests and counts
 // only: fingerprints and rule IDs are token classes that wire/policy checked, and nothing else of the file appears.
+// The default branch is the one GitHub-supplied name in it; mono sanitizes it like every other code span.
 func baselineBody(up gate.Upload, c baselineCheck, added, removed []policy.Accepted) string {
 	b := up.Binding
 	branch := mono(b.Repo.DefaultBranch)
+	// A "|" ends a table cell even inside a code span; GitHub's table syntax takes "\|" as a literal pipe there.
+	branchCell := strings.ReplaceAll(branch, "|", `\|`)
 	var sb strings.Builder
 	line := func(format string, args ...any) { fmt.Fprintf(&sb, format+"\n", args...) }
 
@@ -235,7 +238,7 @@ func baselineBody(up gate.Upload, c baselineCheck, added, removed []policy.Accep
 	}
 	line("| Accepted findings | Count |")
 	line("| --- | --- |")
-	line("| Baseline on %s | %s |", branch, before)
+	line("| Baseline on %s | %s |", branchCell, before)
 	line("| This pull request | %d |", len(c.capture.Accepted))
 	line("| Added | %d |", len(added))
 	line("| Removed | %s |", gone)
@@ -281,5 +284,18 @@ func writeFindings(sb *strings.Builder, title string, list []policy.Accepted) {
 	}
 }
 
-// mono renders a token as a Markdown code span. Callers pass only token-class values, which hold no backtick.
-func mono(s string) string { return "`" + s + "`" }
+// mono renders a value as a Markdown code span. It sanitizes first, so a value outside a token class, such as a
+// default branch named with a backtick or "<!--", can neither leave the span nor open an HTML comment.
+func mono(s string) string { return "`" + sanitize(s) + "`" }
+
+// Strings the App does not control are sanitized before they enter a PR body, by the rule gate/feedback applies to
+// engine-authored text: remove the HTML comment markers, backticks and line breaks, then escape the angle brackets,
+// so that no reassembled "<!--" survives and no such string can forge the managed marker.
+var (
+	markdownStripper = strings.NewReplacer("<!--", "", "-->", "", "`", "", "\r", "", "\n", "")
+	markdownEscaper  = strings.NewReplacer("<", "&lt;", ">", "&gt;")
+)
+
+func sanitize(s string) string {
+	return markdownEscaper.Replace(markdownStripper.Replace(s))
+}

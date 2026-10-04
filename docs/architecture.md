@@ -65,8 +65,10 @@ flowchart LR
 Solid arrows show request, read, or publication flow. The dotted arrow shows an optional AI proposal.
 
 The App stores no report or source code. GitHub stores checks, comments, workflow runs, and the no-source
-report artifact that the Graph page reads. The App stores entitlements, consent records, and an LLM budget
-counter in a key-value store.
+report artifact that the Graph page reads. The App stores entitlements, consent records, an LLM budget
+counter, and short-lived publication leases in a key-value store. A lease makes the writes for one head SHA run
+one at a time, on every instance, so an older publication cannot overwrite a newer one. Without the store, the App
+publishes nothing.
 
 The repository split is:
 
@@ -423,7 +425,8 @@ This page lists only what any host must provide.
 A host must provide these runtime capabilities:
 
 - Run one static Go binary in a container.
-- Provide a key-value driver that passes the `store/storetest` suite.
+- Provide a key-value driver that passes the `store/storetest` suite. When more than one instance runs, its
+  `CompareAndSwap` must be atomic across all of them.
 - Call `POST /internal/sweep` with an external scheduler.
 - Provide a sandbox driver before managed discovery is enabled.
 

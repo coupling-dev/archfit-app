@@ -8,6 +8,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
 	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/alexei-led/archfit-app/internal/store"
 	"github.com/alexei-led/archfit-app/internal/wire/manifest"
 	"github.com/alexei-led/archfit-app/internal/wire/report"
 )
@@ -56,7 +57,14 @@ type Publisher interface {
 	Warn(ctx context.Context, t inputs.Target, expiry time.Time) error
 }
 
-// New returns a Publisher that keeps no state between calls and is safe for concurrent use.
-func New(checks api.Checks, comments api.Comments, pulls api.Pulls, now func() time.Time) Publisher {
-	return &publisher{checks: checks, comments: comments, pulls: pulls, now: now}
+// New returns a Publisher that is safe for concurrent use, also across instances that share s: Publish, Pending and
+// Warn hold a per-head publication lease in s, so that two publishers for one head SHA never interleave their reads
+// and writes. It keeps no other state between calls; GitHub holds the receipts.
+func New(checks api.Checks, comments api.Comments, pulls api.Pulls, s store.Store, now func() time.Time) Publisher {
+	return &serialized{
+		next:  &publisher{checks: checks, comments: comments, pulls: pulls, now: now},
+		store: s,
+		now:   now,
+		wait:  pollWait,
+	}
 }

@@ -34,7 +34,8 @@ and the invariants in `AGENTS.md`. Choices made without an owner answer are mark
 - Offer AI assistance only on explicit request: managed (one provider, consent, hard budget) or
   customer mode (workflow dispatch). Proposals are always reviewable diffs.
 - Keep entitlements (manual grants, trial, grace, suspension), consent records and the LLM budget
-  counter in a KV store; delete them on uninstall. Store nothing else: no reports, no source, no queues.
+  counter in a KV store; delete them on uninstall. Besides them only short-lived publication leases, which
+  serialize the GitHub writes of one head SHA across instances. Store nothing else: no reports, no source, no queues.
 
 ## Subdomain Classification
 
@@ -252,10 +253,11 @@ Distance scale and thresholds are those of the Fractal Design skill. Depths: roo
 | gate/inputs → wire/settings, wire/policy                                    | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
 | gate/inputs → github/api                                                    | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
 | gate/inputs → store                                                         | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
+| gate/feedback → store (publication leases)                                  | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
 | gate/verdict, gate/feedback → wire/report                                   | Contract (published language)     | root           | 2    | 2        | High       | Yes       | —                                                |
 | gate/feedback, gate/sweep → github/api                                      | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
 | gate → wire/{envelope,manifest,settings}, github/{api,oidc,webhook}         | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
-| gate → store (hands the Store to gate/inputs)                               | Contract                          | root           | 1    | 1        | High       | Yes       | —                                                |
+| gate → store (hands the Store to gate/inputs and gate/feedback)             | Contract                          | root           | 1    | 1        | High       | Yes       | —                                                |
 | gate/sweep → wire/settings; gate/feedback → wire/settings, wire/manifest    | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
 | control/account → gate (`Entitlement` record)                               | Contract                          | root           | 2    | 2        | Moderate   | Yes       | gate owns the record so it never imports billing |
 | control/account → store                                                     | Contract                          | root           | 2    | 2        | Moderate   | Yes       | —                                                |
@@ -437,8 +439,8 @@ draft are gone. What the real engine changed in this design:
   **Scenario**: head-edited policy, baseline, settings, workflow, CODEOWNERS; stale approval after re-push; unknown image; missing profile; fork PR; `workflow_run` upload.
   **Expected behavior**: each ends `action_required` with its own reason; none is `success`, `neutral`, or `skipped`.
 - **Test name**: `TestGateSurvivesControlPlaneFailure`
-  **Scenario**: Store failing, LLM provider failing, UI handler panicking, control sweep failing.
-  **Expected behavior**: report upload, webhook pending checks and the gate sweep still complete; a Store failure means "not suspended".
+  **Scenario**: LLM provider failing, UI handler panicking, control sweep failing; separately the Store failing together with the control sweep.
+  **Expected behavior**: without the Store failure, report upload, webhook pending checks and the gate sweep still complete. With the Store failing, an unreadable entitlement would mean "not suspended", but no publication lease can be taken: the upload answers 503, the webhook and every sweep visit return errors, and no gate check is written, so nothing is green.
 - **Test name**: `TestSweepRepairsMissedEvents`
   **Scenario**: drop the PR-opened webhook, drop an upload, change the base policy, let a waiver expire, suspend then restore an installation.
   **Expected behavior**: after one sweep each PR shows the expected check state; re-runs were requested; nothing turned green without a fresh report.

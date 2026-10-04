@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -389,24 +390,55 @@ func (v *fakeVerifier) Verify(_ context.Context, token, audience string) (oidc.C
 	return t.claims, nil
 }
 
-// guardStore proves the gate path only reads: every write panics. It records the tenants it was read under.
+// leaseKeyPrefix is gate/feedback's unexported lease key prefix, restated so that the guard can tell a lease
+// operation from any other Store access.
+const leaseKeyPrefix = "feedback/lease/"
+
+// guardStore proves the gate path writes nothing but publication leases: every other write panics, and so does a
+// compare-and-swap outside the lease keys. It records the tenants and keys of other reads, and the tenants of lease
+// operations separately.
 type guardStore struct {
-	inner   store.Store
-	getErr  error
-	mu      sync.Mutex
-	tenants []store.Tenant
-	keys    []string
+	inner store.Store
+	// entitlementErr fails every read except the leases: the control plane's records are unreadable.
+	entitlementErr error
+	// down fails every operation, the leases included: the Store itself is unreachable.
+	down         error
+	mu           sync.Mutex
+	tenants      []store.Tenant
+	keys         []string
+	leaseTenants []store.Tenant
 }
 
 func (s *guardStore) Get(ctx context.Context, t store.Tenant, key string) ([]byte, error) {
 	s.mu.Lock()
-	s.tenants = append(s.tenants, t)
-	s.keys = append(s.keys, key)
+	lease := strings.HasPrefix(key, leaseKeyPrefix)
+	if lease {
+		s.leaseTenants = append(s.leaseTenants, t)
+	} else {
+		s.tenants = append(s.tenants, t)
+		s.keys = append(s.keys, key)
+	}
 	s.mu.Unlock()
-	if s.getErr != nil {
-		return nil, s.getErr
+	switch {
+	case s.down != nil:
+		return nil, s.down
+	case !lease && s.entitlementErr != nil:
+		return nil, s.entitlementErr
 	}
 	return s.inner.Get(ctx, t, key)
+}
+
+func (s *guardStore) CompareAndSwap(ctx context.Context, t store.Tenant, key string, old, value []byte) (bool, error) {
+	if !strings.HasPrefix(key, leaseKeyPrefix) {
+		panic("gate path wrote to the Store outside a publication lease: CompareAndSwap")
+	}
+	s.mu.Lock()
+	s.leaseTenants = append(s.leaseTenants, t)
+	s.mu.Unlock()
+	if s.down != nil {
+		return false, s.down
+	}
+	return s.inner.CompareAndSwap(ctx, t, key, old, value)
 }
 
 func (s *guardStore) Put(context.Context, store.Tenant, string, []byte) error {

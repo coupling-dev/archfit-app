@@ -13,20 +13,24 @@ habit of every caller instead of a property of one interface.
 
 ## Functional Responsibilities
 
-- Define `Tenant`, `SystemTenant`, `Store` and `ErrNotFound`: six operations, opaque byte values.
+- Define `Tenant`, `SystemTenant`, `Store` and `ErrNotFound`: seven operations, opaque byte values.
 - Make tenant scoping structural: every key operation takes a `Tenant` and none crosses tenants.
 - List the tenants that own keys (`Tenants`), so the sweep can forget an installation whose uninstall webhook was missed.
 - Provide `NewMemory`, the in-process implementation used by tests, local runs, and as `ARCHFIT_STORE=memory`.
 - Provide an atomic integer `Add` so the budget counter needs no transaction.
+- Provide `CompareAndSwap` on one key, so a caller can hold a lease that every instance sees (the publication
+  lease of `gate/feedback`).
 - Provide `DeleteTenant` so uninstall is one call.
 - Export the conformance suite `storetest.Run` **[default]** so every future driver passes the same cases.
 
-Not provided, on purpose: listing keys, TTL, transactions beyond `Add`, schema, migrations, value encoding.
+Not provided, on purpose: listing keys, TTL, transactions beyond `Add` and `CompareAndSwap` on one key, schema,
+migrations, value encoding.
 
 ## Subdomain Classification
 
 Generic. Key-value storage is a solved problem; the module only fixes the smallest interface the App needs.
-Functional volatility is low: the six operations follow from decisions.md §2 "Own state". Implementation
+Functional volatility is low: the operations follow from decisions.md §2 "Own state", plus one compare-and-swap
+for leases that serialize work across instances. Implementation
 volatility is moderate: the KV platform is unchosen until `docs/tech-stack.md` exists. The interface absorbs
 that choice; consumers never see it.
 
@@ -45,7 +49,8 @@ that choice; consumers never see it.
   tenant is never negative.
 
 Known keys are informative only; their owners define them: `entitlement` (owned by `gate/inputs`, written by
-`control/account`), `account` and `consent/<kind>` (private to `control/account`), and under `SystemTenant`
+`control/account`), `account` and `consent/<kind>` (private to `control/account`), `feedback/lease/<head_sha>`
+(private to `gate/feedback`, written only by `CompareAndSwap`), and under `SystemTenant`
 `llm-budget/<YYYY-MM>` (`control/account`). `store` never parses a key or a value except a counter in `Add`.
 
 ## Public Contract
@@ -71,6 +76,9 @@ type Store interface {
     Delete(ctx context.Context, t Tenant, key string) error // deleting a missing key is not an error
     // Add atomically adds delta to the integer at key (missing = 0) and returns the new value.
     Add(ctx context.Context, t Tenant, key string, delta int64) (int64, error)
+    // CompareAndSwap atomically sets key to value when it currently holds exactly old, and reports whether it did.
+    // A nil old matches only a missing key; a nil value deletes the key. A false result changes nothing.
+    CompareAndSwap(ctx context.Context, t Tenant, key string, old, value []byte) (bool, error)
     // DeleteTenant removes every key of the tenant. Idempotent.
     DeleteTenant(ctx context.Context, t Tenant) error
     // Tenants lists every tenant that owns at least one key, SystemTenant excluded.
@@ -96,6 +104,13 @@ with `errors.Is`. `NewMemory` is the only constructor in this package.
   as empty, not as missing.
 - `Put`: creates or replaces. A `nil` value is stored as empty. Last write wins.
 - `Delete`: missing key → `nil`.
+- `CompareAndSwap`: one atomic step against every other operation on the same key, also across processes that
+  share the store. It writes only when the stored bytes equal `old` exactly: a `nil` `old` matches only a missing
+  key, and a non-nil empty `old` matches only a present empty value, never a missing key. A `nil` `value` deletes
+  the key; an empty non-nil `value` stores an empty value. It returns `true` when it wrote (or deleted), `false`
+  with a `nil` error when the comparison failed, and changes nothing then. The value limit of `Put` applies. It
+  stores a copy. Because `Get` returns a non-nil slice for a present empty value, `Get`'s result is always a valid
+  `old` for the same key.
 - `Add`: a missing key counts as 0. Atomic against concurrent `Add` on the same key. `delta` may be negative
   or 0. Overflow of `int64` → error, value unchanged. Non-counter bytes at the key → error, value unchanged.
   A counter is only the canonical decimal form that `Add` itself writes: an optional `-`, then digits without a
@@ -133,6 +148,21 @@ knowledge of every entry below; nothing is restated because this file is the nor
   one key, `entitlement`, under `Tenant(installationID)`. Any error, including `ErrNotFound`, means "not suspended"
   on its side. `store` knows nothing about that rule.
 
+### gate/feedback
+
+- **Counterpart**: internal/gate/feedback/
+- **Direction**: `gate/feedback` depends on `store`
+- **Strength**: Contract
+- **LCA / Rank / Distance**: root / 2 / 2
+- **Volatility**: High (the gate side)
+- **Balanced?**: Yes
+- **Shared knowledge**: `Tenant`, `Store.Get`, `Store.CompareAndSwap`, `ErrNotFound` and the `CompareAndSwap`
+  semantics above, including "a `nil` value deletes". The consumer holds a lease per head SHA at
+  `feedback/lease/<head_sha>` under `Tenant(installationID)`: it reads the key, then swaps from the bytes it read,
+  and releases by swapping its own bytes for `nil`. It relies on the swap being atomic across every instance that
+  shares the store; a driver that is atomic only within one process breaks its guarantee silently. Any error means
+  "no lease" on its side, and it then writes nothing. `store` knows nothing about leases.
+
 ### control/account
 
 - **Counterpart**: internal/control/account/
@@ -152,7 +182,8 @@ knowledge of every entry below; nothing is restated because this file is the nor
 - **LCA / Rank / Distance**: root / 1 / 1
 - **Volatility**: High (`gate`), Moderate (`control`)
 - **Balanced?**: Yes
-- **Shared knowledge**: the `Store` interface type. The gate path only ever calls `Get`. The control façade also
+- **Shared knowledge**: the `Store` interface type. The gate path calls only `Get` and, for the publication leases
+  of `gate/feedback`, `CompareAndSwap`. The control façade also
   calls `Tenants` in its sweep and reads the `SystemTenant` constant, which it skips before it compares the tenants
   with GitHub's installation list.
 
@@ -176,7 +207,12 @@ knowledge of every entry below; nothing is restated because this file is the nor
 - **Balanced?**: Yes
 - **Shared knowledge**: the Public Contract, the semantics table, the key layout `<tenant>/<key>`, the decimal counter
   encoding, and `storetest.Run`. A platform that cannot do an atomic add (compare-and-swap, increment, or a
-  serializable transaction on one key) cannot host this interface.
+  serializable transaction on one key) cannot host this interface. `CompareAndSwap` must be atomic across every
+  App instance, not only within one process: Cloud Run may run several instances at once (docs/design/cloud). On
+  Firestore that is a transaction that reads the document and commits under its `updateTime` precondition, or a
+  `currentDocument.exists=false` precondition for a `nil` `old`; a client-side lock does not qualify. The
+  persistent driver is not built yet; until it is, `storetest` cannot prove this across processes, so the driver
+  needs one test that races two clients of the same database.
 
 ## Change Vectors
 
@@ -186,7 +222,9 @@ knowledge of every entry below; nothing is restated because this file is the nor
 - Replacing the memory map with a sharded or per-tenant structure.
 - Adding conformance cases when a driver shows a new failure mode.
 
-Not supported without a contract change, and unwanted: listing keys, TTL, multi-key transactions.
+Not supported without a contract change, and unwanted: listing keys, TTL, multi-key transactions. A lease whose
+holder crashed stays as an expired value until the next lease on that head takes it over, or until `DeleteTenant`;
+a platform TTL on `feedback/lease/` keys is allowed as a driver detail and never changes the contract.
 
 ## Constraints and Invariants
 
@@ -198,7 +236,7 @@ Not supported without a contract change, and unwanted: listing keys, TTL, multi-
 - The App persists nothing except keys under an installation prefix and the system budget counter. No report,
   source, queue, or job table. `store` must not grow features that invite them.
 - Values are opaque. `store` never logs a value or a key; logs carry tenant ID, operation, outcome, timing only.
-- Safe for concurrent use. `Add` is linearizable per key. Other operations are last-write-wins.
+- Safe for concurrent use. `Add` and `CompareAndSwap` are linearizable per key. Other operations are last-write-wins.
 - Failure is an error, never a default value. `store` does not decide what an outage means; `gate/inputs` reads
   an error as "not suspended", `control/account` reads an error in consent as "no consent".
 - Standard library only in this package. A driver's SDK lives in the driver package only. An implementation
@@ -230,7 +268,13 @@ All cases live in `storetest.Run` and run against `NewMemory` and every driver.
 
 - **Test name**: `TestConformance/GetPutDelete`
   **Scenario**: table: get missing; put then get; put twice; put `nil`; put empty; delete then get; delete missing.
-  **Expected behavior**: `ErrNotFound` by `errors.Is`; the value; the last value; empty and `nil` error; empty and `nil` error; `ErrNotFound`; `nil`.
+  **Expected behavior**: `ErrNotFound` by `errors.Is`; the value; the last value; empty and `nil` error; empty and `nil` error (a non-nil empty slice); `ErrNotFound`; `nil`.
+- **Test name**: `TestConformance/CompareAndSwap`
+  **Scenario**: table: `nil` old over a missing key; `nil` old over a present key; empty old over a missing key; empty old over an empty value; `nil` old over an empty value; a mismatched old; a prefix of the value as old; the matching old; an empty value; a `nil` value; a `nil` value over a missing key with a non-nil old; `nil` old and `nil` value over a missing key. Then the caller's value slice is mutated after a swap, and another tenant swaps the same key.
+  **Expected behavior**: true and created; false, unchanged; false, still missing; true; false; false, unchanged; false, unchanged; true, replaced; true, stored as empty; true, deleted; false; true, still missing. The stored value is a copy; the other tenant never matches the first tenant's bytes and creates its own key.
+- **Test name**: `TestConformance/CompareAndSwapIsAtomic`
+  **Scenario**: 25 rounds; in each, 20 goroutines swap the same key from the previous round's value (`nil` in the first round) to the round number, with `-race`.
+  **Expected behavior**: exactly one winner per round; the final value is the last round's.
 - **Test name**: `TestConformance/Add`
   **Scenario**: table: missing key +5; then −2; then 0; negative result (−10).
   **Expected behavior**: 5; 3; 3; −7. Each return equals a following `Get` parsed as decimal.
@@ -254,7 +298,7 @@ All cases live in `storetest.Run` and run against `NewMemory` and every driver.
 ### Boundary Tests
 
 - **Test name**: `TestConformance/InvalidInput`
-  **Scenario**: table: empty key; 513-byte key; key with NUL; negative tenant; 64 KiB + 1 value; applied to every operation that takes the input.
+  **Scenario**: table: empty key; 513-byte key; key with NUL; negative tenant; 64 KiB + 1 value (`Put` and `CompareAndSwap`); applied to every operation that takes the input.
   **Expected behavior**: an error for each; no key is created or changed.
 - **Test name**: `TestConformance/AddRejectsNonCounterAndOverflow`
   **Scenario**: `Put(k, "abc")` then `Add(k, 1)`; the same with an empty value and with the non-canonical `+7`, `007`, `-0` and ` 7`;
@@ -264,7 +308,7 @@ All cases live in `storetest.Run` and run against `NewMemory` and every driver.
   **Scenario**: `Add(SystemTenant, "llm-budget/2026-09", 10)`, then `DeleteTenant(SystemTenant)`.
   **Expected behavior**: error; the counter still reads 10.
 - **Test name**: `TestConformance/CancelledContext`
-  **Scenario**: every operation with an already cancelled context.
+  **Scenario**: every operation with an already cancelled context, `CompareAndSwap` both as a replace and as a delete.
   **Expected behavior**: an error matching `context.Canceled`; no state change.
 - **Test name**: `TestStoreImportsOnlyStdlib`
   **Scenario**: `go list -deps ./internal/store/...`.

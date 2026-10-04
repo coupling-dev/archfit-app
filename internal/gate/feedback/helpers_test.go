@@ -1,6 +1,7 @@
 package feedback
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
 	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/alexei-led/archfit-app/internal/store"
 	"github.com/alexei-led/archfit-app/internal/wire/manifest"
 	"github.com/alexei-led/archfit-app/internal/wire/report"
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
@@ -58,6 +60,7 @@ type harness struct {
 	comments *fakeComments
 	pulls    *fakePulls
 	clock    *clock
+	store    store.Store
 	pub      Publisher
 }
 
@@ -67,9 +70,18 @@ func newHarness(prHead string) *harness {
 		comments: &fakeComments{},
 		pulls:    &fakePulls{headSHA: prHead},
 		clock:    &clock{t: t0},
+		store:    store.NewMemory(),
 	}
-	h.pub = New(h.checks, h.comments, h.pulls, h.clock.now)
+	h.pub = New(h.checks, h.comments, h.pulls, h.store, h.clock.now)
 	return h
+}
+
+// onContention replaces the wait between lease polls: f runs on each wait, then the wait returns at once.
+func (h *harness) onContention(f func()) {
+	h.pub.(*serialized).wait = func(ctx context.Context) error {
+		f()
+		return ctx.Err()
+	}
 }
 
 func prTarget(head string) inputs.Target {

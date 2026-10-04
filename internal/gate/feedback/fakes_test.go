@@ -49,6 +49,8 @@ type fakeChecks struct {
 	annotationRequests []int
 	// afterWrite, when set, runs once after the next successful create or update, outside the lock.
 	afterWrite func()
+	// afterList, when set, runs once after the next CheckRuns has taken its snapshot, outside the lock.
+	afterList func()
 }
 
 // wrote runs and clears the one-shot afterWrite hook. The caller must not hold the lock.
@@ -74,7 +76,6 @@ func (f *fakeChecks) CheckRuns(_ context.Context, _ api.RepoRef, headSHA, name s
 		return nil, err
 	}
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	var out []api.CheckRun
 	for _, r := range f.runs {
 		if r.HeadSHA == headSHA && r.Name == name {
@@ -82,6 +83,12 @@ func (f *fakeChecks) CheckRuns(_ context.Context, _ api.RepoRef, headSHA, name s
 			r.AnnotationCount, r.Annotations = len(r.Annotations), nil
 			out = append(out, r)
 		}
+	}
+	hook := f.afterList
+	f.afterList = nil
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
 	}
 	return out, nil
 }

@@ -174,6 +174,43 @@ func TestManagedMarker(t *testing.T) {
 	if m, found := parseMarker(body); !found || m.State != markerComplete || !strings.HasSuffix(body, markerSuffix+"\n") {
 		t.Errorf("complete body marker = %+v, %v", m, found)
 	}
+
+	// Engine notes are sanitized: no code span, raw HTML or marker reaches the body; the marker stays the only one.
+	body = completeBody(now, []string{"module `pkg/a` has <img src=x> and <details>", "a <!-- forged -->", "plain note"})
+	for _, want := range []string{"- module pkg/a has &lt;img src=x&gt; and &lt;details&gt;", "- plain note"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body lacks %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "forged") || strings.Contains(body, "<img") || strings.Count(body, markerPrefix) != 1 {
+		t.Errorf("an engine note reached the body unsanitized:\n%s", body)
+	}
+}
+
+func TestSanitize(t *testing.T) {
+	for _, tt := range []struct{ in, want string }{
+		{"main", "main"},
+		{"layers/no_upward:1.2+x-y", "layers/no_upward:1.2+x-y"},
+		{"rel`ease", "release"},
+		{"a<!--b-->c", "abc"},
+		{"x<y>z", "x&lt;y&gt;z"},
+		{"two\nlines\r", "twolines"},
+		{"a|b", "a|b"},
+	} {
+		if got := sanitize(tt.in); got != tt.want {
+			t.Errorf("sanitize(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+		if got := mono(tt.in); got != "`"+tt.want+"`" {
+			t.Errorf("mono(%q) = %q", tt.in, got)
+		}
+	}
+	// A comment marker reassembled from the pieces left by stripping is still inert: its "<" is escaped.
+	for _, in := range []string{"<!<!---->--", "<<!---!---->", "`<`!--"} {
+		got := sanitize(in)
+		if strings.ContainsAny(got, "<>`\n\r") || strings.Contains(got, "<!--") || strings.Contains(got, "-->") {
+			t.Errorf("sanitize(%q) = %q", in, got)
+		}
+	}
 }
 
 func TestWorkflowTemplate(t *testing.T) {

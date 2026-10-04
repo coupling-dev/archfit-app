@@ -367,11 +367,11 @@ func TestSuspensionAndRestoration(t *testing.T) {
 	w.wantAnswer(w.upload(p, fixtureHealthy), 200, "success", "healthy")
 	w.wantGate(p, runCompleted, "success")
 
-	t.Run("a Store outage is not non-payment", func(t *testing.T) {
+	t.Run("an unreadable entitlement is not non-payment", func(t *testing.T) {
 		w := newWorld(t)
 		vault := w.addRepo("acme/vault", 12, 201, true)
 		w.entitle(12, Entitlement{SuspendAfter: w.now.Add(-24 * time.Hour)})
-		w.store.getErr = errors.New("store: connection refused")
+		w.store.entitlementErr = errors.New("store: connection refused")
 		w.wantAnswer(w.upload(w.openPull(vault, 7), fixtureHealthy), 200, "success", "healthy")
 		if len(w.store.tenants) == 0 {
 			t.Error("the Store was not even asked")
@@ -382,7 +382,8 @@ func TestSuspensionAndRestoration(t *testing.T) {
 func TestGateSurvivesControlPlaneFailure(t *testing.T) {
 	ctx := context.Background()
 	w := newWorld(t) // nothing of internal/control is wired: the import test proves it cannot be
-	w.store.getErr = errors.New("store: down")
+	// The control plane's records are unreadable; the publication leases still work (see TestStoreOutageFailsClosed).
+	w.store.entitlementErr = errors.New("store: down")
 	controlDown := errors.New("control: billing provider unreachable")
 	// dispatch is what app does with a delivery: the gate first, then the control plane.
 	dispatch := func(e webhook.Event) error {
@@ -405,6 +406,34 @@ func TestGateSurvivesControlPlaneFailure(t *testing.T) {
 		t.Errorf("sweep = %+v, %v", sum, err)
 	}
 	w.wantGate(lost, runInProgress, "")
+}
+
+// Without the Store no publication lease can be taken, and an unserialized write could let an older run overwrite a
+// newer one. So nothing is written: the upload is retryable, the event is redelivered and the check stays as it was.
+func TestStoreOutageFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	w := newWorld(t)
+	w.store.down = errors.New("store: unreachable")
+	p := w.openPull(w.shop, 7)
+
+	if err := w.gate.HandleEvent(ctx, w.event(webhook.PullOpened, p)); err == nil {
+		t.Error("HandleEvent created the pending check without a lease")
+	}
+	if a := w.upload(p, fixtureHealthy); a.status != 503 || a.Error != "unavailable" || a.Conclusion != "" {
+		t.Errorf("upload answered %d %s, want 503 unavailable", a.status, a.raw)
+	}
+	if sum, err := w.gate.Sweep(ctx); err != nil || sum.Errors == 0 {
+		t.Errorf("sweep = %+v, %v, want errors counted", sum, err)
+	}
+	if n := w.gh.writes(); n != 0 {
+		t.Errorf("%d check or comment writes without a lease, want 0", n)
+	}
+	w.noSuccess()
+
+	w.store.down = nil
+	w.handle(w.event(webhook.PullOpened, p))
+	w.wantAnswer(w.upload(p, fixtureHealthy), 200, "success", "healthy")
+	w.wantGate(p, runCompleted, "success")
 }
 
 func TestBasePolicyChangeReachesOpenPullsAtOnce(t *testing.T) {

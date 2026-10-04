@@ -375,6 +375,46 @@ func TestBaselineBodyAndLogsCarryOnlyIDs(t *testing.T) {
 	}
 }
 
+// Git ref names may hold a backtick, "<", ">", "!", "-" and "|". The default branch is GitHub-supplied and reaches
+// the baseline PR body in code spans, the table included.
+func TestBaselineBodySanitizesDefaultBranch(t *testing.T) {
+	capture := policy.Baseline{Accepted: []policy.Accepted{{Fingerprint: fingerprintA, RuleID: "layers/no_upward"}}}
+	for _, tt := range []struct {
+		branch, want string
+	}{
+		{"main", "`main`"},
+		{"rel`ease", "`release`"},
+		{"a<!--b", "`ab`"},
+		{"x-->y", "`xy`"},
+		{"<!<!---->--x", ""},
+		{"x<img src=y>", "`x&lt;img src=y&gt;`"},
+		{"a|b", "`a|b`"},
+	} {
+		t.Run(tt.branch, func(t *testing.T) {
+			r := api.Repo{RepoRef: api.RepoRef{InstallationID: 7, FullName: "acme/shop"}, ID: 42, DefaultBranch: tt.branch}
+			body := baselineBody(baselineUpload(r, []byte("{}"), ""),
+				baselineCheck{head: runHeadSHA, capture: capture, state: protectedAbsent}, capture.Accepted, nil)
+			if tt.want != "" && !strings.Contains(body, "approved workflow on "+tt.want+" at") {
+				t.Errorf("branch rendered other than %s:\n%s", tt.want, body)
+			}
+			for _, banned := range []string{"<!--", "-->", "<img"} {
+				if strings.Contains(body, banned) {
+					t.Errorf("body contains %q", banned)
+				}
+			}
+			for i, line := range strings.Split(body, "\n") {
+				if strings.Count(line, "`")%2 != 0 {
+					t.Errorf("line %d leaves a code span open: %q", i+1, line)
+				}
+				// Every table row has exactly three cell borders; an escaped pipe is cell content.
+				if strings.HasPrefix(line, "| ") && strings.Count(strings.ReplaceAll(line, `\|`, ""), "|") != 3 {
+					t.Errorf("line %d splits the table row: %q", i+1, line)
+				}
+			}
+		})
+	}
+}
+
 func TestBaselineBodyStaysUnderGitHubLimit(t *testing.T) {
 	policyText := corpus(t, capturedTwo, ".policy.yaml")
 	longRule := strings.Repeat("r", 128) // the longest rule ID ReadBaseline accepts

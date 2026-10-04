@@ -706,6 +706,9 @@ func (f failingStore) Delete(context.Context, store.Tenant, string) error       
 func (f failingStore) Add(context.Context, store.Tenant, string, int64) (int64, error) {
 	return 0, f.err
 }
+func (f failingStore) CompareAndSwap(context.Context, store.Tenant, string, []byte, []byte) (bool, error) {
+	return false, f.err
+}
 func (f failingStore) DeleteTenant(context.Context, store.Tenant) error { return f.err }
 func (f failingStore) Tenants(context.Context) ([]store.Tenant, error)  { return nil, f.err }
 

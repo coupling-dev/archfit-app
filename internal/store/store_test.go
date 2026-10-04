@@ -252,6 +252,9 @@ func (failingStore) Delete(context.Context, store.Tenant, string) error      { r
 func (failingStore) Add(context.Context, store.Tenant, string, int64) (int64, error) {
 	return 0, errOutage
 }
+func (failingStore) CompareAndSwap(context.Context, store.Tenant, string, []byte, []byte) (bool, error) {
+	return false, errOutage
+}
 func (failingStore) DeleteTenant(context.Context, store.Tenant) error { return errOutage }
 func (failingStore) Tenants(context.Context) ([]store.Tenant, error)  { return nil, errOutage }
 
@@ -261,14 +264,16 @@ func TestOutageIsAnErrorNotADefault(t *testing.T) {
 
 	_, getErr := s.Get(ctx, 1, "entitlement")
 	_, addErr := s.Add(ctx, store.SystemTenant, budgetKey, 1)
+	_, swapErr := s.CompareAndSwap(ctx, 1, "lease", nil, []byte("v"))
 	_, tenantsErr := s.Tenants(ctx)
 	errs := map[string]error{
-		"Get":          getErr,
-		"Put":          s.Put(ctx, 1, "entitlement", []byte("v")),
-		"Delete":       s.Delete(ctx, 1, "entitlement"),
-		"Add":          addErr,
-		"DeleteTenant": s.DeleteTenant(ctx, 1),
-		"Tenants":      tenantsErr,
+		"Get":            getErr,
+		"Put":            s.Put(ctx, 1, "entitlement", []byte("v")),
+		"Delete":         s.Delete(ctx, 1, "entitlement"),
+		"Add":            addErr,
+		"CompareAndSwap": swapErr,
+		"DeleteTenant":   s.DeleteTenant(ctx, 1),
+		"Tenants":        tenantsErr,
 	}
 	for op, err := range errs {
 		if !errors.Is(err, errOutage) {

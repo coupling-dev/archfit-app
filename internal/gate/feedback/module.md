@@ -9,7 +9,8 @@
 `feedback` is the only writer of what a developer sees: the `archfit/gate` and `archfit/state` check runs
 and the single PR comment. It also makes the gate check its own receipt, so that GitHub holds the
 idempotency key and the facts a later sweep compares. Without it, retries would spam comments, an old run
-could paint over a newer head, and the App would need a database to remember what it said.
+could paint over a newer head, and the App would need a database to remember what it said. The only thing it
+keeps in the Store is a short-lived lease per head SHA, because GitHub has no conditional check-run write.
 
 ## Functional Responsibilities
 
@@ -25,6 +26,7 @@ could paint over a newer head, and the App would need a database to remember wha
 - Name the blocking findings in the `archfit/gate` summary, so the required check says what blocks.
 - Annotate live findings on the files the pull request changed, at most 50 per request.
 - Keep every write idempotent and never let an older run or head overwrite newer feedback.
+- Serialize every write to one head SHA across all instances with a publication lease in the Store.
 - Stay under GitHub size limits with safe truncation.
 
 ## Subdomain Classification
@@ -37,6 +39,7 @@ wording, layout and limits will be tuned with every pilot.
 - Check names, titles, the `external_id` format, and the hidden marker formats.
 - The comment and summary layout, truncation order and size budgets.
 - The idempotency and ordering rules (run ordering, head ordering).
+- The publication lease: its key, value, lifetime, work deadline and polling.
 - The mapping of `Outcome` to the `archfit/state` conclusion, including the only use of `neutral`.
 - Sanitizing of engine-authored strings before they enter Markdown.
 - Annotation selection (live findings, files the PR changed), the caps and the batching.
@@ -93,7 +96,10 @@ type Publisher interface {
 ```
 
 ```go
-func New(checks Checks, comments Comments, pulls Pulls, now func() time.Time) Publisher
+// New returns a Publisher that is safe for concurrent use, also across instances that share s: Publish, Pending and
+// Warn hold a per-head publication lease in s, so that two publishers for one head SHA never interleave their reads
+// and writes. It keeps no other state between calls; GitHub holds the receipts.
+func New(checks Checks, comments Comments, pulls Pulls, s Store, now func() time.Time) Publisher
 ```
 
 ### Fixed names and markers
@@ -192,6 +198,39 @@ read as a receipt.
 `Warn`: find the comment as above. Section with the same date present → nothing. Present with another
 date → replace. Comment without section → insert after the verdict block. No comment → create one holding the
 comment marker and the section. No-op for `Target.PullRequest == 0`.
+
+### Publication lease
+
+GitHub has no conditional write for check runs: two publishers that both read a check before either writes can
+each act on a stale read, and the older one can then replace a newer `failure` with `success`. So `Publish`,
+`Pending` and `Warn` run inside a lease in the Store, and every read, supersedes check and write of the steps above
+happens while it is held. `State` only reads and takes no lease.
+
+- Slot: tenant `Tenant(Target.Repo.InstallationID)`, key `feedback/lease/<Target.HeadSHA>`. The repository is not
+  part of the key **[default]**: webhook targets carry no repository ID and a full name changes on rename, so a
+  repository part could give two publishers of one head two leases. Two repositories of one installation that share
+  a commit share a lease too; they wait for each other, which costs time and never correctness. A target without
+  an installation ID (`<= 0`) or a head SHA is an error.
+- Value: JSON `{"token", "expires"}`. The token is random per call; `expires` is `now() + 60 s` **[default]**.
+- Acquire: `Get`; missing, expired (`now() >= expires`) or unreadable → `CompareAndSwap` from the bytes read
+  (`nil` when missing) to the new value; held → wait 200 ms **[default]** and read again until the context ends.
+  A lost swap reads again. Only this package writes the key, so an unreadable value is taken over rather than
+  waited on forever.
+- Work: the call runs under a context that ends 50 s after acquisition **[default: lifetime minus a 10 s margin]**,
+  measured by the process's own elapsed time, so the holder stops writing before any other instance may take an
+  expired lease over. The margin covers clock skew between instances and a request already sent when the work
+  deadline fires.
+- Release: `CompareAndSwap` from this call's own bytes to `nil`, under a fresh 5 s context **[default]** detached from
+  the request, so a timed-out upload still releases. A lease another holder took over is never deleted. A failed
+  release is logged; the lease then expires.
+- Fail closed: any Store error while acquiring returns the error and writes nothing to GitHub. An unserialized
+  write could reopen the overwrite, so a Store outage holds new verdicts back instead (`gate` answers 503 and the
+  check stays as it was).
+
+Within the lease, every write is still preceded by its own read: `writeCheck` reads the latest run and checks
+supersession right before it creates or updates, a further annotation batch re-reads before each request, and
+the comment re-reads the head marker before it updates. The lease makes those reads current; it does not replace
+them, so a publisher that waited for the lease still skips a newer receipt it now sees.
 
 ### Layout
 
@@ -865,9 +904,56 @@ type Comments interface {
 }
 ```
 
+### store
+
+- **Counterpart**: internal/store
+- **Direction**: feedback depends on store
+- **Strength**: contract
+- **LCA / Rank / Distance**: root / 2 / 2
+- **Volatility**: high (feedback side); store is low
+- **Balanced?**: yes
+- **Shared knowledge**: tenant = installation ID; the key `feedback/lease/<head_sha>`, private to feedback; `Get`
+  returning `ErrNotFound` for a missing key and a non-nil slice for a present one; `CompareAndSwap` with a `nil` old
+  for "only if missing" and a `nil` value for "delete", atomic across every instance that shares the store.
+  feedback never calls `Put`, `Delete`, `Add`, `DeleteTenant` or `Tenants`. `SystemTenant` is never used here.
+
+<!-- contract: Tenant, SystemTenant — restated from internal/store/module.md -->
+```go
+// Tenant is the authenticated GitHub installation ID that owns a key.
+// Every key is stored under its tenant prefix; no operation crosses tenants.
+type Tenant int64
+
+// SystemTenant holds App-wide keys (the managed-LLM budget counter). It is never a GitHub installation ID.
+const SystemTenant Tenant = 0
+```
+
+<!-- contract: Store, ErrNotFound — restated from internal/store/module.md -->
+```go
+// ErrNotFound is returned by Get when the key does not exist for the tenant.
+var ErrNotFound = errors.New("store: key not found")
+
+// Store is the only persistence seam of the App. Values are opaque bytes.
+// Implementations must be safe for concurrent use.
+type Store interface {
+    Get(ctx context.Context, t Tenant, key string) ([]byte, error)
+    Put(ctx context.Context, t Tenant, key string, value []byte) error
+    Delete(ctx context.Context, t Tenant, key string) error // deleting a missing key is not an error
+    // Add atomically adds delta to the integer at key (missing = 0) and returns the new value.
+    Add(ctx context.Context, t Tenant, key string, delta int64) (int64, error)
+    // CompareAndSwap atomically sets key to value when it currently holds exactly old, and reports whether it did.
+    // A nil old matches only a missing key; a nil value deletes the key. A false result changes nothing.
+    CompareAndSwap(ctx context.Context, t Tenant, key string, old, value []byte) (bool, error)
+    // DeleteTenant removes every key of the tenant. Idempotent.
+    DeleteTenant(ctx context.Context, t Tenant) error
+    // Tenants lists every tenant that owns at least one key, SystemTenant excluded.
+    // Used only by the sweep to forget installations whose uninstall webhook was missed.
+    Tenants(ctx context.Context) ([]Tenant, error)
+}
+```
+
 ### Consumers (inbound)
 
-- **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Builds `Publication` and `Receipt`; calls `Publish`, `Pending`, `State`.
+- **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Builds `Publication` and `Receipt`; passes `Deps.Store` to `New`; calls `Publish`, `Pending`, `State`.
 - **internal/gate/sweep**: contract, gate / 1 / 1, high, balanced. Calls all four `Publisher` methods and compares `Receipt` fields.
 
 ## Change Vectors
@@ -876,6 +962,9 @@ type Comments interface {
 - A new marker version (`v2:` external IDs) when the receipt changes shape.
 - SARIF-based annotations, or annotations on the gate check.
 - A different `archfit/state` conclusion mapping.
+- A change to the lease value. During a rollout two revisions run together, and an unreadable lease is taken over,
+  so a new value must keep `token` and `expires` readable by the previous revision; otherwise the two revisions
+  would not serialize against each other.
 
 ## Constraints and Invariants
 
@@ -885,16 +974,24 @@ type Comments interface {
 - In advisory mode no `archfit/gate` check is written. A ruleset that requires it then stays blocked: closed, never green.
 - An older `(RunID, RunAttempt)` never overwrites a newer one on the same head; a publication for an old
   head never touches the comment. Check runs are per SHA, so an old head's checks cannot affect the new head.
-- Exactly one comment per PR under sequential delivery. Two concurrent first publications may create two;
-  later calls update only the lowest-ID one **[default, stated limit]**. The same limit holds for check runs (highest ID wins).
+- Every write to one head SHA holds that head's publication lease, so writers of one head never interleave, also
+  across instances. An older publication that read a check before a newer one wrote it cannot write at all until
+  the newer one is done, and then sees the newer receipt and skips. `Pending` holds the same lease, so it never
+  creates an `in_progress` run after a publication completed the check. A Store error writes nothing.
+  Stated limit **[default]**: a lease is not a fence for GitHub. A holder stops by its own clock 10 s before the
+  lease expires; a request already sent when its work deadline fires can still land after another instance took
+  the lease over. That needs a holder stalled for 50 s and a takeover inside the 10 s margin.
+- Exactly one comment per PR under sequential delivery and for concurrent publications of one head. Two concurrent
+  first publications for two heads of one PR hold two leases and may create two comments; later calls update only
+  the lowest-ID one **[default, stated limit]**. Check runs are per head, so the lease covers them; a second run of
+  one name could only come from an expired lease, and then the highest ID wins.
 - Annotations are sent only to an `archfit/state` run the same call created, because GitHub appends the annotations
   of every update. A repeated delivery updates the state run in place only when it already holds the publication's
   annotations (same `external_id`, equal `AnnotationCount`); a new attempt, a new report, a sweep publication over an
   annotated run, or a retry after a missing file list creates a new state run. Old state runs stay on the head SHA;
   GitHub shows the newest. `State` and the sweep read only `archfit/gate`, which is still updated in place, so the
-  state run identity does not affect them. Stated limits **[default]**: an equal annotation count stands in for equal
-  annotations; and a newer publication that lands between the re-read and a further annotation batch of an older one
-  can still see that batch appended to the older run, never to its own.
+  state run identity does not affect them. Stated limit **[default]**: an equal annotation count stands in for equal
+  annotations. The re-read before each further annotation batch stays as a second guard behind the lease.
 - Never print "verified", a score, a grade or a percentage of health. Trust is "customer-attested".
   Provenance is necessary, not sufficient.
 - Never invent a location, a repair route or independent evidence. No annotation without a `Location`.
@@ -909,8 +1006,10 @@ type Comments interface {
   content can forge a marker; `State` still reads only the last receipt marker.
 - `Publication.Identity` is a claim copied from the envelope. feedback prints it as claimed and never as
   approved; identity strings are sanitized like every other producer-supplied string.
-- No LLM, no network other than the three role interfaces, no Store. Imports: standard library,
-  `gate/verdict`, `gate/inputs`, `wire/report`, `wire/settings`, `wire/manifest`, `github/api`. Never `control`, `app`, LLM or UI packages.
+- No LLM, no network other than the three role interfaces and the Store. The Store holds only the publication
+  leases: `Get` and `CompareAndSwap` on `feedback/lease/<head_sha>`, never a receipt, a report or a body. Imports:
+  standard library, `gate/verdict`, `gate/inputs`, `wire/report`, `wire/settings`, `wire/manifest`, `github/api`,
+  `store`. Never `control`, `app`, LLM or UI packages.
 - Rendering is deterministic: equal `Publication` and clock give byte-identical text.
 - `api.ErrRateLimited` and other API errors are returned unchanged, with one exception: a `ChangedFiles` error other
   than `ErrRateLimited` is logged and the call returns `nil`, because the file list only filters annotations. A
@@ -919,11 +1018,13 @@ type Comments interface {
 - Logs (`log/slog` default logger **[default]**): repository ID, PR number, head SHA, run ID, attempt, digests,
   conclusion, reason codes, action taken (`created`, `updated`, `skipped_newer`, `skipped_old_head`), timings.
   Never bodies, paths, messages or names.
-- Safe for concurrent use; no state between calls.
+- Safe for concurrent use, also across instances that share the Store. No state between calls but the lease,
+  which is deleted when the call ends.
 
 ## Test Specification
 
-Fakes: in-memory `Checks`, `Comments`, `Pulls` with call recording and injectable errors; a fixed clock.
+Fakes: in-memory `Checks`, `Comments`, `Pulls` with call recording and injectable errors; a fixed clock; the
+memory Store, wrapped where a test needs a Store fault; a replaceable lease wait that observes contention.
 Golden files hold rendered bodies for the wire fixtures.
 
 ### Unit Tests
@@ -1012,6 +1113,21 @@ Golden files hold rendered bodies for the wire fixtures.
 - **Test name**: `TestNewerPublicationStopsAnnotationBatches`
   **Scenario**: a push publication with 121 annotations; right after its state run is created, a newer run (run 8) is stored on the head.
   **Expected behavior**: one request of 50 annotations and no update; the newer run's summary and annotations are unchanged.
+- **Test name**: `TestConcurrentWritersOnOneHead` (T03)
+  **Scenario**: required mode; the first writer is held right after its gate-check read while the second starts, and is released once the second finishes or waits for the lease. Cases: an older success (run 6) first and a newer failure (run 7) second, both over a pending check; the reverse order; `Pending` with no check first and a publication of run 7 second.
+  **Expected behavior**: in every case one gate check, `completed`/`failure` from run 7, and no lease left. Without the lease the first case ends `success` from run 6 and the third with a second, `in_progress` gate check; the reverse order passes either way.
+- **Test name**: `TestLeaseTakeover`
+  **Scenario**: `Publish` with no lease, an expired lease, an unreadable lease value, an empty lease value, and a lease another holder holds for one more second (the wait cancels the context).
+  **Expected behavior**: the first four publish without waiting and release the lease; the held lease is waited for, the call returns `context.Canceled` and makes no GitHub call.
+- **Test name**: `TestLeaseWaitsUntilExpiry`
+  **Scenario**: a held lease that expires 60 s after the clock; each wait advances the clock 20 s.
+  **Expected behavior**: three waits, then the publication.
+- **Test name**: `TestLeaseFailsClosed`
+  **Scenario**: `Publish`, `Pending` and `Warn` with the Store's `Get` failing, with its `CompareAndSwap` failing, with a target without an installation ID, and with a target without a head SHA.
+  **Expected behavior**: each call returns an error; no check or comment call is made.
+- **Test name**: `TestLeaseHolding`
+  **Scenario**: the work context of a held lease; a request context cancelled during the work; another holder's lease written over this one during the work; a second head while the first is held.
+  **Expected behavior**: the work deadline is about 50 s from now by elapsed time, not by the injected clock; the lease is released after the cancelled request; the other holder's lease is not deleted; the second head does not wait.
 - **Test name**: `TestChangedFilesErrorStillPublishes`
   **Scenario**: in required mode with a pending gate check, `ChangedFiles` fails once with `ErrRateLimited`, and once with another error; then a retry.
   **Expected behavior**: the gate check is completed as `failure`, one state run without annotations and the comment are written; `ErrRateLimited` is returned, the other error is not. The retry adds a state run with the two annotations and no second gate check or comment.

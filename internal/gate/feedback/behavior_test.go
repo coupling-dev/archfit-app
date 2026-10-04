@@ -6,12 +6,14 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
 	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/alexei-led/archfit-app/internal/store"
 	"github.com/alexei-led/archfit-app/internal/wire/manifest"
 	"github.com/alexei-led/archfit-app/internal/wire/report"
 )
@@ -110,6 +112,88 @@ func TestNewerPublicationStopsAnnotationBatches(t *testing.T) {
 	}
 	if h.checks.count("UpdateCheckRun") != 0 || !slices.Equal(h.checks.annotationRequests, []int{50}) {
 		t.Errorf("batches after the newer publication: updates %d, requests %v", h.checks.count("UpdateCheckRun"), h.checks.annotationRequests)
+	}
+}
+
+// Two writers for one head: the first reads the gate check and is held there; the second starts. Without the
+// publication lease the second finishes and the first then writes over it from its stale read.
+func TestConcurrentWritersOnOneHead(t *testing.T) {
+	ok := outcome(verdict.Success, reasonHealthy)
+	older := blockedPublication(t, headB, 6, 1)
+	older.Outcome, older.Receipt = ok, receiptFor(ok, 6, 1)
+	newer := blockedPublication(t, headB, 7, 1)
+	publish := func(p Publication) func(context.Context, *harness) error {
+		return func(ctx context.Context, h *harness) error { return h.pub.Publish(ctx, p) }
+	}
+	pending := func(ctx context.Context, h *harness) error { return h.pub.Pending(ctx, prTarget(headB)) }
+
+	for _, tt := range []struct {
+		name          string
+		pendingBefore bool
+		first, second func(context.Context, *harness) error
+		wantStatus    string
+		wantRun       int64
+	}{
+		// An older success read the pending check; a newer failure is published before the older write.
+		{"older success after newer failure", true, publish(older), publish(newer), statusCompleted, 7},
+		// The same order in reverse is the normal case: the newer one replaces the older one.
+		{"newer failure after older success", true, publish(newer), publish(older), statusCompleted, 7},
+		// Pending found no check; a publication completes before Pending creates one.
+		{"pending after a publication", false, pending, publish(newer), statusCompleted, 7},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			h := newHarness(headB)
+			if tt.pendingBefore {
+				if err := h.pub.Pending(ctx, prTarget(headB)); err != nil {
+					t.Fatalf("Pending: %v", err)
+				}
+			}
+			listed, release := make(chan struct{}), make(chan struct{})
+			h.checks.afterList = func() {
+				close(listed)
+				<-release
+			}
+			contended := make(chan struct{})
+			var once sync.Once
+			h.onContention(func() { once.Do(func() { close(contended) }) })
+
+			firstErr, secondErr := make(chan error, 1), make(chan error, 1)
+			go func() { firstErr <- tt.first(ctx, h) }()
+			<-listed
+			go func() { secondErr <- tt.second(ctx, h) }()
+			// Release the first writer once the second has finished or is waiting for the lease.
+			var second error
+			done := false
+			select {
+			case second = <-secondErr:
+				done = true
+			case <-contended:
+			}
+			close(release)
+			if err := <-firstErr; err != nil {
+				t.Fatalf("first writer: %v", err)
+			}
+			if !done {
+				second = <-secondErr
+			}
+			if second != nil {
+				t.Fatalf("second writer: %v", second)
+			}
+
+			gate := h.checks.latest(t, headB, gateCheck)
+			rc, _ := parseReceipt(gate.Summary)
+			if gate.Status != tt.wantStatus || gate.Conclusion != string(verdict.Failure) || rc.RunID != tt.wantRun {
+				t.Errorf("gate check = %s %s from run %d, want %s failure from run %d",
+					gate.Status, gate.Conclusion, rc.RunID, tt.wantStatus, tt.wantRun)
+			}
+			if n := len(h.checks.named(headB, gateCheck)); n != 1 {
+				t.Errorf("%d gate checks on the head, want 1", n)
+			}
+			if _, err := h.store.Get(ctx, 1, leaseKeyB); !errors.Is(err, store.ErrNotFound) {
+				t.Errorf("lease left behind: %v", err)
+			}
+		})
 	}
 }
 

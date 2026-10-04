@@ -164,7 +164,8 @@ func completeBody(consentChecked time.Time, notes []string) string {
 		if kept == 0 {
 			b.WriteString("\n\nEngine notes:\n")
 		}
-		b.WriteString("\n- " + note)
+		// Engine-authored: a backtick or raw HTML would otherwise render as Markdown in the App's PR body.
+		b.WriteString("\n- " + sanitize(note))
 		kept++
 	}
 	return managedBody(b.String(), marker{State: markerComplete})

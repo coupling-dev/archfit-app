@@ -175,6 +175,14 @@ func TestClientSuppliedTenantIsIgnored(t *testing.T) {
 			t.Errorf("Store read under tenant %d key %q", tenant, w.store.keys[i])
 		}
 	}
+	if len(w.store.leaseTenants) == 0 {
+		t.Fatal("the publication was not serialized")
+	}
+	for _, tenant := range w.store.leaseTenants {
+		if tenant != store.Tenant(12) {
+			t.Errorf("publication lease under tenant %d", tenant)
+		}
+	}
 	for _, c := range w.gh.calls {
 		if c.installationID == otherTenant || strings.HasPrefix(c.fullName, "mallory/") {
 			t.Errorf("API call addresses the other tenant: %+v", c)
@@ -309,8 +317,9 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 	}
 }
 
-func TestStoreIsOnlyRead(t *testing.T) {
-	// guardStore panics on every write and on Tenants; this drives every façade entry point over it.
+func TestStoreWritesOnlyPublicationLeases(t *testing.T) {
+	// guardStore panics on every write but a lease compare-and-swap, and on Tenants; this drives every façade entry
+	// point over it.
 	w := newWorld(t)
 	vault := w.addRepo("acme/vault", 12, 201, true)
 	w.entitle(12, Entitlement{SuspendAfter: w.now.Add(time.Hour)})
@@ -329,5 +338,14 @@ func TestStoreIsOnlyRead(t *testing.T) {
 		if key != EntitlementKey || w.store.tenants[i] == store.SystemTenant {
 			t.Errorf("Store read of key %q under tenant %d", key, w.store.tenants[i])
 		}
+	}
+	for _, tenant := range w.store.leaseTenants {
+		if tenant != store.Tenant(12) {
+			t.Errorf("publication lease under tenant %d", tenant)
+		}
+	}
+	// The pull's lease is released once its writes are done.
+	if _, err := w.mem.Get(context.Background(), 12, leaseKeyPrefix+p.head); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("publication lease left behind: %v", err)
 	}
 }
