@@ -343,6 +343,7 @@ type ReasonCode string
 
 const (
     ReasonHealthy             ReasonCode = "healthy"
+    ReasonAttentionOnly       ReasonCode = "attention_only" // needs_attention, and nothing blocks
     ReasonBlockingFindings    ReasonCode = "blocking_findings"
     ReasonEngineError         ReasonCode = "engine_error"
     ReasonMissingCoverage     ReasonCode = "missing_required_coverage"
@@ -351,6 +352,7 @@ const (
     ReasonLabelsMismatch      ReasonCode = "labels_mismatch"
     ReasonPolicyMismatch      ReasonCode = "policy_mismatch"
     ReasonPolicyMissing       ReasonCode = "policy_missing" // settings merged, no policy on the protected ref yet
+    ReasonPolicyDefect        ReasonCode = "policy_defect"  // a required rule's selector matches nothing
     ReasonUnknownIdentity     ReasonCode = "unknown_engine_identity"
     ReasonProfileMissing      ReasonCode = "measurement_profile_missing"
     ReasonWorkflowNotApproved ReasonCode = "workflow_not_approved"
@@ -1172,7 +1174,7 @@ are driven only as far as they go without GitHub. Child internals are tested in 
 
 - **Test name**: `TestLegitimateChangePassesAndViolationFails` (T02)
   **Scenario**: the paired healthy and blocked fixtures of each claimed erosion scenario; the warning-only attention fixture.
-  **Expected behavior**: `success`, `failure`, `success` on `archfit/gate` with `archfit/state` `neutral` for the `needs_attention` verdict; feedback names rule, modules, locations and the validation command.
+  **Expected behavior**: `success`, `failure`, `success` on `archfit/gate`; the upload answer for the `needs_attention` verdict is `success`/`attention_only`, with `archfit/state` `neutral`; feedback names rule, modules, locations and the validation command.
 - **Test name**: `TestTamperingNeverYieldsSuccess` (T12, T14)
   **Scenario**: head-edited policy, baseline, settings (owners, gate mode), workflow and CODEOWNERS; an ordinary non-owner approval; an owner approval followed by a new commit; a head-edited labels file; an envelope that claims no baseline while a baseline exists; a report whose `gate_reference` is missing or `non_comparable` while a baseline exists.
   **Expected behavior**: `policy_mismatch`, `baseline_mismatch`, `labels_mismatch`, `baseline_not_comparable` or `owner_approval_missing`; never `success`; after the owner approves the new head, the same upload re-run passes.

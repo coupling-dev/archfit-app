@@ -153,9 +153,10 @@ func New(c Config, o OAuth, u Users, repos Repos, now func() time.Time) (Session
 - **Volatility**: high
 - **Balanced?**: yes — parent and child
 - **Shared knowledge**: ui supplies a decoded `Report` and the policy text, gets a `View`, serializes it as JSON into
-  the page, links each node to `/r/{o}/{n}/policy#L<PolicyLine>` when the line is not 0, and shows the stale banner when `Stale`.
+  the page, links each node to `/r/{o}/{n}/policy#L<PolicyLine>` when the line is not 0, and shows the stale banner
+  when `Stale`. The template and the script use a link's `Status` as its CSS class and print it as is.
 
-<!-- contract: View, Node, Link, Build — restated from internal/control/ui/graph/module.md -->
+<!-- contract: View, Node, Link, LinkStatus, Build — restated from internal/control/ui/graph/module.md -->
 ```go
 type Node struct {
     Name       string
@@ -163,11 +164,20 @@ type Node struct {
     PolicyLine int // 1-based line of the module in the policy YAML; 0 if not found
 }
 
+// LinkStatus is what the report's findings say about a module pair. It is a display fact, never a check input.
+type LinkStatus string
+
+const (
+    StatusViolation LinkStatus = "violation" // an active gate finding (wire/report Finding.Active) names the pair
+    StatusAccepted  LinkStatus = "accepted"  // a gate finding accepted by the baseline or a waiver names the pair
+    StatusAdvisory  LinkStatus = "advisory"  // another finding that is not fixed names the pair
+    StatusObserved  LinkStatus = "observed"  // a seam that no current finding names
+)
+
 type Link struct {
-    From, To  string
-    Observed  bool // seen in the report
-    Permitted bool // allowed by policy
-    Count     int
+    From, To string
+    Status   LinkStatus
+    Count    int // observed dependencies of the pair's seams; 0 when only a finding names the pair
 }
 
 // View is a read-only picture. Stale is true when the policy text no longer matches the report's config_hash.
@@ -177,8 +187,8 @@ type View struct {
     Stale bool
 }
 
-// Build is pure. Nodes come from the policy's modules, links from the report's seams; a link is not
-// Permitted when an Active finding (wire/report `Finding.Active`) names that module pair.
+// Build is pure. Nodes come from the policy's modules, links from the report's seams and findings; a link's
+// Status comes from the findings that name its module pair, never from the policy text.
 func Build(rep Report, policy []byte) View
 ```
 
@@ -871,7 +881,8 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   pushed on GitHub), ui builds from the default-branch policy instead, the last valid text, and forces the stale banner with
   "the draft does not parse" **[default]**. No run or artifact (GitHub retention): "no report available". Decode error:
   "report unavailable"; never a partial graph. The `View` is embedded as JSON in a `script type="application/json"` element.
-  Links with `Permitted` false are drawn as violations.
+  Each link is drawn and listed with its `Status` (`violation`, `accepted`, `advisory`, `observed`), which is also its CSS
+  class; the page never calls a link "permitted".
 - Assist: authorize `write`; if `content` differs from the file at `head_sha`, save it first (same rules as Save) and use the
   new head; then `Assist.Propose(mode, Request{Repo, Branch, HeadSHA, Instruction, By: login})`. Managed is offered only when
   settings say `managed` and `Consents.Has(ConsentManagedLLM)`; assist enforces both anyway. Managed success: redirect to the

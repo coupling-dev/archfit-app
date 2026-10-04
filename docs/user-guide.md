@@ -139,6 +139,16 @@ The App publishes these items on a pull request:
 - `archfit/gate`, the blocking check when `gate: required`
 - One App comment that the App updates after each run
 
+What each item shows:
+
+- The `archfit/gate` summary names each blocking finding: the rule, the module pair, the first location, the first
+  eight characters of the finding ID, and the repair goal. It shows at most 20 and counts the rest.
+- The `archfit/state` check annotates live findings on the files that the pull request changed. Accepted debt and
+  fixed findings get no annotation. Blocking findings come first. The check shows at most 150 annotations.
+- The comment lists all findings, the evidence gaps, the validation commands, and a JSON block of agent tasks
+  between `<!-- archfit:agent-tasks -->` markers. A coding agent on the pull request can act on that block.
+- The evidence gaps show analyzers that did not run (absent or disabled) on one line.
+
 The gate has three conclusions:
 
 | Conclusion        | Meaning                                            | Action                 |
@@ -148,7 +158,14 @@ The gate has three conclusions:
 | `action_required` | Evidence, governance, or subscription needs action | Follow the reason code |
 
 The gate never uses `neutral` or `skipped`. A missing report never becomes `success`.
-The state check can use `neutral` because it is never a required check.
+
+The state check is never a required check. It uses these conclusions:
+
+| State check       | When                                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------ |
+| `success`         | The gate result is `success` and the engine verdict is `healthy`                           |
+| `neutral`         | The gate result is `success` with `attention_only`, or `failure`                           |
+| `action_required` | The gate result is `action_required`. Errors and unverifiable evidence are never `neutral` |
 
 ### Reason codes
 
@@ -156,19 +173,28 @@ The first reason controls the conclusion. The App keeps later reasons in the com
 
 #### Architecture
 
-| Reason              | Recovery                                                  |
-| ------------------- | --------------------------------------------------------- |
-| `healthy`           | Nothing                                                   |
-| `blocking_findings` | Fix the blocking findings and run the validation command. |
+| Reason              | Recovery                                                                                                 |
+| ------------------- | -------------------------------------------------------------------------------------------------------- |
+| `healthy`           | Nothing                                                                                                  |
+| `attention_only`    | Nothing blocks. Advisories never block. Review the listed dimensions and diagnostics on the state check. |
+| `blocking_findings` | Fix the blocking findings and run the validation command.                                                |
+
+`attention_only` is a `success`. The engine verdict is `needs_attention`, and no evidence, governance, or subscription
+reason applies. The detail lists the dimensions that are not fully measured and the count of active diagnostics.
 
 #### Governance
 
-| Reason                   | Recovery                                                            |
-| ------------------------ | ------------------------------------------------------------------- |
-| `owner_approval_missing` | Get a policy owner to approve the exact commit.                     |
-| `settings_missing`       | Merge the onboarding pull request to add `.archfit-app.yaml`.       |
-| `policy_missing`         | Merge the Archfit policy pull request.                              |
-| `waiver_expired`         | Renew the waiver by owner-approved pull request or fix the finding. |
+| Reason                   | Recovery                                                                                                               |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `owner_approval_missing` | Get a policy owner to approve the exact commit.                                                                        |
+| `settings_missing`       | Merge the onboarding pull request to add `.archfit-app.yaml`.                                                          |
+| `policy_missing`         | Merge the Archfit policy pull request.                                                                                 |
+| `policy_defect`          | Fix the selectors of the listed rules by owner-approved pull request, or mark an intentional guard rule `guard: true`. |
+| `waiver_expired`         | Renew the waiver by owner-approved pull request or fix the finding.                                                    |
+
+`policy_defect` names required rules whose selector matches nothing in the repository. The engine cannot evaluate
+such a rule, so the gate asks for a policy fix instead of more evidence. The comment shows each rule with the selector
+that matches nothing. Other rules that the engine could not evaluate keep `missing_required_coverage`.
 
 #### Evidence
 
@@ -265,7 +291,16 @@ Open **Graph** for the repository. The page is read-only.
 
 - Modules come from the policy and are grouped by layer.
 - Links come from the latest default-branch report artifact.
-- A red link is a dependency that the policy does not permit.
+- Each link has a status that comes from the report findings for its module pair:
+
+  | Status      | Meaning                                                                   |
+  | ----------- | ------------------------------------------------------------------------- |
+  | `violation` | An active gate finding names the pair. The link is red                    |
+  | `accepted`  | A gate finding names the pair, and the baseline or a waiver accepts it    |
+  | `advisory`  | A finding that does not block names the pair                              |
+  | `observed`  | The engine observed the dependency, and no current finding names the pair |
+
+- The graph never shows a link as permitted. A forbidden dependency in the baseline shows as `accepted`.
 - A **Stale** banner appears when the policy differs from the latest report.
 
 GitHub keeps report artifacts for a limited time. Run Archfit on the default branch when no report is available.

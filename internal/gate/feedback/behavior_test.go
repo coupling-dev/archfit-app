@@ -145,13 +145,16 @@ func TestAcceptedDebtIsDisplayOnly(t *testing.T) {
 		}
 	}
 	h := newHarness(headB)
+	h.pulls.changed = []string{"pkg/a/a.go"}
 	p := fixturePublication(t, c, headB)
 	if err := h.pub.Publish(context.Background(), p); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	if got := h.checks.named(headB, gateCheck)[0].Conclusion; got != "failure" {
-		t.Errorf("gate conclusion = %q, want failure", got)
+	gate := h.checks.named(headB, gateCheck)[0]
+	if gate.Conclusion != "failure" {
+		t.Errorf("gate conclusion = %q, want failure", gate.Conclusion)
 	}
+	mustContain(t, section(gate.Summary, headBlocking), "No active gate finding is listed")
 	comment := h.comments.all()[0].Body
 	verdictBlock, _, _ := strings.Cut(comment, "\n### ")
 	mustContain(t, verdictBlock, "Blocked by architecture findings", "blocking_findings")
@@ -164,10 +167,9 @@ func TestAcceptedDebtIsDisplayOnly(t *testing.T) {
 	mustContain(t, debt, "no_direct_b_dependency")
 	lower := strings.ToLower(comment)
 	mustNotContain(t, lower, "exempt", "clean", "not block", "non-blocking", "ignored", "safe to merge")
-	for _, a := range h.checks.named(headB, stateCheck)[0].Annotations {
-		if a.Level != "warning" {
-			t.Errorf("accepted debt annotated as %q", a.Level)
-		}
+	annotations := h.checks.named(headB, stateCheck)[0].Annotations
+	if len(annotations) != 1 || annotations[0].Level != "warning" || strings.Contains(annotations[0].Message, "no_direct_b_dependency") {
+		t.Errorf("annotations = %+v, want only the live advisory as a warning: accepted debt is not annotated", annotations)
 	}
 }
 

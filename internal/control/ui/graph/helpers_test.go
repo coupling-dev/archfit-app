@@ -83,6 +83,20 @@ func reportFor(policyText string, seams []report.Seam, findings []report.Finding
 	}
 }
 
-func observed(from, to string, count int, permitted bool) Link {
-	return Link{From: from, To: to, Observed: true, Permitted: permitted, Count: count}
+func link(from, to string, count int, status LinkStatus) Link {
+	return Link{From: from, To: to, Status: status, Count: count}
+}
+
+// corpusReport decodes a report of the shared wire corpus; internal/wire/module.md owns its names.
+func corpusReport(t *testing.T, name string) report.Report {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "wire", "testdata", "report", name+".json"))
+	if err != nil {
+		t.Fatalf("read corpus fixture: %v", err)
+	}
+	rep, err := report.Decode(raw)
+	if err != nil {
+		t.Fatalf("decode corpus fixture %s: %v", name, err)
+	}
+	return rep
 }

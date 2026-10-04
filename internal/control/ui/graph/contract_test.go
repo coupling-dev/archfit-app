@@ -34,7 +34,7 @@ func TestBuildMapsReportToView(t *testing.T) {
 	}
 	for i, s := range rep.Seams {
 		l := got.Links[i]
-		if l.From != s.FromModule || l.To != s.ToModule || l.Count != s.Edges || !l.Observed {
+		if l.From != s.FromModule || l.To != s.ToModule || l.Count != s.Edges {
 			t.Errorf("Links[%d] = %+v, want seam %s -> %s x%d", i, l, s.FromModule, s.ToModule, s.Edges)
 		}
 	}
@@ -49,12 +49,33 @@ func TestBuildMapsReportToView(t *testing.T) {
 		t.Fatal("fixture has no active gate finding")
 	}
 	for _, l := range got.Links {
-		if want := !active[[2]string{l.From, l.To}]; l.Permitted != want {
-			t.Errorf("%s -> %s Permitted = %v, want %v", l.From, l.To, l.Permitted, want)
+		if isViolation := l.Status == StatusViolation; isViolation != active[[2]string{l.From, l.To}] {
+			t.Errorf("%s -> %s Status = %q, want a violation exactly for an active gate finding", l.From, l.To, l.Status)
 		}
 	}
 	if got.Stale {
 		t.Error("Stale = true, want false: the policy is the one the fixture was computed from")
+	}
+}
+
+// TestStatusFromRealReports reads engine captures of the shared corpus, all computed from fixturePolicy.
+func TestStatusFromRealReports(t *testing.T) {
+	tests := []struct {
+		fixture string
+		want    []Link
+	}{
+		{"real-blocked-forbidden-and-allowed", []Link{link("a", "b", 1, StatusViolation), link("a", "c", 1, StatusAdvisory)}},
+		{"real-baselined-comparable", []Link{link("a", "b", 1, StatusAccepted)}}, // a baselined forbidden edge is never "permitted"
+		{"real-waiver-active", []Link{link("a", "b", 1, StatusAccepted)}},
+		{"real-waiver-expired", []Link{link("a", "b", 1, StatusViolation)}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.fixture, func(t *testing.T) {
+			got := Build(corpusReport(t, tt.fixture), []byte(fixturePolicy))
+			if !reflect.DeepEqual(got.Links, tt.want) {
+				t.Errorf("Links = %+v, want %+v", got.Links, tt.want)
+			}
+		})
 	}
 }
 

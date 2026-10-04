@@ -14,10 +14,10 @@ import (
 const prefixedDigest = "sha256:"
 
 // requiredGateOutcomes are the `conclusion reasons[0]` pairs the report fixtures must cover. A success splits by
-// the report's verdict: the gate gives warning-only attention the reason `healthy` too.
+// the report's verdict: the gate gives warning-only attention its own reason, `attention_only`.
 var requiredGateOutcomes = []string{
 	"success healthy healthy",
-	"success healthy needs_attention",
+	"success attention_only needs_attention",
 	"failure blocking_findings",
 	"action_required missing_required_coverage",
 	"action_required baseline_not_comparable",

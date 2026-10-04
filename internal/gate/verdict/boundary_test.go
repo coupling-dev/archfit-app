@@ -59,6 +59,7 @@ func preconditionCases() []decideCase {
 		one("no gate reference", ReasonBaselineNotComparable, gateRef(nil)),
 		one("unmeasured", ReasonMissingCoverage, engine(verdictHealthy, gatesUnmeasured)),
 		one("unevaluated rule", ReasonMissingCoverage, unevaluated),
+		one("dead selector", ReasonPolicyDefect, deadSelector),
 		one("verdict blocked", ReasonBlockingFindings, engine(verdictBlocked, gatesPass)),
 		one("hard gates fail", ReasonBlockingFindings, engine(verdictHealthy, gatesFail)),
 		one("out-of-enum verdict", ReasonEngineError, engine("error", gatesPass)),

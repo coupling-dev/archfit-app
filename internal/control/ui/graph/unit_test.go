@@ -76,31 +76,31 @@ func TestLinkNormalization(t *testing.T) {
 		{
 			name:      "single seam",
 			seams:     []report.Seam{seam("api", "db", 1)},
-			wantLinks: []Link{observed("api", "db", 1, true)},
+			wantLinks: []Link{link("api", "db", 1, StatusObserved)},
 			wantNodes: declared,
 		},
 		{
 			name:      "duplicate seams merge",
 			seams:     []report.Seam{seam("api", "db", 2), seam("api", "db", 3)},
-			wantLinks: []Link{observed("api", "db", 5, true)},
+			wantLinks: []Link{link("api", "db", 5, StatusObserved)},
 			wantNodes: declared,
 		},
 		{
 			name:      "self seam is kept",
 			seams:     []report.Seam{seam("api", "api", 4)},
-			wantLinks: []Link{observed("api", "api", 4, true)},
+			wantLinks: []Link{link("api", "api", 4, StatusObserved)},
 			wantNodes: declared,
 		},
 		{
 			name:      "seam to an undeclared module",
 			seams:     []report.Seam{seam("api", "cache", 1)},
-			wantLinks: []Link{observed("api", "cache", 1, true)},
+			wantLinks: []Link{link("api", "cache", 1, StatusObserved)},
 			wantNodes: []Node{{"api", "app", 3}, {"cache", "", 0}, {"db", "infra", 6}, {"ui", "app", 9}},
 		},
 		{
 			name:      "seam with an empty endpoint is dropped",
 			seams:     []report.Seam{seam("", "db", 7), seam("api", "", 7), seam("ui", "db", 1)},
-			wantLinks: []Link{observed("ui", "db", 1, true)},
+			wantLinks: []Link{link("ui", "db", 1, StatusObserved)},
 			wantNodes: declared,
 		},
 	}
@@ -117,36 +117,45 @@ func TestLinkNormalization(t *testing.T) {
 	}
 }
 
-func TestPermittedFollowsActiveGateFindings(t *testing.T) {
+func TestStatusFollowsFindings(t *testing.T) {
 	tests := []struct {
-		name      string
-		findings  []report.Finding
-		permitted bool
+		name     string
+		findings []report.Finding
+		status   LinkStatus
 	}{
-		{"gate new", []report.Finding{finding("gate", "new", "api", "db")}, false},
-		{"gate expired_waiver", []report.Finding{finding("gate", "expired_waiver", "api", "db")}, false},
-		{"gate baseline", []report.Finding{finding("gate", "baseline", "api", "db")}, true},
-		{"gate waived", []report.Finding{finding("gate", "waived", "api", "db")}, true},
-		{"gate fixed", []report.Finding{finding("gate", "fixed", "api", "db")}, true},
-		{"advisory new", []report.Finding{finding("advisory", "new", "api", "db")}, true},
-		{"gate new in the other direction", []report.Finding{finding("gate", "new", "db", "api")}, true},
-		{"gate new with an empty To.Module", []report.Finding{finding("gate", "new", "api", "")}, true},
-		{"no finding", nil, true},
+		{"gate new", []report.Finding{finding("gate", "new", "api", "db")}, StatusViolation},
+		{"gate expired_waiver", []report.Finding{finding("gate", "expired_waiver", "api", "db")}, StatusViolation},
+		{"gate baseline", []report.Finding{finding("gate", "baseline", "api", "db")}, StatusAccepted},
+		{"gate waived", []report.Finding{finding("gate", "waived", "api", "db")}, StatusAccepted},
+		{"gate fixed", []report.Finding{finding("gate", "fixed", "api", "db")}, StatusObserved},
+		{"advisory new", []report.Finding{finding("advisory", "new", "api", "db")}, StatusAdvisory},
+		{"advisory baseline", []report.Finding{finding("advisory", "baseline", "api", "db")}, StatusAdvisory},
+		{"advisory fixed", []report.Finding{finding("advisory", "fixed", "api", "db")}, StatusObserved},
+		{"unknown kind", []report.Finding{finding("guard", "new", "api", "db")}, StatusAdvisory},
+		{"gate with an unknown status", []report.Finding{finding("gate", "suppressed", "api", "db")}, StatusAdvisory},
+		{"gate new in the other direction", []report.Finding{finding("gate", "new", "db", "api")}, StatusObserved},
+		{"gate new with an empty To.Module", []report.Finding{finding("gate", "new", "api", "")}, StatusObserved},
+		{"no finding", nil, StatusObserved},
+		{"violation beats accepted and advisory", []report.Finding{
+			finding("advisory", "new", "api", "db"), finding("gate", "baseline", "api", "db"), finding("gate", "new", "api", "db"),
+		}, StatusViolation},
+		{"accepted beats advisory", []report.Finding{
+			finding("advisory", "new", "api", "db"), finding("gate", "waived", "api", "db"),
+		}, StatusAccepted},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if len(tt.findings) == 1 {
-				f := tt.findings[0]
-				if onPair := f.Edge.From.Module == "api" && f.Edge.To.Module == "db"; onPair && tt.permitted == f.Active() {
-					t.Fatalf("the table disagrees with report.Finding.Active() = %v", f.Active())
+			for _, f := range tt.findings {
+				if onPair := f.Edge.From.Module == "api" && f.Edge.To.Module == "db"; onPair && f.Active() && tt.status != StatusViolation {
+					t.Fatalf("the table disagrees with report.Finding.Active(): an active finding is a violation")
 				}
 			}
 			rep := reportFor(threeModules, []report.Seam{seam("api", "db", 1)}, tt.findings)
 			got := Build(rep, []byte(threeModules))
 			for _, l := range got.Links {
 				if l.From == "api" && l.To == "db" {
-					if l.Permitted != tt.permitted {
-						t.Errorf("api -> db Permitted = %v, want %v", l.Permitted, tt.permitted)
+					if l.Status != tt.status {
+						t.Errorf("api -> db Status = %q, want %q", l.Status, tt.status)
 					}
 					return
 				}
@@ -156,10 +165,15 @@ func TestPermittedFollowsActiveGateFindings(t *testing.T) {
 	}
 }
 
-func TestActiveFindingWithoutSeamStillDraws(t *testing.T) {
-	rep := reportFor(threeModules, nil, []report.Finding{finding("gate", "new", "ui", "db")})
+func TestFindingWithoutSeamStillDraws(t *testing.T) {
+	rep := reportFor(threeModules, nil, []report.Finding{
+		finding("gate", "new", "ui", "db"),
+		finding("gate", "baseline", "api", "ui"),
+		finding("advisory", "new", "db", "api"),
+		finding("gate", "fixed", "db", "ui"),
+	})
 	got := Build(rep, []byte(threeModules))
-	want := []Link{{From: "ui", To: "db", Observed: true, Permitted: false, Count: 0}}
+	want := []Link{link("api", "ui", 0, StatusAccepted), link("db", "api", 0, StatusAdvisory), link("ui", "db", 0, StatusViolation)}
 	if !reflect.DeepEqual(got.Links, want) {
 		t.Errorf("Links = %+v, want %+v", got.Links, want)
 	}

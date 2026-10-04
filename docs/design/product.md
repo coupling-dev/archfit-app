@@ -243,7 +243,9 @@ acceptable. The UI must show pending, completed, failed, and stale requests;
 fast schema completion stays available independently. A new always-on customer
 agent is not an agreed first-version requirement.
 
-The graph distinguishes observed dependencies from permitted relationships.
+The graph distinguishes observed dependencies by what the report's findings say
+about them: a violation, accepted debt, an advisory, or no finding. It never
+labels a relationship permitted until the engine reports a per-seam policy status.
 Selecting a module can navigate to its YAML definition. Any supported visual
 edit proposes a YAML change rather than regenerating the whole document from
 graph state. Preserve unrelated content and comments. If YAML is invalid, a

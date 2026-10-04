@@ -19,7 +19,7 @@ func TestInvalidYAMLMarksGraphStale(t *testing.T) {
 	rep := reportFor(threeModules,
 		[]report.Seam{seam("api", "db", 2), seam("ui", "api", 1)},
 		[]report.Finding{finding("gate", "new", "ui", "db")})
-	wantLinks := []Link{observed("api", "db", 2, true), observed("ui", "api", 1, true), observed("ui", "db", 0, false)}
+	wantLinks := []Link{link("api", "db", 2, StatusObserved), link("ui", "api", 1, StatusObserved), link("ui", "db", 0, StatusViolation)}
 
 	broken := strings.Replace(threeModules, "    paths: [api/**]", "   paths: [api/**]", 1)
 	if _, err := policy.Modules([]byte(broken)); err == nil {
@@ -83,17 +83,33 @@ func TestUnsupportedYAMLConstructsAreUntouched(t *testing.T) {
 	}
 }
 
-func TestViolationIsToldApartFromPermitted(t *testing.T) {
+func TestViolationIsToldApartFromObserved(t *testing.T) {
 	// The blocked fixture observes its forbidden dependency a -> b once. Observe it a second time, and
-	// add one allowed dependency b -> a observed once.
+	// add one dependency b -> a that no finding names, observed once.
 	rep := loadReport(t, blockedFixture)
 	rep.Seams = append(rep.Seams, rep.Seams[0], seam("b", "a", 1))
 
 	got := Build(rep, []byte(fixturePolicy))
 
-	want := []Link{observed("a", "b", 2, false), observed("b", "a", 1, true)}
+	want := []Link{link("a", "b", 2, StatusViolation), link("b", "a", 1, StatusObserved)}
 	if !reflect.DeepEqual(got.Links, want) {
 		t.Errorf("Links = %+v, want %+v", got.Links, want)
+	}
+}
+
+func TestBaselinedViolationIsNeverPermitted(t *testing.T) {
+	// The same forbidden dependency once its finding is accepted by the baseline, then by a waiver.
+	for _, status := range []string{"baseline", "waived"} {
+		rep := loadReport(t, blockedFixture)
+		for i := range rep.Findings {
+			if rep.Findings[i].Kind == "gate" {
+				rep.Findings[i].Status = status
+			}
+		}
+		got := Build(rep, []byte(fixturePolicy))
+		if want := []Link{link("a", "b", 1, StatusAccepted)}; !reflect.DeepEqual(got.Links, want) {
+			t.Errorf("%s: Links = %+v, want %+v", status, got.Links, want)
+		}
 	}
 }
 
@@ -116,8 +132,8 @@ func TestSelectingANodeFindsItsYAML(t *testing.T) {
 		}
 	}
 	for _, l := range got.Links {
-		if !l.Permitted {
-			t.Errorf("healthy link %s -> %s is not permitted", l.From, l.To)
+		if l.Status != StatusObserved {
+			t.Errorf("healthy link %s -> %s has status %q, want observed", l.From, l.To, l.Status)
 		}
 	}
 }

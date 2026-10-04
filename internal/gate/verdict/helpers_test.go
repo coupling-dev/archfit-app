@@ -27,12 +27,12 @@ const (
 )
 
 var allCodes = []ReasonCode{
-	ReasonHealthy, ReasonBlockingFindings, ReasonEngineError, ReasonMissingCoverage,
+	ReasonHealthy, ReasonAttentionOnly, ReasonBlockingFindings, ReasonEngineError, ReasonMissingCoverage,
 	ReasonBaselineNotComparable, ReasonBaselineMismatch, ReasonLabelsMismatch, ReasonPolicyMismatch,
 	ReasonPolicyMissing, ReasonUnknownIdentity, ReasonProfileMissing, ReasonWorkflowNotApproved,
 	ReasonOwnerApprovalMissing, ReasonSettingsMissing, ReasonForkUnsupported, ReasonUnsupportedEvent,
 	ReasonEnvelopeMismatch, ReasonReportInvalid, ReasonMissingUpload, ReasonStaleInputs,
-	ReasonWaiverExpired, ReasonSuspended,
+	ReasonWaiverExpired, ReasonSuspended, ReasonPolicyDefect,
 }
 
 var withoutCodes = []ReasonCode{
@@ -94,6 +94,15 @@ func unevaluated(f *Facts) {
 	f.Report.Decision.UnevaluatedRequiredRules = []report.UnevaluatedRule{
 		{RuleID: "layers/no_upward_imports", Reason: "required tool `dependency-cruiser` was absent"},
 	}
+}
+
+// deadReason is the engine's unevaluated-rule reason for a selector that matches nothing.
+const deadReason = "selector matches nothing: to internal/gihub/**"
+
+// deadSelector adds a required rule the engine could not evaluate because its selector matches nothing.
+func deadSelector(f *Facts) {
+	f.Report.Decision.UnevaluatedRequiredRules = append(f.Report.Decision.UnevaluatedRequiredRules,
+		report.UnevaluatedRule{RuleID: "no_store_to_github", Reason: deadReason})
 }
 
 func problem(p ingest.Problem) func(*Facts) {
@@ -164,8 +173,10 @@ func checkInvariants(t *testing.T, o Outcome) {
 			t.Fatalf("reason %q says verified", r.Code)
 		}
 	}
-	if seen[ReasonHealthy] && len(o.Reasons) != 1 {
-		t.Fatalf("healthy beside other reasons: %v", codes(o))
+	for _, alone := range []ReasonCode{ReasonHealthy, ReasonAttentionOnly} {
+		if seen[alone] && len(o.Reasons) != 1 {
+			t.Fatalf("%s beside other reasons: %v", alone, codes(o))
+		}
 	}
 }
 
@@ -284,7 +295,7 @@ func fuzzFacts(rng *rand.Rand) Facts {
 	if hit() {
 		for i := range 1 + rng.IntN(2) {
 			r.Decision.UnevaluatedRequiredRules = append(r.Decision.UnevaluatedRequiredRules,
-				report.UnevaluatedRule{RuleID: pick(rng, "rule/a", "rule/b") + string(rune('0'+i))})
+				report.UnevaluatedRule{RuleID: pick(rng, "rule/a", "rule/b") + string(rune('0'+i)), Reason: pick(rng, "", deadReason)})
 		}
 	}
 	if hit() {

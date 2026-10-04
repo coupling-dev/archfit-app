@@ -61,7 +61,7 @@ func TestLegitimateChangePassesAndViolationFails(t *testing.T) {
 
 	attention := w.openPull(w.shop, 3)
 	w.handle(w.event(webhook.PullOpened, attention))
-	w.wantAnswer(w.upload(attention, fixtureAttention), 200, "success", "healthy")
+	w.wantAnswer(w.upload(attention, fixtureAttention), 200, "success", "attention_only")
 	w.wantGate(attention, runCompleted, "success")
 	if c, _ := w.check(attention, attention.head, stateCheckName); c.Conclusion != "neutral" {
 		t.Errorf("%s of the needs_attention PR = %q, want neutral", stateCheckName, c.Conclusion)
