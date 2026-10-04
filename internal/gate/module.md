@@ -453,9 +453,10 @@ type Publication struct {
     Report   *Report // nil when there is no usable report
     Trusted  Trusted
     // Resolve, when set, reads the trusted inputs again inside the head's publication lease, before anything is
-    // written. When the result no longer accepts a Receipt digest, the decision was computed from inputs older than
-    // the protected ref: Publish writes nothing and returns ErrStaleInputs, so it never replaces a publication
-    // computed from newer inputs. nil skips the check; sweep corrections, which are never a success, leave it nil.
+    // written. When the result differs from Trusted in any field (a digest, the owner approval, the settings) or no
+    // longer accepts a Receipt digest, the decision was computed from inputs that are no longer current: Publish
+    // writes nothing and returns ErrStaleInputs, so it never replaces a publication computed from newer inputs. nil
+    // skips the check; sweep corrections, which are never a success, leave it nil.
     Resolve func(context.Context) (Trusted, error)
 }
 
@@ -976,8 +977,9 @@ type Store interface {
 7. Receipt (table below); `publisher.Publish(ctx, Publication{target, u.Identity, outcome, receipt, u.Report, trusted,
    Resolve})`. `Identity` is the envelope's claim; feedback prints it as claimed. `Resolve` calls
    `resolver.Resolve(ctx, target, now)` again, inside the publication lease: a sweep may have corrected the check
-   from newer inputs between step 3 and the lease, under the same run identity. When the new inputs no longer accept
-   a receipt digest, feedback writes nothing and returns `ErrStaleInputs`; the upload answers 503 `unavailable` and
+   from newer inputs between step 3 and the lease, under the same run identity, and an owner may dismiss the
+   approval step 5 relied on. When the new inputs differ from `trusted` in any field or no longer accept a receipt
+   digest, feedback writes nothing and returns `ErrStaleInputs`; the upload answers 503 `unavailable` and
    the Action's retry decides from the new inputs. The correction stays until then.
 8. Answer 200 with conclusion and reason.
 

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
@@ -52,7 +53,7 @@ func (s *serialized) Publish(ctx context.Context, p Publication) error {
 			if err != nil {
 				return fmt.Errorf("feedback: resolve inputs again: %w: %w", errUnwritten, err)
 			}
-			if !decidedFrom(p.Receipt, fresh) {
+			if !decidedFrom(p, fresh) {
 				return ErrStaleInputs
 			}
 		}
@@ -60,12 +61,16 @@ func (s *serialized) Publish(ctx context.Context, p Publication) error {
 	})
 }
 
-// decidedFrom reports whether every input digest of r is still accepted by t: the sweep's stale_inputs condition,
-// negated, so that no publication the sweep would at once call stale is ever written.
-func decidedFrom(r Receipt, t inputs.Trusted) bool {
-	return inputs.Accepts(t.PolicyDigests, r.PolicyDigest) &&
-		inputs.Accepts(t.BaselineDigests, r.BaselineDigest) &&
-		inputs.Accepts(t.LabelsDigests, r.LabelsDigest)
+// decidedFrom reports whether p was decided from the trusted inputs t read now. Every field of t must equal
+// p.Trusted: the decision, the receipt and the rendering all read it, so a change of any field, digests or not (an
+// owner approval dismissed, settings edited, a subscription suspended), makes p stale. Whole-value equality cannot fall
+// behind a field that verdict.Decide starts to read. The digest checks are the sweep's stale_inputs condition, negated,
+// so that no publication the sweep would at once call stale is ever written, whatever p.Trusted holds.
+func decidedFrom(p Publication, t inputs.Trusted) bool {
+	return reflect.DeepEqual(p.Trusted, t) &&
+		inputs.Accepts(t.PolicyDigests, p.Receipt.PolicyDigest) &&
+		inputs.Accepts(t.BaselineDigests, p.Receipt.BaselineDigest) &&
+		inputs.Accepts(t.LabelsDigests, p.Receipt.LabelsDigest)
 }
 
 func (s *serialized) Pending(ctx context.Context, t inputs.Target) error {

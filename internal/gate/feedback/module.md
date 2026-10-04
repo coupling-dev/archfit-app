@@ -74,9 +74,10 @@ type Publication struct {
     Report   *Report // nil when there is no usable report
     Trusted  Trusted
     // Resolve, when set, reads the trusted inputs again inside the head's publication lease, before anything is
-    // written. When the result no longer accepts a Receipt digest, the decision was computed from inputs older than
-    // the protected ref: Publish writes nothing and returns ErrStaleInputs, so it never replaces a publication
-    // computed from newer inputs. nil skips the check; sweep corrections, which are never a success, leave it nil.
+    // written. When the result differs from Trusted in any field (a digest, the owner approval, the settings) or no
+    // longer accepts a Receipt digest, the decision was computed from inputs that are no longer current: Publish
+    // writes nothing and returns ErrStaleInputs, so it never replaces a publication computed from newer inputs. nil
+    // skips the check; sweep corrections, which are never a success, leave it nil.
     Resolve func(context.Context) (Trusted, error)
 }
 
@@ -251,8 +252,11 @@ The run identity orders two uploads, but not an upload and a sweep correction: t
 `(RunID, RunAttempt)`, so the equal identity counts as replaceable. An upload decided from policy P1 that waits for
 the lease while the sweep, already reading P2, writes `stale_inputs` would then replace the correction with its P1
 `success`. So, inside the lease and before its first GitHub request, `Publish` calls `Publication.Resolve` when it is
-set and checks each receipt digest (`PolicyDigest`, `BaselineDigest`, `LabelsDigest`) with `inputs.Accepts` against
-the result: the sweep's stale condition, negated. A digest that is no longer accepted writes nothing and returns
+set and checks two things against the result. It must equal `Publication.Trusted` in every field, so that a change
+the digests do not show (an owner approval dismissed, settings edited, a subscription suspended) also makes the
+decision stale; whole-value equality covers every field `verdict.Decide`, the receipt and the rendering read, now and
+after a field is added. And each receipt digest (`PolicyDigest`, `BaselineDigest`, `LabelsDigest`) must pass
+`inputs.Accepts`: the sweep's stale condition, negated. A result that fails either writes nothing and returns
 `ErrStaleInputs`; a `Resolve` error writes nothing and is returned wrapped, `errors.Is` intact. Both release the
 lease at once. `gate` sets `Resolve` on every upload publication; the sweep's publications carry the inputs they were
 just resolved from and are never a success, so they leave it nil.
@@ -1176,8 +1180,8 @@ Golden files hold rendered bodies for the wire fixtures.
   **Scenario**: a held call that fails with a possibly sent write (`context.DeadlineExceeded`), and one that fails with `ErrStaleInputs`; then a second holder whose waits advance the clock 20 s each.
   **Expected behavior**: the first keeps its lease and the second holder waits 60 s, until it expires; the second releases at once and the next holder does not wait.
 - **Test name**: `TestStaleDecisionNeverReplacesNewerInputs`
-  **Scenario**: a sweep-style `stale_inputs` correction with policy P2 and run 7.1, then an upload of run 7.1 decided `success` from P1 whose `Resolve` returns P2; the same with `Resolve` failing; and an upload decided from P2 over a correction from P1.
-  **Expected behavior**: the first returns `ErrStaleInputs`, the second the `Resolve` error, and in both the gate check stays `action_required`/`stale_inputs`; the third writes `success`. No lease is left. Without the check the first two end `success`.
+  **Scenario**: a sweep-style `stale_inputs` correction with policy P2 and run 7.1, then an upload of run 7.1 decided `success` from P1 whose `Resolve` returns P2; the same with `Resolve` failing; an upload decided from P2 with owner approval `granted` whose `Resolve` returns the same inputs with approval `missing`; and two uploads decided from P2 over a correction from P1 whose `Resolve` returns exactly the inputs they were decided from, one without and one with a granted approval.
+  **Expected behavior**: the first and third return `ErrStaleInputs`, the second the `Resolve` error, and in all three the gate check stays `action_required`/`stale_inputs`; the last two write `success`. No lease is left. Without the check the first three end `success`; with a digest-only check the third does.
 - **Test name**: `TestChangedFilesErrorStillPublishes`
   **Scenario**: in required mode with a pending gate check, `ChangedFiles` fails once with `ErrRateLimited`, and once with another error; then a retry 60 s later.
   **Expected behavior**: the gate check is completed as `failure`, one state run without annotations and the comment are written; `ErrRateLimited` is returned, the other error is not. The retry adds a state run with the two annotations and no second gate check or comment.

@@ -245,7 +245,8 @@ func TestLeaseKeptAfterFailedCall(t *testing.T) {
 
 // An upload decided from policy P1 waits while a sweep, which already reads P2, corrects the check to stale_inputs
 // under the same run identity. Inside the lease the upload's inputs are read again: a decision from inputs that are
-// no longer trusted writes nothing, so the correction stays.
+// no longer trusted writes nothing, so the correction stays. Any change counts, not only a digest: an owner approval
+// dismissed between the two reads leaves every digest accepted, yet the decision no longer holds.
 func TestStaleDecisionNeverReplacesNewerInputs(t *testing.T) {
 	const p1, p2 = policyDigest, "5555555555555555555555555555555555555555555555555555555555555555"
 	ctx := context.Background()
@@ -254,18 +255,25 @@ func TestStaleDecisionNeverReplacesNewerInputs(t *testing.T) {
 		tr.PolicyDigests = []string{policy}
 		return tr
 	}
+	approved := func(approval inputs.Approval, by string) inputs.Trusted {
+		tr := trustedWith(p2)
+		tr.ProtectedPaths, tr.Approval, tr.ApprovedBy = []string{".github/archfit.yaml"}, approval, by
+		return tr
+	}
 	boom := errors.New("protected ref unreadable")
 	for _, tt := range []struct {
 		name                       string
 		uploadPolicy, sweptPolicy  string
-		fresh                      inputs.Trusted
+		decided, fresh             inputs.Trusted
 		resolveErr                 error
 		wantErr                    error
 		wantConclusion, wantReason string
 	}{
-		{"inputs changed after the decision", p1, p2, trustedWith(p2), nil, ErrStaleInputs, "action_required", "stale_inputs"},
-		{"inputs unreadable again", p1, p2, inputs.Trusted{}, boom, boom, "action_required", "stale_inputs"},
-		{"decision from the current inputs", p2, p1, trustedWith(p2), nil, nil, "success", "healthy"},
+		{"inputs changed after the decision", p1, p2, trustedWith(p1), trustedWith(p2), nil, ErrStaleInputs, "action_required", "stale_inputs"},
+		{"inputs unreadable again", p1, p2, trustedWith(p1), inputs.Trusted{}, boom, boom, "action_required", "stale_inputs"},
+		{"owner approval dismissed after the decision", p2, p1, approved(inputs.ApprovalGranted, "alice"), approved(inputs.ApprovalMissing, ""), nil, ErrStaleInputs, "action_required", "stale_inputs"},
+		{"decision from the current inputs", p2, p1, trustedWith(p2), trustedWith(p2), nil, nil, "success", "healthy"},
+		{"approval unchanged since the decision", p2, p1, approved(inputs.ApprovalGranted, "alice"), approved(inputs.ApprovalGranted, "alice"), nil, nil, "success", "healthy"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			h := newHarness(headB)
@@ -282,7 +290,7 @@ func TestStaleDecisionNeverReplacesNewerInputs(t *testing.T) {
 			decided.PolicyDigest = tt.uploadPolicy
 			upload := Publication{
 				Target: prTarget(headB), Identity: fullIdentity(), Outcome: healthy, Receipt: decided,
-				Report: loadReport(t, "healthy"), Trusted: trustedWith(tt.uploadPolicy),
+				Report: loadReport(t, "healthy"), Trusted: tt.decided,
 				Resolve: func(context.Context) (inputs.Trusted, error) { return tt.fresh, tt.resolveErr },
 			}
 			if err := h.pub.Publish(ctx, upload); !errors.Is(err, tt.wantErr) {

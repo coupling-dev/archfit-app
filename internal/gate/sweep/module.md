@@ -333,9 +333,10 @@ type Publication struct {
     Report   *Report // nil when there is no usable report
     Trusted  Trusted
     // Resolve, when set, reads the trusted inputs again inside the head's publication lease, before anything is
-    // written. When the result no longer accepts a Receipt digest, the decision was computed from inputs older than
-    // the protected ref: Publish writes nothing and returns ErrStaleInputs, so it never replaces a publication
-    // computed from newer inputs. nil skips the check; sweep corrections, which are never a success, leave it nil.
+    // written. When the result differs from Trusted in any field (a digest, the owner approval, the settings) or no
+    // longer accepts a Receipt digest, the decision was computed from inputs that are no longer current: Publish
+    // writes nothing and returns ErrStaleInputs, so it never replaces a publication computed from newer inputs. nil
+    // skips the check; sweep corrections, which are never a success, leave it nil.
     Resolve func(context.Context) (Trusted, error)
 }
 
