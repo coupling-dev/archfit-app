@@ -69,6 +69,7 @@ The system's contract is its external surface. Everything else is internal.
 | `GET /healthz`          | `app`                     | none                                                      |
 | `POST /v1/reports`      | `gate`                    | GitHub Actions OIDC bearer token, audience = App base URL |
 | `POST /v1/discoveries`  | `control` (onboarding)    | same OIDC checks, through the gate's `Receiver`           |
+| `POST /v1/baselines`    | `control` (onboarding)    | same OIDC checks, through the gate's `Receiver`           |
 | `POST /webhooks/github` | `app` → `gate`, `control` | `X-Hub-Signature-256`                                     |
 | `POST /internal/sweep`  | `app` → `control`, `gate` | operator bearer token **[default]**                       |
 | `POST /internal/grants` | `app` → `control`         | operator bearer token **[default]**                       |
@@ -221,6 +222,12 @@ waiver expiry (warn 7 days before, re-run after), suspension and restoration. Th
 CODEOWNERS entries). After merge, the UI dispatches discovery; the workflow uploads a draft policy to
 `POST /v1/discoveries`; `onboarding` opens PR 2. Stages are derived from GitHub on every read.
 
+**Baseline capture**: an owner dispatches the workflow with `mode: baseline` on the default branch; the Action runs
+`archfit baseline` in the pinned image and uploads the file to `POST /v1/baselines`. `onboarding` pins the run to the
+default-branch head, checks the approved identity and that the capture ran under the protected policy and labels, then
+opens or updates one pull request on `archfit/baseline` that changes only `.archfit-baseline.json`. It never commits to
+the default branch; the gate's protected-path rule requires an owner approval of the exact head before that PR merges.
+
 **Managed onboarding**: consent recorded in KV → onboarding PR opened with a "discovery running" body → `Sandbox.Discover`
 → policy commit pushed to the same PR. No LLM runs inside the sandbox **[default]**; optional LLM refinement
 is an ordinary `assist` request on the resulting draft.
@@ -293,8 +300,9 @@ and child (distance 1). Everything that crosses the root is contract coupling, w
    waiver expiry live in the check run; the sweep compares them with the protected ref. No second copy can drift.
 6. **Consumer-owned seams.** `Sandbox` lives with `onboarding`, `Provider` with `assist`, `Store` stands alone
    because both branches use it. Platform implementations are separate packages chosen in `app`.
-7. **Two upload routes, one provenance path.** `/v1/discoveries` reuses the gate's `Receiver`, so discovery
-   cannot weaken or fork the authentication rules. Discovery output never satisfies the gate.
+7. **Three upload routes, one provenance path.** `/v1/discoveries` and `/v1/baselines` reuse the gate's `Receiver`,
+   so neither can weaken or fork the authentication rules. Discovery and baseline output never satisfy the gate; a
+   baseline becomes trusted input only when an owner-approved pull request merges it.
 8. **Advisory mode publishes no `archfit/gate` check [default].** If a ruleset requires the check while settings
    say `advisory`, the PR stays blocked as "expected": closed, never green.
 9. **No LLM in the sandbox [default].** One LLM call site (`assist`), one budget counter, and source never
@@ -316,7 +324,9 @@ baseline and labels integrity through producer-stated envelope digests (below); 
 permission cache of 60 seconds; Anthropic model `claude-sonnet-5`.
 
 Readings of decisions.md adopted here, to be confirmed by the owner: §3 "Supported triggers" governs report
-uploads; discovery uploads (§5) also accept `workflow_dispatch`. §2 "keys are prefixed by installation ID" has
+uploads; discovery uploads (§5) and baseline uploads (§4) also accept `workflow_dispatch`. §4 "The App never
+commits it" means never to the protected ref: the App commits a captured baseline only to `archfit/baseline`, and it
+reaches the protected ref only by an owner-approved merge. §2 "keys are prefixed by installation ID" has
 one exception, the App-wide LLM budget counter of §7. §4 "created `in_progress` on PR open or push" means a push
 to the PR branch (a new head SHA); a default-branch push gets `archfit/state` only. §7 "suggestion" means a
 commit on the draft PR, not a GitHub review suggestion. Supported languages are whatever engine v2.3.1 supports;

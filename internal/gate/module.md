@@ -99,7 +99,7 @@ type Entitlement struct {
 // Binding is the authoritative identity of an upload, resolved from OIDC claims and the GitHub API.
 type Binding struct {
     Repo         Repo   // resolved by the App, never from the envelope
-    Event        string // "pull_request" | "push"; discovery uploads also "workflow_dispatch"
+    Event        string // "pull_request" | "push"; discovery and baseline uploads also "workflow_dispatch"
     PullRequest  int    // 0 unless pull_request
     HeadSHA      string
     BaseRef      string // PR base branch; for other events the branch the run executed on
@@ -128,8 +128,8 @@ type Upload struct {
     Digest   string   // payload digest, verified against the envelope
     BaselineDigest string // claimed by the envelope; "" = the producer used no baseline
     LabelsDigest   string // claimed by the envelope; "" = the producer used no labels file
-    Payload  []byte   // the exact verified bytes; the only content for KindDiscovery
-    Report   *Report  // nil for KindDiscovery and when ProblemReportInvalid
+    Payload  []byte   // the exact verified bytes; the only content for KindDiscovery and KindBaseline
+    Report   *Report  // nil for KindDiscovery, KindBaseline and when ProblemReportInvalid
     Problems []Problem
 }
 ```
@@ -646,7 +646,7 @@ type Producer struct {
 - **Balanced?**: yes
 - **Shared knowledge**: the report route passes `KindReport` to `Receive`. The envelope itself is handled inside `gate/ingest`.
 
-<!-- contract: Envelope, Kind, SchemaV1, KindReport, KindDiscovery — restated from internal/wire/envelope/module.md -->
+<!-- contract: Envelope, Kind, SchemaV1, KindReport, KindDiscovery, KindBaseline — restated from internal/wire/envelope/module.md -->
 ```go
 // SchemaV1 is the only envelope schema version accepted.
 const SchemaV1 = "archfit.report-envelope.v1"
@@ -657,6 +657,7 @@ type Kind string
 const (
     KindReport    Kind = "report"    // engine state report, POST /v1/reports
     KindDiscovery Kind = "discovery" // discovery draft policy, POST /v1/discoveries
+    KindBaseline  Kind = "baseline"  // captured engine baseline file, POST /v1/baselines
 )
 
 // Envelope is what the producer states about a payload. Every field is self-reported:
@@ -676,7 +677,7 @@ type Envelope struct {
     ImageDigest   string `json:"image_digest"`   // "sha256:<64 hex>"
     Platform      string `json:"platform"`       // e.g. "linux/amd64"
     PayloadDigest  string `json:"payload_digest"`  // "sha256:<64 hex>" of the exact payload bytes
-    BaselineDigest string `json:"baseline_digest"` // bare hex SHA-256 of the baseline file the engine loaded; "" = none
+    BaselineDigest string `json:"baseline_digest"` // bare hex SHA-256 of the baseline file the engine loaded; "" = none; always "" for discovery and baseline
     LabelsDigest   string `json:"labels_digest"`   // bare hex SHA-256 of the labels file the engine loaded; "" = none
 }
 ```

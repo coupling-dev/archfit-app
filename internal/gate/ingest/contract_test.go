@@ -170,6 +170,54 @@ func TestReceiveDiscovery(t *testing.T) {
 	})
 }
 
+func TestReceiveBaseline(t *testing.T) {
+	t.Run("workflow_dispatch", func(t *testing.T) {
+		s := discoveryScenario(t)
+		s.toBaseline()
+		up, err := s.receive(t)
+		// The JSON payload is not a report: no problem proves report.Decode was not called.
+		wantProblems(t, up, err)
+		if up.Report != nil || string(up.Payload) != baselineJSON {
+			t.Error("baseline upload must carry the payload only")
+		}
+		if up.Binding.Event != "workflow_dispatch" || up.Binding.BaseRef != defaultBranch {
+			t.Errorf("binding = %+v, want workflow_dispatch on the default branch", up.Binding)
+		}
+	})
+
+	t.Run("default branch push", func(t *testing.T) {
+		s := pushScenario(t)
+		s.toBaseline()
+		up, err := s.receive(t)
+		wantProblems(t, up, err)
+	})
+
+	t.Run("pull_request run", func(t *testing.T) {
+		s := prScenario(t)
+		s.toBaseline()
+		up, err := s.receive(t)
+		wantProblems(t, up, err, ProblemUnsupportedEvent)
+	})
+
+	t.Run("dispatch on another branch", func(t *testing.T) {
+		s := discoveryScenario(t)
+		s.toBaseline()
+		s.claims.Ref = "refs/heads/feature"
+		up, err := s.receive(t)
+		wantProblems(t, up, err)
+		if up.Binding.BaseRef != "feature" {
+			t.Errorf("BaseRef = %q, want the branch the run executed on, for the route to refuse", up.Binding.BaseRef)
+		}
+	})
+
+	t.Run("baseline envelope on the discovery route", func(t *testing.T) {
+		s := discoveryScenario(t)
+		s.env.Kind = envelope.KindBaseline
+		up, err := s.receive(t)
+		wantRejection(t, up, err, 400, "kind_mismatch")
+	})
+}
+
 func TestProblemsNeverReject(t *testing.T) {
 	workflowRun := func(s *scenario) { s.toEvent("workflow_run", "refs/heads/"+defaultBranch) }
 	forkPR := func(s *scenario) {

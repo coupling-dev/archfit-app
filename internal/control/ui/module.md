@@ -274,7 +274,7 @@ type Consents interface {
 - **LCA / Rank / Distance**: control / 1 / 1
 - **Volatility**: high
 - **Balanced?**: yes
-- **Shared knowledge**: `Progress`, `StartCustomer`, `StartManaged`. ui never mounts `DiscoveryHandler` (the façade does).
+- **Shared knowledge**: `Progress`, `StartCustomer`, `StartManaged`. ui never mounts `DiscoveryHandler` or `BaselineHandler` (the façade does).
   Before `StartManaged` ui checks `Consents.Has(ConsentSourceProcessing)` and sends the administrator to the consent page
   when it is false **[default]**. `ErrNoSandbox` is the sentinel onboarding returns when managed discovery is not
   configured; ui shows "managed discovery is not available". `ErrAlreadyOnboarded` and `ErrBusy` are the sentinels
@@ -308,6 +308,8 @@ type Onboarding interface {
     StartManaged(ctx context.Context, r Repo, owners []string) (Draft, error)
     // DiscoveryHandler serves POST /v1/discoveries and opens PR 2 with the proposed policy.
     DiscoveryHandler() http.Handler
+    // BaselineHandler serves POST /v1/baselines and opens or updates the baseline PR. It never writes the default branch.
+    BaselineHandler() http.Handler
 }
 ```
 

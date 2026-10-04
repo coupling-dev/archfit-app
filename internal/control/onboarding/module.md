@@ -11,13 +11,17 @@ modes, using only pull requests a human merges. Customer mode is always two PRs:
 the App settings file and CODEOWNERS entries; PR 2 carries the policy that discovery in the customer's
 CI proposed. Managed mode runs one ephemeral sandbox job after recorded consent and puts the policy on
 the onboarding PR. Without this module a customer would hand-write the workflow, settings, CODEOWNERS and policy files and nobody could tell
-which step is missing.
+which step is missing. The same upload path then carries the baseline: a capture by the approved workflow on the
+default branch becomes a baseline pull request that an architecture owner approves, never a commit to the default branch.
 
 ## Functional Responsibilities
 
 - Derive the onboarding stage and the next action from GitHub on every call. Store nothing.
 - Generate PR 1: pinned workflow from the locked manifest, settings with the first owner list, CODEOWNERS entries.
 - Serve `POST /v1/discoveries`: reuse the gate's `Receiver`, check the producer, check the draft is no-source policy text, open PR 2.
+- Serve `POST /v1/baselines`: reuse the gate's `Receiver`, check the producer at the default-branch head, check the capture
+  against the approved identity and the protected policy and labels, then open or update the baseline PR on `archfit/baseline`
+  with a body that counts the accepted findings added and removed. Never write the default branch.
 - Managed discovery: require `ConsentSourceProcessing`, open the onboarding PR, run `Sandbox.Discover` once, commit the draft policy or a clear failure state.
 - Own the `Sandbox` seam and its default ("not available").
 - Never enable the required gate: generated settings always say `gate: advisory`.
@@ -30,13 +34,15 @@ path will change with every pilot (product.md §4 leaves usability targets open)
 ## Encapsulated Knowledge
 
 - Stage derivation rules and diagnostic texts.
-- Branch names `archfit/onboarding` and `archfit/policy`; workflow path `.github/workflows/archfit.yaml`. **[default]**
+- Branch names `archfit/onboarding`, `archfit/policy` and `archfit/baseline`; workflow path `.github/workflows/archfit.yaml`. **[default]**
 - The workflow template (embedded, `text/template`) and what it pins.
 - CODEOWNERS location lookup and the append-only edit.
 - The discovery draft checks (size, text shape, zero waivers).
+- The baseline upload checks (head pin, identity, structure, policy and labels binding) and the baseline PR body.
 - Managed job state: one hidden marker line in the onboarding PR body.
 - Limits, all **[default]** (none is in decisions.md): discovery draft ≤ 1 MB and ≤ 500 bytes per line; sandbox timeout 10 min;
-  a `running` marker counts as stalled after 11 min (timeout + 1 min); at most 2 concurrent managed jobs per process; at most 20 notes in a PR body.
+  a `running` marker counts as stalled after 11 min (timeout + 1 min); at most 2 concurrent managed jobs per process; at most 20 notes in a PR body;
+  at most 150 findings listed per section of a baseline PR body.
 - PR titles and bodies, failure codes shown in the managed PR body.
 
 ## Public Contract
@@ -93,6 +99,8 @@ type Onboarding interface {
     StartManaged(ctx context.Context, r Repo, owners []string) (Draft, error)
     // DiscoveryHandler serves POST /v1/discoveries and opens PR 2 with the proposed policy.
     DiscoveryHandler() http.Handler
+    // BaselineHandler serves POST /v1/baselines and opens or updates the baseline PR. It never writes the default branch.
+    BaselineHandler() http.Handler
 }
 ```
 
@@ -203,6 +211,67 @@ Statuses stay inside the producer's no-retry set (`400 401 403 409 413`) for per
 The PR body states: engine discovery draft from run `<RunID>`, digest `<Upload.Digest>`; a proposal to review, not
 measurement evidence. The handler never creates or updates a check run or comment.
 
+Steps 1 to 4 are one function shared with the baseline upload (`checkProducer`); discovery reads the settings at the
+default branch by name.
+
+### Baseline upload (`POST /v1/baselines`)
+
+decisions.md §4: the baseline is a file on the protected ref, it changes only through an owner-approved pull request,
+and the App never commits it there. This handler is the App side of the Action's `mode: baseline`: the Action runs
+`archfit baseline` in the pinned image on the default branch and uploads the file it wrote; the handler turns it into
+a pull request. Statuses and body format are those of the discovery upload. The first failure decides; nothing is
+proposed on any failure.
+
+1. `Receiver.Receive(ctx, req, KindBaseline)`, mapped as in discovery step 1.
+2. `Upload.Problems` non-empty → `400` with the first problem as code (a `pull_request` run gives `unsupported_event`).
+3. `Binding.BaseRef != DefaultBranch` → `403 not_default_branch`.
+4. `Repos.BranchHead(DefaultBranch)`: error → `503 rate_limited` or `500 internal`; not equal to `Binding.HeadSHA` →
+   `409 stale_head`. The capture describes an older tree; the Action treats `409` as superseded, and an owner re-dispatches.
+   Every later read is at that head commit, not at the branch name, so a push between two reads cannot mix two trees.
+5. Settings at the head commit: absent or invalid → `403 settings_missing`; `Binding.WorkflowPath != Settings.Workflow` →
+   `403 workflow_not_approved`.
+6. `manifest.Lookup(Upload.Identity)` misses → `403 unknown_engine_identity`.
+7. More than `policy.MaxBaselineBytes` (1 MiB) → `413 baseline_too_large`.
+8. `policy.ReadBaseline(payload)` fails → `400 baseline_invalid`. The error text is dropped.
+9. The capture's `ProfileVersion` differs from the manifest row's `ProfileVersion` → `403 unknown_engine_identity` (the
+   gate's identity predicate: an approved row and that row's profile).
+10. Policy at the head commit: absent → `403 policy_missing`; `policy.Digest(policy) != ConfigHash` → `403 policy_mismatch`.
+    The capture must have run under the protected policy, never under a head-tree or older one.
+11. Labels at the head commit: `policy.Digest` of the file, or `""` when absent, must equal `Upload.LabelsDigest`, else
+    `403 labels_mismatch`.
+12. Baseline at the head commit: byte-equal to the payload → `200 {"unchanged": true}`, and nothing is written (an
+    unchanged file would give GitHub a pull request without commits). Absent, readable or unreadable decides the body.
+13. `Proposals.Propose(Change{Branch: "archfit/baseline", Base: DefaultBranch, Files: [{BaselinePath, payload}], …}, "")`,
+    then `Proposals.SetBody` with the same body: `Propose` keeps the body of an open pull request, and a re-upload
+    must describe the bytes it committed. `ErrRateLimited` → `503`; other error → `500`.
+14. `200` with `{"pull_request": <number>, "url": "<url>"}`.
+
+The committed bytes are the payload, unchanged: the engine wrote them and the Action's self-check found them
+comparable. A retry of the same capture commits nothing new (the tree is unchanged) and rewrites the same body, so it is
+idempotent; a new capture adds a commit to the same branch and the same pull request.
+
+The PR body is deterministic and carries IDs, digests and counts only:
+
+- the default-branch head the capture ran at, and that the pull request changes only `.archfit-baseline.json` and the
+  App never commits a baseline to the default branch;
+- "Approving accepts N findings that the baseline on `main` does not accept today", where N counts fingerprints of the
+  capture that the protected baseline lacks;
+- a table: accepted findings on the default branch (`none` when absent, `unreadable` when not a readable v2 file), in
+  this pull request, added, removed (`unknown` when unreadable);
+- the added and the removed findings, one line each, `rule_id` and fingerprint, sorted by rule then fingerprint, at
+  most 150 per list **[default]** with an "and N more" line (GitHub refuses a body over 65 536 characters; a listed
+  line is at most 168 characters, so two full lists stay under 51 000);
+- run ID and attempt, engine version, platform, image digest, profile version, policy digest, labels digest or "no
+  labels file", payload digest, and that the capture is customer-attested: the App checked the run, workflow, head,
+  identity and digests and did not run the engine;
+- that an architecture owner named in `.archfit-app.yaml` must approve the exact head commit, and that a new commit needs
+  a new approval.
+
+When the protected baseline is absent or unreadable, every captured finding counts as added: overstating what approval
+accepts is the safe direction. The existing protected-path rule of the gate then governs the merge: the pull request
+changes `.archfit-baseline.json`, so its own report needs an owner approval of the exact head SHA. The handler never
+creates or updates a check run or comment.
+
 ### StartManaged
 
 1. `Consents.Has(ctx, r.InstallationID, ConsentSourceProcessing)` false → `ErrNoConsent`. Nothing else happens.
@@ -226,7 +295,7 @@ No LLM runs here. Managed LLM refinement is a separate `assist` request on the r
 ## Integrations
 
 Every integration is **contract** strength, volatility **high** (this module's side), and balanced. Outbound only;
-inbound consumers are `internal/control/` (`New`, `DiscoveryHandler`; control / 1 / 1) and `internal/control/ui/`
+inbound consumers are `internal/control/` (`New`, `DiscoveryHandler`, `BaselineHandler`; control / 1 / 1) and `internal/control/ui/`
 (`Progress`, `StartCustomer`, `StartManaged`; control / 1 / 1).
 
 ### internal/gate
@@ -237,7 +306,7 @@ inbound consumers are `internal/control/` (`New`, `DiscoveryHandler`; control / 
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high
 - **Balanced?**: yes
-- **Shared knowledge**: one provenance path for both upload routes.
+- **Shared knowledge**: one provenance path for every upload route.
 
 <!-- contract: Receiver, Rejection — restated from internal/gate/module.md -->
 ```go
@@ -262,7 +331,7 @@ type Receiver interface {
 // Binding is the authoritative identity of an upload, resolved from OIDC claims and the GitHub API.
 type Binding struct {
     Repo         Repo   // resolved by the App, never from the envelope
-    Event        string // "pull_request" | "push"; discovery uploads also "workflow_dispatch"
+    Event        string // "pull_request" | "push"; discovery and baseline uploads also "workflow_dispatch"
     PullRequest  int    // 0 unless pull_request
     HeadSHA      string
     BaseRef      string // PR base branch; for other events the branch the run executed on
@@ -291,15 +360,18 @@ type Upload struct {
     Digest   string   // payload digest, verified against the envelope
     BaselineDigest string // claimed by the envelope; "" = the producer used no baseline
     LabelsDigest   string // claimed by the envelope; "" = the producer used no labels file
-    Payload  []byte   // the exact verified bytes; the only content for KindDiscovery
-    Report   *Report  // nil for KindDiscovery and when ProblemReportInvalid
+    Payload  []byte   // the exact verified bytes; the only content for KindDiscovery and KindBaseline
+    Report   *Report  // nil for KindDiscovery, KindBaseline and when ProblemReportInvalid
     Problems []Problem
 }
 ```
 
-`Report` is an opaque part of `Upload` for this module; it is always nil for `KindDiscovery`. Discovery uploads leave
-`BaselineDigest` and `LabelsDigest` empty; this module never reads them.
-For discovery, `Binding.Event` may also be `workflow_dispatch`; for non-PR events `Binding.BaseRef` is the branch the run executed on.
+`Report` is an opaque part of `Upload` for this module; it is always nil for `KindDiscovery` and `KindBaseline`.
+Discovery uploads leave `BaselineDigest` and `LabelsDigest` empty; this module never reads them for discovery. A
+baseline upload has an empty `BaselineDigest` (the envelope decoder enforces it), and its `LabelsDigest` must equal the
+digest of the protected labels file. `Identity` is looked up in the manifest for a baseline upload.
+For discovery and baseline, `Binding.Event` may also be `workflow_dispatch`; for non-PR events `Binding.BaseRef` is the
+branch the run executed on, and `Binding.HeadSHA` the commit the run checked out.
 
 ### internal/control/proposal
 
@@ -310,6 +382,7 @@ For discovery, `Binding.Event` may also be `workflow_dispatch`; for non-PR event
 - **Volatility**: high
 - **Balanced?**: yes
 - **Shared knowledge**: `Propose` with `expectHeadSHA == ""`, `Get`, `SetBody`. Retrying never opens a second PR.
+  `Propose` keeps the body of an open PR, so the baseline upload calls `SetBody` after it.
 
 <!-- contract: Proposals, Change, Draft, DraftState — restated from internal/control/proposal/module.md -->
 ```go
@@ -395,14 +468,14 @@ type Consents interface {
 ### internal/wire/envelope
 
 - **Counterpart**: `internal/wire/envelope/`
-- **Direction**: `onboarding` depends on `wire/envelope` (`KindDiscovery` only; decoding happens inside `Receiver`)
+- **Direction**: `onboarding` depends on `wire/envelope` (`KindDiscovery`, `KindBaseline` and `PayloadDigest`; decoding happens inside `Receiver`)
 - **Strength**: contract
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high
 - **Balanced?**: yes
 - **Shared knowledge**:
 
-<!-- contract: Envelope, Kind, SchemaV1, KindReport, KindDiscovery — restated from internal/wire/envelope/module.md -->
+<!-- contract: Envelope, Kind, SchemaV1, KindReport, KindDiscovery, KindBaseline — restated from internal/wire/envelope/module.md -->
 ```go
 // SchemaV1 is the only envelope schema version accepted.
 const SchemaV1 = "archfit.report-envelope.v1"
@@ -413,6 +486,7 @@ type Kind string
 const (
     KindReport    Kind = "report"    // engine state report, POST /v1/reports
     KindDiscovery Kind = "discovery" // discovery draft policy, POST /v1/discoveries
+    KindBaseline  Kind = "baseline"  // captured engine baseline file, POST /v1/baselines
 )
 
 // Envelope is what the producer states about a payload. Every field is self-reported:
@@ -432,7 +506,7 @@ type Envelope struct {
     ImageDigest   string `json:"image_digest"`   // "sha256:<64 hex>"
     Platform      string `json:"platform"`       // e.g. "linux/amd64"
     PayloadDigest  string `json:"payload_digest"`  // "sha256:<64 hex>" of the exact payload bytes
-    BaselineDigest string `json:"baseline_digest"` // bare hex SHA-256 of the baseline file the engine loaded; "" = none
+    BaselineDigest string `json:"baseline_digest"` // bare hex SHA-256 of the baseline file the engine loaded; "" = none; always "" for discovery and baseline
     LabelsDigest   string `json:"labels_digest"`   // bare hex SHA-256 of the labels file the engine loaded; "" = none
 }
 ```
@@ -498,7 +572,9 @@ the workflow path must be under `.github/workflows/` and end in `.yml` or `.yaml
 - **Balanced?**: yes
 - **Shared knowledge**: the three engine file paths (protected paths in CODEOWNERS and the PR body), `Validate` as the structural
   check of a draft, and `Waivers` as its zero-exceptions check. `Validate`'s error text is never echoed or logged.
-  `Digest` (bare lowercase hex, no `sha256:` prefix) is never called here.
+  For a baseline upload: `ReadBaseline` as its structural check, `MaxBaselineBytes`, and `Digest` (bare lowercase hex,
+  no `sha256:` prefix) of the protected policy and labels files, compared with `Baseline.ConfigHash` and the envelope's
+  labels digest. `ReadBaseline`'s error text is never echoed or logged.
 
 <!-- contract: PolicyPath, BaselinePath, LabelsPath, Digest — restated from internal/wire/policy/module.md -->
 ```go
@@ -539,10 +615,40 @@ func Waivers(policy []byte) ([]Waiver, error)
 func Validate(policy []byte) error
 ```
 
+<!-- contract: BaselineSchemaV2, MaxBaselineBytes, Accepted, Baseline, ReadBaseline — restated from internal/wire/policy/module.md -->
+```go
+// BaselineSchemaV2 is the only engine baseline schema the App reads (engine v2.3.1 writes it).
+const BaselineSchemaV2 = "archfit.baseline.v2"
+
+// MaxBaselineBytes caps a baseline file: 1 MiB, the size github/api reads back from the protected ref.
+const MaxBaselineBytes = 1 << 20
+
+// Accepted is one accepted finding of a baseline: its engine finding ID and the rule that produced it.
+type Accepted struct {
+    Fingerprint string // 32 lowercase hex
+    RuleID      string
+}
+
+// Baseline is the App's view of an engine baseline file: what it accepts and what it was captured under.
+type Baseline struct {
+    Accepted       []Accepted // file order
+    ConfigHash     string     // state.config_hash: Digest of the policy the capture ran under
+    ProfileVersion string     // state.measurement_profile.version
+}
+
+// ReadBaseline decodes an engine baseline file. It is a structural check, not engine validation: one JSON
+// object of schema BaselineSchemaV2, at most MaxBaselineBytes, with a state block naming a 64-hex config hash
+// and a measurement profile version, and accepted findings with distinct 32-hex fingerprints and token rule IDs.
+// Errors never echo keys or values.
+func ReadBaseline(raw []byte) (Baseline, error)
+```
+
+Fingerprints and rule IDs are token classes after `ReadBaseline`, so the PR body renders them in code spans unescaped.
+
 ### internal/wire/manifest
 
 - **Counterpart**: `internal/wire/manifest/`
-- **Direction**: `onboarding` depends on `wire/manifest` (`Current`)
+- **Direction**: `onboarding` depends on `wire/manifest` (`Current` for the workflow, `Lookup` for a baseline upload)
 - **Strength**: contract
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high
@@ -753,6 +859,7 @@ func New(ts TokenSource, hc *http.Client) *Client
 ```
 
 `ErrNotFound` is the sentinel for an absent file or run; `ErrRateLimited` is the sentinel after bounded backoff.
+`Repos.BranchHead` pins a baseline upload to the default-branch head, and `Repos.File` then reads at that commit SHA.
 Of `Pulls` only `PullByHead` is called, to read the onboarding PR's `Body`; `Review` is unused. This
 module never calls `Changes`, it only builds `FileChange` values. It only reads check runs; it never calls
 `CreateCheckRun`, `UpdateCheckRun`, `Rerun` or `Dispatch` (the UI dispatches discovery).
@@ -800,6 +907,11 @@ type TokenSource interface {
 - Nothing here is ever called by the gate path. A failure here never changes a gate result. The gate reads only the cached `Entitlement` record that `account` writes.
 - Two PRs always in customer mode. The one-draft-PR flow is deferred (decisions.md §5) and not part of v1.
 - Discovery output is onboarding evidence only: it never creates, updates or satisfies a check. Provenance of the upload is necessary, not sufficient; nothing says "verified".
+- A baseline reaches the default branch only by an owner-approved merge of `archfit/baseline`. The handler writes that
+  branch only, with exactly one file, and never commits to the default branch; there is no silent re-baseline. A
+  baseline upload never creates, updates or satisfies a check, and its body never says "verified".
+- A baseline upload reads settings, policy, labels and the current baseline at one commit, the default-branch head
+  that the capturing run checked out. A run at any other commit is `stale_head`.
 - Nothing is published without review: every output is a draft PR. `gate: required` is never generated.
 - No consent → no sandbox job, no clone, no token minted. Consent is read at call time, never cached.
 - No persistent source: this module never clones, never writes source or draft bytes to disk, Store, logs or caches. `DraftPolicy` lives in memory until committed.
@@ -862,6 +974,21 @@ Test doubles only at boundaries: in-memory GitHub roles (`Repos`, `Actions`, `Ch
 - **Test name**: `TestDiscoveryStatusMapping`
   **Scenario**: table: `*Rejection` 401/403/409/413; `ErrRateLimited`; generic error; each `Problem` (including `ProblemUnsupportedEvent` for a `pull_request` discovery); non-default branch; settings missing; other workflow path; oversized; invalid draft; `Propose` rate limited.
   **Expected behavior**: rejection status and code; 503; 500; `400` with the problem code; `403 not_default_branch`, `403 settings_missing`, `403 workflow_not_approved`; 413; 400; 503. No `Propose` call except in the last row. Every permanent error is inside `400 401 403 409 413`.
+- **Test name**: `TestBaselineUploadOpensBaselinePR`
+  **Scenario**: the protected head holds the real capture with two accepted findings; the upload is the real capture of
+  the same policy with none.
+  **Expected behavior**: `200` with the PR number; `Receive` asked for `KindBaseline`; one `Propose` on `archfit/baseline`
+  into the default branch with exactly `.archfit-baseline.json` equal to the payload; nothing written to the default branch;
+  the body names both removed fingerprints, "Approving accepts no finding", the run, the head, the policy and payload
+  digests, an architecture owner and the exact head commit, "customer-attested", and never "verified"; no check call.
+- **Test name**: `TestBaselineStatusMapping`
+  **Scenario**: table: rejections; `ErrRateLimited`; generic error; a `pull_request` run; envelope mismatch; fork; another
+  branch; the default branch moved; `BranchHead` rate limited; settings missing; other workflow; settings and policy edited
+  on the branch name but not at the head commit; unlisted image; unapproved profile; oversized; a policy and a report as
+  payload; schema v1; policy missing; another policy; labels claimed but absent, present but not claimed, present and
+  claimed; `Propose` rate limited and failing; `SetBody` failing.
+  **Expected behavior**: the status and code of the step that refuses; `200` for the three accepted rows; no `Propose` call
+  and no PR on any refusal; no baseline on the default branch.
 - **Test name**: `TestStartManagedHappyPath`
   **Scenario**: consent present; fake sandbox returns a valid draft and two notes.
   **Expected behavior**: draft PR opened with `data_mode: managed` and a "running since" body; job receives a token from `RepoReadToken` for exactly this repository, `Ref` = default branch, manifest image digest, 10-minute timeout; policy committed to the same branch; body updated to complete; `Progress` diagnostic follows.
@@ -895,6 +1022,13 @@ Test doubles only at boundaries: in-memory GitHub roles (`Repos`, `Actions`, `Ch
 - **Test name**: `TestDiscoveryRejectsForeignDocuments`
   **Scenario**: table of uploads that all pass the shape checks, each foreign row carrying a seeded marker string: an engine state report JSON; one-line prose with a colon; a YAML sequence; a mapping without `version`; a mapping with an unknown top-level key; and a real engine policy (`version`, `modules`, `rules`).
   **Expected behavior**: every foreign row → `400 discovery_invalid`, zero `Propose` calls, no PR, and the marker in no log line and no response body; the real policy → `200`, one `Propose`, committed bytes equal the upload.
+- **Test name**: `TestBaselineBodyAndLogsCarryOnlyIDs`
+  **Scenario**: a real capture with an unknown key whose value is a marker string.
+  **Expected behavior**: the marker is committed in the file and appears in no PR body, response or log line.
+- **Test name**: `TestBaselineBodyStaysUnderGitHubLimit`
+  **Scenario**: a protected baseline of 300 findings and a capture of 3 000 other findings, all with 128-character rule IDs.
+  **Expected behavior**: the body counts 3 000 added and 300 removed, lists 150 of each with "and 2850 more" and
+  "and 150 more", and stays under 65 536 characters.
 - **Test name**: `TestProgressErrors`
   **Scenario**: `File` returns `ErrRateLimited`; `LatestRun` returns `ErrNotFound`; `CheckRuns` fails.
   **Expected behavior**: error returned; "not reported" without error; error returned. No stage is guessed.
@@ -907,6 +1041,17 @@ Test doubles only at boundaries: in-memory GitHub roles (`Repos`, `Actions`, `Ch
 - **Test name**: `TestRetriesNeverDuplicatePRs`
   **Scenario**: `StartCustomer` five times; the same discovery upload three times; `StartManaged` retried after a failure.
   **Expected behavior**: one PR per branch; the newest content on the branch (T18).
+- **Test name**: `TestBaselineReuploadUpdatesTheSamePR`
+  **Scenario**: the same capture uploaded twice, then a new capture of the same policy.
+  **Expected behavior**: one PR on `archfit/baseline`; the branch carries the newest capture; the body is rewritten for it;
+  the default branch gets no file.
+- **Test name**: `TestBaselineFirstAdoptionCountsEveryFindingAsAdded` / `TestBaselineUnreadableProtectedBaselineOvercountsAdded`
+  **Scenario**: no protected baseline, with a labels file; a protected baseline of schema v1.
+  **Expected behavior**: every captured finding counts as added; the body says there is no baseline yet, or that the
+  protected file is not readable and removals are unknown.
+- **Test name**: `TestBaselineUnchangedOpensNothing`
+  **Scenario**: the capture is byte-equal to the protected baseline.
+  **Expected behavior**: `200 {"unchanged": true}`; no `Propose`, no `SetBody`, no PR.
 - **Test name**: `TestRestrictedOrganizationFallback`
   **Scenario**: `workflow_dispatch` is unavailable; the customer runs the CLI in existing CI on a default-branch `push` and uploads the draft.
   **Expected behavior**: accepted through the same endpoint and checks; PR 2 opens; no elevated permission is requested (T18).

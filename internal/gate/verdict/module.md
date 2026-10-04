@@ -340,7 +340,7 @@ five listed ones returns `ActionRequired` with `engine_error` **[default]**; `Wi
 // Binding is the authoritative identity of an upload, resolved from OIDC claims and the GitHub API.
 type Binding struct {
     Repo         Repo   // resolved by the App, never from the envelope
-    Event        string // "pull_request" | "push"; discovery uploads also "workflow_dispatch"
+    Event        string // "pull_request" | "push"; discovery and baseline uploads also "workflow_dispatch"
     PullRequest  int    // 0 unless pull_request
     HeadSHA      string
     BaseRef      string // PR base branch; for other events the branch the run executed on
@@ -369,8 +369,8 @@ type Upload struct {
     Digest   string   // payload digest, verified against the envelope
     BaselineDigest string // claimed by the envelope; "" = the producer used no baseline
     LabelsDigest   string // claimed by the envelope; "" = the producer used no labels file
-    Payload  []byte   // the exact verified bytes; the only content for KindDiscovery
-    Report   *Report  // nil for KindDiscovery and when ProblemReportInvalid
+    Payload  []byte   // the exact verified bytes; the only content for KindDiscovery and KindBaseline
+    Report   *Report  // nil for KindDiscovery, KindBaseline and when ProblemReportInvalid
     Problems []Problem
 }
 ```

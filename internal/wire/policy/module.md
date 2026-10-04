@@ -7,10 +7,11 @@
 ## Purpose
 
 The engine policy `.archfit.yaml`, the baseline `.archfit-baseline.json` and the labels file
-`.archfit-labels.yaml` belong to the Archfit engine, not to the App. The App needs six small things from them:
+`.archfit-labels.yaml` belong to the Archfit engine, not to the App. The App needs seven small things from them:
 where they live, the digest rule that binds a report to them, the waiver expiry dates to schedule around, the
-declared modules for the graph view, the engine's config JSON Schema for the editor, and a structural check that
-a text is plausibly a policy before the App proposes or saves it. This module owns exactly
+declared modules for the graph view, the engine's config JSON Schema for the editor, a structural check that
+a text is plausibly a policy before the App proposes or saves it, and the accepted finding IDs and capture policy
+of a baseline before the App proposes it. This module owns exactly
 that and deliberately nothing more. Without it, the digest rule would be re-derived in several places, and any
 drift between them would turn honest reports into `policy_mismatch`.
 
@@ -25,8 +26,11 @@ drift between them would turn honest reports into `policy_mismatch`.
 - `Validate`: a structural check that a text is plausibly an engine policy: one YAML mapping whose top-level keys
   all belong to the schema's closed key set and include the required `version`. It keeps foreign text (a report,
   a labels file, model prose) out of policy pull requests and saved drafts.
-- Nothing else. It does no engine validation of policies (no value, type or rule check), does not match waivers to
-  findings, parse baselines or labels, or enforce expiry.
+- `ReadBaseline`: a structural reader of an `archfit.baseline.v2` file: the accepted finding IDs with their rule IDs,
+  the `state.config_hash` the capture ran under, and the measurement profile version. It keeps a foreign or
+  incomplete document out of baseline pull requests.
+- Nothing else. It does no engine validation of policies or baselines (no value, type or rule check), does not match
+  waivers or accepted findings to findings, read metrics or dimension snapshots, parse labels, or enforce expiry.
 
 ## Subdomain Classification
 
@@ -67,7 +71,26 @@ Supporting. Volatility: moderate, tied to engine releases (pinned v2.3.1).
   In v2.3.1 the root has sixteen properties and requires only `version`; the schema file is the one source.
 - The YAML library: the same single third-party dependency as `wire/settings`
   (`go.yaml.in/yaml/v3` **[default]** until `docs/tech-stack.md` names one). `Modules` uses its node API for line numbers.
-- The baseline and labels files are opaque here. Only their paths and digests are known.
+- The labels file is opaque here. Only its path and digest are known.
+- The baseline keys the App reads, pinned to engine v2.3.1 (`internal/baseline` at the pinned revision):
+  `schema_version` (`archfit.baseline.v2`), `accepted[].fingerprint` (the finding ID, `hex(sha256(…)[:16])`, so 32
+  lowercase hex), `accepted[].rule_id`, `state.config_hash` (equal to `Digest` of the policy the capture ran under,
+  checked on the corpus captures) and `state.measurement_profile.version`. v2.3.1 writes the profile on every
+  capture; a file without it cannot be bound to an approved identity and is refused.
+
+### Baseline reading rules
+
+- Input limit 1 048 576 bytes **[default]**, the read cap of `github/api.File`: a larger baseline could not be read
+  back from the protected ref by the gate. Invalid UTF-8 is an error.
+- One JSON object (`encoding/json`; trailing data is an error). Keys the App does not read are ignored, at every depth:
+  the engine adds baseline keys over time (seams, module digests), and the engine's own decoder ignores unknown keys
+  too. This is the third deliberate nuance of the parent's "unknown fields are rejected" rule, after the policy
+  readers and the report key sets.
+- Required: `schema_version` equal to `BaselineSchemaV2`; `accepted`, a list (empty is fine, `null` is not);
+  `state.config_hash`, 64 lowercase hex; `state.measurement_profile.version`, 1 to 64 token characters.
+- Per accepted entry: `fingerprint` exactly 32 lowercase hex; `rule_id` 1 to 128 characters of `A-Z a-z 0-9 _ . : / + -`;
+  fingerprints distinct. These are token classes, so a caller may render both in Markdown code spans unescaped.
+- Any error returns the zero `Baseline`. Errors name the key and the rule, never a value.
 
 ### Common reading rules
 
@@ -177,6 +200,35 @@ func Modules(policy []byte) ([]ModuleDef, error)
 func Validate(policy []byte) error
 ```
 
+`ReadBaseline` is the structural gate for a baseline that is about to be proposed:
+
+```go
+// BaselineSchemaV2 is the only engine baseline schema the App reads (engine v2.3.1 writes it).
+const BaselineSchemaV2 = "archfit.baseline.v2"
+
+// MaxBaselineBytes caps a baseline file: 1 MiB, the size github/api reads back from the protected ref.
+const MaxBaselineBytes = 1 << 20
+
+// Accepted is one accepted finding of a baseline: its engine finding ID and the rule that produced it.
+type Accepted struct {
+    Fingerprint string // 32 lowercase hex
+    RuleID      string
+}
+
+// Baseline is the App's view of an engine baseline file: what it accepts and what it was captured under.
+type Baseline struct {
+    Accepted       []Accepted // file order
+    ConfigHash     string     // state.config_hash: Digest of the policy the capture ran under
+    ProfileVersion string     // state.measurement_profile.version
+}
+
+// ReadBaseline decodes an engine baseline file. It is a structural check, not engine validation: one JSON
+// object of schema BaselineSchemaV2, at most MaxBaselineBytes, with a state block naming a 64-hex config hash
+// and a measurement profile version, and accepted findings with distinct 32-hex fingerprints and token rule IDs.
+// Errors never echo keys or values.
+func ReadBaseline(raw []byte) (Baseline, error)
+```
+
 `PolicyPath` is the location of the engine policy on the protected ref. `BaselinePath` is the location of the
 persisted engine baseline and `LabelsPath` is the location of the approved labels file, both beside the policy.
 `ApprovedBy` is descriptive text copied from the file.
@@ -195,6 +247,9 @@ Semantics not visible in the signatures:
   waivers: a caller that also needs readable waivers calls `Waivers` as well.
 - `Waivers` alone is not a policy check: it ignores unknown keys, so prose or JSON with a colon passes it.
 - `Schema` returns a fresh copy on every call. The bytes are the engine's file, not reformatted.
+- `ReadBaseline` follows the baseline reading rules above. `Accepted` keeps file order; a caller that compares two
+  baselines treats the fingerprints as a set. `ConfigHash` is the capture's own claim: the caller compares it with
+  `Digest` of the protected policy, and `ProfileVersion` with the approved manifest row.
 
 ## Integrations
 
@@ -224,7 +279,9 @@ Shared knowledge, per counterpart:
   The digests and the earliest expiry reach it through `inputs.Trusted`, without a policy type.
 - `internal/control/onboarding` holds `PolicyPath` to place the proposed policy of PR 2 and to derive the `policy_merged`
   stage, `BaselinePath` and `LabelsPath`, `Waivers`, and `Validate`, which it calls on an uploaded discovery draft: an
-  error means no pull request is opened.
+  error means no pull request is opened. For a baseline upload it also holds `Digest`, `MaxBaselineBytes`,
+  `Accepted`, `Baseline` and `ReadBaseline`: an error means no pull request is opened, and `ConfigHash` must equal
+  `Digest` of the protected policy.
 - `internal/control/assist` holds `PolicyPath`, `Schema` (rule descriptions for the prompt context) and `Validate`,
   which it calls on a provider answer: an error means the proposal is not a policy.
 - `internal/control/ui` holds `PolicyPath`, `Schema` for the editor's completion and in-browser validation,
@@ -253,7 +310,9 @@ No counterpart contract is used by this module, so nothing is restated here.
   the gate verifies on the pull request that changed the policy.
 - This module never decides where bytes come from. Consumers read the protected ref; head-tree policy, baseline
   and labels are never trusted, except the digest of an owner-approved candidate, which is the consumer's rule.
-- The App never writes or commits a baseline; this module has no baseline writer and no policy writer.
+- The App never writes a baseline and never commits one to the protected ref; this module has no baseline writer and
+  no policy writer. A captured baseline reaches the protected ref only through an owner-approved pull request that
+  `control/onboarding` proposes with the producer's exact bytes.
 - Digests are over raw bytes. No consumer may normalize a file before hashing.
 - A baseline or labels digest stated by the producer is self-reported. It proves nothing alone; it only lets the
   gate refuse a run that says it used other bytes than the protected ref holds.
@@ -332,6 +391,14 @@ it and first checks that its `config_hash` is the digest of that policy.
 - **Test name**: `TestPathConstants`
   **Scenario**: read the constants.
   **Expected behavior**: `.archfit.yaml`, `.archfit-baseline.json` and `.archfit-labels.yaml`.
+- **Test name**: `TestReadBaselineRealCaptures`
+  **Scenario**: the real v2.3.1 captures `real-baselined-comparable.baseline.json` (two accepted) and
+  `real-attention-baseline.baseline.json` (none).
+  **Expected behavior**: fingerprints and rule IDs in file order; `ConfigHash` equals `Digest` of the sibling policy;
+  `ProfileVersion` `archfit.measurement.v1`; the empty capture has no accepted entry and the same `ConfigHash`.
+- **Test name**: `TestReadBaselineIgnoresUnknownKeys`
+  **Scenario**: a minimal valid baseline with unknown keys at the root, inside an accepted entry and inside `state`.
+  **Expected behavior**: decodes with its one accepted entry.
 
 ### Boundary Tests
 
@@ -354,6 +421,14 @@ it and first checks that its `config_hash` is the digest of that policy.
 - **Test name**: `TestErrorsNeverEchoValues`
   **Scenario**: a waiver whose `reason` and malformed `expires` contain the marker `LEAK-7f3a`.
   **Expected behavior**: the error names entry index and key; it does not contain the marker.
+- **Test name**: `TestReadBaselineRejects`
+  **Scenario**: table: empty; YAML; an array; trailing data; invalid UTF-8; over 1 MiB; schema v1; no schema; no or `null`
+  `accepted`; no `state`; a prefixed, empty or uppercase config hash; no profile; an empty or spaced profile version;
+  a 31-hex, uppercase or missing fingerprint; a rule ID with a space, with Markdown, empty or of 129 characters; a duplicate fingerprint.
+  **Expected behavior**: an error for every row; the unedited minimal baseline decodes.
+- **Test name**: `TestReadBaselineErrorsNeverEchoValues`
+  **Scenario**: the marker `LEAK-BASELINE-7f3a` as a rule ID, as the schema version, and in truncated JSON.
+  **Expected behavior**: every error is free of the marker.
 - **Test name**: `FuzzWaivers`
   **Scenario**: fuzz `Waivers` seeded with the fixtures.
   **Expected behavior**: never panics; every returned `Expires` has time 23:59:59 and location UTC.
@@ -383,6 +458,7 @@ it and first checks that its `config_hash` is the digest of that policy.
 - **Test name**: `TestApprovedByIsNeverAuthority`
   **Scenario**: a waiver with `approved_by` naming a real owner login.
   **Expected behavior**: the value is returned as plain text; the package exposes nothing that treats it as an approval.
+  The exported surface is exactly the Public Contract.
 - **Test name**: `TestGraphJumpsToTheModuleLine`
   **Scenario**: a policy shown in the editor; take `Modules`, split the same text by LF, read the line at `Line` for each module.
   **Expected behavior**: each line, trimmed, starts with the module name followed by a colon.

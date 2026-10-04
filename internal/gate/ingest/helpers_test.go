@@ -33,6 +33,7 @@ const (
 	prNumber       = 7
 	workflowPath   = ".github/workflows/archfit.yaml"
 	discoveryYAML  = "# LEAK-DISCOVERY-DRAFT\nmodules:\n  - name: shop\n    path: pkg/shop\n"
+	baselineJSON   = `{"schema_version":"archfit.baseline.v2","accepted":[]}`
 )
 
 var (
@@ -194,6 +195,14 @@ func (s *scenario) toDiscovery() {
 	s.target = "/v1/discoveries"
 	s.env.Kind = envelope.KindDiscovery
 	s.setBody([]byte(discoveryYAML))
+}
+
+// toBaseline turns the scenario into a baseline upload; the payload is opaque to this module.
+func (s *scenario) toBaseline() {
+	s.kind = envelope.KindBaseline
+	s.target = "/v1/baselines"
+	s.env.Kind = envelope.KindBaseline
+	s.setBody([]byte(baselineJSON))
 }
 
 // toEvent turns the scenario into a consistent non-PR run of the given event.

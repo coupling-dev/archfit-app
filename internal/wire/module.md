@@ -48,17 +48,19 @@ child is normative in the child's own `module.md`; it is not restated here.
 | `internal/wire/envelope` | report-envelope v1: `Envelope`, `Kind`, `Decode`, `PayloadDigest`, `Schema`                          |
 | `internal/wire/report`   | engine state v1 as no-source transport: `Report` and its parts, `Decode`, `EngineVersions`, size cap |
 | `internal/wire/settings` | `.archfit-app.yaml`: `Settings`, modes, `Parse`, `Render`, file location                             |
-| `internal/wire/policy`   | engine file locations, bare-hex `Digest`, `Waivers` and `Modules` readers, config `Schema`           |
+| `internal/wire/policy`   | engine file locations, bare-hex `Digest`, `Waivers`, `Modules`, `ReadBaseline` readers, config `Schema` |
 | `internal/wire/manifest` | locked approved identities: `Identity`, `Entry`, `Lookup`, `Current`, `EngineVersions`               |
 
 ### Versioning rule
 
 - Every contract carries a version identifier: envelope `archfit.report-envelope.v1`; report
   `archfit.architecture-state.v1`; settings file `version: 1`; manifest data `version: 1`; policy follows the
-  engine release of the manifest's `current` row, v2.3.1 today.
-- Unknown fields are rejected by every decoder here. Two deliberate nuances: the policy readers ignore
+  engine release of the manifest's `current` row, v2.3.1 today; the engine baseline file `archfit.baseline.v2`.
+- Unknown fields are rejected by every decoder here. Three deliberate nuances: the policy readers ignore
   engine-owned keys they do not read; the report decoder knows every key of each engine release it reads and
-  drops the known keys that are not allowlisted, while a key that release's schema does not define is still an error.
+  drops the known keys that are not allowlisted, while a key that release's schema does not define is still an error;
+  the baseline reader (`policy.ReadBaseline`) ignores baseline keys it does not read, as the engine's own decoder does.
+- The envelope `kind` enum gained `baseline` inside v1: a new accepted value is additive, so the version stays.
 - Engine releases evolve without a flag day. The manifest approves rows of several releases (N and N-1 during an
   upgrade window). The report decoder reads the document of the release the upload envelope claims, with that
   release's key set and nothing else; a release it does not list fails decoding, so the upload ends

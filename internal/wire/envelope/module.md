@@ -49,7 +49,7 @@ The length limits and character sets below (100, 64, 32) are **[default]**; the 
 | JSON key          | Rule                                                                                  |
 | ----------------- | ------------------------------------------------------------------------------------- |
 | `schema_version`  | equals `SchemaV1`                                                                     |
-| `kind`            | `report` or `discovery`                                                               |
+| `kind`            | `report`, `discovery` or `baseline`                                                   |
 | `repository`      | `^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$`                                       |
 | `event`           | `^[a-z_]{1,64}$` — format only **[default]**, see below                               |
 | `pull_request`    | integer ≥ 0; > 0 if and only if `event` is `pull_request`                             |
@@ -62,14 +62,20 @@ The length limits and character sets below (100, 64, 32) are **[default]**; the 
 | `image_digest`    | `^sha256:[0-9a-f]{64}$`                                                               |
 | `platform`        | `^[a-z0-9]+/[a-z0-9]+(/[a-z0-9]+)?$`, at most 32 characters — format only             |
 | `payload_digest`  | `^sha256:[0-9a-f]{64}$`                                                               |
-| `baseline_digest` | `^[0-9a-f]{64}$` or exactly `""` (no file); bare hex; `""` when `kind` is `discovery` |
-| `labels_digest`   | same rule as `baseline_digest`                                                        |
+| `baseline_digest` | `^[0-9a-f]{64}$` or exactly `""` (no file); bare hex; `""` when `kind` is `discovery` or `baseline` |
+| `labels_digest`   | `^[0-9a-f]{64}$` or exactly `""` (no file); bare hex; `""` when `kind` is `discovery`               |
 
 Two digest formats exist on purpose. `payload_digest` and `image_digest` keep the `sha256:` prefix **[default]**: they
 are envelope-native values in OCI style. `baseline_digest` and `labels_digest` are bare hex because they are compared
 with the engine-style digest of the protected-ref files, which is bare hex like the engine's `config_hash`. A prefixed
 value in a bare field, or the reverse, is a decode error, so the two can never be confused silently. A discovery
-upload runs before any policy exists, so both input digests must be `""` there **[default]**.
+upload runs before any policy exists, so both input digests must be `""` there **[default]**. A baseline upload is
+the capture itself: `archfit baseline` loads no stored baseline, so `baseline_digest` must be `""`, while
+`labels_digest` states the labels file the capture read, which the App compares with the protected ref.
+
+The `baseline` kind was added inside v1. Under the parent's versioning rule a new accepted value is additive: no
+producer that sends `report` or `discovery` sees a change, and the Action may send `baseline` only after an App
+release that accepts it. The schema `$id` and `SchemaV1` are unchanged.
 
 `event` is checked as a format, not as the three supported names **[default]**. Reason: an honest upload from an
 unsupported trigger (`workflow_run`) must pass decoding so that the gate can publish `action_required` with
@@ -88,6 +94,7 @@ type Kind string
 const (
     KindReport    Kind = "report"    // engine state report, POST /v1/reports
     KindDiscovery Kind = "discovery" // discovery draft policy, POST /v1/discoveries
+    KindBaseline  Kind = "baseline"  // captured engine baseline file, POST /v1/baselines
 )
 
 // Envelope is what the producer states about a payload. Every field is self-reported:
@@ -107,7 +114,7 @@ type Envelope struct {
     ImageDigest   string `json:"image_digest"`   // "sha256:<64 hex>"
     Platform      string `json:"platform"`       // e.g. "linux/amd64"
     PayloadDigest  string `json:"payload_digest"`  // "sha256:<64 hex>" of the exact payload bytes
-    BaselineDigest string `json:"baseline_digest"` // bare hex SHA-256 of the baseline file the engine loaded; "" = none
+    BaselineDigest string `json:"baseline_digest"` // bare hex SHA-256 of the baseline file the engine loaded; "" = none; always "" for discovery and baseline
     LabelsDigest   string `json:"labels_digest"`   // bare hex SHA-256 of the labels file the engine loaded; "" = none
 }
 ```
@@ -124,8 +131,9 @@ func PayloadDigest(payload []byte) string
 func Schema() []byte
 ```
 
-`SchemaV1` is the schema version constant. `KindReport` is the kind of an engine state report upload and
-`KindDiscovery` is the kind of a discovery draft-policy upload. `PayloadDigest` is both a function and an
+`SchemaV1` is the schema version constant. `KindReport` is the kind of an engine state report upload,
+`KindDiscovery` is the kind of a discovery draft-policy upload, and `KindBaseline` is the kind of a baseline file
+captured by `archfit baseline` on the default branch. `PayloadDigest` is both a function and an
 envelope field; the function computes what the field states.
 
 Semantics not visible in the signatures:
@@ -162,7 +170,8 @@ Shared knowledge, per counterpart:
   the gate to compare with the trusted digests of the protected ref. Nothing from ingest is known here.
 - `internal/gate` imports this module for `KindReport` only, to ask its receiver for a report upload. It reads
   `BaselineDigest`, `LabelsDigest` and the three identity strings through `ingest.Upload`.
-- `internal/control/onboarding` holds `Kind` and `KindDiscovery` only, to ask the gate's receiver for a discovery upload.
+- `internal/control/onboarding` holds `Kind`, `KindDiscovery` and `KindBaseline` only, to ask the gate's receiver for a
+  discovery or a baseline upload. It reads `LabelsDigest` of a baseline upload through `ingest.Upload`.
 - `archfit-action` holds the schema document returned by `Schema` and the digest rule. It must send exactly the
   16 keys, and state the baseline and labels digests of the bytes it handed to the engine. Contract coupling tolerates the distance: separate repository, separate release cycle, versioned schema,
   strict decoding. The Action ships after the App for any additive change (see the parent's versioning rule).
@@ -208,8 +217,10 @@ so `TestSchemaAndDecoderAgree` states that field per fixture name in the test.
   **Expected behavior**: the first four fail; the last three decode with the fields unchanged.
 - **Test name**: `TestInputDigestFormats`
   **Scenario**: table for `baseline_digest` and `labels_digest`: 64 lowercase hex; `""`; `sha256:` plus 64 hex; uppercase hex; 63 hex;
-  key absent; `null`; a non-empty value with `kind: discovery`. Plus `payload_digest` as bare 64 hex.
-  **Expected behavior**: only the first two decode; a bare `payload_digest` is an error too.
+  key absent; `null`; a non-empty value with `kind: discovery`. Plus `payload_digest` as bare 64 hex. Plus `kind: baseline`
+  with both digests `""`, with a non-empty `baseline_digest`, and with a non-empty `labels_digest`.
+  **Expected behavior**: only the first two decode; a bare `payload_digest` is an error too. For `kind: baseline` a
+  non-empty `baseline_digest` is an error and a non-empty `labels_digest` decodes.
 - **Test name**: `TestPayloadDigestKnownVectors`
   **Scenario**: table: empty input; `"abc"`; a 5 MB buffer; the same text with LF and with CRLF.
   **Expected behavior**: empty gives `sha256:e3b0c442…b855`; `"abc"` gives `sha256:ba7816bf…15ad`; LF and CRLF differ; output always matches `^sha256:[0-9a-f]{64}$`.
@@ -220,7 +231,7 @@ so `TestSchemaAndDecoderAgree` states that field per fixture name in the test.
 ### Integration Contract Tests
 
 - **Test name**: `TestDecodeAcceptsConformanceEnvelopes`
-  **Scenario**: every fixture in `internal/wire/testdata/envelope/` marked `decode: ok` (PR report, default-branch push report, discovery by `workflow_dispatch`).
+  **Scenario**: every fixture in `internal/wire/testdata/envelope/` marked `decode: ok` (PR report, default-branch push report, discovery by `workflow_dispatch`, baseline by `workflow_dispatch`).
   **Expected behavior**: decodes; each `Envelope` field equals the value recorded in the fixture's expectation.
 - **Test name**: `TestSchemaAndDecoderAgree`
   **Scenario**: run every envelope fixture, valid and invalid, through `Decode` and through a test-local evaluator of `Schema()`

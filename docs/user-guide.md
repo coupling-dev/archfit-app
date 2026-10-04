@@ -87,7 +87,8 @@ PR 1 adds these files:
 The workflow uses no repository secret. It uses the job GitHub OIDC token.
 It runs on `pull_request`, `push` to the default branch, and `workflow_dispatch`. The Action refuses other events.
 Pull request and push runs report the architecture state. A manual dispatch selects `mode`: `discovery` proposes a
-policy, and `baseline` captures accepted debt as a workflow artifact. A dispatch with `mode: report` is refused.
+policy, and `baseline` captures accepted debt. A dispatch with `mode: report` is refused. See
+[Capture a baseline](#capture-a-baseline).
 The `discover` input selects discovery; the status page button uses it.
 On a pull request, the Action reads `.archfit.yaml`, `.archfit-baseline.json`, and `.archfit-labels.yaml` per file:
 from the pull request head when the pull request changes that file, otherwise from the tip of the base branch. The
@@ -321,6 +322,38 @@ The proposal arrives as a commit on the draft pull request. Nothing is published
 
 Managed AI receives the draft policy text and the instruction. It receives no source code and no report.
 AI output never affects the gate result.
+
+## Capture a baseline
+
+The baseline `.archfit-baseline.json` lists the findings the repository accepts as existing debt. It is a protected
+path. The App never commits it to the default branch.
+
+1. Run the Archfit workflow on the default branch with `mode: baseline`.
+2. The Action runs `archfit baseline` in the pinned engine image and uploads the file to the App.
+3. The App opens a draft pull request from `archfit/baseline`, or updates the open one. It changes only
+   `.archfit-baseline.json`.
+4. Read the pull request body. It counts the accepted findings that the capture adds and removes, and lists their rule
+   IDs and finding IDs. Approval accepts every added finding.
+5. Select **Ready for review**. A policy owner approves the exact head commit on GitHub.
+6. Merge the pull request.
+
+The App accepts the upload only from the workflow named in `.archfit-app.yaml`, from a run at the current head of the
+default branch, from an engine image in the locked manifest, and for a capture made with the policy and labels file on
+the default branch. A capture equal to the current baseline opens nothing.
+
+| Refusal                   | Recovery                                                                      |
+| ------------------------- | ----------------------------------------------------------------------------- |
+| `stale_head`              | The default branch moved during the capture. Run the workflow again.          |
+| `not_default_branch`      | Run the workflow on the default branch.                                       |
+| `workflow_not_approved`   | Run the workflow named in `.archfit-app.yaml`.                                |
+| `unknown_engine_identity` | Use the engine image pinned by the onboarding workflow.                       |
+| `policy_mismatch`         | Run the workflow again. The capture did not use the policy on the branch tip. |
+| `labels_mismatch`         | Run the workflow again. The capture did not use the labels on the branch tip. |
+| `baseline_invalid`        | Use the unmodified file from `archfit baseline` of the pinned engine.         |
+| `baseline_too_large`      | The file is larger than 1 MiB. Reduce the accepted debt or split the policy.  |
+
+The Action of this release keeps the file as the `archfit-baseline` workflow artifact and does not upload it yet.
+Until an Action release uploads baselines, download the artifact and open the pull request yourself.
 
 ## Enable the gate
 

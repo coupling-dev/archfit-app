@@ -166,6 +166,92 @@ The upload handler has a 55-second deadline. The target is feedback within 60 se
 The upload body is at most 5 MiB. A larger body gets `413 payload_too_large`, and the App publishes nothing.
 The App does not read part of a report.
 
+## Baseline upload
+
+The baseline is a file on the protected ref. It changes only through a pull request that an architecture owner
+approves. The App never commits it to the default branch.
+
+```mermaid
+flowchart LR
+    ACTION["archfit-action<br/>mode: baseline on main"]
+    ONB["control/onboarding<br/>receive and check"]
+    OK{"Approved run at the main head,<br/>approved identity, protected<br/>policy and labels?"}
+    REJECT["HTTP error<br/>nothing written"]
+    PR["Pull request from<br/>archfit/baseline"]
+    OWNER["Owner approves<br/>the exact head"]
+    MAIN["Protected ref"]
+
+    ACTION -->|"POST /v1/baselines"| ONB
+    ONB --> OK
+    OK -->|"no"| REJECT
+    OK -->|"yes"| PR
+    PR --> OWNER
+    OWNER -->|"merge"| MAIN
+
+    classDef core fill:#2f855a,stroke:#22543d,color:#ffffff
+    classDef control fill:#e8eef7,stroke:#4a6fa5,color:#1a202c
+    classDef nottrusted fill:#fff4d6,stroke:#b7791f,color:#1a202c
+    classDef neutral fill:#edf2f7,stroke:#718096,color:#1a202c
+
+    class ONB core
+    class PR,MAIN control
+    class ACTION nottrusted
+    class OK,REJECT,OWNER neutral
+```
+
+Arrows show the order of the baseline flow. Only the merge writes the protected ref.
+
+`control/onboarding` uses the gate's `Receiver`, so the token, envelope, run and digest checks are the same as for a
+report. Then it checks, in this order, and the first failure decides:
+
+1. The run has no problem and ran on the default branch.
+2. The run checked out the current head of the default branch. Every later read is at that commit.
+3. The run used the workflow that `.archfit-app.yaml` names.
+4. The engine identity is a row of the locked manifest.
+5. The file is a structurally valid `archfit.baseline.v2` baseline of at most 1 MiB, and its measurement profile is
+   the profile of that manifest row.
+6. Its `state.config_hash` is the digest of the protected `.archfit.yaml`.
+7. The envelope's `labels_digest` is the digest of the protected `.archfit-labels.yaml`, or empty when there is none.
+
+A file equal to the protected baseline opens nothing. Otherwise the App opens a draft pull request from
+`archfit/baseline` into the default branch that changes only `.archfit-baseline.json`, with the uploaded bytes. A new
+upload updates the same branch and pull request and rewrites its body. The body counts the accepted findings added
+and removed, lists them by rule ID and finding ID, names the run, engine identity and digests, and states that an
+architecture owner must approve the exact head commit. The gate's protected-path rule then governs the merge.
+
+Today the Action captures with plain `archfit baseline`, which accepts all current eligible debt. The added count in
+the body is what keeps that visible to the owner. When the engine ships `archfit baseline --reanchor`, a re-capture
+after an engine or profile change should use it, so that the pull request accepts no new finding by construction.
+
+### Baseline upload contract
+
+The Action must implement this contract in `mode: baseline` when `endpoint` is set:
+
+- Request: `POST <endpoint>/v1/baselines`.
+- Headers: `Authorization: Bearer <OIDC token>` with the endpoint as audience, `X-Archfit-Envelope` with the
+  one-line `archfit.report-envelope.v1` JSON, and `Content-Type: application/json`.
+- Body: the exact bytes of the `.archfit-baseline.json` that `archfit baseline` wrote, at most 1,048,576 bytes.
+- Envelope: `kind` is `baseline`; `event` is `workflow_dispatch` (or `push` to the default branch); `pull_request` is
+  `0`; `base_sha` and `merge_base_sha` are `""`; `head_sha` is the checked-out default-branch commit; `baseline_digest`
+  is `""`; `labels_digest` is the bare hex SHA-256 of the labels file the capture read, or `""` without one;
+  `payload_digest` is `sha256:<hex>` of the body; the engine identity fields are those of the pinned image.
+
+| Status        | Body                                    | Meaning                                                                  |
+| ------------- | --------------------------------------- | ------------------------------------------------------------------------ |
+| 200           | `{"pull_request": <n>, "url": "<url>"}` | The baseline pull request was opened or updated                          |
+| 200           | `{"unchanged": true}`                   | The capture equals the protected baseline. Nothing was written           |
+| 400           | `{"error": "<code>"}`                   | Malformed or unbound upload, or `baseline_invalid`. Final                |
+| 401           | `{"error": "<code>"}`                   | `token_missing` or `token_invalid`. Final                                |
+| 403           | `{"error": "<code>"}`                   | Not eligible or not bound to the protected inputs (below). Final         |
+| 409           | `{"error": "<code>"}`                   | `stale_head` or `stale_attempt`. Superseded: dispatch the capture again  |
+| 413           | `{"error": "<code>"}`                   | `baseline_too_large` above 1 MiB, `payload_too_large` above 5 MiB. Final |
+| 429, 503, 500 | `{"error": "<code>"}`                   | `rate_limited`, `oidc_unavailable` or `internal`. Retry                  |
+
+The `400` codes are `method_not_allowed`, `envelope_missing`, `envelope_invalid`, `kind_mismatch`, `digest_mismatch`,
+`unsupported_event`, `envelope_mismatch`, `fork` and `baseline_invalid`. The `403` codes are `repository_mismatch`,
+`not_installed`, `run_not_found`, `run_mismatch`, `not_default_branch`, `settings_missing`, `workflow_not_approved`,
+`unknown_engine_identity`, `policy_missing`, `policy_mismatch` and `labels_mismatch`.
+
 ## Gate outcomes
 
 The `verdict` package has three conclusions. It cannot represent `neutral` or `skipped`.
@@ -274,6 +360,7 @@ These invariants keep repository authors from weakening the gate:
 - Describe report provenance as `customer-attested`, never as `verified`.
 - Keep LLM output, billing, and UI code off the gate path.
 - Resolve tenant identity from a verified webhook, OIDC claim, or OAuth session.
+- Never commit to the protected ref. A captured baseline arrives only as a pull request that an owner approves.
 - Log IDs, digests, outcomes, and timings only.
 
 The protected paths are:
@@ -298,6 +385,7 @@ The routes come from [`internal/app/handler.go`](../internal/app/handler.go) and
 | `GET /healthz`          | `app`     | None                       |
 | `POST /v1/reports`      | `gate`    | GitHub Actions OIDC token  |
 | `POST /v1/discoveries`  | `control` | GitHub Actions OIDC checks |
+| `POST /v1/baselines`    | `control` | GitHub Actions OIDC checks |
 | `POST /webhooks/github` | `app`     | `X-Hub-Signature-256`      |
 | `POST /internal/sweep`  | `app`     | Operator bearer token      |
 | `POST /internal/grants` | `app`     | Operator bearer token      |
@@ -348,7 +436,7 @@ See [`.env.example`](../.env.example).
 | Variable                             | Function                                               |
 | ------------------------------------ | ------------------------------------------------------ |
 | `ARCHFIT_ADDR`                       | Listen address. Default `:8080`                        |
-| `ARCHFIT_BASE_URL`                   | Public URL and OIDC audience                           |
+| `ARCHFIT_BASE_URL`                   | Public URL and OIDC audience. No trailing `/`          |
 | `ARCHFIT_GITHUB_APP_ID`              | GitHub App ID                                          |
 | `ARCHFIT_GITHUB_PRIVATE_KEY_FILE`    | GitHub App private-key file                            |
 | `ARCHFIT_GITHUB_WEBHOOK_SECRET_FILE` | Webhook secret file                                    |
@@ -368,8 +456,18 @@ See [`.env.example`](../.env.example).
 - `archfit-action` is not published. Its `feat/wave1-run-engine` branch sends the envelope format of this service, runs
   on `pull_request`, `push`, and `workflow_dispatch` only, and accepts `mode: report | discovery | baseline`. The
   manifest `action_ref` takes the commit of its first release.
-- No CI check compares the Action's vendored envelope schema (`schema/envelope.v1.schema.json` in `archfit-action`)
-  with `internal/wire/envelope/envelope.v1.schema.json` at the pinned `action_ref`. Add an App-side CI job that fails on a
-  difference before the first release.
+- `archfit-action` does not upload a baseline yet. Its `mode: baseline` stores `.archfit-baseline.json` as a workflow
+  artifact only. Before its first release it must:
+  - set the envelope `kind` to `baseline` and keep `baseline_digest` empty;
+  - send the file to `/v1/baselines` as the [baseline upload contract](#baseline-upload-contract) states, with a 1 MiB
+    cap, and stop exiting early in `report.sh` for baseline mode when an endpoint is set;
+  - report the pull request URL, `unchanged`, and the new error codes in the step summary, and treat `409 stale_head`
+    as "dispatch the capture again", not as success;
+  - vendor the envelope schema again: the App schema now accepts `kind: baseline`, so the copy pinned in its
+    `SCHEMA_SOURCE` (revision `9dca5f9`) differs from this one.
+- The `action-conformance` CI job compares the Action's vendored `schema/envelope.v1.schema.json` with
+  `internal/wire/envelope/envelope.v1.schema.json` at the manifest `action_ref`. While `action_ref` is the placeholder,
+  the `action-pin` job reports "not verified" in a warning and the step summary, and `action-conformance` shows as
+  skipped. If `archfit-action` stays private, the repository needs an `ARCHFIT_ACTION_TOKEN` secret with read access.
 - No GitHub App is registered.
 - The Monaco editor bundle is not built. The policy editor uses a plain text area.

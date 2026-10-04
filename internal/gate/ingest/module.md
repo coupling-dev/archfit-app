@@ -22,7 +22,7 @@ speak for any pull request.
 - Verify the payload digest; decode a report payload with the no-source decoder.
 - Answer with a `Rejection` (HTTP status only) while no tenant is authenticated or when the upload is
   stale; after that, record every defect as a `Problem` so the gate can publish it.
-- Serve both upload kinds (`report`, `discovery`) with exactly the same provenance checks.
+- Serve every upload kind (`report`, `discovery`, `baseline`) with exactly the same provenance checks.
 
 ## Subdomain Classification
 
@@ -44,7 +44,7 @@ high; event support, binding rules and rejection codes will move with the Action
 // Binding is the authoritative identity of an upload, resolved from OIDC claims and the GitHub API.
 type Binding struct {
     Repo         Repo   // resolved by the App, never from the envelope
-    Event        string // "pull_request" | "push"; discovery uploads also "workflow_dispatch"
+    Event        string // "pull_request" | "push"; discovery and baseline uploads also "workflow_dispatch"
     PullRequest  int    // 0 unless pull_request
     HeadSHA      string
     BaseRef      string // PR base branch; for other events the branch the run executed on
@@ -73,8 +73,8 @@ type Upload struct {
     Digest   string   // payload digest, verified against the envelope
     BaselineDigest string // claimed by the envelope; "" = the producer used no baseline
     LabelsDigest   string // claimed by the envelope; "" = the producer used no labels file
-    Payload  []byte   // the exact verified bytes; the only content for KindDiscovery
-    Report   *Report  // nil for KindDiscovery and when ProblemReportInvalid
+    Payload  []byte   // the exact verified bytes; the only content for KindDiscovery and KindBaseline
+    Report   *Report  // nil for KindDiscovery, KindBaseline and when ProblemReportInvalid
     Problems []Problem
 }
 ```
@@ -138,10 +138,12 @@ could be published truthfully: the head moved (step 14) and the bytes are not wh
 | ----------- | ----------------------------------------------------------------------------------- |
 | `report`    | `pull_request`; `push` when `Claims.Ref == "refs/heads/" + Repo.DefaultBranch`      |
 | `discovery` | `workflow_dispatch`; `push` when `Claims.Ref == "refs/heads/" + Repo.DefaultBranch` |
+| `baseline`  | `workflow_dispatch`; `push` when `Claims.Ref == "refs/heads/" + Repo.DefaultBranch` |
 
 Everything else, including `workflow_run`, `pull_request_target`, `schedule` and a push to another branch,
-adds `ProblemUnsupportedEvent`. `Binding.Event` is `run.Event` verbatim; for a discovery upload it can be
-`workflow_dispatch`.
+adds `ProblemUnsupportedEvent`. `Binding.Event` is `run.Event` verbatim; for a discovery or baseline upload it
+can be `workflow_dispatch`. A `workflow_dispatch` run on another branch is eligible here: `Binding.BaseRef` names
+that branch, and the consuming route (`control/onboarding`) refuses it with `not_default_branch`.
 
 ### Pull request resolution (step 14)
 
@@ -205,7 +207,7 @@ is de-duplicated and in the constant declaration order.
 - **Shared knowledge**: every envelope field is self-reported. `Decode` already enforces `SchemaV1`, SHA and
   digest formats. `Schema` is not used here.
 
-<!-- contract: Envelope, Kind, SchemaV1, KindReport, KindDiscovery — restated from internal/wire/envelope/module.md -->
+<!-- contract: Envelope, Kind, SchemaV1, KindReport, KindDiscovery, KindBaseline — restated from internal/wire/envelope/module.md -->
 ```go
 // SchemaV1 is the only envelope schema version accepted.
 const SchemaV1 = "archfit.report-envelope.v1"
@@ -216,6 +218,7 @@ type Kind string
 const (
     KindReport    Kind = "report"    // engine state report, POST /v1/reports
     KindDiscovery Kind = "discovery" // discovery draft policy, POST /v1/discoveries
+    KindBaseline  Kind = "baseline"  // captured engine baseline file, POST /v1/baselines
 )
 
 // Envelope is what the producer states about a payload. Every field is self-reported:
@@ -235,7 +238,7 @@ type Envelope struct {
     ImageDigest   string `json:"image_digest"`   // "sha256:<64 hex>"
     Platform      string `json:"platform"`       // e.g. "linux/amd64"
     PayloadDigest  string `json:"payload_digest"`  // "sha256:<64 hex>" of the exact payload bytes
-    BaselineDigest string `json:"baseline_digest"` // bare hex SHA-256 of the baseline file the engine loaded; "" = none
+    BaselineDigest string `json:"baseline_digest"` // bare hex SHA-256 of the baseline file the engine loaded; "" = none; always "" for discovery and baseline
     LabelsDigest   string `json:"labels_digest"`   // bare hex SHA-256 of the labels file the engine loaded; "" = none
 }
 ```
@@ -581,6 +584,11 @@ requests built with `httptest.NewRequest`. No network.
 - **Test name**: `TestReceiveDiscovery`
   **Scenario**: kind `discovery` from a `workflow_dispatch` run with a YAML payload; the same from a `pull_request` run.
   **Expected behavior**: `Report` nil, `Payload` equals the body, `Binding.Event` `workflow_dispatch`; the second carries `ProblemUnsupportedEvent`. `report.Decode` was not called.
+- **Test name**: `TestReceiveBaseline`
+  **Scenario**: kind `baseline` with a JSON payload from a `workflow_dispatch` run on the default branch; from a default-branch
+  `push`; from a `pull_request` run; from a `workflow_dispatch` run on `feature`; a `baseline` envelope on the discovery route.
+  **Expected behavior**: the first two carry no problem, `Report` nil and `Payload` equal to the body; the `pull_request` run carries
+  `ProblemUnsupportedEvent`; the `feature` dispatch carries no problem and `BaseRef` `feature`; the last is the 400 `kind_mismatch` rejection.
 - **Test name**: `TestProblemsNeverReject`
   **Scenario**: `workflow_run` upload; fork PR; invalid report bytes with a correct digest; all three at once.
   **Expected behavior**: nil error each time; problems de-duplicated in declaration order; `Report` nil only for the invalid bytes.

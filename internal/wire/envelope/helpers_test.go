@@ -67,6 +67,12 @@ func discoveryFields() map[string]string {
 	return f
 }
 
+func baselineFields() map[string]string {
+	f := pushFields("workflow_dispatch")
+	f["kind"] = `"baseline"`
+	return f
+}
+
 // render writes the object in contract key order; keys outside the contract follow, sorted.
 func render(fields map[string]string) []byte {
 	keys := fieldOrder()

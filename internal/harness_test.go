@@ -343,10 +343,12 @@ func (u upload) request(t *testing.T, path string) *http.Request {
 
 // answer is the JSON body of an upload response.
 type answer struct {
-	Status     int
-	Conclusion string `json:"conclusion"`
-	Reason     string `json:"reason"`
-	Error      string `json:"error"`
+	Status      int
+	Conclusion  string `json:"conclusion"`
+	Reason      string `json:"reason"`
+	Error       string `json:"error"`
+	PullRequest int    `json:"pull_request"`
+	Unchanged   bool   `json:"unchanged"`
 }
 
 func readAnswer(t *testing.T, resp *http.Response) answer {
@@ -433,6 +435,7 @@ func newSystem(t *testing.T, w *world, o options) *system {
 	}
 	s.mux.Handle("POST /v1/reports", s.gate.UploadHandler())
 	s.mux.Handle("POST /v1/discoveries", s.ctl.DiscoveryHandler())
+	s.mux.Handle("POST /v1/baselines", s.ctl.BaselineHandler())
 	s.mux.Handle("/", s.ctl.UIHandler())
 	return s
 }
@@ -810,4 +813,11 @@ func discoveryUpload(fullName string, repoID, runID int64, head string, policy [
 		},
 		key: oidcKey(),
 	}
+}
+
+// baselineUpload is a baseline captured by a workflow_dispatch run on main, with the labels file it read.
+func baselineUpload(fullName string, repoID, runID int64, head string, baseline, labels []byte) upload {
+	u := discoveryUpload(fullName, repoID, runID, head, baseline)
+	u.env.Kind, u.env.LabelsDigest = "baseline", digest(labels)
+	return u
 }

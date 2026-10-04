@@ -59,6 +59,7 @@ func New(d Deps) (*Control, error)
 
 func (c *Control) UIHandler() http.Handler        // "/"
 func (c *Control) DiscoveryHandler() http.Handler // POST /v1/discoveries
+func (c *Control) BaselineHandler() http.Handler  // POST /v1/baselines
 // HandleEvent maintains entitlements on installation events and forgets a tenant on uninstall.
 func (c *Control) HandleEvent(ctx context.Context, e Event) error
 // Sweep refreshes every installation's Entitlement record and forgets Store tenants
@@ -125,7 +126,7 @@ type Completion struct {
   32 bytes, empty `BaseURL`, a non-nil `Sandbox` with nil `Tokens`, or an error from `ui.New`. Nil `Now` means `time.Now`.
   Nil `Sandbox` and nil `Provider` are valid. It never panics. **[default]**
 - `UIHandler` returns the `ui` handler wrapped in a panic recovery that answers `500` and logs the route pattern only.
-- `DiscoveryHandler` returns `Onboarding.DiscoveryHandler()` unchanged.
+- `DiscoveryHandler` returns `Onboarding.DiscoveryHandler()` unchanged; `BaselineHandler` returns `Onboarding.BaselineHandler()` unchanged.
 - `HandleEvent` has its own 10 s timeout **[default]**. `e.InstallationID <= 0` is an error. By `e.Kind`:
   - `InstallationAdded`, `ReposRemoved` → `Repos.ListRepos(e.InstallationID)` → `hasPrivate` = any `Private` → `Account.Observe(id, hasPrivate, Now())`.
   - `InstallationRemoved` → `Account.Forget(e.InstallationID)`. No GitHub call.
@@ -233,6 +234,8 @@ type Onboarding interface {
     StartManaged(ctx context.Context, r Repo, owners []string) (Draft, error)
     // DiscoveryHandler serves POST /v1/discoveries and opens PR 2 with the proposed policy.
     DiscoveryHandler() http.Handler
+    // BaselineHandler serves POST /v1/baselines and opens or updates the baseline PR. It never writes the default branch.
+    BaselineHandler() http.Handler
 }
 ```
 

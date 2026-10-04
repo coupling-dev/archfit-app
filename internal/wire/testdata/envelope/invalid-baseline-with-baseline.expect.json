@@ -1,0 +1,4 @@
+{
+  "producer": "synthetic: hand-written by the envelope module against envelope.v1.schema.json; archfit-action publishes no baseline-mode upload yet",
+  "decode": "error"
+}

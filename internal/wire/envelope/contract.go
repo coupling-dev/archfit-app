@@ -17,6 +17,7 @@ type Kind string
 const (
 	KindReport    Kind = "report"    // engine state report, POST /v1/reports
 	KindDiscovery Kind = "discovery" // discovery draft policy, POST /v1/discoveries
+	KindBaseline  Kind = "baseline"  // captured engine baseline file, POST /v1/baselines
 )
 
 // Envelope is what the producer states about a payload. Every field is self-reported:
@@ -36,7 +37,7 @@ type Envelope struct {
 	ImageDigest    string `json:"image_digest"`    // "sha256:<64 hex>"
 	Platform       string `json:"platform"`        // e.g. "linux/amd64"
 	PayloadDigest  string `json:"payload_digest"`  // "sha256:<64 hex>" of the exact payload bytes
-	BaselineDigest string `json:"baseline_digest"` // bare hex SHA-256 of the baseline file the engine loaded; "" = none
+	BaselineDigest string `json:"baseline_digest"` // bare hex SHA-256 of the baseline file the engine loaded; "" = none; always "" for discovery and baseline
 	LabelsDigest   string `json:"labels_digest"`   // bare hex SHA-256 of the labels file the engine loaded; "" = none
 }
 

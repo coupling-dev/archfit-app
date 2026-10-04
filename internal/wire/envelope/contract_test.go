@@ -61,7 +61,7 @@ func TestDecodeAcceptsConformanceEnvelopes(t *testing.T) {
 			}
 		})
 	}
-	for _, name := range []string{"pr-report", "push-report", "discovery-dispatch"} {
+	for _, name := range []string{"pr-report", "push-report", "discovery-dispatch", "baseline-dispatch"} {
 		if !seen[name] {
 			t.Errorf("conformance fixture %q is missing", name)
 		}
@@ -75,6 +75,7 @@ func TestSchemaAndDecoderAgree(t *testing.T) {
 		"invalid-extra-key":                "",
 		"invalid-top-level-array":          "",
 		"invalid-discovery-with-baseline":  "baseline_digest",
+		"invalid-baseline-with-baseline":   "baseline_digest",
 		"invalid-missing-key":              "labels_digest",
 		"invalid-null-kind":                "kind",
 		"invalid-prefixed-baseline-digest": "baseline_digest",

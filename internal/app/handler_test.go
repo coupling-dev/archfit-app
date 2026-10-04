@@ -82,6 +82,8 @@ func TestRouteTable(t *testing.T) {
 		{"healthz", httptest.NewRequest(http.MethodGet, base+"/healthz", nil), http.StatusOK, nil},
 		{"reports", httptest.NewRequest(http.MethodPost, base+"/v1/reports", nil), http.StatusCreated, []string{"gate.Upload"}},
 		{"discoveries", httptest.NewRequest(http.MethodPost, base+"/v1/discoveries", nil), http.StatusAccepted, []string{"control.Discovery"}},
+		{"baselines", httptest.NewRequest(http.MethodPost, base+"/v1/baselines", nil), http.StatusAccepted, []string{"control.Baseline"}},
+		{"GET on the baseline path", httptest.NewRequest(http.MethodGet, base+"/v1/baselines", nil), http.StatusOK, []string{"control.UI"}},
 		{"webhook", signed(), http.StatusAccepted, []string{"gate.HandleEvent", "control.HandleEvent"}},
 		{"sweep", operatorRequest(base+"/internal/sweep", testOperatorToken, ""), http.StatusOK, []string{"control.Sweep", "gate.Sweep"}},
 		{"grants", operatorRequest(base+"/internal/grants", testOperatorToken, grant), http.StatusNoContent, []string{"control.Grant"}},
@@ -125,6 +127,7 @@ func TestRouteDeadlines(t *testing.T) {
 	}{
 		{"gate upload", post("/v1/reports"), []time.Duration{short}},
 		{"discovery upload", post("/v1/discoveries"), []time.Duration{short}},
+		{"baseline upload", post("/v1/baselines"), []time.Duration{short}},
 		{"UI page", httptest.NewRequest(http.MethodGet, "/", nil), []time.Duration{short}},
 		{"UI save", post("/r/octo/repo/policy"), []time.Duration{short}},
 		{"GET on the assist path", httptest.NewRequest(http.MethodGet, "/r/octo/repo/assist", nil), []time.Duration{short}},
