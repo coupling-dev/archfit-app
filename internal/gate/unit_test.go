@@ -465,6 +465,17 @@ func TestUploadPipeline(t *testing.T) {
 			Outcome: verdict.Decide(verdict.Facts{Report: healthy, IdentityApproved: true, WorkflowApproved: true, Trusted: trusted}),
 			Receipt: feedback.Receipt{RunID: 9, RunAttempt: 2, ReportDigest: "sha256:d", PolicyDigest: "aa11", Conclusion: verdict.Success, Reason: verdict.ReasonHealthy},
 		}
+		if pub.Resolve == nil {
+			t.Fatal("publication without Resolve: feedback cannot check the inputs again inside the lease")
+		}
+		f.resolver.trusted.PolicyDigests = []string{"bb22"}
+		if fresh, err := pub.Resolve(context.Background()); err != nil || !reflect.DeepEqual(fresh.PolicyDigests, []string{"bb22"}) {
+			t.Errorf("Resolve = %v, %v, want the resolver's current inputs", fresh.PolicyDigests, err)
+		}
+		if got := f.resolver.targets[len(f.resolver.targets)-1]; !reflect.DeepEqual(got, wantTarget) {
+			t.Errorf("Resolve read %+v, want the decision's target %+v", got, wantTarget)
+		}
+		pub.Resolve = nil
 		if !reflect.DeepEqual(pub, want) {
 			t.Errorf("publication =\n %+v, want\n %+v", pub, want)
 		}

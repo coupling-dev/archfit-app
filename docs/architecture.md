@@ -67,7 +67,8 @@ Solid arrows show request, read, or publication flow. The dotted arrow shows an 
 The App stores no report or source code. GitHub stores checks, comments, workflow runs, and the no-source
 report artifact that the Graph page reads. The App stores entitlements, consent records, an LLM budget
 counter, and short-lived publication leases in a key-value store. A lease makes the writes for one head SHA run
-one at a time, on every instance, so an older publication cannot overwrite a newer one. Without the store, the App
+one at a time, on every instance, so an older publication cannot overwrite a newer one. Inside the lease an upload
+reads its inputs again, so a decision from replaced inputs is never written. Without the store, the App
 publishes nothing.
 
 The repository split is:

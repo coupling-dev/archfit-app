@@ -230,7 +230,9 @@ func TestChangedFilesErrorStillPublishes(t *testing.T) {
 				t.Errorf("comments = %d, want 1", len(h.comments.all()))
 			}
 
-			// The retry the Action makes after ErrRateLimited sends the annotations on a new state run.
+			// The retry the Action makes after ErrRateLimited, past Retry-After and so past the lease the failed call
+			// kept, sends the annotations on a new state run.
+			h.clock.set(t0.Add(leaseTTL))
 			if err := h.pub.Publish(ctx, blockedPublication(t, headB, 7, 1)); err != nil {
 				t.Fatalf("retry: %v", err)
 			}

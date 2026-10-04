@@ -322,7 +322,7 @@ type Receipt struct {
 }
 ```
 
-<!-- contract: Publication, Publisher, CheckState — restated from internal/gate/feedback/module.md -->
+<!-- contract: Publication, ErrStaleInputs, Publisher, CheckState — restated from internal/gate/feedback/module.md -->
 ```go
 // Publication is one complete piece of feedback for one head SHA.
 type Publication struct {
@@ -332,7 +332,16 @@ type Publication struct {
     Receipt  Receipt
     Report   *Report // nil when there is no usable report
     Trusted  Trusted
+    // Resolve, when set, reads the trusted inputs again inside the head's publication lease, before anything is
+    // written. When the result no longer accepts a Receipt digest, the decision was computed from inputs older than
+    // the protected ref: Publish writes nothing and returns ErrStaleInputs, so it never replaces a publication
+    // computed from newer inputs. nil skips the check; sweep corrections, which are never a success, leave it nil.
+    Resolve func(context.Context) (Trusted, error)
 }
+
+// ErrStaleInputs is returned by Publish when Publication.Resolve shows that the trusted inputs changed after the
+// decision. Nothing was written; the caller decides again from the new inputs.
+var ErrStaleInputs error
 
 // CheckState is the gate check currently on a head SHA.
 type CheckState struct {

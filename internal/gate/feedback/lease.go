@@ -27,6 +27,9 @@ const (
 	releaseTimeout = 5 * time.Second
 )
 
+// errUnwritten marks a failure before the first GitHub request. Like success, it releases the lease at once.
+var errUnwritten = errors.New("nothing written")
+
 // lease is the stored value. Token tells holders apart, so a release never deletes a lease another holder took over.
 type lease struct {
 	Token   string    `json:"token"`
@@ -43,7 +46,26 @@ type serialized struct {
 }
 
 func (s *serialized) Publish(ctx context.Context, p Publication) error {
-	return s.hold(ctx, p.Target, func(ctx context.Context) error { return s.next.Publish(ctx, p) })
+	return s.hold(ctx, p.Target, func(ctx context.Context) error {
+		if p.Resolve != nil {
+			fresh, err := p.Resolve(ctx)
+			if err != nil {
+				return fmt.Errorf("feedback: resolve inputs again: %w: %w", errUnwritten, err)
+			}
+			if !decidedFrom(p.Receipt, fresh) {
+				return ErrStaleInputs
+			}
+		}
+		return s.next.Publish(ctx, p)
+	})
+}
+
+// decidedFrom reports whether every input digest of r is still accepted by t: the sweep's stale_inputs condition,
+// negated, so that no publication the sweep would at once call stale is ever written.
+func decidedFrom(r Receipt, t inputs.Trusted) bool {
+	return inputs.Accepts(t.PolicyDigests, r.PolicyDigest) &&
+		inputs.Accepts(t.BaselineDigests, r.BaselineDigest) &&
+		inputs.Accepts(t.LabelsDigests, r.LabelsDigest)
 }
 
 func (s *serialized) Pending(ctx context.Context, t inputs.Target) error {
@@ -68,10 +90,15 @@ func (s *serialized) hold(ctx context.Context, t inputs.Target, fn func(context.
 	if err != nil {
 		return fmt.Errorf("feedback: publication lease: %w", err)
 	}
-	defer s.release(ctx, t, tenant, key, mine)
 	work, cancel := context.WithTimeout(ctx, leaseTTL-leaseMargin)
 	defer cancel()
-	return fn(work)
+	err = fn(work)
+	// A failed call may have sent a write that GitHub still applies: a client timeout, a 5xx, or the work deadline.
+	// The lease then stays until it expires, so that write lands inside the margin before a waiting holder reads.
+	if err == nil || errors.Is(err, errUnwritten) {
+		s.release(ctx, t, tenant, key, mine)
+	}
+	return err
 }
 
 // leaseSlot is the tenant and key of a head's lease: the installation and the head SHA. The repository is left out on
@@ -123,8 +150,8 @@ func held(raw []byte, now time.Time) bool {
 	return json.Unmarshal(raw, &l) == nil && now.Before(l.Expires)
 }
 
-// release deletes the lease only while it is still this holder's. It runs even when the request context has ended;
-// a failed release is logged and the lease then expires on its own.
+// release deletes the lease only while it is still this holder's. It runs even when the request context has ended,
+// after a call that succeeded or wrote nothing; a failed release is logged and the lease then expires on its own.
 func (s *serialized) release(ctx context.Context, t inputs.Target, tenant store.Tenant, key string, mine []byte) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
 	defer cancel()

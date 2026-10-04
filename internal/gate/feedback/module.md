@@ -73,7 +73,16 @@ type Publication struct {
     Receipt  Receipt
     Report   *Report // nil when there is no usable report
     Trusted  Trusted
+    // Resolve, when set, reads the trusted inputs again inside the head's publication lease, before anything is
+    // written. When the result no longer accepts a Receipt digest, the decision was computed from inputs older than
+    // the protected ref: Publish writes nothing and returns ErrStaleInputs, so it never replaces a publication
+    // computed from newer inputs. nil skips the check; sweep corrections, which are never a success, leave it nil.
+    Resolve func(context.Context) (Trusted, error)
 }
+
+// ErrStaleInputs is returned by Publish when Publication.Resolve shows that the trusted inputs changed after the
+// decision. Nothing was written; the caller decides again from the new inputs.
+var ErrStaleInputs error
 
 // CheckState is the gate check currently on a head SHA.
 type CheckState struct {
@@ -218,11 +227,17 @@ happens while it is held. `State` only reads and takes no lease.
   waited on forever.
 - Work: the call runs under a context that ends 50 s after acquisition **[default: lifetime minus a 10 s margin]**,
   measured by the process's own elapsed time, so the holder stops writing before any other instance may take an
-  expired lease over. The margin covers clock skew between instances and a request already sent when the work
-  deadline fires.
-- Release: `CompareAndSwap` from this call's own bytes to `nil`, under a fresh 5 s context **[default]** detached from
-  the request, so a timed-out upload still releases. A lease another holder took over is never deleted. A failed
-  release is logged; the lease then expires.
+  expired lease over. The margin covers clock skew between instances and a request already sent when the call
+  ended: one cut by the work deadline, by the API client's timeout, or answered with a 5xx, which GitHub may still
+  apply. That holds because a failed call keeps its lease (next item).
+- Release: only after a call that returned `nil` or failed before its first GitHub request (`ErrStaleInputs`, a
+  failed `Publication.Resolve`). Every other error keeps the lease until it expires, 60 s after acquisition, so a
+  write in doubt lands before a waiting publisher reads the check **[default]**. The cost is that the next
+  publisher of that head waits up to 60 s; an upload whose 50 s deadline ends first answers 503 and the Action
+  retries, and a retry after `Retry-After: 60` meets an expired lease.
+  Release is `CompareAndSwap` from this call's own bytes to `nil`, under a fresh 5 s context **[default]** detached
+  from the request, so it works after the request context ended. A lease another holder took over is never deleted.
+  A failed release is logged; the lease then expires.
 - Fail closed: any Store error while acquiring returns the error and writes nothing to GitHub. An unserialized
   write could reopen the overwrite, so a Store outage holds new verdicts back instead (`gate` answers 503 and the
   check stays as it was).
@@ -231,6 +246,16 @@ Within the lease, every write is still preceded by its own read: `writeCheck` re
 supersession right before it creates or updates, a further annotation batch re-reads before each request, and
 the comment re-reads the head marker before it updates. The lease makes those reads current; it does not replace
 them, so a publisher that waited for the lease still skips a newer receipt it now sees.
+
+The run identity orders two uploads, but not an upload and a sweep correction: the sweep keeps the receipt's
+`(RunID, RunAttempt)`, so the equal identity counts as replaceable. An upload decided from policy P1 that waits for
+the lease while the sweep, already reading P2, writes `stale_inputs` would then replace the correction with its P1
+`success`. So, inside the lease and before its first GitHub request, `Publish` calls `Publication.Resolve` when it is
+set and checks each receipt digest (`PolicyDigest`, `BaselineDigest`, `LabelsDigest`) with `inputs.Accepts` against
+the result: the sweep's stale condition, negated. A digest that is no longer accepted writes nothing and returns
+`ErrStaleInputs`; a `Resolve` error writes nothing and is returned wrapped, `errors.Is` intact. Both release the
+lease at once. `gate` sets `Resolve` on every upload publication; the sweep's publications carry the inputs they were
+just resolved from and are never a success, so they leave it nil.
 
 ### Layout
 
@@ -415,12 +440,13 @@ type Outcome struct {
 
 - **Counterpart**: internal/gate/inputs
 - **Direction**: feedback depends on inputs
-- **Strength**: model (reads `Target` and `Trusted`)
+- **Strength**: model (reads `Target` and `Trusted`; calls `Accepts`)
 - **LCA / Rank / Distance**: gate / 1 / 1
 - **Volatility**: high
 - **Balanced?**: yes
 - **Shared knowledge**: `Target.PullRequest == 0` is a push; `Trusted.Settings.Gate` selects required mode;
-  `Entitlement.Notice` is shown from `WarnFrom` on. feedback never resolves inputs itself.
+  `Entitlement.Notice` is shown from `WarnFrom` on. feedback never resolves inputs itself: it calls the caller's
+  `Publication.Resolve` and checks the receipt digests with `Accepts`, the predicate the sweep's stale rule uses.
 
 <!-- contract: Entitlement, EntitlementKey — restated from internal/gate/inputs/module.md -->
 ```go
@@ -470,6 +496,18 @@ type Trusted struct {
     Suspended            bool
     Entitlement          Entitlement
 }
+```
+
+<!-- contract: Accepts, First — restated from internal/gate/inputs/module.md -->
+```go
+// Accepts is the digest predicate of the gate: whether claim is acceptable for one digest list of Trusted.
+// An empty list accepts only the empty claim ("nothing trusted, nothing claimed"). A list with entries
+// accepts only a claim that is not empty and is in the list, by exact string equality.
+func Accepts(trusted []string, claim string) bool
+
+// First returns the first digest of a list of Trusted, or "" for an empty list.
+// For every list that Resolve builds, Accepts(trusted, First(trusted)) is true.
+func First(trusted []string) string
 ```
 
 ### wire/settings
@@ -978,9 +1016,15 @@ type Store interface {
   across instances. An older publication that read a check before a newer one wrote it cannot write at all until
   the newer one is done, and then sees the newer receipt and skips. `Pending` holds the same lease, so it never
   creates an `in_progress` run after a publication completed the check. A Store error writes nothing.
+  A call that failed after a GitHub request keeps its lease until it expires, so a write still in flight after a
+  client timeout, a 5xx or the work deadline lands before the next publisher of the head reads.
   Stated limit **[default]**: a lease is not a fence for GitHub. A holder stops by its own clock 10 s before the
-  lease expires; a request already sent when its work deadline fires can still land after another instance took
-  the lease over. That needs a holder stalled for 50 s and a takeover inside the 10 s margin.
+  lease expires; a request GitHub applies more than 10 s after the work deadline (or after a clock skew that eats
+  the margin) can still land after another instance took the lease over.
+- A publication with `Resolve` set is written only while its receipt digests are still accepted by the inputs read
+  inside the lease, so an upload decided from older inputs never replaces a sweep correction made from newer ones,
+  although both carry the same run identity. Stated limit **[default]**: inputs that change after that read and
+  before the write are the sweep's to correct, as for any change after a publication.
 - Exactly one comment per PR under sequential delivery and for concurrent publications of one head. Two concurrent
   first publications for two heads of one PR hold two leases and may create two comments; later calls update only
   the lowest-ID one **[default, stated limit]**. Check runs are per head, so the lease covers them; a second run of
@@ -1006,20 +1050,20 @@ type Store interface {
   content can forge a marker; `State` still reads only the last receipt marker.
 - `Publication.Identity` is a claim copied from the envelope. feedback prints it as claimed and never as
   approved; identity strings are sanitized like every other producer-supplied string.
-- No LLM, no network other than the three role interfaces and the Store. The Store holds only the publication
+- No LLM, no network other than the three role interfaces, the Store and the caller's `Publication.Resolve`. The Store holds only the publication
   leases: `Get` and `CompareAndSwap` on `feedback/lease/<head_sha>`, never a receipt, a report or a body. Imports:
   standard library, `gate/verdict`, `gate/inputs`, `wire/report`, `wire/settings`, `wire/manifest`, `github/api`,
   `store`. Never `control`, `app`, LLM or UI packages.
 - Rendering is deterministic: equal `Publication` and clock give byte-identical text.
 - `api.ErrRateLimited` and other API errors are returned unchanged, with one exception: a `ChangedFiles` error other
   than `ErrRateLimited` is logged and the call returns `nil`, because the file list only filters annotations. A
-  failed publication never produces green; one that fails before the gate check is written leaves the pending check
+  `Publication.Resolve` error is returned wrapped, with `errors.Is` intact. A failed publication never produces green; one that fails before the gate check is written leaves the pending check
   pending.
 - Logs (`log/slog` default logger **[default]**): repository ID, PR number, head SHA, run ID, attempt, digests,
   conclusion, reason codes, action taken (`created`, `updated`, `skipped_newer`, `skipped_old_head`), timings.
   Never bodies, paths, messages or names.
 - Safe for concurrent use, also across instances that share the Store. No state between calls but the lease,
-  which is deleted when the call ends.
+  which is deleted when the call succeeds or fails before its first GitHub request, and otherwise expires.
 
 ## Test Specification
 
@@ -1091,7 +1135,7 @@ Golden files hold rendered bodies for the wire fixtures.
   **Expected behavior**: `archfit/gate` conclusion is one of `success`, `failure`, `action_required`, equal to the outcome; `archfit/state` is `action_required` whenever the outcome is.
 - **Test name**: `TestRateLimitLeavesPendingAlone`
   **Scenario**: `ErrRateLimited` from `CheckRuns`, from `ChangedFiles`, from `UpdateCheckRun`, from `CreateComment`.
-  **Expected behavior**: the error is returned with `errors.Is` intact; the pending check is unchanged when the error comes before the gate check is written (`CheckRuns`, `UpdateCheckRun`); no failed publication produces green; a retry completes the publication with one gate check and one comment.
+  **Expected behavior**: the error is returned with `errors.Is` intact; the pending check is unchanged when the error comes before the gate check is written (`CheckRuns`, `UpdateCheckRun`); no failed publication produces green; a retry once the kept lease expired completes the publication with one gate check and one comment.
 - **Test name**: `TestSummaryLimitIsRespected`
   **Scenario**: the fake `Checks` rejects summaries over 65 535 bytes, as the real client does.
   **Expected behavior**: no publication of any fixture or stress input is rejected.
@@ -1128,8 +1172,14 @@ Golden files hold rendered bodies for the wire fixtures.
 - **Test name**: `TestLeaseHolding`
   **Scenario**: the work context of a held lease; a request context cancelled during the work; another holder's lease written over this one during the work; a second head while the first is held.
   **Expected behavior**: the work deadline is about 50 s from now by elapsed time, not by the injected clock; the lease is released after the cancelled request; the other holder's lease is not deleted; the second head does not wait.
+- **Test name**: `TestLeaseKeptAfterFailedCall`
+  **Scenario**: a held call that fails with a possibly sent write (`context.DeadlineExceeded`), and one that fails with `ErrStaleInputs`; then a second holder whose waits advance the clock 20 s each.
+  **Expected behavior**: the first keeps its lease and the second holder waits 60 s, until it expires; the second releases at once and the next holder does not wait.
+- **Test name**: `TestStaleDecisionNeverReplacesNewerInputs`
+  **Scenario**: a sweep-style `stale_inputs` correction with policy P2 and run 7.1, then an upload of run 7.1 decided `success` from P1 whose `Resolve` returns P2; the same with `Resolve` failing; and an upload decided from P2 over a correction from P1.
+  **Expected behavior**: the first returns `ErrStaleInputs`, the second the `Resolve` error, and in both the gate check stays `action_required`/`stale_inputs`; the third writes `success`. No lease is left. Without the check the first two end `success`.
 - **Test name**: `TestChangedFilesErrorStillPublishes`
-  **Scenario**: in required mode with a pending gate check, `ChangedFiles` fails once with `ErrRateLimited`, and once with another error; then a retry.
+  **Scenario**: in required mode with a pending gate check, `ChangedFiles` fails once with `ErrRateLimited`, and once with another error; then a retry 60 s later.
   **Expected behavior**: the gate check is completed as `failure`, one state run without annotations and the comment are written; `ErrRateLimited` is returned, the other error is not. The retry adds a state run with the two annotations and no second gate check or comment.
 - **Test name**: `TestOldRunCannotOverwriteNewerHead` (T11, T03)
   **Scenario**: publish run 7 for head B; then run 6 for head B; then run 5 for the old head A while the PR head is B.

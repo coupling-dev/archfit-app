@@ -147,15 +147,18 @@ The new multi-key `Store` transaction writes both together. A single-key transac
 and the waiver notice) holds a lease in the `Store`. The key is the installation and the head SHA. The holder reads the
 check, compares the receipts and writes while it holds the lease. So an older publication can no longer overwrite a newer
 one, and a late pending check can no longer replace a verdict. A `Store` error writes nothing.
-The lease lasts 60 seconds. The holder stops its own work 10 seconds before that, by its own clock.
+The lease lasts 60 seconds. The holder stops its own work 10 seconds before that, by its own clock. A call that
+fails after it sent a request to GitHub (a client timeout, a 5xx, the work deadline) keeps the lease until it expires,
+so a write that GitHub still applies lands before the next holder reads. An upload reads its inputs again inside the
+lease and writes nothing when they changed, so it never replaces a sweep correction made from newer inputs.
 
 **Pending gate check: open.** The lease removes the race between concurrent calls on one instance or several. A lease
-still cannot fence writes to GitHub: a holder that stalls for 50 seconds can have a request in flight when another
-instance takes over. Branch protection already blocks a merge while a required check is missing, and GitHub shows it as
+still cannot fence writes to GitHub: a request that GitHub applies more than 10 seconds after the holder's work
+deadline can land after another instance took over. Branch protection already blocks a merge while a required check is missing, and GitHub shows it as
 "Expected". So the pending check on webhooks can still be dropped. This is [open decision 1](#open-decisions).
 
-**Remaining limit.** A request that a stalled holder sent just before its deadline can land after a takeover. Then the
-last write to GitHub wins until the next sweep.
+**Remaining limit.** A request that GitHub applies more than 10 seconds after the holder's work deadline can land
+after a takeover. Then the last write to GitHub wins until the next sweep.
 
 ## Failure handling
 
@@ -229,8 +232,8 @@ Each decision has a default. The design uses the default until the owner changes
 
 ## Known limits
 
-- Publications of one head are serialized by a `Store` lease. A holder that stalls for 50 seconds can still have a
-  write land after a takeover, until the next sweep.
+- Publications of one head are serialized by a `Store` lease. A request that GitHub applies more than 10 seconds
+  after the holder's work deadline can still land after a takeover, until the next sweep.
 - A `Store` outage stops all publication. Checks stay as they were until the `Store` is back. An unserialized write
   would let an older run overwrite a newer one.
 - The release canary gets no real webhooks or uploads. See [Release](operations.md#release).

@@ -442,7 +442,7 @@ type Receipt struct {
 }
 ```
 
-<!-- contract: Publication, Publisher, CheckState — restated from internal/gate/feedback/module.md -->
+<!-- contract: Publication, ErrStaleInputs, Publisher, CheckState — restated from internal/gate/feedback/module.md -->
 ```go
 // Publication is one complete piece of feedback for one head SHA.
 type Publication struct {
@@ -452,7 +452,16 @@ type Publication struct {
     Receipt  Receipt
     Report   *Report // nil when there is no usable report
     Trusted  Trusted
+    // Resolve, when set, reads the trusted inputs again inside the head's publication lease, before anything is
+    // written. When the result no longer accepts a Receipt digest, the decision was computed from inputs older than
+    // the protected ref: Publish writes nothing and returns ErrStaleInputs, so it never replaces a publication
+    // computed from newer inputs. nil skips the check; sweep corrections, which are never a success, leave it nil.
+    Resolve func(context.Context) (Trusted, error)
 }
+
+// ErrStaleInputs is returned by Publish when Publication.Resolve shows that the trusted inputs changed after the
+// decision. Nothing was written; the caller decides again from the new inputs.
+var ErrStaleInputs error
 
 // CheckState is the gate check currently on a head SHA.
 type CheckState struct {
@@ -964,8 +973,12 @@ type Store interface {
    copied unchanged; they are customer-attested like the report. A decision without a reason cannot come from
    `Decide`; if one ever does, the façade treats it as a failed step: 503 `unavailable`, nothing published, the
    pending check stays. It never reads `Reasons[0]` of an empty list and never invents a reason.
-7. Receipt (table below); `publisher.Publish(ctx, Publication{target, u.Identity, outcome, receipt, u.Report, trusted})`.
-   `Identity` is the envelope's claim; feedback prints it as claimed.
+7. Receipt (table below); `publisher.Publish(ctx, Publication{target, u.Identity, outcome, receipt, u.Report, trusted,
+   Resolve})`. `Identity` is the envelope's claim; feedback prints it as claimed. `Resolve` calls
+   `resolver.Resolve(ctx, target, now)` again, inside the publication lease: a sweep may have corrected the check
+   from newer inputs between step 3 and the lease, under the same run identity. When the new inputs no longer accept
+   a receipt digest, feedback writes nothing and returns `ErrStaleInputs`; the upload answers 503 `unavailable` and
+   the Action's retry decides from the new inputs. The correction stays until then.
 8. Answer 200 with conclusion and reason.
 
 | `Receipt` field        | Value                                                                                            |
@@ -1072,7 +1085,10 @@ event left undone.
   taken because the Store fails, nothing is written: the upload answers 503 `unavailable`, `HandleEvent` returns the
   error and the sweep counts it, and the check stays as it was until the Store is back **[default: fail closed]**.
   An unserialized write would reopen the overwrite. So a Store outage now blocks new verdicts, where before only
-  the entitlement read depended on it.
+  the entitlement read depended on it. A publication that failed after a GitHub request keeps the lease until it
+  expires (60 s), so a write still in flight lands first; a retry of the same head waits for it.
+- An upload decision is written only while the inputs it was decided from are still trusted inside the lease (step
+  7), so it never replaces a sweep correction computed from newer inputs.
 - Suspension is `action_required` in category `subscription`: never an architecture failure, never a success.
   A restored entitlement re-runs the workflow; an old receipt is never promoted to `success`.
 - Nothing is persisted by the gate but the publication leases, which hold a token and an expiry only and are
@@ -1133,7 +1149,7 @@ are driven only as far as they go without GitHub. Child internals are tested in 
 
 - **Test name**: `TestUploadPipeline`
   **Scenario**: hand-written fakes of the children through `newGate`: a clean pull request upload; a non-PR upload with `ProblemUnsupportedEvent` and `ProblemFork` whose binding names a feature branch; an upload whose claimed baseline digest is not trusted.
-  **Expected behavior**: `Receive` gets `KindReport` under a deadline of about 50 seconds; `Resolve` gets the target of the binding and the clock; the `Publication` equals the one built from `verdict.Decide` and the receipt table. The non-PR target has `BaseRef` = the default branch and keeps `Fork`; the answer is `fork_unsupported`. The claimed digest reaches `Decide` unchanged: `baseline_mismatch`.
+  **Expected behavior**: `Receive` gets `KindReport` under a deadline of about 50 seconds; `Resolve` gets the target of the binding and the clock; the `Publication` equals the one built from `verdict.Decide` and the receipt table, apart from `Resolve`, which is set and returns the resolver's current inputs for the same target. The non-PR target has `BaseRef` = the default branch and keeps `Fork`; the answer is `fork_unsupported`. The claimed digest reaches `Decide` unchanged: `baseline_mismatch`.
 - **Test name**: `TestHandleEventRules`
   **Scenario**: the `HandleEvent` table over fakes of the children: a new head in required mode; a fork of a repository that is not onboarded; a deleted fork repository (`HeadRepo == ""`); a review against each row of the re-run guard table (receipt without a run, run not found, in progress, newer attempt, completed at the receipt's attempt), with approval still missing, with another receipt reason, with a pending check and with no check; an error from each child call (`Resolve`, `Pending`, `State`, `Actions.Run`, `Actions.Rerun`, `RunRepo`); `Sweep`.
   **Expected behavior**: the target is built from the verified event; the not-onboarded fork gets nothing; the deleted fork gets the `sweep.Without(ReasonForkUnsupported, …)` publication with a zero run and the first trusted digests; `Actions.Rerun` is called only for the completed run at the receipt's attempt; a receipt without a run makes no GitHub call; a run that is not found is a nil error without a re-run; a review event never writes feedback; every child error is returned and nothing is published; `Sweep` passes the clock and the summary through.
@@ -1172,7 +1188,7 @@ are driven only as far as they go without GitHub. Child internals are tested in 
   **Expected behavior**: each conclusion is `success`, `failure` or `action_required`; pending checks are `in_progress`.
 - **Test name**: `TestTransientFailuresLeavePending`
   **Scenario**: GitHub 5xx and rate-limit exhaustion during `Resolve` and during `Publish`.
-  **Expected behavior**: 503 (`Retry-After` for rate limit); the pending check is unchanged; a retry of the same upload completes once.
+  **Expected behavior**: 503 (`Retry-After` for rate limit); the pending check is unchanged; a retry of the same upload 60 s later, when a lease kept by a failed write has expired, completes once.
 - **Test name**: `TestClientSuppliedTenantIsIgnored`
   **Scenario**: another installation's ID in headers, query and envelope-like fields, with an entitlement stored for that other tenant.
   **Expected behavior**: the Store is read under the claim's tenant only; no API call addresses the other tenant.

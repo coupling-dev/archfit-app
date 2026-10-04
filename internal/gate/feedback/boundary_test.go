@@ -161,6 +161,8 @@ func TestRateLimitLeavesPendingAlone(t *testing.T) {
 				}
 			}
 
+			// The Action retries after Retry-After (60 s), when the lease the failed call kept has expired.
+			h.clock.set(t0.Add(leaseTTL))
 			if err := h.pub.Publish(ctx, p); err != nil {
 				t.Fatalf("retry: %v", err)
 			}

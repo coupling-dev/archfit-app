@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
+	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
 var leaseKeyB = leasePrefix + headB
@@ -201,5 +203,98 @@ func TestLeaseHolding(t *testing.T) {
 	})
 	if err := s.hold(otherCtx, prTarget(headA), func(context.Context) error { return nil }); err != nil {
 		t.Errorf("hold on another head: %v", err)
+	}
+}
+
+// A call that failed may have sent a write GitHub still applies, so its lease stays until it expires and the next
+// holder waits for it. A call that failed before any write releases at once.
+func TestLeaseKeptAfterFailedCall(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		err      error
+		wantKept bool
+	}{
+		{"uncertain write", context.DeadlineExceeded, true},
+		{"nothing written", ErrStaleInputs, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			h := newHarness(headB)
+			s := h.pub.(*serialized)
+			if err := s.hold(ctx, prTarget(headB), func(context.Context) error { return tt.err }); !errors.Is(err, tt.err) {
+				t.Fatalf("hold error = %v, want %v", err, tt.err)
+			}
+			raw, err := h.store.Get(ctx, 1, leaseKeyB)
+			if kept := err == nil && held(raw, t0); kept != tt.wantKept {
+				t.Fatalf("lease kept = %v (%v), want %v", kept, err, tt.wantKept)
+			}
+			var waited time.Duration
+			h.onContention(func() {
+				waited += 20 * time.Second
+				h.clock.set(t0.Add(waited))
+			})
+			if err := s.hold(ctx, prTarget(headB), func(context.Context) error { return nil }); err != nil {
+				t.Fatalf("next hold: %v", err)
+			}
+			if want := map[bool]time.Duration{true: leaseTTL, false: 0}[tt.wantKept]; waited != want {
+				t.Errorf("next holder waited %v, want %v", waited, want)
+			}
+		})
+	}
+}
+
+// An upload decided from policy P1 waits while a sweep, which already reads P2, corrects the check to stale_inputs
+// under the same run identity. Inside the lease the upload's inputs are read again: a decision from inputs that are
+// no longer trusted writes nothing, so the correction stays.
+func TestStaleDecisionNeverReplacesNewerInputs(t *testing.T) {
+	const p1, p2 = policyDigest, "5555555555555555555555555555555555555555555555555555555555555555"
+	ctx := context.Background()
+	trustedWith := func(policy string) inputs.Trusted {
+		tr := trusted(settings.GateRequired)
+		tr.PolicyDigests = []string{policy}
+		return tr
+	}
+	boom := errors.New("protected ref unreadable")
+	for _, tt := range []struct {
+		name                       string
+		uploadPolicy, sweptPolicy  string
+		fresh                      inputs.Trusted
+		resolveErr                 error
+		wantErr                    error
+		wantConclusion, wantReason string
+	}{
+		{"inputs changed after the decision", p1, p2, trustedWith(p2), nil, ErrStaleInputs, "action_required", "stale_inputs"},
+		{"inputs unreadable again", p1, p2, inputs.Trusted{}, boom, boom, "action_required", "stale_inputs"},
+		{"decision from the current inputs", p2, p1, trustedWith(p2), nil, nil, "success", "healthy"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(headB)
+			stale := verdict.Without(verdict.ReasonStaleInputs)
+			swept := receiptFor(stale, 7, 1)
+			swept.PolicyDigest = tt.sweptPolicy
+			correction := Publication{Target: prTarget(headB), Outcome: stale, Receipt: swept, Trusted: trustedWith(tt.sweptPolicy)}
+			if err := h.pub.Publish(ctx, correction); err != nil {
+				t.Fatalf("sweep correction: %v", err)
+			}
+
+			healthy := outcome(verdict.Success, reasonHealthy)
+			decided := receiptFor(healthy, 7, 1)
+			decided.PolicyDigest = tt.uploadPolicy
+			upload := Publication{
+				Target: prTarget(headB), Identity: fullIdentity(), Outcome: healthy, Receipt: decided,
+				Report: loadReport(t, "healthy"), Trusted: trustedWith(tt.uploadPolicy),
+				Resolve: func(context.Context) (inputs.Trusted, error) { return tt.fresh, tt.resolveErr },
+			}
+			if err := h.pub.Publish(ctx, upload); !errors.Is(err, tt.wantErr) {
+				t.Errorf("upload Publish error = %v, want %v", err, tt.wantErr)
+			}
+			gate := h.checks.latest(t, headB, gateCheck)
+			if got, _ := parseReceipt(gate.Summary); gate.Conclusion != tt.wantConclusion || string(got.Reason) != tt.wantReason {
+				t.Errorf("gate shows %s/%s, want %s/%s", gate.Conclusion, got.Reason, tt.wantConclusion, tt.wantReason)
+			}
+			if _, err := h.store.Get(ctx, 1, leaseKeyB); !errors.Is(err, store.ErrNotFound) {
+				t.Errorf("lease kept after the upload: %v", err)
+			}
+		})
 	}
 }

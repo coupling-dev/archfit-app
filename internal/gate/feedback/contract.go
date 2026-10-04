@@ -3,6 +3,7 @@ package feedback
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
@@ -36,7 +37,16 @@ type Publication struct {
 	Receipt  Receipt
 	Report   *report.Report // nil when there is no usable report
 	Trusted  inputs.Trusted
+	// Resolve, when set, reads the trusted inputs again inside the head's publication lease, before anything is
+	// written. When the result no longer accepts a Receipt digest, the decision was computed from inputs older than
+	// the protected ref: Publish writes nothing and returns ErrStaleInputs, so it never replaces a publication
+	// computed from newer inputs. nil skips the check; sweep corrections, which are never a success, leave it nil.
+	Resolve func(context.Context) (inputs.Trusted, error)
 }
+
+// ErrStaleInputs is returned by Publish when Publication.Resolve shows that the trusted inputs changed after the
+// decision. Nothing was written; the caller decides again from the new inputs.
+var ErrStaleInputs = fmt.Errorf("feedback: trusted inputs changed after the decision: %w", errUnwritten)
 
 // CheckState is the gate check currently on a head SHA.
 type CheckState struct {

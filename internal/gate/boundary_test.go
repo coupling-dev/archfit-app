@@ -140,6 +140,8 @@ func TestTransientFailuresLeavePending(t *testing.T) {
 			}
 			w.noSuccess()
 
+			// The Action retries after Retry-After (60 s), when a lease kept by a failed write has expired.
+			w.now = w.now.Add(time.Minute)
 			w.wantAnswer(w.send(s), 200, "success", "healthy")
 			if done := w.wantGate(p, runCompleted, "success"); done.ID != pending.ID {
 				t.Errorf("the retry created check %d beside the pending %d", done.ID, pending.ID)
