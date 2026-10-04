@@ -87,6 +87,9 @@ func link(from, to string, count int, status LinkStatus) Link {
 	return Link{From: from, To: to, Status: status, Count: count}
 }
 
+// corpusEngine is the engine release that captured the shared wire corpus.
+const corpusEngine = "v2.3.1"
+
 // corpusReport decodes a report of the shared wire corpus; internal/wire/module.md owns its names.
 func corpusReport(t *testing.T, name string) report.Report {
 	t.Helper()
@@ -94,7 +97,7 @@ func corpusReport(t *testing.T, name string) report.Report {
 	if err != nil {
 		t.Fatalf("read corpus fixture: %v", err)
 	}
-	rep, err := report.Decode(raw)
+	rep, err := report.Decode(raw, corpusEngine)
 	if err != nil {
 		t.Fatalf("decode corpus fixture %s: %v", name, err)
 	}
