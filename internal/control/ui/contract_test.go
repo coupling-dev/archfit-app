@@ -272,6 +272,10 @@ func TestGraphPageBuildsFromArtifact(t *testing.T) {
 	if strings.Contains(body, `id="stale"`) {
 		t.Error("stale banner on a fresh report")
 	}
+	// hard_gates: fail. An observed link of this report is not proof that the policy permits it.
+	if !want.Incomplete || !strings.Contains(body, `id="incomplete"`) {
+		t.Errorf("Incomplete = %v and no incomplete banner for a report whose hard gates did not pass", want.Incomplete)
+	}
 	if strings.Contains(body, "MARKER-") {
 		t.Error("a field the decoder drops reached the page")
 	}

@@ -370,7 +370,9 @@ draft are gone. What the real engine changed in this design:
 - Nothing is persisted except KV keys under an installation prefix (and the system budget counter). No report, source, queue, or job table.
 - Logs and telemetry carry IDs, digests, outcomes and timings only: no report bodies, paths, or messages.
 - Handlers do their work in the request and are idempotent; GitHub holds the dedup keys.
-- GitHub rate-limit exhaustion leaves checks pending for the sweep; it never produces green.
+- GitHub rate-limit exhaustion before a decision is published leaves checks pending for the sweep; it never produces
+  green. A rate limit on the changed-file list, which only filters annotations, comes after the gate check is written
+  with its decided conclusion; the retry adds the annotations.
 - Origin is presentation only; enforcement is never filtered to introduced findings. No repository score.
 - Standard library first. Expected third-party dependencies: one YAML parser, nothing else until `docs/tech-stack.md` says so.
 - Targets **[default]**: feedback within 60 seconds of upload at p95; missed events repaired within one sweep interval.

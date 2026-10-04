@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -194,20 +195,44 @@ func TestWorkflowTemplate(t *testing.T) {
 		"audience":             `(?m)^\s+audience: "https://archfit\.example"$`,
 		"pull_request trigger": `(?m)^  pull_request:\s*$`,
 		"push to trunk":        `(?m)^  push:\n    branches:\n      - "trunk"$`,
-		"dispatch input":       `(?m)^  workflow_dispatch:\n    inputs:\n      discover:\n(.+\n)*?\s+type: boolean$`,
-		"discover passed on":   `discover: \$\{\{ inputs\.discover \}\}`,
-		"permissions":          `(?m)^permissions:\n  contents: read\n  id-token: write\n\n`,
+		"mode choice input": `(?m)^  workflow_dispatch:\n    inputs:\n      mode:\n(.+\n)*?\s+type: choice\n\s+options:\n` +
+			`\s+- report\n\s+- discovery\n\s+- baseline\n\s+default: report$`,
+		"discover input": `(?m)^      discover:\n(.+\n)*?\s+type: boolean\n\s+default: false$`,
+		// discover: true is how the App's Discover button dispatches; it must not collide with the mode default.
+		"mode passed on":     `(?m)^\s+mode: \$\{\{ inputs\.discover && 'discovery' \|\| inputs\.mode \}\}$`,
+		"discover passed on": `(?m)^\s+discover: \$\{\{ inputs\.discover \}\}$`,
+		"permissions":        `(?m)^permissions:\n  contents: read\n  id-token: write\n\n`,
 	} {
 		if !regexp.MustCompile(re).MatchString(got) {
 			t.Errorf("%s: no match for %s in\n%s", name, re, got)
 		}
 	}
 
+	// The Action runs only on these events and refuses every other one before the checkout.
+	on := regexp.MustCompile(`(?ms)^on:\n(.*?)^\S`).FindStringSubmatch(got)
+	if on == nil {
+		t.Fatalf("no on: block in\n%s", got)
+	}
+	var triggers []string
+	for _, m := range regexp.MustCompile(`(?m)^  ([a-z_]+):`).FindAllStringSubmatch(on[1], -1) {
+		triggers = append(triggers, m[1])
+	}
+	if want := []string{"pull_request", "push", "workflow_dispatch"}; !slices.Equal(triggers, want) {
+		t.Errorf("triggers = %q, want exactly %q", triggers, want)
+	}
+
 	header, _, _ := strings.Cut(got, "\nname:")
-	for _, want := range []string{".archfit.yaml", ".archfit-baseline.json", ".archfit-labels.yaml", "baseline_digest", "labels_digest", "base-ref"} {
-		if !strings.Contains(header, want) {
+	prose := strings.Join(strings.Fields(strings.ReplaceAll(header, "\n#", " ")), " ") // the comment lines as one text
+	for _, want := range []string{
+		".archfit.yaml", ".archfit-baseline.json", ".archfit-labels.yaml", "baseline_digest", "labels_digest",
+		"per file", "from the pull request head when the pull request changes", "from the tip of the base branch",
+	} {
+		if !strings.Contains(prose, want) {
 			t.Errorf("header comment does not name %q", want)
 		}
+	}
+	if strings.Contains(header, "base-ref") {
+		t.Error("header comment says the inputs come from the base ref only")
 	}
 	for _, line := range strings.Split(header, "\n") {
 		if !strings.HasPrefix(line, "#") {
@@ -215,7 +240,7 @@ func TestWorkflowTemplate(t *testing.T) {
 		}
 	}
 
-	for _, banned := range []string{"secrets.", "workflow_run", "pull_request_target", "write-all"} {
+	for _, banned := range []string{"secrets.", "workflow_run", "pull_request_target", "merge_group", "write-all"} {
 		if strings.Contains(got, banned) {
 			t.Errorf("workflow contains %q", banned)
 		}

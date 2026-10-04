@@ -35,7 +35,7 @@ tuned against rate limits and pilot behavior.
 - The rule order per pull request and which rule ends the evaluation.
 - What "stale" means for a receipt, and the expiry test based on the check's `StartedAt`.
 - The re-run guard that keeps re-runs to one per receipt.
-- How a `Without` publication keeps the previous run identity so that feedback updates in place.
+- How a `Without` publication keeps the previous run identity so that feedback updates the gate check in place.
 - The traversal order and its rotation.
 - Which errors stop the pass and which are skipped.
 
@@ -170,9 +170,10 @@ print "no upload" and label the digests "from the protected ref". The receipt:
 | `EarliestWaiverExpiry`                | `Trusted.EarliestWaiverExpiry`              |
 | `Conclusion`, `Reason`                | from the outcome (`ActionRequired`, `code`) |
 
-Copying the run identity keeps the `external_id`, so feedback updates the existing check in place instead
-of refusing the write as "older". Writing the current digests and the new reason is the de-duplication:
-the next pass finds the receipt neither stale nor expired.
+Copying the run identity keeps the `external_id`, so feedback updates the existing `archfit/gate` check in
+place instead of refusing the write as "older" (an `archfit/state` run that carries annotations is replaced by a
+new run without them; the sweep reads only `archfit/gate`). Writing the current digests and the new reason is the
+de-duplication: the next pass finds the receipt neither stale nor expired.
 
 ### Re-run guard
 

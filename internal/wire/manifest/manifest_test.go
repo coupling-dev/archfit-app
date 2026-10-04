@@ -341,7 +341,8 @@ func TestManifestMatchesFixtureProducers(t *testing.T) {
 
 func TestManifestHasNoPlaceholdersInRelease(t *testing.T) {
 	// The placeholders module.md documents, as "entry index field". Empty it in the commit that replaces them.
-	documented := []string{"0 action_ref", "0 image_digest", "1 action_ref", "1 image_digest"}
+	// The image digests are the published v2.3.1 ones; the Action commit waits for the Action's first release.
+	documented := []string{"0 action_ref", "1 action_ref"}
 
 	var file struct {
 		Entries []fileEntry `json:"entries"`

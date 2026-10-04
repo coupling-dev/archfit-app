@@ -536,6 +536,16 @@ func TestGateSummaryNamesBlockers(t *testing.T) {
 			}
 		}
 	})
+	t.Run("only when the outcome says findings block", func(t *testing.T) {
+		evidence := p
+		evidence.Outcome = outcome(verdict.ActionRequired, reasonCoverage)
+		if strings.Contains(renderGate(evidence), headBlocking) {
+			t.Errorf("an outcome without blocking_findings names active findings as blocking")
+		}
+		behind := p
+		behind.Outcome = outcome(verdict.ActionRequired, reasonIdentity, reasonBlocking)
+		mustContain(t, section(renderGate(behind), headBlocking), "`no_direct_b_dependency`")
+	})
 }
 
 func TestDigestSourceLabels(t *testing.T) {

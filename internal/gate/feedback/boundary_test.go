@@ -134,7 +134,8 @@ func TestRateLimitLeavesPendingAlone(t *testing.T) {
 		pendingKept bool
 	}{
 		{"CheckRuns", func(h *harness) { h.checks.failOnce("CheckRuns", api.ErrRateLimited) }, true},
-		{"ChangedFiles", func(h *harness) { h.pulls.failOnce("ChangedFiles", api.ErrRateLimited) }, true},
+		// The file list is read after the gate check is written: it only filters annotations.
+		{"ChangedFiles", func(h *harness) { h.pulls.failOnce("ChangedFiles", api.ErrRateLimited) }, false},
 		{"UpdateCheckRun", func(h *harness) { h.checks.failOnce("UpdateCheckRun", api.ErrRateLimited) }, true},
 		{"CreateComment", func(h *harness) { h.comments.failOnce("CreateComment", api.ErrRateLimited) }, false},
 	}

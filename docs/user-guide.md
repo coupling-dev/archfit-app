@@ -85,6 +85,13 @@ PR 1 adds these files:
 - `CODEOWNERS` entries for the protected paths
 
 The workflow uses no repository secret. It uses the job GitHub OIDC token.
+It runs on `pull_request`, `push` to the default branch, and `workflow_dispatch`. The Action refuses other events.
+Pull request and push runs report the architecture state. A manual dispatch selects `mode`: `discovery` proposes a
+policy, and `baseline` captures accepted debt as a workflow artifact. A dispatch with `mode: report` is refused.
+The `discover` input selects discovery; the status page button uses it.
+On a pull request, the Action reads `.archfit.yaml`, `.archfit-baseline.json`, and `.archfit-labels.yaml` per file:
+from the pull request head when the pull request changes that file, otherwise from the tip of the base branch. The
+App accepts a changed file only when an architecture owner approved the exact head commit.
 Discovery can also run in an existing customer workflow that uploads from a default-branch push.
 
 The status page derives its stage from GitHub on every read.
@@ -141,10 +148,14 @@ The App publishes these items on a pull request:
 
 What each item shows:
 
-- The `archfit/gate` summary names each blocking finding: the rule, the module pair, the first location, the first
-  eight characters of the finding ID, and the repair goal. It shows at most 20 and counts the rest.
+- When architecture findings block (reason `blocking_findings`), the `archfit/gate` summary names each blocking
+  finding: the rule, the module pair, the first location, the first eight characters of the finding ID, and the
+  repair goal. It shows at most 20 and counts the rest.
 - The `archfit/state` check annotates live findings on the files that the pull request changed. Accepted debt and
-  fixed findings get no annotation. Blocking findings come first. The check shows at most 150 annotations.
+  fixed findings get no annotation. Blocking findings come first. The check shows at most 150 annotations. A new
+  report or run attempt gets a new `archfit/state` check run with its own annotations, so annotations from an
+  earlier report do not stay; GitHub shows the newest run. If the App cannot read the list of changed files, the
+  check has no annotations for that upload.
 - The comment lists all findings, the evidence gaps, the validation commands, and a JSON block of agent tasks
   between `<!-- archfit:agent-tasks -->` markers. A coding agent on the pull request can act on that block.
 - The evidence gaps show analyzers that did not run (absent or disabled) on one line.
@@ -330,13 +341,15 @@ Open **Graph** for the repository. The page is read-only.
 
   | Status      | Meaning                                                                   |
   | ----------- | ------------------------------------------------------------------------- |
-  | `violation` | An active gate finding names the pair. The link is red                    |
-  | `accepted`  | A gate finding names the pair, and the baseline or a waiver accepts it    |
-  | `advisory`  | A finding that does not block names the pair                              |
-  | `observed`  | The engine observed the dependency, and no current finding names the pair |
+  | `violation` | An active gate finding, or a gate finding of an unknown status, names the pair. The link is red |
+  | `accepted`  | A gate finding names the pair, and the baseline or a waiver accepts it                          |
+  | `advisory`  | A finding that does not block names the pair                                                    |
+  | `observed`  | The engine observed the dependency, and no current finding names the pair                       |
 
 - The graph never shows a link as permitted. A forbidden dependency in the baseline shows as `accepted`.
 - A **Stale** banner appears when the policy differs from the latest report.
+- An **Incomplete** banner appears when the report's hard gates did not pass or the engine did not evaluate all
+  required rules. Then an `observed` link can still break a rule that was not evaluated.
 
 GitHub keeps report artifacts for a limited time. Run Archfit on the default branch when no report is available.
 

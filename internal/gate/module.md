@@ -192,8 +192,10 @@ The `Retry-After` value of 60 seconds is **[default]**.
 
 Rate-limit rule, one for the whole gate: `api.ErrRateLimited` during `Receive` (before a decision exists) is the
 429 `rate_limited` rejection from `gate/ingest`, passed through unchanged. `api.ErrRateLimited` after `Receive`
-(resolving inputs or publishing) is 503 with `Retry-After`. The Action retries both, the pending check stays
-pending, nothing green is written, and the sweep repairs what the retries do not. In the sweep the same error
+(resolving inputs or publishing) is 503 with `Retry-After`. The Action retries both, and the sweep repairs what the
+retries do not. A rate limit before the gate check is written leaves the pending check pending and writes nothing
+green. The one rate limit that `feedback` returns after the gate check is written, from the changed-file list that
+only filters annotations, leaves the gate check with the decided conclusion; the retry adds the annotations. In the sweep the same error
 stops the pass with `Summary.RateLimited`.
 The handler works under a 50 second deadline **[default]**, inside the 60 second feedback target.
 

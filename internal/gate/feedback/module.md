@@ -142,21 +142,33 @@ required, so `neutral` is allowed here and only here. It is a string literal in 
 
 ### Publish algorithm
 
-Order: the changed-file list (pull requests with a possible annotation only), gate check, state check, comment
-**[default: the required check first]**. Any error ends the call; a retry repeats the whole call safely.
+Order: gate check, the changed-file list (pull requests with a possible annotation only), state check, comment
+**[default: the required check first]**. The file list only filters annotations, so it is read after the gate check
+is written: a failure to read it never leaves the required check pending. On any `ChangedFiles` error the state check
+is written without annotations and the comment as usual; the call then returns `api.ErrRateLimited` when that was the
+error, so the Action retries, and `nil` after logging for any other error. Any other error ends the call; a retry
+repeats the whole call safely.
 
 For each check to write:
 
 1. `Checks.CheckRuns(repo, Target.HeadSHA, name)`; take the run with the highest ID **[default]**.
-2. None → `CreateCheckRun` (completed).
-3. Existing is `in_progress`, or its receipt marker is absent or unreadable → `UpdateCheckRun`.
-4. Existing receipt has a higher `(RunID, RunAttempt)` pair than `p.Receipt` → write nothing for this check.
-5. Otherwise (same `external_id`, same pair, or lower pair) → `UpdateCheckRun` in place.
+2. None → create a run (below).
+3. Existing receipt has a higher `(RunID, RunAttempt)` pair than `p.Receipt` → write nothing for this check. An
+   `in_progress` run, or one whose receipt marker is absent or unreadable, is never newer.
+4. `archfit/gate` → `UpdateCheckRun` in place, the pending run included. The gate check carries no annotation.
+5. `archfit/state` with the same `external_id` and `AnnotationCount` equal to the number of annotations this
+   publication would send → `UpdateCheckRun` in place without annotations: the run already holds them.
+6. Otherwise → create a new `archfit/state` run. GitHub appends the annotations of every request and never removes
+   one, so an update in place could only add annotations to stale ones: annotations go only on a run this call
+   creates. A new attempt, a new report on the same head, a sweep publication without a report over a run with
+   annotations, and a retry after a failed file list each get a new state run; the newest is the one GitHub shows.
 
 Every create and update sets `Status = "completed"`, `ExternalID`, `StartedAt = now()` **[default: the
-check's `StartedAt` is the time of the last publication; the sweep relies on it]**, title, summary and,
-for `archfit/state`, up to 50 annotations. More annotations follow in further `UpdateCheckRun` calls on the same
-run, 50 each, with the same fields (see Annotations below).
+check's `StartedAt` is the time of the last publication; the sweep relies on it]**, title and summary. A created
+`archfit/state` run carries up to 50 annotations; more follow in further `UpdateCheckRun` calls on that run, 50 each,
+with the same fields (see Annotations below). Before each further batch `CheckRuns` is read again; when the newest run
+is not the created one, or its receipt is newer than `p.Receipt`, the remaining batches are dropped, so an older
+publication never overwrites a newer summary.
 
 Comment (pull requests with settings only):
 
@@ -190,15 +202,16 @@ receipt marker. Block G is in the gate summary only.
    then `Reasons[0]`: code, category, `Detail`, `Next`.
 2. Further reasons, one line each (for example unevaluated rules beside a blocker).
 
-   G. Blocking findings (gate summary only), so the required check names what blocks: every finding for which
+   G. Blocking findings (gate summary only, and only when `Outcome.Reasons` holds `blocking_findings`: an outcome
+   that blocks on evidence, governance or subscription alone names no finding as blocking), so the required check
+   names what blocks: every finding for which
    `Finding.Active()` is true, in report order, one line each: rule ID, `Edge.From.Module` → `Edge.To.Module`
    ("(no module)" when empty), the first location as `file:line` (the file alone for line 0; "no location reported"
    when `locations: []`), the first 8 characters of the finding ID (the prefix the engine prints), and the `Goal` of
    the first agent task with that `FindingID` ("none reported" without one). At most 20, then "and N more blocking
-   findings" **[default]**. When no finding is active but `Outcome.Reasons` holds `blocking_findings` (a hard gate
-   that failed without a finding, for example a metric ratchet), the block is the line "No active gate finding is
-   listed…" instead; otherwise, without a report, or when suspended, it is omitted. Display only: the conclusion
-   still comes from `Outcome`.
+   findings" **[default]**. When no finding is active (a hard gate that failed without a finding, for example a
+   metric ratchet), the block is the line "No active gate finding is listed…" instead. Without `blocking_findings`,
+   without a report, or when suspended, it is omitted. Display only: the conclusion still comes from `Outcome`.
 3. `Trusted.Entitlement.Notice`, when `WarnFrom` is set, `now()` is at or past it, and the notice is not empty.
 4. Waiver notice section (owned by `Warn`).
 5. Findings: blocking first. A finding is shown as blocking when `Finding.Active()` of `wire/report` is true
@@ -262,12 +275,13 @@ Annotations: only on `archfit/state`; from `Finding.Locations{File, Line}` only;
 `baseline` and `waived`, and `fixed` findings get none; a status this version does not know is live); findings shown
 as blocking first, then report order; level `failure` for those, `warning` otherwise; message = rule ID and `Why`;
 `Line == 0` is sent as line 1. A finding with `locations: []` gets no annotation. On a pull request only locations in
-files the PR changed are annotated: `Publish` calls `Pulls.ChangedFiles` once, before any write, and only when some
-annotation is possible; a `truncated` list means any file may have changed, so every location counts; its error is
-returned unchanged and nothing is written. A push annotates every location. At most 150 annotations in total
-**[default]**, sent 50 per request (GitHub's limit): the create or update of the check carries the first 50, and
-further updates of the same run carry the rest, each with the same title and summary. GitHub appends the
-annotations of each request.
+files the PR changed are annotated: `Publish` calls `Pulls.ChangedFiles` once, after the gate check and before the
+state check, and only when some annotation is possible; a `truncated` list means any file may have changed, so every
+location counts; on its error the state check gets no annotation (see Publish algorithm). A push annotates every
+location. At most 150 annotations in total **[default]**, sent 50 per request (GitHub's limit): the create of the
+state run carries the first 50, and further updates of the same run carry the rest, each with the same title and
+summary. GitHub appends the annotations of each request, so annotations are only ever sent to a run this
+publication created.
 
 Size: summaries and the comment stay at or under 65 535 bytes. The receipt marker and blocks 1, 2, 7, 8 are
 budgeted first and never cut. Of the rest, the budget is handed out in this order: block 6, block 9, block 5, block
@@ -823,6 +837,9 @@ type CheckRun struct {
     Summary     string // markdown, max 65535 bytes
     Annotations []Annotation
     StartedAt   time.Time
+    // AnnotationCount is read-only: the annotations GitHub holds for the run, set by CheckRuns.
+    // Create and update never send it; GitHub appends the Annotations of each request.
+    AnnotationCount int
 }
 
 type Checks interface {
@@ -870,10 +887,14 @@ type Comments interface {
   head never touches the comment. Check runs are per SHA, so an old head's checks cannot affect the new head.
 - Exactly one comment per PR under sequential delivery. Two concurrent first publications may create two;
   later calls update only the lowest-ID one **[default, stated limit]**. The same limit holds for check runs (highest ID wins).
-- GitHub appends the annotations of every update to the run, and the run is updated in place per head SHA. A
-  repeated delivery, a retry after a partial publication, or a new run on the same head therefore adds the same
-  annotations again **[stated limit]**. Upgrade trigger: duplicate annotations reported by a pilot; the fix is a new
-  check run per `(RunID, RunAttempt)`, which changes how `State` and the sweep find the receipt.
+- Annotations are sent only to an `archfit/state` run the same call created, because GitHub appends the annotations
+  of every update. A repeated delivery updates the state run in place only when it already holds the publication's
+  annotations (same `external_id`, equal `AnnotationCount`); a new attempt, a new report, a sweep publication over an
+  annotated run, or a retry after a missing file list creates a new state run. Old state runs stay on the head SHA;
+  GitHub shows the newest. `State` and the sweep read only `archfit/gate`, which is still updated in place, so the
+  state run identity does not affect them. Stated limits **[default]**: an equal annotation count stands in for equal
+  annotations; and a newer publication that lands between the re-read and a further annotation batch of an older one
+  can still see that batch appended to the older run, never to its own.
 - Never print "verified", a score, a grade or a percentage of health. Trust is "customer-attested".
   Provenance is necessary, not sufficient.
 - Never invent a location, a repair route or independent evidence. No annotation without a `Location`.
@@ -891,8 +912,10 @@ type Comments interface {
 - No LLM, no network other than the three role interfaces, no Store. Imports: standard library,
   `gate/verdict`, `gate/inputs`, `wire/report`, `wire/settings`, `wire/manifest`, `github/api`. Never `control`, `app`, LLM or UI packages.
 - Rendering is deterministic: equal `Publication` and clock give byte-identical text.
-- `api.ErrRateLimited` and other API errors are returned unchanged. A failed publication leaves the pending
-  check pending; it never produces green.
+- `api.ErrRateLimited` and other API errors are returned unchanged, with one exception: a `ChangedFiles` error other
+  than `ErrRateLimited` is logged and the call returns `nil`, because the file list only filters annotations. A
+  failed publication never produces green; one that fails before the gate check is written leaves the pending check
+  pending.
 - Logs (`log/slog` default logger **[default]**): repository ID, PR number, head SHA, run ID, attempt, digests,
   conclusion, reason codes, action taken (`created`, `updated`, `skipped_newer`, `skipped_old_head`), timings.
   Never bodies, paths, messages or names.
@@ -927,8 +950,8 @@ Golden files hold rendered bodies for the wire fixtures.
   **Scenario**: coverage rows `ok`, `absent` without a reason (twice), `disabled` with a reason, `timed out` with a reason, `absent` with a reason; producer rows that repeat four of them, one without a coverage row (`git-history: absent`) and one whose status differs from its coverage row; rendered as comment and state summary.
   **Expected behavior**: full lines for the `timed out` row, the `absent` row with a reason, the producer without a coverage row and the producer whose status differs; one line "Analyzers that did not run (absent or disabled): …" naming the reasonless `absent` and the `disabled` tools in report order; no line for a repeated producer, no disabled reason text, no "None reported".
 - **Test name**: `TestGateSummaryNamesBlockers`
-  **Scenario**: a report with an advisory, an accepted gate finding and three active gate findings (one located with two locations and two agent tasks, one whole-file with no source module and no task, one without a location); 25 active findings; a blocking outcome without an active finding; a healthy outcome, a suspended outcome and a nil report.
-  **Expected behavior**: block G in the gate summary only, in report order, with rule, module pair, first location, 8-character ID prefix and the first task's goal, "(no module)", "no location reported" and "Goal: none reported" where they apply; never the advisory or the accepted finding; the receipt marker stays last; 20 lines then "and 5 more blocking findings"; the "No active gate finding is listed" line; no block in the last three.
+  **Scenario**: a report with an advisory, an accepted gate finding and three active gate findings (one located with two locations and two agent tasks, one whole-file with no source module and no task, one without a location); 25 active findings; a blocking outcome without an active finding; a healthy outcome, a suspended outcome and a nil report; the active findings under an `action_required` outcome without `blocking_findings`, and under one with `blocking_findings` as a later reason.
+  **Expected behavior**: block G in the gate summary only, in report order, with rule, module pair, first location, 8-character ID prefix and the first task's goal, "(no module)", "no location reported" and "Goal: none reported" where they apply; never the advisory or the accepted finding; the receipt marker stays last; 20 lines then "and 5 more blocking findings"; the "No active gate finding is listed" line; no block for healthy, suspended, nil report, or an outcome without `blocking_findings`; the block when `blocking_findings` is a later reason.
 - **Test name**: `TestDigestSourceLabels`
   **Scenario**: an upload whose claims were accepted; an upload with `baseline_mismatch`; one with `labels_mismatch`; the zero `Identity` (a `sweep.Without` publication); no baseline and no labels file; rendered as comment, gate summary and state summary.
   **Expected behavior**: "stated by the producer" on both lines; "from the protected ref" on the mismatched line only; "from the protected ref; no upload" on both lines; "no baseline" and "no labels file" without a label. "stated by the producer" never appears without an upload.
@@ -967,7 +990,7 @@ Golden files hold rendered bodies for the wire fixtures.
   **Expected behavior**: `archfit/gate` conclusion is one of `success`, `failure`, `action_required`, equal to the outcome; `archfit/state` is `action_required` whenever the outcome is.
 - **Test name**: `TestRateLimitLeavesPendingAlone`
   **Scenario**: `ErrRateLimited` from `CheckRuns`, from `ChangedFiles`, from `UpdateCheckRun`, from `CreateComment`.
-  **Expected behavior**: the error is returned with `errors.Is` intact; the pending check is unchanged; a retry completes the publication without duplicates.
+  **Expected behavior**: the error is returned with `errors.Is` intact; the pending check is unchanged when the error comes before the gate check is written (`CheckRuns`, `UpdateCheckRun`); no failed publication produces green; a retry completes the publication with one gate check and one comment.
 - **Test name**: `TestSummaryLimitIsRespected`
   **Scenario**: the fake `Checks` rejects summaries over 65 535 bytes, as the real client does.
   **Expected behavior**: no publication of any fixture or stress input is rejected.
@@ -981,8 +1004,17 @@ Golden files hold rendered bodies for the wire fixtures.
 ### Behavior Tests
 
 - **Test name**: `TestRepeatedDeliveryDoesNotSpam` (T11)
-  **Scenario**: the same publication five times; then the same run with a new attempt.
-  **Expected behavior**: one comment and one check run per name; the comment is updated once for the new attempt; identical bodies cause no comment update call.
+  **Scenario**: the same publication, with two annotated locations in a changed file, five times; then the same run with a new attempt. The fake `Checks` appends the annotations of every update and lists only their count, as GitHub does.
+  **Expected behavior**: one comment and one check run per name, the state run holding exactly two annotations; identical bodies cause no comment update call. The new attempt updates the gate run and the comment once and creates a second state run, which holds exactly two annotations.
+- **Test name**: `TestRepublishWithoutReportDropsAnnotations`
+  **Scenario**: an annotated publication, then twice a sweep-style publication with the same run identity, no report and `stale_inputs`.
+  **Expected behavior**: one gate run updated to `action_required`; a second state run, `action_required`, with no annotation; the repeat writes no third state run.
+- **Test name**: `TestNewerPublicationStopsAnnotationBatches`
+  **Scenario**: a push publication with 121 annotations; right after its state run is created, a newer run (run 8) is stored on the head.
+  **Expected behavior**: one request of 50 annotations and no update; the newer run's summary and annotations are unchanged.
+- **Test name**: `TestChangedFilesErrorStillPublishes`
+  **Scenario**: in required mode with a pending gate check, `ChangedFiles` fails once with `ErrRateLimited`, and once with another error; then a retry.
+  **Expected behavior**: the gate check is completed as `failure`, one state run without annotations and the comment are written; `ErrRateLimited` is returned, the other error is not. The retry adds a state run with the two annotations and no second gate check or comment.
 - **Test name**: `TestOldRunCannotOverwriteNewerHead` (T11, T03)
   **Scenario**: publish run 7 for head B; then run 6 for head B; then run 5 for the old head A while the PR head is B.
   **Expected behavior**: head B feedback is unchanged; head A gets its own checks; the comment still describes head B run 7.

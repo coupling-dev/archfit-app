@@ -3,6 +3,7 @@ package feedback
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -98,8 +99,11 @@ func renderGate(p Publication) string {
 
 // blockersBlock names, in the gate summary, the findings shown as blocking (Finding.Active): rule, module pair,
 // first location, finding ID prefix and the goal of its agent task, in report order. Display only, like block 5.
+// It is written only when the outcome holds blocking_findings: otherwise nothing blocks on architecture grounds.
 func blockersBlock(p Publication) string {
-	if p.Report == nil || suspended(p.Outcome) {
+	if p.Report == nil || suspended(p.Outcome) || !slices.ContainsFunc(p.Outcome.Reasons, func(r verdict.Reason) bool {
+		return r.Code == verdict.ReasonBlockingFindings
+	}) {
 		return ""
 	}
 	var active []report.Finding
@@ -109,12 +113,7 @@ func blockersBlock(p Publication) string {
 		}
 	}
 	if len(active) == 0 {
-		for _, r := range p.Outcome.Reasons {
-			if r.Code == verdict.ReasonBlockingFindings {
-				return headBlocking + "\n\n" + noActiveBlocker
-			}
-		}
-		return ""
+		return headBlocking + "\n\n" + noActiveBlocker
 	}
 	goals := map[string]string{}
 	for _, t := range p.Report.AgentTasks {

@@ -154,12 +154,20 @@ parse counts as stalled.
 - If `Progress` is past `installed` → `ErrAlreadyOnboarded`; nothing is written.
 - `.archfit-app.yaml` = `settings.Render(Settings{Version: 1, Owners: owners, Gate: GateAdvisory, Workflow: <workflow path>, DataMode: DataCustomer | DataManaged})`.
 - Workflow file from the template with `manifest.Current()`: Action pinned to `ActionRef` (commit SHA), `EngineVersion`,
-  `ImageDigest`; triggers `pull_request`, `push` to `r.DefaultBranch`, `workflow_dispatch` with boolean input `discover`;
+  `ImageDigest`; triggers exactly `pull_request`, `push` to `r.DefaultBranch` and `workflow_dispatch` (the Action refuses
+  every other event, `workflow_run`, `pull_request_target` and `merge_group` included); dispatch inputs `mode` (choice
+  `report` | `discovery` | `baseline`, default `report`) and boolean `discover` (default `false`), passed to the Action as
+  `mode: ${{ inputs.discover && 'discovery' || inputs.mode }}` and `discover: ${{ inputs.discover }}`. `discover: true`
+  wins over `mode`, because the UI dispatches discovery with `{"discover": "true"}` only and the Action refuses
+  `discover: true` beside `mode: report`; on `pull_request` and `push` both are empty, which the Action reads as
+  `report`. A dispatched `report` is refused by the Action: reports come from `pull_request` and `push` runs.
   `permissions: contents: read, id-token: write`; no secrets; no step runs repository scripts.
   `Deps.BaseURL` is written as the Action's upload endpoint and OIDC audience. **[default: Action input names pinned in the plan]**
-  Action obligation, stated in the workflow's header comment and the PR body: the Action runs the engine with the base-ref
-  `.archfit.yaml`, `.archfit-baseline.json` and `.archfit-labels.yaml`, and fills the envelope's `baseline_digest` and `labels_digest`
-  (bare hex SHA-256, `""` when the file is absent) from exactly those files. Onboarding computes no digest.
+  Action obligation, stated in the workflow's header comment and the PR body: the Action reads `.archfit.yaml`,
+  `.archfit-baseline.json` and `.archfit-labels.yaml` per file, on a pull request from the PR head when the PR changes that
+  file and otherwise from the tip of the base branch (a push or dispatch run from the branch it ran on), and fills the
+  envelope's `baseline_digest` and `labels_digest` (bare hex SHA-256, `""` when the file is absent) from exactly the files
+  the engine read. The App accepts a head digest only with owner approval of the exact head SHA. Onboarding computes no digest.
 - CODEOWNERS: the first existing of `.github/CODEOWNERS`, `CODEOWNERS`, `docs/CODEOWNERS`, else a new `.github/CODEOWNERS`.
   Append, under the line `# Archfit protected paths`, one line per protected path — the five are `/` + `PolicyPath`, `BaselinePath`,
   `LabelsPath`, `settings.Path` and the workflow path: `/.archfit.yaml`, `/.archfit-baseline.json`, `/.archfit-labels.yaml`,
@@ -674,6 +682,9 @@ type CheckRun struct {
     Summary     string // markdown, max 65535 bytes
     Annotations []Annotation
     StartedAt   time.Time
+    // AnnotationCount is read-only: the annotations GitHub holds for the run, set by CheckRuns.
+    // Create and update never send it; GitHub appends the Annotations of each request.
+    AnnotationCount int
 }
 
 type Checks interface {
@@ -829,7 +840,7 @@ Test doubles only at boundaries: in-memory GitHub roles (`Repos`, `Actions`, `Ch
   **Expected behavior**: no managed diagnostic; running; stalled; failed with the code; review PR; stalled; no managed diagnostic. Render then parse round-trips.
 - **Test name**: `TestWorkflowTemplate`
   **Scenario**: render with a manifest entry and default branch `trunk`.
-  **Expected behavior**: Action pinned by 40-hex `ActionRef`; image digest and engine version present; `Deps.BaseURL` as endpoint and audience; triggers `pull_request`, `push` on `trunk`, `workflow_dispatch` input `discover`; `id-token: write`, `contents: read`; the header comment names the base-ref files and the two digests the Action reports; no `secrets.`, no `run:` step, no `workflow_run`, no `pull_request_target`.
+  **Expected behavior**: Action pinned by 40-hex `ActionRef`; image digest and engine version present; `Deps.BaseURL` as endpoint and audience; triggers exactly `pull_request`, `push` on `trunk` and `workflow_dispatch`; dispatch inputs `mode` (choice `report`, `discovery`, `baseline`, default `report`) and boolean `discover`, passed as `mode: ${{ inputs.discover && 'discovery' || inputs.mode }}` and `discover: ${{ inputs.discover }}`; `id-token: write`, `contents: read`; the header comment names the three files, says they are read per file (PR head when the PR changes the file, else the base branch tip), never "base-ref", and names the two digests the Action reports; no `secrets.`, no `run:` step, no `workflow_run`, no `pull_request_target`, no `merge_group`.
 - **Test name**: `TestCodeownersAppend`
   **Scenario**: table: no file; file in `.github/`; file at root only; file without trailing newline; entries already present; team owner.
   **Expected behavior**: original bytes are a prefix of the result; five lines added once (policy, baseline, labels, settings, workflow); second run adds nothing; location precedence honored; `@org/team` form used.

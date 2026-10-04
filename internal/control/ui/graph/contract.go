@@ -19,7 +19,7 @@ type Node struct {
 type LinkStatus string
 
 const (
-	StatusViolation LinkStatus = "violation" // an active gate finding (wire/report Finding.Active) names the pair
+	StatusViolation LinkStatus = "violation" // an active gate finding (wire/report Finding.Active), or a gate finding of unknown status, names the pair
 	StatusAccepted  LinkStatus = "accepted"  // a gate finding accepted by the baseline or a waiver names the pair
 	StatusAdvisory  LinkStatus = "advisory"  // another finding that is not fixed names the pair
 	StatusObserved  LinkStatus = "observed"  // a seam that no current finding names
@@ -32,18 +32,24 @@ type Link struct {
 }
 
 // View is a read-only picture. Stale is true when the policy text no longer matches the report's config_hash.
+// Incomplete is true when the report's hard gates did not pass or a required rule was not evaluated: an observed
+// link may then still break a rule.
 type View struct {
-	Nodes []Node
-	Links []Link
-	Stale bool
+	Nodes      []Node
+	Links      []Link
+	Stale      bool
+	Incomplete bool
 }
 
-// Finding vocabulary of wire/report that the status reads; Finding.Active stays the one rule for a violation.
+// Finding vocabulary of wire/report that the status reads. Finding.Active decides an active violation; a gate
+// finding of a status outside this vocabulary is a violation too (fail safe).
 const (
 	kindGate       = "gate"
 	statusBaseline = "baseline"
 	statusWaived   = "waived"
 	statusFixed    = "fixed"
+
+	hardGatesPass = "pass" // Decision.HardGates; any other value, an unknown one included, is incomplete
 )
 
 type pair struct{ from, to string }
@@ -95,7 +101,12 @@ func Build(rep report.Report, policyText []byte) View {
 	}
 
 	// Non-nil slices: the parent serializes the view to JSON, where an empty graph is [] and not null.
-	v := View{Nodes: make([]Node, 0, len(nodes)), Links: make([]Link, 0, len(links)), Stale: stale}
+	v := View{
+		Nodes:      make([]Node, 0, len(nodes)),
+		Links:      make([]Link, 0, len(links)),
+		Stale:      stale,
+		Incomplete: rep.Decision.HardGates != hardGatesPass || len(rep.Decision.UnevaluatedRequiredRules) > 0,
+	}
 	for _, n := range nodes {
 		v.Nodes = append(v.Nodes, n)
 	}
@@ -110,8 +121,9 @@ func Build(rep report.Report, policyText []byte) View {
 }
 
 // findingStatus is the status one finding gives its pair. A fixed finding says nothing about the current tree:
-// it gives StatusObserved, which never creates a link. A kind or status this version does not know is advisory,
-// so a finding is never drawn as a plain observation.
+// it gives StatusObserved, which never creates a link. A gate finding whose status this version does not know is a
+// violation, fail safe like feedback, which treats an unknown status as live. A kind this version does not know is
+// advisory, so a finding is never drawn as a plain observation.
 func findingStatus(f report.Finding) LinkStatus {
 	switch {
 	case f.Active():
@@ -120,6 +132,8 @@ func findingStatus(f report.Finding) LinkStatus {
 		return StatusObserved
 	case f.Kind == kindGate && (f.Status == statusBaseline || f.Status == statusWaived):
 		return StatusAccepted
+	case f.Kind == kindGate:
+		return StatusViolation
 	default:
 		return StatusAdvisory
 	}

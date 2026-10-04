@@ -153,8 +153,9 @@ func New(c Config, o OAuth, u Users, repos Repos, now func() time.Time) (Session
 - **Volatility**: high
 - **Balanced?**: yes — parent and child
 - **Shared knowledge**: ui supplies a decoded `Report` and the policy text, gets a `View`, serializes it as JSON into
-  the page, links each node to `/r/{o}/{n}/policy#L<PolicyLine>` when the line is not 0, and shows the stale banner
-  when `Stale`. The template and the script use a link's `Status` as its CSS class and print it as is.
+  the page, links each node to `/r/{o}/{n}/policy#L<PolicyLine>` when the line is not 0, shows the stale banner
+  when `Stale`, and the incomplete banner (`id="incomplete"`) when `Incomplete`. The template and the script use a
+  link's `Status` as its CSS class and print it as is.
 
 <!-- contract: View, Node, Link, LinkStatus, Build — restated from internal/control/ui/graph/module.md -->
 ```go
@@ -168,7 +169,7 @@ type Node struct {
 type LinkStatus string
 
 const (
-    StatusViolation LinkStatus = "violation" // an active gate finding (wire/report Finding.Active) names the pair
+    StatusViolation LinkStatus = "violation" // an active gate finding (wire/report Finding.Active), or a gate finding of unknown status, names the pair
     StatusAccepted  LinkStatus = "accepted"  // a gate finding accepted by the baseline or a waiver names the pair
     StatusAdvisory  LinkStatus = "advisory"  // another finding that is not fixed names the pair
     StatusObserved  LinkStatus = "observed"  // a seam that no current finding names
@@ -181,10 +182,13 @@ type Link struct {
 }
 
 // View is a read-only picture. Stale is true when the policy text no longer matches the report's config_hash.
+// Incomplete is true when the report's hard gates did not pass or a required rule was not evaluated: an observed
+// link may then still break a rule.
 type View struct {
-    Nodes []Node
-    Links []Link
-    Stale bool
+    Nodes      []Node
+    Links      []Link
+    Stale      bool
+    Incomplete bool
 }
 
 // Build is pure. Nodes come from the policy's modules, links from the report's seams and findings; a link's
@@ -510,6 +514,9 @@ type CheckRun struct {
     Summary     string // markdown, max 65535 bytes
     Annotations []Annotation
     StartedAt   time.Time
+    // AnnotationCount is read-only: the annotations GitHub holds for the run, set by CheckRuns.
+    // Create and update never send it; GitHub appends the Annotations of each request.
+    AnnotationCount int
 }
 
 type Checks interface {
@@ -892,7 +899,8 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   "the draft does not parse" **[default]**. No run or artifact (GitHub retention): "no report available". Decode error:
   "report unavailable"; never a partial graph. The `View` is embedded as JSON in a `script type="application/json"` element.
   Each link is drawn and listed with its `Status` (`violation`, `accepted`, `advisory`, `observed`), which is also its CSS
-  class; the page never calls a link "permitted".
+  class; the page never calls a link "permitted". When `View.Incomplete`, a banner says the report's hard gates did not
+  pass or not all required rules were evaluated, so an observed link can still break a rule.
 - Assist: authorize `write`; if `content` differs from the file at `head_sha`, save it first (same rules as Save) and use the
   new head; then `Assist.Propose(mode, Request{Repo, Branch, HeadSHA, Instruction, By: login})`. Managed is offered only when
   settings say `managed` and `Consents.Has(ConsentManagedLLM)`; assist enforces both anyway. Managed success: redirect to the
@@ -994,9 +1002,10 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Expected behavior**: one branch, one draft PR, one commit; the second save (empty `head_sha`, identical content) is a
   no-op with a notice, not a `409`; the same retry with different content is `409`.
 - **Test name**: `TestGraphPageBuildsFromArtifact`
-  **Scenario**: the healthy wire fixture as the `archfit-report` artifact of the latest default-branch run.
+  **Scenario**: the blocked wire fixture (`hard_gates: fail`, no baseline) as the `archfit-report` artifact of the latest default-branch run.
   **Expected behavior**: the embedded JSON equals `graph.Build(report, policy)`; node links point to `#L<line>`; no stale banner;
-  marker strings placed in fields the decoder drops (`matched_by`, measurement, task declarations) appear nowhere in the page.
+  the incomplete banner; marker strings placed in fields the decoder drops (`matched_by`, measurement, task declarations)
+  appear nowhere in the page.
 - **Test name**: `TestConsentRecordAndRevoke`
   **Scenario**: an administrator records `managed_llm`, then revokes it.
   **Expected behavior**: `Consents.Has` is true then false for the installation of the authorized `Repo`; `By` is the session login.
@@ -1060,7 +1069,8 @@ their interfaces except where a test says otherwise. The clock is injected.
   commit; the PR is not marked ready.
 - **Test name**: `TestInvalidYAMLIsRefusedAndGraphGoesStale` (T17)
   **Scenario**: save broken YAML; then open the graph while the draft differs from the report's policy.
-  **Expected behavior**: `422` and no commit; the graph page shows the stale banner and still draws the report. Then a broken
+  **Expected behavior**: `422` and no commit; before the edit the healthy report shows no incomplete banner; the graph page
+  shows the stale banner and still draws the report. Then a broken
   draft is pushed on GitHub: the graph page draws from the default-branch policy with the stale banner and "the draft does not parse".
 - **Test name**: `TestUIAndGitHubFirstEditsShareOnePath` (T17)
   **Scenario**: one policy edit through the editor, one pushed directly to the draft branch on GitHub.

@@ -116,7 +116,8 @@ a `truncated` result: it returns the paths read so far with `truncated` true.
   false with `nil` error; a team string without exactly one `/` → error.
 - `CheckRuns`: `GET /repos/{r}/commits/{sha}/check-runs?check_name=&app_id=<own>&filter=latest`: only this
   App's check runs, so another app's check of the same name is never seen (a run whose `app.id` is not the
-  App's is dropped as well); latest per name is GitHub's `filter=latest`; annotations are not read back.
+  App's is dropped as well); latest per name is GitHub's `filter=latest`; annotations are not read back, only
+  their number: `AnnotationCount` = `output.annotations_count`. Create and update never send that field.
 - `CreateCheckRun`: `POST /repos/{r}/check-runs`; `UpdateCheckRun`: `PATCH /repos/{r}/check-runs/{id}`. An
   annotation maps to `start_line = end_line = Line`, and `Line` 0 to line 1. GitHub appends annotations on update.
 - `AppComments`: `GET /repos/{r}/issues/{n}/comments`, kept when `user.login` is the bot login.
@@ -246,6 +247,9 @@ type CheckRun struct {
     Summary     string // markdown, max 65535 bytes
     Annotations []Annotation
     StartedAt   time.Time
+    // AnnotationCount is read-only: the annotations GitHub holds for the run, set by CheckRuns.
+    // Create and update never send it; GitHub appends the Annotations of each request.
+    AnnotationCount int
 }
 
 type Checks interface {
@@ -402,9 +406,9 @@ type TokenSource interface {
 - **Balanced?**: Yes
 - **Shared knowledge**: role interfaces only. `ingest`: `Repos`, `Pulls`, `Actions`. `inputs`: `Repos`, `Pulls`.
   `feedback`: `Checks`, `Comments`, `Pulls`. `sweep`: `Repos`, `Pulls`, `Actions`. They rely on: `ErrRateLimited`
-  leaves checks pending for the sweep; lists are complete or an error; `Reviews` order; `ChangedFiles` includes
-  rename sources and `truncated` means "assume any path changed"; `CheckRuns` holds this App's runs only;
-  GitHub appends annotations.
+  is returned after bounded backoff, so the caller can stop before it writes and leave checks pending for the sweep;
+  lists are complete or an error; `Reviews` order; `ChangedFiles` includes rename sources and `truncated` means
+  "assume any path changed"; `CheckRuns` holds this App's runs only, with `AnnotationCount`; GitHub appends annotations.
 
 ### gate and control façades, app
 
@@ -528,7 +532,7 @@ One test per role interface; each asserts method, route, credential, request bod
 - **Test name**: `TestChecksContract`
   **Scenario**: create `in_progress`; update to `completed` with 50 annotations (one with `Line` 0); list by name.
   **Expected behavior**: request bodies match; line 0 sent as 1; only this App's runs listed; `ID`, `ExternalID`,
-  `Summary`, `StartedAt` mapped.
+  `Summary`, `StartedAt` and `AnnotationCount` (from `output.annotations_count`) mapped.
 - **Test name**: `TestCommentsContract`
   **Scenario**: a thread with user comments, another bot's comments and two of the App's; create; update.
   **Expected behavior**: only the App's two returned; `GET /app` called once across calls.

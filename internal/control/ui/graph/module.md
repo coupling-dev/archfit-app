@@ -21,6 +21,8 @@ not a permitted dependency. Without it this logic would sit in templates and Jav
 - Give each link its `Status` from the report's findings on that module pair: `violation`, `accepted`, `advisory`, or
   `observed`.
 - Set `Stale` when the policy text is not the policy the report was computed from, or does not parse.
+- Set `Incomplete` when the report's hard gates did not pass or a required rule was not evaluated, so that an
+  `observed` link is not read as clean.
 
 Graph never edits YAML and never proposes a change. Visual edits are deferred (decisions.md §6).
 
@@ -35,10 +37,13 @@ Layout, colors and interaction are not here; they are the parent's templates and
 - The status a finding gives its pair, and the precedence when several findings name it. Which findings are active
   (a violation) is not graph's knowledge: `report.Finding.Active()` of wire/report decides, the same rule the gate's
   feedback uses. Graph knows only the accepted statuses (`baseline`, `waived`), the `fixed` status and the `gate`
-  kind, the display vocabulary feedback reads too.
+  kind, the display vocabulary feedback reads too. A `gate` finding with any other status is drawn as a violation
+  (fail safe), as feedback treats an unknown status as live.
 - How duplicate seams, seams to undeclared modules, and findings without a seam are normalized.
 - The ordering rule of the output.
 - The meaning of `Stale`: a digest comparison plus "the text parses", not a YAML comparison.
+- The meaning of `Incomplete`: `Decision.HardGates` other than `pass`, or a non-empty
+  `Decision.UnevaluatedRequiredRules`.
 
 ## Public Contract
 
@@ -53,7 +58,7 @@ type Node struct {
 type LinkStatus string
 
 const (
-    StatusViolation LinkStatus = "violation" // an active gate finding (wire/report Finding.Active) names the pair
+    StatusViolation LinkStatus = "violation" // an active gate finding (wire/report Finding.Active), or a gate finding of unknown status, names the pair
     StatusAccepted  LinkStatus = "accepted"  // a gate finding accepted by the baseline or a waiver names the pair
     StatusAdvisory  LinkStatus = "advisory"  // another finding that is not fixed names the pair
     StatusObserved  LinkStatus = "observed"  // a seam that no current finding names
@@ -66,10 +71,13 @@ type Link struct {
 }
 
 // View is a read-only picture. Stale is true when the policy text no longer matches the report's config_hash.
+// Incomplete is true when the report's hard gates did not pass or a required rule was not evaluated: an observed
+// link may then still break a rule.
 type View struct {
-    Nodes []Node
-    Links []Link
-    Stale bool
+    Nodes      []Node
+    Links      []Link
+    Stale      bool
+    Incomplete bool
 }
 
 // Build is pure. Nodes come from the policy's modules, links from the report's seams and findings; a link's
@@ -86,8 +94,10 @@ func Build(rep Report, policy []byte) View
 3. `Status` comes from the findings with `Edge.From.Module == From` and `Edge.To.Module == To`. Each finding gives one
    status: `violation` when `Finding.Active()` is true (the rule wire/report owns: today a gate finding with status `new`
    or `expired_waiver`); none when its status is `fixed` (it says nothing about the current tree); `accepted` for a
-   `gate` finding with status `baseline` or `waived`; `advisory` for every other finding, an advisory of any status and
-   a kind or status this version does not know included, so a finding is never drawn as a plain observation. The
+   `gate` finding with status `baseline` or `waived`; `violation` for a `gate` finding with any other status, one this
+   version does not know included (fail safe: feedback treats an unknown status as live); `advisory` for every other
+   finding, an advisory of any status and a kind this version does not know included, so a finding is never drawn as
+   a plain observation. The
    strongest wins: `violation` > `accepted` > `advisory` > `observed`. Findings with an empty module on either side do
    not change a link. The policy text never sets a status: graph does not evaluate rules.
 4. A finding that gives a status to a pair without a seam still yields a link, `Count` 0 **[default]**: a violation or
@@ -98,7 +108,11 @@ func Build(rep Report, policy []byte) View
 7. `policy.Modules` error (invalid YAML): nodes come only from rule 5, and `Stale` is true whatever the digests say.
    The caller is expected to keep showing the view of the last valid text, marked stale (the parent does).
 8. Order: `Nodes` by `Name`, `Links` by `(From, To)`, byte-wise ascending. The same input always gives the same output.
-9. `Build` never fails and never panics. A zero `Report` with an empty policy gives an empty, stale `View`.
+9. `Build` never fails and never panics. A zero `Report` with an empty policy gives an empty, stale, incomplete `View`.
+10. `Incomplete = rep.Decision.HardGates != "pass" || len(rep.Decision.UnevaluatedRequiredRules) > 0`. `fail`,
+    `unmeasured`, an empty and an unknown value are all incomplete: the engine did not show that every required rule
+    was evaluated and passed, so an `observed` link may still be a forbidden edge it did not evaluate. Display only,
+    like `Stale`.
 
 Stated limits **[default]**: no link says "permitted". A relationship the policy permits but the engine did not observe
 is not in a report, and graph does not interpret policy rules, so `observed` means only that no current finding names
@@ -128,8 +142,8 @@ upgrade path; graph would read it then, never compute it.
 - **Volatility**: moderate
 - **Balanced?**: yes — contract coupling tolerates the distance
 - **Shared knowledge**: graph reads `Seams` (`FromModule`, `ToModule`, `Edges`), `Findings` (`Kind`, `Status`,
-  `Edge.From.Module`, `Edge.To.Module`) and `Comparison.ConfigHash`, and calls `Finding.Active()`, nothing else. `Decision` is an opaque part of `Report`
-  for this module. `Reference`, `Dimension`, `Coverage`, `AgentTask` and the other types in the fences below are restated
+  `Edge.From.Module`, `Edge.To.Module`), `Comparison.ConfigHash` and `Decision.HardGates` with
+  `Decision.UnevaluatedRequiredRules` (only whether it is empty), and calls `Finding.Active()`, nothing else. `Reference`, `Dimension`, `Coverage`, `AgentTask` and the other types in the fences below are restated
   only because they share a fence with a type graph reads; graph never touches them. `StateSchemaV1` is the constant
   wire/report checks at decode time; `MaxBytes` is the constant that caps a payload; graph uses neither.
 
@@ -156,6 +170,24 @@ type Report struct {
     Findings      []Finding            `json:"findings"`
     AgentTasks    []AgentTask          `json:"agent_tasks"`
     Seams         []Seam               `json:"seams"`
+}
+```
+
+<!-- contract: Decision, UnevaluatedRule — restated from internal/wire/report/module.md -->
+```go
+// Decision is the engine's structured gate decision. The process exit code is not part of a report:
+// healthy, needs_attention and blocked are Report.Verdict; an engine error produces no report at all.
+type Decision struct {
+    HardGates                string            `json:"hard_gates"` // "pass" | "fail" | "unmeasured"
+    UnevaluatedRequiredRules []UnevaluatedRule `json:"unevaluated_required_rules,omitempty"`
+    ActiveBlockers           int               `json:"active_blockers"`
+    AttentionDimensions      int               `json:"attention_dimensions"`
+    UnknownDimensions        int               `json:"unknown_dimensions"`
+}
+
+type UnevaluatedRule struct {
+    RuleID string `json:"rule_id"`
+    Reason string `json:"reason"`
 }
 ```
 
@@ -415,11 +447,12 @@ Nothing is mocked.
 - **Test name**: `TestStatusFollowsFindings`
   **Scenario**: one seam `api → db` and a table of findings on that pair: gate/new; gate/expired_waiver; gate/baseline;
   gate/waived; gate/fixed; advisory/new; advisory/baseline; advisory/fixed; an unknown kind; a gate finding with an
-  unknown status; gate/new on `db → api`; gate/new with an empty `To.Module`; no finding; advisory, baseline and new
-  together; advisory and waived together.
-  **Expected behavior**: `violation` for the first two; `accepted` for baseline and waived; `observed` for fixed findings,
-  the other direction, the empty module and no finding; `advisory` for advisories and unknown kinds or statuses;
-  `violation` and `accepted` win the last two rows. Every active finding on the pair gives `violation`: the rule is wire/report's.
+  unknown status; that one beside gate/baseline; gate/new on `db → api`; gate/new with an empty `To.Module`; no
+  finding; advisory, baseline and new together; advisory and waived together.
+  **Expected behavior**: `violation` for the first two and for the gate finding with an unknown status (also beside
+  baseline); `accepted` for baseline and waived; `observed` for fixed findings, the other direction, the empty module and
+  no finding; `advisory` for advisories and unknown kinds; `violation` and `accepted` win the last two rows. Every active
+  finding on the pair gives `violation`: the rule is wire/report's.
 - **Test name**: `TestFindingWithoutSeamStillDraws`
   **Scenario**: gate/new on `ui → db`, gate/baseline on `api → ui`, advisory/new on `db → api` and gate/fixed on `db → ui`,
   with no seams.
@@ -443,6 +476,10 @@ Nothing is mocked.
   **Scenario**: table: same bytes; one added space; one added comment; empty policy; empty `ConfigHash`; `ConfigHash` in
   upper case; `ConfigHash` with a `sha256:` prefix.
   **Expected behavior**: `Stale` false only for the first row.
+- **Test name**: `TestIncompleteFollowsDecision`
+  **Scenario**: table of `Decision`: `pass`; `pass` with an unevaluated required rule; `unmeasured` with one; `fail`;
+  `PASS`; the zero decision. Then the healthy and the blocked (`hard_gates: fail`) wire fixtures.
+  **Expected behavior**: `Incomplete` false only for `pass` without unevaluated rules and for the healthy fixture.
 
 ### Boundary Tests
 

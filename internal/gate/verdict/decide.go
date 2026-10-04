@@ -43,6 +43,7 @@ const (
 	engineValueCap      = 32
 	referenceReasonsCap = 3
 	referenceDetailCap  = 200
+	ruleIDsCap          = 20 // rule IDs named in a Detail; feedback never cuts the reason block
 )
 
 // Decide is a pure function. It checks, in order: subscription, settings, source and producer eligibility,
@@ -248,12 +249,19 @@ func splitRules(rules []report.UnevaluatedRule) (defects, missing []report.Uneva
 	return defects, missing
 }
 
+// ruleIDs names the first ruleIDsCap rules, then counts the rest: the Detail sits in the reason block, which
+// feedback never cuts, so it must not grow with the report.
 func ruleIDs(rules []report.UnevaluatedRule) string {
-	ids := make([]string, 0, len(rules))
-	for _, r := range rules {
+	n := min(len(rules), ruleIDsCap)
+	ids := make([]string, 0, n)
+	for _, r := range rules[:n] {
 		ids = append(ids, r.RuleID)
 	}
-	return strings.Join(ids, ", ")
+	out := strings.Join(ids, ", ")
+	if rest := len(rules) - n; rest > 0 {
+		out += " and " + strconv.Itoa(rest) + " more"
+	}
+	return out
 }
 
 func referenceDetail(ref *report.Reference) string {

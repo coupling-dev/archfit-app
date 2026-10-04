@@ -147,3 +147,35 @@ func TestStaleFollowsPolicyDigest(t *testing.T) {
 		})
 	}
 }
+
+// An observed link is not proof that the policy permits it when the engine did not finish evaluating its rules.
+func TestIncompleteFollowsDecision(t *testing.T) {
+	unevaluated := []report.UnevaluatedRule{{RuleID: "no_direct_b_dependency", Reason: "required tool go/packages was absent"}}
+	tests := []struct {
+		name       string
+		decision   report.Decision
+		incomplete bool
+	}{
+		{"hard gates pass", report.Decision{HardGates: "pass"}, false},
+		{"hard gates pass with an unevaluated rule", report.Decision{HardGates: "pass", UnevaluatedRequiredRules: unevaluated}, true},
+		{"hard gates unmeasured", report.Decision{HardGates: "unmeasured", UnevaluatedRequiredRules: unevaluated}, true},
+		{"hard gates fail", report.Decision{HardGates: "fail"}, true},
+		{"hard gates unknown", report.Decision{HardGates: "PASS"}, true},
+		{"zero decision", report.Decision{}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rep := reportFor(threeModules, []report.Seam{seam("api", "db", 1)}, nil)
+			rep.Decision = tt.decision
+			if got := Build(rep, []byte(threeModules)).Incomplete; got != tt.incomplete {
+				t.Errorf("Incomplete = %v, want %v", got, tt.incomplete)
+			}
+		})
+	}
+	if Build(loadReport(t, healthyFixture), []byte(fixturePolicy)).Incomplete {
+		t.Error("the healthy fixture is incomplete")
+	}
+	if !Build(loadReport(t, blockedFixture), []byte(fixturePolicy)).Incomplete {
+		t.Error("the blocked fixture (hard_gates: fail) is complete")
+	}
+}

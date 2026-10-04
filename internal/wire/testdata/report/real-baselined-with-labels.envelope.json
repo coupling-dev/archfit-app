@@ -10,7 +10,7 @@
   "run_id": 17654321098,
   "run_attempt": 1,
   "engine_version": "v2.3.1",
-  "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "image_digest": "sha256:7d4f73248865e11bbfe244cd477bd0ea8e8cbdc0b7fb2baade8e044b618b2793",
   "platform": "linux/amd64",
   "payload_digest": "sha256:5a1b0cc7f39dc543d588727f7bee42cfd9bbac23e68d9814a918500c236d0b68",
   "baseline_digest": "a2156f290e150237a413af9b0d7977c4983f19885b9a2915342e751500a8edbb",

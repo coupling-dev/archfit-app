@@ -47,12 +47,14 @@ v2.3.1; an upgrade window holds the rows of two releases, N and N-1.
   that release that decodes, and, when `current` moves to it, `wire/policy` embeds its config schema. The format
   rule above is all this package can check alone; it is not an approval of any version string.
 - The values must come from the engine release evidence of plan task T01 (engine source revision
-  `f8877d25ba36d84d3780071580d23486e3d794d0`, tag `v2.3.1`). Today only `profile_version`
-  (`archfit.measurement.v1`) is real. The shipped image digests and the Action commit are placeholders: `sha256:`
-  plus 64 times `a` on `linux/amd64`, `sha256:` plus 64 times `b` on `linux/arm64`, and 40 times `c` as `action_ref` of
-  both rows. They wait for the published v2.3.1 image digests and the pinned `archfit-action` commit. This is a release
-  blocker recorded in `docs/plans/2026-09-21-implement-archfit-app.md`. Until it is resolved every real upload misses
-  `Lookup` and concludes `action_required`, and a generated workflow pins an image and a commit that do not exist.
+  `f8877d25ba36d84d3780071580d23486e3d794d0`, tag `v2.3.1`). `profile_version` (`archfit.measurement.v1`) and the image
+  digests are real: the published per-platform digests of `ghcr.io/alexei-led/archfit:v2.3.1`,
+  `sha256:7d4f73248865e11bbfe244cd477bd0ea8e8cbdc0b7fb2baade8e044b618b2793` on `linux/amd64` and
+  `sha256:82ab97da8d38af59b02ac522caa70fb2218212c7d15821e0df5cbeb9b04ec9e7` on `linux/arm64`. The Action commit is still
+  a placeholder, 40 times `c` as `action_ref` of both rows: `archfit-action` has no published commit yet. This is a
+  release blocker recorded in `docs/architecture.md` (Release blockers). `Lookup` does not read `action_ref`, so an upload
+  from the published image matches its row; until the commit is replaced, a generated workflow pins an Action commit that
+  does not exist.
 - A placeholder is an `image_digest` or `action_ref` whose hex part is one character repeated. Placeholders are
   forbidden in a release: `TestManifestHasNoPlaceholdersInRelease` fails when the environment variable
   `ARCHFIT_RELEASE=1` is set and any row carries one. The release pipeline must run the tests with that variable. The
@@ -190,7 +192,7 @@ tolerates the distance of separate repositories and release cycles.
   **Scenario**: collect every placeholder value of the embedded rows, as `entry index, field`; read `ARCHFIT_RELEASE`. The
   test never skips.
   **Expected behavior**: with `ARCHFIT_RELEASE=1`, no placeholder is left. Without it, the placeholders found are exactly
-  the documented ones (both image digests, both `action_ref` values), so a partial replacement fails; once all are
+  the documented ones (both `action_ref` values; the image digests are real), so a partial replacement fails; once all are
   replaced the documented list is emptied in the same commit.
 - **Test name**: `TestLookupExactMatch`
   **Scenario**: table against a known row: exact identity; digest uppercased; version without the `v`; platform

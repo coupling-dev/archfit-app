@@ -128,8 +128,8 @@ func (p *pass) warn(ctx context.Context, t inputs.Target, e time.Time) error {
 // verdict.Suspended(tr.Entitlement) for ReasonSuspended, with the run identity of rc (zero when there
 // is no previous receipt) and the current digests of tr.
 //
-// Keeping the previous run identity keeps the check's external_id, so feedback updates in place; the
-// current digests and the new reason are what makes the next pass find nothing to do.
+// Keeping the previous run identity keeps the check's external_id, so feedback updates the gate check in
+// place; the current digests and the new reason are what makes the next pass find nothing to do.
 func Without(code verdict.ReasonCode, t inputs.Target, tr inputs.Trusted, rc feedback.Receipt) feedback.Publication {
 	out := verdict.Without(code)
 	if code == verdict.ReasonSuspended {

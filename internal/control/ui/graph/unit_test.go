@@ -132,7 +132,11 @@ func TestStatusFollowsFindings(t *testing.T) {
 		{"advisory baseline", []report.Finding{finding("advisory", "baseline", "api", "db")}, StatusAdvisory},
 		{"advisory fixed", []report.Finding{finding("advisory", "fixed", "api", "db")}, StatusObserved},
 		{"unknown kind", []report.Finding{finding("guard", "new", "api", "db")}, StatusAdvisory},
-		{"gate with an unknown status", []report.Finding{finding("gate", "suppressed", "api", "db")}, StatusAdvisory},
+		// Fail safe, as feedback treats an unknown status as live: a gate finding is never drawn as less than it may be.
+		{"gate with an unknown status", []report.Finding{finding("gate", "suppressed", "api", "db")}, StatusViolation},
+		{"unknown gate status beats accepted", []report.Finding{
+			finding("gate", "baseline", "api", "db"), finding("gate", "suppressed", "api", "db"),
+		}, StatusViolation},
 		{"gate new in the other direction", []report.Finding{finding("gate", "new", "db", "api")}, StatusObserved},
 		{"gate new with an empty To.Module", []report.Finding{finding("gate", "new", "api", "")}, StatusObserved},
 		{"no finding", nil, StatusObserved},

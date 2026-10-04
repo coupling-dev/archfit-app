@@ -6,10 +6,10 @@ import (
 	"slices"
 )
 
-// PLACEHOLDER DATA: the image_digest and action_ref values in manifest.json are not the
-// published engine v2.3.1 release values (they were not available when this was written). Replace all
-// of them from the engine release evidence before any release; the repeated-character values are fake.
-// TestManifestHasNoPlaceholdersInRelease fails a build tested with ARCHFIT_RELEASE=1 while they remain.
+// PLACEHOLDER DATA: the image_digest values in manifest.json are the published per-platform digests of
+// ghcr.io/alexei-led/archfit:v2.3.1, but action_ref is a fake repeated-character value: archfit-action has
+// no published commit yet. Replace it before any release.
+// TestManifestHasNoPlaceholdersInRelease fails a build tested with ARCHFIT_RELEASE=1 while it remains.
 //
 //go:embed manifest.json
 var manifestJSON []byte

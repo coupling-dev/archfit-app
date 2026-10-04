@@ -1,6 +1,7 @@
 package verdict
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -128,6 +129,35 @@ func TestEngineDecisionMatrix(t *testing.T) {
 		r, _ := find(decide(t, f), ReasonMissingCoverage)
 		if want := "layers/no_upward_imports, no_direct_b_dependency"; r.Detail != want {
 			t.Errorf("detail = %q, want %q", r.Detail, want)
+		}
+	})
+	// The reason block is never cut from feedback, so its Detail stays small however many rules the report lists.
+	t.Run("rule lists are capped", func(t *testing.T) {
+		ids := func(n int) []string {
+			out := make([]string, n)
+			for i := range out {
+				out[i] = fmt.Sprintf("rule%02d", i)
+			}
+			return out
+		}
+		for _, tt := range []struct {
+			n    int
+			want string
+		}{
+			{20, strings.Join(ids(20), ", ")},
+			{21, strings.Join(ids(20), ", ") + " and 1 more"},
+			{25, strings.Join(ids(20), ", ") + " and 5 more"},
+		} {
+			for code, reason := range map[ReasonCode]string{ReasonMissingCoverage: "absent", ReasonPolicyDefect: deadReason} {
+				f := healthyFacts()
+				for _, id := range ids(tt.n) {
+					f.Report.Decision.UnevaluatedRequiredRules = append(f.Report.Decision.UnevaluatedRequiredRules,
+						report.UnevaluatedRule{RuleID: id, Reason: reason})
+				}
+				if r, _ := find(decide(t, f), code); r.Detail != tt.want {
+					t.Errorf("%s with %d rules: detail = %q, want %q", code, tt.n, r.Detail, tt.want)
+				}
+			}
 		}
 	})
 }

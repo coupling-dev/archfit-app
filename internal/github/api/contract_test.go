@@ -398,7 +398,7 @@ func TestChecksContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []CheckRun{{ID: 99, Name: "archfit", HeadSHA: "abc123", ExternalID: "ext-1", Status: "completed",
-		Conclusion: "success", Title: "Gate", Summary: "All good", StartedAt: started}}
+		Conclusion: "success", Title: "Gate", Summary: "All good", StartedAt: started, AnnotationCount: 50}}
 	if !reflect.DeepEqual(runs, want) {
 		t.Errorf("CheckRuns = %+v\nwant        %+v", runs, want)
 	}

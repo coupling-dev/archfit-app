@@ -261,7 +261,11 @@ func (f *fakeGitHub) CheckRuns(_ context.Context, r api.RepoRef, headSHA, name s
 	if err := f.enter("CheckRuns", r); err != nil {
 		return nil, err
 	}
-	return f.checkRuns(r.FullName, headSHA, name), nil
+	runs := f.checkRuns(r.FullName, headSHA, name)
+	for i := range runs {
+		runs[i].AnnotationCount = len(runs[i].Annotations) // GitHub lists the number, as feedback reads it
+	}
+	return runs, nil
 }
 
 func (f *fakeGitHub) checkRuns(fullName, headSHA, name string) []api.CheckRun {
@@ -295,8 +299,10 @@ func (f *fakeGitHub) UpdateCheckRun(_ context.Context, r api.RepoRef, c api.Chec
 	}
 	for i, old := range f.checks[r.FullName] {
 		if old.ID == c.ID {
-			f.checks[r.FullName][i] = c
 			f.checkWrites = append(f.checkWrites, c)
+			// As GitHub: the annotations of every update are appended to the run's.
+			c.Annotations = append(slices.Clone(old.Annotations), c.Annotations...)
+			f.checks[r.FullName][i] = c
 			return nil
 		}
 	}

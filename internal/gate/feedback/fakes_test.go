@@ -1,10 +1,12 @@
 package feedback
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"slices"
 	"sync"
+	"testing"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
 )
@@ -45,6 +47,19 @@ type fakeChecks struct {
 	lastID int64
 	// annotationRequests is the number of annotations each create or update carried, in call order.
 	annotationRequests []int
+	// afterWrite, when set, runs once after the next successful create or update, outside the lock.
+	afterWrite func()
+}
+
+// wrote runs and clears the one-shot afterWrite hook. The caller must not hold the lock.
+func (f *fakeChecks) wrote() {
+	f.mu.Lock()
+	hook := f.afterWrite
+	f.afterWrite = nil
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 }
 
 func (f *fakeChecks) record(call string) {
@@ -63,6 +78,8 @@ func (f *fakeChecks) CheckRuns(_ context.Context, _ api.RepoRef, headSHA, name s
 	var out []api.CheckRun
 	for _, r := range f.runs {
 		if r.HeadSHA == headSHA && r.Name == name {
+			// As GitHub: the annotations are not listed, only their number.
+			r.AnnotationCount, r.Annotations = len(r.Annotations), nil
 			out = append(out, r)
 		}
 	}
@@ -78,12 +95,25 @@ func (f *fakeChecks) CreateCheckRun(_ context.Context, _ api.RepoRef, c api.Chec
 		return api.CheckRun{}, err
 	}
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.annotationRequests = append(f.annotationRequests, len(c.Annotations))
 	f.lastID++
 	c.ID = f.lastID
+	c.AnnotationCount = 0
+	c.Annotations = slices.Clone(c.Annotations)
 	f.runs = append(f.runs, c)
+	f.mu.Unlock()
+	f.wrote()
 	return c, nil
+}
+
+// add stores a run as another publication would have written it, bypassing the call record.
+func (f *fakeChecks) add(c api.CheckRun) api.CheckRun {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.lastID++
+	c.ID = f.lastID
+	f.runs = append(f.runs, c)
+	return c
 }
 
 // UpdateCheckRun appends the annotations of the request to the run, as GitHub does.
@@ -96,15 +126,18 @@ func (f *fakeChecks) UpdateCheckRun(_ context.Context, _ api.RepoRef, c api.Chec
 		return err
 	}
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	for i := range f.runs {
 		if f.runs[i].ID == c.ID {
 			f.annotationRequests = append(f.annotationRequests, len(c.Annotations))
 			c.Annotations = append(slices.Clone(f.runs[i].Annotations), c.Annotations...)
+			c.AnnotationCount = 0
 			f.runs[i] = c
+			f.mu.Unlock()
+			f.wrote()
 			return nil
 		}
 	}
+	f.mu.Unlock()
 	return api.ErrNotFound
 }
 
@@ -129,6 +162,16 @@ func (f *fakeChecks) named(headSHA, name string) []api.CheckRun {
 		}
 	}
 	return out
+}
+
+// latest is the highest-ID run of a name on a head, the one GitHub shows; it fails the test when there is none.
+func (f *fakeChecks) latest(t *testing.T, headSHA, name string) api.CheckRun {
+	t.Helper()
+	runs := f.named(headSHA, name)
+	if len(runs) == 0 {
+		t.Fatalf("no %s run on %s", name, headSHA)
+	}
+	return slices.MaxFunc(runs, func(a, b api.CheckRun) int { return cmp.Compare(a.ID, b.ID) })
 }
 
 func (f *fakeChecks) count(call string) int {

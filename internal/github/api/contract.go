@@ -96,6 +96,9 @@ type CheckRun struct {
 	Summary     string // markdown, max 65535 bytes
 	Annotations []Annotation
 	StartedAt   time.Time
+	// AnnotationCount is read-only: the annotations GitHub holds for the run, set by CheckRuns.
+	// Create and update never send it; GitHub appends the Annotations of each request.
+	AnnotationCount int
 }
 
 type Checks interface {

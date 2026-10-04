@@ -77,7 +77,9 @@ func onboardingBody(mode settings.DataMode) string {
 	b.WriteString("This pull request sets up Archfit advisory feedback. Nothing is enforced: the gate stays `advisory` until an owner enables it by pull request.\n\n")
 	b.WriteString("### Files\n\n")
 	fmt.Fprintf(&b, "- `%s`: runs the Archfit Action, pinned to a commit, with the pinned engine image. It needs `contents: read` and `id-token: write`, no secrets, and runs no repository script. ", workflowPath)
-	fmt.Fprintf(&b, "The Action runs the engine with the base-ref `%s`, `%s` and `%s`, and reports `baseline_digest` and `labels_digest` (SHA-256, empty when the file is absent) from exactly those files.\n",
+	fmt.Fprintf(&b, "The Action reads `%s`, `%s` and `%s` per file: on a pull request from the pull request head when the pull request changes that file, otherwise from the tip of the base branch. "+
+		"The App accepts a head copy only when an architecture owner approved that exact head commit. "+
+		"The Action reports `baseline_digest` and `labels_digest` (SHA-256, empty when the file is absent) from exactly the files the engine read.\n",
 		policy.PolicyPath, policy.BaselinePath, policy.LabelsPath)
 	fmt.Fprintf(&b, "- `%s`: the Archfit App settings: the architecture owners, the gate mode and the approved workflow.\n", settings.Path)
 	b.WriteString("- `CODEOWNERS`: makes the architecture owners the code owners of the protected paths. Existing lines are unchanged.\n\n")

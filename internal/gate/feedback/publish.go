@@ -2,6 +2,7 @@ package feedback
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"time"
@@ -57,11 +58,6 @@ func (s *publisher) Publish(ctx context.Context, p Publication) (err error) {
 			"failed", err != nil, "elapsed", s.now().Sub(now))
 	}()
 
-	// Read before any write, so that a failure leaves every check as it was.
-	changed, err := s.changedFiles(ctx, p)
-	if err != nil {
-		return err
-	}
 	isPull := p.Target.PullRequest != 0 && p.Trusted.SettingsFound
 	run := api.CheckRun{
 		HeadSHA:    p.Target.HeadSHA,
@@ -76,16 +72,32 @@ func (s *publisher) Publish(ctx context.Context, p Publication) (err error) {
 			return err
 		}
 	}
+	// The file list only filters annotations, so it is read after the required check is written. Without it the
+	// state check carries no annotation; a rate limit is still returned so that the caller retries.
+	changed, listErr := s.changedFiles(ctx, p)
 	run.Name, run.Conclusion = stateCheck, stateConclusion(p.Outcome, p.Report)
 	run.Title, run.Summary = stateTitle(p), renderState(p)
-	run.Annotations = annotations(p, changed)
+	run.Annotations = nil
+	if listErr == nil {
+		run.Annotations = annotations(p, changed)
+	}
 	if state, err = s.writeCheck(ctx, p.Target.Repo.RepoRef, run, p.Receipt); err != nil {
 		return err
 	}
 	if isPull {
-		comment, err = s.writeComment(ctx, p, now)
+		if comment, err = s.writeComment(ctx, p, now); err != nil {
+			return err
+		}
 	}
-	return err
+	if listErr != nil {
+		slog.Default().WarnContext(ctx, "feedback published without annotations: changed files unavailable",
+			"repo_id", p.Target.Repo.ID, "pull", p.Target.PullRequest, "head_sha", p.Target.HeadSHA,
+			"rate_limited", errors.Is(listErr, api.ErrRateLimited))
+	}
+	if errors.Is(listErr, api.ErrRateLimited) {
+		return listErr
+	}
+	return nil
 }
 
 // stateConclusion fails closed like the gate: missing, unverifiable or ineligible evidence asks for action and is
@@ -116,33 +128,61 @@ func (s *publisher) latestRun(ctx context.Context, r api.RepoRef, headSHA, name 
 	return latest, true, nil
 }
 
-// writeCheck creates or updates the run with the first annotationsPerRequest annotations, then sends the rest in
-// further updates of the same run: GitHub takes 50 per request and appends each batch.
+// writeCheck updates the latest run in place when that shows exactly this publication, else creates a run.
 func (s *publisher) writeCheck(ctx context.Context, r api.RepoRef, run api.CheckRun, receipt Receipt) (string, error) {
 	existing, found, err := s.latestRun(ctx, r, run.HeadSHA, run.Name)
 	if err != nil {
 		return actionNone, err
 	}
-	if found && supersedes(existing, receipt) {
+	switch {
+	case found && supersedes(existing, receipt):
 		return actionSkippedNewer, nil
+	case found && reusable(existing, run):
+		run.ID, run.Annotations = existing.ID, nil
+		return actionUpdated, s.checks.UpdateCheckRun(ctx, r, run)
 	}
+	return actionCreated, s.createRun(ctx, r, run, receipt)
+}
+
+// reusable reports whether an update in place leaves the run showing exactly run. GitHub appends the annotations of
+// every request and never removes one, so annotations go only on a new run. archfit/gate carries none, so its latest
+// run, the pending one included, is always updated. An archfit/state run is updated only when it already holds this
+// publication's annotations: the same external_id and as many annotations as run would send. An equal count stands
+// in for equal annotations, because one external_id names one report and annotations are rendered
+// deterministically from it.
+func reusable(existing, run api.CheckRun) bool {
+	if run.Name == gateCheck {
+		return true
+	}
+	return existing.ExternalID == run.ExternalID && existing.AnnotationCount == len(run.Annotations)
+}
+
+// createRun creates the run with the first annotationsPerRequest annotations and sends the rest in updates of the
+// same run: GitHub takes 50 per request and appends each batch. Before each further batch it reads the latest run
+// again and stops when another run took its place or a newer publication superseded it, so an older publication
+// never overwrites a newer summary.
+func (s *publisher) createRun(ctx context.Context, r api.RepoRef, run api.CheckRun, receipt Receipt) error {
 	var rest []api.Annotation
 	run.Annotations, rest = batch(run.Annotations)
-	action := actionUpdated
-	if found {
-		run.ID = existing.ID
-		err = s.checks.UpdateCheckRun(ctx, r, run)
-	} else {
-		var created api.CheckRun
-		action = actionCreated
-		created, err = s.checks.CreateCheckRun(ctx, r, run)
-		run.ID = created.ID
+	created, err := s.checks.CreateCheckRun(ctx, r, run)
+	if err != nil {
+		return err
 	}
-	for err == nil && len(rest) > 0 {
+	run.ID = created.ID
+	for len(rest) > 0 {
+		latest, found, err := s.latestRun(ctx, r, run.HeadSHA, run.Name)
+		if err != nil {
+			return err
+		}
+		if !found || latest.ID != run.ID || supersedes(latest, receipt) {
+			return nil
+		}
 		run.Annotations, rest = batch(rest)
-		err = s.checks.UpdateCheckRun(ctx, r, run)
+		if err := s.checks.UpdateCheckRun(ctx, r, run); err != nil {
+			return err
+		}
 	}
-	return action, err
+	return nil
 }
 
 // batch splits off the annotations of one request.

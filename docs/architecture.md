@@ -362,8 +362,14 @@ See [`.env.example`](../.env.example).
 
 ### Release blockers
 
-- The locked manifest contains placeholder image digests and an Action commit. A real upload ends in
-  `action_required` while these values remain. `ARCHFIT_RELEASE=1` makes the release test fail.
+- The locked manifest contains a placeholder Action commit (`action_ref`). Its image digests are the published
+  v2.3.1 digests. A generated workflow pins an Action commit that does not exist while the placeholder remains.
+  `ARCHFIT_RELEASE=1` makes the release test fail.
+- `archfit-action` is not published. Its `feat/wave1-run-engine` branch sends the envelope format of this service, runs
+  on `pull_request`, `push`, and `workflow_dispatch` only, and accepts `mode: report | discovery | baseline`. The
+  manifest `action_ref` takes the commit of its first release.
+- No CI check compares the Action's vendored envelope schema (`schema/envelope.v1.schema.json` in `archfit-action`)
+  with `internal/wire/envelope/envelope.v1.schema.json` at the pinned `action_ref`. Add an App-side CI job that fails on a
+  difference before the first release.
 - No GitHub App is registered.
-- `archfit-action` does not send the envelope format of this service yet.
 - The Monaco editor bundle is not built. The policy editor uses a plain text area.

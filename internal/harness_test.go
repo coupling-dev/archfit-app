@@ -37,6 +37,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/github/oidc"
 	"github.com/alexei-led/archfit-app/internal/github/webhook"
 	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/alexei-led/archfit-app/internal/wire/manifest"
 )
 
 const (
@@ -211,6 +212,9 @@ func loadFixture(t *testing.T, name string) fixture {
 	return f
 }
 
+// approvedImage is the image digest of the manifest row new workflows pin (engine v2.3.1, linux/amd64).
+var approvedImage = manifest.Current().ImageDigest
+
 func digest(raw []byte) string {
 	if raw == nil {
 		return ""
@@ -291,7 +295,7 @@ func demoUpload(f fixture) upload {
 		env: envelope{
 			SchemaVersion: "archfit.report-envelope.v1", Kind: "report", Repository: demoRepo, Event: "pull_request",
 			PullRequest: demoPull, HeadSHA: demoHead, BaseSHA: demoBase, MergeBaseSHA: demoMergeBase,
-			RunID: demoRun, RunAttempt: 1, EngineVersion: "v2.3.1", ImageDigest: "sha256:" + strings.Repeat("a", 64),
+			RunID: demoRun, RunAttempt: 1, EngineVersion: "v2.3.1", ImageDigest: approvedImage,
 			Platform: "linux/amd64", PayloadDigest: "sha256:" + digest(f.report),
 			BaselineDigest: digest(f.baseline), LabelsDigest: digest(f.labels),
 		},
@@ -795,7 +799,7 @@ func discoveryUpload(fullName string, repoID, runID int64, head string, policy [
 		env: envelope{
 			SchemaVersion: "archfit.report-envelope.v1", Kind: "discovery", Repository: fullName, Event: "workflow_dispatch",
 			HeadSHA: head, RunID: runID, RunAttempt: 1, EngineVersion: "v2.3.1",
-			ImageDigest: "sha256:" + strings.Repeat("a", 64), Platform: "linux/amd64", PayloadDigest: "sha256:" + digest(policy),
+			ImageDigest: approvedImage, Platform: "linux/amd64", PayloadDigest: "sha256:" + digest(policy),
 		},
 		body: policy,
 		claims: map[string]any{

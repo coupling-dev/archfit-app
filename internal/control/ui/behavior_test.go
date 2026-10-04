@@ -143,6 +143,10 @@ func TestInvalidYAMLIsRefusedAndGraphGoesStale(t *testing.T) {
 		return v, res.Body.String()
 	}
 
+	if got, body := view(); got.Incomplete || strings.Contains(body, `id="incomplete"`) {
+		t.Error("a healthy report whose hard gates passed is shown as incomplete")
+	}
+
 	edited := policyText + "  c:\n    layer: edge\n"
 	wantStatus(t, c.post(base+"/policy", formOf("", "", edited)), http.StatusSeeOther)
 	got, body := view()
