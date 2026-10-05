@@ -47,6 +47,20 @@ type fakeGitHub struct {
 	checkWrites []api.CheckRun // every created or updated check run, in order
 	commentOps  int            // comments created or updated
 	reruns      []int64
+	// beforeCheckWrite runs once, unlocked, at the start of the next check run create or update: what it does
+	// happens after that publisher's reads and before its first write.
+	beforeCheckWrite func()
+}
+
+// checkWriteHook takes the one-shot beforeCheckWrite hook and runs it outside the lock.
+func (f *fakeGitHub) checkWriteHook() {
+	f.mu.Lock()
+	hook := f.beforeCheckWrite
+	f.beforeCheckWrite = nil
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 }
 
 type fakeCall struct {
@@ -280,6 +294,7 @@ func (f *fakeGitHub) checkRuns(fullName, headSHA, name string) []api.CheckRun {
 }
 
 func (f *fakeGitHub) CreateCheckRun(_ context.Context, r api.RepoRef, c api.CheckRun) (api.CheckRun, error) {
+	f.checkWriteHook()
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if err := f.enter("CreateCheckRun", r); err != nil {
@@ -293,6 +308,7 @@ func (f *fakeGitHub) CreateCheckRun(_ context.Context, r api.RepoRef, c api.Chec
 }
 
 func (f *fakeGitHub) UpdateCheckRun(_ context.Context, r api.RepoRef, c api.CheckRun) error {
+	f.checkWriteHook()
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if err := f.enter("UpdateCheckRun", r); err != nil {
@@ -402,7 +418,10 @@ type guardStore struct {
 	// entitlementErr fails every read except the leases: the control plane's records are unreadable.
 	entitlementErr error
 	// down fails every operation, the leases included: the Store itself is unreachable.
-	down         error
+	down error
+	// beforeLease runs once, at the next lease read, before the lease is taken: what it does happens while that
+	// publisher waits for the lease, between its decision and its first read inside the lease.
+	beforeLease  func()
 	mu           sync.Mutex
 	tenants      []store.Tenant
 	keys         []string
@@ -412,13 +431,18 @@ type guardStore struct {
 func (s *guardStore) Get(ctx context.Context, t store.Tenant, key string) ([]byte, error) {
 	s.mu.Lock()
 	lease := strings.HasPrefix(key, leaseKeyPrefix)
+	var hook func()
 	if lease {
 		s.leaseTenants = append(s.leaseTenants, t)
+		hook, s.beforeLease = s.beforeLease, nil
 	} else {
 		s.tenants = append(s.tenants, t)
 		s.keys = append(s.keys, key)
 	}
 	s.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 	switch {
 	case s.down != nil:
 		return nil, s.down
@@ -518,6 +542,19 @@ func (p *fakePublisher) Pending(_ context.Context, t inputs.Target) error {
 func (p *fakePublisher) State(_ context.Context, t inputs.Target) (feedback.CheckState, error) {
 	p.states = append(p.states, t)
 	return p.state, p.stateErr
+}
+
+// Reconcile is State, decide and Publish, as feedback runs them inside the lease.
+func (p *fakePublisher) Reconcile(ctx context.Context, t inputs.Target, decide feedback.Decision) error {
+	current, err := p.State(ctx, t)
+	if err != nil {
+		return err
+	}
+	pub, err := decide(ctx, current)
+	if err != nil || pub == nil {
+		return err
+	}
+	return p.Publish(ctx, *pub)
 }
 
 func (p *fakePublisher) Warn(context.Context, inputs.Target, time.Time) error {

@@ -23,11 +23,14 @@ const (
 	reactionRerun        = "rerun"
 	reactionRepoSweep    = "repo_sweep"
 	reactionNotOnboarded = "not_onboarded"
+	// reactionApprovalWithdrawn is owner_approval_missing published over a receipt that asked for no action.
+	reactionApprovalWithdrawn = "approval_withdrawn"
 )
 
 // HandleEvent reacts to a verified webhook event: pending check on a new head, fork refusal,
-// re-run on a review change when the last receipt was owner_approval_missing, and a one-repository
-// sweep when a default-branch push changes a protected path.
+// owner_approval_missing on a review change that withdraws the approval a receipt relied on, re-run on a
+// review change when the last receipt was owner_approval_missing, and a one-repository sweep when a
+// default-branch push changes a protected path.
 func (g *Gate) HandleEvent(ctx context.Context, e webhook.Event) error {
 	reaction, err := g.react(ctx, e)
 	slog.Default().InfoContext(ctx, "gate event",
@@ -93,33 +96,44 @@ func (g *Gate) newHead(ctx context.Context, t inputs.Target) (string, error) {
 	return reactionNone, nil
 }
 
-// reviewChanged re-runs the workflow once an owner's review arrives after owner_approval_missing.
-// The check stays as it is until the new upload; nothing here can turn it green.
+// reviewChanged reacts to a review that may withdraw or grant an owner approval. It reads the gate check, decides
+// and writes inside the head's publication lease (Publisher.Reconcile), so no other publication for the head lands
+// in between. A receipt that asks for no action while the approval it needs is gone becomes owner_approval_missing
+// at once, as sweep rule 5a does it. After owner_approval_missing, a review once no approval is missing re-runs the
+// workflow; the check stays as it is until the new upload, so nothing here can turn it green.
 func (g *Gate) reviewChanged(ctx context.Context, t inputs.Target) (string, error) {
-	state, err := g.publisher.State(ctx, t)
+	reaction := reactionNone
+	err := g.publisher.Reconcile(ctx, t, func(ctx context.Context, current feedback.CheckState) (*feedback.Publication, error) {
+		rc := current.Receipt
+		decided := rc.Conclusion == verdict.Success || rc.Conclusion == verdict.Failure
+		if !decided && rc.Reason != verdict.ReasonOwnerApprovalMissing {
+			return nil, nil // the check already asks for action, or there is none yet
+		}
+		trusted, err := g.resolver.Resolve(ctx, t, g.now())
+		if err != nil {
+			return nil, fmt.Errorf("gate: resolve inputs: %w", err)
+		}
+		if pub := sweep.Withdrawal(t, current, trusted); pub != nil {
+			reaction = reactionApprovalWithdrawn
+			return pub, nil
+		}
+		if rc.Reason != verdict.ReasonOwnerApprovalMissing || verdict.Unapproved(trusted) {
+			return nil, nil // no re-run while an owner approval is still missing
+		}
+		// The sweep owns the guard. A receipt without a run and a run that is gone are skipped, not errors.
+		res, err := sweep.Rerun(ctx, g.actions, t.Repo.RepoRef, rc)
+		if err != nil {
+			return nil, fmt.Errorf("gate: re-run: %w", err)
+		}
+		if res == sweep.RerunRequested {
+			reaction = reactionRerun
+		}
+		return nil, nil
+	})
 	if err != nil {
-		return reactionNone, fmt.Errorf("gate: check state: %w", err)
+		return reaction, fmt.Errorf("gate: review: %w", err)
 	}
-	if state.Receipt.Reason != verdict.ReasonOwnerApprovalMissing {
-		return reactionNone, nil
-	}
-	trusted, err := g.resolver.Resolve(ctx, t, g.now())
-	if err != nil {
-		return reactionNone, fmt.Errorf("gate: resolve inputs: %w", err)
-	}
-	if trusted.Approval != inputs.ApprovalGranted {
-		return reactionNone, nil // no re-run for a review that grants nothing
-	}
-
-	// The sweep owns the guard. A receipt without a run and a run that is gone are skipped, not errors.
-	res, err := sweep.Rerun(ctx, g.actions, t.Repo.RepoRef, state.Receipt)
-	if err != nil {
-		return reactionNone, fmt.Errorf("gate: re-run: %w", err)
-	}
-	if res != sweep.RerunRequested {
-		return reactionNone, nil
-	}
-	return reactionRerun, nil
+	return reaction, nil
 }
 
 // protectedPush reports whether a default-branch push may have changed a trusted input.

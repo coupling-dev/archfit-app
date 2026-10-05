@@ -78,8 +78,8 @@ func Decide(f Facts) Outcome {
 			rs.add(ReasonUnknownIdentity, "")
 		}
 	}
-	// Step 5. Only the two known passing values clear it: an unknown Approval fails closed.
-	if t.Approval != inputs.ApprovalNotRequired && t.Approval != inputs.ApprovalGranted {
+	// Step 5.
+	if Unapproved(t) {
 		rs.add(ReasonOwnerApprovalMissing, strings.Join(t.ProtectedPaths, ", "))
 	}
 	integrity(&rs, f)
@@ -89,16 +89,31 @@ func Decide(f Facts) Outcome {
 	return rs.outcome()
 }
 
-// Without returns the fixed outcome for a target that has no report: code is one of
-// ReasonMissingUpload, ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended.
+// Unapproved is the condition of step 5: t needs an owner approval that it does not have. Only the two known passing
+// values clear it, so an unknown Approval fails closed.
+func Unapproved(t inputs.Trusted) bool {
+	return t.Approval != inputs.ApprovalNotRequired && t.Approval != inputs.ApprovalGranted
+}
+
+// Without returns the fixed outcome for a target that has no report: code is one of ReasonMissingUpload,
+// ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended, ReasonOwnerApprovalMissing.
 func Without(code ReasonCode) Outcome {
 	var rs reasons
 	switch code {
-	case ReasonMissingUpload, ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended:
+	case ReasonMissingUpload, ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended,
+		ReasonOwnerApprovalMissing:
 		rs.add(code, "")
 	default:
 		rs.add(ReasonEngineError, "")
 	}
+	return rs.outcome()
+}
+
+// ApprovalMissing is Without(ReasonOwnerApprovalMissing) for a caller that holds the trusted inputs: Detail names
+// t.ProtectedPaths, exactly as step 5 of Decide sets it.
+func ApprovalMissing(t inputs.Trusted) Outcome {
+	var rs reasons
+	rs.add(ReasonOwnerApprovalMissing, strings.Join(t.ProtectedPaths, ", "))
 	return rs.outcome()
 }
 

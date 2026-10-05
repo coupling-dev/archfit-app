@@ -168,8 +168,9 @@ func New(d Deps) *Gate
 func (g *Gate) UploadHandler() http.Handler
 
 // HandleEvent reacts to a verified webhook event: pending check on a new head, fork refusal,
-// re-run on a review change when the last receipt was owner_approval_missing, and a one-repository
-// sweep when a default-branch push changes a protected path.
+// owner_approval_missing on a review change that withdraws the approval a receipt relied on, re-run on a
+// review change when the last receipt was owner_approval_missing, and a one-repository sweep when a
+// default-branch push changes a protected path.
 func (g *Gate) HandleEvent(ctx context.Context, e Event) error
 
 // Sweep runs one reconciliation pass.

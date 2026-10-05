@@ -6,9 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alexei-led/archfit-app/internal/gate/feedback"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
 	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
 func TestMissedWebhookAndMissingUpload(t *testing.T) {
@@ -273,6 +275,7 @@ func TestLateOwnerApproval(t *testing.T) {
 	}{
 		{"approval on the head SHA", inputs.ApprovalGranted, []int64{9}},
 		{"approval on an older SHA", inputs.ApprovalMissing, nil},
+		{"approval no longer needed", inputs.ApprovalNotRequired, []int64{9}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -294,6 +297,124 @@ func TestLateOwnerApproval(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWithdrawnApprovalEndsSuccess(t *testing.T) {
+	withdrawn := func(tr inputs.Trusted) inputs.Trusted {
+		tr.Approval, tr.ProtectedPaths = inputs.ApprovalMissing, []string{".archfit-app.yaml", ".github/workflows/archfit.yaml"}
+		return tr
+	}
+	granted := trusted()
+	granted.Approval, granted.ProtectedPaths = inputs.ApprovalGranted, []string{".archfit-app.yaml"}
+	advisory := withdrawn(trusted())
+	advisory.Settings.Gate = settings.GateAdvisory
+	failed := receipt(9, verdict.ReasonBlockingFindings)
+	failed.Conclusion = verdict.Failure
+	stalePolicy := receipt(9, verdict.ReasonHealthy)
+	stalePolicy.PolicyDigest = "p0"
+
+	tests := []struct {
+		name string
+		rc   feedback.Receipt
+		tr   inputs.Trusted
+		want []verdict.ReasonCode
+	}{
+		{"success", receipt(9, verdict.ReasonHealthy), withdrawn(trusted()), []verdict.ReasonCode{verdict.ReasonOwnerApprovalMissing}},
+		{"failure", failed, withdrawn(trusted()), []verdict.ReasonCode{verdict.ReasonOwnerApprovalMissing}},
+		{"withdrawn while the policy also changed", stalePolicy, withdrawn(trusted()), []verdict.ReasonCode{verdict.ReasonOwnerApprovalMissing}},
+		{"approval still granted", receipt(9, verdict.ReasonHealthy), granted, nil},
+		{"the check already asks for action", receipt(9, verdict.ReasonPolicyMismatch), withdrawn(trusted()), nil},
+		{"advisory mode", receipt(9, verdict.ReasonHealthy), advisory, nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newWorld(t)
+			tg := w.pull(w.repo(1, 11, "acme/shop"), 1, tc.tr)
+			w.check(tg, tc.rc, t0.Add(-day))
+
+			for i := range 2 {
+				w.pass(t0.Add(time.Duration(i) * time.Hour))
+			}
+
+			if got := w.reasons()[1]; !slices.Equal(got, tc.want) {
+				t.Errorf("published %v, want %v", got, tc.want)
+			}
+			if len(w.actions.rerunCalls) != 0 {
+				t.Errorf("re-runs = %v: no run can pass before an owner approves again", w.actions.rerunCalls)
+			}
+			if len(tc.want) == 0 {
+				return
+			}
+			pub := w.pub.published[0]
+			if r := pub.Outcome.Reasons[0]; r.Detail != ".archfit-app.yaml, .github/workflows/archfit.yaml" {
+				t.Errorf("reason = %+v, want the protected paths in Detail", r)
+			}
+			if rc := pub.Receipt; rc.RunID != 9 || rc.RunAttempt != 1 || rc.PolicyDigest != "p1" {
+				t.Errorf("receipt = %+v, want run 9.1 at the current policy p1", rc)
+			}
+			// The first pass resolves twice: once to find the rule, once inside the lease to decide it.
+			if !reflect.DeepEqual(pub.Trusted, tc.tr) || w.resolver.calls[1] != tg || !w.resolver.nows[1].Equal(t0) {
+				t.Errorf("published from %+v; want the inputs read again inside the lease at the pass time", pub.Trusted)
+			}
+		})
+	}
+}
+
+// Rule 5a decides again inside the publication lease, from the gate check and the inputs as they are there.
+func TestWithdrawalDecidesInsideTheLease(t *testing.T) {
+	withdrawn := trusted()
+	withdrawn.Approval, withdrawn.ProtectedPaths = inputs.ApprovalMissing, []string{".archfit-app.yaml"}
+	granted := withdrawn
+	granted.Approval = inputs.ApprovalGranted
+	newer := receipt(9, verdict.ReasonHealthy)
+	newer.RunAttempt = 2
+
+	tests := []struct {
+		name        string
+		waited      func(w *world, tg inputs.Target) // what lands while the pass waits for the lease
+		want        []verdict.ReasonCode
+		wantAttempt int
+		wantErrors  int
+	}{
+		{"nothing landed", nil, []verdict.ReasonCode{verdict.ReasonOwnerApprovalMissing}, 1, 0},
+		{"a newer attempt turned green", func(w *world, tg inputs.Target) {
+			w.pub.states[checkKey(tg)] = feedback.CheckState{Exists: true, StartedAt: t0, Receipt: newer}
+		}, []verdict.ReasonCode{verdict.ReasonOwnerApprovalMissing}, 2, 0},
+		{"the owner approved again", func(w *world, tg inputs.Target) { w.trust(tg, granted) }, nil, 0, 0},
+		{"the inputs cannot be read", func(w *world, tg inputs.Target) { w.resolver.errs[pullKey(tg)] = errBoom }, nil, 0, 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newWorld(t)
+			tg := w.pull(w.repo(1, 11, "acme/shop"), 1, withdrawn)
+			w.check(tg, receipt(9, verdict.ReasonHealthy), t0.Add(-day))
+			if tc.waited != nil {
+				w.pub.waited = func(inputs.Target) { tc.waited(w, tg) }
+			}
+
+			sum := w.pass(t0)
+
+			if got := w.reasons()[1]; !slices.Equal(got, tc.want) || sum.Errors != tc.wantErrors {
+				t.Errorf("published %v with %d errors, want %v with %d", got, sum.Errors, tc.want, tc.wantErrors)
+			}
+			if len(tc.want) > 0 {
+				if rc := w.pub.published[0].Receipt; rc.RunID != 9 || rc.RunAttempt != tc.wantAttempt {
+					t.Errorf("receipt = %+v, want run 9.%d", rc, tc.wantAttempt)
+				}
+			}
+		})
+	}
+
+	t.Run("no lease", func(t *testing.T) {
+		w := newWorld(t)
+		tg := w.pull(w.repo(1, 11, "acme/shop"), 1, withdrawn)
+		w.check(tg, receipt(9, verdict.ReasonHealthy), t0.Add(-day))
+		w.pub.errs["Reconcile:acme/shop"] = errBoom
+
+		if sum := w.pass(t0); sum.Errors != 1 || len(w.pub.published) != 0 {
+			t.Errorf("summary %+v, published %v; want the pull skipped and nothing written", sum, w.reasons())
+		}
+	})
 }
 
 func TestStoreOutageDoesNotSuspend(t *testing.T) {

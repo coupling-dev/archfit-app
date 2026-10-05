@@ -16,7 +16,8 @@ separate, testable steps. Without this module a report is a self-reported file a
 - Serve `POST /v1/reports`: authenticate and bind the upload, resolve trusted inputs, check the engine
   identity against the locked manifest and the workflow path against settings, decide, publish, answer.
 - React to verified webhook events: pending gate check on a new head (required mode), fork refusal,
-  workflow re-run when an owner's review arrives after `owner_approval_missing`, and a one-repository sweep
+  `owner_approval_missing` when a review withdraws the approval a `success` or `failure` check relied on,
+  workflow re-run on a review after `owner_approval_missing` once no approval is missing, and a one-repository sweep
   when a default-branch push changes a protected path.
 - Run one reconciliation pass on request.
 - Publish, for the control plane, the `Entitlement` record contract, the `Receiver` for discovery uploads,
@@ -59,8 +60,9 @@ func New(d Deps) *Gate
 func (g *Gate) UploadHandler() http.Handler
 
 // HandleEvent reacts to a verified webhook event: pending check on a new head, fork refusal,
-// re-run on a review change when the last receipt was owner_approval_missing, and a one-repository
-// sweep when a default-branch push changes a protected path.
+// owner_approval_missing on a review change that withdraws the approval a receipt relied on, re-run on a
+// review change when the last receipt was owner_approval_missing, and a one-repository sweep when a
+// default-branch push changes a protected path.
 func (g *Gate) HandleEvent(ctx context.Context, e Event) error
 
 // Sweep runs one reconciliation pass.
@@ -403,8 +405,8 @@ type Facts struct {
 // The step table of gate/verdict is the normative order.
 func Decide(f Facts) Outcome
 
-// Without returns the fixed outcome for a target that has no report: code is one of
-// ReasonMissingUpload, ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended.
+// Without returns the fixed outcome for a target that has no report: code is one of ReasonMissingUpload,
+// ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended, ReasonOwnerApprovalMissing.
 func Without(code ReasonCode) Outcome
 ```
 
@@ -442,7 +444,7 @@ type Receipt struct {
 }
 ```
 
-<!-- contract: Publication, ErrStaleInputs, Publisher, CheckState — restated from internal/gate/feedback/module.md -->
+<!-- contract: Publication, ErrStaleInputs, Publisher, CheckState, Decision — restated from internal/gate/feedback/module.md -->
 ```go
 // Publication is one complete piece of feedback for one head SHA.
 type Publication struct {
@@ -481,7 +483,15 @@ type Publisher interface {
     State(ctx context.Context, t Target) (CheckState, error)
     // Warn adds or refreshes the waiver-expiry notice in the PR comment. Idempotent.
     Warn(ctx context.Context, t Target, expiry time.Time) error
+    // Reconcile reads the gate check and calls decide with it, then publishes what decide returns, all inside the
+    // head's publication lease: no other publication for the head can land between the read, the decision and the
+    // write. A nil publication writes nothing. decide reads everything else it needs itself, inside the lease.
+    Reconcile(ctx context.Context, t Target, decide Decision) error
 }
+
+// Decision decides, from the gate check as it is inside the publication lease, what Reconcile publishes; nil
+// publishes nothing. An error writes nothing and is returned by Reconcile.
+type Decision func(ctx context.Context, current CheckState) (*Publication, error)
 ```
 
 ### gate/sweep (child)
@@ -495,9 +505,10 @@ type Publisher interface {
 - **Shared knowledge**: `Sweeper`, `Summary`, `Config` (restated in Public Contract above). `Run` returns a nil
   error with `RateLimited` set when GitHub's rate limit stopped the pass. `RunRepo` is the same pass for one
   repository; it needs only `RepoRef` and `Private` of the `Repo` it is given. `Errors` counts skipped units.
-  The sweep owns two rules the façade also needs, and exports both: the re-run guard (`Rerun`, called for
-  `ReviewChanged`) and the publication for a target without a report (`Without`, called for the fork refusal of a
-  new head). The façade has no copy of either.
+  The sweep owns the rules the façade also needs, and exports them: the re-run guard (`Rerun`, called for
+  `ReviewChanged`), the publication for a target without a report (`Without`, called for the fork refusal of a
+  new head), and the withdrawn-approval rule 5a (`Withdrawn` and `Withdrawal`, called for `ReviewChanged`). The
+  façade has no copy of any of them.
 
 <!-- contract: New — restated from internal/gate/sweep/module.md -->
 ```go
@@ -521,12 +532,22 @@ const (
 func Rerun(ctx context.Context, actions Actions, r RepoRef, rc Receipt) (RerunResult, error)
 ```
 
-<!-- contract: Without — restated from internal/gate/sweep/module.md -->
+<!-- contract: Without, Withdrawn, Withdrawal — restated from internal/gate/sweep/module.md -->
 ```go
-// Without builds the publication for a target that has no report: verdict.Without(code), or
-// verdict.Suspended(tr.Entitlement) for ReasonSuspended, with the run identity of rc (zero when there
-// is no previous receipt) and the current digests of tr.
+// Without builds the publication for a target that has no report: verdict.Without(code),
+// verdict.Suspended(tr.Entitlement) for ReasonSuspended, or verdict.ApprovalMissing(tr) for
+// ReasonOwnerApprovalMissing, with the run identity of rc (zero when there is no previous receipt) and the
+// current digests of tr.
 func Without(code ReasonCode, t Target, tr Trusted, rc Receipt) Publication
+
+// Withdrawn reports whether rc concluded without asking for action although tr now lacks the owner approval that
+// verdict.Decide demands. Only success and failure match, so a pending, zero or unreadable receipt never does.
+func Withdrawn(rc Receipt, tr Trusted) bool
+
+// Withdrawal is rule 5a, decided inside the head's publication lease (Publisher.Reconcile) from the gate check
+// current there and inputs tr resolved there: Without(ReasonOwnerApprovalMissing) over the current receipt when the
+// repository is in required mode and that receipt is Withdrawn, else nil.
+func Withdrawal(t Target, current CheckState, tr Trusted) *Publication
 ```
 
 ### wire/manifest
@@ -1021,7 +1042,7 @@ Special targets, all through the same flow:
 | `Event.Kind`                     | Reaction                                                                                                                                                                                                                                                         |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PullOpened`, `PullSynchronized` | `Resolve`. `!SettingsFound` → nothing. Fork → `Publish(sweep.Without(ReasonForkUnsupported, target, trusted, Receipt{}))`: a zero-run receipt carrying the base digests. Else `Settings.Gate == GateRequired` → `publisher.Pending(target)`. Advisory → nothing. |
-| `ReviewChanged`                  | `State(target)`; only when its receipt reason is `owner_approval_missing`: `Resolve`; when `Approval == ApprovalGranted` **[default: no re-run for a review that grants nothing]** → `sweep.Rerun(ctx, actions, repo, receipt)`, the re-run guard of the sweep.  |
+| `ReviewChanged`                  | `Reconcile(target, …)`: inside the lease, a withdrawn approval → `sweep.Withdrawal` (below); reason `owner_approval_missing` and `!verdict.Unapproved(trusted)` **[default: no re-run while an approval is missing]** → `sweep.Rerun`.                           |
 | `DefaultBranchPush`              | `ChangedPaths` empty (= unknown), or `inputs.MayBeProtected(path)` for any changed path → `sweeper.RunRepo(ctx, repo, now)` in the request. Otherwise nothing.                                                                                                   |
 | `PullClosed`                     | nothing.                                                                                                                                                                                                                                                         |
 | installation kinds, `Ignored`    | nothing; `control` handles installations.                                                                                                                                                                                                                        |
@@ -1038,6 +1059,34 @@ construction (its "Without publications" table); the zero previous receipt gives
 workflow run reported for this head, and the digests are `First` of each trusted list. The sweep's rule 1 builds the
 same publication for a fork it finds unmarked, so the two paths cannot differ. The `external_id` is then `v1:0:0:`.
 Any later upload for the head has a higher run pair and replaces it.
+
+Withdrawn approval: `ReviewChanged` runs entirely inside `publisher.Reconcile`, so the gate check read, the
+decision and the write all happen under the head's publication lease. The decision calls `Resolve` (once, at
+`g.now()`) only when the check it is given concludes `success` or `failure`, or its reason is
+`owner_approval_missing`; every other receipt, a pending check and no check get no `Resolve` (`State` itself lists
+the check runs). In required mode, when the current receipt is `sweep.Withdrawn`, it returns
+`sweep.Withdrawal(target, current, trusted)`: `owner_approval_missing` under the current receipt's run identity,
+with the protected paths in `Detail`, logged as `approval_withdrawn`, and no re-run. This is rule 5a of the sweep,
+which repairs a lost event within the hour. After `owner_approval_missing`, once `!verdict.Unapproved(trusted)`
+(approval granted, or no longer required), it calls `sweep.Rerun` inside the same lease and publishes nothing.
+
+Because nothing is decided outside the lease, every ordering of these events and an upload ends right:
+
+- A withdrawal that lands while an upload holds the lease waits, then reads the check the upload wrote, a newer run
+  attempt included, and downgrades it.
+- An upload decided before a withdrawal that waits for the lease while the withdrawal writes re-reads its inputs
+  inside the lease. Any change of `Trusted` (whole-value equality, `decidedFrom`), the dismissed approval included,
+  makes it write nothing and answer 503 `unavailable`; the Action's retry then decides from the new inputs.
+- An approval that lands while the withdrawal holds the lease waits, then reads `owner_approval_missing` and
+  re-runs the workflow. An approval that lands before the withdrawal reads its inputs leaves the green check alone:
+  the withdrawal no longer finds the receipt withdrawn and writes nothing.
+
+A Store outage writes nothing and returns the lease error; the check keeps its conclusion, green included, until the
+Store is back and the next event or sweep pass runs. Every `ReviewChanged` takes the lease before it knows whether
+anything qualifies, also for a pending or absent check, so during an outage the re-run after an approval waits for
+rule 7b of the sweep, which needs no lease. Do not add a `State` prefilter outside the lease to save that: a filter
+that sees a pending check while an upload holds the lease returns early, and the upload's `success` then stands over
+a withdrawn approval.
 
 Re-run guard: `sweep.Rerun` is the only implementation; the façade has none. Its single behavior, for this reaction:
 
@@ -1153,8 +1202,8 @@ are driven only as far as they go without GitHub. Child internals are tested in 
   **Scenario**: hand-written fakes of the children through `newGate`: a clean pull request upload; a non-PR upload with `ProblemUnsupportedEvent` and `ProblemFork` whose binding names a feature branch; an upload whose claimed baseline digest is not trusted.
   **Expected behavior**: `Receive` gets `KindReport` under a deadline of about 50 seconds; `Resolve` gets the target of the binding and the clock; the `Publication` equals the one built from `verdict.Decide` and the receipt table, apart from `Resolve`, which is set and returns the resolver's current inputs for the same target. The non-PR target has `BaseRef` = the default branch and keeps `Fork`; the answer is `fork_unsupported`. The claimed digest reaches `Decide` unchanged: `baseline_mismatch`.
 - **Test name**: `TestHandleEventRules`
-  **Scenario**: the `HandleEvent` table over fakes of the children: a new head in required mode; a fork of a repository that is not onboarded; a deleted fork repository (`HeadRepo == ""`); a review against each row of the re-run guard table (receipt without a run, run not found, in progress, newer attempt, completed at the receipt's attempt), with approval still missing, with another receipt reason, with a pending check and with no check; an error from each child call (`Resolve`, `Pending`, `State`, `Actions.Run`, `Actions.Rerun`, `RunRepo`); `Sweep`.
-  **Expected behavior**: the target is built from the verified event; the not-onboarded fork gets nothing; the deleted fork gets the `sweep.Without(ReasonForkUnsupported, …)` publication with a zero run and the first trusted digests; `Actions.Rerun` is called only for the completed run at the receipt's attempt; a receipt without a run makes no GitHub call; a run that is not found is a nil error without a re-run; a review event never writes feedback; every child error is returned and nothing is published; `Sweep` passes the clock and the summary through.
+  **Scenario**: the `HandleEvent` table over fakes of the children: a new head in required mode; a fork of a repository that is not onboarded; a deleted fork repository (`HeadRepo == ""`); a review against each row of the re-run guard table (receipt without a run, run not found, in progress, newer attempt, completed at the receipt's attempt), with approval still missing, with no approval needed any more, with another receipt reason, with a pending check and with no check; a review on a `success` receipt whose approval is now missing, and the same with the approval still granted, in advisory mode, and on an `action_required` receipt; an error from each child call (`Resolve`, `Pending`, `State`, `Actions.Run`, `Actions.Rerun`, `RunRepo`, the withdrawal `Publish`); `Sweep`.
+  **Expected behavior**: the target is built from the verified event; the not-onboarded fork gets nothing; the deleted fork gets the `sweep.Without(ReasonForkUnsupported, …)` publication with a zero run and the first trusted digests; `Actions.Rerun` is called only for the completed run at the receipt's attempt (with an approval granted or no longer needed); a receipt without a run makes no GitHub call; a run that is not found is a nil error without a re-run; the withdrawn approval gets exactly the `sweep.Without(ReasonOwnerApprovalMissing, …)` publication through `Reconcile`, from one check read and one `Resolve`, and no re-run; every other review event writes no feedback; every child error is returned and nothing is published; `Sweep` passes the clock and the summary through.
 - **Test name**: `TestNewComposesTheChildren`
   **Scenario**: `New` with a real `*api.Client` that has no transport, a stub verifier and a nil `Deps.Now`; one `POST /v1/reports` without an envelope.
   **Expected behavior**: a nil `Deps.Now` means `time.Now`; the composed handler answers 400 with an error code, so the real children are wired as far as they go without GitHub.
@@ -1225,6 +1274,18 @@ are driven only as far as they go without GitHub. Child internals are tested in 
 - **Test name**: `TestReviewTriggersRerun` (T14)
   **Scenario**: `owner_approval_missing` receipt; the owner approves; webhook delivered; then delivered again.
   **Expected behavior**: one re-run; the check stays `action_required` until the new upload; the second delivery finds the run in progress and does nothing.
+- **Test name**: `TestWithdrawnApprovalEndsSuccess` (T14)
+  **Scenario**: a pull that edits the policy, the settings file or the workflow file, approved by the owner, with a `success` check; the owner's review is dismissed, or the owner requests changes; the `ReviewChanged` event arrives, or it is lost and the sweep runs; the trigger repeats; the owner approves again. Separately, a non-owner requests changes and the owner only comments.
+  **Expected behavior**: the gate and state checks become `action_required` with `owner_approval_missing` under the same run; no re-run; the repeat writes nothing; the new approval re-runs the workflow once and the next upload passes. A review that withdraws nothing leaves the check green with no write.
+- **Test name**: `TestWithdrawalRacesWithPublication` (T14)
+  **Scenario**: (1) an upload decided under the approval; before it holds the publication lease the owner requests changes and the `ReviewChanged` event publishes the withdrawal. (2) A dismissal; before the withdrawal holds the lease the owner approves again, through the event and through the sweep. (3) A re-run attempt 2 that read the approval inside the lease; as it writes `success`, the owner requests changes and the `ReviewChanged` event runs concurrently. (4) The sweep finds attempt 1 withdrawn; before it holds the lease, attempt 2 turns green and the approval is withdrawn again. (5) A withdrawal that holds the lease and has read its inputs; as it writes, the owner approves again and that `ReviewChanged` event runs concurrently.
+  **Expected behavior**: (1) the upload answers 503 `unavailable`, writes no `success`, and its retry gets `owner_approval_missing`. (2) nothing is written, no error, the check stays `success`. (3) and (4) the check ends `owner_approval_missing` over attempt 2. (5) the approval event waits for the lease, reads `owner_approval_missing` and re-runs the workflow once; the re-run's upload passes.
+- **Test name**: `TestApprovalNoLongerNeededReruns`
+  **Scenario**: an `owner_approval_missing` receipt on a pull that edited the workflow file; the pull then changes no protected path; a `ReviewChanged` event, or a sweep.
+  **Expected behavior**: one re-run of the receipt's run, and the re-run's upload passes.
+- **Test name**: `TestWithdrawalDuringStoreOutage`
+  **Scenario**: a green check whose approval is dismissed while the Store is unreachable: the `ReviewChanged` event, a sweep and an upload retry; then the Store is back and the sweep runs.
+  **Expected behavior**: during the outage the event returns an error, the sweep counts one error, the upload answers 503, and nothing is written, `success` included; after it the check becomes `owner_approval_missing`.
 - **Test name**: `TestSuspensionAndRestoration` (T21)
   **Scenario**: private repository past trial and grace; upload; then the record is replaced by a grant and the sweep runs; separately the Store fails during an upload.
   **Expected behavior**: `action_required`/`subscription`, not `failure` and not `success`; after restoration a re-run is requested and only the fresh report turns the check green; with the entitlement unreadable the upload is decided normally (an unreadable record is not non-payment).

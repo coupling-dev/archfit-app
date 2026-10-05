@@ -332,12 +332,12 @@ flowchart LR
 
 The arrows show recovery flow. The sweep does not compute a new report because the App stores no report.
 
-| Event                                                    | Gate action                                             | Control action                        |
-| -------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------- |
-| New pull request head                                    | Set a pending required check or refuse a fork           | None                                  |
-| Push to the default branch that changes a protected path | Sweep that repository                                   | None                                  |
-| Review change                                            | Rerun when the last reason was `owner_approval_missing` | None                                  |
-| Installation added or removed                            | None                                                    | Start the trial or delete tenant data |
+| Event                                                    | Gate action                                                                                                                                                                  | Control action                        |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| New pull request head                                    | Set a pending required check or refuse a fork                                                                                                                                | None                                  |
+| Push to the default branch that changes a protected path | Sweep that repository                                                                                                                                                        | None                                  |
+| Review change                                            | Set `owner_approval_missing` when a `success` or `failure` check lost its owner approval; rerun when the last reason was `owner_approval_missing` and no approval is missing | None                                  |
+| Installation added or removed                            | None                                                                                                                                                                         | Start the trial or delete tenant data |
 
 The app handler runs gate and control webhook work independently. A control error does not change gate work.
 
@@ -345,9 +345,23 @@ The sweep inspects open pull requests for these conditions:
 
 - A pending required check is missing.
 - No report arrived within 60 minutes.
+- An owner approval that a `success` or `failure` check relied on is gone.
 - The policy, baseline, or labels changed on the protected ref.
 - A waiver expires within seven days or has expired.
 - The subscription changed.
+
+An owner approval can end without a new commit: the owner dismisses the review or requests changes, the owner leaves
+the settings file on the protected ref, or the pull request starts to change a protected path. Edits to the settings
+file and the workflow file change no digest in the receipt, so the receipt digests cannot show this. The review event,
+or the sweep when the event is lost, then sets the required check to `action_required` with `owner_approval_missing`.
+It requests no rerun: no run can pass until an owner approves the head again, and that approval triggers the rerun.
+The rerun also follows when no approval is needed any more, for example after a base retarget.
+The review event and the sweep read the check, read the inputs, decide, and write all inside the head's publication
+lease. So a newer run that turned green while they waited is the result they downgrade, and an approval that
+arrives meanwhile is handled by its own review event after the write. An upload decided before the withdrawal reads
+its inputs again inside the lease, writes nothing, and answers `503`. Without the Store nothing is written, and the
+check keeps its current conclusion until the Store is back and the next review event or sweep pass runs. In
+advisory mode there is no required check, and neither path changes the advisory `archfit/state` check.
 
 The sweep reruns the customer workflow after stale inputs, an expired waiver, late owner approval, or restored
 subscription. A missing upload becomes `action_required`. A fresh report is required for a new `success` result.
@@ -460,15 +474,12 @@ See [`.env.example`](../.env.example).
 - `archfit-action` is not published. Its `feat/wave1-run-engine` branch sends the envelope format of this service, runs
   on `pull_request`, `push`, and `workflow_dispatch` only, and accepts `mode: report | discovery | baseline`. The
   manifest `action_ref` takes the commit of its first release.
-- `archfit-action` does not upload a baseline yet. Its `mode: baseline` stores `.archfit-baseline.json` as a workflow
-  artifact only. Before its first release it must:
-  - set the envelope `kind` to `baseline` and keep `baseline_digest` empty;
-  - send the file to `/v1/baselines` as the [baseline upload contract](#baseline-upload-contract) states, with a 1 MiB
-    cap, and stop exiting early in `report.sh` for baseline mode when an endpoint is set;
-  - report the pull request URL, `unchanged`, and the new error codes in the step summary, and treat `409 stale_head`
-    as "dispatch the capture again", not as success;
-  - vendor the envelope schema again: the App schema now accepts `kind: baseline`, so the copy pinned in its
-    `SCHEMA_SOURCE` (revision `9dca5f9`) differs from this one.
+- On that branch, from commit `04fce3f`, `mode: baseline` with an `endpoint` uploads the captured
+  `.archfit-baseline.json` to `/v1/baselines` as the [baseline upload contract](#baseline-upload-contract) states:
+  envelope `kind: baseline` with an empty `baseline_digest`, a 1 MiB cap, the pull request URL, `unchanged`, or the
+  error code in the step summary, and a failed job with "dispatch the capture again" on `409 stale_head` or
+  `stale_attempt`. It still keeps the file as a workflow artifact. Its vendored envelope schema pins revision `c0b1e97`
+  of this repository and is byte-identical to `internal/wire/envelope/envelope.v1.schema.json`.
 - The `action-conformance` CI job compares the Action's vendored `schema/envelope.v1.schema.json` with
   `internal/wire/envelope/envelope.v1.schema.json` at the manifest `action_ref`. While `action_ref` is the placeholder,
   the `action-pin` job reports "not verified" in a warning and the step summary, and `action-conformance` shows as

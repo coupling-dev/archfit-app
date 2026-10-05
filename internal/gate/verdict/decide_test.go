@@ -2,6 +2,7 @@ package verdict
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -559,5 +560,37 @@ func TestWithout(t *testing.T) {
 	}
 	if r := Without(ReasonSuspended).Reasons[0]; r.Category != CategorySubscription || r.Next != "Archfit subscription inactive." {
 		t.Errorf("suspended = %+v", r)
+	}
+}
+
+func TestApprovalMissing(t *testing.T) {
+	for _, paths := range [][]string{{".archfit-app.yaml"}, {".archfit.yaml", ".github/workflows/archfit.yaml"}, nil} {
+		tr := inputs.Trusted{SettingsFound: true, Approval: inputs.ApprovalMissing, ProtectedPaths: paths}
+		o := ApprovalMissing(tr)
+		checkInvariants(t, o)
+		wantCodes(t, o, ActionRequired, ReasonOwnerApprovalMissing)
+		decided := decide(t, with(approvalMissing, func(f *Facts) { f.Trusted.ProtectedPaths = paths }))
+		if decided.Reasons[0] != o.Reasons[0] {
+			t.Errorf("Decide gives %+v, ApprovalMissing gives %+v", decided.Reasons[0], o.Reasons[0])
+		}
+	}
+}
+
+func TestUnapproved(t *testing.T) {
+	for approval, want := range map[inputs.Approval]bool{
+		inputs.ApprovalNotRequired: false,
+		inputs.ApprovalGranted:     false,
+		inputs.ApprovalMissing:     true,
+		"":                         true,
+		"skipped":                  true,
+	} {
+		tr := inputs.Trusted{Approval: approval}
+		if got := Unapproved(tr); got != want {
+			t.Errorf("Unapproved(%q) = %v, want %v", approval, got, want)
+		}
+		decided := decide(t, with(func(f *Facts) { f.Trusted.Approval = approval }))
+		if got := slices.ContainsFunc(decided.Reasons, func(r Reason) bool { return r.Code == ReasonOwnerApprovalMissing }); got != want {
+			t.Errorf("Decide with approval %q names owner_approval_missing: %v, want %v", approval, got, want)
+		}
 	}
 }

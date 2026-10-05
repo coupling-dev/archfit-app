@@ -16,7 +16,7 @@ precondition holds.
 - `Decide`: map `Facts` to an `Outcome` in a fixed order: subscription, settings, source and producer
   eligibility, governance (owner approval), input integrity, evidence completeness, engine decision.
 - `Without`: the fixed outcome for a target that has no report (missing upload, stale inputs, expired
-  waiver, fork, suspension).
+  waiver, fork, suspension, withdrawn owner approval).
 - Keep architecture, evidence, governance and subscription outcomes apart through `Category`.
 - Preserve secondary reasons (for example unevaluated required rules beside a blocker) for feedback.
 - Give every reason a recovery action (`Next`).
@@ -122,8 +122,8 @@ type Facts struct {
 // The step table of gate/verdict is the normative order.
 func Decide(f Facts) Outcome
 
-// Without returns the fixed outcome for a target that has no report: code is one of
-// ReasonMissingUpload, ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended.
+// Without returns the fixed outcome for a target that has no report: code is one of ReasonMissingUpload,
+// ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended, ReasonOwnerApprovalMissing.
 func Without(code ReasonCode) Outcome
 ```
 
@@ -131,6 +131,14 @@ func Without(code ReasonCode) Outcome
 // Suspended is Without(ReasonSuspended) for a caller that holds the entitlement record: Next is
 // e.Reason when it is not empty, exactly as step 1 of Decide sets it.
 func Suspended(e Entitlement) Outcome
+
+// ApprovalMissing is Without(ReasonOwnerApprovalMissing) for a caller that holds the trusted inputs: Detail names
+// t.ProtectedPaths, exactly as step 5 of Decide sets it.
+func ApprovalMissing(t Trusted) Outcome
+
+// Unapproved is the condition of step 5: t needs an owner approval that it does not have. Only the two known passing
+// values clear it, so an unknown Approval fails closed.
+func Unapproved(t Trusted) bool
 ```
 
 ### What the two booleans mean
@@ -310,7 +318,11 @@ count; the `policy_defect` Detail holds rule IDs, never the dead glob (feedback 
 glob in the evidence-gap section). `labels_mismatch` is category evidence **[default]**.
 
 `Without(code)` returns `ActionRequired` with the single catalog reason of `code`. A code outside the
-five listed ones returns `ActionRequired` with `engine_error` **[default]**; `Without` can never return `Success`.
+six listed ones returns `ActionRequired` with `engine_error` **[default]**; `Without` can never return `Success`.
+`Suspended(e)` and `ApprovalMissing(t)` are the two codes whose `Decide` reason carries record data; each returns
+exactly the `Reasons[0]` that `Decide` gives for the same record, so a sweep correction reads like the upload
+decision it replaces. `Unapproved(t)` is the condition of step 5; `gate/sweep` uses it to find a receipt decided
+under an owner approval that is gone, so the step and the sweep cannot disagree about which approvals clear it.
 
 ### Why `neutral` and `skipped` cannot be represented
 
@@ -685,7 +697,7 @@ type Seam struct {
 
 - **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Builds `Facts`, calls `Decide`. The fork refusal reaches `Without` through `sweep.Without`.
 - **internal/gate/feedback**: model, gate / 1 / 1, high, balanced. Renders `Outcome`; `Receipt` stores `Conclusion` and `ReasonCode`.
-- **internal/gate/sweep**: contract, gate / 1 / 1, high, balanced. Calls `Without` and `Suspended`; compares receipt `ReasonCode` values.
+- **internal/gate/sweep**: contract, gate / 1 / 1, high, balanced. Calls `Without`, `Suspended`, `ApprovalMissing` and `Unapproved`; compares receipt `ReasonCode` and `Conclusion` values.
 
 ## Change Vectors
 
@@ -761,11 +773,17 @@ type Seam struct {
   **Scenario**: iterate every `ReasonCode` constant of the contract (twenty-four).
   **Expected behavior**: each has the catalog category and conclusion (`success` for `healthy` and `attention_only`); every code except `healthy` has a non-empty `Next`; the `Next` texts of `workflow_not_approved` and `settings_missing` name `settings.Path`.
 - **Test name**: `TestWithout`
-  **Scenario**: the five allowed codes, then `ReasonHealthy` and an unknown code.
+  **Scenario**: the six allowed codes, then `ReasonHealthy` and an unknown code.
   **Expected behavior**: `ActionRequired` with one reason each; the last two give `engine_error`.
 - **Test name**: `TestSuspended`
   **Scenario**: an entitlement with a `Reason`; the zero entitlement; `Decide` for suspended facts with the same two records.
   **Expected behavior**: `ActionRequired`, one reason `subscription_suspended` in category `subscription`; `Next` is the record's `Reason`, or the catalog text for the zero record; `Reasons[0]` equals the one `Decide` gives.
+- **Test name**: `TestApprovalMissing`
+  **Scenario**: trusted inputs with a missing approval and one, two or no protected paths; `Decide` for the same inputs.
+  **Expected behavior**: `ActionRequired`, one reason `owner_approval_missing`; `Reasons[0]` equals the one `Decide` gives, `Detail` included.
+- **Test name**: `TestUnapproved`
+  **Scenario**: `Approval` `not_required`, `granted`, `missing`, empty, and an unknown value; `Decide` for each.
+  **Expected behavior**: true for the last three only, and `Decide` names `owner_approval_missing` exactly when it is true.
 
 ### Integration Contract Tests
 

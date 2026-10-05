@@ -47,17 +47,39 @@ type serialized struct {
 }
 
 func (s *serialized) Publish(ctx context.Context, p Publication) error {
-	return s.hold(ctx, p.Target, func(ctx context.Context) error {
-		if p.Resolve != nil {
-			fresh, err := p.Resolve(ctx)
-			if err != nil {
-				return fmt.Errorf("feedback: resolve inputs again: %w: %w", errUnwritten, err)
-			}
-			if !decidedFrom(p, fresh) {
-				return ErrStaleInputs
-			}
+	return s.hold(ctx, p.Target, func(ctx context.Context) error { return s.publishFresh(ctx, p) })
+}
+
+// publishFresh publishes p unless p.Resolve shows that its inputs moved. The caller holds the lease.
+func (s *serialized) publishFresh(ctx context.Context, p Publication) error {
+	if p.Resolve != nil {
+		fresh, err := p.Resolve(ctx)
+		if err != nil {
+			return fmt.Errorf("feedback: resolve inputs again: %w: %w", errUnwritten, err)
 		}
-		return s.next.Publish(ctx, p)
+		if !decidedFrom(p, fresh) {
+			return ErrStaleInputs
+		}
+	}
+	return s.next.Publish(ctx, p)
+}
+
+// Reconcile is State, decide and Publish under one hold of the lease. A failed read or decision wrote no check, so it
+// releases the lease at once; decide may have called GitHub (a re-run request), but never a check or comment write.
+func (s *serialized) Reconcile(ctx context.Context, t inputs.Target, decide Decision) error {
+	return s.hold(ctx, t, func(ctx context.Context) error {
+		current, err := s.next.State(ctx, t)
+		if err != nil {
+			return fmt.Errorf("feedback: read the gate check: %w (%w)", err, errUnwritten)
+		}
+		p, err := decide(ctx, current)
+		if err != nil {
+			return fmt.Errorf("%w (%w)", err, errUnwritten)
+		}
+		if p == nil {
+			return nil
+		}
+		return s.publishFresh(ctx, *p)
 	})
 }
 

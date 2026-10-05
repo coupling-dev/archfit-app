@@ -147,6 +147,12 @@ func TestLeaseFailsClosed(t *testing.T) {
 				"Publish": func() error { return pub.Publish(ctx, p) },
 				"Pending": func() error { return pub.Pending(ctx, tt.target) },
 				"Warn":    func() error { return pub.Warn(ctx, tt.target, t0.Add(48*time.Hour)) },
+				"Reconcile": func() error {
+					return pub.Reconcile(ctx, tt.target, func(context.Context, CheckState) (*Publication, error) {
+						t.Error("Reconcile decided without a lease")
+						return &p, nil
+					})
+				},
 			} {
 				if err := call(); err == nil {
 					t.Errorf("%s: want an error", name)
@@ -302,6 +308,69 @@ func TestStaleDecisionNeverReplacesNewerInputs(t *testing.T) {
 			}
 			if _, err := h.store.Get(ctx, 1, leaseKeyB); !errors.Is(err, store.ErrNotFound) {
 				t.Errorf("lease kept after the upload: %v", err)
+			}
+		})
+	}
+}
+
+// Reconcile reads the gate check only once it holds the lease, so it decides from what the previous holder wrote;
+// it writes what decide returns, and nothing when decide returns nil or fails. Each releases the lease at once.
+func TestReconcileDecidesInsideTheLease(t *testing.T) {
+	ctx := context.Background()
+	boom := errors.New("inputs unreadable")
+	for _, tt := range []struct {
+		name        string
+		decision    func(current CheckState) (*Publication, error)
+		wantErr     error
+		wantAttempt int // of the gate check afterwards
+	}{
+		{"publication", func(current CheckState) (*Publication, error) {
+			p := blockedPublication(t, headB, 7, current.Receipt.RunAttempt)
+			p.Outcome = verdict.Without(verdict.ReasonOwnerApprovalMissing)
+			p.Receipt = receiptFor(p.Outcome, 7, current.Receipt.RunAttempt)
+			return &p, nil
+		}, nil, 2},
+		{"nothing to do", func(CheckState) (*Publication, error) { return nil, nil }, nil, 2},
+		{"decision fails", func(CheckState) (*Publication, error) { return nil, boom }, boom, 2},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(headB)
+			if err := h.pub.Publish(ctx, blockedPublication(t, headB, 7, 1)); err != nil {
+				t.Fatal(err)
+			}
+			checkWrites := func() int { return h.checks.count("CreateCheckRun") + h.checks.count("UpdateCheckRun") }
+			putLease(t, h.store, leaseBytes(t, "other", t0.Add(time.Second)))
+			writes := 0
+			h.onContention(func() { // the holder publishes attempt 2, then releases
+				if err := h.pub.(*serialized).next.Publish(ctx, blockedPublication(t, headB, 7, 2)); err != nil {
+					t.Fatal(err)
+				}
+				if err := h.store.Delete(ctx, 1, leaseKeyB); err != nil {
+					t.Fatal(err)
+				}
+				writes = checkWrites()
+			})
+			var seen CheckState
+
+			err := h.pub.Reconcile(ctx, prTarget(headB), func(_ context.Context, current CheckState) (*Publication, error) {
+				seen = current
+				return tt.decision(current)
+			})
+
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("Reconcile = %v, want %v", err, tt.wantErr)
+			}
+			if seen.Receipt.RunAttempt != 2 {
+				t.Errorf("decided from attempt %d, want the attempt the previous holder wrote", seen.Receipt.RunAttempt)
+			}
+			gate := h.checks.latest(t, headB, gateCheck)
+			got, _ := parseReceipt(gate.Summary)
+			wrote := checkWrites() > writes
+			if got.RunAttempt != tt.wantAttempt || wrote != (tt.name == "publication") {
+				t.Errorf("gate holds attempt %d (%s), wrote %v", got.RunAttempt, got.Reason, wrote)
+			}
+			if _, err := h.store.Get(ctx, 1, leaseKeyB); !errors.Is(err, store.ErrNotFound) {
+				t.Errorf("lease kept after Reconcile: %v", err)
 			}
 		})
 	}

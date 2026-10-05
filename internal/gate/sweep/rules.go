@@ -55,11 +55,14 @@ func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted)
 		}
 		p.sum.TimedOut++
 		return nil
+	case Withdrawn(rc, tr):
+		// No re-run: no run can pass before an owner approves again, and rule 7b re-runs then.
+		return p.withdraw(ctx, t)
 	case stale(rc, tr):
-		if err := p.publish(ctx, "5", t, tr, rc, verdict.ReasonStaleInputs); err != nil {
+		if err := p.publish(ctx, "5b", t, tr, rc, verdict.ReasonStaleInputs); err != nil {
 			return err
 		}
-		_, err := p.rerun(ctx, "5", t, rc)
+		_, err := p.rerun(ctx, "5b", t, rc)
 		return err
 	}
 
@@ -68,7 +71,8 @@ func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted)
 		return err
 	}
 	restored := rc.Reason == verdict.ReasonSuspended // rule 2 already excluded Trusted.Suspended
-	approvedLate := rc.Reason == verdict.ReasonOwnerApprovalMissing && tr.Approval == inputs.ApprovalGranted
+	// Granted, or no longer needed (a retargeted base, a repointed settings workflow): either way the reason is gone.
+	approvedLate := rc.Reason == verdict.ReasonOwnerApprovalMissing && !verdict.Unapproved(tr)
 	switch {
 	case !e.IsZero() && !p.now.Before(e) && state.StartedAt.Before(e):
 		if err := p.publish(ctx, "6b", t, tr, rc, verdict.ReasonWaiverExpired); err != nil {
@@ -92,6 +96,14 @@ func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted)
 		return err
 	}
 	return nil
+}
+
+// Withdrawn reports whether rc concluded without asking for action although tr now lacks the owner approval that
+// verdict.Decide demands: the approval it relied on was dismissed or followed by a request for changes, the approver
+// left the owners of the protected settings, or the pull now changes a protected path. Only success and failure
+// match, so a pending, zero or unreadable receipt never does.
+func Withdrawn(rc feedback.Receipt, tr inputs.Trusted) bool {
+	return (rc.Conclusion == verdict.Success || rc.Conclusion == verdict.Failure) && verdict.Unapproved(tr)
 }
 
 // stale reports whether the receipt was computed from inputs that are no longer on the protected ref,
@@ -124,16 +136,20 @@ func (p *pass) warn(ctx context.Context, t inputs.Target, e time.Time) error {
 	return nil
 }
 
-// Without builds the publication for a target that has no report: verdict.Without(code), or
-// verdict.Suspended(tr.Entitlement) for ReasonSuspended, with the run identity of rc (zero when there
-// is no previous receipt) and the current digests of tr.
+// Without builds the publication for a target that has no report: verdict.Without(code),
+// verdict.Suspended(tr.Entitlement) for ReasonSuspended, or verdict.ApprovalMissing(tr) for
+// ReasonOwnerApprovalMissing, with the run identity of rc (zero when there is no previous receipt) and the
+// current digests of tr.
 //
 // Keeping the previous run identity keeps the check's external_id, so feedback updates the gate check in
 // place; the current digests and the new reason are what makes the next pass find nothing to do.
 func Without(code verdict.ReasonCode, t inputs.Target, tr inputs.Trusted, rc feedback.Receipt) feedback.Publication {
 	out := verdict.Without(code)
-	if code == verdict.ReasonSuspended {
+	switch code {
+	case verdict.ReasonSuspended:
 		out = verdict.Suspended(tr.Entitlement)
+	case verdict.ReasonOwnerApprovalMissing:
+		out = verdict.ApprovalMissing(tr)
 	}
 	return feedback.Publication{
 		Target:  t,
@@ -153,18 +169,54 @@ func Without(code verdict.ReasonCode, t inputs.Target, tr inputs.Trusted, rc fee
 	}
 }
 
+// Withdrawal is rule 5a, decided inside the head's publication lease (feedback.Publisher.Reconcile) from the gate
+// check current there and inputs tr resolved there: Without(ReasonOwnerApprovalMissing) over the current receipt
+// when the repository is in required mode and that receipt is Withdrawn, else nil. Deciding inside the lease is what
+// makes it safe: a newer run that turned green while the caller waited is the receipt it replaces, and an owner who
+// approved again meanwhile leaves the check as it is.
+func Withdrawal(t inputs.Target, current feedback.CheckState, tr inputs.Trusted) *feedback.Publication {
+	if tr.Settings.Gate != settings.GateRequired || !Withdrawn(current.Receipt, tr) {
+		return nil
+	}
+	pub := Without(verdict.ReasonOwnerApprovalMissing, t, tr, current.Receipt)
+	return &pub
+}
+
+// withdraw is rule 5a. The pass saw a withdrawn receipt outside the lease; Reconcile decides again inside it.
+func (p *pass) withdraw(ctx context.Context, t inputs.Target) error {
+	var pub *feedback.Publication
+	var was feedback.Receipt
+	err := p.publisher.Reconcile(ctx, t, func(ctx context.Context, current feedback.CheckState) (*feedback.Publication, error) {
+		tr, err := p.resolver.Resolve(ctx, t, p.now)
+		if err != nil {
+			return nil, err
+		}
+		pub, was = Withdrawal(t, current, tr), current.Receipt
+		return pub, nil
+	})
+	if err != nil || pub == nil {
+		return err
+	}
+	p.logPublished("5a", *pub, was)
+	return nil
+}
+
 func (p *pass) publish(ctx context.Context, rule string, t inputs.Target, tr inputs.Trusted, rc feedback.Receipt, code verdict.ReasonCode) error {
 	pub := Without(code, t, tr, rc)
 	if err := p.publisher.Publish(ctx, pub); err != nil {
 		return err
 	}
-	p.logAction(t, rule, "publish", "reason", string(code),
+	p.logPublished(rule, pub, rc)
+	return nil
+}
+
+func (p *pass) logPublished(rule string, pub feedback.Publication, rc feedback.Receipt) {
+	p.logAction(pub.Target, rule, "publish", "reason", string(pub.Receipt.Reason),
 		"run_id", pub.Receipt.RunID, "run_attempt", pub.Receipt.RunAttempt,
 		"policy_digest", pub.Receipt.PolicyDigest, "baseline_digest", pub.Receipt.BaselineDigest,
 		"labels_digest", pub.Receipt.LabelsDigest,
 		"was_policy_digest", rc.PolicyDigest, "was_baseline_digest", rc.BaselineDigest,
 		"was_labels_digest", rc.LabelsDigest)
-	return nil
 }
 
 // RerunResult is what the re-run guard found or did. It is meaningful only with a nil error.

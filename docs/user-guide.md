@@ -236,6 +236,9 @@ that matches nothing. Other rules that the engine could not evaluate keep `missi
 
 The sweep requests a workflow rerun after stale inputs, an expired waiver, late owner approval, or restored subscription.
 A rerun uses customer CI minutes. A fresh report is required for a new `success` result.
+When an owner approval that a passed check relied on is withdrawn, the review event sets `owner_approval_missing` at
+once; the sweep does it within an hour if the event is lost. No rerun is requested until an owner approves again or
+no approval is needed any more.
 
 ### Engine versions
 
@@ -293,7 +296,10 @@ Select **Reload the draft**, then apply the edit again.
 ### Owner approval
 
 A protected-path change needs approval from a policy owner on the exact head commit.
-A new push cancels the approval.
+A new push cancels the approval. A dismissed review, or a later request for changes from the same owner, also
+cancels it. The required check then returns to `action_required` with `owner_approval_missing` within the review
+event, or within an hour if the event is lost. No new commit is needed. A new owner approval reruns the workflow,
+and a fresh report sets the result again.
 
 The protected paths are:
 
@@ -352,8 +358,10 @@ the default branch. A capture equal to the current baseline opens nothing.
 | `baseline_invalid`        | Use the unmodified file from `archfit baseline` of the pinned engine.         |
 | `baseline_too_large`      | The file is larger than 1 MiB. Reduce the accepted debt or split the policy.  |
 
-The Action of this release keeps the file as the `archfit-baseline` workflow artifact and does not upload it yet.
-Until an Action release uploads baselines, download the artifact and open the pull request yourself.
+The generated workflow sets `endpoint`, so the Action uploads the file. It also keeps the file as the
+`archfit-baseline` workflow artifact. A `409` answer (`stale_head` or `stale_attempt`) fails the job: dispatch the
+capture again on the current default-branch head. Without `endpoint` the Action sends nothing; commit the artifact
+as `.archfit-baseline.json` in a pull request that a policy owner approves.
 
 ## Enable the gate
 

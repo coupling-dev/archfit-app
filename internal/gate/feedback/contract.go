@@ -66,11 +66,19 @@ type Publisher interface {
 	State(ctx context.Context, t inputs.Target) (CheckState, error)
 	// Warn adds or refreshes the waiver-expiry notice in the PR comment. Idempotent.
 	Warn(ctx context.Context, t inputs.Target, expiry time.Time) error
+	// Reconcile reads the gate check and calls decide with it, then publishes what decide returns, all inside the
+	// head's publication lease: no other publication for the head can land between the read, the decision and the
+	// write. A nil publication writes nothing. decide reads everything else it needs itself, inside the lease.
+	Reconcile(ctx context.Context, t inputs.Target, decide Decision) error
 }
 
-// New returns a Publisher that is safe for concurrent use, also across instances that share s: Publish, Pending and
-// Warn hold a per-head publication lease in s, so that two publishers for one head SHA never interleave their reads
-// and writes. It keeps no other state between calls; GitHub holds the receipts.
+// Decision decides, from the gate check as it is inside the publication lease, what Reconcile publishes; nil
+// publishes nothing. An error writes nothing and is returned by Reconcile.
+type Decision func(ctx context.Context, current CheckState) (*Publication, error)
+
+// New returns a Publisher that is safe for concurrent use, also across instances that share s: Publish, Pending,
+// Warn and Reconcile hold a per-head publication lease in s, so that two publishers for one head SHA never interleave
+// their reads and writes. It keeps no other state between calls; GitHub holds the receipts.
 func New(checks api.Checks, comments api.Comments, pulls api.Pulls, s store.Store, now func() time.Time) Publisher {
 	return &serialized{
 		next:  &publisher{checks: checks, comments: comments, pulls: pulls, now: now},

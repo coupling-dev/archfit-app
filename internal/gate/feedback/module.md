@@ -102,13 +102,21 @@ type Publisher interface {
     State(ctx context.Context, t Target) (CheckState, error)
     // Warn adds or refreshes the waiver-expiry notice in the PR comment. Idempotent.
     Warn(ctx context.Context, t Target, expiry time.Time) error
+    // Reconcile reads the gate check and calls decide with it, then publishes what decide returns, all inside the
+    // head's publication lease: no other publication for the head can land between the read, the decision and the
+    // write. A nil publication writes nothing. decide reads everything else it needs itself, inside the lease.
+    Reconcile(ctx context.Context, t Target, decide Decision) error
 }
+
+// Decision decides, from the gate check as it is inside the publication lease, what Reconcile publishes; nil
+// publishes nothing. An error writes nothing and is returned by Reconcile.
+type Decision func(ctx context.Context, current CheckState) (*Publication, error)
 ```
 
 ```go
-// New returns a Publisher that is safe for concurrent use, also across instances that share s: Publish, Pending and
-// Warn hold a per-head publication lease in s, so that two publishers for one head SHA never interleave their reads
-// and writes. It keeps no other state between calls; GitHub holds the receipts.
+// New returns a Publisher that is safe for concurrent use, also across instances that share s: Publish, Pending,
+// Warn and Reconcile hold a per-head publication lease in s, so that two publishers for one head SHA never interleave
+// their reads and writes. It keeps no other state between calls; GitHub holds the receipts.
 func New(checks Checks, comments Comments, pulls Pulls, s Store, now func() time.Time) Publisher
 ```
 
@@ -213,8 +221,8 @@ comment marker and the section. No-op for `Target.PullRequest == 0`.
 
 GitHub has no conditional write for check runs: two publishers that both read a check before either writes can
 each act on a stale read, and the older one can then replace a newer `failure` with `success`. So `Publish`,
-`Pending` and `Warn` run inside a lease in the Store, and every read, supersedes check and write of the steps above
-happens while it is held. `State` only reads and takes no lease.
+`Pending`, `Warn` and `Reconcile` run inside a lease in the Store, and every read, supersedes check and write of the
+steps above happens while it is held. `State` only reads and takes no lease.
 
 - Slot: tenant `Tenant(Target.Repo.InstallationID)`, key `feedback/lease/<Target.HeadSHA>`. The repository is not
   part of the key **[default]**: webhook targets carry no repository ID and a full name changes on rename, so a
@@ -260,6 +268,17 @@ after a field is added. And each receipt digest (`PolicyDigest`, `BaselineDigest
 `ErrStaleInputs`; a `Resolve` error writes nothing and is returned wrapped, `errors.Is` intact. Both release the
 lease at once. `gate` sets `Resolve` on every upload publication; the sweep's publications carry the inputs they were
 just resolved from and are never a success, so they leave it nil.
+
+`Reconcile(ctx, target, decide)` is for a caller whose decision depends on the gate check itself: the withdrawal of
+an owner approval (sweep rule 5a and `ReviewChanged` in `gate`), which replaces a receipt that asked for no action,
+and the re-run after `owner_approval_missing`. Inside one hold of the lease it calls `State`, passes the result to
+`decide`, and publishes the publication `decide` returns (with the `Resolve` check above when it is set). `decide`
+resolves the trusted inputs itself, inside the lease, so the read, the decision and the write see no other
+publication for the head in between: a newer run that turned green while the caller waited is the receipt it
+decides about, and a review that lands after the read is handled by its own event, which waits for this lease and
+then reads the written check. A nil publication writes nothing. A `State` or `decide` error writes no check and
+releases the lease at once; `decide` may have requested a re-run, which writes no check. Without the lease nothing
+is read and `decide` is not called.
 
 ### Layout
 
@@ -1171,8 +1190,11 @@ Golden files hold rendered bodies for the wire fixtures.
   **Scenario**: a held lease that expires 60 s after the clock; each wait advances the clock 20 s.
   **Expected behavior**: three waits, then the publication.
 - **Test name**: `TestLeaseFailsClosed`
-  **Scenario**: `Publish`, `Pending` and `Warn` with the Store's `Get` failing, with its `CompareAndSwap` failing, with a target without an installation ID, and with a target without a head SHA.
-  **Expected behavior**: each call returns an error; no check or comment call is made.
+  **Scenario**: `Publish`, `Pending`, `Warn` and `Reconcile` with the Store's `Get` failing, with its `CompareAndSwap` failing, with a target without an installation ID, and with a target without a head SHA.
+  **Expected behavior**: each call returns an error; no check or comment call is made; `Reconcile` never calls its decision.
+- **Test name**: `TestReconcileDecidesInsideTheLease`
+  **Scenario**: a gate check of run 7.1; another holder has the lease and publishes run 7.2 before it releases; `Reconcile` with a decision that returns a publication over the check it is given, one that returns nil, and one that fails.
+  **Expected behavior**: each decision is given run 7.2; the first writes over 7.2, the other two write nothing and the third's error is returned; no lease is left.
 - **Test name**: `TestLeaseHolding`
   **Scenario**: the work context of a held lease; a request context cancelled during the work; another holder's lease written over this one during the work; a second head while the first is held.
   **Expected behavior**: the work deadline is about 50 s from now by elapsed time, not by the injected clock; the lease is released after the cancelled request; the other holder's lease is not deleted; the second head does not wait.
