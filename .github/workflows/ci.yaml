@@ -20,6 +20,19 @@ jobs:
       - run: go test -race ./...
       - run: CGO_ENABLED=0 go build ./...
 
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # Same minor version as the engine repository: patch releases float, new linters arrive only with a bump.
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
+        with:
+          version: v2.14
+
   image:
     name: Image builds
     runs-on: ubuntu-24.04
