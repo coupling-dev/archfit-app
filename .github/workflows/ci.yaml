@@ -28,7 +28,7 @@ jobs:
       - run: docker build -t archfit-app:ci .
 
   # The App owns the envelope schema; archfit-action vendors a copy (decisions.md §3). action-conformance checks the
-  # copy at the Action commit that generated workflows pin. While that commit is the manifest placeholder there is
+  # copy at the Action commit that generated workflows pin. If the manifest ever pins a placeholder commit there is
   # nothing to check: action-pin says so in a warning and the step summary, and action-conformance shows as skipped.
   action-pin:
     name: Pinned Action commit
@@ -69,13 +69,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      # ARCHFIT_ACTION_TOKEN is needed only while archfit-action is private; GITHUB_TOKEN reads a public repository.
       - uses: actions/checkout@v4
         with:
           repository: alexei-led/archfit-action
           ref: ${{ needs.action-pin.outputs.ref }}
           path: archfit-action
-          token: ${{ secrets.ARCHFIT_ACTION_TOKEN || github.token }}
           persist-credentials: false
       - name: Compare the vendored envelope schema
         env:

@@ -296,6 +296,10 @@ approves v2.3.1 only, until the v2.4.0 images are published.
 Tests in `internal/wire` stop a manifest row for a release that the decoder cannot read, that has no real capture
 in the fixture corpus, or whose config schema is not pinned when new workflows move to it.
 
+Generated workflows pin `archfit-action` v1.0.0 by commit `a9cd2ce8d0dc996b258b5faa5145eaf11bd6bc5b`, the manifest
+`action_ref`. The `action-conformance` CI job checks out that commit and fails when its vendored
+`schema/envelope.v1.schema.json` differs from `internal/wire/envelope/envelope.v1.schema.json`.
+
 ## Webhooks and the sweep
 
 A webhook starts immediate work. The sweep repairs work after a lost webhook or a changed protected ref.
@@ -468,21 +472,5 @@ See [`.env.example`](../.env.example).
 
 ### Release blockers
 
-- The locked manifest contains a placeholder Action commit (`action_ref`). Its image digests are the published
-  v2.3.1 digests. A generated workflow pins an Action commit that does not exist while the placeholder remains.
-  `ARCHFIT_RELEASE=1` makes the release test fail.
-- `archfit-action` is not published. Its `feat/wave1-run-engine` branch sends the envelope format of this service, runs
-  on `pull_request`, `push`, and `workflow_dispatch` only, and accepts `mode: report | discovery | baseline`. The
-  manifest `action_ref` takes the commit of its first release.
-- On that branch, from commit `04fce3f`, `mode: baseline` with an `endpoint` uploads the captured
-  `.archfit-baseline.json` to `/v1/baselines` as the [baseline upload contract](#baseline-upload-contract) states:
-  envelope `kind: baseline` with an empty `baseline_digest`, a 1 MiB cap, the pull request URL, `unchanged`, or the
-  error code in the step summary, and a failed job with "dispatch the capture again" on `409 stale_head` or
-  `stale_attempt`. It still keeps the file as a workflow artifact. Its vendored envelope schema pins revision `c0b1e97`
-  of this repository and is byte-identical to `internal/wire/envelope/envelope.v1.schema.json`.
-- The `action-conformance` CI job compares the Action's vendored `schema/envelope.v1.schema.json` with
-  `internal/wire/envelope/envelope.v1.schema.json` at the manifest `action_ref`. While `action_ref` is the placeholder,
-  the `action-pin` job reports "not verified" in a warning and the step summary, and `action-conformance` shows as
-  skipped. If `archfit-action` stays private, the repository needs an `ARCHFIT_ACTION_TOKEN` secret with read access.
 - No GitHub App is registered.
 - The Monaco editor bundle is not built. The policy editor uses a plain text area.

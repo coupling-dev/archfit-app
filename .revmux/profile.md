@@ -53,5 +53,5 @@
 - Provenance is "customer-attested", never "verified".
 - `needs_attention` with nothing to act on is `success` with reason `attention_only`.
 - The store has only an in-memory driver today (persistent storage is a known release
-  blocker), and `action_ref` in the manifest is a placeholder until the action is published.
+  blocker).
 - Stdlib-first Go; wire types are separate from domain and storage types.

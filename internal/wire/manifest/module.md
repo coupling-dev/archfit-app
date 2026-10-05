@@ -50,18 +50,17 @@ v2.3.1; an upgrade window holds the rows of two releases, N and N-1.
   `f8877d25ba36d84d3780071580d23486e3d794d0`, tag `v2.3.1`). `profile_version` (`archfit.measurement.v1`) and the image
   digests are real: the published per-platform digests of `ghcr.io/alexei-led/archfit:v2.3.1`,
   `sha256:7d4f73248865e11bbfe244cd477bd0ea8e8cbdc0b7fb2baade8e044b618b2793` on `linux/amd64` and
-  `sha256:82ab97da8d38af59b02ac522caa70fb2218212c7d15821e0df5cbeb9b04ec9e7` on `linux/arm64`. The Action commit is still
-  a placeholder, 40 times `c` as `action_ref` of both rows: `archfit-action` has no published commit yet. This is a
-  release blocker recorded in `docs/architecture.md` (Release blockers). `Lookup` does not read `action_ref`, so an upload
-  from the published image matches its row; until the commit is replaced, a generated workflow pins an Action commit that
-  does not exist.
+  `sha256:82ab97da8d38af59b02ac522caa70fb2218212c7d15821e0df5cbeb9b04ec9e7` on `linux/arm64`. `action_ref` of both rows is the
+  published `archfit-action` release `v1.0.0`, commit `a9cd2ce8d0dc996b258b5faa5145eaf11bd6bc5b` (the tag is annotated;
+  the row holds the commit, never the tag object). `Lookup` does not read `action_ref`; it is what a generated workflow
+  pins.
 - A placeholder is an `image_digest` or `action_ref` whose hex part is one character repeated. Placeholders are
   forbidden in a release: `TestManifestHasNoPlaceholdersInRelease` fails when the environment variable
   `ARCHFIT_RELEASE=1` is set and any row carries one. The release pipeline must run the tests with that variable. The
   variable is read by the test only; it never reaches `Lookup` or `Current`.
-- The synthetic `.envelope.json` siblings in `internal/wire/testdata/report/` state the `linux/amd64` row's identity.
-  Replacing the placeholders means editing `manifest.json`, those envelopes and the test's list of documented
-  placeholders in one commit.
+- The synthetic `.envelope.json` siblings in `internal/wire/testdata/report/` state the `linux/amd64` row's identity
+  (engine version, image digest, platform; they carry no `action_ref`). Changing that identity means editing
+  `manifest.json` and those envelopes in one commit.
 - Validation errors name the entry index, the field and the rule. They never quote a value.
 - "Locked" means: no environment variable, flag, file path, Store key, or network fetch can add or change a row.
   The only way to change it is a reviewed commit to `manifest.json`.
@@ -192,8 +191,8 @@ tolerates the distance of separate repositories and release cycles.
   **Scenario**: collect every placeholder value of the embedded rows, as `entry index, field`; read `ARCHFIT_RELEASE`. The
   test never skips.
   **Expected behavior**: with `ARCHFIT_RELEASE=1`, no placeholder is left. Without it, the placeholders found are exactly
-  the documented ones (both `action_ref` values; the image digests are real), so a partial replacement fails; once all are
-  replaced the documented list is emptied in the same commit.
+  the documented ones, so an undocumented placeholder fails. The documented list is empty: the image digests and the
+  Action commit are all real.
 - **Test name**: `TestLookupExactMatch`
   **Scenario**: table against a known row: exact identity; digest uppercased; version without the `v`; platform
   `linux/arm64` when only `linux/amd64` is listed for that digest; leading space in each field.

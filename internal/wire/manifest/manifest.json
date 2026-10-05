@@ -6,7 +6,7 @@
       "image_digest": "sha256:7d4f73248865e11bbfe244cd477bd0ea8e8cbdc0b7fb2baade8e044b618b2793",
       "platform": "linux/amd64",
       "profile_version": "archfit.measurement.v1",
-      "action_ref": "cccccccccccccccccccccccccccccccccccccccc",
+      "action_ref": "a9cd2ce8d0dc996b258b5faa5145eaf11bd6bc5b",
       "current": true
     },
     {
@@ -14,7 +14,7 @@
       "image_digest": "sha256:82ab97da8d38af59b02ac522caa70fb2218212c7d15821e0df5cbeb9b04ec9e7",
       "platform": "linux/arm64",
       "profile_version": "archfit.measurement.v1",
-      "action_ref": "cccccccccccccccccccccccccccccccccccccccc"
+      "action_ref": "a9cd2ce8d0dc996b258b5faa5145eaf11bd6bc5b"
     }
   ]
 }
