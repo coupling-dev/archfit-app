@@ -6,7 +6,8 @@ Security rules for identities, secrets, and incidents are in [Security](security
 
 ## Environments
 
-- **Production:** one Google Cloud project.
+- **Production:** one Google Cloud project, `coupling-dev-510710` (display name `coupling-dev`). Commands need the
+  project ID, not the display name.
 - **Local:** one process with every route, the memory store, and inline webhook processing. Local webhook tests use a
   separate development GitHub App and a tunnel. The production App never points at a tunnel.
 - **Staging:** none for the beta. A staging pair of services with a second GitHub App costs about $0 at zero instances.
@@ -21,6 +22,32 @@ Security rules for identities, secrets, and incidents are in [Security](security
 - CI owns only the image and the traffic of the two services. Terraform ignores those fields.
 - Secret values never enter Terraform. The owner adds them directly to Secret Manager.
 - The owner applies infrastructure changes. An infrastructure change never runs at the same time as a release.
+
+## Project guardrails
+
+The project has no Organization, so organization policies cannot restrict regions or services
+(see [Security](security.md#organization)). These project-level controls were applied with `gcloud` before
+Terraform exists. Terraform must import them when it takes over the project.
+
+| Control                 | Setting                                                                                                                                                              |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Enabled APIs            | `run`, `firestore`, `cloudtasks`, `cloudscheduler`, `secretmanager`, `artifactregistry`, `iam`, `iamcredentials`, `sts`, plus the platform APIs they need            |
+| Disabled APIs           | The default BigQuery family, Dataform, Dataplex, Analytics Hub, `sql-component`, `apptopology`, `containerregistry`, `pubsub`, and the `cloudapis` bundle            |
+| Cloud Run quotas        | `europe-west1`: 4 vCPU, 4 GiB, 4 services. Every other region: 0. One region per project. GPUs, jobs and worker pools: 0                                             |
+| Default compute account | The automatic `roles/editor` grant is removed. Each component uses its own service account                                                                           |
+| Guardrail alert         | One log-based alert policy emails the owner on IAM changes, API enable or disable, quota changes, service account key creation, and Cloud Run outside `europe-west1` |
+| Essential contacts      | The owner gets security, billing, suspension, technical and legal notices                                                                                            |
+| Budget                  | 200 ILS a month on the billing account. Alerts at 50%, 90% and 100% of actual spend, and at 100% of forecast spend                                                   |
+
+Limits:
+
+- An Owner or Editor credential can reverse every control in the table. The controls slow an attacker down. The alert
+  tells the owner. Least privilege on the deploy identity is the control a leaked credential cannot undo.
+- No budget action stops spending. A billing kill switch can delete resources, so the beta does not use one.
+- Raise a Cloud Run quota before a release needs more: `gcloud quotas preferences update run-cpu-europe-west1
+--service=run.googleapis.com --quota-id=CpuAllocPerProjectRegion --preferred-value=<milli-vCPU>`.
+  A quota change also triggers the guardrail alert.
+- Moving to another region needs new quota preferences for that region. The Firestore location cannot change.
 
 ## First deployment
 

@@ -113,8 +113,10 @@ Direction:
 
 A personal Google account has no Organization resource. Without one, Security Command Center and central organization
 policies are not available. The beta runs without one. The compensating controls are the post-release checks, no
-service-account keys, and Terraform as the only way to change IAM. Create an organization before a second admin
-joins, or before paying customers.
+service-account keys, Terraform as the only way to change IAM, and the
+[project guardrails](operations.md#project-guardrails): disabled APIs, Cloud Run quotas of 0 outside `europe-west1`,
+and an alert on every guardrail change. Create an organization before a second admin joins, or before paying
+customers.
 
 ## Incident response
 
