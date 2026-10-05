@@ -22,7 +22,7 @@ drift between them would turn honest reports into `policy_mismatch`.
   `comparison.config_hash`. For baseline and labels it is the value the producer states in the upload envelope.
 - `Waivers`: read the `waivers:` list of a policy file into `Waiver` values with parsed expiry instants.
 - `Modules`: list the names, layers and line numbers of the policy's `modules:` map, in file order.
-- `Schema`: the engine v2.3.1 config JSON Schema (`archfit.schema.json`), embedded unchanged.
+- `Schema`: the engine v2.4.0 config JSON Schema (`archfit.schema.json`), embedded unchanged.
 - `Validate`: a structural check that a text is plausibly an engine policy: one YAML mapping whose top-level keys
   all belong to the schema's closed key set and include the required `version`. It keeps foreign text (a report,
   a labels file, model prose) out of policy pull requests and saved drafts.
@@ -35,7 +35,7 @@ drift between them would turn honest reports into `policy_mismatch`.
 ## Subdomain Classification
 
 Published language owned by the `archfit` repository; this module is the App's pinned, read-only view of it.
-Supporting. Volatility: moderate, tied to engine releases (pinned v2.3.1).
+Supporting. Volatility: moderate, tied to engine releases (config schema pinned v2.4.0).
 
 ## Encapsulated Knowledge
 
@@ -46,37 +46,38 @@ Supporting. Volatility: moderate, tied to engine releases (pinned v2.3.1).
 - What the engine does not hash. It reports no digest for the baseline or the labels file; `comparison.labels_hash`
   is a canonical hash of approved labels and cannot be reproduced from raw bytes. For those two files the binding
   is: producer states `Digest` of the bytes it used, the App compares with `Digest` of the protected-ref bytes.
-- The waiver keys, pinned to the v2.3.1 config schema (`WaiverDef`): `rule`, `from`, `to`, `reason`, `approved_by`,
-  `expires`; the engine requires all but `from` and `to`.
+- The waiver keys, pinned to the v2.4.0 config schema (`WaiverDef`, unchanged since v2.3.1): `rule`, `from`, `to`,
+  `reason`, `approved_by`, `expires`; the engine requires all but `from` and `to`.
 - The expiry rule: `expires` is a `YYYY-MM-DD` date, valid through the end of that day; the instant is 23:59:59
   UTC of that day **[default: UTC]**. The engine treats a malformed `expires` as already expired.
 - The modules shape, pinned to the same schema: `modules:` is a map from module name to a definition with `paths`,
   `public`, `internal`, `layer` and other keys. Only the name, `layer` and the key's line are read.
 - The embedded schema file and its provenance: `archfit.schema.json` copied unchanged from the engine repository
-  at revision `f8877d25ba36d84d3780071580d23486e3d794d0` (tag `v2.3.1`). A sibling file `SCHEMA_SOURCE` records the
+  at revision `5aefcdc2c5465c2eb7198ea91394bd8cb8ad2b22` (tag `v2.4.0`). A sibling file `SCHEMA_SOURCE` records the
   source revision, the source path and the SHA-256 of the copy **[default]**.
 - One pinned schema, not one per engine release **[default]**. Its users are the editor (`GET /schema/policy.json`,
   one route for every repository), `Validate` and the assist prompt. None of them knows which engine release a
   repository runs: that pin is in the repository's workflow file, which the App does not parse. So the schema is
   the one of the release new workflows pin, `manifest.Current().EngineVersion`, and the parent `wire` test
   `TestPolicySchemaFollowsTheCurrentEngine` fails as soon as `current` moves until this file and `SCHEMA_SOURCE`
-  are re-pinned. v2.4.0 adds the rule key `guard` and rule types: optional keys and enum values inside config
-  schema v2, no top-level key. During an upgrade window a repository still on N-1 therefore gets a schema that
+  are re-pinned. The pin is v2.4.0, which adds the rule key `guard` to v2.3.1's schema: an optional key inside
+  config schema v2, no top-level key. During an upgrade window a repository still on N-1 therefore gets a schema that
   also accepts N's additions; its own engine rejects them on the draft pull request's check, which stays the
   authority. `Validate` reads only the root key set, which v2.4.0 leaves unchanged. Per-release pins need a
   per-repository engine release in the control plane first.
 - The top-level key set of a policy. It is derived from the embedded schema's root `properties` and `required`,
   read once lazily with `encoding/json`; there is never a second hand-written list. The derivation relies on the
   root's `additionalProperties: false`; a schema without it has no closed key set and `Validate` then always fails.
-  In v2.3.1 the root has sixteen properties and requires only `version`; the schema file is the one source.
+  In v2.4.0, as in v2.3.1, the root has sixteen properties and requires only `version`; the schema file is the one
+  source.
 - The YAML library: the same single third-party dependency as `wire/settings`
   (`go.yaml.in/yaml/v3` **[default]** until `docs/tech-stack.md` names one). `Modules` uses its node API for line numbers.
 - The labels file is opaque here. Only its path and digest are known.
-- The baseline keys the App reads, pinned to engine v2.3.1 (`internal/baseline` at the pinned revision):
-  `schema_version` (`archfit.baseline.v2`), `accepted[].fingerprint` (the finding ID, `hex(sha256(…)[:16])`, so 32
-  lowercase hex), `accepted[].rule_id`, `state.config_hash` (equal to `Digest` of the policy the capture ran under,
-  checked on the corpus captures) and `state.measurement_profile.version`. v2.3.1 writes the profile on every
-  capture; a file without it cannot be bound to an approved identity and is refused.
+- The baseline keys the App reads, pinned to engine v2.3.1 (`internal/baseline` at the pinned revision, unchanged
+  in v2.4.0): `schema_version` (`archfit.baseline.v2`), `accepted[].fingerprint` (the finding ID,
+  `hex(sha256(…)[:16])`, so 32 lowercase hex), `accepted[].rule_id`, `state.config_hash` (equal to `Digest` of the
+  policy the capture ran under, checked on the corpus captures) and `state.measurement_profile.version`. v2.3.1
+  writes the profile on every capture; a file without it cannot be bound to an approved identity and is refused.
 
 ### Baseline reading rules
 
@@ -174,7 +175,7 @@ func Waivers(policy []byte) ([]Waiver, error)
 ```
 
 ```go
-// Schema returns the engine v2.3.1 config JSON Schema, embedded unchanged, for the editor.
+// Schema returns the engine v2.4.0 config JSON Schema, embedded unchanged, for the editor.
 func Schema() []byte
 ```
 
@@ -264,7 +265,7 @@ root coupling table.
 | `internal/control/assist`        | assist depends on policy        | Contract | root / 2 / 2              | High       | Yes       |
 | `internal/control/ui`            | ui depends on policy            | Contract | root / 2 / 2              | High       | Yes       |
 | `internal/control/ui/graph`      | graph depends on policy         | Contract | root / 3 / 3              | Moderate   | Yes       |
-| `archfit` engine config (v2.3.1) | policy follows the engine files | Contract | outside the tree; highest | Moderate   | Yes       |
+| `archfit` engine config (v2.4.0) | policy follows the engine files | Contract | outside the tree; highest | Moderate   | Yes       |
 
 The `control/ui/graph` row exists because the graph's stale flag compares `Digest` of the policy text with the
 report's `config_hash`, and its nodes come from `Modules`, so that both rules live in one place.
@@ -296,7 +297,7 @@ No counterpart contract is used by this module, so nothing is restated here.
 ## Change Vectors
 
 - A new engine release: replace the embedded schema and `SCHEMA_SOURCE` in the change that moves the manifest's
-  `current` to it (the v2.4.0 release brings the rule key `guard`); adjust waiver keys if the waiver contract changed.
+  `current` to it (v2.4.0 brought the rule key `guard`); adjust waiver keys if the waiver contract changed.
 - The control plane learns each repository's engine release: then the schema can be pinned per release.
 - The engine changes how it computes `config_hash`, or starts reporting baseline and labels digests: change `Digest` only.
 - Configurable file locations per repository: the constants become defaults; the settings file would carry overrides.
@@ -386,7 +387,7 @@ it and first checks that its `config_hash` is the digest of that policy.
   **Expected behavior**: `a` at line 3 and `b` at line 6 for the capture; for the full fixture every module of the recorded expectation, in order.
 - **Test name**: `TestSchemaIsThePinnedEngineFile`
   **Scenario**: hash `Schema()` and parse it.
-  **Expected behavior**: the SHA-256 equals the one in `SCHEMA_SOURCE`; the revision there is `f8877d25…`; valid JSON with `waivers`
+  **Expected behavior**: the SHA-256 equals the one in `SCHEMA_SOURCE`; the revision there is `5aefcdc2…`; valid JSON with `waivers`
   and `modules` properties and a `WaiverDef` that requires `rule`, `reason`, `approved_by`, `expires`; two calls return equal but independent slices.
 - **Test name**: `TestPathConstants`
   **Scenario**: read the constants.

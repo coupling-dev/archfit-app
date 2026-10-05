@@ -68,16 +68,17 @@ not define is an unknown key, as before. A release that is not listed is a decod
 | Release  | Key set                                                           |
 | -------- | ----------------------------------------------------------------- |
 | `v2.3.1` | the pinned v2.3.1 state schema (`internal/wire/testdata/schema/`) |
-| `v2.4.0` | the v2.3.1 key set **[default]**                                  |
+| `v2.4.0` | the v2.3.1 key set                                                |
 
 - v2.4.0 adds rule types, finding kinds, the config key `guard` and unevaluated-rule reasons of the form
   `selector matches nothing: <side> <glob>`, but no state key (owner statement). A rule ID is an identifier, a
   finding kind a token and a reason text, none of them an enum here. Whether every v2.4.0 value also fits its
-  string class is not shown by that statement: only the real v2.4.0 capture that must decode before a v2.4.0
-  manifest row lands proves it.
-- The v2.4.0 row prepares the upgrade; it approves nothing. The manifest approves a release only with its image
-  digests, and the parent's `TestEveryApprovedEngineVersionHasACapture` makes a real v2.4.0 capture decode before a
-  v2.4.0 row can land. Should the released v2.4.0 emit a state key after all, that capture fails here first.
+  string class is not shown by that statement: only a real v2.4.0 capture proves it.
+- Verified against the release: `archfit.state.schema.json` at tag v2.4.0 (revision
+  `5aefcdc2c5465c2eb7198ea91394bd8cb8ad2b22`) is byte-identical to the pinned v2.3.1 file (SHA-256
+  `acd9a09e…`), and the unmodified capture `real-blocked-no-baseline-v240` has exactly the key paths of the v2.3.1
+  capture and decodes as a v2.4.0 document. The manifest approves v2.4.0 with its image digests; the parent's
+  `TestEveryApprovedEngineVersionHasACapture` holds that capture to it.
 - A key a later release adds is a shadow field tagged `since:"<release>"`; untagged fields exist in every release.
   The pre-pass reads the tag when it looks a key up and treats a key of a later release as unknown. A tag that
   names no listed release makes the key unknown under every release. Within `archfit.architecture-state.v1` a
@@ -577,8 +578,9 @@ No counterpart contract is used by this module, so nothing is restated here.
 Fixtures live in `internal/wire/testdata/report/` and `internal/wire/testdata/leakage/`, read by relative path.
 Each fixture has an `.expect.json` sibling recording its producer artifact and expected outcome (see the parent document);
 this module asserts its `decode` and `fields` keys. The pinned engine schema is `internal/wire/testdata/schema/archfit.state.schema.json`.
-This module has no private fixture and no `testdata` folder of its own. Every fixture is a v2.3.1 document, so the
-tests decode it as one.
+This module has no private fixture and no `testdata` folder of its own. Every fixture is a v2.3.1 document except
+the v2.4.0 capture `real-blocked-no-baseline-v240`. The two releases share one key set, so the tests decode every
+fixture as v2.3.1, and `TestEveryEngineVersionReadsTheCorpus` decodes each one under every listed release.
 
 ### Unit Tests
 

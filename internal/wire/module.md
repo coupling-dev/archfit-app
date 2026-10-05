@@ -31,7 +31,8 @@ core modules, which is why everything here is contract-strength and strictly ver
 - The rule for what belongs here: transport types, schemas, strict decoding, digests. No domain decisions, no I/O.
 - The fixture corpus: its layout, the named cases, and the producer artifact each one was captured from.
 - The pinned external revisions the contracts were taken from: engine `archfit` v2.3.1 at
-  `f8877d25ba36d84d3780071580d23486e3d794d0`; `archfit-action` at `4759dd985bff385af5c2dee2c918a0eced59f4f3`
+  `f8877d25ba36d84d3780071580d23486e3d794d0` (state schema) and v2.4.0 at `5aefcdc2c5465c2eb7198ea91394bd8cb8ad2b22`
+  (config schema, same state schema); `archfit-action` at `4759dd985bff385af5c2dee2c918a0eced59f4f3`
   (plan inventory of 20 September 2026).
 - Each child's internals (decoder technique, caps, file formats) stay in that child.
 
@@ -55,7 +56,7 @@ child is normative in the child's own `module.md`; it is not restated here.
 
 - Every contract carries a version identifier: envelope `archfit.report-envelope.v1`; report
   `archfit.architecture-state.v1`; settings file `version: 1`; manifest data `version: 1`; policy follows the
-  engine release of the manifest's `current` row, v2.3.1 today; the engine baseline file `archfit.baseline.v2`.
+  engine release of the manifest's `current` row, v2.4.0 today; the engine baseline file `archfit.baseline.v2`.
 - Unknown fields are rejected by every decoder here. Three deliberate nuances: the policy readers ignore
   engine-owned keys they do not read; the report decoder knows every key of each engine release it reads and
   drops the known keys that are not allowlisted, while a key that release's schema does not define is still an error;
@@ -153,8 +154,9 @@ tampering fixture overrides `baseline_digest` with a value outside `trusted_base
 `facts` fails the corpus test.
 
 Fixtures captured from the engine cite their engine release and that release's pinned revision (v2.3.1:
-`f8877d25…`); fixtures from a mutable branch are not allowed. Every fixture today is a v2.3.1 document, and the
-tests decode it as one.
+`f8877d25…`; v2.4.0: `5aefcdc2…`); fixtures from a mutable branch are not allowed. The tests decode a capture as a
+document of the release it cites, and a synthetic fixture as a v2.3.1 document, the release every one of them was
+derived from. Every fixture is a v2.3.1 document except `real-blocked-no-baseline-v240`.
 Required report fixtures (plan T02): `healthy`, `attention-pass` (verdict `needs_attention` with passing hard
 gates), `blocked`, `missing-evidence` (`hard_gates: unmeasured`), `unknown-identity`, `profile-comparable` (symmetric
 partial with a recognized `partial_basis`), `profile-incompatible` (`gate_reference.status: non_comparable`),
@@ -188,6 +190,14 @@ remaining tool-version formats: grimp failing with `uv`, the macOS system git, t
 `large-module` (150 locations on one finding, 152 task files and a 906-character public-surface constraint).
 The captures, like the earlier ones, come from a development host, not from the pinned image.
 
+`real-blocked-no-baseline-v240` is the v2.4.0 capture the manifest's v2.4.0 rows need: the command of
+`real-blocked-no-baseline` on the engine's `testdata/fixture-go` at tag v2.4.0 (unchanged since v2.3.1, so its policy
+file is byte-identical), run with the released binary `archfit-v2.4.0-darwin-arm64` from the GitHub release, checked
+against the release's `SHA256SUMS`, on a development host, not the pinned image. It is unmodified. Its key paths are
+those of the v2.3.1 capture; the bytes differ only in an agent-task constraint (v2.4.0 no longer lists the target's
+public surface on a forbidden-dependency task) and the host's git version. Its expectation is the v2.3.1 one: blocked,
+`hard_gates: fail`, `non_comparable` gate reference, `failure` with `["blocking_findings"]`.
+
 The `leakage/` set has two groups. Rejecting fixtures (`decode: "error"`): snippet field, log blob, raw model output
 key, multi-line text, oversized text. One surviving fixture (`decode: "ok"`): a marker identifier inside
 `agent_tasks[].declarations`, `matched_by` and a seam `hypothesis`; it must decode, and the marker must be gone.
@@ -203,14 +213,15 @@ External counterparts, reached only through these contracts:
 
 | Counterpart                       | Direction                                       | Strength                    | LCA / Rank / Distance     | Volatility | Balanced? |
 | --------------------------------- | ----------------------------------------------- | --------------------------- | ------------------------- | ---------- | --------- |
-| `archfit` engine (v2.3.1)         | report, policy, manifest follow engine releases | Contract (versioned schema) | outside the tree; highest | Moderate   | Yes       |
+| `archfit` engine (v2.3.1, v2.4.0) | report, policy, manifest follow engine releases | Contract (versioned schema) | outside the tree; highest | Moderate   | Yes       |
 | `archfit-action` (external repo)  | the Action conforms to envelope and report      | Contract (JSON Schema)      | outside the tree; highest | Moderate   | Yes       |
 | customer repositories (the files) | customers write settings and policy files       | Contract (versioned file)   | outside the tree; highest | Moderate   | Yes       |
 
-Shared knowledge: with the engine, the complete v2.3.1 state schema key set, its enums and decision semantics, the
-config schema, waiver keys, the `modules` map shape, the three input file names, the bare-hex hashing rule and
-released identities, all pinned at revision `f8877d25ba36d84d3780071580d23486e3d794d0` and verified against a real
-report; with the Action, the envelope schema, both digest rules and the no-source transport; with customers, the settings field rules. Separate repositories and release cycles are the highest
+Shared knowledge: with the engine, the complete v2.3.1 state schema key set (unchanged in v2.4.0), its enums and
+decision semantics, the config schema, waiver keys, the `modules` map shape, the three input file names, the bare-hex
+hashing rule and released identities, pinned at revision `f8877d25ba36d84d3780071580d23486e3d794d0` (v2.3.1) and, for
+the config schema and the v2.4.0 identities, `5aefcdc2c5465c2eb7198ea91394bd8cb8ad2b22` (v2.4.0), each verified
+against a real report; with the Action, the envelope schema, both digest rules and the no-source transport; with customers, the settings field rules. Separate repositories and release cycles are the highest
 distance the system has. Contract coupling with explicit versions, strict decoding and a shared fixture corpus is
 what keeps it balanced. Installed Actions, images and stored baselines never upgrade atomically, so old decode
 paths stay until retired.
@@ -274,7 +285,7 @@ Parent tests live in package `wire_test` and exercise the children together and 
   **Expected behavior**: every required named fixture exists; every fixture has an `.expect.json` with `producer` and `decode`, no unknown keys, and no unknown `facts` key; every report fixture has `gate` with a non-empty `reasons` list; no orphan expectation files.
 - **Test name**: `TestFixturesRecordPinnedProducers`
   **Scenario**: read every `producer` entry.
-  **Expected behavior**: engine-captured fixtures cite a pinned release at its pinned revision (`v2.3.1` at `f8877d25ba36d84d3780071580d23486e3d794d0`); synthetic ones give a reason; none cites a branch name.
+  **Expected behavior**: engine-captured fixtures cite a pinned release at its pinned revision (`v2.3.1` at `f8877d25ba36d84d3780071580d23486e3d794d0`, `v2.4.0` at `5aefcdc2c5465c2eb7198ea91394bd8cb8ad2b22`); synthetic ones give a reason; none cites a branch name.
 - **Test name**: `TestLeakageFixturesCarryTheMarker`
   **Scenario**: read every file in `testdata/leakage/`.
   **Expected behavior**: each contains `LEAK-7f3a`; all have `decode: "error"` except the one surviving declarations fixture, which has `decode: "ok"`.

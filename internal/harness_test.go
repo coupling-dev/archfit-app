@@ -212,8 +212,9 @@ func loadFixture(t *testing.T, name string) fixture {
 	return f
 }
 
-// approvedImage is the image digest of the manifest row new workflows pin (engine v2.3.1, linux/amd64).
-var approvedImage = manifest.Current().ImageDigest
+// approved is the identity of the manifest row new workflows pin (linux/amd64). The corpus captures are v2.3.1
+// documents; every approved release reads them with the same key set.
+var approved = manifest.Current().Identity
 
 func digest(raw []byte) string {
 	if raw == nil {
@@ -295,8 +296,8 @@ func demoUpload(f fixture) upload {
 		env: envelope{
 			SchemaVersion: "archfit.report-envelope.v1", Kind: "report", Repository: demoRepo, Event: "pull_request",
 			PullRequest: demoPull, HeadSHA: demoHead, BaseSHA: demoBase, MergeBaseSHA: demoMergeBase,
-			RunID: demoRun, RunAttempt: 1, EngineVersion: "v2.3.1", ImageDigest: approvedImage,
-			Platform: "linux/amd64", PayloadDigest: "sha256:" + digest(f.report),
+			RunID: demoRun, RunAttempt: 1, EngineVersion: approved.EngineVersion, ImageDigest: approved.ImageDigest,
+			Platform: approved.Platform, PayloadDigest: "sha256:" + digest(f.report),
 			BaselineDigest: digest(f.baseline), LabelsDigest: digest(f.labels),
 		},
 		body: f.report,
@@ -804,8 +805,8 @@ func discoveryUpload(fullName string, repoID, runID int64, head string, policy [
 	return upload{
 		env: envelope{
 			SchemaVersion: "archfit.report-envelope.v1", Kind: "discovery", Repository: fullName, Event: "workflow_dispatch",
-			HeadSHA: head, RunID: runID, RunAttempt: 1, EngineVersion: "v2.3.1",
-			ImageDigest: approvedImage, Platform: "linux/amd64", PayloadDigest: "sha256:" + digest(policy),
+			HeadSHA: head, RunID: runID, RunAttempt: 1, EngineVersion: approved.EngineVersion,
+			ImageDigest: approved.ImageDigest, Platform: approved.Platform, PayloadDigest: "sha256:" + digest(policy),
 		},
 		body: policy,
 		claims: map[string]any{

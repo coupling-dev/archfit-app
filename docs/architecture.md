@@ -291,8 +291,9 @@ An engine upgrade needs no flag day. Three `wire` packages share the rule:
   unevaluated required rules, the config hash, the measurement-profile version, and the gate reference.
 - `wire/policy` keeps one engine config schema, the schema of the release that new workflows pin.
 
-The App reads v2.3.1 reports. It is ready for v2.4.0 reports, because v2.4.0 adds no report key. The manifest
-approves v2.3.1 only, until the v2.4.0 images are published.
+The App reads v2.3.1 and v2.4.0 reports; v2.4.0 adds no report key. The manifest approves the published images of
+both releases. New workflows pin v2.4.0 (`current`), and the policy editor uses the v2.4.0 config schema. The v2.3.1
+rows stay for the upgrade window and go once workflows have moved their pin.
 Tests in `internal/wire` stop a manifest row for a release that the decoder cannot read, that has no real capture
 in the fixture corpus, or whose config schema is not pinned when new workflows move to it.
 
@@ -474,3 +475,5 @@ See [`.env.example`](../.env.example).
 
 - No GitHub App is registered.
 - The Monaco editor bundle is not built. The policy editor uses a plain text area.
+- No persistent Store driver: `ARCHFIT_STORE` supports only `memory`. Pilots need a driver with atomic cross-instance
+  `CompareAndSwap` (Firestore, per docs/tech-stack.md).

@@ -558,8 +558,9 @@ func Withdrawal(t Target, current CheckState, tr Trusted) *Publication
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high (gate side); the manifest is moderate
 - **Balanced?**: yes
-- **Shared knowledge**: the manifest is locked in the binary (engine v2.3.1). `Lookup` is an exact match on all
-  three fields; any empty field is a miss, so unknown never equals unknown. `Current` is not used here.
+- **Shared knowledge**: the manifest is locked in the binary (engine v2.4.0 current, v2.3.1 still approved). `Lookup`
+  is an exact match on all three fields; any empty field is a miss, so unknown never equals unknown. `Current` is not
+  used here.
 
 <!-- contract: Identity, Entry, Lookup, Current — restated from internal/wire/manifest/module.md -->
 ```go
@@ -987,7 +988,7 @@ type Store interface {
 3. `trusted, err := resolver.Resolve(ctx, target, now)`. Error → 503; the pending check stays.
 4. `IdentityApproved` = `manifest.Lookup(u.Identity)` hits **and** `entry.ProfileVersion != ""` **and**
    `u.Report.Comparison.MeasurementProfile != nil` **and** its `Version == entry.ProfileVersion`. A manifest row
-   without a profile version approves nothing, so two empty versions never compare equal (for engine v2.3.1 the manifest holds `archfit.measurement.v1`). False when `u.Report == nil`.
+   without a profile version approves nothing, so two empty versions never compare equal (for engines v2.3.1 and v2.4.0 the manifest holds `archfit.measurement.v1`). False when `u.Report == nil`.
 5. `WorkflowApproved` = `trusted.SettingsFound` **and** `u.Binding.WorkflowPath != ""` **and** it equals
    `trusted.Settings.Workflow`. A workflow file changed by the PR is a protected path; `inputs` then demands owner approval.
 6. `outcome = verdict.Decide(Facts{Problems: u.Problems, BaselineDigest: u.BaselineDigest, LabelsDigest: u.LabelsDigest,

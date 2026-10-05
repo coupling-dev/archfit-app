@@ -6,12 +6,26 @@
       "image_digest": "sha256:7d4f73248865e11bbfe244cd477bd0ea8e8cbdc0b7fb2baade8e044b618b2793",
       "platform": "linux/amd64",
       "profile_version": "archfit.measurement.v1",
-      "action_ref": "a9cd2ce8d0dc996b258b5faa5145eaf11bd6bc5b",
-      "current": true
+      "action_ref": "a9cd2ce8d0dc996b258b5faa5145eaf11bd6bc5b"
     },
     {
       "engine_version": "v2.3.1",
       "image_digest": "sha256:82ab97da8d38af59b02ac522caa70fb2218212c7d15821e0df5cbeb9b04ec9e7",
+      "platform": "linux/arm64",
+      "profile_version": "archfit.measurement.v1",
+      "action_ref": "a9cd2ce8d0dc996b258b5faa5145eaf11bd6bc5b"
+    },
+    {
+      "engine_version": "v2.4.0",
+      "image_digest": "sha256:6062d0203afa2314633b6fe6ac841471e331f4830cb9bdfd8f62e823be5c2eff",
+      "platform": "linux/amd64",
+      "profile_version": "archfit.measurement.v1",
+      "action_ref": "a9cd2ce8d0dc996b258b5faa5145eaf11bd6bc5b",
+      "current": true
+    },
+    {
+      "engine_version": "v2.4.0",
+      "image_digest": "sha256:bdb0db83ec2945f440d259070c37a5eacb269edcaa6aaf30fbdb19b7ee447e3d",
       "platform": "linux/arm64",
       "profile_version": "archfit.measurement.v1",
       "action_ref": "a9cd2ce8d0dc996b258b5faa5145eaf11bd6bc5b"
