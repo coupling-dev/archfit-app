@@ -21,8 +21,8 @@ const (
 	otherBranch = "archfit/other"
 	mainBranch  = "main"
 
-	draftYAML  = "version: 1\nrules:\n  max_fan_out: 10\n"
-	editedYAML = "version: 1\nrules:\n  max_fan_out: 7\n"
+	draftYAML  = "version: 2\nrules:\n  - {id: fan_out, type: public_api_max, max: 10}\n"
+	editedYAML = "version: 2\nrules:\n  - {id: fan_out, type: public_api_max, max: 7}\n"
 
 	testMaxCost    = int64(90_000)
 	testActualCost = int64(7_000)

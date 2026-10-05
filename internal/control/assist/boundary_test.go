@@ -189,7 +189,7 @@ func TestRawOutputNeverLeaves(t *testing.T) {
 
 func TestForeignAnswerIsNotAProposal(t *testing.T) {
 	const marker = "FOREIGN-ANSWER-MARKER-9f3a"
-	validPolicy := "version: 2\nmodules:\n  core:\n    path: internal/core\n# " + marker + "\n"
+	validPolicy := "version: 2\nmodules:\n  core:\n    paths: [internal/core/**]\n# " + marker + "\n"
 	tests := []struct {
 		name      string
 		text      string
@@ -200,6 +200,7 @@ func TestForeignAnswerIsNotAProposal(t *testing.T) {
 		{"JSON object with foreign keys", `{"answer": "` + marker + `", "ok": true}`, ErrInvalidProposal, ""},
 		{"mapping without version", "modules:\n  core:\n    path: " + marker + "\n", ErrInvalidProposal, ""},
 		{"one unknown top-level key", "version: 2\nmodules: {}\nextra: " + marker + "\n", ErrInvalidProposal, ""},
+		{"a key the editor refuses", "version: 2\nmodules:\n  core:\n    path: " + marker + "\n", ErrInvalidProposal, ""},
 		{"valid edited policy", validPolicy, nil, validPolicy},
 	}
 	for _, tt := range tests {

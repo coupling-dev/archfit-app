@@ -33,6 +33,11 @@ func Waivers(policy []byte) ([]Waiver, error) {
 	if err != nil || !ok {
 		return nil, err
 	}
+	return waiversOf(top)
+}
+
+// waiversOf is Waivers over an already read text.
+func waiversOf(top topLevel) ([]Waiver, error) {
 	list := resolve(&top.Waivers)
 	if isNull(list) {
 		return nil, nil

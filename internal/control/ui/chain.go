@@ -21,8 +21,7 @@ const (
 	permWrite = "write"
 	permAdmin = "admin"
 
-	contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
-		"worker-src 'self' blob:; frame-ancestors 'none'"
+	contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self'; frame-ancestors 'none'"
 )
 
 // scope is what the chain hands to a page: the signed-in user and, on repository routes, the authorized

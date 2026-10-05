@@ -27,6 +27,11 @@ func Modules(policy []byte) ([]ModuleDef, error) {
 	if err != nil || !ok {
 		return nil, err
 	}
+	return modulesOf(policy, top)
+}
+
+// modulesOf is Modules over an already read text.
+func modulesOf(policy []byte, top topLevel) ([]ModuleDef, error) {
 	modules := resolve(&top.Modules)
 	if isNull(modules) {
 		return nil, nil
@@ -34,18 +39,23 @@ func Modules(policy []byte) ([]ModuleDef, error) {
 	if modules.Kind != yaml.MappingNode {
 		return nil, errors.New("policy: modules is not a mapping")
 	}
-	// Deliberate ceiling: the library also counts a lone CR, NEL, LS and PS as line breaks, so its lines would
-	// not match an LF split of the same text. Such input is refused instead of mapped; map the lines if a real
-	// policy ever needs one of these characters.
-	if bytes.Count(policy, []byte("\r")) != bytes.Count(policy, []byte("\r\n")) ||
-		bytes.ContainsAny(policy, "\u0085  ") {
-		return nil, errors.New("policy: input has a line break other than LF or CRLF")
+	// Deliberate ceiling: the library also counts a lone CR as a line break, so its lines would not match an
+	// LF split of the same text. Such input is refused instead of mapped.
+	if hasOtherLineBreak(policy) {
+		return nil, errLineBreak
 	}
 	c := collector{seen: map[string]bool{}}
 	if err := c.collect(modules, false); err != nil {
 		return nil, err
 	}
 	return c.out, nil
+}
+
+// hasOtherLineBreak reports a line break the library counts and an LF split, a text area and the engine's decoder
+// do not: a lone CR, NEL, LS or PS. Only readers that report lines refuse it; the others read such a text.
+func hasOtherLineBreak(policy []byte) bool {
+	return bytes.Count(policy, []byte("\r")) != bytes.Count(policy, []byte("\r\n")) ||
+		bytes.ContainsAny(policy, "\u0085\u2028\u2029")
 }
 
 type collector struct {

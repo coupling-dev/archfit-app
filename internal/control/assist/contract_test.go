@@ -121,7 +121,7 @@ func TestManagedPreconditions(t *testing.T) {
 func TestManagedPolicyAtTheLimitIsAccepted(t *testing.T) {
 	t.Parallel()
 	fx := newFixture()
-	head := "version: 1\n# "
+	head := "version: 2\n# "
 	fx.repos.files[fileKey{headA, policy.PolicyPath}] = []byte(head + strings.Repeat("x", 16<<10-len(head)-1) + "\n")
 	if _, err := fx.assist().Propose(context.Background(), ModeManaged, validRequest()); err != nil {
 		t.Fatalf("Propose() with a 16 KB policy error = %v", err)

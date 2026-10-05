@@ -414,17 +414,17 @@ The routes come from [`internal/app/handler.go`](../internal/app/handler.go) and
 
 ### UI routes
 
-| Method and route                                      | Authentication                                  |
-| ----------------------------------------------------- | ----------------------------------------------- |
-| `GET /`                                               | None. Shows the landing page or repository list |
-| `GET /auth/login` and `GET /auth/callback`            | None                                            |
-| `POST /auth/logout`                                   | GitHub OAuth session and CSRF token             |
-| `GET /static/{path}` and `GET /schema/policy.json`    | None                                            |
-| `GET /r/{o}/{n}`                                      | Session with repository `read` permission       |
-| `POST /r/{o}/{n}/onboarding`, `/discover`, `/consent` | Session with repository `admin` permission      |
-| `GET /r/{o}/{n}/policy` and `/graph`                  | Session with repository `read` permission       |
-| `POST /r/{o}/{n}/policy` and `/policy/ready`          | Session with repository `write` permission      |
-| `POST /r/{o}/{n}/assist`                              | Session with repository `write` permission      |
+| Method and route                                                               | Authentication                                  |
+| ------------------------------------------------------------------------------ | ----------------------------------------------- |
+| `GET /`                                                                        | None. Shows the landing page or repository list |
+| `GET /auth/login` and `GET /auth/callback`                                     | None                                            |
+| `POST /auth/logout`                                                            | GitHub OAuth session and CSRF token             |
+| `GET /static/{path}` and `GET /schema/policy.json`                             | None                                            |
+| `GET /r/{o}/{n}`                                                               | Session with repository `read` permission       |
+| `POST /r/{o}/{n}/onboarding`, `/discover`; `GET` and `POST /r/{o}/{n}/consent` | Session with repository `admin` permission      |
+| `GET /r/{o}/{n}/policy` and `/graph`, `POST /r/{o}/{n}/policy/check`           | Session with repository `read` permission       |
+| `POST /r/{o}/{n}/policy` and `/policy/ready`                                   | Session with repository `write` permission      |
+| `POST /r/{o}/{n}/assist`                                                       | Session with repository `write` permission      |
 
 ## Platform seams
 
@@ -474,6 +474,5 @@ See [`.env.example`](../.env.example).
 ### Release blockers
 
 - No GitHub App is registered.
-- The Monaco editor bundle is not built. The policy editor uses a plain text area.
 - No persistent Store driver: `ARCHFIT_STORE` supports only `memory`. Pilots need a driver with atomic cross-instance
   `CompareAndSwap` (Firestore, per docs/tech-stack.md).

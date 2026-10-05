@@ -85,14 +85,17 @@ parts and behavior a GitHub user already expects.
 
 ## 6. UI and editing
 
-| Decision              | Answer                                                                                                                                              | Why                                                          |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Frontend              | Server-rendered Go templates; Monaco with `monaco-yaml` for the editor. No SPA framework.                                                           | Least code that meets the editor requirement.                |
-| Login and access      | GitHub OAuth; every request checks the user's repository permission through the GitHub API with a short cache. Signed-cookie sessions.              | GitHub permissions are the access model.                     |
-| Drafts                | A branch and a draft PR. "Draft, awaiting review, published" is the PR state.                                                                       | No draft storage, no version-conflict logic of our own.      |
-| Validation            | Schema validation in the browser, instantly. Engine validation is the check result on the draft PR (customer mode) or a sandbox job (managed mode). | Reuses the one validation path that is authoritative anyway. |
-| Graph                 | Read-only view of engine output and policy; selecting a module jumps to its YAML. Visual edits deferred.                                            | Removes the YAML round-trip problem.                         |
-| Organization overview | Repositories from the GitHub API with latest check states. No score.                                                                                | No aggregation store.                                        |
+| Decision              | Answer                                                                                                                                                                                | Why                                                          |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Frontend              | Server-rendered Go templates; the policy editor is a plain text area with no editor library. No SPA framework.                                                                        | Least code; works without JavaScript.                        |
+| Login and access      | GitHub OAuth; every request checks the user's repository permission through the GitHub API with a short cache. Signed-cookie sessions.                                                | GitHub permissions are the access model.                     |
+| Drafts                | A branch and a draft PR. "Draft, awaiting review, published" is the PR state.                                                                                                         | No draft storage, no version-conflict logic of our own.      |
+| Validation            | Syntax and schema problems by line, on the server, on Check and on every save. Engine validation is the check result on the draft PR (customer mode) or a sandbox job (managed mode). | Reuses the one validation path that is authoritative anyway. |
+| Graph                 | Read-only view of engine output and policy; selecting a module jumps to its YAML. Visual edits deferred.                                                                              | Removes the YAML round-trip problem.                         |
+| Organization overview | Repositories from the GitHub API with latest check states. No score.                                                                                                                  | No aggregation store.                                        |
+
+Later option, not a release blocker: CodeMirror 6 in place of the text area, with YAML highlighting and a lint underline
+fed by the same server diagnostics, its styles under a CSP nonce, and no blob workers.
 
 ## 7. AI assistance
 

@@ -13,16 +13,25 @@
   {{range .Checks}}<li><code>{{.Name}}</code>: {{.State}}{{if .Reason}} — {{.Reason}}{{end}}</li>{{end}}
 </ul>
 {{end}}
-<p class="hint">Editor validation follows the schema only. The Archfit check on the draft pull request is the
-authoritative validation, and merging that pull request on GitHub is what publishes the policy.</p>
+<p class="hint">Check and Save validate the text against the engine config schema only. The Archfit check on the draft
+pull request is the authoritative validation, and merging that pull request on GitHub is what publishes the policy.</p>
+<p class="hint">Full checks run in CI with <code>archfit config lint</code>.</p>
 <form method="post" action="/r/{{$.Repo}}/policy" id="editor-form">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
   <input type="hidden" name="branch" value="{{.Branch}}">
   <input type="hidden" name="head_sha" value="{{.HeadSHA}}">
-  <textarea name="content" id="policy" rows="30" spellcheck="false" data-schema="/schema/policy.json">{{.Content}}</textarea>
-  <div id="monaco" hidden></div>
+  {{/* HTML drops one newline right after <textarea>: the literal one below keeps a leading blank line of the text. */}}
+  <textarea name="content" id="policy" rows="30" spellcheck="false"{{if .Unsaved}} data-unsaved{{end}}>
+{{.Content}}</textarea>
+  {{if .Diagnostics}}
+  <ol id="diagnostics" class="diagnostics">
+    {{range .Diagnostics}}<li>{{if .Line}}<a href="#L{{.Line}}">Line {{.Line}}</a>{{if .Column}}, column {{.Column}}{{end}}: {{end}}{{.Message}}</li>
+    {{end}}
+  </ol>
+  {{end}}
   <p>
     <button type="submit">Save to the draft pull request</button>
+    <button type="submit" formaction="/r/{{$.Repo}}/policy/check">Check</button>
     {{if .CanReady}}<button type="submit" formaction="/r/{{$.Repo}}/policy/ready">Mark ready for review</button>{{end}}
   </p>
   <fieldset>
@@ -38,10 +47,6 @@ authoritative validation, and merging that pull request on GitHub is what publis
     <button type="submit" formaction="/r/{{$.Repo}}/assist">Propose</button>
   </fieldset>
 </form>
-{{end}}
-{{if .Monaco}}
-<link rel="stylesheet" href="/static/vendor/monaco.bundle.css">
-<script src="/static/vendor/monaco.bundle.js" defer></script>
 {{end}}
 <script src="/static/editor.js" defer></script>
 {{end}}

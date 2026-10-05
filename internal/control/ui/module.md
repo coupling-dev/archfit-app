@@ -14,13 +14,13 @@ could still work GitHub-first, but onboarding, schema-guided editing and consent
 
 ## Functional Responsibilities
 
-- Serve server-rendered pages (`html/template`) and embedded static assets (Monaco, `monaco-yaml`, small scripts).
+- Serve server-rendered pages (`html/template`) and embedded static assets (one stylesheet, two small scripts).
 - Authenticate every request through `session` and authorize every repository page at the needed permission.
 - Overview: the user's repositories with their latest default-branch `archfit/state` check conclusion. No score.
 - Repository status: onboarding `Progress`, actions to start onboarding or dispatch discovery, entitlement banner.
-- Policy editor: load policy and schema, validate in the browser, save as a commit on a draft branch through
-  `proposal` bound to the head SHA that was loaded, show the draft state (draft / awaiting review / published),
-  mark ready for review.
+- Policy editor: load the policy into a plain text area, check it on the server (Check, and before every save) and
+  list its problems by line, save as a commit on a draft branch through `proposal` bound to the head SHA that was
+  loaded, show the draft state (draft / awaiting review / published), mark ready for review.
 - Graph: fetch the latest report artifact, decode it, build the view through `graph`, draw it, mark it stale.
 - Assist: turn the form into an `assist.Request`, show the outcome or the pending customer run.
 - Consent: record and revoke `source_processing` and `managed_llm` consent (repository administrators only).
@@ -73,6 +73,7 @@ Minimum repository permission in brackets. `{o}/{n}` is only a lookup key for `S
 - `POST /r/{o}/{n}/discover` [admin] — dispatch the discovery run of the Archfit workflow.
 - `GET /r/{o}/{n}/policy` [read] — editor; optional `?branch=archfit/…`.
 - `POST /r/{o}/{n}/policy` [write] — save; form `branch`, `head_sha`, `content`.
+- `POST /r/{o}/{n}/policy/check` [read] — check the text and save nothing; form `branch`, `head_sha`, `content`.
 - `POST /r/{o}/{n}/policy/ready` [write] — mark the draft PR ready for review; form `branch`, `head_sha`.
 - `GET /r/{o}/{n}/graph` [read] — graph page.
 - `POST /r/{o}/{n}/assist` [write] — form `branch`, `head_sha`, `content`, `instruction`, `mode`.
@@ -85,14 +86,16 @@ Minimum repository permission in brackets. `{o}/{n}` is only a lookup key for `S
   `api.ErrNotFound` from any GitHub call a page does not handle itself: `404` with the same "Not found." wording.
 - Missing or wrong CSRF token: `403`. Body over 512 KB **[default]**: `413`.
 - `ErrStale`, or a `head_sha` that is not the draft head: `409`, the user's text kept in the editor, nothing written.
-- Invalid form, unparseable YAML, a text `policy.Validate` refuses, `ErrInvalidRequest`, `ErrInvalidProposal`: `422`, text kept.
+- Invalid form, a policy text over 256 KB or not UTF-8, a text `policy.Diagnose` finds problems in, `ErrInvalidRequest`,
+  `ErrInvalidProposal`: `422`, text kept. A save or assist refused by `Diagnose` also lists the problems under the editor.
 - Assist preconditions (`ErrNoDraft`, `ErrNoConsent`, `ErrNotManaged`, `ErrPolicyTooLarge`, `ErrNoAssistWorkflow`): `409` with a clear state.
   `assist.ErrBusy`: `429`. `ErrManagedUnavailable`, `ErrBudgetExhausted`, `ErrProvider`: `503` with a clear state; the editor stays usable.
 - Onboarding states, each `409` with fixed wording: `onboarding.ErrNoSandbox` "Managed discovery is not available.",
   `onboarding.ErrAlreadyOnboarded` "This repository is already onboarded. Reload the page to see its state.",
   `onboarding.ErrBusy` "Managed discovery is busy with other repositories. Try again in a few minutes."
 - `ErrRateLimited`: `503` with `Retry-After: 60` **[default]**. Any other upstream error: `502`. Panic: `500`.
-- Every successful `POST` answers `303` to the page that shows the result.
+- Every successful `POST` answers `303` to the page that shows the result, except Check: it answers `200` with the
+  editor, the problem list or "The check found no problems.", because nothing changed that a redirect could show.
 
 ## Integrations
 
@@ -606,10 +609,11 @@ func New(ts TokenSource, hc *http.Client) *Client
 - **Volatility**: high (this side), moderate (wire/policy)
 - **Balanced?**: yes — contract coupling
 - **Shared knowledge**: `PolicyPath` is the constant naming the file the editor loads and saves. `Schema()` is served
-  unchanged at `/schema/policy.json` for `monaco-yaml`. `Waivers` is the server-side YAML syntax check of a save
-  **[default]**: only `wire/*` may import a YAML library. `Modules` is the second half of that check and the graph
-  page's test for "this text parses". Both ignore unknown keys, so `Validate` is the third check of a save: it refuses
-  a text that is not an engine policy (prose with a colon, a JSON report). ui never shows `Validate`'s error text. `Digest` is used only
+  unchanged at `/schema/policy.json` for editors outside the App; no page of the App reads it. `Diagnose` is the one
+  check of an edited text, for Check and for every save, the save before an assist request included **[default]**:
+  only `wire/*` may import a YAML library. Its `nil` implies that `Validate`, `Waivers` and `Modules` accept the text,
+  so a saved draft is always readable by the graph and the gate. ui shows its `Diagnostic` lines to the user who
+  submitted the text and never logs them. `Modules` is the graph page's test for "this text parses". `Digest` is used only
   inside `graph`. `BaselinePath` and `LabelsPath` are the constants naming `.archfit-baseline.json` and
   `.archfit-labels.yaml`; ui never reads or writes either.
 
@@ -626,21 +630,6 @@ const (
 // engine's comparison.config_hash. The engine reports no digest for baseline or labels; for those the
 // producer states Digest of the bytes it used in the envelope, and the App compares it with the protected ref.
 func Digest(raw []byte) string
-```
-
-<!-- contract: Waiver, Waivers — restated from internal/wire/policy/module.md -->
-```go
-// Waiver is the subset of an engine waiver the App reads. The engine enforces it; the App only schedules around Expires.
-type Waiver struct {
-    Rule       string    // engine rule ID
-    From, To   string    // endpoint selectors, may be ""
-    Reason     string
-    ApprovedBy string    // descriptive only, never authentication
-    Expires    time.Time // end of the YYYY-MM-DD day, UTC
-}
-
-// Waivers extracts the waivers of a policy file. It ignores every other key.
-func Waivers(policy []byte) ([]Waiver, error)
 ```
 
 <!-- contract: Schema — restated from internal/wire/policy/module.md -->
@@ -662,13 +651,18 @@ type ModuleDef struct {
 func Modules(policy []byte) ([]ModuleDef, error)
 ```
 
-<!-- contract: Validate — restated from internal/wire/policy/module.md -->
+<!-- contract: Diagnostic, Diagnose — restated from internal/wire/policy/module.md -->
 ```go
-// Validate reports whether policy is plausibly an engine policy file: a YAML document whose root is a
-// mapping, whose top-level keys all belong to the engine config schema's closed key set, and which has
-// the required `version` key. It is a structural check, not engine validation: the engine remains the
-// authority on the file's meaning. Errors never echo keys or values.
-func Validate(policy []byte) error
+// Diagnostic is one problem of a policy text, worded for the person who wrote the text.
+type Diagnostic struct {
+    Line    int    // 1-based line in the text; 0 when the problem has no single place
+    Column  int    // 1-based column; 0 when unknown
+    Message string // one sentence; may quote keys of the text, at most 64 characters of each
+}
+
+// Diagnose checks a policy text against the embedded engine config schema and the App's own readers. It returns
+// nil exactly when the text is fit to save: then Validate, Waivers and Modules all accept it too.
+func Diagnose(policy []byte) []Diagnostic
 ```
 
 ### internal/wire/settings
@@ -833,15 +827,15 @@ type OAuth interface {
 - `session` turns a request into a `User` and a repository name into an authorized `Repo`. It is the only source of
   tenant identity in the UI.
 - `graph` turns a `Report` and policy text into a `View`. Pure.
-- ui's own code is handlers, templates (`templates/`, transparent folder), static assets (`static/`, transparent folder,
-  Monaco and `monaco-yaml` vendored, all embedded with `go:embed`) and the handler chain. The two children do not know each other.
+- ui's own code is handlers, templates (`templates/`, transparent folder), static assets (`static/`, transparent folder:
+  `app.css`, `editor.js`, `graph.js`, all embedded with `go:embed`; no vendored library) and the handler chain. The two children do not know each other.
 
 ### Handler chain
 
 1. Recover panics → `500`; log route pattern and request ID only.
-2. Security headers: `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
-   worker-src 'self' blob:; frame-ancestors 'none'` (Monaco needs inline styles and blob workers), `X-Content-Type-Options: nosniff`,
-   `Referrer-Policy: same-origin` **[default]**.
+2. Security headers: `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self';
+   frame-ancestors 'none'` (no inline style, no inline script, no worker: every style is a class in `app.css`),
+   `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` **[default]**.
 3. `http.MaxBytesReader` at 512 KB **[default]** on every `POST`.
 4. `Sessions.User`. Missing → login redirect or `401`.
 5. `POST` only: constant-time compare of form field `csrf` with the token derived from `User.Token`.
@@ -878,20 +872,30 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   when the draft is `DraftOpen` or `DraftInReview`, load `PolicyPath` at `Draft.HeadSHA` and set `head_sha` to it; otherwise load
   from the default branch with `head_sha` empty. The page shows the draft state in the words draft / awaiting review /
   published (and closed), the draft's check conclusions (engine validation is the check on the draft PR), and the PR link. The
-  form is a plain `textarea` that Monaco upgrades; saving works without JavaScript. The script marks the graph link "stale"
-  as soon as the buffer differs from the loaded text or has diagnostics.
-- Save: checks in order: size ≤ 256 KB **[default]** and valid UTF-8; `policy.Waivers(content)` and `policy.Modules(content)`
-  succeed, else `422` "not valid YAML"; `policy.Validate(content)` succeeds, else `422` with the editor re-rendered from the
-  form and the fixed wording "The text is not an Archfit policy: it has an unknown top-level key, has no version key, or
-  is not a mapping. Nothing was saved." **[default]**, never `Validate`'s error text and never the content outside the
-  editor; `Proposals.Get`; content
+  form is a plain `textarea` with no editor library **[default]**; Check and save work without JavaScript. The template
+  puts a newline right after the opening `<textarea>` tag: HTML drops exactly one there, so a text that starts with a
+  blank line keeps it through a save. One line says
+  "Full checks run in CI with `archfit config lint`.": the App cannot run the engine, so vacuous selectors, ownership and
+  rule types are not checked here. Below the text area, a problem list shows each `Diagnostic` as "Line 12, column 3:
+  message"; the line is a link `#L12`, and the message is plain text (escaped, never `template.HTML`). The script
+  (`static/editor.js`) moves the caret to the line of a `#L<n>` hash or of a clicked link, and marks the graph link
+  "stale" as soon as the buffer differs from the loaded text, the page lists problems, or the text area carries
+  `data-unsaved`: a page re-rendered from a form (Check, a refused save, ready or assist) holds the submitted text, not
+  the text on the branch. Without JavaScript the list and its text still show.
+- Check: the same form check as Save (`branch`, `head_sha`), then the one policy check: size ≤ 256 KB **[default]**,
+  valid UTF-8, `policy.Diagnose(content)`. It saves nothing and asks GitHub nothing beyond authorization: the editor is re-rendered from the
+  form, `200`, with the problem list and "The check found problems, listed below the editor.", or with "The check found
+  no problems.". An invalid form, a text too large or not UTF-8 is `422` as for Save. `read` is enough, since nothing is written.
+- Save: the policy check of Check first; a problem is `422` with the editor re-rendered from the form, the problem list,
+  and "The policy has problems, listed below the editor. Nothing was saved." **[default]**; `Proposals.Get`; content
   equal to the file currently on the branch (at `Draft.HeadSHA` for an open draft, else on the default branch) is a no-op with
   a notice, whatever `head_sha` says, so a retried save never conflicts with itself; then an open draft whose head differs
   from `head_sha` (including an empty `head_sha`) is `409`; then `Proposals.Propose(Change{Repo: repo.RepoRef, Branch, Base: repo.DefaultBranch, Title, Body, Message,
   Files: [{PolicyPath, content}]}, head_sha)`. Title `"Archfit policy edit by @<login>"`, fixed body, message
   `"archfit: edit policy (@<login>)"` **[default]**. A browser submits every `textarea` with CRLF line ends: before the
   comparison ui turns CRLF back into LF unless the file on the branch already uses CRLF **[default]**. Nothing else in the
-  text is touched. A refused save, ready or assist re-renders the editor from the form alone and asks GitHub nothing.
+  text is touched. A refused save, ready or assist re-renders the editor from the form alone and asks GitHub nothing
+  beyond authorization, except that an assist refused for problems first read the branch file to compare.
 - Ready: `Proposals.Get`; head must equal `head_sha`, state must be `DraftOpen`; then `Proposals.Ready(number)`. ui never merges:
   publication is the merge on GitHub under the customer's ruleset and owner approval, the same path as a GitHub-first edit.
 - Graph: settings → `LatestRun(Settings.Workflow, DefaultBranch)` → `Artifact(run.ID, "archfit-report", report.MaxBytes)` →
@@ -904,7 +908,9 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   class; the page never calls a link "permitted". When `View.Incomplete`, a banner says the report's hard gates did not
   pass or not all required rules were evaluated, so an observed link can still break a rule.
 - Assist: authorize `write`; if `content` differs from the file at `head_sha`, save it first (same rules as Save) and use the
-  new head; then `Assist.Propose(mode, Request{Repo, Branch, HeadSHA, Instruction, By: login})`. Managed is offered only when
+  new head. Owner decision: when `content` equals the file the editor would load for the branch (after the CRLF rule) and
+  `Diagnose` finds problems in it, nothing is saved and the request goes ahead on the loaded head, so a user can ask AI
+  to fix a broken draft; the answer is checked by `Diagnose` in assist. A changed text with problems is refused as for Save; then `Assist.Propose(mode, Request{Repo, Branch, HeadSHA, Instruction, By: login})`. Managed is offered only when
   settings say `managed` and `Consents.Has(ConsentManagedLLM)`; assist enforces both anyway. Managed success: redirect to the
   editor on the new head with a link to the PR diff. Customer success: redirect to the editor with `?since=<head_sha>`, the
   head the request was bound to; with `since` the editor shows the run state from
@@ -935,19 +941,22 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
 - No repository score, no aggregate, no ranking, anywhere.
 - Draft, awaiting review and published are pull-request states read from GitHub. ui stores no draft, no version, no lock.
 - Stale drafts are refused, not merged: every save, ready and assist carries the loaded `head_sha`.
-- Invalid YAML, and a text `policy.Validate` refuses, is never saved by ui: not by save, and not by the save that
-  precedes an assist request, so assist is never handed such a text. Ready sends no text. Invalid YAML marks the graph
-  stale. Schema validity is not engine validity: the page says that the check on the draft PR is the authoritative validation.
+- A text with a `policy.Diagnose` problem (invalid YAML, a key, type or value the engine schema refuses) is never
+  saved by ui: not by save, and not by the save that precedes an assist request. Assist may be asked about such a text
+  only when it is already the draft on the branch (it was committed outside ui); ui commits nothing then, and assist
+  commits only an answer that `Diagnose` accepts. Ready sends no text. Invalid YAML marks the graph
+  stale. Schema validity is not engine validity: the page says that the check on the draft PR is the authoritative
+  validation and that full checks run in CI with `archfit config lint`.
 - ui never rewrites policy text: it saves the user's bytes as they are. Comments and YAML constructs the App does not
   understand survive every round trip. The graph never writes.
 - AI only on an explicit `POST` by a user with `write`. Nothing is auto-published. Model text is never rendered by ui; users
-  see proposals as the diff on GitHub. A failed assist request leaves the editor, schema completion and saving working.
+  see proposals as the diff on GitHub. A failed assist request leaves the editor, Check and saving working.
 - `html/template` auto-escaping everywhere; no `template.HTML` for values that came from GitHub, a report, or a form.
 - Static assets and the schema carry no tenant data; everything else requires a session.
 - Logs: request ID, route pattern, status, duration, user ID, repository ID, installation ID, outcome. No form content, no
   policy text, no instruction, no report content, no cookie or token.
 - Inherited: control-plane code. The gate never calls ui; a panic or outage here changes no check. Standard library only
-  on the Go side; vendored browser assets are files, not Go dependencies.
+  on the Go side, and no browser library: the static assets are this module's own files.
 - Declared restatement: three kinds of link are built from the literal host `https://github.com/`: the assist
   workflow's runs page, the pull-request search and the default-branch commits page. `internal/github` owns the
   knowledge of GitHub hosts and publishes no URL builder; `control/assist` (`RunURL`) and `control/onboarding`
@@ -989,7 +998,8 @@ their interfaces except where a test says otherwise. The clock is injected.
 
 - **Test name**: `TestRoutesAndMinimumPermissions`
   **Scenario**: table of every route × user permission `none`, `read`, `write`, `admin`, and not signed in.
-  **Expected behavior**: `303` to login or `401` without a session; `404` below the minimum; success at and above it;
+  **Expected behavior**: `303` to login or `401` without a session; `404` below the minimum; success at and above it
+  (`200` for a page and for Check, `303` for every other `POST`);
   `/static/` and `/schema/policy.json` answer without a session.
 - **Test name**: `TestOverviewReadsStateOnDefaultBranchHead`
   **Scenario**: table of repositories: `archfit/state` success on the default-branch head; neutral; no check run; `BranchHead` fails.
@@ -1044,14 +1054,20 @@ their interfaces except where a test says otherwise. The clock is injected.
 - **Test name**: `TestSaveRejectsForeignDocuments`
   **Scenario**: table, through save and through assist: one line of prose with a colon; a JSON object with foreign keys; a
   mapping without `version`; a mapping with one unknown top-level key; then a valid policy.
-  **Expected behavior**: `422` for the first four, no `Propose` and no assist call, the editor re-rendered with the text kept and
-  the fixed "not an Archfit policy" wording and nothing of `Validate`'s error text; the valid policy saves with `303`.
+  **Expected behavior**: `422` for the first four, no `Propose` and no assist call, the editor re-rendered with the text kept,
+  the "The policy has problems" sentence and the row's problem as a linked line (`Unknown key` or `Missing required key`),
+  and nothing of `Validate`'s error text; the valid policy saves with `303`.
 - **Test name**: `TestNoScoreAnywhere` (T17)
   **Scenario**: render every page with healthy, blocked and attention fixtures.
   **Expected behavior**: no number that aggregates findings or dimensions, no grade, no percentage, no sort by health.
 - **Test name**: `TestHostileStringsAreEscaped`
   **Scenario**: repository names, module names, diagnostics and check titles containing HTML and script text.
-  **Expected behavior**: escaped in HTML and in the embedded JSON; the CSP header is present on every page.
+  **Expected behavior**: escaped in HTML and in the embedded JSON; every page carries exactly the CSP of the handler
+  chain, with no `'unsafe-inline'` and no `worker-src`.
+- **Test name**: `TestNoAssetNeedsInlineStyleOrBlobWorker`
+  **Scenario**: read every embedded template and static file.
+  **Expected behavior**: no `<style>`, no `style=` attribute, no script that sets `.style` or a style attribute, no
+  `blob:` and no worker: the CSP blocks all of them.
 - **Test name**: `TestLogsCarryOnlyIdentifiers`
   **Scenario**: run save, assist, consent and graph with marker strings in content, instruction and report.
   **Expected behavior**: no marker, token or cookie value in any log line.
@@ -1079,8 +1095,8 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Expected behavior**: both are commits on a PR against the default branch; the editor shows the GitHub-pushed head after reload and
   refuses to save over it from an older load; ui offers no merge or approval action.
 - **Test name**: `TestUnknownYAMLConstructsSurviveASave` (T17)
-  **Scenario**: a valid policy with comments, anchors, merge keys and, below a schema top-level key, a key and tags the App
-  does not know; change one line and save. (An unknown top-level key is refused: `TestSaveRejectsForeignDocuments`.)
+  **Scenario**: a valid policy with comments, anchors, merge keys and, below a schema top-level key, an explicit `!!str` tag and a
+  block scalar; change one line and save. (An unknown key is refused: `TestSaveRejectsForeignDocuments`.)
   **Expected behavior**: the committed bytes equal the submitted bytes; nothing is reformatted or dropped.
 - **Test name**: `TestAssistIsExplicitAndReviewable` (T20)
   **Scenario**: real `assist` with a fake `Provider`; load pages, save, open the graph; then one assist `POST`.
@@ -1094,6 +1110,28 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Scenario**: customer-mode request; the fake run is queued, then failed; a second run succeeds and pushes a commit.
   **Expected behavior**: pending with the run link; failed; completed with a reload offer; no Store key is written and no credential field
   exists on the form.
+- **Test name**: `TestCheckListsProblemsAndSavesNothing`
+  **Scenario**: table, posted to Check by a user with `read`: an unknown key and an enum miss, each with a close match; the
+  same text with CRLF line ends; a tab indent; a comment-only text; an `<img>` tag as a key; a valid policy.
+  **Expected behavior**: `200`; the problems as list items with `#L<n>` links, line, column and "Did you mean"; the same
+  line numbers for CRLF; a problem without a line has no link; the tag is escaped in the list; the valid policy shows "The check found no problems." and
+  no list; the text is kept and the `archfit config lint` line is shown; nothing is written and GitHub is not asked for
+  the policy or the draft.
+- **Test name**: `TestRefusedSaveListsTheProblems`
+  **Scenario**: save, and assist, a text with a missing required key and a misspelled key.
+  **Expected behavior**: `422`, "The policy has problems" with both problems as linked lines, the text kept and the editor
+  script on the page; no write and no assist call.
+- **Test name**: `TestEditorKeepsALeadingBlankLine`
+  **Scenario**: the policy on the default branch starts with a blank line; load the editor, Check the same text, save it with one more line.
+  **Expected behavior**: both pages carry two newlines after the opening `<textarea>` tag; the committed bytes keep the blank line.
+- **Test name**: `TestOnlyAFormRerenderIsMarkedUnsaved`
+  **Scenario**: load the editor; then Check a valid text and save a text with a problem.
+  **Expected behavior**: the loaded page has no `data-unsaved`; both re-rendered pages have it.
+- **Test name**: `TestAssistOnABrokenDraft`
+  **Scenario**: the draft on the branch has a missing required key; assist is asked with that same text (CRLF from the
+  browser), then with a changed text that still has problems.
+  **Expected behavior**: the first request reaches assist bound to the draft head with no commit; the second is `422`
+  with no assist call and no commit.
 - **Test name**: `TestGraphWithoutAReport`
   **Scenario**: the graph page with no workflow run; then with an `archfit-report` artifact that `report.Decode` refuses.
   **Expected behavior**: `200` "No report available"; then `200` "Report unavailable" and no `graph-data` element: never a partial graph.

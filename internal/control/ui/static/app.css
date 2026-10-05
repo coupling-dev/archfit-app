@@ -19,7 +19,7 @@ button, .button { font: inherit; padding: .35rem .8rem; cursor: pointer; }
 .violation td { color: var(--bad); }
 .accepted td, .advisory td { color: var(--warn); }
 .stale::after { content: " (stale)"; color: var(--warn); }
-#monaco { height: 70vh; border: 1px solid var(--line); }
+.diagnostics li { color: var(--bad); }
 #graph { overflow: auto; }
 #graph svg { display: block; }
 #graph rect { fill: none; stroke: currentColor; }

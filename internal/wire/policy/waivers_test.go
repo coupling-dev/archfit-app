@@ -217,12 +217,23 @@ func TestApprovedByIsNeverAuthority(t *testing.T) {
 
 	// The exported surface is the Public Contract and nothing that could act on ApprovedBy.
 	want := []string{
-		"Accepted", "Baseline", "BaselinePath", "BaselineSchemaV2", "Digest", "LabelsPath", "MaxBaselineBytes",
-		"ModuleDef", "Modules", "PolicyPath", "ReadBaseline", "Schema", "Validate", "Waiver", "Waivers",
+		"Accepted", "Baseline", "BaselinePath", "BaselineSchemaV2", "Diagnose", "Diagnostic", "Digest", "LabelsPath",
+		"MaxBaselineBytes", "ModuleDef", "Modules", "PolicyPath", "ReadBaseline", "Schema", "Validate", "Waiver", "Waivers",
 	}
 	if got := exportedNames(t); !slices.Equal(got, want) {
 		t.Errorf("exported identifiers = %v, want %v", got, want)
 	}
+}
+
+// receiverType names the type of a method receiver; a method of an unexported type is not exported surface.
+func receiverType(expr ast.Expr) string {
+	if star, ok := expr.(*ast.StarExpr); ok {
+		expr = star.X
+	}
+	if id, ok := expr.(*ast.Ident); ok {
+		return id.Name
+	}
+	return ""
 }
 
 func exportedNames(t *testing.T) []string {
@@ -243,7 +254,9 @@ func exportedNames(t *testing.T) []string {
 		for _, decl := range file.Decls {
 			switch d := decl.(type) {
 			case *ast.FuncDecl:
-				names = append(names, d.Name.Name)
+				if d.Recv == nil || ast.IsExported(receiverType(d.Recv.List[0].Type)) {
+					names = append(names, d.Name.Name)
+				}
 			case *ast.GenDecl:
 				for _, spec := range d.Specs {
 					switch s := spec.(type) {

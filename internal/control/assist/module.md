@@ -33,7 +33,7 @@ workflow inputs will be tuned with every pilot. The `Provider` seam itself is st
 - The prompt: system text, how schema and policy are framed, the instruction to answer with one complete YAML file.
 - The permitted-context rule and its limits: policy at most 16 KB **[default]**, instruction at most 2 000 bytes **[default]**,
   answer at most 64 KB **[default]**, `MaxTokens` 8 192 **[default]**.
-- Output normalization and validation (code-fence stripping, UTF-8, `policy.Validate`, "must differ").
+- Output normalization and validation (code-fence stripping, UTF-8, `policy.Diagnose`, "must differ").
 - The order of checks, chosen so that nothing is spent before every free check has passed.
 - The reservation protocol against `Budget` and the rule that settlement survives request cancellation.
 - The in-flight guard: one managed request per repository and branch at a time **[default]**.
@@ -130,7 +130,7 @@ All are sentinels for `errors.Is` **[default names]**. Messages carry no user te
 - `ErrBusy` — a managed request for the same repository and branch is still running.
 - `ErrBudgetExhausted` (owned by `account`, passed through) — the monthly cap would be exceeded. No call was made.
 - `ErrProvider` — the provider call failed or timed out. Wraps status information only.
-- `ErrInvalidProposal` — the answer is empty, too large, not a policy file (`policy.Validate` refuses it), or identical to the input. Nothing was written.
+- `ErrInvalidProposal` — the answer is empty, too large, not a policy file the editor would save (`policy.Diagnose` lists a problem), or identical to the input. Nothing was written.
 - `ErrNoAssistWorkflow` — customer mode and the workflow file does not exist on the branch.
 - Any other GitHub or Store error is returned wrapped. `ErrRateLimited` stays testable with `errors.Is`.
 
@@ -412,9 +412,10 @@ func New(ts TokenSource, hc *http.Client) *Client
 - **Volatility**: high (this side), moderate (wire/policy)
 - **Balanced?**: yes — contract coupling
 - **Shared knowledge**: `PolicyPath` is the constant naming the file assist reads and writes. `Schema()` is the prompt's
-  rule reference. `Validate` is the structural check of an answer: only `wire/settings` and `wire/policy` may import a
-  YAML library. It inspects no value, so a malformed waiver date passes it; the engine check on the draft PR is the
-  authority on the file's meaning. Assist drops `Validate`'s error text. `BaselinePath` and `LabelsPath` are the constants naming the baseline and labels files; assist never touches either, and never calls `Digest`.
+  rule reference. `Diagnose` is the check of an answer, the same check the editor runs before every save, so a
+  proposal commit can always be saved again from the editor: only `wire/settings` and `wire/policy` may import a
+  YAML library. It knows the schema, not the engine's rules; the engine check on the draft PR is the
+  authority on the file's meaning. Assist drops `Diagnose`'s messages: they may quote the answer. `BaselinePath` and `LabelsPath` are the constants naming the baseline and labels files; assist never touches either, and never calls `Digest`.
 
 <!-- contract: PolicyPath, BaselinePath, LabelsPath, Digest — restated from internal/wire/policy/module.md -->
 ```go
@@ -431,18 +432,24 @@ const (
 func Digest(raw []byte) string
 ```
 
-<!-- contract: Validate — restated from internal/wire/policy/module.md -->
+<!-- contract: Diagnostic, Diagnose — restated from internal/wire/policy/module.md -->
 ```go
-// Validate reports whether policy is plausibly an engine policy file: a YAML document whose root is a
-// mapping, whose top-level keys all belong to the engine config schema's closed key set, and which has
-// the required `version` key. It is a structural check, not engine validation: the engine remains the
-// authority on the file's meaning. Errors never echo keys or values.
-func Validate(policy []byte) error
+// Diagnostic is one problem of a policy text, worded for the person who wrote the text.
+type Diagnostic struct {
+    Line    int    // 1-based line in the text; 0 when the problem has no single place
+    Column  int    // 1-based column; 0 when unknown
+    Message string // one sentence; may quote keys of the text, at most 64 characters of each
+}
+
+// Diagnose checks a policy text against the embedded engine config schema and the App's own readers. It returns
+// nil exactly when the text is fit to save: then Validate, Waivers and Modules all accept it too.
+func Diagnose(policy []byte) []Diagnostic
 ```
 
 <!-- contract: Schema — restated from internal/wire/policy/module.md -->
 ```go
-// Schema returns the engine v2.4.0 config JSON Schema, embedded unchanged, for the editor.
+// Schema returns the engine v2.4.0 config JSON Schema, embedded unchanged: Diagnose's schema, the assist
+// prompt's context, and the file served for editors outside the App.
 func Schema() []byte
 ```
 
@@ -528,10 +535,11 @@ works unchanged.
    the full reservation: the error is on the safe side of the cap.
 6. Normalize: trim; strip one surrounding Markdown code fence; end with one newline. Validate: UTF-8, no NUL, at most
    64 KB **[default]**, no fence line left over (prose around a fence, an unclosed fence), bytes differ from the input
-   apart from surrounding white space, and the answer passes `policy.Validate`: prose with a colon, a JSON document, a
-   mapping without `version` or with a foreign top-level key is not a policy. Else `ErrInvalidProposal`: nothing is
+   apart from surrounding white space, and `policy.Diagnose` lists no problem: prose with a colon, a JSON document, a
+   mapping without `version` or with a foreign top-level key, and a key, type or value `Diagnose` refuses (stricter
+   than the engine in places) are not a policy. Else `ErrInvalidProposal`: nothing is
    proposed, the text is discarded, and the budget stays settled by step 5 exactly as for any other invalid answer.
-   Neither the answer nor `Validate`'s error text is logged or returned; the error names the failed check only.
+   Neither the answer nor `Diagnose`'s messages are logged or returned; the error names the failed check only.
 7. `Proposals.Propose(Change{Repo, Branch, Base: Repo.DefaultBranch, Message, Files: [{PolicyPath, answer}]}, Request.HeadSHA)`.
    `Message` is `"archfit: AI proposal requested by @<By>"` **[default]**. `Title` and `Body` are set to the same fixed
    text and matter only if the PR had to be recreated. `ErrStale` here means that during the provider call someone pushed to the branch, or the
@@ -569,7 +577,7 @@ customer's environment toward Archfit, and no Archfit money is spent. The workfl
   the customer's model key exists only in the customer's CI.
 - The installation ID comes from `Request.Repo`, which the caller obtained from an authorized session. Assist takes no ID from text.
 - Failure isolation: any failure here (provider, budget, Store, GitHub) returns an error to the caller and changes
-  nothing else. Editing, schema completion, checks and the gate do not depend on assist.
+  nothing else. Editing, the editor's schema check, checks and the gate do not depend on assist.
 - One budget instant per request: the clock is read once before `Reserve`, and `Settle` gets that same value, as
   account's Operation rules require. The provider call between them can take 150 seconds. With two clock reads a call
   that crosses a UTC month end would leave the whole reservation in the old month and book a negative delta in the new
@@ -655,7 +663,7 @@ roles at their interfaces. The clock is injected. No test calls a real model.
   for valid YAML it appears only as the `.archfit.yaml` file content, not in commit message, title or body.
 - **Test name**: `TestForeignAnswerIsNotAProposal`
   **Scenario**: table: the provider returns one-line prose with a colon; a JSON object with foreign keys; a YAML mapping
-  without `version`; a mapping with one unknown top-level key; a valid edited policy. Every answer carries a seeded
+  without `version`; a mapping with one unknown top-level key; a module with an unknown key; a valid edited policy. Every answer carries a seeded
   marker string; capturing logger.
   **Expected behavior**: `ErrInvalidProposal` and zero `Propose` calls for all but the last, which is proposed as
   `.archfit.yaml`; in every row exactly one `Settle(max, returned cost)`; the marker never appears in a log line or error.

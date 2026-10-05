@@ -18,7 +18,6 @@ type page struct {
 	Repo   string // full name of the authorized repository, "" outside repository routes
 	Notice string
 	Error  string
-	Monaco bool
 	Body   any
 }
 
@@ -38,7 +37,6 @@ func (s *server) newPage(r *http.Request, sc scope, title string, body any) page
 		CSRF:   csrfToken(sc.user),
 		Repo:   sc.repo.FullName,
 		Notice: notices[r.URL.Query().Get("notice")],
-		Monaco: s.monaco,
 		Body:   body,
 	}
 }

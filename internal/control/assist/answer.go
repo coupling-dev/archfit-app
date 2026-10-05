@@ -31,10 +31,10 @@ func normalizeAnswer(text string, draftPolicy []byte) ([]byte, error) {
 		reason = "not a bare YAML file"
 	case bytes.Equal(bytes.TrimSpace(answer), bytes.TrimSpace(draftPolicy)):
 		reason = "identical to the draft"
-	default:
-		if err := policy.Validate(answer); err != nil {
-			reason = "not a valid policy"
-		}
+	// Diagnose is the editor's check too, so a proposal commit can always be saved again from the editor. Its
+	// messages may quote the answer, so they never enter the error.
+	case len(policy.Diagnose(answer)) > 0:
+		reason = "not a valid policy"
 	}
 	if reason != "" {
 		return nil, fmt.Errorf("%w: %s", ErrInvalidProposal, reason)

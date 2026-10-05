@@ -28,7 +28,8 @@ func Digest(raw []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// Schema returns the engine v2.4.0 config JSON Schema, embedded unchanged, for the editor.
+// Schema returns the engine v2.4.0 config JSON Schema, embedded unchanged: Diagnose's schema, the assist
+// prompt's context, and the file served for editors outside the App.
 func Schema() []byte {
 	return bytes.Clone(schema)
 }
