@@ -244,7 +244,7 @@ func TestGraphPageBuildsFromArtifact(t *testing.T) {
 	if bytes.Count(payload, []byte("MARKER-")) < 2 {
 		t.Fatal("markers were not placed in the fixture")
 	}
-	rep, err := report.Decode(payload)
+	rep, err := report.Decode(payload, "v2.3.1")
 	if err != nil {
 		t.Fatalf("fixture does not decode: %v", err)
 	}
@@ -271,6 +271,10 @@ func TestGraphPageBuildsFromArtifact(t *testing.T) {
 	wantContains(t, body, "violation")
 	if strings.Contains(body, `id="stale"`) {
 		t.Error("stale banner on a fresh report")
+	}
+	// hard_gates: fail. An observed link of this report is not proof that the policy permits it.
+	if !want.Incomplete || !strings.Contains(body, `id="incomplete"`) {
+		t.Errorf("Incomplete = %v and no incomplete banner for a report whose hard gates did not pass", want.Incomplete)
 	}
 	if strings.Contains(body, "MARKER-") {
 		t.Error("a field the decoder drops reached the page")

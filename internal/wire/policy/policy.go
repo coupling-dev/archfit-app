@@ -28,7 +28,7 @@ func Digest(raw []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// Schema returns the engine v2.3.1 config JSON Schema, embedded unchanged, for the editor.
+// Schema returns the engine v2.4.0 config JSON Schema, embedded unchanged, for the editor.
 func Schema() []byte {
 	return bytes.Clone(schema)
 }

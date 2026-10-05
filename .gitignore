@@ -11,6 +11,8 @@ dist/
 # Local agent, editor, and OS state.
 .pi/
 .claude/
+# revmux review archive (agent transcripts); .revmux/profile.md stays tracked.
+.revmux/tasks/
 .idea/
 .vscode/
 .DS_Store

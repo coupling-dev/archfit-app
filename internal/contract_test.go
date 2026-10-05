@@ -138,6 +138,7 @@ func TestRoutesRequireTheirAuthentication(t *testing.T) {
 	routes := []struct{ method, path string }{
 		{http.MethodPost, "/v1/reports"},
 		{http.MethodPost, "/v1/discoveries"},
+		{http.MethodPost, "/v1/baselines"},
 		{http.MethodPost, "/webhooks/github"},
 		{http.MethodPost, "/internal/sweep"},
 		{http.MethodPost, "/internal/grants"},
@@ -167,6 +168,8 @@ func TestRoutesRequireTheirAuthentication(t *testing.T) {
 					r = noToken(demoUpload(f)).request(t, rt.path)
 				case "/v1/discoveries":
 					r = noToken(discoveryUpload(demoRepo, demoRepoID, 555, demoBase, f.policy)).request(t, rt.path)
+				case "/v1/baselines":
+					r = noToken(baselineUpload(demoRepo, demoRepoID, 555, demoBase, f.baseline, f.labels)).request(t, rt.path)
 				}
 				r.Header.Set("X-GitHub-Event", "installation")
 				r.Header.Set("X-GitHub-Delivery", "d-1")

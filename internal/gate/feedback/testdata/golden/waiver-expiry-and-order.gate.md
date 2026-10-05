@@ -7,6 +7,10 @@
 Also reported:
 - `waiver_expired` (governance): no_direct_b_dependency. Next: Renew the waiver or fix the finding.
 
+### Blocking findings
+
+- `no_direct_b_dependency`: `a` → `b` at `pkg/a/extra.go:7`, finding `c4b1a2e3`. Goal: Remove the forbidden dependency from pkg/a/a.go on pkg/b; move shared behavior to a location permitted by the existing dependency rules.
+
 ### Inputs and identity
 
 - Policy digest: `1111111111111111111111111111111111111111111111111111111111111111`

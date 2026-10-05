@@ -28,6 +28,8 @@ single place where it is enforced at runtime.
   or timeout there never reaches the gate routes. The deadline of every route is in the Timeouts table below: 55 seconds
   **[default]** for the control routes, 300 seconds **[default]** for the managed assist route only, and the gate upload route
   has its own 55 seconds **[default]** (target: feedback within 60 seconds).
+- Base URL: `ARCHFIT_BASE_URL` must not end in `/`. It is the OIDC audience, compared byte for byte with the token's
+  `aud`, and the Action refuses an endpoint with a trailing slash; a slash here would refuse every upload.
 - Secret files: every `*_FILE` variable names a text file. `app` reads it, trims leading and trailing white space, and
   refuses an empty result at startup. The cookie key is the trimmed raw bytes of its file, not an encoding of them, and
   `control.New` requires exactly 32 of them.
@@ -81,6 +83,7 @@ func Run(ctx context.Context, c Config, log *slog.Logger) error
 | `GET /healthz`                  | `app`: `{"status":"ok"}`; no dependency is probed | none                                        |
 | `POST /v1/reports`              | `gate.UploadHandler()`                            | gate (OIDC)                                 |
 | `POST /v1/discoveries`          | `control.DiscoveryHandler()`                      | control, through the gate `Receiver` (OIDC) |
+| `POST /v1/baselines`            | `control.BaselineHandler()`                       | control, through the gate `Receiver` (OIDC) |
 | `POST /webhooks/github`         | `app` fan-out                                     | `app` (`webhook.Verify`)                    |
 | `POST /internal/sweep`          | `app`                                             | `app` (operator bearer token)               |
 | `POST /internal/grants`         | `app`                                             | `app` (operator bearer token)               |
@@ -96,6 +99,7 @@ The deadline is the one the handler sees on its request context. `http.TimeoutHa
 | `GET /healthz`                  | none     | answers from memory                                                                                          |
 | `POST /v1/reports`              | 55 s     | gate upload; target: feedback within 60 seconds                                                              |
 | `POST /v1/discoveries`          | 55 s     | control per-request timeout                                                                                  |
+| `POST /v1/baselines`            | 55 s     | control per-request timeout                                                                                  |
 | `POST /webhooks/github`         | none     | each half of the fan-out runs detached from the request under its own deadline: gate 55 s, then control 55 s |
 | `POST /internal/sweep`          | none     | operator call; no deadline of its own                                                                        |
 | `POST /internal/grants`         | none     | operator call; no deadline of its own                                                                        |
@@ -145,7 +149,8 @@ All integrations are constructor or handler calls: contract strength. `app` hold
 
 <!-- contract: Gate, Deps, New — restated from internal/gate/module.md -->
 ```go
-// Deps are the only things the gate path may touch: GitHub, OIDC, the Store (read-only) and a clock.
+// Deps are the only things the gate path may touch: GitHub, OIDC, the Store and a clock. On the Store the gate
+// path reads the entitlement and writes only gate/feedback's publication leases.
 type Deps struct {
     GitHub   *Client
     OIDC     Verifier
@@ -163,8 +168,9 @@ func New(d Deps) *Gate
 func (g *Gate) UploadHandler() http.Handler
 
 // HandleEvent reacts to a verified webhook event: pending check on a new head, fork refusal,
-// re-run on a review change when the last receipt was owner_approval_missing, and a one-repository
-// sweep when a default-branch push changes a protected path.
+// owner_approval_missing on a review change that withdraws the approval a receipt relied on, re-run on a
+// review change when the last receipt was owner_approval_missing, and a one-repository sweep when a
+// default-branch push changes a protected path.
 func (g *Gate) HandleEvent(ctx context.Context, e Event) error
 
 // Sweep runs one reconciliation pass.
@@ -252,6 +258,7 @@ func New(d Deps) (*Control, error)
 
 func (c *Control) UIHandler() http.Handler        // "/"
 func (c *Control) DiscoveryHandler() http.Handler // POST /v1/discoveries
+func (c *Control) BaselineHandler() http.Handler  // POST /v1/baselines
 // HandleEvent maintains entitlements on installation events and forgets a tenant on uninstall.
 func (c *Control) HandleEvent(ctx context.Context, e Event) error
 // Sweep refreshes every installation's Entitlement record and forgets Store tenants
@@ -365,6 +372,9 @@ type Store interface {
     Delete(ctx context.Context, t Tenant, key string) error // deleting a missing key is not an error
     // Add atomically adds delta to the integer at key (missing = 0) and returns the new value.
     Add(ctx context.Context, t Tenant, key string, delta int64) (int64, error)
+    // CompareAndSwap atomically sets key to value when it currently holds exactly old, and reports whether it did.
+    // A nil old matches only a missing key; a nil value deletes the key. A false result changes nothing.
+    CompareAndSwap(ctx context.Context, t Tenant, key string, old, value []byte) (bool, error)
     // DeleteTenant removes every key of the tenant. Idempotent.
     DeleteTenant(ctx context.Context, t Tenant) error
     // Tenants lists every tenant that owns at least one key, SystemTenant excluded.
@@ -554,7 +564,8 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
 ### Unit Tests
 
 - **Test name**: `TestLoadDefaultsAndRequired`
-  **Scenario**: table over environments: empty; only required variables; every variable set; non-numeric app ID; unknown `ARCHFIT_STORE`; unknown `ARCHFIT_SANDBOX`.
+  **Scenario**: table over environments: empty; only required variables; every variable set; non-numeric app ID; unknown `ARCHFIT_STORE`; unknown `ARCHFIT_SANDBOX`;
+  `ARCHFIT_BASE_URL` ending in `/` (host only, with a path, `/` alone); a base URL with a path and no trailing slash.
   **Expected behavior**: defaults `:8080`, `memory`, `none`; an error naming the first missing or invalid variable; no secret content in any error.
 - **Test name**: `TestLoadNeverReadsSecretValuesFromEnv`
   **Scenario**: set `ARCHFIT_GITHUB_PRIVATE_KEY` style variables holding inline PEM.
@@ -581,7 +592,7 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   `400` and no call; `400` and no call; `401`.
 - **Test name**: `TestRouteDeadlines`
   **Scenario**: table over the route classes with fake handlers that record `ctx.Deadline()` and return at once: `POST /v1/reports`,
-  `POST /v1/discoveries`, `GET /`, `POST /r/o/n/policy`, `GET /r/o/n/assist`, `POST /r/o/n/assist`, `POST /r/o/n/assist/x`; the two webhook halves;
+  `POST /v1/discoveries`, `POST /v1/baselines`, `GET /`, `POST /r/o/n/policy`, `GET /r/o/n/assist`, `POST /r/o/n/assist`, `POST /r/o/n/assist/x`; the two webhook halves;
   the operator routes. No sleeping.
   **Expected behavior**: 55 s for every row except `POST /r/o/n/assist`, which sees 300 s; the webhook halves each see 55 s although the
   request has no deadline; the operator routes see no deadline; the server write timeout is greater than every one of them.

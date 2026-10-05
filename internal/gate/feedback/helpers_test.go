@@ -1,6 +1,7 @@
 package feedback
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
 	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/alexei-led/archfit-app/internal/store"
 	"github.com/alexei-led/archfit-app/internal/wire/manifest"
 	"github.com/alexei-led/archfit-app/internal/wire/report"
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
@@ -58,6 +60,7 @@ type harness struct {
 	comments *fakeComments
 	pulls    *fakePulls
 	clock    *clock
+	store    store.Store
 	pub      Publisher
 }
 
@@ -67,9 +70,18 @@ func newHarness(prHead string) *harness {
 		comments: &fakeComments{},
 		pulls:    &fakePulls{headSHA: prHead},
 		clock:    &clock{t: t0},
+		store:    store.NewMemory(),
 	}
-	h.pub = New(h.checks, h.comments, h.pulls, h.clock.now)
+	h.pub = New(h.checks, h.comments, h.pulls, h.store, h.clock.now)
 	return h
+}
+
+// onContention replaces the wait between lease polls: f runs on each wait, then the wait returns at once.
+func (h *harness) onContention(f func()) {
+	h.pub.(*serialized).wait = func(ctx context.Context) error {
+		f()
+		return ctx.Err()
+	}
 }
 
 func prTarget(head string) inputs.Target {
@@ -119,6 +131,10 @@ var (
 	reasonProfile  = verdict.Reason{Code: verdict.ReasonBaselineNotComparable, Category: verdict.CategoryEvidence, Detail: "measurement profile differs", Next: "Refresh the baseline on the protected branch."}
 	reasonWaiver   = verdict.Reason{Code: verdict.ReasonWaiverExpired, Category: verdict.CategoryGovernance, Detail: "no_direct_b_dependency", Next: "Renew the waiver or fix the finding."}
 	reasonSuspend  = verdict.Reason{Code: verdict.ReasonSuspended, Category: verdict.CategorySubscription, Detail: "installation 1", Next: "Trial ended. Choose a plan to resume the gate."}
+
+	reasonAttention = verdict.Reason{Code: verdict.ReasonAttentionOnly, Category: verdict.CategoryArchitecture,
+		Detail: "dimensions not fully measured: change_locality, testability, operations, drift; active diagnostics: 1",
+		Next:   "Advisories never block. Review the listed dimensions and diagnostics on the archfit/state check."}
 )
 
 // fixtureCase is one wire fixture with the outcome the gate would hand to feedback.
@@ -133,7 +149,7 @@ func fixtureCases() []fixtureCase {
 	id := fullIdentity()
 	return []fixtureCase{
 		{name: "healthy", outcome: outcome(verdict.Success, reasonHealthy), identity: id},
-		{name: "attention-warning-only", outcome: outcome(verdict.Success, reasonHealthy), identity: id},
+		{name: "attention-warning-only", outcome: outcome(verdict.Success, reasonAttention), identity: id},
 		{name: "blocked", outcome: outcome(verdict.Failure, reasonBlocking), identity: id},
 		{name: "missing-required-evidence", outcome: outcome(verdict.ActionRequired, reasonCoverage), identity: id},
 		{name: "unknown-identity", outcome: outcome(verdict.ActionRequired, reasonIdentity), identity: manifest.Identity{EngineVersion: "v0.0.0", ImageDigest: "sha256:0000", Platform: "linux/amd64"}},
@@ -157,7 +173,7 @@ func loadReport(t *testing.T, name string) *report.Report {
 	if err != nil {
 		t.Fatalf("read fixture %s: %v", name, err)
 	}
-	r, err := report.Decode(raw)
+	r, err := report.Decode(raw, "v2.3.1")
 	if err != nil {
 		t.Fatalf("decode fixture %s: %v", name, err)
 	}

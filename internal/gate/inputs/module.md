@@ -159,7 +159,8 @@ superset stated in `MayBeProtected`.
    does not decode gives the zero `Entitlement`, which means "not suspended" **[default]**. Log the outcome
    (`found`, `missing`, `unreadable`) and the installation ID only. Recovery of a missing record is outside the
    gate: `control`'s sweep backfills it (Observe + Refresh for every installation), so a missed installation
-   webhook delays the trial start by at most one sweep interval. A Store outage never blocks a merge.
+   webhook delays the trial start by at most one sweep interval. A Store outage never fails `Resolve`; that
+   publishing then also needs the Store for its lease is `gate/feedback`'s rule, not this module's.
 2. `Suspended = t.Repo.Private && !SuspendAfter.IsZero() && !now.Before(SuspendAfter)`.
 3. Settings: `Repos.File(ref = t.BaseRef, settings.Path)`. `api.ErrNotFound` → return
    `Trusted{SettingsFound: false}` with only `Entitlement` and `Suspended` filled; `Approval` is
@@ -221,7 +222,7 @@ size cap (1 MiB), a 5xx, a timeout. "Absent" is only `api.ErrNotFound`. `Resolve
 - **Balanced?**: yes
 - **Shared knowledge**: tenant = installation ID; key `EntitlementKey`; value is the JSON of `Entitlement`.
   `ErrNotFound` is the sentinel of `store` for a missing key; inputs treats it like every other Store error.
-  inputs never calls `Put`, `Delete`, `Add`, `DeleteTenant` or `Tenants`. `SystemTenant` is never used here.
+  inputs never calls `Put`, `Delete`, `Add`, `CompareAndSwap`, `DeleteTenant` or `Tenants`. `SystemTenant` is never used here.
 
 <!-- contract: Tenant, SystemTenant — restated from internal/store/module.md -->
 ```go
@@ -246,6 +247,9 @@ type Store interface {
     Delete(ctx context.Context, t Tenant, key string) error // deleting a missing key is not an error
     // Add atomically adds delta to the integer at key (missing = 0) and returns the new value.
     Add(ctx context.Context, t Tenant, key string, delta int64) (int64, error)
+    // CompareAndSwap atomically sets key to value when it currently holds exactly old, and reports whether it did.
+    // A nil old matches only a missing key; a nil value deletes the key. A false result changes nothing.
+    CompareAndSwap(ctx context.Context, t Tenant, key string, old, value []byte) (bool, error)
     // DeleteTenant removes every key of the tenant. Idempotent.
     DeleteTenant(ctx context.Context, t Tenant) error
     // Tenants lists every tenant that owns at least one key, SystemTenant excluded.

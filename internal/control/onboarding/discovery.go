@@ -44,20 +44,13 @@ func (s *service) DiscoveryHandler() http.Handler {
 
 func (s *service) serveDiscovery(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	up, err := s.receiver.Receive(ctx, req, envelope.KindDiscovery)
-	var rejection *gate.Rejection
-	switch {
-	case errors.As(err, &rejection):
-		writeError(w, rejection.Status, rejection.Code)
-		return
-	case err != nil:
-		slog.Default().ErrorContext(ctx, "discovery upload not received", "error_class", errClass(err))
-		writeUnavailable(w, err)
+	up, ok := s.receive(w, req, envelope.KindDiscovery)
+	if !ok {
 		return
 	}
 
 	b := up.Binding
-	log := slog.Default().With("installation_id", b.Repo.InstallationID, "repository_id", b.Repo.ID, "run_id", b.RunID, "digest", up.Digest)
+	log := uploadLog(up)
 	status, code := s.checkUpload(ctx, up)
 	if code != "" {
 		log.WarnContext(ctx, "discovery upload refused", "outcome", code)
@@ -79,26 +72,32 @@ func (s *service) serveDiscovery(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"pull_request": draft.Number, "url": draft.URL})
 }
 
-// checkUpload returns a non-empty code when the upload must not become a pull request.
-// Settings are read at the default branch only: the head tree of the run is never trusted.
-func (s *service) checkUpload(ctx context.Context, up gate.Upload) (status int, code string) {
+// receive runs the gate's provenance checks for one upload kind. On any failure it has answered the request.
+func (s *service) receive(w http.ResponseWriter, req *http.Request, kind envelope.Kind) (gate.Upload, bool) {
+	up, err := s.receiver.Receive(req.Context(), req, kind)
+	var rejection *gate.Rejection
+	switch {
+	case errors.As(err, &rejection):
+		writeError(w, rejection.Status, rejection.Code)
+		return gate.Upload{}, false
+	case err != nil:
+		slog.Default().ErrorContext(req.Context(), "upload not received", "kind", string(kind), "error_class", errClass(err))
+		writeUnavailable(w, err)
+		return gate.Upload{}, false
+	}
+	return up, true
+}
+
+// uploadLog carries the identifiers every upload log line names; never payload bytes.
+func uploadLog(up gate.Upload) *slog.Logger {
 	b := up.Binding
-	if len(up.Problems) > 0 {
-		return http.StatusBadRequest, string(up.Problems[0])
-	}
-	if b.BaseRef != b.Repo.DefaultBranch {
-		return http.StatusForbidden, codeNotDefaultBranch
-	}
-	raw, found, err := s.file(ctx, b.Repo, settings.Path)
-	if err != nil {
-		return unavailable(err)
-	}
-	set, err := settings.Parse(raw)
-	if !found || err != nil {
-		return http.StatusForbidden, codeSettingsMissing
-	}
-	if b.WorkflowPath != set.Workflow {
-		return http.StatusForbidden, codeWorkflowNotApproved
+	return slog.Default().With("installation_id", b.Repo.InstallationID, "repository_id", b.Repo.ID, "run_id", b.RunID, "digest", up.Digest)
+}
+
+// checkUpload returns a non-empty code when the upload must not become a pull request.
+func (s *service) checkUpload(ctx context.Context, up gate.Upload) (status int, code string) {
+	if _, status, code = s.checkProducer(ctx, up, false); code != "" {
+		return status, code
 	}
 	switch code = checkDraft(up.Payload); code {
 	case "":
@@ -107,6 +106,45 @@ func (s *service) checkUpload(ctx context.Context, up gate.Upload) (status int, 
 		return http.StatusRequestEntityTooLarge, code
 	}
 	return http.StatusBadRequest, code
+}
+
+// checkProducer is the producer check both upload routes share: no problem, a run on the default branch, and the
+// workflow that the default-branch settings approve. The head tree of the run is never trusted. With pinHead the
+// run must also be at the current default-branch head, and ref is that commit, so that every later read of the
+// caller sees the same tree; otherwise ref is the default branch name.
+func (s *service) checkProducer(ctx context.Context, up gate.Upload, pinHead bool) (ref string, status int, code string) {
+	b := up.Binding
+	if len(up.Problems) > 0 {
+		return "", http.StatusBadRequest, string(up.Problems[0])
+	}
+	if b.BaseRef != b.Repo.DefaultBranch {
+		return "", http.StatusForbidden, codeNotDefaultBranch
+	}
+	ref = b.Repo.DefaultBranch
+	if pinHead {
+		head, err := s.gh.repos.BranchHead(ctx, b.Repo.RepoRef, b.Repo.DefaultBranch)
+		if err != nil {
+			status, code = unavailable(err)
+			return "", status, code
+		}
+		if head != b.HeadSHA {
+			return "", http.StatusConflict, codeStaleHead
+		}
+		ref = head
+	}
+	raw, found, err := s.fileAt(ctx, b.Repo, ref, settings.Path)
+	if err != nil {
+		status, code = unavailable(err)
+		return "", status, code
+	}
+	set, err := settings.Parse(raw)
+	if !found || err != nil {
+		return "", http.StatusForbidden, codeSettingsMissing
+	}
+	if b.WorkflowPath != set.Workflow {
+		return "", http.StatusForbidden, codeWorkflowNotApproved
+	}
+	return ref, 0, ""
 }
 
 // checkDraft returns "" for a draft that may become a pull request. The size and line checks are shape

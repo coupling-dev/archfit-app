@@ -69,6 +69,8 @@ type Onboarding interface {
 	StartManaged(ctx context.Context, r api.Repo, owners []string) (proposal.Draft, error)
 	// DiscoveryHandler serves POST /v1/discoveries and opens PR 2 with the proposed policy.
 	DiscoveryHandler() http.Handler
+	// BaselineHandler serves POST /v1/baselines and opens or updates the baseline PR. It never writes the default branch.
+	BaselineHandler() http.Handler
 }
 
 type Deps struct {

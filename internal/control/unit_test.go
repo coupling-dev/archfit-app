@@ -50,7 +50,7 @@ func TestNewValidatesWiring(t *testing.T) {
 			if err != nil {
 				t.Fatalf("New: %v", err)
 			}
-			if c.UIHandler() == nil || c.DiscoveryHandler() == nil {
+			if c.UIHandler() == nil || c.DiscoveryHandler() == nil || c.BaselineHandler() == nil {
 				t.Fatal("handlers are not mounted")
 			}
 			if err := c.HandleEvent(context.Background(), webhook.Event{Kind: webhook.InstallationAdded, InstallationID: 7}); err != nil {

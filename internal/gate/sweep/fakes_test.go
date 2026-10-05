@@ -132,6 +132,7 @@ type fakePublisher struct {
 	pendings   []inputs.Target
 	warnings   []warning
 	stateCalls int
+	waited     func(inputs.Target)
 }
 
 func (f *fakePublisher) Publish(_ context.Context, p feedback.Publication) error {
@@ -164,6 +165,22 @@ func (f *fakePublisher) State(_ context.Context, t inputs.Target) (feedback.Chec
 		return feedback.CheckState{}, err
 	}
 	return f.states[checkKey(t)], nil
+}
+
+// Reconcile runs waited (what lands while the caller waits for the lease), then decides from the check as it is and
+// publishes the result, as feedback does inside the lease.
+func (f *fakePublisher) Reconcile(ctx context.Context, t inputs.Target, decide feedback.Decision) error {
+	if err := f.errs["Reconcile:"+t.Repo.FullName]; err != nil {
+		return err
+	}
+	if f.waited != nil {
+		f.waited(t)
+	}
+	pub, err := decide(ctx, f.states[checkKey(t)])
+	if err != nil || pub == nil {
+		return err
+	}
+	return f.Publish(ctx, *pub)
 }
 
 func (f *fakePublisher) Warn(_ context.Context, t inputs.Target, expiry time.Time) error {

@@ -72,6 +72,7 @@ func TestNoVerifiedNoScore(t *testing.T) {
 func TestGateCheckNeverNeutral(t *testing.T) {
 	conclusions := map[verdict.ReasonCode]verdict.Conclusion{
 		verdict.ReasonHealthy:               verdict.Success,
+		verdict.ReasonAttentionOnly:         verdict.Success,
 		verdict.ReasonBlockingFindings:      verdict.Failure,
 		verdict.ReasonEngineError:           verdict.ActionRequired,
 		verdict.ReasonMissingCoverage:       verdict.ActionRequired,
@@ -80,6 +81,7 @@ func TestGateCheckNeverNeutral(t *testing.T) {
 		verdict.ReasonLabelsMismatch:        verdict.ActionRequired,
 		verdict.ReasonPolicyMismatch:        verdict.ActionRequired,
 		verdict.ReasonPolicyMissing:         verdict.ActionRequired,
+		verdict.ReasonPolicyDefect:          verdict.ActionRequired,
 		verdict.ReasonUnknownIdentity:       verdict.ActionRequired,
 		verdict.ReasonProfileMissing:        verdict.ActionRequired,
 		verdict.ReasonWorkflowNotApproved:   verdict.ActionRequired,
@@ -115,6 +117,10 @@ func TestGateCheckNeverNeutral(t *testing.T) {
 				if len(gate) != 1 || !allowed[gate[0].Conclusion] || gate[0].Conclusion != string(conclusion) {
 					t.Errorf("gate runs = %+v, want one with conclusion %q", gate, conclusion)
 				}
+				// Fail closed on the advisory check too: an outcome that asks for action is never neutral there.
+				if state := h.checks.named(headB, stateCheck); conclusion == verdict.ActionRequired && state[0].Conclusion != string(verdict.ActionRequired) {
+					t.Errorf("state conclusion = %q for an outcome that asks for action", state[0].Conclusion)
+				}
 			})
 		}
 	}
@@ -128,6 +134,8 @@ func TestRateLimitLeavesPendingAlone(t *testing.T) {
 		pendingKept bool
 	}{
 		{"CheckRuns", func(h *harness) { h.checks.failOnce("CheckRuns", api.ErrRateLimited) }, true},
+		// The file list is read after the gate check is written: it only filters annotations.
+		{"ChangedFiles", func(h *harness) { h.pulls.failOnce("ChangedFiles", api.ErrRateLimited) }, false},
 		{"UpdateCheckRun", func(h *harness) { h.checks.failOnce("UpdateCheckRun", api.ErrRateLimited) }, true},
 		{"CreateComment", func(h *harness) { h.comments.failOnce("CreateComment", api.ErrRateLimited) }, false},
 	}
@@ -153,6 +161,8 @@ func TestRateLimitLeavesPendingAlone(t *testing.T) {
 				}
 			}
 
+			// The Action retries after Retry-After (60 s), when the lease the failed call kept has expired.
+			h.clock.set(t0.Add(leaseTTL))
 			if err := h.pub.Publish(ctx, p); err != nil {
 				t.Fatalf("retry: %v", err)
 			}

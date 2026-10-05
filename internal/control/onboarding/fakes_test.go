@@ -36,6 +36,7 @@ type fakePR struct {
 type hub struct {
 	mu     sync.Mutex
 	files  map[string]map[string][]byte // "owner/name@ref" → path → content
+	heads  map[string]string            // "owner/name@branch" → head commit SHA
 	prs    []*fakePR
 	runs   map[string]api.WorkflowRun // by repository
 	checks map[string][]api.CheckRun  // by repository
@@ -46,6 +47,7 @@ type hub struct {
 func newHub() *hub {
 	return &hub{
 		files:  map[string]map[string][]byte{},
+		heads:  map[string]string{},
 		runs:   map[string]api.WorkflowRun{},
 		checks: map[string][]api.CheckRun{},
 		calls:  map[string]int{},
@@ -111,6 +113,18 @@ func (h *hub) putLocked(repo, ref, path string, content []byte) {
 		h.files[k] = map[string][]byte{}
 	}
 	h.files[k][path] = append([]byte(nil), content...)
+}
+
+func (h *hub) remove(r api.Repo, ref, path string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.files[refKey(r.FullName, ref)], path)
+}
+
+func (h *hub) setHead(r api.Repo, branch, sha string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.heads[refKey(r.FullName, branch)] = sha
 }
 
 func (h *hub) file(r api.Repo, ref, path string) ([]byte, bool) {
@@ -306,8 +320,17 @@ func (h *hub) File(ctx context.Context, r api.RepoRef, ref, path string) ([]byte
 	return append([]byte(nil), b...), "blob", nil
 }
 
-func (h *hub) BranchHead(ctx context.Context, _ api.RepoRef, _ string) (string, error) {
-	return "", h.enter(ctx, "BranchHead", "")
+func (h *hub) BranchHead(ctx context.Context, r api.RepoRef, branch string) (string, error) {
+	if err := h.enter(ctx, "BranchHead", branch); err != nil {
+		return "", err
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	sha, ok := h.heads[refKey(r.FullName, branch)]
+	if !ok {
+		return "", api.ErrNotFound
+	}
+	return sha, nil
 }
 
 func (h *hub) Run(ctx context.Context, _ api.RepoRef, _ int64) (api.WorkflowRun, error) {

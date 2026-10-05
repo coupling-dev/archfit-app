@@ -9,7 +9,8 @@
 `feedback` is the only writer of what a developer sees: the `archfit/gate` and `archfit/state` check runs
 and the single PR comment. It also makes the gate check its own receipt, so that GitHub holds the
 idempotency key and the facts a later sweep compares. Without it, retries would spam comments, an old run
-could paint over a newer head, and the App would need a database to remember what it said.
+could paint over a newer head, and the App would need a database to remember what it said. The only thing it
+keeps in the Store is a short-lived lease per head SHA, because GitHub has no conditional check-run write.
 
 ## Functional Responsibilities
 
@@ -21,8 +22,11 @@ could paint over a newer head, and the App would need a database to remember wha
   modules and locations; introduced versus accepted debt; dimensions; a mandatory evidence-gap section;
   input digests and measurement identity; per-dimension completeness and the customer-attested trust statement;
   validation command replay;
-  a marker-delimited JSON block of agent tasks.
+  a marker-delimited JSON block of agent tasks that a coding agent on the PR can act on.
+- Name the blocking findings in the `archfit/gate` summary, so the required check says what blocks.
+- Annotate live findings on the files the pull request changed, at most 50 per request.
 - Keep every write idempotent and never let an older run or head overwrite newer feedback.
+- Serialize every write to one head SHA across all instances with a publication lease in the Store.
 - Stay under GitHub size limits with safe truncation.
 
 ## Subdomain Classification
@@ -35,9 +39,11 @@ wording, layout and limits will be tuned with every pilot.
 - Check names, titles, the `external_id` format, and the hidden marker formats.
 - The comment and summary layout, truncation order and size budgets.
 - The idempotency and ordering rules (run ordering, head ordering).
+- The publication lease: its key, value, lifetime, work deadline and polling.
 - The mapping of `Outcome` to the `archfit/state` conclusion, including the only use of `neutral`.
 - Sanitizing of engine-authored strings before they enter Markdown.
-- Annotation selection and the cap.
+- Annotation selection (live findings, files the PR changed), the caps and the batching.
+- Which coverage and producer rows are evidence gaps, which are folded into one line, and which repeat each other.
 
 ## Public Contract
 
@@ -67,7 +73,17 @@ type Publication struct {
     Receipt  Receipt
     Report   *Report // nil when there is no usable report
     Trusted  Trusted
+    // Resolve, when set, reads the trusted inputs again inside the head's publication lease, before anything is
+    // written. When the result differs from Trusted in any field (a digest, the owner approval, the settings) or no
+    // longer accepts a Receipt digest, the decision was computed from inputs that are no longer current: Publish
+    // writes nothing and returns ErrStaleInputs, so it never replaces a publication computed from newer inputs. nil
+    // skips the check; sweep corrections, which are never a success, leave it nil.
+    Resolve func(context.Context) (Trusted, error)
 }
+
+// ErrStaleInputs is returned by Publish when Publication.Resolve shows that the trusted inputs changed after the
+// decision. Nothing was written; the caller decides again from the new inputs.
+var ErrStaleInputs error
 
 // CheckState is the gate check currently on a head SHA.
 type CheckState struct {
@@ -86,11 +102,22 @@ type Publisher interface {
     State(ctx context.Context, t Target) (CheckState, error)
     // Warn adds or refreshes the waiver-expiry notice in the PR comment. Idempotent.
     Warn(ctx context.Context, t Target, expiry time.Time) error
+    // Reconcile reads the gate check and calls decide with it, then publishes what decide returns, all inside the
+    // head's publication lease: no other publication for the head can land between the read, the decision and the
+    // write. A nil publication writes nothing. decide reads everything else it needs itself, inside the lease.
+    Reconcile(ctx context.Context, t Target, decide Decision) error
 }
+
+// Decision decides, from the gate check as it is inside the publication lease, what Reconcile publishes; nil
+// publishes nothing. An error writes nothing and is returned by Reconcile.
+type Decision func(ctx context.Context, current CheckState) (*Publication, error)
 ```
 
 ```go
-func New(checks Checks, comments Comments, pulls Pulls, now func() time.Time) Publisher
+// New returns a Publisher that is safe for concurrent use, also across instances that share s: Publish, Pending,
+// Warn and Reconcile hold a per-head publication lease in s, so that two publishers for one head SHA never interleave
+// their reads and writes. It keeps no other state between calls; GitHub holds the receipts.
+func New(checks Checks, comments Comments, pulls Pulls, s Store, now func() time.Time) Publisher
 ```
 
 ### Fixed names and markers
@@ -120,27 +147,52 @@ marker and an `external_id` with run ID, attempt and report digest exist.
 | Pull request, `!Trusted.SettingsFound`        | yes             | no                                             | no      |
 | Push (`Target.PullRequest == 0`)              | yes             | no                                             | no      |
 
-`archfit/state` conclusion: `success` when `Outcome.Conclusion == Success` and `Report.Verdict == "healthy"`;
-otherwise the literal `neutral` **[default]**. A `needs_attention` report that passes the gate is therefore `success` on
-`archfit/gate` and `neutral` on `archfit/state`, which keeps the attention visible. The state check is never
-required, so `neutral` is allowed here and only here. It is a string literal in this package and never a `Conclusion` value.
+`archfit/state` conclusion:
+
+| `Outcome.Conclusion` | `Report.Verdict`   | `archfit/state`                          |
+| -------------------- | ------------------ | ---------------------------------------- |
+| `action_required`    | any, or no report  | `action_required`                        |
+| `success`            | `healthy`          | `success`                                |
+| `success`            | `needs_attention`  | `neutral` (reason `attention_only`)      |
+| `failure`            | any                | `neutral` **[default]**                  |
+
+The state check fails closed like the gate: an outcome that asks for action (an error, missing, unverifiable or
+ineligible evidence, governance, subscription) is `action_required` there too, never `neutral` or `skipped`, so a
+ruleset that requires the state check by mistake cannot be passed by bad evidence. A `needs_attention` report that
+passes the gate is `success` on `archfit/gate` and `neutral` on `archfit/state`, which keeps the attention visible;
+architecture findings are `neutral` there because this check never enforces them. The state check is never
+required, so `neutral` is allowed here and only here. It is a string literal in this package and never a
+`Conclusion` value.
 
 ### Publish algorithm
 
-Order: gate check, state check, comment **[default: the required check first]**. Any error ends the call;
-a retry repeats the whole call safely.
+Order: gate check, the changed-file list (pull requests with a possible annotation only), state check, comment
+**[default: the required check first]**. The file list only filters annotations, so it is read after the gate check
+is written: a failure to read it never leaves the required check pending. On any `ChangedFiles` error the state check
+is written without annotations and the comment as usual; the call then returns `api.ErrRateLimited` when that was the
+error, so the Action retries, and `nil` after logging for any other error. Any other error ends the call; a retry
+repeats the whole call safely.
 
 For each check to write:
 
 1. `Checks.CheckRuns(repo, Target.HeadSHA, name)`; take the run with the highest ID **[default]**.
-2. None → `CreateCheckRun` (completed).
-3. Existing is `in_progress`, or its receipt marker is absent or unreadable → `UpdateCheckRun`.
-4. Existing receipt has a higher `(RunID, RunAttempt)` pair than `p.Receipt` → write nothing for this check.
-5. Otherwise (same `external_id`, same pair, or lower pair) → `UpdateCheckRun` in place.
+2. None → create a run (below).
+3. Existing receipt has a higher `(RunID, RunAttempt)` pair than `p.Receipt` → write nothing for this check. An
+   `in_progress` run, or one whose receipt marker is absent or unreadable, is never newer.
+4. `archfit/gate` → `UpdateCheckRun` in place, the pending run included. The gate check carries no annotation.
+5. `archfit/state` with the same `external_id` and `AnnotationCount` equal to the number of annotations this
+   publication would send → `UpdateCheckRun` in place without annotations: the run already holds them.
+6. Otherwise → create a new `archfit/state` run. GitHub appends the annotations of every request and never removes
+   one, so an update in place could only add annotations to stale ones: annotations go only on a run this call
+   creates. A new attempt, a new report on the same head, a sweep publication without a report over a run with
+   annotations, and a retry after a failed file list each get a new state run; the newest is the one GitHub shows.
 
 Every create and update sets `Status = "completed"`, `ExternalID`, `StartedAt = now()` **[default: the
-check's `StartedAt` is the time of the last publication; the sweep relies on it]**, title, summary and,
-for `archfit/state`, annotations.
+check's `StartedAt` is the time of the last publication; the sweep relies on it]**, title and summary. A created
+`archfit/state` run carries up to 50 annotations; more follow in further `UpdateCheckRun` calls on that run, 50 each,
+with the same fields (see Annotations below). Before each further batch `CheckRuns` is read again; when the newest run
+is not the created one, or its receipt is newer than `p.Receipt`, the remaining batches are dropped, so an older
+publication never overwrites a newer summary.
 
 Comment (pull requests with settings only):
 
@@ -165,13 +217,88 @@ read as a receipt.
 date → replace. Comment without section → insert after the verdict block. No comment → create one holding the
 comment marker and the section. No-op for `Target.PullRequest == 0`.
 
+### Publication lease
+
+GitHub has no conditional write for check runs: two publishers that both read a check before either writes can
+each act on a stale read, and the older one can then replace a newer `failure` with `success`. So `Publish`,
+`Pending`, `Warn` and `Reconcile` run inside a lease in the Store, and every read, supersedes check and write of the
+steps above happens while it is held. `State` only reads and takes no lease.
+
+- Slot: tenant `Tenant(Target.Repo.InstallationID)`, key `feedback/lease/<Target.HeadSHA>`. The repository is not
+  part of the key **[default]**: webhook targets carry no repository ID and a full name changes on rename, so a
+  repository part could give two publishers of one head two leases. Two repositories of one installation that share
+  a commit share a lease too; they wait for each other, which costs time and never correctness. A target without
+  an installation ID (`<= 0`) or a head SHA is an error.
+- Value: JSON `{"token", "expires"}`. The token is random per call; `expires` is `now() + 60 s` **[default]**.
+- Acquire: `Get`; missing, expired (`now() >= expires`) or unreadable → `CompareAndSwap` from the bytes read
+  (`nil` when missing) to the new value; held → wait 200 ms **[default]** and read again until the context ends.
+  A lost swap reads again. Only this package writes the key, so an unreadable value is taken over rather than
+  waited on forever.
+- Work: the call runs under a context that ends 50 s after acquisition **[default: lifetime minus a 10 s margin]**,
+  measured by the process's own elapsed time, so the holder stops writing before any other instance may take an
+  expired lease over. The margin covers clock skew between instances and a request already sent when the call
+  ended: one cut by the work deadline, by the API client's timeout, or answered with a 5xx, which GitHub may still
+  apply. That holds because a failed call keeps its lease (next item).
+- Release: only after a call that returned `nil` or failed before its first GitHub request (`ErrStaleInputs`, a
+  failed `Publication.Resolve`). Every other error keeps the lease until it expires, 60 s after acquisition, so a
+  write in doubt lands before a waiting publisher reads the check **[default]**. The cost is that the next
+  publisher of that head waits up to 60 s; an upload whose 50 s deadline ends first answers 503 and the Action
+  retries, and a retry after `Retry-After: 60` meets an expired lease.
+  Release is `CompareAndSwap` from this call's own bytes to `nil`, under a fresh 5 s context **[default]** detached
+  from the request, so it works after the request context ended. A lease another holder took over is never deleted.
+  A failed release is logged; the lease then expires.
+- Fail closed: any Store error while acquiring returns the error and writes nothing to GitHub. An unserialized
+  write could reopen the overwrite, so a Store outage holds new verdicts back instead (`gate` answers 503 and the
+  check stays as it was).
+
+Within the lease, every write is still preceded by its own read: `writeCheck` reads the latest run and checks
+supersession right before it creates or updates, a further annotation batch re-reads before each request, and
+the comment re-reads the head marker before it updates. The lease makes those reads current; it does not replace
+them, so a publisher that waited for the lease still skips a newer receipt it now sees.
+
+The run identity orders two uploads, but not an upload and a sweep correction: the sweep keeps the receipt's
+`(RunID, RunAttempt)`, so the equal identity counts as replaceable. An upload decided from policy P1 that waits for
+the lease while the sweep, already reading P2, writes `stale_inputs` would then replace the correction with its P1
+`success`. So, inside the lease and before its first GitHub request, `Publish` calls `Publication.Resolve` when it is
+set and checks two things against the result. It must equal `Publication.Trusted` in every field, so that a change
+the digests do not show (an owner approval dismissed, settings edited, a subscription suspended) also makes the
+decision stale; whole-value equality covers every field `verdict.Decide`, the receipt and the rendering read, now and
+after a field is added. And each receipt digest (`PolicyDigest`, `BaselineDigest`, `LabelsDigest`) must pass
+`inputs.Accepts`: the sweep's stale condition, negated. A result that fails either writes nothing and returns
+`ErrStaleInputs`; a `Resolve` error writes nothing and is returned wrapped, `errors.Is` intact. Both release the
+lease at once. `gate` sets `Resolve` on every upload publication; the sweep's publications carry the inputs they were
+just resolved from and are never a success, so they leave it nil.
+
+`Reconcile(ctx, target, decide)` is for a caller whose decision depends on the gate check itself: the withdrawal of
+an owner approval (sweep rule 5a and `ReviewChanged` in `gate`), which replaces a receipt that asked for no action,
+and the re-run after `owner_approval_missing`. Inside one hold of the lease it calls `State`, passes the result to
+`decide`, and publishes the publication `decide` returns (with the `Resolve` check above when it is set). `decide`
+resolves the trusted inputs itself, inside the lease, so the read, the decision and the write see no other
+publication for the head in between: a newer run that turned green while the caller waited is the receipt it
+decides about, and a review that lands after the read is handled by its own event, which waits for this lease and
+then reads the written check. A nil publication writes nothing. A `State` or `decide` error writes no check and
+releases the lease at once; `decide` may have requested a re-run, which writes no check. Without the lease nothing
+is read and `decide` is not called.
+
 ### Layout
 
-Comment, in order. Check summaries use the same blocks: gate = 1, 2, 8, receipt marker; state = 1, 2, 5, 6, 7, 8, receipt marker.
+Comment, in order. Check summaries use the same blocks: gate = 1, 2, G, 8, receipt marker; state = 1, 2, 5, 6, 7, 8,
+receipt marker. Block G is in the gate summary only.
 
 1. Markers, then the verdict line: "Passed", "Blocked by architecture findings", or "Action required" **[default]**,
    then `Reasons[0]`: code, category, `Detail`, `Next`.
 2. Further reasons, one line each (for example unevaluated rules beside a blocker).
+
+   G. Blocking findings (gate summary only, and only when `Outcome.Reasons` holds `blocking_findings`: an outcome
+   that blocks on evidence, governance or subscription alone names no finding as blocking), so the required check
+   names what blocks: every finding for which
+   `Finding.Active()` is true, in report order, one line each: rule ID, `Edge.From.Module` → `Edge.To.Module`
+   ("(no module)" when empty), the first location as `file:line` (the file alone for line 0; "no location reported"
+   when `locations: []`), the first 8 characters of the finding ID (the prefix the engine prints), and the `Goal` of
+   the first agent task with that `FindingID` ("none reported" without one). At most 20, then "and N more blocking
+   findings" **[default]**. When no finding is active (a hard gate that failed without a finding, for example a
+   metric ratchet), the block is the line "No active gate finding is listed…" instead. Without `blocking_findings`,
+   without a report, or when suspended, it is omitted. Display only: the conclusion still comes from `Outcome`.
 3. `Trusted.Entitlement.Notice`, when `WarnFrom` is set, `now()` is at or past it, and the notice is not empty.
 4. Waiver notice section (owned by `Warn`).
 5. Findings: blocking first. A finding is shown as blocking when `Finding.Active()` of `wire/report` is true
@@ -187,9 +314,16 @@ Comment, in order. Check summaries use the same blocks: gate = 1, 2, 8, receipt 
    `Confidence`, `Gate`, and the change from `Delta` (status, metric changes, counts of new and resolved findings)
    when present. Measurement trust is not an engine field: the constant "customer-attested" is printed once for the
    block. A missing key is printed as "not reported"; keys outside the nine cannot pass the decoder.
-7. Evidence gaps, always present: `Decision.UnevaluatedRequiredRules` with their reasons, `Coverage.Tools` entries
-   whose `Status` is not `ok`, every `Dimension.Unknown` fact with its reason, the measurement profile's `Unknowns`, and
-   producers whose `Status` is not `ok`. When the protected ref has no baseline (`Trusted.BaselineDigests` empty):
+7. Evidence gaps, always present: `Decision.UnevaluatedRequiredRules` with their reasons (a dead selector shows its
+   engine reason, `selector matches nothing: <side> <glob>`, here); `Coverage.Tools` entries whose `Status` is not
+   `ok`, except that the rows that did not run, `disabled` ones and `absent` ones without a `Reason`, are folded into
+   the one line "Analyzers that did not run (absent or disabled): …" naming each tool in report order; every
+   `Dimension.Unknown` fact with its reason; the measurement profile's `Unknowns`; and producers whose `Status` is not
+   `ok`, except a producer whose tool and status repeat a coverage row. The fold drops noise, not facts: an `absent`
+   row with a reason is a full line, and what a missing analyzer leaves unmeasured stays visible as dimension
+   unknowns and unevaluated rules. The App cannot tell from a row alone whether the language is present (an absent
+   tool over a present language and a language that is not there look the same), so the line claims neither.
+   When the protected ref has no baseline (`Trusted.BaselineDigests` empty):
    the line "No baseline: every current violation blocks." When a baseline exists and the gate reference is not
    comparable, by the rule of `gate/verdict` step 7a (a nil `GateReference`, or any `Status` other than
    `comparable`, `not_requested` included): one line per entry of its `Reasons`, "no reason given" when it has none,
@@ -222,15 +356,23 @@ first trusted digest) and of `gate/sweep` (always the first trusted digest):
 The mismatch codes are `baseline_mismatch` and `labels_mismatch`. "stated by the producer" is never printed for a
 digest the App wrote itself. An upload always has an identity: the envelope decoder requires every identity field.
 
-When `Reasons[0].Category` is `subscription`, blocks 5 to 7, 9 and 10 are omitted **[default]**: paid output is suspended, the reason and recovery stay.
+When `Reasons[0].Category` is `subscription`, blocks G, 5 to 7, 9 and 10 are omitted **[default]**: paid output is suspended, the reason and recovery stay.
 
-Annotations: only on `archfit/state`; from `Finding.Locations{File, Line}` only; findings shown as blocking first,
-report order; level `failure` for those, `warning` otherwise; message = rule ID and `Why`; `Line == 0` is sent as line 1; at most 50 per update
-**[default]**. A finding with `locations: []` gets no annotation.
+Annotations: only on `archfit/state`; from `Finding.Locations{File, Line}` only; live findings only (accepted debt,
+`baseline` and `waived`, and `fixed` findings get none; a status this version does not know is live); findings shown
+as blocking first, then report order; level `failure` for those, `warning` otherwise; message = rule ID and `Why`;
+`Line == 0` is sent as line 1. A finding with `locations: []` gets no annotation. On a pull request only locations in
+files the PR changed are annotated: `Publish` calls `Pulls.ChangedFiles` once, after the gate check and before the
+state check, and only when some annotation is possible; a `truncated` list means any file may have changed, so every
+location counts; on its error the state check gets no annotation (see Publish algorithm). A push annotates every
+location. At most 150 annotations in total **[default]**, sent 50 per request (GitHub's limit): the create of the
+state run carries the first 50, and further updates of the same run carry the rest, each with the same title and
+summary. GitHub appends the annotations of each request, so annotations are only ever sent to a run this
+publication created.
 
 Size: summaries and the comment stay at or under 65 535 bytes. The receipt marker and blocks 1, 2, 7, 8 are
 budgeted first and never cut. Of the rest, the budget is handed out in this order: block 6, block 9, block 5, block
-10. Block 6 is cut at a line end, like block 5, when the never-cut blocks leave it too little room; block 9 takes
+10. Block G takes the place of block 5 in the gate summary and is cut the same way. Block 6 is cut at a line end, like block 5, when the never-cut blocks leave it too little room; block 9 takes
 at most its own budget (below) before block 5 gets anything, so a long finding list cannot push the validation
 commands out. Then block 5 is cut at a line end and ends with "Output truncated.", and block 10 shrinks by whole
 tasks into what is left, so tasks give way first and findings second. Cuts never split a UTF-8 sequence or a marker.
@@ -278,6 +420,7 @@ type ReasonCode string
 
 const (
     ReasonHealthy             ReasonCode = "healthy"
+    ReasonAttentionOnly       ReasonCode = "attention_only" // needs_attention, and nothing blocks
     ReasonBlockingFindings    ReasonCode = "blocking_findings"
     ReasonEngineError         ReasonCode = "engine_error"
     ReasonMissingCoverage     ReasonCode = "missing_required_coverage"
@@ -286,6 +429,7 @@ const (
     ReasonLabelsMismatch      ReasonCode = "labels_mismatch"
     ReasonPolicyMismatch      ReasonCode = "policy_mismatch"
     ReasonPolicyMissing       ReasonCode = "policy_missing" // settings merged, no policy on the protected ref yet
+    ReasonPolicyDefect        ReasonCode = "policy_defect"  // a required rule's selector matches nothing
     ReasonUnknownIdentity     ReasonCode = "unknown_engine_identity"
     ReasonProfileMissing      ReasonCode = "measurement_profile_missing"
     ReasonWorkflowNotApproved ReasonCode = "workflow_not_approved"
@@ -319,12 +463,13 @@ type Outcome struct {
 
 - **Counterpart**: internal/gate/inputs
 - **Direction**: feedback depends on inputs
-- **Strength**: model (reads `Target` and `Trusted`)
+- **Strength**: model (reads `Target` and `Trusted`; calls `Accepts`)
 - **LCA / Rank / Distance**: gate / 1 / 1
 - **Volatility**: high
 - **Balanced?**: yes
 - **Shared knowledge**: `Target.PullRequest == 0` is a push; `Trusted.Settings.Gate` selects required mode;
-  `Entitlement.Notice` is shown from `WarnFrom` on. feedback never resolves inputs itself.
+  `Entitlement.Notice` is shown from `WarnFrom` on. feedback never resolves inputs itself: it calls the caller's
+  `Publication.Resolve` and checks the receipt digests with `Accepts`, the predicate the sweep's stale rule uses.
 
 <!-- contract: Entitlement, EntitlementKey — restated from internal/gate/inputs/module.md -->
 ```go
@@ -374,6 +519,18 @@ type Trusted struct {
     Suspended            bool
     Entitlement          Entitlement
 }
+```
+
+<!-- contract: Accepts, First — restated from internal/gate/inputs/module.md -->
+```go
+// Accepts is the digest predicate of the gate: whether claim is acceptable for one digest list of Trusted.
+// An empty list accepts only the empty claim ("nothing trusted, nothing claimed"). A list with entries
+// accepts only a claim that is not empty and is in the list, by exact string equality.
+func Accepts(trusted []string, claim string) bool
+
+// First returns the first digest of a list of Trusted, or "" for an empty list.
+// For every list that Resolve builds, Accepts(trusted, First(trusted)) is true.
+func First(trusted []string) string
 ```
 
 ### wire/settings
@@ -428,7 +585,10 @@ type Settings struct {
   A report has no exit code, no `needs_attention` flag, no per-dimension trust and no single validation command.
   `Seam` is an opaque part of `Report` for this module and is not rendered. `Metric` values are shown only through `Delta`. `StateSchemaV1` is the schema constant the decoder enforced.
   `Finding.Active()` is the single definition of "active gate finding"; feedback calls it for the "blocking" label,
-  the group order and the annotation level.
+  the group order, block G and the annotation level. For display feedback also reads the finding statuses
+  `baseline`, `waived` and `fixed` (debt and fixed groups; no annotation) and the coverage statuses `ok`, `absent` and
+  `disabled` (block 7), as named constants in `render.go`; `wire/report` owns both vocabularies, and a value outside
+  them is shown, never hidden. `AgentTask.FindingID` and `Goal` name the repair goal in block G.
 
 <!-- contract: Active, Finding — restated from internal/wire/report/module.md -->
 ```go
@@ -690,10 +850,12 @@ func Current() Entry
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high (feedback side); the client is low
 - **Balanced?**: yes
-- **Shared knowledge**: a `Summary` over 65 535 bytes is an error from the client, so feedback truncates first.
+- **Shared knowledge**: a `Summary` over 65 535 bytes, or more than 50 `Annotations` in one request, is an error from
+  the client, so feedback truncates and batches first; GitHub appends the annotations of each update.
   `AppComments` returns only comments authored by the App's bot user. `ErrRateLimited` is the sentinel
   returned after bounded backoff; feedback passes it up unchanged. `ErrNotFound` is the sentinel for a
-  missing object. Used methods: all of `Checks` and `Comments`, and `Pulls.Pull`. `Review` is not used here.
+  missing object. `ChangedFiles` lists the old and the new path of a rename and sets `truncated` when GitHub cut the
+  list off. Used methods: all of `Checks` and `Comments`, `Pulls.Pull` and `Pulls.ChangedFiles`. `Review` is not used here.
 
 <!-- contract: RepoRef, Repo, ErrNotFound, ErrRateLimited — restated from internal/github/api/module.md -->
 ```go
@@ -775,6 +937,9 @@ type CheckRun struct {
     Summary     string // markdown, max 65535 bytes
     Annotations []Annotation
     StartedAt   time.Time
+    // AnnotationCount is read-only: the annotations GitHub holds for the run, set by CheckRuns.
+    // Create and update never send it; GitHub appends the Annotations of each request.
+    AnnotationCount int
 }
 
 type Checks interface {
@@ -800,9 +965,56 @@ type Comments interface {
 }
 ```
 
+### store
+
+- **Counterpart**: internal/store
+- **Direction**: feedback depends on store
+- **Strength**: contract
+- **LCA / Rank / Distance**: root / 2 / 2
+- **Volatility**: high (feedback side); store is low
+- **Balanced?**: yes
+- **Shared knowledge**: tenant = installation ID; the key `feedback/lease/<head_sha>`, private to feedback; `Get`
+  returning `ErrNotFound` for a missing key and a non-nil slice for a present one; `CompareAndSwap` with a `nil` old
+  for "only if missing" and a `nil` value for "delete", atomic across every instance that shares the store.
+  feedback never calls `Put`, `Delete`, `Add`, `DeleteTenant` or `Tenants`. `SystemTenant` is never used here.
+
+<!-- contract: Tenant, SystemTenant — restated from internal/store/module.md -->
+```go
+// Tenant is the authenticated GitHub installation ID that owns a key.
+// Every key is stored under its tenant prefix; no operation crosses tenants.
+type Tenant int64
+
+// SystemTenant holds App-wide keys (the managed-LLM budget counter). It is never a GitHub installation ID.
+const SystemTenant Tenant = 0
+```
+
+<!-- contract: Store, ErrNotFound — restated from internal/store/module.md -->
+```go
+// ErrNotFound is returned by Get when the key does not exist for the tenant.
+var ErrNotFound = errors.New("store: key not found")
+
+// Store is the only persistence seam of the App. Values are opaque bytes.
+// Implementations must be safe for concurrent use.
+type Store interface {
+    Get(ctx context.Context, t Tenant, key string) ([]byte, error)
+    Put(ctx context.Context, t Tenant, key string, value []byte) error
+    Delete(ctx context.Context, t Tenant, key string) error // deleting a missing key is not an error
+    // Add atomically adds delta to the integer at key (missing = 0) and returns the new value.
+    Add(ctx context.Context, t Tenant, key string, delta int64) (int64, error)
+    // CompareAndSwap atomically sets key to value when it currently holds exactly old, and reports whether it did.
+    // A nil old matches only a missing key; a nil value deletes the key. A false result changes nothing.
+    CompareAndSwap(ctx context.Context, t Tenant, key string, old, value []byte) (bool, error)
+    // DeleteTenant removes every key of the tenant. Idempotent.
+    DeleteTenant(ctx context.Context, t Tenant) error
+    // Tenants lists every tenant that owns at least one key, SystemTenant excluded.
+    // Used only by the sweep to forget installations whose uninstall webhook was missed.
+    Tenants(ctx context.Context) ([]Tenant, error)
+}
+```
+
 ### Consumers (inbound)
 
-- **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Builds `Publication` and `Receipt`; calls `Publish`, `Pending`, `State`.
+- **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Builds `Publication` and `Receipt`; passes `Deps.Store` to `New`; calls `Publish`, `Pending`, `State`.
 - **internal/gate/sweep**: contract, gate / 1 / 1, high, balanced. Calls all four `Publisher` methods and compares `Receipt` fields.
 
 ## Change Vectors
@@ -811,16 +1023,42 @@ type Comments interface {
 - A new marker version (`v2:` external IDs) when the receipt changes shape.
 - SARIF-based annotations, or annotations on the gate check.
 - A different `archfit/state` conclusion mapping.
+- A change to the lease value. During a rollout two revisions run together, and an unreadable lease is taken over,
+  so a new value must keep `token` and `expires` readable by the previous revision; otherwise the two revisions
+  would not serialize against each other.
 
 ## Constraints and Invariants
 
 - The gate check conclusion is always `string(Outcome.Conclusion)`: `success`, `failure` or `action_required`.
-  feedback never downgrades, upgrades or skips it. `neutral` is written only to `archfit/state`.
+  feedback never downgrades, upgrades or skips it. `neutral` is written only to `archfit/state`, and never for an
+  outcome that asks for action: that is `action_required` on both checks.
 - In advisory mode no `archfit/gate` check is written. A ruleset that requires it then stays blocked: closed, never green.
 - An older `(RunID, RunAttempt)` never overwrites a newer one on the same head; a publication for an old
   head never touches the comment. Check runs are per SHA, so an old head's checks cannot affect the new head.
-- Exactly one comment per PR under sequential delivery. Two concurrent first publications may create two;
-  later calls update only the lowest-ID one **[default, stated limit]**. The same limit holds for check runs (highest ID wins).
+- Every write to one head SHA holds that head's publication lease, so writers of one head never interleave, also
+  across instances. An older publication that read a check before a newer one wrote it cannot write at all until
+  the newer one is done, and then sees the newer receipt and skips. `Pending` holds the same lease, so it never
+  creates an `in_progress` run after a publication completed the check. A Store error writes nothing.
+  A call that failed after a GitHub request keeps its lease until it expires, so a write still in flight after a
+  client timeout, a 5xx or the work deadline lands before the next publisher of the head reads.
+  Stated limit **[default]**: a lease is not a fence for GitHub. A holder stops by its own clock 10 s before the
+  lease expires; a request GitHub applies more than 10 s after the work deadline (or after a clock skew that eats
+  the margin) can still land after another instance took the lease over.
+- A publication with `Resolve` set is written only while its receipt digests are still accepted by the inputs read
+  inside the lease, so an upload decided from older inputs never replaces a sweep correction made from newer ones,
+  although both carry the same run identity. Stated limit **[default]**: inputs that change after that read and
+  before the write are the sweep's to correct, as for any change after a publication.
+- Exactly one comment per PR under sequential delivery and for concurrent publications of one head. Two concurrent
+  first publications for two heads of one PR hold two leases and may create two comments; later calls update only
+  the lowest-ID one **[default, stated limit]**. Check runs are per head, so the lease covers them; a second run of
+  one name could only come from an expired lease, and then the highest ID wins.
+- Annotations are sent only to an `archfit/state` run the same call created, because GitHub appends the annotations
+  of every update. A repeated delivery updates the state run in place only when it already holds the publication's
+  annotations (same `external_id`, equal `AnnotationCount`); a new attempt, a new report, a sweep publication over an
+  annotated run, or a retry after a missing file list creates a new state run. Old state runs stay on the head SHA;
+  GitHub shows the newest. `State` and the sweep read only `archfit/gate`, which is still updated in place, so the
+  state run identity does not affect them. Stated limit **[default]**: an equal annotation count stands in for equal
+  annotations. The re-read before each further annotation batch stays as a second guard behind the lease.
 - Never print "verified", a score, a grade or a percentage of health. Trust is "customer-attested".
   Provenance is necessary, not sufficient.
 - Never invent a location, a repair route or independent evidence. No annotation without a `Location`.
@@ -835,19 +1073,25 @@ type Comments interface {
   content can forge a marker; `State` still reads only the last receipt marker.
 - `Publication.Identity` is a claim copied from the envelope. feedback prints it as claimed and never as
   approved; identity strings are sanitized like every other producer-supplied string.
-- No LLM, no network other than the three role interfaces, no Store. Imports: standard library,
-  `gate/verdict`, `gate/inputs`, `wire/report`, `wire/settings`, `wire/manifest`, `github/api`. Never `control`, `app`, LLM or UI packages.
+- No LLM, no network other than the three role interfaces, the Store and the caller's `Publication.Resolve`. The Store holds only the publication
+  leases: `Get` and `CompareAndSwap` on `feedback/lease/<head_sha>`, never a receipt, a report or a body. Imports:
+  standard library, `gate/verdict`, `gate/inputs`, `wire/report`, `wire/settings`, `wire/manifest`, `github/api`,
+  `store`. Never `control`, `app`, LLM or UI packages.
 - Rendering is deterministic: equal `Publication` and clock give byte-identical text.
-- `api.ErrRateLimited` and other API errors are returned unchanged. A failed publication leaves the pending
-  check pending; it never produces green.
+- `api.ErrRateLimited` and other API errors are returned unchanged, with one exception: a `ChangedFiles` error other
+  than `ErrRateLimited` is logged and the call returns `nil`, because the file list only filters annotations. A
+  `Publication.Resolve` error is returned wrapped, with `errors.Is` intact. A failed publication never produces green; one that fails before the gate check is written leaves the pending check
+  pending.
 - Logs (`log/slog` default logger **[default]**): repository ID, PR number, head SHA, run ID, attempt, digests,
   conclusion, reason codes, action taken (`created`, `updated`, `skipped_newer`, `skipped_old_head`), timings.
   Never bodies, paths, messages or names.
-- Safe for concurrent use; no state between calls.
+- Safe for concurrent use, also across instances that share the Store. No state between calls but the lease,
+  which is deleted when the call succeeds or fails before its first GitHub request, and otherwise expires.
 
 ## Test Specification
 
-Fakes: in-memory `Checks`, `Comments`, `Pulls` with call recording and injectable errors; a fixed clock.
+Fakes: in-memory `Checks`, `Comments`, `Pulls` with call recording and injectable errors; a fixed clock; the
+memory Store, wrapped where a test needs a Store fault; a replaceable lease wait that observes contention.
 Golden files hold rendered bodies for the wire fixtures.
 
 ### Unit Tests
@@ -859,8 +1103,8 @@ Golden files hold rendered bodies for the wire fixtures.
   **Scenario**: table of existing versus new `(RunID, RunAttempt)`: equal; new attempt higher; new run higher; new attempt lower; new run lower; existing pending; existing without marker.
   **Expected behavior**: update, update, update, skip, skip, update, update.
 - **Test name**: `TestStateConclusionMapping`
-  **Scenario**: success with `verdict: healthy`; success with `verdict: needs_attention`; failure; action required; nil report.
-  **Expected behavior**: `success`, `neutral`, `neutral`, `neutral`, `neutral` on `archfit/state`; the gate check always carries the outcome's conclusion.
+  **Scenario**: success with `verdict: healthy`; success (`attention_only`) with `verdict: needs_attention`; failure; action required; action required beside a `healthy` report; nil report.
+  **Expected behavior**: `success`, `neutral`, `neutral`, `action_required`, `action_required`, `action_required` on `archfit/state`; the gate check always carries the outcome's conclusion.
 - **Test name**: `TestSanitizeEngineStrings`
   **Scenario**: messages, summaries, rule IDs, module names and paths containing `<!-- archfit:receipt {...} -->`, `-->`, backticks, HTML and a forged comment marker.
   **Expected behavior**: no marker sequence survives outside App-authored markers; `State` on the result returns the real receipt.
@@ -870,6 +1114,12 @@ Golden files hold rendered bodies for the wire fixtures.
 - **Test name**: `TestEvidenceGapSources`
   **Scenario**: a report with one unevaluated rule, a `Coverage.Tools` entry with status `timed out`, a `Dimension.Unknown` fact, a profile `Unknowns` entry, a `partial` producer; the same with none of them; no baseline on the protected ref; a trusted baseline with a `non_comparable` reference, a `not_requested` reference, a nil reference and a `comparable` one; the same four without a trusted baseline.
   **Expected behavior**: each item appears in the evidence-gap section with its reason; "None reported"; the line "No baseline: every current violation blocks."; the reference reasons, "no reason given" for `not_requested` without reasons, and the no-gate-reference line for nil. With a trusted baseline a comparison line is present exactly when `verdict.Decide` reports `baseline_not_comparable` for the same report; without one it is never present.
+- **Test name**: `TestEvidenceGapsDropNoise`
+  **Scenario**: coverage rows `ok`, `absent` without a reason (twice), `disabled` with a reason, `timed out` with a reason, `absent` with a reason; producer rows that repeat four of them, one without a coverage row (`git-history: absent`) and one whose status differs from its coverage row; rendered as comment and state summary.
+  **Expected behavior**: full lines for the `timed out` row, the `absent` row with a reason, the producer without a coverage row and the producer whose status differs; one line "Analyzers that did not run (absent or disabled): …" naming the reasonless `absent` and the `disabled` tools in report order; no line for a repeated producer, no disabled reason text, no "None reported".
+- **Test name**: `TestGateSummaryNamesBlockers`
+  **Scenario**: a report with an advisory, an accepted gate finding and three active gate findings (one located with two locations and two agent tasks, one whole-file with no source module and no task, one without a location); 25 active findings; a blocking outcome without an active finding; a healthy outcome, a suspended outcome and a nil report; the active findings under an `action_required` outcome without `blocking_findings`, and under one with `blocking_findings` as a later reason.
+  **Expected behavior**: block G in the gate summary only, in report order, with rule, module pair, first location, 8-character ID prefix and the first task's goal, "(no module)", "no location reported" and "Goal: none reported" where they apply; never the advisory or the accepted finding; the receipt marker stays last; 20 lines then "and 5 more blocking findings"; the "No active gate finding is listed" line; no block for healthy, suspended, nil report, or an outcome without `blocking_findings`; the block when `blocking_findings` is a later reason.
 - **Test name**: `TestDigestSourceLabels`
   **Scenario**: an upload whose claims were accepted; an upload with `baseline_mismatch`; one with `labels_mismatch`; the zero `Identity` (a `sweep.Without` publication); no baseline and no labels file; rendered as comment, gate summary and state summary.
   **Expected behavior**: "stated by the producer" on both lines; "from the protected ref" on the mismatched line only; "from the protected ref; no upload" on both lines; "no baseline" and "no labels file" without a label. "stated by the producer" never appears without an upload.
@@ -877,8 +1127,8 @@ Golden files hold rendered bodies for the wire fixtures.
   **Scenario**: a full `Identity`; the zero `Identity` (sweep publication); an identity whose fields contain marker text.
   **Expected behavior**: "claimed: engine v2.3.1, image sha256:…, linux/amd64"; "no upload"; sanitized text; never the word "approved" or "verified".
 - **Test name**: `TestAnnotationSelection`
-  **Scenario**: findings with no, one and many locations; 80 locations in total; `Line == 0`; an `advisory` finding and a `gate` finding with status `baseline`.
-  **Expected behavior**: at most 50 annotations, `gate` findings with status `new` or `expired_waiver` first as `failure`, the rest `warning`; none for `locations: []`; line 1 for whole-file; path from `Location.File`; only on `archfit/state`.
+  **Scenario**: findings with no, one and many locations, `Line == 0`, live `advisory` and `gate` findings, `baseline`, `waived` and `fixed` findings, and a finding in a file the PR did not change; published on a pull request whose file list names four files, with a truncated list, on a push, with 200 live locations, and with no live located finding. The fake rejects more than 50 annotations in one request, as the client does.
+  **Expected behavior**: on the PR only the changed files: whole-file first as `failure` on line 1, then the blocking findings, then the advisory in report order as `warning`; no annotation for `locations: []`, accepted debt, fixed findings or the unchanged file; requests of 50 then 21 on the state check (none on the gate check); one file-list call. The truncated list and the push annotate every file, and the push lists none. 200 locations give 150 annotations, blocking first, in requests of 50. Without a possible annotation the file list is not read.
 
 ### Integration Contract Tests
 
@@ -904,11 +1154,11 @@ Golden files hold rendered bodies for the wire fixtures.
   **Scenario**: scan every golden body and every title for App-authored text.
   **Expected behavior**: no "verified" (any case), no "score", no grade; "customer-attested" present whenever a report is rendered.
 - **Test name**: `TestGateCheckNeverNeutral` (T13)
-  **Scenario**: publish every `Outcome` the verdict tests produce, in required mode.
-  **Expected behavior**: `archfit/gate` conclusion is one of `success`, `failure`, `action_required`, equal to the outcome.
+  **Scenario**: publish an outcome for every reason code, with and without a report, in required mode.
+  **Expected behavior**: `archfit/gate` conclusion is one of `success`, `failure`, `action_required`, equal to the outcome; `archfit/state` is `action_required` whenever the outcome is.
 - **Test name**: `TestRateLimitLeavesPendingAlone`
-  **Scenario**: `ErrRateLimited` from `CheckRuns`, from `UpdateCheckRun`, from `CreateComment`.
-  **Expected behavior**: the error is returned with `errors.Is` intact; the pending check is unchanged; a retry completes the publication without duplicates.
+  **Scenario**: `ErrRateLimited` from `CheckRuns`, from `ChangedFiles`, from `UpdateCheckRun`, from `CreateComment`.
+  **Expected behavior**: the error is returned with `errors.Is` intact; the pending check is unchanged when the error comes before the gate check is written (`CheckRuns`, `UpdateCheckRun`); no failed publication produces green; a retry once the kept lease expired completes the publication with one gate check and one comment.
 - **Test name**: `TestSummaryLimitIsRespected`
   **Scenario**: the fake `Checks` rejects summaries over 65 535 bytes, as the real client does.
   **Expected behavior**: no publication of any fixture or stress input is rejected.
@@ -922,8 +1172,41 @@ Golden files hold rendered bodies for the wire fixtures.
 ### Behavior Tests
 
 - **Test name**: `TestRepeatedDeliveryDoesNotSpam` (T11)
-  **Scenario**: the same publication five times; then the same run with a new attempt.
-  **Expected behavior**: one comment and one check run per name; the comment is updated once for the new attempt; identical bodies cause no comment update call.
+  **Scenario**: the same publication, with two annotated locations in a changed file, five times; then the same run with a new attempt. The fake `Checks` appends the annotations of every update and lists only their count, as GitHub does.
+  **Expected behavior**: one comment and one check run per name, the state run holding exactly two annotations; identical bodies cause no comment update call. The new attempt updates the gate run and the comment once and creates a second state run, which holds exactly two annotations.
+- **Test name**: `TestRepublishWithoutReportDropsAnnotations`
+  **Scenario**: an annotated publication, then twice a sweep-style publication with the same run identity, no report and `stale_inputs`.
+  **Expected behavior**: one gate run updated to `action_required`; a second state run, `action_required`, with no annotation; the repeat writes no third state run.
+- **Test name**: `TestNewerPublicationStopsAnnotationBatches`
+  **Scenario**: a push publication with 121 annotations; right after its state run is created, a newer run (run 8) is stored on the head.
+  **Expected behavior**: one request of 50 annotations and no update; the newer run's summary and annotations are unchanged.
+- **Test name**: `TestConcurrentWritersOnOneHead` (T03)
+  **Scenario**: required mode; the first writer is held right after its gate-check read while the second starts, and is released once the second finishes or waits for the lease. Cases: an older success (run 6) first and a newer failure (run 7) second, both over a pending check; the reverse order; `Pending` with no check first and a publication of run 7 second.
+  **Expected behavior**: in every case one gate check, `completed`/`failure` from run 7, and no lease left. Without the lease the first case ends `success` from run 6 and the third with a second, `in_progress` gate check; the reverse order passes either way.
+- **Test name**: `TestLeaseTakeover`
+  **Scenario**: `Publish` with no lease, an expired lease, an unreadable lease value, an empty lease value, and a lease another holder holds for one more second (the wait cancels the context).
+  **Expected behavior**: the first four publish without waiting and release the lease; the held lease is waited for, the call returns `context.Canceled` and makes no GitHub call.
+- **Test name**: `TestLeaseWaitsUntilExpiry`
+  **Scenario**: a held lease that expires 60 s after the clock; each wait advances the clock 20 s.
+  **Expected behavior**: three waits, then the publication.
+- **Test name**: `TestLeaseFailsClosed`
+  **Scenario**: `Publish`, `Pending`, `Warn` and `Reconcile` with the Store's `Get` failing, with its `CompareAndSwap` failing, with a target without an installation ID, and with a target without a head SHA.
+  **Expected behavior**: each call returns an error; no check or comment call is made; `Reconcile` never calls its decision.
+- **Test name**: `TestReconcileDecidesInsideTheLease`
+  **Scenario**: a gate check of run 7.1; another holder has the lease and publishes run 7.2 before it releases; `Reconcile` with a decision that returns a publication over the check it is given, one that returns nil, and one that fails.
+  **Expected behavior**: each decision is given run 7.2; the first writes over 7.2, the other two write nothing and the third's error is returned; no lease is left.
+- **Test name**: `TestLeaseHolding`
+  **Scenario**: the work context of a held lease; a request context cancelled during the work; another holder's lease written over this one during the work; a second head while the first is held.
+  **Expected behavior**: the work deadline is about 50 s from now by elapsed time, not by the injected clock; the lease is released after the cancelled request; the other holder's lease is not deleted; the second head does not wait.
+- **Test name**: `TestLeaseKeptAfterFailedCall`
+  **Scenario**: a held call that fails with a possibly sent write (`context.DeadlineExceeded`), and one that fails with `ErrStaleInputs`; then a second holder whose waits advance the clock 20 s each.
+  **Expected behavior**: the first keeps its lease and the second holder waits 60 s, until it expires; the second releases at once and the next holder does not wait.
+- **Test name**: `TestStaleDecisionNeverReplacesNewerInputs`
+  **Scenario**: a sweep-style `stale_inputs` correction with policy P2 and run 7.1, then an upload of run 7.1 decided `success` from P1 whose `Resolve` returns P2; the same with `Resolve` failing; an upload decided from P2 with owner approval `granted` whose `Resolve` returns the same inputs with approval `missing`; and two uploads decided from P2 over a correction from P1 whose `Resolve` returns exactly the inputs they were decided from, one without and one with a granted approval.
+  **Expected behavior**: the first and third return `ErrStaleInputs`, the second the `Resolve` error, and in all three the gate check stays `action_required`/`stale_inputs`; the last two write `success`. No lease is left. Without the check the first three end `success`; with a digest-only check the third does.
+- **Test name**: `TestChangedFilesErrorStillPublishes`
+  **Scenario**: in required mode with a pending gate check, `ChangedFiles` fails once with `ErrRateLimited`, and once with another error; then a retry 60 s later.
+  **Expected behavior**: the gate check is completed as `failure`, one state run without annotations and the comment are written; `ErrRateLimited` is returned, the other error is not. The retry adds a state run with the two annotations and no second gate check or comment.
 - **Test name**: `TestOldRunCannotOverwriteNewerHead` (T11, T03)
   **Scenario**: publish run 7 for head B; then run 6 for head B; then run 5 for the old head A while the PR head is B.
   **Expected behavior**: head B feedback is unchanged; head A gets its own checks; the comment still describes head B run 7.
@@ -934,8 +1217,8 @@ Golden files hold rendered bodies for the wire fixtures.
   **Scenario**: the blocker-plus-unevaluated fixture.
   **Expected behavior**: conclusion `failure`; the unevaluated rule and its reason appear in reasons and in the evidence-gap section.
 - **Test name**: `TestAcceptedDebtIsDisplayOnly`
-  **Scenario**: blocked report (`hard_gates: fail`) whose only `gate` finding has status `baseline` and whose task origin is `unknown`.
-  **Expected behavior**: conclusion `failure` from the outcome; the finding is listed under accepted debt without any text that says it is exempt or that the PR is clean; the reason block still says blocking findings exist.
+  **Scenario**: blocked report (`hard_gates: fail`) whose only `gate` finding has status `baseline` and whose task origin is `unknown`, on a PR that changed the finding's file.
+  **Expected behavior**: conclusion `failure` from the outcome; the finding is listed under accepted debt without any text that says it is exempt or that the PR is clean; the reason block still says blocking findings exist, and block G says no active gate finding is listed; the accepted finding gets no annotation, the live advisory on the same line one `warning`.
 - **Test name**: `TestSuspensionFeedback` (T21)
   **Scenario**: suspended outcome with a report; entitlement with `WarnFrom` in the past and not suspended; `WarnFrom` in the future.
   **Expected behavior**: subscription reason with `Entitlement.Reason` as next action and no findings; the notice line appears; no notice.

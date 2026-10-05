@@ -48,6 +48,7 @@ type Control struct {
 	tenants   tenantLister
 	ui        http.Handler
 	discovery http.Handler
+	baseline  http.Handler
 	now       func() time.Time
 
 	// Held for the composition only; the façade never calls them.
@@ -82,6 +83,7 @@ func New(d Deps) (*Control, error) {
 		return nil, fmt.Errorf("control: ui: %w", err)
 	}
 	c := newControl(acct, d.GitHub, d.Store, page, onb.DiscoveryHandler(), d.Now)
+	c.baseline = onb.BaselineHandler()
 	c.consents, c.budget, c.onboarding, c.assist = consents, budget, onb, asst
 	return c, nil
 }
@@ -117,6 +119,10 @@ func (c *Control) UIHandler() http.Handler { // "/"
 
 func (c *Control) DiscoveryHandler() http.Handler { // POST /v1/discoveries
 	return c.discovery
+}
+
+func (c *Control) BaselineHandler() http.Handler { // POST /v1/baselines
+	return c.baseline
 }
 
 // recovered contains a UI panic: 500 for this request, the process and every other handler keep working.

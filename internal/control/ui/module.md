@@ -153,9 +153,11 @@ func New(c Config, o OAuth, u Users, repos Repos, now func() time.Time) (Session
 - **Volatility**: high
 - **Balanced?**: yes — parent and child
 - **Shared knowledge**: ui supplies a decoded `Report` and the policy text, gets a `View`, serializes it as JSON into
-  the page, links each node to `/r/{o}/{n}/policy#L<PolicyLine>` when the line is not 0, and shows the stale banner when `Stale`.
+  the page, links each node to `/r/{o}/{n}/policy#L<PolicyLine>` when the line is not 0, shows the stale banner
+  when `Stale`, and the incomplete banner (`id="incomplete"`) when `Incomplete`. The template and the script use a
+  link's `Status` as its CSS class and print it as is.
 
-<!-- contract: View, Node, Link, Build — restated from internal/control/ui/graph/module.md -->
+<!-- contract: View, Node, Link, LinkStatus, Build — restated from internal/control/ui/graph/module.md -->
 ```go
 type Node struct {
     Name       string
@@ -163,22 +165,34 @@ type Node struct {
     PolicyLine int // 1-based line of the module in the policy YAML; 0 if not found
 }
 
+// LinkStatus is what the report's findings say about a module pair. It is a display fact, never a check input.
+type LinkStatus string
+
+const (
+    StatusViolation LinkStatus = "violation" // an active gate finding (wire/report Finding.Active), or a gate finding of unknown status, names the pair
+    StatusAccepted  LinkStatus = "accepted"  // a gate finding accepted by the baseline or a waiver names the pair
+    StatusAdvisory  LinkStatus = "advisory"  // another finding that is not fixed names the pair
+    StatusObserved  LinkStatus = "observed"  // a seam that no current finding names
+)
+
 type Link struct {
-    From, To  string
-    Observed  bool // seen in the report
-    Permitted bool // allowed by policy
-    Count     int
+    From, To string
+    Status   LinkStatus
+    Count    int // observed dependencies of the pair's seams; 0 when only a finding names the pair
 }
 
 // View is a read-only picture. Stale is true when the policy text no longer matches the report's config_hash.
+// Incomplete is true when the report's hard gates did not pass or a required rule was not evaluated: an observed
+// link may then still break a rule.
 type View struct {
-    Nodes []Node
-    Links []Link
-    Stale bool
+    Nodes      []Node
+    Links      []Link
+    Stale      bool
+    Incomplete bool
 }
 
-// Build is pure. Nodes come from the policy's modules, links from the report's seams; a link is not
-// Permitted when an Active finding (wire/report `Finding.Active`) names that module pair.
+// Build is pure. Nodes come from the policy's modules, links from the report's seams and findings; a link's
+// Status comes from the findings that name its module pair, never from the policy text.
 func Build(rep Report, policy []byte) View
 ```
 
@@ -260,7 +274,7 @@ type Consents interface {
 - **LCA / Rank / Distance**: control / 1 / 1
 - **Volatility**: high
 - **Balanced?**: yes
-- **Shared knowledge**: `Progress`, `StartCustomer`, `StartManaged`. ui never mounts `DiscoveryHandler` (the façade does).
+- **Shared knowledge**: `Progress`, `StartCustomer`, `StartManaged`. ui never mounts `DiscoveryHandler` or `BaselineHandler` (the façade does).
   Before `StartManaged` ui checks `Consents.Has(ConsentSourceProcessing)` and sends the administrator to the consent page
   when it is false **[default]**. `ErrNoSandbox` is the sentinel onboarding returns when managed discovery is not
   configured; ui shows "managed discovery is not available". `ErrAlreadyOnboarded` and `ErrBusy` are the sentinels
@@ -294,6 +308,8 @@ type Onboarding interface {
     StartManaged(ctx context.Context, r Repo, owners []string) (Draft, error)
     // DiscoveryHandler serves POST /v1/discoveries and opens PR 2 with the proposed policy.
     DiscoveryHandler() http.Handler
+    // BaselineHandler serves POST /v1/baselines and opens or updates the baseline PR. It never writes the default branch.
+    BaselineHandler() http.Handler
 }
 ```
 
@@ -500,6 +516,9 @@ type CheckRun struct {
     Summary     string // markdown, max 65535 bytes
     Annotations []Annotation
     StartedAt   time.Time
+    // AnnotationCount is read-only: the annotations GitHub holds for the run, set by CheckRuns.
+    // Create and update never send it; GitHub appends the Annotations of each request.
+    AnnotationCount int
 }
 
 type Checks interface {
@@ -626,7 +645,7 @@ func Waivers(policy []byte) ([]Waiver, error)
 
 <!-- contract: Schema — restated from internal/wire/policy/module.md -->
 ```go
-// Schema returns the engine v2.3.1 config JSON Schema, embedded unchanged, for the editor.
+// Schema returns the engine v2.4.0 config JSON Schema, embedded unchanged, for the editor.
 func Schema() []byte
 ```
 
@@ -713,9 +732,11 @@ func Render(s Settings) []byte
 - **Volatility**: high (this side), moderate (wire/report)
 - **Balanced?**: yes — contract coupling
 - **Shared knowledge**: ui downloads the artifact with `MaxBytes` as the cap, calls `Decode`, and hands the `Report` to
-  `graph.Build` unread. The artifact holds the raw engine state JSON; `Decode` validates it against the v2.3.1 state
-  schema and reduces it to the no-source form, so fields the decoder drops (measurement, `matched_by`, task declarations,
-  metric provenance, seam scores) never reach a template and ui never renders them. ui parses the artifact in no other way.
+  `graph.Build` unread. The artifact holds the raw engine state JSON; `Decode` validates it against the state schema of
+  an engine release and reduces it to the no-source form, so fields the decoder drops (measurement, `matched_by`, task
+  declarations, metric provenance, seam scores) never reach a template and ui never renders them. ui parses the artifact
+  in no other way. The artifact comes without the envelope that names its release, so ui passes the last of
+  `EngineVersions`: the newest key set holds every older one, and the graph only displays what it reads.
   `StateSchemaV1` is the constant `Decode` checks. For this module each nested type is opaque:
   - `Decision` is an opaque part of `Report` for this module.
   - `Comparison` is an opaque part of `Report` for this module.
@@ -754,10 +775,18 @@ type Report struct {
 
 <!-- contract: Decode — restated from internal/wire/report/module.md -->
 ```go
-// Decode strictly parses payload as the no-source transport. It fails on: size over MaxBytes, a key the
-// v2.3.1 state schema does not define, wrong schema_version, an enum value outside its set, strings over
-// the per-field caps, absolute or parent-escaping paths, multi-line text, or duplicate finding IDs.
-func Decode(payload []byte) (Report, error)
+// Decode strictly parses payload as the no-source transport of the state document engineVersion emits. It
+// fails on: an engineVersion outside EngineVersions, size over MaxBytes, a key that release's state schema
+// does not define, wrong schema_version, an enum value outside its set, strings over the per-field caps,
+// absolute or parent-escaping paths, multi-line text, or duplicate finding IDs.
+func Decode(payload []byte, engineVersion string) (Report, error)
+```
+
+<!-- contract: EngineVersions — restated from internal/wire/report/module.md -->
+```go
+// EngineVersions returns the engine releases whose state document Decode reads, oldest first. Each emits
+// StateSchemaV1; a later release only adds optional keys, so the last key set holds every earlier one.
+func EngineVersions() []string
 ```
 
 ### internal/control (parent façade)
@@ -871,7 +900,9 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   pushed on GitHub), ui builds from the default-branch policy instead, the last valid text, and forces the stale banner with
   "the draft does not parse" **[default]**. No run or artifact (GitHub retention): "no report available". Decode error:
   "report unavailable"; never a partial graph. The `View` is embedded as JSON in a `script type="application/json"` element.
-  Links with `Permitted` false are drawn as violations.
+  Each link is drawn and listed with its `Status` (`violation`, `accepted`, `advisory`, `observed`), which is also its CSS
+  class; the page never calls a link "permitted". When `View.Incomplete`, a banner says the report's hard gates did not
+  pass or not all required rules were evaluated, so an observed link can still break a rule.
 - Assist: authorize `write`; if `content` differs from the file at `head_sha`, save it first (same rules as Save) and use the
   new head; then `Assist.Propose(mode, Request{Repo, Branch, HeadSHA, Instruction, By: login})`. Managed is offered only when
   settings say `managed` and `Consents.Has(ConsentManagedLLM)`; assist enforces both anyway. Managed success: redirect to the
@@ -973,9 +1004,10 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Expected behavior**: one branch, one draft PR, one commit; the second save (empty `head_sha`, identical content) is a
   no-op with a notice, not a `409`; the same retry with different content is `409`.
 - **Test name**: `TestGraphPageBuildsFromArtifact`
-  **Scenario**: the healthy wire fixture as the `archfit-report` artifact of the latest default-branch run.
+  **Scenario**: the blocked wire fixture (`hard_gates: fail`, no baseline) as the `archfit-report` artifact of the latest default-branch run.
   **Expected behavior**: the embedded JSON equals `graph.Build(report, policy)`; node links point to `#L<line>`; no stale banner;
-  marker strings placed in fields the decoder drops (`matched_by`, measurement, task declarations) appear nowhere in the page.
+  the incomplete banner; marker strings placed in fields the decoder drops (`matched_by`, measurement, task declarations)
+  appear nowhere in the page.
 - **Test name**: `TestConsentRecordAndRevoke`
   **Scenario**: an administrator records `managed_llm`, then revokes it.
   **Expected behavior**: `Consents.Has` is true then false for the installation of the authorized `Repo`; `By` is the session login.
@@ -1039,7 +1071,8 @@ their interfaces except where a test says otherwise. The clock is injected.
   commit; the PR is not marked ready.
 - **Test name**: `TestInvalidYAMLIsRefusedAndGraphGoesStale` (T17)
   **Scenario**: save broken YAML; then open the graph while the draft differs from the report's policy.
-  **Expected behavior**: `422` and no commit; the graph page shows the stale banner and still draws the report. Then a broken
+  **Expected behavior**: `422` and no commit; before the edit the healthy report shows no incomplete banner; the graph page
+  shows the stale banner and still draws the report. Then a broken
   draft is pushed on GitHub: the graph page draws from the default-branch policy with the stale banner and "the draft does not parse".
 - **Test name**: `TestUIAndGitHubFirstEditsShareOnePath` (T17)
   **Scenario**: one policy edit through the editor, one pushed directly to the draft branch on GitHub.

@@ -16,6 +16,8 @@ func lookup(code ReasonCode) (entry, bool) {
 	switch code {
 	case ReasonHealthy:
 		return entry{CategoryArchitecture, Success, ""}, true
+	case ReasonAttentionOnly:
+		return entry{CategoryArchitecture, Success, "Advisories never block. Review the listed dimensions and diagnostics on the archfit/state check."}, true
 	case ReasonBlockingFindings:
 		return entry{CategoryArchitecture, Failure, "Fix the blocking findings and run the validation command."}, true
 	case ReasonEngineError:
@@ -32,6 +34,8 @@ func lookup(code ReasonCode) (entry, bool) {
 		return entry{CategoryEvidence, ActionRequired, "Run the workflow with the policy from the base branch; re-run if the base changed."}, true
 	case ReasonPolicyMissing:
 		return entry{CategoryGovernance, ActionRequired, "Merge the Archfit policy PR."}, true
+	case ReasonPolicyDefect:
+		return entry{CategoryGovernance, ActionRequired, "Fix the selectors of the listed rules in an owner-approved policy PR, or mark an intentional guard rule guard: true."}, true
 	case ReasonUnknownIdentity:
 		return entry{CategoryEvidence, ActionRequired, "Use the engine image pinned by the Archfit onboarding workflow."}, true
 	case ReasonProfileMissing:

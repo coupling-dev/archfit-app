@@ -3,10 +3,44 @@ package report
 import (
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
 )
+
+// TestSinceTagSelectsTheKeySet: a key that a later release adds carries `since:"<release>"`; under an earlier
+// release it is an unknown key. A probe type stands in for such a key: no state key has one yet.
+func TestSinceTagSelectsTheKeySet(t *testing.T) {
+	type probe struct {
+		Old string `json:"old"`
+		New string `json:"new" since:"v2.4.0"`
+		Odd string `json:"odd" since:"v9.9.9"` // a release Decode does not read: never a known key
+	}
+	v231, v240 := slices.Index(engineVersions, "v2.3.1"), slices.Index(engineVersions, "v2.4.0")
+	tests := []struct {
+		name    string
+		version int
+		payload string
+		ok      bool
+	}{
+		{"old key under v2.3.1", v231, `{"old":"x"}`, true},
+		{"new key under v2.3.1", v231, `{"old":"x","new":"y"}`, false},
+		{"new key under v2.4.0", v240, `{"old":"x","new":"y"}`, true},
+		{"key of an unlisted release under the newest", len(engineVersions) - 1, `{"odd":"z"}`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := prepass([]byte(tt.payload), reflect.TypeFor[probe](), tt.version)
+			if tt.ok != (err == nil) {
+				t.Fatalf("err = %v, want ok = %v", err, tt.ok)
+			}
+			if err != nil && !strings.Contains(err.Error(), "unknown key") {
+				t.Errorf("error %q, want an unknown key", err)
+			}
+		})
+	}
+}
 
 func TestStringClassRules(t *testing.T) {
 	classes := []struct {
@@ -21,6 +55,9 @@ func TestStringClassRules(t *testing.T) {
 		{"token", "seams[0].strength", 64, []any{"seams", 0, "strength"}},
 		{"version", "comparison.rubric_version", 128, []any{"comparison", "rubric_version"}},
 		{"hash token", "comparison.model_hash", 128, []any{"comparison", "model_hash"}},
+		{"tool version", "producers[0].tool_version", 128, toolVersionSteps},
+		{"task goal", "agent_tasks[0].goal", 4_096, []any{"agent_tasks", 0, "goal"}},
+		{"task constraint", "agent_tasks[0].constraints[0]", 4_096, []any{"agent_tasks", 0, "constraints", 0}},
 		{"path", "findings[0].locations[0].file", 512, []any{"findings", 0, "locations", 0, "file"}},
 	}
 	var rows []mutation
@@ -50,7 +87,48 @@ func TestStringClassRules(t *testing.T) {
 		mutation{"config_hash 63 hex", setter(hex64[:63], configHash...), "comparison.config_hash"},
 		mutation{"config_hash with sha256 prefix", setter("sha256:"+hex64, configHash...), "comparison.config_hash"},
 	)
-	runMutations(t, rows)
+	runMutations(t, append(rows, toolVersionRows()...))
+}
+
+var toolVersionSteps = []any{"comparison", "measurement_profile", "producers", 0, "tool_version"}
+
+// toolVersionRows: a producer's tool_version is the tool's own version output, so it is free text. Every
+// string the engine emits must decode; the other version-like fields stay tokens.
+func toolVersionRows() []mutation {
+	const loc = "producers[0].tool_version"
+	accepted := []struct{ source, version string }{
+		{"go/packages", "go1.27.1"},
+		{"go/packages devel toolchain", "devel go1.28-4f2a1b3c Tue Sep 30 12:00:00 2026 +0000"},
+		{"dependency-cruiser", "18.5.0"},
+		{"grimp helper", "grimp 3.17; python 3.14.3"},
+		{"grimp failure with uv", "uv 0.12.21 (Homebrew 2026-09-29 aarch64-apple-darwin)"},
+		{"grimp failure with python3", "Python 3.12.4"},
+		{"cargo", "cargo 1.98.0 (797e8a9bc 2026-08-05)"},
+		{"cargo-modules", "cargo-modules 0.26.0"},
+		{"scip with rust-analyzer", "rust-analyzer 1.98.0"},
+		{"scip with scip-python", "scip-python 0.6.6"},
+		{"ast-grep", "ast-grep 0.45.3"},
+		{"jscpd", "jscpd 5.4.0"},
+		{"git-history", "git version 2.56.0"},
+		{"git-history with macOS git", "git version 2.54.0 (Apple Git-157)"},
+		{"supplied-coverage with two formats", "coverage-parser.go-coverprofile.v1,coverage-parser.lcov.v1"},
+		{"limit counted in characters", strings.Repeat("é", 128)},
+	}
+	var rows []mutation
+	for _, a := range accepted {
+		rows = append(rows, mutation{"tool version of " + a.source, setter(a.version, toolVersionSteps...), ""})
+	}
+	semantics := []any{"comparison", "measurement_profile", "producers", 0, "semantics_version"}
+	return append(rows,
+		mutation{"tool version of 129 characters", setter(strings.Repeat("é", 129), toolVersionSteps...), loc},
+		mutation{"tool version with a bidi override", setter("v1"+string(rune(0x202e))+"2", toolVersionSteps...), loc},
+		mutation{"tool version with a zero-width space", setter("v1"+string(rune(0x200b))+"2", toolVersionSteps...), loc},
+		mutation{"tool version with a no-break space", setter("v1"+string(rune(0x00a0))+"2", toolVersionSteps...), loc},
+		mutation{"tool version with CR", setter("cargo 1.98.0\r", toolVersionSteps...), loc},
+		mutation{"semantics_version stays a token", setter("grimp.v2; python", semantics...), "producers[0].semantics_version"},
+		mutation{"unknowns stay tokens", setter([]any{"uv (unknown)"}, "comparison", "measurement_profile", "unknowns"),
+			"measurement_profile.unknowns[0]"},
+	)
 }
 
 func TestPathRules(t *testing.T) {
@@ -168,12 +246,12 @@ func TestCollectionCaps(t *testing.T) {
 		}},
 		{"decision.unevaluated_required_rules", 1_000, []any{"decision", "unevaluated_required_rules"},
 			func(int) any { return map[string]any{"rule_id": "r", "reason": "x"} }},
-		{"findings[0].locations", 100, []any{"findings", 0, "locations"},
+		{"findings[0].locations", 10_000, []any{"findings", 0, "locations"},
 			func(i int) any { return map[string]any{"file": "a.go", "line": i} }},
 		{"findings[0].allowed_alternatives", 32, []any{"findings", 0, "allowed_alternatives"}, text},
-		{"agent_tasks[0].constraints", 32, []any{"agent_tasks", 0, "constraints"}, text},
+		{"agent_tasks[0].constraints", 34, []any{"agent_tasks", 0, "constraints"}, text},
 		{"agent_tasks[0].validation", 32, []any{"agent_tasks", 0, "validation"}, text},
-		{"agent_tasks[0].files", 1_000, []any{"agent_tasks", 0, "files"}, text},
+		{"agent_tasks[0].files", 10_002, []any{"agent_tasks", 0, "files"}, text},
 		{"dimensions.drift.metrics", 256, append(drift, "metrics"),
 			func(int) any { return map[string]any{"name": "m", "value": 1.5, "unit": "count"} }},
 		{"dimensions.drift.unknown", 256, append(drift, "unknown"),
@@ -212,7 +290,7 @@ func TestCollectionCaps(t *testing.T) {
 				if len(payload) > MaxBytes {
 					t.Fatalf("payload of %d bytes would test the size cap instead", len(payload))
 				}
-				_, err := Decode(payload)
+				_, err := Decode(payload, fixtureEngine)
 				if !over {
 					if err != nil {
 						t.Fatalf("Decode: %v", err)
@@ -222,6 +300,45 @@ func TestCollectionCaps(t *testing.T) {
 				wantError(t, err, c.loc)
 			})
 		}
+	}
+}
+
+// TestTaskHoldsWhatItsFindingHolds builds a task the way the engine does (agenttask.Build) from a finding at
+// its caps: files are the location files plus both edge endpoints; constraints are the finding constraint, one
+// "allowed alternative: <a>" per alternative and the target module's public surface; a cycle goal is
+// "Break the import cycle: " plus the why. A finding that decodes must not yield a task that does not.
+func TestTaskHoldsWhatItsFindingHolds(t *testing.T) {
+	doc := baseDoc(t)
+	text := strings.Repeat("w", maxTextLen)
+
+	locations, files := make([]any, maxLocations), []any{"pkg/a/a.go", "pkg/b"}
+	for i := range locations {
+		file := fmt.Sprintf("pkg/a/f%05d.go", i)
+		locations[i] = map[string]any{"file": file, "line": i + 1}
+		files = append(files, file)
+	}
+	alternatives, constraints := make([]any, maxAlternatives), []any{text}
+	for i := range alternatives {
+		alternatives[i] = text
+		constraints = append(constraints, "allowed alternative: "+text)
+	}
+	globs := make([]string, 100)
+	for i := range globs {
+		globs[i] = fmt.Sprintf("pkg/b/api/v1/resources/group_%03d/**", i)
+	}
+	constraints = append(constraints, fmt.Sprintf("public surface of module %q: [%s]", "b", strings.Join(globs, " ")))
+
+	set(t, doc, locations, "findings", 0, "locations")
+	set(t, doc, alternatives, "findings", 0, "allowed_alternatives")
+	set(t, doc, text, "findings", 0, "why")
+	set(t, doc, text, "findings", 0, "constraint")
+	set(t, doc, files, "agent_tasks", 0, "files")
+	set(t, doc, constraints, "agent_tasks", 0, "constraints")
+	set(t, doc, "Break the import cycle: "+text, "agent_tasks", 0, "goal")
+
+	r := mustDecode(t, encode(t, doc))
+	if task := r.AgentTasks[0]; len(task.Files) != maxLocations+2 || len(task.Constraints) != maxAlternatives+2 {
+		t.Errorf("task with %d files and %d constraints", len(task.Files), len(task.Constraints))
 	}
 }
 
@@ -296,7 +413,7 @@ func TestPresenceRules(t *testing.T) {
 		t.Run("absent "+name, func(t *testing.T) {
 			doc := baseDoc(t)
 			del(t, doc, steps...)
-			_, err := Decode(encode(t, doc))
+			_, err := Decode(encode(t, doc), fixtureEngine)
 			if optional := isOptionalKey(general); optional != (err == nil) {
 				t.Errorf("%s absent: optional=%v, err=%v", general, optional, err)
 			}
@@ -304,7 +421,7 @@ func TestPresenceRules(t *testing.T) {
 		t.Run("null "+name, func(t *testing.T) {
 			doc := baseDoc(t)
 			set(t, doc, nil, steps...)
-			_, err := Decode(encode(t, doc))
+			_, err := Decode(encode(t, doc), fixtureEngine)
 			if nullable := general == "seams[].scores.p10" || general == "seams[].scores.p90"; nullable != (err == nil) {
 				t.Errorf("%s null: nullable=%v, err=%v", general, nullable, err)
 			}
@@ -356,7 +473,7 @@ func TestDuplicateFindingIDs(t *testing.T) {
 			first, second := minimalFinding(7).(map[string]any), minimalFinding(7).(map[string]any)
 			first["status"], second["status"] = statuses[0], statuses[1]
 			set(t, doc, []any{first, second}, "findings")
-			_, err := Decode(encode(t, doc))
+			_, err := Decode(encode(t, doc), fixtureEngine)
 			wantError(t, err, "findings[1].id")
 		})
 	}

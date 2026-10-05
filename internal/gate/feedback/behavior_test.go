@@ -2,18 +2,27 @@ package feedback
 
 import (
 	"context"
+	"errors"
 	"reflect"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
 	"github.com/alexei-led/archfit-app/internal/gate/verdict"
+	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/alexei-led/archfit-app/internal/wire/manifest"
+	"github.com/alexei-led/archfit-app/internal/wire/report"
 )
 
 func TestRepeatedDeliveryDoesNotSpam(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(headB)
+	h.pulls.changed = []string{"pkg/a/a.go"} // the fixture's blocker and advisory are both located there
+	const located = 2
 	for range 5 {
 		if err := h.pub.Publish(ctx, blockedPublication(t, headB, 7, 1)); err != nil {
 			t.Fatalf("Publish: %v", err)
@@ -25,6 +34,9 @@ func TestRepeatedDeliveryDoesNotSpam(t *testing.T) {
 	if counts() != [3]int{1, 1, 1} {
 		t.Fatalf("gate, state, comments = %v, want one each", counts())
 	}
+	if got := len(h.checks.latest(t, headB, stateCheck).Annotations); got != located {
+		t.Errorf("state annotations after five deliveries = %d, want %d: GitHub appends on every update", got, located)
+	}
 	if h.comments.count("CreateComment") != 1 || h.comments.count("UpdateComment") != 0 {
 		t.Errorf("identical bodies caused comment writes: %v", h.comments.calls)
 	}
@@ -32,13 +44,206 @@ func TestRepeatedDeliveryDoesNotSpam(t *testing.T) {
 	if err := h.pub.Publish(ctx, blockedPublication(t, headB, 7, 2)); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	if counts() != [3]int{1, 1, 1} || h.comments.count("UpdateComment") != 1 {
-		t.Errorf("new attempt: counts %v, comment updates %d; want one each and 1", counts(), h.comments.count("UpdateComment"))
+	// A new attempt is a new archfit/state run: an update in place would add its annotations to the old ones.
+	if counts() != [3]int{1, 2, 1} || h.comments.count("UpdateComment") != 1 {
+		t.Errorf("new attempt: counts %v, comment updates %d; want gate 1, state 2, comment 1 and 1 update", counts(), h.comments.count("UpdateComment"))
+	}
+	state := h.checks.latest(t, headB, stateCheck)
+	if state.ExternalID != "v1:7:2:"+reportDigest || len(state.Annotations) != located {
+		t.Errorf("latest state run = %q with %d annotations, want the new attempt with %d", state.ExternalID, len(state.Annotations), located)
 	}
 	if got := h.checks.named(headB, gateCheck)[0].ExternalID; got != "v1:7:2:"+reportDigest {
 		t.Errorf("gate external_id = %q", got)
 	}
 	mustContain(t, h.comments.all()[0].Body, "run 7.2 -->")
+}
+
+// A sweep publication keeps the run identity of the last receipt but has no report: the failure annotations of the
+// report it replaces must not stay on the run that now says action_required.
+func TestRepublishWithoutReportDropsAnnotations(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(headB)
+	h.pulls.changed = []string{"pkg/a/a.go"}
+	if err := h.pub.Publish(ctx, blockedPublication(t, headB, 7, 1)); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	stale := blockedPublication(t, headB, 7, 1)
+	stale.Identity, stale.Report = manifest.Identity{}, nil
+	stale.Outcome = outcome(verdict.ActionRequired, verdict.Reason{Code: verdict.ReasonStaleInputs, Category: verdict.CategoryEvidence})
+	stale.Receipt = receiptFor(stale.Outcome, 7, 1)
+	for range 2 {
+		if err := h.pub.Publish(ctx, stale); err != nil {
+			t.Fatalf("Publish: %v", err)
+		}
+	}
+	runs := h.checks.named(headB, stateCheck)
+	state := h.checks.latest(t, headB, stateCheck)
+	if len(runs) != 2 || len(state.Annotations) != 0 || state.Conclusion != string(verdict.ActionRequired) {
+		t.Errorf("state runs = %d, latest %q with %d annotations; want a second run, action_required, none", len(runs), state.Conclusion, len(state.Annotations))
+	}
+	if gate := h.checks.named(headB, gateCheck); len(gate) != 1 || gate[0].Conclusion != string(verdict.ActionRequired) {
+		t.Errorf("gate runs = %+v, want the one run updated in place", gate)
+	}
+}
+
+// A newer publication that lands between two annotation batches of an older one keeps its summary: the older
+// one stops sending batches.
+func TestNewerPublicationStopsAnnotationBatches(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(headB)
+	p := blockedPublication(t, headB, 7, 1)
+	p.Target = pushTarget(headB) // every location is annotated; no gate check, no comment
+	located := make([]report.Location, 120)
+	for i := range located {
+		located[i] = report.Location{File: "pkg/a/a.go", Line: i + 1}
+	}
+	p.Report.Findings[0].Locations = located
+
+	newer := blockedPublication(t, headB, 8, 1)
+	h.checks.afterWrite = func() {
+		h.checks.add(api.CheckRun{Name: stateCheck, HeadSHA: headB, ExternalID: externalID(newer.Receipt), Status: statusCompleted,
+			Conclusion: stateNeutral, Summary: "newer\n" + receiptMarker(newer.Receipt)})
+	}
+	if err := h.pub.Publish(ctx, p); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if got := h.checks.latest(t, headB, stateCheck); got.Summary != "newer\n"+receiptMarker(newer.Receipt) || len(got.Annotations) != 0 {
+		t.Errorf("the newer run changed: %d annotations, summary %q", len(got.Annotations), got.Summary)
+	}
+	if h.checks.count("UpdateCheckRun") != 0 || !slices.Equal(h.checks.annotationRequests, []int{50}) {
+		t.Errorf("batches after the newer publication: updates %d, requests %v", h.checks.count("UpdateCheckRun"), h.checks.annotationRequests)
+	}
+}
+
+// Two writers for one head: the first reads the gate check and is held there; the second starts. Without the
+// publication lease the second finishes and the first then writes over it from its stale read.
+func TestConcurrentWritersOnOneHead(t *testing.T) {
+	ok := outcome(verdict.Success, reasonHealthy)
+	older := blockedPublication(t, headB, 6, 1)
+	older.Outcome, older.Receipt = ok, receiptFor(ok, 6, 1)
+	newer := blockedPublication(t, headB, 7, 1)
+	publish := func(p Publication) func(context.Context, *harness) error {
+		return func(ctx context.Context, h *harness) error { return h.pub.Publish(ctx, p) }
+	}
+	pending := func(ctx context.Context, h *harness) error { return h.pub.Pending(ctx, prTarget(headB)) }
+
+	for _, tt := range []struct {
+		name          string
+		pendingBefore bool
+		first, second func(context.Context, *harness) error
+		wantStatus    string
+		wantRun       int64
+	}{
+		// An older success read the pending check; a newer failure is published before the older write.
+		{"older success after newer failure", true, publish(older), publish(newer), statusCompleted, 7},
+		// The same order in reverse is the normal case: the newer one replaces the older one.
+		{"newer failure after older success", true, publish(newer), publish(older), statusCompleted, 7},
+		// Pending found no check; a publication completes before Pending creates one.
+		{"pending after a publication", false, pending, publish(newer), statusCompleted, 7},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			h := newHarness(headB)
+			if tt.pendingBefore {
+				if err := h.pub.Pending(ctx, prTarget(headB)); err != nil {
+					t.Fatalf("Pending: %v", err)
+				}
+			}
+			listed, release := make(chan struct{}), make(chan struct{})
+			h.checks.afterList = func() {
+				close(listed)
+				<-release
+			}
+			contended := make(chan struct{})
+			var once sync.Once
+			h.onContention(func() { once.Do(func() { close(contended) }) })
+
+			firstErr, secondErr := make(chan error, 1), make(chan error, 1)
+			go func() { firstErr <- tt.first(ctx, h) }()
+			<-listed
+			go func() { secondErr <- tt.second(ctx, h) }()
+			// Release the first writer once the second has finished or is waiting for the lease.
+			var second error
+			done := false
+			select {
+			case second = <-secondErr:
+				done = true
+			case <-contended:
+			}
+			close(release)
+			if err := <-firstErr; err != nil {
+				t.Fatalf("first writer: %v", err)
+			}
+			if !done {
+				second = <-secondErr
+			}
+			if second != nil {
+				t.Fatalf("second writer: %v", second)
+			}
+
+			gate := h.checks.latest(t, headB, gateCheck)
+			rc, _ := parseReceipt(gate.Summary)
+			if gate.Status != tt.wantStatus || gate.Conclusion != string(verdict.Failure) || rc.RunID != tt.wantRun {
+				t.Errorf("gate check = %s %s from run %d, want %s failure from run %d",
+					gate.Status, gate.Conclusion, rc.RunID, tt.wantStatus, tt.wantRun)
+			}
+			if n := len(h.checks.named(headB, gateCheck)); n != 1 {
+				t.Errorf("%d gate checks on the head, want 1", n)
+			}
+			if _, err := h.store.Get(ctx, 1, leaseKeyB); !errors.Is(err, store.ErrNotFound) {
+				t.Errorf("lease left behind: %v", err)
+			}
+		})
+	}
+}
+
+// The file list only filters annotations. Its failure never keeps the required check from being written.
+func TestChangedFilesErrorStillPublishes(t *testing.T) {
+	ctx := context.Background()
+	for _, tt := range []struct {
+		name    string
+		err     error
+		wantErr bool
+	}{
+		{"rate limited", api.ErrRateLimited, true},
+		{"other error", errors.New("boom"), false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(headB)
+			h.pulls.changed = []string{"pkg/a/a.go"}
+			if err := h.pub.Pending(ctx, prTarget(headB)); err != nil {
+				t.Fatalf("Pending: %v", err)
+			}
+			h.pulls.failOnce("ChangedFiles", tt.err)
+			err := h.pub.Publish(ctx, blockedPublication(t, headB, 7, 1))
+			if got := errors.Is(err, tt.err); got != tt.wantErr {
+				t.Fatalf("Publish error = %v, want returned: %v", err, tt.wantErr)
+			}
+			gate := h.checks.named(headB, gateCheck)
+			if len(gate) != 1 || gate[0].Status != statusCompleted || gate[0].Conclusion != string(verdict.Failure) {
+				t.Errorf("gate = %+v, want the pending run completed as failure", gate)
+			}
+			if state := h.checks.named(headB, stateCheck); len(state) != 1 || len(state[0].Annotations) != 0 {
+				t.Errorf("state runs = %+v, want one without annotations", state)
+			}
+			if len(h.comments.all()) != 1 {
+				t.Errorf("comments = %d, want 1", len(h.comments.all()))
+			}
+
+			// The retry the Action makes after ErrRateLimited, past Retry-After and so past the lease the failed call
+			// kept, sends the annotations on a new state run.
+			h.clock.set(t0.Add(leaseTTL))
+			if err := h.pub.Publish(ctx, blockedPublication(t, headB, 7, 1)); err != nil {
+				t.Fatalf("retry: %v", err)
+			}
+			if got := len(h.checks.latest(t, headB, stateCheck).Annotations); got != 2 {
+				t.Errorf("annotations after retry = %d, want 2", got)
+			}
+			if len(h.checks.named(headB, gateCheck)) != 1 || len(h.comments.all()) != 1 {
+				t.Errorf("the retry duplicated the gate check or the comment")
+			}
+		})
+	}
 }
 
 func TestOldRunCannotOverwriteNewerHead(t *testing.T) {
@@ -145,13 +350,16 @@ func TestAcceptedDebtIsDisplayOnly(t *testing.T) {
 		}
 	}
 	h := newHarness(headB)
+	h.pulls.changed = []string{"pkg/a/a.go"}
 	p := fixturePublication(t, c, headB)
 	if err := h.pub.Publish(context.Background(), p); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	if got := h.checks.named(headB, gateCheck)[0].Conclusion; got != "failure" {
-		t.Errorf("gate conclusion = %q, want failure", got)
+	gate := h.checks.named(headB, gateCheck)[0]
+	if gate.Conclusion != "failure" {
+		t.Errorf("gate conclusion = %q, want failure", gate.Conclusion)
 	}
+	mustContain(t, section(gate.Summary, headBlocking), "No active gate finding is listed")
 	comment := h.comments.all()[0].Body
 	verdictBlock, _, _ := strings.Cut(comment, "\n### ")
 	mustContain(t, verdictBlock, "Blocked by architecture findings", "blocking_findings")
@@ -164,10 +372,9 @@ func TestAcceptedDebtIsDisplayOnly(t *testing.T) {
 	mustContain(t, debt, "no_direct_b_dependency")
 	lower := strings.ToLower(comment)
 	mustNotContain(t, lower, "exempt", "clean", "not block", "non-blocking", "ignored", "safe to merge")
-	for _, a := range h.checks.named(headB, stateCheck)[0].Annotations {
-		if a.Level != "warning" {
-			t.Errorf("accepted debt annotated as %q", a.Level)
-		}
+	annotations := h.checks.named(headB, stateCheck)[0].Annotations
+	if len(annotations) != 1 || annotations[0].Level != "warning" || strings.Contains(annotations[0].Message, "no_direct_b_dependency") {
+		t.Errorf("annotations = %+v, want only the live advisory as a warning: accepted debt is not annotated", annotations)
 	}
 }
 

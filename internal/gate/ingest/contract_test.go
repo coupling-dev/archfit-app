@@ -43,12 +43,37 @@ func TestReceivePullRequestReport(t *testing.T) {
 			if !bytes.Equal(up.Payload, s.body) {
 				t.Error("payload differs from the body")
 			}
-			want, err := report.Decode(s.body)
+			want, err := report.Decode(s.body, s.env.EngineVersion)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if up.Report == nil || !reflect.DeepEqual(*up.Report, want) {
 				t.Errorf("report = %+v, want the decoded fixture", up.Report)
+			}
+		})
+	}
+}
+
+func TestReportKeySetFollowsTheClaimedEngine(t *testing.T) {
+	rows := []struct {
+		version  string
+		problems []Problem
+	}{
+		{"v2.3.1", nil},
+		{"v2.4.0", nil},
+		{"v9.9.9", []Problem{ProblemReportInvalid}}, // a release the decoder does not read
+	}
+	for _, row := range rows {
+		t.Run(row.version, func(t *testing.T) {
+			s := prScenario(t)
+			s.env.EngineVersion = row.version
+			up, err := s.receive(t)
+			wantProblems(t, up, err, row.problems...)
+			if (up.Report == nil) != (len(row.problems) > 0) {
+				t.Errorf("report nil = %v, want %v", up.Report == nil, len(row.problems) > 0)
+			}
+			if up.Identity.EngineVersion != row.version {
+				t.Errorf("identity engine version = %q, want the claimed %q", up.Identity.EngineVersion, row.version)
 			}
 		})
 	}
@@ -142,6 +167,54 @@ func TestReceiveDiscovery(t *testing.T) {
 		s.setBody(readFixture(t, "healthy.json"))
 		up, err := s.receive(t)
 		wantProblems(t, up, err, ProblemUnsupportedEvent)
+	})
+}
+
+func TestReceiveBaseline(t *testing.T) {
+	t.Run("workflow_dispatch", func(t *testing.T) {
+		s := discoveryScenario(t)
+		s.toBaseline()
+		up, err := s.receive(t)
+		// The JSON payload is not a report: no problem proves report.Decode was not called.
+		wantProblems(t, up, err)
+		if up.Report != nil || string(up.Payload) != baselineJSON {
+			t.Error("baseline upload must carry the payload only")
+		}
+		if up.Binding.Event != "workflow_dispatch" || up.Binding.BaseRef != defaultBranch {
+			t.Errorf("binding = %+v, want workflow_dispatch on the default branch", up.Binding)
+		}
+	})
+
+	t.Run("default branch push", func(t *testing.T) {
+		s := pushScenario(t)
+		s.toBaseline()
+		up, err := s.receive(t)
+		wantProblems(t, up, err)
+	})
+
+	t.Run("pull_request run", func(t *testing.T) {
+		s := prScenario(t)
+		s.toBaseline()
+		up, err := s.receive(t)
+		wantProblems(t, up, err, ProblemUnsupportedEvent)
+	})
+
+	t.Run("dispatch on another branch", func(t *testing.T) {
+		s := discoveryScenario(t)
+		s.toBaseline()
+		s.claims.Ref = "refs/heads/feature"
+		up, err := s.receive(t)
+		wantProblems(t, up, err)
+		if up.Binding.BaseRef != "feature" {
+			t.Errorf("BaseRef = %q, want the branch the run executed on, for the route to refuse", up.Binding.BaseRef)
+		}
+	})
+
+	t.Run("baseline envelope on the discovery route", func(t *testing.T) {
+		s := discoveryScenario(t)
+		s.env.Kind = envelope.KindBaseline
+		up, err := s.receive(t)
+		wantRejection(t, up, err, 400, "kind_mismatch")
 	})
 }
 

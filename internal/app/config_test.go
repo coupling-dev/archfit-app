@@ -49,6 +49,8 @@ func TestLoadDefaultsAndRequired(t *testing.T) {
 	everything := requiredOnly
 	everything.Addr = "127.0.0.1:9000"
 	everything.AnthropicKeyFile = "/run/secrets/anthropic"
+	underPath := requiredOnly
+	underPath.BaseURL = "https://archfit.example/app"
 
 	all := requiredEnv()
 	all[envAddr] = "127.0.0.1:9000"
@@ -76,6 +78,11 @@ func TestLoadDefaultsAndRequired(t *testing.T) {
 		{name: "first missing wins", env: without(without(requiredEnv(), envOperatorTokenFile), envAppID), wantErr: envAppID},
 		{name: "unknown store", env: with(requiredEnv(), envStore, "MARKER-redis"), wantErr: envStore},
 		{name: "unknown sandbox", env: with(requiredEnv(), envSandbox, "MARKER-docker"), wantErr: envSandbox},
+		// The base URL is the OIDC audience, compared byte for byte, and the Action refuses an endpoint ending in '/'.
+		{name: "base URL with trailing slash", env: with(requiredEnv(), envBaseURL, "https://MARKER.example/"), wantErr: envBaseURL},
+		{name: "base URL path with trailing slash", env: with(requiredEnv(), envBaseURL, "https://archfit.example/app/"), wantErr: envBaseURL},
+		{name: "base URL slash only", env: with(requiredEnv(), envBaseURL, "/"), wantErr: envBaseURL},
+		{name: "base URL with a path", env: with(requiredEnv(), envBaseURL, "https://archfit.example/app"), want: underPath},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

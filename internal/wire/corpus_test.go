@@ -15,8 +15,12 @@ import (
 const (
 	corpusRoot     = "testdata"
 	engineRevision = "f8877d25ba36d84d3780071580d23486e3d794d0"
+	v240Revision   = "5aefcdc2c5465c2eb7198ea91394bd8cb8ad2b22"
 	leakMarker     = "LEAK-7f3a"
 	syntheticLabel = "synthetic: "
+
+	// fixtureEngine is the engine release every synthetic report and leakage fixture was derived from.
+	fixtureEngine = "v2.3.1"
 
 	folderEnvelope = "envelope"
 	folderReport   = "report"
@@ -50,6 +54,9 @@ var (
 		"baseline_digest": true, "labels_digest": true,
 		"trusted_policy_digests": true, "trusted_baseline_digests": true, "trusted_labels_digests": true,
 	}
+
+	// pinnedRevisions maps every engine release the corpus holds captures of to that release's source revision.
+	pinnedRevisions = map[string]string{"v2.3.1": engineRevision, "v2.4.0": v240Revision}
 
 	revisionPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	reasonPattern   = regexp.MustCompile(`^[a-z]+(_[a-z]+)*$`)
@@ -112,6 +119,19 @@ type fixture struct {
 }
 
 func (f fixture) id() string { return f.Folder + "/" + f.Name }
+
+// engine is the engine release whose state document the fixture is: the capture's own, else fixtureEngine.
+func (f fixture) engine(t *testing.T) string {
+	t.Helper()
+	p, reason, err := f.Expect.engineProducer()
+	if err != nil {
+		t.Fatalf("%s: %v", f.id(), err)
+	}
+	if reason != "" {
+		return fixtureEngine
+	}
+	return p.EngineVersion
+}
 
 func (f fixture) bytes(t *testing.T) []byte {
 	t.Helper()

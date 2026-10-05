@@ -15,7 +15,8 @@ import (
 	"github.com/alexei-led/archfit-app/internal/store"
 )
 
-// Deps are the only things the gate path may touch: GitHub, OIDC, the Store (read-only) and a clock.
+// Deps are the only things the gate path may touch: GitHub, OIDC, the Store and a clock. On the Store the gate
+// path reads the entitlement and writes only gate/feedback's publication leases.
 type Deps struct {
 	GitHub   *api.Client
 	OIDC     oidc.Verifier
@@ -55,7 +56,7 @@ func compose(gh github, v oidc.Verifier, s store.Store, audience string, c Confi
 		now = time.Now
 	}
 	resolver := inputs.New(gh, gh, s)
-	publisher := feedback.New(gh, gh, gh, now)
+	publisher := feedback.New(gh, gh, gh, s, now)
 	return newGate(newReceiver(gh, v, audience), resolver, publisher,
 		sweep.New(gh, gh, gh, resolver, publisher, c), gh, now)
 }

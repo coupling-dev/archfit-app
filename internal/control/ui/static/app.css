@@ -17,6 +17,7 @@ button, .button { font: inherit; padding: .35rem .8rem; cursor: pointer; }
 .error { border-color: var(--bad); }
 .hint { opacity: .75; font-size: .9rem; }
 .violation td { color: var(--bad); }
+.accepted td, .advisory td { color: var(--warn); }
 .stale::after { content: " (stale)"; color: var(--warn); }
 #monaco { height: 70vh; border: 1px solid var(--line); }
 #graph { overflow: auto; }
@@ -26,5 +27,6 @@ button, .button { font: inherit; padding: .35rem .8rem; cursor: pointer; }
 #graph .layer { font-weight: 700; }
 #graph path { fill: none; stroke: currentColor; opacity: .55; }
 #graph path.violation { stroke: var(--bad); opacity: 1; stroke-width: 2; }
-#graph path.unobserved { stroke-dasharray: 4 3; }
+#graph path.accepted { stroke: var(--warn); opacity: 1; stroke-dasharray: 4 3; }
+#graph path.advisory { stroke: var(--warn); opacity: .9; }
 #graph marker path { fill: currentColor; stroke: none; opacity: 1; }

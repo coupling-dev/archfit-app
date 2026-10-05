@@ -16,6 +16,7 @@ import (
 const (
 	onboardingBranch = "archfit/onboarding"
 	policyBranch     = "archfit/policy"
+	baselineBranch   = "archfit/baseline"
 	workflowPath     = ".github/workflows/archfit.yaml"
 	stateCheckName   = "archfit/state" // published only by the App, only for an accepted upload
 
@@ -74,7 +75,12 @@ func changeFor(r api.Repo, branch, title, body, message string, files []api.File
 
 // file reads path at the default branch; absent is (nil, false, nil).
 func (s *service) file(ctx context.Context, r api.Repo, path string) ([]byte, bool, error) {
-	raw, _, err := s.gh.repos.File(ctx, r.RepoRef, r.DefaultBranch, path)
+	return s.fileAt(ctx, r, r.DefaultBranch, path)
+}
+
+// fileAt reads path at ref, a branch name or a commit SHA; absent is (nil, false, nil).
+func (s *service) fileAt(ctx context.Context, r api.Repo, ref, path string) ([]byte, bool, error) {
+	raw, _, err := s.gh.repos.File(ctx, r.RepoRef, ref, path)
 	switch {
 	case errors.Is(err, api.ErrNotFound):
 		return nil, false, nil

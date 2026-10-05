@@ -118,8 +118,9 @@ func (r *receiver) receive(ctx context.Context, req *http.Request, kind envelope
 		Payload:        body,
 	}
 	if kind == envelope.KindReport {
-		// The decode error may quote payload content; only the fact is kept.
-		if rep, err := report.Decode(body); err != nil {
+		// The key set is the one of the engine release the envelope claims; a release the decoder does not read
+		// is an invalid report. The decode error may quote payload content; only the fact is kept.
+		if rep, err := report.Decode(body, env.EngineVersion); err != nil {
 			problems.add(ProblemReportInvalid)
 		} else {
 			up.Report = &rep

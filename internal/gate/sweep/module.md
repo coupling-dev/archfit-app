@@ -17,6 +17,8 @@ and a changed base policy, an expired waiver or a restored subscription would ne
 - In required mode: ensure fork PRs show `fork_unsupported` and suspended repositories show
   `subscription_suspended`. In advisory mode only the waiver warning runs.
 - Create the missing pending gate check; turn a pending check into `missing_upload` after `MissingUploadAfter` (60 minutes).
+- Detect `success` and `failure` receipts whose owner approval is gone (dismissed, followed by a request for changes,
+  the approver no longer an owner, a protected path newly changed); publish `owner_approval_missing`, with no re-run.
 - Detect receipts whose policy, baseline or labels digest no longer matches the protected ref; publish
   `stale_inputs` and re-run the customer's workflow.
 - Warn 7 days before the earliest waiver expiry; after expiry publish `waiver_expired` and re-run.
@@ -33,9 +35,9 @@ tuned against rate limits and pilot behavior.
 ## Encapsulated Knowledge
 
 - The rule order per pull request and which rule ends the evaluation.
-- What "stale" means for a receipt, and the expiry test based on the check's `StartedAt`.
+- What "stale" and "withdrawn" mean for a receipt, and the expiry test based on the check's `StartedAt`.
 - The re-run guard that keeps re-runs to one per receipt.
-- How a `Without` publication keeps the previous run identity so that feedback updates in place.
+- How a `Without` publication keeps the previous run identity so that feedback updates the gate check in place.
 - The traversal order and its rotation.
 - Which errors stop the pass and which are skipped.
 
@@ -87,10 +89,20 @@ func Rerun(ctx context.Context, actions Actions, r RepoRef, rc Receipt) (RerunRe
 ```
 
 ```go
-// Without builds the publication for a target that has no report: verdict.Without(code), or
-// verdict.Suspended(tr.Entitlement) for ReasonSuspended, with the run identity of rc (zero when there
-// is no previous receipt) and the current digests of tr.
+// Without builds the publication for a target that has no report: verdict.Without(code),
+// verdict.Suspended(tr.Entitlement) for ReasonSuspended, or verdict.ApprovalMissing(tr) for
+// ReasonOwnerApprovalMissing, with the run identity of rc (zero when there is no previous receipt) and the
+// current digests of tr.
 func Without(code ReasonCode, t Target, tr Trusted, rc Receipt) Publication
+
+// Withdrawn reports whether rc concluded without asking for action although tr now lacks the owner approval that
+// verdict.Decide demands. Only success and failure match, so a pending, zero or unreadable receipt never does.
+func Withdrawn(rc Receipt, tr Trusted) bool
+
+// Withdrawal is rule 5a, decided inside the head's publication lease (Publisher.Reconcile) from the gate check
+// current there and inputs tr resolved there: Without(ReasonOwnerApprovalMissing) over the current receipt when the
+// repository is in required mode and that receipt is Withdrawn, else nil.
+func Withdrawal(t Target, current CheckState, tr Trusted) *Publication
 ```
 
 ### Traversal
@@ -112,7 +124,7 @@ repository's open PRs at once; the hourly `Run` stays the recovery path when tha
 ### Rules per pull request
 
 `state` is `Publisher.State(target)`, `rc` is `state.Receipt`, "has receipt" means `state.Exists && !state.Pending`.
-The first rule whose condition holds ends the evaluation of that pull, whether or not it had to write anything (a fork already marked, a pending check younger than the limit), except rule 6a, which never ends it. Otherwise a fresh pending check would fall through to rule 5 and read as a stale zero receipt.
+The first rule whose condition holds ends the evaluation of that pull, whether or not it had to write anything (a fork already marked, a pending check younger than the limit), except rule 6a, which never ends it. Otherwise a fresh pending check would fall through to rule 5b and read as a stale zero receipt.
 
 | #   | Condition                                                                       | Action                                                                                                 | Counter     |
 | --- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ----------- |
@@ -121,15 +133,37 @@ The first rule whose condition holds ends the evaluation of that pull, whether o
 | 2   | `Trusted.Suspended`                                                             | unless `rc.Reason == subscription_suspended`: publish `Without(ReasonSuspended)`                       | `Suspended` |
 | 3   | `!state.Exists`                                                                 | `Publisher.Pending(target)`                                                                            | `Pended`    |
 | 4   | `state.Pending`                                                                 | if `now − state.StartedAt ≥ MissingUploadAfter`: publish `Without(ReasonMissingUpload)`                | `TimedOut`  |
-| 5   | has receipt and it is stale (below)                                             | publish `Without(ReasonStaleInputs)`, then re-run                                                      | `Rerun`     |
+| 5a  | `Withdrawn(rc, Trusted)`: the approval a decided receipt relied on is gone      | `Publisher.Reconcile` with `Withdrawal` decided inside the lease (below); no re-run                    | —           |
+| 5b  | has receipt and it is stale (below)                                             | publish `Without(ReasonStaleInputs)`, then re-run                                                      | `Rerun`     |
 | 6a  | expiry `e` set, `now < e` and `e − now ≤ WaiverWarnBefore`                      | `Publisher.Warn(target, e)`                                                                            | `Warned`    |
 | 6b  | expiry `e` set, `now ≥ e` and `state.StartedAt < e`                             | publish `Without(ReasonWaiverExpired)`, then re-run                                                    | `Rerun`     |
 | 7a  | `rc.Reason == subscription_suspended` and `!Trusted.Suspended`                  | re-run; if no re-run is possible publish `Without(ReasonMissingUpload)`                                | `Rerun`     |
-| 7b  | `rc.Reason == owner_approval_missing` and `Trusted.Approval == ApprovalGranted` | re-run; if no re-run is possible publish `Without(ReasonMissingUpload)`                                | `Rerun`     |
+| 7b  | `rc.Reason == owner_approval_missing` and `!verdict.Unapproved(Trusted)`        | re-run; if no re-run is possible publish `Without(ReasonMissingUpload)`                                | `Rerun`     |
 | 7c  | `rc.Reason` is `stale_inputs` or `waiver_expired`                               | re-run (retries a re-run request that failed in an earlier pass; the guard makes it a no-op otherwise) | `Rerun`     |
 
 Definitions:
 
+- Withdrawn receipt: `rc.Conclusion` is `success` or `failure`, and `verdict.Unapproved(Trusted)` holds, the
+  condition of step 5 of `Decide`. `Decide` cannot reach either conclusion with such inputs, so the receipt was
+  decided under an owner approval that is gone: the review was dismissed or followed by a request for changes, the
+  approver is no longer in the protected settings' `owners`, or the pull now changes a protected path (a base that
+  moved or a new base branch). Edits of the settings file and the workflow file change no receipt digest, so only
+  this rule sees them. Rule 5a comes before rule 5b: a withdrawal that also left a digest stale is still
+  `owner_approval_missing`, because no re-run can pass until an owner approves again. That approval then re-runs
+  through `HandleEvent(ReviewChanged)` or rule 7b. A pending, zero or unreadable receipt, and every receipt that
+  already asks for action, never match.
+- Rule 5a is decided twice. The pass finds `Withdrawn` from the `State` and `Trusted` it read outside the lease; then
+  `Publisher.Reconcile` holds the head's lease, reads the gate check again, and the decision resolves the inputs
+  again at the pass's `now`, both inside the lease, and returns `Withdrawal(target, current, trusted)`. That is
+  `Without(ReasonOwnerApprovalMissing, ...)` over the current receipt, whose outcome is
+  `verdict.ApprovalMissing(Trusted)` (`Detail` names `Trusted.ProtectedPaths`, as `Decide` does), or nil when the
+  receipt there is no longer withdrawn. So a newer run attempt that turned green while the pass waited for the lease
+  is the receipt withdrawn, under its own run identity, and an owner who approved again meanwhile leaves the check
+  alone with no write. A later review is handled by its own `ReviewChanged`, which waits for this lease and then
+  reads the written check. A `Resolve` error inside the lease writes nothing and counts the pull in `Summary.Errors`.
+- Rule 7b fires on any approval that no longer misses, `granted` or `not_required`: a retargeted base or a repointed
+  settings workflow can drop the protected path from the pull, and the `owner_approval_missing` receipt must not wait
+  for an approval nobody needs. The re-run guard still allows one re-run per attempt.
 - Stale receipt, any of four clauses. The digest clauses are the digest predicate of `gate/inputs`
   (`inputs.Accepts`); the sweep has no comparison of its own:
   - policy: `!Accepts(Trusted.PolicyDigests, rc.PolicyDigest)`;
@@ -140,8 +174,8 @@ Definitions:
 - "Empty list and empty digest" is fresh. In the no-policy window (settings merged, no policy on the protected ref,
   or the policy deleted from the base) the receipt says `policy_missing` with `PolicyDigest == ""`, the trusted list
   is empty, and nothing fires: no write, no re-run, the `policy_missing` feedback stays. When the policy merges, the
-  list is no longer empty, `""` is not in it, and rule 5 fires once.
-- Bound of the unreadable clause: the zero receipt has `RunID == 0`, so rule 5 makes one `Without` publication and
+  list is no longer empty, `""` is not in it, and rule 5b fires once.
+- Bound of the unreadable clause: the zero receipt has `RunID == 0`, so rule 5b makes one `Without` publication and
   the guard allows no re-run; the new receipt is readable and carries the current digests, so the next pass is fresh.
 - Expiry `e`: `rc.EarliestWaiverExpiry`; when that is zero, `Trusted.EarliestWaiverExpiry`. `state.StartedAt` is the
   time of the last publication (feedback sets it), so `StartedAt < e ≤ now` means "evaluated before the waiver
@@ -156,10 +190,12 @@ Definitions:
 
 `Without(code, target, trusted, rc)` is exported: the sweep owns the construction, and `gate` calls it for the fork
 refusal of a new head with the zero `rc`. It returns
-`Publication{Target, Identity: zero, Outcome, Receipt, Report: nil, Trusted}`. `Outcome` is `verdict.Without(code)`;
-for `ReasonSuspended` it is `verdict.Suspended(Trusted.Entitlement)`, so a suspension published by the sweep shows
-`Entitlement.Reason` as its recovery, the same text an upload gets from `Decide`. The zero `Identity` makes feedback
-print "no upload" and label the digests "from the protected ref". The receipt:
+`Publication{Target, Identity: zero, Outcome, Receipt, Report: nil, Trusted}` with a nil `Resolve`.
+`Outcome` is `verdict.Without(code)`; for `ReasonSuspended` it is
+`verdict.Suspended(Trusted.Entitlement)`, so a suspension published by the sweep shows `Entitlement.Reason` as its
+recovery, the same text an upload gets from `Decide`; for `ReasonOwnerApprovalMissing` it is
+`verdict.ApprovalMissing(Trusted)`, whose `Detail` names the protected paths as `Decide` does. The zero `Identity`
+makes feedback print "no upload" and label the digests "from the protected ref". The receipt:
 
 | Field                                 | Value                                       |
 | ------------------------------------- | ------------------------------------------- |
@@ -170,9 +206,10 @@ print "no upload" and label the digests "from the protected ref". The receipt:
 | `EarliestWaiverExpiry`                | `Trusted.EarliestWaiverExpiry`              |
 | `Conclusion`, `Reason`                | from the outcome (`ActionRequired`, `code`) |
 
-Copying the run identity keeps the `external_id`, so feedback updates the existing check in place instead
-of refusing the write as "older". Writing the current digests and the new reason is the de-duplication:
-the next pass finds the receipt neither stale nor expired.
+Copying the run identity keeps the `external_id`, so feedback updates the existing `archfit/gate` check in
+place instead of refusing the write as "older" (an `archfit/state` run that carries annotations is replaced by a
+new run without them; the sweep reads only `archfit/gate`). Writing the current digests and the new reason is the
+de-duplication: the next pass finds the receipt neither stale nor expired.
 
 ### Re-run guard
 
@@ -199,7 +236,8 @@ Termination: what changes in GitHub state after each re-run site, so the next pa
 
 | Site                         | Why it does not fire again                                                                                                                                                            |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Rule 5                       | the `Without` receipt carries the current digests (or `""` for an empty list), so no stale clause holds; the reason is `stale_inputs`, which leaves only rule 7c                      |
+| Rule 5a                      | no re-run; the receipt concludes `action_required` with the current digests, so neither 5a nor 5b holds; rule 7b acts once no approval is missing                                     |
+| Rule 5b                      | the `Without` receipt carries the current digests (or `""` for an empty list), so no stale clause holds; the reason is `stale_inputs`, which leaves only rule 7c                      |
 | Rule 6b                      | the publication sets `StartedAt ≥ e`, and the new receipt carries the next unexpired expiry from `Trusted`, so `StartedAt < e ≤ now` is false                                         |
 | Rules 7a, 7b                 | a successful `Rerun` advances the run's attempt, so the guard blocks; an upload then replaces the reason; no upload → the next pass publishes `missing_upload`, which no rule re-runs |
 | Rule 7c                      | guard only: it fires while the run is still completed at the receipt's attempt (the earlier `Rerun` failed) and stops once the attempt advances                                       |
@@ -321,7 +359,7 @@ type Receipt struct {
 }
 ```
 
-<!-- contract: Publication, Publisher, CheckState — restated from internal/gate/feedback/module.md -->
+<!-- contract: Publication, ErrStaleInputs, Publisher, CheckState, Decision — restated from internal/gate/feedback/module.md -->
 ```go
 // Publication is one complete piece of feedback for one head SHA.
 type Publication struct {
@@ -331,7 +369,17 @@ type Publication struct {
     Receipt  Receipt
     Report   *Report // nil when there is no usable report
     Trusted  Trusted
+    // Resolve, when set, reads the trusted inputs again inside the head's publication lease, before anything is
+    // written. When the result differs from Trusted in any field (a digest, the owner approval, the settings) or no
+    // longer accepts a Receipt digest, the decision was computed from inputs that are no longer current: Publish
+    // writes nothing and returns ErrStaleInputs, so it never replaces a publication computed from newer inputs. nil
+    // skips the check; sweep corrections, which are never a success, leave it nil.
+    Resolve func(context.Context) (Trusted, error)
 }
+
+// ErrStaleInputs is returned by Publish when Publication.Resolve shows that the trusted inputs changed after the
+// decision. Nothing was written; the caller decides again from the new inputs.
+var ErrStaleInputs error
 
 // CheckState is the gate check currently on a head SHA.
 type CheckState struct {
@@ -350,7 +398,15 @@ type Publisher interface {
     State(ctx context.Context, t Target) (CheckState, error)
     // Warn adds or refreshes the waiver-expiry notice in the PR comment. Idempotent.
     Warn(ctx context.Context, t Target, expiry time.Time) error
+    // Reconcile reads the gate check and calls decide with it, then publishes what decide returns, all inside the
+    // head's publication lease: no other publication for the head can land between the read, the decision and the
+    // write. A nil publication writes nothing. decide reads everything else it needs itself, inside the lease.
+    Reconcile(ctx context.Context, t Target, decide Decision) error
 }
+
+// Decision decides, from the gate check as it is inside the publication lease, what Reconcile publishes; nil
+// publishes nothing. An error writes nothing and is returned by Reconcile.
+type Decision func(ctx context.Context, current CheckState) (*Publication, error)
 ```
 
 ### gate/verdict
@@ -390,6 +446,7 @@ type ReasonCode string
 
 const (
     ReasonHealthy             ReasonCode = "healthy"
+    ReasonAttentionOnly       ReasonCode = "attention_only" // needs_attention, and nothing blocks
     ReasonBlockingFindings    ReasonCode = "blocking_findings"
     ReasonEngineError         ReasonCode = "engine_error"
     ReasonMissingCoverage     ReasonCode = "missing_required_coverage"
@@ -398,6 +455,7 @@ const (
     ReasonLabelsMismatch      ReasonCode = "labels_mismatch"
     ReasonPolicyMismatch      ReasonCode = "policy_mismatch"
     ReasonPolicyMissing       ReasonCode = "policy_missing" // settings merged, no policy on the protected ref yet
+    ReasonPolicyDefect        ReasonCode = "policy_defect"  // a required rule's selector matches nothing
     ReasonUnknownIdentity     ReasonCode = "unknown_engine_identity"
     ReasonProfileMissing      ReasonCode = "measurement_profile_missing"
     ReasonWorkflowNotApproved ReasonCode = "workflow_not_approved"
@@ -445,16 +503,24 @@ type Facts struct {
 // The step table of gate/verdict is the normative order.
 func Decide(f Facts) Outcome
 
-// Without returns the fixed outcome for a target that has no report: code is one of
-// ReasonMissingUpload, ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended.
+// Without returns the fixed outcome for a target that has no report: code is one of ReasonMissingUpload,
+// ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended, ReasonOwnerApprovalMissing.
 func Without(code ReasonCode) Outcome
 ```
 
-<!-- contract: Suspended — restated from internal/gate/verdict/module.md -->
+<!-- contract: Suspended, ApprovalMissing, Unapproved — restated from internal/gate/verdict/module.md -->
 ```go
 // Suspended is Without(ReasonSuspended) for a caller that holds the entitlement record: Next is
 // e.Reason when it is not empty, exactly as step 1 of Decide sets it.
 func Suspended(e Entitlement) Outcome
+
+// ApprovalMissing is Without(ReasonOwnerApprovalMissing) for a caller that holds the trusted inputs: Detail names
+// t.ProtectedPaths, exactly as step 5 of Decide sets it.
+func ApprovalMissing(t Trusted) Outcome
+
+// Unapproved is the condition of step 5: t needs an owner approval that it does not have. Only the two known passing
+// values clear it, so an unknown Approval fails closed.
+func Unapproved(t Trusted) bool
 ```
 
 ### wire/settings
@@ -646,7 +712,10 @@ type Actions interface {
 - A failure for one installation, repository or pull never aborts the pass.
 - Reconciliation window (stated, not zero): a missed event or an expiry is repaired within one sweep interval
   (hourly **[default]**) plus the customer's CI time. During that window the old check result stands.
-- A Store outage inside `Resolve` means "not suspended"; the sweep never suspends on missing data.
+- A Store outage inside `Resolve` means "not suspended"; the sweep never suspends on missing data. The same outage
+  fails every `Publish`, `Pending`, `Warn` and `Reconcile`, which need `gate/feedback`'s publication lease: each such
+  pull counts as an error and its check stays as it was until a pass after the Store is back. The sweep never writes
+  `success`; a check that was green, with an approval withdrawn meanwhile, stays green until that pass.
 - Logs (`log/slog` default logger **[default]**): installation ID, repository ID, PR number, head SHA, rule
   number, action, digests, timings, and the `Summary`. Never paths, messages, owner or reviewer names.
 - Imports: standard library, `gate/inputs`, `gate/feedback`, `gate/verdict`, `wire/settings`, `github/api`.
@@ -663,6 +732,11 @@ calls and serves `State` from what was published; injectable errors. Time is the
 - **Test name**: `TestStaleReceipt`
   **Scenario**: table: policy digest equal to base; equal to approved head digest; different; trusted policy list empty with receipt digest `""`; trusted policy list empty with a receipt digest; policy `""` with a trusted policy; baseline `""` with no trusted baseline; baseline `""` with a trusted baseline; baseline set with none trusted; zero receipt (empty reason) with empty trusted lists.
   **Expected behavior**: fresh, fresh, stale, fresh, stale, stale, fresh, stale, stale, stale. For every combination of a trusted list (empty, one, two digests) and a receipt digest (`""`, each entry, an unknown one), in each of the three digest fields, a receipt with a reason is stale exactly when `inputs.Accepts` is false.
+- **Test name**: `TestWithdrawnReceipt`
+  **Scenario**: every receipt conclusion (`success`, `failure`, `action_required`, empty, an unknown value) × every
+  approval (`missing`, empty, an unknown value, `granted`, `not_required`).
+  **Expected behavior**: `Withdrawn` is true exactly for `success` or `failure` with an approval other than
+  `granted` and `not_required`.
 - **Test name**: `TestNoPolicyWindowIsQuiet`
   **Scenario**: required mode, no policy on the base, a pull whose receipt is `policy_missing` with `PolicyDigest == ""` from run 9 attempt 1; two passes; then the policy merges (trusted list = one digest) and two more passes; the same start with the policy deleted from the base.
   **Expected behavior**: passes 1 and 2 make no `Publish`, no `Rerun`, and leave the `policy_missing` feedback; pass 3 publishes `stale_inputs` and requests exactly one re-run of run 9; pass 4 is quiet. `RunRepo` from the push trigger gives the same single repair as pass 3.
@@ -688,7 +762,7 @@ calls and serves `State` from what was published; injectable errors. Time is the
 ### Integration Contract Tests
 
 - **Test name**: `TestRunRepairsEachRule`
-  **Scenario**: one repository with one pull per rule row (fork, suspended, no check, pending 59 minutes, pending 60 minutes, stale policy, stale baseline, stale labels, waiver in 3 days, waiver expired, restored entitlement, late approval) plus a healthy one.
+  **Scenario**: one repository with one pull per rule row (fork, suspended, no check, pending 59 minutes, pending 60 minutes, stale policy, stale baseline, stale labels, waiver in 3 days, waiver expired, restored entitlement, late approval, withdrawn approval) plus a healthy one.
   **Expected behavior**: the action of each row and nothing else; the healthy pull gets no write; `Summary` counters match.
 - **Test name**: `TestSecondPassIsQuiet`
   **Scenario**: run twice with unchanged fakes (the publisher reflects the first pass); every `Rerun` of the first pass succeeded, so those runs are queued or at a newer attempt.
@@ -745,8 +819,21 @@ calls and serves `State` from what was published; injectable errors. Time is the
   **Scenario**: a suspended pull whose receipt came from an upload; the entitlement is restored; then the same for a pull suspended before any upload.
   **Expected behavior**: a re-run is requested and the check stays `action_required` until a new upload; the second becomes `missing_upload`; no old receipt is turned into `success`.
 - **Test name**: `TestLateOwnerApproval` (T14)
-  **Scenario**: receipt `owner_approval_missing`; an owner approves the head but the review webhook was lost.
-  **Expected behavior**: one re-run; nothing when the approval is for an older SHA.
+  **Scenario**: receipt `owner_approval_missing`; an owner approves the head but the review webhook was lost; the
+  approval is for an older SHA; no approval is needed any more (`not_required`).
+  **Expected behavior**: one re-run; nothing for the older SHA; one re-run when no approval is needed.
+- **Test name**: `TestWithdrawnApprovalEndsSuccess` (T14)
+  **Scenario**: a `success` receipt, a `failure` receipt, and a `success` receipt whose policy digest is also stale,
+  each while the owner approval is now missing; then a `success` receipt with the approval still granted, an
+  `action_required` receipt with the approval missing, and advisory mode. Two passes each.
+  **Expected behavior**: the first three publish `owner_approval_missing` once, with the protected paths in
+  `Detail`, the run identity of the receipt and the current digests, from inputs resolved a second time inside the
+  lease at the pass time, and without `Resolve`; no re-run. The last three publish nothing.
+- **Test name**: `TestWithdrawalDecidesInsideTheLease` (T14)
+  **Scenario**: a withdrawn `success` receipt of run 9.1; while the pass waits for the lease nothing lands, attempt
+  9.2 turns green, the owner approves again, or the inputs become unreadable; separately, the lease is unavailable.
+  **Expected behavior**: `owner_approval_missing` over 9.1, then over 9.2; nothing for the new approval; nothing
+  and one counted error for the unreadable inputs and for the missing lease.
 - **Test name**: `TestStoreOutageDoesNotSuspend` (T21)
   **Scenario**: the resolver reports `Suspended` false because the Store failed, for a pull with a `success` receipt.
   **Expected behavior**: no publication; the receipt stands.

@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
 
+	"github.com/alexei-led/archfit-app/internal/gate/inputs"
 	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/manifest"
@@ -93,10 +95,11 @@ func TestStateConclusionMapping(t *testing.T) {
 		want    string
 	}{
 		{"success healthy", outcome(verdict.Success, reasonHealthy), &report.Report{Verdict: "healthy"}, "success"},
-		{"success needs attention", outcome(verdict.Success, reasonHealthy), &report.Report{Verdict: "needs_attention"}, "neutral"},
+		{"success needs attention", outcome(verdict.Success, reasonAttention), &report.Report{Verdict: "needs_attention"}, "neutral"},
 		{"failure", outcome(verdict.Failure, reasonBlocking), &report.Report{Verdict: "blocked"}, "neutral"},
-		{"action required", outcome(verdict.ActionRequired, reasonCoverage), &report.Report{Verdict: "blocked"}, "neutral"},
-		{"nil report", outcome(verdict.ActionRequired, reasonInvalid), nil, "neutral"},
+		{"action required", outcome(verdict.ActionRequired, reasonCoverage), &report.Report{Verdict: "blocked"}, "action_required"},
+		{"action required beside a healthy report", outcome(verdict.ActionRequired, reasonIdentity), &report.Report{Verdict: "healthy"}, "action_required"},
+		{"nil report", outcome(verdict.ActionRequired, reasonInvalid), nil, "action_required"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -426,6 +429,125 @@ func TestEvidenceGapSources(t *testing.T) {
 	mustContain(t, gaps(p), "Baseline comparison not_requested: no reason given")
 }
 
+func TestEvidenceGapsDropNoise(t *testing.T) {
+	r := gapReport(false)
+	r.Coverage.Tools = []report.ToolCoverage{
+		{Tool: "go/packages", Status: "ok"},
+		{Tool: "dependency-cruiser", Status: "absent"},
+		{Tool: "cargo", Status: "absent"},
+		{Tool: "jscpd", Status: "disabled", Reason: "clone detection disabled by config"},
+		{Tool: "scip", Status: "timed out", Reason: "deadline of 60s passed"},
+		{Tool: "deploy-unit", Status: "absent", Reason: "Go toolchain unavailable for deploy-unit discovery"},
+	}
+	r.Comparison.MeasurementProfile.Producers = []report.Producer{
+		{Tool: "go/packages", Status: "ok"},
+		{Tool: "cargo", Status: "absent"},
+		{Tool: "jscpd", Status: "disabled"},
+		{Tool: "scip", Status: "timed out"},
+		{Tool: "git-history", Status: "absent"},
+		{Tool: "dependency-cruiser", Status: "partial", PartialBasis: "unresolved_specifiers"},
+	}
+	p := blockedPublication(t, headB, 7, 1)
+	p.Report = r
+	for name, body := range map[string]string{"comment": renderComment(p, t0, ""), "state": renderState(p)} {
+		gaps := section(body, headGaps)
+		mustContain(t, gaps,
+			"- Tool `scip`: timed out (deadline of 60s passed)\n",
+			"- Tool `deploy-unit`: absent (Go toolchain unavailable for deploy-unit discovery)\n",
+			"- Analyzers that did not run (absent or disabled): `dependency-cruiser`, `cargo`, `jscpd`\n",
+			"- Producer `git-history`: absent\n",
+			"- Producer `dependency-cruiser`: partial (unresolved_specifiers)\n")
+		mustNotContain(t, gaps, "Tool `cargo`", "Tool `jscpd`", "Tool `dependency-cruiser`", "clone detection disabled",
+			"Producer `cargo`", "Producer `jscpd`", "Producer `scip`", "Producer `go/packages`", "None reported")
+		if t.Failed() {
+			t.Fatalf("%s gaps:\n%s", name, gaps)
+		}
+	}
+}
+
+func TestGateSummaryNamesBlockers(t *testing.T) {
+	active := func(id, rule, from, to string, locations ...report.Location) report.Finding {
+		return report.Finding{ID: id, Kind: "gate", RuleID: rule, Status: "new", Locations: locations,
+			Edge: report.Edge{From: report.Endpoint{Module: from, Path: "pkg/" + from}, To: report.Endpoint{Module: to}}}
+	}
+	r := &report.Report{
+		Verdict: "blocked",
+		Findings: []report.Finding{
+			{ID: "aaaa0000aaaa0000aaaa0000aaaa0000", Kind: "advisory", RuleID: "bc/imbalanced_coupling", Status: "new"},
+			active("ba3803eca947bf3c1b7efa8f37854d5e", "no_direct_b_dependency", "a", "b",
+				report.Location{File: "pkg/a/a.go", Line: 3}, report.Location{File: "pkg/a/second.go", Line: 9}),
+			{ID: "cccc0000cccc0000cccc0000cccc0000", Kind: "gate", RuleID: "accepted_rule", Status: "baseline"},
+			active("dddd1111dddd1111dddd1111dddd1111", "whole_rule", "", "db", report.Location{File: "whole.go"}),
+			active("eeee2222eeee2222eeee2222eeee2222", "nowhere", "api", "db"),
+		},
+		AgentTasks: []report.AgentTask{
+			{FindingID: "ba3803eca947bf3c1b7efa8f37854d5e", Goal: "Remove the forbidden dependency."},
+			{FindingID: "ba3803eca947bf3c1b7efa8f37854d5e", Goal: "a second task for the same finding"},
+		},
+	}
+	p := blockedPublication(t, headB, 7, 1)
+	p.Report = r
+	gate := renderGate(p)
+	want := headBlocking + "\n\n" +
+		"- `no_direct_b_dependency`: `a` → `b` at `pkg/a/a.go:3`, finding `ba3803ec`. Goal: Remove the forbidden dependency.\n" +
+		"- `whole_rule`: (no module) → `db` at `whole.go`, finding `dddd1111`. Goal: none reported\n" +
+		"- `nowhere`: `api` → `db`, no location reported, finding `eeee2222`. Goal: none reported\n\n" + headInputs
+	if !strings.Contains(gate, want) {
+		t.Errorf("gate summary lacks the blocking findings block:\n%s", gate)
+	}
+	if !strings.HasSuffix(gate, "\n"+receiptMarker(p.Receipt)) {
+		t.Errorf("the receipt marker is not the last line")
+	}
+	for name, body := range map[string]string{"comment": renderComment(p, t0, ""), "state": renderState(p)} {
+		if strings.Contains(body, headBlocking) {
+			t.Errorf("%s repeats the gate summary's block", name)
+		}
+	}
+
+	t.Run("capped", func(t *testing.T) {
+		p := p
+		p.Report = &report.Report{Verdict: "blocked"}
+		for i := range 25 {
+			p.Report.Findings = append(p.Report.Findings, active(fmt.Sprintf("%032x", i), fmt.Sprintf("rule_%02d", i), "a", "b"))
+		}
+		block := section(renderGate(p), headBlocking)
+		if got := strings.Count(block, "\n- `rule_"); got != blockerCap {
+			t.Errorf("%d findings named, want %d", got, blockerCap)
+		}
+		mustContain(t, block, "`rule_19`", "- and 5 more blocking findings")
+		mustNotContain(t, block, "`rule_20`")
+	})
+	t.Run("a blocking outcome without an active finding says so", func(t *testing.T) {
+		p := p
+		p.Report = &report.Report{Verdict: "blocked", Findings: []report.Finding{r.Findings[0], r.Findings[2]}}
+		mustContain(t, section(renderGate(p), headBlocking), "No active gate finding is listed")
+	})
+	t.Run("nothing to name", func(t *testing.T) {
+		healthy := p
+		healthy.Outcome = outcome(verdict.Success, reasonHealthy)
+		healthy.Report = &report.Report{Verdict: "healthy"}
+		suspendedPub := p
+		suspendedPub.Outcome = outcome(verdict.ActionRequired, reasonSuspend, reasonBlocking)
+		noReport := p
+		noReport.Report = nil
+		for name, q := range map[string]Publication{"healthy": healthy, "suspended": suspendedPub, "no report": noReport} {
+			if strings.Contains(renderGate(q), headBlocking) {
+				t.Errorf("%s: the gate summary names blocking findings", name)
+			}
+		}
+	})
+	t.Run("only when the outcome says findings block", func(t *testing.T) {
+		evidence := p
+		evidence.Outcome = outcome(verdict.ActionRequired, reasonCoverage)
+		if strings.Contains(renderGate(evidence), headBlocking) {
+			t.Errorf("an outcome without blocking_findings names active findings as blocking")
+		}
+		behind := p
+		behind.Outcome = outcome(verdict.ActionRequired, reasonIdentity, reasonBlocking)
+		mustContain(t, section(renderGate(behind), headBlocking), "`no_direct_b_dependency`")
+	})
+}
+
 func TestDigestSourceLabels(t *testing.T) {
 	const producer, protected, noUpload = "(stated by the producer)", "(from the protected ref)", "(from the protected ref; no upload)"
 	line := func(body, prefix string) string {
@@ -522,45 +644,97 @@ func TestAnnotationSelection(t *testing.T) {
 		}
 		return out
 	}
-	r := &report.Report{
-		Verdict: "blocked",
-		Findings: []report.Finding{
-			{ID: "1", Kind: "advisory", RuleID: "adv", Status: "new", Why: "advisory why", Locations: locations("adv.go", 30)},
-			{ID: "2", Kind: "gate", RuleID: "debt", Status: "baseline", Why: "debt why", Locations: locations("debt.go", 9)},
-			{ID: "3", Kind: "gate", RuleID: "none", Status: "new", Why: "no location", Locations: []report.Location{}},
-			{ID: "4", Kind: "gate", RuleID: "whole", Status: "expired_waiver", Why: "whole file", Locations: []report.Location{{File: "whole.go", Line: 0}}},
-			{ID: "5", Kind: "gate", RuleID: "many", Status: "new", Why: "many why", Locations: locations("many.go", 40)},
-		},
+	findings := []report.Finding{
+		{ID: "1", Kind: "advisory", RuleID: "adv", Status: "new", Why: "advisory why", Locations: locations("adv.go", 30)},
+		{ID: "2", Kind: "gate", RuleID: "debt", Status: "baseline", Why: "debt why", Locations: locations("debt.go", 9)},
+		{ID: "3", Kind: "gate", RuleID: "none", Status: "new", Why: "no location", Locations: []report.Location{}},
+		{ID: "4", Kind: "gate", RuleID: "whole", Status: "expired_waiver", Why: "whole file", Locations: []report.Location{{File: "whole.go", Line: 0}}},
+		{ID: "5", Kind: "gate", RuleID: "many", Status: "new", Why: "many why", Locations: locations("many.go", 40)},
+		{ID: "6", Kind: "advisory", RuleID: "waived", Status: "waived", Why: "waived why", Locations: locations("adv.go", 2)},
+		{ID: "7", Kind: "gate", RuleID: "gone", Status: "fixed", Why: "fixed why", Locations: locations("many.go", 2)},
+		{ID: "8", Kind: "gate", RuleID: "elsewhere", Status: "new", Why: "untouched file", Locations: locations("untouched.go", 5)},
 	}
-	h := newHarness(headB)
-	p := blockedPublication(t, headB, 7, 1)
-	p.Report = r
-	if err := h.pub.Publish(context.Background(), p); err != nil {
-		t.Fatalf("Publish: %v", err)
-	}
-	if got := h.checks.named(headB, gateCheck)[0].Annotations; len(got) != 0 {
-		t.Errorf("gate check carries %d annotations, want none", len(got))
-	}
-	got := h.checks.named(headB, stateCheck)[0].Annotations
-	if len(got) != 50 {
-		t.Fatalf("got %d annotations, want 50", len(got))
-	}
-	if got[0] != (api.Annotation{Path: "whole.go", Line: 1, Level: "failure", Message: "whole: whole file"}) {
-		t.Errorf("first annotation = %+v", got[0])
-	}
-	for i, a := range got {
-		want := "warning"
-		if i < 41 {
-			want = "failure"
+	changed := []string{"adv.go", "debt.go", "whole.go", "many.go"}
+	publish := func(t *testing.T, target inputs.Target, changed []string, truncated bool, findings []report.Finding) (*harness, []api.Annotation) {
+		t.Helper()
+		h := newHarness(headB)
+		h.pulls.changed, h.pulls.truncated = changed, truncated
+		p := blockedPublication(t, headB, 7, 1)
+		p.Target, p.Report = target, &report.Report{Verdict: "blocked", Findings: findings}
+		if err := h.pub.Publish(context.Background(), p); err != nil {
+			t.Fatalf("Publish: %v", err)
 		}
-		if a.Level != want {
-			t.Errorf("annotation %d (%s) level = %q, want %q", i, a.Path, a.Level, want)
+		if gate := h.checks.named(headB, gateCheck); len(gate) > 0 && len(gate[0].Annotations) != 0 {
+			t.Errorf("gate check carries %d annotations, want none", len(gate[0].Annotations))
 		}
-		if a.Path == "" || a.Line < 1 || strings.Contains(a.Message, "no location") {
-			t.Errorf("annotation %d invented or lost a location: %+v", i, a)
+		return h, h.checks.named(headB, stateCheck)[0].Annotations
+	}
+	perPath := func(got []api.Annotation) map[string]int {
+		out := map[string]int{}
+		for _, a := range got {
+			out[a.Path]++
 		}
+		return out
 	}
-	if got[41].Path != "adv.go" || got[49].Path != "adv.go" {
-		t.Errorf("non-blocking annotations are not in report order: %q, %q", got[41].Path, got[49].Path)
-	}
+
+	t.Run("live findings on files the pull request changed", func(t *testing.T) {
+		h, got := publish(t, prTarget(headB), changed, false, findings)
+		if want := map[string]int{"whole.go": 1, "many.go": 40, "adv.go": 30}; !maps.Equal(perPath(got), want) {
+			t.Fatalf("annotations per file = %v, want %v", perPath(got), want)
+		}
+		if got[0] != (api.Annotation{Path: "whole.go", Line: 1, Level: "failure", Message: "whole: whole file"}) {
+			t.Errorf("first annotation = %+v", got[0])
+		}
+		for i, a := range got {
+			want := "warning"
+			if i < 41 {
+				want = "failure"
+			}
+			if a.Level != want {
+				t.Errorf("annotation %d (%s) level = %q, want %q", i, a.Path, a.Level, want)
+			}
+			if a.Line < 1 || strings.Contains(a.Message, "no location") {
+				t.Errorf("annotation %d invented or lost a location: %+v", i, a)
+			}
+		}
+		if got[41].Path != "adv.go" || got[41].Line != 1 || got[70].Line != 30 {
+			t.Errorf("non-blocking annotations are not in report order: %+v, %+v", got[41], got[70])
+		}
+		// The gate check, then the state check with 50, then one more request for the rest.
+		if want := []int{0, 50, 21}; !slices.Equal(h.checks.annotationRequests, want) || h.pulls.listed != 1 {
+			t.Errorf("annotations per request = %v, file lists = %d; want %v and 1", h.checks.annotationRequests, h.pulls.listed, want)
+		}
+	})
+	t.Run("a truncated file list counts every file as changed", func(t *testing.T) {
+		_, got := publish(t, prTarget(headB), nil, true, findings)
+		if perPath(got)["untouched.go"] != 5 || len(got) != 76 {
+			t.Errorf("annotations per file = %v", perPath(got))
+		}
+	})
+	t.Run("a push annotates every file and lists none", func(t *testing.T) {
+		h, got := publish(t, pushTarget(headB), nil, false, findings)
+		if perPath(got)["untouched.go"] != 5 || len(got) != 76 || h.pulls.listed != 0 {
+			t.Errorf("annotations per file = %v, file lists = %d", perPath(got), h.pulls.listed)
+		}
+		if want := []int{50, 26}; !slices.Equal(h.checks.annotationRequests, want) {
+			t.Errorf("annotations per request = %v, want %v", h.checks.annotationRequests, want)
+		}
+	})
+	t.Run("at most 150, blocking first", func(t *testing.T) {
+		many := append([]report.Finding{{ID: "9", Kind: "advisory", RuleID: "adv", Status: "new", Locations: locations("adv.go", 100)}},
+			report.Finding{ID: "10", Kind: "gate", RuleID: "many", Status: "new", Locations: locations("many.go", 100)})
+		h, got := publish(t, prTarget(headB), changed, false, many)
+		if want := map[string]int{"many.go": 100, "adv.go": 50}; !maps.Equal(perPath(got), want) {
+			t.Errorf("annotations per file = %v, want %v", perPath(got), want)
+		}
+		if want := []int{0, 50, 50, 50}; !slices.Equal(h.checks.annotationRequests, want) {
+			t.Errorf("annotations per request = %v, want %v", h.checks.annotationRequests, want)
+		}
+	})
+	t.Run("no candidate, no file list", func(t *testing.T) {
+		h, got := publish(t, prTarget(headB), changed, false, []report.Finding{findings[1], findings[2], findings[5], findings[6]})
+		if len(got) != 0 || h.pulls.listed != 0 {
+			t.Errorf("got %d annotations and %d file lists, want none", len(got), h.pulls.listed)
+		}
+	})
 }

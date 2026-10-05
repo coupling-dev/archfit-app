@@ -15,6 +15,7 @@ import (
 
 	"github.com/alexei-led/archfit-app/internal/gate/feedback"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
+	"github.com/alexei-led/archfit-app/internal/gate/sweep"
 	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/webhook"
@@ -465,6 +466,17 @@ func TestUploadPipeline(t *testing.T) {
 			Outcome: verdict.Decide(verdict.Facts{Report: healthy, IdentityApproved: true, WorkflowApproved: true, Trusted: trusted}),
 			Receipt: feedback.Receipt{RunID: 9, RunAttempt: 2, ReportDigest: "sha256:d", PolicyDigest: "aa11", Conclusion: verdict.Success, Reason: verdict.ReasonHealthy},
 		}
+		if pub.Resolve == nil {
+			t.Fatal("publication without Resolve: feedback cannot check the inputs again inside the lease")
+		}
+		f.resolver.trusted.PolicyDigests = []string{"bb22"}
+		if fresh, err := pub.Resolve(context.Background()); err != nil || !reflect.DeepEqual(fresh.PolicyDigests, []string{"bb22"}) {
+			t.Errorf("Resolve = %v, %v, want the resolver's current inputs", fresh.PolicyDigests, err)
+		}
+		if got := f.resolver.targets[len(f.resolver.targets)-1]; !reflect.DeepEqual(got, wantTarget) {
+			t.Errorf("Resolve read %+v, want the decision's target %+v", got, wantTarget)
+		}
+		pub.Resolve = nil
 		if !reflect.DeepEqual(pub, want) {
 			t.Errorf("publication =\n %+v, want\n %+v", pub, want)
 		}
@@ -581,6 +593,7 @@ func TestHandleEventRules(t *testing.T) {
 		{"run in progress", missing, granted, api.WorkflowRun{Status: runInProgress, Attempt: 2}, false},
 		{"newer attempt already ran", missing, granted, api.WorkflowRun{Status: runCompleted, Attempt: 3}, false},
 		{"approval still missing", missing, inputs.Trusted{SettingsFound: true, Approval: inputs.ApprovalMissing}, api.WorkflowRun{Status: runCompleted, Attempt: 2}, false},
+		{"approval no longer needed", missing, inputs.Trusted{SettingsFound: true, Approval: inputs.ApprovalNotRequired}, api.WorkflowRun{Status: runCompleted, Attempt: 2}, true},
 		{"another receipt reason", feedback.CheckState{Exists: true, Receipt: feedback.Receipt{RunID: 9, RunAttempt: 2, Reason: verdict.ReasonPolicyMismatch}}, granted, api.WorkflowRun{Status: runCompleted, Attempt: 2}, false},
 		{"pending check", feedback.CheckState{Exists: true, Pending: true}, granted, api.WorkflowRun{Status: runCompleted}, false},
 		{"no check", feedback.CheckState{}, granted, api.WorkflowRun{Status: runCompleted}, false},
@@ -620,6 +633,56 @@ func TestHandleEventRules(t *testing.T) {
 		}
 	})
 
+	green := feedback.CheckState{Exists: true, Receipt: feedback.Receipt{
+		RunID: 9, RunAttempt: 2, ReportDigest: "rd", PolicyDigest: "aa11", Conclusion: verdict.Success, Reason: verdict.ReasonHealthy,
+	}}
+	withdrawn := inputs.Trusted{
+		SettingsFound: true, Settings: settings.Settings{Gate: settings.GateRequired}, PolicyDigests: []string{"aa11"},
+		ProtectedPaths: []string{settings.Path}, Approval: inputs.ApprovalMissing,
+	}
+	t.Run("review: a withdrawn approval ends a green receipt", func(t *testing.T) {
+		f := newPipelineFakes()
+		f.publisher.state, f.resolver.trusted = green, withdrawn
+		if err := f.gate.HandleEvent(ctx, pullEvent(webhook.ReviewChanged)); err != nil {
+			t.Fatal(err)
+		}
+		if len(f.publisher.published) != 1 || len(f.actions.ran)+len(f.actions.reran) != 0 {
+			t.Fatalf("published %d, ran %v, reran %v; want one publication and no re-run",
+				len(f.publisher.published), f.actions.ran, f.actions.reran)
+		}
+		pub := f.publisher.published[0]
+		want := sweep.Without(verdict.ReasonOwnerApprovalMissing, wantTarget, withdrawn, green.Receipt)
+		if !reflect.DeepEqual(pub, want) {
+			t.Errorf("publication =\n %+v, want\n %+v", pub, want)
+		}
+		if !slices.Equal(f.resolver.nows, []time.Time{testStart}) || len(f.publisher.states) != 1 {
+			t.Errorf("resolved at %v after %d check reads, want one of each inside Reconcile", f.resolver.nows, len(f.publisher.states))
+		}
+	})
+	quiet := []struct {
+		name    string
+		state   feedback.CheckState
+		trusted inputs.Trusted
+	}{
+		{"the approval still holds", green, func() inputs.Trusted { tr := withdrawn; tr.Approval = inputs.ApprovalGranted; return tr }()},
+		{"advisory mode", green, func() inputs.Trusted { tr := withdrawn; tr.Settings.Gate = settings.GateAdvisory; return tr }()},
+		{"the check already asks for action", feedback.CheckState{Exists: true, Receipt: feedback.Receipt{
+			RunID: 9, RunAttempt: 2, Conclusion: verdict.ActionRequired, Reason: verdict.ReasonPolicyMismatch,
+		}}, withdrawn},
+	}
+	for _, tc := range quiet {
+		t.Run("review: nothing to withdraw: "+tc.name, func(t *testing.T) {
+			f := newPipelineFakes()
+			f.publisher.state, f.resolver.trusted = tc.state, tc.trusted
+			if err := f.gate.HandleEvent(ctx, pullEvent(webhook.ReviewChanged)); err != nil {
+				t.Fatal(err)
+			}
+			if len(f.publisher.published) != 0 || len(f.actions.reran) != 0 {
+				t.Errorf("published %d, reran %v", len(f.publisher.published), f.actions.reran)
+			}
+		})
+	}
+
 	errs := []struct {
 		name  string
 		kind  webhook.EventKind
@@ -637,6 +700,9 @@ func TestHandleEventRules(t *testing.T) {
 			f.actions.run = api.WorkflowRun{Status: runCompleted, Attempt: 2}
 		}},
 		{"repository sweep", webhook.DefaultBranchPush, func(f *pipelineFakes) { f.sweeper.err = boom }},
+		{"withdrawal", webhook.ReviewChanged, func(f *pipelineFakes) {
+			f.publisher.state, f.resolver.trusted, f.publisher.publishErr = green, withdrawn, boom
+		}},
 	}
 	for _, tc := range errs {
 		t.Run("error is returned: "+tc.name, func(t *testing.T) {

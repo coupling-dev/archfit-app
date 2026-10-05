@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/webhook"
 	"github.com/alexei-led/archfit-app/internal/wire/policy"
@@ -61,7 +62,7 @@ func TestLegitimateChangePassesAndViolationFails(t *testing.T) {
 
 	attention := w.openPull(w.shop, 3)
 	w.handle(w.event(webhook.PullOpened, attention))
-	w.wantAnswer(w.upload(attention, fixtureAttention), 200, "success", "healthy")
+	w.wantAnswer(w.upload(attention, fixtureAttention), 200, "success", "attention_only")
 	w.wantGate(attention, runCompleted, "success")
 	if c, _ := w.check(attention, attention.head, stateCheckName); c.Conclusion != "neutral" {
 		t.Errorf("%s of the needs_attention PR = %q, want neutral", stateCheckName, c.Conclusion)
@@ -342,6 +343,345 @@ func TestReviewTriggersRerun(t *testing.T) {
 	w.wantAnswer(w.send(w.spec(p, body)), 200, "success", "healthy")
 }
 
+// An owner approval that a green receipt relied on can end without a new commit: the review is dismissed, or the owner
+// requests changes. Settings and workflow edits move no digest, so only the approval itself can show the change.
+func TestWithdrawnApprovalEndsSuccess(t *testing.T) {
+	ctx := context.Background()
+	edits := map[string]func(w *world, p *pull) []func(map[string]any){
+		"policy": func(w *world, p *pull) []func(map[string]any) {
+			return []func(map[string]any){configHash(w.editsPolicy(p))}
+		},
+		"settings": func(w *world, p *pull) []func(map[string]any) {
+			w.changes(p, "pkg/a/a.go", settings.Path)
+			return nil
+		},
+		"workflow": func(w *world, p *pull) []func(map[string]any) {
+			w.changes(p, "pkg/a/a.go", testWorkflow)
+			return nil
+		},
+	}
+	withdrawals := map[string]func(w *world, p *pull){
+		"dismissed": func(w *world, p *pull) { // GitHub changes the state of the review itself
+			key := pullKey(p.repo.FullName, p.number)
+			for i, rv := range w.gh.reviews[key] {
+				if rv.Reviewer == ownerLogin && rv.State == "APPROVED" {
+					w.gh.reviews[key][i].State = "DISMISSED"
+				}
+			}
+		},
+		"changes requested": func(w *world, p *pull) { w.review(p, ownerLogin, "CHANGES_REQUESTED", p.head) },
+	}
+	triggers := map[string]func(w *world, p *pull){
+		"the ReviewChanged event": func(w *world, p *pull) { w.handle(w.event(webhook.ReviewChanged, p)) },
+		"the event is lost and the hourly sweep runs": func(w *world, _ *pull) {
+			w.now = w.now.Add(time.Hour)
+			if sum, err := w.gate.Sweep(ctx); err != nil || sum.Errors != 0 {
+				w.t.Errorf("sweep = %+v, %v", sum, err)
+			}
+		},
+	}
+	// approved leaves a green receipt that holds only because the owner approved the head.
+	approved := func(t *testing.T, edit func(*world, *pull) []func(map[string]any)) (*world, *pull, []func(map[string]any)) {
+		w := newWorld(t)
+		p := w.openPull(w.shop, 7)
+		muts := edit(w, p)
+		w.handle(w.event(webhook.PullOpened, p))
+		w.review(p, ownerLogin, "APPROVED", p.head)
+		w.wantAnswer(w.upload(p, fixtureHealthy, muts...), 200, "success", "healthy")
+		return w, p, muts
+	}
+
+	for editName, edit := range edits {
+		for withdrawName, withdraw := range withdrawals {
+			for triggerName, trigger := range triggers {
+				t.Run(editName+"/"+withdrawName+"/"+triggerName, func(t *testing.T) {
+					w, p, muts := approved(t, edit)
+					withdraw(w, p)
+					trigger(w, p)
+
+					w.wantGate(p, runCompleted, "action_required")
+					if rc := w.receipt(p); rc.Reason != verdict.ReasonOwnerApprovalMissing || rc.RunID != p.runID {
+						t.Errorf("receipt = %+v, want owner_approval_missing under run %d", rc, p.runID)
+					}
+					if c, _ := w.check(p, p.head, stateCheckName); c.Conclusion != "action_required" {
+						t.Errorf("%s = %q, want action_required", stateCheckName, c.Conclusion)
+					}
+					if len(w.gh.reruns) != 0 {
+						t.Errorf("reruns = %v: no run can be green until an owner approves again", w.gh.reruns)
+					}
+
+					writes := w.gh.writes()
+					trigger(w, p)
+					if w.gh.writes() != writes || len(w.gh.reruns) != 0 {
+						t.Errorf("a repeated trigger added %d writes and reruns %v", w.gh.writes()-writes, w.gh.reruns)
+					}
+
+					w.review(p, ownerLogin, "APPROVED", p.head)
+					w.handle(w.event(webhook.ReviewChanged, p))
+					if !slices.Equal(w.gh.reruns, []int64{p.runID}) {
+						t.Fatalf("reruns after the new approval = %v, want [%d]", w.gh.reruns, p.runID)
+					}
+					w.wantGate(p, runCompleted, "action_required")
+					w.wantAnswer(w.upload(p, fixtureHealthy, muts...), 200, "success", "healthy")
+				})
+			}
+		}
+	}
+
+	t.Run("an approval that still holds keeps the check green", func(t *testing.T) {
+		for editName, edit := range edits {
+			w, p, _ := approved(t, edit)
+			w.review(p, "bob", "CHANGES_REQUESTED", p.head) // not an owner
+			w.review(p, ownerLogin, "COMMENTED", p.head)    // a comment withdraws nothing
+			writes := w.gh.writes()
+			for _, trigger := range triggers {
+				trigger(w, p)
+			}
+			if c, _ := w.check(p, p.head, gateCheckName); c.Conclusion != "success" || w.gh.writes() != writes || len(w.gh.reruns) != 0 {
+				t.Errorf("%s: gate = %q, %d writes, reruns %v", editName, c.Conclusion, w.gh.writes()-writes, w.gh.reruns)
+			}
+		}
+	})
+}
+
+// approvedSettingsEdit is a pull that edits the settings file, approved by the owner, with a green gate check. The
+// digests do not show the edit: only the owner approval keeps the check green.
+func (w *world) approvedSettingsEdit() (*pull, uploadSpec) {
+	w.t.Helper()
+	p := w.openPull(w.shop, 7)
+	w.changes(p, "pkg/a/a.go", settings.Path)
+	w.handle(w.event(webhook.PullOpened, p))
+	w.review(p, ownerLogin, "APPROVED", p.head)
+	s := w.spec(p, w.report(w.shop, fixtureHealthy))
+	w.wantAnswer(w.send(s), 200, "success", "healthy")
+	return p, s
+}
+
+// successWrites counts the gate check writes that concluded success.
+func (w *world) successWrites() int {
+	n := 0
+	for _, c := range w.gh.checkWrites {
+		if c.Name == gateCheckName && c.Conclusion == "success" {
+			n++
+		}
+	}
+	return n
+}
+
+// The publication lease orders a withdrawal and an upload of the same head; whichever waits reads its inputs again
+// inside the lease and writes nothing when they moved.
+func TestWithdrawalRacesWithPublication(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("an upload decided under the approval waits while the withdrawal is published", func(t *testing.T) {
+		w := newWorld(t)
+		p, retry := w.approvedSettingsEdit()
+		greens := w.successWrites()
+		w.store.beforeLease = func() { // the upload has decided success; the owner dismisses before it holds the lease
+			w.review(p, ownerLogin, "CHANGES_REQUESTED", p.head)
+			w.handle(w.event(webhook.ReviewChanged, p))
+		}
+
+		a := w.send(retry)
+
+		if a.status != 503 || a.Error != "unavailable" {
+			t.Errorf("upload answered %d %s, want 503 unavailable: its decision is stale", a.status, a.raw)
+		}
+		w.wantGate(p, runCompleted, "action_required")
+		if got := w.receipt(p).Reason; got != verdict.ReasonOwnerApprovalMissing {
+			t.Errorf("receipt reason = %s, want owner_approval_missing", got)
+		}
+		if n := w.successWrites(); n != greens {
+			t.Errorf("%d success writes after the withdrawal", n-greens)
+		}
+		w.wantAnswer(w.send(retry), 200, "action_required", "owner_approval_missing") // the Action's retry
+	})
+
+	triggers := map[string]func(t *testing.T, w *world, p *pull){
+		"the ReviewChanged event": func(t *testing.T, w *world, p *pull) {
+			if err := w.gate.HandleEvent(ctx, w.event(webhook.ReviewChanged, p)); err != nil {
+				t.Errorf("HandleEvent = %v", err)
+			}
+		},
+		"the sweep": func(t *testing.T, w *world, _ *pull) {
+			w.now = w.now.Add(time.Hour)
+			if sum, err := w.gate.Sweep(ctx); err != nil || sum.Errors != 0 {
+				t.Errorf("sweep = %+v, %v", sum, err)
+			}
+		},
+	}
+	for name, trigger := range triggers {
+		t.Run("a withdrawal that waits while the owner approves again writes nothing: "+name, func(t *testing.T) {
+			w := newWorld(t)
+			p, _ := w.approvedSettingsEdit()
+			w.review(p, ownerLogin, "DISMISSED", p.head)
+			w.store.beforeLease = func() { w.review(p, ownerLogin, "APPROVED", p.head) }
+			writes := w.gh.writes()
+
+			trigger(t, w, p)
+
+			w.wantGate(p, runCompleted, "success") // the owner approved this head again: the green check holds
+			if w.gh.writes() != writes {
+				t.Errorf("%d writes from a withdrawal decided on replaced inputs", w.gh.writes()-writes)
+			}
+		})
+	}
+
+	t.Run("a newer attempt that turns green while the event's withdrawal waits is withdrawn too", func(t *testing.T) {
+		w := newWorld(t)
+		p, _ := w.approvedSettingsEdit()
+		w.editRun(p, func(r *api.WorkflowRun) { r.Attempt = 2 }) // the workflow was re-run
+		retry := w.spec(p, w.report(w.shop, fixtureHealthy))
+		var withdrawal <-chan error
+		w.gh.beforeCheckWrite = func() { // attempt 2 read the approval inside the lease; the owner then withdraws it
+			w.review(p, ownerLogin, "CHANGES_REQUESTED", p.head)
+			withdrawal = w.eventAtLease(w.event(webhook.ReviewChanged, p))
+		}
+
+		w.wantAnswer(w.send(retry), 200, "success", "healthy")
+
+		if err := <-withdrawal; err != nil {
+			t.Fatalf("HandleEvent = %v", err)
+		}
+		w.wantGate(p, runCompleted, "action_required")
+		if rc := w.receipt(p); rc.Reason != verdict.ReasonOwnerApprovalMissing || rc.RunAttempt != 2 {
+			t.Errorf("receipt = %+v, want owner_approval_missing over attempt 2", rc)
+		}
+	})
+
+	t.Run("a newer attempt that turns green while the sweep's withdrawal waits is withdrawn too", func(t *testing.T) {
+		w := newWorld(t)
+		p, _ := w.approvedSettingsEdit()
+		w.review(p, ownerLogin, "CHANGES_REQUESTED", p.head)
+		w.editRun(p, func(r *api.WorkflowRun) { r.Attempt = 2 })
+		retry := w.spec(p, w.report(w.shop, fixtureHealthy))
+		w.store.beforeLease = func() { // the sweep found attempt 1 withdrawn; attempt 2 passes before it holds the lease
+			w.review(p, ownerLogin, "APPROVED", p.head)
+			w.wantAnswer(w.send(retry), 200, "success", "healthy")
+			w.review(p, ownerLogin, "CHANGES_REQUESTED", p.head)
+		}
+
+		triggers["the sweep"](t, w, p)
+
+		w.wantGate(p, runCompleted, "action_required")
+		if rc := w.receipt(p); rc.Reason != verdict.ReasonOwnerApprovalMissing || rc.RunAttempt != 2 {
+			t.Errorf("receipt = %+v, want owner_approval_missing over attempt 2", rc)
+		}
+	})
+
+	t.Run("an approval that lands while the withdrawal writes re-runs the workflow", func(t *testing.T) {
+		w := newWorld(t)
+		p, _ := w.approvedSettingsEdit()
+		w.review(p, ownerLogin, "CHANGES_REQUESTED", p.head)
+		var approval <-chan error
+		w.gh.beforeCheckWrite = func() { // the withdrawal read the inputs inside the lease; the owner approves again
+			w.review(p, ownerLogin, "APPROVED", p.head)
+			approval = w.eventAtLease(w.event(webhook.ReviewChanged, p))
+		}
+
+		w.handle(w.event(webhook.ReviewChanged, p))
+
+		if err := <-approval; err != nil {
+			t.Fatalf("HandleEvent of the approval = %v", err)
+		}
+		if !slices.Equal(w.gh.reruns, []int64{p.runID}) {
+			t.Fatalf("reruns = %v, want [%d]: the new approval was lost behind the withdrawal", w.gh.reruns, p.runID)
+		}
+		w.wantGate(p, runCompleted, "action_required") // until the re-run uploads
+		w.wantAnswer(w.send(w.spec(p, w.report(w.shop, fixtureHealthy))), 200, "success", "healthy")
+	})
+}
+
+// eventAtLease handles e in another goroutine and returns once that handler waits for the publication lease, or has
+// finished without asking for it. The channel yields the HandleEvent error.
+func (w *world) eventAtLease(e webhook.Event) <-chan error {
+	atLease, done := make(chan struct{}), make(chan error, 1)
+	w.store.mu.Lock()
+	w.store.beforeLease = func() { close(atLease) }
+	w.store.mu.Unlock()
+	go func() { done <- w.gate.HandleEvent(context.Background(), e) }()
+	select {
+	case <-atLease:
+	case err := <-done:
+		w.store.mu.Lock()
+		w.store.beforeLease = nil
+		w.store.mu.Unlock()
+		done <- err
+	}
+	return done
+}
+
+// A receipt that asked for an owner approval is re-run once no approval is needed any more, as after an approval: a
+// base retarget or a repointed settings workflow can drop the protected path from the pull request.
+func TestApprovalNoLongerNeededReruns(t *testing.T) {
+	ctx := context.Background()
+	triggers := map[string]func(w *world, p *pull){
+		"the ReviewChanged event": func(w *world, p *pull) {
+			w.review(p, "bob", "COMMENTED", p.head)
+			w.handle(w.event(webhook.ReviewChanged, p))
+		},
+		"the sweep": func(w *world, _ *pull) {
+			w.now = w.now.Add(time.Hour)
+			if sum, err := w.gate.Sweep(ctx); err != nil || sum.Errors != 0 {
+				w.t.Errorf("sweep = %+v, %v", sum, err)
+			}
+		},
+	}
+	for name, trigger := range triggers {
+		t.Run(name, func(t *testing.T) {
+			w := newWorld(t)
+			p := w.openPull(w.shop, 7)
+			w.changes(p, "pkg/a/a.go", testWorkflow)
+			w.handle(w.event(webhook.PullOpened, p))
+			body := w.report(w.shop, fixtureHealthy)
+			w.wantAnswer(w.send(w.spec(p, body)), 200, "action_required", "owner_approval_missing")
+			w.changes(p, "pkg/a/a.go") // the pull request no longer changes a protected path
+
+			trigger(w, p)
+
+			if !slices.Equal(w.gh.reruns, []int64{p.runID}) {
+				t.Fatalf("reruns = %v, want [%d]", w.gh.reruns, p.runID)
+			}
+			w.wantGate(p, runCompleted, "action_required")
+			w.wantAnswer(w.send(w.spec(p, body)), 200, "success", "healthy")
+		})
+	}
+}
+
+// Without the Store the withdrawal cannot take the lease, so it cannot write: the green check stays as it is, no new
+// success is published, and the next trigger after the Store is back downgrades it.
+func TestWithdrawalDuringStoreOutage(t *testing.T) {
+	ctx := context.Background()
+	w := newWorld(t)
+	p, retry := w.approvedSettingsEdit()
+	w.review(p, ownerLogin, "DISMISSED", p.head)
+	w.store.down = errors.New("store: unreachable")
+	writes, greens := w.gh.writes(), w.successWrites()
+
+	if err := w.gate.HandleEvent(ctx, w.event(webhook.ReviewChanged, p)); err == nil {
+		t.Error("HandleEvent reported success without a lease")
+	}
+	if sum, err := w.gate.Sweep(ctx); err != nil || sum.Errors != 1 {
+		t.Errorf("sweep = %+v, %v, want the pull counted as an error", sum, err)
+	}
+	if a := w.send(retry); a.status != 503 || a.Error != "unavailable" {
+		t.Errorf("upload answered %d %s, want 503 unavailable", a.status, a.raw)
+	}
+	if w.gh.writes() != writes || w.successWrites() != greens {
+		t.Errorf("%d writes, %d of them success, without a lease", w.gh.writes()-writes, w.successWrites()-greens)
+	}
+
+	w.store.down = nil
+	w.now = w.now.Add(time.Hour)
+	if sum, err := w.gate.Sweep(ctx); err != nil || sum.Errors != 0 {
+		t.Errorf("sweep after the outage = %+v, %v", sum, err)
+	}
+	w.wantGate(p, runCompleted, "action_required")
+	if got := w.receipt(p).Reason; got != verdict.ReasonOwnerApprovalMissing {
+		t.Errorf("receipt reason = %s, want owner_approval_missing", got)
+	}
+}
+
 func TestSuspensionAndRestoration(t *testing.T) {
 	ctx := context.Background()
 	w := newWorld(t)
@@ -367,11 +707,11 @@ func TestSuspensionAndRestoration(t *testing.T) {
 	w.wantAnswer(w.upload(p, fixtureHealthy), 200, "success", "healthy")
 	w.wantGate(p, runCompleted, "success")
 
-	t.Run("a Store outage is not non-payment", func(t *testing.T) {
+	t.Run("an unreadable entitlement is not non-payment", func(t *testing.T) {
 		w := newWorld(t)
 		vault := w.addRepo("acme/vault", 12, 201, true)
 		w.entitle(12, Entitlement{SuspendAfter: w.now.Add(-24 * time.Hour)})
-		w.store.getErr = errors.New("store: connection refused")
+		w.store.entitlementErr = errors.New("store: connection refused")
 		w.wantAnswer(w.upload(w.openPull(vault, 7), fixtureHealthy), 200, "success", "healthy")
 		if len(w.store.tenants) == 0 {
 			t.Error("the Store was not even asked")
@@ -382,7 +722,8 @@ func TestSuspensionAndRestoration(t *testing.T) {
 func TestGateSurvivesControlPlaneFailure(t *testing.T) {
 	ctx := context.Background()
 	w := newWorld(t) // nothing of internal/control is wired: the import test proves it cannot be
-	w.store.getErr = errors.New("store: down")
+	// The control plane's records are unreadable; the publication leases still work (see TestStoreOutageFailsClosed).
+	w.store.entitlementErr = errors.New("store: down")
 	controlDown := errors.New("control: billing provider unreachable")
 	// dispatch is what app does with a delivery: the gate first, then the control plane.
 	dispatch := func(e webhook.Event) error {
@@ -405,6 +746,34 @@ func TestGateSurvivesControlPlaneFailure(t *testing.T) {
 		t.Errorf("sweep = %+v, %v", sum, err)
 	}
 	w.wantGate(lost, runInProgress, "")
+}
+
+// Without the Store no publication lease can be taken, and an unserialized write could let an older run overwrite a
+// newer one. So nothing is written: the upload is retryable, the event is redelivered and the check stays as it was.
+func TestStoreOutageFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	w := newWorld(t)
+	w.store.down = errors.New("store: unreachable")
+	p := w.openPull(w.shop, 7)
+
+	if err := w.gate.HandleEvent(ctx, w.event(webhook.PullOpened, p)); err == nil {
+		t.Error("HandleEvent created the pending check without a lease")
+	}
+	if a := w.upload(p, fixtureHealthy); a.status != 503 || a.Error != "unavailable" || a.Conclusion != "" {
+		t.Errorf("upload answered %d %s, want 503 unavailable", a.status, a.raw)
+	}
+	if sum, err := w.gate.Sweep(ctx); err != nil || sum.Errors == 0 {
+		t.Errorf("sweep = %+v, %v, want errors counted", sum, err)
+	}
+	if n := w.gh.writes(); n != 0 {
+		t.Errorf("%d check or comment writes without a lease, want 0", n)
+	}
+	w.noSuccess()
+
+	w.store.down = nil
+	w.handle(w.event(webhook.PullOpened, p))
+	w.wantAnswer(w.upload(p, fixtureHealthy), 200, "success", "healthy")
+	w.wantGate(p, runCompleted, "success")
 }
 
 func TestBasePolicyChangeReachesOpenPullsAtOnce(t *testing.T) {

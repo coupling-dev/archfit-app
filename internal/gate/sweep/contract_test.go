@@ -71,6 +71,10 @@ func eachRuleWorld(t *testing.T, now time.Time, fullName, baseRef string) (*worl
 	w.check(open(12, approved), receipt(112, verdict.ReasonOwnerApprovalMissing), now.Add(-day))
 
 	w.check(open(13, trusted()), healthy(13), now.Add(-day))
+
+	withdrawn := trusted() // the owner approval the green receipt relied on was dismissed
+	withdrawn.Approval, withdrawn.ProtectedPaths = inputs.ApprovalMissing, []string{settings.Path}
+	w.check(open(14, withdrawn), healthy(14), now.Add(-day))
 	return w, r
 }
 
@@ -79,7 +83,7 @@ func TestRunRepairsEachRule(t *testing.T) {
 
 	sum := w.pass(t0)
 
-	want := Summary{Repos: 1, Pulls: 13, Pended: 1, TimedOut: 1, Rerun: 6, Warned: 1, Suspended: 1}
+	want := Summary{Repos: 1, Pulls: 14, Pended: 1, TimedOut: 1, Rerun: 6, Warned: 1, Suspended: 1}
 	if sum != want {
 		t.Errorf("summary = %+v, want %+v", sum, want)
 	}
@@ -91,6 +95,7 @@ func TestRunRepairsEachRule(t *testing.T) {
 		7:  {verdict.ReasonStaleInputs},
 		8:  {verdict.ReasonStaleInputs},
 		10: {verdict.ReasonWaiverExpired},
+		14: {verdict.ReasonOwnerApprovalMissing},
 	}
 	if got := w.reasons(); !reflect.DeepEqual(got, wantReasons) {
 		t.Errorf("published = %v, want %v", got, wantReasons)
@@ -137,7 +142,7 @@ func TestSecondPassIsQuiet(t *testing.T) {
 			t.Errorf("second pass warned PR %d with a new date %v", warn.target.PullRequest, warn.expiry)
 		}
 	}
-	want := Summary{Repos: 1, Pulls: 13, Warned: 1, Suspended: 1}
+	want := Summary{Repos: 1, Pulls: 14, Warned: 1, Suspended: 1}
 	if sum != want {
 		t.Errorf("summary = %+v, want %+v", sum, want)
 	}

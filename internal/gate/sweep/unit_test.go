@@ -76,6 +76,23 @@ func TestStaleReceipt(t *testing.T) {
 	})
 }
 
+func TestWithdrawnReceipt(t *testing.T) {
+	conclusions := map[verdict.Conclusion]bool{
+		verdict.Success: true, verdict.Failure: true, verdict.ActionRequired: false, "": false, "neutral": false,
+	}
+	approvals := map[inputs.Approval]bool{
+		inputs.ApprovalMissing: true, "": true, "skipped": true, inputs.ApprovalGranted: false, inputs.ApprovalNotRequired: false,
+	}
+	for conclusion, decided := range conclusions {
+		for approval, unapproved := range approvals {
+			rc := feedback.Receipt{RunID: 9, RunAttempt: 1, Conclusion: conclusion, Reason: verdict.ReasonHealthy}
+			if got, want := Withdrawn(rc, inputs.Trusted{Approval: approval}), decided && unapproved; got != want {
+				t.Errorf("Withdrawn(%q receipt, approval %q) = %v, want %v", conclusion, approval, got, want)
+			}
+		}
+	}
+}
+
 func TestNoPolicyWindowIsQuiet(t *testing.T) {
 	// start is the no-policy window: settings merged, the receipt says policy_missing.
 	start := func(t *testing.T) (*world, api.Repo, inputs.Target) {

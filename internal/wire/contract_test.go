@@ -7,13 +7,16 @@ import (
 	"go/parser"
 	"go/token"
 	"os/exec"
+	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/wire/envelope"
+	"github.com/alexei-led/archfit-app/internal/wire/manifest"
 	"github.com/alexei-led/archfit-app/internal/wire/policy"
 	"github.com/alexei-led/archfit-app/internal/wire/report"
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
@@ -123,7 +126,7 @@ func decodeFixture(t *testing.T, f fixture) (got, want any, err error) {
 		if f.Expect.Decode == decodeOK {
 			strictFields(t, f, &wantReport)
 		}
-		r, err := report.Decode(raw)
+		r, err := report.Decode(raw, f.engine(t))
 		if err != nil {
 			return nil, wantReport, err
 		}
@@ -165,7 +168,7 @@ func TestRealEngineCaptureDecodes(t *testing.T) {
 		t.Fatalf("producer must be the engine capture, got synthetic %q (err %v)", reason, err)
 	}
 
-	r, err := report.Decode(capture.bytes(t))
+	r, err := report.Decode(capture.bytes(t), capture.engine(t))
 	if err != nil {
 		t.Fatalf("report.Decode on the unmodified capture: %v", err)
 	}
@@ -196,6 +199,58 @@ func TestRealEngineCaptureDecodes(t *testing.T) {
 	}
 	if len(r.Seams) != 1 || r.Seams[0].FromModule != "a" || r.Seams[0].ToModule != "b" {
 		t.Errorf("seams = %+v, want one seam from a to b", r.Seams)
+	}
+}
+
+// TestEveryApprovedEngineVersionIsReadable: the manifest approves only a release whose state key set the report
+// decoder knows, so an approved identity never meets a decoder that cannot read its report.
+func TestEveryApprovedEngineVersionIsReadable(t *testing.T) {
+	var capture []byte
+	for _, f := range inFolder(loadCorpus(t), folderReport) {
+		if f.Name == realCapture {
+			capture = f.bytes(t)
+		}
+	}
+	for _, release := range manifest.EngineVersions() {
+		if !slices.Contains(report.EngineVersions(), release) {
+			t.Errorf("the manifest approves %s, the report decoder does not read it", release)
+			continue
+		}
+		if _, err := report.Decode(capture, release); err != nil {
+			t.Errorf("the real capture does not decode as a %s document: %v", release, err)
+		}
+	}
+}
+
+// TestEveryApprovedEngineVersionHasACapture: a release enters the manifest only together with an unmodified
+// capture of its own output in the corpus, which then has to decode as recorded.
+func TestEveryApprovedEngineVersionHasACapture(t *testing.T) {
+	captured := map[string]bool{}
+	for _, f := range inFolder(loadCorpus(t), folderReport) {
+		if p, reason, err := f.Expect.engineProducer(); err == nil && reason == "" && f.Expect.Decode == decodeOK {
+			captured[p.EngineVersion] = true
+		}
+	}
+	for _, release := range manifest.EngineVersions() {
+		if !captured[release] {
+			t.Errorf("the manifest approves %s, the corpus holds no decodable capture of it", release)
+		}
+	}
+}
+
+// TestPolicySchemaFollowsTheCurrentEngine: wire/policy embeds one engine config schema, for the editor and for
+// Validate: the schema of the release new workflows pin. Moving manifest Current to another release fails here
+// until the schema and its SCHEMA_SOURCE are re-pinned.
+func TestPolicySchemaFollowsTheCurrentEngine(t *testing.T) {
+	note := readFile(t, filepath.Join("policy", "SCHEMA_SOURCE"))
+	tag := ""
+	for line := range strings.Lines(string(note)) {
+		if value, ok := strings.CutPrefix(strings.TrimSpace(line), "tag: "); ok {
+			tag = value
+		}
+	}
+	if want := manifest.Current().EngineVersion; tag != want {
+		t.Errorf("policy schema pinned at %q, manifest Current is engine %q", tag, want)
 	}
 }
 
@@ -265,8 +320,13 @@ func TestUnknownVersionRejectedEverywhere(t *testing.T) {
 	}
 
 	rep := pick(folderReport, realCapture).bytes(t)
-	if _, err := report.Decode(bump(rep, report.StateSchemaV1, "archfit.architecture-state.v2")); err == nil {
-		t.Error("report v2 decoded")
+	for _, release := range report.EngineVersions() {
+		if _, err := report.Decode(bump(rep, report.StateSchemaV1, "archfit.architecture-state.v2"), release); err == nil {
+			t.Errorf("report v2 decoded as a %s document", release)
+		}
+	}
+	if _, err := report.Decode(rep, "v2.5.0"); err == nil {
+		t.Error("a report of an engine release the decoder does not read decoded")
 	}
 
 	const settingsV1 = "version: 1\nowners:\n  - octo-owner\nworkflow: .github/workflows/archfit.yml\n"

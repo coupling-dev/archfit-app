@@ -71,6 +71,43 @@ func TestDecodeRealEngineReport(t *testing.T) {
 	}
 }
 
+func TestProducerToolVersionsSurvive(t *testing.T) {
+	tests := []struct {
+		fixture string
+		want    map[string]Producer // by tool; only the rows checked
+	}{
+		{"report/real-polyglot-blocked.json", map[string]Producer{
+			"cargo":              {ToolVersion: "cargo 1.98.0 (797e8a9bc 2026-08-05)", Status: "ok"},
+			"grimp":              {ToolVersion: "grimp 3.17; python 3.14.3", Status: "ok"},
+			"dependency-cruiser": {ToolVersion: "18.5.0", Status: "ok"},
+			"cargo-modules":      {ToolVersion: "cargo-modules 0.26.0", Status: "ok"},
+			"scip":               {ToolVersion: "scip-python 0.6.6", Status: "ok"},
+			"jscpd":              {ToolVersion: "jscpd 5.4.0", Status: "ok"},
+			"ast-grep/syntax":    {ToolVersion: "ast-grep 0.45.3", Status: "ok"},
+		}},
+		{"report/producer-versions.json", map[string]Producer{
+			"grimp":             {ToolVersion: "uv 0.12.21 (Homebrew 2026-09-29 aarch64-apple-darwin)", Status: "partial"},
+			"git-history":       {ToolVersion: "git version 2.54.0 (Apple Git-157)", Status: "ok"},
+			"supplied-coverage": {ToolVersion: "coverage-parser.go-coverprofile.v1,coverage-parser.lcov.v1", Status: "ok"},
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.fixture, func(t *testing.T) {
+			r := mustDecode(t, loadFixture(t, tt.fixture))
+			checkExpectation(t, r, loadExpectation(t, tt.fixture).Fields)
+			got := map[string]Producer{}
+			for _, p := range r.Comparison.MeasurementProfile.Producers {
+				got[p.Tool] = Producer{ToolVersion: p.ToolVersion, Status: p.Status}
+			}
+			for tool, want := range tt.want {
+				if got[tool] != want {
+					t.Errorf("producer %s = %+v, want %+v", tool, got[tool], want)
+				}
+			}
+		})
+	}
+}
+
 func TestDecodeConformanceFixtures(t *testing.T) {
 	names := fixtures(t, "report")
 	for _, required := range []string{
@@ -85,7 +122,7 @@ func TestDecodeConformanceFixtures(t *testing.T) {
 	for _, name := range names {
 		t.Run(name, func(t *testing.T) {
 			want := loadExpectation(t, name)
-			r, err := Decode(loadFixture(t, name))
+			r, err := Decode(loadFixture(t, name), fixtureEngine)
 			if want.Decode == decodeError {
 				if err == nil {
 					t.Fatal("decoded, want an error")
@@ -264,6 +301,59 @@ func TestEngineSchemaKeySetIsCovered(t *testing.T) {
 	w.check("report", w.root, reflect.TypeFor[shadowReport]())
 }
 
+// shadowFields visits every field of every shadow struct reachable from t, with its JSON location.
+func shadowFields(loc string, t reflect.Type, visit func(loc string, f reflect.StructField)) {
+	t = indirect(t)
+	switch t.Kind() {
+	case reflect.Slice, reflect.Map:
+		shadowFields(loc+"[]", t.Elem(), visit)
+	case reflect.Struct:
+		for i := range t.NumField() {
+			f := t.Field(i)
+			key, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+			visit(loc+"."+key, f)
+			shadowFields(loc+"."+key, f.Type, visit)
+		}
+	}
+}
+
+func TestSinceTagsNameListedReleases(t *testing.T) {
+	shadowFields("report", reflect.TypeFor[shadowReport](), func(loc string, f reflect.StructField) {
+		if since, ok := f.Tag.Lookup("since"); ok && !slices.Contains(EngineVersions(), since) {
+			t.Errorf("%s: since %q is not a release Decode reads", loc, since)
+		}
+	})
+}
+
+// decisionCore is what the gate decides from (gate/verdict Decide, the identity check, the receipt) plus the two
+// fields of Finding.Active. Every release Decode reads must define them: none may carry a since tag.
+var decisionCore = []string{
+	"report.schema_version", "report.verdict", "report.decision", "report.decision.hard_gates",
+	"report.decision.unevaluated_required_rules", "report.decision.unevaluated_required_rules[].rule_id",
+	"report.decision.unevaluated_required_rules[].reason", "report.comparison", "report.comparison.config_hash",
+	"report.comparison.measurement_profile", "report.comparison.measurement_profile.version",
+	"report.gate_reference", "report.gate_reference.status", "report.gate_reference.reasons",
+	"report.findings", "report.findings[].id", "report.findings[].kind", "report.findings[].status",
+}
+
+func TestDecisionCoreIsInEveryVersion(t *testing.T) {
+	seen := map[string]bool{}
+	shadowFields("report", reflect.TypeFor[shadowReport](), func(loc string, f reflect.StructField) {
+		if !slices.Contains(decisionCore, loc) {
+			return
+		}
+		seen[loc] = true
+		if since, ok := f.Tag.Lookup("since"); ok {
+			t.Errorf("%s is part of the decision core but exists only since %s", loc, since)
+		}
+	})
+	for _, loc := range decisionCore {
+		if !seen[loc] {
+			t.Errorf("decision core field %s has no shadow field", loc)
+		}
+	}
+}
+
 func TestSizeCap(t *testing.T) {
 	doc := baseDoc(t)
 	set(t, doc, "", "measurement", "source_ref")
@@ -279,11 +369,11 @@ func TestSizeCap(t *testing.T) {
 	}
 	mustDecode(t, exact)
 
-	_, err := Decode(padded(room + 1))
+	_, err := Decode(padded(room+1), fixtureEngine)
 	wantError(t, err, "MaxBytes")
 
 	// The size check comes before any parsing: garbage over the cap reports the size, not the syntax.
-	_, err = Decode(bytes.Repeat([]byte{0xff}, MaxBytes+1))
+	_, err = Decode(bytes.Repeat([]byte{0xff}, MaxBytes+1), fixtureEngine)
 	wantError(t, err, "MaxBytes")
 }
 
@@ -293,8 +383,50 @@ func TestWrongSchemaVersion(t *testing.T) {
 		t.Run(version, func(t *testing.T) {
 			doc := baseDoc(t)
 			set(t, doc, version, "schema_version")
-			_, err := Decode(encode(t, doc))
+			_, err := Decode(encode(t, doc), fixtureEngine)
 			wantError(t, err, "schema_version")
+		})
+	}
+}
+
+func TestEngineVersions(t *testing.T) {
+	got := EngineVersions()
+	if want := []string{"v2.3.1", "v2.4.0"}; !slices.Equal(got, want) {
+		t.Errorf("EngineVersions() = %q, want %q", got, want)
+	}
+	got[0] = "changed"
+	if EngineVersions()[0] != "v2.3.1" {
+		t.Error("EngineVersions() hands out the package's own list")
+	}
+}
+
+// TestEveryEngineVersionReadsTheCorpus: the corpus holds v2.3.1 documents, and a later release adds keys at
+// most, so every listed release decodes every fixture to the same Report, or rejects it alike.
+func TestEveryEngineVersionReadsTheCorpus(t *testing.T) {
+	for _, name := range append(fixtures(t, "report"), fixtures(t, "leakage")...) {
+		payload := loadFixture(t, name)
+		want, wantErr := Decode(payload, fixtureEngine)
+		for _, version := range EngineVersions() {
+			got, err := Decode(payload, version)
+			if (err == nil) != (wantErr == nil) || !reflect.DeepEqual(got, want) {
+				t.Errorf("%s under %s: err %v, want err %v; equal reports %v", name, version, err, wantErr, reflect.DeepEqual(got, want))
+			}
+		}
+	}
+}
+
+func TestUnknownEngineVersionIsRefused(t *testing.T) {
+	payload := loadFixture(t, "report/real-blocked-no-baseline.json")
+	for _, version := range []string{"", "v2.3.0", "v2.5.0", "2.3.1", "v2.3.1 ", "V2.3.1", "v2.3.1-" + leakMarker} {
+		t.Run(version, func(t *testing.T) {
+			r, err := Decode(payload, version)
+			wantError(t, err, "engine_version")
+			if !isZero(r) {
+				t.Error("an error must come with a zero Report")
+			}
+			if strings.Contains(err.Error(), leakMarker) {
+				t.Errorf("error echoes the engine version: %v", err)
+			}
 		})
 	}
 }

@@ -1,12 +1,14 @@
 // Package manifest is the locked list of approved engine and image identities shipped in the binary.
 package manifest
 
-import _ "embed"
+import (
+	_ "embed"
+	"slices"
+)
 
-// PLACEHOLDER DATA: the image_digest and action_ref values in manifest.json are not the
-// published engine v2.3.1 release values (they were not available when this was written). Replace all
-// of them from the engine release evidence before any release; the repeated-character values are fake.
-// TestManifestHasNoPlaceholdersInRelease fails a build tested with ARCHFIT_RELEASE=1 while they remain.
+// The image_digest values in manifest.json are the published per-platform digests of
+// ghcr.io/alexei-led/archfit:v2.3.1; action_ref is the archfit-action v1.0.0 commit.
+// TestManifestHasNoPlaceholdersInRelease fails a build tested with ARCHFIT_RELEASE=1 if a placeholder returns.
 //
 //go:embed manifest.json
 var manifestJSON []byte
@@ -41,4 +43,10 @@ func Lookup(id Identity) (Entry, bool) {
 // Current returns the entry new workflows are generated against (linux/amd64).
 func Current() Entry {
 	return loaded.current
+}
+
+// EngineVersions returns the engine releases the manifest approves, each once, in the order of their first row.
+// During an upgrade window it holds two: the release new workflows pin and the one before it.
+func EngineVersions() []string {
+	return slices.Clone(loaded.versions)
 }

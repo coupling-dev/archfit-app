@@ -128,6 +128,9 @@ its entitlement in one transaction. Cloud Audit Logs record who created the task
 - The driver uses the REST API over `net/http`, in line with the no-SDK rule of [tech stack](../../tech-stack.md#dependencies).
   It must pass `store/storetest` against the Firestore emulator.
 - `Store` gains one operation: a transaction over several keys of one tenant. See [Concurrency](#concurrency).
+- `Store` already has a single-key `CompareAndSwap` for the publication leases. The driver implements it with a
+  transaction that commits under the document's `updateTime` precondition, or with `exists=false` when the key must be
+  missing. It must be atomic across all instances. A lock in one process is not enough.
 - The free quota covers only the default database. The database location cannot change after creation.
 - Daily backups with a 7-day retention. A restore creates a new database and never overwrites the live one.
 - During a rollout, two revisions run at the same time. Each stored format change must be readable by the previous revision.
@@ -140,14 +143,22 @@ Retries, duplicates, and two services make races more likely than in one process
 A concurrent write can drop a grant, and a crash between the writes leaves a stale entitlement.
 The new multi-key `Store` transaction writes both together. A single-key transaction is not enough.
 
-**Pending gate check: change the behavior.** The pending check is created by a list-then-create sequence.
-Two concurrent calls can both create one. A late pending check then hides a verdict until the next sweep.
-A lease in Firestore cannot fence writes to GitHub. So the design stops creating the pending check on webhooks.
-Branch protection already blocks a merge while a required check is missing, and GitHub shows it as "Expected".
-The upload creates the only gate check for a head. This is [open decision 1](#open-decisions).
+**Publications of one head: fixed.** Every write to GitHub for one head (an upload, a sweep repair, the pending check
+and the waiver notice) holds a lease in the `Store`. The key is the installation and the head SHA. The holder reads the
+check, compares the receipts and writes while it holds the lease. So an older publication can no longer overwrite a newer
+one, and a late pending check can no longer replace a verdict. A `Store` error writes nothing.
+The lease lasts 60 seconds. The holder stops its own work 10 seconds before that, by its own clock. A call that
+fails after it sent a request to GitHub (a client timeout, a 5xx, the work deadline) keeps the lease until it expires,
+so a write that GitHub still applies lands before the next holder reads. An upload reads its inputs again inside the
+lease and writes nothing when they changed, so it never replaces a sweep correction made from newer inputs.
 
-**Remaining limit.** Two publishers can still overlap on one head, for example an upload and a sweep repair.
-The last write to GitHub wins until the next sweep.
+**Pending gate check: open.** The lease removes the race between concurrent calls on one instance or several. A lease
+still cannot fence writes to GitHub: a request that GitHub applies more than 10 seconds after the holder's work
+deadline can land after another instance took over. Branch protection already blocks a merge while a required check is missing, and GitHub shows it as
+"Expected". So the pending check on webhooks can still be dropped. This is [open decision 1](#open-decisions).
+
+**Remaining limit.** A request that GitHub applies more than 10 seconds after the holder's work deadline can land
+after a takeover. Then the last write to GitHub wins until the next sweep.
 
 ## Failure handling
 
@@ -157,7 +168,7 @@ The last write to GitHub wins until the next sweep.
 | Worker returns success without the work    | The task is gone. The sweep repairs gate and control state                       |
 | The platform rejects a dispatch (401, 403) | The App never sees it. A platform alert catches it                               |
 | Queue unavailable at intake                | Intake processes the webhook inline                                              |
-| Firestore unavailable                      | Store calls fail. The gate cannot read the entitlement, so it does not pass      |
+| Firestore unavailable                      | Store calls fail. No publication lease, so nothing is published: uploads get 503 |
 | GitHub API errors or rate limits           | The worker retries through the queue. The upload returns its error to the Action |
 | Webhook lost before intake                 | The sweep repairs checks. GitHub keeps failed deliveries for 3 days              |
 | Bad release                                | Roll back. See [Operations](operations.md#roll-back)                             |
@@ -212,7 +223,7 @@ Each decision has a default. The design uses the default until the owner changes
 
 | #   | Decision                                  | Default                     | Other choice                                                         |
 | --- | ----------------------------------------- | --------------------------- | -------------------------------------------------------------------- |
-| 1   | Create the pending gate check on webhooks | No                          | Keep it and accept that a late pending check can hide a verdict      |
+| 1   | Create the pending gate check on webhooks | No                          | Keep it. The lease leaves only a stalled holder's late write         |
 | 2   | Region                                    | `europe-west1`              | `us-central1` at the same price. The Firestore location is permanent |
 | 3   | Warm public instance                      | No                          | About $5–10 a month, no cold starts                                  |
 | 4   | Final domain                              | None. The owner must choose | It is the OIDC audience and must exist before the App is registered  |
@@ -221,7 +232,10 @@ Each decision has a default. The design uses the default until the owner changes
 
 ## Known limits
 
-- Two publishers can overlap on one head until the next sweep.
+- Publications of one head are serialized by a `Store` lease. A request that GitHub applies more than 10 seconds
+  after the holder's work deadline can still land after a takeover, until the next sweep.
+- A `Store` outage stops all publication. Checks stay as they were until the `Store` is back. An unserialized write
+  would let an older run overwrite a newer one.
 - The release canary gets no real webhooks or uploads. See [Release](operations.md#release).
 - Domain mapping is in Preview. It has no SLA.
 - Two instances per service cap cost and throughput. That is intended for the beta.

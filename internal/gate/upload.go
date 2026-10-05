@@ -104,6 +104,9 @@ func (g *Gate) decideAndPublish(ctx context.Context, u Upload) (verdict.Outcome,
 		Receipt:  receipt(u, trusted, outcome),
 		Report:   u.Report,
 		Trusted:  trusted,
+		// A sweep may correct the check between this decision and its publication. Inside the lease feedback refuses
+		// a decision whose inputs are no longer trusted (503 here); the Action's retry decides from the new inputs.
+		Resolve: func(ctx context.Context) (inputs.Trusted, error) { return g.resolver.Resolve(ctx, target, g.now()) },
 	})
 	if err != nil {
 		return verdict.Outcome{}, fmt.Errorf("gate: publish: %w", err)

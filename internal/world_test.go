@@ -594,7 +594,7 @@ func (c *checkRun) json() map[string]any {
 	return map[string]any{
 		"id": c.ID, "name": c.Name, "head_sha": c.HeadSHA, "external_id": c.ExternalID, "status": c.Status,
 		"conclusion": conclusion, "started_at": started, "app": map[string]any{"id": appID},
-		"output": map[string]any{"title": c.Title, "summary": c.Summary},
+		"output": map[string]any{"title": c.Title, "summary": c.Summary, "annotations_count": len(c.Annotations)},
 	}
 }
 
@@ -612,7 +612,7 @@ func (c *checkRun) apply(b map[string]any) {
 	}
 	if out, ok := b["output"].(map[string]any); ok {
 		c.Title, c.Summary = str(out, "title"), str(out, "summary")
-		c.Annotations = nil
+		// As GitHub: the annotations of every request are appended, never replaced.
 		anns, _ := out["annotations"].([]any)
 		for _, a := range anns {
 			am, _ := a.(map[string]any)

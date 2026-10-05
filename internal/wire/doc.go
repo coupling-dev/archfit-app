@@ -8,6 +8,8 @@
 //
 // Versioning rule: every contract carries a version identifier, and a wrong or unknown one is a decode error.
 // Decoders reject unknown fields, so a producer may send a new optional field only after an App release allows it.
+// The report decoder reads each engine release it lists with that release's own key set, and the manifest may
+// approve several releases, so an engine upgrade needs no flag day.
 // A breaking change adds a new version constant and a new decode path beside the old one, which stays until no
 // approved producer emits the old version. A version bump never changes a consumer's domain types.
 //

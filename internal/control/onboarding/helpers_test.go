@@ -104,11 +104,12 @@ func discoveryUpload(r api.Repo, event string, payload []byte) gate.Upload {
 }
 
 type uploadResponse struct {
-	status int
-	raw    string
-	Error  string `json:"error"`
-	Number int    `json:"pull_request"`
-	URL    string `json:"url"`
+	status    int
+	raw       string
+	Error     string `json:"error"`
+	Number    int    `json:"pull_request"`
+	URL       string `json:"url"`
+	Unchanged bool   `json:"unchanged"`
 }
 
 func (f *fixture) post(t *testing.T) uploadResponse {

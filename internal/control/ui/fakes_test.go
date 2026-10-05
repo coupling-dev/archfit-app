@@ -365,6 +365,10 @@ func (o *fakeOnboarding) DiscoveryHandler() http.Handler {
 	panic("ui must never mount DiscoveryHandler")
 }
 
+func (o *fakeOnboarding) BaselineHandler() http.Handler {
+	panic("ui must never mount BaselineHandler")
+}
+
 type assistCall struct {
 	mode assist.Mode
 	req  assist.Request

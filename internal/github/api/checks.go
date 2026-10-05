@@ -26,6 +26,8 @@ type checkOutputJSON struct {
 	Title       string           `json:"title"`
 	Summary     string           `json:"summary"`
 	Annotations []annotationJSON `json:"annotations,omitempty"`
+	// AnnotationsCount is response-only: checkRunBody never sets it, so no request carries it.
+	AnnotationsCount int `json:"annotations_count,omitempty"`
 }
 
 type checkRunJSON struct {
@@ -50,7 +52,7 @@ func (j checkRunJSON) checkRun() CheckRun {
 		run.StartedAt = *j.StartedAt
 	}
 	if j.Output != nil {
-		run.Title, run.Summary = j.Output.Title, j.Output.Summary
+		run.Title, run.Summary, run.AnnotationCount = j.Output.Title, j.Output.Summary, j.Output.AnnotationsCount
 	}
 	return run
 }

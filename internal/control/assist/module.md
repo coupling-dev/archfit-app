@@ -442,7 +442,7 @@ func Validate(policy []byte) error
 
 <!-- contract: Schema — restated from internal/wire/policy/module.md -->
 ```go
-// Schema returns the engine v2.3.1 config JSON Schema, embedded unchanged, for the editor.
+// Schema returns the engine v2.4.0 config JSON Schema, embedded unchanged, for the editor.
 func Schema() []byte
 ```
 

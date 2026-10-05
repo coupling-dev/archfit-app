@@ -55,7 +55,7 @@ func loadReport(t *testing.T, name string) report.Report {
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
-	rep, err := report.Decode(raw)
+	rep, err := report.Decode(raw, "v2.3.1")
 	if err != nil {
 		t.Fatalf("decode fixture %s: %v", name, err)
 	}
@@ -83,6 +83,23 @@ func reportFor(policyText string, seams []report.Seam, findings []report.Finding
 	}
 }
 
-func observed(from, to string, count int, permitted bool) Link {
-	return Link{From: from, To: to, Observed: true, Permitted: permitted, Count: count}
+func link(from, to string, count int, status LinkStatus) Link {
+	return Link{From: from, To: to, Status: status, Count: count}
+}
+
+// corpusEngine is the engine release that captured the shared wire corpus.
+const corpusEngine = "v2.3.1"
+
+// corpusReport decodes a report of the shared wire corpus; internal/wire/module.md owns its names.
+func corpusReport(t *testing.T, name string) report.Report {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "wire", "testdata", "report", name+".json"))
+	if err != nil {
+		t.Fatalf("read corpus fixture: %v", err)
+	}
+	rep, err := report.Decode(raw, corpusEngine)
+	if err != nil {
+		t.Fatalf("decode corpus fixture %s: %v", name, err)
+	}
+	return rep
 }

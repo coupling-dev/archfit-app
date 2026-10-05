@@ -34,7 +34,8 @@ and the invariants in `AGENTS.md`. Choices made without an owner answer are mark
 - Offer AI assistance only on explicit request: managed (one provider, consent, hard budget) or
   customer mode (workflow dispatch). Proposals are always reviewable diffs.
 - Keep entitlements (manual grants, trial, grace, suspension), consent records and the LLM budget
-  counter in a KV store; delete them on uninstall. Store nothing else: no reports, no source, no queues.
+  counter in a KV store; delete them on uninstall. Besides them only short-lived publication leases, which
+  serialize the GitHub writes of one head SHA across instances. Store nothing else: no reports, no source, no queues.
 
 ## Subdomain Classification
 
@@ -69,6 +70,7 @@ The system's contract is its external surface. Everything else is internal.
 | `GET /healthz`          | `app`                     | none                                                      |
 | `POST /v1/reports`      | `gate`                    | GitHub Actions OIDC bearer token, audience = App base URL |
 | `POST /v1/discoveries`  | `control` (onboarding)    | same OIDC checks, through the gate's `Receiver`           |
+| `POST /v1/baselines`    | `control` (onboarding)    | same OIDC checks, through the gate's `Receiver`           |
 | `POST /webhooks/github` | `app` → `gate`, `control` | `X-Hub-Signature-256`                                     |
 | `POST /internal/sweep`  | `app` → `control`, `gate` | operator bearer token **[default]**                       |
 | `POST /internal/grants` | `app` → `control`         | operator bearer token **[default]**                       |
@@ -127,10 +129,10 @@ func Run(ctx context.Context, c Config, log *slog.Logger) error
 ## Integrations
 
 The root integrates with nothing above it. Its external counterparts are other repositories, reached only
-through the contracts above: `archfit` (engine state and config schemas, pinned v2.3.1), `archfit-action`
-(conforms to the envelope schema owned here), and GitHub. Distance to them is the highest the system has
-(separate repositories and lifecycles), so the strength is contract by construction: versioned JSON Schema,
-strict decoding, a locked manifest. All internal integrations are listed in the coupling table below.
+through the contracts above: `archfit` (config schema pinned v2.4.0; state schema pinned v2.3.1, byte-identical in
+v2.4.0), `archfit-action` (conforms to the envelope schema owned here), and GitHub. Distance to them is the highest
+the system has (separate repositories and lifecycles), so the strength is contract by construction: versioned JSON
+Schema, strict decoding, a locked manifest. All internal integrations are listed in the coupling table below.
 
 ## Internal Design
 
@@ -221,6 +223,12 @@ waiver expiry (warn 7 days before, re-run after), suspension and restoration. Th
 CODEOWNERS entries). After merge, the UI dispatches discovery; the workflow uploads a draft policy to
 `POST /v1/discoveries`; `onboarding` opens PR 2. Stages are derived from GitHub on every read.
 
+**Baseline capture**: an owner dispatches the workflow with `mode: baseline` on the default branch; the Action runs
+`archfit baseline` in the pinned image and uploads the file to `POST /v1/baselines`. `onboarding` pins the run to the
+default-branch head, checks the approved identity and that the capture ran under the protected policy and labels, then
+opens or updates one pull request on `archfit/baseline` that changes only `.archfit-baseline.json`. It never commits to
+the default branch; the gate's protected-path rule requires an owner approval of the exact head before that PR merges.
+
 **Managed onboarding**: consent recorded in KV → onboarding PR opened with a "discovery running" body → `Sandbox.Discover`
 → policy commit pushed to the same PR. No LLM runs inside the sandbox **[default]**; optional LLM refinement
 is an ordinary `assist` request on the resulting draft.
@@ -245,10 +253,11 @@ Distance scale and thresholds are those of the Fractal Design skill. Depths: roo
 | gate/inputs → wire/settings, wire/policy                                    | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
 | gate/inputs → github/api                                                    | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
 | gate/inputs → store                                                         | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
+| gate/feedback → store (publication leases)                                  | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
 | gate/verdict, gate/feedback → wire/report                                   | Contract (published language)     | root           | 2    | 2        | High       | Yes       | —                                                |
 | gate/feedback, gate/sweep → github/api                                      | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
 | gate → wire/{envelope,manifest,settings}, github/{api,oidc,webhook}         | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
-| gate → store (hands the Store to gate/inputs)                               | Contract                          | root           | 1    | 1        | High       | Yes       | —                                                |
+| gate → store (hands the Store to gate/inputs and gate/feedback)             | Contract                          | root           | 1    | 1        | High       | Yes       | —                                                |
 | gate/sweep → wire/settings; gate/feedback → wire/settings, wire/manifest    | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
 | control/account → gate (`Entitlement` record)                               | Contract                          | root           | 2    | 2        | Moderate   | Yes       | gate owns the record so it never imports billing |
 | control/account → store                                                     | Contract                          | root           | 2    | 2        | Moderate   | Yes       | —                                                |
@@ -293,8 +302,9 @@ and child (distance 1). Everything that crosses the root is contract coupling, w
    waiver expiry live in the check run; the sweep compares them with the protected ref. No second copy can drift.
 6. **Consumer-owned seams.** `Sandbox` lives with `onboarding`, `Provider` with `assist`, `Store` stands alone
    because both branches use it. Platform implementations are separate packages chosen in `app`.
-7. **Two upload routes, one provenance path.** `/v1/discoveries` reuses the gate's `Receiver`, so discovery
-   cannot weaken or fork the authentication rules. Discovery output never satisfies the gate.
+7. **Three upload routes, one provenance path.** `/v1/discoveries` and `/v1/baselines` reuse the gate's `Receiver`,
+   so neither can weaken or fork the authentication rules. Discovery and baseline output never satisfy the gate; a
+   baseline becomes trusted input only when an owner-approved pull request merges it.
 8. **Advisory mode publishes no `archfit/gate` check [default].** If a ruleset requires the check while settings
    say `advisory`, the PR stays blocked as "expected": closed, never green.
 9. **No LLM in the sandbox [default].** One LLM call site (`assist`), one budget counter, and source never
@@ -316,10 +326,12 @@ baseline and labels integrity through producer-stated envelope digests (below); 
 permission cache of 60 seconds; Anthropic model `claude-sonnet-5`.
 
 Readings of decisions.md adopted here, to be confirmed by the owner: §3 "Supported triggers" governs report
-uploads; discovery uploads (§5) also accept `workflow_dispatch`. §2 "keys are prefixed by installation ID" has
+uploads; discovery uploads (§5) and baseline uploads (§4) also accept `workflow_dispatch`. §4 "The App never
+commits it" means never to the protected ref: the App commits a captured baseline only to `archfit/baseline`, and it
+reaches the protected ref only by an owner-approved merge. §2 "keys are prefixed by installation ID" has
 one exception, the App-wide LLM budget counter of §7. §4 "created `in_progress` on PR open or push" means a push
 to the PR branch (a new head SHA); a default-branch push gets `archfit/state` only. §7 "suggestion" means a
-commit on the draft PR, not a GitHub review suggestion. Supported languages are whatever engine v2.3.1 supports;
+commit on the draft PR, not a GitHub review suggestion. Supported languages are whatever engine v2.4.0 supports;
 the App has no language-specific logic, so no module owns that list. "Checked by Archfit on this repository"
 needs this repository's own `.archfit.yaml`, which is a plan task; until then the root import tests are the enforcement.
 
@@ -370,7 +382,9 @@ draft are gone. What the real engine changed in this design:
 - Nothing is persisted except KV keys under an installation prefix (and the system budget counter). No report, source, queue, or job table.
 - Logs and telemetry carry IDs, digests, outcomes and timings only: no report bodies, paths, or messages.
 - Handlers do their work in the request and are idempotent; GitHub holds the dedup keys.
-- GitHub rate-limit exhaustion leaves checks pending for the sweep; it never produces green.
+- GitHub rate-limit exhaustion before a decision is published leaves checks pending for the sweep; it never produces
+  green. A rate limit on the changed-file list, which only filters annotations, comes after the gate check is written
+  with its decided conclusion; the retry adds the annotations.
 - Origin is presentation only; enforcement is never filtered to introduced findings. No repository score.
 - Standard library first. Expected third-party dependencies: one YAML parser, nothing else until `docs/tech-stack.md` says so.
 - Targets **[default]**: feedback within 60 seconds of upload at p95; missed events repaired within one sweep interval.
@@ -425,8 +439,8 @@ draft are gone. What the real engine changed in this design:
   **Scenario**: head-edited policy, baseline, settings, workflow, CODEOWNERS; stale approval after re-push; unknown image; missing profile; fork PR; `workflow_run` upload.
   **Expected behavior**: each ends `action_required` with its own reason; none is `success`, `neutral`, or `skipped`.
 - **Test name**: `TestGateSurvivesControlPlaneFailure`
-  **Scenario**: Store failing, LLM provider failing, UI handler panicking, control sweep failing.
-  **Expected behavior**: report upload, webhook pending checks and the gate sweep still complete; a Store failure means "not suspended".
+  **Scenario**: LLM provider failing, UI handler panicking, control sweep failing; separately the Store failing together with the control sweep.
+  **Expected behavior**: without the Store failure, report upload, webhook pending checks and the gate sweep still complete. With the Store failing, an unreadable entitlement would mean "not suspended", but no publication lease can be taken: the upload answers 503, the webhook and every sweep visit return errors, and no gate check is written, so nothing is green.
 - **Test name**: `TestSweepRepairsMissedEvents`
   **Scenario**: drop the PR-opened webhook, drop an upload, change the base policy, let a waiver expire, suspend then restore an installation.
   **Expected behavior**: after one sweep each PR shows the expected check state; re-runs were requested; nothing turned green without a fresh report.

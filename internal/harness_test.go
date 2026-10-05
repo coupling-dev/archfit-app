@@ -37,6 +37,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/github/oidc"
 	"github.com/alexei-led/archfit-app/internal/github/webhook"
 	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/alexei-led/archfit-app/internal/wire/manifest"
 )
 
 const (
@@ -211,6 +212,10 @@ func loadFixture(t *testing.T, name string) fixture {
 	return f
 }
 
+// approved is the identity of the manifest row new workflows pin (linux/amd64). The corpus captures are v2.3.1
+// documents; every approved release reads them with the same key set.
+var approved = manifest.Current().Identity
+
 func digest(raw []byte) string {
 	if raw == nil {
 		return ""
@@ -291,8 +296,8 @@ func demoUpload(f fixture) upload {
 		env: envelope{
 			SchemaVersion: "archfit.report-envelope.v1", Kind: "report", Repository: demoRepo, Event: "pull_request",
 			PullRequest: demoPull, HeadSHA: demoHead, BaseSHA: demoBase, MergeBaseSHA: demoMergeBase,
-			RunID: demoRun, RunAttempt: 1, EngineVersion: "v2.3.1", ImageDigest: "sha256:" + strings.Repeat("a", 64),
-			Platform: "linux/amd64", PayloadDigest: "sha256:" + digest(f.report),
+			RunID: demoRun, RunAttempt: 1, EngineVersion: approved.EngineVersion, ImageDigest: approved.ImageDigest,
+			Platform: approved.Platform, PayloadDigest: "sha256:" + digest(f.report),
 			BaselineDigest: digest(f.baseline), LabelsDigest: digest(f.labels),
 		},
 		body: f.report,
@@ -339,10 +344,12 @@ func (u upload) request(t *testing.T, path string) *http.Request {
 
 // answer is the JSON body of an upload response.
 type answer struct {
-	Status     int
-	Conclusion string `json:"conclusion"`
-	Reason     string `json:"reason"`
-	Error      string `json:"error"`
+	Status      int
+	Conclusion  string `json:"conclusion"`
+	Reason      string `json:"reason"`
+	Error       string `json:"error"`
+	PullRequest int    `json:"pull_request"`
+	Unchanged   bool   `json:"unchanged"`
 }
 
 func readAnswer(t *testing.T, resp *http.Response) answer {
@@ -429,6 +436,7 @@ func newSystem(t *testing.T, w *world, o options) *system {
 	}
 	s.mux.Handle("POST /v1/reports", s.gate.UploadHandler())
 	s.mux.Handle("POST /v1/discoveries", s.ctl.DiscoveryHandler())
+	s.mux.Handle("POST /v1/baselines", s.ctl.BaselineHandler())
 	s.mux.Handle("/", s.ctl.UIHandler())
 	return s
 }
@@ -699,6 +707,9 @@ func (f failingStore) Delete(context.Context, store.Tenant, string) error       
 func (f failingStore) Add(context.Context, store.Tenant, string, int64) (int64, error) {
 	return 0, f.err
 }
+func (f failingStore) CompareAndSwap(context.Context, store.Tenant, string, []byte, []byte) (bool, error) {
+	return false, f.err
+}
 func (f failingStore) DeleteTenant(context.Context, store.Tenant) error { return f.err }
 func (f failingStore) Tenants(context.Context) ([]store.Tenant, error)  { return nil, f.err }
 
@@ -794,8 +805,8 @@ func discoveryUpload(fullName string, repoID, runID int64, head string, policy [
 	return upload{
 		env: envelope{
 			SchemaVersion: "archfit.report-envelope.v1", Kind: "discovery", Repository: fullName, Event: "workflow_dispatch",
-			HeadSHA: head, RunID: runID, RunAttempt: 1, EngineVersion: "v2.3.1",
-			ImageDigest: "sha256:" + strings.Repeat("a", 64), Platform: "linux/amd64", PayloadDigest: "sha256:" + digest(policy),
+			HeadSHA: head, RunID: runID, RunAttempt: 1, EngineVersion: approved.EngineVersion,
+			ImageDigest: approved.ImageDigest, Platform: approved.Platform, PayloadDigest: "sha256:" + digest(policy),
 		},
 		body: policy,
 		claims: map[string]any{
@@ -806,4 +817,11 @@ func discoveryUpload(fullName string, repoID, runID int64, head string, policy [
 		},
 		key: oidcKey(),
 	}
+}
+
+// baselineUpload is a baseline captured by a workflow_dispatch run on main, with the labels file it read.
+func baselineUpload(fullName string, repoID, runID int64, head string, baseline, labels []byte) upload {
+	u := discoveryUpload(fullName, repoID, runID, head, baseline)
+	u.env.Kind, u.env.LabelsDigest = "baseline", digest(labels)
+	return u
 }

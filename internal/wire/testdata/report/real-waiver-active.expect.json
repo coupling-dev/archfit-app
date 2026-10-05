@@ -17,7 +17,7 @@
   "gate": {
     "conclusion": "success",
     "reasons": [
-      "healthy"
+      "attention_only"
     ]
   }
 }

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math"
@@ -53,6 +54,31 @@ func (m *memory) Put(ctx context.Context, t Tenant, key string, value []byte) er
 	defer m.mu.Unlock()
 	m.data[keyPath(t, key)] = append([]byte{}, value...)
 	return nil
+}
+
+func (m *memory) CompareAndSwap(ctx context.Context, t Tenant, key string, old, value []byte) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if err := validateKey("compare and swap", t, key); err != nil {
+		return false, err
+	}
+	if len(value) > maxValueLen {
+		return false, opError("compare and swap", t, key, "value longer than "+strconv.Itoa(maxValueLen)+" bytes")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	path := keyPath(t, key)
+	cur, ok := m.data[path]
+	if ok != (old != nil) || !bytes.Equal(cur, old) {
+		return false, nil
+	}
+	if value == nil {
+		delete(m.data, path)
+	} else {
+		m.data[path] = append([]byte{}, value...)
+	}
+	return true, nil
 }
 
 func (m *memory) Delete(ctx context.Context, t Tenant, key string) error {

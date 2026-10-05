@@ -50,7 +50,10 @@ func (s *server) buildGraph(ctx context.Context, sc scope) (graphBody, error) {
 	if err != nil {
 		return graphBody{}, err
 	}
-	rep, err := report.Decode(payload)
+	// The artifact carries no envelope that names its engine release. The graph only displays it, and the
+	// newest release's key set holds every older one, so the newest is the one to read it with.
+	releases := report.EngineVersions()
+	rep, err := report.Decode(payload, releases[len(releases)-1])
 	if err != nil {
 		return graphBody{Unavailable: reportUnavailable}, nil
 	}

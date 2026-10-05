@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -76,7 +77,8 @@ func (c Config) validate() error {
 		ok  bool
 	}{
 		{envAddr, c.Addr != ""},
-		{envBaseURL, c.BaseURL != ""},
+		// The base URL is the OIDC audience, compared byte for byte; the Action refuses an endpoint ending in '/'.
+		{envBaseURL, c.BaseURL != "" && !strings.HasSuffix(c.BaseURL, "/")},
 		{envAppID, c.AppID > 0},
 		{envPrivateKeyFile, c.PrivateKeyFile != ""},
 		{envWebhookSecretFile, c.WebhookSecretFile != ""},

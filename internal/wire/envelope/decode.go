@@ -31,7 +31,8 @@ func fields() []field {
 			return rule(e.SchemaVersion == SchemaV1, "must equal "+SchemaV1)
 		}},
 		{"kind", 0, func(e *Envelope) string {
-			return rule(e.Kind == KindReport || e.Kind == KindDiscovery, "must be report or discovery")
+			return rule(e.Kind == KindReport || e.Kind == KindDiscovery || e.Kind == KindBaseline,
+				"must be report, discovery or baseline")
 		}},
 		{"repository", 0, func(e *Envelope) string {
 			owner, name, ok := strings.Cut(e.Repository, "/")
@@ -61,7 +62,13 @@ func fields() []field {
 			return rule(isPlatform(e.Platform), "must be os/arch or os/arch/variant, at most 32 characters")
 		}},
 		{"payload_digest", 0, func(e *Envelope) string { return prefixedDigest(e.PayloadDigest) }},
-		{"baseline_digest", 0, func(e *Envelope) string { return inputDigest(e, e.BaselineDigest) }},
+		{"baseline_digest", 0, func(e *Envelope) string {
+			// A baseline upload is the capture itself: the engine loaded no stored baseline to produce it.
+			if e.Kind == KindBaseline {
+				return rule(e.BaselineDigest == "", "must be empty when kind is baseline")
+			}
+			return inputDigest(e, e.BaselineDigest)
+		}},
 		{"labels_digest", 0, func(e *Envelope) string { return inputDigest(e, e.LabelsDigest) }},
 	}
 }

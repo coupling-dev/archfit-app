@@ -85,6 +85,14 @@ PR 1 adds these files:
 - `CODEOWNERS` entries for the protected paths
 
 The workflow uses no repository secret. It uses the job GitHub OIDC token.
+It runs on `pull_request`, `push` to the default branch, and `workflow_dispatch`. The Action refuses other events.
+Pull request and push runs report the architecture state. A manual dispatch selects `mode`: `discovery` proposes a
+policy, and `baseline` captures accepted debt. A dispatch with `mode: report` is refused. See
+[Capture a baseline](#capture-a-baseline).
+The `discover` input selects discovery; the status page button uses it.
+On a pull request, the Action reads `.archfit.yaml`, `.archfit-baseline.json`, and `.archfit-labels.yaml` per file:
+from the pull request head when the pull request changes that file, otherwise from the tip of the base branch. The
+App accepts a changed file only when an architecture owner approved the exact head commit.
 Discovery can also run in an existing customer workflow that uploads from a default-branch push.
 
 The status page derives its stage from GitHub on every read.
@@ -139,6 +147,20 @@ The App publishes these items on a pull request:
 - `archfit/gate`, the blocking check when `gate: required`
 - One App comment that the App updates after each run
 
+What each item shows:
+
+- When architecture findings block (reason `blocking_findings`), the `archfit/gate` summary names each blocking
+  finding: the rule, the module pair, the first location, the first eight characters of the finding ID, and the
+  repair goal. It shows at most 20 and counts the rest.
+- The `archfit/state` check annotates live findings on the files that the pull request changed. Accepted debt and
+  fixed findings get no annotation. Blocking findings come first. The check shows at most 150 annotations. A new
+  report or run attempt gets a new `archfit/state` check run with its own annotations, so annotations from an
+  earlier report do not stay; GitHub shows the newest run. If the App cannot read the list of changed files, the
+  check has no annotations for that upload.
+- The comment lists all findings, the evidence gaps, the validation commands, and a JSON block of agent tasks
+  between `<!-- archfit:agent-tasks -->` markers. A coding agent on the pull request can act on that block.
+- The evidence gaps show analyzers that did not run (absent or disabled) on one line.
+
 The gate has three conclusions:
 
 | Conclusion        | Meaning                                            | Action                 |
@@ -148,7 +170,14 @@ The gate has three conclusions:
 | `action_required` | Evidence, governance, or subscription needs action | Follow the reason code |
 
 The gate never uses `neutral` or `skipped`. A missing report never becomes `success`.
-The state check can use `neutral` because it is never a required check.
+
+The state check is never a required check. It uses these conclusions:
+
+| State check       | When                                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------ |
+| `success`         | The gate result is `success` and the engine verdict is `healthy`                           |
+| `neutral`         | The gate result is `success` with `attention_only`, or `failure`                           |
+| `action_required` | The gate result is `action_required`. Errors and unverifiable evidence are never `neutral` |
 
 ### Reason codes
 
@@ -156,19 +185,28 @@ The first reason controls the conclusion. The App keeps later reasons in the com
 
 #### Architecture
 
-| Reason              | Recovery                                                  |
-| ------------------- | --------------------------------------------------------- |
-| `healthy`           | Nothing                                                   |
-| `blocking_findings` | Fix the blocking findings and run the validation command. |
+| Reason              | Recovery                                                                                                 |
+| ------------------- | -------------------------------------------------------------------------------------------------------- |
+| `healthy`           | Nothing                                                                                                  |
+| `attention_only`    | Nothing blocks. Advisories never block. Review the listed dimensions and diagnostics on the state check. |
+| `blocking_findings` | Fix the blocking findings and run the validation command.                                                |
+
+`attention_only` is a `success`. The engine verdict is `needs_attention`, and no evidence, governance, or subscription
+reason applies. The detail lists the dimensions that are not fully measured and the count of active diagnostics.
 
 #### Governance
 
-| Reason                   | Recovery                                                            |
-| ------------------------ | ------------------------------------------------------------------- |
-| `owner_approval_missing` | Get a policy owner to approve the exact commit.                     |
-| `settings_missing`       | Merge the onboarding pull request to add `.archfit-app.yaml`.       |
-| `policy_missing`         | Merge the Archfit policy pull request.                              |
-| `waiver_expired`         | Renew the waiver by owner-approved pull request or fix the finding. |
+| Reason                   | Recovery                                                                                                               |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `owner_approval_missing` | Get a policy owner to approve the exact commit.                                                                        |
+| `settings_missing`       | Merge the onboarding pull request to add `.archfit-app.yaml`.                                                          |
+| `policy_missing`         | Merge the Archfit policy pull request.                                                                                 |
+| `policy_defect`          | Fix the selectors of the listed rules by owner-approved pull request, or mark an intentional guard rule `guard: true`. |
+| `waiver_expired`         | Renew the waiver by owner-approved pull request or fix the finding.                                                    |
+
+`policy_defect` names required rules whose selector matches nothing in the repository. The engine cannot evaluate
+such a rule, so the gate asks for a policy fix instead of more evidence. The comment shows each rule with the selector
+that matches nothing. Other rules that the engine could not evaluate keep `missing_required_coverage`.
 
 #### Evidence
 
@@ -198,6 +236,44 @@ The first reason controls the conclusion. The App keeps later reasons in the com
 
 The sweep requests a workflow rerun after stale inputs, an expired waiver, late owner approval, or restored subscription.
 A rerun uses customer CI minutes. A fresh report is required for a new `success` result.
+When an owner approval that a passed check relied on is withdrawn, the review event sets `owner_approval_missing` at
+once; the sweep does it within an hour if the event is lost. No rerun is requested until an owner approves again or
+no approval is needed any more.
+
+### Engine versions
+
+The App approves engine images in a locked manifest. It reads a report with the key set of the engine release
+that the upload names.
+
+- The manifest approves engine v2.4.0 and v2.3.1. New workflows pin v2.4.0. v2.3.1 stays approved during the
+  upgrade window; move your workflow pin to v2.4.0 before it closes.
+- During an upgrade the App approves two releases: the new release and the release before it. Change the pin
+  in your workflow by pull request.
+- A report from an engine release that the App cannot read gives `report_invalid`. A report from an image that
+  the manifest does not list gives `unknown_engine_identity`. Both end `action_required`. Use the engine image
+  that the onboarding workflow pins.
+- The policy editor validates with the config schema of the release that new workflows pin. If your repository
+  uses the release before it, the editor can accept a key that your engine rejects. The Archfit check on the draft
+  pull request shows that error.
+
+### Report limits
+
+The App reads a complete report or no report. It never shortens a report to make it fit.
+
+| Limit                         | Maximum                                       | Above the maximum                                  |
+| ----------------------------- | --------------------------------------------- | -------------------------------------------------- |
+| Upload body                   | 5 MiB                                         | `413 payload_too_large`; the App publishes nothing |
+| Findings, agent tasks         | 10 000 each                                   | `report_invalid`                                   |
+| Seams                         | 50 000                                        | `report_invalid`                                   |
+| Locations in one finding      | 10 000                                        | `report_invalid`                                   |
+| Files in one agent task       | 10 002                                        | `report_invalid`                                   |
+| Constraints in one agent task | 34, each at most 4 096 characters on one line | `report_invalid`                                   |
+| Goal of one agent task        | 4 096 characters on one line                  | `report_invalid`                                   |
+| Tool version of one producer  | 128 printable characters on one line          | `report_invalid`                                   |
+
+With `gate: required`, an upload over 5 MiB leaves the `archfit/gate` check pending. The sweep sets it to
+`action_required` with `missing_upload` after 60 minutes. A report of about 3 000 seams with one advisory each is
+larger than 5 MiB. The comment shows at most 10 locations for each finding and gives the count of the others.
 
 ## Change the policy
 
@@ -220,7 +296,10 @@ Select **Reload the draft**, then apply the edit again.
 ### Owner approval
 
 A protected-path change needs approval from a policy owner on the exact head commit.
-A new push cancels the approval.
+A new push cancels the approval. A dismissed review, or a later request for changes from the same owner, also
+cancels it. The required check then returns to `action_required` with `owner_approval_missing` within the review
+event, or within an hour if the event is lost. No new commit is needed. A new owner approval reruns the workflow,
+and a fresh report sets the result again.
 
 The protected paths are:
 
@@ -250,6 +329,40 @@ The proposal arrives as a commit on the draft pull request. Nothing is published
 Managed AI receives the draft policy text and the instruction. It receives no source code and no report.
 AI output never affects the gate result.
 
+## Capture a baseline
+
+The baseline `.archfit-baseline.json` lists the findings the repository accepts as existing debt. It is a protected
+path. The App never commits it to the default branch.
+
+1. Run the Archfit workflow on the default branch with `mode: baseline`.
+2. The Action runs `archfit baseline` in the pinned engine image and uploads the file to the App.
+3. The App opens a draft pull request from `archfit/baseline`, or updates the open one. It changes only
+   `.archfit-baseline.json`.
+4. Read the pull request body. It counts the accepted findings that the capture adds and removes, and lists their rule
+   IDs and finding IDs. Approval accepts every added finding.
+5. Select **Ready for review**. A policy owner approves the exact head commit on GitHub.
+6. Merge the pull request.
+
+The App accepts the upload only from the workflow named in `.archfit-app.yaml`, from a run at the current head of the
+default branch, from an engine image in the locked manifest, and for a capture made with the policy and labels file on
+the default branch. A capture equal to the current baseline opens nothing.
+
+| Refusal                   | Recovery                                                                      |
+| ------------------------- | ----------------------------------------------------------------------------- |
+| `stale_head`              | The default branch moved during the capture. Run the workflow again.          |
+| `not_default_branch`      | Run the workflow on the default branch.                                       |
+| `workflow_not_approved`   | Run the workflow named in `.archfit-app.yaml`.                                |
+| `unknown_engine_identity` | Use the engine image pinned by the onboarding workflow.                       |
+| `policy_mismatch`         | Run the workflow again. The capture did not use the policy on the branch tip. |
+| `labels_mismatch`         | Run the workflow again. The capture did not use the labels on the branch tip. |
+| `baseline_invalid`        | Use the unmodified file from `archfit baseline` of the pinned engine.         |
+| `baseline_too_large`      | The file is larger than 1 MiB. Reduce the accepted debt or split the policy.  |
+
+The generated workflow sets `endpoint`, so the Action uploads the file. It also keeps the file as the
+`archfit-baseline` workflow artifact. A `409` answer (`stale_head` or `stale_attempt`) fails the job: dispatch the
+capture again on the current default-branch head. Without `endpoint` the Action sends nothing; commit the artifact
+as `.archfit-baseline.json` in a pull request that a policy owner approves.
+
 ## Enable the gate
 
 1. Open a pull request that sets `gate: required` in the settings file.
@@ -265,8 +378,19 @@ Open **Graph** for the repository. The page is read-only.
 
 - Modules come from the policy and are grouped by layer.
 - Links come from the latest default-branch report artifact.
-- A red link is a dependency that the policy does not permit.
+- Each link has a status that comes from the report findings for its module pair:
+
+  | Status      | Meaning                                                                   |
+  | ----------- | ------------------------------------------------------------------------- |
+  | `violation` | An active gate finding, or a gate finding of an unknown status, names the pair. The link is red |
+  | `accepted`  | A gate finding names the pair, and the baseline or a waiver accepts it                          |
+  | `advisory`  | A finding that does not block names the pair                                                    |
+  | `observed`  | The engine observed the dependency, and no current finding names the pair                       |
+
+- The graph never shows a link as permitted. A forbidden dependency in the baseline shows as `accepted`.
 - A **Stale** banner appears when the policy differs from the latest report.
+- An **Incomplete** banner appears when the report's hard gates did not pass or the engine did not evaluate all
+  required rules. Then an `observed` link can still break a rule that was not evaluated.
 
 GitHub keeps report artifacts for a limited time. Run Archfit on the default branch when no report is available.
 

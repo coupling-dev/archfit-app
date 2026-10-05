@@ -126,6 +126,30 @@ func TestInputDigestFormats(t *testing.T) {
 		{"non-empty with kind discovery", discoveryFields, quoted(hex64), false},
 	}
 	for _, field := range []string{"baseline_digest", "labels_digest"} {
+		t.Run(field+"/empty with kind baseline", func(t *testing.T) {
+			raw := render(baselineFields())
+			wantDecoded(t, raw)
+			wantSchemaAgrees(t, raw, true)
+		})
+	}
+	// A baseline upload is the capture itself: the engine read no stored baseline, but it did read the labels file.
+	t.Run("baseline_digest/non-empty with kind baseline", func(t *testing.T) {
+		fields := baselineFields()
+		fields["baseline_digest"] = quoted(hex64)
+		raw := render(fields)
+		wantRejected(t, raw, "baseline_digest")
+		wantSchemaAgrees(t, raw, false)
+	})
+	t.Run("labels_digest/non-empty with kind baseline", func(t *testing.T) {
+		fields := baselineFields()
+		fields["labels_digest"] = quoted(hex64)
+		raw := render(fields)
+		if got := wantDecoded(t, raw); got.Kind != envelope.KindBaseline || got.LabelsDigest != hex64 {
+			t.Errorf("got kind %q labels %q", got.Kind, got.LabelsDigest)
+		}
+		wantSchemaAgrees(t, raw, true)
+	})
+	for _, field := range []string{"baseline_digest", "labels_digest"} {
 		for _, tt := range tests {
 			t.Run(field+"/"+tt.name, func(t *testing.T) {
 				fields := tt.base()

@@ -119,7 +119,7 @@ func TestInvalidYAMLIsRefusedAndGraphGoesStale(t *testing.T) {
 	c := e.as("alice", permWrite)
 	base := "/r/" + repoName
 	payload := artifact(t, "healthy")
-	rep, err := report.Decode(payload)
+	rep, err := report.Decode(payload, "v2.3.1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,6 +141,10 @@ func TestInvalidYAMLIsRefusedAndGraphGoesStale(t *testing.T) {
 			t.Fatal(err)
 		}
 		return v, res.Body.String()
+	}
+
+	if got, body := view(); got.Incomplete || strings.Contains(body, `id="incomplete"`) {
+		t.Error("a healthy report whose hard gates passed is shown as incomplete")
 	}
 
 	edited := policyText + "  c:\n    layer: edge\n"

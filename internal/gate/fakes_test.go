@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,6 +47,20 @@ type fakeGitHub struct {
 	checkWrites []api.CheckRun // every created or updated check run, in order
 	commentOps  int            // comments created or updated
 	reruns      []int64
+	// beforeCheckWrite runs once, unlocked, at the start of the next check run create or update: what it does
+	// happens after that publisher's reads and before its first write.
+	beforeCheckWrite func()
+}
+
+// checkWriteHook takes the one-shot beforeCheckWrite hook and runs it outside the lock.
+func (f *fakeGitHub) checkWriteHook() {
+	f.mu.Lock()
+	hook := f.beforeCheckWrite
+	f.beforeCheckWrite = nil
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 }
 
 type fakeCall struct {
@@ -261,7 +276,11 @@ func (f *fakeGitHub) CheckRuns(_ context.Context, r api.RepoRef, headSHA, name s
 	if err := f.enter("CheckRuns", r); err != nil {
 		return nil, err
 	}
-	return f.checkRuns(r.FullName, headSHA, name), nil
+	runs := f.checkRuns(r.FullName, headSHA, name)
+	for i := range runs {
+		runs[i].AnnotationCount = len(runs[i].Annotations) // GitHub lists the number, as feedback reads it
+	}
+	return runs, nil
 }
 
 func (f *fakeGitHub) checkRuns(fullName, headSHA, name string) []api.CheckRun {
@@ -275,6 +294,7 @@ func (f *fakeGitHub) checkRuns(fullName, headSHA, name string) []api.CheckRun {
 }
 
 func (f *fakeGitHub) CreateCheckRun(_ context.Context, r api.RepoRef, c api.CheckRun) (api.CheckRun, error) {
+	f.checkWriteHook()
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if err := f.enter("CreateCheckRun", r); err != nil {
@@ -288,6 +308,7 @@ func (f *fakeGitHub) CreateCheckRun(_ context.Context, r api.RepoRef, c api.Chec
 }
 
 func (f *fakeGitHub) UpdateCheckRun(_ context.Context, r api.RepoRef, c api.CheckRun) error {
+	f.checkWriteHook()
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if err := f.enter("UpdateCheckRun", r); err != nil {
@@ -295,8 +316,10 @@ func (f *fakeGitHub) UpdateCheckRun(_ context.Context, r api.RepoRef, c api.Chec
 	}
 	for i, old := range f.checks[r.FullName] {
 		if old.ID == c.ID {
-			f.checks[r.FullName][i] = c
 			f.checkWrites = append(f.checkWrites, c)
+			// As GitHub: the annotations of every update are appended to the run's.
+			c.Annotations = append(slices.Clone(old.Annotations), c.Annotations...)
+			f.checks[r.FullName][i] = c
 			return nil
 		}
 	}
@@ -383,24 +406,63 @@ func (v *fakeVerifier) Verify(_ context.Context, token, audience string) (oidc.C
 	return t.claims, nil
 }
 
-// guardStore proves the gate path only reads: every write panics. It records the tenants it was read under.
+// leaseKeyPrefix is gate/feedback's unexported lease key prefix, restated so that the guard can tell a lease
+// operation from any other Store access.
+const leaseKeyPrefix = "feedback/lease/"
+
+// guardStore proves the gate path writes nothing but publication leases: every other write panics, and so does a
+// compare-and-swap outside the lease keys. It records the tenants and keys of other reads, and the tenants of lease
+// operations separately.
 type guardStore struct {
-	inner   store.Store
-	getErr  error
-	mu      sync.Mutex
-	tenants []store.Tenant
-	keys    []string
+	inner store.Store
+	// entitlementErr fails every read except the leases: the control plane's records are unreadable.
+	entitlementErr error
+	// down fails every operation, the leases included: the Store itself is unreachable.
+	down error
+	// beforeLease runs once, at the next lease read, before the lease is taken: what it does happens while that
+	// publisher waits for the lease, between its decision and its first read inside the lease.
+	beforeLease  func()
+	mu           sync.Mutex
+	tenants      []store.Tenant
+	keys         []string
+	leaseTenants []store.Tenant
 }
 
 func (s *guardStore) Get(ctx context.Context, t store.Tenant, key string) ([]byte, error) {
 	s.mu.Lock()
-	s.tenants = append(s.tenants, t)
-	s.keys = append(s.keys, key)
+	lease := strings.HasPrefix(key, leaseKeyPrefix)
+	var hook func()
+	if lease {
+		s.leaseTenants = append(s.leaseTenants, t)
+		hook, s.beforeLease = s.beforeLease, nil
+	} else {
+		s.tenants = append(s.tenants, t)
+		s.keys = append(s.keys, key)
+	}
 	s.mu.Unlock()
-	if s.getErr != nil {
-		return nil, s.getErr
+	if hook != nil {
+		hook()
+	}
+	switch {
+	case s.down != nil:
+		return nil, s.down
+	case !lease && s.entitlementErr != nil:
+		return nil, s.entitlementErr
 	}
 	return s.inner.Get(ctx, t, key)
+}
+
+func (s *guardStore) CompareAndSwap(ctx context.Context, t store.Tenant, key string, old, value []byte) (bool, error) {
+	if !strings.HasPrefix(key, leaseKeyPrefix) {
+		panic("gate path wrote to the Store outside a publication lease: CompareAndSwap")
+	}
+	s.mu.Lock()
+	s.leaseTenants = append(s.leaseTenants, t)
+	s.mu.Unlock()
+	if s.down != nil {
+		return false, s.down
+	}
+	return s.inner.CompareAndSwap(ctx, t, key, old, value)
 }
 
 func (s *guardStore) Put(context.Context, store.Tenant, string, []byte) error {
@@ -480,6 +542,19 @@ func (p *fakePublisher) Pending(_ context.Context, t inputs.Target) error {
 func (p *fakePublisher) State(_ context.Context, t inputs.Target) (feedback.CheckState, error) {
 	p.states = append(p.states, t)
 	return p.state, p.stateErr
+}
+
+// Reconcile is State, decide and Publish, as feedback runs them inside the lease.
+func (p *fakePublisher) Reconcile(ctx context.Context, t inputs.Target, decide feedback.Decision) error {
+	current, err := p.State(ctx, t)
+	if err != nil {
+		return err
+	}
+	pub, err := decide(ctx, current)
+	if err != nil || pub == nil {
+		return err
+	}
+	return p.Publish(ctx, *pub)
 }
 
 func (p *fakePublisher) Warn(context.Context, inputs.Target, time.Time) error {

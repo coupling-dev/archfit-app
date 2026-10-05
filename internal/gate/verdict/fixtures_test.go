@@ -48,7 +48,7 @@ func loadReport(t *testing.T, name string) *report.Report {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := report.Decode(payload)
+	r, err := report.Decode(payload, "v2.3.1")
 	if err != nil {
 		t.Fatalf("decode %s: %v", name, err)
 	}
@@ -153,7 +153,7 @@ func TestDecideWireFixtures(t *testing.T) {
 		first      ReasonCode
 	}{
 		"healthy":                 {Success, ReasonHealthy},
-		"attention-pass":          {Success, ReasonHealthy},
+		"attention-pass":          {Success, ReasonAttentionOnly},
 		"blocked":                 {Failure, ReasonBlockingFindings},
 		"missing-evidence":        {ActionRequired, ReasonMissingCoverage},
 		"unknown-identity":        {ActionRequired, ReasonProfileMissing},
@@ -194,7 +194,7 @@ func TestReasonsZeroDeterminesConclusion(t *testing.T) {
 		checkInvariants(t, o)
 		want := ActionRequired
 		switch o.Reasons[0].Code {
-		case ReasonHealthy:
+		case ReasonHealthy, ReasonAttentionOnly:
 			want = Success
 		case ReasonBlockingFindings:
 			want = Failure
