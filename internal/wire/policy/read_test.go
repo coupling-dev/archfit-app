@@ -1,9 +1,12 @@
 package policy
 
 import (
+	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func aliasBomb() string {
@@ -43,6 +46,7 @@ func TestReadersRejectBadInput(t *testing.T) {
 		{name: "over the input limit", in: atLimit + "x", wantErr: true},
 		{name: "alias-expansion bomb", in: aliasBomb(), wantErr: true},
 		{name: "complex key", in: "? [a, b]\n: c\n", wantErr: true},
+
 		{name: "empty input"},
 		{name: "comments only", in: "# nothing here\n"},
 		{name: "at the input limit", in: atLimit, want: 1},
@@ -115,5 +119,146 @@ func TestErrorsNeverEchoValues(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestReadBoundsTheLibraryDecode(t *testing.T) {
+	repeat := func(n int, line func(i int) string) string {
+		var b strings.Builder
+		b.WriteString("version: 2\nmodules:\n")
+		for i := range n {
+			b.WriteString(line(i))
+		}
+		return b.String()
+	}
+	var aliased strings.Builder
+	aliased.WriteString(repeat(5000, func(i int) string { return fmt.Sprintf("  m%d: {}\n", i) }))
+	aliased.WriteString("layers: &big {")
+	for i := range 2000 {
+		fmt.Fprintf(&aliased, "k%d: 1, ", i)
+	}
+	aliased.WriteString("}\nexclude: [")
+	for range 200 {
+		aliased.WriteString("*big, ")
+	}
+	aliased.WriteString("]\n")
+
+	tests := []struct {
+		name string
+		in   string
+		want error
+	}{
+		{"50 000 identical keys", repeat(50_000, func(int) string { return "  a: {}\n" }), errSyntax},
+		{"too many keys in one mapping", repeat(maxMappingKeys+1, func(i int) string { return fmt.Sprintf("  m%d: {}\n", i) }), errTooComplex},
+		{"a large mapping expanded by many aliases", aliased.String(), errTooComplex},
+		{"an alias inside its own anchor", "version: 2\nlayers: &l [a, *l]\n", errSyntax},
+		{"a long scalar expanded by many aliases", aliasedScalar("", 128<<10, 43_000), errTooComplex},
+		{"a binary value expanded by many aliases", aliasedScalar("!!binary ", 96<<10, 4000), errSyntax},
+		{"long keys that differ only at the end, expanded by aliases", longKeys(1500, 500, 8), errTooComplex},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var before, after runtime.MemStats
+			runtime.ReadMemStats(&before)
+			start := time.Now()
+			_, err := Waivers([]byte(tt.in))
+			diags := Diagnose([]byte(tt.in))
+			elapsed := time.Since(start)
+			runtime.ReadMemStats(&after)
+			if !errors.Is(err, tt.want) {
+				t.Errorf("Waivers error = %v, want %v", err, tt.want)
+			}
+			if len(diags) != 1 {
+				t.Errorf("Diagnose = %+v, want one diagnostic", diags)
+			}
+			if alloc := after.TotalAlloc - before.TotalAlloc; alloc > 256<<20 {
+				t.Errorf("allocated %d MB", alloc>>20)
+			}
+			if elapsed > 5*time.Second {
+				t.Errorf("took %v", elapsed)
+			}
+		})
+	}
+
+	legit := repeat(maxModules, func(i int) string { return fmt.Sprintf("  m%d: {}\n", i) })
+	if mods, err := Modules([]byte(legit)); err != nil || len(mods) != maxModules {
+		t.Errorf("Modules(%d modules) = %d, %v", maxModules, len(mods), err)
+	}
+}
+
+// aliasedScalar is a policy with one anchored scalar of size bytes, of base64 text, used by n aliases.
+func aliasedScalar(tag string, size, n int) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "version: 2\nx: &a %s%s\ny: [", tag, strings.Repeat("QUJD", size/4))
+	for range n {
+		b.WriteString("*a,")
+	}
+	b.WriteString("]\n")
+	return b.String()
+}
+
+// longKeys is an anchored mapping of n keys of size bytes that differ only in their last characters, used by
+// uses aliases.
+func longKeys(n, size, uses int) string {
+	var b strings.Builder
+	b.WriteString("version: 2\nx: &m\n")
+	for i := range n {
+		fmt.Fprintf(&b, "  %s%06d: 1\n", strings.Repeat("k", size-6), i)
+	}
+	b.WriteString("y: [")
+	for range uses {
+		b.WriteString("*m,")
+	}
+	b.WriteString("]\n")
+	return b.String()
+}
+
+// A text area shows a policy with 5 000 modules in realistic stanzas; every reader must take it.
+func TestReadersTakeAFullSizePolicy(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("version: 2\nlayers: [core, edge]\nmodules:\n")
+	for i := range maxModules {
+		fmt.Fprintf(&b, "  mod%04d:\n    owner: team-%d\n    layer: core\n    deploy_unit: svc-%d\n    volatility: low\n"+
+			"    subdomain: core\n    paths: [\"pkg/m%d/**\"]\n    public: [\"pkg/m%d/api\"]\n    internal: [\"pkg/m%d/internal/**\"]\n",
+			i, i%40, i%90, i, i, i)
+	}
+	policy := []byte(b.String())
+	if len(policy) > maxInputBytes {
+		t.Fatalf("fixture is %d bytes, over the input limit", len(policy))
+	}
+	if mods, err := Modules(policy); err != nil || len(mods) != maxModules {
+		t.Errorf("Modules = %d modules, %v", len(mods), err)
+	}
+	if err := Validate(policy); err != nil {
+		t.Errorf("Validate = %v", err)
+	}
+	if got := Diagnose(policy); got != nil {
+		t.Errorf("Diagnose = %+v", got[:min(3, len(got))])
+	}
+}
+
+// NEL, LS and PS are text to the engine. Readers that report no line read them; the ones that do refuse them.
+func TestLineBreaksOnlyMatterWhereLinesAre(t *testing.T) {
+	for _, r := range []string{"\u0085", "\u2028", "\u2029"} {
+		policy := []byte("version: 2\nmodules:\n  a: {}\nwaivers:\n  - rule: r\n    reason: \"pasted" + r + "text\"\n" +
+			"    approved_by: me\n    expires: 2026-10-20\n")
+		if w, err := Waivers(policy); err != nil || len(w) != 1 {
+			t.Errorf("%q: Waivers = %v, %v; want the waiver", r, w, err)
+		}
+		if err := Validate(policy); err != nil {
+			t.Errorf("%q: Validate = %v", r, err)
+		}
+		if _, err := Modules(policy); !errors.Is(err, errLineBreak) {
+			t.Errorf("%q: Modules error = %v, want the line-break error", r, err)
+		}
+		if got := Diagnose(policy); len(got) != 1 || !strings.Contains(got[0].Message, "NEL, LS or PS") {
+			t.Errorf("%q: Diagnose = %+v", r, got)
+		}
+	}
+}
+
+func TestExcessiveAliasingIsTooComplex(t *testing.T) {
+	if err := newSyntaxError(errors.New("yaml: document contains excessive aliasing")); !errors.Is(err, errTooComplex) {
+		t.Errorf("error = %v, want errTooComplex", err)
 	}
 }

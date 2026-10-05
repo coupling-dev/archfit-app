@@ -55,11 +55,15 @@ func TestValidateAcceptsRealPolicies(t *testing.T) {
 	}
 }
 
-func TestValidateRejectsForeignDocuments(t *testing.T) {
-	tests := map[string]struct {
-		policy []byte
-		want   string
-	}{
+type foreignDocument struct {
+	policy []byte
+	want   string // a part of Validate's error
+}
+
+// foreignDocuments are texts Validate refuses; Diagnose must refuse each of them too.
+func foreignDocuments(t *testing.T) map[string]foreignDocument {
+	t.Helper()
+	return map[string]foreignDocument{
 		"engine state report":   {readFile(t, filepath.Join(sharedReportDir, "real-healthy.json")), "key 1 is not"},
 		"labels file":           {fixture(t, "report/real-baselined-with-labels.labels.yaml"), "is not an engine config key"},
 		"prose with a colon":    {[]byte("Sure! Here is the file: done"), "key 1 is not"},
@@ -85,9 +89,12 @@ func TestValidateRejectsForeignDocuments(t *testing.T) {
 		"truncated YAML":        {[]byte("version: 1\nmodules: {a: [\n"), errSyntax.Error()},
 		"invalid UTF-8":         {[]byte("version: 1\nrules: \xff\n"), errNotUTF8.Error()},
 		"too large":             {append([]byte("version: 1\n#"), bytes.Repeat([]byte("x"), maxInputBytes)...), errTooLarge.Error()},
-		"alias bomb":            {[]byte("version: 1\n" + aliasBomb()), errSyntax.Error()},
+		"alias bomb":            {[]byte("version: 1\n" + aliasBomb()), errTooComplex.Error()},
 	}
-	for name, tt := range tests {
+}
+
+func TestValidateRejectsForeignDocuments(t *testing.T) {
+	for name, tt := range foreignDocuments(t) {
 		t.Run(name, func(t *testing.T) {
 			err := Validate(tt.policy)
 			if err == nil {

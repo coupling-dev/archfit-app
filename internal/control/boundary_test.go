@@ -18,7 +18,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/store"
 )
 
-const policyDraft = "version: 1\n"
+const policyDraft = "version: 2\n"
 
 func (h *harness) event(kind webhook.EventKind, id int64) {
 	h.t.Helper()

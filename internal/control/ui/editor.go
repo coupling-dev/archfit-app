@@ -63,6 +63,8 @@ type editorBody struct {
 	RunState     string
 	RunURL       string
 	ReloadURL    string
+	Diagnostics  []policy.Diagnostic // the problems of Content, listed under the editor
+	Unsaved      bool                // Content is the submitted form, not the text on the branch
 }
 
 // current returns the draft of branch and the policy text the editor shows for it: the file at the draft head
@@ -184,19 +186,83 @@ func readEditForm(r *http.Request, sc scope) (editForm, error) {
 	return f, nil
 }
 
-// failEditor answers a refused save, ready or assist: the documented status, the user's text kept in the editor.
-// It asks GitHub nothing, so it works while GitHub does not.
+// formBody is the editor page of a submitted form. It asks GitHub nothing, so it works while GitHub does not.
+func formBody(sc scope, f editForm) editorBody {
+	return editorBody{
+		Branch:      f.branch,
+		BranchQuery: f.branchQuery,
+		HeadSHA:     f.headSHA,
+		Content:     f.content,
+		ReloadURL:   editorURL(sc, f.branchQuery, nil),
+		Unsaved:     true,
+	}
+}
+
+// failEditor answers a refused save, ready or assist: the documented status, the user's text kept in the editor,
+// and the text's problems when the policy check refused it.
 func (s *server) failEditor(w http.ResponseWriter, r *http.Request, sc scope, f editForm, err error) {
 	status, outcome, sentence := explain(err)
 	logOf(r).outcome = outcome
 	if outcome == "rate_limited" {
 		w.Header().Set("Retry-After", retryAfterSeconds)
 	}
-	body := editorBody{Branch: f.branch, BranchQuery: f.branchQuery, HeadSHA: f.headSHA, Content: f.content}
-	body.ReloadURL = editorURL(sc, f.branchQuery, nil)
+	body := formBody(sc, f)
+	var problems *policyProblems
+	if errors.As(err, &problems) {
+		body.Diagnostics = problems.list
+	}
 	p := s.newPage(r, sc, "Policy", body)
 	p.Error = sentence
 	s.render(w, r, status, "editor", p)
+}
+
+const policyProblemsSentence = "The policy has problems, listed below the editor. Nothing was saved."
+
+// errPolicyProblems is the refusal of a text with problems; policyProblems carries the list to the page.
+var errPolicyProblems = invalid(policyProblemsSentence)
+
+type policyProblems struct {
+	list []policy.Diagnostic
+}
+
+func (e *policyProblems) Error() string { return errPolicyProblems.Error() }
+func (e *policyProblems) Unwrap() error { return errPolicyProblems }
+
+// checkPolicy is the one check of an edited policy: Check runs it, and so does every save, assist's included.
+func checkPolicy(content string) error {
+	if len(content) > maxPolicyBytes {
+		return invalid("The policy is larger than 256 KB.")
+	}
+	if !utf8.ValidString(content) {
+		return invalid("The policy is not valid UTF-8 text.")
+	}
+	if list := policy.Diagnose([]byte(content)); len(list) > 0 {
+		return &policyProblems{list: list}
+	}
+	return nil
+}
+
+// check runs checkPolicy on the submitted text and saves nothing. Both outcomes answer 200 with the editor.
+func (s *server) check(w http.ResponseWriter, r *http.Request, sc scope) {
+	f, err := readEditForm(r, sc)
+	if err == nil {
+		err = checkPolicy(f.content)
+	}
+	var problems *policyProblems
+	if err != nil && !errors.As(err, &problems) {
+		s.failEditor(w, r, sc, f, err)
+		return
+	}
+	body := formBody(sc, f)
+	p := s.newPage(r, sc, "Policy", body)
+	if problems != nil {
+		body.Diagnostics = problems.list
+		p.Body = body
+		p.Error = "The check found problems, listed below the editor."
+	} else {
+		p.Notice = "The check found no problems."
+	}
+	s.render(w, r, http.StatusOK, "editor", p)
 }
 
 // matchLineEndings undoes the CRLF a browser puts into every submitted textarea, unless the file on the
@@ -208,24 +274,19 @@ func matchLineEndings(content string, current []byte) string {
 	return strings.ReplaceAll(content, "\r\n", "\n")
 }
 
+// isOnBranch reports whether the submitted text is the policy the editor would load for the form's branch.
+func (s *server) isOnBranch(ctx context.Context, sc scope, f editForm) (bool, error) {
+	_, onBranch, err := s.current(ctx, sc.repo, f.branch)
+	if err != nil {
+		return false, err
+	}
+	return matchLineEndings(f.content, onBranch) == string(onBranch), nil
+}
+
 // saveDraft applies the save rules in their documented order. changed is false for the no-op.
 func (s *server) saveDraft(ctx context.Context, sc scope, f editForm) (draft proposal.Draft, changed bool, err error) {
-	if len(f.content) > maxPolicyBytes {
-		return draft, false, invalid("The policy is larger than 256 KB.")
-	}
-	if !utf8.ValidString(f.content) {
-		return draft, false, invalid("The policy is not valid UTF-8 text.")
-	}
-	if _, err := policy.Waivers([]byte(f.content)); err != nil {
-		return draft, false, invalid("The policy is not valid YAML. Nothing was saved.")
-	}
-	if _, err := policy.Modules([]byte(f.content)); err != nil {
-		return draft, false, invalid("The policy is not valid YAML. Nothing was saved.")
-	}
-	// Waivers and Modules ignore unknown keys. The wording is fixed: Validate's error text is never shown.
-	if err := policy.Validate([]byte(f.content)); err != nil {
-		return draft, false, invalid("The text is not an Archfit policy: it has an unknown top-level key, " +
-			"has no version key, or is not a mapping. Nothing was saved.")
+	if err := checkPolicy(f.content); err != nil {
+		return draft, false, err
 	}
 	draft, onBranch, err := s.current(ctx, sc.repo, f.branch)
 	if err != nil {
@@ -305,6 +366,15 @@ func (s *server) propose(w http.ResponseWriter, r *http.Request, sc scope) {
 		return
 	}
 	draft, changed, err := s.saveDraft(r.Context(), sc, f)
+	var problems *policyProblems
+	if errors.As(err, &problems) {
+		// Owner decision: asking AI to fix the draft that is already on the branch must work. Nothing is
+		// committed here, and assist checks its answer with the same Diagnose.
+		var onBranch bool
+		if onBranch, err = s.isOnBranch(r.Context(), sc, f); err == nil && !onBranch {
+			err = problems
+		}
+	}
 	if err != nil {
 		s.failEditor(w, r, sc, f, err)
 		return

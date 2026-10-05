@@ -2,6 +2,7 @@ package ui
 
 import (
 	"encoding/json"
+	"html"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -221,7 +222,7 @@ func TestUnknownYAMLConstructsSurviveASave(t *testing.T) {
 		"version: 2\n\n" +
 		"modules:\n  a: &defaults\n    layer: core   # trailing comment\n    paths: ['pkg/a/**']\n" +
 		"  b:\n    <<: *defaults\n    paths: [\"pkg/b/**\"]\n  c: {layer: edge, paths: [\"pkg/c/**\"]}\n" +
-		"metrics:\n  x-unknown-to-the-app:\n    - !!binary aGVsbG8=\n    - |\n      block text\n\n"
+		"exclude:\n  - !!str 123\n  - |\n    block text\n\n"
 	tests := []struct {
 		name, onMain, submitted, committed string
 	}{
@@ -404,5 +405,144 @@ func TestCustomerAssistShowsPendingFailedCompleted(t *testing.T) {
 
 	if e.consents.writes != 0 || len(e.acct.installations) != 0 {
 		t.Error("customer-mode assist touched stored state")
+	}
+}
+
+func TestCheckListsProblemsAndSavesNothing(t *testing.T) {
+	const broken = "version: 2\nmodlues: {}\nrules:\n  - id: r\n    type: cycle\n    gate: fial\n"
+	tests := []struct {
+		name, content string
+		want          []string
+		clean         bool
+	}{
+		{"unknown key and enum value", broken, []string{
+			"The check found problems",
+			`<li><a href="#L2">Line 2</a>, column 1: Unknown key ` + "`modlues`. Did you mean `modules`?</li>",
+			`<li><a href="#L6">Line 6</a>, column 11: ` + "`gate` must be one of `off`, `warn`, `fail`. Did you mean `fail`?</li>",
+		}, false},
+		{"a browser's CRLF keeps the line numbers", strings.ReplaceAll(broken, "\n", "\r\n"), []string{
+			`<a href="#L2">Line 2</a>`, `<a href="#L6">Line 6</a>`,
+		}, false},
+		{"syntax error", "version: 2\nmodules:\n\ta: {}\n", []string{
+			`<li><a href="#L3">Line 3</a>: YAML syntax: found character that cannot start any token. The problem is at line 3 or below it.</li>`,
+		}, false},
+		{"a problem without a line", "# nothing yet\n", []string{"<li>Missing required key `version`.</li>"}, false},
+		{"a hostile key is escaped", "version: 2\n\"<img src=x onerror=alert(1)>\": 1\n", []string{
+			"Unknown key `&lt;img src=x onerror=alert(1)&gt;`.",
+		}, false},
+		{"no problems", policyText, []string{"The check found no problems."}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t)
+			c := e.as("alice", permRead)
+			files, gets := len(e.gh.called("File")), e.props.gets
+
+			res := c.post("/r/"+repoName+"/policy/check", formOf("", "", tt.content))
+
+			wantStatus(t, res, http.StatusOK)
+			body := res.Body.String()
+			wantContains(t, body, tt.want...)
+			wantContains(t, body, "Full checks run in CI with <code>archfit config lint</code>.", html.EscapeString(tt.content))
+			if strings.Contains(body, "<img src=x") {
+				t.Error("the page carries an unescaped key of the text")
+			}
+			if got := strings.Contains(body, `id="diagnostics"`); got == tt.clean {
+				t.Errorf("problem list shown = %v, want %v", got, !tt.clean)
+			}
+			e.noWrites(t)
+			if len(e.gh.called("File")) != files || e.props.gets != gets {
+				t.Error("Check asked GitHub for the policy or the draft")
+			}
+		})
+	}
+}
+
+func TestRefusedSaveListsTheProblems(t *testing.T) {
+	const broken = "version: 2\nrules:\n  - id: r\n    gate: warn\n    form: a/**\n"
+	for _, route := range []struct {
+		path string
+		form url.Values
+	}{{"/policy", formOf("", "", broken)}, {"/assist", assistForm(broken)}} {
+		t.Run(route.path, func(t *testing.T) {
+			e := newEnv(t)
+			res := e.as("alice", permWrite).post("/r/"+repoName+route.path, route.form)
+			wantStatus(t, res, http.StatusUnprocessableEntity)
+			wantContains(t, res.Body.String(), policyProblemsSentence, html.EscapeString(broken),
+				`<li><a href="#L3">Line 3</a>, column 5: Missing required key `+"`type`.</li>",
+				`<li><a href="#L5">Line 5</a>, column 5: Unknown key `+"`form`. Did you mean `from`?</li>",
+				`<script src="/static/editor.js" defer></script>`)
+			e.noWrites(t)
+			if len(e.assist.calls) != 0 {
+				t.Error("assist was called with a text that has problems")
+			}
+		})
+	}
+}
+
+func TestEditorKeepsALeadingBlankLine(t *testing.T) {
+	const text = "\n# top\n" + policyText
+	e := newEnv(t)
+	e.gh.setFile(repoName, mainBranch, ".archfit.yaml", text)
+	c := e.as("alice", permWrite)
+
+	// A browser drops the one newline that follows <textarea>, so the page must carry one more.
+	page := c.get("/r/" + repoName + "/policy").Body.String()
+	wantContains(t, page, `spellcheck="false">`+"\n\n# top\n")
+	checked := c.post("/r/"+repoName+"/policy/check", formOf("", "", text)).Body.String()
+	wantContains(t, checked, `data-unsaved>`+"\n\n# top\n")
+
+	wantStatus(t, c.post("/r/"+repoName+"/policy", formOf("", "", text+"# edit\n")), http.StatusSeeOther)
+	if got := e.onBranch(); got != text+"# edit\n" {
+		t.Errorf("committed %q", got)
+	}
+}
+
+func TestOnlyAFormRerenderIsMarkedUnsaved(t *testing.T) {
+	e := newEnv(t)
+	c := e.as("alice", permWrite)
+	if page := c.get("/r/" + repoName + "/policy").Body.String(); strings.Contains(page, "data-unsaved") {
+		t.Error("the text loaded from the branch is marked unsaved")
+	}
+	for path, form := range map[string]url.Values{
+		"/policy/check": formOf("", "", policyText),
+		"/policy":       formOf("", "", "version: 3\n"),
+	} {
+		wantContains(t, c.post("/r/"+repoName+path, form).Body.String(), "data-unsaved")
+	}
+}
+
+// Owner decision: AI may be asked to fix the broken draft already on the branch; a changed broken text is refused.
+func TestAssistOnABrokenDraft(t *testing.T) {
+	const broken = "version: 2\nrules:\n  - id: r\n    gate: warn\n"
+	tests := []struct {
+		name, submitted string
+		wantStatus      int
+		wantCalls       int
+	}{
+		{"the text on the branch, CRLF from the browser", strings.ReplaceAll(broken, "\n", "\r\n"), http.StatusSeeOther, 1},
+		{"a changed text with problems", broken + "# edited\n", http.StatusUnprocessableEntity, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t)
+			d := e.props.push(repoName, editBranchAlice, broken)
+			writes := e.props.writes()
+			form := assistForm(tt.submitted)
+			form.Set("head_sha", d.HeadSHA)
+
+			res := e.as("alice", permWrite).post("/r/"+repoName+"/assist", form)
+
+			wantStatus(t, res, tt.wantStatus)
+			if len(e.assist.calls) != tt.wantCalls {
+				t.Errorf("assist calls = %d, want %d", len(e.assist.calls), tt.wantCalls)
+			}
+			if tt.wantCalls == 1 && e.assist.calls[0].req.HeadSHA != d.HeadSHA {
+				t.Errorf("assist bound to %q, want the draft head %q", e.assist.calls[0].req.HeadSHA, d.HeadSHA)
+			}
+			if e.props.writes() != writes {
+				t.Error("ui committed a text with problems")
+			}
+		})
 	}
 }

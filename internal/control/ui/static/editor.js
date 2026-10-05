@@ -1,18 +1,21 @@
-// Progressive enhancement of the policy editor. The form works without this file.
+// Progressive enhancement of the policy editor. The form and the problem list work without this file.
 (function () {
   "use strict";
   var area = document.getElementById("policy");
   if (!area) return;
   var loaded = area.value;
   var graphLink = document.getElementById("graph-link");
+  var problems = document.querySelectorAll("#diagnostics li").length;
+  // After Check or a refused save the page holds the submitted text, not the text on the branch.
+  var unsaved = area.hasAttribute("data-unsaved");
 
-  // The graph is stale as soon as the buffer differs from the loaded text or has diagnostics.
-  function mark(value, diagnostics) {
-    if (graphLink) graphLink.classList.toggle("stale", value !== loaded || diagnostics > 0);
+  // The graph is stale as soon as the buffer differs from the branch text or the server listed problems.
+  function mark() {
+    if (graphLink) graphLink.classList.toggle("stale", unsaved || area.value !== loaded || problems > 0);
   }
 
-  function lineFromHash() {
-    var m = /^#L(\d+)$/.exec(location.hash);
+  function lineOf(hash) {
+    var m = /^#L(\d+)$/.exec(hash);
     return m ? parseInt(m[1], 10) : 0;
   }
 
@@ -27,23 +30,19 @@
     area.scrollTop = Math.max(0, (line - 5) * lineHeight);
   }
 
-  area.addEventListener("input", function () { mark(area.value, 0); });
+  area.addEventListener("input", mark);
 
-  // The optional vendored bundle (static/vendor/README.md) publishes window.ArchfitEditor.
-  var container = document.getElementById("monaco");
-  if (window.ArchfitEditor && container) {
-    container.hidden = false;
-    area.hidden = true;
-    window.ArchfitEditor.mount(container, {
-      value: area.value,
-      schemaUrl: area.dataset.schema,
-      line: lineFromHash(),
-      onChange: function (value, diagnostics) {
-        area.value = value;
-        mark(value, diagnostics);
-      }
+  // A second click on the same #L link changes no hash, so the list answers clicks itself.
+  var list = document.getElementById("diagnostics");
+  if (list) {
+    list.addEventListener("click", function (event) {
+      var link = event.target.closest("a[href^='#L']");
+      if (!link) return;
+      event.preventDefault();
+      revealInTextarea(lineOf(link.getAttribute("href")));
     });
-  } else {
-    revealInTextarea(lineFromHash());
   }
+
+  mark();
+  revealInTextarea(lineOf(location.hash));
 })();

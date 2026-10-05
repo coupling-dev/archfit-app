@@ -29,8 +29,8 @@ and the invariants in `AGENTS.md`. Choices made without an owner answer are mark
 - Recover from missed events with one periodic sweep; schedule around waiver expiry and base policy changes
   by re-running the customer's workflow.
 - Onboard repositories in customer-executed mode (two PRs) and managed mode (sandbox job after consent).
-- Serve the UI: GitHub OAuth login, organization overview without a score, YAML editor with schema
-  completion, drafts as draft PRs, read-only graph.
+- Serve the UI: GitHub OAuth login, organization overview without a score, YAML editor with server-side
+  schema diagnostics by line, drafts as draft PRs, read-only graph.
 - Offer AI assistance only on explicit request: managed (one provider, consent, hard budget) or
   customer mode (workflow dispatch). Proposals are always reviewable diffs.
 - Keep entitlements (manual grants, trial, grace, suspension), consent records and the LLM budget
@@ -233,7 +233,7 @@ the default branch; the gate's protected-path rule requires an owner approval of
 → policy commit pushed to the same PR. No LLM runs inside the sandbox **[default]**; optional LLM refinement
 is an ordinary `assist` request on the resulting draft.
 
-**Edit and assist**: the editor loads policy and schema, validates in the browser, and saves through
+**Edit and assist**: the editor loads the policy, checks syntax and schema on the server, and saves through
 `proposal.Propose` with the head SHA it read (stale edits are refused). Engine validation is the check result
 on the draft PR. `assist.Propose` adds a commit to the draft (managed) or dispatches the customer's assist workflow.
 

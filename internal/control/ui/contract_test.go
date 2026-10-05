@@ -34,6 +34,7 @@ func repoRoutes(fullName string) []route {
 		{http.MethodPost, base + "/discover", permAdmin, nil},
 		{http.MethodGet, base + "/policy", permRead, nil},
 		{http.MethodPost, base + "/policy", permWrite, formOf("", "", policyText+"# edit\n")},
+		{http.MethodPost, base + "/policy/check", permRead, formOf("", "", policyText+"# edit\n")},
 		{http.MethodPost, base + "/policy/ready", permWrite, nil}, // the form is filled in by the test: it needs an open draft
 		{http.MethodGet, base + "/graph", permRead, nil},
 		{http.MethodPost, base + "/assist", permWrite, url.Values{"mode": {"customer"}, "instruction": {"split module a"}, "content": {policyText}}},
@@ -82,7 +83,7 @@ func TestRoutesAndMinimumPermissions(t *testing.T) {
 					if got != http.StatusNotFound {
 						t.Errorf("%s: status = %d, want 404", perm, got)
 					}
-				case rt.method == http.MethodGet:
+				case rt.method == http.MethodGet, strings.HasSuffix(rt.path, "/policy/check"):
 					if got != http.StatusOK {
 						t.Errorf("%s: status = %d, want 200", perm, got)
 					}
@@ -118,9 +119,7 @@ func TestRoutesAndMinimumPermissions(t *testing.T) {
 				t.Errorf("%s is empty", path)
 			}
 		}
-		for _, path := range []string{"/static/", "/static/vendor/"} {
-			wantStatus(t, e.anonymous().get(path), http.StatusNotFound)
-		}
+		wantStatus(t, e.anonymous().get("/static/"), http.StatusNotFound)
 	})
 }
 

@@ -26,12 +26,6 @@ var templatesFS embed.FS
 //go:embed static
 var staticFS embed.FS
 
-// Names of the prebuilt editor bundle; see static/vendor/README.md.
-const (
-	monacoScript = "vendor/monaco.bundle.js"
-	monacoStyle  = "vendor/monaco.bundle.css"
-)
-
 type Deps struct {
 	OAuth      auth.OAuth // ui builds its own session child from OAuth, CookieKey and BaseURL
 	CookieKey  []byte
@@ -81,7 +75,6 @@ type server struct {
 	proposals  proposal.Proposals
 	now        func() time.Time
 	pages      map[string]*template.Template
-	monaco     bool
 }
 
 // New returns the server-rendered UI mounted at "/". It serves its own static assets.
@@ -98,7 +91,6 @@ func newHandler(d Deps, gh github, sessions session.Sessions) http.Handler {
 	if err != nil {
 		panic(err) // the embedded folder name is a compile-time constant
 	}
-	_, monacoErr := fs.Stat(static, monacoScript)
 	s := &server{
 		gh:         gh,
 		sessions:   sessions,
@@ -109,7 +101,6 @@ func newHandler(d Deps, gh github, sessions session.Sessions) http.Handler {
 		proposals:  d.Proposals,
 		now:        d.Now,
 		pages:      parsePages(),
-		monaco:     monacoErr == nil,
 	}
 
 	mux := http.NewServeMux()
@@ -136,6 +127,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions) http.Handler {
 	mux.Handle("POST /r/{o}/{n}/discover", s.repo(permAdmin, s.discover))
 	mux.Handle("GET /r/{o}/{n}/policy", s.repo(permRead, s.editor))
 	mux.Handle("POST /r/{o}/{n}/policy", s.repo(permWrite, s.save))
+	mux.Handle("POST /r/{o}/{n}/policy/check", s.repo(permRead, s.check))
 	mux.Handle("POST /r/{o}/{n}/policy/ready", s.repo(permWrite, s.ready))
 	mux.Handle("GET /r/{o}/{n}/graph", s.repo(permRead, s.graphPage))
 	mux.Handle("POST /r/{o}/{n}/assist", s.repo(permWrite, s.propose))

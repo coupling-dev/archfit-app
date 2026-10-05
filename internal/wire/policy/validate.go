@@ -59,6 +59,11 @@ func (k keySet) check(policy []byte) error {
 	if err != nil {
 		return err
 	}
+	return k.checkTop(top, ok)
+}
+
+// checkTop is check over an already read text; ok is read's.
+func (k keySet) checkTop(top topLevel, ok bool) error {
 	if !ok {
 		return errEmpty
 	}

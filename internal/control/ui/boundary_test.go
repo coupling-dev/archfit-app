@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"html"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -295,16 +296,20 @@ func TestOwnersRuleIsSettings(t *testing.T) {
 }
 
 func TestSaveRejectsForeignDocuments(t *testing.T) {
-	const notPolicy = "The text is not an Archfit policy"
 	tests := []struct {
 		name, content string
 		want          int
+		problem       string
 	}{
-		{"prose with a colon", "Reminder: ask Bob about the layers", http.StatusUnprocessableEntity},
-		{"JSON with foreign keys", `{"schema_version": 3, "findings": []}`, http.StatusUnprocessableEntity},
-		{"mapping without version", "modules:\n  a:\n    layer: core\n", http.StatusUnprocessableEntity},
-		{"one unknown top-level key", policyText + "reminder: true\n", http.StatusUnprocessableEntity},
-		{"valid policy", policyText + "# edit\n", http.StatusSeeOther},
+		{"prose with a colon", "Reminder: ask Bob about the layers", http.StatusUnprocessableEntity,
+			`<a href="#L1">Line 1</a>, column 1: Unknown key ` + "`Reminder`."},
+		{"JSON with foreign keys", `{"schema_version": 3, "findings": []}`, http.StatusUnprocessableEntity,
+			`<a href="#L1">Line 1</a>, column 2: Unknown key ` + "`schema_version`."},
+		{"mapping without version", "modules:\n  a:\n    layer: core\n", http.StatusUnprocessableEntity,
+			`<a href="#L1">Line 1</a>, column 1: Missing required key ` + "`version`."},
+		{"one unknown top-level key", policyText + "reminder: true\n", http.StatusUnprocessableEntity,
+			`<a href="#L9">Line 9</a>, column 1: Unknown key ` + "`reminder`."},
+		{"valid policy", policyText + "# edit\n", http.StatusSeeOther, ""},
 	}
 	for _, tt := range tests {
 		for _, route := range []struct {
@@ -323,7 +328,7 @@ func TestSaveRejectsForeignDocuments(t *testing.T) {
 				}
 				e.noWrites(t)
 				body := res.Body.String()
-				wantContains(t, body, notPolicy, html.EscapeString(tt.content))
+				wantContains(t, body, policyProblemsSentence, tt.problem, html.EscapeString(tt.content))
 				for _, leak := range []string{"engine config key", "is absent", "document is empty"} {
 					if strings.Contains(body, leak) {
 						t.Errorf("page echoes Validate's error text %q", leak)
@@ -374,6 +379,32 @@ func TestNoScoreAnywhere(t *testing.T) {
 	}
 }
 
+// wantCSP allows no inline style and no worker beyond 'self': nothing on any page needs either.
+const wantCSP = "default-src 'self'; script-src 'self'; style-src 'self'; frame-ancestors 'none'"
+
+// The CSP holds only while no template or script uses an inline style or a blob worker.
+func TestNoAssetNeedsInlineStyleOrBlobWorker(t *testing.T) {
+	inline := regexp.MustCompile(`(?i)<style|\sstyle\s*=|\.style\b|setAttribute\(\s*["']style|blob:|new\s+(Shared)?Worker`)
+	for _, root := range []fs.FS{templatesFS, staticFS} {
+		err := fs.WalkDir(root, ".", func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			raw, err := fs.ReadFile(root, path)
+			if err != nil {
+				return err
+			}
+			if m := inline.Find(raw); m != nil {
+				t.Errorf("%s uses %q, which the CSP blocks", path, m)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestHostileStringsAreEscaped(t *testing.T) {
 	const (
 		hostileRepo   = `acme/<script>alert("repo")</script>`
@@ -401,7 +432,7 @@ func TestHostileStringsAreEscaped(t *testing.T) {
 				t.Errorf("%s contains unescaped %q", path, raw)
 			}
 		}
-		if csp := res.Header().Get("Content-Security-Policy"); csp != contentSecurityPolicy {
+		if csp := res.Header().Get("Content-Security-Policy"); csp != wantCSP {
 			t.Errorf("%s: CSP = %q", path, csp)
 		}
 	}

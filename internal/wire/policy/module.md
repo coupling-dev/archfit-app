@@ -7,11 +7,11 @@
 ## Purpose
 
 The engine policy `.archfit.yaml`, the baseline `.archfit-baseline.json` and the labels file
-`.archfit-labels.yaml` belong to the Archfit engine, not to the App. The App needs seven small things from them:
+`.archfit-labels.yaml` belong to the Archfit engine, not to the App. The App needs eight small things from them:
 where they live, the digest rule that binds a report to them, the waiver expiry dates to schedule around, the
-declared modules for the graph view, the engine's config JSON Schema for the editor, a structural check that
-a text is plausibly a policy before the App proposes or saves it, and the accepted finding IDs and capture policy
-of a baseline before the App proposes it. This module owns exactly
+declared modules for the graph view, the engine's config JSON Schema, a structural check that
+a text is plausibly a policy before the App proposes it, positioned schema diagnostics of a text the editor
+checks or saves, and the accepted finding IDs and capture policy of a baseline before the App proposes it. This module owns exactly
 that and deliberately nothing more. Without it, the digest rule would be re-derived in several places, and any
 drift between them would turn honest reports into `policy_mismatch`.
 
@@ -25,12 +25,17 @@ drift between them would turn honest reports into `policy_mismatch`.
 - `Schema`: the engine v2.4.0 config JSON Schema (`archfit.schema.json`), embedded unchanged.
 - `Validate`: a structural check that a text is plausibly an engine policy: one YAML mapping whose top-level keys
   all belong to the schema's closed key set and include the required `version`. It keeps foreign text (a report,
-  a labels file, model prose) out of policy pull requests and saved drafts.
+  a labels file) out of discovery pull requests; `Diagnose`, which contains it, does the same for saved drafts and
+  assist proposals.
+- `Diagnose`: the editor's check of a policy text: YAML syntax, the embedded schema (unknown keys, types, enum values,
+  required keys, the few value bounds), and the readers above, each problem with its line and, when known, column.
+  It returns nothing exactly when the text is fit to save.
 - `ReadBaseline`: a structural reader of an `archfit.baseline.v2` file: the accepted finding IDs with their rule IDs,
   the `state.config_hash` the capture ran under, and the measurement profile version. It keeps a foreign or
   incomplete document out of baseline pull requests.
-- Nothing else. It does no engine validation of policies or baselines (no value, type or rule check), does not match
-  waivers or accepted findings to findings, read metrics or dimension snapshots, parse labels, or enforce expiry.
+- Nothing else. It does no engine validation of policies or baselines: no rule type, selector, ownership, layer or
+  cross-key check, which only the engine can do (`archfit config lint`). It does not match waivers or accepted
+  findings to findings, read metrics or dimension snapshots, parse labels, or enforce expiry.
 
 ## Subdomain Classification
 
@@ -49,14 +54,15 @@ Supporting. Volatility: moderate, tied to engine releases (config schema pinned 
 - The waiver keys, pinned to the v2.4.0 config schema (`WaiverDef`, unchanged since v2.3.1): `rule`, `from`, `to`,
   `reason`, `approved_by`, `expires`; the engine requires all but `from` and `to`.
 - The expiry rule: `expires` is a `YYYY-MM-DD` date, valid through the end of that day; the instant is 23:59:59
-  UTC of that day **[default: UTC]**. The engine treats a malformed `expires` as already expired.
+  UTC of that day **[default: UTC]**. The engine refuses a malformed `expires` when it loads the config
+  (`internal/config/config.go` at v2.3.1 and v2.4.0), so such a policy runs no check at all.
 - The modules shape, pinned to the same schema: `modules:` is a map from module name to a definition with `paths`,
   `public`, `internal`, `layer` and other keys. Only the name, `layer` and the key's line are read.
 - The embedded schema file and its provenance: `archfit.schema.json` copied unchanged from the engine repository
   at revision `5aefcdc2c5465c2eb7198ea91394bd8cb8ad2b22` (tag `v2.4.0`). A sibling file `SCHEMA_SOURCE` records the
   source revision, the source path and the SHA-256 of the copy **[default]**.
-- One pinned schema, not one per engine release **[default]**. Its users are the editor (`GET /schema/policy.json`,
-  one route for every repository), `Validate` and the assist prompt. None of them knows which engine release a
+- One pinned schema, not one per engine release **[default]**. Its users are `Diagnose`, `Validate`, the assist
+  prompt, and `GET /schema/policy.json` (one route for every repository, for editors outside the App). None of them knows which engine release a
   repository runs: that pin is in the repository's workflow file, which the App does not parse. So the schema is
   the one of the release new workflows pin, `manifest.Current().EngineVersion`, and the parent `wire` test
   `TestPolicySchemaFollowsTheCurrentEngine` fails as soon as `current` moves until this file and `SCHEMA_SOURCE`
@@ -70,6 +76,33 @@ Supporting. Volatility: moderate, tied to engine releases (config schema pinned 
   root's `additionalProperties: false`; a schema without it has no closed key set and `Validate` then always fails.
   In v2.4.0, as in v2.3.1, the root has sixteen properties and requires only `version`; the schema file is the one
   source.
+- The JSON Schema subset `Diagnose` walks: exactly the keywords the embedded schema uses (`$ref` to `$defs`, `type`,
+  `properties`, `patternProperties`, `additionalProperties`, `required`, `items`, `minItems`, `enum`, `const`, `oneOf`,
+  `minimum`, `minLength`, `format`; `$schema`, `$id`, `description` and `default` are annotations). The schema is decoded
+  strictly, and `Diagnose` fails closed on anything the walker would apply only in part: any other keyword, a
+  list-valued `type`, a `$ref` that does not resolve or whose chain does not end, a validation keyword beside `$ref`
+  or beside `oneOf`, a `format` other than `date` and `date-time`, and a property name that a key pattern also
+  matches. Key patterns are compiled in sorted order and every matching pattern applies. RE2 has no look-ahead, so the
+  one `metrics` pattern `^(?!function_loc_threshold$).+$` is read as "any key but that one"; any other pattern must
+  compile as Go `regexp`. No JSON Schema library: a few hundred lines of walker check the same keywords and keep the
+  YAML line and column of every node.
+- Scalars are judged by their YAML tag, with the engine decoder's leniency where it is uniform **[default]**. Probed
+  with `archfit config lint` of engine `v2.4.0-3-g4fca82d`: it accepts `owner: 123` and a bare date for the `date-time`
+  field `reviewed_at`; it rejects `enabled: yes`, `json: 1` and `metrics.function_loc_threshold: "60"`, but accepts
+  `max: "3"` and `version: "2"`. So a `string` takes any scalar, `integer` and `number` take only an unquoted number
+  (stricter than the engine in some places, never looser), `boolean` takes only `true` or `false`, and of the two
+  formats only `date` is checked (`YYYY-MM-DD`, a real day, the engine's and the `Waivers` rule). `minimum` reads the
+  number as the library decodes its tag, so `-0x1`, `-0o7` and `-1_0` count.
+- A null is the engine decoder's default for a key, with one exception that the schema shows: a required key. The
+  engine accepts `gate: ~`, `enabled: ~`, `duplicated_knowledge: ~` and `max_bytes: ~`, and rejects `version: ~`,
+  `rules[].id: ~` and `external_systems.<name>.targets: ~`. So a null passes every check except `required`, where it
+  counts as missing ("needs a value"). Known gap: the engine also rejects `metrics.function_loc_threshold: ~`, a rule of
+  its own `metrics` decoder that the schema does not state; `Diagnose` accepts it and `archfit config lint` catches it.
+- The YAML library names, for a parser or scanner error, the line where the enclosing block or token starts, or the
+  problem line when that block starts on line 1; it prints a scanner line 1-based and a parser line 0-based, leaving
+  out line 0. `read` adds one for the parser's problem wording (measured on `go.yaml.in/yaml/v3` v3.0.5), and
+  `Diagnose` says "The problem is at line N or below it" rather than claim the exact line, and clamps an
+  end-of-stream line to the last line of the text. A duplicate key and a decode error name their exact line.
 - The YAML library: the same single third-party dependency as `wire/settings`
   (`go.yaml.in/yaml/v3` **[default]** until `docs/tech-stack.md` names one). `Modules` uses its node API for line numbers.
 - The labels file is opaque here. Only its path and digest are known.
@@ -95,12 +128,32 @@ Supporting. Volatility: moderate, tied to engine releases (config schema pinned 
 
 ### Common reading rules
 
-`Waivers`, `Modules` and `Validate` share one reader and these rules:
+`Waivers`, `Modules`, `Validate` and `Diagnose` share one reader and these rules:
 
 - Input limit 1 048 576 bytes **[default]**; larger input is an error. Invalid UTF-8 or YAML that does not parse is an error.
 - Exactly one YAML document whose root is a mapping; otherwise an error. Empty input gives `nil, nil` from
   `Waivers` and `Modules`, and an error from `Validate`.
-- Duplicate mapping keys, alias cycles and alias-expansion bombs are errors (the library's full decode runs once).
+- Before the library's full decode, one walk of the parsed tree bounds it **[default]**: at most 524 288 nodes (half
+  the input limit; a node takes at least two bytes, so this bounds only the walk itself), 10 000 keys per mapping,
+  no duplicate key (the library's rule: same kind and same text; refused at the first one, with its line), no
+  `!!binary` value, no alias inside its own anchor, and at most 50 000 000 units of decode work with every alias
+  expansion counted again: a node costs 1 plus 1 per 64 bytes of its text, and a mapping of k keys adds k·(k−1)/2
+  pairs times 1 plus 1 per 64 bytes of its longest key. The library's duplicate-key scan compares every pair of keys
+  byte by byte and allocates a string per duplicate pair, so without the walk 30 KB of identical keys exhausts
+  memory; it base64-decodes a `!!binary` value into a new string at every expansion, and no engine key takes binary
+  data. Breaking a bound is `errTooComplex`; a duplicate key or a `!!binary` value is a syntax error with its line.
+- Then the library's full decode runs once: merge values and alias cycles. Its own "excessive aliasing" refusal is
+  `errTooComplex` too.
+- Line breaks other than LF and CRLF are not a reading error: the engine's decoder treats NEL, LS and PS as text, and
+  a waiver reason pasted with one must not lose the waiver schedule. Only the readers that report lines refuse them
+  (`Modules`, `Diagnose`).
+- Each refusal on the gate path has a cost. `Waivers` (gate inputs, at every resolve and sweep) and `Validate`
+  (discovery uploads) refuse: input over 1 MB, invalid UTF-8, YAML that does not parse, more than one document, a root
+  that is not a mapping, a duplicate key, a `!!binary` value, an alias cycle, and a bound above. The engine refuses
+  every one of these except an over-large decode, so a refused policy is one no engine run accepts either, apart from
+  an unusually large or alias-heavy file. When `Waivers` refuses, the gate runs with no waiver schedule and logs it:
+  no early re-run when a waiver expires, while the engine still enforces the waivers. When `Validate` refuses, no
+  discovery pull request is opened.
 - `Waivers` and `Modules` read only their one top-level key. Every other key, known to the engine or not, is
   ignored. This is deliberately not strict: the engine validates its own file, and a newer engine key must not
   break these two readers. `Validate` is the strict one; see its rules below.
@@ -114,8 +167,8 @@ Supporting. Volatility: moderate, tied to engine releases (config schema pinned 
   whole call. Quoted and unquoted YAML dates are both accepted. The other five keys are copied as strings and may be
   empty; unknown keys inside an entry are ignored **[default]**.
 - Order of the result equals file order. No de-duplication, no filtering of expired entries.
-- A malformed `expires` is an error here although the engine accepts the file and treats the waiver as expired.
-  Nothing is lost: the engine already reports the finding as `expired_waiver`, so there is no expiry to schedule.
+- A malformed `expires` is an error here, and the engine refuses the whole file at config load. Nothing is lost: a
+  policy the engine cannot load produces no report, so there is no expiry to schedule.
 
 ### Modules reading rules
 
@@ -127,8 +180,8 @@ Supporting. Volatility: moderate, tied to engine releases (config schema pinned 
 - A duplicate module name is an error (the YAML library already rejects duplicate mapping keys).
 - Aliases and merge keys under `modules` are resolved by the library; `Line` is then the line of the key, not of the anchor.
   Keys merged in with `<<` directly under `modules` follow the map's own keys, and the map's own keys win.
-- Input with a line break other than LF or CRLF (a lone CR, NEL, LS, PS) is an error when `modules` is a mapping:
-  the library counts those as lines, an LF split does not, so `Line` would be wrong **[default]**.
+- A lone CR, NEL, LS or PS is an error when `modules` is a mapping: the library counts each as a line break, an LF
+  split does not, so `Line` would be wrong **[default]**.
 
 ### Validate rules
 
@@ -143,6 +196,32 @@ Supporting. Volatility: moderate, tied to engine releases (config schema pinned 
   required key by its schema name. No key or value of the input appears in any error.
 - A policy written for a newer engine with a new top-level key is rejected until the embedded schema is replaced.
   That is intended: the pinned engine would reject the file as well.
+
+### Diagnose rules
+
+- The common reading rules apply first, on one parse that the three readers below share. A reading error is one
+  diagnostic: a syntax error with the library's line and problem ("at line N or below it" unless the line is exact),
+  a root that is not a mapping at line 1, and too large, not UTF-8, a NEL/LS/PS line break (checked first, since a
+  text area does not show it), too complex or more than
+  one document without a line.
+  An empty document gives one diagnostic per required root key, without a line.
+- Then the schema walk, from the root: an unknown key at the key's line and column, with "Did you mean" when a known key
+  of that mapping is within edit distance 2 (a swap of neighbours costs 1) and the distance is at most a third of its
+  length; a wrong type, enum or const value, a value under `minimum`, `minLength` or `minItems`, or a bad `date` at
+  the value; a missing required key at the mapping, and a required key whose value is null at that value. An enum
+  miss gets the same suggestion from the enum values. A mapping or list where a `const` or `enum` is expected is
+  wrong. Suggestions are computed only for problems that are listed.
+- A problem inside an alias is reported at the alias, once per use, not at the anchor; the check uses the anchored
+  node.
+- A merge key `<<` is refused at the top level, as `Validate` refuses it. Below it, the merged keys follow YAML merge
+  semantics (the mapping's own keys win, then the merged mappings in order), count for `required`, and are checked
+  against the schema of the mapping they are merged into, each problem reported at the merge key.
+- At most 100 diagnostics in line order, then one note that more are not listed.
+- Only when the walk finds nothing: `Waivers`, `Modules` and `Validate` run over the same parse, and the first error becomes one
+  diagnostic without a line (for example a module name over 200 characters). So `nil` from `Diagnose` implies `nil`
+  errors from all three.
+- Messages may quote keys of the input and the library's syntax problem, each at most 64 characters on one line. They
+  are for the person who wrote the text; no caller logs them.
 
 ## Public Contract
 
@@ -175,7 +254,8 @@ func Waivers(policy []byte) ([]Waiver, error)
 ```
 
 ```go
-// Schema returns the engine v2.4.0 config JSON Schema, embedded unchanged, for the editor.
+// Schema returns the engine v2.4.0 config JSON Schema, embedded unchanged: Diagnose's schema, the assist
+// prompt's context, and the file served for editors outside the App.
 func Schema() []byte
 ```
 
@@ -191,7 +271,7 @@ type ModuleDef struct {
 func Modules(policy []byte) ([]ModuleDef, error)
 ```
 
-`Validate` is the structural gate for text that is about to be proposed or saved as a policy:
+`Validate` is the structural gate for text that is about to be proposed as a policy:
 
 ```go
 // Validate reports whether policy is plausibly an engine policy file: a YAML document whose root is a
@@ -199,6 +279,21 @@ func Modules(policy []byte) ([]ModuleDef, error)
 // the required `version` key. It is a structural check, not engine validation: the engine remains the
 // authority on the file's meaning. Errors never echo keys or values.
 func Validate(policy []byte) error
+```
+
+`Diagnose` is the editor's check: the one check of a text the editor checks or saves.
+
+```go
+// Diagnostic is one problem of a policy text, worded for the person who wrote the text.
+type Diagnostic struct {
+    Line    int    // 1-based line in the text; 0 when the problem has no single place
+    Column  int    // 1-based column; 0 when unknown
+    Message string // one sentence; may quote keys of the text, at most 64 characters of each
+}
+
+// Diagnose checks a policy text against the embedded engine config schema and the App's own readers. It returns
+// nil exactly when the text is fit to save: then Validate, Waivers and Modules all accept it too.
+func Diagnose(policy []byte) []Diagnostic
 ```
 
 `ReadBaseline` is the structural gate for a baseline that is about to be proposed:
@@ -242,11 +337,14 @@ Semantics not visible in the signatures:
   must pass the same text it displays.
 - `Waivers` follows the reading rules above. A caller that gets an error proceeds with no waiver schedule (a zero
   earliest expiry) and logs the outcome only; the engine still enforces the waivers.
-- `Validate` follows the Validate rules above. It is the check control-plane callers run before they propose or
-  save policy text: `nil` means one well-formed YAML mapping within the size limit, with only engine config keys
+- `Validate` follows the Validate rules above. It is the check control-plane callers run before they propose
+  a discovery draft; the editor and assist use `Diagnose`: `nil` means one well-formed YAML mapping within the size limit, with only engine config keys
   and with `version`. It is not engine validation; the check run on the draft PR is. `Validate` does not read
   waivers: a caller that also needs readable waivers calls `Waivers` as well.
 - `Waivers` alone is not a policy check: it ignores unknown keys, so prose or JSON with a colon passes it.
+- `Diagnose` follows the Diagnose rules above. It is stricter than `Validate` (it reads values) and looser than the
+  engine (it knows no rule type, selector or module), so `nil` means "fit to save", never "the engine accepts it".
+  `Line` refers to the exact bytes passed in; a browser's CRLF does not move it.
 - `Schema` returns a fresh copy on every call. The bytes are the engine's file, not reformatted.
 - `ReadBaseline` follows the baseline reading rules above. `Accepted` keeps file order; a caller that compares two
   baselines treats the fingerprints as a set. `ConfigHash` is the capture's own claim: the caller compares it with
@@ -283,10 +381,11 @@ Shared knowledge, per counterpart:
   error means no pull request is opened. For a baseline upload it also holds `Digest`, `MaxBaselineBytes`,
   `Accepted`, `Baseline` and `ReadBaseline`: an error means no pull request is opened, and `ConfigHash` must equal
   `Digest` of the protected policy.
-- `internal/control/assist` holds `PolicyPath`, `Schema` (rule descriptions for the prompt context) and `Validate`,
-  which it calls on a provider answer: an error means the proposal is not a policy.
-- `internal/control/ui` holds `PolicyPath`, `Schema` for the editor's completion and in-browser validation,
-  `Validate` as the server-side check before an editor draft is saved, and `Modules` and `Waivers` for its pages.
+- `internal/control/assist` holds `PolicyPath`, `Schema` (rule descriptions for the prompt context), `Diagnostic` and
+  `Diagnose`, which it calls on a provider answer: any diagnostic means the proposal is not a policy the editor
+  would save. It drops the messages.
+- `internal/control/ui` holds `PolicyPath`, `Schema` (served at `/schema/policy.json`), `Diagnostic` and `Diagnose`
+  as the one check of the editor's Check and of every save, and `Modules` for the graph page.
 - `internal/control/ui/graph` holds `Digest`, `ModuleDef` and `Modules`: nodes, layers and the policy line to jump to.
 - `archfit` engine config: this module holds the config schema file, the three file locations, the waiver keys,
   the shape of the `modules` map, and the hashing rule. The engine owns all of them; this module follows a pinned release. Contract coupling
@@ -318,11 +417,11 @@ No counterpart contract is used by this module, so nothing is restated here.
 - A baseline or labels digest stated by the producer is self-reported. It proves nothing alone; it only lets the
   gate refuse a run that says it used other bytes than the protected ref holds.
 - No I/O, no clock (expiry comparison with "now" is the caller's), no logging. Errors name the entry index and
-  key, never values or reasons text.
+  key, never values or reasons text. `Diagnose` is the one exception: its messages may quote keys, for the author only.
 - `Validate` uses the same input limit, the same reader and the same duplicate-key, alias and line-break handling
   as `Waivers`. An empty or comment-only document is an error for `Validate` only, because `version` is required.
 - `Validate` is structural. It never replaces the engine's validation and never inspects a value.
-- `Waivers`, `Modules` and `Validate` are total: no input panics. Work is bounded by the input limit and the library's alias limits.
+- `Waivers`, `Modules`, `Validate` and `Diagnose` are total: no input panics. Work is bounded by the input limit and the library's alias limits.
 - No other internal import, including `wire/settings` and `wire/report`.
 
 ## Test Specification
@@ -334,7 +433,11 @@ document defines names, suffixes and the expectation format.
 
 One fixture is private, because the shared corpus has no equivalent: `testdata/policy/malformed-expiry.report.json`,
 the synthetic engine report for the shared `policy/malformed-expiry.yaml`. `TestMalformedExpiryNeedsNoSchedule` reads
-it and first checks that its `config_hash` is the digest of that policy.
+it and first checks that its `config_hash` is the digest of that policy. The report is synthetic: engine v2.3.1 and
+v2.4.0 refuse that policy at config load and produce no report.
+
+A second private fixture, `testdata/policy/engine-self.archfit.yaml`, is the engine repository's own `.archfit.yaml`
+at archfit commit `2d20da8`, copied unchanged: a large real policy that `Diagnose` must accept.
 
 ### Unit Tests
 
@@ -357,6 +460,29 @@ it and first checks that its `config_hash` is the digest of that policy.
   **Expected behavior**: `nil, nil` for the first three; errors for rows four and five; the rest succeed with file order kept,
   duplicates kept, missing strings empty, the unknown key ignored.
 
+- **Test name**: `TestDiagnose`
+  **Scenario**: table: a valid policy; a syntax error four lines into the text; a parser error after a leading comment,
+  worded as "at line N or below it" with N the start of its block, and one on the first line; a tab indent; a duplicate key; an unknown top-level and nested key with a close match, and one without;
+  a list where a nested list is expected, read for its line and column; text for a boolean and for an integer; a list
+  for a mapping and a scalar list item; an enum miss with and without a close match; `version: 1`; `enabled: yes`; a
+  missing top-level and nested required key; a comment-only text; `minimum`, `minItems` and `date`; a `metrics` entry;
+  three problems out of order; a top-level merge key; a non-mapping root; a 100-character quoted key; a 201-character
+  module name; a quoted number; a mapping and a list where a const or enum is expected; `version: ~` and a waiver
+  `rule: ~`; `minimum` against `-0x1`, `-1_0` and `-0o7`; a `!!binary` value; an empty `reason` (minLength); a problem inside an alias, and one
+  alias used twice; a merged key the merge site does not allow; an LS line break.
+  **Expected behavior**: exactly the listed diagnostics, with line, column and message; `nil` for the valid policy;
+  alias problems at each alias, a merged key's problem at the merge key.
+- **Test name**: `TestSuggest`
+  **Scenario**: table of misspelled keys against a key list, and `forbiden_dependency` against `forbidden_dependency`.
+  **Expected behavior**: the close key, or nothing when no key is within the distance rule.
+- **Test name**: `TestDiagnoseFailsClosedOnAnUnknownSchemaKeyword`
+  **Scenario**: compile the embedded schema; then schemas with `maximum`, a list-valued `type`, an unresolved `$ref`, a
+  look-ahead pattern other than the known one, bytes that are not JSON, `format: email`, `minimum` beside `$ref`, `enum`
+  beside `oneOf`, a `$ref` cycle, and a property that a key pattern also matches.
+  **Expected behavior**: the embedded schema compiles; every other one is an error.
+- **Test name**: `TestSchemaReferenceChainsResolve`
+  **Scenario**: a property whose `$ref` names a definition that is itself a `$ref`.
+  **Expected behavior**: the property resolves to the last definition.
 - **Test name**: `TestValidateKeySetComesFromSchema`
   **Scenario**: derive the key set from the embedded schema and from a copy with one more root property, also listed as required;
   schema bytes that are not JSON, have no root properties, or lack `additionalProperties: false`.
@@ -373,6 +499,14 @@ it and first checks that its `config_hash` is the digest of that policy.
   `internal/wire/testdata/report/*.policy.yaml`, including the real engine captures and the malformed-expiry policy that
   `Waivers` rejects; table: `version` only; null `version`; all sixteen keys; CRLF with comments; JSON spelling; an alias below a key.
   **Expected behavior**: `nil` error for all.
+- **Test name**: `TestDiagnoseAcceptsRealPolicies`
+  **Scenario**: the same corpus as `TestValidateAcceptsRealPolicies`, plus the engine's own `.archfit.yaml`.
+  **Expected behavior**: `nil` for every file but the malformed-expiry policy, which gets one positioned `expires` diagnostic.
+- **Test name**: `TestDiagnoseReadsScalarsLikeTheEngine`
+  **Scenario**: table of texts engine v2.4.0 accepts: a number for text, a bare date for `reviewed_at`,
+  an unquoted waiver date, null values of optional keys (`gate`, `enabled`, `duplicated_knowledge`), `auto`, required keys brought in by a merge, a merge below a module, an alias
+  for a value, a tagged and a block scalar.
+  **Expected behavior**: `nil` for every row.
 - **Test name**: `TestDigestMatchesEngineConfigHash`
   **Scenario**: for each shared report fixture with a `.policy.yaml` sibling, digest the sibling; include the real engine capture
   `real-blocked-no-baseline`.
@@ -404,14 +538,47 @@ it and first checks that its `config_hash` is the digest of that policy.
 ### Boundary Tests
 
 - **Test name**: `TestReadersRejectBadInput`
-  **Scenario**: table, run for both `Waivers` and `Modules`: invalid YAML; invalid UTF-8; two documents; root is a list; 1 048 577 bytes; an alias-expansion bomb; empty input.
+  **Scenario**: table, run for both `Waivers` and `Modules`: invalid YAML; invalid UTF-8; two documents; root is a list;
+  1 048 577 bytes; an alias-expansion bomb; empty input.
   **Expected behavior**: errors for all but empty input, which gives `nil, nil`; bounded time and memory; no panic.
 - **Test name**: `TestValidateRejectsForeignDocuments`
   **Scenario**: table: the engine state report `real-healthy.json`; a labels file; `Sure! Here is the file: done`; prose without
   a colon; a scalar root; a sequence root; a mapping without `version`; `{}`; one unknown top-level key; `Version`; an integer key,
   a null key and a merge key; empty, white-space-only and comment-only input; a duplicate top-level key; two documents;
-  truncated YAML; invalid UTF-8; 1 048 577 bytes; an alias-expansion bomb.
+  truncated YAML; invalid UTF-8; 1 048 577 bytes; an alias-expansion bomb (refused as too complex).
   **Expected behavior**: an error for every row; unknown keys are named by position, the missing key as `version`; no panic.
+- **Test name**: `TestDiagnoseRefusesWhatValidateRefuses`
+  **Scenario**: every row of `TestValidateRejectsForeignDocuments`.
+  **Expected behavior**: at least one diagnostic for each.
+- **Test name**: `TestDiagnoseIsBounded`
+  **Scenario**: 300 rules with a bad `gate` each.
+  **Expected behavior**: 100 diagnostics and one closing note without a line.
+- **Test name**: `TestDiagnoseSuggestsOnlyForListedProblems`
+  **Scenario**: 3 000 unknown 60-character keys.
+  **Expected behavior**: fewer than a million allocations: no edit distance is computed past the hundredth problem.
+- **Test name**: `TestReadBoundsTheLibraryDecode`
+  **Scenario**: 50 000 identical keys; one mapping with 10 001 keys; a 2 000-key mapping expanded by 200 aliases; an alias
+  inside its own anchor; a 128 KB scalar expanded by 43 000 aliases; a 96 KB `!!binary` value expanded by 4 000 aliases;
+  1 500 keys of 500 bytes that differ only at the end, expanded by 8 aliases; then 5 000 modules, the `Modules` limit.
+  **Expected behavior**: `Waivers` returns the syntax or too-complex error and `Diagnose` one diagnostic, within 5 seconds
+  and 256 MB of allocation; the 5 000 modules read. Without the walk the first row does not finish; with node counts
+  instead of byte weights the long-text rows pass the bound, and the binary row allocates over 1 GB.
+- **Test name**: `TestReadersTakeAFullSizePolicy`
+  **Scenario**: 5 000 modules in realistic stanzas (`owner`, `layer`, `deploy_unit`, `volatility`, `subdomain`,
+  `paths`, `public`, `internal`), under 1 MB.
+  **Expected behavior**: `Modules`, `Validate` and `Diagnose` accept it (about 110 000 nodes).
+- **Test name**: `TestLineBreaksOnlyMatterWhereLinesAre`
+  **Scenario**: a policy with modules and a waiver whose quoted reason holds a NEL, an LS or a PS.
+  **Expected behavior**: `Waivers` returns the waiver and `Validate` accepts the text; `Modules` returns the
+  line-break error and `Diagnose` one line-break diagnostic.
+- **Test name**: `TestExcessiveAliasingIsTooComplex`
+  **Scenario**: the library's "excessive aliasing" error.
+  **Expected behavior**: `errTooComplex`, not a syntax error.
+- **Test name**: `FuzzDiagnose`
+  **Scenario**: fuzz `Diagnose` seeded with the fixtures and truncated YAML; `testdata/fuzz/FuzzDiagnose` keeps an
+  end-of-stream input whose reported line was past the text.
+  **Expected behavior**: never panics; every line is between 0 and the number of input lines and every message is
+  non-empty; when it returns `nil`, `Validate`, `Waivers` and `Modules` all succeed.
 - **Test name**: `TestValidateErrorsEchoNothing`
   **Scenario**: the marker `LEAK-7f3a` as an unknown key and its value, as a duplicate key, below a valid key of a document
   without `version`, as a scalar root, in prose, in broken YAML, as an anchor and alias name; the engine state report.
@@ -454,15 +621,16 @@ it and first checks that its `config_hash` is the digest of that policy.
   **Expected behavior**: different digests in both cases; a whitespace-only edit is still a policy change needing approval.
 - **Test name**: `TestWaiversAsSyntaxCheck`
   **Scenario**: table: a valid policy without waivers; prose text that is not a mapping; truncated YAML; a policy with an unclosed quote.
-  `Waivers` still rejects these, although control-plane callers now use `Validate` as their check.
+  `Waivers` still rejects these, although control-plane callers now use `Validate` or `Diagnose` as their check.
   **Expected behavior**: `nil` error for the first; errors for the rest.
 - **Test name**: `TestApprovedByIsNeverAuthority`
   **Scenario**: a waiver with `approved_by` naming a real owner login.
   **Expected behavior**: the value is returned as plain text; the package exposes nothing that treats it as an approval.
-  The exported surface is exactly the Public Contract.
+  The exported surface is exactly the Public Contract; methods of unexported types are not part of it.
 - **Test name**: `TestGraphJumpsToTheModuleLine`
   **Scenario**: a policy shown in the editor; take `Modules`, split the same text by LF, read the line at `Line` for each module.
   **Expected behavior**: each line, trimmed, starts with the module name followed by a colon.
 - **Test name**: `TestMalformedExpiryNeedsNoSchedule`
-  **Scenario**: the fixture policy with `expires: 2026-13-40`, which the engine accepts and reports as `expired_waiver`.
+  **Scenario**: the fixture policy with `expires: 2026-13-40`, which the current engine refuses at config load; the
+  synthetic report models a run that reports the waiver as `expired_waiver`.
   **Expected behavior**: `Waivers` returns an error; the fixture's report already shows the finding as expired, so no expiry is lost.

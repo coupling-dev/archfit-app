@@ -50,15 +50,14 @@ The tests use the standard `testing` package and table-driven cases with `t.Run`
 
 ## Frontend
 
-| Item      | Choice                                                                                                               |
-| --------- | -------------------------------------------------------------------------------------------------------------------- |
-| Rendering | Server-rendered `html/template`. No SPA framework                                                                    |
-| Editor    | The App uses Monaco with `monaco-yaml` when the optional bundle exists. It uses a plain text area otherwise          |
-| Assets    | The optional bundle lives under `internal/control/ui/static/vendor/`. Node is not needed by `make`, CI, or the image |
-| Graph     | A small vanilla script renders plain SVG from the JSON view model **[default]**                                      |
+| Item      | Choice                                                                                                                           |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Rendering | Server-rendered `html/template`. No SPA framework                                                                                |
+| Editor    | A plain text area. The server checks syntax and schema on Check and on every save, and lists problems by line. No editor library |
+| Graph     | A small vanilla script renders plain SVG from the JSON view model **[default]**                                                  |
 
-The Monaco bundle is not part of the current build. Build it manually before release when the editor needs
-syntax completion and diagnostics. The text area remains the working fallback.
+Static assets are the module's own files under `internal/control/ui/static/`. Node is not needed by `make`, CI, or the
+image. The CSP allows no inline style and no worker.
 
 ## Platform seams
 

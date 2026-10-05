@@ -253,8 +253,8 @@ previous valid graph must be visibly marked as stale.
 
 Technical candidates, not final stack decisions:
 
-- Monaco with `monaco-yaml` for schema completion and diagnostics.
-- A custom Monaco completion integration for AI-generated suggestions.
+- A plain text area with server-side syntax and schema diagnostics by line, and no editor library (the current
+  choice; highlighting and completion are open, see the later option in [decisions](decisions.md#6-ui-and-editing)).
 - React Flow for graph interactions, with a separate layout solution if needed.
 
 Before adoption, check engine-schema compatibility, round-trip behavior, and
@@ -535,5 +535,5 @@ that another vendor's guarantees or prices apply to Archfit.
 - [Semgrep CI onboarding](https://docs.semgrep.dev/deployment/add-semgrep-to-ci): customer-executed scanning and documented data boundaries.
 - [Aikido local onboarding](https://help.aikido.dev/code-scanning/local-code-scanning/github-action-setup-for-local-code-scanning) and [scanner controls](https://help.aikido.dev/code-scanning/local-code-scanning/cli-options-for-local-scanner): local execution and explicit upload controls.
 - [Codecov setup](https://docs.codecov.com/docs/quick-start) and [security](https://about.codecov.io/security/): first-report activation; source access and retention are different claims.
-- [Monaco YAML](https://github.com/remcohaszing/monaco-yaml), [inline completions](https://microsoft.github.io/monaco-editor/typedoc/interfaces/editor_editor_api.languages.InlineCompletionsProvider.html), and [React Flow](https://reactflow.dev/learn/customization/handles): editor candidates; application semantics remain our responsibility.
+- [React Flow](https://reactflow.dev/learn/customization/handles): a graph candidate; application semantics remain our responsibility.
 - [Codecov pricing](https://about.codecov.io/pricing/), [Greptile pricing](https://www.greptile.com/pricing), [Sonar pricing](https://www.sonarsource.com/plans-and-pricing/), and [DeepSource pricing](https://deepsource.com/pricing): examples researched on 17 September 2026; no market-average per-repo price was established.
