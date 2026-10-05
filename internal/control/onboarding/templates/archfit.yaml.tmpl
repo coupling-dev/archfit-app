@@ -12,7 +12,8 @@
 #
 # The Action runs on pull_request, push and workflow_dispatch only and refuses every other event.
 # Reports come from pull_request and push runs. A dispatch runs discovery (a proposed policy) or
-# baseline (accepted debt as an artifact) on the default branch; discover: true selects discovery.
+# baseline (accepted debt, proposed as a pull request that an architecture owner approves) on the
+# default branch; discover: true selects discovery.
 name: archfit
 
 on:
