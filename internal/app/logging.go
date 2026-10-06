@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/hex"
 	"io"
 	"log/slog"
 	"net/http"
@@ -114,13 +115,6 @@ func newTrace(project, id, span string, sampled bool) (trace, bool) {
 }
 
 func isHex(s string, n int) bool {
-	if len(s) != n {
-		return false
-	}
-	for _, c := range s {
-		if !('0' <= c && c <= '9' || 'a' <= c && c <= 'f' || 'A' <= c && c <= 'F') {
-			return false
-		}
-	}
-	return true
+	_, err := hex.DecodeString(s) // every length checked here is even
+	return len(s) == n && err == nil
 }
