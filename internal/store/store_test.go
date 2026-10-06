@@ -78,6 +78,14 @@ func TestErrorsCarryNoValues(t *testing.T) {
 	_, errs["Add negative tenant"] = s.Add(ctx, -1, marker, 1)
 	_, errs["Add non-counter"] = s.Add(ctx, 1, marker, 1)
 	_, errs["Add overflow"] = s.Add(ctx, 1, marker+"/max", 1<<62)
+	swapAll := func(tn store.Tenant, swaps ...store.Swap) error {
+		_, err := s.CompareAndSwapAll(ctx, tn, swaps)
+		return err
+	}
+	errs["CompareAndSwapAll key twice"] = swapAll(1, store.Swap{Key: marker, Value: value}, store.Swap{Key: marker, Value: value})
+	errs["CompareAndSwapAll NUL key"] = swapAll(1, store.Swap{Key: marker, Value: value}, store.Swap{Key: nulKey, Value: value})
+	errs["CompareAndSwapAll big value"] = swapAll(1, store.Swap{Key: marker, Old: value, Value: bigValue})
+	errs["CompareAndSwapAll negative tenant"] = swapAll(-1, store.Swap{Key: marker, Value: value})
 
 	for name, err := range errs {
 		switch {

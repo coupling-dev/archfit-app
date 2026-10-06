@@ -129,7 +129,8 @@ its entitlement in one transaction. Cloud Audit Logs record who created the task
   [tech stack](../../tech-stack.md#dependencies). It passes `store/storetest` against a fake and, in CI, against the
   Firestore emulator. It reads the access token of the service account from the metadata server (`gcptoken`).
   See [Operations](operations.md#firestore) for configuration, indexes and TTL.
-- `Store` gains one operation: a transaction over several keys of one tenant. See [Concurrency](#concurrency).
+- `Store` has a transaction over several keys of one tenant: `CompareAndSwapAll`. The Firestore driver puts every write
+  in one commit, each under a precondition on what it read. See [Concurrency](#concurrency).
 - `Store` already has a single-key `CompareAndSwap` for the publication leases. The driver reads the document, then
   commits under the document's `updateTime` precondition, or with `exists=false` when the key must be missing. That is
   atomic across all instances. A lock in one process is not enough.
@@ -139,11 +140,12 @@ its entitlement in one transaction. Cloud Audit Logs record who created the task
 
 ## Concurrency
 
-Retries, duplicates, and two services make races more likely than in one process. Two races exist in today's code.
+Retries, duplicates, and two services make races more likely than in one process. This section lists each race and its state.
 
-**Account state: fix.** Account writes its record and the derived entitlement as two separate writes, without a version check.
-A concurrent write can drop a grant, and a crash between the writes leaves a stale entitlement.
-The new multi-key `Store` transaction writes both together. A single-key transaction is not enough.
+**Account state: fixed.** Account writes its record and the derived entitlement together, with one `CompareAndSwapAll`
+from the bytes it read. A crash can no longer leave a new record with a stale entitlement. A concurrent writer makes the
+swap fail, and Account reads again and applies its change on top, so a grant is never dropped. A single-key transaction
+is not enough: the entitlement must change only together with its record.
 
 **Publications of one head: fixed.** Every write to GitHub for one head (an upload, a sweep repair, the pending check
 and the waiver notice) holds a lease in the `Store`. The key is the installation and the head SHA. The holder reads the
@@ -179,8 +181,6 @@ after a takeover. Then the last write to GitHub wins until the next sweep.
 
 These capabilities must exist before the first deployment. Details belong to the implementation plan.
 
-- The multi-key `Store` transaction in the memory and Firestore drivers, covered by `store/storetest`.
-- Account writes through the transaction.
 - Open decision 1 applied.
 - A queue seam with an inline driver (default) and a Cloud Tasks driver, and a worker route for queued webhooks.
 - Transient and permanent error classes in webhook handling, and idempotent handlers under concurrent duplicates.
