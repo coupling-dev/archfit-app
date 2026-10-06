@@ -531,5 +531,4 @@ See [`.env.example`](../.env.example).
 ### Release blockers
 
 - No GitHub App is registered.
-- The release does not check `GET /ready` yet, and Terraform sets no `GOOGLE_CLOUD_PROJECT` and no mount for a
-  previous webhook secret.
+- Terraform sets no `GOOGLE_CLOUD_PROJECT` and no mount for a previous webhook secret.
