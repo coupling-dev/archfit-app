@@ -33,6 +33,34 @@ jobs:
         with:
           version: v2.14
 
+  # Offline checks only: no backend, no credentials, no plan. The owner plans and applies (infra/README.md).
+  infra:
+    name: Terraform
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: 1.13.1
+          tofu_wrapper: false
+      - uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+        with:
+          tflint_version: v0.61.0
+      - run: tofu fmt -check -recursive infra
+      - name: Validate and test each stack
+        run: |
+          for stack in infra/data infra/runtime; do
+            tofu -chdir="$stack" init -backend=false -input=false -lockfile=readonly
+            tofu -chdir="$stack" validate
+            tofu -chdir="$stack" test
+          done
+      - name: tflint
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          tflint --chdir=infra --init --config="$PWD/infra/.tflint.hcl"
+          tflint --chdir=infra --recursive --config="$PWD/infra/.tflint.hcl"
+
   image:
     name: Image builds
     runs-on: ubuntu-24.04
