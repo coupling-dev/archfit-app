@@ -2,7 +2,7 @@
 
 **Path**: internal/
 **Parent**: none (root)
-**Submodules**: app, wire, github, store, gcptoken, gate, control
+**Submodules**: app, wire, github, store, gcptoken, queue, gate, control
 
 ## Purpose
 
@@ -35,7 +35,7 @@ and the invariants in `AGENTS.md`. Choices made without an owner answer are mark
   customer mode (workflow dispatch). Proposals are always reviewable diffs.
 - Keep entitlements (manual grants, trial, grace, suspension), consent records and the LLM budget
   counter in a KV store; delete them on uninstall. Besides them only short-lived publication leases, which
-  serialize the GitHub writes of one head SHA across instances. Store nothing else: no reports, no source, no queues.
+  serialize the GitHub writes of one head SHA across instances. Store nothing else: no reports, no source, no queue state.
 
 ## Subdomain Classification
 
@@ -55,8 +55,9 @@ The system as a whole is a **core** product. Per area:
 
 - The decomposition itself: which packages exist, the allowed import directions, and the rule
   that `gate` never imports `control` or `app`.
-- The single-binary shape: every module is a Go package in one process; the only platform seams
-  are `Store`, `Sandbox`, and the LLM `Provider`.
+- The single-binary shape: every module is a Go package in one binary; the only platform seams
+  are `Store`, `Queue`, `Sandbox`, and the LLM `Provider`. A role setting runs the binary as one process with
+  every route, or as a public process and a worker process.
 - The rule that GitHub is the database and the protected ref the only source of customer-approved truth.
 
 ## Public Contract
@@ -71,9 +72,10 @@ The system's contract is its external surface. Everything else is internal.
 | `POST /v1/reports`      | `gate`                    | GitHub Actions OIDC bearer token, audience = App base URL |
 | `POST /v1/discoveries`  | `control` (onboarding)    | same OIDC checks, through the gate's `Receiver`           |
 | `POST /v1/baselines`    | `control` (onboarding)    | same OIDC checks, through the gate's `Receiver`           |
-| `POST /webhooks/github` | `app` → `gate`, `control` | `X-Hub-Signature-256`                                     |
-| `POST /internal/sweep`  | `app` → `control`, `gate` | operator bearer token **[default]**                       |
-| `POST /internal/grants` | `app` → `control`         | operator bearer token **[default]**                       |
+| `POST /webhooks/github` | `app` → `queue`           | `X-Hub-Signature-256`                                     |
+| `POST /internal/webhooks` | `app` → `gate`, `control` (worker role) | Google ID token of the invoker, then `X-Hub-Signature-256` |
+| `POST /internal/sweep`  | `app` → `control`, `gate` | operator bearer token **[default]**; on the worker role the invoker ID token |
+| `POST /internal/grants` | `app` → `control`         | operator bearer token **[default]**; on the worker role the invoker ID token too |
 | everything else         | `control` (ui)            | GitHub OAuth session cookie                               |
 
 ### Upload protocol
@@ -113,13 +115,18 @@ type Config struct {
     OAuthClientID    string // ARCHFIT_GITHUB_OAUTH_CLIENT_ID
     OAuthSecretFile  string // ARCHFIT_GITHUB_OAUTH_SECRET_FILE
     CookieKeyFile    string // ARCHFIT_COOKIE_KEY_FILE
-    OperatorTokenFile string // ARCHFIT_OPERATOR_TOKEN_FILE; authenticates /internal/*
+    OperatorTokenFile string // ARCHFIT_OPERATOR_TOKEN_FILE; authenticates the operator routes; never read by the public role
     AnthropicKeyFile string // ARCHFIT_ANTHROPIC_KEY_FILE; empty disables managed LLM
     StoreDriver      string // ARCHFIT_STORE, "memory" (default) or "firestore"
     FirestoreProject string // ARCHFIT_FIRESTORE_PROJECT; required by "firestore"
     FirestoreDatabase string // ARCHFIT_FIRESTORE_DATABASE; empty selects "(default)"
     FirestoreEmulator string // FIRESTORE_EMULATOR_HOST; host:port, plain HTTP and no credentials
     SandboxDriver    string // ARCHFIT_SANDBOX, "none" until docs/tech-stack.md picks one
+    Role             string // ARCHFIT_ROLE: "all" (default), "public" or "worker"
+    QueueDriver      string // ARCHFIT_QUEUE: "inline" (default) or "cloudtasks"
+    TasksQueue       string // ARCHFIT_TASKS_QUEUE: "projects/<p>/locations/<l>/queues/<q>"; cloudtasks only
+    WorkerURL        string // ARCHFIT_WORKER_URL: the worker service URL; the dispatch OIDC audience
+    Invoker          string // ARCHFIT_INVOKER: the service account e-mail of the queue and Scheduler dispatches
 }
 
 // Load reads Config from the environment. Secrets are file references only.
@@ -143,7 +150,7 @@ Schema, strict decoding, a locked manifest. All internal integrations are listed
 
 ```
 internal/                         Archfit App (root)
-├── app/                          composition root: config, wiring, routes, webhook fan-out, operator endpoints
+├── app/                          composition root: config, roles, wiring, routes, webhook intake and processing, operator endpoints
 ├── wire/                         published language (versioned contracts, no domain logic)
 │   ├── envelope/                 report-envelope v1: schema, strict decode, payload digest
 │   ├── report/                   engine state v1 as no-source allowlist transport
@@ -158,6 +165,8 @@ internal/                         Archfit App (root)
 ├── store/                        Store interface (tenant-prefixed KV) + in-memory implementation
 │   └── firestore/                persistent driver: Firestore over REST
 ├── gcptoken/                     service-account access token from the Cloud Run metadata server
+├── queue/                        Queue interface (webhook hand-off) + inline implementation
+│   └── cloudtasks/               Cloud Tasks implementation over REST
 ├── gate/                         the gate path (core)
 │   ├── ingest/                   authenticate and bind one upload
 │   ├── inputs/                   trusted inputs from the protected ref; owner approval; entitlement read
@@ -175,7 +184,7 @@ internal/                         Archfit App (root)
         └── graph/                read-only graph view model
 ```
 
-Root fan-out is seven, two above the 4±1 guidance; see Minor issues below.
+Root fan-out is eight, three above the 4±1 guidance; see Minor issues below.
 
 ### Go packaging rules
 
@@ -197,6 +206,7 @@ Root fan-out is seven, two above the 4±1 guidance; see Minor issues below.
 | `store`                | standard library                                                            |
 | `store/<driver>`       | standard library, `store`                                                   |
 | `gcptoken`             | standard library                                                            |
+| `queue`, `queue/*`     | standard library; `queue` (from its drivers and `queuetest`)                |
 | `github/*`             | standard library, `github/auth` (from `github/api`)                         |
 | `gate`, `gate/*`       | `wire/*`, `github/*`, `store`, gate siblings                                |
 | `control`, `control/*` | `wire/*`, `github/*`, `store`, `gate` (façade only), control siblings       |
@@ -216,8 +226,11 @@ settings, policy, baseline and labels from the protected ref, computes digests, 
 owner approval on the exact head SHA, and reads the cached `Entitlement`. `gate` checks the manifest identity
 and the workflow path. `gate/verdict` maps the facts to an outcome. `gate/feedback` publishes. All in the request.
 
-**Webhook**: `app` verifies the signature, parses the event, hands it to `gate.HandleEvent` first and then to
-`control.HandleEvent`. A `control` error never changes the gate's result. New head → pending gate check (required
+**Webhook**: intake in `app` verifies the signature, parses the event, and queues two tasks, the gate half first:
+GitHub's own headers and body, named after the delivery ID, so a repeated delivery is deduplicated by name. A task
+that the queue refuses runs inline. The worker verifies the signature again and hands the event to
+`gate.HandleEvent` or `control.HandleEvent`. The halves are separate tasks: a `control` error never blocks or repeats
+gate work. A transient error is retried by the queue; a permanent one is logged and dropped. New head → pending gate check (required
 mode) or fork refusal. A default-branch push that changes a protected path → a one-repository sweep, in the request. Review change → re-run the workflow if the last receipt was `owner_approval_missing`.
 Installation events → trial start, uninstall cleanup.
 
@@ -284,10 +297,12 @@ Distance scale and thresholds are those of the Fractal Design skill. Depths: roo
 | control → its children                                                      | Functional (composition)          | control        | 1    | 1        | High       | Yes       | —                                                |
 | control → gate, store, github/*                                             | Contract                          | root           | 1–2  | 1–2      | Moderate   | Yes       | —                                                |
 | github/api → github/auth (`TokenSource`)                                    | Contract                          | github         | 1    | 1        | Low        | Yes       | —                                                |
-| app → gate, control, store                                                  | Contract (constructors, handlers) | root           | 1    | 1        | Low        | Yes       | —                                                |
+| app → gate, control, store, queue                                           | Contract (constructors, handlers) | root           | 1    | 1        | Low        | Yes       | —                                                |
 | app → gcptoken (constructor)                                                | Contract                          | root           | 1    | 1        | Low        | Yes       | —                                                |
 | app → store/firestore (constructor)                                         | Contract                          | root           | 2    | 2        | Low        | Yes       | —                                                |
 | store/firestore → store (implements `Store`)                                | Contract                          | store          | 1    | 1        | Moderate   | Yes       | —                                                |
+| app → queue/cloudtasks (constructor)                                        | Contract                          | root           | 2    | 2        | Low        | Yes       | —                                                |
+| queue/cloudtasks → queue (`Queue`)                                          | Contract                          | queue          | 1    | 1        | Low        | Yes       | —                                                |
 | app → github/{auth,api,webhook,oidc}                                        | Contract                          | root           | 2    | 2        | Low        | Yes       | —                                                |
 | control → github/webhook (`Event`)                                          | Contract                          | root           | 2    | 2        | Low        | Yes       | —                                                |
 | app → control/assist/anthropic (constructor)                                | Contract                          | root           | 3    | 3        | Low        | Yes       | —                                                |
@@ -364,16 +379,16 @@ draft are gone. What the real engine changed in this design:
 
 ### Minor issues (accepted)
 
-- Root fan-out of seven exceeds 4±1 by two. `app` is wiring only, `store` is a single interface and `gcptoken`
-  is one small leaf that only `app` imports, so the load is low. Folding them elsewhere would hide a platform seam,
-  fatten `cmd/reporter`, or tie the token source to one of the Google API drivers that use it.
+- Root fan-out of eight exceeds 4±1 by three. `app` is wiring only, `store` and `queue` are single interfaces and
+  `gcptoken` is one small leaf that only `app` imports, so the load is low. Folding them elsewhere would hide a
+  platform seam, fatten `cmd/reporter`, or tie the token source to one of the Google API drivers that use it.
 - `github/api` is a wide leaf. It is generic, low-volatility, and split into role interfaces so no consumer holds all of it.
 - `control/ui` is the largest leaf-like module. Split further only when a second contributor works on it.
 
 ## Change Vectors
 
 - Adding a module under `gate` or `control` without touching the other branch.
-- Replacing the KV, sandbox, or LLM platform: a new implementation package plus one line in `app`.
+- Replacing the KV, queue, sandbox, or LLM platform: a new implementation package plus one line in `app`.
 - A new engine version: `wire/report`, `wire/policy`, `wire/manifest` and their fixtures.
 - Splitting `gate` into its own deployment later: the import rule already guarantees it builds alone.
 - A billing provider: inside `control/account`; the `Entitlement` record stays.
@@ -390,9 +405,10 @@ draft are gone. What the real engine changed in this design:
 - Wire types are read-only inputs: modules read a decoded `wire` value and pass it on, but nothing stores one, mutates one, or re-publishes one as its own type.
 - Versioned wire contracts (`wire/*`) stay separate from domain types; storage holds only `account`'s records and the `Entitlement` record.
 - Tenant identity comes from a verified webhook, verified OIDC claims, or an authorized OAuth session; never from a client-supplied ID.
-- Nothing is persisted except KV keys under an installation prefix (and the system budget counter). No report, source, queue, or job table.
+- Nothing is persisted except KV keys under an installation prefix (and the system budget counter). No report, source, queue state, or job table.
 - Logs and telemetry carry IDs, digests, outcomes and timings only: no report bodies, paths, or messages.
-- Handlers do their work in the request and are idempotent; GitHub holds the dedup keys.
+- Webhook handlers are idempotent: a queue delivers at least once, and the task name (the delivery ID and the half)
+  is the only dedup key the App gives the queue. Uploads do their work in the request.
 - GitHub rate-limit exhaustion before a decision is published leaves checks pending for the sweep; it never produces
   green. A rate limit on the changed-file list, which only filters annotations, comes after the gate check is written
   with its decided conclusion; the retry adds the annotations.
@@ -458,6 +474,10 @@ draft are gone. What the real engine changed in this design:
 - **Test name**: `TestDuplicateAndOutOfOrderDelivery`
   **Scenario**: the same upload twice; an older attempt after a newer one; an upload for a superseded head.
   **Expected behavior**: one comment, updated in place; the newer result stands; the stale upload gets `409` and changes nothing.
+- **Test name**: `TestConcurrentDuplicateDelivery`
+  **Scenario**: four concurrent copies of one PR-opened event and of one installation-created event, each through the
+  gate and the control handler, as a queue that delivers at least once can cause.
+  **Expected behavior**: no handler fails; one pending `archfit/gate` check on the head; the entitlement exists.
 - **Test name**: `TestSuspensionIsNeitherArchitectureFailureNorSuccess`
   **Scenario**: private repository after trial and grace with no grant; then a grant.
   **Expected behavior**: `action_required` in category `subscription` with a recovery action; after the grant the workflow is re-run and only a fresh report can produce `success`.

@@ -7,8 +7,9 @@
 ## Purpose
 
 `app` turns configuration into one running process: it loads secrets from file references, constructs every
-module, chooses the platform implementations of `Store`, `Sandbox` and the LLM `Provider`, mounts the HTTP
-routes, verifies and fans out webhooks, and guards the operator endpoints. Without it `cmd/reporter` would
+module, chooses the platform implementations of `Store`, `Sandbox`, `Queue` and the LLM `Provider`, mounts the
+HTTP routes of the process role, verifies and queues webhooks, processes queued webhooks, and guards the operator
+and worker endpoints. Without it `cmd/reporter` would
 have to know every module, and the rule "the gate keeps working when the control plane fails" would have no
 single place where it is enforced at runtime.
 
@@ -16,23 +17,56 @@ single place where it is enforced at runtime.
 
 - `Load`: read `Config` from the environment; fail with a message naming the variable; never read a secret value from the environment itself, only a file path.
 - `Run`: build the dependency graph, start one `http.Server`, shut down gracefully on context cancellation.
-- Route table (normative, below), one `http.ServeMux`.
-- Webhook endpoint: read the body (25 MB cap, GitHub's own maximum **[default]**), read the three delivery headers under
-  `webhook.HeaderEvent`, `webhook.HeaderDelivery` and `webhook.HeaderSignature`, `webhook.Verify`, `webhook.Parse`, then call
-  `gate.HandleEvent` and `control.HandleEvent` independently. Respond `202` when the signature is valid and the payload parses, whatever the handlers return; handler errors are logged by delivery ID. GitHub redelivery plus the sweep are the recovery path.
-  A delivery with a valid signature that `webhook.Parse` refuses answers `400` and reaches no handler.
-- Operator endpoints: constant-time bearer comparison with the operator token. `POST /internal/sweep` runs
-  `control.Sweep` then `gate.Sweep`, each isolated; responds with the gate `Summary` counts as JSON (rules under Operator endpoints below).
-  `POST /internal/grants` sets or clears the manual beta grant through `control.Grant` (body rules under Operator endpoints below).
+- Roles (`ARCHFIT_ROLE`): `all` **[default]**, `public` or `worker`. The role selects the route table (normative,
+  below) and the secrets the process reads. One `http.ServeMux`.
+- Webhook intake (`POST /webhooks/github`, roles `all` and `public`): read the body (25 MB cap, GitHub's own maximum
+  **[default]**), read the three delivery headers under `webhook.HeaderEvent`, `webhook.HeaderDelivery` and
+  `webhook.HeaderSignature`, `webhook.Verify`, `webhook.Parse`. Then queue two tasks, the gate half first:
+  `<delivery ID>_gate` and `<delivery ID>_control`. Each task carries the three delivery headers, `Content-Type`,
+  `X-Archfit-Half` (`gate` or `control`) and the unchanged body, and nothing else. A task that the queue refuses
+  (any `Enqueue` error, for example a body over the task limit, a delivery ID that is no task name, or an
+  unavailable queue) is processed inline in the request, logged as `inline_fallback`. Respond `202` when the
+  signature is valid and the payload parses, whatever happens next. An `Ignored` event queues nothing.
+  A delivery with a valid signature that `webhook.Parse` refuses answers `400` and queues nothing.
+- Queued webhook processing (the inline driver, and `POST /internal/webhooks` in the `worker` role): verify the
+  signature again, parse, and call the handler that `X-Archfit-Half` names, under its own deadline. Error classes:
+  - Done, or an `Ignored` event: `204`.
+  - Transient (every handler error that `api.Permanent` does not mark, a panic, a deadline): `503`, so the queue
+    retries. Logged with `retry: true`.
+  - Permanent (`api.Permanent`: a gone resource, or a final GitHub `4xx` such as `400` or `422`), a bad signature, an unparsable body, an
+    unknown or missing half, or a body over the cap: `204`, logged at error level, never retried.
+  - The inline driver never retries. Its errors are logged, and the intake request line has the outcome `handler_error`.
+- Worker identity (`worker` role): every `/internal/*` route requires a Google ID token in
+  `X-Serverless-Authorization`, else in `Authorization`, with `iss` `https://accounts.google.com` (or
+  `accounts.google.com`), `aud` equal to `ARCHFIT_WORKER_URL`, `email` equal to `ARCHFIT_INVOKER`,
+  `email_verified` true, and `exp` in the future. Anything else answers `401` and reaches no handler. Cloud Run's
+  invoker check verifies the signature before the request reaches the container and can remove it
+  (`SIGNATURE_REMOVED_BY_GOOGLE`), so `app` reads the claims only. This check refuses a caller with another
+  identity; it does not replace the invoker check, internal ingress or the queue routing.
+- Operator endpoints: constant-time bearer comparison with the operator token, in `Authorization` in the `all` role
+  and in `X-Archfit-Operator` in the `worker` role, where `Authorization` carries the invoker's ID token.
+  `POST /internal/sweep` runs `control.Sweep` then `gate.Sweep`, each isolated; responds with the gate `Summary`
+  counts as JSON (rules under Operator endpoints below). On the worker the sweep needs the invoker identity only,
+  because Cloud Scheduler carries no secret. `POST /internal/grants` sets or clears the manual beta grant through
+  `control.Grant` (body rules under Operator endpoints below); on the worker it needs both.
 - Isolation at runtime: the two `control` HTTP handlers are wrapped with panic recovery and a per-request timeout; a panic
   or timeout there never reaches the gate routes. The deadline of every route is in the Timeouts table below: 55 seconds
   **[default]** for the control routes, 300 seconds **[default]** for the managed assist route only, and the gate upload route
   has its own 55 seconds **[default]** (target: feedback within 60 seconds).
 - Base URL: `ARCHFIT_BASE_URL` must not end in `/`. It is the OIDC audience, compared byte for byte with the token's
   `aud`, and the Action refuses an endpoint with a trailing slash; a slash here would refuse every upload.
+- Secrets by role: the `public` role never reads the operator token, even when its variable is set. The `worker`
+  and `all` roles read every secret. The worker still reads the OAuth secret and the cookie key, because
+  `control.New` builds the UI even where no UI route is mounted (upgrade trigger: a role-specific control
+  construction).
 - Secret files: every `*_FILE` variable names a text file. `app` reads it, trims leading and trailing white space, and
   refuses an empty result at startup. The cookie key is the trimmed raw bytes of its file, not an encoding of them, and
   `control.New` requires exactly 32 of them.
+- Platform selection: `QueueDriver` `"inline"` → the inline driver; `"cloudtasks"` → `cloudtasks.New` with
+  `ARCHFIT_TASKS_QUEUE`, the URL `ARCHFIT_WORKER_URL` + `/internal/webhooks`, the audience `ARCHFIT_WORKER_URL` and
+  the invoker `ARCHFIT_INVOKER`. The worker role never enqueues and ignores `QueueDriver`. The `all` role refuses
+  `"cloudtasks"` at startup: it mounts no worker task route, so its tasks would never run. The cloudtasks driver gets
+  its own `gcptoken.Source` over the shared client; startup sends no request to Google.
 - Platform selection: `StoreDriver` `"memory"` → `store.NewMemory()`; `"firestore"` → `firestore.New` with
   `FirestoreProject`, `FirestoreDatabase` and `FirestoreEmulator`, and a `gcptoken.Source` over the shared client
   (nil, and one warning log line, when the emulator is set). `ARCHFIT_FIRESTORE_PROJECT` is required with
@@ -48,9 +82,12 @@ Supporting. Wiring has no business rules and changes only when a module or platf
 
 - Environment variable names, secret-file conventions, defaults, timeouts, body caps.
 - Which concrete implementation backs each seam, and the order of construction.
-- The route table and which module owns each route.
-- The webhook fan-out order (gate first) and the rule that handler errors do not change the HTTP answer.
-- The operator token scheme for `/internal/*`.
+- The route table of each role and which module owns each route.
+- The task layout (names, headers, the half) and the order of the halves (gate first). Intake's answer does not
+  depend on the handlers; the worker's answer depends only on the error class.
+- The error classes of webhook processing.
+- The operator token scheme for `/internal/*`, and the invoker identity check of the worker.
+- Enqueue deadline: 4 s per task **[default]**, so both tasks fit inside GitHub's 10-second delivery timeout.
 - Server settings: read timeout 15 s, write timeout 310 s, idle 60 s, shutdown grace 10 s **[default]**. The write timeout
   is above the longest route deadline (300 s), so a route's own deadline always answers before the server cuts the connection.
 
@@ -66,13 +103,18 @@ type Config struct {
     OAuthClientID    string // ARCHFIT_GITHUB_OAUTH_CLIENT_ID
     OAuthSecretFile  string // ARCHFIT_GITHUB_OAUTH_SECRET_FILE
     CookieKeyFile    string // ARCHFIT_COOKIE_KEY_FILE
-    OperatorTokenFile string // ARCHFIT_OPERATOR_TOKEN_FILE; authenticates /internal/*
+    OperatorTokenFile string // ARCHFIT_OPERATOR_TOKEN_FILE; authenticates the operator routes; never read by the public role
     AnthropicKeyFile string // ARCHFIT_ANTHROPIC_KEY_FILE; empty disables managed LLM
     StoreDriver      string // ARCHFIT_STORE, "memory" (default) or "firestore"
     FirestoreProject string // ARCHFIT_FIRESTORE_PROJECT; required by "firestore"
     FirestoreDatabase string // ARCHFIT_FIRESTORE_DATABASE; empty selects "(default)"
     FirestoreEmulator string // FIRESTORE_EMULATOR_HOST; host:port, plain HTTP and no credentials
     SandboxDriver    string // ARCHFIT_SANDBOX, "none" until docs/tech-stack.md picks one
+    Role             string // ARCHFIT_ROLE: "all" (default), "public" or "worker"
+    QueueDriver      string // ARCHFIT_QUEUE: "inline" (default) or "cloudtasks"
+    TasksQueue       string // ARCHFIT_TASKS_QUEUE: "projects/<p>/locations/<l>/queues/<q>"; cloudtasks only
+    WorkerURL        string // ARCHFIT_WORKER_URL: the worker service URL; the dispatch OIDC audience
+    Invoker          string // ARCHFIT_INVOKER: the service account e-mail of the queue and Scheduler dispatches
 }
 
 // Load reads Config from the environment. Secrets are file references only.
@@ -84,17 +126,23 @@ func Run(ctx context.Context, c Config, log *slog.Logger) error
 
 ### Routes
 
-| Method and path                 | Handler                                           | Authentication done by                      |
-| ------------------------------- | ------------------------------------------------- | ------------------------------------------- |
-| `GET /healthz`                  | `app`: `{"status":"ok"}`; no dependency is probed | none                                        |
-| `POST /v1/reports`              | `gate.UploadHandler()`                            | gate (OIDC)                                 |
-| `POST /v1/discoveries`          | `control.DiscoveryHandler()`                      | control, through the gate `Receiver` (OIDC) |
-| `POST /v1/baselines`            | `control.BaselineHandler()`                       | control, through the gate `Receiver` (OIDC) |
-| `POST /webhooks/github`         | `app` fan-out                                     | `app` (`webhook.Verify`)                    |
-| `POST /internal/sweep`          | `app`                                             | `app` (operator bearer token)               |
-| `POST /internal/grants`         | `app`                                             | `app` (operator bearer token)               |
-| `POST /r/{owner}/{name}/assist` | `control.UIHandler()`, under the long deadline    | control (session)                           |
-| `/` and everything else         | `control.UIHandler()`                             | control (session)                           |
+| Method and path                 | Roles             | Handler                                           | Authentication done by                                     |
+| ------------------------------- | ----------------- | ------------------------------------------------- | ---------------------------------------------------------- |
+| `GET /healthz`                  | every role        | `app`: `{"status":"ok"}`; no dependency is probed | none                                                       |
+| `POST /v1/reports`              | `all`, `public`   | `gate.UploadHandler()`                            | gate (OIDC)                                                |
+| `POST /v1/discoveries`          | `all`, `public`   | `control.DiscoveryHandler()`                      | control, through the gate `Receiver` (OIDC)                |
+| `POST /v1/baselines`            | `all`, `public`   | `control.BaselineHandler()`                       | control, through the gate `Receiver` (OIDC)                |
+| `POST /webhooks/github`         | `all`, `public`   | `app` intake                                      | `app` (`webhook.Verify`)                                   |
+| `POST /internal/webhooks`       | `worker`          | `app` queued webhook processing                   | `app` (invoker ID token, then `webhook.Verify`)            |
+| `POST /internal/sweep`          | `all`             | `app`                                             | `app` (operator bearer token)                              |
+| `POST /internal/sweep`          | `worker`          | `app`                                             | `app` (invoker ID token)                                   |
+| `POST /internal/grants`         | `all`             | `app`                                             | `app` (operator bearer token)                              |
+| `POST /internal/grants`         | `worker`          | `app`                                             | `app` (invoker ID token and operator token)                |
+| any other `/internal/*`         | every role        | `404`                                             | none                                                       |
+| `POST /r/{owner}/{name}/assist` | `all`, `public`   | `control.UIHandler()`, under the long deadline    | control (session)                                          |
+| `/` and everything else         | `all`, `public`   | `control.UIHandler()`                             | control (session)                                          |
+
+The `worker` role answers `404` for every route it does not mount, the UI included.
 
 ### Timeouts
 
@@ -106,7 +154,8 @@ The deadline is the one the handler sees on its request context. `http.TimeoutHa
 | `POST /v1/reports`              | 55 s     | gate upload; target: feedback within 60 seconds                                                              |
 | `POST /v1/discoveries`          | 55 s     | control per-request timeout                                                                                  |
 | `POST /v1/baselines`            | 55 s     | control per-request timeout                                                                                  |
-| `POST /webhooks/github`         | none     | each half of the fan-out runs detached from the request under its own deadline: gate 55 s, then control 55 s |
+| `POST /webhooks/github`         | none     | each enqueue runs detached from the request for 4 s; inline work runs detached: gate 55 s, then control 55 s |
+| `POST /internal/webhooks`       | none     | the half runs under its own deadline (gate 55 s, control 55 s), attached to the dispatch request             |
 | `POST /internal/sweep`          | none     | operator call; no deadline of its own                                                                        |
 | `POST /internal/grants`         | none     | operator call; no deadline of its own                                                                        |
 | `POST /r/{owner}/{name}/assist` | 300 s    | managed assist; the sum below                                                                                |
@@ -321,6 +370,70 @@ type Completion struct {
 }
 ```
 
+### internal/queue, internal/queue/cloudtasks
+
+- **Counterpart**: internal/queue/, internal/queue/cloudtasks/
+- **Direction**: app depends on them (`cloudtasks`: constructor only)
+- **Strength**: contract
+- **LCA / Rank / Distance**: internal (root) / 1 / 1 for `queue`, 2 / 2 for `cloudtasks`
+- **Volatility**: low
+- **Balanced?**: yes
+- **Shared knowledge**: the seam, the inline driver, and the Cloud Tasks constructor. `app` builds every task and is
+  the handler of the inline driver. `app` passes the shared `http.Client` to `cloudtasks.New`.
+
+<!-- contract: Task, Queue, ErrInvalidTask, ValidName, Handler, NewInline — restated from internal/queue/module.md -->
+```go
+// Task is one unit of queued work: the target's own headers and body, and the name that deduplicates it.
+// The queue never reads the body; the receiver verifies it again.
+type Task struct {
+    Name   string // see ValidName; unique per unit of work
+    Header http.Header
+    Body   []byte
+}
+
+// Queue hands a Task to the worker. Implementations must be safe for concurrent use.
+type Queue interface {
+    // Enqueue returns nil once the task will be delivered at least once. A name that was enqueued before is
+    // not an error: the task is then delivered at least once in all. An error means the task was not
+    // accepted, and the caller must process it some other way.
+    Enqueue(ctx context.Context, t Task) error
+}
+
+// ErrInvalidTask is returned for a task whose name or size a driver cannot carry. Nothing was sent.
+var ErrInvalidTask = errors.New("queue: invalid task")
+
+// ValidName reports whether name is a task name that every driver accepts: 1 to 500 of [A-Za-z0-9_-].
+func ValidName(name string) bool
+
+// Handler processes one delivered task.
+type Handler func(ctx context.Context, t Task)
+
+// NewInline returns a Queue that runs every task at once, in the caller's goroutine, through h.
+// It never fails and never retries: h reports its own errors. It ignores the name, so it accepts any task.
+func NewInline(h Handler) Queue
+```
+
+<!-- contract: Config, TokenSource, New — restated from internal/queue/cloudtasks/module.md -->
+```go
+// Config names the queue and the dispatch target. Every value is a resource name, not a secret.
+type Config struct {
+    Queue    string // "projects/<project>/locations/<location>/queues/<queue>"
+    URL      string // the worker route of every task; the queue-level uriOverride replaces it when set
+    Audience string // OIDC audience of the dispatch token: the worker service URL
+    Invoker  string // service account e-mail that Cloud Tasks signs the dispatch token as
+    Endpoint string // API base URL; empty means https://cloudtasks.googleapis.com
+}
+
+// TokenSource returns an OAuth 2.0 access token for the Cloud Tasks API.
+type TokenSource interface {
+    Token(ctx context.Context) (string, error)
+}
+
+// New returns a Queue that creates one Cloud Tasks HTTP task per Enqueue. It makes no network call.
+// A nil client means http.DefaultClient.
+func New(c Config, ts TokenSource, hc *http.Client) (queue.Queue, error)
+```
+
 ### internal/control/assist/anthropic
 
 - **Counterpart**: internal/control/assist/anthropic/
@@ -437,11 +550,14 @@ func New(c Config, tokens TokenSource, hc *http.Client) (store.Store, error)
 - **LCA / Rank / Distance**: internal (root) / 1 / 1
 - **Volatility**: low
 - **Balanced?**: yes
-- **Shared knowledge**: `app` builds one `Source` and passes it as the Firestore `TokenSource`.
+- **Shared knowledge**: `app` builds a `Source` for each Google API driver: the Firestore `TokenSource`, and in
+  `Run` the `cloudtasks.TokenSource`.
 
 <!-- contract: Source, New — restated from internal/gcptoken/module.md -->
 ```go
 // Source returns the access token of the service account the workload runs as.
+// It reads no key file. It caches the token until refreshBefore ahead of its expiry.
+// Safe for concurrent use; one refresh runs at a time.
 type Source struct{ /* unexported */ }
 
 // New returns a Source that asks the metadata server through hc. It sends no request until the first Token call.
@@ -459,7 +575,8 @@ func (s *Source) Token(ctx context.Context) (string, error)
 - **LCA / Rank / Distance**: internal (root) / 2 / 2
 - **Volatility**: low
 - **Balanced?**: yes
-- **Shared knowledge**: constructors, plus the webhook functions, header names and event type used by the fan-out. `app` uses one
+- **Shared knowledge**: constructors, plus the webhook functions, header names and event type used by intake and
+  queued processing, and `api.Permanent`, which decides the error class of a handler error. `app` uses one
   shared `http.Client` with a 30-second timeout **[default]**; it bounds the GitHub and OIDC calls. `Claims` is an opaque result of `Verifier` for this module.
 
 <!-- contract: Credentials, TokenSource — restated from internal/github/auth/module.md -->
@@ -501,6 +618,15 @@ type OAuth interface {
 <!-- contract: New — restated from internal/github/auth/module.md -->
 ```go
 func New(c Credentials, hc *http.Client) (TokenSource, OAuth, error)
+```
+
+<!-- contract: Permanent — restated from internal/github/api/module.md -->
+```go
+// Permanent reports whether err is a GitHub answer that the same call cannot change when it is repeated:
+// ErrNotFound, or a 4xx status other than 401, 403, 408, 409 and 429. A 403 stays retryable because a secondary
+// rate limit can arrive without the headers that mark it. Rate limits, 5xx, transport and every other error are
+// not permanent.
+func Permanent(err error) bool
 ```
 
 <!-- contract: Client, New — restated from internal/github/api/module.md -->
@@ -596,7 +722,7 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
 
 ## Change Vectors
 
-- A new `Store`, `Sandbox`, or `Provider` driver: one constructor call and one driver name.
+- A new `Store`, `Sandbox`, `Queue`, or `Provider` driver: one constructor call and one driver name.
 - A new route or operator endpoint.
 - New configuration variables, timeouts, or log fields.
 - Moving the sweep trigger from an external scheduler to an in-process ticker.
@@ -604,8 +730,14 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
 ## Constraints and Invariants
 
 - `app` is the only package that imports both `gate` and `control`, and the only one that selects platform implementations.
-- Gate first: webhook events reach `gate.HandleEvent` before `control.HandleEvent`; the two results are independent. `gate.Sweep` runs even when `control.Sweep` fails or panics.
-- A failing or missing optional dependency (LLM key, sandbox driver) never prevents startup of the gate routes. A missing GitHub App credential, webhook secret, base URL, or operator token is a startup error.
+- Gate first: the gate task is queued before the control task, and inline work runs the gate half first. The two
+  halves are separate tasks with independent results: a control failure never blocks or repeats gate work.
+  `gate.Sweep` runs even when `control.Sweep` fails or panics.
+- The public role never serves `/internal/*` and never reads the operator token. The worker role never serves the UI,
+  the uploads or intake.
+- A task is GitHub's own delivery. The worker verifies the signature again, so the queue is not trusted. The half
+  header is not signed; it only chooses between two handlers of the same verified delivery.
+- A failing or missing optional dependency (LLM key, sandbox driver) never prevents startup of the gate routes. A missing GitHub App credential, webhook secret, or base URL is a startup error, and so is a missing operator token outside the public role, and a missing worker URL or invoker in the worker role or with the cloudtasks driver.
 - Secrets arrive as file paths; their contents are never logged, never placed in `Config` string form, never echoed in errors.
 - Tenant identity is never taken from a request here. `/internal/grants` is operator-authenticated and is the single place an installation ID arrives in a body; it is logged with the operator action.
 - Webhook body cap 25 MB **[default]**; bodies are never logged. Unknown events answer `202` and do nothing.
@@ -617,7 +749,8 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   nothing. Remove the restatement when `control` publishes the assist route as its own handler or publishes the pattern.
 - Known ceiling: the shutdown grace of 10 seconds is shorter than the assist deadline, so a managed assist request in
   flight at shutdown is cancelled. Upgrade trigger: managed assist traffic that makes deploy-time cancellations visible.
-- No queues, no background job tables. The only goroutines `app` starts are the HTTP server and its shutdown watcher.
+- No background job tables and no queue state: the queue product holds queued tasks. The only goroutines `app`
+  starts are the HTTP server and its shutdown watcher.
 - Standard library only.
 - Logs: IDs, digests, outcomes, timings.
 
@@ -628,8 +761,14 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
 - **Test name**: `TestLoadDefaultsAndRequired`
   **Scenario**: table over environments: empty; only required variables; every variable set; non-numeric app ID; unknown `ARCHFIT_STORE`; unknown `ARCHFIT_SANDBOX`;
   `ARCHFIT_BASE_URL` ending in `/` (host only, with a path, `/` alone); a base URL with a path and no trailing slash;
+  unknown `ARCHFIT_ROLE`; unknown `ARCHFIT_QUEUE`; the public role without the operator token; the worker role with
+  and without the operator token, the worker URL and the invoker; the worker role with `ARCHFIT_QUEUE=cloudtasks`;
+  `cloudtasks` in the `all` role; `cloudtasks` without the queue name, the worker URL or the invoker; an invoker that
+  is not an e-mail; a worker URL with a trailing slash or over plain `http`.
   `ARCHFIT_STORE=firestore` without a project, with a project and a named database, and with `FIRESTORE_EMULATOR_HOST`.
-  **Expected behavior**: defaults `:8080`, `memory`, `none`; an error naming the first missing or invalid variable; no secret content in any error.
+  **Expected behavior**: defaults `:8080`, `memory`, `none`, `all`, `inline`; an error naming the first missing or
+  invalid variable; the public role loads without the operator token, the worker role does not; the worker ignores the
+  queue driver; no secret content in any error.
 - **Test name**: `TestLoadNeverReadsSecretValuesFromEnv`
   **Scenario**: set `ARCHFIT_GITHUB_PRIVATE_KEY` style variables holding inline PEM.
   **Expected behavior**: ignored; only `*_FILE` variables are honored.
@@ -643,8 +782,45 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   **Scenario**: start `Run` with fakes behind every seam; request each row of the Routes table.
   **Expected behavior**: each path reaches its owner; unknown paths reach the UI handler; `/healthz` answers without touching any dependency.
 - **Test name**: `TestWebhookFanOut`
-  **Scenario**: deliver a signed `pull_request` event; then an event with a bad signature; then an unknown event type.
+  **Scenario**: the inline driver: deliver a signed `pull_request` event; then an event with a bad signature; then an unknown event type.
   **Expected behavior**: gate then control receive the same parsed `Event`; bad signature → `401`, no handler called; unknown type → `202`, handlers see `Ignored` or nothing.
+- **Test name**: `TestRoleRouteTables`
+  **Scenario**: table over the three roles and twelve requests: health, the three uploads, intake, two UI paths, sweep
+  and grant with the operator token, a task and a sweep with the invoker ID token, an unknown `/internal/*` path.
+  **Expected behavior**: each request reaches the owner that the Routes table names for that role, or answers the
+  status of an unmounted route (`404`) or a refused credential (`401`) and reaches no handler. The public role has no
+  `/internal/*` route; the worker has no upload, intake or UI route.
+- **Test name**: `TestWorkerRequiresTheInvokerIdentity`
+  **Scenario**: for each worker route, a table of credentials: none; the operator token; an ID token of another
+  service account, another audience, another issuer, with `email_verified` false, expired, with a list audience; no
+  bearer scheme; two segments; a payload that is not base64 or not JSON; the invoker token in `Authorization`; in
+  `X-Serverless-Authorization`; with the issuer without scheme. Then a worker without a configured invoker.
+  **Expected behavior**: `401` and no handler for every refused credential and for the worker without an invoker; the
+  three invoker tokens reach the handler.
+- **Test name**: `TestWorkerGrantNeedsTheOperatorToken`
+  **Scenario**: the invoker ID token with the operator token in `X-Archfit-Operator`; without it; with a wrong one.
+  **Expected behavior**: `204` and one grant; `401` and no grant twice.
+- **Test name**: `TestWorkerTaskErrorClasses`
+  **Scenario**: table over task dispatches: gate done; control done; a Store error; `ErrRateLimited`; a deadline; a
+  control panic; a wrapped `ErrNotFound` from each half; a bad signature; an unparsable body; an unknown half; no half;
+  an ignored event type. Then a gate dispatch whose request context is cancelled.
+  **Expected behavior**: `204` with outcome `done`; `503` with `transient_error` for the four retryable cases; `204`
+  with `permanent_error`, `bad_signature`, `unparsable`, `unknown_half` or `ignored` otherwise; only the named half
+  runs, and none for a refused task; no header value or secret in the logs. The half sees a 55-second deadline, and a
+  cancelled dispatch answers `503`: the worker does not detach from the queue's request.
+- **Test name**: `TestIntakeQueuesOneTaskPerHalf`
+  **Scenario**: the public role over a recording queue: both halves accepted; the control task refused with a `503`
+  error; both refused with `ErrInvalidTask`; a delivery ID that is no task name; an ignored event. Then the headers
+  and body of the tasks for a delivery with extra request headers.
+  **Expected behavior**: `202` each time; tasks named `<delivery>_gate` then `<delivery>_control`; a refused task runs
+  inline and only that one, with the outcome `inline_fallback`, which a failing inline handler does not replace; an
+  ignored event queues nothing; every enqueue has a
+  deadline; a task holds exactly the three delivery headers, `Content-Type` and `X-Archfit-Half`, and the unchanged body.
+- **Test name**: `TestQueuedTaskReachesTheWorker`
+  **Scenario**: a public intake and a worker joined by a queue that dispatches each task to the worker route with the
+  invoker token.
+  **Expected behavior**: intake runs no handler; the worker runs the gate half, then the control half, with the
+  delivery ID and installation ID of the delivery.
 - **Test name**: `TestSweepEndpointReturnsSummary`
   **Scenario**: authorized `POST /internal/sweep` with a gate fake returning counts.
   **Expected behavior**: `200` with the counts as JSON; control sweep was called first.
@@ -657,7 +833,7 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   **Scenario**: table over the route classes with fake handlers that record `ctx.Deadline()` and return at once: `POST /v1/reports`,
   `POST /v1/discoveries`, `POST /v1/baselines`, `GET /`, `POST /r/o/n/policy`, `GET /r/o/n/assist`, `POST /r/o/n/assist`, `POST /r/o/n/assist/x`; the two webhook halves;
   the operator routes. No sleeping.
-  **Expected behavior**: 55 s for every row except `POST /r/o/n/assist`, which sees 300 s; the webhook halves each see 55 s although the
+  **Expected behavior**: 55 s for every row except `POST /r/o/n/assist`, which sees 300 s; the inline webhook halves each see 55 s although the
   request has no deadline; the operator routes see no deadline; the server write timeout is greater than every one of them.
 
 - **Test name**: `TestImportsStayInsideTheDesign`
@@ -676,6 +852,16 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   **Scenario**: no Anthropic key, sandbox `none`; then `ARCHFIT_STORE=firestore` with a project.
   **Expected behavior**: startup succeeds; `control.Deps.Provider` and `Sandbox` are nil; gate routes serve. With
   Firestore, startup sends no outbound request.
+- **Test name**: `TestPublicRoleBootsWithoutTheOperatorToken`
+  **Scenario**: `run` in the public role with no operator token file, and with a file path that does not exist; then
+  the worker role without one.
+  **Expected behavior**: the public role starts, `/healthz` answers, and every `/internal/*` route answers `404`; the
+  worker role fails before listening and names `ARCHFIT_OPERATOR_TOKEN_FILE`.
+- **Test name**: `TestCloudTasksQueueWiring`
+  **Scenario**: `run` in the public role with `ARCHFIT_QUEUE=cloudtasks`, a fake Google token source and a transport that
+  answers `tasks.create`; one signed delivery. Then no token source; then an invalid queue name.
+  **Expected behavior**: `202` and two task creations in the configured queue, named after the delivery and aimed at
+  the worker route; the two other cases fail at startup and name `ARCHFIT_QUEUE` and `ARCHFIT_TASKS_QUEUE`.
 - **Test name**: `TestRequiredDependenciesFailStartup`
   **Scenario**: unreadable private key file; empty webhook secret file; missing base URL; Firestore without a
   project, with an invalid project ID, with an invalid database ID.

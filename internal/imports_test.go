@@ -107,9 +107,12 @@ func TestGatePathImportsNothingForbidden(t *testing.T) {
 	}
 }
 
-// seamImplementations are the packages allowed to import the parent that declares their interface.
+// seamImplementations are the packages allowed to import the parent that declares their interface: the
+// implementations of a seam, and its conformance suite.
 var seamImplementations = map[string]string{
 	internal + "control/assist/anthropic": internal + "control/assist",
+	internal + "queue/cloudtasks":         internal + "queue",
+	internal + "queue/queuetest":          internal + "queue",
 }
 
 // importGroup is one row of the allowed-import table: allowed answers for non-standard imports only.
@@ -126,6 +129,9 @@ func TestAllowedImportMatrix(t *testing.T) {
 			return strings.HasPrefix(imp, yamlModule) && (pkg == internal+"wire/settings" || pkg == internal+"wire/policy")
 		}},
 		{"store", func(p string) bool { return p == internal+"store" }, func(string, string) bool { return false }},
+		{"queue", func(p string) bool { return under(p, "queue") }, func(pkg, imp string) bool {
+			return seamImplementations[pkg] == internal+"queue" && imp == internal+"queue"
+		}},
 		{"gcptoken", func(p string) bool { return p == internal+"gcptoken" }, func(string, string) bool { return false }},
 		{"github", func(p string) bool { return under(p, "github") }, func(pkg, imp string) bool {
 			return pkg == internal+"github/api" && imp == internal+"github/auth"

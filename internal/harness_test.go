@@ -562,7 +562,7 @@ func startApp(t *testing.T, w *world) *runningApp {
 		OAuthSecretFile:   file("oauth", []byte(oauthSecret)),
 		CookieKeyFile:     file("cookie", []byte(cookieKey)),
 		OperatorTokenFile: file("operator", []byte(operatorToken)),
-		StoreDriver:       "memory", SandboxDriver: "none",
+		StoreDriver:       "memory", SandboxDriver: "none", Role: "all", QueueDriver: "inline",
 	}
 	logs := &lockedBuffer{}
 	addr := make(chan string, 1)

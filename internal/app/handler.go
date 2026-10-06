@@ -17,7 +17,9 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate"
+	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/webhook"
+	"github.com/alexei-led/archfit-app/internal/queue"
 )
 
 const (
@@ -37,6 +39,22 @@ const (
 
 	headerRequestID = "X-Request-Id"
 	bearerPrefix    = "Bearer "
+
+	// enqueueTimeout bounds one task creation. Two of them fit inside GitHub's 10-second delivery timeout.
+	enqueueTimeout = 4 * time.Second
+
+	// taskRoute is the worker route of queued webhooks. The webhook queue pins every task to it (uriOverride).
+	taskRoute = "/internal/webhooks"
+	// headerHalf names the half of a delivery that a task carries: halfGate or halfControl. It is not signed;
+	// it only chooses between two handlers that both verify the signed body.
+	headerHalf  = "X-Archfit-Half"
+	halfGate    = "gate"
+	halfControl = "control"
+
+	// headerOperator carries the operator token on the worker, where Authorization carries the invoker's ID token.
+	headerOperator = "X-Archfit-Operator"
+	// headerServerlessAuth is the other header Cloud Run reads an invoker ID token from.
+	headerServerlessAuth = "X-Serverless-Authorization"
 
 	maxLoggedIDLen = 64 // the delivery ID is logged before the signature is checked
 )
@@ -59,35 +77,53 @@ type controlFacade interface {
 }
 
 type handlerDeps struct {
+	role          string
 	gate          gateFacade
 	control       controlFacade
+	queue         queue.Queue // nil means the inline driver
 	webhookSecret []byte
-	operatorToken []byte
+	operatorToken []byte // nil in the public role
+	workerURL     string // the audience of invoker ID tokens; worker role only
+	invoker       string // the e-mail of invoker ID tokens; worker role only
 	now           func() time.Time
 	log           *slog.Logger
 }
 
-// newHandler mounts the route table. Every control handler runs behind its own timeout, and the
+// newHandler mounts the route table of the role. Every control handler runs behind its own timeout, and the
 // outer middleware turns any panic into a 500 for that request only.
 func newHandler(d handlerDeps) http.Handler {
 	s := &server{handlerDeps: d, operatorSum: sha256.Sum256(d.operatorToken)}
+	s.inline = queue.NewInline(s.runInline)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
-	mux.Handle("POST /v1/reports", http.TimeoutHandler(d.gate.UploadHandler(), uploadTimeout, ""))
-	mux.Handle("POST /v1/discoveries", http.TimeoutHandler(d.control.DiscoveryHandler(), controlTimeout, ""))
-	mux.Handle("POST /v1/baselines", http.TimeoutHandler(d.control.BaselineHandler(), controlTimeout, ""))
-	mux.HandleFunc("POST /webhooks/github", s.webhook)
-	mux.Handle("POST /internal/sweep", s.operator(s.sweep))
-	mux.Handle("POST /internal/grants", s.operator(s.grant))
-	ui := d.control.UIHandler()
-	mux.Handle(assistRoute, http.TimeoutHandler(ui, assistTimeout, ""))
-	mux.Handle("/", http.TimeoutHandler(ui, controlTimeout, ""))
+	if d.role != roleWorker {
+		mux.Handle("POST /v1/reports", http.TimeoutHandler(d.gate.UploadHandler(), uploadTimeout, ""))
+		mux.Handle("POST /v1/discoveries", http.TimeoutHandler(d.control.DiscoveryHandler(), controlTimeout, ""))
+		mux.Handle("POST /v1/baselines", http.TimeoutHandler(d.control.BaselineHandler(), controlTimeout, ""))
+		mux.HandleFunc("POST /webhooks/github", s.webhook)
+		ui := d.control.UIHandler()
+		mux.Handle(assistRoute, http.TimeoutHandler(ui, assistTimeout, ""))
+		mux.Handle("/", http.TimeoutHandler(ui, controlTimeout, ""))
+		// Only the routes mounted below serve /internal/*; the UI never sees the prefix.
+		mux.Handle("/internal/", http.NotFoundHandler())
+	}
+	switch d.role {
+	case roleAll:
+		mux.Handle("POST /internal/sweep", s.operator("Authorization", s.sweep))
+		mux.Handle("POST /internal/grants", s.operator("Authorization", s.grant))
+	case roleWorker:
+		// Each route sits behind the invoker identity; grants also need the operator token.
+		mux.Handle("POST "+taskRoute, s.invokerOnly(http.HandlerFunc(s.task)))
+		mux.Handle("POST /internal/sweep", s.invokerOnly(http.HandlerFunc(s.sweep)))
+		mux.Handle("POST /internal/grants", s.invokerOnly(s.operator(headerOperator, s.grant)))
+	}
 	return s.logged(mux)
 }
 
 type server struct {
 	handlerDeps
 	operatorSum [sha256.Size]byte
+	inline      queue.Queue // processes in this request; the fallback when s.queue refuses a task
 }
 
 // requestInfo collects the log fields only a route handler knows.
@@ -193,14 +229,13 @@ func isolate(f func() error) (err error) {
 	return f()
 }
 
-// webhook verifies a delivery and fans it out, gate first. Once the signature is valid the answer
-// is 202 whatever the handlers return: GitHub redelivery and the sweep are the recovery path.
+// webhook is intake: it verifies a delivery and queues it as two tasks, gate first. A verified delivery that
+// parses answers 202 whatever happens next. A real queue retries a failed task; the inline driver does not. With
+// a real queue, a GitHub redelivery inside 24 hours has the same task names and is refused as a duplicate, so the
+// sweep is the recovery path for work that was lost. A task the queue refuses is processed inline, in this request.
 func (s *server) webhook(w http.ResponseWriter, r *http.Request) {
 	ri := info(r)
-	ri.deliveryID = r.Header.Get(webhook.HeaderDelivery)
-	if len(ri.deliveryID) > maxLoggedIDLen {
-		ri.deliveryID = ri.deliveryID[:maxLoggedIDLen]
-	}
+	ri.deliveryID = loggedID(r.Header.Get(webhook.HeaderDelivery))
 
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxWebhookBody))
 	if tooLarge := (*http.MaxBytesError)(nil); errors.As(err, &tooLarge) {
@@ -227,36 +262,151 @@ func (s *server) webhook(w http.ResponseWriter, r *http.Request) {
 	ri.event, ri.installationID, ri.outcome = string(e.Kind), e.InstallationID, "accepted"
 
 	if e.Kind != webhook.Ignored {
-		// GitHub drops the connection after 10 seconds; the handlers keep their own deadlines instead.
+		// GitHub drops the connection after 10 seconds; queueing and inline work keep their own deadlines instead.
 		ctx := context.WithoutCancel(r.Context())
-		halves := []struct {
-			name    string
-			timeout time.Duration
-			handle  func(context.Context, webhook.Event) error
-		}{
-			{"gate", uploadTimeout, s.gate.HandleEvent},
-			{"control", controlTimeout, s.control.HandleEvent},
-		}
-		for _, h := range halves {
-			err := isolate(func() error {
-				ctx, cancel := context.WithTimeout(ctx, h.timeout)
-				defer cancel()
-				return h.handle(ctx, e)
-			})
-			if err != nil {
-				ri.outcome = "handler_error"
-				s.log.Error("webhook handler failed", "delivery_id", ri.deliveryID, "handler", h.name, "error", err.Error())
+		for _, half := range []string{halfGate, halfControl} {
+			t := deliveryTask(r.Header, half, body)
+			if err := s.enqueue(ctx, t); err != nil {
+				ri.outcome = outcomeInlineFallback
+				s.log.Warn("webhook processed inline", "delivery_id", ri.deliveryID, "handler", half, "error", err.Error())
+				_ = s.inline.Enqueue(ctx, t)
 			}
 		}
 	}
 	w.WriteHeader(http.StatusAccepted)
 }
 
-// operator guards /internal/* with the operator bearer token. Both sides are hashed first, so the
-// constant-time comparison does not reveal the token length either.
-func (s *server) operator(next http.HandlerFunc) http.Handler {
+// enqueue hands t to the queue. The inline driver gets no enqueue deadline: it does the work itself, under the
+// handlers' own deadlines.
+func (s *server) enqueue(ctx context.Context, t queue.Task) error {
+	if s.queue == nil {
+		return s.inline.Enqueue(ctx, t)
+	}
+	ctx, cancel := context.WithTimeout(ctx, enqueueTimeout)
+	defer cancel()
+	return s.queue.Enqueue(ctx, t)
+}
+
+// deliveryTask is one half of a delivery: GitHub's own headers and body, named after the delivery ID.
+// No App-defined message is involved, so the worker verifies the signature exactly as intake did.
+func deliveryTask(in http.Header, half string, body []byte) queue.Task {
+	h := http.Header{}
+	for _, k := range []string{webhook.HeaderEvent, webhook.HeaderDelivery, webhook.HeaderSignature} {
+		if v := in.Get(k); v != "" {
+			h.Set(k, v)
+		}
+	}
+	h.Set("Content-Type", "application/json")
+	h.Set(headerHalf, half)
+	return queue.Task{Name: in.Get(webhook.HeaderDelivery) + "_" + half, Header: h, Body: body}
+}
+
+func loggedID(id string) string {
+	if len(id) > maxLoggedIDLen {
+		return id[:maxLoggedIDLen]
+	}
+	return id
+}
+
+// Outcomes of one processed task.
+const (
+	outcomeDone      = "done"
+	outcomeIgnored   = "ignored"
+	outcomePermanent = "permanent_error"
+	outcomeTransient = "transient_error"
+
+	outcomeInlineFallback = "inline_fallback" // intake: the queue refused a task, so it ran in the request
+)
+
+// process verifies and handles one half of a delivery. It returns an error only when a repeat may succeed:
+// the queue then retries. Work that can never succeed (a bad signature, an unparsable body, an unknown half,
+// a permanent GitHub answer) is logged and returns nil, so it is never retried.
+func (s *server) process(ctx context.Context, t queue.Task) (webhook.Event, string, error) {
+	deliveryID := loggedID(t.Header.Get(webhook.HeaderDelivery))
+	half := t.Header.Get(headerHalf)
+	permanent := func(outcome string) (webhook.Event, string, error) {
+		// The half is logged by the switch below only; an unknown value is never echoed.
+		s.log.Error("webhook task dropped", "delivery_id", deliveryID, "outcome", outcome)
+		return webhook.Event{}, outcome, nil
+	}
+	if err := webhook.Verify(s.webhookSecret, t.Header.Get(webhook.HeaderSignature), t.Body); err != nil {
+		return permanent("bad_signature")
+	}
+	e, err := webhook.Parse(t.Header.Get(webhook.HeaderEvent), t.Header.Get(webhook.HeaderDelivery), t.Body)
+	if err != nil {
+		return permanent("unparsable")
+	}
+	var handle func(context.Context, webhook.Event) error
+	var timeout time.Duration
+	switch half {
+	case halfGate:
+		handle, timeout = s.gate.HandleEvent, uploadTimeout
+	case halfControl:
+		handle, timeout = s.control.HandleEvent, controlTimeout
+	default:
+		return permanent("unknown_half")
+	}
+	if e.Kind == webhook.Ignored {
+		return e, outcomeIgnored, nil
+	}
+	err = isolate(func() error {
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		return handle(ctx, e)
+	})
+	switch {
+	case err == nil:
+		return e, outcomeDone, nil
+	case api.Permanent(err):
+		s.log.Error("webhook handler failed", "delivery_id", deliveryID, "handler", half, "retry", false, "error", err.Error())
+		return e, outcomePermanent, nil
+	default:
+		s.log.Error("webhook handler failed", "delivery_id", deliveryID, "handler", half, "retry", true, "error", err.Error())
+		return e, outcomeTransient, err
+	}
+}
+
+// runInline is the inline driver's handler: it runs in the intake request, which logs the outcome. A fallback
+// outcome stays: it is the counted signal that the queue refused work; the handler error has its own line.
+func (s *server) runInline(ctx context.Context, t queue.Task) {
+	if _, outcome, _ := s.process(ctx, t); outcome != outcomeDone && outcome != outcomeIgnored {
+		if ri, ok := ctx.Value(requestInfoKey{}).(*requestInfo); ok && ri.outcome != outcomeInlineFallback {
+			ri.outcome = "handler_error"
+		}
+	}
+}
+
+// task is the worker route of queued webhooks. It answers 5xx only for a transient error, so the queue
+// retries exactly the work that a repeat may finish; every other answer is 204.
+func (s *server) task(w http.ResponseWriter, r *http.Request) {
+	ri := info(r)
+	ri.deliveryID = loggedID(r.Header.Get(webhook.HeaderDelivery))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxWebhookBody))
+	if tooLarge := (*http.MaxBytesError)(nil); errors.As(err, &tooLarge) {
+		ri.size, ri.outcome = r.ContentLength, "body_too_large"
+		s.log.Error("webhook task dropped", "delivery_id", ri.deliveryID, "outcome", ri.outcome)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if err != nil {
+		ri.outcome = "body_unreadable"
+		http.Error(w, "retry", http.StatusServiceUnavailable)
+		return
+	}
+	e, outcome, err := s.process(r.Context(), queue.Task{Header: r.Header, Body: body})
+	ri.event, ri.installationID, ri.outcome = string(e.Kind), e.InstallationID, outcome
+	if err != nil {
+		http.Error(w, "retry", http.StatusServiceUnavailable)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// operator guards an operator route with the operator bearer token in header. Both sides are hashed first,
+// so the constant-time comparison does not reveal the token length either.
+func (s *server) operator(header string, next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), bearerPrefix)
+		token, ok := strings.CutPrefix(r.Header.Get(header), bearerPrefix)
 		sum := sha256.Sum256([]byte(token))
 		if !ok || len(s.operatorToken) == 0 || subtle.ConstantTimeCompare(sum[:], s.operatorSum[:]) != 1 {
 			info(r).outcome = "unauthorized"
