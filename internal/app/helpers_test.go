@@ -24,6 +24,7 @@ import (
 
 	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/webhook"
+	"github.com/alexei-led/archfit-app/internal/queue"
 )
 
 func TestMain(m *testing.M) {
@@ -38,6 +39,9 @@ const (
 	testCookieKey     = "MARKER-cookie-key-0123456789abcd" // 32 bytes
 	testAnthropicKey  = "MARKER-anthropic-key"
 	bodyMarker        = "MARKER-request-body"
+
+	testWorkerURL = "https://worker.archfit.example"
+	testInvoker   = "invoker@coupling-test.iam.gserviceaccount.com"
 )
 
 var testNow = time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)
@@ -93,6 +97,7 @@ type fakeGate struct {
 	summary  gate.Summary
 	eventErr error
 	sweepErr error
+	ctxErr   bool // HandleEvent returns the context's error, as a real call would
 }
 
 func newFakeGate(l *callLog) *fakeGate {
@@ -106,6 +111,9 @@ func (g *fakeGate) HandleEvent(ctx context.Context, e webhook.Event) error {
 	g.log.sawContext(ctx)
 	g.events = append(g.events, e)
 	g.pending[e.HeadSHA] = true
+	if g.ctxErr && ctx.Err() != nil {
+		return ctx.Err()
+	}
 	return g.eventErr
 }
 
@@ -190,6 +198,8 @@ func (b *lockedBuffer) String() string {
 }
 
 type fixture struct {
+	role    string
+	queue   queue.Queue // nil: the inline driver
 	calls   *callLog
 	gate    *fakeGate
 	control *fakeControl
@@ -201,17 +211,21 @@ type fixture struct {
 // call rebuild after replacing a handler the façade returns.
 func newFixture() *fixture {
 	l := &callLog{}
-	f := &fixture{calls: l, gate: newFakeGate(l), control: newFakeControl(l), logs: &lockedBuffer{}}
+	f := &fixture{role: roleAll, calls: l, gate: newFakeGate(l), control: newFakeControl(l), logs: &lockedBuffer{}}
 	f.rebuild()
 	return f
 }
 
 func (f *fixture) rebuild() {
 	f.handler = newHandler(handlerDeps{
+		role:          f.role,
 		gate:          f.gate,
 		control:       f.control,
+		queue:         f.queue,
 		webhookSecret: []byte(testWebhookSecret),
 		operatorToken: []byte(testOperatorToken),
+		workerURL:     testWorkerURL,
+		invoker:       testInvoker,
 		now:           func() time.Time { return testNow },
 		log:           slog.New(slog.NewJSONHandler(f.logs, nil)),
 	})
@@ -316,6 +330,8 @@ func validConfig(t *testing.T) Config {
 		OperatorTokenFile: writeFile(t, dir, "operator", []byte(testOperatorToken+"\n")),
 		StoreDriver:       storeMemory,
 		SandboxDriver:     sandboxNone,
+		Role:              roleAll,
+		QueueDriver:       queueInline,
 	}
 }
 

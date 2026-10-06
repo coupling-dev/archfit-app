@@ -15,6 +15,8 @@ import (
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/auth"
 	"github.com/alexei-led/archfit-app/internal/github/oidc"
+	"github.com/alexei-led/archfit-app/internal/queue"
+	"github.com/alexei-led/archfit-app/internal/queue/cloudtasks"
 	"github.com/alexei-led/archfit-app/internal/store"
 )
 
@@ -33,12 +35,15 @@ const (
 
 // Run wires every module and serves until ctx is cancelled.
 func Run(ctx context.Context, c Config, log *slog.Logger) error {
-	return run(ctx, c, log, &http.Client{Timeout: clientTimeout}, nil)
+	// No Google token source is built yet, so ARCHFIT_QUEUE=cloudtasks is refused at startup.
+	// Upgrade trigger: the metadata-server token source of the Firestore driver; pass it here.
+	return run(ctx, c, log, &http.Client{Timeout: clientTimeout}, nil, nil)
 }
 
-// run is Run with its two test seams: the shared outbound client, and ready, which is called with
-// the bound address once the listener accepts connections. Startup contacts no remote service.
-func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, ready func(net.Addr)) error {
+// run is Run with its test seams: the shared outbound client, the Google access token source of the
+// cloudtasks driver, and ready, which is called with the bound address once the listener accepts
+// connections. Startup contacts no remote service.
+func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, google cloudtasks.TokenSource, ready func(net.Addr)) error {
 	if err := c.validate(); err != nil {
 		return err
 	}
@@ -64,6 +69,10 @@ func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, ready
 	gh := api.New(tokens, hc)
 	verifier := oidc.New(hc)
 	st, sandbox, provider, err := platform(c, sec.anthropicKey, hc)
+	if err != nil {
+		return err
+	}
+	q, err := newQueue(c, google, hc)
 	if err != nil {
 		return err
 	}
@@ -93,13 +102,34 @@ func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, ready
 	}
 
 	return serve(ctx, c.Addr, newHandler(handlerDeps{
+		role:          c.Role,
 		gate:          g,
 		control:       ctl,
+		queue:         q,
 		webhookSecret: sec.webhookSecret,
 		operatorToken: sec.operatorToken,
+		workerURL:     c.WorkerURL,
+		invoker:       c.Invoker,
 		now:           time.Now,
 		log:           log,
 	}), log, ready)
+}
+
+// newQueue selects the queue driver of intake. Nil means the inline driver; the worker never enqueues.
+func newQueue(c Config, google cloudtasks.TokenSource, hc *http.Client) (queue.Queue, error) {
+	if c.QueueDriver != queueCloudTasks || c.Role == roleWorker {
+		return nil, nil
+	}
+	if google == nil {
+		return nil, fmt.Errorf("app: %s=%s needs a Google token source, and none is built yet", envQueue, queueCloudTasks)
+	}
+	q, err := cloudtasks.New(cloudtasks.Config{
+		Queue: c.TasksQueue, URL: c.WorkerURL + taskRoute, Audience: c.WorkerURL, Invoker: c.Invoker,
+	}, google, hc)
+	if err != nil {
+		return nil, fmt.Errorf("app: %s: %w", envTasksQueue, err)
+	}
+	return q, nil
 }
 
 // The driver tables are the single place a platform driver is registered; validate checks names against them.

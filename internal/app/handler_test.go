@@ -51,7 +51,7 @@ func TestOperatorTokenComparison(t *testing.T) {
 
 	t.Run("an empty configured token authorizes nobody", func(t *testing.T) {
 		l := &callLog{}
-		h := newHandler(handlerDeps{gate: newFakeGate(l), control: newFakeControl(l), now: time.Now, log: slog.Default()})
+		h := newHandler(handlerDeps{role: roleAll, gate: newFakeGate(l), control: newFakeControl(l), now: time.Now, log: slog.Default()})
 		r := httptest.NewRequest(http.MethodPost, "/internal/sweep", nil)
 		r.Header.Set("Authorization", "Bearer ")
 		rec := httptest.NewRecorder()
@@ -90,7 +90,7 @@ func TestRouteTable(t *testing.T) {
 		{"root", httptest.NewRequest(http.MethodGet, base+"/", nil), http.StatusOK, []string{"control.UI"}},
 		{"unknown path", httptest.NewRequest(http.MethodGet, base+"/octo/repo/policy", nil), http.StatusOK, []string{"control.UI"}},
 		{"GET on the upload path", httptest.NewRequest(http.MethodGet, base+"/v1/reports", nil), http.StatusOK, []string{"control.UI"}},
-		{"GET on an operator path", httptest.NewRequest(http.MethodGet, base+"/internal/sweep", nil), http.StatusOK, []string{"control.UI"}},
+		{"GET on an operator path", httptest.NewRequest(http.MethodGet, base+"/internal/sweep", nil), http.StatusNotFound, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

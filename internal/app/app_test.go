@@ -2,12 +2,17 @@ package app
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
+	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -17,7 +22,7 @@ func startRun(t *testing.T, c Config, log *slog.Logger) (base string, network *n
 	t.Helper()
 	network = &noNetwork{}
 	base, stop = background(t, func(ctx context.Context, ready func(net.Addr)) error {
-		return run(ctx, c, log, &http.Client{Transport: network}, ready)
+		return run(ctx, c, log, &http.Client{Transport: network}, nil, ready)
 	})
 	return base, network, stop
 }
@@ -86,7 +91,7 @@ func TestRequiredDependenciesFailStartup(t *testing.T) {
 			c := validConfig(t)
 			tt.break_(t, &c)
 			listening := false
-			err := run(t.Context(), c, slog.New(slog.DiscardHandler), &http.Client{Transport: &noNetwork{}},
+			err := run(t.Context(), c, slog.New(slog.DiscardHandler), &http.Client{Transport: &noNetwork{}}, nil,
 				func(net.Addr) { listening = true })
 			if err == nil || listening {
 				t.Fatalf("run = %v, listening = %v; want an error before listening", err, listening)
@@ -216,7 +221,7 @@ func TestLogsNeverContainSecretsOrBodies(t *testing.T) {
 
 func TestImportsStayInsideTheDesign(t *testing.T) {
 	allowed := map[string]bool{}
-	for _, p := range []string{"gate", "control", "control/assist/anthropic", "store", "github/auth", "github/api", "github/webhook", "github/oidc"} {
+	for _, p := range []string{"gate", "control", "control/assist/anthropic", "store", "github/auth", "github/api", "github/webhook", "github/oidc", "queue", "queue/cloudtasks"} {
 		allowed[modulePath+"internal/"+p] = true
 	}
 	out, err := exec.CommandContext(t.Context(), "go", "list", "-f", `{{join .Imports "\n"}}`, ".").Output()
@@ -230,4 +235,113 @@ func TestImportsStayInsideTheDesign(t *testing.T) {
 			t.Errorf("import %s is not listed under Integrations", imp)
 		}
 	}
+}
+
+func TestPublicRoleBootsWithoutTheOperatorToken(t *testing.T) {
+	for _, operatorFile := range []string{"", "/nonexistent/operator-token"} {
+		t.Run("operator token file "+strconv.Quote(operatorFile), func(t *testing.T) {
+			c := validConfig(t)
+			c.Role, c.OperatorTokenFile = rolePublic, operatorFile
+			base, _, stop := startRun(t, c, slog.New(slog.DiscardHandler))
+			if resp := send(t, httptest.NewRequest(http.MethodGet, base+"/healthz", nil)); resp.StatusCode != http.StatusOK {
+				t.Errorf("healthz = %d, want 200", resp.StatusCode)
+			}
+			for _, path := range []string{"/internal/sweep", "/internal/grants", taskRoute} {
+				resp := send(t, operatorRequest(base+path, testOperatorToken, "{}"))
+				if resp.StatusCode != http.StatusNotFound {
+					t.Errorf("POST %s = %d, want 404 on the public role", path, resp.StatusCode)
+				}
+			}
+			if err := stop(); err != nil {
+				t.Errorf("run = %v", err)
+			}
+		})
+	}
+
+	t.Run("the worker role still needs it", func(t *testing.T) {
+		c := validConfig(t)
+		c.Role, c.WorkerURL, c.Invoker, c.OperatorTokenFile = roleWorker, testWorkerURL, testInvoker, ""
+		err := run(t.Context(), c, slog.New(slog.DiscardHandler), &http.Client{Transport: &noNetwork{}}, nil, nil)
+		if err == nil || !strings.Contains(err.Error(), envOperatorTokenFile) {
+			t.Errorf("run = %v, want an error naming %s", err, envOperatorTokenFile)
+		}
+	})
+}
+
+type fakeGoogleTokens struct{}
+
+func (fakeGoogleTokens) Token(context.Context) (string, error) {
+	return "MARKER-google-access-token", nil
+}
+
+// cloudTasksAPI answers tasks.create for the Cloud Tasks host and 404 for every other host.
+type cloudTasksAPI struct {
+	mu      sync.Mutex
+	created []string // request paths and task names
+}
+
+func (a *cloudTasksAPI) RoundTrip(r *http.Request) (*http.Response, error) {
+	if r.URL.Host != "cloudtasks.googleapis.com" {
+		return (&noNetwork{}).RoundTrip(r)
+	}
+	var req struct {
+		Task struct {
+			Name        string `json:"name"`
+			HTTPRequest struct {
+				URL string `json:"url"`
+			} `json:"httpRequest"`
+		} `json:"task"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	a.mu.Lock()
+	a.created = append(a.created, r.URL.Path+" "+req.Task.Name+" "+req.Task.HTTPRequest.URL)
+	a.mu.Unlock()
+	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{}`)), Request: r}, nil
+}
+
+func TestCloudTasksQueueWiring(t *testing.T) {
+	const queueName = "projects/coupling-test/locations/europe-west1/queues/webhooks"
+	cloud := func(t *testing.T) Config {
+		c := validConfig(t)
+		c.Role, c.OperatorTokenFile = rolePublic, ""
+		c.QueueDriver, c.TasksQueue, c.WorkerURL, c.Invoker = queueCloudTasks, queueName, testWorkerURL, testInvoker
+		return c
+	}
+
+	t.Run("intake creates one task per half", func(t *testing.T) {
+		api := &cloudTasksAPI{}
+		base, stop := background(t, func(ctx context.Context, ready func(net.Addr)) error {
+			return run(ctx, cloud(t), slog.New(slog.DiscardHandler), &http.Client{Transport: api}, fakeGoogleTokens{}, ready)
+		})
+		event := []byte(pullOpenedBody)
+		if resp := send(t, webhookRequest(base+"/webhooks/github", "pull_request", "d-1", event, sign(testWebhookSecret, event))); resp.StatusCode != http.StatusAccepted {
+			t.Errorf("intake = %d, want 202", resp.StatusCode)
+		}
+		if err := stop(); err != nil {
+			t.Fatal(err)
+		}
+		want := []string{
+			"/v2/" + queueName + "/tasks " + queueName + "/tasks/d-1_gate " + testWorkerURL + taskRoute,
+			"/v2/" + queueName + "/tasks " + queueName + "/tasks/d-1_control " + testWorkerURL + taskRoute,
+		}
+		if !slices.Equal(api.created, want) {
+			t.Errorf("created %v, want %v", api.created, want)
+		}
+	})
+
+	t.Run("no Google token source is a startup error", func(t *testing.T) {
+		err := run(t.Context(), cloud(t), slog.New(slog.DiscardHandler), &http.Client{Transport: &noNetwork{}}, nil, nil)
+		if err == nil || !strings.Contains(err.Error(), envQueue) {
+			t.Errorf("run = %v, want an error naming %s", err, envQueue)
+		}
+	})
+
+	t.Run("an invalid queue name is a startup error", func(t *testing.T) {
+		c := cloud(t)
+		c.TasksQueue = "webhooks"
+		err := run(t.Context(), c, slog.New(slog.DiscardHandler), &http.Client{Transport: &noNetwork{}}, fakeGoogleTokens{}, nil)
+		if err == nil || !strings.Contains(err.Error(), envTasksQueue) {
+			t.Errorf("run = %v, want an error naming %s", err, envTasksQueue)
+		}
+	})
 }
