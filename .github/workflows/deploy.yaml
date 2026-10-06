@@ -1,0 +1,84 @@
+# Release and roll back the two Cloud Run services (docs/design/cloud/operations.md "Release" and "Roll back").
+#
+# The Workload Identity provider in infra/data admits only this file, on refs/heads/main, of this repository. A run on
+# another ref gets no Google Cloud credentials. The steps live in scripts/deploy/, tested with fakes in
+# scripts/deploy/test/.
+#
+# A push to main releases only while the repository variable RELEASE_ON_PUSH is "true". The owner turns it on after
+# the first release (infra/README.md, step 9) and off after a rollback, until the cause is fixed.
+name: Deploy
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'release: build and release this commit. image: release image_digest again. traffic: move traffic back to the named revisions.'
+        type: choice
+        options:
+          - release
+          - image
+          - traffic
+        default: release
+      image_digest:
+        description: 'For image: the digest (sha256:...) of the last good image, from its release record.'
+        type: string
+      public_revision:
+        description: 'For traffic: the archfit-public revision, from the traffic before of the bad release.'
+        type: string
+      worker_revision:
+        description: 'For traffic: the archfit-worker revision, from the traffic before of the bad release.'
+        type: string
+permissions:
+  contents: read
+# Releases and rollbacks never overlap: a new run waits until the running one ends. GitHub keeps only the newest
+# waiting run and cancels an older waiting one, so one release can cover several commits.
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  release:
+    name: Release
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.RELEASE_ON_PUSH == 'true')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      MODE: ${{ github.event_name == 'push' && 'release' || inputs.mode }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Outputs workload_identity_provider and deploy_service_account of infra/data. They are not secret.
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: projects/335297348272/locations/global/workloadIdentityPools/github/providers/archfit-app
+          service_account: archfit-deploy@coupling-dev-510710.iam.gserviceaccount.com
+      - name: Build and push the image
+        id: build
+        if: env.MODE == 'release'
+        run: |
+          digest=$(scripts/deploy/build.sh "$GITHUB_SHA")
+          echo "digest=$digest" >>"$GITHUB_OUTPUT"
+      - name: Release
+        if: env.MODE == 'release' || env.MODE == 'image'
+        env:
+          DIGEST: ${{ env.MODE == 'release' && steps.build.outputs.digest || inputs.image_digest }}
+        run: scripts/deploy/release.sh "$DIGEST"
+      - name: Roll back traffic
+        if: env.MODE == 'traffic'
+        env:
+          PUBLIC_REVISION: ${{ inputs.public_revision }}
+          WORKER_REVISION: ${{ inputs.worker_revision }}
+        run: scripts/deploy/rollback.sh
+      - name: Upload the release record
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release/
+          if-no-files-found: ignore
+          retention-days: 90
