@@ -12,10 +12,12 @@ import (
 	"github.com/alexei-led/archfit-app/internal/control"
 	"github.com/alexei-led/archfit-app/internal/control/assist/anthropic"
 	"github.com/alexei-led/archfit-app/internal/gate"
+	"github.com/alexei-led/archfit-app/internal/gcptoken"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/auth"
 	"github.com/alexei-led/archfit-app/internal/github/oidc"
 	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/alexei-led/archfit-app/internal/store/firestore"
 )
 
 const (
@@ -104,9 +106,32 @@ func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, ready
 
 // The driver tables are the single place a platform driver is registered; validate checks names against them.
 var (
-	storeDrivers   = map[string]func() store.Store{storeMemory: store.NewMemory}
+	storeDrivers = map[string]func(Config, *http.Client) (store.Store, error){
+		storeMemory:    func(Config, *http.Client) (store.Store, error) { return store.NewMemory(), nil },
+		storeFirestore: newFirestore,
+	}
 	sandboxDrivers = map[string]func() control.Sandbox{sandboxNone: func() control.Sandbox { return nil }}
 )
+
+// newFirestore reads the access token of the Cloud Run service account from the metadata server, except
+// against the emulator, which takes no credentials.
+func newFirestore(c Config, hc *http.Client) (store.Store, error) {
+	var tokens firestore.TokenSource
+	if c.FirestoreEmulator == "" {
+		tokens = gcptoken.New(hc)
+	} else {
+		slog.Warn("store: Firestore emulator selected: plain HTTP, no credentials", "host", c.FirestoreEmulator)
+	}
+	st, err := firestore.New(firestore.Config{
+		ProjectID:    c.FirestoreProject,
+		DatabaseID:   c.FirestoreDatabase,
+		EmulatorHost: c.FirestoreEmulator,
+	}, tokens, hc)
+	if err != nil {
+		return nil, fmt.Errorf("app: Firestore store: %w", err)
+	}
+	return st, nil
+}
 
 // platform selects the implementation behind each platform seam.
 // A nil Sandbox or Provider is valid: the managed feature then reports "not available".
@@ -123,7 +148,11 @@ func platform(c Config, anthropicKey []byte, hc *http.Client) (store.Store, cont
 		}
 		provider = p
 	}
-	return newStore(), newSandbox(), provider, nil
+	st, err := newStore(c, hc)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return st, newSandbox(), provider, nil
 }
 
 // serve runs one http.Server until ctx is cancelled, then lets in-flight requests finish within shutdownGrace.

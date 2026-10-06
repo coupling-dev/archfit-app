@@ -8,7 +8,7 @@ Security rules for identities, secrets, and incidents are in [Security](security
 
 - **Production:** one Google Cloud project, `coupling-dev-510710` (display name `coupling-dev`). Commands need the
   project ID, not the display name.
-- **Local:** one process with every route, the memory store, and inline webhook processing. Local webhook tests use a
+- **Local:** one process with every route, the memory store (or the Firestore emulator), and inline webhook processing. Local webhook tests use a
   separate development GitHub App and a tunnel. The production App never points at a tunnel.
 - **Staging:** none for the beta. A staging pair of services with a second GitHub App costs about $0 at zero instances.
   It is the only way to test real webhooks, uploads, and the OIDC audience before production.
@@ -48,6 +48,40 @@ Limits:
 --service=run.googleapis.com --quota-id=CpuAllocPerProjectRegion --preferred-value=<milli-vCPU>`.
   A quota change also triggers the guardrail alert.
 - Moving to another region needs new quota preferences for that region. The Firestore location cannot change.
+
+## Firestore
+
+The `firestore` Store driver uses one Native-mode database in the project.
+
+| Setting                      | Value                                                                               |
+| ---------------------------- | ----------------------------------------------------------------------------------- |
+| `ARCHFIT_STORE`              | `firestore`                                                                         |
+| `ARCHFIT_FIRESTORE_PROJECT`  | `coupling-dev-510710`. Required. A missing or invalid value stops the startup       |
+| `ARCHFIT_FIRESTORE_DATABASE` | Empty, for `(default)`. The free quota covers only the default database             |
+| Credentials                  | The service account of the Cloud Run service, from the metadata server. No key file |
+| IAM                          | `roles/datastore.user` on the project for the service accounts of both services     |
+
+Data layout: one collection, `kv`, with one document for each key. A document has two fields: `tenant` (integer)
+and `value` (bytes). The document ID is the tenant and the hex form of the key. See
+[`store/firestore`](../../../internal/store/firestore/module.md).
+
+Indexes:
+
+- The driver needs only the automatic single-field indexes on `tenant`. Do not exempt `tenant`: the uninstall and
+  the sweep query it.
+- Exempt `value` from single-field indexing. No query reads it, and the exemption makes writes cheaper.
+- No composite index is needed.
+
+TTL:
+
+- No TTL policy is needed. The App stores no timestamp field, so a TTL policy has nothing to read.
+- An expired publication lease stays as one small document per head SHA. The next lease on that head takes it over,
+  and the uninstall of the installation deletes it. A cleanup of old leases needs a timestamp field in the driver
+  first. It does not change the `Store` contract.
+
+Local runs and tests use the emulator. Set `FIRESTORE_EMULATOR_HOST` to its `host:port`. The driver then uses plain
+HTTP and no credentials, and logs one warning at startup. Never set it on a Cloud Run service. CI runs the driver
+tests against the official emulator image.
 
 ## First deployment
 

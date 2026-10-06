@@ -30,7 +30,7 @@ The only third-party module is:
 | `go.yaml.in/yaml/v3` v3.0.x | `wire/settings`, `wire/policy` | Strict YAML decoding with `KnownFields` |
 
 The App has no GitHub SDK, JWT library, JSON Schema library, assertion library, or LLM SDK.
-GitHub, OIDC, and Anthropic clients use `net/http`.
+GitHub, OIDC, Anthropic, Firestore, and metadata-server clients use `net/http`.
 
 ## Testing
 
@@ -44,6 +44,7 @@ The tests use the standard `testing` package and table-driven cases with `t.Run`
 | GitHub, OIDC, and LLM | `net/http/httptest` servers behind real clients. Consumers use hand-written role fakes                |
 | Clock                 | Injected `func() time.Time`. Tests do not sleep                                                       |
 | Store                 | `store.NewMemory()`. Failure cases use a failing wrapper. Drivers run `store/storetest`               |
+| Firestore             | An `httptest` fake of the REST subset. CI also runs the driver tests against the Firestore emulator   |
 | Fixtures              | `internal/wire/testdata/` with `.expect.json` files                                                   |
 | Import rules          | Root tests run `go list -deps` against the allowed import matrix                                      |
 | Fuzzing               | `testing.F` covers strict `envelope`, `report`, `settings`, and `policy` decoders **[default]**       |
@@ -65,7 +66,7 @@ The design isolates platform-dependent code behind three interfaces.
 
 | Seam       | Current driver                                             | Later choice                                                                                               |
 | ---------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `Store`    | `memory`. Data is lost when the process exits              | Chosen, not built: Firestore over REST. See [cloud design](design/cloud/architecture.md#state)             |
+| `Store`    | `memory` (default), or `firestore`: Firestore over REST    | Add the multi-key transaction. See [cloud design](design/cloud/architecture.md#state)                      |
 | `Sandbox`  | `none`. Managed discovery reports that it is not available | Add an ephemeral container-job driver under `internal/control/onboarding/<driver>/`                        |
 | `Provider` | `internal/control/assist/anthropic` over `net/http`        | Add another provider as a sibling package                                                                  |
 | Host       | Not deployed                                               | Chosen, not built: two Cloud Run services. See [cloud design](design/cloud/architecture.md)                |
