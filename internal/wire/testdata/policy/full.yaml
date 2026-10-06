@@ -33,7 +33,7 @@ rules:
     to: internal/storage
     gate: fail
   - id: layers_point_down
-    type: layer_order
+    type: forbidden_layer_direction
     gate: warn
 waivers:
   - rule: no_billing_to_storage

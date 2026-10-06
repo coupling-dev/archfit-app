@@ -129,8 +129,8 @@ func Run(ctx context.Context, c Config, log *slog.Logger) error
 ## Integrations
 
 The root integrates with nothing above it. Its external counterparts are other repositories, reached only
-through the contracts above: `archfit` (config schema pinned v2.4.0; state schema pinned v2.3.1, byte-identical in
-v2.4.0), `archfit-action` (conforms to the envelope schema owned here), and GitHub. Distance to them is the highest
+through the contracts above: `archfit` (config schema pinned v2.4.1; state schema pinned v2.3.1, byte-identical in
+v2.4.0 and v2.4.1), `archfit-action` (conforms to the envelope schema owned here), and GitHub. Distance to them is the highest
 the system has (separate repositories and lifecycles), so the strength is contract by construction: versioned JSON
 Schema, strict decoding, a locked manifest. All internal integrations are listed in the coupling table below.
 
@@ -331,7 +331,7 @@ commits it" means never to the protected ref: the App commits a captured baselin
 reaches the protected ref only by an owner-approved merge. §2 "keys are prefixed by installation ID" has
 one exception, the App-wide LLM budget counter of §7. §4 "created `in_progress` on PR open or push" means a push
 to the PR branch (a new head SHA); a default-branch push gets `archfit/state` only. §7 "suggestion" means a
-commit on the draft PR, not a GitHub review suggestion. Supported languages are whatever engine v2.4.0 supports;
+commit on the draft PR, not a GitHub review suggestion. Supported languages are whatever engine v2.4.1 supports;
 the App has no language-specific logic, so no module owns that list. "Checked by Archfit on this repository"
 needs this repository's own `.archfit.yaml`, which is a plan task; until then the root import tests are the enforcement.
 

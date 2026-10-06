@@ -23,7 +23,7 @@ func TestDigestKnownVectors(t *testing.T) {
 	}{
 		{"empty", nil, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
 		{"abc", []byte("abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"},
-		{"fixture", base, "b8dcc8eaf47d1aeffc6843172722286719ce9189ad4eae93564f1efbab6a9e87"},
+		{"fixture", base, "061ac761452cf42c43c08346383420f75921017b5dd9dc5b7ee28f7680e715a6"},
 		{"fixture CRLF", bytes.ReplaceAll(base, []byte("\n"), []byte("\r\n")), ""},
 		{"fixture BOM", append([]byte("\xef\xbb\xbf"), base...), ""},
 		{"fixture no trailing newline", bytes.TrimSuffix(base, []byte("\n")), ""},

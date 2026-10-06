@@ -11,8 +11,10 @@ const MaxBytes = 5 << 20
 
 // engineVersions are the engine releases Decode reads, oldest first. A shadow field tagged `since:"<release>"`
 // is a key that release added; every other key is in all of them. v2.4.0 adds rule types, finding kinds and a
-// config key, but no state key, so its key set is the v2.3.1 key set.
-var engineVersions = []string{"v2.3.1", "v2.4.0"}
+// config key, but no state key, so its key set is the v2.3.1 key set. v2.4.1 only enumerates the rule types in
+// its config schema; its state schema is byte-identical, so its key set is the v2.3.1 key set too. v2.3.1 stays
+// listed after its manifest rows are gone: every synthetic corpus fixture is a v2.3.1 document.
+var engineVersions = []string{"v2.3.1", "v2.4.0", "v2.4.1"}
 
 // EngineVersions returns the engine releases whose state document Decode reads, oldest first. Each emits
 // StateSchemaV1; a later release only adds optional keys, so the last key set holds every earlier one.

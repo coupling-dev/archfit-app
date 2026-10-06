@@ -14,7 +14,7 @@ const (
 	decodeOK    = "ok"
 	decodeError = "error"
 
-	// fixtureEngine is the engine release the corpus fixtures are decoded as; v2.4.0 shares its key set.
+	// fixtureEngine is the engine release the corpus fixtures are decoded as; v2.4.0 and v2.4.1 share its key set.
 	fixtureEngine = "v2.3.1"
 )
 

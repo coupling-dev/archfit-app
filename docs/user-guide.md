@@ -245,8 +245,9 @@ no approval is needed any more.
 The App approves engine images in a locked manifest. It reads a report with the key set of the engine release
 that the upload names.
 
-- The manifest approves engine v2.4.0 and v2.3.1. New workflows pin v2.4.0. v2.3.1 stays approved during the
-  upgrade window; move your workflow pin to v2.4.0 before it closes.
+- The manifest approves engine v2.4.1 and v2.4.0. New workflows pin v2.4.1. v2.4.0 stays approved during the
+  upgrade window; move your workflow pin to v2.4.1 before it closes. v2.3.1 is no longer approved: its reports
+  give `action_required`.
 - During an upgrade the App approves two releases: the new release and the release before it. Change the pin
   in your workflow by pull request.
 - A report from an engine release that the App cannot read gives `report_invalid`. A report from an image that

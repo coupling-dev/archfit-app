@@ -1,5 +1,5 @@
 repository: github.com/alexei-led/archfit
-tag: v2.4.0
-revision: 5aefcdc2c5465c2eb7198ea91394bd8cb8ad2b22
+tag: v2.4.1
+revision: ca1f593e69ddf41662cbebe6ccb0fb59b09f73fd
 path: archfit.schema.json
-sha256: 0151dd922205e004b65dfee8fe79f558fbe693c84449f2906153f95777f02fe1
+sha256: 8b16689816245ab49dacfbeec37fc506dd2cade1bbe6edeb49d243c96e3965bf

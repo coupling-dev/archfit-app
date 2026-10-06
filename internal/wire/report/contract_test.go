@@ -391,7 +391,7 @@ func TestWrongSchemaVersion(t *testing.T) {
 
 func TestEngineVersions(t *testing.T) {
 	got := EngineVersions()
-	if want := []string{"v2.3.1", "v2.4.0"}; !slices.Equal(got, want) {
+	if want := []string{"v2.3.1", "v2.4.0", "v2.4.1"}; !slices.Equal(got, want) {
 		t.Errorf("EngineVersions() = %q, want %q", got, want)
 	}
 	got[0] = "changed"

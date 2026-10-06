@@ -147,8 +147,8 @@ func Unapproved(t Trusted) bool
 
 - `IdentityApproved`: `manifest.Lookup(Upload.Identity)` hits, **and** the report carries a measurement profile,
   **and** `MeasurementProfile.Version == Entry.ProfileVersion`. Any empty identity field is a miss, so unknown never
-  equals unknown. False when there is no report. The approved profile version of engines v2.3.1 and
-  v2.4.0 is `archfit.measurement.v1`; the value lives in the manifest, not here.
+  equals unknown. False when there is no report. The approved profile version of engines v2.4.0 and
+  v2.4.1 is `archfit.measurement.v1`; the value lives in the manifest, not here.
 - `WorkflowApproved`: settings were found, `Binding.WorkflowPath` is not empty, and it equals
   `Trusted.Settings.Workflow`. `Binding.WorkflowPath` comes from the verified OIDC `job_workflow_ref`. A workflow
   file changed by the PR is a protected path, which `gate/inputs` turns into `ApprovalMissing` until an owner approves.
