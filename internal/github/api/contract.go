@@ -4,6 +4,7 @@ package api
 import (
 	"context"
 	"errors"
+	"net/http"
 	"time"
 )
 
@@ -25,6 +26,24 @@ var (
 	ErrNotFound    = errors.New("github: not found")
 	ErrRateLimited = errors.New("github: rate limit exhausted") // returned after bounded backoff
 )
+
+// Permanent reports whether err is a GitHub answer that the same call cannot change when it is repeated:
+// ErrNotFound, or a 4xx status other than 401, 408, 409 and 429. Rate limits, 5xx, transport and every other
+// error are not permanent.
+func Permanent(err error) bool {
+	if errors.Is(err, ErrNotFound) {
+		return true
+	}
+	se, ok := errors.AsType[*statusError](err)
+	if !ok || se.status < 400 || se.status > 499 {
+		return false
+	}
+	switch se.status {
+	case http.StatusUnauthorized, http.StatusRequestTimeout, http.StatusConflict, http.StatusTooManyRequests:
+		return false
+	}
+	return true
+}
 
 type Installation struct {
 	ID      int64

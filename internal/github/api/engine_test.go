@@ -77,6 +77,47 @@ func TestStatusMapping(t *testing.T) {
 	}
 }
 
+func TestPermanent(t *testing.T) {
+	tests := []struct {
+		name    string
+		replies []reply
+		want    bool
+	}{
+		{"404", []reply{{status: 404}}, true},
+		{"410", []reply{{status: 410}}, true},
+		{"400", []reply{{status: 400}}, true},
+		{"403 permission", []reply{{status: 403}}, true},
+		{"422", []reply{{status: 422}}, true},
+		{"401 twice", []reply{{status: 401}, {status: 401}}, false},
+		{"408", []reply{{status: 408}}, false},
+		{"409", []reply{{status: 409}}, false},
+		{"rate limit beyond the budget", []reply{{status: 429, header: map[string]string{"Retry-After": "3600"}}}, false},
+		{"500", []reply{{status: 500}}, false},
+		{"503", []reply{{status: 503}}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := newEnv(t, script(tt.replies...))
+			// A POST is never retried on 5xx, so each reply is the final answer.
+			_, err := env.c.CreateComment(context.Background(), repoA, 7, "hello")
+			if err == nil {
+				t.Fatal("CreateComment = nil error")
+			}
+			if got := Permanent(err); got != tt.want {
+				t.Errorf("Permanent(%v) = %v, want %v", err, got, tt.want)
+			}
+		})
+	}
+	for _, err := range []error{errors.New("store: unavailable"), context.DeadlineExceeded, fmt.Errorf("wrapped: %w", ErrRateLimited)} {
+		if Permanent(err) {
+			t.Errorf("Permanent(%v) = true, want false", err)
+		}
+	}
+	if !Permanent(fmt.Errorf("gate: resolve inputs: %w", ErrNotFound)) {
+		t.Error("a wrapped ErrNotFound is not permanent")
+	}
+}
+
 func TestUnauthorizedInvalidatesAndRetriesOnce(t *testing.T) {
 	tests := []struct {
 		name            string
