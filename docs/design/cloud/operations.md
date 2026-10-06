@@ -29,10 +29,15 @@ Security rules for identities, secrets, and incidents are in [Security](security
 
 Both services run the same image. `ARCHFIT_ROLE` selects the routes and the secrets.
 
-| Service | Settings                                                                                                          | Secrets                                                                                       |
-| ------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Public  | `ARCHFIT_ROLE=public`, `ARCHFIT_QUEUE=cloudtasks`, `ARCHFIT_TASKS_QUEUE`, `ARCHFIT_WORKER_URL`, `ARCHFIT_INVOKER` | Every secret except the operator token                                                        |
-| Worker  | `ARCHFIT_ROLE=worker`, `ARCHFIT_WORKER_URL`, `ARCHFIT_INVOKER`                                                    | Every secret. The OAuth secret and the cookie key stay until the worker stops building the UI |
+| Service | Settings                                                                                                          | Secrets                                                                  |
+| ------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Public  | `ARCHFIT_ROLE=public`, `ARCHFIT_QUEUE=cloudtasks`, `ARCHFIT_TASKS_QUEUE`, `ARCHFIT_WORKER_URL`, `ARCHFIT_INVOKER` | App key, webhook secret, OAuth secret, cookie key, Anthropic key         |
+| Worker  | `ARCHFIT_ROLE=worker`, `ARCHFIT_WORKER_URL`, `ARCHFIT_INVOKER`                                                    | App key, webhook secret, operator token                                  |
+
+A role never reads a secret that is not in its row, even when the variable is set. A missing secret of its own row
+stops the startup. During a webhook secret rotation, both services also mount the previous webhook secret
+(`ARCHFIT_GITHUB_WEBHOOK_SECRET_PREVIOUS_FILE`). Both services set `GOOGLE_CLOUD_PROJECT` to the project ID, so log
+lines name their trace.
 
 `ARCHFIT_WORKER_URL` is the worker service URL with no trailing `/`. It is the audience of the invoker ID token.
 `ARCHFIT_INVOKER` is the e-mail of the invoker service account. The App refuses a worker request whose ID token has
@@ -140,8 +145,10 @@ The order matters:
 
 - Build one image for each commit on `main`. Deploy by digest. Keep the last few images for rollbacks.
 - Deploy the worker first, because a new worker route must exist before anything sends to it.
-- Deploy the public service as a tagged canary without traffic. The canary must pass a readiness check:
-  the App key works with GitHub, and the store answers.
+- Deploy the public service as a tagged canary without traffic. The canary must pass the readiness check
+  `GET /ready`: the App key works with GitHub, and the store answers. The same route is the startup probe of both
+  services. It answers `503` with the names of the failed checks, and keeps a result for 30 seconds after a pass and
+  5 seconds after a failure.
 - Promote the exact revisions that CI deployed, never "latest". A revision that another change created stays without traffic.
 - After promotion, check the worker's exposure and the queue routing. See [Worker protection](security.md#worker-protection).
 - Record the image digest and the revision names of each release. A rollback needs them.
@@ -167,9 +174,14 @@ names the main domain as its audience. The worker has no canary. For the beta, f
 
 - Both services write one JSON line for each event to stdout. The App already writes a request line and event lines
   with IDs, digests, outcomes, and timings. The verdict line records each gate decision.
-- Cloud Logging reads severity and message only from its own key names. The App must write those keys, or error
-  alerts cannot match.
-- Each line carries the trace, the role, and the revision. Then one request can be followed from intake to worker.
+- Cloud Logging reads severity and message only from its own key names. The App writes `severity` (`DEBUG`, `INFO`,
+  `WARNING`, `ERROR`) and `message`, so error alerts can match `severity>=ERROR`.
+- Each line carries `role` and `revision`. A line logged inside a request also carries
+  `logging.googleapis.com/trace`, `logging.googleapis.com/spanId` and `logging.googleapis.com/trace_sampled`, read
+  from the request's `traceparent` or `X-Cloud-Trace-Context` header. This needs `GOOGLE_CLOUD_PROJECT`. A module
+  line that is logged without the request context has no trace; use its IDs.
+- Outcomes on the request line include `inline_fallback`, `transient_error`, `permanent_error`, `swept`,
+  `sweep_rate_limited`, `ready` and `not_ready`. Log-based counters read them.
 - Logs never contain source, report content, tokens, headers, bodies, URL paths, or user names.
 - The default log bucket keeps 30 days. Request and verdict lines also go to a long-retention bucket with Log Analytics.
   That bucket answers product questions with SQL, without a pipeline.
