@@ -42,13 +42,13 @@ A routine runtime change cannot destroy data: Firestore, the secrets, and the im
 
 ### Who owns what
 
-| Item                                     | Owner                                                                                      |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Every resource, IAM binding, and setting | Terraform, applied by the owner                                                            |
-| Image and traffic of the two services    | CI. Terraform ignores `image`, `traffic`, `client`, `client_version` and the revision name |
-| Secret values                            | The owner, directly in Secret Manager. Never in Terraform                                  |
-| Billing budget                           | The owner, on the billing account. Not in Terraform                                        |
-| DNS for `coupling.dev`                   | The owner, at the registrar. Not in Terraform                                              |
+| Item                                     | Owner                                                                   |
+| ---------------------------------------- | ----------------------------------------------------------------------- |
+| Every resource, IAM binding, and setting | Terraform, applied by the owner                                         |
+| Image and traffic of the two services    | CI. Terraform ignores `image`, `traffic`, `client` and `client_version` |
+| Secret values                            | The owner, directly in Secret Manager. Never in Terraform               |
+| Billing budget                           | The owner, on the billing account. Not in Terraform                     |
+| DNS for `coupling.dev`                   | The owner, at the registrar. Not in Terraform                           |
 
 ## Names
 
@@ -90,15 +90,16 @@ of each hour (UTC) with the same identity.
 
 All alerts email the owner through the `Owner email` channel.
 
-| Alert                       | Condition                                                                |
-| --------------------------- | ------------------------------------------------------------------------ |
-| Public health check failing | The uptime check of `/healthz` on the `run.app` URL fails for 10 minutes |
-| Public 5xx responses        | At least one 5xx response in 5 minutes                                   |
-| Error log line              | A line with severity `ERROR` or higher on either service                 |
-| Sweep missing               | No `sweep: pass finished` line in 2 hours. Off while `paused` is true    |
-| Webhook queue growing       | More than 50 tasks wait for 15 minutes                                   |
-| Task dispatches fail        | A task attempt ends without OK in 5 minutes, including 401 and 403       |
-| Guardrail change (imported) | IAM, API, quota, key or out-of-region Cloud Run change                   |
+| Alert                       | Condition                                                                                                                        |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Public health check failing | The uptime check of `/healthz` on the `run.app` URL fails for 10 minutes                                                         |
+| Public 5xx responses        | At least one 5xx response in 5 minutes                                                                                           |
+| Error log line              | A line with severity `ERROR` or higher on either service                                                                         |
+| Sweep missing               | No scheduled sweep finished (request line of `POST /internal/sweep` with outcome `swept`) in 2 hours. Off while `paused` is true |
+| Sweep job fails             | A Scheduler attempt for `archfit-sweep` fails (401, 5xx, deadline). Off while `paused` is true                                   |
+| Webhook queue growing       | More than 50 tasks wait for 15 minutes                                                                                           |
+| Task dispatches fail        | A task attempt ends without OK in 5 minutes, including 401 and 403                                                               |
+| Guardrail change (imported) | IAM, API, quota, key or out-of-region Cloud Run change                                                                           |
 
 The budget alerts live on the billing account.
 
@@ -106,7 +107,7 @@ The budget alerts live on the billing account.
 
 The design leaves these choices to the implementation. Each one is the simplest option that meets the design.
 
-- **OpenTofu 1.7 or later.** Import blocks use `for_each`. Terraform 1.7 or later also works.
+- **OpenTofu 1.8 or later.** Import blocks use `for_each` (1.7), and the tests use mock providers (OpenTofu 1.8).
 - **Only the `google` provider, pinned at 8.5.0.** No resource needs `google-beta`. The lock file has hashes for
   `linux_amd64` and `darwin_arm64`.
 - **Imports as import blocks.** The variable `import_existing` (default `true`) turns them on. An import block does
@@ -118,6 +119,10 @@ The design leaves these choices to the implementation. Each one is the simplest 
   for quota. Raise the quota before a release needs more (see [Project guardrails](../docs/design/cloud/operations.md#project-guardrails)).
 - **Timeouts.** The public service has 60 s, above the 55 s handler deadline. The worker has 600 s, for the sweep.
 - **The uptime check calls the `run.app` URL**, so it works before DNS. `/healthz` does not depend on the host.
+- **Services keep deletion protection on.** A replaced service would start the placeholder image. See
+  [Roll back](#roll-back).
+- **The revision name is not ignored.** Cloud Run rejects a kept revision name with a changed template, so Terraform
+  lets Cloud Run name each revision it creates.
 - **Workload Identity** matches the numeric repository ID `1373981201`, the ref `refs/heads/main`, and the workflow
   `coupling-dev/archfit-app/.github/workflows/deploy.yaml@refs/heads/main`. A repository rename or a new repository
   with the same name does not match.
@@ -153,7 +158,7 @@ gcloud auth login
 gcloud auth application-default login
 gcloud auth application-default set-quota-project coupling-dev-510710
 gcloud config set project coupling-dev-510710
-tofu version   # 1.7 or later
+tofu version   # 1.8 or later
 ```
 
 Each apply of IAM, an API, or a quota sends a guardrail alert email. This is expected.
@@ -260,8 +265,8 @@ openssl rand -hex 32 | gcloud secrets versions add archfit-operator-token       
 gcloud secrets versions access 1 --secret=archfit-github-webhook-secret --project=$P | pbcopy
 ```
 
-The Anthropic key is optional. To use it, add a version and set `anthropic_key_version` to that number in a pull
-request.
+The Anthropic key is optional. To use it, add a version, then add `"archfit-anthropic-key" = "<version>"` to
+`secret_versions` in a pull request. Without that entry the key is not mounted, and managed AI stays off.
 
 ### 7. Plan and apply the runtime stack
 
@@ -273,11 +278,11 @@ tofu -chdir=infra/runtime plan -out=runtime.tfplan
 Expected plan summary:
 
 ```text
-Plan: 16 to add, 0 to change, 0 to destroy.
+Plan: 17 to add, 0 to change, 0 to destroy.
 ```
 
-The 16 resources: 2 services, the worker invoker grant, 2 queues, the enqueuer grant, the Scheduler job, the uptime
-check, 6 alert policies, the sweep counter, and the domain mapping. Then apply:
+The 17 resources: 2 services, the worker invoker grant, 2 queues, the enqueuer grant, the Scheduler job, the uptime
+check, 7 alert policies, the sweep counter, and the domain mapping. Then apply:
 
 ```sh
 tofu -chdir=infra/runtime apply runtime.tfplan
@@ -318,7 +323,7 @@ gcloud run deploy archfit-public --image="$IMG@$DIGEST" --region=europe-west1 --
 Set the default of `paused` in `infra/runtime/variables.tf` to `false` in a pull request. After the merge:
 
 ```sh
-tofu -chdir=infra/runtime plan -out=runtime.tfplan   # 4 to change: 2 queues, the Scheduler job, the sweep alert
+tofu -chdir=infra/runtime plan -out=runtime.tfplan   # 5 to change: 2 queues, the Scheduler job, 2 sweep alerts
 tofu -chdir=infra/runtime apply runtime.tfplan
 ```
 
@@ -346,7 +351,8 @@ tofu -chdir=infra/runtime plan   # No changes.
 - Change the code in a pull request. CI checks it. After the merge, run `plan`, review it, and `apply` the saved plan.
 - Apply `data` before `runtime` when a change touches both.
 - **Rotate a secret:** add the new version, set its number in `secret_versions`, and apply `runtime`. Terraform
-  creates new revisions with the current image. CI then promotes them. Follow the
+  creates a new revision of each service that mounts the secret, with the current image. Traffic stays on the revisions
+  that CI promoted, so the next release through CI deploys and promotes a revision with the new version. Follow the
   [rotation rules](../docs/design/cloud/security.md#secrets).
 - **Pause processing** for an incident: `gcloud tasks queues pause archfit-webhooks --location=europe-west1`. The next
   `runtime` plan shows the queue as changed until `paused` matches.
@@ -355,10 +361,15 @@ tofu -chdir=infra/runtime plan   # No changes.
 
 - **A bad release** (image or traffic): follow [Roll back](../docs/design/cloud/operations.md#roll-back). Terraform
   is not involved.
-- **A bad infrastructure change:** revert the pull request, then `plan` and `apply` the stack again. Read the plan:
-  a revert that replaces a service creates a new revision with the current image.
+- **A bad infrastructure change:** revert the pull request, then `plan` and `apply` the stack again. An update keeps
+  the current image.
+- **A replaced or recreated service** starts with the placeholder image, which answers every webhook and task with
+  success and does nothing. So `deletion_protection` stays on, and a plan that replaces a service fails. If a service
+  must be replaced: pause the queues and the Scheduler first (`paused = true`), set `deletion_protection = false` in a
+  pull request, apply, deploy the real image through CI, then resume.
 - **A runtime resource that must go:** a `destroy` of the runtime stack removes services, queues, the Scheduler, and
-  alerts. Data stays. A deleted queue name cannot be used again for about 7 days, so prefer a revert.
+  alerts. Data stays. It needs the same steps as a replacement. A deleted queue name cannot be used again for about
+  7 days, so prefer a revert.
 - **The data stack** is not destroyed. Firestore, the secrets, and the guardrails refuse a destroy
   (`deletion_policy = "PREVENT"`). To stop managing a resource without touching it, use `tofu state rm`.
 - **A damaged state file:** the bucket keeps old versions. List them, and copy a good generation back:
@@ -393,3 +404,10 @@ tflint --chdir=infra --recursive --config="$PWD/infra/.tflint.hcl"
   only platform lines.
 - The inline-fallback alert, the log-based counters for requests and verdicts, and the long-retention log bucket wait
   for the App log lines that they count.
+- A metric-absence condition fires only after its metric had a data point since the policy changed. A sweep that never
+  succeeds is caught by the "Sweep job fails" alert instead.
+- Cloud Tasks writes no audit log for `CreateTask`. The data-write audit logs record only `RunTask` and `DeleteTask`.
+  So a grant task has no recorded creator. Only the project owner can add tasks to the operator queue.
+- The queues and the Scheduler send `Authorization: Bearer <OIDC token>`. Today `/internal/sweep` and
+  `/internal/grants` read the operator token from that header, so every queued call gets 401 until the worker role
+  accepts the invoker identity and reads the grants token from another header.

@@ -16,7 +16,7 @@ Rows marked **[default]** need an owner decision before launch.
 | Build           | `CGO_ENABLED=0` static binary. The existing `Dockerfile` builds a distroless image as a non-root user                            |
 | Commands        | `make fmt`, `make lint`, `make test`, `make build`, and `make all`                                                               |
 | Format and lint | `gofmt -s`, `goimports -local github.com/alexei-led/archfit-app`, and `golangci-lint` v2.14 defaults (CI)                        |
-| Infrastructure  | OpenTofu 1.7+ (Terraform-compatible), `google` provider pinned, stacks `data` and `runtime` under [`infra/`](../infra/README.md) |
+| Infrastructure  | OpenTofu 1.8+ (Terraform-compatible), `google` provider pinned, stacks `data` and `runtime` under [`infra/`](../infra/README.md) |
 | Logging         | `log/slog` writes JSON to stdout. Logs contain IDs, digests, outcomes, and timings                                               |
 | HTTP            | `net/http` with Go 1.22+ `ServeMux` patterns                                                                                     |
 | Crypto          | Standard library RS256 JWT, JWKS, HMAC-SHA256, AES-GCM cookies, and SHA-256 digests                                              |
