@@ -147,6 +147,20 @@ func (s *flakyStore) Put(ctx context.Context, t store.Tenant, key string, value 
 	return s.Store.Put(ctx, t, key, value)
 }
 
+// CompareAndSwapAll fails like Put: account writes its record and entitlement through it. Each key counts as a write.
+func (s *flakyStore) CompareAndSwapAll(ctx context.Context, t store.Tenant, swaps []store.Swap) (bool, error) {
+	s.mu.Lock()
+	fail := s.failPut[t] || s.failAll
+	if !fail {
+		s.writes += len(swaps)
+	}
+	s.mu.Unlock()
+	if fail {
+		return false, errBoom
+	}
+	return s.Store.CompareAndSwapAll(ctx, t, swaps)
+}
+
 func (s *flakyStore) Add(ctx context.Context, t store.Tenant, key string, delta int64) (int64, error) {
 	s.mu.Lock()
 	fail := s.failAll

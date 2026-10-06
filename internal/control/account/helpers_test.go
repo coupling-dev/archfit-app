@@ -42,15 +42,24 @@ type call struct {
 	value  []byte
 }
 
+// opSwap is one key of a CompareAndSwapAll call in the spy's log.
+const opSwap = "Swap"
+
 // spyStore records every call and fails on demand.
 type spyStore struct {
 	store.Store
-	mu        sync.Mutex
-	calls     []call
-	getErr    error
-	putErr    error
-	failAddOn int // 1-based index of the Add call that fails; 0 = never
-	adds      int
+	mu     sync.Mutex
+	calls  []call
+	getErr error
+	putErr error // fails Put and CompareAndSwapAll, the two write paths
+	// failKey fails every Put of the key and every CompareAndSwapAll that includes it, like a crash before
+	// that write.
+	failKey string
+	// beforeWrite, when set, runs once before the next Put or CompareAndSwapAll reaches the Store, like a
+	// concurrent writer. It may set itself again.
+	beforeWrite func()
+	failAddOn   int // 1-based index of the Add call that fails; 0 = never
+	adds        int
 }
 
 func newSpy() *spyStore { return &spyStore{Store: store.NewMemory()} }
@@ -69,12 +78,43 @@ func (s *spyStore) Get(ctx context.Context, t store.Tenant, key string) ([]byte,
 	return s.Store.Get(ctx, t, key)
 }
 
+// interleave runs the beforeWrite hook once.
+func (s *spyStore) interleave() {
+	s.mu.Lock()
+	hook := s.beforeWrite
+	s.beforeWrite = nil
+	s.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
+}
+
 func (s *spyStore) Put(ctx context.Context, t store.Tenant, key string, value []byte) error {
 	s.record("Put", t, key, value)
+	s.interleave()
 	if s.putErr != nil {
 		return s.putErr
 	}
+	if key == s.failKey {
+		return errBoom
+	}
 	return s.Store.Put(ctx, t, key, value)
+}
+
+func (s *spyStore) CompareAndSwapAll(ctx context.Context, t store.Tenant, swaps []store.Swap) (bool, error) {
+	for _, sw := range swaps {
+		s.record(opSwap, t, sw.Key, sw.Value)
+	}
+	s.interleave()
+	if s.putErr != nil {
+		return false, s.putErr
+	}
+	for _, sw := range swaps {
+		if sw.Key == s.failKey {
+			return false, errBoom
+		}
+	}
+	return s.Store.CompareAndSwapAll(ctx, t, swaps)
 }
 
 func (s *spyStore) Delete(ctx context.Context, t store.Tenant, key string) error {
@@ -104,12 +144,13 @@ func (s *spyStore) Tenants(ctx context.Context) ([]store.Tenant, error) {
 	return s.Store.Tenants(ctx)
 }
 
-func (s *spyStore) puts(key string) []call {
+// writes returns the Put calls and swaps of key.
+func (s *spyStore) writes(key string) []call {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []call
 	for _, c := range s.calls {
-		if c.op == "Put" && c.key == key {
+		if (c.op == "Put" || c.op == opSwap) && c.key == key {
 			out = append(out, c)
 		}
 	}
@@ -145,6 +186,24 @@ func readEntitlement(t *testing.T, s store.Store, id int64) gate.Entitlement {
 		t.Fatalf("decode entitlement: %v", err)
 	}
 	return e
+}
+
+// wantInSync checks that the stored entitlement is the one derived from the stored record at now.
+func wantInSync(t *testing.T, s store.Store, id int64, now time.Time) {
+	t.Helper()
+	var r record
+	if b := rawKey(t, s, id, recordKeyName); b != nil {
+		if err := json.Unmarshal(b, &r); err != nil {
+			t.Fatalf("decode record: %v", err)
+		}
+	}
+	want, err := json.Marshal(r.entitlement(now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rawKey(t, s, id, gate.EntitlementKey); !bytes.Equal(got, want) {
+		t.Errorf("entitlement out of step with the record:\n got %s\nwant %s", got, want)
+	}
 }
 
 func counter(t *testing.T, s store.Store, month string) int64 {

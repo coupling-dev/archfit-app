@@ -27,6 +27,9 @@ type fakeFirestore struct {
 	clock   time.Time
 	commits int
 	faults  []fault
+	// beforeCommit, when set, runs once with the lock held when the next commit arrives, before any check:
+	// another instance's write that lands between the driver's read and its commit.
+	beforeCommit func(*fakeFirestore)
 	// streamErr, when set, ends the next streamed answer with an error element after a 200 status,
 	// as Firestore does when a stream fails after its first element.
 	streamErr string
@@ -119,7 +122,8 @@ func (f *fakeFirestore) batchGet(w http.ResponseWriter, r *http.Request) {
 	}
 	readTime := f.clock.Format(time.RFC3339Nano)
 	out := []map[string]any{}
-	for _, name := range req.Documents {
+	// Firestore does not keep the request order, so the fake answers in reverse order.
+	for _, name := range slices.Backward(req.Documents) {
 		if doc, ok := f.docs[name]; ok {
 			out = append(out, map[string]any{"found": document{Name: name, Fields: doc.fields, UpdateTime: doc.updateTime}, "readTime": readTime})
 		} else {
@@ -149,6 +153,10 @@ func (f *fakeFirestore) commit(w http.ResponseWriter, r *http.Request) {
 	named := " on " + req.Writes[0].Delete
 	if req.Writes[0].Update != nil {
 		named = " on " + req.Writes[0].Update.Name
+	}
+	if hook := f.beforeCommit; hook != nil {
+		f.beforeCommit = nil
+		hook(f)
 	}
 	if len(f.faults) > 0 {
 		ft := f.faults[0]

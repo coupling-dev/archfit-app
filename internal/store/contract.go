@@ -27,9 +27,19 @@ type Store interface {
 	// CompareAndSwap atomically sets key to value when it currently holds exactly old, and reports whether it did.
 	// A nil old matches only a missing key; a nil value deletes the key. A false result changes nothing.
 	CompareAndSwap(ctx context.Context, t Tenant, key string, old, value []byte) (bool, error)
+	// CompareAndSwapAll applies every swap in one atomic step when every key currently holds exactly its Old,
+	// and reports whether it did. Each swap follows the rules of CompareAndSwap. A false result changes nothing.
+	CompareAndSwapAll(ctx context.Context, t Tenant, swaps []Swap) (bool, error)
 	// DeleteTenant removes every key of the tenant. Idempotent.
 	DeleteTenant(ctx context.Context, t Tenant) error
 	// Tenants lists every tenant that owns at least one key, SystemTenant excluded.
 	// Used only by the sweep to forget installations whose uninstall webhook was missed.
 	Tenants(ctx context.Context) ([]Tenant, error)
+}
+
+// Swap is one key of CompareAndSwapAll. A nil Old matches only a missing key; a nil Value deletes the key.
+// A swap whose Value equals its Old only checks the key.
+type Swap struct {
+	Key        string
+	Old, Value []byte
 }

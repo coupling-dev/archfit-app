@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -116,5 +117,78 @@ func TestReinstallStartsNewTenant(t *testing.T) {
 	}
 	if st, _ := a.Status(ctx, instA, day(50)); st.Plan != PlanPublic {
 		t.Errorf("A: Plan = %q, want public", st.Plan)
+	}
+}
+
+// Before the record and the entitlement were written together, a crash after the record write left a stale
+// entitlement: a granted installation stayed suspended until the next sweep.
+func TestCrashBetweenWritesChangesNothing(t *testing.T) {
+	ctx := context.Background()
+	for _, op := range []string{"Observe", "Refresh", "Grant"} {
+		t.Run(op, func(t *testing.T) {
+			s := newSpy()
+			a, _, _, _ := newTest(s)
+			mustNil(t, a.Observe(ctx, instA, true, day(0)))
+			mustNil(t, a.Refresh(ctx, instA, day(20)))
+			recordBefore := rawKey(t, s, instA, recordKeyName)
+			entitlementBefore := rawKey(t, s, instA, gate.EntitlementKey)
+
+			s.failKey = gate.EntitlementKey
+			if err := accountWrites(a, instA, day(40))[op](ctx); !errors.Is(err, errBoom) {
+				t.Fatalf("err = %v, want the Store error", err)
+			}
+			if !bytes.Equal(rawKey(t, s, instA, recordKeyName), recordBefore) {
+				t.Error("the record changed although its entitlement was not written")
+			}
+			if !bytes.Equal(rawKey(t, s, instA, gate.EntitlementKey), entitlementBefore) {
+				t.Error("the entitlement changed")
+			}
+			wantInSync(t, s, instA, day(20))
+		})
+	}
+}
+
+// Before the version check, Observe wrote the record it read before a concurrent Grant, and dropped the grant.
+func TestConcurrentGrantDuringObserveIsKept(t *testing.T) {
+	ctx := context.Background()
+	s := newSpy()
+	a, _, _, _ := newTest(s)
+	s.beforeWrite = func() { mustNil(t, a.Grant(ctx, instA, day(90), day(0))) }
+
+	mustNil(t, a.Observe(ctx, instA, true, day(0)))
+
+	st, err := a.Status(ctx, instA, day(0))
+	mustNil(t, err)
+	wantTime(t, "TrialEnds", st.TrialEnds, day(30))
+	wantTime(t, "GrantUntil", st.GrantUntil, day(90))
+	wantInSync(t, s, instA, day(0))
+}
+
+func TestEndlessConcurrentWritesAreAnError(t *testing.T) {
+	ctx := context.Background()
+	s := newSpy()
+	a, _, _, _ := newTest(s)
+	mustNil(t, a.Observe(ctx, instA, true, day(0)))
+
+	// Another writer changes the entitlement before every swap of this call.
+	attempts := 0
+	var interfere func()
+	interfere = func() {
+		attempts++
+		other := []byte(`{"notice":"other writer ` + strconv.Itoa(attempts) + `"}`)
+		mustNil(t, s.Store.Put(ctx, store.Tenant(instA), gate.EntitlementKey, other))
+		s.beforeWrite = interfere
+	}
+	s.beforeWrite = interfere
+	recordBefore := rawKey(t, s, instA, recordKeyName)
+
+	if err := a.Grant(ctx, instA, day(90), day(1)); err == nil {
+		t.Fatal("Grant = nil, want an error after the bounded retries")
+	}
+	if attempts != maxUpdateAttempts {
+		t.Errorf("attempts = %d, want %d", attempts, maxUpdateAttempts)
+	}
+	if !bytes.Equal(rawKey(t, s, instA, recordKeyName), recordBefore) {
+		t.Error("the grant was written although the call failed")
 	}
 }

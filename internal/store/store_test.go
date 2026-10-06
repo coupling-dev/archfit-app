@@ -78,6 +78,14 @@ func TestErrorsCarryNoValues(t *testing.T) {
 	_, errs["Add negative tenant"] = s.Add(ctx, -1, marker, 1)
 	_, errs["Add non-counter"] = s.Add(ctx, 1, marker, 1)
 	_, errs["Add overflow"] = s.Add(ctx, 1, marker+"/max", 1<<62)
+	swapAll := func(tn store.Tenant, swaps ...store.Swap) error {
+		_, err := s.CompareAndSwapAll(ctx, tn, swaps)
+		return err
+	}
+	errs["CompareAndSwapAll key twice"] = swapAll(1, store.Swap{Key: marker, Value: value}, store.Swap{Key: marker, Value: value})
+	errs["CompareAndSwapAll NUL key"] = swapAll(1, store.Swap{Key: marker, Value: value}, store.Swap{Key: nulKey, Value: value})
+	errs["CompareAndSwapAll big value"] = swapAll(1, store.Swap{Key: marker, Old: value, Value: bigValue})
+	errs["CompareAndSwapAll negative tenant"] = swapAll(-1, store.Swap{Key: marker, Value: value})
 
 	for name, err := range errs {
 		switch {
@@ -256,6 +264,9 @@ func (failingStore) Add(context.Context, store.Tenant, string, int64) (int64, er
 func (failingStore) CompareAndSwap(context.Context, store.Tenant, string, []byte, []byte) (bool, error) {
 	return false, errOutage
 }
+func (failingStore) CompareAndSwapAll(context.Context, store.Tenant, []store.Swap) (bool, error) {
+	return false, errOutage
+}
 func (failingStore) DeleteTenant(context.Context, store.Tenant) error { return errOutage }
 func (failingStore) Tenants(context.Context) ([]store.Tenant, error)  { return nil, errOutage }
 
@@ -266,15 +277,17 @@ func TestOutageIsAnErrorNotADefault(t *testing.T) {
 	_, getErr := s.Get(ctx, 1, "entitlement")
 	_, addErr := s.Add(ctx, store.SystemTenant, budgetKey, 1)
 	_, swapErr := s.CompareAndSwap(ctx, 1, "lease", nil, []byte("v"))
+	_, swapAllErr := s.CompareAndSwapAll(ctx, 1, []store.Swap{{Key: "account", Value: []byte("v")}})
 	_, tenantsErr := s.Tenants(ctx)
 	errs := map[string]error{
-		"Get":            getErr,
-		"Put":            s.Put(ctx, 1, "entitlement", []byte("v")),
-		"Delete":         s.Delete(ctx, 1, "entitlement"),
-		"Add":            addErr,
-		"CompareAndSwap": swapErr,
-		"DeleteTenant":   s.DeleteTenant(ctx, 1),
-		"Tenants":        tenantsErr,
+		"Get":               getErr,
+		"Put":               s.Put(ctx, 1, "entitlement", []byte("v")),
+		"Delete":            s.Delete(ctx, 1, "entitlement"),
+		"Add":               addErr,
+		"CompareAndSwap":    swapErr,
+		"CompareAndSwapAll": swapAllErr,
+		"DeleteTenant":      s.DeleteTenant(ctx, 1),
+		"Tenants":           tenantsErr,
 	}
 	for op, err := range errs {
 		if !errors.Is(err, errOutage) {

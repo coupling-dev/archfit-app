@@ -483,7 +483,7 @@ A host must provide these runtime capabilities:
 
 - Run one static Go binary in a container.
 - Provide a key-value driver that passes the `store/storetest` suite. When more than one instance runs, its
-  `CompareAndSwap` must be atomic across all of them.
+  `CompareAndSwap` and `CompareAndSwapAll` must be atomic across all of them.
 - Call `POST /internal/sweep` with an external scheduler.
 - Run the binary as one process (`all`), or as a public process and a worker process with a queue between them.
 - Provide a sandbox driver before managed discovery is enabled.

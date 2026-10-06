@@ -37,6 +37,8 @@ provider may replace manual grants. The `Entitlement` record shape is stable: it
 - Consent key layout `consent/<kind>`, value JSON `{"kind","by","at"}`.
 - Budget key layout `llm-budget/<YYYY-MM>` (UTC month of `now`) under `SystemTenant`; cap `20_000_000` micro-USD (USD 20). **[default]**
 - Reserve-then-compensate as the way to enforce a cap with only `Store.Add`.
+- The update cycle of the record and the entitlement: read both keys, compute, write both with one
+  `Store.CompareAndSwapAll` from the bytes read; on `false`, start again, at most 5 attempts **[default]**.
 
 Nobody else reads the `account`, `consent/*` or `llm-budget/*` keys. The gate reads only `EntitlementKey`.
 
@@ -156,10 +158,15 @@ The gate decides suspension itself from `SuspendAfter`, repository privacy and i
 ### Operation rules
 
 - `installationID <= 0` is an error for every operation. `SystemTenant` is never an installation.
-- `Observe`: read `R` (`ErrNotFound` → zero). If `hasPrivate` and `first_private_at` is zero, set it to `now` and `Put` `R`.
-  `hasPrivate == false` never clears it. Then write `Entitlement`.
-- `Grant`: set `grant_until = until` (zero or past `until` clears the grant), `Put` `R`, write `Entitlement`, log `installation_id`, `until`, outcome.
-- `Refresh`: read `R`, write `Entitlement`. No change to `R`.
+- Update cycle of `Observe`, `Grant` and `Refresh`: read the bytes of `account` and `entitlement` (`ErrNotFound` →
+  missing, and a missing `R` is the zero record); compute the new `R`; derive `Entitlement` from it and `now`; then one
+  `CompareAndSwapAll` with both keys, each from the bytes read. An unchanged `R` is a check (its old bytes as the new
+  value; a missing `R` stays missing). When the swap is `false`, another writer changed a key: the cycle starts again,
+  at most 5 attempts **[default]**. After the last attempt the call returns an error and has written nothing.
+  A Store error from the swap is returned as is and the call is not retried: the outcome is unknown.
+- `Observe`: if `hasPrivate` and `first_private_at` is zero, set it to `now`. `hasPrivate == false` never clears it.
+- `Grant`: set `grant_until = until` (zero or past `until` clears the grant). Log `installation_id`, `until`, outcome.
+- `Refresh`: no change to `R`; only `Entitlement` is rewritten.
 - Backfill: `Observe` on an installation with no record is the normal first call, whether it comes from the installation webhook or,
   when that was missed, from `control.Sweep`. The trial then starts at that call's `now`. Until a record exists the gate reads "not suspended".
 - `Status`: read `R`, compute. Missing record → `PlanPublic`, nil error. Writes nothing.
@@ -240,15 +247,27 @@ type Store interface {
     // CompareAndSwap atomically sets key to value when it currently holds exactly old, and reports whether it did.
     // A nil old matches only a missing key; a nil value deletes the key. A false result changes nothing.
     CompareAndSwap(ctx context.Context, t Tenant, key string, old, value []byte) (bool, error)
+    // CompareAndSwapAll applies every swap in one atomic step when every key currently holds exactly its Old,
+    // and reports whether it did. Each swap follows the rules of CompareAndSwap. A false result changes nothing.
+    CompareAndSwapAll(ctx context.Context, t Tenant, swaps []Swap) (bool, error)
     // DeleteTenant removes every key of the tenant. Idempotent.
     DeleteTenant(ctx context.Context, t Tenant) error
     // Tenants lists every tenant that owns at least one key, SystemTenant excluded.
     // Used only by the sweep to forget installations whose uninstall webhook was missed.
     Tenants(ctx context.Context) ([]Tenant, error)
 }
+
+// Swap is one key of CompareAndSwapAll. A nil Old matches only a missing key; a nil Value deletes the key.
+// A swap whose Value equals its Old only checks the key.
+type Swap struct {
+    Key        string
+    Old, Value []byte
+}
 ```
 
 `ErrNotFound` is the sentinel `Get` returns for a missing key; here it means "zero record", never an error.
+`CompareAndSwapAll` writes `account` and `entitlement` together; `false` means another writer came first, and the
+cycle reads again. Consents use `Put`, `Get` and `Delete` on their own key: they derive nothing.
 `Tenants` is never called here; the `control` façade uses it for orphan cleanup and then calls `Forget`.
 
 ### Consumers (inbound, contract strength, all balanced)
@@ -271,7 +290,11 @@ type Store interface {
 
 - Nothing here is ever called by the gate path. A failure here never changes a gate result. The gate reads only the cached `Entitlement` record this module writes.
 - A Store outage never writes or implies suspension: on any read error nothing is written, so the last good record (or none = "not suspended") stands. A KV or billing outage does not establish non-payment (T21).
-- Writes are idempotent: same record and same day produce the same bytes. Two concurrent `Observe` calls may both set `first_private_at`; the later `Put` wins, seconds apart. Accepted.
+- Writes are idempotent: same record and same day produce the same bytes.
+- The record and the entitlement change together or not at all, and the entitlement is always derived from the record
+  stored next to it. A crash or a Store error never leaves a new record with an old entitlement. Two concurrent writers
+  never drop each other's change: the second one reads the first one's record and applies its change on top. Two calls
+  with different `now` still write in the order they reach the Store; the next `Refresh` corrects the notice text.
 - The trial never restarts within one installation ID: `Observe(false)`, repository removal, and re-adding change nothing. Uninstall deletes the tenant; a new installation ID starts a new trial. **[default, stated limit]**
 - Tenant = `Tenant(installationID)`, which callers take from a verified webhook, the installation list, or an authorized session. Never from a client-supplied ID.
 - Budget exhaustion and budget Store errors affect only managed-LLM calls. Deterministic checks never consult `Budget`.
@@ -308,8 +331,9 @@ type Store interface {
   **Scenario**: suspended installation; `Grant(until = now+90 d)`; then `Refresh` after the grant ends.
   **Expected behavior**: `granted` with `SuspendAfter = until`; then `suspended`. One audit log line per `Grant` with the installation ID.
 - **Test name**: `TestRefreshIsIdempotent`
-  **Scenario**: `Refresh` twice with the same `now`; count `Put` calls and compare bytes.
-  **Expected behavior**: identical `Entitlement` bytes; the `account` record untouched.
+  **Scenario**: `Refresh` twice with the same `now`; count the entitlement writes and compare bytes.
+  **Expected behavior**: two writes with identical `Entitlement` bytes; the `account` record is only checked: never
+  `Put`, and every swap of it carries its stored bytes.
 - **Test name**: `TestConsentRoundTrip`
   **Scenario**: `Has` before `Record`; after `Record`; after `Revoke`; `Revoke` again; the other kind.
   **Expected behavior**: false, true, false, nil error, false.
@@ -323,8 +347,8 @@ type Store interface {
 ### Boundary Tests
 
 - **Test name**: `TestStoreFailureNeverSuspends`
-  **Scenario**: Store `Get` fails during `Observe`, `Refresh`, `Grant`; Store `Put` fails.
-  **Expected behavior**: the error is returned; no `Put` follows a failed `Get`; the previous `Entitlement` bytes are unchanged (T21: outage is not non-payment).
+  **Scenario**: Store `Get` fails during `Observe`, `Refresh`, `Grant`; the Store write (`CompareAndSwapAll`) fails.
+  **Expected behavior**: the error is returned; no write follows a failed `Get`; the previous `Entitlement` bytes are unchanged (T21: outage is not non-payment).
 - **Test name**: `TestCorruptRecordIsAnError`
   **Scenario**: the `account` key holds invalid JSON.
   **Expected behavior**: `Observe`, `Refresh`, `Status` return an error and write nothing; they do not reset the trial.
@@ -355,6 +379,19 @@ type Store interface {
 - **Test name**: `TestBudgetExhaustionTouchesNothingElse`
   **Scenario**: exhaust the budget, then `Observe`, `Refresh`, `Status`, `Has`.
   **Expected behavior**: all succeed; the `Entitlement` record is unaffected (T21: LLM quota exhaustion does not stop deterministic checks).
+- **Test name**: `TestCrashBetweenWritesChangesNothing`
+  **Scenario**: a trial installation (entitlement written on day 20); on day 40 `Observe`, `Refresh` and `Grant` run
+  while the Store fails every write that includes `entitlement`, like a crash before that write.
+  **Expected behavior**: the Store error is returned; `account` and `entitlement` keep their bytes, and the
+  entitlement is the one derived from the stored record. Before the joint write, `Grant` left the new grant with the
+  old, suspending entitlement.
+- **Test name**: `TestConcurrentGrantDuringObserveIsKept`
+  **Scenario**: `Observe(true)` on a new installation; after its read and before its write, a `Grant` to day 90 completes.
+  **Expected behavior**: the record has both the trial start and the grant; the entitlement matches it. Before the
+  version check, `Observe` dropped the grant.
+- **Test name**: `TestEndlessConcurrentWritesAreAnError`
+  **Scenario**: another writer changes `entitlement` to new bytes before every swap of one `Grant`.
+  **Expected behavior**: `Grant` returns an error after 5 attempts; the record keeps its old bytes.
 - **Test name**: `TestReinstallStartsNewTenant`
   **Scenario**: `Forget(A)`, then `Observe(true)` for new installation ID B of the same organization.
   **Expected behavior**: B gets a fresh 30-day trial; A stays empty. Documented limit.

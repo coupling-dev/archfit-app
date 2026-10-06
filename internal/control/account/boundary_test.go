@@ -30,7 +30,7 @@ func TestStoreFailureNeverSuspends(t *testing.T) {
 				a, _, _, _ := newTest(s)
 				mustNil(t, a.Observe(ctx, instA, true, day(0)))
 				before := rawKey(t, s.Store, instA, gate.EntitlementKey)
-				putsBefore := len(s.puts(recordKeyName)) + len(s.puts(gate.EntitlementKey))
+				putsBefore := len(s.writes(recordKeyName)) + len(s.writes(gate.EntitlementKey))
 
 				if failure == "Get" {
 					s.getErr = errBoom
@@ -42,7 +42,7 @@ func TestStoreFailureNeverSuspends(t *testing.T) {
 				if !errors.Is(err, errBoom) {
 					t.Fatalf("err = %v, want the Store error", err)
 				}
-				putsAfter := len(s.puts(recordKeyName)) + len(s.puts(gate.EntitlementKey))
+				putsAfter := len(s.writes(recordKeyName)) + len(s.writes(gate.EntitlementKey))
 				if failure == "Get" && putsAfter != putsBefore {
 					t.Errorf("%d Puts followed a failed Get", putsAfter-putsBefore)
 				}

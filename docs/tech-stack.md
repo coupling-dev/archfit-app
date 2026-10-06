@@ -65,15 +65,15 @@ image. The CSP allows no inline style and no worker.
 
 The design isolates platform-dependent code behind three interfaces.
 
-| Seam       | Current driver                                             | Later choice                                                                                               |
-| ---------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `Store`    | `memory` (default), or `firestore`: Firestore over REST    | Add the multi-key transaction. See [cloud design](design/cloud/architecture.md#state)                      |
-| `Sandbox`  | `none`. Managed discovery reports that it is not available | Add an ephemeral container-job driver under `internal/control/onboarding/<driver>/`                        |
-| `Provider` | `internal/control/assist/anthropic` over `net/http`        | Add another provider as a sibling package                                                                  |
-| Host       | Not deployed                                               | Chosen, not built: two Cloud Run services. See [cloud design](design/cloud/architecture.md)                |
-| Scheduler  | Any external scheduler calls `POST /internal/sweep`        | Chosen, not built: Cloud Scheduler and Cloud Tasks. See [cloud design](design/cloud/architecture.md#flows) |
+| Seam       | Current driver                                             | Later choice                                                                                                         |
+| ---------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `Store`    | `memory` (default), or `firestore`: Firestore over REST    | None. `CompareAndSwapAll` covers the multi-key transaction of the [cloud design](design/cloud/architecture.md#state) |
+| `Sandbox`  | `none`. Managed discovery reports that it is not available | Add an ephemeral container-job driver under `internal/control/onboarding/<driver>/`                                  |
+| `Provider` | `internal/control/assist/anthropic` over `net/http`        | Add another provider as a sibling package                                                                            |
+| Host       | Not deployed                                               | Chosen, not built: two Cloud Run services. See [cloud design](design/cloud/architecture.md)                          |
+| Scheduler  | Any external scheduler calls `POST /internal/sweep`        | Chosen, not built: Cloud Scheduler and Cloud Tasks. See [cloud design](design/cloud/architecture.md#flows)           |
 
-The cloud design adds `Store.Update` to the `Store` contract and a `Queue` seam. The sandbox choice is still open.
+The cloud design adds a `Queue` seam. The sandbox choice is still open.
 The [hosting research](archive/research/20260918-hosting.md) is dated research, not a deployment decision.
 
 ## Conventions

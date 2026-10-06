@@ -15,7 +15,8 @@ trial. The design rejects the Firestore SDK because of its dependencies (docs/te
 ## Functional Responsibilities
 
 - Implement every `store.Store` operation with the semantics of `internal/store/module.md`, and pass `store/storetest`.
-- Make `CompareAndSwap` and `Add` atomic across every process that shares the database, with commit preconditions.
+- Make `CompareAndSwap`, `CompareAndSwapAll` and `Add` atomic across every process that shares the database, with
+  commit preconditions. `CompareAndSwapAll` puts all its writes in one commit.
 - Retry a commit that Firestore rejected because of a conflict, a bounded number of times. Never retry a commit
   whose outcome is unknown.
 - Talk to the Firestore emulator when one is configured: plain HTTP, no credentials.
@@ -35,19 +36,25 @@ Generic (a platform client). Volatility: moderate. The REST subset is stable; li
   so tenants never share a document.
 - Operations:
 
-  | Operation        | REST calls                                                                                           |
-  | ---------------- | ---------------------------------------------------------------------------------------------------- |
-  | `Get`            | `documents:batchGet` with one name. A `missing` answer → `store.ErrNotFound`                          |
-  | `Put`, `Delete`  | `documents:commit` with one write, no precondition                                                   |
-  | `CompareAndSwap` | Read, compare, then `documents:commit` with a precondition on what was read                         |
-  | `Add`            | Read, parse the counter, then `documents:commit` with a precondition on what was read               |
-  | `DeleteTenant`   | `documents:runQuery` (`tenant == t`, names only, limit 100), then one commit of deletes; until empty |
-  | `Tenants`        | `documents:runQuery` (`tenant > last`, order by `tenant`, limit 1), once for each tenant             |
+  | Operation           | REST calls                                                                                                               |
+  | ------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+  | `Get`               | `documents:batchGet` with one name. A `missing` answer → `store.ErrNotFound`                                             |
+  | `Put`, `Delete`     | `documents:commit` with one write, no precondition                                                                       |
+  | `CompareAndSwap`    | Read, compare, then `documents:commit` with a precondition on what was read                                              |
+  | `CompareAndSwapAll` | `documents:batchGet` of every key, compare, then one `documents:commit` with one write and one precondition for each key |
+  | `Add`               | Read, parse the counter, then `documents:commit` with a precondition on what was read                                    |
+  | `DeleteTenant`      | `documents:runQuery` (`tenant == t`, names only, limit 100), then one commit of deletes; until empty                     |
+  | `Tenants`           | `documents:runQuery` (`tenant > last`, order by `tenant`, limit 1), once for each tenant                                 |
 
 - The precondition is `currentDocument.exists = false` when the key was missing, else `currentDocument.updateTime`
   equal to the update time that was read. Firestore gives each write of a document a new update time, so the commit
   fails when any other write came between the read and the commit. The read is the linearization point of a `false`
   result.
+- `CompareAndSwapAll` writes every key, also one that only is checked: a key whose `Value` equals its `Old` is
+  written back with the same bytes under its `updateTime` precondition, and a key that must stay missing gets a
+  `delete` under `exists = false`. Firestore has no write that only checks a document. A commit applies all its
+  writes or none, so one failed precondition rejects the whole commit. `batchGet` does not answer in request order;
+  the driver matches each answer by document name and requires exactly one answer for each document.
 - Conflict statuses: `FAILED_PRECONDITION`, `ALREADY_EXISTS`, `NOT_FOUND` and `ABORTED`. Firestore wrote nothing,
   so the driver reads again and decides again: the new value can still equal `old`. At most 10 attempts
   **[default]**, with a jittered pause from 10 ms, doubled to at most 500 ms **[default]**. After the last attempt
@@ -55,9 +62,10 @@ Generic (a platform client). Volatility: moderate. The REST subset is stable; li
 - Unknown outcome: a transport error, a timeout or any other status after the commit was sent. The commit can have
   landed. A retry would then fail the precondition and report a swap that happened as a failed comparison. So the
   driver returns the error and does not retry.
-- A local lock (64 stripes by document name **[default]**) serializes `CompareAndSwap` and `Add` on one document
-  inside one process. A caller that waits for a stripe leaves when its context ends. It only lowers contention.
-  The preconditions alone make the operations atomic.
+- A local lock (64 stripes by document name **[default]**) serializes `CompareAndSwap`, `CompareAndSwapAll` and `Add`
+  on one document inside one process. A caller takes each stripe of its documents once, in ascending stripe order,
+  so two callers never wait for each other in a cycle. A caller that waits for a stripe leaves when its context ends
+  and releases the stripes it holds. It only lowers contention. The preconditions alone make the operations atomic.
 - Errors carry the HTTP status and the RPC status name only. A Firestore message and a request URL can contain a
   document name, and the name holds the key. Validation errors are those of `store`: tenant and key length only.
 - Reads use `batchGet`, not a plain `GET`. `batchGet` reports a missing document as `missing`, so a `NOT_FOUND`
@@ -142,8 +150,7 @@ func New(c Config, tokens TokenSource, hc *http.Client) (store.Store, error)
 
 ## Change Vectors
 
-- A new `Store` operation (the multi-key transaction of the cloud design) adds one more read-compare-commit or a
-  `beginTransaction` flow here.
+- A `Store` operation that must read inside the commit would need a `beginTransaction` flow here.
 - Higher Firestore limits, or a second collection, change the layout notes only.
 - A TTL on lease keys needs a timestamp field. It is a driver detail and does not change the `Store` contract.
 
@@ -152,7 +159,7 @@ func New(c Config, tokens TokenSource, hc *http.Client) (store.Store, error)
 - Standard library and `store` only. No Google SDK. `TestStoreImportsOnlyStdlib` checks it.
 - The driver never logs. It never puts a key, a value or a token in an error.
 - An uncertain write is an error, never success and never a failed comparison.
-- `CompareAndSwap` and `Add` stay atomic across processes without the local lock.
+- `CompareAndSwap`, `CompareAndSwapAll` and `Add` stay atomic across processes without the local lock.
 
 ## Test Specification
 
@@ -160,8 +167,8 @@ func New(c Config, tokens TokenSource, hc *http.Client) (store.Store, error)
 
 - **Test name**: `TestConformance`
   **Scenario**: `storetest.Run` against the driver on an in-process fake of the REST subset. The fake checks every
-  precondition before it applies a commit, gives each write a new update time, and refuses request shapes it does
-  not know.
+  precondition before it applies a commit, gives each write a new update time, answers `batchGet` in reverse
+  request order, and refuses request shapes it does not know.
   **Expected behavior**: every conformance case passes.
 - **Test name**: `TestConformanceEmulator`
   **Scenario**: `storetest.Run` against the Firestore emulator, one new project for each case. Skips when
@@ -170,20 +177,31 @@ func New(c Config, tokens TokenSource, hc *http.Client) (store.Store, error)
 ### Unit Tests
 
 - **Test name**: `TestCommitFailures`
-  **Scenario**: table over the commit of a `CompareAndSwap`: one `ABORTED`; two `FAILED_PRECONDITION`; `ABORTED`
-  without end; the commit applied and the answer lost (503); a 500.
+  **Scenario**: table over the commit of a `CompareAndSwap` of one key and of a `CompareAndSwapAll` of two keys: one
+  `ABORTED`; two `FAILED_PRECONDITION`; `ABORTED` without end; the commit applied and the answer lost (503); a 500.
   **Expected behavior**: swapped after 2 commits; swapped after 3; an error after 10 commits and 9 pauses; an error
-  after 1 commit with the new value stored; an error after 1 commit with the old value kept. Every pause is in (0, 500 ms].
+  after 1 commit with the new values stored; an error after 1 commit with the old values kept. Every pause is in
+  (0, 500 ms]. Every key holds the same value at the end.
 - **Test name**: `TestAddRetriesAConflictAndReportsAnUnknownOutcome`
   **Scenario**: `Add` with one `ABORTED` commit; then `Add` with an applied commit whose answer is lost.
   **Expected behavior**: the first returns the new value; the second returns an error.
 - **Test name**: `TestPreconditionFailuresAreConflicts`
-  **Scenario**: on the fake and on the emulator: commit a create over an existing document, an update and a delete
-  after another write, and an update of a deleted document.
-  **Expected behavior**: each answer has a conflict status, so the driver reads again.
+  **Scenario**: on the fake and on the emulator: commit a create over an existing document, a delete under
+  `exists = false` of an existing document, an update and a delete after another write, a stale write after and
+  before a valid create of another document in one commit, and an update of a deleted document. Then commit a delete
+  under `exists = false` of a missing document together with a create.
+  **Expected behavior**: each answer has a conflict status, so the driver reads again; the create next to a stale
+  write never lands. The last commit succeeds and creates the document.
 - **Test name**: `TestWaitingForTheLocalLockHonorsTheContext`
   **Scenario**: the stripe of a key is held; a caller waits for it with an ended context.
   **Expected behavior**: the caller gets `context.Canceled` at once.
+- **Test name**: `TestLockTakesEachStripeOnce`
+  **Scenario**: one caller locks two documents on one stripe; then another caller locks one of them.
+  **Expected behavior**: the first lock returns at once; after its unlock the second lock succeeds.
+- **Test name**: `TestLockReleasesTheStripesItTookWhenTheContextEnds`
+  **Scenario**: the highest stripe is held; a caller locks a document on the lowest and one on the highest stripe,
+  with a short deadline; then another caller locks the lowest stripe.
+  **Expected behavior**: the first caller gets `context.DeadlineExceeded`; the lowest stripe is free again.
 - **Test name**: `TestAccessToken`
   **Scenario**: `New`, then `Put`; a token source that fails.
   **Expected behavior**: `New` asks for no token; `Put` sends the token; a token error sends no request.
@@ -200,17 +218,19 @@ func New(c Config, tokens TokenSource, hc *http.Client) (store.Store, error)
   **Scenario**: keys with `/`, `..`, `__x__`, non-UTF-8 bytes and 512 bytes, under the largest tenant; tenants 1 and 12.
   **Expected behavior**: every ID is a valid Firestore ID; the two tenants never share a document.
 - **Test name**: `TestMissingDatabaseIsAnErrorNotAMissingKey`
-  **Scenario**: a client of a project that the server does not know; `Get`, `CompareAndSwap`, `Add`.
+  **Scenario**: a client of a project that the server does not know; `Get`, `CompareAndSwap`, `Add`, `CompareAndSwapAll`.
   **Expected behavior**: each returns an error, `Get` not `ErrNotFound`; no commit is sent.
 - **Test name**: `TestStreamErrorIsAnError`
-  **Scenario**: `Get`, `DeleteTenant` and `Tenants` while the server ends the streamed answer with an error element.
+  **Scenario**: `Get`, `DeleteTenant`, `Tenants` and `CompareAndSwapAll` while the server ends the streamed answer
+  with an error element.
   **Expected behavior**: each returns an error; the stored value stays.
 - **Test name**: `TestCorruptDocumentIsAnErrorNotAMissingKey`
   **Scenario**: a document without the `value` field.
-  **Expected behavior**: `Get` and `CompareAndSwap` return an error that is not `ErrNotFound`.
+  **Expected behavior**: `Get`, `CompareAndSwap` and `CompareAndSwapAll` return an error that is not `ErrNotFound`.
 - **Test name**: `TestErrorsCarryNoKeysOrValues`
-  **Scenario**: a server error whose message names the document, a transport error, a value over the limit, a
-  non-counter value, with a marker in the key and the value.
+  **Scenario**: a server error whose message names the document (also for a `CompareAndSwapAll`), a transport error,
+  a value over the limit, a non-counter value, a `CompareAndSwapAll` with a key twice, with a marker in the key and
+  the value.
   **Expected behavior**: each error has the `store:` prefix and contains neither the marker nor its hex form.
 - **Test name**: `TestDeleteTenantDeletesMoreThanOneBatch`
   **Scenario**: 107 keys under one tenant and one key under another; `DeleteTenant` of the first.
@@ -222,6 +242,16 @@ func New(c Config, tokens TokenSource, hc *http.Client) (store.Store, error)
   **Scenario**: on the fake and on the emulator: 4 independent clients of one database, 3 goroutines each, 20
   rounds; each round swaps one lease key from the value of the round before.
   **Expected behavior**: exactly one winner in each round; the final value is the last round's.
+- **Test name**: `TestCompareAndSwapAllGuardsCheckedKeys`
+  **Scenario**: on the fake: `CompareAndSwapAll` creates `a` and only checks `c`, once as missing and once as
+  unchanged; another instance writes `c` between the driver's read and its commit.
+  **Expected behavior**: `false`, `nil` error; `a` stays missing; `c` holds the other instance's bytes. A driver that
+  leaves the checked key out of the commit returns `true` here.
+- **Test name**: `TestCompareAndSwapAllIsAtomicAcrossClients`
+  **Scenario**: on the fake and on the emulator: 4 independent clients of one database, 3 goroutines each, 20 rounds;
+  each round swaps the keys `account` and `entitlement` from the values of the round before; half of the callers
+  list the keys in the other order.
+  **Expected behavior**: exactly one winner in each round; after each round both keys hold the round's value.
 - **Test name**: `TestAddIsAtomicAcrossClients`
   **Scenario**: on the fake and on the emulator: 3 independent clients add 1 to one counter 25 times each, at the same time.
   **Expected behavior**: the counter is 75.
