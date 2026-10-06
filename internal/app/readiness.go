@@ -23,7 +23,7 @@ const (
 	readyFor    = 30 * time.Second
 	notReadyFor = 5 * time.Second
 
-	// readinessKey is the reserved key the store probe reads. It is never written, so the answer is "not found".
+	// readinessKey is the reserved key the store probe reads. It is never written; any answer but an error passes.
 	readinessKey = "app/readiness"
 )
 
@@ -42,14 +42,10 @@ func githubProbe(checkApp func(context.Context) error) probe {
 // the Firestore driver keeps apart from a missing document.
 func storeProbe(st store.Store) probe {
 	return probe{name: "store", check: func(ctx context.Context) error {
-		_, err := st.Get(ctx, store.SystemTenant, readinessKey)
-		if errors.Is(err, store.ErrNotFound) {
-			return nil
+		if _, err := st.Get(ctx, store.SystemTenant, readinessKey); err != nil && !errors.Is(err, store.ErrNotFound) {
+			return err
 		}
-		if err == nil {
-			return errors.New("app: the reserved readiness key holds a value")
-		}
-		return err
+		return nil
 	}}
 }
 

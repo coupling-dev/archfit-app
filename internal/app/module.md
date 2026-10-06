@@ -92,7 +92,7 @@ single place where it is enforced at runtime.
   - `github`: `api.Client.CheckApp`, `GET /app` with a fresh App JWT. It proves that the App key works with GitHub
     and reads no installation.
   - `store`: `Store.Get(SystemTenant, "app/readiness")`. The key is reserved and never written, so `ErrNotFound` is
-    the healthy answer. Any other error fails, and so does a value under the key. The Firestore driver reports a
+    the usual answer, and a value passes too. Any other error fails. The Firestore driver reports a
     missing database as an error, never as a missing key.
 
   Every role uses the App key and the store, so every role runs both probes. The queue is not probed: the public
@@ -891,7 +891,7 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
 - **Test name**: `TestStoreProbe`
   **Scenario**: the reserved key missing in the memory store; a store whose `Get` fails; the Firestore driver against
   an emulator address that answers `404 NOT_FOUND` (no database); a value under the reserved key.
-  **Expected behavior**: ready for the first; not ready for the other three.
+  **Expected behavior**: ready for the first and the last; not ready for the failing store and the missing database.
 - **Test name**: `TestReadyIsWiredToGitHubAndTheStore`
   **Scenario**: `run` with the memory store and a transport that answers `404` to every request; then `GET /ready`.
   **Expected behavior**: `503`, and exactly one outbound request (`GET /app`).

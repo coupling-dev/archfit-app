@@ -180,7 +180,7 @@ func TestStoreProbe(t *testing.T) {
 		{"the reserved key is missing", store.NewMemory(), true},
 		{"the store fails", failingStore{store.NewMemory()}, false},
 		{"the Firestore database does not exist", noDatabase, false},
-		{"the reserved key holds a value", written, false},
+		{"the reserved key holds a value", written, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
