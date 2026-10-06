@@ -176,6 +176,52 @@ func TestCompareAndSwapIsAtomicAcrossClients(t *testing.T) {
 	t.Run("emulator", func(t *testing.T) { testCompareAndSwapAcrossClients(t, newEmulatorStores(t, emulatorHost(t), 4)) })
 }
 
+// A key that a swap only checks, as missing or as unchanged, stays guarded until the commit: another instance's
+// write between the read and the commit fails the whole call.
+func TestCompareAndSwapAllGuardsCheckedKeys(t *testing.T) {
+	tests := []struct {
+		name    string
+		stored  map[string]string
+		checked store.Swap
+		other   string // what another instance writes at the checked key between the read and the commit
+	}{
+		{"a key that must stay missing is created", nil, store.Swap{Key: "c"}, "other"},
+		{"a key checked as unchanged changes", map[string]string{"c": "c1"}, store.Swap{Key: "c", Old: []byte("c1"), Value: []byte("c1")}, "c2"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFake(t)
+			d := f.client(t)
+			ctx := context.Background()
+			for k, v := range tt.stored {
+				if err := d.Put(ctx, 1, k, []byte(v)); err != nil {
+					t.Fatalf("Put: %v", err)
+				}
+			}
+			f.mu.Lock()
+			f.beforeCommit = func(f *fakeFirestore) {
+				name := d.docName(1, tt.checked.Key)
+				f.docs[name] = fakeDoc{
+					fields:     map[string]fsValue{fieldTenant: integerValue(1), fieldValue: bytesValue([]byte(tt.other))},
+					updateTime: f.tick(),
+				}
+			}
+			f.mu.Unlock()
+
+			ok, err := d.CompareAndSwapAll(ctx, 1, []store.Swap{{Key: "a", Value: []byte("new")}, tt.checked})
+			if err != nil || ok {
+				t.Errorf("CompareAndSwapAll = %v, %v, want false, nil", ok, err)
+			}
+			if _, err := d.Get(ctx, 1, "a"); !errors.Is(err, store.ErrNotFound) {
+				t.Errorf("Get a = %v, want ErrNotFound: the write next to the checked key landed", err)
+			}
+			if got, err := d.Get(ctx, 1, tt.checked.Key); err != nil || string(got) != tt.other {
+				t.Errorf("Get %s = %q, %v, want the other instance's %q", tt.checked.Key, got, err, tt.other)
+			}
+		})
+	}
+}
+
 func TestCompareAndSwapAllIsAtomicAcrossClients(t *testing.T) {
 	t.Run("fake", func(t *testing.T) { testCompareAndSwapAllAcrossClients(t, fakeClients(t, 4)) })
 	t.Run("emulator", func(t *testing.T) {

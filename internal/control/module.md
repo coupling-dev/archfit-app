@@ -575,7 +575,7 @@ fake `Sandbox` and `Provider`, and a fixed clock.
 ### Integration Contract Tests
 
 - **Test name**: `TestSweepRefreshesEveryInstallation`
-  **Scenario**: three installations; `ListRepos` fails for the second; Store `Put` fails for the third.
+  **Scenario**: three installations; `ListRepos` fails for the second; the Store write of the third (`CompareAndSwapAll`, the account write path) fails.
   **Expected behavior**: first observed; second refreshed without GitHub; third logged and skipped; `Sweep` returns nil; counts logged by ID only.
 - **Test name**: `TestSweepBackfillsMissedInstallation`
   **Scenario**: no webhook was delivered; GitHub lists installation 7 with one private repository; the Store is empty; run `Sweep` once, then again an hour later.
