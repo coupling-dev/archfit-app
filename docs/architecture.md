@@ -443,6 +443,7 @@ A new driver changes the composition in `app`. The gate contracts do not change.
 ## Deployment
 
 The App is not deployed. The target is Google Cloud. The [cloud design](design/cloud/architecture.md) owns the deployment design.
+The OpenTofu code and the first-deployment runbook are in [`infra/`](../infra/README.md).
 This page lists only what any host must provide.
 A host must provide these runtime capabilities:
 

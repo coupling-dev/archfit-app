@@ -22,12 +22,16 @@ Security rules for identities, secrets, and incidents are in [Security](security
 - CI owns only the image and the traffic of the two services. Terraform ignores those fields.
 - Secret values never enter Terraform. The owner adds them directly to Secret Manager.
 - The owner applies infrastructure changes. An infrastructure change never runs at the same time as a release.
+- The code is in [`infra/`](../../../infra/README.md): a `data` stack and a `runtime` stack, with state in a
+  versioned GCS bucket in the project.
 
 ## Project guardrails
 
 The project has no Organization, so organization policies cannot restrict regions or services
 (see [Security](security.md#organization)). These project-level controls were applied with `gcloud` before
-Terraform exists. Terraform must import them when it takes over the project.
+Terraform existed. The `data` stack in [`infra/`](../../../infra/README.md) imports the enabled APIs, the quota
+preferences, the alert policy with its channel, and the essential contact. The budget stays on the billing account,
+outside Terraform.
 
 | Control                 | Setting                                                                                                                                                              |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -51,6 +55,7 @@ Limits:
 
 ## First deployment
 
+The exact commands that the owner runs are in the [infrastructure runbook](../../../infra/README.md#first-deployment).
 The order matters:
 
 1. Create the data and identity resources. Add every secret value before any service exists,
