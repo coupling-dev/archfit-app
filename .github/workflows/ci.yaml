@@ -43,7 +43,7 @@ jobs:
           done
           docker logs firestore
           exit 1
-      - run: go test -race -count=1 -timeout=15m -v -run 'Emulator|AcrossClients' ./internal/store/firestore/
+      - run: go test -race -count=1 -timeout=15m -v ./internal/store/firestore/
       - name: Emulator logs
         if: failure()
         run: docker logs firestore
