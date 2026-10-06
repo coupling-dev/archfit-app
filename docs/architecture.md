@@ -107,14 +107,15 @@ flowchart TB
 Arrows show permitted import groups. The `gate` arrow from `control` is a facade call.
 The shared group contains `wire`, `github`, and `store`.
 
-| Package   | Main responsibility                                                            | Child packages                                         |
-| --------- | ------------------------------------------------------------------------------ | ------------------------------------------------------ |
-| `app`     | Loads environment settings, builds packages, and registers routes              | none                                                   |
-| `gate`    | Verifies uploads, decides outcomes, publishes feedback, and runs the sweep     | `ingest`, `inputs`, `verdict`, `feedback`, `sweep`     |
-| `control` | Serves the UI and manages onboarding, proposals, AI requests, and entitlements | `account`, `assist`, `onboarding`, `proposal`, `ui`    |
-| `wire`    | Defines versioned file and message formats                                     | `envelope`, `manifest`, `policy`, `report`, `settings` |
-| `github`  | Holds GitHub API, authentication, webhook, and OIDC knowledge                  | `api`, `auth`, `oidc`, `webhook`                       |
-| `store`   | Defines the tenant key-value interface and the memory driver                   | none                                                   |
+| Package    | Main responsibility                                                            | Child packages                                         |
+| ---------- | ------------------------------------------------------------------------------ | ------------------------------------------------------ |
+| `app`      | Loads environment settings, builds packages, and registers routes              | none                                                   |
+| `gate`     | Verifies uploads, decides outcomes, publishes feedback, and runs the sweep     | `ingest`, `inputs`, `verdict`, `feedback`, `sweep`     |
+| `control`  | Serves the UI and manages onboarding, proposals, AI requests, and entitlements | `account`, `assist`, `onboarding`, `proposal`, `ui`    |
+| `wire`     | Defines versioned file and message formats                                     | `envelope`, `manifest`, `policy`, `report`, `settings` |
+| `github`   | Holds GitHub API, authentication, webhook, and OIDC knowledge                  | `api`, `auth`, `oidc`, `webhook`                       |
+| `store`    | Defines the tenant key-value interface and the memory driver                   | `firestore`                                            |
+| `gcptoken` | Reads the service-account access token from the Cloud Run metadata server      | none                                                   |
 
 The import rules keep the gate independent:
 
@@ -432,11 +433,11 @@ The routes come from [`internal/app/handler.go`](../internal/app/handler.go) and
 
 The App keeps platform-dependent code behind three interfaces.
 
-| Seam       | Current driver                       | Current behavior                    |
-| ---------- | ------------------------------------ | ----------------------------------- |
-| `Store`    | `memory`                             | Data is lost when the process stops |
-| `Sandbox`  | `none`                               | Managed discovery is not available  |
-| `Provider` | `anthropic` when a key is configured | Managed AI is optional              |
+| Seam       | Current driver                       | Current behavior                                                                    |
+| ---------- | ------------------------------------ | ----------------------------------------------------------------------------------- |
+| `Store`    | `memory` (default) or `firestore`    | `memory` loses data when the process stops. `firestore` keeps it in Cloud Firestore |
+| `Sandbox`  | `none`                               | Managed discovery is not available                                                  |
+| `Provider` | `anthropic` when a key is configured | Managed AI is optional                                                              |
 
 A new driver changes the composition in `app`. The gate contracts do not change.
 
@@ -470,11 +471,12 @@ See [`.env.example`](../.env.example).
 | `ARCHFIT_COOKIE_KEY_FILE`            | 32-byte session-cookie key file                        |
 | `ARCHFIT_OPERATOR_TOKEN_FILE`        | Bearer token file for `/internal/*`                    |
 | `ARCHFIT_ANTHROPIC_KEY_FILE`         | Optional Anthropic key file. Empty disables managed AI |
-| `ARCHFIT_STORE`                      | Store driver. Only `memory` exists                     |
+| `ARCHFIT_STORE`                      | Store driver: `memory` (default) or `firestore`        |
+| `ARCHFIT_FIRESTORE_PROJECT`          | Google Cloud project ID. Required with `firestore`     |
+| `ARCHFIT_FIRESTORE_DATABASE`         | Firestore database ID. Default `(default)`             |
+| `FIRESTORE_EMULATOR_HOST`            | Emulator `host:port`. Plain HTTP and no credentials    |
 | `ARCHFIT_SANDBOX`                    | Sandbox driver. Only `none` exists                     |
 
 ### Release blockers
 
 - No GitHub App is registered.
-- No persistent Store driver: `ARCHFIT_STORE` supports only `memory`. Pilots need a driver with atomic cross-instance
-  `CompareAndSwap` (Firestore, per docs/tech-stack.md).
