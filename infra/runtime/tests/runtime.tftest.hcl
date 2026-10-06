@@ -1,8 +1,17 @@
-mock_provider "google" {
-  mock_resource "google_cloud_run_v2_service" {
-    defaults = {
-      uri = "https://archfit-worker-335297348272.europe-west1.run.app"
-    }
+mock_provider "google" {}
+
+# Each service gets its own URL, so a queue or job aimed at the wrong service fails a test.
+override_resource {
+  target = google_cloud_run_v2_service.this["public"]
+  values = {
+    uri = "https://archfit-public-335297348272.europe-west1.run.app"
+  }
+}
+
+override_resource {
+  target = google_cloud_run_v2_service.this["worker"]
+  values = {
+    uri = "https://archfit-worker-335297348272.europe-west1.run.app"
   }
 }
 
@@ -62,6 +71,11 @@ run "worker_is_internal_and_checks_the_invoker" {
 
 run "each_service_runs_as_its_own_account_with_at_most_two_instances" {
   command = plan
+
+  assert {
+    condition     = alltrue([for s in google_cloud_run_v2_service.this : s.deletion_protection != false])
+    error_message = "A replacement would start the placeholder image, so deleting a service must fail."
+  }
 
   assert {
     condition = alltrue([
@@ -124,7 +138,14 @@ run "anthropic_key_mounts_only_on_the_public_service_when_set" {
   command = plan
 
   variables {
-    anthropic_key_version = "3"
+    secret_versions = {
+      "archfit-github-private-key"    = "1"
+      "archfit-github-webhook-secret" = "1"
+      "archfit-github-oauth-secret"   = "1"
+      "archfit-cookie-key"            = "1"
+      "archfit-operator-token"        = "1"
+      "archfit-anthropic-key"         = "3"
+    }
   }
 
   assert {
@@ -167,8 +188,18 @@ run "queues_enforce_their_own_route_and_identity" {
       q.http_target[0].uri_override[0].uri_override_enforce_mode == "ALWAYS"
       && q.http_target[0].uri_override[0].host == "archfit-worker-335297348272.europe-west1.run.app"
       && q.http_target[0].oidc_token[0].service_account_email == "archfit-invoker@coupling-dev-510710.iam.gserviceaccount.com"
+      && q.http_target[0].oidc_token[0].audience == "https://archfit-worker-335297348272.europe-west1.run.app"
     ])
     error_message = "A task creator must not choose the target URL or identity."
+  }
+
+  assert {
+    condition = (
+      google_cloud_scheduler_job.sweep.http_target[0].uri == "https://archfit-worker-335297348272.europe-west1.run.app/internal/sweep"
+      && google_cloud_scheduler_job.sweep.http_target[0].oidc_token[0].service_account_email == "archfit-invoker@coupling-dev-510710.iam.gserviceaccount.com"
+      && google_cloud_scheduler_job.sweep.http_target[0].oidc_token[0].audience == "https://archfit-worker-335297348272.europe-west1.run.app"
+    )
+    error_message = "The Scheduler calls the worker's sweep route as the invoker."
   }
 
   assert {
@@ -201,8 +232,8 @@ run "processing_starts_paused" {
   }
 
   assert {
-    condition     = google_monitoring_alert_policy.missing_sweep.enabled == false
-    error_message = "A paused Scheduler must not raise the missing-sweep alert."
+    condition     = !google_monitoring_alert_policy.missing_sweep.enabled && !google_monitoring_alert_policy.sweep_job_failures.enabled
+    error_message = "A paused Scheduler must not raise the sweep alerts."
   }
 }
 
@@ -219,7 +250,7 @@ run "resumed_processing_runs_queues_and_watches_the_sweep" {
   }
 
   assert {
-    condition     = google_monitoring_alert_policy.missing_sweep.enabled == true
-    error_message = "The missing-sweep alert is on while the Scheduler runs."
+    condition     = google_monitoring_alert_policy.missing_sweep.enabled && google_monitoring_alert_policy.sweep_job_failures.enabled
+    error_message = "The sweep alerts are on while the Scheduler runs."
   }
 }

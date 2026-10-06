@@ -13,11 +13,6 @@ locals {
     "archfit-anthropic-key"         = "ARCHFIT_ANTHROPIC_KEY_FILE"
   }
 
-  secret_versions = merge(
-    var.secret_versions,
-    var.anthropic_key_version == null ? {} : { "archfit-anthropic-key" = var.anthropic_key_version },
-  )
-
   # The data stack grants each secret to its roles. A service mounts exactly the secrets its account can read.
   role_secrets = {
     for role in keys(local.service_access) : role => [
@@ -25,10 +20,11 @@ locals {
     ]
   }
 
-  # The Anthropic key is optional. Every other secret must have a pinned version, or the plan fails.
+  # The Anthropic key is optional: without a version it is not mounted, and managed AI stays off. Every other secret
+  # must have a pinned version, or the plan fails.
   mounts = {
     for role, secrets in local.role_secrets : role => {
-      for s in secrets : s => local.secret_versions[s] if s != "archfit-anthropic-key" || var.anthropic_key_version != null
+      for s in secrets : s => var.secret_versions[s] if s != "archfit-anthropic-key" || contains(keys(var.secret_versions), s)
     }
   }
 
@@ -65,8 +61,8 @@ resource "google_cloud_run_v2_service" "this" {
   location             = var.region
   ingress              = each.value.ingress
   invoker_iam_disabled = each.value.invoker_iam_disabled
-  # Services hold no state. A replacement keeps the data, so a runtime change may delete a service.
-  deletion_protection = false
+  # deletion_protection stays on (the default). A replacement would start the placeholder image, which answers every
+  # webhook and task with success, so a plan that replaces a service fails instead.
 
   template {
     service_account = local.data.service_accounts[each.key]
@@ -132,12 +128,12 @@ resource "google_cloud_run_v2_service" "this" {
 
   lifecycle {
     ignore_changes = [
-      # CI deploys by digest and moves traffic. gcloud also writes the client fields and the revision name.
+      # CI deploys by digest and moves traffic. gcloud also writes the client fields. The revision name is not
+      # ignored: a kept name with a changed template is rejected by Cloud Run, so Terraform lets it generate one.
       template[0].containers[0].image,
       traffic,
       client,
       client_version,
-      template[0].revision,
     ]
   }
 }

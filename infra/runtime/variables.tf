@@ -35,7 +35,7 @@ variable "github_oauth_client_id" {
 }
 
 variable "secret_versions" {
-  description = "Pinned Secret Manager version of each mounted secret. A new value reaches the App only through a new revision."
+  description = "Pinned Secret Manager version of each mounted secret. A new value reaches the App only through a new revision. Add archfit-anthropic-key to turn on managed AI."
   type        = map(string)
   default = {
     "archfit-github-private-key"    = "1"
@@ -44,12 +44,6 @@ variable "secret_versions" {
     "archfit-cookie-key"            = "1"
     "archfit-operator-token"        = "1"
   }
-}
-
-variable "anthropic_key_version" {
-  description = "Pinned version of archfit-anthropic-key. Null mounts no key, and managed AI stays off."
-  type        = string
-  default     = null
 }
 
 variable "paused" {
