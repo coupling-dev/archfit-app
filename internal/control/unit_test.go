@@ -63,6 +63,45 @@ func TestNewValidatesWiring(t *testing.T) {
 	}
 }
 
+func TestNewWorkerNeedsNoUISecrets(t *testing.T) {
+	gh := newFakeGitHub(t)
+	gh.install(7, ghr(70, "org7/app", true))
+	clock := newClock()
+	for _, tt := range []struct {
+		name string
+		deps WorkerDeps
+	}{
+		{"nil GitHub", WorkerDeps{Store: store.NewMemory()}},
+		{"nil Store", WorkerDeps{GitHub: gh.client()}},
+	} {
+		if c, err := NewWorker(tt.deps); err == nil || c != nil {
+			t.Errorf("%s: NewWorker = %v, %v; want nil Control and an error", tt.name, c, err)
+		}
+	}
+
+	st := store.NewMemory()
+	c, err := NewWorker(WorkerDeps{GitHub: gh.client(), Store: st, Now: clock.Now})
+	if err != nil {
+		t.Fatalf("NewWorker: %v", err)
+	}
+	ctx := context.Background()
+	if err := c.HandleEvent(ctx, webhook.Event{Kind: webhook.InstallationAdded, InstallationID: 7}); err != nil {
+		t.Fatalf("HandleEvent: %v", err)
+	}
+	if err := c.Grant(ctx, 7, clock.Now().AddDate(0, 1, 0)); err != nil {
+		t.Fatalf("Grant: %v", err)
+	}
+	if err := c.Sweep(ctx); err != nil {
+		t.Fatalf("Sweep: %v", err)
+	}
+	if ts, err := st.Tenants(ctx); err != nil || !reflect.DeepEqual(ts, []store.Tenant{7}) {
+		t.Errorf("tenants = %v, %v; want the observed installation", ts, err)
+	}
+	if c.UIHandler() != nil || c.DiscoveryHandler() != nil || c.BaselineHandler() != nil {
+		t.Error("the worker façade serves a handler")
+	}
+}
+
 func TestHandleEventRouting(t *testing.T) {
 	kinds := []webhook.EventKind{
 		webhook.PullOpened, webhook.PullSynchronized, webhook.PullClosed, webhook.ReviewChanged,

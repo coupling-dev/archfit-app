@@ -21,7 +21,7 @@ single place where it is enforced at runtime.
   below) and the secrets the process reads. One `http.ServeMux`.
 - Webhook intake (`POST /webhooks/github`, roles `all` and `public`): read the body (25 MB cap, GitHub's own maximum
   **[default]**), read the three delivery headers under `webhook.HeaderEvent`, `webhook.HeaderDelivery` and
-  `webhook.HeaderSignature`, `webhook.Verify`, `webhook.Parse`. Then queue two tasks, the gate half first:
+  `webhook.HeaderSignature`, `webhook.VerifyAny` with the accepted webhook secrets, `webhook.Parse`. Then queue two tasks, the gate half first:
   `<delivery ID>_gate` and `<delivery ID>_control`. Each task carries the three delivery headers, `Content-Type`,
   `X-Archfit-Half` (`gate` or `control`) and the unchanged body, and nothing else. A task that the queue refuses
   (any `Enqueue` error, for example a body over the task limit, a delivery ID that is no task name, or an
@@ -55,10 +55,24 @@ single place where it is enforced at runtime.
   has its own 55 seconds **[default]** (target: feedback within 60 seconds).
 - Base URL: `ARCHFIT_BASE_URL` must not end in `/`. It is the OIDC audience, compared byte for byte with the token's
   `aud`, and the Action refuses an endpoint with a trailing slash; a slash here would refuse every upload.
-- Secrets by role: the `public` role never reads the operator token, even when its variable is set. The `worker`
-  and `all` roles read every secret. The worker still reads the OAuth secret and the cookie key, because
-  `control.New` builds the UI even where no UI route is mounted (upgrade trigger: a role-specific control
-  construction).
+- Secrets by role: a role reads only the secrets it uses, and never reads another one, even when its variable is set.
+
+  | Role     | Reads                                                                                      | Never reads                                   |
+  | -------- | ------------------------------------------------------------------------------------------ | --------------------------------------------- |
+  | `all`    | every secret                                                                               | nothing                                       |
+  | `public` | App key, webhook secrets, OAuth secret, cookie key, Anthropic key                          | operator token                                |
+  | `worker` | App key, webhook secrets, operator token                                                   | OAuth secret, cookie key, Anthropic key       |
+
+  The worker builds its control façade with `control.NewWorker`, which takes no UI dependency, and passes no OAuth
+  fields to `auth.New`, so it holds no OAuth client. `ARCHFIT_GITHUB_OAUTH_CLIENT_ID`, `ARCHFIT_GITHUB_OAUTH_SECRET_FILE`
+  and `ARCHFIT_COOKIE_KEY_FILE` are required in the `all` and `public` roles only. A missing secret of the role's own
+  set is a startup error that names its variable.
+- Webhook secrets: `ARCHFIT_GITHUB_WEBHOOK_SECRET_FILE` is the current secret and is required.
+  `ARCHFIT_GITHUB_WEBHOOK_SECRET_PREVIOUS_FILE` is optional; it is set only during a rotation. While it is set, intake
+  and the worker accept a signature made with either secret (`webhook.VerifyAny`). A configured previous file that is
+  empty or unreadable is a startup error. Rotation: deploy both services with the new current secret and the old one
+  as previous; change the secret in GitHub; after the queue holds no task signed with the old secret (about 2 hours),
+  deploy without the previous file.
 - Secret files: every `*_FILE` variable names a text file. `app` reads it, trims leading and trailing white space, and
   refuses an empty result at startup. The cookie key is the trimmed raw bytes of its file, not an encoding of them, and
   `control.New` requires exactly 32 of them.
@@ -100,11 +114,12 @@ type Config struct {
     AppID            int64  // ARCHFIT_GITHUB_APP_ID
     PrivateKeyFile   string // ARCHFIT_GITHUB_PRIVATE_KEY_FILE
     WebhookSecretFile string // ARCHFIT_GITHUB_WEBHOOK_SECRET_FILE
-    OAuthClientID    string // ARCHFIT_GITHUB_OAUTH_CLIENT_ID
-    OAuthSecretFile  string // ARCHFIT_GITHUB_OAUTH_SECRET_FILE
-    CookieKeyFile    string // ARCHFIT_COOKIE_KEY_FILE
+    WebhookPreviousFile string // ARCHFIT_GITHUB_WEBHOOK_SECRET_PREVIOUS_FILE; optional, set only during a rotation
+    OAuthClientID    string // ARCHFIT_GITHUB_OAUTH_CLIENT_ID; not used by the worker role
+    OAuthSecretFile  string // ARCHFIT_GITHUB_OAUTH_SECRET_FILE; never read by the worker role
+    CookieKeyFile    string // ARCHFIT_COOKIE_KEY_FILE; never read by the worker role
     OperatorTokenFile string // ARCHFIT_OPERATOR_TOKEN_FILE; authenticates the operator routes; never read by the public role
-    AnthropicKeyFile string // ARCHFIT_ANTHROPIC_KEY_FILE; empty disables managed LLM
+    AnthropicKeyFile string // ARCHFIT_ANTHROPIC_KEY_FILE; empty disables managed LLM; never read by the worker role
     StoreDriver      string // ARCHFIT_STORE, "memory" (default) or "firestore"
     FirestoreProject string // ARCHFIT_FIRESTORE_PROJECT; required by "firestore"
     FirestoreDatabase string // ARCHFIT_FIRESTORE_DATABASE; empty selects "(default)"
@@ -132,8 +147,8 @@ func Run(ctx context.Context, c Config, log *slog.Logger) error
 | `POST /v1/reports`              | `all`, `public`   | `gate.UploadHandler()`                            | gate (OIDC)                                                |
 | `POST /v1/discoveries`          | `all`, `public`   | `control.DiscoveryHandler()`                      | control, through the gate `Receiver` (OIDC)                |
 | `POST /v1/baselines`            | `all`, `public`   | `control.BaselineHandler()`                       | control, through the gate `Receiver` (OIDC)                |
-| `POST /webhooks/github`         | `all`, `public`   | `app` intake                                      | `app` (`webhook.Verify`)                                   |
-| `POST /internal/webhooks`       | `worker`          | `app` queued webhook processing                   | `app` (invoker ID token, then `webhook.Verify`)            |
+| `POST /webhooks/github`         | `all`, `public`   | `app` intake                                      | `app` (`webhook.VerifyAny`)                                |
+| `POST /internal/webhooks`       | `worker`          | `app` queued webhook processing                   | `app` (invoker ID token, then `webhook.VerifyAny`)         |
 | `POST /internal/sweep`          | `all`             | `app`                                             | `app` (operator bearer token)                              |
 | `POST /internal/sweep`          | `worker`          | `app`                                             | `app` (invoker ID token)                                   |
 | `POST /internal/grants`         | `all`             | `app`                                             | `app` (operator bearer token)                              |
@@ -293,7 +308,7 @@ type Receiver interface {
 - **Balanced?**: yes
 - **Shared knowledge**: the façade and the two platform seams `app` fills. In this block `Deps` means `control.Deps`.
 
-<!-- contract: Control, Deps, New — restated from internal/control/module.md -->
+<!-- contract: Control, Deps, New, WorkerDeps, NewWorker — restated from internal/control/module.md -->
 ```go
 // Deps are wired by internal/app. Sandbox and Provider may be nil: managed features then report "not available".
 type Deps struct {
@@ -309,9 +324,21 @@ type Deps struct {
     Now       func() time.Time
 }
 
+// WorkerDeps are the dependencies of the worker façade: it handles events, the sweep and grants, and serves no UI.
+// So it takes no OAuth, no cookie key, no Receiver, no Sandbox and no Provider.
+type WorkerDeps struct {
+    GitHub *Client
+    Store  Store
+    Now    func() time.Time
+}
+
 type Control struct{ /* unexported */ }
 
 func New(d Deps) (*Control, error)
+
+// NewWorker builds the façade of the worker role. Only HandleEvent, Sweep and Grant work on it; the handler
+// methods return nil, and the worker mounts no route that needs them.
+func NewWorker(d WorkerDeps) (*Control, error)
 
 func (c *Control) UIHandler() http.Handler        // "/"
 func (c *Control) DiscoveryHandler() http.Handler // POST /v1/discoveries
@@ -629,6 +656,8 @@ type OAuth interface {
 
 <!-- contract: New — restated from internal/github/auth/module.md -->
 ```go
+// New returns the App's token source and, when both OAuth fields are set, the login flow. A process without a UI
+// (the worker role) passes neither and gets a nil OAuth, so it never holds the client secret.
 func New(c Credentials, hc *http.Client) (TokenSource, OAuth, error)
 ```
 
@@ -680,10 +709,12 @@ type Event struct {
 }
 ```
 
-<!-- contract: Verify, Parse — restated from internal/github/webhook/module.md -->
+<!-- contract: VerifyAny, Parse — restated from internal/github/webhook/module.md -->
 ```go
-// Verify checks X-Hub-Signature-256 over body in constant time.
-func Verify(secret []byte, signatureHeader string, body []byte) error
+// VerifyAny accepts a body signed with any of secrets: the current secret and, during a rotation, the previous one.
+// It checks every secret, so the time taken does not show which one matched. An empty list or an empty secret
+// fails closed.
+func VerifyAny(secrets [][]byte, signatureHeader string, body []byte) error
 
 // Parse normalizes a verified delivery. Unknown event types yield Kind == Ignored, not an error.
 func Parse(eventType, deliveryID string, body []byte) (Event, error)
@@ -746,10 +777,10 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   halves are separate tasks with independent results: a control failure never blocks or repeats gate work.
   `gate.Sweep` runs even when `control.Sweep` fails or panics.
 - The public role never serves `/internal/*` and never reads the operator token. The worker role never serves the UI,
-  the uploads or intake.
+  the uploads or intake, and never reads the OAuth secret, the cookie key or the Anthropic key.
 - A task is GitHub's own delivery. The worker verifies the signature again, so the queue is not trusted. The half
   header is not signed; it only chooses between two handlers of the same verified delivery.
-- A failing or missing optional dependency (LLM key, sandbox driver) never prevents startup of the gate routes. A missing GitHub App credential, webhook secret, or base URL is a startup error, and so is a missing operator token outside the public role, and a missing worker URL or invoker in the worker role or with the cloudtasks driver.
+- A failing or missing optional dependency (LLM key, sandbox driver) never prevents startup of the gate routes. A missing GitHub App credential, webhook secret, or base URL is a startup error, and so is a missing operator token outside the public role, a missing OAuth client ID, OAuth secret or cookie key outside the worker role, a configured previous webhook secret file that is empty or unreadable, and a missing worker URL or invoker in the worker role or with the cloudtasks driver.
 - Secrets arrive as file paths; their contents are never logged, never placed in `Config` string form, never echoed in errors.
 - Tenant identity is never taken from a request here. `/internal/grants` is operator-authenticated and is the single place an installation ID arrives in a body; it is logged with the operator action.
 - Webhook body cap 25 MB **[default]**; bodies are never logged. Unknown events answer `202` and do nothing.
@@ -779,8 +810,9 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   is not an e-mail; a worker URL with a trailing slash or over plain `http`.
   `ARCHFIT_STORE=firestore` without a project, with a project and a named database, and with `FIRESTORE_EMULATOR_HOST`.
   **Expected behavior**: defaults `:8080`, `memory`, `none`, `all`, `inline`; an error naming the first missing or
-  invalid variable; the public role loads without the operator token, the worker role does not; the worker ignores the
-  queue driver; no secret content in any error.
+  invalid variable; the public role loads without the operator token, the worker role does not; the worker role loads
+  without the OAuth client ID, the OAuth secret and the cookie key; the previous webhook secret file is loaded when set;
+  the worker ignores the queue driver; no secret content in any error.
 - **Test name**: `TestLoadNeverReadsSecretValuesFromEnv`
   **Scenario**: set `ARCHFIT_GITHUB_PRIVATE_KEY` style variables holding inline PEM.
   **Expected behavior**: ignored; only `*_FILE` variables are honored.
@@ -794,8 +826,8 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   **Scenario**: start `Run` with fakes behind every seam; request each row of the Routes table.
   **Expected behavior**: each path reaches its owner; unknown paths reach the UI handler; `/healthz` answers without touching any dependency.
 - **Test name**: `TestWebhookFanOut`
-  **Scenario**: the inline driver: deliver a signed `pull_request` event; then an event with a bad signature; then an unknown event type.
-  **Expected behavior**: gate then control receive the same parsed `Event`; bad signature → `401`, no handler called; unknown type → `202`, handlers see `Ignored` or nothing.
+  **Scenario**: the inline driver: deliver a signed `pull_request` event; then the same event signed with the previous secret; then an event with a bad signature; then an unknown event type.
+  **Expected behavior**: gate then control receive the same parsed `Event`; the previous secret → `202` and both halves; bad signature → `401`, no handler called; unknown type → `202`, handlers see `Ignored` or nothing.
 - **Test name**: `TestRoleRouteTables`
   **Scenario**: table over the three roles and twelve requests: health, the three uploads, intake, two UI paths, sweep
   and grant with the operator token, a task and a sweep with the invoker ID token, an unknown `/internal/*` path.
@@ -813,7 +845,7 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   **Scenario**: the invoker ID token with the operator token in `X-Archfit-Operator`; without it; with a wrong one.
   **Expected behavior**: `204` and one grant; `401` and no grant twice.
 - **Test name**: `TestWorkerTaskErrorClasses`
-  **Scenario**: table over task dispatches: gate done; control done; a Store error; `ErrRateLimited`; a deadline; a
+  **Scenario**: table over task dispatches: gate done; control done; a delivery signed with the previous secret; a Store error; `ErrRateLimited`; a deadline; a
   control panic; a wrapped `ErrNotFound` from each half; a bad signature; an unparsable body; an unknown half; no half;
   an ignored event type. Then a gate dispatch whose request context is cancelled.
   **Expected behavior**: `204` with outcome `done`; `503` with `transient_error` for the four retryable cases; `204`
@@ -863,20 +895,24 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
 - **Test name**: `TestOptionalDependenciesAreOptional`
   **Scenario**: no Anthropic key, sandbox `none`; then `ARCHFIT_STORE=firestore` with a project.
   **Expected behavior**: startup succeeds; `control.Deps.Provider` and `Sandbox` are nil; gate routes serve. With
-  Firestore, startup sends no outbound request.
-- **Test name**: `TestPublicRoleBootsWithoutTheOperatorToken`
-  **Scenario**: `run` in the public role with no operator token file, and with a file path that does not exist; then
-  the worker role without one.
-  **Expected behavior**: the public role starts, `/healthz` answers, and every `/internal/*` route answers `404`; the
-  worker role fails before listening and names `ARCHFIT_OPERATOR_TOKEN_FILE`.
+  Firestore, startup sends no outbound request. With a previous webhook secret file, intake answers `202` for a
+  delivery signed with the current or the previous secret and `401` for one signed with neither.
+- **Test name**: `TestEachRoleStartsWithOnlyItsSecrets`
+  **Scenario**: for each role, `run` with only the secret settings of that role (`all`: every one; `public`: App key,
+  webhook secret, OAuth client ID and secret, cookie key; `worker`: App key, webhook secret, operator token). Then
+  each foreign secret file set to a path that does not exist. Then each own setting removed, and each own file set to
+  a path that does not exist. Then the public role answers the operator and task routes.
+  **Expected behavior**: each role starts, `/healthz` answers and no request leaves the process; a foreign path does
+  not stop the startup, because it is never read; every missing or unreadable own secret fails before listening and
+  names its variable; the public role answers `404` on every `/internal/*` route.
 - **Test name**: `TestCloudTasksQueueWiring`
   **Scenario**: `run` in the public role with `ARCHFIT_QUEUE=cloudtasks`, a fake Google token source and a transport that
   answers `tasks.create`; one signed delivery. Then no token source; then an invalid queue name.
   **Expected behavior**: `202` and two task creations in the configured queue, named after the delivery and aimed at
   the worker route; the two other cases fail at startup and name `ARCHFIT_QUEUE` and `ARCHFIT_TASKS_QUEUE`.
 - **Test name**: `TestRequiredDependenciesFailStartup`
-  **Scenario**: unreadable private key file; empty webhook secret file; missing base URL; Firestore without a
-  project, with an invalid project ID, with an invalid database ID.
+  **Scenario**: unreadable private key file; empty webhook secret file; empty and unreadable previous webhook secret
+  file; missing base URL; Firestore without a project, with an invalid project ID, with an invalid database ID.
   **Expected behavior**: `Run` returns an error before listening.
 
 ### Behavior Tests

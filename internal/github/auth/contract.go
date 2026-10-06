@@ -50,10 +50,15 @@ type OAuth interface {
 	Exchange(ctx context.Context, code string) (UserToken, error)
 }
 
+// New returns the App's token source and, when both OAuth fields are set, the login flow. A process without a UI
+// (the worker role) passes neither and gets a nil OAuth, so it never holds the client secret.
 func New(c Credentials, hc *http.Client) (TokenSource, OAuth, error) {
 	s, err := newWithClock(c, hc, time.Now)
 	if err != nil {
 		return nil, nil, err
+	}
+	if c.OAuthClientID == "" {
+		return s, nil, nil
 	}
 	return s, s, nil
 }
@@ -75,8 +80,8 @@ func newWithClock(c Credentials, hc *http.Client, now func() time.Time) (*source
 	if c.AppID <= 0 {
 		return nil, errors.New(errPrefix + "app ID must be positive")
 	}
-	if c.OAuthClientID == "" || c.OAuthClientSecret == "" {
-		return nil, errors.New(errPrefix + "OAuth client ID and secret are required")
+	if (c.OAuthClientID == "") != (c.OAuthClientSecret == "") {
+		return nil, errors.New(errPrefix + "OAuth client ID and secret are set together or not at all")
 	}
 	key, err := parsePrivateKey(c.PrivateKeyPEM)
 	if err != nil {

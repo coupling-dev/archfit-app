@@ -285,33 +285,108 @@ func TestImportsStayInsideTheDesign(t *testing.T) {
 	}
 }
 
-func TestPublicRoleBootsWithoutTheOperatorToken(t *testing.T) {
-	for _, operatorFile := range []string{"", "/nonexistent/operator-token"} {
-		t.Run("operator token file "+strconv.Quote(operatorFile), func(t *testing.T) {
-			c := validConfig(t)
-			c.Role, c.OperatorTokenFile = rolePublic, operatorFile
-			base, _, stop := startRun(t, c, slog.New(slog.DiscardHandler))
+// secretField is one secret setting of Config: the variable the startup error names, and the field it sets.
+type secretField struct {
+	env string
+	set func(c *Config, v string)
+}
+
+var (
+	privateKeyField = secretField{envPrivateKeyFile, func(c *Config, v string) { c.PrivateKeyFile = v }}
+	webhookField    = secretField{envWebhookSecretFile, func(c *Config, v string) { c.WebhookSecretFile = v }}
+	oauthIDField    = secretField{envOAuthClientID, func(c *Config, v string) { c.OAuthClientID = v }}
+	oauthField      = secretField{envOAuthSecretFile, func(c *Config, v string) { c.OAuthSecretFile = v }}
+	cookieField     = secretField{envCookieKeyFile, func(c *Config, v string) { c.CookieKeyFile = v }}
+	operatorField   = secretField{envOperatorTokenFile, func(c *Config, v string) { c.OperatorTokenFile = v }}
+	anthropicField  = secretField{envAnthropicKeyFile, func(c *Config, v string) { c.AnthropicKeyFile = v }}
+)
+
+// roleConfig is validConfig for role with only the given secret settings kept; every other one is empty.
+func roleConfig(t *testing.T, role string, own []secretField) Config {
+	t.Helper()
+	full := validConfig(t)
+	c := full
+	for _, f := range []secretField{privateKeyField, webhookField, oauthIDField, oauthField, cookieField, operatorField, anthropicField} {
+		f.set(&c, "")
+	}
+	for _, f := range own {
+		f.set(&c, map[string]string{
+			envPrivateKeyFile: full.PrivateKeyFile, envWebhookSecretFile: full.WebhookSecretFile,
+			envOAuthClientID: full.OAuthClientID, envOAuthSecretFile: full.OAuthSecretFile,
+			envCookieKeyFile: full.CookieKeyFile, envOperatorTokenFile: full.OperatorTokenFile,
+		}[f.env])
+	}
+	c.Role = role
+	if role == roleWorker {
+		c.WorkerURL, c.Invoker = testWorkerURL, testInvoker
+	}
+	return c
+}
+
+func TestEachRoleStartsWithOnlyItsSecrets(t *testing.T) {
+	roles := []struct {
+		role    string
+		own     []secretField
+		foreign []secretField // never read, even when configured
+	}{
+		{roleAll, []secretField{privateKeyField, webhookField, oauthIDField, oauthField, cookieField, operatorField}, nil},
+		{rolePublic, []secretField{privateKeyField, webhookField, oauthIDField, oauthField, cookieField}, []secretField{operatorField}},
+		{roleWorker, []secretField{privateKeyField, webhookField, operatorField}, []secretField{oauthField, cookieField, anthropicField}},
+	}
+	for _, r := range roles {
+		t.Run(r.role+" starts with only its own secrets", func(t *testing.T) {
+			base, network, stop := startRun(t, roleConfig(t, r.role, r.own), slog.New(slog.DiscardHandler))
 			if resp := send(t, httptest.NewRequest(http.MethodGet, base+"/healthz", nil)); resp.StatusCode != http.StatusOK {
 				t.Errorf("healthz = %d, want 200", resp.StatusCode)
 			}
-			for _, path := range []string{"/internal/sweep", "/internal/grants", taskRoute} {
-				resp := send(t, operatorRequest(base+path, testOperatorToken, "{}"))
-				if resp.StatusCode != http.StatusNotFound {
-					t.Errorf("POST %s = %d, want 404 on the public role", path, resp.StatusCode)
-				}
+			if got := network.requests(); got != 0 {
+				t.Errorf("startup made %d outbound requests, want 0", got)
 			}
 			if err := stop(); err != nil {
 				t.Errorf("run = %v", err)
 			}
 		})
+		if len(r.foreign) > 0 {
+			t.Run(r.role+" never reads a foreign secret", func(t *testing.T) {
+				c := roleConfig(t, r.role, r.own)
+				for _, f := range r.foreign {
+					f.set(&c, "/nonexistent/"+f.env)
+				}
+				_, _, stop := startRun(t, c, slog.New(slog.DiscardHandler))
+				if err := stop(); err != nil {
+					t.Errorf("run = %v", err)
+				}
+			})
+		}
+		for _, missing := range r.own {
+			for _, value := range []string{"", "/nonexistent/" + missing.env} {
+				if missing.env == envOAuthClientID && value != "" {
+					continue // the client ID is a value, not a file
+				}
+				t.Run(r.role+" fails closed without "+missing.env+" "+strconv.Quote(value), func(t *testing.T) {
+					c := roleConfig(t, r.role, r.own)
+					missing.set(&c, value)
+					listening := false
+					err := run(t.Context(), c, slog.New(slog.DiscardHandler), &http.Client{Transport: &noNetwork{}}, nil,
+						func(net.Addr) { listening = true })
+					if err == nil || listening || !strings.Contains(err.Error(), missing.env) {
+						t.Errorf("run = %v, listening = %v; want an error naming %s before listening", err, listening, missing.env)
+					}
+				})
+			}
+		}
 	}
 
-	t.Run("the worker role still needs it", func(t *testing.T) {
-		c := validConfig(t)
-		c.Role, c.WorkerURL, c.Invoker, c.OperatorTokenFile = roleWorker, testWorkerURL, testInvoker, ""
-		err := run(t.Context(), c, slog.New(slog.DiscardHandler), &http.Client{Transport: &noNetwork{}}, nil, nil)
-		if err == nil || !strings.Contains(err.Error(), envOperatorTokenFile) {
-			t.Errorf("run = %v, want an error naming %s", err, envOperatorTokenFile)
+	t.Run("the public role serves no operator route", func(t *testing.T) {
+		base, _, stop := startRun(t, roleConfig(t, rolePublic, roles[1].own), slog.New(slog.DiscardHandler))
+		for _, path := range []string{"/internal/sweep", "/internal/grants", taskRoute} {
+			resp := send(t, operatorRequest(base+path, testOperatorToken, "{}"))
+			if resp.StatusCode != http.StatusNotFound {
+				t.Errorf("POST %s = %d, want 404 on the public role", path, resp.StatusCode)
+			}
+		}
+		if err := stop(); err != nil {
+			t.Errorf("run = %v", err)
 		}
 	})
 }

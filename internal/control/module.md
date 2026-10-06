@@ -53,9 +53,21 @@ type Deps struct {
     Now       func() time.Time
 }
 
+// WorkerDeps are the dependencies of the worker façade: it handles events, the sweep and grants, and serves no UI.
+// So it takes no OAuth, no cookie key, no Receiver, no Sandbox and no Provider.
+type WorkerDeps struct {
+    GitHub *Client
+    Store  Store
+    Now    func() time.Time
+}
+
 type Control struct{ /* unexported */ }
 
 func New(d Deps) (*Control, error)
+
+// NewWorker builds the façade of the worker role. Only HandleEvent, Sweep and Grant work on it; the handler
+// methods return nil, and the worker mounts no route that needs them.
+func NewWorker(d WorkerDeps) (*Control, error)
 
 func (c *Control) UIHandler() http.Handler        // "/"
 func (c *Control) DiscoveryHandler() http.Handler // POST /v1/discoveries
@@ -125,6 +137,10 @@ type Completion struct {
 - `New` returns an error, and no `Control`, on a wiring bug: nil `GitHub`, `OAuth`, `Store` or `Receiver`, `CookieKey` not
   32 bytes, empty `BaseURL`, a non-nil `Sandbox` with nil `Tokens`, or an error from `ui.New`. Nil `Now` means `time.Now`.
   Nil `Sandbox` and nil `Provider` are valid. It never panics. **[default]**
+- `NewWorker` returns an error, and no `Control`, on a nil `GitHub` or `Store`. It builds only `account`: no `ui`,
+  `onboarding`, `assist` or `proposal`. So the worker process holds no OAuth secret, cookie key or Anthropic key.
+  `HandleEvent`, `Sweep` and `Grant` behave as on a `Control` from `New`; `UIHandler`, `DiscoveryHandler` and
+  `BaselineHandler` return nil.
 - `UIHandler` returns the `ui` handler wrapped in a panic recovery that answers `500` and logs the route pattern only.
 - `DiscoveryHandler` returns `Onboarding.DiscoveryHandler()` unchanged; `BaselineHandler` returns `Onboarding.BaselineHandler()` unchanged.
 - `HandleEvent` has its own 10 s timeout **[default]**. `e.InstallationID <= 0` is an error. By `e.Kind`:
@@ -483,7 +499,7 @@ func New(ts TokenSource, hc *http.Client) *Client
 ### internal/app (inbound)
 
 - **Counterpart**: `internal/app/`
-- **Direction**: `app` depends on `control` (`New`, handlers, `HandleEvent`, `Sweep`, `Grant`, the two seams)
+- **Direction**: `app` depends on `control` (`New`, `NewWorker`, handlers, `HandleEvent`, `Sweep`, `Grant`, the two seams)
 - **Strength**: contract
 - **LCA / Rank / Distance**: root / 1 / 1
 - **Volatility**: low
@@ -565,6 +581,11 @@ fake `Sandbox` and `Provider`, and a fixed clock.
 - **Test name**: `TestNewValidatesWiring`
   **Scenario**: table: nil `GitHub`; nil `OAuth`; nil `Store`; nil `Receiver`; 16-byte `CookieKey`; empty `BaseURL`; `Sandbox` set with nil `Tokens`; nil `Now`; nil `Sandbox`, `Provider` and `Tokens`.
   **Expected behavior**: error and nil `Control` for the first seven, no panic; the last two construct a working `Control`.
+- **Test name**: `TestNewWorkerNeedsNoUISecrets`
+  **Scenario**: `NewWorker` with nil `GitHub`, with nil `Store`, then with only `GitHub`, `Store` and `Now`;
+  `InstallationAdded`, `Grant` and `Sweep` on the result.
+  **Expected behavior**: errors and nil `Control` for the first two; the third handles all three calls, the tenant is
+  stored, and the three handler methods return nil.
 - **Test name**: `TestHandleEventRouting`
   **Scenario**: table over every `EventKind`, plus `InstallationID` 0.
   **Expected behavior**: `InstallationAdded` and `ReposRemoved` → one `ListRepos` and one `Observe`; `InstallationRemoved` → `Forget`, no GitHub call; all others → no call, nil; ID 0 → error, no call.

@@ -103,9 +103,9 @@ func New(c Credentials, hc *http.Client) (TokenSource, OAuth, error)
 
 ### Behavior rules
 
-- `New` fails when `AppID` ≤ 0, the key does not parse, or either OAuth field is empty **[default: all four
-  are required; the App always runs with the UI]**. A `nil` client means a client with a 10 s timeout **[default]**.
-  `New` makes no network call.
+- `New` fails when `AppID` ≤ 0, the key does not parse, or exactly one OAuth field is empty. With both OAuth fields
+  empty it returns a `nil` `OAuth`: a process without a UI (the `worker` role) never holds the client secret. A
+  `nil` client means a client with a 10 s timeout **[default]**. `New` makes no network call.
 - `AppJWT` never touches the network. It fails only if signing fails.
 - `InstallationToken`: `installationID` ≤ 0 → error without a request. Non-`201` → error carrying the status
   code only. A `404` (uninstalled) or `403` (suspended installation) is such an error; nothing is cached, so
@@ -260,8 +260,10 @@ GitHub is faked with an `http.RoundTripper` inside the `*http.Client`; the clock
   **Expected behavior**: `UserToken{AccessToken, "octocat", 583231}`; the exchange request was a form POST with
   `Accept: application/json`; `GET /user` carried the user token.
 - **Test name**: `TestNewValidatesCredentials`
-  **Scenario**: table: valid; `AppID` 0; bad key; empty client ID; empty client secret; `nil` client.
-  **Expected behavior**: ok; four errors; ok with the default client. No request is made in any row.
+  **Scenario**: table: valid; `AppID` 0; bad key; empty client ID; empty client secret; `nil` client. Then both OAuth
+  fields empty.
+  **Expected behavior**: ok; four errors; ok with the default client; a token source with a `nil` `OAuth` and no
+  error. No request is made in any row.
 
 ### Boundary Tests
 

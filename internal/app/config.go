@@ -49,24 +49,25 @@ const (
 const (
 	roleAll    = "all"    // one process with every route except the worker task route; the local default
 	rolePublic = "public" // intake, uploads and the UI; no /internal/* route and no operator token
-	roleWorker = "worker" // queued webhooks, the sweep and grants, each behind the invoker identity
+	// roleWorker serves queued webhooks, the sweep and grants, each behind the invoker identity. It builds no UI,
+	// so it reads no OAuth secret, cookie key or Anthropic key.
+	roleWorker = "worker"
 )
 
 var roles = map[string]bool{roleAll: true, rolePublic: true, roleWorker: true}
 
 type Config struct {
-	Addr              string // ARCHFIT_ADDR, default ":8080"
-	BaseURL           string // ARCHFIT_BASE_URL; also the OIDC audience
-	AppID             int64  // ARCHFIT_GITHUB_APP_ID
-	PrivateKeyFile    string // ARCHFIT_GITHUB_PRIVATE_KEY_FILE
-	WebhookSecretFile string // ARCHFIT_GITHUB_WEBHOOK_SECRET_FILE
-	// WebhookPreviousFile is ARCHFIT_GITHUB_WEBHOOK_SECRET_PREVIOUS_FILE: optional, set only during a rotation.
-	WebhookPreviousFile string
-	OAuthClientID       string // ARCHFIT_GITHUB_OAUTH_CLIENT_ID
-	OAuthSecretFile     string // ARCHFIT_GITHUB_OAUTH_SECRET_FILE
-	CookieKeyFile       string // ARCHFIT_COOKIE_KEY_FILE
+	Addr                string // ARCHFIT_ADDR, default ":8080"
+	BaseURL             string // ARCHFIT_BASE_URL; also the OIDC audience
+	AppID               int64  // ARCHFIT_GITHUB_APP_ID
+	PrivateKeyFile      string // ARCHFIT_GITHUB_PRIVATE_KEY_FILE
+	WebhookSecretFile   string // ARCHFIT_GITHUB_WEBHOOK_SECRET_FILE
+	WebhookPreviousFile string // ARCHFIT_GITHUB_WEBHOOK_SECRET_PREVIOUS_FILE; optional, set only during a rotation
+	OAuthClientID       string // ARCHFIT_GITHUB_OAUTH_CLIENT_ID; not used by the worker role
+	OAuthSecretFile     string // ARCHFIT_GITHUB_OAUTH_SECRET_FILE; never read by the worker role
+	CookieKeyFile       string // ARCHFIT_COOKIE_KEY_FILE; never read by the worker role
 	OperatorTokenFile   string // ARCHFIT_OPERATOR_TOKEN_FILE; authenticates the operator routes; never read by the public role
-	AnthropicKeyFile    string // ARCHFIT_ANTHROPIC_KEY_FILE; empty disables managed LLM
+	AnthropicKeyFile    string // ARCHFIT_ANTHROPIC_KEY_FILE; empty disables managed LLM; never read by the worker role
 	StoreDriver         string // ARCHFIT_STORE, "memory" (default) or "firestore"
 	FirestoreProject    string // ARCHFIT_FIRESTORE_PROJECT; required by "firestore"
 	FirestoreDatabase   string // ARCHFIT_FIRESTORE_DATABASE; empty selects "(default)"
@@ -118,6 +119,7 @@ func (c Config) validate() error {
 	// The worker never enqueues; the public role and "all" enqueue through the configured driver.
 	enqueuesToCloudTasks := c.Role != roleWorker && c.QueueDriver == queueCloudTasks
 	needsWorker := enqueuesToCloudTasks || c.Role == roleWorker
+	servesUI := c.Role != roleWorker
 	checks := []struct {
 		env string
 		ok  bool
@@ -129,9 +131,10 @@ func (c Config) validate() error {
 		{envAppID, c.AppID > 0},
 		{envPrivateKeyFile, c.PrivateKeyFile != ""},
 		{envWebhookSecretFile, c.WebhookSecretFile != ""},
-		{envOAuthClientID, c.OAuthClientID != ""},
-		{envOAuthSecretFile, c.OAuthSecretFile != ""},
-		{envCookieKeyFile, c.CookieKeyFile != ""},
+		// The UI secrets: the worker serves no UI and never reads them.
+		{envOAuthClientID, !servesUI || c.OAuthClientID != ""},
+		{envOAuthSecretFile, !servesUI || c.OAuthSecretFile != ""},
+		{envCookieKeyFile, !servesUI || c.CookieKeyFile != ""},
 		// The public role never reads the operator token: it serves no route that checks it.
 		{envOperatorTokenFile, c.Role == rolePublic || c.OperatorTokenFile != ""},
 		{envStore, storeDrivers[c.StoreDriver] != nil},
@@ -157,17 +160,22 @@ type secrets struct {
 	privateKeyPEM   []byte
 	webhookSecret   []byte
 	webhookPrevious []byte // nil outside a rotation
-	oauthSecret     []byte
-	cookieKey       []byte
+	oauthSecret     []byte // nil in the worker role
+	cookieKey       []byte // nil in the worker role
 	operatorToken   []byte // nil in the public role
-	anthropicKey    []byte // nil when no key file is configured
+	anthropicKey    []byte // nil when no key file is configured, and in the worker role
 }
 
 func loadSecrets(c Config) (secrets, error) {
 	var s secrets
-	operatorTokenFile := c.OperatorTokenFile
-	if c.Role == rolePublic {
-		operatorTokenFile = "" // never read, even when configured
+	// A role never reads a secret it does not use, even when it is configured.
+	oauthSecretFile, cookieKeyFile, anthropicKeyFile, operatorTokenFile :=
+		c.OAuthSecretFile, c.CookieKeyFile, c.AnthropicKeyFile, c.OperatorTokenFile
+	switch c.Role {
+	case rolePublic:
+		operatorTokenFile = ""
+	case roleWorker:
+		oauthSecretFile, cookieKeyFile, anthropicKeyFile = "", "", ""
 	}
 	files := []struct {
 		env, path string
@@ -176,10 +184,10 @@ func loadSecrets(c Config) (secrets, error) {
 		{envPrivateKeyFile, c.PrivateKeyFile, &s.privateKeyPEM},
 		{envWebhookSecretFile, c.WebhookSecretFile, &s.webhookSecret},
 		{envWebhookPreviousFile, c.WebhookPreviousFile, &s.webhookPrevious},
-		{envOAuthSecretFile, c.OAuthSecretFile, &s.oauthSecret},
-		{envCookieKeyFile, c.CookieKeyFile, &s.cookieKey},
+		{envOAuthSecretFile, oauthSecretFile, &s.oauthSecret},
+		{envCookieKeyFile, cookieKeyFile, &s.cookieKey},
 		{envOperatorTokenFile, operatorTokenFile, &s.operatorToken},
-		{envAnthropicKeyFile, c.AnthropicKeyFile, &s.anthropicKey},
+		{envAnthropicKeyFile, anthropicKeyFile, &s.anthropicKey},
 	}
 	for _, f := range files {
 		if f.path == "" { // an optional secret, or one that the role never reads

@@ -88,6 +88,30 @@ func New(d Deps) (*Control, error) {
 	return c, nil
 }
 
+// WorkerDeps are the dependencies of the worker façade: it handles events, the sweep and grants, and serves no UI.
+// So it takes no OAuth, no cookie key, no Receiver, no Sandbox and no Provider.
+type WorkerDeps struct {
+	GitHub *api.Client
+	Store  store.Store
+	Now    func() time.Time
+}
+
+// NewWorker builds the façade of the worker role. Only HandleEvent, Sweep and Grant work on it; the handler
+// methods return nil, and the worker mounts no route that needs them.
+func NewWorker(d WorkerDeps) (*Control, error) {
+	switch {
+	case d.GitHub == nil:
+		return nil, errors.New("control: nil GitHub client")
+	case d.Store == nil:
+		return nil, errors.New("control: nil Store")
+	}
+	if d.Now == nil {
+		d.Now = time.Now
+	}
+	acct, _, _ := account.New(d.Store)
+	return &Control{account: acct, repos: d.GitHub, tenants: d.Store, now: d.Now}, nil
+}
+
 func (d Deps) validate() error {
 	switch {
 	case d.GitHub == nil:

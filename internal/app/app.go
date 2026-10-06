@@ -59,12 +59,11 @@ func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, googl
 	// Modules bind slog.Default() when they are constructed, so install the logger first.
 	slog.SetDefault(log)
 
-	tokens, oauth, err := auth.New(auth.Credentials{
-		AppID:             c.AppID,
-		PrivateKeyPEM:     sec.privateKeyPEM,
-		OAuthClientID:     c.OAuthClientID,
-		OAuthClientSecret: string(sec.oauthSecret),
-	}, hc)
+	creds := auth.Credentials{AppID: c.AppID, PrivateKeyPEM: sec.privateKeyPEM}
+	if c.Role != roleWorker {
+		creds.OAuthClientID, creds.OAuthClientSecret = c.OAuthClientID, string(sec.oauthSecret)
+	}
+	tokens, oauth, err := auth.New(creds, hc)
 	if err != nil {
 		return fmt.Errorf("app: GitHub App credentials: %w", err)
 	}
@@ -87,18 +86,23 @@ func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, googl
 		Sweep:    gate.Config{MissingUploadAfter: missingUploadAfter, WaiverWarnBefore: waiverWarnBefore},
 		Now:      time.Now,
 	})
-	ctl, err := control.New(control.Deps{
-		GitHub:    gh,
-		Tokens:    tokens,
-		OAuth:     oauth,
-		Store:     st,
-		Receiver:  gate.NewReceiver(gh, verifier, c.BaseURL),
-		Sandbox:   sandbox,
-		Provider:  provider,
-		CookieKey: sec.cookieKey,
-		BaseURL:   c.BaseURL,
-		Now:       time.Now,
-	})
+	var ctl *control.Control
+	if c.Role == roleWorker {
+		ctl, err = control.NewWorker(control.WorkerDeps{GitHub: gh, Store: st, Now: time.Now})
+	} else {
+		ctl, err = control.New(control.Deps{
+			GitHub:    gh,
+			Tokens:    tokens,
+			OAuth:     oauth,
+			Store:     st,
+			Receiver:  gate.NewReceiver(gh, verifier, c.BaseURL),
+			Sandbox:   sandbox,
+			Provider:  provider,
+			CookieKey: sec.cookieKey,
+			BaseURL:   c.BaseURL,
+			Now:       time.Now,
+		})
+	}
 	if err != nil {
 		return fmt.Errorf("app: control: %w", err)
 	}
