@@ -61,6 +61,7 @@ func TestReportKeySetFollowsTheClaimedEngine(t *testing.T) {
 	}{
 		{"v2.3.1", nil},
 		{"v2.4.0", nil},
+		{"v2.4.1", nil},
 		{"v9.9.9", []Problem{ProblemReportInvalid}}, // a release the decoder does not read
 	}
 	for _, row := range rows {

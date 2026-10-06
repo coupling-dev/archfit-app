@@ -178,7 +178,7 @@ func TestRowsOfSeveralEngineVersions(t *testing.T) {
 // TestApprovedEngineVersions lists the shipped releases; change it with manifest.json.
 func TestApprovedEngineVersions(t *testing.T) {
 	got := EngineVersions()
-	if want := []string{"v2.3.1", "v2.4.0"}; !slices.Equal(got, want) {
+	if want := []string{"v2.4.0", "v2.4.1"}; !slices.Equal(got, want) {
 		t.Errorf("EngineVersions() = %q, want %q", got, want)
 	}
 	got[0] = "changed"
@@ -341,7 +341,7 @@ func TestManifestMatchesFixtureProducers(t *testing.T) {
 
 func TestManifestHasNoPlaceholdersInRelease(t *testing.T) {
 	// The placeholders module.md documents, as "entry index field". None remain: the image digests are the
-	// published v2.3.1 ones and the Action commit is archfit-action v1.0.0.
+	// published v2.4.0 and v2.4.1 ones and the Action commit is archfit-action v1.0.0.
 	var documented []string
 
 	var file struct {
@@ -535,6 +535,16 @@ func TestOlderEngineIsNotApproved(t *testing.T) {
 
 	if got, ok := Lookup(id); ok {
 		t.Errorf("v2.3.0 hit: %+v", got)
+	}
+
+	// v2.3.1's upgrade window is closed: its published images are no longer approved.
+	for _, closed := range []Identity{
+		{EngineVersion: "v2.3.1", ImageDigest: "sha256:7d4f73248865e11bbfe244cd477bd0ea8e8cbdc0b7fb2baade8e044b618b2793", Platform: "linux/amd64"},
+		{EngineVersion: "v2.3.1", ImageDigest: "sha256:82ab97da8d38af59b02ac522caa70fb2218212c7d15821e0df5cbeb9b04ec9e7", Platform: "linux/arm64"},
+	} {
+		if got, ok := Lookup(closed); ok {
+			t.Errorf("v2.3.1 %s hit: %+v", closed.Platform, got)
+		}
 	}
 }
 

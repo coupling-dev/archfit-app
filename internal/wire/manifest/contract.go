@@ -7,7 +7,7 @@ import (
 )
 
 // The image_digest values in manifest.json are the published per-platform digests of
-// ghcr.io/alexei-led/archfit:v2.3.1; action_ref is the archfit-action v1.0.0 commit.
+// ghcr.io/alexei-led/archfit:v2.4.0 and :v2.4.1; action_ref is the archfit-action v1.0.0 commit.
 // TestManifestHasNoPlaceholdersInRelease fails a build tested with ARCHFIT_RELEASE=1 if a placeholder returns.
 //
 //go:embed manifest.json

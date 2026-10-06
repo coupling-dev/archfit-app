@@ -576,8 +576,8 @@ requests built with `httptest.NewRequest`. No network.
   **Scenario**: the healthy fixture with matching claims, run, pull and envelope.
   **Expected behavior**: no error, no problems; `Binding` fully filled from GitHub; `Identity`, `BaselineDigest` and `LabelsDigest` copied from the envelope (also when they are `""`); `Digest` equals `envelope.PayloadDigest(body)`; `Report` decoded.
 - **Test name**: `TestReportKeySetFollowsTheClaimedEngine`
-  **Scenario**: the healthy pull request upload with the envelope claiming engine `v2.3.1`, `v2.4.0` and `v9.9.9`.
-  **Expected behavior**: the first two decode with no problem; `v9.9.9`, a release the decoder does not read, gives `ProblemReportInvalid` and a nil `Report`, never a rejection; `Identity.EngineVersion` is the claim in every row.
+  **Scenario**: the healthy pull request upload with the envelope claiming engine `v2.3.1`, `v2.4.0`, `v2.4.1` and `v9.9.9`.
+  **Expected behavior**: the first three decode with no problem; `v9.9.9`, a release the decoder does not read, gives `ProblemReportInvalid` and a nil `Report`, never a rejection; `Identity.EngineVersion` is the claim in every row.
 - **Test name**: `TestReceiveDefaultBranchPush`
   **Scenario**: `push` run on the default branch.
   **Expected behavior**: `PullRequest` 0, `BaseRef` = default branch, no `Pulls` call, no problems. A push to `feature/x` gives `BaseRef` `feature/x` plus `ProblemUnsupportedEvent`; an unbound `pull_request` run (`refs/pull/7/merge`) gives the default branch.

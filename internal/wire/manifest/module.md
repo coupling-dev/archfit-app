@@ -24,7 +24,8 @@ identity could compare as equal to another unknown.
 
 Published language (release identity shared with `archfit` and `archfit-action`). Supporting.
 Volatility: moderate. It changes only with a reviewed engine, image or Action release. An upgrade window holds the
-rows of two releases, N and N-1. The shipped rows are engine v2.4.0 (N, `current`) and v2.3.1 (N-1).
+rows of two releases, N and N-1. The shipped rows are engine v2.4.1 (N, `current`) and v2.4.0 (N-1). The v2.3.1
+window is closed: its rows are deleted.
 
 ## Encapsulated Knowledge
 
@@ -47,16 +48,22 @@ rows of two releases, N and N-1. The shipped rows are engine v2.4.0 (N, `current
   that release that decodes, and, when `current` moves to it, `wire/policy` embeds its config schema. The format
   rule above is all this package can check alone; it is not an approval of any version string.
 - The values must come from the engine release evidence. `profile_version` (`archfit.measurement.v1` for both
-  releases, the engine's `MeasurementProfileVersion`) and the image digests are real:
-  - v2.3.1 (plan task T01; engine source revision `f8877d25ba36d84d3780071580d23486e3d794d0`): the published
-    per-platform digests of `ghcr.io/alexei-led/archfit:v2.3.1`,
-    `sha256:7d4f73248865e11bbfe244cd477bd0ea8e8cbdc0b7fb2baade8e044b618b2793` on `linux/amd64` and
-    `sha256:82ab97da8d38af59b02ac522caa70fb2218212c7d15821e0df5cbeb9b04ec9e7` on `linux/arm64`.
+  releases, the engine's `MeasurementProfileVersion`, read from each release's unmodified capture) and the image
+  digests are real:
   - v2.4.0 (engine source revision `5aefcdc2c5465c2eb7198ea91394bd8cb8ad2b22`): the per-platform digests of
     `ghcr.io/alexei-led/archfit:v2.4.0` from the release asset `image-identity.json` (index
     `sha256:aafef4ce48cb79ffecba0cbffb9bfb51bb12320970d13c522242a5f56b2eb71d`),
     `sha256:6062d0203afa2314633b6fe6ac841471e331f4830cb9bdfd8f62e823be5c2eff` on `linux/amd64` and
     `sha256:bdb0db83ec2945f440d259070c37a5eacb269edcaa6aaf30fbdb19b7ee447e3d` on `linux/arm64`.
+  - v2.4.1 (engine source revision `ca1f593e69ddf41662cbebe6ccb0fb59b09f73fd`): the per-platform digests of
+    `ghcr.io/alexei-led/archfit:v2.4.1` from the release asset `image-identity.json` (index
+    `sha256:82e5663b154c03b9ba2b5b50b691647b2784e2609b3a5e544576d78a986d1162`),
+    `sha256:996e044c55eec96303c344bbe327c97b2a17661b1ab626bb94d00d47045c01c7` on `linux/amd64` and
+    `sha256:21efa8ea2831714ab87243454abaf668c51d08ae9c3e261f289940c79cc68e62` on `linux/arm64`.
+  - v2.3.1 (closed window; engine source revision `f8877d25ba36d84d3780071580d23486e3d794d0`) had
+    `sha256:7d4f73248865e11bbfe244cd477bd0ea8e8cbdc0b7fb2baade8e044b618b2793` (`linux/amd64`) and
+    `sha256:82ab97da8d38af59b02ac522caa70fb2218212c7d15821e0df5cbeb9b04ec9e7` (`linux/arm64`); no row holds them,
+    and `TestOlderEngineIsNotApproved` checks that both miss.
 
   `action_ref` of every row is the published `archfit-action` release `v1.0.0`, commit
   `a9cd2ce8d0dc996b258b5faa5145eaf11bd6bc5b` (the tag is annotated; the row holds the commit, never the tag object).
@@ -65,9 +72,11 @@ rows of two releases, N and N-1. The shipped rows are engine v2.4.0 (N, `current
   forbidden in a release: `TestManifestHasNoPlaceholdersInRelease` fails when the environment variable
   `ARCHFIT_RELEASE=1` is set and any row carries one. The release pipeline must run the tests with that variable. The
   variable is read by the test only; it never reaches `Lookup` or `Current`.
-- The synthetic `.envelope.json` siblings in `internal/wire/testdata/report/` state the v2.3.1 `linux/amd64` row's
-  identity, the release their reports were captured with (engine version, image digest, platform; they carry no
-  `action_ref`). Changing that identity means editing `manifest.json` and those envelopes in one commit.
+- The synthetic `.envelope.json` siblings in `internal/wire/testdata/report/` state the `current` (v2.4.1
+  `linux/amd64`) row's identity (engine version, image digest, platform; they carry no `action_ref`); `unlisted-image`
+  states v2.4.1 with an unlisted digest. Their reports are v2.3.1 captures, which every listed release reads with the
+  same key set; the envelope identity is what the gate approves, the capture's own release is in its expectation.
+  Deleting or moving the row they state means editing `manifest.json` and those envelopes in one commit.
 - Validation errors name the entry index, the field and the rule. They never quote a value.
 - "Locked" means: no environment variable, flag, file path, Store key, or network fetch can add or change a row.
   The only way to change it is a reviewed commit to `manifest.json`.
@@ -114,7 +123,7 @@ Semantics not visible in the signatures:
 - `ProfileVersion` is the value the gate compares with the report's `measurement_profile.version`. This module
   does not know the report type; the consumer passes no report in.
 - `Identity` has no JSON tags: it is not a wire form. The consumer builds it from three envelope strings.
-- `EngineVersions` returns a fresh slice on every call, today `v2.3.1`, `v2.4.0`. It approves nothing by itself:
+- `EngineVersions` returns a fresh slice on every call, today `v2.4.0`, `v2.4.1`. It approves nothing by itself:
   `Lookup` on the whole identity stays the only approval. The parent `wire` tests read it to tie every approved
   release to the report decoder, to a real capture and, through `Current`, to the policy schema pin.
 
@@ -129,7 +138,7 @@ consumers (the consumer depends on this module) and its external counterparts. V
 | `internal/gate/ingest`            | ingest depends on manifest         | Contract | root / 2 / 2              | High       | Yes       |
 | `internal/gate/feedback`          | feedback depends on manifest       | Contract | root / 2 / 2              | High       | Yes       |
 | `internal/control/onboarding`     | onboarding depends on manifest     | Contract | root / 2 / 2              | High       | Yes       |
-| `archfit` engine (v2.3.1, v2.4.0) | manifest records released identity | Contract | outside the tree; highest | Moderate   | Yes       |
+| `archfit` engine (v2.4.0, v2.4.1) | manifest records released identity | Contract | outside the tree; highest | Moderate   | Yes       |
 | `archfit-action` (external repo)  | manifest pins one Action commit    | Contract | outside the tree; highest | Moderate   | Yes       |
 
 Rank for `internal/gate`: the LCA is the root, and the deeper module (`wire/manifest`) is two levels below it. The
@@ -193,7 +202,7 @@ tolerates the distance of separate repositories and release cycles.
   **Expected behavior**: valid; the version list is `v2.3.1`, `v2.4.0`; all four rows keep their own profile version.
 - **Test name**: `TestApprovedEngineVersions`
   **Scenario**: call `EngineVersions`, change the returned slice, call it again.
-  **Expected behavior**: `v2.3.1`, `v2.4.0` both times, each a release tag; it changes only together with `manifest.json`.
+  **Expected behavior**: `v2.4.0`, `v2.4.1` both times, each a release tag; it changes only together with `manifest.json`.
 - **Test name**: `TestManifestHasNoPlaceholdersInRelease`
   **Scenario**: collect every placeholder value of the embedded rows, as `entry index, field`; read `ARCHFIT_RELEASE`. The
   test never skips.
@@ -242,8 +251,9 @@ tolerates the distance of separate repositories and release cycles.
   **Scenario**: the current identity with one hex character of the image digest changed (T03: wrong image).
   **Expected behavior**: miss.
 - **Test name**: `TestOlderEngineIsNotApproved`
-  **Scenario**: identity with `EngineVersion: "v2.3.0"` and a current image digest.
-  **Expected behavior**: miss; v2.3.0 snapshots are non-comparable and the manifest holds no v2.3.0 row.
+  **Scenario**: identity with `EngineVersion: "v2.3.0"` and a current image digest; the published v2.3.1 identities on
+  both platforms (closed upgrade window).
+  **Expected behavior**: all miss; v2.3.0 snapshots are non-comparable and the manifest holds no v2.3.0 or v2.3.1 row.
 - **Test name**: `TestGeneratedWorkflowInputsArePinned`
   **Scenario**: read `Current()` as onboarding would.
   **Expected behavior**: `ActionRef` is a commit SHA and `ImageDigest` a digest; neither is a tag, branch, or `latest`.

@@ -155,6 +155,14 @@ func TestDiagnose(t *testing.T) {
 			want:   []Diagnostic{{Line: 5, Column: 11, Message: "`gate` must be one of `off`, `warn`, `fail`. Did you mean `fail`?"}},
 		},
 		{
+			name:   "misspelled rule type",
+			policy: "version: 2\nrules:\n  - id: r\n    type: forbiden_dependency\n",
+			want: []Diagnostic{{Line: 4, Column: 11, Message: "`type` must be one of `cycle`, `forbidden_dependency`, " +
+				"`forbidden_layer_direction`, `forbidden_pattern`, `internal_api_access`, `module_cycle`, " +
+				"`new_cross_module_dependency`, `public_api_change`, `public_api_max`, `public_api_only`, " +
+				"`public_api_type_leak`. Did you mean `forbidden_dependency`?"}},
+		},
+		{
 			name:   "wrong enum value without a close match",
 			policy: "version: 2\ncoupling:\n  duplicated_knowledge: ignore\n",
 			want:   []Diagnostic{{Line: 3, Column: 25, Message: "`duplicated_knowledge` must be one of `score`, `advisory`."}},

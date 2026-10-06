@@ -291,9 +291,11 @@ An engine upgrade needs no flag day. Three `wire` packages share the rule:
   unevaluated required rules, the config hash, the measurement-profile version, and the gate reference.
 - `wire/policy` keeps one engine config schema, the schema of the release that new workflows pin.
 
-The App reads v2.3.1 and v2.4.0 reports; v2.4.0 adds no report key. The manifest approves the published images of
-both releases. New workflows pin v2.4.0 (`current`), and the policy editor uses the v2.4.0 config schema. The v2.3.1
-rows stay for the upgrade window and go once workflows have moved their pin.
+The App reads v2.3.1, v2.4.0 and v2.4.1 reports; neither later release adds a report key. The manifest approves the
+published images of v2.4.0 and v2.4.1. New workflows pin v2.4.1 (`current`), and the policy editor uses the v2.4.1
+config schema, which lists the allowed rule types. The v2.4.0 rows stay for the upgrade window and go once workflows
+have moved their pin. The v2.3.1 window is closed: its rows are gone, so a v2.3.1 upload concludes
+`action_required`. The decoder still reads v2.3.1 documents because the fixture corpus is built from them.
 Tests in `internal/wire` stop a manifest row for a release that the decoder cannot read, that has no real capture
 in the fixture corpus, or whose config schema is not pinned when new workflows move to it.
 

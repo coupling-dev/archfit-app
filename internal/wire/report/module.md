@@ -69,6 +69,7 @@ not define is an unknown key, as before. A release that is not listed is a decod
 | -------- | ----------------------------------------------------------------- |
 | `v2.3.1` | the pinned v2.3.1 state schema (`internal/wire/testdata/schema/`) |
 | `v2.4.0` | the v2.3.1 key set                                                |
+| `v2.4.1` | the v2.3.1 key set                                                |
 
 - v2.4.0 adds rule types, finding kinds, the config key `guard` and unevaluated-rule reasons of the form
   `selector matches nothing: <side> <glob>`, but no state key (owner statement). A rule ID is an identifier, a
@@ -79,6 +80,13 @@ not define is an unknown key, as before. A release that is not listed is a decod
   `acd9a09e…`), and the unmodified capture `real-blocked-no-baseline-v240` has exactly the key paths of the v2.3.1
   capture and decodes as a v2.4.0 document. The manifest approves v2.4.0 with its image digests; the parent's
   `TestEveryApprovedEngineVersionHasACapture` holds that capture to it.
+- v2.4.1 only enumerates the allowed `rules[].type` values in the config schema. Verified against the release:
+  `archfit.state.schema.json` at tag v2.4.1 (revision `ca1f593e69ddf41662cbebe6ccb0fb59b09f73fd`) is byte-identical
+  to the pinned v2.3.1 file, and the unmodified capture `real-blocked-no-baseline-v241` is byte-identical to the
+  v2.4.0 capture and decodes as a v2.4.1 document. The manifest approves v2.4.1 (`current`) and v2.4.0.
+- v2.3.1 stays listed although its manifest rows are gone (its upgrade window is closed): every synthetic corpus
+  fixture is a v2.3.1 document, and consumer tests decode them as one. A v2.3.1 upload still decodes and concludes
+  `action_required` on its unapproved identity.
 - A key a later release adds is a shadow field tagged `since:"<release>"`; untagged fields exist in every release.
   The pre-pass reads the tag when it looks a key up and treats a key of a later release as unknown. A tag that
   names no listed release makes the key unknown under every release. Within `archfit.architecture-state.v1` a
@@ -479,7 +487,7 @@ Semantics not visible in the signatures:
   to one problem (`report_invalid`). The message names location and rule only.
 - `engineVersion` is compared exactly with the listed releases: no trimming, no `v` added, no ranges. An unlisted
   release, the empty string included, is an error naming `engine_version`, before the payload is read.
-- `EngineVersions` returns `v2.3.1`, `v2.4.0` today, as a fresh slice on every call. A caller without a bound
+- `EngineVersions` returns `v2.3.1`, `v2.4.0`, `v2.4.1` today, as a fresh slice on every call. A caller without a bound
   release that only displays a report (the graph page) passes the last one; the gate passes the envelope's.
 - A decoded `Report` owns its memory; it does not alias `payload`.
 - `Decode` never drops, reorders, or rewrites findings, tasks, seams, or validation commands. The only dropped
@@ -579,8 +587,8 @@ Fixtures live in `internal/wire/testdata/report/` and `internal/wire/testdata/le
 Each fixture has an `.expect.json` sibling recording its producer artifact and expected outcome (see the parent document);
 this module asserts its `decode` and `fields` keys. The pinned engine schema is `internal/wire/testdata/schema/archfit.state.schema.json`.
 This module has no private fixture and no `testdata` folder of its own. Every fixture is a v2.3.1 document except
-the v2.4.0 capture `real-blocked-no-baseline-v240`. The two releases share one key set, so the tests decode every
-fixture as v2.3.1, and `TestEveryEngineVersionReadsTheCorpus` decodes each one under every listed release.
+the v2.4.0 capture `real-blocked-no-baseline-v240` and the v2.4.1 capture `real-blocked-no-baseline-v241`. The three
+releases share one key set, so the tests decode every fixture as v2.3.1, and `TestEveryEngineVersionReadsTheCorpus` decodes each one under every listed release.
 
 ### Unit Tests
 
@@ -661,7 +669,7 @@ fixture as v2.3.1, and `TestEveryEngineVersionReadsTheCorpus` decodes each one u
   missing schema file fails the test; it never skips.
 - **Test name**: `TestEngineVersions`
   **Scenario**: call `EngineVersions`, change the returned slice, call it again.
-  **Expected behavior**: `v2.3.1`, `v2.4.0` both times: the caller gets a copy.
+  **Expected behavior**: `v2.3.1`, `v2.4.0`, `v2.4.1` both times: the caller gets a copy.
 - **Test name**: `TestEveryEngineVersionReadsTheCorpus`
   **Scenario**: decode every report and leakage fixture once per listed release.
   **Expected behavior**: the same `Report`, or an error, as under v2.3.1, for every release.
