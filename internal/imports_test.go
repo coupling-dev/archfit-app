@@ -126,6 +126,7 @@ func TestAllowedImportMatrix(t *testing.T) {
 			return strings.HasPrefix(imp, yamlModule) && (pkg == internal+"wire/settings" || pkg == internal+"wire/policy")
 		}},
 		{"store", func(p string) bool { return p == internal+"store" }, func(string, string) bool { return false }},
+		{"gcptoken", func(p string) bool { return p == internal+"gcptoken" }, func(string, string) bool { return false }},
 		{"github", func(p string) bool { return under(p, "github") }, func(pkg, imp string) bool {
 			return pkg == internal+"github/api" && imp == internal+"github/auth"
 		}},
