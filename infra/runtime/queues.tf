@@ -1,8 +1,7 @@
 # Each queue sets its own target route and identity (queue-level uriOverride, enforced). A task creator names only the
 # queue, so the public service cannot aim a task at the grants route.
 locals {
-  worker = google_cloud_run_v2_service.this["worker"]
-  state  = var.paused ? "PAUSED" : "RUNNING"
+  state = var.paused ? "PAUSED" : "RUNNING"
   queue_names = {
     webhooks = "archfit-webhooks"
     operator = "archfit-operator"
@@ -52,7 +51,7 @@ resource "google_cloud_tasks_queue" "this" {
 
     uri_override {
       scheme                    = "HTTPS"
-      host                      = trimprefix(local.worker.uri, "https://")
+      host                      = trimprefix(local.worker_url, "https://")
       uri_override_enforce_mode = "ALWAYS"
       path_override {
         path = each.value.path
@@ -61,7 +60,7 @@ resource "google_cloud_tasks_queue" "this" {
 
     oidc_token {
       service_account_email = local.data.service_accounts.invoker
-      audience              = local.worker.uri
+      audience              = local.worker_url
     }
   }
 }
@@ -85,11 +84,11 @@ resource "google_cloud_scheduler_job" "sweep" {
 
   http_target {
     http_method = "POST"
-    uri         = "${local.worker.uri}${var.worker_paths.sweep}"
+    uri         = "${local.worker_url}${var.worker_paths.sweep}"
 
     oidc_token {
       service_account_email = local.data.service_accounts.invoker
-      audience              = local.worker.uri
+      audience              = local.worker_url
     }
   }
 }

@@ -28,17 +28,26 @@ locals {
     }
   }
 
+  # The deterministic run.app URL of the worker. It is known before the service exists, so the public service, the
+  # queues and the Scheduler can name it without a cycle. It is the audience of every invoker ID token, and the App
+  # compares it byte for byte.
+  worker_url = "https://archfit-worker-${local.data.project_number}.${var.region}.run.app"
+
+  # The settings from operations.md "Roles and routing" and "Firestore".
   common_env = {
-    ARCHFIT_BASE_URL      = local.base_url
-    ARCHFIT_GITHUB_APP_ID = var.github_app_id
-    ARCHFIT_STORE         = "firestore"
+    ARCHFIT_BASE_URL               = local.base_url
+    ARCHFIT_GITHUB_APP_ID          = var.github_app_id
+    ARCHFIT_GITHUB_OAUTH_CLIENT_ID = var.github_oauth_client_id
+    ARCHFIT_STORE                  = "firestore"
+    ARCHFIT_FIRESTORE_PROJECT      = var.project_id
+    ARCHFIT_WORKER_URL             = local.worker_url
+    ARCHFIT_INVOKER                = local.data.service_accounts.invoker
   }
 
   role_env = {
     public = merge(local.common_env, {
-      ARCHFIT_ROLE                   = "public"
-      ARCHFIT_GITHUB_OAUTH_CLIENT_ID = var.github_oauth_client_id
-      # Built from names: the queue depends on the worker URL, and both services are one resource.
+      ARCHFIT_ROLE        = "public"
+      ARCHFIT_QUEUE       = "cloudtasks"
       ARCHFIT_TASKS_QUEUE = "projects/${var.project_id}/locations/${var.region}/queues/${local.queue_names.webhooks}"
     })
     worker = merge(local.common_env, {
@@ -61,6 +70,8 @@ resource "google_cloud_run_v2_service" "this" {
   location             = var.region
   ingress              = each.value.ingress
   invoker_iam_disabled = each.value.invoker_iam_disabled
+  # Cloud Run accepts an ID token for this audience even if the platform changes which URLs it lists.
+  custom_audiences = each.key == "worker" ? [local.worker_url] : []
   # deletion_protection stays on (the default). A replacement would start the placeholder image, which answers every
   # webhook and task with success, so a plan that replaces a service fails instead.
 

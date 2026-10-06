@@ -17,3 +17,13 @@ resource "google_firestore_backup_schedule" "daily" {
 
   daily_recurrence {}
 }
+
+# The driver stores each key in the kv collection with two fields. No query reads value, so it gets no single-field
+# index, which makes writes cheaper. tenant keeps its automatic index: the uninstall and the sweep query it.
+resource "google_firestore_field" "kv_value" {
+  database   = google_firestore_database.default.name
+  collection = "kv"
+  field      = "value"
+
+  index_config {}
+}

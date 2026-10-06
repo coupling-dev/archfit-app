@@ -55,3 +55,11 @@ resource "google_service_account_iam_member" "deploy_acts_as" {
   role               = "roles/iam.serviceAccountUser"
   member             = google_service_account.deploy.member
 }
+
+# A webhook task names the invoker in its own oidcToken, and Cloud Tasks requires the task creator to act as that
+# account. The queue-level uriOverride still pins the route, so the token reaches only the webhook route.
+resource "google_service_account_iam_member" "public_acts_as_invoker" {
+  service_account_id = google_service_account.runtime["invoker"].name
+  role               = "roles/iam.serviceAccountUser"
+  member             = google_service_account.runtime["public"].member
+}

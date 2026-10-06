@@ -35,12 +35,13 @@ override_data {
       secret_readers = {
         "archfit-github-private-key"    = ["public", "worker"]
         "archfit-github-webhook-secret" = ["public", "worker"]
-        "archfit-github-oauth-secret"   = ["public"]
-        "archfit-cookie-key"            = ["public"]
+        "archfit-github-oauth-secret"   = ["public", "worker"]
+        "archfit-cookie-key"            = ["public", "worker"]
         "archfit-operator-token"        = ["worker"]
         "archfit-anthropic-key"         = ["public"]
       }
       notification_channel = "projects/coupling-dev-510710/notificationChannels/1"
+      project_number       = "335297348272"
     }
   }
 }
@@ -113,9 +114,11 @@ run "secrets_are_pinned_files_mounted_per_role" {
     condition = toset([for v in google_cloud_run_v2_service.this["worker"].template[0].volumes : v.name]) == toset([
       "archfit-github-private-key",
       "archfit-github-webhook-secret",
+      "archfit-github-oauth-secret",
+      "archfit-cookie-key",
       "archfit-operator-token",
     ])
-    error_message = "The worker mounts no UI or LLM secrets."
+    error_message = "The worker mounts every secret it reads, and never the LLM key."
   }
 
   assert {
@@ -257,5 +260,44 @@ run "resumed_processing_runs_queues_and_watches_the_sweep" {
   assert {
     condition     = google_monitoring_alert_policy.missing_sweep.enabled && google_monitoring_alert_policy.sweep_job_failures.enabled
     error_message = "The sweep alerts are on while the Scheduler runs."
+  }
+}
+
+run "roles_get_the_settings_from_operations_md" {
+  command = plan
+
+  assert {
+    condition = alltrue([
+      for k, s in google_cloud_run_v2_service.this : alltrue([
+        for want in [
+          "ARCHFIT_ROLE=${k}",
+          "ARCHFIT_STORE=firestore",
+          "ARCHFIT_FIRESTORE_PROJECT=coupling-dev-510710",
+          "ARCHFIT_WORKER_URL=https://archfit-worker-335297348272.europe-west1.run.app",
+          "ARCHFIT_INVOKER=archfit-invoker@coupling-dev-510710.iam.gserviceaccount.com",
+          "ARCHFIT_GITHUB_APP_ID=123456",
+          "ARCHFIT_GITHUB_OAUTH_CLIENT_ID=Iv1.test",
+        ] : contains([for e in s.template[0].containers[0].env : "${e.name}=${e.value}"], want)
+      ])
+    ])
+    error_message = "Each service names its role, the store, and the worker audience and invoker that the App checks."
+  }
+
+  assert {
+    condition = alltrue([
+      for want in ["ARCHFIT_QUEUE=cloudtasks", "ARCHFIT_TASKS_QUEUE=projects/coupling-dev-510710/locations/europe-west1/queues/archfit-webhooks"] :
+      contains([for e in google_cloud_run_v2_service.this["public"].template[0].containers[0].env : "${e.name}=${e.value}"], want)
+    ])
+    error_message = "The public service enqueues to the webhook queue."
+  }
+
+  assert {
+    condition     = !contains([for e in google_cloud_run_v2_service.this["worker"].template[0].containers[0].env : e.name], "ARCHFIT_QUEUE")
+    error_message = "The worker never enqueues."
+  }
+
+  assert {
+    condition     = google_cloud_run_v2_service.this["worker"].custom_audiences == tolist(["https://archfit-worker-335297348272.europe-west1.run.app"])
+    error_message = "The worker accepts the invoker token for the audience the App checks."
   }
 }

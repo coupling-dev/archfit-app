@@ -70,13 +70,18 @@ A routine runtime change cannot destroy data: Firestore, the secrets, and the im
 Each service mounts only the secrets that its account can read. The data stack sets this list once, and the runtime
 stack reads it. Every secret is a file at `/secrets/<secret>/value`, and its `*_FILE` variable names that file.
 
-| Service          | Ingress       | Invoker check              | Secrets                                                                             | Other settings                                                              |
-| ---------------- | ------------- | -------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `archfit-public` | All           | Off (no `allUsers` grant)  | App private key, webhook secret, OAuth secret, cookie key, Anthropic key (optional) | `ARCHFIT_ROLE=public`, `ARCHFIT_TASKS_QUEUE`, OAuth client ID, timeout 60 s |
-| `archfit-worker` | Internal only | On, `archfit-invoker` only | App private key, webhook secret, operator token                                     | `ARCHFIT_ROLE=worker`, timeout 600 s                                        |
+| Service          | Ingress       | Invoker check              | Secrets                                                                             | Other settings                                                                         |
+| ---------------- | ------------- | -------------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `archfit-public` | All           | Off (no `allUsers` grant)  | App private key, webhook secret, OAuth secret, cookie key, Anthropic key (optional) | `ARCHFIT_ROLE=public`, `ARCHFIT_QUEUE=cloudtasks`, `ARCHFIT_TASKS_QUEUE`, timeout 60 s |
+| `archfit-worker` | Internal only | On, `archfit-invoker` only | App private key, webhook secret, OAuth secret, cookie key, operator token           | `ARCHFIT_ROLE=worker`, custom audience = worker URL, timeout 600 s                     |
 
-Both services also get `ARCHFIT_BASE_URL=https://app.coupling.dev`, `ARCHFIT_GITHUB_APP_ID`, and
-`ARCHFIT_STORE=firestore`. Each runs 0 to 2 instances with 1 vCPU and 512 MiB, and CPU only during requests.
+These settings follow [Roles and routing](../docs/design/cloud/operations.md#roles-and-routing) and
+[Firestore](../docs/design/cloud/operations.md#firestore). Both services also get `ARCHFIT_BASE_URL=https://app.coupling.dev`,
+`ARCHFIT_GITHUB_APP_ID`, `ARCHFIT_GITHUB_OAUTH_CLIENT_ID`, `ARCHFIT_STORE=firestore`,
+`ARCHFIT_FIRESTORE_PROJECT=coupling-dev-510710`, `ARCHFIT_WORKER_URL`, and `ARCHFIT_INVOKER`. `ARCHFIT_WORKER_URL` is
+the deterministic URL `https://archfit-worker-335297348272.europe-west1.run.app`. The queues and the Scheduler use it
+as the target and the token audience, so all of them name one string. The worker does not get the Anthropic key: only
+the public service calls the LLM. Each runs 0 to 2 instances with 1 vCPU and 512 MiB, and CPU only during requests.
 
 | Queue              | Route (enforced)     | Rate              | Retries                         | Who can add tasks         |
 | ------------------ | -------------------- | ----------------- | ------------------------------- | ------------------------- |
@@ -119,6 +124,8 @@ The design leaves these choices to the implementation. Each one is the simplest 
   for quota. Raise the quota before a release needs more (see [Project guardrails](../docs/design/cloud/operations.md#project-guardrails)).
 - **Timeouts.** The public service has 60 s, above the 55 s handler deadline. The worker has 600 s, for the sweep.
 - **The uptime check calls the `run.app` URL**, so it works before DNS. `/healthz` does not depend on the host.
+- **The public account can act as the invoker.** A webhook task names the invoker in its own `oidcToken`, and Cloud
+  Tasks requires that. The enforced queue-level route still sends the token only to `/internal/webhooks`.
 - **Services keep deletion protection on.** A replaced service would start the placeholder image. See
   [Roll back](#roll-back).
 - **The revision name is not ignored.** Cloud Run rejects a kept revision name with a changed template, so Terraform
@@ -208,13 +215,13 @@ tofu -chdir=infra/data plan -out=data.tfplan
 Expected plan summary:
 
 ```text
-Plan: 41 to import, 32 to add, N to change, 0 to destroy.
+Plan: 41 to import, 36 to add, N to change, 0 to destroy.
 ```
 
 - **41 to import:** 25 APIs, 13 quota preferences, the alert policy, its channel, and the essential contact.
-- **32 to add:** Firestore and its backup schedule (2), 6 secrets and 8 secret grants (14), 4 service accounts and
-  7 IAM grants (11), the Artifact Registry repository (1), the Workload Identity pool and provider (2), and 2 audit
-  log settings (2).
+- **36 to add:** Firestore, its backup schedule and the index exemption of `kv.value` (3), 6 secrets and 10 secret
+  grants (16), 4 service accounts and 8 IAM grants (12), the Artifact Registry repository (1), the Workload Identity
+  pool and provider (2), and 2 audit log settings (2).
 - **N to change:** only Terraform-side fields on imported resources, for example `disable_on_destroy`,
   `disable_dependent_services` and `deletion_policy`, and `dimensions` from `null` to `{}` on the ten preferences
   without a region (the same empty value). If a change touches a real setting (a filter, a quota value, an
@@ -412,6 +419,3 @@ tflint --chdir=infra --recursive --config="$PWD/infra/.tflint.hcl"
   succeeds is caught by the "Sweep job fails" alert instead.
 - Cloud Tasks writes no audit log for `CreateTask`. The data-write audit logs record only `RunTask` and `DeleteTask`.
   So a grant task has no recorded creator. Only the project owner can add tasks to the operator queue.
-- The queues and the Scheduler send `Authorization: Bearer <OIDC token>`. Today `/internal/sweep` and
-  `/internal/grants` read the operator token from that header, so every queued call gets 401 until the worker role
-  accepts the invoker identity and reads the grants token from another header.

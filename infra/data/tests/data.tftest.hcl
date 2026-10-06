@@ -119,16 +119,31 @@ run "each_secret_is_readable_only_by_its_roles" {
       "archfit-github-webhook-secret|roles/secretmanager.secretAccessor|public",
       "archfit-github-webhook-secret|roles/secretmanager.secretAccessor|worker",
       "archfit-github-oauth-secret|roles/secretmanager.secretAccessor|public",
+      "archfit-github-oauth-secret|roles/secretmanager.secretAccessor|worker",
       "archfit-cookie-key|roles/secretmanager.secretAccessor|public",
+      "archfit-cookie-key|roles/secretmanager.secretAccessor|worker",
       "archfit-operator-token|roles/secretmanager.secretAccessor|worker",
       "archfit-anthropic-key|roles/secretmanager.secretAccessor|public",
     ])
-    error_message = "The public role must not read the operator token; the worker must not read UI or LLM secrets."
+    error_message = "The public role must not read the operator token; the worker must not read the LLM key."
   }
 
   assert {
     condition     = alltrue([for s in google_secret_manager_secret.this : s.deletion_policy == "PREVENT"])
     error_message = "Secrets are data and must not be destroyed by Terraform."
+  }
+}
+
+run "only_the_public_account_acts_as_the_invoker" {
+  command = plan
+
+  assert {
+    condition = (
+      google_service_account_iam_member.public_acts_as_invoker.service_account_id == "projects/coupling-dev-510710/serviceAccounts/archfit-invoker@coupling-dev-510710.iam.gserviceaccount.com"
+      && google_service_account_iam_member.public_acts_as_invoker.member == "serviceAccount:archfit-public@coupling-dev-510710.iam.gserviceaccount.com"
+      && google_service_account_iam_member.public_acts_as_invoker.role == "roles/iam.serviceAccountUser"
+    )
+    error_message = "The public account names the invoker in its tasks, so it alone may act as the invoker."
   }
 }
 
@@ -148,6 +163,11 @@ run "state_lives_in_the_one_region_and_cannot_be_destroyed" {
   assert {
     condition     = google_firestore_database.default.delete_protection_state == "DELETE_PROTECTION_ENABLED" && google_firestore_database.default.deletion_policy == "PREVENT"
     error_message = "The database must be protected in Google Cloud and in Terraform."
+  }
+
+  assert {
+    condition     = google_firestore_field.kv_value.collection == "kv" && google_firestore_field.kv_value.field == "value" && length(google_firestore_field.kv_value.index_config[0].indexes) == 0
+    error_message = "The value field of kv is exempt from single-field indexing."
   }
 
   assert {

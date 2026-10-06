@@ -49,7 +49,7 @@ Each caller of the worker has one route. Terraform pins it at the queue level (`
 Every caller sends an OIDC token of the invoker service account with the worker URL as audience. A webhook task
 names the invoker in its own `oidcToken`. Queue-level authentication, when Terraform sets it, overrides the task's.
 A task with an `oidcToken` needs the creator to act as that service account: the public service account then needs
-`roles/iam.serviceAccountUser` on the invoker account (not verified here; check it when Terraform builds the queue).
+`roles/iam.serviceAccountUser` on the invoker account. The `data` stack in [`infra/`](../../../infra/README.md) grants it.
 
 Task names are `<delivery ID>_gate` and `<delivery ID>_control`. Cloud Tasks refuses a name for up to 24 hours after
 the task ran, so a GitHub redelivery inside that window is a duplicate. Intake processes a webhook inline when the
