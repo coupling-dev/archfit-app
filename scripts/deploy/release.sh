@@ -11,7 +11,8 @@
 # An image rollback runs this script with the digest of an earlier image.
 #
 # Usage: release.sh <image digest>
-# Environment: GITHUB_RUN_ID and GITHUB_RUN_ATTEMPT name the revisions. GITHUB_SHA is recorded.
+# Environment: GITHUB_RUN_ID and GITHUB_RUN_ATTEMPT name the revisions. GITHUB_SHA is recorded as run_commit: the
+# main commit of the run, which built the image only in a release, not in an image rollback.
 set -euo pipefail
 
 here=$(dirname "${BASH_SOURCE[0]}")
@@ -39,12 +40,12 @@ canary_url=""
 write_record() {
 	mkdir -p "$RELEASE_DIR"
 	jq -n \
-		--arg status "$status" --arg step "$step" --arg commit "${GITHUB_SHA:-}" --arg image "$image" \
+		--arg status "$status" --arg step "$step" --arg run_commit "${GITHUB_SHA:-}" --arg image "$image" \
 		--arg digest "$digest" --arg run "$run_id" --arg attempt "$attempt" \
 		--arg worker "$worker_revision" --arg worker_before "$worker_before" \
 		--arg public "$public_revision" --arg public_before "$public_before" --arg canary "$canary_url" \
 		'def lines: split("\n") | map(select(. != ""));
-		{status: $status, step: $step, commit: $commit, image: $image, digest: $digest, run: $run, attempt: $attempt,
+		{status: $status, step: $step, run_commit: $run_commit, image: $image, digest: $digest, run: $run, attempt: $attempt,
 		 worker: {revision: $worker, traffic_before: ($worker_before | lines)},
 		 public: {revision: $public, traffic_before: ($public_before | lines), canary_url: $canary}}' \
 		>"$RELEASE_DIR/release.json"

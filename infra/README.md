@@ -379,8 +379,8 @@ The deploy workflow [`.github/workflows/deploy.yaml`](../.github/workflows/deplo
 
 - A run on another ref gets no credentials: Workload Identity admits only `main`.
 - Each release names its revisions `archfit-worker-r<run>-<attempt>` and `archfit-public-r<run>-<attempt>`.
-- The release record is the artifact `release-<run>-<attempt>` (`release.json`) and the job summary: the commit, the
-  image digest, the new revisions, and the revisions with traffic before the release. Take the rollback inputs from
+- The release record is the artifact `release-<run>-<attempt>` (`release.json`) and the job summary: the commit of
+  the run, the image digest, the new revisions, and the revisions with traffic before the release. Take the rollback inputs from
   it: the revision names in "traffic before" (without `=<percent>`) for a traffic rollback, the `digest` of an earlier
   release for an image rollback.
 - A release or rollback fails when the worker ingress is not internal, the worker invoker check is off, the worker's

@@ -135,8 +135,8 @@ assert_nothing_promoted() {
 @test "release records the image, the revisions and the traffic before it" {
 	release
 	[ "$status" -eq 0 ]
-	run jq -c '{status, step, commit, digest, image, worker, public: (.public | del(.canary_url))}' "$RELEASE_DIR/release.json"
-	[ "$output" = "{\"status\":\"released\",\"step\":\"finished\",\"commit\":\"$GITHUB_SHA\",\"digest\":\"$FAKE_DIGEST\",\"image\":\"$IMAGE\",\"worker\":{\"revision\":\"$WORKER_REV\",\"traffic_before\":[\"archfit-worker-r100-1=100\"]},\"public\":{\"revision\":\"$PUBLIC_REV\",\"traffic_before\":[\"archfit-public-r100-1=100\"]}}" ]
+	run jq -c '{status, step, run_commit, digest, image, worker, public: (.public | del(.canary_url))}' "$RELEASE_DIR/release.json"
+	[ "$output" = "{\"status\":\"released\",\"step\":\"finished\",\"run_commit\":\"$GITHUB_SHA\",\"digest\":\"$FAKE_DIGEST\",\"image\":\"$IMAGE\",\"worker\":{\"revision\":\"$WORKER_REV\",\"traffic_before\":[\"archfit-worker-r100-1=100\"]},\"public\":{\"revision\":\"$PUBLIC_REV\",\"traffic_before\":[\"archfit-public-r100-1=100\"]}}" ]
 	grep -q "| Image | \`$IMAGE\` |" "$GITHUB_STEP_SUMMARY"
 	grep -q "| Public traffic before | \`archfit-public-r100-1=100\` |" "$GITHUB_STEP_SUMMARY"
 }

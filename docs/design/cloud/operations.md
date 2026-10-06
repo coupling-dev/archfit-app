@@ -186,8 +186,8 @@ promotes a worker revision only when Cloud Run reports it ready, which needs onl
 `GET /ready` checks the same image, key and store from the public service.
 
 Each revision that the release creates has the name `<service>-r<run>-<attempt>` (the workflow run ID and attempt).
-The release record (`release.json`, a workflow artifact, and the job summary) holds the commit, the image digest, the
-two new revisions, and the revisions that had traffic before.
+The release record (`release.json`, a workflow artifact, and the job summary) holds the commit of the run, the image
+digest, the two new revisions, and the revisions that had traffic before.
 
 ## Roll back
 
