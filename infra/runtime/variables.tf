@@ -22,16 +22,15 @@ variable "placeholder_image" {
   default     = "us-docker.pkg.dev/cloudrun/container/hello"
 }
 
+# No defaults until the App is registered (runbook step 5): the runtime stack cannot be applied without them.
 variable "github_app_id" {
-  description = "GitHub App ID. Empty until the App is registered; the real image then refuses to start."
+  description = "GitHub App ID."
   type        = string
-  default     = ""
 }
 
 variable "github_oauth_client_id" {
-  description = "GitHub App OAuth client ID. Empty until the App is registered."
+  description = "GitHub App OAuth client ID."
   type        = string
-  default     = ""
 }
 
 variable "secret_versions" {

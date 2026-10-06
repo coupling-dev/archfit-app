@@ -45,6 +45,11 @@ override_data {
   }
 }
 
+variables {
+  github_app_id          = "123456"
+  github_oauth_client_id = "Iv1.test"
+}
+
 run "worker_is_internal_and_checks_the_invoker" {
   command = plan
 

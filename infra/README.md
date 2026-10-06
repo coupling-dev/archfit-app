@@ -216,7 +216,8 @@ Plan: 41 to import, 32 to add, N to change, 0 to destroy.
   7 IAM grants (11), the Artifact Registry repository (1), the Workload Identity pool and provider (2), and 2 audit
   log settings (2).
 - **N to change:** only Terraform-side fields on imported resources, for example `disable_on_destroy`,
-  `disable_dependent_services` and `deletion_policy`. If a change touches a real setting (a filter, a quota value, an
+  `disable_dependent_services` and `deletion_policy`, and `dimensions` from `null` to `{}` on the ten preferences
+  without a region (the same empty value). If a change touches a real setting (a filter, a quota value, an
   email, a category), stop. Copy the live value into the code in a pull request, and plan again.
 - **0 to destroy.** Any destroy: stop.
 
@@ -241,8 +242,8 @@ Register the App with these settings. Keep the webhook inactive, and install it 
 - Callback URL: `https://app.coupling.dev/auth/callback`
 - Webhook URL: `https://app.coupling.dev/webhooks/github`, inactive
 
-Then set the defaults of `github_app_id` and `github_oauth_client_id` in `infra/runtime/variables.tf` in a pull
-request. These IDs are not secret. A default keeps every later apply correct.
+Then add defaults for `github_app_id` and `github_oauth_client_id` in `infra/runtime/variables.tf` in a pull
+request. These IDs are not secret. Until they have values, the runtime plan stops and asks for them.
 
 ### 6. Add the secret values
 
@@ -343,13 +344,16 @@ gcloud scheduler jobs run archfit-sweep --location=$R --project=$P
 gcloud logging read 'jsonPayload.msg="sweep: pass finished" OR jsonPayload.message="sweep: pass finished"' \
   --project=$P --freshness=10m --limit=1
 tofu -chdir=infra/data plan      # No changes.
-tofu -chdir=infra/runtime plan   # No changes.
+tofu -chdir=infra/runtime plan   # Only template.revision -> null on services CI deployed (see Routine changes)
 ```
 
 ## Routine changes
 
 - Change the code in a pull request. CI checks it. After the merge, run `plan`, review it, and `apply` the saved plan.
 - Apply `data` before `runtime` when a change touches both.
+- After a CI deploy, the runtime plan shows `template[0].revision` changing to `null` on that service: gcloud names
+  each revision it deploys. This diff is safe. An apply creates one more revision with the current image and no
+  traffic.
 - **Rotate a secret:** add the new version, set its number in `secret_versions`, and apply `runtime`. Terraform
   creates a new revision of each service that mounts the secret, with the current image. Traffic stays on the revisions
   that CI promoted, so the next release through CI deploys and promotes a revision with the new version. Follow the
