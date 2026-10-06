@@ -89,6 +89,18 @@ jobs:
           tflint --chdir=infra --init --config="$PWD/infra/.tflint.hcl"
           tflint --chdir=infra --recursive --config="$PWD/infra/.tflint.hcl"
 
+  # The release scripts run only on main with Google Cloud credentials, so CI tests them with fakes on every change.
+  deploy-scripts:
+    name: Deploy scripts
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends bats
+      - run: make deploy-check ACTIONLINT="go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"
+
   image:
     name: Image builds
     runs-on: ubuntu-24.04

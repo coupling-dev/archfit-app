@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Fake docker for deploy.bats. It logs each call to $FAKE_LOG; a push makes the image exist for the fake gcloud.
+set -euo pipefail
+
+printf 'docker %s\n' "$*" >>"$FAKE_LOG"
+if [[ $1 == push ]]; then
+	touch "$FAKE_STATE/pushed"
+fi

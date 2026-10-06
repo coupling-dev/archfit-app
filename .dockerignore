@@ -1,0 +1,2 @@
+# google-github-actions/auth writes its credentials file into the workspace. Keep it out of the build context.
+gha-creds-*.json

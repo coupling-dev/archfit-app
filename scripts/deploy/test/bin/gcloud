@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# Fake gcloud for deploy.bats. It logs each call to $FAKE_LOG and keeps deployed revisions in $FAKE_STATE.
+# The FAKE_* variables below change its answers. It answers only the calls the release scripts make.
+set -euo pipefail
+
+printf 'gcloud %s\n' "$*" >>"$FAKE_LOG"
+
+repo=europe-west1-docker.pkg.dev/coupling-dev-510710/archfit-app/archfit-app
+old_image="$repo@sha256:$(printf 'a%.0s' {1..64})"
+worker_host=archfit-worker-335297348272.europe-west1.run.app
+invoker=archfit-invoker@coupling-dev-510710.iam.gserviceaccount.com
+
+flag() {
+	local name=$1 arg
+	for arg in "${args[@]}"; do
+		if [[ $arg == "--$name="* ]]; then
+			printf '%s\n' "${arg#*=}"
+			return
+		fi
+	done
+}
+
+# image_of prints the image of a revision: the deployed one, or an older release image.
+image_of() {
+	if [[ -f $FAKE_STATE/revisions/$1 ]]; then
+		cat "$FAKE_STATE/revisions/$1"
+	else
+		printf '%s\n' "$old_image"
+	fi
+}
+
+args=("$@")
+case "$1 $2 $3" in
+"auth configure-docker "*) ;;
+
+"artifacts docker images")
+	image=$5
+	if [[ $image == *@* ]]; then
+		[[ ${FAKE_DIGEST_MISSING:-} != 1 ]] || {
+			echo "ERROR: image not found" >&2
+			exit 1
+		}
+		printf '%s\n' "${image#*@}"
+	elif [[ -f $FAKE_STATE/pushed ]]; then
+		printf '%s\n' "$FAKE_DIGEST"
+	else
+		echo "ERROR: image not found" >&2
+		exit 1
+	fi
+	;;
+
+"run deploy "*)
+	service=$3
+	revision="$service-$(flag revision-suffix)"
+	mkdir -p "$FAKE_STATE/revisions"
+	flag image >"$FAKE_STATE/revisions/$revision"
+	if [[ -n $(flag tag) ]]; then
+		printf '%s\n' "$revision" >"$FAKE_STATE/tagged"
+	fi
+	;;
+
+"run services describe")
+	service=$4
+	if [[ $service == archfit-worker ]]; then
+		ingress=${FAKE_WORKER_INGRESS:-internal}
+		invoker_iam_disabled=${FAKE_WORKER_INVOKER_IAM_DISABLED:-}
+		tagged=""
+	else
+		ingress=all
+		invoker_iam_disabled=true
+		tagged=${FAKE_CANARY_REVISION:-$(cat "$FAKE_STATE/tagged" 2>/dev/null || true)}
+	fi
+	jq -n --arg service "$service" --arg ingress "$ingress" --arg off "$invoker_iam_disabled" --arg tagged "$tagged" '{
+		metadata: {name: $service, annotations: ({"run.googleapis.com/ingress": $ingress}
+			+ (if $off == "" then {} else {"run.googleapis.com/invoker-iam-disabled": $off} end))},
+		status: {traffic: ([{revisionName: ($service + "-r100-1"), percent: 100}]
+			+ (if $tagged == "" then [] else [{revisionName: $tagged, tag: "canary",
+				url: ("https://canary---" + $service + "-abc.a.run.app")}] end))}}'
+	;;
+
+"run revisions describe")
+	revision=$4
+	service=$(cut -d- -f1-2 <<<"$revision")
+	[[ $revision != "${FAKE_FOREIGN_REVISION:-}" ]] || service=someone-else
+	ready=True
+	[[ $revision != "${FAKE_NOT_READY_REVISION:-}" ]] || ready=False
+	image=$(image_of "$revision")
+	[[ $revision != "${FAKE_FOREIGN_IMAGE_REVISION:-}" ]] || image="$repo:latest"
+	jq -n --arg revision "$revision" --arg service "$service" --arg image "$image" --arg ready "$ready" '{
+		metadata: {name: $revision, labels: {"serving.knative.dev/service": $service}},
+		spec: {containers: [{image: $image}]},
+		status: {conditions: [{type: "Ready", status: $ready}]}}'
+	;;
+
+"run services update-traffic") ;;
+
+"run services get-iam-policy")
+	jq -n --arg invoker "$invoker" --arg extra "${FAKE_WORKER_EXTRA_INVOKER:-}" '{
+		bindings: [{role: "roles/run.invoker", members: ([("serviceAccount:" + $invoker)]
+			+ (if $extra == "" then [] else [$extra] end))}]}'
+	;;
+
+"tasks queues describe")
+	queue=$4
+	host=$worker_host
+	path=/internal/webhooks
+	[[ $queue == archfit-webhooks ]] || path=/internal/grants
+	identity=$invoker
+	if [[ $queue == "${FAKE_QUEUE:-}" ]]; then
+		host=${FAKE_QUEUE_HOST:-$host}
+		path=${FAKE_QUEUE_PATH:-$path}
+		identity=${FAKE_QUEUE_IDENTITY:-$identity}
+	fi
+	jq -n --arg queue "$queue" --arg host "$host" --arg path "$path" --arg identity "$identity" \
+		--arg audience "https://$worker_host" '{name: $queue, httpTarget: {httpMethod: "POST",
+		uriOverride: {scheme: "HTTPS", host: $host, pathOverride: {path: $path}, uriOverrideEnforceMode: "ALWAYS"},
+		oidcToken: {serviceAccountEmail: $identity, audience: $audience}}}'
+	;;
+
+*)
+	echo "fake gcloud: unexpected call: $*" >&2
+	exit 2
+	;;
+esac
