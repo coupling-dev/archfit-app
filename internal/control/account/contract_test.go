@@ -114,22 +114,24 @@ func TestRefreshIsIdempotent(t *testing.T) {
 	s := newSpy()
 	a, _, _, _ := newTest(s)
 	mustNil(t, a.Observe(ctx, instA, true, day(0)))
-	recordPuts := len(s.puts(recordKeyName))
 	recordBytes := rawKey(t, s, instA, recordKeyName)
-	entPuts := len(s.puts(gate.EntitlementKey))
+	entWrites := len(s.writes(gate.EntitlementKey))
 
 	mustNil(t, a.Refresh(ctx, instA, day(5)))
 	mustNil(t, a.Refresh(ctx, instA, day(5)))
 
-	puts := s.puts(gate.EntitlementKey)
-	if len(puts) != entPuts+2 {
-		t.Fatalf("entitlement Puts = %d, want %d", len(puts), entPuts+2)
+	writes := s.writes(gate.EntitlementKey)
+	if len(writes) != entWrites+2 {
+		t.Fatalf("entitlement writes = %d, want %d", len(writes), entWrites+2)
 	}
-	if !bytes.Equal(puts[len(puts)-1].value, puts[len(puts)-2].value) {
-		t.Errorf("entitlement bytes differ:\n%s\n%s", puts[len(puts)-2].value, puts[len(puts)-1].value)
+	if !bytes.Equal(writes[len(writes)-1].value, writes[len(writes)-2].value) {
+		t.Errorf("entitlement bytes differ:\n%s\n%s", writes[len(writes)-2].value, writes[len(writes)-1].value)
 	}
-	if got := len(s.puts(recordKeyName)); got != recordPuts {
-		t.Errorf("account Puts = %d, want %d", got, recordPuts)
+	// Refresh checks the record it derived the entitlement from and writes it back unchanged.
+	for _, w := range s.writes(recordKeyName) {
+		if w.op == "Put" || (w.op == opSwap && !bytes.Equal(w.value, recordBytes)) {
+			t.Errorf("account record written: %s %q", w.op, w.value)
+		}
 	}
 	if !bytes.Equal(rawKey(t, s, instA, recordKeyName), recordBytes) {
 		t.Error("account record changed")
