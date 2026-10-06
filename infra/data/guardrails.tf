@@ -51,7 +51,7 @@ resource "google_cloud_quotas_quota_preference" "run" {
   name       = each.key
   service    = "run.googleapis.com"
   quota_id   = each.value.quota_id
-  dimensions = each.value.region == null ? null : { region = each.value.region }
+  dimensions = each.value.region == null ? {} : { region = each.value.region }
 
   quota_config {
     preferred_value = each.value.value

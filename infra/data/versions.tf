@@ -1,6 +1,6 @@
 terraform {
-  # for_each in import blocks needs OpenTofu or Terraform 1.7.
-  required_version = ">= 1.7"
+  # Import blocks with for_each need 1.7; the tests' mock providers need OpenTofu 1.8.
+  required_version = ">= 1.8"
 
   required_providers {
     google = {

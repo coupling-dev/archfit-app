@@ -5,18 +5,47 @@ mock_provider "google" {
     }
   }
 
-  mock_resource "google_service_account" {
-    defaults = {
-      email  = "archfit-test@coupling-dev-510710.iam.gserviceaccount.com"
-      member = "serviceAccount:archfit-test@coupling-dev-510710.iam.gserviceaccount.com"
-      name   = "projects/coupling-dev-510710/serviceAccounts/archfit-test@coupling-dev-510710.iam.gserviceaccount.com"
-    }
-  }
-
   mock_resource "google_iam_workload_identity_pool" {
     defaults = {
       name = "projects/335297348272/locations/global/workloadIdentityPools/github"
     }
+  }
+}
+
+# Each account gets its own identity, so a grant to the wrong account fails a test.
+override_resource {
+  target = google_service_account.runtime["public"]
+  values = {
+    email  = "archfit-public@coupling-dev-510710.iam.gserviceaccount.com"
+    member = "serviceAccount:archfit-public@coupling-dev-510710.iam.gserviceaccount.com"
+    name   = "projects/coupling-dev-510710/serviceAccounts/archfit-public@coupling-dev-510710.iam.gserviceaccount.com"
+  }
+}
+
+override_resource {
+  target = google_service_account.runtime["worker"]
+  values = {
+    email  = "archfit-worker@coupling-dev-510710.iam.gserviceaccount.com"
+    member = "serviceAccount:archfit-worker@coupling-dev-510710.iam.gserviceaccount.com"
+    name   = "projects/coupling-dev-510710/serviceAccounts/archfit-worker@coupling-dev-510710.iam.gserviceaccount.com"
+  }
+}
+
+override_resource {
+  target = google_service_account.runtime["invoker"]
+  values = {
+    email  = "archfit-invoker@coupling-dev-510710.iam.gserviceaccount.com"
+    member = "serviceAccount:archfit-invoker@coupling-dev-510710.iam.gserviceaccount.com"
+    name   = "projects/coupling-dev-510710/serviceAccounts/archfit-invoker@coupling-dev-510710.iam.gserviceaccount.com"
+  }
+}
+
+override_resource {
+  target = google_service_account.deploy
+  values = {
+    email  = "archfit-deploy@coupling-dev-510710.iam.gserviceaccount.com"
+    member = "serviceAccount:archfit-deploy@coupling-dev-510710.iam.gserviceaccount.com"
+    name   = "projects/coupling-dev-510710/serviceAccounts/archfit-deploy@coupling-dev-510710.iam.gserviceaccount.com"
   }
 }
 
@@ -53,18 +82,26 @@ run "deploy_identity_has_only_its_three_grants" {
   command = plan
 
   assert {
-    condition     = google_project_iam_member.deploy_run_developer.role == "roles/run.developer"
+    condition     = google_project_iam_member.deploy_run_developer.role == "roles/run.developer" && google_project_iam_member.deploy_run_developer.member == "serviceAccount:archfit-deploy@coupling-dev-510710.iam.gserviceaccount.com"
     error_message = "The deploy account's only project role is run.developer."
   }
 
   assert {
-    condition     = google_artifact_registry_repository_iam_member.deploy_writer.role == "roles/artifactregistry.writer"
+    condition     = google_artifact_registry_repository_iam_member.deploy_writer.role == "roles/artifactregistry.writer" && google_artifact_registry_repository_iam_member.deploy_writer.member == "serviceAccount:archfit-deploy@coupling-dev-510710.iam.gserviceaccount.com"
     error_message = "The deploy account writes images only to the App repository."
   }
 
   assert {
-    condition     = toset(keys(google_service_account_iam_member.deploy_acts_as)) == toset(["public", "worker"])
+    condition = toset([for m in google_service_account_iam_member.deploy_acts_as : "${m.service_account_id}|${m.role}|${m.member}"]) == toset([
+      "projects/coupling-dev-510710/serviceAccounts/archfit-public@coupling-dev-510710.iam.gserviceaccount.com|roles/iam.serviceAccountUser|serviceAccount:archfit-deploy@coupling-dev-510710.iam.gserviceaccount.com",
+      "projects/coupling-dev-510710/serviceAccounts/archfit-worker@coupling-dev-510710.iam.gserviceaccount.com|roles/iam.serviceAccountUser|serviceAccount:archfit-deploy@coupling-dev-510710.iam.gserviceaccount.com",
+    ])
     error_message = "The deploy account may act only as the two accounts that run revisions, never as the invoker."
+  }
+
+  assert {
+    condition     = google_service_account_iam_member.deploy_workload_identity.service_account_id == "projects/coupling-dev-510710/serviceAccounts/archfit-deploy@coupling-dev-510710.iam.gserviceaccount.com"
+    error_message = "Workload Identity may impersonate only the deploy account."
   }
 }
 
@@ -72,15 +109,19 @@ run "each_secret_is_readable_only_by_its_roles" {
   command = plan
 
   assert {
-    condition = toset(keys(google_secret_manager_secret_iam_member.accessor)) == toset([
-      "archfit-github-private-key/public",
-      "archfit-github-private-key/worker",
-      "archfit-github-webhook-secret/public",
-      "archfit-github-webhook-secret/worker",
-      "archfit-github-oauth-secret/public",
-      "archfit-cookie-key/public",
-      "archfit-operator-token/worker",
-      "archfit-anthropic-key/public",
+    condition = toset([
+      for k, m in google_secret_manager_secret_iam_member.accessor :
+      "${split("/", k)[0]}|${m.role}|${trimsuffix(trimprefix(m.member, "serviceAccount:archfit-"), "@coupling-dev-510710.iam.gserviceaccount.com")}"
+      if m.secret_id == google_secret_manager_secret.this[split("/", k)[0]].id
+      ]) == toset([
+      "archfit-github-private-key|roles/secretmanager.secretAccessor|public",
+      "archfit-github-private-key|roles/secretmanager.secretAccessor|worker",
+      "archfit-github-webhook-secret|roles/secretmanager.secretAccessor|public",
+      "archfit-github-webhook-secret|roles/secretmanager.secretAccessor|worker",
+      "archfit-github-oauth-secret|roles/secretmanager.secretAccessor|public",
+      "archfit-cookie-key|roles/secretmanager.secretAccessor|public",
+      "archfit-operator-token|roles/secretmanager.secretAccessor|worker",
+      "archfit-anthropic-key|roles/secretmanager.secretAccessor|public",
     ])
     error_message = "The public role must not read the operator token; the worker must not read UI or LLM secrets."
   }
@@ -119,7 +160,7 @@ run "runtime_accounts_get_state_access_and_nothing_else_at_project_level" {
   command = plan
 
   assert {
-    condition     = toset(keys(google_project_iam_member.state_user)) == toset(["public", "worker"])
+    condition     = toset([for m in google_project_iam_member.state_user : m.member]) == toset(["serviceAccount:archfit-public@coupling-dev-510710.iam.gserviceaccount.com", "serviceAccount:archfit-worker@coupling-dev-510710.iam.gserviceaccount.com"])
     error_message = "Only the public and worker accounts use Firestore; the invoker has no project role."
   }
 
@@ -147,11 +188,20 @@ run "guardrail_quotas_allow_only_the_one_region" {
   command = plan
 
   assert {
+    condition = toset([for k, q in google_cloud_quotas_quota_preference.run : k if length(q.dimensions) > 0]) == toset([
+      "run-cpu-europe-west1",
+      "run-mem-europe-west1",
+      "run-services-europe-west1",
+    ])
+    error_message = "Only the three europe-west1 preferences carry a dimension; the others apply to every region."
+  }
+
+  assert {
     condition = alltrue([
       for k, q in google_cloud_quotas_quota_preference.run :
-      endswith(k, "-europe-west1") ? q.dimensions == tomap({ region = "europe-west1" }) : local.run_quota_preferences[k].region == null
+      length(q.dimensions) == 0 || q.dimensions == tomap({ region = "europe-west1" })
     ])
-    error_message = "Only the europe-west1 preferences carry a region; the others apply to every region."
+    error_message = "A regional preference names only europe-west1."
   }
 
   assert {
@@ -160,6 +210,11 @@ run "guardrail_quotas_allow_only_the_one_region" {
       endswith(k, "-europe-west1") || k == "run-max-regions" || q.quota_config[0].preferred_value == "0"
     ])
     error_message = "Every other region, GPU, job and worker-pool quota must be 0."
+  }
+
+  assert {
+    condition     = google_cloud_quotas_quota_preference.run["run-max-regions"].quota_config[0].preferred_value == "1"
+    error_message = "One region per project."
   }
 
   assert {
