@@ -26,13 +26,16 @@ type Summary struct {
 	Pended, TimedOut, Rerun, Warned int
 	Suspended                       int
 	Errors                          int  // repositories or pulls skipped after an error; details are in the log
-	RateLimited                     bool // sweep stopped early; the next sweep continues
+	RateLimited                     bool // the pass stopped early on a GitHub rate limit
 }
 
 type Sweeper interface {
 	// Run re-derives the expected check state of every open PR from GitHub and repairs differences.
+	// A rate limit stops the pass with a nil error and Summary.RateLimited: the next pass continues the work.
 	Run(ctx context.Context, now time.Time) (Summary, error)
 	// RunRepo is the same pass limited to one repository (used when the protected ref changes).
+	// A rate limit stops it with Summary.RateLimited and an error that wraps api.ErrRateLimited, so the caller
+	// retries the repository.
 	RunRepo(ctx context.Context, r api.Repo, now time.Time) (Summary, error)
 }
 

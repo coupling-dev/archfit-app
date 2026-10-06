@@ -179,7 +179,9 @@ the client and clears `Timeout` on its copy, so the 150 second deadline of `cont
 - `POST /internal/sweep` answers `200` with the gate `Summary` when `gate.Sweep` succeeds, also when `control.Sweep`
   failed or panicked (that failure is only logged). When `gate.Sweep` fails it answers `500` with the partial `Summary`.
   The `Summary` is encoded by `encoding/json` with the Go field names (`Repos`, `Pulls`, `Pended`, `TimedOut`, `Rerun`,
-  `Warned`, `Suspended`, `Errors`, `RateLimited`); there are no JSON tags.
+  `Warned`, `Suspended`, `Errors`, `RateLimited`); there are no JSON tags. A pass that a GitHub rate limit stopped
+  still answers `200`, because a retry before the limit resets cannot help and the next hourly pass continues the
+  work; its request line has the outcome `sweep_rate_limited` instead of `swept`, so a log-based counter sees it.
 
 `cmd/reporter` builds a JSON `slog.Logger`, calls `Load(os.Getenv)`, then `Run` with a context cancelled on
 SIGINT or SIGTERM, and exits non-zero on error. It contains nothing else. The skeleton's handler code and its
@@ -245,7 +247,7 @@ type Summary struct {
     Pended, TimedOut, Rerun, Warned      int
     Suspended                            int
     Errors                               int  // repositories or pulls skipped after an error; details are in the log
-    RateLimited                          bool // sweep stopped early; the next sweep continues
+    RateLimited                          bool // the pass stopped early on a GitHub rate limit
 }
 
 type Sweeper interface {
@@ -833,7 +835,7 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   delivery ID and installation ID of the delivery.
 - **Test name**: `TestSweepEndpointReturnsSummary`
   **Scenario**: authorized `POST /internal/sweep` with a gate fake returning counts.
-  **Expected behavior**: `200` with the counts as JSON; control sweep was called first.
+  **Expected behavior**: `200` with the counts as JSON; control sweep was called first. A `RateLimited` summary still answers `200`, and its request line has the outcome `sweep_rate_limited`; otherwise the outcome is `swept`.
 - **Test name**: `TestGrantEndpoint`
   **Scenario**: authorized body with a future `until`; `"until": null`; `until` omitted; `until` in the past or equal to now; malformed JSON,
   unknown field, missing or negative installation ID, oversized body; user session cookie instead of the operator token.

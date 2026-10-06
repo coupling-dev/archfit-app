@@ -431,6 +431,11 @@ func (s *server) sweep(w http.ResponseWriter, r *http.Request) {
 		return err
 	})
 	status := http.StatusOK
+	if sum.RateLimited && ri.outcome == "swept" {
+		// Still 200: a retry before the limit resets cannot help, and the next hourly pass continues the work.
+		// The outcome makes the stopped pass countable.
+		ri.outcome = "sweep_rate_limited"
+	}
 	if err != nil {
 		ri.outcome = "gate_sweep_error"
 		s.log.Error("gate sweep failed", "error", err.Error())

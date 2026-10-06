@@ -24,7 +24,7 @@ and a changed base policy, an expired waiver or a restored subscription would ne
 - Warn 7 days before the earliest waiver expiry; after expiry publish `waiver_expired` and re-run.
 - Re-run after a restored entitlement or a late owner approval.
 - Run the same pass for one repository on request (`RunRepo`), used when the protected ref changes.
-- Stop cleanly on GitHub rate-limit exhaustion; the next pass continues.
+- Stop cleanly on GitHub rate-limit exhaustion: the next `Run` continues, and `RunRepo` returns the limit so its caller retries.
 - Return counts only, including the number of skipped units.
 
 ## Subdomain Classification
@@ -55,13 +55,14 @@ type Summary struct {
     Pended, TimedOut, Rerun, Warned      int
     Suspended                            int
     Errors                               int  // repositories or pulls skipped after an error; details are in the log
-    RateLimited                          bool // sweep stopped early; the next sweep continues
+    RateLimited                          bool // the pass stopped early on a GitHub rate limit
 }
 
 type Sweeper interface {
     // Run re-derives the expected check state of every open PR from GitHub and repairs differences.
     Run(ctx context.Context, now time.Time) (Summary, error)
     // RunRepo is the same pass limited to one repository (used when the protected ref changes).
+    // A rate limit stops it with Summary.RateLimited and an error that wraps api.ErrRateLimited.
     RunRepo(ctx context.Context, r Repo, now time.Time) (Summary, error)
 }
 ```
@@ -255,7 +256,9 @@ counted in `Summary.Errors`; it costs one API call and no CI minutes.
 | `ListInstallations` fails                               | return the error                                                          |
 | any other error for an installation, repository or pull | log IDs and outcome, `Summary.Errors++`, skip that unit, continue         |
 
-`Errors` counts skipped units; the details are in the log. `RunRepo` follows the same table (no `ListInstallations` row).
+`Errors` counts skipped units; the details are in the log. `RunRepo` follows the same table (no `ListInstallations`
+row), except for the rate limit: it sets `Summary.RateLimited` and returns an error that wraps `api.ErrRateLimited`.
+Its one repository is the whole pass, so a stop leaves the work undone, and the caller retries it.
 
 ## Integrations
 
@@ -707,8 +710,9 @@ type Actions interface {
   `OpenPulls` returns raw pulls. The owner of the rule is `gate/ingest` (`Binding.Fork`); `gate` computes it a third
   time from the webhook payload. If they drift, a fork is refused on one path and judged on another. It stays while
   `inputs.Target.Fork` is a plain boolean each caller fills; remove it when `github/api` or `gate/ingest` publishes a predicate.
-- Rate-limit exhaustion leaves checks pending or unchanged; it never produces green. The pass ends with
-  `RateLimited` and a nil error so the scheduler does not treat it as a failure.
+- Rate-limit exhaustion leaves checks pending or unchanged; it never produces green. `Run` ends with
+  `RateLimited` and a nil error so the scheduler does not treat it as a failure. `RunRepo` returns the error, so the
+  webhook queue retries the push that started it.
 - A failure for one installation, repository or pull never aborts the pass.
 - Reconciliation window (stated, not zero): a missed event or an expiry is repaired within one sweep interval
   (hourly **[default]**) plus the customer's CI time. During that window the old check result stands.
@@ -787,7 +791,7 @@ calls and serves `State` from what was published; injectable errors. Time is the
 
 - **Test name**: `TestRateLimitStopsThePass`
   **Scenario**: `ErrRateLimited` from `ListRepos`, `OpenPulls`, `Resolve`, `State`, `Publish`, `Run` and `Rerun`, each at the second repository.
-  **Expected behavior**: the pass stops; `RateLimited` true; nil error; the first repository's repairs are kept; no check turned `success`.
+  **Expected behavior**: the pass stops; `RateLimited` true; nil error; the first repository's repairs are kept; no check turned `success`. `RunRepo` with `ErrRateLimited` from `OpenPulls` returns `RateLimited` true and an error that wraps `api.ErrRateLimited`.
 - **Test name**: `TestUnitErrorsAreSkipped`
   **Scenario**: a generic error for one installation, one repository and one pull.
   **Expected behavior**: the others are processed; nil error; `Summary.Errors == 3`; one log line per skipped unit with IDs only. The same pull error inside `RunRepo` gives `Errors == 1` and a nil error.

@@ -168,13 +168,14 @@ type Summary struct {
     Pended, TimedOut, Rerun, Warned      int
     Suspended                            int
     Errors                               int  // repositories or pulls skipped after an error; details are in the log
-    RateLimited                          bool // sweep stopped early; the next sweep continues
+    RateLimited                          bool // the pass stopped early on a GitHub rate limit
 }
 
 type Sweeper interface {
     // Run re-derives the expected check state of every open PR from GitHub and repairs differences.
     Run(ctx context.Context, now time.Time) (Summary, error)
     // RunRepo is the same pass limited to one repository (used when the protected ref changes).
+    // A rate limit stops it with Summary.RateLimited and an error that wraps api.ErrRateLimited.
     RunRepo(ctx context.Context, r Repo, now time.Time) (Summary, error)
 }
 ```
@@ -199,7 +200,8 @@ Rate-limit rule, one for the whole gate: `api.ErrRateLimited` during `Receive` (
 retries do not. A rate limit before the gate check is written leaves the pending check pending and writes nothing
 green. The one rate limit that `feedback` returns after the gate check is written, from the changed-file list that
 only filters annotations, leaves the gate check with the decided conclusion; the retry adds the annotations. In the sweep the same error
-stops the pass with `Summary.RateLimited`.
+stops the pass with `Summary.RateLimited`. In `HandleEvent` it is returned, also from `RunRepo`, so the webhook queue
+retries the delivery.
 The handler works under a 50 second deadline **[default]**, inside the 60 second feedback target.
 
 ## Integrations
@@ -504,7 +506,7 @@ type Decision func(ctx context.Context, current CheckState) (*Publication, error
 - **Balanced?**: yes
 - **Shared knowledge**: `Sweeper`, `Summary`, `Config` (restated in Public Contract above). `Run` returns a nil
   error with `RateLimited` set when GitHub's rate limit stopped the pass. `RunRepo` is the same pass for one
-  repository; it needs only `RepoRef` and `Private` of the `Repo` it is given. `Errors` counts skipped units.
+  repository, and it returns the rate limit as an error that wraps `api.ErrRateLimited`; it needs only `RepoRef` and `Private` of the `Repo` it is given. `Errors` counts skipped units.
   The sweep owns the rules the façade also needs, and exports them: the re-run guard (`Rerun`, called for
   `ReviewChanged`), the publication for a target without a report (`Without`, called for the fork refusal of a
   new head), and the withdrawn-approval rule 5a (`Withdrawn` and `Withdrawal`, called for `ReviewChanged`). The
@@ -1063,7 +1065,8 @@ caller without settings. The exact fifth protected path is `Settings.Workflow`, 
 `MayBeProtected` takes the whole `.github/workflows/` directory instead **[default]**: a superset that needs no file
 read; an extra `RunRepo` is harmless because the pass is idempotent. The façade names no path and no directory. `RunRepo` re-resolves every open PR of the repository, so a changed base policy or baseline shows
 as `stale_inputs` (plus a re-run) within the webhook request instead of within the hour. The hourly sweep stays the
-recovery path when the push event is lost or `RunRepo` stops on a rate limit.
+recovery path when the push event is lost. A rate limit in `RunRepo` is returned from `HandleEvent`, so the webhook
+queue retries the push.
 
 Fork refusal publication: `sweep.Without(ReasonForkUnsupported, target, trusted, Receipt{})`. The sweep owns the
 construction (its "Without publications" table); the zero previous receipt gives a zero run identity, because no
@@ -1235,7 +1238,7 @@ are driven only as far as they go without GitHub. Child internals are tested in 
   **Expected behavior**: pending check; nothing; nothing; `fork_unsupported` published; pending check on the new head; one re-run only for the receipt-plus-granted case; nothing for the rest; redelivery changes nothing.
 - **Test name**: `TestProtectedPushTriggersRepoSweep`
   **Scenario**: table of `DefaultBranchPush.ChangedPaths`: `.archfit.yaml`; `.archfit-baseline.json`; `.archfit-labels.yaml`; `.archfit-app.yaml`; `.github/workflows/archfit.yaml`; another workflow file; only source files; empty list (unknown); each with a second repository that has stale PRs.
-  **Expected behavior**: `RunRepo` for the pushed repository in the first six rows and for the empty list; no call for source-only pushes; the other repository is never touched; a `RateLimited` summary is not an error.
+  **Expected behavior**: `RunRepo` for the pushed repository in the first six rows and for the empty list; no call for source-only pushes; the other repository is never touched; a rate limit inside `RunRepo` is returned as a retryable error that wraps `api.ErrRateLimited`, and nothing is written.
 - **Test name**: `TestNewReceiverIsTheSameReceiver`
   **Scenario**: run the ingest rejection table through `NewReceiver(...)` with `KindDiscovery`.
   **Expected behavior**: identical rejections; a discovery `Upload` carries `Payload` and a nil `Report`; no check is written.

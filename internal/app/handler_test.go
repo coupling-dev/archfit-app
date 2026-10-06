@@ -273,6 +273,22 @@ func TestSweepEndpointReturnsSummary(t *testing.T) {
 		}
 	})
 
+	t.Run("the request line counts a rate-limited pass", func(t *testing.T) {
+		for _, tt := range []struct {
+			limited bool
+			outcome string
+		}{{false, "swept"}, {true, "sweep_rate_limited"}} {
+			f := newFixture()
+			f.gate.summary = gate.Summary{RateLimited: tt.limited}
+			if rec := f.do(operatorRequest("/internal/sweep", testOperatorToken, "")); rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200: the next pass continues the work", rec.Code)
+			}
+			if logs := f.logs.String(); !strings.Contains(logs, `"outcome":"`+tt.outcome+`"`) {
+				t.Errorf("RateLimited %v: logs lack outcome %s: %s", tt.limited, tt.outcome, logs)
+			}
+		}
+	})
+
 	t.Run("a gate sweep error answers 500 with the partial counts", func(t *testing.T) {
 		f := newFixture()
 		f.gate.summary = want

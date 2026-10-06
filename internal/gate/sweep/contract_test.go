@@ -352,6 +352,16 @@ func TestRateLimitStopsThePass(t *testing.T) {
 		})
 	}
 
+	// One repository is the whole pass of RunRepo: a stop leaves its work undone, so the caller must retry.
+	t.Run("RunRepo returns the limit", func(t *testing.T) {
+		w := threeRepos(t)
+		w.pulls.errs["a/a"] = limited
+		sum, err := w.sweeper.RunRepo(context.Background(), w.repos.repos[1][0], t0)
+		if want := (Summary{Repos: 1, RateLimited: true}); !errors.Is(err, api.ErrRateLimited) || sum != want {
+			t.Errorf("summary = %+v, err = %v, want %+v and api.ErrRateLimited", sum, err, want)
+		}
+	})
+
 	t.Run("ListInstallations", func(t *testing.T) {
 		w := threeRepos(t)
 		w.repos.listInstErr = limited
