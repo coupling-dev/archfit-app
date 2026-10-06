@@ -54,6 +54,22 @@ func TestOptionalDependenciesAreOptional(t *testing.T) {
 		t.Errorf("run = %v, want nil after cancellation", err)
 	}
 
+	t.Run("firestore starts without contacting Google", func(t *testing.T) {
+		c := validConfig(t)
+		c.StoreDriver, c.FirestoreProject = storeFirestore, "coupling-dev-510710"
+		st, _, _, err := platform(c, nil, http.DefaultClient)
+		if err != nil || st == nil {
+			t.Fatalf("platform = %v, %v, want a Firestore store", st, err)
+		}
+		_, network, stop := startRun(t, c, slog.New(slog.DiscardHandler))
+		if got := network.requests(); got != 0 {
+			t.Errorf("startup made %d outbound requests, want 0", got)
+		}
+		if err := stop(); err != nil {
+			t.Errorf("run = %v, want nil after cancellation", err)
+		}
+	})
+
 	t.Run("a configured key selects the Anthropic provider", func(t *testing.T) {
 		_, _, provider, err := platform(c, []byte(testAnthropicKey), http.DefaultClient)
 		if err != nil || provider == nil {
@@ -85,6 +101,13 @@ func TestRequiredDependenciesFailStartup(t *testing.T) {
 		{"missing app ID", func(_ *testing.T, c *Config) { c.AppID = 0 }, envAppID},
 		{"unknown store driver", func(_ *testing.T, c *Config) { c.StoreDriver = "redis" }, envStore},
 		{"unknown sandbox driver", func(_ *testing.T, c *Config) { c.SandboxDriver = "docker" }, envSandbox},
+		{"firestore without a project", func(_ *testing.T, c *Config) { c.StoreDriver = storeFirestore }, envFirestoreProject},
+		{"firestore with an invalid project", func(_ *testing.T, c *Config) {
+			c.StoreDriver, c.FirestoreProject = storeFirestore, "MARKER/project"
+		}, "invalid project ID"},
+		{"firestore with an invalid database", func(_ *testing.T, c *Config) {
+			c.StoreDriver, c.FirestoreProject, c.FirestoreDatabase = storeFirestore, "coupling-dev-510710", "MARKER/db"
+		}, "invalid database ID"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -221,7 +244,7 @@ func TestLogsNeverContainSecretsOrBodies(t *testing.T) {
 
 func TestImportsStayInsideTheDesign(t *testing.T) {
 	allowed := map[string]bool{}
-	for _, p := range []string{"gate", "control", "control/assist/anthropic", "store", "github/auth", "github/api", "github/webhook", "github/oidc", "queue", "queue/cloudtasks"} {
+	for _, p := range []string{"gate", "control", "control/assist/anthropic", "store", "store/firestore", "gcptoken", "github/auth", "github/api", "github/webhook", "github/oidc", "queue", "queue/cloudtasks"} {
 		allowed[modulePath+"internal/"+p] = true
 	}
 	out, err := exec.CommandContext(t.Context(), "go", "list", "-f", `{{join .Imports "\n"}}`, ".").Output()

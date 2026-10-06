@@ -132,6 +132,7 @@ func TestAllowedImportMatrix(t *testing.T) {
 		{"queue", func(p string) bool { return under(p, "queue") }, func(pkg, imp string) bool {
 			return seamImplementations[pkg] == internal+"queue" && imp == internal+"queue"
 		}},
+		{"gcptoken", func(p string) bool { return p == internal+"gcptoken" }, func(string, string) bool { return false }},
 		{"github", func(p string) bool { return under(p, "github") }, func(pkg, imp string) bool {
 			return pkg == internal+"github/api" && imp == internal+"github/auth"
 		}},

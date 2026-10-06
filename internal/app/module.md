@@ -65,10 +65,12 @@ single place where it is enforced at runtime.
 - Platform selection: `QueueDriver` `"inline"` → the inline driver; `"cloudtasks"` → `cloudtasks.New` with
   `ARCHFIT_TASKS_QUEUE`, the URL `ARCHFIT_WORKER_URL` + `/internal/webhooks`, the audience `ARCHFIT_WORKER_URL` and
   the invoker `ARCHFIT_INVOKER`. The worker role never enqueues and ignores `QueueDriver`. The `all` role refuses
-  `"cloudtasks"` at startup: it mounts no worker task route, so its tasks would never run. The cloudtasks driver needs a
-  Google access token source; `Run` has none yet, so `"cloudtasks"` is a startup error until the metadata-server
-  token source is wired (upgrade trigger: that source exists).
-  `StoreDriver` `"memory"` → `store.NewMemory()`; `SandboxDriver` `"none"` → nil `Sandbox`
+  `"cloudtasks"` at startup: it mounts no worker task route, so its tasks would never run. The cloudtasks driver gets
+  its own `gcptoken.Source` over the shared client; startup sends no request to Google.
+- Platform selection: `StoreDriver` `"memory"` → `store.NewMemory()`; `"firestore"` → `firestore.New` with
+  `FirestoreProject`, `FirestoreDatabase` and `FirestoreEmulator`, and a `gcptoken.Source` over the shared client
+  (nil, and one warning log line, when the emulator is set). `ARCHFIT_FIRESTORE_PROJECT` is required with
+  `"firestore"`; an invalid project or database ID is a startup error. Startup sends no request to Google. `SandboxDriver` `"none"` → nil `Sandbox`
   (managed discovery reports "not available"); `AnthropicKeyFile` empty → nil `Provider`. `control.New` and `anthropic.New` return errors; both are startup errors (a configured but invalid LLM key must not start silently). `app` passes the same `TokenSource` to `api.New` and to `control.Deps.Tokens`. Unknown driver names are a startup error. New drivers are added here and nowhere else.
 - Structured logging with `log/slog`, JSON to stdout: request ID, route, status, duration, installation ID, outcome. Never bodies, paths, messages, tokens.
 
@@ -103,7 +105,10 @@ type Config struct {
     CookieKeyFile    string // ARCHFIT_COOKIE_KEY_FILE
     OperatorTokenFile string // ARCHFIT_OPERATOR_TOKEN_FILE; authenticates the operator routes; never read by the public role
     AnthropicKeyFile string // ARCHFIT_ANTHROPIC_KEY_FILE; empty disables managed LLM
-    StoreDriver      string // ARCHFIT_STORE, "memory" until docs/tech-stack.md picks a KV
+    StoreDriver      string // ARCHFIT_STORE, "memory" (default) or "firestore"
+    FirestoreProject string // ARCHFIT_FIRESTORE_PROJECT; required by "firestore"
+    FirestoreDatabase string // ARCHFIT_FIRESTORE_DATABASE; empty selects "(default)"
+    FirestoreEmulator string // FIRESTORE_EMULATOR_HOST; host:port, plain HTTP and no credentials
     SandboxDriver    string // ARCHFIT_SANDBOX, "none" until docs/tech-stack.md picks one
     Role             string // ARCHFIT_ROLE: "all" (default), "public" or "worker"
     QueueDriver      string // ARCHFIT_QUEUE: "inline" (default) or "cloudtasks"
@@ -458,7 +463,7 @@ func New(c Config, hc *http.Client) (Provider, error)
 - **Direction**: app depends on store
 - **Strength**: contract
 - **LCA / Rank / Distance**: internal (root) / 1 / 1
-- **Volatility**: low functional, moderate implementation (KV backend unchosen)
+- **Volatility**: low functional, moderate implementation
 - **Balanced?**: yes
 - **Shared knowledge**: `app` constructs one `Store` and hands the same value to `gate` (which only reads) and `control`.
   `ErrNotFound` is the sentinel returned by `Get`; `app` never inspects it.
@@ -501,6 +506,65 @@ type Store interface {
 ```go
 // NewMemory returns an in-process Store for tests and local runs. Data is lost on exit.
 func NewMemory() Store
+```
+
+### internal/store/firestore
+
+- **Counterpart**: internal/store/firestore/
+- **Direction**: app depends on it (constructor only)
+- **Strength**: contract
+- **LCA / Rank / Distance**: internal (root) / 2 / 2
+- **Volatility**: low
+- **Balanced?**: yes
+- **Shared knowledge**: `app` calls `New` when `ARCHFIT_STORE=firestore` and passes the shared `http.Client`.
+  The 30-second client timeout bounds every Firestore request.
+
+<!-- contract: New, Config, TokenSource, DefaultDatabase — restated from internal/store/firestore/module.md -->
+```go
+// DefaultDatabase is the database ID used when Config.DatabaseID is empty.
+const DefaultDatabase = "(default)"
+
+// TokenSource returns an OAuth access token for the Firestore API.
+type TokenSource interface {
+    Token(ctx context.Context) (string, error)
+}
+
+// Config selects the database.
+type Config struct {
+    ProjectID  string // Google Cloud project ID
+    DatabaseID string // empty selects DefaultDatabase
+    // EmulatorHost is host:port of a Firestore emulator. When set, the driver uses plain HTTP and no credentials.
+    EmulatorHost string
+}
+
+// New returns a Store over the database in c. It validates c and contacts no server.
+// tokens may be nil only in emulator mode.
+func New(c Config, tokens TokenSource, hc *http.Client) (store.Store, error)
+```
+
+### internal/gcptoken
+
+- **Counterpart**: internal/gcptoken/
+- **Direction**: app depends on it (constructor only)
+- **Strength**: contract
+- **LCA / Rank / Distance**: internal (root) / 1 / 1
+- **Volatility**: low
+- **Balanced?**: yes
+- **Shared knowledge**: `app` builds a `Source` for each Google API driver: the Firestore `TokenSource`, and in
+  `Run` the `cloudtasks.TokenSource`.
+
+<!-- contract: Source, New — restated from internal/gcptoken/module.md -->
+```go
+// Source returns the access token of the service account the workload runs as.
+// It reads no key file. It caches the token until refreshBefore ahead of its expiry.
+// Safe for concurrent use; one refresh runs at a time.
+type Source struct{ /* unexported */ }
+
+// New returns a Source that asks the metadata server through hc. It sends no request until the first Token call.
+func New(hc *http.Client) *Source
+
+// Token returns a valid access token. Errors never contain the token.
+func (s *Source) Token(ctx context.Context) (string, error)
 ```
 
 ### internal/github/auth, api, webhook, oidc
@@ -659,7 +723,6 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
 ## Change Vectors
 
 - A new `Store`, `Sandbox`, `Queue`, or `Provider` driver: one constructor call and one driver name.
-- The Google token source for `cloudtasks`: one argument of `run` in `Run`.
 - A new route or operator endpoint.
 - New configuration variables, timeouts, or log fields.
 - Moving the sweep trigger from an external scheduler to an in-process ticker.
@@ -702,6 +765,7 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   and without the operator token, the worker URL and the invoker; the worker role with `ARCHFIT_QUEUE=cloudtasks`;
   `cloudtasks` in the `all` role; `cloudtasks` without the queue name, the worker URL or the invoker; an invoker that
   is not an e-mail; a worker URL with a trailing slash or over plain `http`.
+  `ARCHFIT_STORE=firestore` without a project, with a project and a named database, and with `FIRESTORE_EMULATOR_HOST`.
   **Expected behavior**: defaults `:8080`, `memory`, `none`, `all`, `inline`; an error naming the first missing or
   invalid variable; the public role loads without the operator token, the worker role does not; the worker ignores the
   queue driver; no secret content in any error.
@@ -785,8 +849,9 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   **Scenario**: run every route with marker strings in bodies, tokens, and secret files; capture logs.
   **Expected behavior**: no marker appears.
 - **Test name**: `TestOptionalDependenciesAreOptional`
-  **Scenario**: no Anthropic key, sandbox `none`.
-  **Expected behavior**: startup succeeds; `control.Deps.Provider` and `Sandbox` are nil; gate routes serve.
+  **Scenario**: no Anthropic key, sandbox `none`; then `ARCHFIT_STORE=firestore` with a project.
+  **Expected behavior**: startup succeeds; `control.Deps.Provider` and `Sandbox` are nil; gate routes serve. With
+  Firestore, startup sends no outbound request.
 - **Test name**: `TestPublicRoleBootsWithoutTheOperatorToken`
   **Scenario**: `run` in the public role with no operator token file, and with a file path that does not exist; then
   the worker role without one.
@@ -798,7 +863,8 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   **Expected behavior**: `202` and two task creations in the configured queue, named after the delivery and aimed at
   the worker route; the two other cases fail at startup and name `ARCHFIT_QUEUE` and `ARCHFIT_TASKS_QUEUE`.
 - **Test name**: `TestRequiredDependenciesFailStartup`
-  **Scenario**: unreadable private key file; empty webhook secret file; missing base URL.
+  **Scenario**: unreadable private key file; empty webhook secret file; missing base URL; Firestore without a
+  project, with an invalid project ID, with an invalid database ID.
   **Expected behavior**: `Run` returns an error before listening.
 
 ### Behavior Tests

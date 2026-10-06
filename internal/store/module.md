@@ -2,7 +2,7 @@
 
 **Path**: internal/store/ (includes the transparent folder `storetest/`, the exported conformance suite)
 **Parent**: internal/ (Archfit App root)
-**Submodules**: none (leaf)
+**Submodules**: firestore
 
 ## Purpose
 
@@ -17,6 +17,7 @@ habit of every caller instead of a property of one interface.
 - Make tenant scoping structural: every key operation takes a `Tenant` and none crosses tenants.
 - List the tenants that own keys (`Tenants`), so the sweep can forget an installation whose uninstall webhook was missed.
 - Provide `NewMemory`, the in-process implementation used by tests, local runs, and as `ARCHFIT_STORE=memory`.
+  The persistent driver is the child `store/firestore` (`ARCHFIT_STORE=firestore`).
 - Provide an atomic integer `Add` so the budget counter needs no transaction.
 - Provide `CompareAndSwap` on one key, so a caller can hold a lease that every instance sees (the publication
   lease of `gate/feedback`).
@@ -31,8 +32,8 @@ migrations, value encoding.
 Generic. Key-value storage is a solved problem; the module only fixes the smallest interface the App needs.
 Functional volatility is low: the operations follow from decisions.md §2 "Own state", plus one compare-and-swap
 for leases that serialize work across instances. Implementation
-volatility is moderate: the KV platform is unchosen until `docs/tech-stack.md` exists. The interface absorbs
-that choice; consumers never see it.
+volatility is moderate: the platform is Firestore (docs/tech-stack.md), and its driver is a child package. The
+interface absorbs that choice; consumers never see it.
 
 ## Encapsulated Knowledge
 
@@ -195,29 +196,29 @@ knowledge of every entry below; nothing is restated because this file is the nor
 - **LCA / Rank / Distance**: root / 1 / 1
 - **Volatility**: Low
 - **Balanced?**: Yes
-- **Shared knowledge**: `NewMemory` when `ARCHFIT_STORE=memory`; later a driver constructor that returns `Store`.
+- **Shared knowledge**: `NewMemory` when `ARCHFIT_STORE=memory`; `firestore.New` (see `store/firestore`) when
+  `ARCHFIT_STORE=firestore`. Both return `Store`.
 
-### Future KV platform (external)
+### store/firestore (child)
 
-- **Counterpart**: a managed KV product, reached through a child package `internal/store/<driver>/` added after `docs/tech-stack.md`
+- **Counterpart**: internal/store/firestore/
 - **Direction**: the driver depends on `store` (implements `Store`); `store` itself never imports its drivers; `app` selects one
 - **Strength**: Contract
-- **LCA / Rank / Distance**: store / 1 / 1 for driver → `store`; the platform itself is outside the tree (highest distance), so only the driver holds its SDK
-- **Volatility**: Moderate (unchosen platform)
+- **LCA / Rank / Distance**: store / 1 / 1
+- **Volatility**: Moderate
 - **Balanced?**: Yes
-- **Shared knowledge**: the Public Contract, the semantics table, the key layout `<tenant>/<key>`, the decimal counter
-  encoding, and `storetest.Run`. A platform that cannot do an atomic add (compare-and-swap, increment, or a
-  serializable transaction on one key) cannot host this interface. `CompareAndSwap` must be atomic across every
-  App instance, not only within one process: Cloud Run may run several instances at once (docs/design/cloud). On
-  Firestore that is a transaction that reads the document and commits under its `updateTime` precondition, or a
-  `currentDocument.exists=false` precondition for a `nil` `old`; a client-side lock does not qualify. The
-  persistent driver is not built yet; until it is, `storetest` cannot prove this across processes, so the driver
-  needs one test that races two clients of the same database.
+- **Shared knowledge**: the Public Contract, the semantics table, the input limits, the canonical decimal counter
+  encoding, and `storetest.Run`. The driver keeps its own document layout; the `<tenant>/<key>` layout above is the
+  memory driver's. A platform that cannot do an atomic add (compare-and-swap, increment, or a serializable
+  transaction on one key) cannot host this interface. `CompareAndSwap` must be atomic across every App instance,
+  not only within one process: Cloud Run may run several instances at once (docs/design/cloud). The Firestore driver
+  commits under the document's `updateTime` precondition, or `currentDocument.exists=false` for a `nil` `old`; a
+  client-side lock does not qualify. Its tests race several independent clients of one database, on a fake and on
+  the Firestore emulator. Any later driver is a sibling package `store/<driver>` under the same rules.
 
 ## Change Vectors
 
-- Choosing the KV platform: a new `store/<driver>` package plus one line in `app`. `store` then becomes a parent;
-  its contract does not change.
+- Another platform: a new `store/<driver>` package plus one line in `app`. The contract does not change.
 - Raising key or value limits.
 - Replacing the memory map with a sharded or per-tenant structure.
 - Adding conformance cases when a driver shows a new failure mode.
@@ -312,7 +313,8 @@ All cases live in `storetest.Run` and run against `NewMemory` and every driver.
   **Expected behavior**: an error matching `context.Canceled`; no state change.
 - **Test name**: `TestStoreImportsOnlyStdlib`
   **Scenario**: `go list -deps ./internal/store/...`.
-  **Expected behavior**: no internal package other than `store` and `store/storetest`; no third-party module.
+  **Expected behavior**: no internal package outside `store` and its children (`storetest`, the drivers); no
+  third-party module. A driver reaches its platform over `net/http` and takes credentials through an interface.
 - **Test name**: `TestErrorsCarryNoValues`
   **Scenario**: trigger every validation error with a marker string in key and value.
   **Expected behavior**: no error text contains the marker.

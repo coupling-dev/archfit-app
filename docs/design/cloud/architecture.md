@@ -125,12 +125,14 @@ its entitlement in one transaction. Cloud Audit Logs record who created the task
 
 - Firestore in Native mode holds all tenant state in one database, behind the existing `Store` seam.
 - Every key carries its tenant. Isolation is a property of the code and of `store/storetest`, not of IAM.
-- The driver uses the REST API over `net/http`, in line with the no-SDK rule of [tech stack](../../tech-stack.md#dependencies).
-  It must pass `store/storetest` against the Firestore emulator.
+- The driver `store/firestore` uses the REST API over `net/http`, in line with the no-SDK rule of
+  [tech stack](../../tech-stack.md#dependencies). It passes `store/storetest` against a fake and, in CI, against the
+  Firestore emulator. It reads the access token of the service account from the metadata server (`gcptoken`).
+  See [Operations](operations.md#firestore) for configuration, indexes and TTL.
 - `Store` gains one operation: a transaction over several keys of one tenant. See [Concurrency](#concurrency).
-- `Store` already has a single-key `CompareAndSwap` for the publication leases. The driver implements it with a
-  transaction that commits under the document's `updateTime` precondition, or with `exists=false` when the key must be
-  missing. It must be atomic across all instances. A lock in one process is not enough.
+- `Store` already has a single-key `CompareAndSwap` for the publication leases. The driver reads the document, then
+  commits under the document's `updateTime` precondition, or with `exists=false` when the key must be missing. That is
+  atomic across all instances. A lock in one process is not enough.
 - The free quota covers only the default database. The database location cannot change after creation.
 - Daily backups with a 7-day retention. A restore creates a new database and never overwrites the live one.
 - During a rollout, two revisions run at the same time. Each stored format change must be readable by the previous revision.
@@ -177,7 +179,7 @@ after a takeover. Then the last write to GitHub wins until the next sweep.
 
 These capabilities must exist before the first deployment. Details belong to the implementation plan.
 
-- A Firestore `Store` driver and the multi-key transaction, both covered by `store/storetest`.
+- The multi-key `Store` transaction in the memory and Firestore drivers, covered by `store/storetest`.
 - Account writes through the transaction.
 - Open decision 1 applied.
 - A queue seam with an inline driver (default) and a Cloud Tasks driver, and a worker route for queued webhooks.

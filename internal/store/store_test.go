@@ -30,12 +30,13 @@ func TestStoreImportsOnlyStdlib(t *testing.T) {
 	if err != nil {
 		t.Fatalf("go list: %v", err)
 	}
-	allowed := []string{storePkg, storePkg + "/storetest"}
 	if !strings.Contains(string(out), storePkg) {
 		t.Fatalf("go list did not list %s: %q", storePkg, out)
 	}
+	// store, storetest and the drivers under store/ import the standard library and store only: a driver
+	// reaches its platform over net/http and takes credentials through an interface.
 	for pkg := range strings.FieldsSeq(string(out)) {
-		if !slices.Contains(allowed, pkg) {
+		if pkg != storePkg && !strings.HasPrefix(pkg, storePkg+"/") {
 			t.Errorf("store depends on %s; only the standard library is allowed", pkg)
 		}
 	}

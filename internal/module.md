@@ -2,7 +2,7 @@
 
 **Path**: internal/
 **Parent**: none (root)
-**Submodules**: app, wire, github, store, queue, gate, control
+**Submodules**: app, wire, github, store, gcptoken, queue, gate, control
 
 ## Purpose
 
@@ -48,7 +48,7 @@ The system as a whole is a **core** product. Per area:
 | `control/account`                                    | Supporting — needed, not differentiating                | Moderate                                                              | Trial and commercial terms are **[default]** and expected to change before launch |
 | `control/proposal`                                   | Supporting                                              | Low                                                                   | Branch-plus-draft-PR mechanics are stable GitHub behavior                         |
 | `wire`                                               | Published language between three repositories           | Moderate                                                              | Changes only with a versioned engine or Action release                            |
-| `github`, `store`                                    | Generic — solved problems                               | Low functional, moderate implementation (`store` backend is unchosen) | Wrapped behind contracts                                                          |
+| `github`, `store`, `gcptoken`                        | Generic — solved problems                               | Low functional, moderate implementation                               | Wrapped behind contracts                                                          |
 | `app`                                                | Supporting                                              | Low                                                                   | Wiring only                                                                       |
 
 ## Encapsulated Knowledge
@@ -117,7 +117,10 @@ type Config struct {
     CookieKeyFile    string // ARCHFIT_COOKIE_KEY_FILE
     OperatorTokenFile string // ARCHFIT_OPERATOR_TOKEN_FILE; authenticates the operator routes; never read by the public role
     AnthropicKeyFile string // ARCHFIT_ANTHROPIC_KEY_FILE; empty disables managed LLM
-    StoreDriver      string // ARCHFIT_STORE, "memory" until docs/tech-stack.md picks a KV
+    StoreDriver      string // ARCHFIT_STORE, "memory" (default) or "firestore"
+    FirestoreProject string // ARCHFIT_FIRESTORE_PROJECT; required by "firestore"
+    FirestoreDatabase string // ARCHFIT_FIRESTORE_DATABASE; empty selects "(default)"
+    FirestoreEmulator string // FIRESTORE_EMULATOR_HOST; host:port, plain HTTP and no credentials
     SandboxDriver    string // ARCHFIT_SANDBOX, "none" until docs/tech-stack.md picks one
     Role             string // ARCHFIT_ROLE: "all" (default), "public" or "worker"
     QueueDriver      string // ARCHFIT_QUEUE: "inline" (default) or "cloudtasks"
@@ -160,6 +163,8 @@ internal/                         Archfit App (root)
 │   ├── webhook/                  signature verification, normalized events
 │   └── oidc/                     Actions OIDC token verification
 ├── store/                        Store interface (tenant-prefixed KV) + in-memory implementation
+│   └── firestore/                persistent driver: Firestore over REST
+├── gcptoken/                     service-account access token from the Cloud Run metadata server
 ├── queue/                        Queue interface (webhook hand-off) + inline implementation
 │   └── cloudtasks/               Cloud Tasks implementation over REST
 ├── gate/                         the gate path (core)
@@ -179,7 +184,7 @@ internal/                         Archfit App (root)
         └── graph/                read-only graph view model
 ```
 
-Root fan-out is seven, two above the 4±1 guidance; see Minor issues below.
+Root fan-out is eight, three above the 4±1 guidance; see Minor issues below.
 
 ### Go packaging rules
 
@@ -190,7 +195,7 @@ Root fan-out is seven, two above the 4±1 guidance; see Minor issues below.
   boilerplate, and these children hold no hidden internals. Their parents' contracts say so, and consumers
   cite the child they import. `gate` and `control` publish only their façade package; nobody outside imports
   `gate/*` or `control/*`, with one exception: `app` calls the constructor of a platform implementation
-  (`control/assist/anthropic`, and later `store/<driver>`, `control/onboarding/<sandbox>`), which `control` publishes for that purpose.
+  (`control/assist/anthropic`, `store/firestore`, and later `control/onboarding/<sandbox>`), which `control` or `store` publishes for that purpose.
 - `cmd/reporter` stays a thin entry point: build the logger, `app.Load`, `app.Run`.
 
 ### Allowed imports (enforced by Archfit on this repository and by a root test)
@@ -199,6 +204,8 @@ Root fan-out is seven, two above the 4±1 guidance; see Minor issues below.
 | ---------------------- | --------------------------------------------------------------------------- |
 | `wire/*`               | standard library, one YAML library (in `wire/settings`, `wire/policy` only) |
 | `store`                | standard library                                                            |
+| `store/<driver>`       | standard library, `store`                                                   |
+| `gcptoken`             | standard library                                                            |
 | `queue`, `queue/*`     | standard library; `queue` (from its drivers and `queuetest`)                |
 | `github/*`             | standard library, `github/auth` (from `github/api`)                         |
 | `gate`, `gate/*`       | `wire/*`, `github/*`, `store`, gate siblings                                |
@@ -291,6 +298,9 @@ Distance scale and thresholds are those of the Fractal Design skill. Depths: roo
 | control → gate, store, github/*                                             | Contract                          | root           | 1–2  | 1–2      | Moderate   | Yes       | —                                                |
 | github/api → github/auth (`TokenSource`)                                    | Contract                          | github         | 1    | 1        | Low        | Yes       | —                                                |
 | app → gate, control, store, queue                                           | Contract (constructors, handlers) | root           | 1    | 1        | Low        | Yes       | —                                                |
+| app → gcptoken (constructor)                                                | Contract                          | root           | 1    | 1        | Low        | Yes       | —                                                |
+| app → store/firestore (constructor)                                         | Contract                          | root           | 2    | 2        | Low        | Yes       | —                                                |
+| store/firestore → store (implements `Store`)                                | Contract                          | store          | 1    | 1        | Moderate   | Yes       | —                                                |
 | app → queue/cloudtasks (constructor)                                        | Contract                          | root           | 2    | 2        | Low        | Yes       | —                                                |
 | queue/cloudtasks → queue (`Queue`)                                          | Contract                          | queue          | 1    | 1        | Low        | Yes       | —                                                |
 | app → github/{auth,api,webhook,oidc}                                        | Contract                          | root           | 2    | 2        | Low        | Yes       | —                                                |
@@ -369,8 +379,9 @@ draft are gone. What the real engine changed in this design:
 
 ### Minor issues (accepted)
 
-- Root fan-out of seven exceeds 4±1 by two. `app` is wiring only, and `store` and `queue` are single interfaces, so
-  the load is low. Folding them elsewhere would hide a platform seam or fatten `cmd/reporter`.
+- Root fan-out of eight exceeds 4±1 by three. `app` is wiring only, `store` and `queue` are single interfaces and
+  `gcptoken` is one small leaf that only `app` imports, so the load is low. Folding them elsewhere would hide a
+  platform seam, fatten `cmd/reporter`, or tie the token source to one of the Google API drivers that use it.
 - `github/api` is a wide leaf. It is generic, low-volatility, and split into role interfaces so no consumer holds all of it.
 - `control/ui` is the largest leaf-like module. Split further only when a second contributor works on it.
 
