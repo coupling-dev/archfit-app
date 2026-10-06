@@ -92,6 +92,11 @@ run "each_service_runs_as_its_own_account_with_at_most_two_instances" {
   }
 
   assert {
+    condition     = tonumber(trimsuffix(google_cloud_run_v2_service.this["public"].template[0].timeout, "s")) > 300
+    error_message = "The public timeout must exceed the 300 s deadline of the managed assist route."
+  }
+
+  assert {
     condition     = alltrue([for s in google_cloud_run_v2_service.this : s.template[0].scaling[0].max_instance_count == 2])
     error_message = "Two instances per service cap cost."
   }

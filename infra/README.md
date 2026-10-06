@@ -70,10 +70,10 @@ A routine runtime change cannot destroy data: Firestore, the secrets, and the im
 Each service mounts only the secrets that its account can read. The data stack sets this list once, and the runtime
 stack reads it. Every secret is a file at `/secrets/<secret>/value`, and its `*_FILE` variable names that file.
 
-| Service          | Ingress       | Invoker check              | Secrets                                                                             | Other settings                                                                         |
-| ---------------- | ------------- | -------------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `archfit-public` | All           | Off (no `allUsers` grant)  | App private key, webhook secret, OAuth secret, cookie key, Anthropic key (optional) | `ARCHFIT_ROLE=public`, `ARCHFIT_QUEUE=cloudtasks`, `ARCHFIT_TASKS_QUEUE`, timeout 60 s |
-| `archfit-worker` | Internal only | On, `archfit-invoker` only | App private key, webhook secret, OAuth secret, cookie key, operator token           | `ARCHFIT_ROLE=worker`, custom audience = worker URL, timeout 600 s                     |
+| Service          | Ingress       | Invoker check              | Secrets                                                                             | Other settings                                                                          |
+| ---------------- | ------------- | -------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `archfit-public` | All           | Off (no `allUsers` grant)  | App private key, webhook secret, OAuth secret, cookie key, Anthropic key (optional) | `ARCHFIT_ROLE=public`, `ARCHFIT_QUEUE=cloudtasks`, `ARCHFIT_TASKS_QUEUE`, timeout 330 s |
+| `archfit-worker` | Internal only | On, `archfit-invoker` only | App private key, webhook secret, OAuth secret, cookie key, operator token           | `ARCHFIT_ROLE=worker`, custom audience = worker URL, timeout 600 s                      |
 
 These settings follow [Roles and routing](../docs/design/cloud/operations.md#roles-and-routing) and
 [Firestore](../docs/design/cloud/operations.md#firestore). Both services also get `ARCHFIT_BASE_URL=https://app.coupling.dev`,
@@ -122,7 +122,8 @@ The design leaves these choices to the implementation. Each one is the simplest 
 - **Secret replication** is user-managed in `europe-west1`, so secrets stay in the one region.
 - **Sizing.** 2 services × 2 instances × 1 vCPU uses the full 4 vCPU quota. During a rollout, new instances can wait
   for quota. Raise the quota before a release needs more (see [Project guardrails](../docs/design/cloud/operations.md#project-guardrails)).
-- **Timeouts.** The public service has 60 s, above the 55 s handler deadline. The worker has 600 s, for the sweep.
+- **Timeouts.** The public service has 330 s, above the 300 s deadline of the managed assist route. Uploads and the
+  other routes stop at 55 s in the App. The worker has 600 s, for the sweep.
 - **The uptime check calls the `run.app` URL**, so it works before DNS. `/healthz` does not depend on the host.
 - **The public account can act as the invoker.** A webhook task names the invoker in its own `oidcToken`, and Cloud
   Tasks requires that. The enforced queue-level route still sends the token only to `/internal/webhooks`.

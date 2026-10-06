@@ -55,10 +55,12 @@ locals {
     })
   }
 
+  # The public timeout sits above the longest route deadline, the 300 s managed assist route (handler.go); uploads
+  # and control routes stop at 55 s on their own. The worker timeout covers the sweep.
   # The public service is the only component that the internet reaches. Its invoker check is off instead of an
   # allUsers binding. The worker is internal, and its invoker check is on.
   service_access = {
-    public = { ingress = "INGRESS_TRAFFIC_ALL", invoker_iam_disabled = true, timeout = "60s" }
+    public = { ingress = "INGRESS_TRAFFIC_ALL", invoker_iam_disabled = true, timeout = "330s" }
     worker = { ingress = "INGRESS_TRAFFIC_INTERNAL_ONLY", invoker_iam_disabled = false, timeout = "600s" }
   }
 }
