@@ -33,7 +33,7 @@ single place where it is enforced at runtime.
   - Done, or an `Ignored` event: `204`.
   - Transient (every handler error that `api.Permanent` does not mark, a panic, a deadline): `503`, so the queue
     retries. Logged with `retry: true`.
-  - Permanent (`api.Permanent`: a gone resource or a final GitHub `4xx`), a bad signature, an unparsable body, an
+  - Permanent (`api.Permanent`: a gone resource, or a final GitHub `4xx` such as `400` or `422`), a bad signature, an unparsable body, an
     unknown or missing half, or a body over the cap: `204`, logged at error level, never retried.
   - The inline driver never retries. Its errors are logged, and the intake request line has the outcome `handler_error`.
 - Worker identity (`worker` role): every `/internal/*` route requires a Google ID token in
@@ -101,7 +101,7 @@ type Config struct {
     OAuthClientID    string // ARCHFIT_GITHUB_OAUTH_CLIENT_ID
     OAuthSecretFile  string // ARCHFIT_GITHUB_OAUTH_SECRET_FILE
     CookieKeyFile    string // ARCHFIT_COOKIE_KEY_FILE
-    OperatorTokenFile string // ARCHFIT_OPERATOR_TOKEN_FILE; authenticates /internal/*
+    OperatorTokenFile string // ARCHFIT_OPERATOR_TOKEN_FILE; authenticates the operator routes; never read by the public role
     AnthropicKeyFile string // ARCHFIT_ANTHROPIC_KEY_FILE; empty disables managed LLM
     StoreDriver      string // ARCHFIT_STORE, "memory" until docs/tech-stack.md picks a KV
     SandboxDriver    string // ARCHFIT_SANDBOX, "none" until docs/tech-stack.md picks one
@@ -559,8 +559,9 @@ func New(c Credentials, hc *http.Client) (TokenSource, OAuth, error)
 <!-- contract: Permanent — restated from internal/github/api/module.md -->
 ```go
 // Permanent reports whether err is a GitHub answer that the same call cannot change when it is repeated:
-// ErrNotFound, or a 4xx status other than 401, 408, 409 and 429. Rate limits, 5xx, transport and every other
-// error are not permanent.
+// ErrNotFound, or a 4xx status other than 401, 403, 408, 409 and 429. A 403 stays retryable because a secondary
+// rate limit can arrive without the headers that mark it. Rate limits, 5xx, transport and every other error are
+// not permanent.
 func Permanent(err error) bool
 ```
 

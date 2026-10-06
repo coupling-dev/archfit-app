@@ -60,8 +60,9 @@ needs one. It is a wide leaf on purpose: role interfaces keep each consumer's kn
   `x-github-request-id`. Never the URL's variable parts, the body, or a token.
 - A `TokenSource` error is returned wrapped and treated as opaque.
 - `Permanent` classifies a returned error for a caller that can repeat the work later: `ErrNotFound` and a final
-  `4xx` (missing permission, `400`, `422`) are permanent. `401` (the App credential can change), `408`, `409`
-  (a conflict can clear) and every rate limit are not.
+  `4xx` (`400`, `422`) are permanent. `401` (the App credential can change), `403` (a secondary rate limit can
+  arrive without its headers, so a missing permission is retried too), `408`, `409` (a conflict can clear) and
+  every rate limit are not.
 
 ### Backoff and retry
 
@@ -177,8 +178,9 @@ var (
 
 ```go
 // Permanent reports whether err is a GitHub answer that the same call cannot change when it is repeated:
-// ErrNotFound, or a 4xx status other than 401, 408, 409 and 429. Rate limits, 5xx, transport and every other
-// error are not permanent.
+// ErrNotFound, or a 4xx status other than 401, 403, 408, 409 and 429. A 403 stays retryable because a secondary
+// rate limit can arrive without the headers that mark it. Rate limits, 5xx, transport and every other error are
+// not permanent.
 func Permanent(err error) bool
 ```
 
@@ -497,10 +499,10 @@ the network.
   `Retry-After`; `429`; `422`; `500` on `POST`.
   **Expected behavior**: `ErrNotFound` ×2; error; error; rate-limit path ×3; error; error without a retry.
 - **Test name**: `TestPermanent`
-  **Scenario**: table of final answers to a `POST`: `404`; `410`; `400`; `403` permission; `422`; `401` twice; `408`;
-  `409`; a rate limit beyond the budget; `500`; `503`. Then plain errors: a Store error, `context.DeadlineExceeded`,
-  a wrapped `ErrRateLimited`, a wrapped `ErrNotFound`.
-  **Expected behavior**: permanent for the first five and for the wrapped `ErrNotFound`; not permanent for the rest.
+  **Scenario**: table of final answers to a `POST`: `404`; `410`; `400`; `422`; `403` without rate-limit headers; `401`
+  twice; `408`; `409`; a rate limit beyond the budget; `500`; `503`. Then plain errors: a Store error,
+  `context.DeadlineExceeded`, a wrapped `ErrRateLimited`, a wrapped `ErrNotFound`.
+  **Expected behavior**: permanent for the first four and for the wrapped `ErrNotFound`; not permanent for the rest.
 - **Test name**: `TestUnauthorizedInvalidatesAndRetriesOnce`
   **Scenario**: table with a recording `TokenSource` stub: `401` then `200` on `GET`; `401` then `200` on `PATCH`;
   `401` twice; `401` on an App JWT route; `401` on a `Users` call.

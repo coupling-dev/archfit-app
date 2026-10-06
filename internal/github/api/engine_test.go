@@ -86,7 +86,7 @@ func TestPermanent(t *testing.T) {
 		{"404", []reply{{status: 404}}, true},
 		{"410", []reply{{status: 410}}, true},
 		{"400", []reply{{status: 400}}, true},
-		{"403 permission", []reply{{status: 403}}, true},
+		{"403 without rate-limit headers", []reply{{status: 403}}, false},
 		{"422", []reply{{status: 422}}, true},
 		{"401 twice", []reply{{status: 401}, {status: 401}}, false},
 		{"408", []reply{{status: 408}}, false},

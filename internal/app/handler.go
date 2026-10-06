@@ -94,11 +94,6 @@ type handlerDeps struct {
 func newHandler(d handlerDeps) http.Handler {
 	s := &server{handlerDeps: d, operatorSum: sha256.Sum256(d.operatorToken)}
 	s.inline = queue.NewInline(s.runInline)
-	if s.queue == nil {
-		s.queue = s.inline
-	} else {
-		s.queued = true
-	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
 	if d.role != roleWorker {
@@ -129,7 +124,6 @@ type server struct {
 	handlerDeps
 	operatorSum [sha256.Size]byte
 	inline      queue.Queue // processes in this request; the fallback when s.queue refuses a task
-	queued      bool        // s.queue is a real queue, not s.inline
 }
 
 // requestInfo collects the log fields only a route handler knows.
@@ -235,9 +229,10 @@ func isolate(f func() error) (err error) {
 	return f()
 }
 
-// webhook is intake: it verifies a delivery and queues it as two tasks, gate first. Once the signature is
-// valid the answer is 202 whatever happens next: the queue retries the work, and GitHub redelivery and the
-// sweep are the recovery path. A task the queue refuses is processed inline, in this request.
+// webhook is intake: it verifies a delivery and queues it as two tasks, gate first. A verified delivery that
+// parses answers 202 whatever happens next. A real queue retries a failed task; the inline driver does not. A
+// GitHub redelivery inside 24 hours has the same task names and is refused as a duplicate, so the sweep is the
+// recovery path for work that was lost. A task the queue refuses is processed inline, in this request.
 func (s *server) webhook(w http.ResponseWriter, r *http.Request) {
 	ri := info(r)
 	ri.deliveryID = loggedID(r.Header.Get(webhook.HeaderDelivery))
@@ -284,7 +279,7 @@ func (s *server) webhook(w http.ResponseWriter, r *http.Request) {
 // enqueue hands t to the queue. The inline driver gets no enqueue deadline: it does the work itself, under the
 // handlers' own deadlines.
 func (s *server) enqueue(ctx context.Context, t queue.Task) error {
-	if !s.queued {
+	if s.queue == nil {
 		return s.inline.Enqueue(ctx, t)
 	}
 	ctx, cancel := context.WithTimeout(ctx, enqueueTimeout)

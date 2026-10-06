@@ -74,8 +74,8 @@ The system's contract is its external surface. Everything else is internal.
 | `POST /v1/baselines`    | `control` (onboarding)    | same OIDC checks, through the gate's `Receiver`           |
 | `POST /webhooks/github` | `app` → `queue`           | `X-Hub-Signature-256`                                     |
 | `POST /internal/webhooks` | `app` → `gate`, `control` (worker role) | Google ID token of the invoker, then `X-Hub-Signature-256` |
-| `POST /internal/sweep`  | `app` → `control`, `gate` | operator bearer token **[default]**                       |
-| `POST /internal/grants` | `app` → `control`         | operator bearer token **[default]**                       |
+| `POST /internal/sweep`  | `app` → `control`, `gate` | operator bearer token **[default]**; on the worker role the invoker ID token |
+| `POST /internal/grants` | `app` → `control`         | operator bearer token **[default]**; on the worker role the invoker ID token too |
 | everything else         | `control` (ui)            | GitHub OAuth session cookie                               |
 
 ### Upload protocol
@@ -115,7 +115,7 @@ type Config struct {
     OAuthClientID    string // ARCHFIT_GITHUB_OAUTH_CLIENT_ID
     OAuthSecretFile  string // ARCHFIT_GITHUB_OAUTH_SECRET_FILE
     CookieKeyFile    string // ARCHFIT_COOKIE_KEY_FILE
-    OperatorTokenFile string // ARCHFIT_OPERATOR_TOKEN_FILE; authenticates /internal/*
+    OperatorTokenFile string // ARCHFIT_OPERATOR_TOKEN_FILE; authenticates the operator routes; never read by the public role
     AnthropicKeyFile string // ARCHFIT_ANTHROPIC_KEY_FILE; empty disables managed LLM
     StoreDriver      string // ARCHFIT_STORE, "memory" until docs/tech-stack.md picks a KV
     SandboxDriver    string // ARCHFIT_SANDBOX, "none" until docs/tech-stack.md picks one
@@ -396,7 +396,8 @@ draft are gone. What the real engine changed in this design:
 - Tenant identity comes from a verified webhook, verified OIDC claims, or an authorized OAuth session; never from a client-supplied ID.
 - Nothing is persisted except KV keys under an installation prefix (and the system budget counter). No report, source, queue state, or job table.
 - Logs and telemetry carry IDs, digests, outcomes and timings only: no report bodies, paths, or messages.
-- Handlers do their work in the request and are idempotent; GitHub holds the dedup keys.
+- Webhook handlers are idempotent: a queue delivers at least once, and the task name (the delivery ID and the half)
+  is the only dedup key the App gives the queue. Uploads do their work in the request.
 - GitHub rate-limit exhaustion before a decision is published leaves checks pending for the sweep; it never produces
   green. A rate limit on the changed-file list, which only filters annotations, comes after the gate check is written
   with its decided conclusion; the retry adds the annotations.

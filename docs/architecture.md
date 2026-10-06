@@ -355,11 +355,11 @@ runs inline in the intake request. With the inline driver, the default, every ta
 
 The worker answers by error class:
 
-| Class     | Examples                                                                       | Answer | Effect                     |
-| --------- | ------------------------------------------------------------------------------ | ------ | -------------------------- |
-| Done      | The handler succeeded, or the event is ignored                                 | `204`  | The task is complete       |
-| Transient | A Store error, a GitHub rate limit or `5xx`, a deadline, a panic               | `503`  | The queue retries the task |
-| Permanent | A gone resource, a final GitHub `4xx`, a bad signature, an unparsable delivery | `204`  | An error line; no retry    |
+| Class     | Examples                                                                          | Answer | Effect                     |
+| --------- | --------------------------------------------------------------------------------- | ------ | -------------------------- |
+| Done      | The handler succeeded, or the event is ignored                                    | `204`  | The task is complete       |
+| Transient | A Store error, a GitHub rate limit or `5xx`, a deadline, a panic                  | `503`  | The queue retries the task |
+| Permanent | A gone resource, a GitHub `400` or `422`, a bad signature, an unparsable delivery | `204`  | An error line; no retry    |
 
 Handlers are idempotent, because a queue delivers at least once and two worker instances can run one task at the
 same time. The publication lease serializes the GitHub writes of one head.

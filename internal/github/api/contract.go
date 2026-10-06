@@ -28,8 +28,9 @@ var (
 )
 
 // Permanent reports whether err is a GitHub answer that the same call cannot change when it is repeated:
-// ErrNotFound, or a 4xx status other than 401, 408, 409 and 429. Rate limits, 5xx, transport and every other
-// error are not permanent.
+// ErrNotFound, or a 4xx status other than 401, 403, 408, 409 and 429. A 403 stays retryable because a secondary
+// rate limit can arrive without the headers that mark it. Rate limits, 5xx, transport and every other error are
+// not permanent.
 func Permanent(err error) bool {
 	if errors.Is(err, ErrNotFound) {
 		return true
@@ -39,7 +40,7 @@ func Permanent(err error) bool {
 		return false
 	}
 	switch se.status {
-	case http.StatusUnauthorized, http.StatusRequestTimeout, http.StatusConflict, http.StatusTooManyRequests:
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusRequestTimeout, http.StatusConflict, http.StatusTooManyRequests:
 		return false
 	}
 	return true

@@ -56,7 +56,7 @@ type Config struct {
 	OAuthClientID     string // ARCHFIT_GITHUB_OAUTH_CLIENT_ID
 	OAuthSecretFile   string // ARCHFIT_GITHUB_OAUTH_SECRET_FILE
 	CookieKeyFile     string // ARCHFIT_COOKIE_KEY_FILE
-	OperatorTokenFile string // ARCHFIT_OPERATOR_TOKEN_FILE; authenticates /internal/*
+	OperatorTokenFile string // ARCHFIT_OPERATOR_TOKEN_FILE; authenticates the operator routes; never read by the public role
 	AnthropicKeyFile  string // ARCHFIT_ANTHROPIC_KEY_FILE; empty disables managed LLM
 	StoreDriver       string // ARCHFIT_STORE, "memory" until docs/tech-stack.md picks a KV
 	SandboxDriver     string // ARCHFIT_SANDBOX, "none" until docs/tech-stack.md picks one
