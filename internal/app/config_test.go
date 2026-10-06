@@ -51,6 +51,17 @@ func TestLoadDefaultsAndRequired(t *testing.T) {
 	everything.AnthropicKeyFile = "/run/secrets/anthropic"
 	underPath := requiredOnly
 	underPath.BaseURL = "https://archfit.example/app"
+	onFirestore := requiredOnly
+	onFirestore.StoreDriver = "firestore"
+	onFirestore.FirestoreProject = "coupling-dev-510710"
+	onFirestore.FirestoreDatabase = "archfit"
+	onEmulator := requiredOnly
+	onEmulator.StoreDriver = "firestore"
+	onEmulator.FirestoreProject = "archfit-local"
+	onEmulator.FirestoreEmulator = "127.0.0.1:8086"
+	firestoreEnv := func(project string) map[string]string {
+		return with(with(requiredEnv(), envStore, "firestore"), envFirestoreProject, project)
+	}
 
 	all := requiredEnv()
 	all[envAddr] = "127.0.0.1:9000"
@@ -78,6 +89,9 @@ func TestLoadDefaultsAndRequired(t *testing.T) {
 		{name: "first missing wins", env: without(without(requiredEnv(), envOperatorTokenFile), envAppID), wantErr: envAppID},
 		{name: "unknown store", env: with(requiredEnv(), envStore, "MARKER-redis"), wantErr: envStore},
 		{name: "unknown sandbox", env: with(requiredEnv(), envSandbox, "MARKER-docker"), wantErr: envSandbox},
+		{name: "firestore without a project", env: firestoreEnv(""), wantErr: envFirestoreProject},
+		{name: "firestore with a named database", env: with(firestoreEnv("coupling-dev-510710"), envFirestoreDatabase, "archfit"), want: onFirestore},
+		{name: "firestore emulator", env: with(firestoreEnv("archfit-local"), envFirestoreEmulator, "127.0.0.1:8086"), want: onEmulator},
 		// The base URL is the OIDC audience, compared byte for byte, and the Action refuses an endpoint ending in '/'.
 		{name: "base URL with trailing slash", env: with(requiredEnv(), envBaseURL, "https://MARKER.example/"), wantErr: envBaseURL},
 		{name: "base URL path with trailing slash", env: with(requiredEnv(), envBaseURL, "https://archfit.example/app/"), wantErr: envBaseURL},
