@@ -73,6 +73,17 @@ resource "google_cloud_tasks_queue_iam_member" "public_enqueuer" {
   member   = "serviceAccount:${local.data.service_accounts.public}"
 }
 
+# The release reads the routing of both queues back after each release and fails if it differs (security.md "Worker
+# protection"). The deploy identity can only read the queues.
+resource "google_cloud_tasks_queue_iam_member" "deploy_viewer" {
+  for_each = google_cloud_tasks_queue.this
+
+  name     = each.value.name
+  location = var.region
+  role     = "roles/cloudtasks.viewer"
+  member   = "serviceAccount:${local.data.deploy_service_account}"
+}
+
 # The Scheduler starts the sweep each hour.
 resource "google_cloud_scheduler_job" "sweep" {
   name             = "archfit-sweep"
