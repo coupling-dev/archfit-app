@@ -99,7 +99,7 @@ func newHandler(d handlerDeps) http.Handler {
 	s.inline = queue.NewInline(s.runInline)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
-	// Readiness has no credential on any role: Cloud Run's startup probe sends none.
+	// Readiness has no credential on any role: a deploy check through the service URL sends none.
 	mux.HandleFunc(readyRoute, s.ready)
 	if d.role != roleWorker {
 		mux.Handle("POST /v1/reports", http.TimeoutHandler(d.gate.UploadHandler(), uploadTimeout, ""))

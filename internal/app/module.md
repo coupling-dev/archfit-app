@@ -86,8 +86,9 @@ single place where it is enforced at runtime.
   (nil, and one warning log line, when the emulator is set). `ARCHFIT_FIRESTORE_PROJECT` is required with
   `"firestore"`; an invalid project or database ID is a startup error. Startup sends no request to Google. `SandboxDriver` `"none"` → nil `Sandbox`
   (managed discovery reports "not available"); `AnthropicKeyFile` empty → nil `Provider`. `control.New` and `anthropic.New` return errors; both are startup errors (a configured but invalid LLM key must not start silently). `app` passes the same `TokenSource` to `api.New` and to `control.Deps.Tokens`. Unknown driver names are a startup error. New drivers are added here and nowhere else.
-- Readiness (`GET /ready`, every role, no credential): the check for the Cloud Run startup probe and the release
-  canary. It runs two probes at the same time, under one 5-second deadline **[default]** that includes the GitHub
+- Readiness (`GET /ready`, every role, no credential): the check of the release canary and of a post-deploy check.
+  It is not a startup probe: Cloud Run runs that on every new instance, and a GitHub API outage would then stop new
+  instances, intake included, although intake does not need GitHub. The startup probe is `GET /healthz`. It runs two probes at the same time, under one 5-second deadline **[default]** that includes the GitHub
   client's own retries and rate-limit waits:
   - `github`: `api.Client.CheckApp`, `GET /app` with a fresh App JWT. It proves that the App key works with GitHub
     and reads no installation.
@@ -111,7 +112,9 @@ single place where it is enforced at runtime.
   and every line logged with that request's context carries `logging.googleapis.com/trace`
   (`projects/<project>/traces/<trace ID>`), `logging.googleapis.com/spanId` and
   `logging.googleapis.com/trace_sampled`. Only hex digits of the right length pass, so a caller cannot write into a
-  line; a malformed header, the all-zero trace ID or no project logs no trace. Limit: a module line logged without a
+  line. A `traceparent` needs a hex version other than `ff`, exactly four fields for version `00`, and non-zero IDs;
+  a malformed one falls back to `X-Cloud-Trace-Context`. A malformed header, an all-zero ID or no project logs no
+  trace. Limit: a module line logged without a
   context (`slog.Info`, not `slog.InfoContext`) carries no trace; it still carries the role, the revision and its
   own IDs. Upgrade trigger: a module line that must be found by trace.
 
@@ -760,7 +763,7 @@ func Parse(eventType, deliveryID string, body []byte) (Event, error)
 
 <!-- contract: HeaderEvent, HeaderDelivery, HeaderSignature — restated from internal/github/webhook/module.md -->
 ```go
-// Header names of a GitHub webhook delivery. Callers read these headers and pass their values to Verify and Parse.
+// Header names of a GitHub webhook delivery. Callers read these headers and pass their values to VerifyAny and Parse.
 const (
     HeaderEvent     = "X-GitHub-Event"
     HeaderDelivery  = "X-GitHub-Delivery"
@@ -965,7 +968,9 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
 - **Test name**: `TestRequestTrace`
   **Scenario**: table: `traceparent` sampled, not sampled, in upper case; `X-Cloud-Trace-Context` with a decimal span,
   with and without options; both headers; a malformed `traceparent` next to a valid `X-Cloud-Trace-Context`; no
-  project; no header; a quote in the trace ID; a span that is not a number; the all-zero trace ID.
+  project; no header; a quote in the trace ID; a span that is not a number; the all-zero trace ID; a later version
+  with an extra field; version `ff` and a non-hex version next to a valid `X-Cloud-Trace-Context`; version `00` with
+  an extra field; the all-zero span ID, in both headers.
   **Expected behavior**: the trace name, a 16-digit lower-case span and the sampled flag for the valid rows, with
   `traceparent` first; no trace for the rest.
 - **Test name**: `TestModuleLinesCarryTheRequestTrace`

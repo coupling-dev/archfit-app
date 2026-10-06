@@ -146,9 +146,12 @@ The order matters:
 - Build one image for each commit on `main`. Deploy by digest. Keep the last few images for rollbacks.
 - Deploy the worker first, because a new worker route must exist before anything sends to it.
 - Deploy the public service as a tagged canary without traffic. The canary must pass the readiness check
-  `GET /ready`: the App key works with GitHub, and the store answers. The same route is the startup probe of both
-  services. It answers `503` with the names of the failed checks, and keeps a result for 30 seconds after a pass and
-  5 seconds after a failure.
+  `GET /ready`: the App key works with GitHub, and the store answers. It answers `503` with the names of the failed
+  checks, and keeps a result for 30 seconds after a pass and 5 seconds after a failure. Use the same route for
+  the worker's post-deploy check.
+- Do not use `GET /ready` as a startup probe. Cloud Run runs a startup probe on every new instance, so a GitHub API
+  outage would stop every new instance, intake included, although intake does not need GitHub. The startup probe
+  is `GET /healthz`, which checks only that the process serves.
 - Promote the exact revisions that CI deployed, never "latest". A revision that another change created stays without traffic.
 - After promotion, check the worker's exposure and the queue routing. See [Worker protection](security.md#worker-protection).
 - Record the image digest and the revision names of each release. A rollback needs them.
