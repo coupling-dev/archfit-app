@@ -120,7 +120,8 @@ func (c Config) validate() error {
 		{envOperatorTokenFile, c.Role == rolePublic || c.OperatorTokenFile != ""},
 		{envStore, storeDrivers[c.StoreDriver] != nil},
 		{envSandbox, sandboxDrivers[c.SandboxDriver] != nil},
-		{envQueue, c.QueueDriver == queueInline || c.QueueDriver == queueCloudTasks},
+		// The all role mounts no worker task route, so its tasks must run inline.
+		{envQueue, c.QueueDriver == queueInline || c.QueueDriver == queueCloudTasks && c.Role != roleAll},
 		{envTasksQueue, !enqueuesToCloudTasks || c.TasksQueue != ""},
 		// The worker URL is an OIDC audience, compared byte for byte like the base URL.
 		{envWorkerURL, !needsWorker || strings.HasPrefix(c.WorkerURL, "https://") && !strings.HasSuffix(c.WorkerURL, "/")},

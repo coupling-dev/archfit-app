@@ -272,7 +272,7 @@ func (s *server) webhook(w http.ResponseWriter, r *http.Request) {
 		for _, half := range []string{halfGate, halfControl} {
 			t := deliveryTask(r.Header, half, body)
 			if err := s.enqueue(ctx, t); err != nil {
-				ri.outcome = "inline_fallback"
+				ri.outcome = outcomeInlineFallback
 				s.log.Warn("webhook processed inline", "delivery_id", ri.deliveryID, "handler", half, "error", err.Error())
 				_ = s.inline.Enqueue(ctx, t)
 			}
@@ -319,6 +319,8 @@ const (
 	outcomeIgnored   = "ignored"
 	outcomePermanent = "permanent_error"
 	outcomeTransient = "transient_error"
+
+	outcomeInlineFallback = "inline_fallback" // intake: the queue refused a task, so it ran in the request
 )
 
 // process verifies and handles one half of a delivery. It returns an error only when a repeat may succeed:
@@ -369,10 +371,11 @@ func (s *server) process(ctx context.Context, t queue.Task) (webhook.Event, stri
 	}
 }
 
-// runInline is the inline driver's handler: it runs in the intake request, which logs the outcome.
+// runInline is the inline driver's handler: it runs in the intake request, which logs the outcome. A fallback
+// outcome stays: it is the counted signal that the queue refused work; the handler error has its own line.
 func (s *server) runInline(ctx context.Context, t queue.Task) {
 	if _, outcome, _ := s.process(ctx, t); outcome != outcomeDone && outcome != outcomeIgnored {
-		if ri, ok := ctx.Value(requestInfoKey{}).(*requestInfo); ok {
+		if ri, ok := ctx.Value(requestInfoKey{}).(*requestInfo); ok && ri.outcome != outcomeInlineFallback {
 			ri.outcome = "handler_error"
 		}
 	}

@@ -51,6 +51,7 @@ func TestLoadDefaultsAndRequired(t *testing.T) {
 	everything := requiredOnly
 	everything.Addr = "127.0.0.1:9000"
 	everything.AnthropicKeyFile = "/run/secrets/anthropic"
+	everything.Role, everything.OperatorTokenFile = "public", "/run/secrets/operator"
 	everything.QueueDriver = "cloudtasks"
 	everything.TasksQueue = "projects/coupling-test/locations/europe-west1/queues/webhooks"
 	everything.WorkerURL = "https://worker.example"
@@ -63,7 +64,7 @@ func TestLoadDefaultsAndRequired(t *testing.T) {
 		return with(with(with(requiredEnv(), envRole, "worker"), envWorkerURL, worker.WorkerURL), envInvoker, worker.Invoker)
 	}
 	cloudEnv := func() map[string]string {
-		m := with(with(requiredEnv(), envQueue, "cloudtasks"), envTasksQueue, everything.TasksQueue)
+		m := with(with(with(requiredEnv(), envRole, "public"), envQueue, "cloudtasks"), envTasksQueue, everything.TasksQueue)
 		return with(with(m, envWorkerURL, everything.WorkerURL), envInvoker, everything.Invoker)
 	}
 	underPath := requiredOnly
@@ -74,7 +75,7 @@ func TestLoadDefaultsAndRequired(t *testing.T) {
 	all[envAnthropicKeyFile] = "/run/secrets/anthropic"
 	all[envStore] = "memory"
 	all[envSandbox] = "none"
-	all[envRole] = "all"
+	all[envRole] = "public"
 	all[envQueue] = "cloudtasks"
 	all[envTasksQueue] = everything.TasksQueue
 	all[envWorkerURL] = everything.WorkerURL
@@ -107,6 +108,7 @@ func TestLoadDefaultsAndRequired(t *testing.T) {
 		{name: "base URL with a path", env: with(requiredEnv(), envBaseURL, "https://archfit.example/app"), want: underPath},
 		{name: "unknown role", env: with(requiredEnv(), envRole, "MARKER-batch"), wantErr: envRole},
 		{name: "unknown queue", env: with(requiredEnv(), envQueue, "MARKER-pubsub"), wantErr: envQueue},
+		{name: "cloudtasks in the all role", env: with(cloudEnv(), envRole, "all"), wantErr: envQueue},
 		{name: "public role without the operator token", env: without(with(requiredEnv(), envRole, "public"), envOperatorTokenFile), want: public},
 		{name: "worker role", env: workerEnv(), want: worker},
 		{name: "worker role without the operator token", env: without(workerEnv(), envOperatorTokenFile), wantErr: envOperatorTokenFile},

@@ -64,7 +64,8 @@ single place where it is enforced at runtime.
   `control.New` requires exactly 32 of them.
 - Platform selection: `QueueDriver` `"inline"` → the inline driver; `"cloudtasks"` → `cloudtasks.New` with
   `ARCHFIT_TASKS_QUEUE`, the URL `ARCHFIT_WORKER_URL` + `/internal/webhooks`, the audience `ARCHFIT_WORKER_URL` and
-  the invoker `ARCHFIT_INVOKER`. The worker role never enqueues and ignores `QueueDriver`. The cloudtasks driver needs a
+  the invoker `ARCHFIT_INVOKER`. The worker role never enqueues and ignores `QueueDriver`. The `all` role refuses
+  `"cloudtasks"` at startup: it mounts no worker task route, so its tasks would never run. The cloudtasks driver needs a
   Google access token source; `Run` has none yet, so `"cloudtasks"` is a startup error until the metadata-server
   token source is wired (upgrade trigger: that source exists).
   `StoreDriver` `"memory"` → `store.NewMemory()`; `SandboxDriver` `"none"` → nil `Sandbox`
@@ -698,8 +699,8 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   `ARCHFIT_BASE_URL` ending in `/` (host only, with a path, `/` alone); a base URL with a path and no trailing slash;
   unknown `ARCHFIT_ROLE`; unknown `ARCHFIT_QUEUE`; the public role without the operator token; the worker role with
   and without the operator token, the worker URL and the invoker; the worker role with `ARCHFIT_QUEUE=cloudtasks`;
-  `cloudtasks` without the queue name, the worker URL or the invoker; an invoker that is not an e-mail; a worker URL
-  with a trailing slash or over plain `http`.
+  `cloudtasks` in the `all` role; `cloudtasks` without the queue name, the worker URL or the invoker; an invoker that
+  is not an e-mail; a worker URL with a trailing slash or over plain `http`.
   **Expected behavior**: defaults `:8080`, `memory`, `none`, `all`, `inline`; an error naming the first missing or
   invalid variable; the public role loads without the operator token, the worker role does not; the worker ignores the
   queue driver; no secret content in any error.
@@ -747,7 +748,8 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   error; both refused with `ErrInvalidTask`; a delivery ID that is no task name; an ignored event. Then the headers
   and body of the tasks for a delivery with extra request headers.
   **Expected behavior**: `202` each time; tasks named `<delivery>_gate` then `<delivery>_control`; a refused task runs
-  inline and only that one, with the outcome `inline_fallback`; an ignored event queues nothing; every enqueue has a
+  inline and only that one, with the outcome `inline_fallback`, which a failing inline handler does not replace; an
+  ignored event queues nothing; every enqueue has a
   deadline; a task holds exactly the three delivery headers, `Content-Type` and `X-Archfit-Half`, and the unchanged body.
 - **Test name**: `TestQueuedTaskReachesTheWorker`
   **Scenario**: a public intake and a worker joined by a queue that dispatches each task to the worker route with the

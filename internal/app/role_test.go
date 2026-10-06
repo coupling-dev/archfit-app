@@ -410,6 +410,19 @@ func TestIntakeQueuesOneTaskPerHalf(t *testing.T) {
 		})
 	}
 
+	t.Run("a failing inline fallback keeps the fallback outcome", func(t *testing.T) {
+		f := newFixture()
+		f.role = rolePublic
+		f.queue = &recordingQueue{fail: map[string]error{delivery + "_gate": errors.New("queue down")}}
+		f.gate.eventErr = errors.New("store: unavailable")
+		f.rebuild()
+		f.do(webhookRequest("/webhooks/github", "pull_request", delivery, event, sign(testWebhookSecret, event)))
+		logs := f.logs.String()
+		if !strings.Contains(logs, `"outcome":"inline_fallback"`) || strings.Contains(logs, `"outcome":"handler_error"`) {
+			t.Errorf("request line must count the fallback: %s", logs)
+		}
+	})
+
 	t.Run("a task carries GitHub's own headers, body and the half", func(t *testing.T) {
 		f := newFixture()
 		q := &recordingQueue{}

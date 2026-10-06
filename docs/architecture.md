@@ -507,7 +507,7 @@ See [`.env.example`](../.env.example).
 | `ARCHFIT_STORE`                      | Store driver. Only `memory` exists                                                                      |
 | `ARCHFIT_SANDBOX`                    | Sandbox driver. Only `none` exists                                                                      |
 | `ARCHFIT_ROLE`                       | `all` (default), `public`, or `worker`                                                                  |
-| `ARCHFIT_QUEUE`                      | Queue driver of intake: `inline` (default) or `cloudtasks`                                              |
+| `ARCHFIT_QUEUE`                      | Queue driver of intake: `inline` (default) or `cloudtasks` (`public` role only)                         |
 | `ARCHFIT_TASKS_QUEUE`                | `projects/<p>/locations/<l>/queues/<q>`, for `cloudtasks`                                               |
 | `ARCHFIT_WORKER_URL`                 | Worker service URL, the invoker token audience. No trailing `/`. For `cloudtasks` and the `worker` role |
 | `ARCHFIT_INVOKER`                    | Service account e-mail of queue and Scheduler dispatches. For `cloudtasks` and the `worker` role        |
