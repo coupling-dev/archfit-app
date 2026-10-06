@@ -87,6 +87,20 @@ type structuredQuery struct {
 	Limit   int                  `json:"limit,omitempty"`
 }
 
+type batchGetRequest struct {
+	Documents []string `json:"documents"`
+}
+
+// streamItem is one element of the JSON array that batchGet and runQuery answer with.
+type streamItem struct {
+	Found    *document `json:"found"`    // batchGet
+	Missing  string    `json:"missing"`  // batchGet
+	Document *document `json:"document"` // runQuery
+	Error    *struct {
+		Status string `json:"status"`
+	} `json:"error"`
+}
+
 type runQueryRequest struct {
 	StructuredQuery structuredQuery `json:"structuredQuery"`
 }

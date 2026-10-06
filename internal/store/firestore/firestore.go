@@ -18,7 +18,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/store"
@@ -39,8 +38,9 @@ const (
 	maxValueLen = 64 << 10
 
 	maxResponseBytes = 8 << 20
-	// deleteBatch is the number of documents DeleteTenant reads and deletes in one commit.
-	deleteBatch = 500
+	// deleteBatch is the number of documents DeleteTenant reads and deletes in one commit. The deleted documents
+	// count toward the 10 MiB limit of one commit: 100 values of 64 KiB, with their index entries, stay under it.
+	deleteBatch = 100
 
 	// maxAttempts bounds the read-compare-commit loop of CompareAndSwap and Add on a conflict. A local lock
 	// serializes the callers of one process, so only other instances conflict.
@@ -97,14 +97,18 @@ func New(c Config, tokens TokenSource, hc *http.Client) (store.Store, error) {
 		base = "http://" + c.EmulatorHost + "/v1/"
 		tokens = staticToken(emulatorToken)
 	}
-	return &driver{
+	d := &driver{
 		documents: "projects/" + c.ProjectID + "/databases/" + c.DatabaseID + "/documents",
 		base:      base,
 		tokens:    tokens,
 		hc:        hc,
 		seed:      maphash.MakeSeed(),
 		wait:      sleep,
-	}, nil
+	}
+	for i := range d.locks {
+		d.locks[i] = make(chan struct{}, 1)
+	}
+	return d, nil
 }
 
 type staticToken string
@@ -118,7 +122,7 @@ type driver struct {
 	hc        *http.Client
 
 	seed  maphash.Seed
-	locks [lockStripes]sync.Mutex
+	locks [lockStripes]chan struct{}                 // one-slot locks that a waiting caller can leave when its context ends
 	wait  func(context.Context, time.Duration) error // the retry pause; tests replace it
 }
 
@@ -129,11 +133,16 @@ func (d *driver) docName(t store.Tenant, key string) string {
 }
 
 // lock serializes CompareAndSwap and Add on one document inside this process. It only lowers contention:
-// atomicity across instances comes from the commit preconditions.
-func (d *driver) lock(name string) func() {
-	mu := &d.locks[maphash.String(d.seed, name)%lockStripes]
-	mu.Lock()
-	return mu.Unlock
+// atomicity across instances comes from the commit preconditions. A caller whose context ends while it
+// waits leaves with the context error.
+func (d *driver) lock(ctx context.Context, name string) (func(), error) {
+	slot := d.locks[maphash.String(d.seed, name)%lockStripes]
+	select {
+	case slot <- struct{}{}:
+		return func() { <-slot }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 func (d *driver) Get(ctx context.Context, t store.Tenant, key string) ([]byte, error) {
@@ -244,7 +253,11 @@ func (d *driver) Add(ctx context.Context, t store.Tenant, key string, delta int6
 // what was read. On a conflict, which is a definite rejection, it reads again. Any other commit failure is
 // returned as is: the write may have landed, so a retry could report a swap it made as a failed comparison.
 func (d *driver) readModifyWrite(ctx context.Context, name string, decide func(stored, bool) (*write, error)) error {
-	defer d.lock(name)()
+	unlock, err := d.lock(ctx, name)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	for attempt := 1; ; attempt++ {
 		cur, found, err := d.read(ctx, name)
 		if err != nil {
@@ -372,15 +385,28 @@ type stored struct {
 	updateTime string // opaque; only passed back in a precondition
 }
 
+// read uses batchGet rather than a plain GET: batchGet reports a missing document as "missing", so a
+// NOT_FOUND status always means a missing database or project and stays an error, never a missing key.
 func (d *driver) read(ctx context.Context, name string) (stored, bool, error) {
-	var doc document
-	err := d.call(ctx, http.MethodGet, name, nil, &doc)
-	var apiErr *apiError
-	if errors.As(err, &apiErr) && apiErr.Status == statusNotFound {
-		return stored{}, false, nil
-	}
+	items, err := d.stream(ctx, d.documents+":batchGet", batchGetRequest{Documents: []string{name}})
 	if err != nil {
 		return stored{}, false, err
+	}
+	var doc *document
+	missing := false
+	for _, it := range items {
+		switch {
+		case it.Found != nil && it.Found.Name == name:
+			doc = it.Found
+		case it.Missing == name:
+			missing = true
+		}
+	}
+	switch {
+	case missing && doc == nil:
+		return stored{}, false, nil
+	case doc == nil || missing:
+		return stored{}, false, errors.New("store: firestore: batchGet did not answer for the document")
 	}
 	v, ok := doc.Fields[fieldValue]
 	if !ok || v.BytesValue == nil || doc.UpdateTime == "" {
@@ -397,49 +423,57 @@ func (d *driver) read(ctx context.Context, name string) (stored, bool, error) {
 }
 
 func (d *driver) commit(ctx context.Context, writes ...write) error {
-	return d.call(ctx, http.MethodPost, d.documents+":commit", commitRequest{Writes: writes}, nil)
+	return d.call(ctx, d.documents+":commit", commitRequest{Writes: writes}, nil)
 }
 
 func (d *driver) query(ctx context.Context, q structuredQuery) ([]document, error) {
 	q.From = []collectionSelector{{CollectionID: collection}}
-	var results []struct {
-		Document *document `json:"document"`
-	}
-	if err := d.call(ctx, http.MethodPost, d.documents+":runQuery", runQueryRequest{StructuredQuery: q}, &results); err != nil {
+	items, err := d.stream(ctx, d.documents+":runQuery", runQueryRequest{StructuredQuery: q})
+	if err != nil {
 		return nil, err
 	}
-	docs := make([]document, 0, len(results))
-	for _, r := range results {
-		if r.Document != nil { // a result without a document only carries the read time
-			docs = append(docs, *r.Document)
+	docs := make([]document, 0, len(items))
+	for _, it := range items {
+		if it.Document != nil { // an element without a document only carries the read time
+			docs = append(docs, *it.Document)
 		}
 	}
 	return docs, nil
 }
 
+// stream calls a streaming method. Its answer is a JSON array, and an error after the first element arrives
+// as a last element with an "error" member and a 200 status. Such an answer is an error as a whole: a partial
+// result would let DeleteTenant or Tenants stop early and report success.
+func (d *driver) stream(ctx context.Context, path string, in any) ([]streamItem, error) {
+	var items []streamItem
+	if err := d.call(ctx, path, in, &items); err != nil {
+		return nil, err
+	}
+	for _, it := range items {
+		if it.Error != nil {
+			return nil, &apiError{HTTPStatus: http.StatusOK, Status: safeToken(it.Error.Status)}
+		}
+	}
+	return items, nil
+}
+
 // call sends one request. Errors carry the HTTP and RPC status only: a Firestore message can quote a
 // document name, which holds the key.
-func (d *driver) call(ctx context.Context, method, path string, in, out any) error {
+func (d *driver) call(ctx context.Context, path string, in, out any) error {
 	token, err := d.tokens.Token(ctx)
 	if err != nil {
 		return fmt.Errorf("store: firestore: access token: %w", err)
 	}
-	var body io.Reader
-	if in != nil {
-		raw, err := json.Marshal(in)
-		if err != nil {
-			return fmt.Errorf("store: firestore: encoding request: %w", err)
-		}
-		body = bytes.NewReader(raw)
+	raw, err := json.Marshal(in)
+	if err != nil {
+		return fmt.Errorf("store: firestore: encoding request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, d.base+path, body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, d.base+path, bytes.NewReader(raw))
 	if err != nil {
 		return errors.New("store: firestore: building request")
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	if in != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
+	req.Header.Set("Content-Type", "application/json")
 	resp, err := d.hc.Do(req)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -453,7 +487,7 @@ func (d *driver) call(ctx context.Context, method, path string, in, out any) err
 		return fmt.Errorf("store: firestore: request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+	raw, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return fmt.Errorf("store: firestore: reading response: %w", err)
 	}

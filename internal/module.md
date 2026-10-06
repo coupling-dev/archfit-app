@@ -115,7 +115,10 @@ type Config struct {
     CookieKeyFile    string // ARCHFIT_COOKIE_KEY_FILE
     OperatorTokenFile string // ARCHFIT_OPERATOR_TOKEN_FILE; authenticates /internal/*
     AnthropicKeyFile string // ARCHFIT_ANTHROPIC_KEY_FILE; empty disables managed LLM
-    StoreDriver      string // ARCHFIT_STORE, "memory" until docs/tech-stack.md picks a KV
+    StoreDriver      string // ARCHFIT_STORE, "memory" (default) or "firestore"
+    FirestoreProject string // ARCHFIT_FIRESTORE_PROJECT; required by "firestore"
+    FirestoreDatabase string // ARCHFIT_FIRESTORE_DATABASE; empty selects "(default)"
+    FirestoreEmulator string // FIRESTORE_EMULATOR_HOST; host:port, plain HTTP and no credentials
     SandboxDriver    string // ARCHFIT_SANDBOX, "none" until docs/tech-stack.md picks one
 }
 

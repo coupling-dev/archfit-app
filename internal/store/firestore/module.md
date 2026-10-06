@@ -37,11 +37,11 @@ Generic (a platform client). Volatility: moderate. The REST subset is stable; li
 
   | Operation        | REST calls                                                                                           |
   | ---------------- | ---------------------------------------------------------------------------------------------------- |
-  | `Get`            | `GET` the document. `NOT_FOUND` → `store.ErrNotFound`                                                |
+  | `Get`            | `documents:batchGet` with one name. A `missing` answer → `store.ErrNotFound`                          |
   | `Put`, `Delete`  | `documents:commit` with one write, no precondition                                                   |
-  | `CompareAndSwap` | `GET`, compare, then `documents:commit` with a precondition on what was read                         |
-  | `Add`            | `GET`, parse the counter, then `documents:commit` with a precondition on what was read               |
-  | `DeleteTenant`   | `documents:runQuery` (`tenant == t`, names only, limit 500), then one commit of deletes; until empty |
+  | `CompareAndSwap` | Read, compare, then `documents:commit` with a precondition on what was read                         |
+  | `Add`            | Read, parse the counter, then `documents:commit` with a precondition on what was read               |
+  | `DeleteTenant`   | `documents:runQuery` (`tenant == t`, names only, limit 100), then one commit of deletes; until empty |
   | `Tenants`        | `documents:runQuery` (`tenant > last`, order by `tenant`, limit 1), once for each tenant             |
 
 - The precondition is `currentDocument.exists = false` when the key was missing, else `currentDocument.updateTime`
@@ -56,9 +56,17 @@ Generic (a platform client). Volatility: moderate. The REST subset is stable; li
   landed. A retry would then fail the precondition and report a swap that happened as a failed comparison. So the
   driver returns the error and does not retry.
 - A local lock (64 stripes by document name **[default]**) serializes `CompareAndSwap` and `Add` on one document
-  inside one process. It only lowers contention. The preconditions alone make the operations atomic.
+  inside one process. A caller that waits for a stripe leaves when its context ends. It only lowers contention.
+  The preconditions alone make the operations atomic.
 - Errors carry the HTTP status and the RPC status name only. A Firestore message and a request URL can contain a
   document name, and the name holds the key. Validation errors are those of `store`: tenant and key length only.
+- Reads use `batchGet`, not a plain `GET`. `batchGet` reports a missing document as `missing`, so a `NOT_FOUND`
+  status always means a missing project or database. That is an error, never a missing key.
+- `batchGet` and `runQuery` stream a JSON array. An error after the first element arrives as a last element with
+  an `error` member and HTTP 200. The whole answer is then an error: a partial query result would let
+  `DeleteTenant` or `Tenants` stop early and report success.
+- `DeleteTenant` deletes 100 documents in one commit **[default]**. Deleted documents count toward the 10 MiB
+  limit of one commit, and 100 values of 64 KiB with their index entries stay under it.
 - Responses are capped at 8 MiB. Request deadlines come from the caller's context and the client timeout.
 
 ## Public Contract
@@ -169,6 +177,13 @@ func New(c Config, tokens TokenSource, hc *http.Client) (store.Store, error)
 - **Test name**: `TestAddRetriesAConflictAndReportsAnUnknownOutcome`
   **Scenario**: `Add` with one `ABORTED` commit; then `Add` with an applied commit whose answer is lost.
   **Expected behavior**: the first returns the new value; the second returns an error.
+- **Test name**: `TestPreconditionFailuresAreConflicts`
+  **Scenario**: on the fake and on the emulator: commit a create over an existing document, an update and a delete
+  after another write, and an update of a deleted document.
+  **Expected behavior**: each answer has a conflict status, so the driver reads again.
+- **Test name**: `TestWaitingForTheLocalLockHonorsTheContext`
+  **Scenario**: the stripe of a key is held; a caller waits for it with an ended context.
+  **Expected behavior**: the caller gets `context.Canceled` at once.
 - **Test name**: `TestAccessToken`
   **Scenario**: `New`, then `Put`; a token source that fails.
   **Expected behavior**: `New` asks for no token; `Put` sends the token; a token error sends no request.
@@ -184,6 +199,12 @@ func New(c Config, tokens TokenSource, hc *http.Client) (store.Store, error)
 - **Test name**: `TestDocumentIDIsValidForEveryKey`
   **Scenario**: keys with `/`, `..`, `__x__`, non-UTF-8 bytes and 512 bytes, under the largest tenant; tenants 1 and 12.
   **Expected behavior**: every ID is a valid Firestore ID; the two tenants never share a document.
+- **Test name**: `TestMissingDatabaseIsAnErrorNotAMissingKey`
+  **Scenario**: a client of a project that the server does not know; `Get`, `CompareAndSwap`, `Add`.
+  **Expected behavior**: each returns an error, `Get` not `ErrNotFound`; no commit is sent.
+- **Test name**: `TestStreamErrorIsAnError`
+  **Scenario**: `Get`, `DeleteTenant` and `Tenants` while the server ends the streamed answer with an error element.
+  **Expected behavior**: each returns an error; the stored value stays.
 - **Test name**: `TestCorruptDocumentIsAnErrorNotAMissingKey`
   **Scenario**: a document without the `value` field.
   **Expected behavior**: `Get` and `CompareAndSwap` return an error that is not `ErrNotFound`.
@@ -192,7 +213,7 @@ func New(c Config, tokens TokenSource, hc *http.Client) (store.Store, error)
   non-counter value, with a marker in the key and the value.
   **Expected behavior**: each error has the `store:` prefix and contains neither the marker nor its hex form.
 - **Test name**: `TestDeleteTenantDeletesMoreThanOneBatch`
-  **Scenario**: 507 keys under one tenant and one key under another; `DeleteTenant` of the first.
+  **Scenario**: 107 keys under one tenant and one key under another; `DeleteTenant` of the first.
   **Expected behavior**: `Tenants` lists only the second.
 
 ### Behavior Tests

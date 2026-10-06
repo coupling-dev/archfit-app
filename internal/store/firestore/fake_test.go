@@ -27,6 +27,9 @@ type fakeFirestore struct {
 	clock   time.Time
 	commits int
 	faults  []fault
+	// streamErr, when set, ends the next streamed answer with an error element after a 200 status,
+	// as Firestore does when a stream fails after its first element.
+	streamErr string
 }
 
 type fakeDoc struct {
@@ -96,25 +99,43 @@ func (f *fakeFirestore) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	switch {
-	case r.Method == http.MethodGet && strings.HasPrefix(path, fakeDocuments+"/"+collection+"/"):
-		f.get(w, path)
+	case r.Method == http.MethodPost && path == fakeDocuments+":batchGet":
+		f.batchGet(w, r)
 	case r.Method == http.MethodPost && path == fakeDocuments+":commit":
 		f.commit(w, r)
 	case r.Method == http.MethodPost && path == fakeDocuments+":runQuery":
 		f.runQuery(w, r)
 	default:
-		rpcError(w, http.StatusNotFound, "NOT_FOUND", "unknown route "+path)
+		// Firestore answers a request for a database or project that does not exist like this.
+		rpcError(w, http.StatusNotFound, "NOT_FOUND", "the database "+path+" does not exist")
 	}
 }
 
-func (f *fakeFirestore) get(w http.ResponseWriter, name string) {
-	doc, ok := f.docs[name]
-	if !ok {
-		// Firestore names the document in its message; the driver must not pass the message on.
-		rpcError(w, http.StatusNotFound, "NOT_FOUND", "no entity to read: "+name)
+func (f *fakeFirestore) batchGet(w http.ResponseWriter, r *http.Request) {
+	var req batchGetRequest
+	if err := decodeStrict(r, &req); err != nil || len(req.Documents) == 0 {
+		rpcError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "bad batchGet")
 		return
 	}
-	writeJSON(w, document{Name: name, Fields: doc.fields, UpdateTime: doc.updateTime})
+	readTime := f.clock.Format(time.RFC3339Nano)
+	out := []map[string]any{}
+	for _, name := range req.Documents {
+		if doc, ok := f.docs[name]; ok {
+			out = append(out, map[string]any{"found": document{Name: name, Fields: doc.fields, UpdateTime: doc.updateTime}, "readTime": readTime})
+		} else {
+			out = append(out, map[string]any{"missing": name, "readTime": readTime})
+		}
+	}
+	f.writeStream(w, out)
+}
+
+// writeStream answers a streaming method, with the injected error element last when one is set.
+func (f *fakeFirestore) writeStream(w http.ResponseWriter, out []map[string]any) {
+	if f.streamErr != "" {
+		out = append(out, map[string]any{"error": map[string]any{"code": 500, "status": f.streamErr, "message": "stream failed"}})
+		f.streamErr = ""
+	}
+	writeJSON(w, out)
 }
 
 func (f *fakeFirestore) commit(w http.ResponseWriter, r *http.Request) {
@@ -124,20 +145,25 @@ func (f *fakeFirestore) commit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f.commits++
+	// Firestore names the document in its messages; the driver must never pass a message on.
+	named := " on " + req.Writes[0].Delete
+	if req.Writes[0].Update != nil {
+		named = " on " + req.Writes[0].Update.Name
+	}
 	if len(f.faults) > 0 {
 		ft := f.faults[0]
 		f.faults = f.faults[1:]
 		if ft.apply {
 			if status, code := f.apply(req.Writes); status != "" {
-				rpcError(w, code, status, "precondition failed")
+				rpcError(w, code, status, "precondition failed"+named)
 				return
 			}
 		}
-		rpcError(w, ft.httpStatus, ft.status, "injected")
+		rpcError(w, ft.httpStatus, ft.status, "injected"+named)
 		return
 	}
 	if status, code := f.apply(req.Writes); status != "" {
-		rpcError(w, code, status, "precondition failed")
+		rpcError(w, code, status, "precondition failed"+named)
 		return
 	}
 	results := make([]map[string]string, len(req.Writes))
@@ -253,7 +279,7 @@ func (f *fakeFirestore) runQuery(w http.ResponseWriter, r *http.Request) {
 	if len(out) == 0 {
 		out = append(out, map[string]any{"readTime": readTime})
 	}
-	writeJSON(w, out)
+	f.writeStream(w, out)
 }
 
 func decodeStrict(r *http.Request, v any) error {

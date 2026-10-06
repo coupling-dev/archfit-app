@@ -384,3 +384,125 @@ func TestDeleteTenantDeletesMoreThanOneBatch(t *testing.T) {
 		t.Errorf("Tenants = %v, %v, want [5]", got, err)
 	}
 }
+
+func TestStreamErrorIsAnError(t *testing.T) {
+	ops := map[string]func(*driver) error{
+		"Get":          func(d *driver) error { _, err := d.Get(context.Background(), 4, "k"); return err },
+		"DeleteTenant": func(d *driver) error { return d.DeleteTenant(context.Background(), 4) },
+		"Tenants":      func(d *driver) error { _, err := d.Tenants(context.Background()); return err },
+	}
+	for name, op := range ops {
+		t.Run(name, func(t *testing.T) {
+			f := newFake(t)
+			d := f.client(t)
+			if err := d.Put(context.Background(), 4, "k", []byte("v")); err != nil {
+				t.Fatalf("Put: %v", err)
+			}
+			f.mu.Lock()
+			f.streamErr = "INTERNAL"
+			f.mu.Unlock()
+			if err := op(d); err == nil || errors.Is(err, store.ErrNotFound) {
+				t.Errorf("%s with a failed stream = %v, want an error", name, err)
+			}
+			if got, err := d.Get(context.Background(), 4, "k"); err != nil || string(got) != "v" {
+				t.Errorf("Get after the failed stream = %q, %v, want the value kept", got, err)
+			}
+		})
+	}
+}
+
+func TestMissingDatabaseIsAnErrorNotAMissingKey(t *testing.T) {
+	f := newFake(t)
+	s, err := New(Config{ProjectID: "no-such-project"}, staticToken(fakeToken), f.srv.Client())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	d := s.(*driver)
+	d.base = f.srv.URL + "/v1/"
+	ctx := context.Background()
+	if _, err := d.Get(ctx, 1, "entitlement"); err == nil || errors.Is(err, store.ErrNotFound) {
+		t.Errorf("Get = %v, want an error other than ErrNotFound", err)
+	}
+	if ok, err := d.CompareAndSwap(ctx, 1, "lease", []byte("v"), nil); err == nil {
+		t.Errorf("CompareAndSwap = %v, nil, want an error", ok)
+	}
+	if _, err := d.Add(ctx, 1, "n", 1); err == nil {
+		t.Error("Add = nil error, want an error")
+	}
+	if got := f.commitCount(); got != 0 {
+		t.Errorf("commits = %d, want 0: a failed read writes nothing", got)
+	}
+}
+
+func TestWaitingForTheLocalLockHonorsTheContext(t *testing.T) {
+	d := newFake(t).client(t)
+	unlock, err := d.lock(context.Background(), d.docName(1, "lease"))
+	if err != nil {
+		t.Fatalf("lock: %v", err)
+	}
+	defer unlock()
+
+	// The stripe is held, so only the context can end the wait.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := d.lock(ctx, d.docName(1, "lease"))
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("lock = %v, want context.Canceled", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the wait for the local lock ignored the ended context")
+	}
+}
+
+// The driver retries exactly the statuses Firestore uses for a failed precondition. The emulator run checks
+// the classification against Firestore itself, not only against the fake.
+func testPreconditionFailuresAreConflicts(t *testing.T, d *driver) {
+	ctx := context.Background()
+	name := d.docName(1, "k")
+	if err := d.Put(ctx, 1, "k", []byte("v1")); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	first, found, err := d.read(ctx, name)
+	if err != nil || !found {
+		t.Fatalf("read = %v, %v", found, err)
+	}
+	if err := d.Put(ctx, 1, "k", []byte("v2")); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	stale := precondition(first, true)
+	cases := []struct {
+		name  string
+		setup func() error
+		w     write
+	}{
+		{"create over an existing document", nil, d.update(1, "k", []byte("x"), precondition(stored{}, false))},
+		{"update after another write", nil, d.update(1, "k", []byte("x"), stale)},
+		{"delete after another write", nil, write{Delete: name, CurrentDocument: stale}},
+		{"update of a deleted document", func() error { return d.Delete(ctx, 1, "k") }, d.update(1, "k", []byte("x"), stale)},
+	}
+	for _, tc := range cases {
+		if tc.setup != nil {
+			if err := tc.setup(); err != nil {
+				t.Fatalf("%s: setup: %v", tc.name, err)
+			}
+		}
+		err := d.commit(ctx, tc.w)
+		var apiErr *apiError
+		if !errors.As(err, &apiErr) || !apiErr.conflict() {
+			t.Errorf("%s: commit = %v, want a conflict status", tc.name, err)
+		}
+	}
+}
+
+func TestPreconditionFailuresAreConflicts(t *testing.T) {
+	t.Run("fake", func(t *testing.T) { testPreconditionFailuresAreConflicts(t, newFake(t).client(t)) })
+	t.Run("emulator", func(t *testing.T) {
+		testPreconditionFailuresAreConflicts(t, newEmulatorStores(t, emulatorHost(t), 1)[0].(*driver))
+	})
+}
