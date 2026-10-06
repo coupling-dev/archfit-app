@@ -14,8 +14,8 @@ func TestReplayedDeliveryYieldsSameEvent(t *testing.T) {
 
 			deliver := func(deliveryID string) Event {
 				t.Helper()
-				if err := Verify(secret, header, payload); err != nil {
-					t.Fatalf("Verify() error = %v", err)
+				if err := VerifyAny([][]byte{secret}, header, payload); err != nil {
+					t.Fatalf("VerifyAny() error = %v", err)
 				}
 				ev, err := Parse(tt.eventType, deliveryID, payload)
 				if err != nil {

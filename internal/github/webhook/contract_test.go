@@ -12,8 +12,8 @@ func TestVerifyThenParseRealDeliveries(t *testing.T) {
 		t.Run(tt.file, func(t *testing.T) {
 			// Signed over the bytes as read: a formatter may rewrite the fixture file.
 			payload := fixture(t, tt.file)
-			if err := Verify(secret, sign(secret, payload), payload); err != nil {
-				t.Fatalf("Verify() error = %v", err)
+			if err := VerifyAny([][]byte{secret}, sign(secret, payload), payload); err != nil {
+				t.Fatalf("VerifyAny() error = %v", err)
 			}
 			got, err := Parse(tt.eventType, testDelivery, payload)
 			if err != nil {
@@ -69,8 +69,8 @@ func TestHeaderNames(t *testing.T) {
 			t.Errorf("header constant = %q, want %q", name, want)
 		}
 	}
-	if err := Verify(secret, h.Get(HeaderSignature), payload); err != nil {
-		t.Fatalf("Verify() error = %v", err)
+	if err := VerifyAny([][]byte{secret}, h.Get(HeaderSignature), payload); err != nil {
+		t.Fatalf("VerifyAny() error = %v", err)
 	}
 	ev, err := Parse(h.Get(HeaderEvent), h.Get(HeaderDelivery), payload)
 	if err != nil {

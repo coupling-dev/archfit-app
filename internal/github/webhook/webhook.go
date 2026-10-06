@@ -37,7 +37,7 @@ type Event struct {
 	ChangedPaths   []string // default_branch_push only
 }
 
-// Header names of a GitHub webhook delivery. Callers read these headers and pass their values to Verify and Parse.
+// Header names of a GitHub webhook delivery. Callers read these headers and pass their values to VerifyAny and Parse.
 const (
 	HeaderEvent     = "X-GitHub-Event"
 	HeaderDelivery  = "X-GitHub-Delivery"
@@ -53,12 +53,8 @@ var (
 	errSignatureMismatch  = errors.New("webhook: signature mismatch")
 )
 
-// Verify checks X-Hub-Signature-256 over body in constant time.
-func Verify(secret []byte, signatureHeader string, body []byte) error {
-	return VerifyAny([][]byte{secret}, signatureHeader, body)
-}
-
-// VerifyAny accepts a body signed with any of secrets: the current secret and, during a rotation, the previous one.
+// VerifyAny checks X-Hub-Signature-256 over body in constant time. It accepts a body signed with any of secrets:
+// the current secret and, during a rotation, the previous one.
 // It checks every secret, so the time taken does not show which one matched. An empty list or an empty secret
 // fails closed.
 func VerifyAny(secrets [][]byte, signatureHeader string, body []byte) error {

@@ -240,7 +240,7 @@ func TestErrorsCarryNoPayload(t *testing.T) {
 
 	var errs []error
 	verify := func(secret []byte, header string, body []byte) {
-		errs = append(errs, Verify(secret, header, body))
+		errs = append(errs, VerifyAny([][]byte{secret}, header, body))
 	}
 	parse := func(eventType, deliveryID string, body []byte) {
 		_, err := Parse(eventType, deliveryID, body)

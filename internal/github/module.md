@@ -35,7 +35,7 @@ Owned by the branch as a whole; no module outside `internal/github/` may hold an
 - Which credential each endpoint needs.
 - The App permissions and event subscriptions the children rely on.
 
-One published exception: the three webhook delivery header names. `app` owns the `http.Request`, and `Verify`
+One published exception: the three webhook delivery header names. `app` owns the `http.Request`, and `VerifyAny`
 and `Parse` take header values, so `app` must read those headers. `webhook` exports the names as the constants
 `HeaderEvent`, `HeaderDelivery`, `HeaderSignature`; `app` uses the constants and no module outside the branch
 spells the strings. Nothing else in the list above is published.
@@ -212,11 +212,11 @@ Child documents specify their own tests. These exercise the branch as a whole, w
   **Expected behavior**: the call succeeds after one invalidate, one mint and one retry; in the second case an error
   after exactly two API requests.
 - **Test name**: `TestWebhookEventAddressesAPI`
-  **Scenario**: a signed `pull_request` delivery → `Verify` → `Parse` → `RepoRef` from the event → `Pulls.Pull`.
+  **Scenario**: a signed `pull_request` delivery → `VerifyAny` → `Parse` → `RepoRef` from the event → `Pulls.Pull`.
   **Expected behavior**: the pull is fetched with the token of the event's installation; `HeadSHA` of event and
   API agree in the fixture.
 - **Test name**: `TestOIDCClaimsResolveToInstallation`
-  **Scenario**: a signed Actions token → `Verify` → `ResolveRepo(Claims.Repository)` → `Actions.Run(Claims.RunID)`.
+  **Scenario**: a signed Actions token → `oidc.Verify` → `ResolveRepo(Claims.Repository)` → `Actions.Run(Claims.RunID)`.
   **Expected behavior**: the run is read with the resolved installation's token; `WorkflowPath` of the claims equals
   the run's `WorkflowPath` in the fixture.
 
