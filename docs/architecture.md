@@ -107,20 +107,22 @@ flowchart TB
 Arrows show permitted import groups. The `gate` arrow from `control` is a facade call.
 The shared group contains `wire`, `github`, and `store`.
 
-| Package   | Main responsibility                                                            | Child packages                                         |
-| --------- | ------------------------------------------------------------------------------ | ------------------------------------------------------ |
-| `app`     | Loads environment settings, builds packages, and registers routes              | none                                                   |
-| `gate`    | Verifies uploads, decides outcomes, publishes feedback, and runs the sweep     | `ingest`, `inputs`, `verdict`, `feedback`, `sweep`     |
-| `control` | Serves the UI and manages onboarding, proposals, AI requests, and entitlements | `account`, `assist`, `onboarding`, `proposal`, `ui`    |
-| `wire`    | Defines versioned file and message formats                                     | `envelope`, `manifest`, `policy`, `report`, `settings` |
-| `github`  | Holds GitHub API, authentication, webhook, and OIDC knowledge                  | `api`, `auth`, `oidc`, `webhook`                       |
-| `store`   | Defines the tenant key-value interface and the memory driver                   | none                                                   |
+| Package    | Main responsibility                                                            | Child packages                                         |
+| ---------- | ------------------------------------------------------------------------------ | ------------------------------------------------------ |
+| `app`      | Loads environment settings, builds packages, and registers routes              | none                                                   |
+| `gate`     | Verifies uploads, decides outcomes, publishes feedback, and runs the sweep     | `ingest`, `inputs`, `verdict`, `feedback`, `sweep`     |
+| `control`  | Serves the UI and manages onboarding, proposals, AI requests, and entitlements | `account`, `assist`, `onboarding`, `proposal`, `ui`    |
+| `wire`     | Defines versioned file and message formats                                     | `envelope`, `manifest`, `policy`, `report`, `settings` |
+| `github`   | Holds GitHub API, authentication, webhook, and OIDC knowledge                  | `api`, `auth`, `oidc`, `webhook`                       |
+| `store`    | Defines the tenant key-value interface and the memory driver                   | `firestore`                                            |
+| `gcptoken` | Reads the service-account access token from the Cloud Run metadata server      | none                                                   |
+| `queue`    | Defines the webhook hand-off interface and the inline driver                   | `cloudtasks`                                           |
 
 The import rules keep the gate independent:
 
 - `gate` never imports `control`, `app`, UI code, or LLM code.
 - `control` uses only the `gate` facade.
-- `wire` and `store` import no other internal package.
+- `wire`, `store` and `queue` import no other internal package.
 - A seam implementation can import the package that defines its interface.
 - Tests run `go list -deps` to enforce the allowed imports.
 
@@ -346,7 +348,22 @@ The arrows show recovery flow. The sweep does not compute a new report because t
 | Review change                                            | Set `owner_approval_missing` when a `success` or `failure` check lost its owner approval; rerun when the last reason was `owner_approval_missing` and no approval is missing | None                                  |
 | Installation added or removed                            | None                                                                                                                                                                         | Start the trial or delete tenant data |
 
-The app handler runs gate and control webhook work independently. A control error does not change gate work.
+Webhook intake verifies the signature and queues two tasks: the gate half, then the control half. Each task carries
+GitHub's own headers and body and is named `<delivery ID>_gate` or `<delivery ID>_control`, so the queue refuses a
+repeated delivery by name. The worker verifies the signature again, then runs one half. A control failure never
+blocks or repeats gate work. A task that the queue refuses (a body too large for a task, or an unavailable queue)
+runs inline in the intake request. With the inline driver, the default, every task runs inline.
+
+The worker answers by error class:
+
+| Class     | Examples                                                                          | Answer | Effect                     |
+| --------- | --------------------------------------------------------------------------------- | ------ | -------------------------- |
+| Done      | The handler succeeded, or the event is ignored                                    | `204`  | The task is complete       |
+| Transient | A Store error, a GitHub rate limit or `5xx`, a deadline, a panic                  | `503`  | The queue retries the task |
+| Permanent | A gone resource, a GitHub `400` or `422`, a bad signature, an unparsable delivery | `204`  | An error line; no retry    |
+
+Handlers are idempotent, because a queue delivers at least once and two worker instances can run one task at the
+same time. The publication lease serializes the GitHub writes of one head.
 
 The sweep inspects open pull requests for these conditions:
 
@@ -402,6 +419,10 @@ A change to a protected path needs approval from an architecture owner on the ex
 The routes come from [`internal/app/handler.go`](../internal/app/handler.go) and
 [`internal/control/ui/ui.go`](../internal/control/ui/ui.go).
 
+`ARCHFIT_ROLE` selects the routes. The `all` role, the default, serves every route below except
+`POST /internal/webhooks`. The `public` role serves no `/internal/*` route. The `worker` role serves only
+`GET /healthz` and the three worker routes.
+
 ### Service routes
 
 | Method and route        | Owner     | Authentication             |
@@ -413,6 +434,18 @@ The routes come from [`internal/app/handler.go`](../internal/app/handler.go) and
 | `POST /webhooks/github` | `app`     | `X-Hub-Signature-256`      |
 | `POST /internal/sweep`  | `app`     | Operator bearer token      |
 | `POST /internal/grants` | `app`     | Operator bearer token      |
+
+Worker routes:
+
+| Method and route          | Owner | Authentication                                                         |
+| ------------------------- | ----- | ---------------------------------------------------------------------- |
+| `POST /internal/webhooks` | `app` | Invoker ID token, then `X-Hub-Signature-256` on the queued body        |
+| `POST /internal/sweep`    | `app` | Invoker ID token                                                       |
+| `POST /internal/grants`   | `app` | Invoker ID token and the operator bearer token in `X-Archfit-Operator` |
+
+The invoker ID token is the Google ID token that Cloud Tasks or Cloud Scheduler attaches. Cloud Run's invoker check
+verifies its signature. The App then checks its claims: the issuer is Google, the audience is `ARCHFIT_WORKER_URL`,
+the e-mail is `ARCHFIT_INVOKER` and is verified, and the token is not expired.
 
 ### UI routes
 
@@ -430,13 +463,14 @@ The routes come from [`internal/app/handler.go`](../internal/app/handler.go) and
 
 ## Platform seams
 
-The App keeps platform-dependent code behind three interfaces.
+The App keeps platform-dependent code behind four interfaces.
 
-| Seam       | Current driver                       | Current behavior                    |
-| ---------- | ------------------------------------ | ----------------------------------- |
-| `Store`    | `memory`                             | Data is lost when the process stops |
-| `Sandbox`  | `none`                               | Managed discovery is not available  |
-| `Provider` | `anthropic` when a key is configured | Managed AI is optional              |
+| Seam       | Current driver                       | Current behavior                                                                      |
+| ---------- | ------------------------------------ | ------------------------------------------------------------------------------------- |
+| `Store`    | `memory` (default) or `firestore`    | `memory` loses data when the process stops. `firestore` keeps it in Cloud Firestore   |
+| `Queue`    | `inline` (default) or `cloudtasks`   | `inline` runs webhook work in the intake request. `cloudtasks` hands it to the worker |
+| `Sandbox`  | `none`                               | Managed discovery is not available                                                    |
+| `Provider` | `anthropic` when a key is configured | Managed AI is optional                                                                |
 
 A new driver changes the composition in `app`. The gate contracts do not change.
 
@@ -451,6 +485,7 @@ A host must provide these runtime capabilities:
 - Provide a key-value driver that passes the `store/storetest` suite. When more than one instance runs, its
   `CompareAndSwap` must be atomic across all of them.
 - Call `POST /internal/sweep` with an external scheduler.
+- Run the binary as one process (`all`), or as a public process and a worker process with a queue between them.
 - Provide a sandbox driver before managed discovery is enabled.
 
 ### Configuration
@@ -459,23 +494,29 @@ The App reads environment variables. It does not read a `.env` file.
 Secret variables name files. They do not contain secret values.
 See [`.env.example`](../.env.example).
 
-| Variable                             | Function                                               |
-| ------------------------------------ | ------------------------------------------------------ |
-| `ARCHFIT_ADDR`                       | Listen address. Default `:8080`                        |
-| `ARCHFIT_BASE_URL`                   | Public URL and OIDC audience. No trailing `/`          |
-| `ARCHFIT_GITHUB_APP_ID`              | GitHub App ID                                          |
-| `ARCHFIT_GITHUB_PRIVATE_KEY_FILE`    | GitHub App private-key file                            |
-| `ARCHFIT_GITHUB_WEBHOOK_SECRET_FILE` | Webhook secret file                                    |
-| `ARCHFIT_GITHUB_OAUTH_CLIENT_ID`     | OAuth client ID                                        |
-| `ARCHFIT_GITHUB_OAUTH_SECRET_FILE`   | OAuth client secret file                               |
-| `ARCHFIT_COOKIE_KEY_FILE`            | 32-byte session-cookie key file                        |
-| `ARCHFIT_OPERATOR_TOKEN_FILE`        | Bearer token file for `/internal/*`                    |
-| `ARCHFIT_ANTHROPIC_KEY_FILE`         | Optional Anthropic key file. Empty disables managed AI |
-| `ARCHFIT_STORE`                      | Store driver. Only `memory` exists                     |
-| `ARCHFIT_SANDBOX`                    | Sandbox driver. Only `none` exists                     |
+| Variable                             | Function                                                                                                |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `ARCHFIT_ADDR`                       | Listen address. Default `:8080`                                                                         |
+| `ARCHFIT_BASE_URL`                   | Public URL and OIDC audience. No trailing `/`                                                           |
+| `ARCHFIT_GITHUB_APP_ID`              | GitHub App ID                                                                                           |
+| `ARCHFIT_GITHUB_PRIVATE_KEY_FILE`    | GitHub App private-key file                                                                             |
+| `ARCHFIT_GITHUB_WEBHOOK_SECRET_FILE` | Webhook secret file                                                                                     |
+| `ARCHFIT_GITHUB_OAUTH_CLIENT_ID`     | OAuth client ID                                                                                         |
+| `ARCHFIT_GITHUB_OAUTH_SECRET_FILE`   | OAuth client secret file                                                                                |
+| `ARCHFIT_COOKIE_KEY_FILE`            | 32-byte session-cookie key file                                                                         |
+| `ARCHFIT_OPERATOR_TOKEN_FILE`        | Bearer token file for the operator routes. Not read by the `public` role                                |
+| `ARCHFIT_ANTHROPIC_KEY_FILE`         | Optional Anthropic key file. Empty disables managed AI                                                  |
+| `ARCHFIT_STORE`                      | Store driver: `memory` (default) or `firestore`                                                         |
+| `ARCHFIT_FIRESTORE_PROJECT`          | Google Cloud project ID. Required with `firestore`                                                      |
+| `ARCHFIT_FIRESTORE_DATABASE`         | Firestore database ID. Default `(default)`                                                              |
+| `FIRESTORE_EMULATOR_HOST`            | Emulator `host:port`. Plain HTTP and no credentials                                                     |
+| `ARCHFIT_SANDBOX`                    | Sandbox driver. Only `none` exists                                                                      |
+| `ARCHFIT_ROLE`                       | `all` (default), `public`, or `worker`                                                                  |
+| `ARCHFIT_QUEUE`                      | Queue driver of intake: `inline` (default) or `cloudtasks` (`public` role only)                         |
+| `ARCHFIT_TASKS_QUEUE`                | `projects/<p>/locations/<l>/queues/<q>`, for `cloudtasks`                                               |
+| `ARCHFIT_WORKER_URL`                 | Worker service URL, the invoker token audience. No trailing `/`. For `cloudtasks` and the `worker` role |
+| `ARCHFIT_INVOKER`                    | Service account e-mail of queue and Scheduler dispatches. For `cloudtasks` and the `worker` role        |
 
 ### Release blockers
 
 - No GitHub App is registered.
-- No persistent Store driver: `ARCHFIT_STORE` supports only `memory`. Pilots need a driver with atomic cross-instance
-  `CompareAndSwap` (Firestore, per docs/tech-stack.md).

@@ -59,6 +59,10 @@ needs one. It is a wide leaf on purpose: role interfaces keep each consumer's kn
 - Other `403` (missing App permission), `409`, `422` → error with method, route template, status and
   `x-github-request-id`. Never the URL's variable parts, the body, or a token.
 - A `TokenSource` error is returned wrapped and treated as opaque.
+- `Permanent` classifies a returned error for a caller that can repeat the work later: `ErrNotFound` and a final
+  `4xx` (`400`, `422`) are permanent. `401` (the App credential can change), `403` (a secondary rate limit can
+  arrive without its headers, so a missing permission is retried too), `408`, `409` (a conflict can clear) and
+  every rate limit are not.
 
 ### Backoff and retry
 
@@ -170,6 +174,14 @@ var (
     ErrNotFound    = errors.New("github: not found")
     ErrRateLimited = errors.New("github: rate limit exhausted") // returned after bounded backoff
 )
+```
+
+```go
+// Permanent reports whether err is a GitHub answer that the same call cannot change when it is repeated:
+// ErrNotFound, or a 4xx status other than 401, 403, 408, 409 and 429. A 403 stays retryable because a secondary
+// rate limit can arrive without the headers that mark it. Rate limits, 5xx, transport and every other error are
+// not permanent.
+func Permanent(err error) bool
 ```
 
 ```go
@@ -419,7 +431,8 @@ type TokenSource interface {
 - **Volatility**: High (`gate`), Moderate (`control`), Low (`app`)
 - **Balanced?**: Yes
 - **Shared knowledge**: `Client`, `New`. Façades hand the client to children as role interfaces. Used directly:
-  `gate`: `Actions` (`Rerun` on a review change); `control`: `Repos` (`ListInstallations`, `ListRepos`); `app`: `New` only.
+  `gate`: `Actions` (`Rerun` on a review change); `control`: `Repos` (`ListInstallations`, `ListRepos`); `app`: `New`,
+  and `Permanent` for the error class of queued webhook work.
 
 ### control children
 
@@ -485,6 +498,11 @@ the network.
   **Scenario**: table: `404`; `410`; `401`; `403` permission; `403` with `x-ratelimit-remaining: 0`; `403` with
   `Retry-After`; `429`; `422`; `500` on `POST`.
   **Expected behavior**: `ErrNotFound` ×2; error; error; rate-limit path ×3; error; error without a retry.
+- **Test name**: `TestPermanent`
+  **Scenario**: table of final answers to a `POST`: `404`; `410`; `400`; `422`; `403` without rate-limit headers; `401`
+  twice; `408`; `409`; a rate limit beyond the budget; `500`; `503`. Then plain errors: a Store error,
+  `context.DeadlineExceeded`, a wrapped `ErrRateLimited`, a wrapped `ErrNotFound`.
+  **Expected behavior**: permanent for the first four and for the wrapped `ErrNotFound`; not permanent for the rest.
 - **Test name**: `TestUnauthorizedInvalidatesAndRetriesOnce`
   **Scenario**: table with a recording `TokenSource` stub: `401` then `200` on `GET`; `401` then `200` on `PATCH`;
   `401` twice; `401` on an App JWT route; `401` on a `Users` call.

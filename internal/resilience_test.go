@@ -3,11 +3,16 @@ package internal_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/alexei-led/archfit-app/internal/gate"
+	"github.com/alexei-led/archfit-app/internal/github/webhook"
 )
 
 const day = 24 * time.Hour
@@ -94,6 +99,53 @@ func TestDuplicateAndOutOfOrderDelivery(t *testing.T) {
 	}
 	if after := len(w.publishingWrites()); after != writes {
 		t.Errorf("stale uploads wrote to GitHub: %v", w.publishingWrites()[writes:])
+	}
+}
+
+// A queue delivers at least once, and two worker instances can run one task at the same time.
+func TestConcurrentDuplicateDelivery(t *testing.T) {
+	w := newWorld(t)
+	w.seedDemo(loadFixture(t, "real-healthy"), "required", true)
+	s := newSystem(t, w, options{})
+	events := map[string]any{
+		"pull_request": pullPayload("opened", demoInstallation, demoRepo, demoRepo, true, demoPull, demoHead),
+		"installation": installationPayload("created", demoInstallation),
+	}
+	const copies = 4
+	errs := make(chan error, 2*copies*len(events))
+	var wg sync.WaitGroup
+	for name, payload := range events {
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e, err := webhook.Parse(name, "delivery-dup-"+name, raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for range copies {
+			wg.Go(func() { errs <- s.gate.HandleEvent(context.Background(), e) })
+			wg.Go(func() { errs <- s.ctl.HandleEvent(context.Background(), e) })
+		}
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Errorf("a duplicate delivery failed: %v", err)
+		}
+	}
+	var gateChecks int
+	for _, c := range w.checkRuns(demoRepo) {
+		if c.Name == checkGate && c.HeadSHA == demoHead {
+			gateChecks++
+		}
+	}
+	if gateChecks != 1 {
+		t.Errorf("%d concurrent copies of one delivery left %d pending archfit/gate checks; want 1", copies, gateChecks)
+	}
+	if _, err := s.store.Get(context.Background(), demoInstallation, gate.EntitlementKey); err != nil {
+		t.Errorf("entitlement after duplicate installation events: %v", err)
 	}
 }
 

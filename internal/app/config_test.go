@@ -45,18 +45,52 @@ func TestLoadDefaultsAndRequired(t *testing.T) {
 		OperatorTokenFile: "/run/secrets/operator",
 		StoreDriver:       "memory",
 		SandboxDriver:     "none",
+		Role:              "all",
+		QueueDriver:       "inline",
 	}
 	everything := requiredOnly
 	everything.Addr = "127.0.0.1:9000"
 	everything.AnthropicKeyFile = "/run/secrets/anthropic"
+	everything.Role, everything.OperatorTokenFile = "public", "/run/secrets/operator"
+	everything.QueueDriver = "cloudtasks"
+	everything.TasksQueue = "projects/coupling-test/locations/europe-west1/queues/webhooks"
+	everything.WorkerURL = "https://worker.example"
+	everything.Invoker = "invoker@coupling-test.iam.gserviceaccount.com"
+	public := requiredOnly
+	public.Role, public.OperatorTokenFile = "public", ""
+	worker := requiredOnly
+	worker.Role, worker.WorkerURL, worker.Invoker = "worker", everything.WorkerURL, everything.Invoker
+	workerEnv := func() map[string]string {
+		return with(with(with(requiredEnv(), envRole, "worker"), envWorkerURL, worker.WorkerURL), envInvoker, worker.Invoker)
+	}
+	cloudEnv := func() map[string]string {
+		m := with(with(with(requiredEnv(), envRole, "public"), envQueue, "cloudtasks"), envTasksQueue, everything.TasksQueue)
+		return with(with(m, envWorkerURL, everything.WorkerURL), envInvoker, everything.Invoker)
+	}
 	underPath := requiredOnly
 	underPath.BaseURL = "https://archfit.example/app"
+	onFirestore := requiredOnly
+	onFirestore.StoreDriver = "firestore"
+	onFirestore.FirestoreProject = "coupling-dev-510710"
+	onFirestore.FirestoreDatabase = "archfit"
+	onEmulator := requiredOnly
+	onEmulator.StoreDriver = "firestore"
+	onEmulator.FirestoreProject = "archfit-local"
+	onEmulator.FirestoreEmulator = "127.0.0.1:8086"
+	firestoreEnv := func(project string) map[string]string {
+		return with(with(requiredEnv(), envStore, "firestore"), envFirestoreProject, project)
+	}
 
 	all := requiredEnv()
 	all[envAddr] = "127.0.0.1:9000"
 	all[envAnthropicKeyFile] = "/run/secrets/anthropic"
 	all[envStore] = "memory"
 	all[envSandbox] = "none"
+	all[envRole] = "public"
+	all[envQueue] = "cloudtasks"
+	all[envTasksQueue] = everything.TasksQueue
+	all[envWorkerURL] = everything.WorkerURL
+	all[envInvoker] = everything.Invoker
 
 	tests := []struct {
 		name    string
@@ -78,11 +112,29 @@ func TestLoadDefaultsAndRequired(t *testing.T) {
 		{name: "first missing wins", env: without(without(requiredEnv(), envOperatorTokenFile), envAppID), wantErr: envAppID},
 		{name: "unknown store", env: with(requiredEnv(), envStore, "MARKER-redis"), wantErr: envStore},
 		{name: "unknown sandbox", env: with(requiredEnv(), envSandbox, "MARKER-docker"), wantErr: envSandbox},
+		{name: "firestore without a project", env: firestoreEnv(""), wantErr: envFirestoreProject},
+		{name: "firestore with a named database", env: with(firestoreEnv("coupling-dev-510710"), envFirestoreDatabase, "archfit"), want: onFirestore},
+		{name: "firestore emulator", env: with(firestoreEnv("archfit-local"), envFirestoreEmulator, "127.0.0.1:8086"), want: onEmulator},
 		// The base URL is the OIDC audience, compared byte for byte, and the Action refuses an endpoint ending in '/'.
 		{name: "base URL with trailing slash", env: with(requiredEnv(), envBaseURL, "https://MARKER.example/"), wantErr: envBaseURL},
 		{name: "base URL path with trailing slash", env: with(requiredEnv(), envBaseURL, "https://archfit.example/app/"), wantErr: envBaseURL},
 		{name: "base URL slash only", env: with(requiredEnv(), envBaseURL, "/"), wantErr: envBaseURL},
 		{name: "base URL with a path", env: with(requiredEnv(), envBaseURL, "https://archfit.example/app"), want: underPath},
+		{name: "unknown role", env: with(requiredEnv(), envRole, "MARKER-batch"), wantErr: envRole},
+		{name: "unknown queue", env: with(requiredEnv(), envQueue, "MARKER-pubsub"), wantErr: envQueue},
+		{name: "cloudtasks in the all role", env: with(cloudEnv(), envRole, "all"), wantErr: envQueue},
+		{name: "public role without the operator token", env: without(with(requiredEnv(), envRole, "public"), envOperatorTokenFile), want: public},
+		{name: "worker role", env: workerEnv(), want: worker},
+		{name: "worker role without the operator token", env: without(workerEnv(), envOperatorTokenFile), wantErr: envOperatorTokenFile},
+		{name: "worker role without the worker URL", env: without(workerEnv(), envWorkerURL), wantErr: envWorkerURL},
+		{name: "worker role without the invoker", env: without(workerEnv(), envInvoker), wantErr: envInvoker},
+		{name: "worker role ignores the queue driver", env: with(workerEnv(), envQueue, "cloudtasks"), want: func() Config { c := worker; c.QueueDriver = "cloudtasks"; return c }()},
+		{name: "cloudtasks without the queue name", env: without(cloudEnv(), envTasksQueue), wantErr: envTasksQueue},
+		{name: "cloudtasks without the worker URL", env: without(cloudEnv(), envWorkerURL), wantErr: envWorkerURL},
+		{name: "cloudtasks without the invoker", env: without(cloudEnv(), envInvoker), wantErr: envInvoker},
+		{name: "invoker that is not an e-mail", env: with(cloudEnv(), envInvoker, "MARKER-invoker"), wantErr: envInvoker},
+		{name: "worker URL with trailing slash", env: with(cloudEnv(), envWorkerURL, "https://MARKER.example/"), wantErr: envWorkerURL},
+		{name: "worker URL over plain http", env: with(cloudEnv(), envWorkerURL, "http://MARKER.example"), wantErr: envWorkerURL},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

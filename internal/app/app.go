@@ -12,10 +12,14 @@ import (
 	"github.com/alexei-led/archfit-app/internal/control"
 	"github.com/alexei-led/archfit-app/internal/control/assist/anthropic"
 	"github.com/alexei-led/archfit-app/internal/gate"
+	"github.com/alexei-led/archfit-app/internal/gcptoken"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/auth"
 	"github.com/alexei-led/archfit-app/internal/github/oidc"
+	"github.com/alexei-led/archfit-app/internal/queue"
+	"github.com/alexei-led/archfit-app/internal/queue/cloudtasks"
 	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/alexei-led/archfit-app/internal/store/firestore"
 )
 
 const (
@@ -33,12 +37,15 @@ const (
 
 // Run wires every module and serves until ctx is cancelled.
 func Run(ctx context.Context, c Config, log *slog.Logger) error {
-	return run(ctx, c, log, &http.Client{Timeout: clientTimeout}, nil)
+	hc := &http.Client{Timeout: clientTimeout}
+	// The Cloud Tasks API token comes from the metadata server; the source sends nothing until the first enqueue.
+	return run(ctx, c, log, hc, gcptoken.New(hc), nil)
 }
 
-// run is Run with its two test seams: the shared outbound client, and ready, which is called with
-// the bound address once the listener accepts connections. Startup contacts no remote service.
-func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, ready func(net.Addr)) error {
+// run is Run with its test seams: the shared outbound client, the Google access token source of the
+// cloudtasks driver, and ready, which is called with the bound address once the listener accepts
+// connections. Startup contacts no remote service.
+func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, google cloudtasks.TokenSource, ready func(net.Addr)) error {
 	if err := c.validate(); err != nil {
 		return err
 	}
@@ -64,6 +71,10 @@ func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, ready
 	gh := api.New(tokens, hc)
 	verifier := oidc.New(hc)
 	st, sandbox, provider, err := platform(c, sec.anthropicKey, hc)
+	if err != nil {
+		return err
+	}
+	q, err := newQueue(c, google, hc)
 	if err != nil {
 		return err
 	}
@@ -93,20 +104,64 @@ func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, ready
 	}
 
 	return serve(ctx, c.Addr, newHandler(handlerDeps{
+		role:          c.Role,
 		gate:          g,
 		control:       ctl,
+		queue:         q,
 		webhookSecret: sec.webhookSecret,
 		operatorToken: sec.operatorToken,
+		workerURL:     c.WorkerURL,
+		invoker:       c.Invoker,
 		now:           time.Now,
 		log:           log,
 	}), log, ready)
 }
 
+// newQueue selects the queue driver of intake. Nil means the inline driver; the worker never enqueues.
+func newQueue(c Config, google cloudtasks.TokenSource, hc *http.Client) (queue.Queue, error) {
+	if c.QueueDriver != queueCloudTasks || c.Role == roleWorker {
+		return nil, nil
+	}
+	if google == nil {
+		return nil, fmt.Errorf("app: %s=%s needs a Google token source", envQueue, queueCloudTasks)
+	}
+	q, err := cloudtasks.New(cloudtasks.Config{
+		Queue: c.TasksQueue, URL: c.WorkerURL + taskRoute, Audience: c.WorkerURL, Invoker: c.Invoker,
+	}, google, hc)
+	if err != nil {
+		return nil, fmt.Errorf("app: %s: %w", envTasksQueue, err)
+	}
+	return q, nil
+}
+
 // The driver tables are the single place a platform driver is registered; validate checks names against them.
 var (
-	storeDrivers   = map[string]func() store.Store{storeMemory: store.NewMemory}
+	storeDrivers = map[string]func(Config, *http.Client) (store.Store, error){
+		storeMemory:    func(Config, *http.Client) (store.Store, error) { return store.NewMemory(), nil },
+		storeFirestore: newFirestore,
+	}
 	sandboxDrivers = map[string]func() control.Sandbox{sandboxNone: func() control.Sandbox { return nil }}
 )
+
+// newFirestore reads the access token of the Cloud Run service account from the metadata server, except
+// against the emulator, which takes no credentials.
+func newFirestore(c Config, hc *http.Client) (store.Store, error) {
+	var tokens firestore.TokenSource
+	if c.FirestoreEmulator == "" {
+		tokens = gcptoken.New(hc)
+	} else {
+		slog.Warn("store: Firestore emulator selected: plain HTTP, no credentials", "host", c.FirestoreEmulator)
+	}
+	st, err := firestore.New(firestore.Config{
+		ProjectID:    c.FirestoreProject,
+		DatabaseID:   c.FirestoreDatabase,
+		EmulatorHost: c.FirestoreEmulator,
+	}, tokens, hc)
+	if err != nil {
+		return nil, fmt.Errorf("app: Firestore store: %w", err)
+	}
+	return st, nil
+}
 
 // platform selects the implementation behind each platform seam.
 // A nil Sandbox or Provider is valid: the managed feature then reports "not available".
@@ -123,7 +178,11 @@ func platform(c Config, anthropicKey []byte, hc *http.Client) (store.Store, cont
 		}
 		provider = p
 	}
-	return newStore(), newSandbox(), provider, nil
+	st, err := newStore(c, hc)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return st, newSandbox(), provider, nil
 }
 
 // serve runs one http.Server until ctx is cancelled, then lets in-flight requests finish within shutdownGrace.
