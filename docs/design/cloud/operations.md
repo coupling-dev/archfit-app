@@ -196,7 +196,7 @@ digest, the two new revisions, and the revisions that had traffic before.
   first. The previous revisions use their own pinned secret versions, so those versions must still exist.
   Run the deploy workflow with `mode: traffic` and the revisions from "traffic before" in the bad release's
   record. It accepts only revisions that a release created, moves the public service first and the worker second,
-  removes the canary tag from the bad public revision, then runs the post-release checks.
+  then removes the canary tag from the bad public revision and runs the post-release checks.
 - **Image rollback.** After a secret was destroyed, an old revision cannot start. Redeploy the last good image with
   the current secrets through the release pipeline: run the deploy workflow with `mode: image` and the digest of
   that image from its release record.

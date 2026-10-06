@@ -94,6 +94,10 @@ case "$1 $2 $3" in
 
 "run services update-traffic")
 	if [[ -n $(flag remove-tags) ]]; then
+		[[ ${FAKE_REMOVE_TAGS_FAILS:-} != 1 ]] || {
+			echo "ERROR: tag not found" >&2
+			exit 1
+		}
 		rm -f "$FAKE_STATE/tagged"
 	fi
 	;;

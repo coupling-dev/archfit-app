@@ -209,9 +209,17 @@ assert_canary_untagged() {
 	[ "$status" -eq 0 ]
 	run calls 'gcloud run services update-traffic'
 	[[ ${lines[0]} == "gcloud run services update-traffic archfit-public --to-revisions=archfit-public-r100-1=100 "* ]]
-	[[ ${lines[1]} == "gcloud run services update-traffic archfit-public --remove-tags=canary "* ]]
-	[[ ${lines[2]} == "gcloud run services update-traffic archfit-worker --to-revisions=archfit-worker-r100-1=100 "* ]]
+	[[ ${lines[1]} == "gcloud run services update-traffic archfit-worker --to-revisions=archfit-worker-r100-1=100 "* ]]
+	[[ ${lines[2]} == "gcloud run services update-traffic archfit-public --remove-tags=canary "* ]]
 	[ "${#lines[@]}" -eq 3 ]
+	[ -n "$(calls 'gcloud tasks queues describe')" ]
+}
+
+@test "rollback moves all traffic and runs the checks when the canary tag cannot be removed, then fails" {
+	run env FAKE_REMOVE_TAGS_FAILS=1 PUBLIC_REVISION=archfit-public-r100-1 WORKER_REVISION=archfit-worker-r100-1 "$DEPLOY/rollback.sh"
+	[ "$status" -ne 0 ]
+	[[ $output == *"the tag canary still names a bad revision; remove it by hand"* ]]
+	[ "$(calls 'gcloud run services update-traffic [^ ]+ --to-revisions' | wc -l)" -eq 2 ]
 	[ -n "$(calls 'gcloud tasks queues describe')" ]
 }
 
