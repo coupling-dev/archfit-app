@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Fake curl for deploy.bats. It logs each call to $FAKE_LOG and answers with the next HTTP code of $FAKE_READY_CODES
+# (space-separated, default "200"). The last code repeats. It prints the body and the code as --write-out asks.
+set -euo pipefail
+
+printf 'curl %s\n' "$*" >>"$FAKE_LOG"
+read -ra codes <<<"${FAKE_READY_CODES:-200}"
+calls=$(grep -c '^curl ' "$FAKE_LOG")
+index=$((calls <= ${#codes[@]} ? calls - 1 : ${#codes[@]} - 1))
+code=${codes[index]}
+if [[ $code == 200 ]]; then
+	printf 'ok\n%s' "$code"
+else
+	printf '{"failed":["github"]}\n%s' "$code"
+fi

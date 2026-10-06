@@ -40,8 +40,9 @@ override_data {
         "archfit-operator-token"        = ["worker"]
         "archfit-anthropic-key"         = ["public"]
       }
-      notification_channel = "projects/coupling-dev-510710/notificationChannels/1"
-      project_number       = "335297348272"
+      deploy_service_account = "archfit-deploy@coupling-dev-510710.iam.gserviceaccount.com"
+      notification_channel   = "projects/coupling-dev-510710/notificationChannels/1"
+      project_number         = "335297348272"
     }
   }
 }
@@ -228,6 +229,14 @@ run "queues_enforce_their_own_route_and_identity" {
   assert {
     condition     = google_cloud_tasks_queue_iam_member.public_enqueuer.name == "archfit-webhooks" && google_cloud_tasks_queue_iam_member.public_enqueuer.role == "roles/cloudtasks.enqueuer"
     error_message = "The public service can add tasks only to the webhook queue."
+  }
+
+  assert {
+    condition = toset([for m in google_cloud_tasks_queue_iam_member.deploy_viewer : "${m.name}|${m.role}|${m.member}"]) == toset([
+      "archfit-webhooks|roles/cloudtasks.viewer|serviceAccount:archfit-deploy@coupling-dev-510710.iam.gserviceaccount.com",
+      "archfit-operator|roles/cloudtasks.viewer|serviceAccount:archfit-deploy@coupling-dev-510710.iam.gserviceaccount.com",
+    ])
+    error_message = "The deploy account can only read the two queues, for the post-release routing check."
   }
 }
 

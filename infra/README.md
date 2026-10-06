@@ -35,7 +35,7 @@ flowchart LR
 | Stack     | State prefix | Holds                                                                                                                                                                                                           |
 | --------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `data`    | `data`       | Enabled APIs, Cloud Run quota preferences, guardrail alert and its channel, essential contact, Firestore, backups, secrets, service accounts, IAM, Artifact Registry, Workload Identity, data-access audit logs |
-| `runtime` | `runtime`    | The two Cloud Run services, the worker invoker binding, the two queues, the Scheduler job, the uptime check, the alerts, the log-based sweep counter, the domain mapping                                        |
+| `runtime` | `runtime`    | The two Cloud Run services, the worker invoker binding, the two queues and their IAM, the Scheduler job, the uptime check, the alerts, the log-based sweep counter, the domain mapping                          |
 
 A routine runtime change cannot destroy data: Firestore, the secrets, and the imported guardrails have
 `deletion_policy = "PREVENT"`, and Firestore also has delete protection on in Google Cloud.
@@ -287,11 +287,12 @@ tofu -chdir=infra/runtime plan -out=runtime.tfplan
 Expected plan summary:
 
 ```text
-Plan: 17 to add, 0 to change, 0 to destroy.
+Plan: 19 to add, 0 to change, 0 to destroy.
 ```
 
-The 17 resources: 2 services, the worker invoker grant, 2 queues, the enqueuer grant, the Scheduler job, the uptime
-check, 7 alert policies, the sweep counter, and the domain mapping. Then apply:
+The 19 resources: 2 services, the worker invoker grant, 2 queues, the enqueuer grant, 2 queue reader grants for the
+deploy account, the Scheduler job, the uptime check, 7 alert policies, the sweep counter, and the domain mapping. Then
+apply:
 
 ```sh
 tofu -chdir=infra/runtime apply runtime.tfplan
@@ -312,20 +313,31 @@ gcloud beta run domain-mappings describe --domain=app.coupling.dev --region=euro
 
 ### 9. Deploy the first image
 
-CI deploys through `.github/workflows/deploy.yaml` with the `archfit-deploy` account (outputs
-`workload_identity_provider` and `deploy_service_account` of the data stack). Deploy the worker first.
-
-Until that workflow exists, the owner deploys by hand, by digest:
+CI deploys through `.github/workflows/deploy.yaml` with the `archfit-deploy` account. The workflow names the outputs
+`workload_identity_provider` and `deploy_service_account` of the data stack. Compare them first:
 
 ```sh
-IMG=europe-west1-docker.pkg.dev/coupling-dev-510710/archfit-app/archfit-app
-gcloud auth configure-docker europe-west1-docker.pkg.dev
-docker build --platform=linux/amd64 -t "$IMG:$(git rev-parse HEAD)" .
-docker push "$IMG:$(git rev-parse HEAD)"
-DIGEST=$(gcloud artifacts docker images describe "$IMG:$(git rev-parse HEAD)" --format='value(image_summary.digest)')
-gcloud run deploy archfit-worker --image="$IMG@$DIGEST" --region=europe-west1 --project=coupling-dev-510710
-gcloud run deploy archfit-public --image="$IMG@$DIGEST" --region=europe-west1 --project=coupling-dev-510710
+# projects/335297348272/locations/global/workloadIdentityPools/github/providers/archfit-app
+tofu -chdir=infra/data output workload_identity_provider
+# archfit-deploy@coupling-dev-510710.iam.gserviceaccount.com
+tofu -chdir=infra/data output deploy_service_account
 ```
+
+If a value differs, change the workflow in a pull request first. Then run the first release by hand, and follow it:
+
+```sh
+gh workflow run deploy.yaml --ref main -f mode=release
+gh run watch "$(gh run list --workflow=deploy.yaml --limit=1 --json databaseId --jq '.[0].databaseId')"
+```
+
+The release must end with `Release: released` and `Post-release checks: passed` in the job summary. Then turn on a
+release for each push to `main`:
+
+```sh
+gh variable set RELEASE_ON_PUSH --body true
+```
+
+See [Releases](#releases) for what the workflow does and how to roll back.
 
 ### 10. Resume processing
 
@@ -354,6 +366,36 @@ gcloud logging read 'jsonPayload.msg="sweep: pass finished" OR jsonPayload.messa
 tofu -chdir=infra/data plan      # No changes.
 tofu -chdir=infra/runtime plan   # Only template.revision -> null on services CI deployed (see Routine changes)
 ```
+
+## Releases
+
+The deploy workflow [`.github/workflows/deploy.yaml`](../.github/workflows/deploy.yaml) runs the scripts in
+[`scripts/deploy/`](../scripts/deploy/). It follows [Release](../docs/design/cloud/operations.md#release).
+
+| Run                                                                 | What it does                                                                    |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Push to `main`, while the variable `RELEASE_ON_PUSH` is `true`      | Builds the image of the commit and releases it                                  |
+| `gh workflow run deploy.yaml --ref main -f mode=release`            | The same, for the current `main`                                                |
+| `... -f mode=image -f image_digest=sha256:<digest>`                 | Image rollback: releases an earlier image again with the current secrets        |
+| `... -f mode=traffic -f public_revision=<r> -f worker_revision=<r>` | Traffic rollback: moves traffic back to earlier release revisions (one or both) |
+
+- A run on another ref gets no credentials: Workload Identity admits only `main`.
+- Each release names its revisions `archfit-worker-r<run>-<attempt>` and `archfit-public-r<run>-<attempt>`.
+- The release record is the artifact `release-<run>-<attempt>` (`release.json`) and the job summary: the commit of
+  the run, the image digest, the new revisions, and the revisions with traffic before the release. Take the rollback
+  inputs from it: the revision names in "traffic before" (without `=<percent>`) for a traffic rollback, the `digest`
+  of an earlier release for an image rollback.
+- A release or rollback fails when the worker ingress is not internal, the worker invoker check is off, the worker's
+  IAM policy has any binding other than `roles/run.invoker` for `archfit-invoker`, or a queue routes to another
+  method, scheme, host, path, enforce mode, identity, or audience. Then the revisions of the release already have
+  traffic. Fix the setting with Terraform (`apply` the runtime stack), or roll back.
+- A release that stops before the public promotion, and a traffic rollback of the public service, remove the
+  `canary` tag. A revision without traffic is then not reachable at the tag URL.
+- Before a rollback, stop releases on push: `gh variable set RELEASE_ON_PUSH --body false`. A newer waiting run
+  cancels an older waiting one, so a push could replace the waiting rollback. Check that the rollback run started.
+  Turn releases on push on again when the cause is fixed.
+- The deploy account can read the two queues (`roles/cloudtasks.viewer` on each queue, in the runtime stack) for the
+  routing check. It has no other new role.
 
 ## Routine changes
 
@@ -410,8 +452,6 @@ tflint --chdir=infra --recursive --config="$PWD/infra/.tflint.hcl"
 - The billing budget is on the billing account, outside this code.
 - Disabled APIs and the removed default Editor grant cannot be expressed as resources. The guardrail alert reports a
   change to either.
-- The deploy workflow `deploy.yaml` and its post-release check do not exist yet. The check reads the queue routing, so
-  the deploy account will also need `roles/cloudtasks.viewer` on the two queues.
 - Cloud Logging reads severity only from its own key name. Until the App writes that key, the error-line alert matches
   only platform lines.
 - The inline-fallback alert, the log-based counters for requests and verdicts, and the long-retention log bucket wait

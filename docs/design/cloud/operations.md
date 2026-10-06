@@ -137,22 +137,44 @@ The order matters:
 3. Register the App with its webhook inactive, and install it nowhere yet.
 4. Create the services with a placeholder image, and the queues and the Scheduler paused.
    The placeholder answers every request with success and does nothing.
-5. Deploy the first real image through CI.
+5. Deploy the first real image through CI: run the deploy workflow by hand. Then turn on releases for each push to
+   `main`.
 6. Resume the queues and the Scheduler. Activate the webhook. Install the App on one test repository.
    Follow one pull request from webhook to check. Then install it on the invited repositories.
 
 ## Release
 
+The workflow [`.github/workflows/deploy.yaml`](../../../.github/workflows/deploy.yaml) releases each push to `main`
+while the repository variable `RELEASE_ON_PUSH` is `true`, and a manual run on `main`.
+Its steps are the scripts in [`scripts/deploy/`](../../../scripts/deploy/). The commands for the owner are in the
+[infrastructure runbook](../../../infra/README.md#releases).
+
+```mermaid
+flowchart TD
+    B["Build and push the image of the commit"] --> W["Deploy the worker by digest, no traffic"]
+    W --> P["Deploy the public service by digest,<br/>no traffic, tag canary"]
+    P --> V{"Both new revisions are<br/>this release's, with this image?"}
+    V -->|no| F["Fail. No traffic moves"]
+    V -->|yes| R{"Canary GET /ready<br/>answers 200?"}
+    R -->|no| F
+    R -->|yes| PW["Promote the worker revision"]
+    PW --> PP["Promote the public revision"]
+    PP --> C{"Worker exposure and<br/>queue routing match?"}
+    C -->|no| X["Fail the release"]
+    C -->|yes| D["Released"]
+```
+
 - Build one image for each commit on `main`. Deploy by digest. Keep the last few images for rollbacks.
 - Deploy the worker first, because a new worker route must exist before anything sends to it.
 - Deploy the public service as a tagged canary without traffic. The canary must pass the readiness check
   `GET /ready`: the App key works with GitHub, and the store answers. It answers `503` with the names of the failed
-  checks, and keeps a result for 30 seconds after a pass and 5 seconds after a failure. Use the same route for
-  the worker's post-deploy check.
+  checks, and keeps a result for 30 seconds after a pass and 5 seconds after a failure. CI cannot call the worker's
+  `GET /ready` (see the worker check limit below).
 - Do not use `GET /ready` as a startup probe. Cloud Run runs a startup probe on every new instance, so a GitHub API
   outage would stop every new instance, intake included, although intake does not need GitHub. The startup probe
   is `GET /healthz`, which checks only that the process serves.
 - Promote the exact revisions that CI deployed, never "latest". A revision that another change created stays without traffic.
+  A release that stops before the public promotion removes the canary tag, so its revision is not reachable.
 - After promotion, check the worker's exposure and the queue routing. See [Worker protection](security.md#worker-protection).
 - Record the image digest and the revision names of each release. A rollback needs them.
 - Releases never overlap.
@@ -160,16 +182,31 @@ The order matters:
 Canary limits: the canary gets no real webhooks and no uploads. GitHub calls the main domain, and an Actions token
 names the main domain as its audience. The worker has no canary. For the beta, fast rollback covers the gap.
 
+Worker check limit: the worker has internal ingress, so a GitHub runner cannot call its `GET /ready`. The release
+promotes a worker revision only when Cloud Run reports it ready, which needs only a started container. The canary's
+`GET /ready` checks the same image, key and store from the public service.
+
+Each revision that the release creates has the name `<service>-r<run>-<attempt>` (the workflow run ID and attempt).
+The release record (`release.json`, a workflow artifact, and the job summary) holds the commit of the run, the image
+digest, the two new revisions, and the revisions that had traffic before.
+
 ## Roll back
 
 - **Traffic rollback.** Move traffic back to the previous revisions. If the worker does harm, pause the webhook queue
   first. The previous revisions use their own pinned secret versions, so those versions must still exist.
+  Run the deploy workflow with `mode: traffic` and the revisions from "traffic before" in the bad release's
+  record. It accepts only revisions that a release created, moves the public service first and the worker second,
+  then removes the canary tag from the bad public revision and runs the post-release checks.
 - **Image rollback.** After a secret was destroyed, an old revision cannot start. Redeploy the last good image with
-  the current secrets through the release pipeline.
+  the current secrets through the release pipeline: run the deploy workflow with `mode: image` and the digest of
+  that image from its release record.
+- Run a rollback from `main`. Workload Identity admits no other ref.
+- Turn off releases on push before you start a rollback. Runs wait in one queue, and a newer waiting run cancels an
+  older one, so a push could otherwise replace the waiting rollback. Check that the rollback run started.
 - **What is recovered.** Tasks that the worker answered with 5xx retry. See [Failure handling](architecture.md#failure-handling). Tasks that a bad worker
   answered with success are gone. The sweep repairs gate and control state for those.
 - A rollback does not undo stored data. The format rule in [State](architecture.md#state) keeps old revisions working.
-- After a rollback, do not release again until the cause is fixed.
+- After a rollback, do not release again until the cause is fixed. Keep releases on push off until then.
 
 ## Observability
 

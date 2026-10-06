@@ -43,6 +43,7 @@ make test     # race tests
 make lint     # golangci-lint
 make build    # .bin/reporter
 make run      # start the service on the configured address
+make deploy-check  # shellcheck, actionlint, and the release script tests (scripts/deploy)
 ```
 
 Export the variables in [`.env.example`](.env.example) before `make run`.

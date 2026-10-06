@@ -1,6 +1,7 @@
 BINARY := reporter
 BIN_DIR := .bin
 MODULE := github.com/alexei-led/archfit-app
+ACTIONLINT ?= actionlint
 GO_FILES := $(shell find . -type f -name '*.go' -not -path './vendor/*')
 
 .DEFAULT_GOAL := help
@@ -30,6 +31,12 @@ fmt: ## format Go files
 fmt-check: ## verify Go formatting
 	@test -z "$$(gofmt -l $(GO_FILES))" || { echo 'gofmt: files need formatting' >&2; gofmt -l $(GO_FILES); exit 1; }
 	@test -z "$$(goimports -d -local $(MODULE) $(GO_FILES))" || { echo 'goimports: files need formatting' >&2; goimports -d -local $(MODULE) $(GO_FILES); exit 1; }
+
+.PHONY: deploy-check
+deploy-check: ## lint the workflows and test the release scripts (needs shellcheck, actionlint, bats, jq)
+	shellcheck scripts/deploy/*.sh scripts/deploy/test/bin/* scripts/deploy/test/*.bats
+	$(ACTIONLINT)
+	bats scripts/deploy/test
 
 .PHONY: run
 run: ## run the reporter locally

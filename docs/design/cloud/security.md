@@ -92,8 +92,9 @@ The key then never enters App memory. The change is local to `internal/github/au
 
 ## Supply chain
 
-Facts in the repository today: the `Dockerfile` pins base images by tag, CI pins actions by version tag, and CI has no
-vulnerability scan. The module has one third-party dependency.
+Facts in the repository today: the `Dockerfile` pins base images by tag, CI pins most actions by version tag, and CI
+has no vulnerability scan. The deploy workflow pins every action by commit SHA and deploys images by digest. The
+module has one third-party dependency.
 
 Direction:
 
