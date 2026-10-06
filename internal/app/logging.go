@@ -90,8 +90,10 @@ func requestTrace(h http.Header, project string) (trace, bool) {
 	if project == "" {
 		return trace{}, false
 	}
-	// traceparent: 00-<32 hex trace ID>-<16 hex span ID>-<2 hex flags>
-	if parts := strings.Split(h.Get(headerTraceParent), "-"); len(parts) == 4 &&
+	// traceparent: <2 hex version>-<32 hex trace ID>-<16 hex span ID>-<2 hex flags>. Version ff is invalid, version
+	// 00 has exactly four fields, and a later version may append fields after them (W3C Trace Context).
+	if parts := strings.Split(h.Get(headerTraceParent), "-"); len(parts) >= 4 &&
+		isHex(parts[0], 2) && !strings.EqualFold(parts[0], "ff") && (parts[0] != "00" || len(parts) == 4) &&
 		isHex(parts[1], traceIDLen) && isHex(parts[2], spanLen) && isHex(parts[3], 2) {
 		flags, _ := strconv.ParseUint(parts[3], 16, 8)
 		return newTrace(project, parts[1], parts[2], flags&1 == 1)
@@ -107,7 +109,7 @@ func requestTrace(h http.Header, project string) (trace, bool) {
 }
 
 func newTrace(project, id, span string, sampled bool) (trace, bool) {
-	if strings.Trim(id, "0") == "" { // the all-zero trace ID is invalid
+	if strings.Trim(id, "0") == "" || strings.Trim(span, "0") == "" { // all-zero IDs are invalid
 		return trace{}, false
 	}
 	span = strings.Repeat("0", spanLen-len(span)) + strings.ToLower(span)
