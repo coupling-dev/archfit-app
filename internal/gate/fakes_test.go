@@ -465,6 +465,10 @@ func (s *guardStore) CompareAndSwap(ctx context.Context, t store.Tenant, key str
 	return s.inner.CompareAndSwap(ctx, t, key, old, value)
 }
 
+func (s *guardStore) CompareAndSwapAll(context.Context, store.Tenant, []store.Swap) (bool, error) {
+	panic("gate path wrote to the Store: CompareAndSwapAll")
+}
+
 func (s *guardStore) Put(context.Context, store.Tenant, string, []byte) error {
 	panic("gate path wrote to the Store: Put")
 }

@@ -19,6 +19,7 @@ import (
 const (
 	maxKeyLen   = 512
 	maxValueLen = 64 << 10
+	maxSwaps    = 10
 )
 
 // Run runs every conformance case against a fresh store per case.
@@ -32,6 +33,8 @@ func Run(t *testing.T, newStore func() store.Store) {
 		{"AddIsAtomic", testAddIsAtomic},
 		{"CompareAndSwap", testCompareAndSwap},
 		{"CompareAndSwapIsAtomic", testCompareAndSwapIsAtomic},
+		{"CompareAndSwapAll", testCompareAndSwapAll},
+		{"CompareAndSwapAllIsAtomic", testCompareAndSwapAllIsAtomic},
 		{"TenantIsolation", testTenantIsolation},
 		{"DeleteTenant", testDeleteTenant},
 		{"Tenants", testTenants},
@@ -265,6 +268,109 @@ func testCompareAndSwapIsAtomic(t *testing.T, s store.Store) {
 	wantValue(t, s, tn, "lease", strconv.Itoa(rounds-1))
 }
 
+func swap(key string, old, value *string) store.Swap {
+	sw := store.Swap{Key: key}
+	if old != nil {
+		sw.Old = []byte(*old)
+	}
+	if value != nil {
+		sw.Value = []byte(*value)
+	}
+	return sw
+}
+
+func testCompareAndSwapAll(t *testing.T, s store.Store) {
+	ctx := context.Background()
+	const tn = store.Tenant(1)
+	keys := []string{"a", "b", "c"}
+	steps := []struct {
+		name    string
+		swaps   []store.Swap
+		swapped bool
+		want    []*string // per key of keys; nil: the key must be missing afterwards
+	}{
+		{"create two missing keys", []store.Swap{swap("a", nil, ptr("a1")), swap("b", nil, ptr("b1"))},
+			true, []*string{ptr("a1"), ptr("b1"), nil}},
+		{"a mismatch on the second key changes neither", []store.Swap{swap("a", ptr("a1"), ptr("a2")), swap("b", ptr("b0"), ptr("b2"))},
+			false, []*string{ptr("a1"), ptr("b1"), nil}},
+		{"a mismatch on the first key changes neither", []store.Swap{swap("a", ptr("a0"), ptr("a2")), swap("b", ptr("b1"), ptr("b2"))},
+			false, []*string{ptr("a1"), ptr("b1"), nil}},
+		{"nil old over a present key", []store.Swap{swap("c", nil, ptr("c1")), swap("b", nil, ptr("b2"))},
+			false, []*string{ptr("a1"), ptr("b1"), nil}},
+		{"empty old over a missing key", []store.Swap{swap("a", ptr("a1"), ptr("a2")), swap("c", ptr(""), ptr("c1"))},
+			false, []*string{ptr("a1"), ptr("b1"), nil}},
+		{"a missing key that stays missing", []store.Swap{swap("a", ptr("a1"), ptr("a2")), swap("c", nil, nil)},
+			true, []*string{ptr("a2"), ptr("b1"), nil}},
+		{"a present key where a missing one is expected", []store.Swap{swap("a", ptr("a2"), ptr("a3")), swap("b", nil, nil)},
+			false, []*string{ptr("a2"), ptr("b1"), nil}},
+		{"a check of an unchanged key", []store.Swap{swap("a", ptr("a2"), ptr("a2")), swap("b", ptr("b1"), ptr("b2"))},
+			true, []*string{ptr("a2"), ptr("b2"), nil}},
+		{"a failed check", []store.Swap{swap("a", ptr("a1"), ptr("a1")), swap("b", ptr("b2"), ptr("b3"))},
+			false, []*string{ptr("a2"), ptr("b2"), nil}},
+		{"delete, store empty and create at once", []store.Swap{swap("a", ptr("a2"), nil), swap("b", ptr("b2"), ptr("")), swap("c", nil, ptr("c1"))},
+			true, []*string{nil, ptr(""), ptr("c1")}},
+		{"nil old over an empty value", []store.Swap{swap("b", nil, ptr("x"))},
+			false, []*string{nil, ptr(""), ptr("c1")}},
+		{"one swap", []store.Swap{swap("b", ptr(""), ptr("b4"))},
+			true, []*string{nil, ptr("b4"), ptr("c1")}},
+	}
+	for _, st := range steps {
+		swapped, err := s.CompareAndSwapAll(ctx, tn, st.swaps)
+		if err != nil || swapped != st.swapped {
+			t.Errorf("%s: CompareAndSwapAll = %v, %v, want %v, nil", st.name, swapped, err, st.swapped)
+		}
+		for i, key := range keys {
+			if st.want[i] == nil {
+				wantNotFound(t, s, tn, key)
+			} else {
+				wantValue(t, s, tn, key, *st.want[i])
+			}
+		}
+	}
+
+	// The caller's slices are not aliased.
+	value := []byte("mine")
+	if ok, err := s.CompareAndSwapAll(ctx, tn, []store.Swap{{Key: "alias", Value: value}}); err != nil || !ok {
+		t.Fatalf("CompareAndSwapAll alias = %v, %v", ok, err)
+	}
+	value[0] = 'X'
+	wantValue(t, s, tn, "alias", "mine")
+}
+
+// Each round of swaps of two keys from one pair of values has exactly one winner, and no round leaves the keys
+// apart. Half of the workers list the keys in the other order.
+func testCompareAndSwapAllIsAtomic(t *testing.T, s store.Store) {
+	const workers, rounds = 20, 25
+	ctx := context.Background()
+	const tn = store.Tenant(1)
+	for round := range rounds {
+		var old []byte
+		if round > 0 {
+			old = []byte(strconv.Itoa(round - 1))
+		}
+		next := []byte(strconv.Itoa(round))
+		wins := make([]bool, workers)
+		errs := make([]error, workers)
+		var wg sync.WaitGroup
+		for w := range workers {
+			swaps := []store.Swap{{Key: "record", Old: old, Value: next}, {Key: "derived", Old: old, Value: next}}
+			if w%2 == 1 {
+				slices.Reverse(swaps)
+			}
+			wg.Go(func() { wins[w], errs[w] = s.CompareAndSwapAll(ctx, tn, swaps) })
+		}
+		wg.Wait()
+		if err := errors.Join(errs...); err != nil {
+			t.Fatalf("round %d: CompareAndSwapAll: %v", round, err)
+		}
+		if n := len(slices.DeleteFunc(wins, func(won bool) bool { return !won })); n != 1 {
+			t.Fatalf("round %d: %d winners, want 1", round, n)
+		}
+		wantValue(t, s, tn, "record", string(next))
+		wantValue(t, s, tn, "derived", string(next))
+	}
+}
+
 func testTenantIsolation(t *testing.T, s store.Store) {
 	ctx := context.Background()
 	const a, b = store.Tenant(1), store.Tenant(2)
@@ -279,6 +385,18 @@ func testTenantIsolation(t *testing.T, s store.Store) {
 		t.Errorf("Add under B = %d, %v, want 1, nil", n, err)
 	}
 	wantValue(t, s, a, "k", "a-value")
+
+	mustPut(t, s, a, "j", "a-j")
+	stolen := []store.Swap{{Key: "k", Old: []byte("a-value"), Value: []byte("b")}, {Key: "j", Old: []byte("a-j"), Value: []byte("b")}}
+	if ok, err := s.CompareAndSwapAll(ctx, b, stolen); err != nil || ok {
+		t.Errorf("CompareAndSwapAll under B with A's values = %v, %v, want false, nil", ok, err)
+	}
+	if ok, err := s.CompareAndSwapAll(ctx, b, []store.Swap{{Key: "j", Value: []byte("b-j")}}); err != nil || !ok {
+		t.Errorf("CompareAndSwapAll create under B = %v, %v, want true, nil", ok, err)
+	}
+	wantValue(t, s, a, "k", "a-value")
+	wantValue(t, s, a, "j", "a-j")
+	wantValue(t, s, b, "j", "b-j")
 }
 
 func testDeleteTenant(t *testing.T, s store.Store) {
@@ -389,6 +507,11 @@ func testInvalidInput(t *testing.T, s store.Store) {
 			_, err := s.CompareAndSwap(ctx, tn, k, nil, []byte("x"))
 			return err
 		},
+		// The valid swap before the invalid one must not land either.
+		"CompareAndSwapAll": func(tn store.Tenant, k string) error {
+			_, err := s.CompareAndSwapAll(ctx, tn, []store.Swap{{Key: "new", Value: []byte("x")}, {Key: k, Value: []byte("x")}})
+			return err
+		},
 	}
 	inputs := []struct {
 		name   string
@@ -427,6 +550,28 @@ func testInvalidInput(t *testing.T, s store.Store) {
 		t.Error("CompareAndSwap with a 64 KiB + 1 value: want an error")
 	}
 
+	create := func(key string) store.Swap { return store.Swap{Key: key, Value: []byte("x")} }
+	tooMany := make([]store.Swap, maxSwaps+1)
+	for i := range tooMany {
+		tooMany[i] = create("new/" + strconv.Itoa(i))
+	}
+	badSwaps := map[string][]store.Swap{
+		"no swaps":                 nil,
+		"an empty list":            {},
+		"a key twice":              {create("new"), {Key: "new", Value: []byte("y")}},
+		"more than the limit":      tooMany,
+		"a 64 KiB + 1 value":       {create("new"), {Key: "k", Old: []byte("v"), Value: big}},
+		"a 64 KiB + 1 value first": {{Key: "new", Value: big}, {Key: "k", Old: []byte("v"), Value: []byte("y")}},
+	}
+	for name, swaps := range badSwaps {
+		if _, err := s.CompareAndSwapAll(ctx, tn, swaps); err == nil {
+			t.Errorf("CompareAndSwapAll with %s: want an error", name)
+		}
+	}
+	for i := range tooMany {
+		wantNotFound(t, s, tn, tooMany[i].Key)
+	}
+
 	wantValue(t, s, tn, "k", "v")
 	wantNotFound(t, s, tn, "new")
 	wantTenants(t, s, tn)
@@ -435,6 +580,11 @@ func testInvalidInput(t *testing.T, s store.Store) {
 	longKey := strings.Repeat("a", maxKeyLen)
 	if err := s.Put(ctx, tn, longKey, big[:maxValueLen]); err != nil {
 		t.Errorf("Put with a 512-byte key and a 64 KiB value: %v", err)
+	}
+	atLimit := tooMany[:maxSwaps]
+	atLimit[0].Value = big[:maxValueLen]
+	if ok, err := s.CompareAndSwapAll(ctx, tn, atLimit); err != nil || !ok {
+		t.Errorf("CompareAndSwapAll with %d swaps and a 64 KiB value = %v, %v, want true, nil", maxSwaps, ok, err)
 	}
 }
 
@@ -486,8 +636,12 @@ func testCancelledContext(t *testing.T, s store.Store) {
 		"Add":            func() error { _, err := s.Add(ctx, tn, "n", 1); return err },
 		"CompareAndSwap": func() error { _, err := s.CompareAndSwap(ctx, tn, "k", []byte("v"), []byte("x")); return err },
 		"Swap delete":    func() error { _, err := s.CompareAndSwap(ctx, tn, "k", []byte("v"), nil); return err },
-		"DeleteTenant":   func() error { return s.DeleteTenant(ctx, tn) },
-		"Tenants":        func() error { _, err := s.Tenants(ctx); return err },
+		"CompareAndSwapAll": func() error {
+			_, err := s.CompareAndSwapAll(ctx, tn, []store.Swap{{Key: "k", Old: []byte("v"), Value: []byte("x")}, {Key: "new", Value: []byte("x")}})
+			return err
+		},
+		"DeleteTenant": func() error { return s.DeleteTenant(ctx, tn) },
+		"Tenants":      func() error { _, err := s.Tenants(ctx); return err },
 	}
 	for name, op := range ops {
 		if err := op(); !errors.Is(err, context.Canceled) {

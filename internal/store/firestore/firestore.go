@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -36,13 +37,14 @@ const (
 	// The input limits of internal/store/module.md.
 	maxKeyLen   = 512
 	maxValueLen = 64 << 10
+	maxSwaps    = 10
 
 	maxResponseBytes = 8 << 20
 	// deleteBatch is the number of documents DeleteTenant reads and deletes in one commit. The deleted documents
 	// count toward the 10 MiB limit of one commit: 100 values of 64 KiB, with their index entries, stay under it.
 	deleteBatch = 100
 
-	// maxAttempts bounds the read-compare-commit loop of CompareAndSwap and Add on a conflict. A local lock
+	// maxAttempts bounds the read-compare-commit loop of CompareAndSwap, CompareAndSwapAll and Add on a conflict. A local lock
 	// serializes the callers of one process, so only other instances conflict.
 	maxAttempts = 10
 	retryBase   = 10 * time.Millisecond
@@ -132,17 +134,33 @@ func (d *driver) docName(t store.Tenant, key string) string {
 	return d.documents + "/" + collection + "/" + strconv.FormatInt(int64(t), 10) + "-" + hex.EncodeToString([]byte(key))
 }
 
-// lock serializes CompareAndSwap and Add on one document inside this process. It only lowers contention:
-// atomicity across instances comes from the commit preconditions. A caller whose context ends while it
-// waits leaves with the context error.
-func (d *driver) lock(ctx context.Context, name string) (func(), error) {
-	slot := d.locks[maphash.String(d.seed, name)%lockStripes]
-	select {
-	case slot <- struct{}{}:
-		return func() { <-slot }, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
+// lock serializes the read-compare-commit operations on the documents inside this process. It only lowers
+// contention: atomicity across instances comes from the commit preconditions. It takes each stripe once and in
+// ascending order, so two callers never wait for each other in a cycle, and two names on one stripe never
+// wait for themselves. A caller whose context ends while it waits leaves with the context error.
+func (d *driver) lock(ctx context.Context, names ...string) (func(), error) {
+	stripes := make([]uint64, 0, len(names))
+	for _, name := range names {
+		stripes = append(stripes, maphash.String(d.seed, name)%lockStripes)
 	}
+	slices.Sort(stripes)
+	stripes = slices.Compact(stripes)
+	held := 0
+	unlock := func() {
+		for _, i := range stripes[:held] {
+			<-d.locks[i]
+		}
+	}
+	for _, i := range stripes {
+		select {
+		case d.locks[i] <- struct{}{}:
+			held++
+		case <-ctx.Done():
+			unlock()
+			return nil, ctx.Err()
+		}
+	}
+	return unlock, nil
 }
 
 func (d *driver) Get(ctx context.Context, t store.Tenant, key string) ([]byte, error) {
@@ -152,11 +170,11 @@ func (d *driver) Get(ctx context.Context, t store.Tenant, key string) ([]byte, e
 	if err := validateKey("get", t, key); err != nil {
 		return nil, err
 	}
-	doc, found, err := d.read(ctx, d.docName(t, key))
+	doc, err := d.read(ctx, d.docName(t, key))
 	switch {
 	case err != nil:
 		return nil, err
-	case !found:
+	case !doc.found:
 		return nil, store.ErrNotFound
 	}
 	return doc.value, nil
@@ -198,25 +216,63 @@ func (d *driver) CompareAndSwap(ctx context.Context, t store.Tenant, key string,
 	}
 	name := d.docName(t, key)
 	swapped := false
-	err := d.readModifyWrite(ctx, name, func(cur stored, found bool) (*write, error) {
-		if found != (old != nil) || !bytes.Equal(cur.value, old) {
+	err := d.readModifyWrite(ctx, []string{name}, func(cur []stored) ([]write, error) {
+		if !cur[0].holds(old) {
 			swapped = false
 			return nil, nil
 		}
 		swapped = true
-		if value == nil {
-			if !found {
-				return nil, nil // nothing to delete; the comparison held at the read
-			}
-			return &write{Delete: name, CurrentDocument: precondition(cur, found)}, nil
+		if value == nil && !cur[0].found {
+			return nil, nil // nothing to delete; the comparison held at the read
 		}
-		w := d.update(t, key, value, precondition(cur, found))
-		return &w, nil
+		return []write{d.swapWrite(t, key, value, cur[0])}, nil
 	})
 	if err != nil {
 		return false, err
 	}
 	return swapped, nil
+}
+
+func (d *driver) CompareAndSwapAll(ctx context.Context, t store.Tenant, swaps []store.Swap) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if err := validateSwaps(t, swaps); err != nil {
+		return false, err
+	}
+	names := make([]string, len(swaps))
+	for i, s := range swaps {
+		names[i] = d.docName(t, s.Key)
+	}
+	swapped := false
+	err := d.readModifyWrite(ctx, names, func(cur []stored) ([]write, error) {
+		swapped = false
+		for i, s := range swaps {
+			if !cur[i].holds(s.Old) {
+				return nil, nil
+			}
+		}
+		swapped = true
+		// Every swap is a write, also a missing key that stays missing: its delete under exists=false keeps
+		// the key guarded until the commit.
+		writes := make([]write, len(swaps))
+		for i, s := range swaps {
+			writes[i] = d.swapWrite(t, s.Key, s.Value, cur[i])
+		}
+		return writes, nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return swapped, nil
+}
+
+// swapWrite writes value at key, or deletes the key for a nil value, under a precondition on cur.
+func (d *driver) swapWrite(t store.Tenant, key string, value []byte, cur stored) write {
+	if value == nil {
+		return write{Delete: d.docName(t, key), CurrentDocument: precondition(cur)}
+	}
+	return d.update(t, key, value, precondition(cur))
 }
 
 func (d *driver) Add(ctx context.Context, t store.Tenant, key string, delta int64) (int64, error) {
@@ -227,12 +283,12 @@ func (d *driver) Add(ctx context.Context, t store.Tenant, key string, delta int6
 		return 0, err
 	}
 	var next int64
-	err := d.readModifyWrite(ctx, d.docName(t, key), func(cur stored, found bool) (*write, error) {
+	err := d.readModifyWrite(ctx, []string{d.docName(t, key)}, func(cur []stored) ([]write, error) {
 		var n int64
-		if found {
+		if cur[0].found {
 			var err error
 			// The strconv error quotes its input, so it is dropped: errors never carry a value.
-			if n, err = strconv.ParseInt(string(cur.value), 10, 64); err != nil || strconv.FormatInt(n, 10) != string(cur.value) {
+			if n, err = strconv.ParseInt(string(cur[0].value), 10, 64); err != nil || strconv.FormatInt(n, 10) != string(cur[0].value) {
 				return nil, opError("add", t, key, "value is not a counter")
 			}
 		}
@@ -240,8 +296,7 @@ func (d *driver) Add(ctx context.Context, t store.Tenant, key string, delta int6
 			return nil, opError("add", t, key, "counter overflow")
 		}
 		next = n + delta
-		w := d.update(t, key, strconv.AppendInt(nil, next, 10), precondition(cur, found))
-		return &w, nil
+		return []write{d.update(t, key, strconv.AppendInt(nil, next, 10), precondition(cur[0]))}, nil
 	})
 	if err != nil {
 		return 0, err
@@ -249,25 +304,26 @@ func (d *driver) Add(ctx context.Context, t store.Tenant, key string, delta int6
 	return next, nil
 }
 
-// readModifyWrite reads the document, lets decide compute the write, and commits it under a precondition on
-// what was read. On a conflict, which is a definite rejection, it reads again. Any other commit failure is
-// returned as is: the write may have landed, so a retry could report a swap it made as a failed comparison.
-func (d *driver) readModifyWrite(ctx context.Context, name string, decide func(stored, bool) (*write, error)) error {
-	unlock, err := d.lock(ctx, name)
+// readModifyWrite reads the documents, lets decide compute the writes, and commits them in one commit under
+// preconditions on what was read. decide gets the documents in the order of names. On a conflict, which is a
+// definite rejection, it reads again. Any other commit failure is returned as is: the writes may have landed,
+// so a retry could report a swap it made as a failed comparison.
+func (d *driver) readModifyWrite(ctx context.Context, names []string, decide func([]stored) ([]write, error)) error {
+	unlock, err := d.lock(ctx, names...)
 	if err != nil {
 		return err
 	}
 	defer unlock()
 	for attempt := 1; ; attempt++ {
-		cur, found, err := d.read(ctx, name)
+		cur, err := d.readAll(ctx, names)
 		if err != nil {
 			return err
 		}
-		w, err := decide(cur, found)
-		if err != nil || w == nil {
+		writes, err := decide(cur)
+		if err != nil || len(writes) == 0 {
 			return err
 		}
-		err = d.commit(ctx, *w)
+		err = d.commit(ctx, writes...)
 		var apiErr *apiError
 		if !errors.As(err, &apiErr) || !apiErr.conflict() {
 			return err
@@ -371,55 +427,88 @@ func (d *driver) update(t store.Tenant, key string, value []byte, pre *precond) 
 }
 
 // precondition requires the document to be exactly as read: missing, or unchanged since its update time.
-func precondition(cur stored, found bool) *precond {
-	if !found {
+func precondition(cur stored) *precond {
+	if !cur.found {
 		f := false
 		return &precond{Exists: &f}
 	}
 	return &precond{UpdateTime: cur.updateTime}
 }
 
-// stored is a decoded document.
+// stored is a decoded document, or a missing one.
 type stored struct {
-	value      []byte // non-nil, also when empty
+	found      bool
+	value      []byte // non-nil, also when empty, if found
 	updateTime string // opaque; only passed back in a precondition
 }
 
-// read uses batchGet rather than a plain GET: batchGet reports a missing document as "missing", so a
-// NOT_FOUND status always means a missing database or project and stays an error, never a missing key.
-func (d *driver) read(ctx context.Context, name string) (stored, bool, error) {
-	items, err := d.stream(ctx, d.documents+":batchGet", batchGetRequest{Documents: []string{name}})
+// holds reports whether the document holds exactly old, with the rules of CompareAndSwap: a nil old matches
+// only a missing document.
+func (s stored) holds(old []byte) bool {
+	return s.found == (old != nil) && bytes.Equal(s.value, old)
+}
+
+func (d *driver) read(ctx context.Context, name string) (stored, error) {
+	docs, err := d.readAll(ctx, []string{name})
 	if err != nil {
-		return stored{}, false, err
+		return stored{}, err
 	}
-	var doc *document
-	missing := false
+	return docs[0], nil
+}
+
+// readAll reads the distinct documents names in one batchGet and returns them in the order of names.
+// It uses batchGet rather than a plain GET: batchGet reports a missing document as "missing", so a NOT_FOUND
+// status always means a missing database or project and stays an error, never a missing key. The answer
+// order is not defined, so each document is matched by name, and each must be answered exactly once.
+func (d *driver) readAll(ctx context.Context, names []string) ([]stored, error) {
+	items, err := d.stream(ctx, d.documents+":batchGet", batchGetRequest{Documents: names})
+	if err != nil {
+		return nil, err
+	}
+	index := make(map[string]int, len(names))
+	for i, name := range names {
+		index[name] = i
+	}
+	docs := make([]stored, len(names))
+	answered := make([]bool, len(names))
 	for _, it := range items {
-		switch {
-		case it.Found != nil && it.Found.Name == name:
-			doc = it.Found
-		case it.Missing == name:
-			missing = true
+		name := it.Missing
+		if it.Found != nil {
+			name = it.Found.Name
+		}
+		if name == "" {
+			continue // an element without a document only carries the read time
+		}
+		i, ok := index[name]
+		if !ok || answered[i] || (it.Found != nil && it.Missing != "") {
+			return nil, errors.New("store: firestore: batchGet answered for an unexpected document")
+		}
+		answered[i] = true
+		if it.Found != nil {
+			if docs[i], err = decode(it.Found); err != nil {
+				return nil, err
+			}
 		}
 	}
-	switch {
-	case missing && doc == nil:
-		return stored{}, false, nil
-	case doc == nil || missing:
-		return stored{}, false, errors.New("store: firestore: batchGet did not answer for the document")
+	if slices.Contains(answered, false) {
+		return nil, errors.New("store: firestore: batchGet did not answer for every document")
 	}
+	return docs, nil
+}
+
+func decode(doc *document) (stored, error) {
 	v, ok := doc.Fields[fieldValue]
 	if !ok || v.BytesValue == nil || doc.UpdateTime == "" {
-		return stored{}, false, errCorrupt
+		return stored{}, errCorrupt
 	}
 	b, err := base64.StdEncoding.DecodeString(*v.BytesValue)
 	if err != nil {
-		return stored{}, false, errCorrupt
+		return stored{}, errCorrupt
 	}
 	if b == nil {
 		b = []byte{}
 	}
-	return stored{value: b, updateTime: doc.UpdateTime}, true, nil
+	return stored{found: true, value: b, updateTime: doc.UpdateTime}, nil
 }
 
 func (d *driver) commit(ctx context.Context, writes ...write) error {
@@ -552,6 +641,31 @@ func safeToken(s string) string {
 // opError matches the validation errors of internal/store: tenant and key length only, never the key or the value.
 func opError(op string, t store.Tenant, key, problem string) error {
 	return fmt.Errorf("store: %s: tenant %d, key length %d: %s", op, t, len(key), problem)
+}
+
+// validateSwaps checks the input of CompareAndSwapAll like internal/store does.
+func validateSwaps(t store.Tenant, swaps []store.Swap) error {
+	const op = "compare and swap all"
+	if t < 0 {
+		return opError(op, t, "", "negative tenant")
+	}
+	if len(swaps) == 0 || len(swaps) > maxSwaps {
+		return fmt.Errorf("store: %s: tenant %d: %d swaps, want 1 to %d", op, t, len(swaps), maxSwaps)
+	}
+	seen := make(map[string]bool, len(swaps))
+	for _, s := range swaps {
+		if err := validateKey(op, t, s.Key); err != nil {
+			return err
+		}
+		if seen[s.Key] {
+			return opError(op, t, s.Key, "key appears twice")
+		}
+		seen[s.Key] = true
+		if len(s.Value) > maxValueLen {
+			return opError(op, t, s.Key, "value longer than "+strconv.Itoa(maxValueLen)+" bytes")
+		}
+	}
+	return nil
 }
 
 func validateKey(op string, t store.Tenant, key string) error {

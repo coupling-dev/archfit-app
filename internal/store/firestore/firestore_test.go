@@ -1,10 +1,12 @@
 package firestore
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash/maphash"
 	"net/http"
 	"os"
 	"slices"
@@ -93,6 +95,48 @@ func testCompareAndSwapAcrossClients(t *testing.T, clients []store.Store) {
 	}
 }
 
+// The two keys stand for the account record and its entitlement. Half of the callers list them in the other
+// order, so a lock order that depends on the caller would deadlock.
+func testCompareAndSwapAllAcrossClients(t *testing.T, clients []store.Store) {
+	const perClient, rounds = 3, 20
+	ctx := context.Background()
+	for round := range rounds {
+		var old []byte
+		if round > 0 {
+			old = []byte(strconv.Itoa(round - 1))
+		}
+		next := []byte(strconv.Itoa(round))
+		var wins atomic.Int64
+		errs := make([]error, len(clients)*perClient)
+		var wg sync.WaitGroup
+		for i := range errs {
+			swaps := []store.Swap{{Key: "account", Old: old, Value: next}, {Key: "entitlement", Old: old, Value: next}}
+			if i%2 == 1 {
+				slices.Reverse(swaps)
+			}
+			wg.Go(func() {
+				ok, err := clients[i%len(clients)].CompareAndSwapAll(ctx, 1, swaps)
+				errs[i] = err
+				if ok {
+					wins.Add(1)
+				}
+			})
+		}
+		wg.Wait()
+		if err := errors.Join(errs...); err != nil {
+			t.Fatalf("round %d: %v", round, err)
+		}
+		if n := wins.Load(); n != 1 {
+			t.Fatalf("round %d: %d winners, want 1", round, n)
+		}
+		for _, k := range []string{"account", "entitlement"} {
+			if got, err := clients[0].Get(ctx, 1, k); err != nil || !bytes.Equal(got, next) {
+				t.Fatalf("round %d: %s = %q, %v, want %q", round, k, got, err, next)
+			}
+		}
+	}
+}
+
 func testAddAcrossClients(t *testing.T, clients []store.Store) {
 	const perClient = 25
 	ctx := context.Background()
@@ -132,6 +176,13 @@ func TestCompareAndSwapIsAtomicAcrossClients(t *testing.T) {
 	t.Run("emulator", func(t *testing.T) { testCompareAndSwapAcrossClients(t, newEmulatorStores(t, emulatorHost(t), 4)) })
 }
 
+func TestCompareAndSwapAllIsAtomicAcrossClients(t *testing.T) {
+	t.Run("fake", func(t *testing.T) { testCompareAndSwapAllAcrossClients(t, fakeClients(t, 4)) })
+	t.Run("emulator", func(t *testing.T) {
+		testCompareAndSwapAllAcrossClients(t, newEmulatorStores(t, emulatorHost(t), 4))
+	})
+}
+
 func TestAddIsAtomicAcrossClients(t *testing.T) {
 	t.Run("fake", func(t *testing.T) { testAddAcrossClients(t, fakeClients(t, 3)) })
 	t.Run("emulator", func(t *testing.T) { testAddAcrossClients(t, newEmulatorStores(t, emulatorHost(t), 3)) })
@@ -157,38 +208,57 @@ func TestCommitFailures(t *testing.T) {
 		{"an unknown outcome is an error, not a retry", []fault{lost}, false, true, "new", 1, 0},
 		{"a server error is not retried", []fault{{httpStatus: http.StatusInternalServerError, status: "INTERNAL"}}, false, true, "old", 1, 0},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			f := newFake(t)
-			d := f.client(t)
-			var waits []time.Duration
-			d.wait = func(_ context.Context, d time.Duration) error { waits = append(waits, d); return nil }
-			ctx := context.Background()
-			if err := d.Put(ctx, 1, "k", []byte("old")); err != nil {
-				t.Fatalf("Put: %v", err)
-			}
-			before := f.commitCount()
-			f.inject(tt.faults...)
-
-			swapped, err := d.CompareAndSwap(ctx, 1, "k", []byte("old"), []byte("new"))
-			if swapped != tt.wantSwapped || (err != nil) != tt.wantErr {
-				t.Errorf("CompareAndSwap = %v, %v, want %v, error %v", swapped, err, tt.wantSwapped, tt.wantErr)
-			}
-			if got := f.commitCount() - before; got != tt.wantCommits {
-				t.Errorf("commits = %d, want %d", got, tt.wantCommits)
-			}
-			if len(waits) != tt.wantPauses {
-				t.Errorf("pauses = %v, want %d", waits, tt.wantPauses)
-			}
-			for _, w := range waits {
-				if w <= 0 || w > retryCap {
-					t.Errorf("pause %v outside (0, %v]", w, retryCap)
+	old, next := []byte("old"), []byte("new")
+	ops := []struct {
+		name string
+		keys []string
+		swap func(context.Context, *driver) (bool, error)
+	}{
+		{"CompareAndSwap", []string{"k"}, func(ctx context.Context, d *driver) (bool, error) {
+			return d.CompareAndSwap(ctx, 1, "k", old, next)
+		}},
+		{"CompareAndSwapAll", []string{"k", "j"}, func(ctx context.Context, d *driver) (bool, error) {
+			return d.CompareAndSwapAll(ctx, 1, []store.Swap{{Key: "k", Old: old, Value: next}, {Key: "j", Old: old, Value: next}})
+		}},
+	}
+	for _, op := range ops {
+		for _, tt := range tests {
+			t.Run(op.name+"/"+tt.name, func(t *testing.T) {
+				f := newFake(t)
+				d := f.client(t)
+				var waits []time.Duration
+				d.wait = func(_ context.Context, d time.Duration) error { waits = append(waits, d); return nil }
+				ctx := context.Background()
+				for _, k := range op.keys {
+					if err := d.Put(ctx, 1, k, old); err != nil {
+						t.Fatalf("Put: %v", err)
+					}
 				}
-			}
-			if got, err := d.Get(ctx, 1, "k"); err != nil || string(got) != tt.wantValue {
-				t.Errorf("Get = %q, %v, want %q", got, err, tt.wantValue)
-			}
-		})
+				before := f.commitCount()
+				f.inject(tt.faults...)
+
+				swapped, err := op.swap(ctx, d)
+				if swapped != tt.wantSwapped || (err != nil) != tt.wantErr {
+					t.Errorf("%s = %v, %v, want %v, error %v", op.name, swapped, err, tt.wantSwapped, tt.wantErr)
+				}
+				if got := f.commitCount() - before; got != tt.wantCommits {
+					t.Errorf("commits = %d, want %d", got, tt.wantCommits)
+				}
+				if len(waits) != tt.wantPauses {
+					t.Errorf("pauses = %v, want %d", waits, tt.wantPauses)
+				}
+				for _, w := range waits {
+					if w <= 0 || w > retryCap {
+						t.Errorf("pause %v outside (0, %v]", w, retryCap)
+					}
+				}
+				for _, k := range op.keys {
+					if got, err := d.Get(ctx, 1, k); err != nil || string(got) != tt.wantValue {
+						t.Errorf("Get %s = %q, %v, want %q", k, got, err, tt.wantValue)
+					}
+				}
+			})
+		}
 	}
 }
 
@@ -325,6 +395,9 @@ func TestCorruptDocumentIsAnErrorNotAMissingKey(t *testing.T) {
 	if _, err := d.CompareAndSwap(context.Background(), 1, "k", nil, []byte("v")); err == nil {
 		t.Error("CompareAndSwap over a corrupt document = nil error, want an error")
 	}
+	if _, err := d.CompareAndSwapAll(context.Background(), 1, []store.Swap{{Key: "j", Value: []byte("v")}, {Key: "k", Value: []byte("v")}}); err == nil {
+		t.Error("CompareAndSwapAll over a corrupt document = nil error, want an error")
+	}
 }
 
 func TestErrorsCarryNoKeysOrValues(t *testing.T) {
@@ -341,7 +414,16 @@ func TestErrorsCarryNoKeysOrValues(t *testing.T) {
 	_, notFoundServer := d.CompareAndSwap(ctx, 1, key+"/x", []byte("old"), value)
 	_, transportErr := unreachable.Get(ctx, 1, key)
 	errs := map[string]error{
-		"server error":    d.Put(ctx, 1, key, value),
+		"server error": d.Put(ctx, 1, key, value),
+		"server error of a multi-key swap": func() error {
+			f.inject(fault{httpStatus: http.StatusInternalServerError, status: "INTERNAL"})
+			_, err := d.CompareAndSwapAll(ctx, 1, []store.Swap{{Key: key, Value: value}, {Key: key + "/2", Value: value}})
+			return err
+		}(),
+		"a key twice": func() error {
+			_, err := d.CompareAndSwapAll(ctx, 1, []store.Swap{{Key: key, Value: value}, {Key: key, Value: value}})
+			return err
+		}(),
 		"transport error": transportErr,
 		"too long value":  d.Put(ctx, 1, key, make([]byte, maxValueLen+1)),
 		"corrupt counter": func() error {
@@ -390,6 +472,10 @@ func TestStreamErrorIsAnError(t *testing.T) {
 		"Get":          func(d *driver) error { _, err := d.Get(context.Background(), 4, "k"); return err },
 		"DeleteTenant": func(d *driver) error { return d.DeleteTenant(context.Background(), 4) },
 		"Tenants":      func(d *driver) error { _, err := d.Tenants(context.Background()); return err },
+		"CompareAndSwapAll": func(d *driver) error {
+			_, err := d.CompareAndSwapAll(context.Background(), 4, []store.Swap{{Key: "k", Old: []byte("v"), Value: []byte("x")}})
+			return err
+		},
 	}
 	for name, op := range ops {
 		t.Run(name, func(t *testing.T) {
@@ -429,6 +515,9 @@ func TestMissingDatabaseIsAnErrorNotAMissingKey(t *testing.T) {
 	if _, err := d.Add(ctx, 1, "n", 1); err == nil {
 		t.Error("Add = nil error, want an error")
 	}
+	if ok, err := d.CompareAndSwapAll(ctx, 1, []store.Swap{{Key: "account"}, {Key: "entitlement", Value: []byte("v")}}); err == nil {
+		t.Errorf("CompareAndSwapAll = %v, nil, want an error", ok)
+	}
 	if got := f.commitCount(); got != 0 {
 		t.Errorf("commits = %d, want 0: a failed read writes nothing", got)
 	}
@@ -460,6 +549,79 @@ func TestWaitingForTheLocalLockHonorsTheContext(t *testing.T) {
 	}
 }
 
+// stripeMates returns two names of documents on one lock stripe.
+func stripeMates(d *driver) (string, string) {
+	first := d.docName(1, "k0")
+	stripe := maphash.String(d.seed, first) % lockStripes
+	for i := 1; ; i++ {
+		name := d.docName(1, "k"+strconv.Itoa(i))
+		if maphash.String(d.seed, name)%lockStripes == stripe {
+			return first, name
+		}
+	}
+}
+
+func TestLockTakesEachStripeOnce(t *testing.T) {
+	d := newFake(t).client(t)
+	a, b := stripeMates(d)
+	done := make(chan error, 1)
+	go func() {
+		unlock, err := d.lock(context.Background(), a, b)
+		if err == nil {
+			unlock()
+		}
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("lock = %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("lock of two documents on one stripe waits for itself")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	unlock, err := d.lock(ctx, a)
+	if err != nil {
+		t.Fatalf("the stripe stayed held after unlock: %v", err)
+	}
+	unlock()
+}
+
+func TestLockReleasesTheStripesItTookWhenTheContextEnds(t *testing.T) {
+	d := newFake(t).client(t)
+	var low, high string
+	for i := 0; low == "" || high == ""; i++ {
+		name := d.docName(1, "k"+strconv.Itoa(i))
+		switch maphash.String(d.seed, name) % lockStripes {
+		case 0:
+			low = name
+		case lockStripes - 1:
+			high = name
+		}
+	}
+	unlockHigh, err := d.lock(context.Background(), high)
+	if err != nil {
+		t.Fatalf("lock: %v", err)
+	}
+	defer unlockHigh()
+
+	// The caller takes the low stripe, then waits for the held high stripe until its context ends.
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := d.lock(ctx, high, low); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("lock = %v, want context.DeadlineExceeded", err)
+	}
+	free, cancelFree := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelFree()
+	unlock, err := d.lock(free, low)
+	if err != nil {
+		t.Fatalf("the low stripe stayed held: %v", err)
+	}
+	unlock()
+}
+
 // The driver retries exactly the statuses Firestore uses for a failed precondition. The emulator run checks
 // the classification against Firestore itself, not only against the fake.
 func testPreconditionFailuresAreConflicts(t *testing.T, d *driver) {
@@ -468,23 +630,29 @@ func testPreconditionFailuresAreConflicts(t *testing.T, d *driver) {
 	if err := d.Put(ctx, 1, "k", []byte("v1")); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	first, found, err := d.read(ctx, name)
-	if err != nil || !found {
-		t.Fatalf("read = %v, %v", found, err)
+	first, err := d.read(ctx, name)
+	if err != nil || !first.found {
+		t.Fatalf("read = %v, %v", first.found, err)
 	}
 	if err := d.Put(ctx, 1, "k", []byte("v2")); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	stale := precondition(first, true)
+	stale := precondition(first)
+	missing := precondition(stored{})
+	// other is missing; a write that creates it rides along with the failing write and must not land.
+	createOther := d.update(1, "other", []byte("x"), missing)
 	cases := []struct {
-		name  string
-		setup func() error
-		w     write
+		name   string
+		setup  func() error
+		writes []write
 	}{
-		{"create over an existing document", nil, d.update(1, "k", []byte("x"), precondition(stored{}, false))},
-		{"update after another write", nil, d.update(1, "k", []byte("x"), stale)},
-		{"delete after another write", nil, write{Delete: name, CurrentDocument: stale}},
-		{"update of a deleted document", func() error { return d.Delete(ctx, 1, "k") }, d.update(1, "k", []byte("x"), stale)},
+		{"create over an existing document", nil, []write{d.update(1, "k", []byte("x"), missing)}},
+		{"guard of a missing document that exists", nil, []write{{Delete: name, CurrentDocument: missing}}},
+		{"update after another write", nil, []write{d.update(1, "k", []byte("x"), stale)}},
+		{"delete after another write", nil, []write{{Delete: name, CurrentDocument: stale}}},
+		{"a stale write after a valid write", nil, []write{createOther, d.update(1, "k", []byte("x"), stale)}},
+		{"a stale write before a valid write", nil, []write{d.update(1, "k", []byte("x"), stale), createOther}},
+		{"update of a deleted document", func() error { return d.Delete(ctx, 1, "k") }, []write{d.update(1, "k", []byte("x"), stale)}},
 	}
 	for _, tc := range cases {
 		if tc.setup != nil {
@@ -492,11 +660,21 @@ func testPreconditionFailuresAreConflicts(t *testing.T, d *driver) {
 				t.Fatalf("%s: setup: %v", tc.name, err)
 			}
 		}
-		err := d.commit(ctx, tc.w)
+		err := d.commit(ctx, tc.writes...)
 		var apiErr *apiError
 		if !errors.As(err, &apiErr) || !apiErr.conflict() {
 			t.Errorf("%s: commit = %v, want a conflict status", tc.name, err)
 		}
+	}
+	if _, err := d.Get(ctx, 1, "other"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("Get other = %v, want ErrNotFound: a commit with a failed precondition wrote", err)
+	}
+	// CompareAndSwapAll keeps a key that must stay missing guarded with a delete under exists=false.
+	if err := d.commit(ctx, write{Delete: d.docName(1, "never"), CurrentDocument: missing}, createOther); err != nil {
+		t.Errorf("a guard of a missing document = %v, want success", err)
+	}
+	if got, err := d.Get(ctx, 1, "other"); err != nil || string(got) != "x" {
+		t.Errorf("Get other = %q, %v, want the write next to the guard", got, err)
 	}
 }
 

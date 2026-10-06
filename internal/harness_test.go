@@ -710,6 +710,9 @@ func (f failingStore) Add(context.Context, store.Tenant, string, int64) (int64, 
 func (f failingStore) CompareAndSwap(context.Context, store.Tenant, string, []byte, []byte) (bool, error) {
 	return false, f.err
 }
+func (f failingStore) CompareAndSwapAll(context.Context, store.Tenant, []store.Swap) (bool, error) {
+	return false, f.err
+}
 func (f failingStore) DeleteTenant(context.Context, store.Tenant) error { return f.err }
 func (f failingStore) Tenants(context.Context) ([]store.Tenant, error)  { return nil, f.err }
 
@@ -736,6 +739,13 @@ func (s *recordingStore) note(t store.Tenant, key string) {
 func (s *recordingStore) Put(ctx context.Context, t store.Tenant, key string, value []byte) error {
 	s.note(t, key)
 	return s.Store.Put(ctx, t, key, value)
+}
+
+func (s *recordingStore) CompareAndSwapAll(ctx context.Context, t store.Tenant, swaps []store.Swap) (bool, error) {
+	for _, sw := range swaps {
+		s.note(t, sw.Key)
+	}
+	return s.Store.CompareAndSwapAll(ctx, t, swaps)
 }
 
 func (s *recordingStore) Add(ctx context.Context, t store.Tenant, key string, delta int64) (int64, error) {

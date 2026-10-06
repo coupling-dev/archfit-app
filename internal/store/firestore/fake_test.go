@@ -119,7 +119,8 @@ func (f *fakeFirestore) batchGet(w http.ResponseWriter, r *http.Request) {
 	}
 	readTime := f.clock.Format(time.RFC3339Nano)
 	out := []map[string]any{}
-	for _, name := range req.Documents {
+	// Firestore does not keep the request order, so the fake answers in reverse order.
+	for _, name := range slices.Backward(req.Documents) {
 		if doc, ok := f.docs[name]; ok {
 			out = append(out, map[string]any{"found": document{Name: name, Fields: doc.fields, UpdateTime: doc.updateTime}, "readTime": readTime})
 		} else {

@@ -81,6 +81,31 @@ func (m *memory) CompareAndSwap(ctx context.Context, t Tenant, key string, old, 
 	return true, nil
 }
 
+func (m *memory) CompareAndSwapAll(ctx context.Context, t Tenant, swaps []Swap) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if err := validateSwaps("compare and swap all", t, swaps); err != nil {
+		return false, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, s := range swaps {
+		cur, ok := m.data[keyPath(t, s.Key)]
+		if ok != (s.Old != nil) || !bytes.Equal(cur, s.Old) {
+			return false, nil
+		}
+	}
+	for _, s := range swaps {
+		if s.Value == nil {
+			delete(m.data, keyPath(t, s.Key))
+		} else {
+			m.data[keyPath(t, s.Key)] = append([]byte{}, s.Value...)
+		}
+	}
+	return true, nil
+}
+
 func (m *memory) Delete(ctx context.Context, t Tenant, key string) error {
 	if err := ctx.Err(); err != nil {
 		return err
