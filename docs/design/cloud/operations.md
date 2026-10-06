@@ -55,7 +55,10 @@ The order matters:
 
 1. Create the data and identity resources. Add every secret value before any service exists,
    because a revision cannot start without its secrets.
-2. Choose and verify the final domain before the GitHub App is registered. The domain is the OIDC audience.
+2. Verify the final domain before the GitHub App is registered. The domain is the OIDC audience.
+   The domain is `https://app.coupling.dev`, so `ARCHFIT_BASE_URL` is that exact string, with no trailing `/`.
+   DNS for `coupling.dev` is at the registrar (Namecheap). Verify `coupling.dev` in Google Search Console with the
+   owner account, then point `app` at the Cloud Run domain mapping with the CNAME record that the mapping shows.
 3. Register the App with its webhook inactive, and install it nowhere yet.
 4. Create the services with a placeholder image, and the queues and the Scheduler paused.
    The placeholder answers every request with success and does nothing.

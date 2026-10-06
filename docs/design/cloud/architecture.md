@@ -221,14 +221,14 @@ Add these services when the trigger fires:
 
 Each decision has a default. The design uses the default until the owner changes it.
 
-| #   | Decision                                  | Default                     | Other choice                                                         |
-| --- | ----------------------------------------- | --------------------------- | -------------------------------------------------------------------- |
-| 1   | Create the pending gate check on webhooks | No                          | Keep it. The lease leaves only a stalled holder's late write         |
-| 2   | Region                                    | `europe-west1`              | `us-central1` at the same price. The Firestore location is permanent |
-| 3   | Warm public instance                      | No                          | About $5–10 a month, no cold starts                                  |
-| 4   | Final domain                              | None. The owner must choose | It is the OIDC audience and must exist before the App is registered  |
-| 5   | Google Cloud Organization                 | None for the beta           | See [Security](security.md#organization)                             |
-| 6   | Staging environment                       | None for the beta           | See the trigger in [Options](#options)                               |
+| #   | Decision                                  | Default                             | Other choice                                                         |
+| --- | ----------------------------------------- | ----------------------------------- | -------------------------------------------------------------------- |
+| 1   | Create the pending gate check on webhooks | No                                  | Keep it. The lease leaves only a stalled holder's late write         |
+| 2   | Region                                    | `europe-west1`                      | `us-central1` at the same price. The Firestore location is permanent |
+| 3   | Warm public instance                      | No                                  | About $5–10 a month, no cold starts                                  |
+| 4   | Final domain                              | `https://app.coupling.dev` (chosen) | It is the OIDC audience and must exist before the App is registered  |
+| 5   | Google Cloud Organization                 | None for the beta                   | See [Security](security.md#organization)                             |
+| 6   | Staging environment                       | None for the beta                   | See the trigger in [Options](#options)                               |
 
 ## Known limits
 
