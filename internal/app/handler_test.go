@@ -190,6 +190,17 @@ func TestWebhookFanOut(t *testing.T) {
 		}
 	})
 
+	t.Run("the previous secret is accepted during a rotation", func(t *testing.T) {
+		f := newFixture()
+		rec := f.do(webhookRequest("/webhooks/github", "pull_request", "d-6", body, sign(testWebhookPrevious, body)))
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("status = %d, want 202", rec.Code)
+		}
+		if got := f.calls.get(); !reflect.DeepEqual(got, []string{"gate.HandleEvent", "control.HandleEvent"}) {
+			t.Errorf("calls = %v, want both halves", got)
+		}
+	})
+
 	rejected := []struct {
 		name      string
 		signature string
@@ -270,6 +281,22 @@ func TestSweepEndpointReturnsSummary(t *testing.T) {
 		}
 		if calls := f.calls.get(); !reflect.DeepEqual(calls, []string{"control.Sweep", "gate.Sweep"}) {
 			t.Errorf("order = %v", calls)
+		}
+	})
+
+	t.Run("the request line counts a rate-limited pass", func(t *testing.T) {
+		for _, tt := range []struct {
+			limited bool
+			outcome string
+		}{{false, "swept"}, {true, "sweep_rate_limited"}} {
+			f := newFixture()
+			f.gate.summary = gate.Summary{RateLimited: tt.limited}
+			if rec := f.do(operatorRequest("/internal/sweep", testOperatorToken, "")); rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200: the next pass continues the work", rec.Code)
+			}
+			if logs := f.logs.String(); !strings.Contains(logs, `"outcome":"`+tt.outcome+`"`) {
+				t.Errorf("RateLimited %v: logs lack outcome %s: %s", tt.limited, tt.outcome, logs)
+			}
 		}
 	})
 

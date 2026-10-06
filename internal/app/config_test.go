@@ -56,6 +56,8 @@ func TestLoadDefaultsAndRequired(t *testing.T) {
 	everything.TasksQueue = "projects/coupling-test/locations/europe-west1/queues/webhooks"
 	everything.WorkerURL = "https://worker.example"
 	everything.Invoker = "invoker@coupling-test.iam.gserviceaccount.com"
+	everything.WebhookPreviousFile = "/run/secrets/webhook-previous"
+	everything.TraceProject, everything.Revision = "coupling-test", "reporter-00001-abc"
 	public := requiredOnly
 	public.Role, public.OperatorTokenFile = "public", ""
 	worker := requiredOnly
@@ -91,6 +93,9 @@ func TestLoadDefaultsAndRequired(t *testing.T) {
 	all[envTasksQueue] = everything.TasksQueue
 	all[envWorkerURL] = everything.WorkerURL
 	all[envInvoker] = everything.Invoker
+	all[envWebhookPreviousFile] = everything.WebhookPreviousFile
+	all[envTraceProject] = everything.TraceProject
+	all[envRevision] = everything.Revision
 
 	tests := []struct {
 		name    string
@@ -126,6 +131,10 @@ func TestLoadDefaultsAndRequired(t *testing.T) {
 		{name: "public role without the operator token", env: without(with(requiredEnv(), envRole, "public"), envOperatorTokenFile), want: public},
 		{name: "worker role", env: workerEnv(), want: worker},
 		{name: "worker role without the operator token", env: without(workerEnv(), envOperatorTokenFile), wantErr: envOperatorTokenFile},
+		{name: "worker role without the UI variables", env: without(without(without(workerEnv(), envOAuthClientID), envOAuthSecretFile), envCookieKeyFile),
+			want: func() Config { c := worker; c.OAuthClientID, c.OAuthSecretFile, c.CookieKeyFile = "", "", ""; return c }()},
+		{name: "previous webhook secret", env: with(requiredEnv(), envWebhookPreviousFile, "/run/secrets/webhook-previous"),
+			want: func() Config { c := requiredOnly; c.WebhookPreviousFile = "/run/secrets/webhook-previous"; return c }()},
 		{name: "worker role without the worker URL", env: without(workerEnv(), envWorkerURL), wantErr: envWorkerURL},
 		{name: "worker role without the invoker", env: without(workerEnv(), envInvoker), wantErr: envInvoker},
 		{name: "worker role ignores the queue driver", env: with(workerEnv(), envQueue, "cloudtasks"), want: func() Config { c := worker; c.QueueDriver = "cloudtasks"; return c }()},

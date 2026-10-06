@@ -797,3 +797,37 @@ func TestUsersContract(t *testing.T) {
 		t.Errorf("App credentials were minted for Users calls: jwt %d, installation %v", env.ts.jwtCalls, env.ts.minted)
 	}
 }
+
+func TestCheckAppProvesTheKeyOnEveryCall(t *testing.T) {
+	ctx := context.Background()
+	status := http.StatusOK
+	env := newEnv(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if status != http.StatusOK {
+			reply{status: status, body: `{"message":"Bad credentials"}`}.write(w)
+			return
+		}
+		appHandler(w, r)
+	}))
+	for range 2 {
+		if err := env.c.CheckApp(ctx); err != nil {
+			t.Fatalf("CheckApp = %v", err)
+		}
+	}
+	if n := env.gh.count("GET", "/app"); n != 2 {
+		t.Errorf("GET /app called %d times, want 2: the identity cache must not answer a check", n)
+	}
+	for _, r := range env.gh.requests() {
+		if r.Auth != appJWT {
+			t.Errorf("%s: Authorization = %q, want the App JWT", r, r.Auth)
+		}
+	}
+
+	status = http.StatusUnauthorized
+	err := env.c.CheckApp(ctx)
+	if err == nil || !strings.Contains(err.Error(), "status 401") {
+		t.Errorf("CheckApp after a rejected JWT = %v, want an error with the status", err)
+	}
+	if err != nil && strings.Contains(err.Error(), "Bad credentials") {
+		t.Errorf("error %q quotes the response body", err)
+	}
+}

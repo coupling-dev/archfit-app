@@ -300,11 +300,14 @@ func TestProtectedPushTriggersRepoSweep(t *testing.T) {
 		}
 	})
 
-	t.Run("a rate-limited pass is not an error", func(t *testing.T) {
+	t.Run("a rate-limited pass is a retryable error", func(t *testing.T) {
 		w := newWorld(t)
 		w.openPull(w.shop, 7)
 		w.gh.fail["OpenPulls"] = api.ErrRateLimited
-		w.handle(w.pushEvent(w.shop, policy.PolicyPath))
+		err := w.gate.HandleEvent(context.Background(), w.pushEvent(w.shop, policy.PolicyPath))
+		if !errors.Is(err, api.ErrRateLimited) || api.Permanent(err) {
+			t.Errorf("HandleEvent = %v, want a retryable api.ErrRateLimited", err)
+		}
 		if n := w.gh.writes(); n != 0 {
 			t.Errorf("%d writes after a rate limit", n)
 		}

@@ -192,10 +192,10 @@ func TestNoSecretInAnyError(t *testing.T) {
 		}},
 		{"webhook: wrong secret", nil, func(t *testing.T, _ *world) error {
 			body := pullRequestDelivery(t, instA, repoWidgets)
-			return webhook.Verify([]byte(webhookSecret), signDelivery(oauthClientSecret, body), body)
+			return webhook.VerifyAny([][]byte{[]byte(webhookSecret)}, signDelivery(oauthClientSecret, body), body)
 		}},
 		{"webhook: malformed signature", nil, func(t *testing.T, _ *world) error {
-			return webhook.Verify([]byte(webhookSecret), "sha256="+marker, []byte(leak))
+			return webhook.VerifyAny([][]byte{[]byte(webhookSecret)}, "sha256="+marker, []byte(leak))
 		}},
 		{"webhook: malformed body", nil, func(*testing.T, *world) error {
 			_, err := webhook.Parse("pull_request", "delivery-1", []byte(`{"action":"`+marker))

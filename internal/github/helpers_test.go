@@ -86,7 +86,7 @@ func signDelivery(secret string, body []byte) string {
 
 // receive handles a delivery the way app does: no Event exists before the signature holds.
 func receive(signature, eventType, deliveryID string, body []byte) (webhook.Event, error) {
-	if err := webhook.Verify([]byte(webhookSecret), signature, body); err != nil {
+	if err := webhook.VerifyAny([][]byte{[]byte(webhookSecret)}, signature, body); err != nil {
 		return webhook.Event{}, err
 	}
 	return webhook.Parse(eventType, deliveryID, body)

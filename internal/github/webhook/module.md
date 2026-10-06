@@ -13,6 +13,7 @@ parse GitHub payloads themselves, and a forged delivery could schedule work or n
 ## Functional Responsibilities
 
 - Verify `X-Hub-Signature-256` over the exact body bytes with HMAC-SHA256 in constant time.
+- Accept a signature from any of several secrets, so a secret rotation drops no delivery.
 - Map GitHub event types and actions to the closed `EventKind` set; everything else is `Ignored`.
 - Extract identity (installation, repository, pull request, head, base) from the signed body only.
 - Detect forks: `HeadRepo` differs from `Repo`.
@@ -107,15 +108,18 @@ type Event struct {
 ```
 
 ```go
-// Verify checks X-Hub-Signature-256 over body in constant time.
-func Verify(secret []byte, signatureHeader string, body []byte) error
+// VerifyAny checks X-Hub-Signature-256 over body in constant time. It accepts a body signed with any of secrets:
+// the current secret and, during a rotation, the previous one.
+// It checks every secret, so the time taken does not show which one matched. An empty list or an empty secret
+// fails closed.
+func VerifyAny(secrets [][]byte, signatureHeader string, body []byte) error
 
 // Parse normalizes a verified delivery. Unknown event types yield Kind == Ignored, not an error.
 func Parse(eventType, deliveryID string, body []byte) (Event, error)
 ```
 
 ```go
-// Header names of a GitHub webhook delivery. Callers read these headers and pass their values to Verify and Parse.
+// Header names of a GitHub webhook delivery. Callers read these headers and pass their values to VerifyAny and Parse.
 const (
     HeaderEvent     = "X-GitHub-Event"
     HeaderDelivery  = "X-GitHub-Delivery"
@@ -130,15 +134,17 @@ kind for a new installation or added repositories. `InstallationRemoved` is the 
 `ReposRemoved` is the kind for repositories taken out of an installation.
 
 `HeaderEvent` names the header whose value is `Parse`'s `eventType`. `HeaderDelivery` names the header whose
-value is `Parse`'s `deliveryID`. `HeaderSignature` names the header whose value is `Verify`'s `signatureHeader`.
+value is `Parse`'s `deliveryID`. `HeaderSignature` names the header whose value is `VerifyAny`'s `signatureHeader`.
 They are untyped string constants and the only spelling of these names outside tests: the caller owns
 the `http.Request`, this package owns what the headers are called.
 
 ### Behavior rules
 
-- `Verify` errors on: empty secret (fail closed), empty header, missing `sha256=` prefix, non-hex or wrong-length
-  digest, mismatch. Errors never contain the secret, the expected digest, or the body.
-- `Parse` must be called only after `Verify` succeeded on the same `body`. It is pure: no I/O, no clock, no state.
+- `VerifyAny` errors on: an empty list, an empty secret anywhere in the list (fail closed), empty header, missing
+  `sha256=` prefix, non-hex or wrong-length digest, mismatch with every secret. Errors never contain a secret, the
+  expected digest, or the body. It computes the MAC of every secret and compares each with
+  `hmac.Equal` before it decides; it never returns at the first match.
+- `Parse` must be called only after `VerifyAny` succeeded on the same `body`. It is pure: no I/O, no clock, no state.
 - `Parse` errors on: empty `deliveryID`; malformed JSON for a known event type; a mapped kind whose identity is
   incomplete (`installation.id` ≤ 0; empty or slash-less `repository.full_name` for repository kinds;
   `pull_request.number` ≤ 0; a head SHA that is not 40 lowercase hex). An error means "answer `400`, do nothing".
@@ -163,8 +169,9 @@ home of `Event`, so nothing is restated for the consumers below.
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: Low
 - **Balanced?**: Yes
-- **Shared knowledge**: `Verify`, `Parse`, `Event`, `HeaderEvent`, `HeaderDelivery`, `HeaderSignature`. `app` reads
-  the secret file, the three headers (by these constants) and the body, answers `401` on a `Verify` error and `400` on a `Parse` error, then hands the `Event` to `gate.HandleEvent`
+- **Shared knowledge**: `VerifyAny`, `Parse`, `Event`, `HeaderEvent`, `HeaderDelivery`, `HeaderSignature`. `app` reads
+  the secret files (the current one, and the previous one during a rotation), the three headers (by these
+  constants) and the body, answers `401` on a `VerifyAny` error and `400` on a `Parse` error, then hands the `Event` to `gate.HandleEvent`
   and afterwards to `control.HandleEvent`.
 
 ### gate
@@ -207,7 +214,6 @@ home of `Event`, so nothing is restated for the consumers below.
 
 - A consumer needs a new event or action: a new `EventKind` constant and a mapping row.
 - GitHub changes the commit cap of push payloads or adds a payload field worth reading.
-- Secret rotation with two accepted secrets: `Verify` called twice by `app`, or a variadic form here.
 - A different cap for `ChangedPaths`.
 
 ## Constraints and Invariants
@@ -231,11 +237,16 @@ Payload fixtures are trimmed copies of real GitHub deliveries under `testdata/`,
 ### Unit Tests
 
 - **Test name**: `TestVerify`
-  **Scenario**: table: valid signature; uppercase hex; one flipped body byte; one flipped digest nibble; wrong secret;
+  **Scenario**: `VerifyAny` with one secret, table: valid signature; uppercase hex; one flipped body byte; one flipped digest nibble; wrong secret;
   `sha1=` prefix; no prefix; 63 hex characters; non-hex; empty header; empty secret; empty body with a valid signature.
   **Expected behavior**: `nil` for the first two and the last; an error for every other row.
+- **Test name**: `TestVerifyAnyAcceptsTheCurrentAndThePreviousSecret`
+  **Scenario**: table over the secrets `[current, previous]`: signed with the current secret; signed with the
+  previous secret; signed with neither; the previous signature against `[current]` only; no secret; an empty secret
+  in the list; a malformed header.
+  **Expected behavior**: `nil` for the first two; an error for every other row; no error contains either secret value.
 - **Test name**: `TestVerifyUsesConstantTimeCompare`
-  **Scenario**: source check in the package test: the comparison is `hmac.Equal`, not `==` or `bytes.Equal`.
+  **Scenario**: source check in the package test: the comparison in `VerifyAny` is `hmac.Equal`, not `==` or `bytes.Equal`.
   **Expected behavior**: the check passes; a change to a non-constant-time compare fails it.
 - **Test name**: `TestParseMapping`
   **Scenario**: table of (event type, action) → kind for every row of the Mapping section, plus `labeled`, `edited`,
@@ -253,14 +264,14 @@ Payload fixtures are trimmed copies of real GitHub deliveries under `testdata/`,
 ### Integration Contract Tests
 
 - **Test name**: `TestVerifyThenParseRealDeliveries`
-  **Scenario**: each fixture signed with a test secret, passed through `Verify` and `Parse`.
+  **Scenario**: each fixture signed with a test secret, passed through `VerifyAny` and `Parse`.
   **Expected behavior**: no error; the expected `Event`, including `DeliveryID`.
 - **Test name**: `TestUnknownEventTypeIsIgnoredNotError`
   **Scenario**: event types `star`, `workflow_run`, `check_run`, with valid JSON, with `{}` and with non-JSON bodies.
   **Expected behavior**: `Kind == Ignored`, `nil` error in all rows; the body is not parsed.
 - **Test name**: `TestHeaderNames`
   **Scenario**: a request built with `http.Header.Set` under GitHub's literal header names, read back with
-  `Header.Get` under the three constants, then passed through `Verify` and `Parse`.
+  `Header.Get` under the three constants, then passed through `VerifyAny` and `Parse`.
   **Expected behavior**: the constants equal `X-GitHub-Event`, `X-GitHub-Delivery`, `X-Hub-Signature-256`; the
   delivery verifies and parses.
 - **Test name**: `TestForkDetectionFields`

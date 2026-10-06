@@ -78,6 +78,14 @@ Rotation rules:
 | Operator token  | 90 days                     | Rotate while no grant task is queued                                                                      |
 | Anthropic key   | 12 months, and on suspicion | Deploy the new key, then revoke the old one at the provider                                               |
 
+Webhook secret rotation, in order:
+
+1. Add the new value as a new secret version. Deploy both services with the new value as the current secret and the
+   old value in `ARCHFIT_GITHUB_WEBHOOK_SECRET_PREVIOUS_FILE`. Both values are now accepted, with a constant-time check of each.
+2. Change the secret in the GitHub App settings.
+3. Wait until the webhook queue holds no task signed with the old value (the queue retries for about 2 hours).
+4. Deploy both services without the previous secret. Then disable the old version.
+
 The App private key is the most valuable secret. For the beta it lives in Secret Manager and in App memory.
 Before paying customers, move the signing to Cloud KMS: import the key and sign each App JWT with a KMS call.
 The key then never enters App memory. The change is local to `internal/github/auth`, which signs JWTs without a library.

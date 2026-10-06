@@ -49,7 +49,7 @@ func (g *Gate) react(ctx context.Context, e webhook.Event) (string, error) {
 		if !protectedPush(e.ChangedPaths) {
 			return reactionNone, nil
 		}
-		// A rate-limited pass is a nil error: the hourly sweep continues it.
+		// A rate limit is an error that wraps api.ErrRateLimited: the queue retries the delivery.
 		if _, err := g.sweeper.RunRepo(ctx, eventTarget(e).Repo, g.now()); err != nil {
 			return reactionRepoSweep, fmt.Errorf("gate: repository sweep: %w", err)
 		}

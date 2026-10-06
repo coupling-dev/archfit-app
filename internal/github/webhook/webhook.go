@@ -37,7 +37,7 @@ type Event struct {
 	ChangedPaths   []string // default_branch_push only
 }
 
-// Header names of a GitHub webhook delivery. Callers read these headers and pass their values to Verify and Parse.
+// Header names of a GitHub webhook delivery. Callers read these headers and pass their values to VerifyAny and Parse.
 const (
 	HeaderEvent     = "X-GitHub-Event"
 	HeaderDelivery  = "X-GitHub-Delivery"
@@ -53,10 +53,18 @@ var (
 	errSignatureMismatch  = errors.New("webhook: signature mismatch")
 )
 
-// Verify checks X-Hub-Signature-256 over body in constant time.
-func Verify(secret []byte, signatureHeader string, body []byte) error {
-	if len(secret) == 0 {
+// VerifyAny checks X-Hub-Signature-256 over body in constant time. It accepts a body signed with any of secrets:
+// the current secret and, during a rotation, the previous one.
+// It checks every secret, so the time taken does not show which one matched. An empty list or an empty secret
+// fails closed.
+func VerifyAny(secrets [][]byte, signatureHeader string, body []byte) error {
+	if len(secrets) == 0 {
 		return errNoSecret
+	}
+	for _, secret := range secrets {
+		if len(secret) == 0 {
+			return errNoSecret
+		}
 	}
 	digest, ok := strings.CutPrefix(signatureHeader, signaturePrefix)
 	if !ok || len(digest) != hex.EncodedLen(sha256.Size) {
@@ -66,9 +74,13 @@ func Verify(secret []byte, signatureHeader string, body []byte) error {
 	if err != nil {
 		return errSignatureMalformed
 	}
-	mac := hmac.New(sha256.New, secret)
-	mac.Write(body)
-	if !hmac.Equal(got, mac.Sum(nil)) {
+	matched := false
+	for _, secret := range secrets {
+		mac := hmac.New(sha256.New, secret)
+		mac.Write(body)
+		matched = hmac.Equal(got, mac.Sum(nil)) || matched
+	}
+	if !matched {
 		return errSignatureMismatch
 	}
 	return nil

@@ -69,6 +69,7 @@ The system's contract is its external surface. Everything else is internal.
 | Route                   | Owner                     | Authentication                                            |
 | ----------------------- | ------------------------- | --------------------------------------------------------- |
 | `GET /healthz`          | `app`                     | none                                                      |
+| `GET /ready`            | `app` → `github/api`, `store` | none; proves the App key with GitHub and that the store answers |
 | `POST /v1/reports`      | `gate`                    | GitHub Actions OIDC bearer token, audience = App base URL |
 | `POST /v1/discoveries`  | `control` (onboarding)    | same OIDC checks, through the gate's `Receiver`           |
 | `POST /v1/baselines`    | `control` (onboarding)    | same OIDC checks, through the gate's `Receiver`           |
@@ -440,7 +441,7 @@ draft are gone. What the real engine changed in this design:
   **Expected behavior**: the documented status for each; nothing is published; no success check exists.
 - **Test name**: `TestRoutesRequireTheirAuthentication`
   **Scenario**: call every route of the HTTP surface without and with wrong credentials.
-  **Expected behavior**: `401`/`403` everywhere except `/healthz`; `/internal/*` refuse a user session.
+  **Expected behavior**: `401`/`403` everywhere except `/healthz` and `/ready`; `/internal/*` refuse a user session.
 
 ### Boundary Tests
 

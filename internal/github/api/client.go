@@ -350,6 +350,22 @@ func (c *Client) send(ctx context.Context, k call, out any) error {
 	return nil
 }
 
+// CheckApp proves that the App key works with GitHub: GET /app with a fresh App JWT, on every call. It reads no
+// installation. Bound it with ctx: on a rate limit or a 5xx the client waits and retries within its own budget.
+func (c *Client) CheckApp(ctx context.Context) error {
+	var got struct {
+		ID int64 `json:"id"`
+	}
+	k := call{cred: appCred, method: http.MethodGet, route: "/app", url: apiURL("/app", nil)}
+	if err := c.send(ctx, k, &got); err != nil {
+		return err
+	}
+	if got.ID <= 0 {
+		return k.errorf("invalid response")
+	}
+	return nil
+}
+
 func (c *Client) appIdentity(ctx context.Context) (appInfo, error) {
 	c.appMu.Lock()
 	defer c.appMu.Unlock()

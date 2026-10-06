@@ -257,6 +257,8 @@ func TestWorkerTaskErrorClasses(t *testing.T) {
 	}{
 		{name: "gate done", half: halfGate, want: 204, calls: []string{"gate.HandleEvent"}, outcome: outcomeDone},
 		{name: "control done", half: halfControl, want: 204, calls: []string{"control.HandleEvent"}, outcome: outcomeDone},
+		{name: "signed with the previous secret during a rotation", half: halfGate, signature: sign(testWebhookPrevious, event),
+			want: 204, calls: []string{"gate.HandleEvent"}, outcome: outcomeDone},
 		{name: "transient gate error is retried", half: halfGate, gateErr: errors.New("store: unavailable"), want: 503,
 			calls: []string{"gate.HandleEvent"}, outcome: outcomeTransient},
 		{name: "rate limit is retried", half: halfGate, gateErr: fmt.Errorf("gate: %w", api.ErrRateLimited), want: 503,

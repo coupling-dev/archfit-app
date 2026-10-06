@@ -77,25 +77,30 @@ type controlFacade interface {
 }
 
 type handlerDeps struct {
-	role          string
-	gate          gateFacade
-	control       controlFacade
-	queue         queue.Queue // nil means the inline driver
-	webhookSecret []byte
-	operatorToken []byte // nil in the public role
-	workerURL     string // the audience of invoker ID tokens; worker role only
-	invoker       string // the e-mail of invoker ID tokens; worker role only
-	now           func() time.Time
-	log           *slog.Logger
+	role           string
+	gate           gateFacade
+	control        controlFacade
+	queue          queue.Queue // nil means the inline driver
+	webhookSecrets [][]byte    // the current secret first, then the previous one during a rotation
+	operatorToken  []byte      // nil in the public role
+	workerURL      string      // the audience of invoker ID tokens; worker role only
+	invoker        string      // the e-mail of invoker ID tokens; worker role only
+	traceProject   string      // the project of request traces in log lines; empty logs no trace
+	probes         []probe     // the dependencies of the role that GET /ready checks
+	now            func() time.Time
+	log            *slog.Logger
 }
 
 // newHandler mounts the route table of the role. Every control handler runs behind its own timeout, and the
 // outer middleware turns any panic into a 500 for that request only.
 func newHandler(d handlerDeps) http.Handler {
-	s := &server{handlerDeps: d, operatorSum: sha256.Sum256(d.operatorToken)}
+	s := &server{handlerDeps: d, operatorSum: sha256.Sum256(d.operatorToken),
+		readiness: &readiness{probes: d.probes, timeout: readyTimeout, now: d.now, log: d.log}}
 	s.inline = queue.NewInline(s.runInline)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
+	// Readiness has no credential on any role: a deploy check through the service URL sends none.
+	mux.HandleFunc(readyRoute, s.ready)
 	if d.role != roleWorker {
 		mux.Handle("POST /v1/reports", http.TimeoutHandler(d.gate.UploadHandler(), uploadTimeout, ""))
 		mux.Handle("POST /v1/discoveries", http.TimeoutHandler(d.control.DiscoveryHandler(), controlTimeout, ""))
@@ -124,6 +129,7 @@ type server struct {
 	handlerDeps
 	operatorSum [sha256.Size]byte
 	inline      queue.Queue // processes in this request; the fallback when s.queue refuses a task
+	readiness   *readiness
 }
 
 // requestInfo collects the log fields only a route handler knows.
@@ -177,11 +183,15 @@ func (s *server) logged(next http.Handler) http.Handler {
 
 		ri := &requestInfo{}
 		sw := &statusWriter{ResponseWriter: w}
-		r = r.WithContext(context.WithValue(r.Context(), requestInfoKey{}, ri))
+		ctx := context.WithValue(r.Context(), requestInfoKey{}, ri)
+		if t, ok := requestTrace(r.Header, s.traceProject); ok {
+			ctx = context.WithValue(ctx, traceKey{}, t)
+		}
+		r = r.WithContext(ctx)
 		defer func() {
 			if v := recover(); v != nil {
 				ri.outcome = "panic"
-				s.log.Error("handler panicked", "request_id", requestID, "panic", fmt.Sprint(v), "stack", string(debug.Stack()))
+				s.log.ErrorContext(r.Context(), "handler panicked", "request_id", requestID, "panic", fmt.Sprint(v), "stack", string(debug.Stack()))
 				if sw.status == 0 {
 					http.Error(sw, "internal error", http.StatusInternalServerError)
 				}
@@ -208,7 +218,7 @@ func (s *server) logged(next http.Handler) http.Handler {
 			if ri.outcome != "" {
 				attrs = append(attrs, "outcome", ri.outcome)
 			}
-			s.log.Info("request", attrs...)
+			s.log.InfoContext(r.Context(), "request", attrs...)
 		}()
 		next.ServeHTTP(sw, r)
 	})
@@ -248,7 +258,7 @@ func (s *server) webhook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if err := webhook.Verify(s.webhookSecret, r.Header.Get(webhook.HeaderSignature), body); err != nil {
+	if err := webhook.VerifyAny(s.webhookSecrets, r.Header.Get(webhook.HeaderSignature), body); err != nil {
 		ri.outcome = "bad_signature"
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -268,7 +278,7 @@ func (s *server) webhook(w http.ResponseWriter, r *http.Request) {
 			t := deliveryTask(r.Header, half, body)
 			if err := s.enqueue(ctx, t); err != nil {
 				ri.outcome = outcomeInlineFallback
-				s.log.Warn("webhook processed inline", "delivery_id", ri.deliveryID, "handler", half, "error", err.Error())
+				s.log.WarnContext(ctx, "webhook processed inline", "delivery_id", ri.deliveryID, "handler", half, "error", err.Error())
 				_ = s.inline.Enqueue(ctx, t)
 			}
 		}
@@ -326,10 +336,10 @@ func (s *server) process(ctx context.Context, t queue.Task) (webhook.Event, stri
 	half := t.Header.Get(headerHalf)
 	permanent := func(outcome string) (webhook.Event, string, error) {
 		// The half is logged by the switch below only; an unknown value is never echoed.
-		s.log.Error("webhook task dropped", "delivery_id", deliveryID, "outcome", outcome)
+		s.log.ErrorContext(ctx, "webhook task dropped", "delivery_id", deliveryID, "outcome", outcome)
 		return webhook.Event{}, outcome, nil
 	}
-	if err := webhook.Verify(s.webhookSecret, t.Header.Get(webhook.HeaderSignature), t.Body); err != nil {
+	if err := webhook.VerifyAny(s.webhookSecrets, t.Header.Get(webhook.HeaderSignature), t.Body); err != nil {
 		return permanent("bad_signature")
 	}
 	e, err := webhook.Parse(t.Header.Get(webhook.HeaderEvent), t.Header.Get(webhook.HeaderDelivery), t.Body)
@@ -358,10 +368,10 @@ func (s *server) process(ctx context.Context, t queue.Task) (webhook.Event, stri
 	case err == nil:
 		return e, outcomeDone, nil
 	case api.Permanent(err):
-		s.log.Error("webhook handler failed", "delivery_id", deliveryID, "handler", half, "retry", false, "error", err.Error())
+		s.log.ErrorContext(ctx, "webhook handler failed", "delivery_id", deliveryID, "handler", half, "retry", false, "error", err.Error())
 		return e, outcomePermanent, nil
 	default:
-		s.log.Error("webhook handler failed", "delivery_id", deliveryID, "handler", half, "retry", true, "error", err.Error())
+		s.log.ErrorContext(ctx, "webhook handler failed", "delivery_id", deliveryID, "handler", half, "retry", true, "error", err.Error())
 		return e, outcomeTransient, err
 	}
 }
@@ -384,7 +394,7 @@ func (s *server) task(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxWebhookBody))
 	if tooLarge := (*http.MaxBytesError)(nil); errors.As(err, &tooLarge) {
 		ri.size, ri.outcome = r.ContentLength, "body_too_large"
-		s.log.Error("webhook task dropped", "delivery_id", ri.deliveryID, "outcome", ri.outcome)
+		s.log.ErrorContext(r.Context(), "webhook task dropped", "delivery_id", ri.deliveryID, "outcome", ri.outcome)
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -423,7 +433,7 @@ func (s *server) sweep(w http.ResponseWriter, r *http.Request) {
 	ri.outcome = "swept"
 	if err := isolate(func() error { return s.control.Sweep(r.Context()) }); err != nil {
 		ri.outcome = "control_sweep_error"
-		s.log.Error("control sweep failed", "error", err.Error())
+		s.log.ErrorContext(r.Context(), "control sweep failed", "error", err.Error())
 	}
 	var sum gate.Summary
 	err := isolate(func() (err error) {
@@ -431,9 +441,14 @@ func (s *server) sweep(w http.ResponseWriter, r *http.Request) {
 		return err
 	})
 	status := http.StatusOK
+	if sum.RateLimited && ri.outcome == "swept" {
+		// Still 200: a retry before the limit resets cannot help, and the next hourly pass continues the work.
+		// The outcome makes the stopped pass countable.
+		ri.outcome = "sweep_rate_limited"
+	}
 	if err != nil {
 		ri.outcome = "gate_sweep_error"
-		s.log.Error("gate sweep failed", "error", err.Error())
+		s.log.ErrorContext(r.Context(), "gate sweep failed", "error", err.Error())
 		status = http.StatusInternalServerError
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -462,7 +477,7 @@ func (s *server) grant(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.control.Grant(r.Context(), req.InstallationID, until); err != nil {
 		ri.outcome = "grant_error"
-		s.log.Error("operator grant failed", "installation_id", req.InstallationID, "error", err.Error())
+		s.log.ErrorContext(r.Context(), "operator grant failed", "installation_id", req.InstallationID, "error", err.Error())
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}

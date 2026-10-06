@@ -287,6 +287,14 @@ func TestNewValidatesCredentials(t *testing.T) {
 		{"empty client secret", func(c *Credentials) { c.OAuthClientSecret = "" }, gh.client(), false},
 		{"nil client", func(*Credentials) {}, nil, true},
 	}
+	t.Run("no OAuth fields: a token source and no login flow", func(t *testing.T) {
+		c := validCredentials()
+		c.OAuthClientID, c.OAuthClientSecret = "", ""
+		ts, oa, err := New(c, gh.client())
+		if err != nil || ts == nil || oa != nil {
+			t.Errorf("New = %v, %v, %v; want a token source, a nil OAuth and no error", ts, oa, err)
+		}
+	})
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := validCredentials()

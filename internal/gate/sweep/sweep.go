@@ -38,7 +38,7 @@ func (s *sweeper) Run(ctx context.Context, now time.Time) (Summary, error) {
 	installations, err := s.repos.ListInstallations(ctx)
 	if err != nil {
 		if errors.Is(err, api.ErrRateLimited) {
-			return p.finish(err)
+			return p.finishPartial(err)
 		}
 		return Summary{}, fmt.Errorf("sweep: list installations: %w", err)
 	}
@@ -52,26 +52,37 @@ func (s *sweeper) Run(ctx context.Context, now time.Time) (Summary, error) {
 	start := int(((now.Unix()/3600)%n + n) % n)
 	for i := range installations {
 		if err := p.installation(ctx, installations[(start+i)%len(installations)]); err != nil {
-			return p.finish(err)
+			return p.finishPartial(err)
 		}
 	}
 	return p.finish(nil)
 }
 
+// RunRepo returns a rate limit as an error: its one repository is the whole pass, so a stop leaves the work
+// undone and the caller retries it.
 func (s *sweeper) RunRepo(ctx context.Context, r api.Repo, now time.Time) (Summary, error) {
 	p := &pass{sweeper: s, now: now}
 	return p.finish(p.repo(ctx, r))
 }
 
+// finishPartial ends a full pass. A rate limit is not an error there: the next hourly pass starts elsewhere
+// and continues the work.
+func (p *pass) finishPartial(err error) (Summary, error) {
+	if errors.Is(err, api.ErrRateLimited) {
+		p.sum.RateLimited = true
+		return p.finish(nil)
+	}
+	return p.finish(err)
+}
+
 func (p *pass) finish(err error) (Summary, error) {
 	if errors.Is(err, api.ErrRateLimited) {
 		p.sum.RateLimited = true
-		err = nil
 	}
 	slog.Info("sweep: pass finished",
 		"repos", p.sum.Repos, "pulls", p.sum.Pulls, "pended", p.sum.Pended, "timed_out", p.sum.TimedOut,
 		"rerun", p.sum.Rerun, "warned", p.sum.Warned, "suspended", p.sum.Suspended, "errors", p.sum.Errors,
-		"rate_limited", p.sum.RateLimited, "cancelled", err != nil)
+		"rate_limited", p.sum.RateLimited, "cancelled", err != nil && !p.sum.RateLimited)
 	return p.sum, err
 }
 

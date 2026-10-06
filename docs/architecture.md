@@ -353,6 +353,8 @@ GitHub's own headers and body and is named `<delivery ID>_gate` or `<delivery ID
 repeated delivery by name. The worker verifies the signature again, then runs one half. A control failure never
 blocks or repeats gate work. A task that the queue refuses (a body too large for a task, or an unavailable queue)
 runs inline in the intake request. With the inline driver, the default, every task runs inline.
+During a webhook secret rotation, intake and the worker accept a signature made with the current or the previous
+secret.
 
 The worker answers by error class:
 
@@ -421,19 +423,25 @@ The routes come from [`internal/app/handler.go`](../internal/app/handler.go) and
 
 `ARCHFIT_ROLE` selects the routes. The `all` role, the default, serves every route below except
 `POST /internal/webhooks`. The `public` role serves no `/internal/*` route. The `worker` role serves only
-`GET /healthz` and the three worker routes.
+`GET /healthz`, `GET /ready` and the three worker routes.
 
 ### Service routes
 
 | Method and route        | Owner     | Authentication             |
 | ----------------------- | --------- | -------------------------- |
 | `GET /healthz`          | `app`     | None                       |
+| `GET /ready`            | `app`     | None                       |
 | `POST /v1/reports`      | `gate`    | GitHub Actions OIDC token  |
 | `POST /v1/discoveries`  | `control` | GitHub Actions OIDC checks |
 | `POST /v1/baselines`    | `control` | GitHub Actions OIDC checks |
 | `POST /webhooks/github` | `app`     | `X-Hub-Signature-256`      |
 | `POST /internal/sweep`  | `app`     | Operator bearer token      |
 | `POST /internal/grants` | `app`     | Operator bearer token      |
+
+`GET /healthz` probes nothing. `GET /ready` proves that the App key works with GitHub (`GET /app` with an App JWT)
+and that the store answers (a read of a reserved key). It answers `200`, or `503` with the names of the failed
+checks only. A result is kept for 30 seconds after a pass and 5 seconds after a failure, so frequent calls make at
+most one GitHub request in each window. The path does not end in `z`, because Cloud Run reserves some such paths.
 
 Worker routes:
 
@@ -494,29 +502,34 @@ The App reads environment variables. It does not read a `.env` file.
 Secret variables name files. They do not contain secret values.
 See [`.env.example`](../.env.example).
 
-| Variable                             | Function                                                                                                |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| `ARCHFIT_ADDR`                       | Listen address. Default `:8080`                                                                         |
-| `ARCHFIT_BASE_URL`                   | Public URL and OIDC audience. No trailing `/`                                                           |
-| `ARCHFIT_GITHUB_APP_ID`              | GitHub App ID                                                                                           |
-| `ARCHFIT_GITHUB_PRIVATE_KEY_FILE`    | GitHub App private-key file                                                                             |
-| `ARCHFIT_GITHUB_WEBHOOK_SECRET_FILE` | Webhook secret file                                                                                     |
-| `ARCHFIT_GITHUB_OAUTH_CLIENT_ID`     | OAuth client ID                                                                                         |
-| `ARCHFIT_GITHUB_OAUTH_SECRET_FILE`   | OAuth client secret file                                                                                |
-| `ARCHFIT_COOKIE_KEY_FILE`            | 32-byte session-cookie key file                                                                         |
-| `ARCHFIT_OPERATOR_TOKEN_FILE`        | Bearer token file for the operator routes. Not read by the `public` role                                |
-| `ARCHFIT_ANTHROPIC_KEY_FILE`         | Optional Anthropic key file. Empty disables managed AI                                                  |
-| `ARCHFIT_STORE`                      | Store driver: `memory` (default) or `firestore`                                                         |
-| `ARCHFIT_FIRESTORE_PROJECT`          | Google Cloud project ID. Required with `firestore`                                                      |
-| `ARCHFIT_FIRESTORE_DATABASE`         | Firestore database ID. Default `(default)`                                                              |
-| `FIRESTORE_EMULATOR_HOST`            | Emulator `host:port`. Plain HTTP and no credentials                                                     |
-| `ARCHFIT_SANDBOX`                    | Sandbox driver. Only `none` exists                                                                      |
-| `ARCHFIT_ROLE`                       | `all` (default), `public`, or `worker`                                                                  |
-| `ARCHFIT_QUEUE`                      | Queue driver of intake: `inline` (default) or `cloudtasks` (`public` role only)                         |
-| `ARCHFIT_TASKS_QUEUE`                | `projects/<p>/locations/<l>/queues/<q>`, for `cloudtasks`                                               |
-| `ARCHFIT_WORKER_URL`                 | Worker service URL, the invoker token audience. No trailing `/`. For `cloudtasks` and the `worker` role |
-| `ARCHFIT_INVOKER`                    | Service account e-mail of queue and Scheduler dispatches. For `cloudtasks` and the `worker` role        |
+| Variable                                      | Function                                                                                                |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `ARCHFIT_ADDR`                                | Listen address. Default `:8080`                                                                         |
+| `ARCHFIT_BASE_URL`                            | Public URL and OIDC audience. No trailing `/`                                                           |
+| `ARCHFIT_GITHUB_APP_ID`                       | GitHub App ID                                                                                           |
+| `ARCHFIT_GITHUB_PRIVATE_KEY_FILE`             | GitHub App private-key file                                                                             |
+| `ARCHFIT_GITHUB_WEBHOOK_SECRET_FILE`          | Webhook secret file                                                                                     |
+| `ARCHFIT_GITHUB_WEBHOOK_SECRET_PREVIOUS_FILE` | Optional. The previous webhook secret file, set only during a rotation. Both secrets are accepted       |
+| `ARCHFIT_GITHUB_OAUTH_CLIENT_ID`              | OAuth client ID. Not used by the `worker` role                                                          |
+| `ARCHFIT_GITHUB_OAUTH_SECRET_FILE`            | OAuth client secret file. Not read by the `worker` role                                                 |
+| `ARCHFIT_COOKIE_KEY_FILE`                     | 32-byte session-cookie key file. Not read by the `worker` role                                          |
+| `ARCHFIT_OPERATOR_TOKEN_FILE`                 | Bearer token file for the operator routes. Not read by the `public` role                                |
+| `ARCHFIT_ANTHROPIC_KEY_FILE`                  | Optional Anthropic key file. Empty disables managed AI. Not read by the `worker` role                   |
+| `ARCHFIT_STORE`                               | Store driver: `memory` (default) or `firestore`                                                         |
+| `ARCHFIT_FIRESTORE_PROJECT`                   | Google Cloud project ID. Required with `firestore`                                                      |
+| `ARCHFIT_FIRESTORE_DATABASE`                  | Firestore database ID. Default `(default)`                                                              |
+| `FIRESTORE_EMULATOR_HOST`                     | Emulator `host:port`. Plain HTTP and no credentials                                                     |
+| `ARCHFIT_SANDBOX`                             | Sandbox driver. Only `none` exists                                                                      |
+| `ARCHFIT_ROLE`                                | `all` (default), `public`, or `worker`                                                                  |
+| `ARCHFIT_QUEUE`                               | Queue driver of intake: `inline` (default) or `cloudtasks` (`public` role only)                         |
+| `ARCHFIT_TASKS_QUEUE`                         | `projects/<p>/locations/<l>/queues/<q>`, for `cloudtasks`                                               |
+| `ARCHFIT_WORKER_URL`                          | Worker service URL, the invoker token audience. No trailing `/`. For `cloudtasks` and the `worker` role |
+| `ARCHFIT_INVOKER`                             | Service account e-mail of queue and Scheduler dispatches. For `cloudtasks` and the `worker` role        |
+| `GOOGLE_CLOUD_PROJECT`                        | Optional. Google Cloud project ID of the log trace field. Empty: log lines name no trace                |
+| `K_REVISION`                                  | Set by Cloud Run. Written as `revision` on every log line                                               |
 
 ### Release blockers
 
 - No GitHub App is registered.
+- The release does not check `GET /ready` yet, and Terraform sets no `GOOGLE_CLOUD_PROJECT` and no mount for a
+  previous webhook secret.

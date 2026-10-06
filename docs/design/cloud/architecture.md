@@ -184,10 +184,6 @@ These capabilities must exist before the first deployment. Details belong to the
 - Open decision 1 applied.
 - A queue seam with an inline driver (default) and a Cloud Tasks driver, and a worker route for queued webhooks.
 - Transient and permanent error classes in webhook handling, and idempotent handlers under concurrent duplicates.
-- Roles that select routes and the required secrets. The public role starts without the operator token.
-- Two accepted webhook secrets during a rotation. See [Security](security.md#secrets).
-- A readiness check that proves the App key works with GitHub and the store answers.
-- Log fields that Cloud Logging reads. See [Operations](operations.md#observability).
 - `module.md` and import-matrix updates for the new seams.
 - The [release blockers](../../architecture.md#release-blockers) closed.
 
