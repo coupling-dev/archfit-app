@@ -317,8 +317,10 @@ CI deploys through `.github/workflows/deploy.yaml` with the `archfit-deploy` acc
 `workload_identity_provider` and `deploy_service_account` of the data stack. Compare them first:
 
 ```sh
-tofu -chdir=infra/data output workload_identity_provider   # projects/335297348272/locations/global/workloadIdentityPools/github/providers/archfit-app
-tofu -chdir=infra/data output deploy_service_account       # archfit-deploy@coupling-dev-510710.iam.gserviceaccount.com
+# projects/335297348272/locations/global/workloadIdentityPools/github/providers/archfit-app
+tofu -chdir=infra/data output workload_identity_provider
+# archfit-deploy@coupling-dev-510710.iam.gserviceaccount.com
+tofu -chdir=infra/data output deploy_service_account
 ```
 
 If a value differs, change the workflow in a pull request first. Then run the first release by hand, and follow it:
@@ -380,15 +382,18 @@ The deploy workflow [`.github/workflows/deploy.yaml`](../.github/workflows/deplo
 - A run on another ref gets no credentials: Workload Identity admits only `main`.
 - Each release names its revisions `archfit-worker-r<run>-<attempt>` and `archfit-public-r<run>-<attempt>`.
 - The release record is the artifact `release-<run>-<attempt>` (`release.json`) and the job summary: the commit of
-  the run, the image digest, the new revisions, and the revisions with traffic before the release. Take the rollback inputs from
-  it: the revision names in "traffic before" (without `=<percent>`) for a traffic rollback, the `digest` of an earlier
-  release for an image rollback.
+  the run, the image digest, the new revisions, and the revisions with traffic before the release. Take the rollback
+  inputs from it: the revision names in "traffic before" (without `=<percent>`) for a traffic rollback, the `digest`
+  of an earlier release for an image rollback.
 - A release or rollback fails when the worker ingress is not internal, the worker invoker check is off, the worker's
-  IAM policy gives `roles/run.invoker` to a principal other than `archfit-invoker` or names `allUsers` or
-  `allAuthenticatedUsers`, or a queue routes to another host, path, or identity. Then the revisions of the release
-  already have traffic. Fix the setting with Terraform (`apply` the runtime stack), or roll
-  back.
-- After a rollback, stop releases on push until the cause is fixed: `gh variable set RELEASE_ON_PUSH --body false`.
+  IAM policy has any binding other than `roles/run.invoker` for `archfit-invoker`, or a queue routes to another
+  method, scheme, host, path, enforce mode, identity, or audience. Then the revisions of the release already have
+  traffic. Fix the setting with Terraform (`apply` the runtime stack), or roll back.
+- A release that stops before the public promotion, and a traffic rollback of the public service, remove the
+  `canary` tag. A revision without traffic is then not reachable at the tag URL.
+- Before a rollback, stop releases on push: `gh variable set RELEASE_ON_PUSH --body false`. A newer waiting run
+  cancels an older waiting one, so a push could replace the waiting rollback. Check that the rollback run started.
+  Turn releases on push on again when the cause is fixed.
 - The deploy account can read the two queues (`roles/cloudtasks.viewer` on each queue, in the runtime stack) for the
   routing check. It has no other new role.
 

@@ -1,8 +1,8 @@
 # shellcheck shell=bash disable=SC2034 # the settings are read by the scripts that source this file
 # Shared settings and helpers of the release scripts. Sourced, never run.
 #
-# The values come from the Terraform in infra/ (outputs of the data and runtime stacks). They are not secret.
-# scripts/deploy/test/deploy.bats checks that they still match the Terraform code.
+# The values come from the Terraform in infra/ (variable defaults, names and outputs of the data and runtime stacks).
+# They are not secret. scripts/deploy/test/deploy.bats checks each of them against the Terraform code.
 
 PROJECT_ID=coupling-dev-510710
 REGION=europe-west1
@@ -54,6 +54,10 @@ gcloud_run() {
 	gcloud "$@" --region="$REGION" --project="$PROJECT_ID" --quiet
 }
 
+image_digest() {
+	gcloud artifacts docker images describe "$1" --project="$PROJECT_ID" --format='value(image_summary.digest)'
+}
+
 service_json() {
 	gcloud_run run services describe "$1" --format=json
 }
@@ -77,4 +81,10 @@ promote() {
 	local service=$1 revision=$2
 	log "promote: $service -> $revision"
 	gcloud_run run services update-traffic "$service" --to-revisions="$revision=100"
+}
+
+# drop_canary removes the canary tag. Its URL bypasses traffic, so a revision without traffic must not keep it.
+drop_canary() {
+	log "untag: $PUBLIC_SERVICE $CANARY_TAG"
+	gcloud_run run services update-traffic "$PUBLIC_SERVICE" --remove-tags="$CANARY_TAG"
 }

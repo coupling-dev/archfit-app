@@ -5,7 +5,8 @@
 # It accepts only a revision that an earlier release created: the name has the release pattern
 # <service>-r<run>-<attempt>, the revision belongs to the service, runs an image of this repository by digest, and is
 # ready. A revision that Terraform or a person created never gets traffic. The public service moves first, the worker
-# second: the reverse order of a release. Then the post-release checks run.
+# second: the reverse order of a release. A public rollback also removes the canary tag, which still names the bad
+# revision. Then the post-release checks run.
 #
 # For an image rollback, run release.sh with the digest of the last good image instead.
 #
@@ -43,6 +44,9 @@ done
 summary "### Traffic rollback" ""
 for target in "${targets[@]}"; do
 	promote "${target%%=*}" "${target#*=}"
+	if [[ ${target%%=*} == "$PUBLIC_SERVICE" ]]; then
+		drop_canary
+	fi
 	summary "- \`${target%%=*}\` → \`${target#*=}\`"
 done
 summary ""

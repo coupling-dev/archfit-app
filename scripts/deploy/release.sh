@@ -7,6 +7,9 @@
 #  4. Promote the worker, then the public service, each to its named revision. Never "latest".
 #  5. Run the post-release checks (check.sh).
 #
+# If the release stops before the public promotion, it removes the canary tag, so the unpromoted revision is not
+# reachable at the tag URL.
+#
 # It writes the release record to $RELEASE_DIR/release.json and to the job summary, also when it fails.
 # An image rollback runs this script with the digest of an earlier image.
 #
@@ -36,6 +39,7 @@ step=start
 worker_before=""
 public_before=""
 canary_url=""
+untag_on_exit=false
 
 write_record() {
 	mkdir -p "$RELEASE_DIR"
@@ -62,7 +66,13 @@ write_record() {
 		"| Stopped at | $step |" \
 		""
 }
-trap write_record EXIT
+on_exit() {
+	if [[ $untag_on_exit == true ]]; then
+		drop_canary || log "untag failed: remove the tag $CANARY_TAG from $PUBLIC_SERVICE by hand"
+	fi
+	write_record
+}
+trap on_exit EXIT
 
 deploy() {
 	local service=$1
@@ -101,8 +111,7 @@ check_ready() {
 }
 
 step="image lookup"
-gcloud artifacts docker images describe "$image" --project="$PROJECT_ID" --format='value(image_summary.digest)' >/dev/null ||
-	die "image $image is not in Artifact Registry"
+image_digest "$image" >/dev/null || die "image $image is not in Artifact Registry"
 
 step="traffic before"
 worker_before=$(serving_traffic "$WORKER_SERVICE")
@@ -111,6 +120,7 @@ public_before=$(serving_traffic "$PUBLIC_SERVICE")
 step="deploy worker"
 deploy "$WORKER_SERVICE"
 step="deploy public canary"
+untag_on_exit=true
 deploy "$PUBLIC_SERVICE" --tag="$CANARY_TAG"
 
 step="verify revisions"
@@ -127,6 +137,7 @@ step="promote worker"
 promote "$WORKER_SERVICE" "$worker_revision"
 step="promote public"
 promote "$PUBLIC_SERVICE" "$public_revision"
+untag_on_exit=false
 
 step="post-release checks"
 "$here/check.sh"

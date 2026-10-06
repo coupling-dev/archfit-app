@@ -29,10 +29,10 @@ Security rules for identities, secrets, and incidents are in [Security](security
 
 Both services run the same image. `ARCHFIT_ROLE` selects the routes and the secrets.
 
-| Service | Settings                                                                                                          | Secrets                                                          |
-| ------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| Public  | `ARCHFIT_ROLE=public`, `ARCHFIT_QUEUE=cloudtasks`, `ARCHFIT_TASKS_QUEUE`, `ARCHFIT_WORKER_URL`, `ARCHFIT_INVOKER` | App key, webhook secret, OAuth secret, cookie key, Anthropic key |
-| Worker  | `ARCHFIT_ROLE=worker`, `ARCHFIT_WORKER_URL`, `ARCHFIT_INVOKER`                                                    | App key, webhook secret, operator token                          |
+| Service | Settings                                                                                                          | Secrets                                                                  |
+| ------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Public  | `ARCHFIT_ROLE=public`, `ARCHFIT_QUEUE=cloudtasks`, `ARCHFIT_TASKS_QUEUE`, `ARCHFIT_WORKER_URL`, `ARCHFIT_INVOKER` | App key, webhook secret, OAuth secret, cookie key, Anthropic key         |
+| Worker  | `ARCHFIT_ROLE=worker`, `ARCHFIT_WORKER_URL`, `ARCHFIT_INVOKER`                                                    | App key, webhook secret, operator token                                  |
 
 A role never reads a secret that is not in its row, even when the variable is set. A missing secret of its own row
 stops the startup. During a webhook secret rotation, both services also mount the previous webhook secret
@@ -174,6 +174,7 @@ flowchart TD
   outage would stop every new instance, intake included, although intake does not need GitHub. The startup probe
   is `GET /healthz`, which checks only that the process serves.
 - Promote the exact revisions that CI deployed, never "latest". A revision that another change created stays without traffic.
+  A release that stops before the public promotion removes the canary tag, so its revision is not reachable.
 - After promotion, check the worker's exposure and the queue routing. See [Worker protection](security.md#worker-protection).
 - Record the image digest and the revision names of each release. A rollback needs them.
 - Releases never overlap.
@@ -195,15 +196,17 @@ digest, the two new revisions, and the revisions that had traffic before.
   first. The previous revisions use their own pinned secret versions, so those versions must still exist.
   Run the deploy workflow with `mode: traffic` and the revisions from "traffic before" in the bad release's
   record. It accepts only revisions that a release created, moves the public service first and the worker second,
-  then runs the post-release checks.
+  removes the canary tag from the bad public revision, then runs the post-release checks.
 - **Image rollback.** After a secret was destroyed, an old revision cannot start. Redeploy the last good image with
   the current secrets through the release pipeline: run the deploy workflow with `mode: image` and the digest of
   that image from its release record.
 - Run a rollback from `main`. Workload Identity admits no other ref.
+- Turn off releases on push before you start a rollback. Runs wait in one queue, and a newer waiting run cancels an
+  older one, so a push could otherwise replace the waiting rollback. Check that the rollback run started.
 - **What is recovered.** Tasks that the worker answered with 5xx retry. See [Failure handling](architecture.md#failure-handling). Tasks that a bad worker
   answered with success are gone. The sweep repairs gate and control state for those.
 - A rollback does not undo stored data. The format rule in [State](architecture.md#state) keeps old revisions working.
-- After a rollback, do not release again until the cause is fixed. Turn off releases on push until then.
+- After a rollback, do not release again until the cause is fixed. Keep releases on push off until then.
 
 ## Observability
 

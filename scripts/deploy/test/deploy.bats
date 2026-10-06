@@ -3,6 +3,8 @@
 # Behavior tests of the release scripts. Fake gcloud, docker and curl in test/bin record every call; no test talks to
 # Google Cloud.
 
+bats_require_minimum_version 1.5.0
+
 setup() {
 	ROOT=$(cd "$BATS_TEST_DIRNAME/../../.." && pwd)
 	DEPLOY=$ROOT/scripts/deploy
@@ -31,7 +33,11 @@ release() {
 }
 
 assert_nothing_promoted() {
-	[ -z "$(calls 'gcloud run services update-traffic')" ]
+	[ -z "$(calls 'gcloud run services update-traffic [^ ]+ --to-revisions')" ]
+}
+
+assert_canary_untagged() {
+	[ "$(calls 'gcloud run services update-traffic archfit-public --remove-tags=canary ' | wc -l)" -eq 1 ]
 }
 
 # --- release ---
@@ -52,7 +58,7 @@ assert_nothing_promoted() {
 	[ "${#lines[@]}" -eq 2 ]
 	[[ ${lines[0]} == "gcloud run services update-traffic archfit-worker --to-revisions=$WORKER_REV=100 "* ]]
 	[[ ${lines[1]} == "gcloud run services update-traffic archfit-public --to-revisions=$PUBLIC_REV=100 "* ]]
-	run grep -E -- '--to-latest|LATEST' "$FAKE_LOG"
+	run grep -E -- '--to-latest|LATEST|--remove-tags' "$FAKE_LOG"
 	[ "$status" -eq 1 ]
 }
 
@@ -79,6 +85,7 @@ assert_nothing_promoted() {
 	[[ $output == *"canary $PUBLIC_REV is not ready; nothing promoted"* ]]
 	[ "$(calls curl | wc -l)" -eq 3 ]
 	assert_nothing_promoted
+	assert_canary_untagged
 	[ "$(jq -r '.status + "|" + .step' "$RELEASE_DIR/release.json")" = "failed|canary readiness" ]
 }
 
@@ -88,6 +95,7 @@ assert_nothing_promoted() {
 	[ "$status" -ne 0 ]
 	[[ $output == *"revision $PUBLIC_REV is not the archfit-public revision of this release"* ]]
 	assert_nothing_promoted
+	assert_canary_untagged
 	[ -z "$(calls curl)" ]
 }
 
@@ -146,6 +154,7 @@ assert_nothing_promoted() {
 	release
 	[ "$status" -ne 0 ]
 	[ "$(calls 'gcloud run services update-traffic' | wc -l)" -eq 2 ]
+	[ -z "$(calls 'gcloud run services update-traffic archfit-public --remove-tags')" ]
 	[ "$(jq -r '.status + "|" + .step' "$RELEASE_DIR/release.json")" = "failed|post-release checks" ]
 }
 
@@ -162,16 +171,23 @@ assert_nothing_promoted() {
 		"FAKE_WORKER_INGRESS=all|archfit-worker ingress is 'all', want 'internal'"
 		"FAKE_WORKER_INGRESS=internal-and-cloud-load-balancing|archfit-worker ingress is 'internal-and-cloud-load-balancing'"
 		"FAKE_WORKER_INVOKER_IAM_DISABLED=true|archfit-worker has the invoker check off"
-		"FAKE_WORKER_EXTRA_INVOKER=allUsers|IAM policy names allUsers or allAuthenticatedUsers"
-		"FAKE_WORKER_EXTRA_INVOKER=serviceAccount:archfit-public@coupling-dev-510710.iam.gserviceaccount.com|archfit-worker invokers are"
+		"FAKE_WORKER_EXTRA_INVOKER=allUsers|archfit-worker IAM bindings are"
+		"FAKE_WORKER_EXTRA_INVOKER=allAuthenticatedUsers|archfit-worker IAM bindings are"
+		"FAKE_WORKER_EXTRA_INVOKER=serviceAccount:archfit-public@coupling-dev-510710.iam.gserviceaccount.com|archfit-worker IAM bindings are"
+		"FAKE_WORKER_EXTRA_BINDING=roles/run.developer|serviceAccount:archfit-public@coupling-dev-510710.iam.gserviceaccount.com|archfit-worker IAM bindings are"
+		"FAKE_WORKER_NO_BINDINGS=1|archfit-worker IAM bindings are []"
 		"FAKE_QUEUE_PATH=/internal/grants|queue archfit-webhooks routing is"
 		"FAKE_QUEUE_HOST=archfit-public-335297348272.europe-west1.run.app|queue archfit-webhooks routing is"
 		"FAKE_QUEUE_IDENTITY=archfit-public@coupling-dev-510710.iam.gserviceaccount.com|queue archfit-webhooks routing is"
+		"FAKE_QUEUE_AUDIENCE=https://app.coupling.dev|queue archfit-webhooks routing is"
+		"FAKE_QUEUE_ENFORCE=IF_NOT_EXISTS|queue archfit-webhooks routing is"
+		"FAKE_QUEUE_SCHEME=HTTP|queue archfit-webhooks routing is"
+		"FAKE_QUEUE_METHOD=GET|queue archfit-webhooks routing is"
 	)
 	local case setting want
 	for case in "${cases[@]}"; do
-		setting=${case%%|*}
-		want=${case#*|}
+		setting=${case%|*}
+		want=${case##*|}
 		run env FAKE_QUEUE=archfit-webhooks "$setting" "$DEPLOY/check.sh"
 		echo "case $setting: $output"
 		[ "$status" -ne 0 ]
@@ -192,9 +208,10 @@ assert_nothing_promoted() {
 	run env PUBLIC_REVISION=archfit-public-r100-1 WORKER_REVISION=archfit-worker-r100-1 "$DEPLOY/rollback.sh"
 	[ "$status" -eq 0 ]
 	run calls 'gcloud run services update-traffic'
-	[ "${#lines[@]}" -eq 2 ]
 	[[ ${lines[0]} == "gcloud run services update-traffic archfit-public --to-revisions=archfit-public-r100-1=100 "* ]]
-	[[ ${lines[1]} == "gcloud run services update-traffic archfit-worker --to-revisions=archfit-worker-r100-1=100 "* ]]
+	[[ ${lines[1]} == "gcloud run services update-traffic archfit-public --remove-tags=canary "* ]]
+	[[ ${lines[2]} == "gcloud run services update-traffic archfit-worker --to-revisions=archfit-worker-r100-1=100 "* ]]
+	[ "${#lines[@]}" -eq 3 ]
 	[ -n "$(calls 'gcloud tasks queues describe')" ]
 }
 
@@ -245,9 +262,9 @@ assert_nothing_promoted() {
 # --- build ---
 
 @test "build pushes the commit image once and prints its digest" {
-	run "$DEPLOY/build.sh" "$GITHUB_SHA"
+	run --separate-stderr "$DEPLOY/build.sh" "$GITHUB_SHA"
 	[ "$status" -eq 0 ]
-	[ "${lines[${#lines[@]} - 1]}" = "$FAKE_DIGEST" ]
+	[ "$output" = "$FAKE_DIGEST" ]
 	local tagged=europe-west1-docker.pkg.dev/coupling-dev-510710/archfit-app/archfit-app:$GITHUB_SHA
 	[ -n "$(calls "docker build --platform=linux/amd64 .*--tag=$tagged \\.")" ]
 	[ "$(calls "docker push $tagged$")" = "docker push $tagged" ]
@@ -255,9 +272,9 @@ assert_nothing_promoted() {
 
 @test "build reuses the image of a commit that was already pushed" {
 	touch "$FAKE_STATE/pushed"
-	run "$DEPLOY/build.sh" "$GITHUB_SHA"
+	run --separate-stderr "$DEPLOY/build.sh" "$GITHUB_SHA"
 	[ "$status" -eq 0 ]
-	[ "${lines[${#lines[@]} - 1]}" = "$FAKE_DIGEST" ]
+	[ "$output" = "$FAKE_DIGEST" ]
 	[ -z "$(calls docker)" ]
 }
 
@@ -277,6 +294,26 @@ assert_nothing_promoted() {
 	[ -f "$ROOT/.github/workflows/deploy.yaml" ]
 }
 
+@test "the project, region, services and image repository match the Terraform" {
+	# shellcheck source=../lib.sh
+	source "$DEPLOY/lib.sh"
+	local stack
+	for stack in data runtime; do
+		grep -A3 '^variable "project_id"' "$ROOT/infra/$stack/variables.tf" | grep -q "default     = \"$PROJECT_ID\""
+		grep -A3 '^variable "region"' "$ROOT/infra/$stack/variables.tf" | grep -q "default     = \"$REGION\""
+	done
+	# shellcheck disable=SC2016 # literal Terraform expressions
+	{
+		grep -q 'name                 = "archfit-${each.key}"' "$ROOT/infra/runtime/services.tf"
+		grep -q 'value       = "${google_artifact_registry_repository.app.location}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.app.repository_id}/archfit-app"' "$ROOT/infra/data/outputs.tf"
+	}
+	grep -A1 '^  service_access = {' "$ROOT/infra/runtime/services.tf" | grep -q '^    public = '
+	grep -A2 '^  service_access = {' "$ROOT/infra/runtime/services.tf" | grep -q '^    worker = '
+	[ "$PUBLIC_SERVICE" = archfit-public ] && [ "$WORKER_SERVICE" = archfit-worker ]
+	grep -q 'repository_id = "archfit-app"' "$ROOT/infra/data/registry.tf"
+	[ "$IMAGE_REPO" = "$REGION-docker.pkg.dev/$PROJECT_ID/archfit-app/archfit-app" ]
+}
+
 @test "the expected queue routes and identities match the Terraform" {
 	# shellcheck source=../lib.sh
 	source "$DEPLOY/lib.sh"
@@ -290,7 +327,22 @@ assert_nothing_promoted() {
 	[ "$WORKER_HOST" = "archfit-worker-335297348272.$REGION.run.app" ]
 	grep -q "\`https://$WORKER_HOST\`" "$ROOT/infra/README.md"
 	# shellcheck disable=SC2016 # a literal Terraform expression
-	grep -q '"archfit-${each.key}"' "$ROOT/infra/data/identities.tf"
+	grep -q 'account_id   = "archfit-${each.key}"' "$ROOT/infra/data/identities.tf"
+	grep -q '^    invoker = ' "$ROOT/infra/data/identities.tf"
 	[ "$INVOKER" = "archfit-invoker@$PROJECT_ID.iam.gserviceaccount.com" ]
-	grep -q "\`$IMAGE_REPO\`" "$ROOT/infra/README.md"
+}
+
+@test "the workflow names the project number of the worker host" {
+	# shellcheck source=../lib.sh
+	source "$DEPLOY/lib.sh"
+	local number=${WORKER_HOST#archfit-worker-}
+	number=${number%%.*}
+	grep -q "workload_identity_provider: projects/$number/locations/global/workloadIdentityPools/github/providers/archfit-app" "$ROOT/.github/workflows/deploy.yaml"
+	grep -q "service_account: archfit-deploy@$PROJECT_ID.iam.gserviceaccount.com" "$ROOT/.github/workflows/deploy.yaml"
+}
+
+@test "a push that skips the release job does not join the release concurrency group" {
+	run grep -n '^concurrency:' "$ROOT/.github/workflows/deploy.yaml"
+	[ "$status" -eq 1 ]
+	grep -q '^    concurrency:' "$ROOT/.github/workflows/deploy.yaml"
 }

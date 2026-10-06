@@ -5,7 +5,7 @@
 # scripts/deploy/test/.
 #
 # A push to main releases only while the repository variable RELEASE_ON_PUSH is "true". The owner turns it on after
-# the first release (infra/README.md, step 9) and off after a rollback, until the cause is fixed.
+# the first release (infra/README.md, step 9), and off before a rollback until the cause is fixed.
 name: Deploy
 on:
   push:
@@ -32,17 +32,18 @@ on:
         type: string
 permissions:
   contents: read
-# Releases and rollbacks never overlap: a new run waits until the running one ends. GitHub keeps only the newest
-# waiting run and cancels an older waiting one, so one release can cover several commits.
-concurrency:
-  group: release
-  cancel-in-progress: false
 jobs:
   release:
     name: Release
     if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.RELEASE_ON_PUSH == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    # Releases and rollbacks never overlap: a new run waits until the running one ends. GitHub keeps only the newest
+    # waiting run and cancels an older one, so a later release can replace a waiting rollback. The group is on the job,
+    # so a push whose job the RELEASE_ON_PUSH gate skips does not join it.
+    concurrency:
+      group: release
+      cancel-in-progress: false
     permissions:
       contents: read
       id-token: write

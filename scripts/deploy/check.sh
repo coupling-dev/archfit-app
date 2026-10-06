@@ -2,8 +2,8 @@
 # Post-release checks from security.md "Worker protection". The deploy identity can change ingress and the invoker
 # check, so each release and rollback reads them back and fails if they differ from the design:
 #
-#  - The worker is not exposed: ingress is internal, the invoker check is on, only the invoker identity has
-#    roles/run.invoker, and no binding names allUsers or allAuthenticatedUsers.
+#  - The worker is not exposed: ingress is internal, the invoker check is on, and its IAM policy has exactly one
+#    binding, roles/run.invoker for the invoker identity. Any other binding can grant run.routes.invoke.
 #  - Each queue sends to its own worker route with the invoker identity (queue-level uriOverride, enforced).
 #
 # Usage: check.sh
@@ -18,7 +18,7 @@ fail() {
 }
 
 check_worker() {
-	local json policy ingress invoker_check_off invokers
+	local json policy ingress invoker_check_off bindings want
 	json=$(service_json "$WORKER_SERVICE") || {
 		fail "cannot read service $WORKER_SERVICE"
 		return
@@ -32,12 +32,9 @@ check_worker() {
 		fail "cannot read the IAM policy of $WORKER_SERVICE"
 		return
 	}
-	invokers=$(jq -r '[.bindings[]? | select(.role == "roles/run.invoker") | .members[]] | sort | join(" ")' <<<"$policy")
-	[[ $invokers == "serviceAccount:$INVOKER" ]] ||
-		fail "$WORKER_SERVICE invokers are '$invokers', want 'serviceAccount:$INVOKER'"
-	if jq -e '[.bindings[]?.members[]] | any(. == "allUsers" or . == "allAuthenticatedUsers")' <<<"$policy" >/dev/null; then
-		fail "$WORKER_SERVICE IAM policy names allUsers or allAuthenticatedUsers"
-	fi
+	bindings=$(jq -c '[.bindings[]? | {role, members: (.members | sort), condition}] | sort' <<<"$policy")
+	want=$(jq -nc --arg member "serviceAccount:$INVOKER" '[{role: "roles/run.invoker", members: [$member], condition: null}]')
+	[[ $bindings == "$want" ]] || fail "$WORKER_SERVICE IAM bindings are $bindings, want $want"
 }
 
 check_queue() {
