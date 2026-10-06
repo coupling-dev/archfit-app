@@ -34,6 +34,10 @@ const (
 	envTasksQueue        = "ARCHFIT_TASKS_QUEUE"
 	envWorkerURL         = "ARCHFIT_WORKER_URL"
 	envInvoker           = "ARCHFIT_INVOKER"
+	// envTraceProject is the name Google client libraries read. It completes the trace field of a log line.
+	envTraceProject = "GOOGLE_CLOUD_PROJECT"
+	// envRevision is set by Cloud Run on every revision.
+	envRevision = "K_REVISION"
 
 	defaultAddr = ":8080"
 
@@ -78,6 +82,8 @@ type Config struct {
 	TasksQueue          string // ARCHFIT_TASKS_QUEUE: "projects/<p>/locations/<l>/queues/<q>"; cloudtasks only
 	WorkerURL           string // ARCHFIT_WORKER_URL: the worker service URL; the dispatch OIDC audience
 	Invoker             string // ARCHFIT_INVOKER: the service account e-mail of the queue and Scheduler dispatches
+	TraceProject        string // GOOGLE_CLOUD_PROJECT; optional; names the trace of a log line; empty logs no trace
+	Revision            string // K_REVISION; set by Cloud Run; logged on every line
 }
 
 // Load reads Config from the environment. Secrets are file references only.
@@ -106,6 +112,8 @@ func Load(getenv func(string) string) (Config, error) {
 		TasksQueue:          getenv(envTasksQueue),
 		WorkerURL:           getenv(envWorkerURL),
 		Invoker:             getenv(envInvoker),
+		TraceProject:        getenv(envTraceProject),
+		Revision:            getenv(envRevision),
 	}
 	if err := c.validate(); err != nil {
 		return Config{}, err

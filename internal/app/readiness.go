@@ -86,7 +86,7 @@ func (r *readiness) check(ctx context.Context) []string {
 	for i, err := range errs {
 		if err != nil {
 			failed = append(failed, r.probes[i].name)
-			r.log.Error("readiness probe failed", "probe", r.probes[i].name, "error", err.Error())
+			r.log.ErrorContext(ctx, "readiness probe failed", "probe", r.probes[i].name, "error", err.Error())
 		}
 	}
 	r.failed, r.until = failed, r.now().Add(readyFor)

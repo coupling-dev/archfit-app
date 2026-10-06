@@ -56,6 +56,8 @@ func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, googl
 	if log == nil {
 		log = slog.Default()
 	}
+	// Every line names the role and the revision, so one request can be followed from intake to the worker.
+	log = log.With("role", c.Role, "revision", c.Revision)
 	// Modules bind slog.Default() when they are constructed, so install the logger first.
 	slog.SetDefault(log)
 
@@ -116,6 +118,7 @@ func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, googl
 		operatorToken:  sec.operatorToken,
 		workerURL:      c.WorkerURL,
 		invoker:        c.Invoker,
+		traceProject:   c.TraceProject,
 		// Every role uses the App key and the store, so every role probes both.
 		probes: []probe{githubProbe(gh.CheckApp), storeProbe(st)},
 		now:    time.Now,

@@ -104,6 +104,16 @@ single place where it is enforced at runtime.
   GitHub call in each window. A caller that hangs up does not cancel the check. The path does not end in `z`:
   Cloud Run reserves some such paths, so a check through the service URL could not reach `/readyz`.
 - Structured logging with `log/slog`, JSON to stdout: request ID, route, status, duration, installation ID, outcome. Never bodies, paths, messages, tokens.
+  `NewLogger` writes the field names that Cloud Logging reads: `severity` (`DEBUG`, `INFO`, `WARNING`, `ERROR`)
+  instead of `level`, and `message` instead of `msg`; `time` stays. Keys inside a group keep their names. `Run` adds
+  `role` and `revision` (`K_REVISION`) to every line. When `GOOGLE_CLOUD_PROJECT` is set, the request middleware
+  reads the trace from `traceparent`, else from `X-Cloud-Trace-Context` (its decimal span ID becomes 16 hex digits),
+  and every line logged with that request's context carries `logging.googleapis.com/trace`
+  (`projects/<project>/traces/<trace ID>`), `logging.googleapis.com/spanId` and
+  `logging.googleapis.com/trace_sampled`. Only hex digits of the right length pass, so a caller cannot write into a
+  line; a malformed header, the all-zero trace ID or no project logs no trace. Limit: a module line logged without a
+  context (`slog.Info`, not `slog.InfoContext`) carries no trace; it still carries the role, the revision and its
+  own IDs. Upgrade trigger: a module line that must be found by trace.
 
 ## Subdomain Classification
 
@@ -147,6 +157,8 @@ type Config struct {
     TasksQueue       string // ARCHFIT_TASKS_QUEUE: "projects/<p>/locations/<l>/queues/<q>"; cloudtasks only
     WorkerURL        string // ARCHFIT_WORKER_URL: the worker service URL; the dispatch OIDC audience
     Invoker          string // ARCHFIT_INVOKER: the service account e-mail of the queue and Scheduler dispatches
+    TraceProject     string // GOOGLE_CLOUD_PROJECT; optional; names the trace of a log line; empty logs no trace
+    Revision         string // K_REVISION; set by Cloud Run; logged on every line
 }
 
 // Load reads Config from the environment. Secrets are file references only.
@@ -154,6 +166,10 @@ func Load(getenv func(string) string) (Config, error)
 
 // Run wires every module and serves until ctx is cancelled.
 func Run(ctx context.Context, c Config, log *slog.Logger) error
+
+// NewLogger returns the process logger: one JSON line per event on w, with the field names Cloud Logging reads.
+// A line logged with a request context also carries that request's trace.
+func NewLogger(w io.Writer) *slog.Logger
 ```
 
 ### Routes
@@ -216,7 +232,7 @@ the client and clears `Timeout` on its copy, so the 150 second deadline of `cont
   still answers `200`, because a retry before the limit resets cannot help and the next hourly pass continues the
   work; its request line has the outcome `sweep_rate_limited` instead of `swept`, so a log-based counter sees it.
 
-`cmd/reporter` builds a JSON `slog.Logger`, calls `Load(os.Getenv)`, then `Run` with a context cancelled on
+`cmd/reporter` builds the logger with `NewLogger(os.Stdout)`, calls `Load(os.Getenv)`, then `Run` with a context cancelled on
 SIGINT or SIGTERM, and exits non-zero on error. It contains nothing else. The skeleton's handler code and its
 `TestReportIngestRefusesEveryReport` are removed in the same change that introduces verified ingestion (plan T09).
 
@@ -937,6 +953,24 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
 - **Test name**: `TestLogsNeverContainSecretsOrBodies`
   **Scenario**: run every route with marker strings in bodies, tokens, and secret files; capture logs.
   **Expected behavior**: no marker appears.
+- **Test name**: `TestLogLinesUseCloudLoggingFieldNames`
+  **Scenario**: `run` with `NewLogger`, a trace project and a revision; `GET /healthz` with a sampled `traceparent`.
+  **Expected behavior**: no line has `level` or `msg`; every line has `role` and `revision`; the request line has
+  exactly `time`, `severity`, `message`, `role`, `revision`, the three `logging.googleapis.com/` trace fields,
+  `request_id`, `method`, `route`, `status` and `duration_ms`, with severity `INFO` and the trace of the header.
+- **Test name**: `TestSeverityNames`
+  **Scenario**: each slog level and levels between them; a warning and an error through `NewLogger`, the error with a
+  group that has its own `level` and `msg` keys.
+  **Expected behavior**: `DEBUG`, `INFO`, `WARNING`, `ERROR`; the group keys keep their names.
+- **Test name**: `TestRequestTrace`
+  **Scenario**: table: `traceparent` sampled, not sampled, in upper case; `X-Cloud-Trace-Context` with a decimal span,
+  with and without options; both headers; a malformed `traceparent` next to a valid `X-Cloud-Trace-Context`; no
+  project; no header; a quote in the trace ID; a span that is not a number; the all-zero trace ID.
+  **Expected behavior**: the trace name, a 16-digit lower-case span and the sampled flag for the valid rows, with
+  `traceparent` first; no trace for the rest.
+- **Test name**: `TestModuleLinesCarryTheRequestTrace`
+  **Scenario**: one line with a request context that holds a trace, one without a context.
+  **Expected behavior**: the first carries the trace fields and its attributes; the second has no trace field.
 - **Test name**: `TestOptionalDependenciesAreOptional`
   **Scenario**: no Anthropic key, sandbox `none`; then `ARCHFIT_STORE=firestore` with a project.
   **Expected behavior**: startup succeeds; `control.Deps.Provider` and `Sandbox` are nil; gate routes serve. With
