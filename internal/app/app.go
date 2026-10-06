@@ -104,16 +104,16 @@ func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, googl
 	}
 
 	return serve(ctx, c.Addr, newHandler(handlerDeps{
-		role:          c.Role,
-		gate:          g,
-		control:       ctl,
-		queue:         q,
-		webhookSecret: sec.webhookSecret,
-		operatorToken: sec.operatorToken,
-		workerURL:     c.WorkerURL,
-		invoker:       c.Invoker,
-		now:           time.Now,
-		log:           log,
+		role:           c.Role,
+		gate:           g,
+		control:        ctl,
+		queue:          q,
+		webhookSecrets: sec.webhookSecrets(),
+		operatorToken:  sec.operatorToken,
+		workerURL:      c.WorkerURL,
+		invoker:        c.Invoker,
+		now:            time.Now,
+		log:            log,
 	}), log, ready)
 }
 

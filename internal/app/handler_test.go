@@ -190,6 +190,17 @@ func TestWebhookFanOut(t *testing.T) {
 		}
 	})
 
+	t.Run("the previous secret is accepted during a rotation", func(t *testing.T) {
+		f := newFixture()
+		rec := f.do(webhookRequest("/webhooks/github", "pull_request", "d-6", body, sign(testWebhookPrevious, body)))
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("status = %d, want 202", rec.Code)
+		}
+		if got := f.calls.get(); !reflect.DeepEqual(got, []string{"gate.HandleEvent", "control.HandleEvent"}) {
+			t.Errorf("calls = %v, want both halves", got)
+		}
+	})
+
 	rejected := []struct {
 		name      string
 		signature string

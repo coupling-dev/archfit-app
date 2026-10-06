@@ -77,16 +77,16 @@ type controlFacade interface {
 }
 
 type handlerDeps struct {
-	role          string
-	gate          gateFacade
-	control       controlFacade
-	queue         queue.Queue // nil means the inline driver
-	webhookSecret []byte
-	operatorToken []byte // nil in the public role
-	workerURL     string // the audience of invoker ID tokens; worker role only
-	invoker       string // the e-mail of invoker ID tokens; worker role only
-	now           func() time.Time
-	log           *slog.Logger
+	role           string
+	gate           gateFacade
+	control        controlFacade
+	queue          queue.Queue // nil means the inline driver
+	webhookSecrets [][]byte    // the current secret first, then the previous one during a rotation
+	operatorToken  []byte      // nil in the public role
+	workerURL      string      // the audience of invoker ID tokens; worker role only
+	invoker        string      // the e-mail of invoker ID tokens; worker role only
+	now            func() time.Time
+	log            *slog.Logger
 }
 
 // newHandler mounts the route table of the role. Every control handler runs behind its own timeout, and the
@@ -248,7 +248,7 @@ func (s *server) webhook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if err := webhook.Verify(s.webhookSecret, r.Header.Get(webhook.HeaderSignature), body); err != nil {
+	if err := webhook.VerifyAny(s.webhookSecrets, r.Header.Get(webhook.HeaderSignature), body); err != nil {
 		ri.outcome = "bad_signature"
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -329,7 +329,7 @@ func (s *server) process(ctx context.Context, t queue.Task) (webhook.Event, stri
 		s.log.Error("webhook task dropped", "delivery_id", deliveryID, "outcome", outcome)
 		return webhook.Event{}, outcome, nil
 	}
-	if err := webhook.Verify(s.webhookSecret, t.Header.Get(webhook.HeaderSignature), t.Body); err != nil {
+	if err := webhook.VerifyAny(s.webhookSecrets, t.Header.Get(webhook.HeaderSignature), t.Body); err != nil {
 		return permanent("bad_signature")
 	}
 	e, err := webhook.Parse(t.Header.Get(webhook.HeaderEvent), t.Header.Get(webhook.HeaderDelivery), t.Body)

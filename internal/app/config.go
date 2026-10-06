@@ -16,14 +16,16 @@ const (
 	envAppID             = "ARCHFIT_GITHUB_APP_ID"
 	envPrivateKeyFile    = "ARCHFIT_GITHUB_PRIVATE_KEY_FILE"
 	envWebhookSecretFile = "ARCHFIT_GITHUB_WEBHOOK_SECRET_FILE"
-	envOAuthClientID     = "ARCHFIT_GITHUB_OAUTH_CLIENT_ID"
-	envOAuthSecretFile   = "ARCHFIT_GITHUB_OAUTH_SECRET_FILE"
-	envCookieKeyFile     = "ARCHFIT_COOKIE_KEY_FILE"
-	envOperatorTokenFile = "ARCHFIT_OPERATOR_TOKEN_FILE"
-	envAnthropicKeyFile  = "ARCHFIT_ANTHROPIC_KEY_FILE"
-	envStore             = "ARCHFIT_STORE"
-	envFirestoreProject  = "ARCHFIT_FIRESTORE_PROJECT"
-	envFirestoreDatabase = "ARCHFIT_FIRESTORE_DATABASE"
+	// envWebhookPreviousFile names the secret that a rotation replaces. Both are accepted while it is set.
+	envWebhookPreviousFile = "ARCHFIT_GITHUB_WEBHOOK_SECRET_PREVIOUS_FILE"
+	envOAuthClientID       = "ARCHFIT_GITHUB_OAUTH_CLIENT_ID"
+	envOAuthSecretFile     = "ARCHFIT_GITHUB_OAUTH_SECRET_FILE"
+	envCookieKeyFile       = "ARCHFIT_COOKIE_KEY_FILE"
+	envOperatorTokenFile   = "ARCHFIT_OPERATOR_TOKEN_FILE"
+	envAnthropicKeyFile    = "ARCHFIT_ANTHROPIC_KEY_FILE"
+	envStore               = "ARCHFIT_STORE"
+	envFirestoreProject    = "ARCHFIT_FIRESTORE_PROJECT"
+	envFirestoreDatabase   = "ARCHFIT_FIRESTORE_DATABASE"
 	// envFirestoreEmulator is the name every Firestore client reads; the emulator prints it on start.
 	envFirestoreEmulator = "FIRESTORE_EMULATOR_HOST"
 	envSandbox           = "ARCHFIT_SANDBOX"
@@ -58,21 +60,23 @@ type Config struct {
 	AppID             int64  // ARCHFIT_GITHUB_APP_ID
 	PrivateKeyFile    string // ARCHFIT_GITHUB_PRIVATE_KEY_FILE
 	WebhookSecretFile string // ARCHFIT_GITHUB_WEBHOOK_SECRET_FILE
-	OAuthClientID     string // ARCHFIT_GITHUB_OAUTH_CLIENT_ID
-	OAuthSecretFile   string // ARCHFIT_GITHUB_OAUTH_SECRET_FILE
-	CookieKeyFile     string // ARCHFIT_COOKIE_KEY_FILE
-	OperatorTokenFile string // ARCHFIT_OPERATOR_TOKEN_FILE; authenticates the operator routes; never read by the public role
-	AnthropicKeyFile  string // ARCHFIT_ANTHROPIC_KEY_FILE; empty disables managed LLM
-	StoreDriver       string // ARCHFIT_STORE, "memory" (default) or "firestore"
-	FirestoreProject  string // ARCHFIT_FIRESTORE_PROJECT; required by "firestore"
-	FirestoreDatabase string // ARCHFIT_FIRESTORE_DATABASE; empty selects "(default)"
-	FirestoreEmulator string // FIRESTORE_EMULATOR_HOST; host:port, plain HTTP and no credentials
-	SandboxDriver     string // ARCHFIT_SANDBOX, "none" until docs/tech-stack.md picks one
-	Role              string // ARCHFIT_ROLE: "all" (default), "public" or "worker"
-	QueueDriver       string // ARCHFIT_QUEUE: "inline" (default) or "cloudtasks"
-	TasksQueue        string // ARCHFIT_TASKS_QUEUE: "projects/<p>/locations/<l>/queues/<q>"; cloudtasks only
-	WorkerURL         string // ARCHFIT_WORKER_URL: the worker service URL; the dispatch OIDC audience
-	Invoker           string // ARCHFIT_INVOKER: the service account e-mail of the queue and Scheduler dispatches
+	// WebhookPreviousFile is ARCHFIT_GITHUB_WEBHOOK_SECRET_PREVIOUS_FILE: optional, set only during a rotation.
+	WebhookPreviousFile string
+	OAuthClientID       string // ARCHFIT_GITHUB_OAUTH_CLIENT_ID
+	OAuthSecretFile     string // ARCHFIT_GITHUB_OAUTH_SECRET_FILE
+	CookieKeyFile       string // ARCHFIT_COOKIE_KEY_FILE
+	OperatorTokenFile   string // ARCHFIT_OPERATOR_TOKEN_FILE; authenticates the operator routes; never read by the public role
+	AnthropicKeyFile    string // ARCHFIT_ANTHROPIC_KEY_FILE; empty disables managed LLM
+	StoreDriver         string // ARCHFIT_STORE, "memory" (default) or "firestore"
+	FirestoreProject    string // ARCHFIT_FIRESTORE_PROJECT; required by "firestore"
+	FirestoreDatabase   string // ARCHFIT_FIRESTORE_DATABASE; empty selects "(default)"
+	FirestoreEmulator   string // FIRESTORE_EMULATOR_HOST; host:port, plain HTTP and no credentials
+	SandboxDriver       string // ARCHFIT_SANDBOX, "none" until docs/tech-stack.md picks one
+	Role                string // ARCHFIT_ROLE: "all" (default), "public" or "worker"
+	QueueDriver         string // ARCHFIT_QUEUE: "inline" (default) or "cloudtasks"
+	TasksQueue          string // ARCHFIT_TASKS_QUEUE: "projects/<p>/locations/<l>/queues/<q>"; cloudtasks only
+	WorkerURL           string // ARCHFIT_WORKER_URL: the worker service URL; the dispatch OIDC audience
+	Invoker             string // ARCHFIT_INVOKER: the service account e-mail of the queue and Scheduler dispatches
 }
 
 // Load reads Config from the environment. Secrets are file references only.
@@ -80,26 +84,27 @@ func Load(getenv func(string) string) (Config, error) {
 	// A non-numeric app ID stays 0 and is reported by validate.
 	appID, _ := strconv.ParseInt(getenv(envAppID), 10, 64)
 	c := Config{
-		Addr:              cmp.Or(getenv(envAddr), defaultAddr),
-		BaseURL:           getenv(envBaseURL),
-		AppID:             appID,
-		PrivateKeyFile:    getenv(envPrivateKeyFile),
-		WebhookSecretFile: getenv(envWebhookSecretFile),
-		OAuthClientID:     getenv(envOAuthClientID),
-		OAuthSecretFile:   getenv(envOAuthSecretFile),
-		CookieKeyFile:     getenv(envCookieKeyFile),
-		OperatorTokenFile: getenv(envOperatorTokenFile),
-		AnthropicKeyFile:  getenv(envAnthropicKeyFile),
-		StoreDriver:       cmp.Or(getenv(envStore), storeMemory),
-		FirestoreProject:  getenv(envFirestoreProject),
-		FirestoreDatabase: getenv(envFirestoreDatabase),
-		FirestoreEmulator: getenv(envFirestoreEmulator),
-		SandboxDriver:     cmp.Or(getenv(envSandbox), sandboxNone),
-		Role:              cmp.Or(getenv(envRole), roleAll),
-		QueueDriver:       cmp.Or(getenv(envQueue), queueInline),
-		TasksQueue:        getenv(envTasksQueue),
-		WorkerURL:         getenv(envWorkerURL),
-		Invoker:           getenv(envInvoker),
+		Addr:                cmp.Or(getenv(envAddr), defaultAddr),
+		BaseURL:             getenv(envBaseURL),
+		AppID:               appID,
+		PrivateKeyFile:      getenv(envPrivateKeyFile),
+		WebhookSecretFile:   getenv(envWebhookSecretFile),
+		WebhookPreviousFile: getenv(envWebhookPreviousFile),
+		OAuthClientID:       getenv(envOAuthClientID),
+		OAuthSecretFile:     getenv(envOAuthSecretFile),
+		CookieKeyFile:       getenv(envCookieKeyFile),
+		OperatorTokenFile:   getenv(envOperatorTokenFile),
+		AnthropicKeyFile:    getenv(envAnthropicKeyFile),
+		StoreDriver:         cmp.Or(getenv(envStore), storeMemory),
+		FirestoreProject:    getenv(envFirestoreProject),
+		FirestoreDatabase:   getenv(envFirestoreDatabase),
+		FirestoreEmulator:   getenv(envFirestoreEmulator),
+		SandboxDriver:       cmp.Or(getenv(envSandbox), sandboxNone),
+		Role:                cmp.Or(getenv(envRole), roleAll),
+		QueueDriver:         cmp.Or(getenv(envQueue), queueInline),
+		TasksQueue:          getenv(envTasksQueue),
+		WorkerURL:           getenv(envWorkerURL),
+		Invoker:             getenv(envInvoker),
 	}
 	if err := c.validate(); err != nil {
 		return Config{}, err
@@ -149,12 +154,13 @@ func (c Config) validate() error {
 
 // secrets are the contents of the secret files. They never enter Config, a log line or an error.
 type secrets struct {
-	privateKeyPEM []byte
-	webhookSecret []byte
-	oauthSecret   []byte
-	cookieKey     []byte
-	operatorToken []byte // nil in the public role
-	anthropicKey  []byte // nil when no key file is configured
+	privateKeyPEM   []byte
+	webhookSecret   []byte
+	webhookPrevious []byte // nil outside a rotation
+	oauthSecret     []byte
+	cookieKey       []byte
+	operatorToken   []byte // nil in the public role
+	anthropicKey    []byte // nil when no key file is configured
 }
 
 func loadSecrets(c Config) (secrets, error) {
@@ -169,13 +175,14 @@ func loadSecrets(c Config) (secrets, error) {
 	}{
 		{envPrivateKeyFile, c.PrivateKeyFile, &s.privateKeyPEM},
 		{envWebhookSecretFile, c.WebhookSecretFile, &s.webhookSecret},
+		{envWebhookPreviousFile, c.WebhookPreviousFile, &s.webhookPrevious},
 		{envOAuthSecretFile, c.OAuthSecretFile, &s.oauthSecret},
 		{envCookieKeyFile, c.CookieKeyFile, &s.cookieKey},
 		{envOperatorTokenFile, operatorTokenFile, &s.operatorToken},
 		{envAnthropicKeyFile, c.AnthropicKeyFile, &s.anthropicKey},
 	}
 	for _, f := range files {
-		if f.path == "" { // the optional Anthropic key, and the operator token of the public role
+		if f.path == "" { // an optional secret, or one that the role never reads
 			continue
 		}
 		b, err := os.ReadFile(f.path)
@@ -188,4 +195,12 @@ func loadSecrets(c Config) (secrets, error) {
 		*f.dst = b
 	}
 	return s, nil
+}
+
+// webhookSecrets are the secrets a delivery signature may use: the current one and, during a rotation, the previous.
+func (s secrets) webhookSecrets() [][]byte {
+	if s.webhookPrevious == nil {
+		return [][]byte{s.webhookSecret}
+	}
+	return [][]byte{s.webhookSecret, s.webhookPrevious}
 }

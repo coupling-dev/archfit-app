@@ -33,12 +33,13 @@ func TestMain(m *testing.M) {
 }
 
 const (
-	testWebhookSecret = "MARKER-webhook-secret"
-	testOperatorToken = "MARKER-operator-token"
-	testOAuthSecret   = "MARKER-oauth-secret"
-	testCookieKey     = "MARKER-cookie-key-0123456789abcd" // 32 bytes
-	testAnthropicKey  = "MARKER-anthropic-key"
-	bodyMarker        = "MARKER-request-body"
+	testWebhookSecret   = "MARKER-webhook-secret"
+	testWebhookPrevious = "MARKER-webhook-previous"
+	testOperatorToken   = "MARKER-operator-token"
+	testOAuthSecret     = "MARKER-oauth-secret"
+	testCookieKey       = "MARKER-cookie-key-0123456789abcd" // 32 bytes
+	testAnthropicKey    = "MARKER-anthropic-key"
+	bodyMarker          = "MARKER-request-body"
 
 	testWorkerURL = "https://worker.archfit.example"
 	testInvoker   = "invoker@coupling-test.iam.gserviceaccount.com"
@@ -218,16 +219,16 @@ func newFixture() *fixture {
 
 func (f *fixture) rebuild() {
 	f.handler = newHandler(handlerDeps{
-		role:          f.role,
-		gate:          f.gate,
-		control:       f.control,
-		queue:         f.queue,
-		webhookSecret: []byte(testWebhookSecret),
-		operatorToken: []byte(testOperatorToken),
-		workerURL:     testWorkerURL,
-		invoker:       testInvoker,
-		now:           func() time.Time { return testNow },
-		log:           slog.New(slog.NewJSONHandler(f.logs, nil)),
+		role:           f.role,
+		gate:           f.gate,
+		control:        f.control,
+		queue:          f.queue,
+		webhookSecrets: [][]byte{[]byte(testWebhookSecret), []byte(testWebhookPrevious)},
+		operatorToken:  []byte(testOperatorToken),
+		workerURL:      testWorkerURL,
+		invoker:        testInvoker,
+		now:            func() time.Time { return testNow },
+		log:            slog.New(slog.NewJSONHandler(f.logs, nil)),
 	})
 }
 

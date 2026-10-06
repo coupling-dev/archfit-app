@@ -53,6 +53,36 @@ func TestVerify(t *testing.T) {
 	}
 }
 
+func TestVerifyAnyAcceptsTheCurrentAndThePreviousSecret(t *testing.T) {
+	current, previous := []byte("current-secret"), []byte("previous-secret")
+	payload := []byte(`{"action":"opened"}`)
+	tests := []struct {
+		name    string
+		secrets [][]byte
+		header  string
+		wantErr bool
+	}{
+		{"signed with the current secret", [][]byte{current, previous}, sign(current, payload), false},
+		{"signed with the previous secret", [][]byte{current, previous}, sign(previous, payload), false},
+		{"signed with neither", [][]byte{current, previous}, sign([]byte("another-secret"), payload), true},
+		{"previous secret alone after the rotation", [][]byte{current}, sign(previous, payload), true},
+		{"no secret configured", nil, sign(current, payload), true},
+		{"an empty secret in the list fails closed", [][]byte{current, nil}, sign(current, payload), true},
+		{"malformed header", [][]byte{current, previous}, "sha256=zz", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := VerifyAny(tt.secrets, tt.header, payload)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("VerifyAny() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err != nil && strings.Contains(err.Error(), "secret-") {
+				t.Errorf("error %q quotes a secret", err)
+			}
+		})
+	}
+}
+
 func TestVerifyUsesConstantTimeCompare(t *testing.T) {
 	file, err := parser.ParseFile(token.NewFileSet(), "webhook.go", nil, 0)
 	if err != nil {
@@ -60,12 +90,12 @@ func TestVerifyUsesConstantTimeCompare(t *testing.T) {
 	}
 	var verify *ast.FuncDecl
 	for _, d := range file.Decls {
-		if fn, ok := d.(*ast.FuncDecl); ok && fn.Name.Name == "Verify" && fn.Recv == nil {
+		if fn, ok := d.(*ast.FuncDecl); ok && fn.Name.Name == "VerifyAny" && fn.Recv == nil {
 			verify = fn
 		}
 	}
 	if verify == nil {
-		t.Fatal("Verify not found in webhook.go")
+		t.Fatal("VerifyAny not found in webhook.go")
 	}
 
 	usesHMACEqual := false

@@ -70,6 +70,25 @@ func TestOptionalDependenciesAreOptional(t *testing.T) {
 		}
 	})
 
+	t.Run("a previous webhook secret is accepted next to the current one", func(t *testing.T) {
+		c := validConfig(t)
+		c.WebhookPreviousFile = writeFile(t, t.TempDir(), "webhook-previous", []byte(testWebhookPrevious+"\n"))
+		base, _, stop := startRun(t, c, slog.New(slog.DiscardHandler))
+		event := []byte(`{"zen":"ping","hook_id":1}`)
+		for _, tt := range []struct {
+			secret string
+			want   int
+		}{{testWebhookSecret, http.StatusAccepted}, {testWebhookPrevious, http.StatusAccepted}, {"MARKER-neither", http.StatusUnauthorized}} {
+			resp := send(t, webhookRequest(base+"/webhooks/github", "ping", "d-7", event, sign(tt.secret, event)))
+			if resp.StatusCode != tt.want {
+				t.Errorf("signed with %s: status = %d, want %d", tt.secret, resp.StatusCode, tt.want)
+			}
+		}
+		if err := stop(); err != nil {
+			t.Errorf("run = %v, want nil after cancellation", err)
+		}
+	})
+
 	t.Run("a configured key selects the Anthropic provider", func(t *testing.T) {
 		_, _, provider, err := platform(c, []byte(testAnthropicKey), http.DefaultClient)
 		if err != nil || provider == nil {
@@ -91,6 +110,12 @@ func TestRequiredDependenciesFailStartup(t *testing.T) {
 		{"empty webhook secret file", func(t *testing.T, c *Config) {
 			c.WebhookSecretFile = writeFile(t, t.TempDir(), "webhook", []byte(" \n"))
 		}, envWebhookSecretFile},
+		{"empty previous webhook secret file", func(t *testing.T, c *Config) {
+			c.WebhookPreviousFile = writeFile(t, t.TempDir(), "webhook-previous", []byte("\n"))
+		}, envWebhookPreviousFile},
+		{"unreadable previous webhook secret file", func(t *testing.T, c *Config) {
+			c.WebhookPreviousFile = t.TempDir() + "/absent"
+		}, envWebhookPreviousFile},
 		{"empty operator token file", func(t *testing.T, c *Config) {
 			c.OperatorTokenFile = writeFile(t, t.TempDir(), "operator", nil)
 		}, envOperatorTokenFile},
