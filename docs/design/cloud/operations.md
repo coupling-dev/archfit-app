@@ -23,6 +23,37 @@ Security rules for identities, secrets, and incidents are in [Security](security
 - Secret values never enter Terraform. The owner adds them directly to Secret Manager.
 - The owner applies infrastructure changes. An infrastructure change never runs at the same time as a release.
 
+## Roles and routing
+
+Both services run the same image. `ARCHFIT_ROLE` selects the routes and the secrets.
+
+| Service | Settings                                                                                                          | Secrets                                                                                       |
+| ------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Public  | `ARCHFIT_ROLE=public`, `ARCHFIT_QUEUE=cloudtasks`, `ARCHFIT_TASKS_QUEUE`, `ARCHFIT_WORKER_URL`, `ARCHFIT_INVOKER` | Every secret except the operator token                                                        |
+| Worker  | `ARCHFIT_ROLE=worker`, `ARCHFIT_WORKER_URL`, `ARCHFIT_INVOKER`                                                    | Every secret. The OAuth secret and the cookie key stay until the worker stops building the UI |
+
+`ARCHFIT_WORKER_URL` is the worker service URL with no trailing `/`. It is the audience of the invoker ID token.
+`ARCHFIT_INVOKER` is the e-mail of the invoker service account. The App refuses a worker request whose ID token has
+another audience or another e-mail.
+
+Each caller of the worker has one route. Terraform pins it at the queue level (`uriOverride`, enforced):
+
+| Caller          | Worker route              | Request                                                                                                    |
+| --------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Webhook queue   | `POST /internal/webhooks` | One queue for both halves. The header `X-Archfit-Half` selects the gate half or the control half           |
+| Operator queue  | `POST /internal/grants`   | JSON `{"installation_id": <id>, "until": "<RFC 3339>"}`, and `X-Archfit-Operator: Bearer <operator token>` |
+| Cloud Scheduler | `POST /internal/sweep`    | Hourly. No body and no secret                                                                              |
+
+Every caller sends an OIDC token of the invoker service account with the worker URL as audience. A webhook task
+names the invoker in its own `oidcToken`. Queue-level authentication, when Terraform sets it, overrides the task's.
+A task with an `oidcToken` needs the creator to act as that service account: the public service account then needs
+`roles/iam.serviceAccountUser` on the invoker account (not verified here; check it when Terraform builds the queue).
+
+Task names are `<delivery ID>_gate` and `<delivery ID>_control`. Cloud Tasks refuses a name for up to 24 hours after
+the task ran, so a GitHub redelivery inside that window is a duplicate. Intake processes a webhook inline when the
+queue refuses a task for another reason. The body limit is 900 KiB, under the 1 MiB task limit on the quotas page.
+The `tasks.create` reference names 100 KB; if that limit applies, a larger task is refused and processed inline.
+
 ## Project guardrails
 
 The project has no Organization, so organization policies cannot restrict regions or services
@@ -164,3 +195,6 @@ Run each drill once before the first invited installation:
 - Rotate the webhook secret and the App private key.
 - Trigger each alert.
 - Send a task at another URL through each queue, and check that it still reaches the pinned route.
+- Send one webhook through the queue and check that the worker accepts the invoker ID token. Cloud Run can remove
+  the token signature or change the `Authorization` header; the App reads the claims from
+  `X-Serverless-Authorization` first, then from `Authorization`.
