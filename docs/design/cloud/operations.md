@@ -22,6 +22,8 @@ Security rules for identities, secrets, and incidents are in [Security](security
 - CI owns only the image and the traffic of the two services. Terraform ignores those fields.
 - Secret values never enter Terraform. The owner adds them directly to Secret Manager.
 - The owner applies infrastructure changes. An infrastructure change never runs at the same time as a release.
+- The code is in [`infra/`](../../../infra/README.md): a `data` stack and a `runtime` stack, with state in a
+  versioned GCS bucket in the project.
 
 ## Roles and routing
 
@@ -47,7 +49,7 @@ Each caller of the worker has one route. Terraform pins it at the queue level (`
 Every caller sends an OIDC token of the invoker service account with the worker URL as audience. A webhook task
 names the invoker in its own `oidcToken`. Queue-level authentication, when Terraform sets it, overrides the task's.
 A task with an `oidcToken` needs the creator to act as that service account: the public service account then needs
-`roles/iam.serviceAccountUser` on the invoker account (not verified here; check it when Terraform builds the queue).
+`roles/iam.serviceAccountUser` on the invoker account. The `data` stack in [`infra/`](../../../infra/README.md) grants it.
 
 Task names are `<delivery ID>_gate` and `<delivery ID>_control`. Cloud Tasks refuses a name for up to 24 hours after
 the task ran, so a GitHub redelivery inside that window is a duplicate. Intake processes a webhook inline when the
@@ -58,7 +60,9 @@ The `tasks.create` reference names 100 KB; if that limit applies, a larger task 
 
 The project has no Organization, so organization policies cannot restrict regions or services
 (see [Security](security.md#organization)). These project-level controls were applied with `gcloud` before
-Terraform exists. Terraform must import them when it takes over the project.
+Terraform existed. The `data` stack in [`infra/`](../../../infra/README.md) imports the enabled APIs, the quota
+preferences, the alert policy with its channel, and the essential contact. The budget stays on the billing account,
+outside Terraform.
 
 | Control                 | Setting                                                                                                                                                              |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -116,6 +120,7 @@ tests against the official emulator image.
 
 ## First deployment
 
+The exact commands that the owner runs are in the [infrastructure runbook](../../../infra/README.md#first-deployment).
 The order matters:
 
 1. Create the data and identity resources. Add every secret value before any service exists,

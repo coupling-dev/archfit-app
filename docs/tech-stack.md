@@ -8,18 +8,19 @@ Rows marked **[default]** need an owner decision before launch.
 
 ## Language and build
 
-| Item            | Choice                                                                                                    |
-| --------------- | --------------------------------------------------------------------------------------------------------- |
-| Language        | Go 1.27. Module path `github.com/alexei-led/archfit-app`                                                  |
-| Packages        | One Go package per module folder under `internal/`                                                        |
-| Entry point     | `cmd/reporter` calls the logger, `app.Load`, and `app.Run`                                                |
-| Build           | `CGO_ENABLED=0` static binary. The existing `Dockerfile` builds a distroless image as a non-root user     |
-| Commands        | `make fmt`, `make lint`, `make test`, `make build`, and `make all`                                        |
-| Format and lint | `gofmt -s`, `goimports -local github.com/alexei-led/archfit-app`, and `golangci-lint` v2.14 defaults (CI) |
-| Logging         | `log/slog` writes JSON to stdout. Logs contain IDs, digests, outcomes, and timings                        |
-| HTTP            | `net/http` with Go 1.22+ `ServeMux` patterns                                                              |
-| Crypto          | Standard library RS256 JWT, JWKS, HMAC-SHA256, AES-GCM cookies, and SHA-256 digests                       |
-| Embedded data   | `go:embed` stores schemas, the locked manifest, the Anthropic price table, templates, and assets          |
+| Item            | Choice                                                                                                                           |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Language        | Go 1.27. Module path `github.com/alexei-led/archfit-app`                                                                         |
+| Packages        | One Go package per module folder under `internal/`                                                                               |
+| Entry point     | `cmd/reporter` calls the logger, `app.Load`, and `app.Run`                                                                       |
+| Build           | `CGO_ENABLED=0` static binary. The existing `Dockerfile` builds a distroless image as a non-root user                            |
+| Commands        | `make fmt`, `make lint`, `make test`, `make build`, and `make all`                                                               |
+| Format and lint | `gofmt -s`, `goimports -local github.com/alexei-led/archfit-app`, and `golangci-lint` v2.14 defaults (CI)                        |
+| Infrastructure  | OpenTofu 1.8+ (Terraform-compatible), `google` provider pinned, stacks `data` and `runtime` under [`infra/`](../infra/README.md) |
+| Logging         | `log/slog` writes JSON to stdout. Logs contain IDs, digests, outcomes, and timings                                               |
+| HTTP            | `net/http` with Go 1.22+ `ServeMux` patterns                                                                                     |
+| Crypto          | Standard library RS256 JWT, JWKS, HMAC-SHA256, AES-GCM cookies, and SHA-256 digests                                              |
+| Embedded data   | `go:embed` stores schemas, the locked manifest, the Anthropic price table, templates, and assets                                 |
 
 ## Dependencies
 

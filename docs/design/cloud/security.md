@@ -107,7 +107,9 @@ Direction:
 
 - Admin Activity logs are always on. They record IAM changes, deploys, and queue changes.
 - Turn on data-read audit logs for Secret Manager. Each secret read then has a principal.
-- Turn on data-write audit logs for Cloud Tasks. Each grant then has the operator's identity.
+- Turn on data-write audit logs for Cloud Tasks. They record `RunTask` and `DeleteTask`. Cloud Tasks writes no audit
+  log for `CreateTask`, so a grant task has no recorded creator. Only the project owner can add tasks to the operator
+  queue, which names the creator while one admin exists.
 
 ## Organization
 

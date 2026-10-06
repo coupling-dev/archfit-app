@@ -19,6 +19,13 @@ dist/
 *.swp
 *.swo
 
+# Terraform working directories and local variable files. Lock files stay tracked.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfplan
+
 # Local logs and temporary files.
 *.log
 tmp/
