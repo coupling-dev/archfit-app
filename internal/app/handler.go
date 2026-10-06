@@ -230,9 +230,9 @@ func isolate(f func() error) (err error) {
 }
 
 // webhook is intake: it verifies a delivery and queues it as two tasks, gate first. A verified delivery that
-// parses answers 202 whatever happens next. A real queue retries a failed task; the inline driver does not. A
-// GitHub redelivery inside 24 hours has the same task names and is refused as a duplicate, so the sweep is the
-// recovery path for work that was lost. A task the queue refuses is processed inline, in this request.
+// parses answers 202 whatever happens next. A real queue retries a failed task; the inline driver does not. With
+// a real queue, a GitHub redelivery inside 24 hours has the same task names and is refused as a duplicate, so the
+// sweep is the recovery path for work that was lost. A task the queue refuses is processed inline, in this request.
 func (s *server) webhook(w http.ResponseWriter, r *http.Request) {
 	ri := info(r)
 	ri.deliveryID = loggedID(r.Header.Get(webhook.HeaderDelivery))
