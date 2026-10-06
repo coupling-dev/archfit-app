@@ -116,8 +116,10 @@ func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, googl
 		operatorToken:  sec.operatorToken,
 		workerURL:      c.WorkerURL,
 		invoker:        c.Invoker,
-		now:            time.Now,
-		log:            log,
+		// Every role uses the App key and the store, so every role probes both.
+		probes: []probe{githubProbe(gh.CheckApp), storeProbe(st)},
+		now:    time.Now,
+		log:    log,
 	}), log, ready)
 }
 

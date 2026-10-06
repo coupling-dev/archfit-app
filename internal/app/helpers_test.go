@@ -201,6 +201,7 @@ func (b *lockedBuffer) String() string {
 type fixture struct {
 	role    string
 	queue   queue.Queue // nil: the inline driver
+	probes  []probe
 	calls   *callLog
 	gate    *fakeGate
 	control *fakeControl
@@ -227,6 +228,7 @@ func (f *fixture) rebuild() {
 		operatorToken:  []byte(testOperatorToken),
 		workerURL:      testWorkerURL,
 		invoker:        testInvoker,
+		probes:         f.probes,
 		now:            func() time.Time { return testNow },
 		log:            slog.New(slog.NewJSONHandler(f.logs, nil)),
 	})

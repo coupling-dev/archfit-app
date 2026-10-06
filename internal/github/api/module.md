@@ -21,6 +21,7 @@ GitHub, and "never a false green on rate-limit exhaustion" would depend on each 
 - Follow pagination to a cap and fail, not truncate, beyond it.
 - Use conditional requests; back off within a bound on rate limits; then return `ErrRateLimited`.
 - Map "gone or no access" to `ErrNotFound`.
+- Prove on request that the App key works with GitHub (`CheckApp`), for the readiness check.
 
 Not here: any decision about what the data means (approval, staleness, fork policy, which check to publish),
 token minting (`github/auth`), webhooks, OIDC.
@@ -40,6 +41,9 @@ needs one. It is a wide leaf on purpose: role interfaces keep each consumer's kn
 - Credential per call: App JWT for `ListInstallations`, `ResolveRepo` (installation lookup) and `GET /app`;
   the installation token of `RepoRef.InstallationID` for every `RepoRef` method; the caller's token for `Users`.
 - `GET /app` is called once and kept for the process: App ID (check-run filter) and bot login `<slug>[bot]`.
+  `CheckApp` is the exception: it sends `GET /app` with a fresh App JWT on every call and never uses the kept
+  identity, so each call proves the key again. It returns `nil` for a `2xx` answer with a positive `id`, and the
+  usual errors otherwise. The ETag cache applies: a `304` is also an answer to an authenticated request.
 - Input guards before any request: `InstallationID` > 0; `FullName` matches `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`;
   refs, branches and paths are escaped per path segment, and an empty, `.` or `..` segment (also as owner or
   name) is an error before any request. No caller string can change the route.
@@ -348,6 +352,10 @@ type Users interface {
 type Client struct{ /* unexported */ }
 
 func New(ts TokenSource, hc *http.Client) *Client
+
+// CheckApp proves that the App key works with GitHub: GET /app with a fresh App JWT, on every call. It reads no
+// installation. Bound it with ctx: on a rate limit or a 5xx the client waits and retries within its own budget.
+func (c *Client) CheckApp(ctx context.Context) error
 ```
 
 `WorkflowRun.Event` is GitHub's event name for the run (`pull_request`, `push`, `workflow_dispatch`,
@@ -534,6 +542,11 @@ the network.
 ### Integration Contract Tests
 
 One test per role interface; each asserts method, route, credential, request body and the mapped result.
+
+- **Test name**: `TestCheckAppProvesTheKeyOnEveryCall`
+  **Scenario**: `CheckApp` twice against a `200` answer; then once against a `401` answer with a message body.
+  **Expected behavior**: `nil` twice and two `GET /app` requests with the App JWT; then an error that names the
+  status and does not quote the body.
 
 - **Test name**: `TestReposContract`
   **Scenario**: `ListInstallations` (one suspended); `ListRepos`; `ResolveRepo`; `File` for a file, a missing file,

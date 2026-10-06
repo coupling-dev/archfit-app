@@ -85,6 +85,7 @@ type handlerDeps struct {
 	operatorToken  []byte      // nil in the public role
 	workerURL      string      // the audience of invoker ID tokens; worker role only
 	invoker        string      // the e-mail of invoker ID tokens; worker role only
+	probes         []probe     // the dependencies of the role that GET /ready checks
 	now            func() time.Time
 	log            *slog.Logger
 }
@@ -92,10 +93,13 @@ type handlerDeps struct {
 // newHandler mounts the route table of the role. Every control handler runs behind its own timeout, and the
 // outer middleware turns any panic into a 500 for that request only.
 func newHandler(d handlerDeps) http.Handler {
-	s := &server{handlerDeps: d, operatorSum: sha256.Sum256(d.operatorToken)}
+	s := &server{handlerDeps: d, operatorSum: sha256.Sum256(d.operatorToken),
+		readiness: &readiness{probes: d.probes, timeout: readyTimeout, now: d.now, log: d.log}}
 	s.inline = queue.NewInline(s.runInline)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
+	// Readiness has no credential on any role: Cloud Run's startup probe sends none.
+	mux.HandleFunc(readyRoute, s.ready)
 	if d.role != roleWorker {
 		mux.Handle("POST /v1/reports", http.TimeoutHandler(d.gate.UploadHandler(), uploadTimeout, ""))
 		mux.Handle("POST /v1/discoveries", http.TimeoutHandler(d.control.DiscoveryHandler(), controlTimeout, ""))
@@ -124,6 +128,7 @@ type server struct {
 	handlerDeps
 	operatorSum [sha256.Size]byte
 	inline      queue.Queue // processes in this request; the fallback when s.queue refuses a task
+	readiness   *readiness
 }
 
 // requestInfo collects the log fields only a route handler knows.

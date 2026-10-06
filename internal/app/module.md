@@ -86,6 +86,23 @@ single place where it is enforced at runtime.
   (nil, and one warning log line, when the emulator is set). `ARCHFIT_FIRESTORE_PROJECT` is required with
   `"firestore"`; an invalid project or database ID is a startup error. Startup sends no request to Google. `SandboxDriver` `"none"` → nil `Sandbox`
   (managed discovery reports "not available"); `AnthropicKeyFile` empty → nil `Provider`. `control.New` and `anthropic.New` return errors; both are startup errors (a configured but invalid LLM key must not start silently). `app` passes the same `TokenSource` to `api.New` and to `control.Deps.Tokens`. Unknown driver names are a startup error. New drivers are added here and nowhere else.
+- Readiness (`GET /ready`, every role, no credential): the check for the Cloud Run startup probe and the release
+  canary. It runs two probes at the same time, under one 5-second deadline **[default]** that includes the GitHub
+  client's own retries and rate-limit waits:
+  - `github`: `api.Client.CheckApp`, `GET /app` with a fresh App JWT. It proves that the App key works with GitHub
+    and reads no installation.
+  - `store`: `Store.Get(SystemTenant, "app/readiness")`. The key is reserved and never written, so `ErrNotFound` is
+    the healthy answer. Any other error fails, and so does a value under the key. The Firestore driver reports a
+    missing database as an error, never as a missing key.
+
+  Every role uses the App key and the store, so every role runs both probes. The queue is not probed: the public
+  service account may only create tasks, and a refused task falls back to inline processing. All probes pass →
+  `200` `{"status":"ok"}`, outcome `ready`. Else `503` `{"status":"unavailable","failed":["github","store"]}` with
+  the failed probe names only, outcome `not_ready`; each probe error goes to an error log line. The answer has
+  `Cache-Control: no-store`. One check runs at a time, and concurrent callers share its result. A pass answers for
+  30 seconds and a failure for 5 seconds **[default]**, so a probe flood or a public caller makes at most one
+  GitHub call in each window. A caller that hangs up does not cancel the check. The path does not end in `z`:
+  Cloud Run reserves some such paths, so a check through the service URL could not reach `/readyz`.
 - Structured logging with `log/slog`, JSON to stdout: request ID, route, status, duration, installation ID, outcome. Never bodies, paths, messages, tokens.
 
 ## Subdomain Classification
@@ -144,6 +161,7 @@ func Run(ctx context.Context, c Config, log *slog.Logger) error
 | Method and path                 | Roles             | Handler                                           | Authentication done by                                     |
 | ------------------------------- | ----------------- | ------------------------------------------------- | ---------------------------------------------------------- |
 | `GET /healthz`                  | every role        | `app`: `{"status":"ok"}`; no dependency is probed | none                                                       |
+| `GET /ready`                    | every role        | `app` readiness: GitHub App key and store probed  | none                                                       |
 | `POST /v1/reports`              | `all`, `public`   | `gate.UploadHandler()`                            | gate (OIDC)                                                |
 | `POST /v1/discoveries`          | `all`, `public`   | `control.DiscoveryHandler()`                      | control, through the gate `Receiver` (OIDC)                |
 | `POST /v1/baselines`            | `all`, `public`   | `control.BaselineHandler()`                       | control, through the gate `Receiver` (OIDC)                |
@@ -670,12 +688,16 @@ func New(c Credentials, hc *http.Client) (TokenSource, OAuth, error)
 func Permanent(err error) bool
 ```
 
-<!-- contract: Client, New — restated from internal/github/api/module.md -->
+<!-- contract: Client, New, CheckApp — restated from internal/github/api/module.md -->
 ```go
 // Client implements every role interface. Consumers depend on the role interfaces they need.
 type Client struct{ /* unexported */ }
 
 func New(ts TokenSource, hc *http.Client) *Client
+
+// CheckApp proves that the App key works with GitHub: GET /app with a fresh App JWT, on every call. It reads no
+// installation. Bound it with ctx: on a rate limit or a 5xx the client waits and retries within its own budget.
+func (c *Client) CheckApp(ctx context.Context) error
 ```
 
 <!-- contract: Event, EventKind — restated from internal/github/webhook/module.md -->
@@ -834,6 +856,29 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   **Expected behavior**: each request reaches the owner that the Routes table names for that role, or answers the
   status of an unmounted route (`404`) or a refused credential (`401`) and reaches no handler. The public role has no
   `/internal/*` route; the worker has no upload, intake or UI route.
+- **Test name**: `TestReadyAnswersFromTheProbes`
+  **Scenario**: table over the two probes: both pass; the GitHub probe fails; the store probe fails; both fail. Each
+  failure quotes a marker.
+  **Expected behavior**: `200` `{"status":"ok"}` with outcome `ready`; otherwise `503` with the failed names in probe
+  order and outcome `not_ready`; `Cache-Control: no-store`; the marker is never in the body; both probes run once.
+- **Test name**: `TestReadyRemembersAResultBriefly`
+  **Scenario**: a passing and a failing probe, checked again just before and at the end of 30 and 5 seconds.
+  **Expected behavior**: one probe call inside the window, a fresh check at its end.
+- **Test name**: `TestReadyIsBounded`
+  **Scenario**: a probe that waits for its context, with a short timeout; ten concurrent callers of a slow probe; a
+  caller whose context is already cancelled.
+  **Expected behavior**: the hanging probe fails at the timeout; the ten callers cause one probe call; the probe sees
+  a live context.
+- **Test name**: `TestReadyNeedsNoCredentialOnAnyRole`
+  **Scenario**: `GET /ready` with no header on each role.
+  **Expected behavior**: `200` on every role.
+- **Test name**: `TestStoreProbe`
+  **Scenario**: the reserved key missing in the memory store; a store whose `Get` fails; the Firestore driver against
+  an emulator address that answers `404 NOT_FOUND` (no database); a value under the reserved key.
+  **Expected behavior**: ready for the first; not ready for the other three.
+- **Test name**: `TestReadyIsWiredToGitHubAndTheStore`
+  **Scenario**: `run` with the memory store and a transport that answers `404` to every request; then `GET /ready`.
+  **Expected behavior**: `503`, and exactly one outbound request (`GET /app`).
 - **Test name**: `TestWorkerRequiresTheInvokerIdentity`
   **Scenario**: for each worker route, a table of credentials: none; the operator token; an ID token of another
   service account, another audience, another issuer, with `email_verified` false, expired, with a list audience; no
