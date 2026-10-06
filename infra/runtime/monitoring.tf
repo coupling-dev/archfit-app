@@ -97,11 +97,18 @@ resource "google_monitoring_alert_policy" "error_lines" {
   }
 }
 
-# The gate sweep writes this line after each pass. Both key names match, before and after the App moves to the
-# Cloud Logging key names.
+# One count for each scheduled sweep that finished: the request line of POST /internal/sweep with outcome "swept".
+# A one-repository pass after a push webhook writes "sweep: pass finished" too, so that line is not used.
+# Both key names match, before and after the App moves to the Cloud Logging key names.
 resource "google_logging_metric" "sweep_passes" {
-  name   = "archfit/sweep_passes"
-  filter = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"${google_cloud_run_v2_service.this["worker"].name}\" AND (jsonPayload.msg=\"sweep: pass finished\" OR jsonPayload.message=\"sweep: pass finished\")"
+  name = "archfit/sweep_passes"
+  filter = join(" AND ", [
+    "resource.type=\"cloud_run_revision\"",
+    "resource.labels.service_name=\"${google_cloud_run_v2_service.this["worker"].name}\"",
+    "(jsonPayload.msg=\"request\" OR jsonPayload.message=\"request\")",
+    "jsonPayload.route=\"POST ${var.worker_paths.sweep}\"",
+    "jsonPayload.outcome=\"swept\"",
+  ])
 
   metric_descriptor {
     metric_kind = "DELTA"
@@ -110,6 +117,8 @@ resource "google_logging_metric" "sweep_passes" {
 }
 
 # Target: one finished pass at least every 2 hours. Off while the Scheduler is paused.
+# A metric-absence condition fires only after the metric had a point since the policy changed. A sweep that never
+# succeeds is caught by sweep_job_failures below.
 resource "google_monitoring_alert_policy" "missing_sweep" {
   display_name          = "archfit sweep missing"
   combiner              = "OR"
@@ -127,6 +136,29 @@ resource "google_monitoring_alert_policy" "missing_sweep" {
         per_series_aligner   = "ALIGN_SUM"
         cross_series_reducer = "REDUCE_SUM"
       }
+    }
+  }
+}
+
+# Cloud Scheduler logs each attempt. A failed attempt (a 401, a 5xx, a deadline) is an ERROR line on the job.
+resource "google_monitoring_alert_policy" "sweep_job_failures" {
+  display_name          = "archfit sweep job fails"
+  combiner              = "OR"
+  severity              = "ERROR"
+  enabled               = !var.paused
+  notification_channels = local.channels
+
+  conditions {
+    display_name = "Failed Scheduler attempt"
+    condition_matched_log {
+      filter = "resource.type=\"cloud_scheduler_job\" AND resource.labels.job_id=\"${google_cloud_scheduler_job.sweep.name}\" AND severity>=ERROR"
+    }
+  }
+
+  alert_strategy {
+    auto_close = "1800s"
+    notification_rate_limit {
+      period = "3600s"
     }
   }
 }

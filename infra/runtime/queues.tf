@@ -17,7 +17,7 @@ locals {
       max_attempts              = -1
       max_retry_duration        = "7200s"
     }
-    # Grants. The operator creates the tasks, and Cloud Audit Logs record who.
+    # Grants. Only the project owner can add tasks here. Cloud Tasks writes no audit log for CreateTask.
     operator = {
       path                      = var.worker_paths.grants
       max_dispatches_per_second = 1
