@@ -24,7 +24,7 @@ const (
 	StatusAccepted  LinkStatus = "accepted"  // a gate finding accepted by the baseline or a waiver names the pair
 	StatusAdvisory  LinkStatus = "advisory"  // another finding that is not fixed names the pair
 	StatusAllowed   LinkStatus = "allowed"   // engine seam policy only: a fail-gated allowlist or layer rule permits the pair
-	StatusObserved  LinkStatus = "observed"  // a seam that no current finding names and, with a seam policy, no rule decides
+	StatusObserved  LinkStatus = "observed"  // engine seam policy: no active finding names the pair and no rule permits it; without one: no current finding names the pair
 )
 
 type Link struct {

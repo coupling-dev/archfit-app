@@ -508,3 +508,26 @@ func TestSeamPolicy(t *testing.T) {
 		})
 	}
 }
+
+// TestRootImporterCapture: engine v2.5.0 names an importer that no module owns by its package directory, "." for the
+// repository root, and ends the finding why and constraint with the rule's rationale and docs reference.
+func TestRootImporterCapture(t *testing.T) {
+	r := mustDecodeAs(t, loadFixture(t, "report/real-root-importer-v250.json"), seamPolicyRelease)
+	if len(r.Findings) != 1 || len(r.AgentTasks) != 1 {
+		t.Fatalf("%d findings, %d tasks, want one each", len(r.Findings), len(r.AgentTasks))
+	}
+	f, task := r.Findings[0], r.AgentTasks[0]
+	if f.Edge.From != (Endpoint{Path: "."}) || f.Edge.To.Module != "billing" {
+		t.Errorf("edge = %+v, want from the unowned root package to module billing", f.Edge)
+	}
+	if !slices.Contains(task.Files, ".") {
+		t.Errorf("task files = %q, want the root package", task.Files)
+	}
+	const docs = " (see docs/adr/0001-billing.md)"
+	if !strings.HasSuffix(f.Why, " — billing is reached only through the shop checkout"+docs) || !strings.HasSuffix(f.Constraint, docs) {
+		t.Errorf("why %q / constraint %q do not end with the rule's rationale and docs", f.Why, f.Constraint)
+	}
+	if !slices.Contains(task.Constraints, "rationale: billing is reached only through the shop checkout") {
+		t.Errorf("task constraints = %q, want the rationale entry", task.Constraints)
+	}
+}

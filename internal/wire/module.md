@@ -163,7 +163,7 @@ Fixtures captured from the engine cite their engine release and that release's p
 allowed. The tests, and every consumer test that reads the whole corpus, decode a capture as a document of the
 release it cites, and a synthetic fixture as a v2.3.1 document, the release every one of them was derived from.
 Every fixture is a v2.3.1 document except `real-blocked-no-baseline-v240`, `real-blocked-no-baseline-v241`,
-`real-blocked-no-baseline-v250` and `real-seam-policy-v250`.
+`real-blocked-no-baseline-v250`, `real-seam-policy-v250` and `real-root-importer-v250`.
 Required report fixtures (plan T02): `healthy`, `attention-pass` (verdict `needs_attention` with passing hard
 gates), `blocked`, `missing-evidence` (`hard_gates: unmeasured`), `unknown-identity`, `profile-comparable` (symmetric
 partial with a recognized `partial_basis`), `profile-incompatible` (`gate_reference.status: non_comparable`),
@@ -230,6 +230,15 @@ policy and the baseline the engine loaded ship beside it. The added import close
 do not type-check: both required rules are unevaluated, and the baseline (go/packages `ok`) is `non_comparable` with
 the report (`partial`). Its expectation records that: blocked, `hard_gates: fail`, both rule IDs unevaluated,
 `action_required` with `["baseline_not_comparable", "blocking_findings", "missing_required_coverage"]`.
+
+`real-root-importer-v250` is the v2.5.0 capture of the v2.5.0 config keys in use, built on a scratch Go module:
+`billing/api/api.go`, `shop/shop.go`, and a root `main.go` that no module owns and imports `billing/api`. Its
+policy (beside it) gives `billing` `visible_to: [shop]` and has one fail-gated `module_dependencies` rule with
+`rationale`, `alternatives` and `docs`. `archfit check --json -c .archfit.yaml -q --refresh` runs with the same
+released binary and no baseline. It is unmodified. The engine names the unowned importer by its package directory,
+`edge.from.path: "."`, and lists `.` in the task's files; the why and the constraint end with the rationale and the
+docs reference, and the task has a `rationale: ` constraint. Its expectation is the `real-blocked-no-baseline` one:
+blocked, `hard_gates: fail`, `non_comparable` gate reference, `failure` with `["blocking_findings"]`.
 
 The `leakage/` set has two groups. Rejecting fixtures (`decode: "error"`): snippet field, log blob, raw model output
 key, multi-line text, oversized text. One surviving fixture (`decode: "ok"`): a marker identifier inside

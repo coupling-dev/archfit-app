@@ -242,8 +242,8 @@ func (c *checker) finding(s *shadowFinding) Finding {
 		Locations: list(c, "locations", s.Locations, maxLocations, true, func(l *shadowLocation) Location {
 			return Location{File: c.str("file", l.File, classPath), Line: c.count("line", l.Line, maxLine)}
 		}),
-		Why:                 c.str("why", s.Why, classText),
-		Constraint:          c.str("constraint", s.Constraint, classText),
+		Why:                 c.str("why", s.Why, classFindingText),
+		Constraint:          c.str("constraint", s.Constraint, classFindingText),
 		AllowedAlternatives: stringsOf(c, "allowed_alternatives", s.AllowedAlternatives, maxAlternatives, false, classText),
 	}
 	if s.ID != nil {

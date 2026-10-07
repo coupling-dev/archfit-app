@@ -17,7 +17,7 @@ const (
 	maxUnevaluatedRules = 1_000
 	maxLocations        = 10_000 // the engine lists one location per file of a module, unbounded
 	maxAlternatives     = 32
-	maxTaskConstraints  = maxAlternatives + 2 // the finding constraint, one per alternative, the public surface
+	maxTaskConstraints  = maxAlternatives + 3 // the finding constraint, the rationale (v2.5.0), one per alternative, the public surface
 	maxTaskValidation   = 32
 	maxTaskFiles        = maxLocations + 2 // every location file and both edge endpoints
 	maxDimensionFacts   = 256              // metrics, unknown, delta metrics
@@ -25,6 +25,7 @@ const (
 	maxSmallList        = 64 // producers, unknowns, coverage.tools, every reasons list
 
 	maxTextLen       = 500
+	maxFindingLen    = 2_000 // a finding why or constraint ends with the rule's rationale and docs reference (v2.5.0)
 	maxTaskTextLen   = 4_096 // a task goal or constraint holds a why, two paths or a module's public globs
 	maxCommandLen    = 512
 	maxIdentifierLen = 200
@@ -53,8 +54,9 @@ const (
 type strClass int
 
 const (
-	classText     strClass = iota
-	classTaskText          // a task goal or constraint: text with a larger cap
+	classText        strClass = iota
+	classFindingText          // a finding why or constraint: text with a larger cap
+	classTaskText             // a task goal or constraint: text with the largest cap
 	classCommand
 	classIdentifier
 	classToken
@@ -199,6 +201,8 @@ func stringRule(s string, class strClass) (phase, string) {
 	switch class {
 	case classText:
 		return phaseString, tooLong(s, maxTextLen)
+	case classFindingText:
+		return phaseString, tooLong(s, maxFindingLen)
 	case classTaskText:
 		return phaseString, tooLong(s, maxTaskTextLen)
 	case classIdentifier:
@@ -261,7 +265,8 @@ func isRefreshFlag(word string) bool {
 	return word == "--refresh" || strings.HasPrefix(word, "--refresh=")
 }
 
-// pathRule accepts a clean, relative, forward-slash path; a directory or a glob is a path.
+// pathRule accepts a clean, relative, forward-slash path; a directory or a glob is a path, the repository root "."
+// included (engine v2.5.0 names an importer no module owns by its package directory, "." at the root).
 func pathRule(p string) string {
 	switch {
 	case p == "":
@@ -272,7 +277,7 @@ func pathRule(p string) string {
 		return "must use forward slashes"
 	case strings.HasPrefix(p, "/"), len(p) >= 2 && p[1] == ':' && unicode.IsLetter(rune(p[0])):
 		return "must be relative"
-	case p == ".", p == "..", strings.HasPrefix(p, "../"), path.Clean(p) != p:
+	case p == "..", strings.HasPrefix(p, "../"), path.Clean(p) != p:
 		return "must be a clean path inside the repository"
 	}
 	return ""

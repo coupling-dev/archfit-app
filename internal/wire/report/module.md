@@ -193,7 +193,7 @@ caps none of these lists.
 | `decision.unevaluated_required_rules`                           | 1 000   | one per policy rule                                            |
 | `locations` per finding                                         | 10 000  | one per file of a module, see below                            |
 | `allowed_alternatives` per finding                              | 32      | none emitted by v2.3.1                                         |
-| `constraints` per task                                          | 34      | alternatives plus 2, see below                                 |
+| `constraints` per task                                          | 35      | alternatives plus 3, see below                                 |
 | `validation` per task                                           | 32      | one command in real output                                     |
 | `files` per task                                                | 10 002  | locations plus 2, see below                                    |
 | `metrics`, `unknown` per dimension; `metrics` per delta         | 256     | 15 metrics at most in the real captures                        |
@@ -205,9 +205,10 @@ caps none of these lists.
   module. Real reports had 106 and 91; the former cap of 100 turned a real blocked report into `report_invalid`.
   10 000 locations cost 0.3 to 0.8 MiB, so a finding at the cap still leaves room for the rest of the report.
 - `files` per task: the engine's task files are every location file plus the two edge endpoints, so the cap is
-  the locations cap plus 2. `constraints` per task: the finding constraint, one per allowed alternative and the
-  target module's public surface, so the alternatives cap plus 2. The former 32 rejected a task whose finding had
-  31 or 32 alternatives.
+  the locations cap plus 2. `constraints` per task: the finding constraint, the rule's rationale
+  (`rationale: <text>`, engine v2.5.0), one per allowed alternative and the target module's public surface, so the
+  alternatives cap plus 3. The former 32 rejected a task whose finding had 31 or 32 alternatives, and the former 34 a
+  v2.5.0 task with a rationale and 32 alternatives.
 - `seams` and `findings`: a real report reaches `MaxBytes` long before either cap. 3 059 seams with one advisory
   each measured 5.71 MB, over the cap.
 
@@ -222,14 +223,21 @@ Every kept string is valid UTF-8 without control characters (no CR, LF, tab, NUL
 separators U+2028 and U+2029, which are not control characters but break a single line. All lengths and character
 sets are **[default]**. Classes:
 
-- Text, at most 500 characters, single line: `Finding.Why`, `Finding.Constraint`, `AllowedAlternatives[]`,
+- Finding text, at most 2 000 characters, single line: `Finding.Why`, `Finding.Constraint`. From engine v2.5.0 the
+  engine ends the why with ` — <rationale>` and both with ` (see <docs>)`, texts the policy author writes and the
+  engine does not bound; a real `module_dependencies` why is about 110 characters before them, so the 500 of Text
+  would reject a two-sentence rationale with an ADR path. 2 000 keeps a task goal (`Break the import cycle: ` and
+  the why) and the task's `rationale: ` constraint under the 4 096 of Task text. A rationale or docs value over the
+  cap, or on more than one line (a YAML `|` or `>` block scalar ends with a line break), makes the report
+  `report_invalid`; the user guide says so.
+- Text, at most 500 characters, single line: `AllowedAlternatives[]`,
   `UnknownFact.Fact`, `UnknownFact.Reason`, `UnevaluatedRule.Reason`, `ToolCoverage.Reason`,
   `DimensionCoverage.Basis`, and every `Reasons[]` list (`Comparison`, `Reference`, `Delta`, `TaskOriginReasons`).
   Real engine text contains quotes, backticks and dashes, so no character set applies.
 - Task text, at most 4 096 characters, single line: `AgentTask.Goal`, `AgentTask.Constraints[]`. The engine
   composes them from other fields: a goal is a template with both edge paths (up to about 1 200 characters) or
-  `Break the import cycle: ` and the why; a constraint is the finding constraint, `allowed alternative: ` and an
-  alternative, or `public surface of module "<module>": [<every public glob>]`. That last one is unbounded: a real
+  `Break the import cycle: ` and the why; a constraint is the finding constraint, `rationale: ` and the rule's
+  rationale, `allowed alternative: ` and an alternative, or `public surface of module "<module>": [<every public glob>]`. That last one is unbounded: a real
   one with 21 globs was 765 characters, so the 500 of Text rejected a real blocked report. 4 096 holds every
   fixed composition and about 100 public globs at the observed 35 characters each.
 - Command, at most 512 characters, single line: `AgentTask.Validation[]`. No whitespace-separated word equals
@@ -255,8 +263,10 @@ sets are **[default]**. Classes:
 - Hash: `Comparison.ConfigHash` is `""` or `^[0-9a-f]{64}$`, bare hex without a `sha256:` prefix. `ModelHash`,
   `LabelsHash`, `SettingsHash` are token characters, at most 128.
 - Path: `Location.File`, `AgentTask.Files[]`, and `Endpoint.Path` when not empty. Non-empty, at most 512
-  characters, forward slashes only, relative, equal to its own `path.Clean` form, not `.`, no `..` segment, no leading
-  `/`, no backslash, no drive prefix (`C:`). A directory or a glob such as `pkg/a/**` is a valid path.
+  characters, forward slashes only, relative, equal to its own `path.Clean` form, no `..` segment, no leading
+  `/`, no backslash, no drive prefix (`C:`). A directory or a glob such as `pkg/a/**` is a valid path, and so is `.`,
+  the repository root: engine v2.5.0 names an importer that no module owns by its package directory, `.` for a
+  root package, in `edge.from.path` and in the task's `files` (`real-root-importer-v250`).
 - Numbers (ranges are **[default]**): `line` 0 to 10 000 000; every count ≥ 0; metric values any finite number;
   integers must be written without fraction or exponent.
 - Finding `id` values are unique across the report. `finding_id` and finding references are not checked against
@@ -606,14 +616,14 @@ Each fixture has an `.expect.json` sibling recording its producer artifact and e
 this module asserts its `decode` and `fields` keys. The pinned engine schema is `internal/wire/testdata/schema/archfit.state.schema.json`.
 This module has no private fixture and no `testdata` folder of its own. Every fixture is a v2.3.1 document except
 the v2.4.0 capture `real-blocked-no-baseline-v240`, the v2.4.1 capture `real-blocked-no-baseline-v241` and the
-v2.5.0 captures `real-blocked-no-baseline-v250` and `real-seam-policy-v250`. The tests decode each fixture as a
+v2.5.0 captures `real-blocked-no-baseline-v250`, `real-seam-policy-v250` and `real-root-importer-v250`. The tests decode each fixture as a
 document of its own release, and `TestEveryEngineVersionReadsTheCorpus` decodes each one under every listed release.
 
 ### Unit Tests
 
 - **Test name**: `TestStringClassRules`
   **Scenario**: table, one row per string class at its limit, one over it, one with LF, a tab, NUL, U+2028 and U+2029, the classes
-  including tool version (128) and task text (`goal`, `constraints[]`, 4 096); token rows with a backtick and with `timed out`;
+  including finding text (`why`, `constraint`, 2 000), tool version (128) and task text (`goal`, `constraints[]`, 4 096); token rows with a backtick and with `timed out`;
   `config_hash` rows: empty, 64 hex, uppercase, 63 hex, with a `sha256:` prefix; tool-version rows: every engine format listed under
   String rules, 128 and 129 multi-byte characters, a bidi override, a zero-width space, a no-break space, a CR; a `;` in
   `semantics_version` and `(` in `unknowns`.
@@ -631,7 +641,8 @@ document of its own release, and `TestEveryEngineVersionReadsTheCorpus` decodes 
 - **Test name**: `TestPathRules`
   **Scenario**: table for `locations[].file`, `agent_tasks[].files[]` and `edge.from.path`: `pkg/a/a.go`; `pkg/b`; `pkg/a/**`; empty;
   `.`; `/etc/passwd`; `../x`; `a/../../x`; `a//b`; `a/./b`; `a\b`; `C:/x`; 513 characters.
-  **Expected behavior**: the first three decode everywhere; empty decodes only for an endpoint path; the rest are errors.
+  **Expected behavior**: the first four (`.` is the repository root) decode everywhere; empty decodes only for an endpoint
+  path; the rest are errors.
 - **Test name**: `TestEnums`
   **Scenario**: one row per schema enum with each allowed value and one unknown value; an empty `partial_basis`; plus unknown
   values for `Finding.Status`, `Severity` and `Origin`.
@@ -639,13 +650,14 @@ document of its own release, and `TestEveryEngineVersionReadsTheCorpus` decodes 
   plain-string values decode unchanged.
 - **Test name**: `TestCollectionCaps`
   **Scenario**: generated reports at each cap and one element over it, `delta.metrics` (256) included, `locations` at 10 000,
-  `constraints` at 34 and task `files` at 10 002.
+  `constraints` at 35 and task `files` at 10 002.
   **Expected behavior**: at-cap decodes; over-cap is an error naming the collection.
 - **Test name**: `TestTaskHoldsWhatItsFindingHolds`
-  **Scenario**: a finding at its caps (10 000 locations, 32 alternatives of 500 characters, a 500-character why and constraint) and
-  the task the engine builds from it: every location file plus both endpoints, the constraint, one `allowed alternative: ` per
-  alternative and a public surface of 100 globs, and the goal `Break the import cycle: ` plus the why.
-  **Expected behavior**: decodes, with 10 002 files and 34 constraints.
+  **Scenario**: a finding at its caps (10 000 locations, 32 alternatives of 500 characters, a 2 000-character why and constraint) and
+  the task the engine builds from it: every location file plus both endpoints, the constraint, `rationale: ` with a rationale as
+  long as the why, one `allowed alternative: ` per alternative and a public surface of 100 globs, and the goal
+  `Break the import cycle: ` plus the why.
+  **Expected behavior**: decodes, with 10 002 files and 35 constraints.
 - **Test name**: `TestPresenceRules`
   **Scenario**: table: each kept required key absent, at every level; each as `null`; `gate_reference` and `measurement_profile` absent;
   `matched_by`, `measurement` and `declarations` absent; `dimensions` with eight keys, with a tenth key, with `name` different from its key.
@@ -692,6 +704,11 @@ document of its own release, and `TestEveryEngineVersionReadsTheCorpus` decodes 
   reflection; decode the v2.3.1 capture and the all-keys fixture as v2.3.1, and `real-seam-policy-v250` as v2.5.0.
   **Expected behavior**: every schema property is a shadow field, and the reverse; kept plus dropped equals the schema key set. A
   missing schema file fails the test; it never skips.
+- **Test name**: `TestRootImporterCapture`
+  **Scenario**: the unmodified v2.5.0 capture `real-root-importer-v250`: a root `main.go` that no module owns imports a module whose
+  `visible_to` excludes it, under a fail-gated `module_dependencies` rule with `rationale`, `alternatives` and `docs`.
+  **Expected behavior**: decodes as a v2.5.0 document; the finding's `edge.from` is `{module: "", path: "."}`; the task files hold
+  `.`; the why ends with ` — <rationale> (see <docs>)`, the constraint with ` (see <docs>)`; the task has the `rationale: ` entry.
 - **Test name**: `TestEngineVersions`
   **Scenario**: call `EngineVersions`, change the returned slice, call it again.
   **Expected behavior**: `v2.3.1`, `v2.4.0`, `v2.4.1`, `v2.5.0` both times: the caller gets a copy.

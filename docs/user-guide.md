@@ -273,13 +273,18 @@ The App reads a complete report or no report. It never shortens a report to make
 | Seams                         | 50 000                                        | `report_invalid`                                   |
 | Locations in one finding      | 10 000                                        | `report_invalid`                                   |
 | Files in one agent task       | 10 002                                        | `report_invalid`                                   |
-| Constraints in one agent task | 34, each at most 4 096 characters on one line | `report_invalid`                                   |
+| Why and constraint of a finding | 2 000 characters on one line                | `report_invalid`                                   |
+| Constraints in one agent task | 35, each at most 4 096 characters on one line | `report_invalid`                                   |
 | Goal of one agent task        | 4 096 characters on one line                  | `report_invalid`                                   |
 | Tool version of one producer  | 128 printable characters on one line          | `report_invalid`                                   |
 
 With `gate: required`, an upload over 5 MiB leaves the `archfit/gate` check pending. The sweep sets it to
 `action_required` with `missing_upload` after 60 minutes. A report of about 3 000 seams with one advisory each is
 larger than 5 MiB. The comment shows at most 10 locations for each finding and gives the count of the others.
+
+Engine v2.5.0 adds a rule's `rationale` and `docs` to the why and the constraint of each finding of that rule. Write
+both on one line and keep them short: a plain or quoted YAML string, or `>-`. A `|` or `>` block ends with a line
+break, and a why over 2 000 characters is too long. Both make the report `report_invalid`.
 
 ## Change the policy
 
@@ -394,7 +399,7 @@ Open **Graph** for the repository. The page is read-only.
   | `accepted`  | A gate finding names the pair, and the baseline or a waiver accepts it                          |
   | `advisory`  | A finding that does not block names the pair                                                    |
   | `allowed`   | Engine v2.5.0 or later: a blocking allowlist or layer rule permits the pair. The link is green |
-  | `observed`  | The engine observed the dependency, no current finding names the pair, and no rule decides it   |
+  | `observed`  | Engine v2.5.0 or later: no active finding names the pair, and no blocking rule permits it. A baselined or waived advisory can still name it. Older engines: no current finding names the pair, and a rule can still permit it |
 
 - Only the engine can mark a link `allowed`. A report from an engine before v2.5.0 has no `allowed` link. A
   forbidden dependency in the baseline shows as `accepted`, never as `allowed`.

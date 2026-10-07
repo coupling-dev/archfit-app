@@ -50,7 +50,9 @@ func TestStringClassRules(t *testing.T) {
 		limit int
 		steps []any
 	}{
-		{"text", "findings[0].why", 500, []any{"findings", 0, "why"}},
+		{"text", "decision.unevaluated_required_rules[0].reason", 500, []any{"decision", "unevaluated_required_rules", 0, "reason"}},
+		{"finding why", "findings[0].why", 2_000, []any{"findings", 0, "why"}},
+		{"finding constraint", "findings[0].constraint", 2_000, []any{"findings", 0, "constraint"}},
 		{"command", "agent_tasks[0].validation[0]", 512, []any{"agent_tasks", 0, "validation", 0}},
 		{"identifier", "findings[0].rule_id", 200, []any{"findings", 0, "rule_id"}},
 		{"token", "seams[0].strength", 64, []any{"seams", 0, "strength"}},
@@ -149,7 +151,7 @@ func TestPathRules(t *testing.T) {
 		{"file", "pkg/a/a.go", true},
 		{"directory", "pkg/b", true},
 		{"glob", "pkg/a/**", true},
-		{"dot", ".", false},
+		{"repository root", ".", true},
 		{"absolute", "/etc/passwd", false},
 		{"parent", "../x", false},
 		{"escaping parent", "a/../../x", false},
@@ -250,7 +252,7 @@ func TestCollectionCaps(t *testing.T) {
 		{"findings[0].locations", 10_000, []any{"findings", 0, "locations"},
 			func(i int) any { return map[string]any{"file": "a.go", "line": i} }},
 		{"findings[0].allowed_alternatives", 32, []any{"findings", 0, "allowed_alternatives"}, text},
-		{"agent_tasks[0].constraints", 34, []any{"agent_tasks", 0, "constraints"}, text},
+		{"agent_tasks[0].constraints", 35, []any{"agent_tasks", 0, "constraints"}, text},
 		{"agent_tasks[0].validation", 32, []any{"agent_tasks", 0, "validation"}, text},
 		{"agent_tasks[0].files", 10_002, []any{"agent_tasks", 0, "files"}, text},
 		{"dimensions.drift.metrics", 256, append(drift, "metrics"),
@@ -305,12 +307,13 @@ func TestCollectionCaps(t *testing.T) {
 }
 
 // TestTaskHoldsWhatItsFindingHolds builds a task the way the engine does (agenttask.Build) from a finding at
-// its caps: files are the location files plus both edge endpoints; constraints are the finding constraint, one
-// "allowed alternative: <a>" per alternative and the target module's public surface; a cycle goal is
-// "Break the import cycle: " plus the why. A finding that decodes must not yield a task that does not.
+// its caps: files are the location files plus both edge endpoints; constraints are the finding constraint,
+// "rationale: <r>" (v2.5.0), one "allowed alternative: <a>" per alternative and the target module's public surface;
+// a cycle goal is "Break the import cycle: " plus the why. The why ends with the rationale, so neither is longer
+// than a why at its cap. A finding that decodes must not yield a task that does not.
 func TestTaskHoldsWhatItsFindingHolds(t *testing.T) {
 	doc := baseDoc(t)
-	text := strings.Repeat("w", maxTextLen)
+	text, why := strings.Repeat("w", maxTextLen), strings.Repeat("y", maxFindingLen)
 
 	locations, files := make([]any, maxLocations), []any{"pkg/a/a.go", "pkg/b"}
 	for i := range locations {
@@ -318,7 +321,7 @@ func TestTaskHoldsWhatItsFindingHolds(t *testing.T) {
 		locations[i] = map[string]any{"file": file, "line": i + 1}
 		files = append(files, file)
 	}
-	alternatives, constraints := make([]any, maxAlternatives), []any{text}
+	alternatives, constraints := make([]any, maxAlternatives), []any{why, "rationale: " + why}
 	for i := range alternatives {
 		alternatives[i] = text
 		constraints = append(constraints, "allowed alternative: "+text)
@@ -331,14 +334,14 @@ func TestTaskHoldsWhatItsFindingHolds(t *testing.T) {
 
 	set(t, doc, locations, "findings", 0, "locations")
 	set(t, doc, alternatives, "findings", 0, "allowed_alternatives")
-	set(t, doc, text, "findings", 0, "why")
-	set(t, doc, text, "findings", 0, "constraint")
+	set(t, doc, why, "findings", 0, "why")
+	set(t, doc, why, "findings", 0, "constraint")
 	set(t, doc, files, "agent_tasks", 0, "files")
 	set(t, doc, constraints, "agent_tasks", 0, "constraints")
-	set(t, doc, "Break the import cycle: "+text, "agent_tasks", 0, "goal")
+	set(t, doc, "Break the import cycle: "+why, "agent_tasks", 0, "goal")
 
 	r := mustDecode(t, encode(t, doc))
-	if task := r.AgentTasks[0]; len(task.Files) != maxLocations+2 || len(task.Constraints) != maxAlternatives+2 {
+	if task := r.AgentTasks[0]; len(task.Files) != maxLocations+2 || len(task.Constraints) != maxAlternatives+3 {
 		t.Errorf("task with %d files and %d constraints", len(task.Files), len(task.Constraints))
 	}
 }

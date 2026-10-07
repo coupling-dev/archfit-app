@@ -69,7 +69,7 @@ const (
     StatusAccepted  LinkStatus = "accepted"  // a gate finding accepted by the baseline or a waiver names the pair
     StatusAdvisory  LinkStatus = "advisory"  // another finding that is not fixed names the pair
     StatusAllowed   LinkStatus = "allowed"   // engine seam policy only: a fail-gated allowlist or layer rule permits the pair
-    StatusObserved  LinkStatus = "observed"  // a seam that no current finding names and, with a seam policy, no rule decides
+    StatusObserved  LinkStatus = "observed"  // engine seam policy: no active finding names the pair and no rule permits it; without one: no current finding names the pair
 )
 
 type Link struct {
@@ -132,7 +132,9 @@ func Build(rep Report, policy []byte) View
 
 Stated limits **[default]**: only the engine says "allowed". A relationship the policy permits but the engine did
 not observe is not in a report, and graph does not interpret policy rules. In a report from an engine before v2.5.0
-no link is `allowed`, and `observed` means only that no current finding names the pair. In a v2.5.0 report a pair
+no link is `allowed`, and `observed` means only that no current finding names the pair: a rule may still permit it.
+In a v2.5.0 report `observed` is the engine's: no active finding names the pair and no blocking rule permits it; a
+baselined or waived advisory can still name the pair. In a v2.5.0 report a pair
 that only a finding names (no seam) keeps the finding status of rule 4.
 
 ## Integrations
