@@ -61,21 +61,46 @@ func TestBuildMapsReportToView(t *testing.T) {
 // TestStatusFromRealReports reads engine captures of the shared corpus, all computed from fixturePolicy.
 func TestStatusFromRealReports(t *testing.T) {
 	tests := []struct {
-		fixture string
-		want    []Link
+		fixture, release string
+		want             []Link
 	}{
-		{"real-blocked-forbidden-and-allowed", []Link{link("a", "b", 1, StatusViolation), link("a", "c", 1, StatusAdvisory)}},
-		{"real-baselined-comparable", []Link{link("a", "b", 1, StatusAccepted)}}, // a baselined forbidden edge is never "permitted"
-		{"real-waiver-active", []Link{link("a", "b", 1, StatusAccepted)}},
-		{"real-waiver-expired", []Link{link("a", "b", 1, StatusViolation)}},
+		{"real-blocked-forbidden-and-allowed", corpusEngine, []Link{link("a", "b", 1, StatusViolation), link("a", "c", 1, StatusAdvisory)}},
+		{"real-baselined-comparable", corpusEngine, []Link{link("a", "b", 1, StatusAccepted)}}, // a baselined forbidden edge is never "permitted"
+		{"real-waiver-active", corpusEngine, []Link{link("a", "b", 1, StatusAccepted)}},
+		{"real-waiver-expired", corpusEngine, []Link{link("a", "b", 1, StatusViolation)}},
+		{"real-blocked-no-baseline-v250", "v2.5.0", []Link{link("a", "b", 1, StatusViolation)}}, // seams[].policy: violation
 	}
 	for _, tt := range tests {
 		t.Run(tt.fixture, func(t *testing.T) {
-			got := Build(corpusReport(t, tt.fixture), []byte(fixturePolicy))
+			got := Build(corpusReport(t, tt.fixture, tt.release), []byte(fixturePolicy))
 			if !reflect.DeepEqual(got.Links, tt.want) {
 				t.Errorf("Links = %+v, want %+v", got.Links, tt.want)
 			}
 		})
+	}
+}
+
+// TestStatusFromEngineSeamPolicy reads the v2.5.0 capture of the engine's hexagonal map scenario: every link shows
+// the engine's seams[].policy, the same statuses `archfit map` prints for that run, allowed included.
+func TestStatusFromEngineSeamPolicy(t *testing.T) {
+	const name = "real-seam-policy-v250"
+	got := Build(corpusReport(t, name, "v2.5.0"), corpusFile(t, name+".policy.yaml"))
+	want := []Link{
+		link("api", "billing", 1, StatusAccepted),
+		link("api", "stripe", 1, StatusAllowed),
+		link("billing", "stripe", 1, StatusViolation),
+		link("orders", "audit", 1, StatusObserved),
+		link("orders", "billing", 1, StatusAllowed),
+		link("stripe", "orders", 1, StatusAllowed),
+	}
+	if !reflect.DeepEqual(got.Links, want) {
+		t.Errorf("Links = %+v, want %+v", got.Links, want)
+	}
+	if got.Stale {
+		t.Error("Stale = true, want false: the policy is the one the capture was computed from")
+	}
+	if !got.Incomplete {
+		t.Error("Incomplete = false, want true: the capture did not evaluate its two required rules")
 	}
 }
 

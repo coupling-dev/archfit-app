@@ -17,6 +17,7 @@ const (
 	engineRevision = "f8877d25ba36d84d3780071580d23486e3d794d0"
 	v240Revision   = "5aefcdc2c5465c2eb7198ea91394bd8cb8ad2b22"
 	v241Revision   = "ca1f593e69ddf41662cbebe6ccb0fb59b09f73fd"
+	v250Revision   = "59318b9eec906f54bc7a54d01db634b0c20c0647"
 	leakMarker     = "LEAK-7f3a"
 	syntheticLabel = "synthetic: "
 
@@ -57,7 +58,9 @@ var (
 	}
 
 	// pinnedRevisions maps every engine release the corpus holds captures of to that release's source revision.
-	pinnedRevisions = map[string]string{"v2.3.1": engineRevision, "v2.4.0": v240Revision, "v2.4.1": v241Revision}
+	pinnedRevisions = map[string]string{
+		"v2.3.1": engineRevision, "v2.4.0": v240Revision, "v2.4.1": v241Revision, "v2.5.0": v250Revision,
+	}
 
 	revisionPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	reasonPattern   = regexp.MustCompile(`^[a-z]+(_[a-z]+)*$`)

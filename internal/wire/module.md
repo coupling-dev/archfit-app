@@ -31,8 +31,9 @@ core modules, which is why everything here is contract-strength and strictly ver
 - The rule for what belongs here: transport types, schemas, strict decoding, digests. No domain decisions, no I/O.
 - The fixture corpus: its layout, the named cases, and the producer artifact each one was captured from.
 - The pinned external revisions the contracts were taken from: engine `archfit` v2.3.1 at
-  `f8877d25ba36d84d3780071580d23486e3d794d0` (state schema), v2.4.0 at `5aefcdc2c5465c2eb7198ea91394bd8cb8ad2b22`
-  (same state schema) and v2.4.1 at `ca1f593e69ddf41662cbebe6ccb0fb59b09f73fd` (config schema, same state schema);
+  `f8877d25ba36d84d3780071580d23486e3d794d0`, v2.4.0 at `5aefcdc2c5465c2eb7198ea91394bd8cb8ad2b22` and v2.4.1 at
+  `ca1f593e69ddf41662cbebe6ccb0fb59b09f73fd` (the same state schema), and v2.5.0 at
+  `59318b9eec906f54bc7a54d01db634b0c20c0647` (state schema with `seams[].policy`, config schema);
   `archfit-action` at `4759dd985bff385af5c2dee2c918a0eced59f4f3`
   (plan inventory of 20 September 2026).
 - Each child's internals (decoder technique, caps, file formats) stay in that child.
@@ -57,7 +58,7 @@ child is normative in the child's own `module.md`; it is not restated here.
 
 - Every contract carries a version identifier: envelope `archfit.report-envelope.v1`; report
   `archfit.architecture-state.v1`; settings file `version: 1`; manifest data `version: 1`; policy follows the
-  engine release of the manifest's `current` row, v2.4.1 today; the engine baseline file `archfit.baseline.v2`.
+  engine release of the manifest's `current` row, v2.5.0 today; the engine baseline file `archfit.baseline.v2`.
 - Unknown fields are rejected by every decoder here. Three deliberate nuances: the policy readers ignore
   engine-owned keys they do not read; the report decoder knows every key of each engine release it reads and
   drops the known keys that are not allowlisted, while a key that release's schema does not define is still an error;
@@ -71,8 +72,8 @@ child is normative in the child's own `module.md`; it is not restated here.
   capture of N to the corpus, adds the manifest rows and re-pins the policy schema when `current` moves; after the
   App release, workflows move their pin; then N-1's rows go. The parent tests below hold the three together.
   Closing a window deletes manifest rows only: the decoder keeps reading the release while corpus fixtures are its
-  documents (v2.3.1, whose rows are gone, is still listed in `report` because every synthetic fixture is a v2.3.1
-  document).
+  documents (v2.3.1 and v2.4.0, whose rows are gone, are still listed in `report` because every synthetic fixture
+  is a v2.3.1 document and `real-blocked-no-baseline-v240` a v2.4.0 one).
 - Two digest formats exist and are never compared with each other: engine-style bare lowercase hex (`policy.Digest`,
   the report's `config_hash`, the envelope's `baseline_digest` and `labels_digest`) and the prefixed `sha256:<hex>`
   form of envelope-native values (`payload_digest`, `image_digest`) **[default]**.
@@ -158,10 +159,11 @@ tampering fixture overrides `baseline_digest` with a value outside `trusted_base
 `facts` fails the corpus test.
 
 Fixtures captured from the engine cite their engine release and that release's pinned revision (v2.3.1:
-`f8877d25…`; v2.4.0: `5aefcdc2…`; v2.4.1: `ca1f593e…`); fixtures from a mutable branch are not allowed. The tests
-decode a capture as a document of the release it cites, and a synthetic fixture as a v2.3.1 document, the release
-every one of them was derived from. Every fixture is a v2.3.1 document except `real-blocked-no-baseline-v240` and
-`real-blocked-no-baseline-v241`.
+`f8877d25…`; v2.4.0: `5aefcdc2…`; v2.4.1: `ca1f593e…`; v2.5.0: `59318b9e…`); fixtures from a mutable branch are not
+allowed. The tests, and every consumer test that reads the whole corpus, decode a capture as a document of the
+release it cites, and a synthetic fixture as a v2.3.1 document, the release every one of them was derived from.
+Every fixture is a v2.3.1 document except `real-blocked-no-baseline-v240`, `real-blocked-no-baseline-v241`,
+`real-blocked-no-baseline-v250`, `real-seam-policy-v250` and `real-root-importer-v250`.
 Required report fixtures (plan T02): `healthy`, `attention-pass` (verdict `needs_attention` with passing hard
 gates), `blocked`, `missing-evidence` (`hard_gates: unmeasured`), `unknown-identity`, `profile-comparable` (symmetric
 partial with a recognized `partial_basis`), `profile-incompatible` (`gate_reference.status: non_comparable`),
@@ -188,8 +190,9 @@ are measured, so it is captured on the engine's reachability fixture), `real-att
 the engine fixture with a cargo crate, a Python and a TypeScript package added and every optional analyzer on, so
 its producer rows carry the real tool versions of cargo, cargo-modules, grimp, dependency-cruiser, scip, jscpd and
 ast-grep. Two byte copies of captures ship a synthetic envelope: `unlisted-image` (image digest outside the
-manifest) and `baseline-tampered`. Every synthetic envelope states engine v2.4.1, the `current` row; the reports
-beside them are v2.3.1 documents, which v2.4.1 reads with the same key set (see `manifest`).
+manifest) and `baseline-tampered`. Every synthetic envelope states engine v2.5.0, the `current` row; the reports
+beside them are v2.3.1 documents, which v2.5.0 reads too: its key set only adds the optional `seams[].policy` (see
+`manifest`).
 
 Two hand-edited fixtures cover what real engine output reached the old App limits with: `producer-versions` (the
 remaining tool-version formats: grimp failing with `uv`, the macOS system git, two coverage parsers) and
@@ -210,6 +213,33 @@ the released binary `archfit-v2.4.1-darwin-arm64`, checked against the release's
 not the pinned image. It is unmodified, and its bytes equal the v2.4.0 capture: v2.4.1 changes only the config
 schema (the rule types become an enum), and the report names no engine version. Its expectation is the v2.4.0 one.
 
+`real-blocked-no-baseline-v250` is the v2.5.0 capture the manifest's v2.5.0 rows need, produced the same way: the
+command of `real-blocked-no-baseline` on `testdata/fixture-go` at tag v2.5.0 (policy file byte-identical), run with
+the released binary `archfit-v2.5.0-darwin-arm64`, checked against the release's `SHA256SUMS`, on a development host,
+not the pinned image. It is unmodified, and its bytes equal the v2.4.1 capture except for `"policy":"violation"` on
+its one seam, the one state key v2.5.0 adds. Its expectation is the v2.4.1 one.
+
+`real-seam-policy-v250` is the v2.5.0 capture that carries four of the five `seams[].policy` values (no `advisory`:
+the run has no advisory finding): the `hexagonalRepo` scenario of the engine's `cmd/archfit/map_test.go` at tag v2.5.0, rebuilt file
+for file (five Go packages, the test's policy with layers, a fail-gated `forbidden_layer_direction` and a fail-gated
+`forbidden_dependency` rule). `archfit baseline` runs first; then `billing` imports `stripe`, and
+`archfit check --json -c .archfit.yaml -q --refresh` runs with the same released binary. It is unmodified, and its
+seam statuses equal the engine's `map` golden file for the scenario: `api -> billing` accepted, `api -> stripe`,
+`orders -> billing` and `stripe -> orders` allowed, `billing -> stripe` violation, `orders -> audit` observed. Its
+policy and the baseline the engine loaded ship beside it. The added import closes a Go import cycle, so four packages
+do not type-check: both required rules are unevaluated, and the baseline (go/packages `ok`) is `non_comparable` with
+the report (`partial`). Its expectation records that: blocked, `hard_gates: fail`, both rule IDs unevaluated,
+`action_required` with `["baseline_not_comparable", "blocking_findings", "missing_required_coverage"]`.
+
+`real-root-importer-v250` is the v2.5.0 capture of the v2.5.0 config keys in use, built on a scratch Go module:
+`billing/api/api.go`, `shop/shop.go`, and a root `main.go` that no module owns and imports `billing/api`. Its
+policy (beside it) gives `billing` `visible_to: [shop]` and has one fail-gated `module_dependencies` rule with
+`rationale`, `alternatives` and `docs`. `archfit check --json -c .archfit.yaml -q --refresh` runs with the same
+released binary and no baseline. It is unmodified. The engine names the unowned importer by its package directory,
+`edge.from.path: "."`, and lists `.` in the task's files; the why and the constraint end with the rationale and the
+docs reference, and the task has a `rationale: ` constraint. Its expectation is the `real-blocked-no-baseline` one:
+blocked, `hard_gates: fail`, `non_comparable` gate reference, `failure` with `["blocking_findings"]`.
+
 The `leakage/` set has two groups. Rejecting fixtures (`decode: "error"`): snippet field, log blob, raw model output
 key, multi-line text, oversized text. One surviving fixture (`decode: "ok"`): a marker identifier inside
 `agent_tasks[].declarations`, `matched_by` and a seam `hypothesis`; it must decode, and the marker must be gone.
@@ -225,15 +255,16 @@ External counterparts, reached only through these contracts:
 
 | Counterpart                       | Direction                                       | Strength                    | LCA / Rank / Distance     | Volatility | Balanced? |
 | --------------------------------- | ----------------------------------------------- | --------------------------- | ------------------------- | ---------- | --------- |
-| `archfit` engine (v2.4.0, v2.4.1) | report, policy, manifest follow engine releases | Contract (versioned schema) | outside the tree; highest | Moderate   | Yes       |
+| `archfit` engine (v2.4.1, v2.5.0) | report, policy, manifest follow engine releases | Contract (versioned schema) | outside the tree; highest | Moderate   | Yes       |
 | `archfit-action` (external repo)  | the Action conforms to envelope and report      | Contract (JSON Schema)      | outside the tree; highest | Moderate   | Yes       |
 | customer repositories (the files) | customers write settings and policy files       | Contract (versioned file)   | outside the tree; highest | Moderate   | Yes       |
 
-Shared knowledge: with the engine, the complete v2.3.1 state schema key set (unchanged in v2.4.0 and v2.4.1), its enums and
-decision semantics, the config schema, waiver keys, the `modules` map shape, the three input file names, the bare-hex
-hashing rule and released identities, pinned at revision `f8877d25ba36d84d3780071580d23486e3d794d0` (v2.3.1) and, for
-the v2.4.0 identities, `5aefcdc2c5465c2eb7198ea91394bd8cb8ad2b22` (v2.4.0) and, for the config schema and the v2.4.1
-identities, `ca1f593e69ddf41662cbebe6ccb0fb59b09f73fd` (v2.4.1), each verified
+Shared knowledge: with the engine, the complete state schema key set (the v2.3.1 one, unchanged in v2.4.0 and v2.4.1,
+plus `seams[].policy` in v2.5.0), its enums and decision semantics, the config schema, waiver keys, the `modules` map
+shape, the three input file names, the bare-hex hashing rule and released identities, pinned at revision
+`f8877d25ba36d84d3780071580d23486e3d794d0` (v2.3.1), `5aefcdc2c5465c2eb7198ea91394bd8cb8ad2b22` (v2.4.0),
+`ca1f593e69ddf41662cbebe6ccb0fb59b09f73fd` (v2.4.1 identities) and, for the state schema, the config schema and the
+v2.5.0 identities, `59318b9eec906f54bc7a54d01db634b0c20c0647` (v2.5.0), each verified
 against a real report; with the Action, the envelope schema, both digest rules and the no-source transport; with customers, the settings field rules. Separate repositories and release cycles are the highest
 distance the system has. Contract coupling with explicit versions, strict decoding and a shared fixture corpus is
 what keeps it balanced. Installed Actions, images and stored baselines never upgrade atomically, so old decode
@@ -298,13 +329,13 @@ Parent tests live in package `wire_test` and exercise the children together and 
   **Expected behavior**: every required named fixture exists; every fixture has an `.expect.json` with `producer` and `decode`, no unknown keys, and no unknown `facts` key; every report fixture has `gate` with a non-empty `reasons` list; no orphan expectation files.
 - **Test name**: `TestFixturesRecordPinnedProducers`
   **Scenario**: read every `producer` entry.
-  **Expected behavior**: engine-captured fixtures cite a pinned release at its pinned revision (`v2.3.1` at `f8877d25ba36d84d3780071580d23486e3d794d0`, `v2.4.0` at `5aefcdc2c5465c2eb7198ea91394bd8cb8ad2b22`, `v2.4.1` at `ca1f593e69ddf41662cbebe6ccb0fb59b09f73fd`); synthetic ones give a reason; none cites a branch name.
+  **Expected behavior**: engine-captured fixtures cite a pinned release at its pinned revision (`v2.3.1` at `f8877d25ba36d84d3780071580d23486e3d794d0`, `v2.4.0` at `5aefcdc2c5465c2eb7198ea91394bd8cb8ad2b22`, `v2.4.1` at `ca1f593e69ddf41662cbebe6ccb0fb59b09f73fd`, `v2.5.0` at `59318b9eec906f54bc7a54d01db634b0c20c0647`); synthetic ones give a reason; none cites a branch name.
 - **Test name**: `TestLeakageFixturesCarryTheMarker`
   **Scenario**: read every file in `testdata/leakage/`.
   **Expected behavior**: each contains `LEAK-7f3a`; all have `decode: "error"` except the one surviving declarations fixture, which has `decode: "ok"`.
 - **Test name**: `TestPinnedEngineSchemaIsRecorded`
   **Scenario**: read `testdata/schema/`.
-  **Expected behavior**: `archfit.state.schema.json` is present with a source note citing revision `f8877d25ba36d84d3780071580d23486e3d794d0` and its SHA-256; the hash matches.
+  **Expected behavior**: `archfit.state.schema.json` is present with a source note citing tag `v2.5.0`, revision `59318b9eec906f54bc7a54d01db634b0c20c0647` and its SHA-256; the hash matches.
 
 ### Integration Contract Tests
 
@@ -320,7 +351,7 @@ Parent tests live in package `wire_test` and exercise the children together and 
   **Expected behavior**: exactly the parent and the five published packages; the parent exports no identifiers.
 - **Test name**: `TestUnknownVersionRejectedEverywhere`
   **Scenario**: an envelope with `archfit.report-envelope.v2`, a report with `archfit.architecture-state.v2` under every listed engine
-  release, the real capture as a document of engine `v2.5.0`, a settings file with `version: 2`.
+  release, the real capture as a document of engine `v2.6.0`, a settings file with `version: 2`.
   **Expected behavior**: all are errors.
 - **Test name**: `TestEveryApprovedEngineVersionIsReadable`
   **Scenario**: every release of `manifest.EngineVersions`.

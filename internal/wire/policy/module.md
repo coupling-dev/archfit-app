@@ -22,7 +22,7 @@ drift between them would turn honest reports into `policy_mismatch`.
   `comparison.config_hash`. For baseline and labels it is the value the producer states in the upload envelope.
 - `Waivers`: read the `waivers:` list of a policy file into `Waiver` values with parsed expiry instants.
 - `Modules`: list the names, layers and line numbers of the policy's `modules:` map, in file order.
-- `Schema`: the engine v2.4.1 config JSON Schema (`archfit.schema.json`), embedded unchanged.
+- `Schema`: the engine v2.5.0 config JSON Schema (`archfit.schema.json`), embedded unchanged.
 - `Validate`: a structural check that a text is plausibly an engine policy: one YAML mapping whose top-level keys
   all belong to the schema's closed key set and include the required `version`. It keeps foreign text (a report,
   a labels file) out of discovery pull requests; `Diagnose`, which contains it, does the same for saved drafts and
@@ -40,7 +40,7 @@ drift between them would turn honest reports into `policy_mismatch`.
 ## Subdomain Classification
 
 Published language owned by the `archfit` repository; this module is the App's pinned, read-only view of it.
-Supporting. Volatility: moderate, tied to engine releases (config schema pinned v2.4.1).
+Supporting. Volatility: moderate, tied to engine releases (config schema pinned v2.5.0).
 
 ## Encapsulated Knowledge
 
@@ -51,32 +51,37 @@ Supporting. Volatility: moderate, tied to engine releases (config schema pinned 
 - What the engine does not hash. It reports no digest for the baseline or the labels file; `comparison.labels_hash`
   is a canonical hash of approved labels and cannot be reproduced from raw bytes. For those two files the binding
   is: producer states `Digest` of the bytes it used, the App compares with `Digest` of the protected-ref bytes.
-- The waiver keys, pinned to the v2.4.1 config schema (`WaiverDef`, unchanged since v2.3.1): `rule`, `from`, `to`,
+- The waiver keys, pinned to the v2.5.0 config schema (`WaiverDef`, unchanged since v2.3.1): `rule`, `from`, `to`,
   `reason`, `approved_by`, `expires`; the engine requires all but `from` and `to`.
 - The expiry rule: `expires` is a `YYYY-MM-DD` date, valid through the end of that day; the instant is 23:59:59
   UTC of that day **[default: UTC]**. The engine refuses a malformed `expires` when it loads the config
   (`internal/config/config.go` at v2.3.1 and v2.4.0), so such a policy runs no check at all.
 - The modules shape, pinned to the same schema: `modules:` is a map from module name to a definition with `paths`,
-  `public`, `internal`, `layer` and other keys. Only the name, `layer` and the key's line are read.
+  `public`, `internal`, `layer` and other keys (v2.5.0 adds the allowlists `depends_on` and `visible_to`). Only the
+  name, `layer` and the key's line are read.
 - The embedded schema file and its provenance: `archfit.schema.json` copied unchanged from the engine repository
-  at revision `ca1f593e69ddf41662cbebe6ccb0fb59b09f73fd` (tag `v2.4.1`). A sibling file `SCHEMA_SOURCE` records the
+  at revision `59318b9eec906f54bc7a54d01db634b0c20c0647` (tag `v2.5.0`). A sibling file `SCHEMA_SOURCE` records the
   source revision, the source path and the SHA-256 of the copy **[default]**.
 - One pinned schema, not one per engine release **[default]**. Its users are `Diagnose`, `Validate`, the assist
   prompt, and `GET /schema/policy.json` (one route for every repository, for editors outside the App). None of them knows which engine release a
   repository runs: that pin is in the repository's workflow file, which the App does not parse. So the schema is
   the one of the release new workflows pin, `manifest.Current().EngineVersion`, and the parent `wire` test
   `TestPolicySchemaFollowsTheCurrentEngine` fails as soon as `current` moves until this file and `SCHEMA_SOURCE`
-  are re-pinned. The pin is v2.4.1. v2.4.0 added the rule key `guard` to v2.3.1's schema (an optional key inside
+  are re-pinned. The pin is v2.5.0. v2.4.0 added the rule key `guard` to v2.3.1's schema (an optional key inside
   config schema v2, no top-level key); v2.4.1 adds an `enum` of the eleven rule types to `rules[].type`, so a
-  misspelled type is an enum miss with a "Did you mean" suggestion instead of passing as free text. During an
-  upgrade window a repository still on N-1 therefore gets a schema that also applies N's changes; its own engine
-  decides on the draft pull request's check, which stays the authority. `Validate` reads only the root key set,
-  which v2.4.0 and v2.4.1 leave unchanged. Per-release pins need a
-  per-repository engine release in the control plane first.
+  misspelled type is an enum miss with a "Did you mean" suggestion instead of passing as free text. v2.5.0 adds
+  optional keys only: the module keys `depends_on` and `visible_to` (lists of module names or selectors), the
+  twelfth rule type `module_dependencies`, and the rule keys `from_module`, `to_module`, `rationale`, `docs` (text)
+  and `alternatives` (a list of text). `module_review.gate` is not new; only its engine behavior changed. Whether
+  an allowlist entry or a module selector names a declared module is the engine's check (`archfit config lint`
+  `unknown_module`), not the schema's: `Diagnose` accepts any text there. During an upgrade window a repository
+  still on N-1 therefore gets a schema that also applies N's changes; its own engine decides on the draft pull
+  request's check, which stays the authority. `Validate` reads only the root key set, which v2.4.0, v2.4.1 and
+  v2.5.0 leave unchanged. Per-release pins need a per-repository engine release in the control plane first.
 - The top-level key set of a policy. It is derived from the embedded schema's root `properties` and `required`,
   read once lazily with `encoding/json`; there is never a second hand-written list. The derivation relies on the
   root's `additionalProperties: false`; a schema without it has no closed key set and `Validate` then always fails.
-  In v2.4.1, as in v2.3.1, the root has sixteen properties and requires only `version`; the schema file is the one
+  In v2.5.0, as in v2.3.1, the root has sixteen properties and requires only `version`; the schema file is the one
   source.
 - The JSON Schema subset `Diagnose` walks: exactly the keywords the embedded schema uses (`$ref` to `$defs`, `type`,
   `properties`, `patternProperties`, `additionalProperties`, `required`, `items`, `minItems`, `enum`, `const`, `oneOf`,
@@ -256,7 +261,7 @@ func Waivers(policy []byte) ([]Waiver, error)
 ```
 
 ```go
-// Schema returns the engine v2.4.1 config JSON Schema, embedded unchanged: Diagnose's schema, the assist
+// Schema returns the engine v2.5.0 config JSON Schema, embedded unchanged: Diagnose's schema, the assist
 // prompt's context, and the file served for editors outside the App.
 func Schema() []byte
 ```
@@ -365,7 +370,7 @@ root coupling table.
 | `internal/control/assist`        | assist depends on policy        | Contract | root / 2 / 2              | High       | Yes       |
 | `internal/control/ui`            | ui depends on policy            | Contract | root / 2 / 2              | High       | Yes       |
 | `internal/control/ui/graph`      | graph depends on policy         | Contract | root / 3 / 3              | Moderate   | Yes       |
-| `archfit` engine config (v2.4.1) | policy follows the engine files | Contract | outside the tree; highest | Moderate   | Yes       |
+| `archfit` engine config (v2.5.0) | policy follows the engine files | Contract | outside the tree; highest | Moderate   | Yes       |
 
 The `control/ui/graph` row exists because the graph's stale flag compares `Digest` of the policy text with the
 report's `config_hash`, and its nodes come from `Modules`, so that both rules live in one place.
@@ -398,7 +403,8 @@ No counterpart contract is used by this module, so nothing is restated here.
 ## Change Vectors
 
 - A new engine release: replace the embedded schema and `SCHEMA_SOURCE` in the change that moves the manifest's
-  `current` to it (v2.4.0 brought the rule key `guard`, v2.4.1 the rule-type enum); adjust waiver keys if the waiver contract changed.
+  `current` to it (v2.4.0 brought the rule key `guard`, v2.4.1 the rule-type enum, v2.5.0 the module allowlists,
+  module selectors and rule rationale); adjust waiver keys if the waiver contract changed.
 - The control plane learns each repository's engine release: then the schema can be pinned per release.
 - The engine changes how it computes `config_hash`, or starts reporting baseline and labels digests: change `Digest` only.
 - Configurable file locations per repository: the constants become defaults; the settings file would carry overrides.
@@ -467,7 +473,13 @@ at archfit commit `2d20da8`, copied unchanged: a large real policy that `Diagnos
   worded as "at line N or below it" with N the start of its block, and one on the first line; a tab indent; a duplicate key; an unknown top-level and nested key with a close match, and one without;
   a list where a nested list is expected, read for its line and column; text for a boolean and for an integer; a list
   for a mapping and a scalar list item; an enum miss with and without a close match; a misspelled rule type
-  (`forbiden_dependency`: the eleven types, "Did you mean `forbidden_dependency`?"); `version: 1`; `enabled: yes`; a
+  (`forbiden_dependency`: the twelve types, "Did you mean `forbidden_dependency`?"); the v2.5.0 keys: valid
+  `depends_on` and `visible_to` lists (a module name, `layer:`, `role:` and glob selectors, an empty list) with a
+  `module_dependencies` rule, an allowlist entry that names no declared module (no diagnostic: the engine's check),
+  valid `from_module`, `to_module`, `rationale`, `alternatives`, `docs`, an allowlist given as text and as a
+  mapping, an allowlist item that is a list, `alternatives` as text, `rationale` as a list, `from_module` as a
+  mapping, the typos `depend_on`, `visibile_to`, `from_modul`, `rationalle` (each with "Did you mean") and
+  `module_dependecies` (an enum miss with "Did you mean `module_dependencies`?"); `version: 1`; `enabled: yes`; a
   missing top-level and nested required key; a comment-only text; `minimum`, `minItems` and `date`; a `metrics` entry;
   three problems out of order; a top-level merge key; a non-mapping root; a 100-character quoted key; a 201-character
   module name; a quoted number; a mapping and a list where a const or enum is expected; `version: ~` and a waiver
@@ -524,7 +536,7 @@ at archfit commit `2d20da8`, copied unchanged: a large real policy that `Diagnos
   **Expected behavior**: `a` at line 3 and `b` at line 6 for the capture; for the full fixture every module of the recorded expectation, in order.
 - **Test name**: `TestSchemaIsThePinnedEngineFile`
   **Scenario**: hash `Schema()` and parse it.
-  **Expected behavior**: the SHA-256 equals the one in `SCHEMA_SOURCE`; the revision there is `ca1f593e…`; valid JSON with `waivers`
+  **Expected behavior**: the SHA-256 equals the one in `SCHEMA_SOURCE`; the revision there is `59318b9e…`; valid JSON with `waivers`
   and `modules` properties and a `WaiverDef` that requires `rule`, `reason`, `approved_by`, `expires`; two calls return equal but independent slices.
 - **Test name**: `TestPathConstants`
   **Scenario**: read the constants.

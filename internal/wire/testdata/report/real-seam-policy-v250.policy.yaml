@@ -1,0 +1,28 @@
+version: 2
+layers: [domain, application, adapter, entrypoint]
+coupling:
+  min_severity: critical
+modules:
+  api:
+    paths: ["internal/api/**"]
+    layer: entrypoint
+  stripe:
+    paths: ["internal/stripe/**"]
+    layer: adapter
+  orders:
+    paths: ["internal/orders/**"]
+    layer: application
+  billing:
+    paths: ["internal/billing/**"]
+    layer: domain
+  audit:
+    paths: ["internal/audit/**"]
+rules:
+  - id: layers-point-inward
+    type: forbidden_layer_direction
+    gate: fail
+  - id: api-not-into-billing
+    type: forbidden_dependency
+    from: internal/api/**
+    to: internal/billing
+    gate: fail

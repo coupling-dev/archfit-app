@@ -242,8 +242,8 @@ func (c *checker) finding(s *shadowFinding) Finding {
 		Locations: list(c, "locations", s.Locations, maxLocations, true, func(l *shadowLocation) Location {
 			return Location{File: c.str("file", l.File, classPath), Line: c.count("line", l.Line, maxLine)}
 		}),
-		Why:                 c.str("why", s.Why, classText),
-		Constraint:          c.str("constraint", s.Constraint, classText),
+		Why:                 c.str("why", s.Why, classFindingText),
+		Constraint:          c.str("constraint", s.Constraint, classFindingText),
 		AllowedAlternatives: stringsOf(c, "allowed_alternatives", s.AllowedAlternatives, maxAlternatives, false, classText),
 	}
 	if s.ID != nil {
@@ -276,7 +276,8 @@ func (c *checker) task(s *shadowTask) AgentTask {
 	}
 }
 
-// seam keeps the identity, the edge count and the three coupling dimensions; scores and evidence are dropped.
+// seam keeps the identity, the edge count, the three coupling dimensions and the engine's policy status; scores and
+// evidence are dropped.
 func (c *checker) seam(s *shadowSeam) Seam {
 	return Seam{
 		ID:         c.str("id", s.ID, classIdentifier),
@@ -287,5 +288,6 @@ func (c *checker) seam(s *shadowSeam) Seam {
 		Distance:   c.str("distance", s.Distance, classToken),
 		Volatility: c.str("volatility", s.Volatility, classToken),
 		Severity:   c.opt("severity", s.Severity, classToken),
+		Policy:     c.optEnum("policy", s.Policy, "violation", "accepted", "advisory", "allowed", "observed"),
 	}
 }

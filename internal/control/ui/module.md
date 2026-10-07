@@ -168,14 +168,16 @@ type Node struct {
     PolicyLine int // 1-based line of the module in the policy YAML; 0 if not found
 }
 
-// LinkStatus is what the report's findings say about a module pair. It is a display fact, never a check input.
+// LinkStatus is what the report says about a module pair: the engine's seam policy status when the report carries
+// one (engine v2.5.0 and later), else what the findings on the pair say. It is a display fact, never a check input.
 type LinkStatus string
 
 const (
     StatusViolation LinkStatus = "violation" // an active gate finding (wire/report Finding.Active), or a gate finding of unknown status, names the pair
     StatusAccepted  LinkStatus = "accepted"  // a gate finding accepted by the baseline or a waiver names the pair
     StatusAdvisory  LinkStatus = "advisory"  // another finding that is not fixed names the pair
-    StatusObserved  LinkStatus = "observed"  // a seam that no current finding names
+    StatusAllowed   LinkStatus = "allowed"   // engine seam policy only: a fail-gated allowlist or layer rule permits the pair
+    StatusObserved  LinkStatus = "observed"  // engine seam policy: no active finding names the pair and no rule permits it; without one: no current finding names the pair
 )
 
 type Link struct {
@@ -194,8 +196,9 @@ type View struct {
     Incomplete bool
 }
 
-// Build is pure. Nodes come from the policy's modules, links from the report's seams and findings; a link's
-// Status comes from the findings that name its module pair, never from the policy text.
+// Build is pure. Nodes come from the policy's modules, links from the report's seams and findings. A link's Status
+// is the engine's seams[].policy when a seam of the pair carries it; otherwise it comes from the findings that name
+// the pair. Graph never computes a status from the policy text.
 func Build(rep Report, policy []byte) View
 ```
 
@@ -634,7 +637,7 @@ func Digest(raw []byte) string
 
 <!-- contract: Schema — restated from internal/wire/policy/module.md -->
 ```go
-// Schema returns the engine v2.4.1 config JSON Schema, embedded unchanged, for the editor.
+// Schema returns the engine v2.5.0 config JSON Schema, embedded unchanged, for the editor.
 func Schema() []byte
 ```
 
@@ -743,16 +746,16 @@ func Render(s Settings) []byte
 
 <!-- contract: Report, StateSchemaV1, MaxBytes — restated from internal/wire/report/module.md -->
 ```go
-// StateSchemaV1 is the engine state contract accepted (engine v2.3.1, archfit.state.schema.json).
+// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v2.3.1 to v2.5.0).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
-// Report is the no-source transport form of an engine state report. The decoder knows every key of the
-// v2.3.1 state schema: keys listed here are kept (length-capped), the other known keys are validated and
-// dropped (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores),
-// and any key the schema does not define is a decode error.
+// Report is the no-source transport form of an engine state report. The decoder knows every key of the state
+// schema of each release it reads: keys listed here are kept (length-capped), the other known keys are validated
+// and dropped (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores),
+// and any key that release's schema does not define is a decode error.
 type Report struct {
     SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
     Verdict       string               `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
@@ -899,13 +902,15 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
 - Ready: `Proposals.Get`; head must equal `head_sha`, state must be `DraftOpen`; then `Proposals.Ready(number)`. ui never merges:
   publication is the merge on GitHub under the customer's ruleset and owner approval, the same path as a GitHub-first edit.
 - Graph: settings → `LatestRun(Settings.Workflow, DefaultBranch)` → `Artifact(run.ID, "archfit-report", report.MaxBytes)` →
-  `report.Decode` → policy text (open draft of the user, else default branch) → `graph.Build`. The artifact is the raw engine
+  `report.Decode` (with the newest release of `report.EngineVersions`: the artifact names none, and the newest key set
+  holds every older one) → policy text (open draft of the user, else default branch) → `graph.Build`. The artifact is the raw engine
   state JSON; only the decoded no-source `Report` is used. When the chosen policy text fails `policy.Modules` (a broken draft
   pushed on GitHub), ui builds from the default-branch policy instead, the last valid text, and forces the stale banner with
   "the draft does not parse" **[default]**. No run or artifact (GitHub retention): "no report available". Decode error:
   "report unavailable"; never a partial graph. The `View` is embedded as JSON in a `script type="application/json"` element.
-  Each link is drawn and listed with its `Status` (`violation`, `accepted`, `advisory`, `observed`), which is also its CSS
-  class; the page never calls a link "permitted". When `View.Incomplete`, a banner says the report's hard gates did not
+  Each link is drawn and listed with its `Status` (`violation`, `accepted`, `advisory`, `allowed`, `observed`), which is also
+  its CSS class. `allowed` comes only from the engine's `seams[].policy` (engine v2.5.0 and later); the page explains that
+  accepted debt is never allowed. When `View.Incomplete`, a banner says the report's hard gates did not
   pass or not all required rules were evaluated, so an observed link can still break a rule.
 - Assist: authorize `write`; if `content` differs from the file at `head_sha`, save it first (same rules as Save) and use the
   new head. Owner decision: when `content` equals the file the editor would load for the branch (after the CRLF rule) and
@@ -1018,6 +1023,10 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Expected behavior**: the embedded JSON equals `graph.Build(report, policy)`; node links point to `#L<line>`; no stale banner;
   the incomplete banner; marker strings placed in fields the decoder drops (`matched_by`, measurement, task declarations)
   appear nowhere in the page.
+- **Test name**: `TestGraphPageShowsTheEngineSeamPolicy`
+  **Scenario**: the unmodified v2.5.0 capture `real-seam-policy-v250` of the shared wire corpus as the `archfit-report` artifact.
+  **Expected behavior**: the page decodes it (newest release); the embedded JSON equals `graph.Build(report, policy)`; the links
+  table has rows of class `violation`, `accepted`, `allowed` and `observed`.
 - **Test name**: `TestConsentRecordAndRevoke`
   **Scenario**: an administrator records `managed_llm`, then revokes it.
   **Expected behavior**: `Consents.Has` is true then false for the installation of the authorized `Repo`; `By` is the session login.

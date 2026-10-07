@@ -275,16 +275,16 @@ func Schema() []byte
 
 <!-- contract: Report, StateSchemaV1, MaxBytes — restated from internal/wire/report/module.md -->
 ```go
-// StateSchemaV1 is the engine state contract accepted (engine v2.3.1, archfit.state.schema.json).
+// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v2.3.1 to v2.5.0).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
-// Report is the no-source transport form of an engine state report. The decoder knows every key of the
-// v2.3.1 state schema: keys listed here are kept (length-capped), the other known keys are validated and
-// dropped (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores),
-// and any key the schema does not define is a decode error.
+// Report is the no-source transport form of an engine state report. The decoder knows every key of the state
+// schema of each release it reads: keys listed here are kept (length-capped), the other known keys are validated
+// and dropped (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores),
+// and any key that release's schema does not define is a decode error.
 type Report struct {
     SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
     Verdict       string               `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
@@ -576,8 +576,9 @@ requests built with `httptest.NewRequest`. No network.
   **Scenario**: the healthy fixture with matching claims, run, pull and envelope.
   **Expected behavior**: no error, no problems; `Binding` fully filled from GitHub; `Identity`, `BaselineDigest` and `LabelsDigest` copied from the envelope (also when they are `""`); `Digest` equals `envelope.PayloadDigest(body)`; `Report` decoded.
 - **Test name**: `TestReportKeySetFollowsTheClaimedEngine`
-  **Scenario**: the healthy pull request upload with the envelope claiming engine `v2.3.1`, `v2.4.0`, `v2.4.1` and `v9.9.9`.
-  **Expected behavior**: the first three decode with no problem; `v9.9.9`, a release the decoder does not read, gives `ProblemReportInvalid` and a nil `Report`, never a rejection; `Identity.EngineVersion` is the claim in every row.
+  **Scenario**: the healthy pull request upload with the envelope claiming engine `v2.3.1`, `v2.4.0`, `v2.4.1`, `v2.5.0` and `v9.9.9`; the
+  unmodified v2.5.0 capture `real-seam-policy-v250` of the shared corpus claimed as `v2.5.0` and as `v2.4.1`.
+  **Expected behavior**: the four listed releases and the capture as `v2.5.0` decode with no problem; `v9.9.9`, a release the decoder does not read, and the capture as `v2.4.1`, whose `seams[].policy` that release does not define, give `ProblemReportInvalid` and a nil `Report`, never a rejection; `Identity.EngineVersion` is the claim in every row.
 - **Test name**: `TestReceiveDefaultBranchPush`
   **Scenario**: `push` run on the default branch.
   **Expected behavior**: `PullRequest` 0, `BaseRef` = default branch, no `Pulls` call, no problems. A push to `feature/x` gives `BaseRef` `feature/x` plus `ProblemUnsupportedEvent`; an unbound `pull_request` run (`refs/pull/7/merge`) gives the default branch.

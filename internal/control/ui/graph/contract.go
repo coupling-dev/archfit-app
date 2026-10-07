@@ -15,14 +15,16 @@ type Node struct {
 	PolicyLine int // 1-based line of the module in the policy YAML; 0 if not found
 }
 
-// LinkStatus is what the report's findings say about a module pair. It is a display fact, never a check input.
+// LinkStatus is what the report says about a module pair: the engine's seam policy status when the report carries
+// one (engine v2.5.0 and later), else what the findings on the pair say. It is a display fact, never a check input.
 type LinkStatus string
 
 const (
 	StatusViolation LinkStatus = "violation" // an active gate finding (wire/report Finding.Active), or a gate finding of unknown status, names the pair
 	StatusAccepted  LinkStatus = "accepted"  // a gate finding accepted by the baseline or a waiver names the pair
 	StatusAdvisory  LinkStatus = "advisory"  // another finding that is not fixed names the pair
-	StatusObserved  LinkStatus = "observed"  // a seam that no current finding names
+	StatusAllowed   LinkStatus = "allowed"   // engine seam policy only: a fail-gated allowlist or layer rule permits the pair
+	StatusObserved  LinkStatus = "observed"  // engine seam policy: no active finding names the pair and no rule permits it; without one: no current finding names the pair
 )
 
 type Link struct {
@@ -54,8 +56,9 @@ const (
 
 type pair struct{ from, to string }
 
-// Build is pure. Nodes come from the policy's modules, links from the report's seams and findings; a link's
-// Status comes from the findings that name its module pair, never from the policy text.
+// Build is pure. Nodes come from the policy's modules, links from the report's seams and findings. A link's Status
+// is the engine's seams[].policy when a seam of the pair carries it; otherwise it comes from the findings that name
+// the pair. Graph never computes a status from the policy text.
 func Build(rep report.Report, policyText []byte) View {
 	defs, err := policy.Modules(policyText)
 	if err != nil {
@@ -72,13 +75,26 @@ func Build(rep report.Report, policyText []byte) View {
 		}
 		return l
 	}
+	// decided holds the pairs whose status the engine gave in seams[].policy: findings never change those.
+	decided := map[pair]bool{}
 	for _, s := range rep.Seams {
-		if s.FromModule != "" && s.ToModule != "" {
-			link(s.FromModule, s.ToModule).Count += s.Edges
+		if s.FromModule == "" || s.ToModule == "" {
+			continue
+		}
+		l := link(s.FromModule, s.ToModule)
+		l.Count += s.Edges
+		if s.Policy != "" {
+			if p := LinkStatus(s.Policy); rank(p) > rank(l.Status) {
+				l.Status = p
+			}
+			decided[pair{s.FromModule, s.ToModule}] = true
 		}
 	}
 	for _, f := range rep.Findings {
 		from, to := f.Edge.From.Module, f.Edge.To.Module
+		if decided[pair{from, to}] {
+			continue
+		}
 		if s := findingStatus(f); s != StatusObserved && from != "" && to != "" {
 			if l := link(from, to); rank(s) > rank(l.Status) {
 				l.Status = s
@@ -139,7 +155,8 @@ func findingStatus(f report.Finding) LinkStatus {
 	}
 }
 
-// rank orders the statuses: the strongest finding on a pair sets its status.
+// rank orders the statuses, the engine's own order: the strongest status on a pair wins. Findings never give
+// StatusAllowed.
 func rank(s LinkStatus) int {
-	return slices.Index([]LinkStatus{StatusObserved, StatusAdvisory, StatusAccepted, StatusViolation}, s)
+	return slices.Index([]LinkStatus{StatusObserved, StatusAllowed, StatusAdvisory, StatusAccepted, StatusViolation}, s)
 }

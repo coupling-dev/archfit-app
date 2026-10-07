@@ -12,10 +12,13 @@
 <p class="banner" id="incomplete">Incomplete: the report's hard gates did not pass or not all required rules were
   evaluated. An observed link can still break a rule; read the archfit/state check for the evidence gaps.</p>
 {{end}}
-<p class="hint">Read-only. Modules are grouped by layer. Link status comes from the report's findings: a red violation is
-  an active gate finding or a gate finding of a status this version does not know, accepted is debt accepted by the
-  baseline or a waiver, advisory is a finding that does not block, and observed is a dependency that no finding
-  names.</p>
+<p class="hint">Read-only. Modules are grouped by layer. Link status is the engine's seam policy status when the report
+  has one (engine v2.5.0 and later), else it comes from the report's findings. A red violation is an active gate
+  finding or a gate finding of a status this version does not know, accepted is debt accepted by the baseline or a
+  waiver, advisory is a finding that does not block, allowed is a dependency that a blocking allowlist or layer rule
+  of the engine permits, and observed is a dependency that no active finding names and no blocking rule permits (for
+  an engine before v2.5.0: no current finding names it, and a rule can still permit it). Accepted debt is never
+  allowed.</p>
 <div id="graph" data-policy-url="/r/{{$.Repo}}/policy"></div>
 <script type="application/json" id="graph-data">{{.View}}</script>
 <h2>Modules</h2>

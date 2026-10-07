@@ -1,0 +1,14 @@
+version: 2
+modules:
+  billing:
+    paths: ["billing/**"]
+    visible_to: [shop]
+  shop:
+    paths: ["shop/**"]
+rules:
+  - id: billing-boundary
+    type: module_dependencies
+    gate: fail
+    rationale: billing is reached only through the shop checkout
+    alternatives: [call the shop checkout]
+    docs: docs/adr/0001-billing.md

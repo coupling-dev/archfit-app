@@ -1,8 +1,9 @@
 package report
 
-// Shadow types mirror the whole v2.3.1 state schema (engine revision f8877d25ba36d84d3780071580d23486e3d794d0),
-// dropped keys included. Kept required keys are pointers or slices so that nil means absent: the pre-pass
-// rejects null, so nothing else produces nil. Fields marked dropped are type-checked and never copied.
+// Shadow types mirror the whole state schema, the union of every listed release (pinned: engine v2.5.0, revision
+// 59318b9eec906f54bc7a54d01db634b0c20c0647), dropped keys included; a key a release added carries its since tag.
+// Kept required keys and the optional enum seams[].policy are pointers or slices so that nil means absent: the
+// pre-pass rejects null, so nothing else produces nil. Fields marked dropped are type-checked and never copied.
 
 // optInt marks the only values that may be null: seams[].scores.p10 and p90.
 type optInt int
@@ -212,6 +213,7 @@ type shadowSeam struct {
 	Distance   *string `json:"distance"`
 	Volatility *string `json:"volatility"`
 	Severity   string  `json:"severity"`
+	Policy     *string `json:"policy" since:"v2.5.0"`
 
 	// Dropped.
 	ScoredEdges          int               `json:"scored_edges"`

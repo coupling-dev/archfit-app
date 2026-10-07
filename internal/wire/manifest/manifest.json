@@ -2,30 +2,30 @@
   "version": 1,
   "entries": [
     {
-      "engine_version": "v2.4.0",
-      "image_digest": "sha256:6062d0203afa2314633b6fe6ac841471e331f4830cb9bdfd8f62e823be5c2eff",
+      "engine_version": "v2.4.1",
+      "image_digest": "sha256:996e044c55eec96303c344bbe327c97b2a17661b1ab626bb94d00d47045c01c7",
       "platform": "linux/amd64",
       "profile_version": "archfit.measurement.v1",
       "action_ref": "a9cd2ce8d0dc996b258b5faa5145eaf11bd6bc5b"
     },
     {
-      "engine_version": "v2.4.0",
-      "image_digest": "sha256:bdb0db83ec2945f440d259070c37a5eacb269edcaa6aaf30fbdb19b7ee447e3d",
+      "engine_version": "v2.4.1",
+      "image_digest": "sha256:21efa8ea2831714ab87243454abaf668c51d08ae9c3e261f289940c79cc68e62",
       "platform": "linux/arm64",
       "profile_version": "archfit.measurement.v1",
       "action_ref": "a9cd2ce8d0dc996b258b5faa5145eaf11bd6bc5b"
     },
     {
-      "engine_version": "v2.4.1",
-      "image_digest": "sha256:996e044c55eec96303c344bbe327c97b2a17661b1ab626bb94d00d47045c01c7",
+      "engine_version": "v2.5.0",
+      "image_digest": "sha256:5752b4fe6d62f4fdd71edf33b4174228e17bd7c3d960b36a67111806ec17686a",
       "platform": "linux/amd64",
       "profile_version": "archfit.measurement.v1",
       "action_ref": "a9cd2ce8d0dc996b258b5faa5145eaf11bd6bc5b",
       "current": true
     },
     {
-      "engine_version": "v2.4.1",
-      "image_digest": "sha256:21efa8ea2831714ab87243454abaf668c51d08ae9c3e261f289940c79cc68e62",
+      "engine_version": "v2.5.0",
+      "image_digest": "sha256:44d95cbb13519b9f85bd610488ae2dd0051b94a6447ee17087aa202c28ac605c",
       "platform": "linux/arm64",
       "profile_version": "archfit.measurement.v1",
       "action_ref": "a9cd2ce8d0dc996b258b5faa5145eaf11bd6bc5b"

@@ -147,8 +147,8 @@ func Unapproved(t Trusted) bool
 
 - `IdentityApproved`: `manifest.Lookup(Upload.Identity)` hits, **and** the report carries a measurement profile,
   **and** `MeasurementProfile.Version == Entry.ProfileVersion`. Any empty identity field is a miss, so unknown never
-  equals unknown. False when there is no report. The approved profile version of engines v2.4.0 and
-  v2.4.1 is `archfit.measurement.v1`; the value lives in the manifest, not here.
+  equals unknown. False when there is no report. The approved profile version of engines v2.4.1 and
+  v2.5.0 is `archfit.measurement.v1`; the value lives in the manifest, not here.
 - `WorkflowApproved`: settings were found, `Binding.WorkflowPath` is not empty, and it equals
   `Trusted.Settings.Workflow`. `Binding.WorkflowPath` comes from the verified OIDC `job_workflow_ref`. A workflow
   file changed by the PR is a protected path, which `gate/inputs` turns into `ApprovalMissing` until an owner approves.
@@ -483,16 +483,16 @@ type Trusted struct {
 
 <!-- contract: Report, StateSchemaV1, MaxBytes — restated from internal/wire/report/module.md -->
 ```go
-// StateSchemaV1 is the engine state contract accepted (engine v2.3.1, archfit.state.schema.json).
+// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v2.3.1 to v2.5.0).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
-// Report is the no-source transport form of an engine state report. The decoder knows every key of the
-// v2.3.1 state schema: keys listed here are kept (length-capped), the other known keys are validated and
-// dropped (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores),
-// and any key the schema does not define is a decode error.
+// Report is the no-source transport form of an engine state report. The decoder knows every key of the state
+// schema of each release it reads: keys listed here are kept (length-capped), the other known keys are validated
+// and dropped (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores),
+// and any key that release's schema does not define is a decode error.
 type Report struct {
     SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
     Verdict       string               `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
@@ -690,6 +690,9 @@ type Seam struct {
     Distance   string `json:"distance"`
     Volatility string `json:"volatility"`
     Severity   string `json:"severity,omitempty"`
+    // Policy is what the engine's policy says about the seam (engine v2.5.0 and later): "violation" | "accepted" |
+    // "advisory" | "allowed" | "observed", a closed set. "" = a report from an earlier release, which has no such key.
+    Policy string `json:"policy,omitempty"`
 }
 ```
 
@@ -788,7 +791,7 @@ type Seam struct {
 ### Integration Contract Tests
 
 - **Test name**: `TestDecideWireFixtures`
-  **Scenario**: every report fixture of the shared corpus `internal/wire/testdata/report` (names and `.expect.json` format per `internal/wire/module.md`; verdict keeps no copy). A fixture with `decode: "ok"` is decoded with `report.Decode`; one with `decode: "error"` gives a nil `Report`. The facts are the clean facts of that document: identity and workflow approved, settings found, no approval needed, not suspended, no problems, trusted policy digests = the report's `config_hash`, trusted baseline and labels digests = `policy.Digest` of the `.baseline.json` and `.labels.yaml` siblings (an empty list when there is no sibling), and the same digests as the envelope's claims. The fixture's `facts` object then overrides single facts; an unknown key in `facts` or in the expectation fails the test. The corpus must hold the required fixtures: `healthy`, `attention-pass`, `blocked`, `missing-evidence`, `unknown-identity`, `profile-comparable`, `profile-incompatible`, `invalid-input`, `blocker-and-unevaluated`, `non-applicable-rule`, `locations-empty`, `matched-by-populated`, `repair-kinds`, `waiver-expiry-order`.
+  **Scenario**: every report fixture of the shared corpus `internal/wire/testdata/report` (names and `.expect.json` format per `internal/wire/module.md`; verdict keeps no copy). A fixture with `decode: "ok"` is decoded with `report.Decode` as a document of its producer's engine release (v2.3.1 for a synthetic fixture); one with `decode: "error"` gives a nil `Report`. The facts are the clean facts of that document: identity and workflow approved, settings found, no approval needed, not suspended, no problems, trusted policy digests = the report's `config_hash`, trusted baseline and labels digests = `policy.Digest` of the `.baseline.json` and `.labels.yaml` siblings (an empty list when there is no sibling), and the same digests as the envelope's claims. The fixture's `facts` object then overrides single facts; an unknown key in `facts` or in the expectation fails the test. The corpus must hold the required fixtures: `healthy`, `attention-pass`, `blocked`, `missing-evidence`, `unknown-identity`, `profile-comparable`, `profile-incompatible`, `invalid-input`, `blocker-and-unevaluated`, `non-applicable-rule`, `locations-empty`, `matched-by-populated`, `repair-kinds`, `waiver-expiry-order`.
   **Expected behavior**: `Decide` returns exactly `gate.conclusion` and the code sequence `gate.reasons` of each fixture. For the named fixtures the document also fixes the first reason: `success`/`healthy` for `healthy` and `non-applicable-rule`; `success`/`attention_only` for `attention-pass`; `failure`/`blocking_findings` for `blocked`; `action_required`/`missing_required_coverage` for `missing-evidence`; `action_required`/`measurement_profile_missing` for `unknown-identity`; `action_required`/`baseline_not_comparable` for `profile-incompatible`; `action_required`/`report_invalid` for `invalid-input`; `failure` with `missing_required_coverage` second for `blocker-and-unevaluated`.
 - **Test name**: `TestReasonsZeroDeterminesConclusion`
   **Scenario**: all outcomes produced by the other tests.

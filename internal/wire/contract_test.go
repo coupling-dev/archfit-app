@@ -325,7 +325,7 @@ func TestUnknownVersionRejectedEverywhere(t *testing.T) {
 			t.Errorf("report v2 decoded as a %s document", release)
 		}
 	}
-	if _, err := report.Decode(rep, "v2.5.0"); err == nil {
+	if _, err := report.Decode(rep, "v2.6.0"); err == nil {
 		t.Error("a report of an engine release the decoder does not read decoded")
 	}
 

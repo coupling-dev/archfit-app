@@ -14,8 +14,12 @@ const (
 	decodeOK    = "ok"
 	decodeError = "error"
 
-	// fixtureEngine is the engine release the corpus fixtures are decoded as; v2.4.0 and v2.4.1 share its key set.
+	// fixtureEngine is the engine release a synthetic fixture is a document of; v2.4.0 and v2.4.1 share its key set.
+	// A capture is a document of the release its producer names (fixtureRelease).
 	fixtureEngine = "v2.3.1"
+
+	// seamPolicyRelease is the first release with the state key seams[].policy.
+	seamPolicyRelease = "v2.5.0"
 )
 
 // fixtureRoot is the shared corpus; its layout and expectation format are defined in internal/wire/module.md.
@@ -44,6 +48,18 @@ func loadFixture(t testing.TB, rel string) []byte {
 		t.Fatalf("read fixture: %v", err)
 	}
 	return b
+}
+
+// fixtureRelease is the engine release whose document a fixture is: a capture's own, else fixtureEngine.
+func fixtureRelease(t testing.TB, rel string) string {
+	t.Helper()
+	var p struct {
+		EngineVersion string `json:"engine_version"`
+	}
+	if json.Unmarshal(loadExpectation(t, rel).Producer, &p) != nil {
+		return fixtureEngine
+	}
+	return p.EngineVersion
 }
 
 func loadExpectation(t testing.TB, rel string) expectation {
@@ -77,9 +93,14 @@ func fixtures(t testing.TB, dir string) []string {
 
 func mustDecode(t testing.TB, payload []byte) Report {
 	t.Helper()
-	r, err := Decode(payload, fixtureEngine)
+	return mustDecodeAs(t, payload, fixtureEngine)
+}
+
+func mustDecodeAs(t testing.TB, payload []byte, release string) Report {
+	t.Helper()
+	r, err := Decode(payload, release)
 	if err != nil {
-		t.Fatalf("Decode: %v", err)
+		t.Fatalf("Decode as %s: %v", release, err)
 	}
 	return r
 }
