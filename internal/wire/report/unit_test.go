@@ -10,7 +10,8 @@ import (
 )
 
 // TestSinceTagSelectsTheKeySet: a key that a later release adds carries `since:"<release>"`; under an earlier
-// release it is an unknown key. A probe type stands in for such a key: no state key has one yet.
+// release it is an unknown key. A probe type keeps the rule apart from the one real tagged key, seams[].policy
+// (TestSeamPolicy).
 func TestSinceTagSelectsTheKeySet(t *testing.T) {
 	type probe struct {
 		Old string `json:"old"`

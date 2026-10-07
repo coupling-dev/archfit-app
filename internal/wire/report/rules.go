@@ -115,6 +115,14 @@ func (c *checker) enum(key string, s *string, allowed ...string) string {
 	return *s
 }
 
+// optEnum checks an optional enum: absent decodes to "", a present value must be in the set.
+func (c *checker) optEnum(key string, s *string, allowed ...string) string {
+	if s == nil {
+		return ""
+	}
+	return c.enum(key, s, allowed...)
+}
+
 // count checks a required integer in 0..limit.
 func (c *checker) count(key string, n *int, limit int) int {
 	if n == nil {

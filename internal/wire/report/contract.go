@@ -3,7 +3,7 @@ package report
 
 import "slices"
 
-// StateSchemaV1 is the engine state contract accepted (engine v2.3.1, archfit.state.schema.json).
+// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v2.3.1 to v2.5.0).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
@@ -12,9 +12,10 @@ const MaxBytes = 5 << 20
 // engineVersions are the engine releases Decode reads, oldest first. A shadow field tagged `since:"<release>"`
 // is a key that release added; every other key is in all of them. v2.4.0 adds rule types, finding kinds and a
 // config key, but no state key, so its key set is the v2.3.1 key set. v2.4.1 only enumerates the rule types in
-// its config schema; its state schema is byte-identical, so its key set is the v2.3.1 key set too. v2.3.1 stays
-// listed after its manifest rows are gone: every synthetic corpus fixture is a v2.3.1 document.
-var engineVersions = []string{"v2.3.1", "v2.4.0", "v2.4.1"}
+// its config schema; its state schema is byte-identical, so its key set is the v2.3.1 key set too. v2.5.0 adds the
+// optional state key seams[].policy. v2.3.1 and v2.4.0 stay listed after their manifest rows are gone: the corpus
+// fixtures are documents of those releases.
+var engineVersions = []string{"v2.3.1", "v2.4.0", "v2.4.1", "v2.5.0"}
 
 // EngineVersions returns the engine releases whose state document Decode reads, oldest first. Each emits
 // StateSchemaV1; a later release only adds optional keys, so the last key set holds every earlier one.
@@ -22,10 +23,10 @@ func EngineVersions() []string {
 	return slices.Clone(engineVersions)
 }
 
-// Report is the no-source transport form of an engine state report. The decoder knows every key of the
-// v2.3.1 state schema: keys listed here are kept (length-capped), the other known keys are validated and
-// dropped (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores),
-// and any key the schema does not define is a decode error.
+// Report is the no-source transport form of an engine state report. The decoder knows every key of the state
+// schema of each release it reads: keys listed here are kept (length-capped), the other known keys are validated
+// and dropped (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores),
+// and any key that release's schema does not define is a decode error.
 type Report struct {
 	SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
 	Verdict       string               `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
@@ -217,4 +218,7 @@ type Seam struct {
 	Distance   string `json:"distance"`
 	Volatility string `json:"volatility"`
 	Severity   string `json:"severity,omitempty"`
+	// Policy is what the engine's policy says about the seam (engine v2.5.0 and later): "violation" | "accepted" |
+	// "advisory" | "allowed" | "observed", a closed set. "" = a report from an earlier release, which has no such key.
+	Policy string `json:"policy,omitempty"`
 }

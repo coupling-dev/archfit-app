@@ -13,7 +13,7 @@ import (
 const (
 	schemaFile       = "archfit.state.schema.json"
 	schemaSourceFile = "SCHEMA_SOURCE"
-	schemaSHA256     = "acd9a09eefe1f30227c0e62155d641925cdfd416e9007e99fea79293c8e387c6"
+	schemaSHA256     = "c8f447ea02b0c7e416409977f99e31b2b3ef3b6da0ab692b96fb6b6bdb3201d6" // engine v2.5.0
 
 	survivingLeakageFixture = "declarations-dropped"
 )
@@ -147,7 +147,7 @@ func TestPinnedEngineSchemaIsRecorded(t *testing.T) {
 		}
 		source[key] = value
 	}
-	want := map[string]string{"revision": engineRevision, "sha256": schemaSHA256, "path": schemaFile}
+	want := map[string]string{"tag": "v2.5.0", "revision": v250Revision, "sha256": schemaSHA256, "path": schemaFile}
 	for key, value := range want {
 		if source[key] != value {
 			t.Errorf("source note %s = %q, want %q", key, source[key], value)

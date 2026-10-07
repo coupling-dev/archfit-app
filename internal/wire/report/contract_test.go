@@ -122,7 +122,7 @@ func TestDecodeConformanceFixtures(t *testing.T) {
 	for _, name := range names {
 		t.Run(name, func(t *testing.T) {
 			want := loadExpectation(t, name)
-			r, err := Decode(loadFixture(t, name), fixtureEngine)
+			r, err := Decode(loadFixture(t, name), fixtureRelease(t, name))
 			if want.Decode == decodeError {
 				if err == nil {
 					t.Fatal("decoded, want an error")
@@ -166,8 +166,8 @@ func collectKeys(v any, into map[string]bool) {
 func TestMarshalledReportHasNoDroppedKey(t *testing.T) {
 	for _, name := range validFixtures(t) {
 		t.Run(name, func(t *testing.T) {
-			payload := loadFixture(t, name)
-			first := mustDecode(t, payload)
+			payload, release := loadFixture(t, name), fixtureRelease(t, name)
+			first := mustDecodeAs(t, payload, release)
 			marshalled := encode(t, first)
 
 			keys := map[string]bool{}
@@ -177,7 +177,7 @@ func TestMarshalledReportHasNoDroppedKey(t *testing.T) {
 					t.Errorf("marshalled report has a %q key", dropped)
 				}
 			}
-			if second := mustDecode(t, marshalled); !reflect.DeepEqual(first, second) {
+			if second := mustDecodeAs(t, marshalled, release); !reflect.DeepEqual(first, second) {
 				t.Error("the second decode differs from the first")
 			}
 			source := parseDoc(t, payload)
@@ -296,6 +296,7 @@ func TestEngineSchemaKeySetIsCovered(t *testing.T) {
 	// Every key of a real capture and of the all-keys fixture must be a shadow field: both decode strictly.
 	mustDecode(t, loadFixture(t, "report/real-blocked-no-baseline.json"))
 	mustDecode(t, loadFixture(t, baseFixture))
+	mustDecodeAs(t, loadFixture(t, "report/real-seam-policy-v250.json"), seamPolicyRelease)
 
 	w := schemaWalker{t: t, root: parseDoc(t, loadFixture(t, "schema/archfit.state.schema.json"))}
 	w.check("report", w.root, reflect.TypeFor[shadowReport]())
@@ -391,7 +392,7 @@ func TestWrongSchemaVersion(t *testing.T) {
 
 func TestEngineVersions(t *testing.T) {
 	got := EngineVersions()
-	if want := []string{"v2.3.1", "v2.4.0", "v2.4.1"}; !slices.Equal(got, want) {
+	if want := []string{"v2.3.1", "v2.4.0", "v2.4.1", "v2.5.0"}; !slices.Equal(got, want) {
 		t.Errorf("EngineVersions() = %q, want %q", got, want)
 	}
 	got[0] = "changed"
@@ -400,14 +401,22 @@ func TestEngineVersions(t *testing.T) {
 	}
 }
 
-// TestEveryEngineVersionReadsTheCorpus: the corpus holds v2.3.1 documents, and a later release adds keys at
-// most, so every listed release decodes every fixture to the same Report, or rejects it alike.
+// TestEveryEngineVersionReadsTheCorpus: a later release adds keys at most, so every release from a fixture's own
+// one on decodes it to the same Report, or rejects it alike. An earlier release reads it alike too unless it carries
+// a key of a later release: then that key is unknown. The only such key is seams[].policy (v2.5.0).
 func TestEveryEngineVersionReadsTheCorpus(t *testing.T) {
 	for _, name := range append(fixtures(t, "report"), fixtures(t, "leakage")...) {
-		payload := loadFixture(t, name)
-		want, wantErr := Decode(payload, fixtureEngine)
-		for _, version := range EngineVersions() {
+		payload, own := loadFixture(t, name), fixtureRelease(t, name)
+		want, wantErr := Decode(payload, own)
+		laterKey := slices.ContainsFunc(want.Seams, func(s Seam) bool { return s.Policy != "" })
+		for i, version := range EngineVersions() {
 			got, err := Decode(payload, version)
+			if laterKey && i < slices.Index(EngineVersions(), seamPolicyRelease) {
+				if err == nil || !strings.Contains(err.Error(), "seams[0]: unknown key") {
+					t.Errorf("%s under %s: err %v, want seams[0]: unknown key", name, version, err)
+				}
+				continue
+			}
 			if (err == nil) != (wantErr == nil) || !reflect.DeepEqual(got, want) {
 				t.Errorf("%s under %s: err %v, want err %v; equal reports %v", name, version, err, wantErr, reflect.DeepEqual(got, want))
 			}
@@ -417,7 +426,7 @@ func TestEveryEngineVersionReadsTheCorpus(t *testing.T) {
 
 func TestUnknownEngineVersionIsRefused(t *testing.T) {
 	payload := loadFixture(t, "report/real-blocked-no-baseline.json")
-	for _, version := range []string{"", "v2.3.0", "v2.5.0", "2.3.1", "v2.3.1 ", "V2.3.1", "v2.3.1-" + leakMarker} {
+	for _, version := range []string{"", "v2.3.0", "v2.6.0", "2.3.1", "v2.3.1 ", "V2.3.1", "v2.3.1-" + leakMarker} {
 		t.Run(version, func(t *testing.T) {
 			r, err := Decode(payload, version)
 			wantError(t, err, "engine_version")
@@ -443,5 +452,59 @@ func TestReportDoesNotAliasPayload(t *testing.T) {
 	}
 	if got := encode(t, first); !bytes.Equal(got, want) {
 		t.Error("the Report changed when the payload was overwritten")
+	}
+}
+
+// TestSeamPolicy: seams[].policy is an optional key of v2.5.0 with a closed value set, the enum of the pinned schema.
+func TestSeamPolicy(t *testing.T) {
+	schema := parseDoc(t, loadFixture(t, "schema/archfit.state.schema.json"))
+	var values []string
+	for _, v := range at(t, schema, "$defs", "Seam", "properties", "policy", "enum").([]any) {
+		values = append(values, v.(string))
+	}
+	if want := []string{"violation", "accepted", "advisory", "allowed", "observed"}; !slices.Equal(values, want) {
+		t.Fatalf("schema enum = %q, want %q", values, want)
+	}
+
+	type row struct {
+		name    string
+		release string
+		value   any // nil: the key is absent
+		want    string
+		wantLoc string
+	}
+	rows := []row{
+		{name: "absent under v2.5.0", release: seamPolicyRelease},
+		{name: "absent under v2.3.1", release: fixtureEngine},
+		{name: "empty", release: seamPolicyRelease, value: "", wantLoc: "seams[0].policy"},
+		{name: "outside the set", release: seamPolicyRelease, value: "permitted", wantLoc: "seams[0].policy"},
+		{name: "case differs", release: seamPolicyRelease, value: "Allowed", wantLoc: "seams[0].policy"},
+		{name: "not a string", release: seamPolicyRelease, value: true, wantLoc: "seams[0].policy"},
+		{name: "a v2.5.0 key under v2.4.1", release: "v2.4.1", value: "allowed", wantLoc: "seams[0]"},
+	}
+	for _, v := range values {
+		rows = append(rows, row{name: v, release: seamPolicyRelease, value: v, want: v})
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			doc := baseDoc(t)
+			if row.value != nil {
+				set(t, doc, row.value, "seams", 0, "policy")
+			}
+			r, err := Decode(encode(t, doc), row.release)
+			if row.wantLoc != "" {
+				wantError(t, err, row.wantLoc)
+				if strings.Contains(err.Error(), "permitted") || strings.Contains(err.Error(), "Allowed") {
+					t.Errorf("error echoes the value: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Decode: %v", err)
+			}
+			if got := r.Seams[0].Policy; got != row.want {
+				t.Errorf("Policy = %q, want %q", got, row.want)
+			}
+		})
 	}
 }

@@ -2,6 +2,8 @@ package ingest
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -55,18 +57,30 @@ func TestReceivePullRequestReport(t *testing.T) {
 }
 
 func TestReportKeySetFollowsTheClaimedEngine(t *testing.T) {
+	// A real v2.5.0 capture: its seams carry seams[].policy, a key v2.4.1 does not define.
+	v250 := filepath.Join("..", "..", "wire", "testdata", "report", "real-seam-policy-v250.json")
 	rows := []struct {
-		version  string
-		problems []Problem
+		name, version, body string // body "" keeps the scenario's v2.3.1 document
+		problems            []Problem
 	}{
-		{"v2.3.1", nil},
-		{"v2.4.0", nil},
-		{"v2.4.1", nil},
-		{"v9.9.9", []Problem{ProblemReportInvalid}}, // a release the decoder does not read
+		{"v2.3.1", "v2.3.1", "", nil},
+		{"v2.4.0", "v2.4.0", "", nil},
+		{"v2.4.1", "v2.4.1", "", nil},
+		{"v2.5.0", "v2.5.0", "", nil},
+		{"v2.5.0 capture", "v2.5.0", v250, nil},
+		{"v2.5.0 capture claimed as v2.4.1", "v2.4.1", v250, []Problem{ProblemReportInvalid}},
+		{"v9.9.9", "v9.9.9", "", []Problem{ProblemReportInvalid}}, // a release the decoder does not read
 	}
 	for _, row := range rows {
-		t.Run(row.version, func(t *testing.T) {
+		t.Run(row.name, func(t *testing.T) {
 			s := prScenario(t)
+			if row.body != "" {
+				raw, err := os.ReadFile(row.body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				s.setBody(raw)
+			}
 			s.env.EngineVersion = row.version
 			up, err := s.receive(t)
 			wantProblems(t, up, err, row.problems...)

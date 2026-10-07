@@ -42,13 +42,23 @@ type fixtureExpect struct {
 	Facts fixtureFacts `json:"facts"`
 }
 
-func loadReport(t *testing.T, name string) *report.Report {
+// fixtureEngine is the release a synthetic fixture is a document of; a capture names its own release.
+const fixtureEngine = "v2.3.1"
+
+func loadReport(t *testing.T, name string, e fixtureExpect) *report.Report {
 	t.Helper()
 	payload, err := os.ReadFile(filepath.Join(fixtureDir, name+".json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := report.Decode(payload, "v2.3.1")
+	engine := fixtureEngine
+	var producer struct {
+		EngineVersion string `json:"engine_version"`
+	}
+	if json.Unmarshal(e.Producer, &producer) == nil {
+		engine = producer.EngineVersion
+	}
+	r, err := report.Decode(payload, engine)
 	if err != nil {
 		t.Fatalf("decode %s: %v", name, err)
 	}
@@ -99,7 +109,7 @@ func fixtureCase(t *testing.T, name string) (Facts, fixtureExpect) {
 		},
 	}
 	if e.Decode == "ok" {
-		f.Report = loadReport(t, name)
+		f.Report = loadReport(t, name, e)
 		f.Trusted.PolicyDigests = []string{f.Report.Comparison.ConfigHash}
 	}
 	f.BaselineDigest, f.LabelsDigest = inputs.First(f.Trusted.BaselineDigests), inputs.First(f.Trusted.LabelsDigests)
