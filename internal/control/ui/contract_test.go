@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"strings"
@@ -282,6 +284,37 @@ func TestGraphPageBuildsFromArtifact(t *testing.T) {
 		if call.detail != fmt.Sprintf("77 archfit-report %d", report.MaxBytes) {
 			t.Errorf("Artifact(%s)", call.detail)
 		}
+	}
+}
+
+// TestGraphPageShowsTheEngineSeamPolicy: an engine v2.5.0 artifact decodes with the newest release's key set, and
+// each link shows the engine's seams[].policy status, allowed included.
+func TestGraphPageShowsTheEngineSeamPolicy(t *testing.T) {
+	e := newEnv(t)
+	c := e.as("alice", permRead)
+	payload, err := os.ReadFile(filepath.Join("..", "..", "wire", "testdata", "report", "real-seam-policy-v250.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep, err := report.Decode(payload, "v2.5.0")
+	if err != nil {
+		t.Fatalf("capture does not decode: %v", err)
+	}
+	e.publishReport(repoName, payload)
+
+	res := c.get("/r/" + repoName + "/graph")
+	wantStatus(t, res, http.StatusOK)
+	body := res.Body.String()
+
+	var got graph.View
+	if err := json.Unmarshal([]byte(embeddedJSON(t, body)), &got); err != nil {
+		t.Fatalf("embedded JSON: %v", err)
+	}
+	if want := graph.Build(rep, []byte(policyText)); !reflect.DeepEqual(got, want) {
+		t.Errorf("embedded view = %+v\nwant %+v", got, want)
+	}
+	for _, status := range []string{"violation", "accepted", "allowed", "observed"} {
+		wantContains(t, body, `<tr class="`+status+`">`)
 	}
 }
 

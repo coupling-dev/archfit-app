@@ -87,17 +87,23 @@ func link(from, to string, count int, status LinkStatus) Link {
 	return Link{From: from, To: to, Status: status, Count: count}
 }
 
-// corpusEngine is the engine release that captured the shared wire corpus.
+// corpusEngine is the engine release of the shared wire corpus's synthetic fixtures and older captures.
 const corpusEngine = "v2.3.1"
 
-// corpusReport decodes a report of the shared wire corpus; internal/wire/module.md owns its names.
-func corpusReport(t *testing.T, name string) report.Report {
+// corpusFile reads a file of the shared wire corpus; internal/wire/module.md owns its names.
+func corpusFile(t *testing.T, name string) []byte {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "wire", "testdata", "report", name+".json"))
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "wire", "testdata", "report", name))
 	if err != nil {
-		t.Fatalf("read corpus fixture: %v", err)
+		t.Fatalf("read corpus file: %v", err)
 	}
-	rep, err := report.Decode(raw, corpusEngine)
+	return raw
+}
+
+// corpusReport decodes a report of the shared wire corpus as a document of release.
+func corpusReport(t *testing.T, name, release string) report.Report {
+	t.Helper()
+	rep, err := report.Decode(corpusFile(t, name+".json"), release)
 	if err != nil {
 		t.Fatalf("decode corpus fixture %s: %v", name, err)
 	}

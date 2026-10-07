@@ -182,3 +182,48 @@ func TestFindingWithoutSeamStillDraws(t *testing.T) {
 		t.Errorf("Links = %+v, want %+v", got.Links, want)
 	}
 }
+
+func TestStatusFollowsEngineSeamPolicy(t *testing.T) {
+	withPolicy := func(from, to string, edges int, policy string) report.Seam {
+		s := seam(from, to, edges)
+		s.Policy = policy
+		return s
+	}
+	tests := []struct {
+		name     string
+		seams    []report.Seam
+		findings []report.Finding
+		want     []Link
+	}{
+		{"violation", []report.Seam{withPolicy("api", "db", 1, "violation")}, nil, []Link{link("api", "db", 1, StatusViolation)}},
+		{"accepted", []report.Seam{withPolicy("api", "db", 1, "accepted")}, nil, []Link{link("api", "db", 1, StatusAccepted)}},
+		{"advisory", []report.Seam{withPolicy("api", "db", 1, "advisory")}, nil, []Link{link("api", "db", 1, StatusAdvisory)}},
+		{"allowed", []report.Seam{withPolicy("api", "db", 1, "allowed")}, nil, []Link{link("api", "db", 1, StatusAllowed)}},
+		{"observed", []report.Seam{withPolicy("api", "db", 1, "observed")}, nil, []Link{link("api", "db", 1, StatusObserved)}},
+		// The engine decided the pair: graph does not overrule it with its own reading of the findings.
+		{"engine allowed, a finding names the pair", []report.Seam{withPolicy("api", "db", 1, "allowed")},
+			[]report.Finding{finding("gate", "new", "api", "db")}, []Link{link("api", "db", 1, StatusAllowed)}},
+		{"engine observed, a baselined advisory names the pair", []report.Seam{withPolicy("api", "db", 1, "observed")},
+			[]report.Finding{finding("advisory", "baseline", "api", "db")}, []Link{link("api", "db", 1, StatusObserved)}},
+		{"duplicate seams: the strongest status wins", []report.Seam{
+			withPolicy("api", "db", 2, "allowed"), withPolicy("api", "db", 3, "violation"), withPolicy("api", "db", 1, "observed"),
+		}, nil, []Link{link("api", "db", 6, StatusViolation)}},
+		{"duplicate seams: allowed beats observed", []report.Seam{
+			withPolicy("api", "db", 1, "observed"), withPolicy("api", "db", 1, "allowed"),
+		}, nil, []Link{link("api", "db", 2, StatusAllowed)}},
+		{"a seam without the key keeps the finding status", []report.Seam{seam("api", "db", 1)},
+			[]report.Finding{finding("gate", "baseline", "api", "db")}, []Link{link("api", "db", 1, StatusAccepted)}},
+		{"a pair only a finding names keeps the finding status", []report.Seam{withPolicy("api", "db", 1, "allowed")},
+			[]report.Finding{finding("gate", "new", "ui", "db")},
+			[]Link{link("api", "db", 1, StatusAllowed), link("ui", "db", 0, StatusViolation)}},
+		{"a seam with an empty endpoint is dropped", []report.Seam{withPolicy("", "db", 1, "violation")}, nil, []Link{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Build(reportFor(threeModules, tt.seams, tt.findings), []byte(threeModules))
+			if !reflect.DeepEqual(got.Links, tt.want) {
+				t.Errorf("Links = %+v, want %+v", got.Links, tt.want)
+			}
+		})
+	}
+}
