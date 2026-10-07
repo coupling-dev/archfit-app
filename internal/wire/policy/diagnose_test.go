@@ -159,8 +159,70 @@ func TestDiagnose(t *testing.T) {
 			policy: "version: 2\nrules:\n  - id: r\n    type: forbiden_dependency\n",
 			want: []Diagnostic{{Line: 4, Column: 11, Message: "`type` must be one of `cycle`, `forbidden_dependency`, " +
 				"`forbidden_layer_direction`, `forbidden_pattern`, `internal_api_access`, `module_cycle`, " +
-				"`new_cross_module_dependency`, `public_api_change`, `public_api_max`, `public_api_only`, " +
-				"`public_api_type_leak`. Did you mean `forbidden_dependency`?"}},
+				"`module_dependencies`, `new_cross_module_dependency`, `public_api_change`, `public_api_max`, " +
+				"`public_api_only`, `public_api_type_leak`. Did you mean `forbidden_dependency`?"}},
+		},
+		{
+			name: "module allowlists and the module_dependencies rule",
+			policy: "version: 2\nmodules:\n  a:\n    paths: [\"pkg/a/**\"]\n    depends_on: [b, \"layer:core\", \"role:adapter\", \"svc-*\"]\n" +
+				"  b:\n    paths: [\"pkg/b/**\"]\n    visible_to: []\nrules:\n  - id: r\n    type: module_dependencies\n    gate: fail\n",
+		},
+		{
+			// Whether an allowlist entry selects a declared module is the engine's check (config lint unknown_module).
+			name:   "an allowlist entry that names no declared module",
+			policy: "version: 2\nmodules:\n  a:\n    depends_on: [no_such_module]\n    visible_to: [nor_this_one]\n",
+		},
+		{
+			name: "module selectors and rule rationale",
+			policy: "version: 2\nrules:\n  - id: r\n    type: forbidden_dependency\n    from_module: \"layer:domain\"\n" +
+				"    to_module: \"role:adapter\"\n    rationale: the domain stays pure\n    alternatives: [use a port]\n" +
+				"    docs: docs/adr/0007.md\n    gate: fail\n",
+		},
+		{
+			name:   "allowlist given as text",
+			policy: "version: 2\nmodules:\n  a:\n    depends_on: b\n    visible_to: {b: true}\n",
+			want: []Diagnostic{
+				{Line: 4, Column: 17, Message: "`depends_on` must be a list."},
+				{Line: 5, Column: 17, Message: "`visible_to` must be a list."},
+			},
+		},
+		{
+			name:   "allowlist entry that is not text",
+			policy: "version: 2\nmodules:\n  a:\n    depends_on: [[b]]\n",
+			want:   []Diagnostic{{Line: 4, Column: 18, Message: "Each item must be text."}},
+		},
+		{
+			name:   "rule rationale keys of the wrong type",
+			policy: "version: 2\nrules:\n  - id: r\n    type: cycle\n    alternatives: use a port\n    rationale: [a, b]\n    from_module: {x: 1}\n",
+			want: []Diagnostic{
+				{Line: 5, Column: 19, Message: "`alternatives` must be a list."},
+				{Line: 6, Column: 16, Message: "`rationale` must be text."},
+				{Line: 7, Column: 18, Message: "`from_module` must be text."},
+			},
+		},
+		{
+			name:   "misspelled allowlist keys",
+			policy: "version: 2\nmodules:\n  a:\n    depend_on: [b]\n    visibile_to: [b]\n",
+			want: []Diagnostic{
+				{Line: 4, Column: 5, Message: "Unknown key `depend_on`. Did you mean `depends_on`?"},
+				{Line: 5, Column: 5, Message: "Unknown key `visibile_to`. Did you mean `visible_to`?"},
+			},
+		},
+		{
+			name:   "misspelled rule keys",
+			policy: "version: 2\nrules:\n  - id: r\n    type: forbidden_dependency\n    from_modul: \"layer:x\"\n    rationalle: why\n",
+			want: []Diagnostic{
+				{Line: 5, Column: 5, Message: "Unknown key `from_modul`. Did you mean `from_module`?"},
+				{Line: 6, Column: 5, Message: "Unknown key `rationalle`. Did you mean `rationale`?"},
+			},
+		},
+		{
+			name:   "misspelled module_dependencies",
+			policy: "version: 2\nrules:\n  - id: r\n    type: module_dependecies\n",
+			want: []Diagnostic{{Line: 4, Column: 11, Message: "`type` must be one of `cycle`, `forbidden_dependency`, " +
+				"`forbidden_layer_direction`, `forbidden_pattern`, `internal_api_access`, `module_cycle`, " +
+				"`module_dependencies`, `new_cross_module_dependency`, `public_api_change`, `public_api_max`, " +
+				"`public_api_only`, `public_api_type_leak`. Did you mean `module_dependencies`?"}},
 		},
 		{
 			name:   "wrong enum value without a close match",
