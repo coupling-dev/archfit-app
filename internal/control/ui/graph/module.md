@@ -8,18 +8,21 @@
 
 Graph turns one engine report plus the current policy text into a read-only picture of modules and
 dependencies that the UI can draw. It keeps three product promises in one pure function: each observed
-dependency carries what the report's findings say about it (a violation, accepted debt, an advisory, or nothing),
-a module can be found in the YAML, and a picture that no longer matches the policy text is marked stale instead of
-looking current. Graph never infers "permitted" from the policy text: a baselined forbidden edge is accepted debt,
-not a permitted dependency. Without it this logic would sit in templates and JavaScript where it cannot be tested.
+dependency carries what the report says about it (the engine's seam policy status when the report has one, else what
+its findings say: a violation, accepted debt, an advisory, or nothing), a module can be found in the YAML, and a
+picture that no longer matches the policy text is marked stale instead of looking current. Graph never infers
+"allowed" itself: only the engine's `seams[].policy` can say a dependency is allowed, and a baselined forbidden edge
+is accepted debt, never allowed. Without it this logic would sit in templates and JavaScript where it cannot be
+tested.
 
 ## Functional Responsibilities
 
 - Build one `Node` per module declared in the policy, with its layer and its line in the YAML.
 - Build one `Link` per observed module-to-module seam of the report, and per module pair a current finding names, in
   a stable order.
-- Give each link its `Status` from the report's findings on that module pair: `violation`, `accepted`, `advisory`, or
-  `observed`.
+- Give each link its `Status`: the engine's `seams[].policy` of the pair when a seam carries it (`violation`,
+  `accepted`, `advisory`, `allowed`, or `observed`); otherwise the status the report's findings on that module pair
+  give: `violation`, `accepted`, `advisory`, or `observed`.
 - Set `Stale` when the policy text is not the policy the report was computed from, or does not parse.
 - Set `Incomplete` when the report's hard gates did not pass or a required rule was not evaluated, so that an
   `observed` link is not read as clean.
@@ -34,7 +37,10 @@ Layout, colors and interaction are not here; they are the parent's templates and
 
 ## Encapsulated Knowledge
 
-- The status a finding gives its pair, and the precedence when several findings name it. Which findings are active
+- The rule that the engine's seam policy status, when present, is the link's status, and findings do not change it:
+  the engine owns the rules and computes the status from the same findings, so a second reading here could only
+  disagree with it (for example, the engine counts only an active advisory, a baselined one names nothing).
+- The status a finding gives its pair, and the precedence when several findings or seams name it. Which findings are active
   (a violation) is not graph's knowledge: `report.Finding.Active()` of wire/report decides, the same rule the gate's
   feedback uses. Graph knows only the accepted statuses (`baseline`, `waived`), the `fixed` status and the `gate`
   kind, the display vocabulary feedback reads too. A `gate` finding with any other status is drawn as a violation
@@ -54,14 +60,16 @@ type Node struct {
     PolicyLine int // 1-based line of the module in the policy YAML; 0 if not found
 }
 
-// LinkStatus is what the report's findings say about a module pair. It is a display fact, never a check input.
+// LinkStatus is what the report says about a module pair: the engine's seam policy status when the report carries
+// one (engine v2.5.0 and later), else what the findings on the pair say. It is a display fact, never a check input.
 type LinkStatus string
 
 const (
     StatusViolation LinkStatus = "violation" // an active gate finding (wire/report Finding.Active), or a gate finding of unknown status, names the pair
     StatusAccepted  LinkStatus = "accepted"  // a gate finding accepted by the baseline or a waiver names the pair
     StatusAdvisory  LinkStatus = "advisory"  // another finding that is not fixed names the pair
-    StatusObserved  LinkStatus = "observed"  // a seam that no current finding names
+    StatusAllowed   LinkStatus = "allowed"   // engine seam policy only: a fail-gated allowlist or layer rule permits the pair
+    StatusObserved  LinkStatus = "observed"  // a seam that no current finding names and, with a seam policy, no rule decides
 )
 
 type Link struct {
@@ -80,8 +88,9 @@ type View struct {
     Incomplete bool
 }
 
-// Build is pure. Nodes come from the policy's modules, links from the report's seams and findings; a link's
-// Status comes from the findings that name its module pair, never from the policy text.
+// Build is pure. Nodes come from the policy's modules, links from the report's seams and findings. A link's Status
+// is the engine's seams[].policy when a seam of the pair carries it; otherwise it comes from the findings that name
+// the pair. Graph never computes a status from the policy text.
 func Build(rep Report, policy []byte) View
 ```
 
@@ -90,8 +99,13 @@ func Build(rep Report, policy []byte) View
 1. Modules: `defs, err := policy.Modules(policyText)`. One node per `ModuleDef`: `Name`, `Layer`, `PolicyLine = Line`.
    On a duplicate name the first wins.
 2. Links: one per distinct `(FromModule, ToModule)` of `rep.Seams`. Duplicates merge **[default]**: `Count` is the sum
-   of `Edges`. A seam with an empty endpoint is dropped. A seam alone gives `observed`.
-3. `Status` comes from the findings with `Edge.From.Module == From` and `Edge.To.Module == To`. Each finding gives one
+   of `Edges`. A seam with an empty endpoint is dropped. A seam alone, without `Policy`, gives `observed`.
+3. Engine status: when a seam of the pair has a non-empty `Policy` (engine v2.5.0 and later; wire/report admits only
+   `violation`, `accepted`, `advisory`, `allowed`, `observed`), the link's `Status` is that value, the strongest one
+   when duplicate seams of the pair differ, and rule 4 does not apply to the pair. Graph shows the engine's status; it
+   does not check it against the findings.
+4. Finding status, for a pair no seam `Policy` decided (every pair of a report from an engine before v2.5.0):
+   `Status` comes from the findings with `Edge.From.Module == From` and `Edge.To.Module == To`. Each finding gives one
    status: `violation` when `Finding.Active()` is true (the rule wire/report owns: today a gate finding with status `new`
    or `expired_waiver`); none when its status is `fixed` (it says nothing about the current tree); `accepted` for a
    `gate` finding with status `baseline` or `waived`; `violation` for a `gate` finding with any other status, one this
@@ -99,25 +113,27 @@ func Build(rep Report, policy []byte) View
    finding, an advisory of any status and a kind this version does not know included, so a finding is never drawn as
    a plain observation. The
    strongest wins: `violation` > `accepted` > `advisory` > `observed`. Findings with an empty module on either side do
-   not change a link. The policy text never sets a status: graph does not evaluate rules.
-4. A finding that gives a status to a pair without a seam still yields a link, `Count` 0 **[default]**: a violation or
+   not change a link. Findings never give `allowed`. The policy text never sets a status: graph does not evaluate
+   rules. The full order, used for duplicate seams too, is the engine's: `violation` > `accepted` > `advisory` >
+   `allowed` > `observed`.
+5. A finding that gives a status to a pair without a seam still yields a link, `Count` 0 **[default]**: a violation or
    accepted debt is never hidden because the seam list is incomplete. A fixed finding yields no link.
-5. A link endpoint that the policy does not declare gets a node with that name, empty `Layer`, `PolicyLine` 0.
-6. `Stale = policy.Digest(policyText) != rep.Comparison.ConfigHash`. Both are bare lower-case hex; the comparison is
+6. A link endpoint that the policy does not declare gets a node with that name, empty `Layer`, `PolicyLine` 0.
+7. `Stale = policy.Digest(policyText) != rep.Comparison.ConfigHash`. Both are bare lower-case hex; the comparison is
    exact. An empty `ConfigHash` or empty policy text is stale.
-7. `policy.Modules` error (invalid YAML): nodes come only from rule 5, and `Stale` is true whatever the digests say.
+8. `policy.Modules` error (invalid YAML): nodes come only from rule 6, and `Stale` is true whatever the digests say.
    The caller is expected to keep showing the view of the last valid text, marked stale (the parent does).
-8. Order: `Nodes` by `Name`, `Links` by `(From, To)`, byte-wise ascending. The same input always gives the same output.
-9. `Build` never fails and never panics. A zero `Report` with an empty policy gives an empty, stale, incomplete `View`.
-10. `Incomplete = rep.Decision.HardGates != "pass" || len(rep.Decision.UnevaluatedRequiredRules) > 0`. `fail`,
+9. Order: `Nodes` by `Name`, `Links` by `(From, To)`, byte-wise ascending. The same input always gives the same output.
+10. `Build` never fails and never panics. A zero `Report` with an empty policy gives an empty, stale, incomplete `View`.
+11. `Incomplete = rep.Decision.HardGates != "pass" || len(rep.Decision.UnevaluatedRequiredRules) > 0`. `fail`,
     `unmeasured`, an empty and an unknown value are all incomplete: the engine did not show that every required rule
     was evaluated and passed, so an `observed` link may still be a forbidden edge it did not evaluate. Display only,
     like `Stale`.
 
-Stated limits **[default]**: no link says "permitted". A relationship the policy permits but the engine did not observe
-is not in a report, and graph does not interpret policy rules, so `observed` means only that no current finding names
-the pair. An engine-computed per-seam policy status (an additive `seams[].policy` key once allowlists exist) is the
-upgrade path; graph would read it then, never compute it.
+Stated limits **[default]**: only the engine says "allowed". A relationship the policy permits but the engine did
+not observe is not in a report, and graph does not interpret policy rules. In a report from an engine before v2.5.0
+no link is `allowed`, and `observed` means only that no current finding names the pair. In a v2.5.0 report a pair
+that only a finding names (no seam) keeps the finding status of rule 4.
 
 ## Integrations
 
@@ -141,7 +157,7 @@ upgrade path; graph would read it then, never compute it.
 - **LCA / Rank / Distance**: root / 3 / 3
 - **Volatility**: moderate
 - **Balanced?**: yes — contract coupling tolerates the distance
-- **Shared knowledge**: graph reads `Seams` (`FromModule`, `ToModule`, `Edges`), `Findings` (`Kind`, `Status`,
+- **Shared knowledge**: graph reads `Seams` (`FromModule`, `ToModule`, `Edges`, `Policy`), `Findings` (`Kind`, `Status`,
   `Edge.From.Module`, `Edge.To.Module`), `Comparison.ConfigHash` and `Decision.HardGates` with
   `Decision.UnevaluatedRequiredRules` (only whether it is empty), and calls `Finding.Active()`, nothing else. `Reference`, `Dimension`, `Coverage`, `AgentTask` and the other types in the fences below are restated
   only because they share a fence with a type graph reads; graph never touches them. `StateSchemaV1` is the constant
@@ -149,16 +165,16 @@ upgrade path; graph would read it then, never compute it.
 
 <!-- contract: Report, StateSchemaV1, MaxBytes — restated from internal/wire/report/module.md -->
 ```go
-// StateSchemaV1 is the engine state contract accepted (engine v2.3.1, archfit.state.schema.json).
+// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v2.3.1 to v2.5.0).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
-// Report is the no-source transport form of an engine state report. The decoder knows every key of the
-// v2.3.1 state schema: keys listed here are kept (length-capped), the other known keys are validated and
-// dropped (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores),
-// and any key the schema does not define is a decode error.
+// Report is the no-source transport form of an engine state report. The decoder knows every key of the state
+// schema of each release it reads: keys listed here are kept (length-capped), the other known keys are validated
+// and dropped (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores),
+// and any key that release's schema does not define is a decode error.
 type Report struct {
     SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
     Verdict       string               `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
@@ -363,6 +379,9 @@ type Seam struct {
     Distance   string `json:"distance"`
     Volatility string `json:"volatility"`
     Severity   string `json:"severity,omitempty"`
+    // Policy is what the engine's policy says about the seam (engine v2.5.0 and later): "violation" | "accepted" |
+    // "advisory" | "allowed" | "observed", a closed set. "" = a report from an earlier release, which has no such key.
+    Policy string `json:"policy,omitempty"`
 }
 ```
 
@@ -408,7 +427,8 @@ func Modules(policy []byte) ([]ModuleDef, error)
 
 ## Change Vectors
 
-- The status rule (for example an engine `seams[].policy` key that can say "permitted" once allowlists exist).
+- The status rule: a new `seams[].policy` value comes with a new state schema version in wire/report, then a new
+  `LinkStatus` and its rank here.
 - More per-node or per-link facts from the report (finding counts per module, seam strength or severity).
 - The merge rule for duplicate seams.
 - Bounded visual edits later: a new function that returns a proposed text patch. `Build` stays read-only.
@@ -424,8 +444,9 @@ func Modules(policy []byte) ([]ModuleDef, error)
 - Cost is linear in modules + seams + findings. The report decoder caps findings and seams; the parent caps the policy
   text. Graph adds no cap of its own.
 - Inherited: control-plane code, never on the gate path. `Stale` and `Status` are display facts and never an input to a check.
-- Never "permitted": no status claims that the policy allows a dependency. A finding is never drawn as a plain
-  observation, and a fixed finding never draws a link.
+- Never "allowed" on graph's own reading: only the engine's `seams[].policy` gives `allowed`, and a pair the engine
+  decided keeps the engine's status. Without it, a finding is never drawn as a plain observation, and a fixed finding
+  never draws a link.
 
 ## Test Specification
 
@@ -453,6 +474,14 @@ Nothing is mocked.
   baseline); `accepted` for baseline and waived; `observed` for fixed findings, the other direction, the empty module and
   no finding; `advisory` for advisories and unknown kinds; `violation` and `accepted` win the last two rows. Every active
   finding on the pair gives `violation`: the rule is wire/report's.
+- **Test name**: `TestStatusFollowsEngineSeamPolicy`
+  **Scenario**: table over seams with `Policy`: each of the five values alone; `allowed` with a gate/new finding on the
+  pair; `observed` with an advisory/baseline finding on the pair; duplicate seams `allowed`, `violation`, `observed`
+  (`Edges` 2, 3, 1); duplicate seams `observed` and `allowed`; a seam without `Policy` and a gate/baseline finding; an
+  `allowed` seam `api → db` and a gate/new finding on `ui → db` with no seam; a `violation` seam with an empty endpoint.
+  **Expected behavior**: the seam's value each time; the finding does not change an engine status; `violation` with
+  `Count` 6 and `allowed` with `Count` 2 for the duplicates; `accepted` without `Policy`; `api → db` allowed and
+  `ui → db` violation with `Count` 0; no link for the empty endpoint.
 - **Test name**: `TestFindingWithoutSeamStillDraws`
   **Scenario**: gate/new on `ui → db`, gate/baseline on `api → ui`, advisory/new on `db → api` and gate/fixed on `db → ui`,
   with no seams.
@@ -465,10 +494,16 @@ Nothing is mocked.
   **Expected behavior**: nodes equal the policy's modules with correct `Layer` and `PolicyLine`; links equal the fixture's
   seams; exactly the pairs named by active gate findings are violations; `Stale` false.
 - **Test name**: `TestStatusFromRealReports`
-  **Scenario**: engine captures of the shared corpus `internal/wire/testdata/report`: `real-blocked-forbidden-and-allowed`,
-  `real-baselined-comparable`, `real-waiver-active`, `real-waiver-expired`.
+  **Scenario**: engine captures of the shared corpus `internal/wire/testdata/report`, each decoded as a document of its
+  release: the v2.3.1 captures `real-blocked-forbidden-and-allowed`, `real-baselined-comparable`, `real-waiver-active`,
+  `real-waiver-expired`, and the v2.5.0 capture `real-blocked-no-baseline-v250` (`seams[].policy: violation`).
   **Expected behavior**: `a → b` violation and `a → c` advisory; `a → b` accepted (a baselined forbidden edge is never
-  permitted); accepted; violation.
+  allowed); accepted; violation; violation.
+- **Test name**: `TestStatusFromEngineSeamPolicy`
+  **Scenario**: the v2.5.0 capture `real-seam-policy-v250` (the engine's hexagonal `map` scenario) with its policy file.
+  **Expected behavior**: the six links with the engine's statuses, `Count` 1 each: `api → billing` accepted,
+  `api → stripe`, `orders → billing` and `stripe → orders` allowed, `billing → stripe` violation, `orders → audit`
+  observed; `Stale` false; `Incomplete` true (two required rules not evaluated).
 - **Test name**: `TestBuildIsDeterministic`
   **Scenario**: build twice from the same input, and once with seams and findings shuffled.
   **Expected behavior**: three identical views, nodes sorted by name, links by `(From, To)`.

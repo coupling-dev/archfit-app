@@ -8,8 +8,8 @@
 
 An engine state report is produced in the customer's CI and uploaded to Archfit. The product promise is that no
 source code reaches Archfit. This module is where that promise is enforced on the payload. It mirrors the engine
-state contract `archfit.architecture-state.v1` (engine v2.3.1, `archfit.state.schema.json`) as each engine release
-it reads emits it, and turns it into a no-source transport: it knows every key of that release's schema, keeps an
+state contract `archfit.architecture-state.v1` (engine v2.3.1 to v2.5.0, `archfit.state.schema.json`) as each
+engine release it reads emits it, and turns it into a no-source transport: it knows every key of that release's schema, keeps an
 allowlisted subset under length caps, drops the rest, and refuses anything the schema does not define. Without it,
 "schema-valid engine JSON" would be mistaken for "no-source payload" (plan T04): a real report carries source
 identifiers in `agent_tasks[].declarations`.
@@ -34,9 +34,10 @@ Volatility: moderate. It changes with a versioned engine release; the caps are *
 
 ## Encapsulated Knowledge
 
-- The complete key set of the v2.3.1 state schema, pinned at engine revision
-  `f8877d25ba36d84d3780071580d23486e3d794d0`, and the split into kept and dropped keys below. Field names and
-  enum values in the Public Contract are taken from that schema, not guessed.
+- The complete key set of the state schema, pinned at engine v2.5.0 (revision
+  `59318b9eec906f54bc7a54d01db634b0c20c0647`, `internal/wire/testdata/schema/`), the union of every listed
+  release's key set, and the split into kept and dropped keys below. Field names and enum values in the Public
+  Contract are taken from that schema, not guessed.
 - The release table: which engine releases `Decode` reads and which release added each key (see "Engine releases
   and key sets" below).
 - The decoding technique. `Decode` unmarshals into unexported shadow types that mirror the whole schema, dropped
@@ -67,9 +68,10 @@ not define is an unknown key, as before. A release that is not listed is a decod
 
 | Release  | Key set                                                           |
 | -------- | ----------------------------------------------------------------- |
-| `v2.3.1` | the pinned v2.3.1 state schema (`internal/wire/testdata/schema/`) |
-| `v2.4.0` | the v2.3.1 key set                                                |
-| `v2.4.1` | the v2.3.1 key set                                                |
+| `v2.3.1` | the pinned state schema without the keys a later release added     |
+| `v2.4.0` | the v2.3.1 key set                                                 |
+| `v2.4.1` | the v2.3.1 key set                                                 |
+| `v2.5.0` | the v2.3.1 key set plus `seams[].policy` (the whole pinned schema) |
 
 - v2.4.0 adds rule types, finding kinds, the config key `guard` and unevaluated-rule reasons of the form
   `selector matches nothing: <side> <glob>`, but no state key (owner statement). A rule ID is an identifier, a
@@ -83,10 +85,20 @@ not define is an unknown key, as before. A release that is not listed is a decod
 - v2.4.1 only enumerates the allowed `rules[].type` values in the config schema. Verified against the release:
   `archfit.state.schema.json` at tag v2.4.1 (revision `ca1f593e69ddf41662cbebe6ccb0fb59b09f73fd`) is byte-identical
   to the pinned v2.3.1 file, and the unmodified capture `real-blocked-no-baseline-v241` is byte-identical to the
-  v2.4.0 capture and decodes as a v2.4.1 document. The manifest approves v2.4.1 (`current`) and v2.4.0.
-- v2.3.1 stays listed although its manifest rows are gone (its upgrade window is closed): every synthetic corpus
-  fixture is a v2.3.1 document, and consumer tests decode them as one. A v2.3.1 upload still decodes and concludes
-  `action_required` on its unapproved identity.
+  v2.4.0 capture and decodes as a v2.4.1 document.
+- v2.5.0 adds one state key, the optional `seams[].policy`, with the closed value set `violation`, `accepted`,
+  `advisory`, `allowed`, `observed` (the engine's policy status of the seam). Verified against the release: the
+  `archfit.state.schema.json` diff between tags v2.4.1 and v2.5.0 (revision
+  `59318b9eec906f54bc7a54d01db634b0c20c0647`) adds only that property; the pinned schema is now the v2.5.0 file
+  (SHA-256 `c8f447ea…`). The unmodified capture `real-blocked-no-baseline-v250` equals the v2.4.1 capture except
+  for `"policy":"violation"` on its one seam, and `real-seam-policy-v250` carries `accepted`, `allowed`,
+  `violation` and `observed`. Both decode as v2.5.0 documents and fail as v2.4.1 documents. `Seam.Policy` keeps the
+  value, an enum checked only when the key is present (absent decodes to `""`); the graph shows it, the gate never
+  reads it. The manifest approves v2.5.0 (`current`) and v2.4.1.
+- v2.3.1 and v2.4.0 stay listed although their manifest rows are gone (their upgrade windows are closed): every
+  synthetic corpus fixture is a v2.3.1 document, consumer tests decode them as one, and `real-blocked-no-baseline-v240`
+  is a v2.4.0 document. An upload of either release still decodes and concludes `action_required` on its
+  unapproved identity.
 - A key a later release adds is a shadow field tagged `since:"<release>"`; untagged fields exist in every release.
   The pre-pass reads the tag when it looks a key up and treats a key of a later release as unknown. A tag that
   names no listed release makes the key unknown under every release. Within `archfit.architecture-state.v1` a
@@ -154,13 +166,15 @@ Values outside the set are decode errors. These are the enums the engine schema 
 | `dimensions.*.status`                 | `measured`, `partial`, `unmeasured`             |
 | `agent_tasks[].repair_kind`           | `code_change`, `needs_owner_decision`           |
 | `producers[].partial_basis`, if given | `unresolved_specifiers`, `degraded_precision`   |
+| `seams[].policy`, if given (v2.5.0)   | `violation`, `accepted`, `advisory`, `allowed`, `observed` |
 
 Other value sets named in the type comments (`Finding.Status`, `Severity`, `Kind`, `Producer.Status`, `Dimension.Gate`,
 `AgentTask.Origin`) are plain strings in the engine schema. They are checked as tokens only **[default]**; a consumer
 that meets a value it does not know fails closed or shows it as text.
 
 An empty `partial_basis` (`""`) is accepted and means the same as an absent key: the enum is checked only for a
-non-empty value **[default]**.
+non-empty value **[default]**. `seams[].policy` is stricter, as the engine schema is: a present key must hold one of
+its five values, the empty string included in the errors.
 
 ### Collection caps
 
@@ -251,16 +265,16 @@ sets are **[default]**. Classes:
 ## Public Contract
 
 ```go
-// StateSchemaV1 is the engine state contract accepted (engine v2.3.1, archfit.state.schema.json).
+// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v2.3.1 to v2.5.0).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
-// Report is the no-source transport form of an engine state report. The decoder knows every key of the
-// v2.3.1 state schema: keys listed here are kept (length-capped), the other known keys are validated and
-// dropped (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores),
-// and any key the schema does not define is a decode error.
+// Report is the no-source transport form of an engine state report. The decoder knows every key of the state
+// schema of each release it reads: keys listed here are kept (length-capped), the other known keys are validated
+// and dropped (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores),
+// and any key that release's schema does not define is a decode error.
 type Report struct {
     SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
     Verdict       string               `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
@@ -454,6 +468,9 @@ type Seam struct {
     Distance   string `json:"distance"`
     Volatility string `json:"volatility"`
     Severity   string `json:"severity,omitempty"`
+    // Policy is what the engine's policy says about the seam (engine v2.5.0 and later): "violation" | "accepted" |
+    // "advisory" | "allowed" | "observed", a closed set. "" = a report from an earlier release, which has no such key.
+    Policy string `json:"policy,omitempty"`
 }
 ```
 
@@ -487,7 +504,7 @@ Semantics not visible in the signatures:
   to one problem (`report_invalid`). The message names location and rule only.
 - `engineVersion` is compared exactly with the listed releases: no trimming, no `v` added, no ranges. An unlisted
   release, the empty string included, is an error naming `engine_version`, before the payload is read.
-- `EngineVersions` returns `v2.3.1`, `v2.4.0`, `v2.4.1` today, as a fresh slice on every call. A caller without a bound
+- `EngineVersions` returns `v2.3.1`, `v2.4.0`, `v2.4.1`, `v2.5.0` today, as a fresh slice on every call. A caller without a bound
   release that only displays a report (the graph page) passes the last one; the gate passes the envelope's.
 - A decoded `Report` owns its memory; it does not alias `payload`.
 - `Decode` never drops, reorders, or rewrites findings, tasks, seams, or validation commands. The only dropped
@@ -515,7 +532,7 @@ table; the `internal/gate` row is computed (LCA root, deeper module two levels d
 | `internal/gate`                  | through gate/ingest, no import   | Contract                      | root / 2 / 2              | High       | Yes       |
 | `internal/control/ui`            | ui depends on report             | Contract                      | root / 2 / 2              | High       | Yes       |
 | `internal/control/ui/graph`      | graph depends on report          | Contract                      | root / 3 / 3              | Moderate   | Yes       |
-| `archfit` engine state (v2.3.1)  | report mirrors the engine schema | Contract (versioned schema)   | outside the tree; highest | Moderate   | Yes       |
+| `archfit` engine state (v2.5.0)  | report mirrors the engine schema | Contract (versioned schema)   | outside the tree; highest | Moderate   | Yes       |
 | `archfit-action` (external repo) | the Action uploads engine state  | Contract                      | outside the tree; highest | Moderate   | Yes       |
 
 Shared knowledge, per counterpart:
@@ -539,10 +556,11 @@ Shared knowledge, per counterpart:
   is not approved. A change to those fields still reaches it.
 - `internal/control/ui` holds `Decode`, `EngineVersions` and `MaxBytes` to read the `archfit-report` workflow
   artifact for the graph page. The artifact names no release, so it decodes with the newest.
-- `internal/control/ui/graph` holds `Report`, `Seam`, `Comparison.ConfigHash` and `Finding.Active`, which decides
-  the links it marks as active gate findings.
-- `archfit` engine state: this module holds the whole v2.3.1 state schema key set, its enums and required lists,
-  pinned at revision `f8877d25ba36d84d3780071580d23486e3d794d0`. It holds no engine Go types (trust-and-reporting.md §7).
+- `internal/control/ui/graph` holds `Report`, `Seam` (`Seam.Policy` included, the status it shows when present),
+  `Comparison.ConfigHash` and `Finding.Active`, which decides the links it marks as active gate findings in a
+  report without `seams[].policy`.
+- `archfit` engine state: this module holds the whole state schema key set, its enums and required lists, pinned
+  at v2.5.0, revision `59318b9eec906f54bc7a54d01db634b0c20c0647`, and which release added each key. It holds no engine Go types (trust-and-reporting.md §7).
 - `archfit-action` uploads the engine's state file bytes as they are, or with dropped keys stripped. Contract
   coupling through a version constant, strict decoding and shared fixtures tolerates the distance of three repositories.
 
@@ -587,8 +605,9 @@ Fixtures live in `internal/wire/testdata/report/` and `internal/wire/testdata/le
 Each fixture has an `.expect.json` sibling recording its producer artifact and expected outcome (see the parent document);
 this module asserts its `decode` and `fields` keys. The pinned engine schema is `internal/wire/testdata/schema/archfit.state.schema.json`.
 This module has no private fixture and no `testdata` folder of its own. Every fixture is a v2.3.1 document except
-the v2.4.0 capture `real-blocked-no-baseline-v240` and the v2.4.1 capture `real-blocked-no-baseline-v241`. The three
-releases share one key set, so the tests decode every fixture as v2.3.1, and `TestEveryEngineVersionReadsTheCorpus` decodes each one under every listed release.
+the v2.4.0 capture `real-blocked-no-baseline-v240`, the v2.4.1 capture `real-blocked-no-baseline-v241` and the
+v2.5.0 captures `real-blocked-no-baseline-v250` and `real-seam-policy-v250`. The tests decode each fixture as a
+document of its own release, and `TestEveryEngineVersionReadsTheCorpus` decodes each one under every listed release.
 
 ### Unit Tests
 
@@ -600,6 +619,11 @@ releases share one key set, so the tests decode every fixture as v2.3.1, and `Te
   `semantics_version` and `(` in `unknowns`.
   **Expected behavior**: at-limit rows, `timed out`, empty and 64-hex hashes and every engine tool-version format decode; every other
   row is an error naming the JSON location.
+- **Test name**: `TestSeamPolicy`
+  **Scenario**: read the `seams[].policy` enum of the pinned schema; on the all-keys fixture, the key absent under v2.5.0
+  and v2.3.1, each enum value, `""`, `permitted`, `Allowed` and `true` under v2.5.0, and `allowed` under v2.4.1.
+  **Expected behavior**: the schema enum is the five values; absent decodes to `""`; each value is kept; the other rows
+  are errors naming `seams[0].policy` (under v2.4.1: an unknown key at `seams[0]`), and no error echoes the value.
 - **Test name**: `TestSinceTagSelectsTheKeySet`
   **Scenario**: the pre-pass over a probe type with an untagged key, a key tagged `since:"v2.4.0"` and a key tagged with an unlisted
   release: the new key under v2.3.1 and under v2.4.0, the unlisted one under the newest release.
@@ -664,17 +688,20 @@ releases share one key set, so the tests decode every fixture as v2.3.1, and `Te
   **Expected behavior**: no `matched_by`, `declarations`, `measurement`, `provenance`, `denominator`, `hypothesis` or `scores` key anywhere;
   the second decode equals the first; counts of findings, tasks and seams equal the counts in the fixture file.
 - **Test name**: `TestEngineSchemaKeySetIsCovered`
-  **Scenario**: walk the pinned `internal/wire/testdata/schema/archfit.state.schema.json` and the shadow types by reflection.
+  **Scenario**: walk the pinned v2.5.0 `internal/wire/testdata/schema/archfit.state.schema.json` and the shadow types by
+  reflection; decode the v2.3.1 capture and the all-keys fixture as v2.3.1, and `real-seam-policy-v250` as v2.5.0.
   **Expected behavior**: every schema property is a shadow field, and the reverse; kept plus dropped equals the schema key set. A
   missing schema file fails the test; it never skips.
 - **Test name**: `TestEngineVersions`
   **Scenario**: call `EngineVersions`, change the returned slice, call it again.
-  **Expected behavior**: `v2.3.1`, `v2.4.0`, `v2.4.1` both times: the caller gets a copy.
+  **Expected behavior**: `v2.3.1`, `v2.4.0`, `v2.4.1`, `v2.5.0` both times: the caller gets a copy.
 - **Test name**: `TestEveryEngineVersionReadsTheCorpus`
   **Scenario**: decode every report and leakage fixture once per listed release.
-  **Expected behavior**: the same `Report`, or an error, as under v2.3.1, for every release.
+  **Expected behavior**: under the fixture's own release (a capture's producer release, else v2.3.1) and every other
+  release, the same `Report` or an error alike; except that a fixture with a `seams[].policy` value is an unknown key
+  at `seams[0]` under every release before v2.5.0.
 - **Test name**: `TestUnknownEngineVersionIsRefused`
-  **Scenario**: the real capture with the release `""`, `v2.3.0`, `v2.5.0`, `2.3.1`, `v2.3.1 ` (trailing space), `V2.3.1` and one
+  **Scenario**: the real capture with the release `""`, `v2.3.0`, `v2.6.0`, `2.3.1`, `v2.3.1 ` (trailing space), `V2.3.1` and one
   carrying `LEAK-7f3a`.
   **Expected behavior**: each is an error naming `engine_version`, with a zero `Report`; no error contains the marker.
 - **Test name**: `TestSinceTagsNameListedReleases`

@@ -293,11 +293,15 @@ An engine upgrade needs no flag day. Three `wire` packages share the rule:
   unevaluated required rules, the config hash, the measurement-profile version, and the gate reference.
 - `wire/policy` keeps one engine config schema, the schema of the release that new workflows pin.
 
-The App reads v2.3.1, v2.4.0 and v2.4.1 reports; neither later release adds a report key. The manifest approves the
-published images of v2.4.0 and v2.4.1. New workflows pin v2.4.1 (`current`), and the policy editor uses the v2.4.1
-config schema, which lists the allowed rule types. The v2.4.0 rows stay for the upgrade window and go once workflows
-have moved their pin. The v2.3.1 window is closed: its rows are gone, so a v2.3.1 upload concludes
-`action_required`. The decoder still reads v2.3.1 documents because the fixture corpus is built from them.
+The App reads v2.3.1, v2.4.0, v2.4.1 and v2.5.0 reports. v2.4.0 and v2.4.1 add no report key. v2.5.0 adds one
+optional key, `seams[].policy`: the engine's policy status of each seam (`violation`, `accepted`, `advisory`,
+`allowed` or `observed`). The graph shows it; the gate does not read it. The manifest approves the published images
+of v2.4.1 and v2.5.0. New workflows pin v2.5.0 (`current`), and the policy editor uses the v2.5.0 config schema,
+which adds the module allowlists (`depends_on`, `visible_to`), the rule type `module_dependencies`, and the rule
+keys `from_module`, `to_module`, `rationale`, `alternatives` and `docs`. The v2.4.1 rows stay for the upgrade window
+and go once workflows have moved their pin. The v2.3.1 and v2.4.0 windows are closed: their rows are gone, so an
+upload from those releases concludes `action_required`. The decoder still reads v2.3.1 and v2.4.0 documents because
+fixtures of the corpus are documents of those releases.
 Tests in `internal/wire` stop a manifest row for a release that the decoder cannot read, that has no real capture
 in the fixture corpus, or whose config schema is not pinned when new workflows move to it.
 
