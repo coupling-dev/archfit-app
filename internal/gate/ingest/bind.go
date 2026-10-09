@@ -39,7 +39,8 @@ func (s problemSet) list() []Problem {
 func eligible(kind envelope.Kind, event string, onDefaultBranch bool) bool {
 	switch event {
 	case eventPush:
-		return onDefaultBranch
+		// A re-anchor is a dispatched run only: it rewrites a protected baseline on purpose, never from a push.
+		return onDefaultBranch && kind != envelope.KindReanchor
 	case eventPullRequest:
 		return kind == envelope.KindReport
 	case eventDispatch:

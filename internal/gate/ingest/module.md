@@ -139,7 +139,7 @@ could be published truthfully: the head moved (step 14) and the bytes are not wh
 | `report`    | `pull_request`; `push` when `Claims.Ref == "refs/heads/" + Repo.DefaultBranch`      |
 | `discovery` | `workflow_dispatch`; `push` when `Claims.Ref == "refs/heads/" + Repo.DefaultBranch` |
 | `baseline`  | `workflow_dispatch`; `push` when `Claims.Ref == "refs/heads/" + Repo.DefaultBranch` |
-| `reanchor`  | `workflow_dispatch` only                                                           |
+| `reanchor`  | `workflow_dispatch` only; never `push`                                              |
 
 Everything else, including `workflow_run`, `pull_request_target`, `schedule` and a push to another branch,
 adds `ProblemUnsupportedEvent`. `Binding.Event` is `run.Event` verbatim; for a discovery or baseline upload it

@@ -323,7 +323,7 @@ func TestWorkflowPathBinding(t *testing.T) {
 }
 
 // TestEligibleEventTable: a dispatch may upload a discovery, a baseline or a re-anchor; a report comes from a pull
-// request; a re-anchor never comes from a pull request.
+// request; a re-anchor comes from a dispatch only.
 func TestEligibleEventTable(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -335,6 +335,7 @@ func TestEligibleEventTable(t *testing.T) {
 		{"report on a pull request", envelope.KindReport, eventPullRequest, false, true},
 		{"reanchor by dispatch on the default branch", envelope.KindReanchor, eventDispatch, true, true},
 		{"reanchor on a pull request", envelope.KindReanchor, eventPullRequest, false, false},
+		{"reanchor on a push to the default branch", envelope.KindReanchor, eventPush, true, false},
 		{"baseline by dispatch on the default branch", envelope.KindBaseline, eventDispatch, true, true},
 		{"report by dispatch", envelope.KindReport, eventDispatch, true, false},
 	}
