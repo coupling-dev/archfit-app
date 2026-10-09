@@ -2,6 +2,7 @@ package onboarding
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -149,5 +150,36 @@ func TestReanchorUnchangedOpensNothing(t *testing.T) {
 	}
 	if n := f.hub.count("Propose") + f.hub.count("SetBody"); n != 0 {
 		t.Errorf("%d write calls for an unchanged re-anchor", n)
+	}
+}
+
+// TestReanchorBodyStaysUnderGitHubLimit: a protected baseline with more debt than a body lists keeps the body under
+// GitHub's limit and counts the rest.
+func TestReanchorBodyStaysUnderGitHubLimit(t *testing.T) {
+	policyText := corpus(t, capturedTwo, ".policy.yaml")
+	var accepted [][2]string
+	var seams []string
+	for i := range 200 {
+		accepted = append(accepted, [2]string{fmt.Sprintf("%032x", i+1), "no_direct_b_dependency"})
+		seams = append(seams, fmt.Sprintf("seam-%03d", i))
+	}
+	protected := syntheticBaselineWith(policyText, "archfit.measurement.v2", seams, "{}", accepted...)
+	reanchored := syntheticBaselineWith(policyText, "archfit.measurement.v2", nil, "{}")
+
+	f := newFixture(t)
+	f.protect(policyText, nil, protected)
+	f.receiver.upload = reanchorUpload(f.repo, reanchored, policy.Digest(protected))
+
+	if res := f.postReanchor(t); res.status != 200 {
+		t.Fatalf("response = %d %s", res.status, res.raw)
+	}
+	body := f.hub.body(f.repo, baselineBranch)
+	if len(body) > 65536 {
+		t.Errorf("body is %d bytes; GitHub refuses more than 65536 characters", len(body))
+	}
+	for _, want := range []string{"and 50 more", "and 100 more", "| Dropped | 200 |"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body does not mention %q", want)
+		}
 	}
 }

@@ -12,8 +12,13 @@ import (
 )
 
 const (
-	reanchorTitle   = "Re-anchor the Archfit baseline"
 	reanchorMessage = "Re-anchor the Archfit baseline captured by the approved workflow"
+
+	// Caps keep the body under GitHub's 65 536 characters at worst case: a rule ID or metric name is at most 128
+	// characters and a fingerprint 32, so the three lists stay near 60 000 characters together.
+	maxListedDropped = 150
+	maxListedSeams   = 100
+	maxListedMetrics = 50
 )
 
 // Response codes of POST /v1/reanchors that this module owns. The App refuses a re-anchor it cannot match against the
@@ -119,7 +124,7 @@ func reanchorBody(up gate.Upload, c baselineCheck) string {
 	line("")
 	line("| Accepted findings | Count |")
 	line("| --- | --- |")
-	line("| Baseline on %s | %d |", branch, len(protected.Accepted))
+	line("| Baseline on %s | %d |", branchCell(branch), len(protected.Accepted))
 	line("| Kept | %d |", kept)
 	line("| Dropped | %d |", len(dropped))
 	line("| Added | 0 |")
@@ -127,7 +132,11 @@ func reanchorBody(up gate.Upload, c baselineCheck) string {
 	writeFindings(&sb, "Dropped", dropped)
 	if len(seamsDropped) > 0 {
 		fmt.Fprintf(&sb, "\n### Seams no longer qualifying (%d)\n\n", len(seamsDropped))
-		for _, id := range seamsDropped {
+		for i, id := range seamsDropped {
+			if i == maxListedSeams {
+				fmt.Fprintf(&sb, "- and %d more\n", len(seamsDropped)-maxListedSeams)
+				break
+			}
 			fmt.Fprintf(&sb, "- %s\n", mono(id))
 		}
 	}
@@ -137,7 +146,12 @@ func reanchorBody(up gate.Upload, c baselineCheck) string {
 		line("")
 		line("| Metric | Version | Before | After |")
 		line("| --- | --- | --- | --- |")
-		for _, m := range metrics {
+		for i, m := range metrics {
+			if i == maxListedMetrics {
+				line("")
+				line("and %d more.", len(metrics)-maxListedMetrics)
+				break
+			}
 			line("| %s | %s | %s | %s |", mono(m.name), mono(m.version), number(m.before), number(m.after))
 		}
 	}
@@ -149,3 +163,6 @@ func reanchorBody(up gate.Upload, c baselineCheck) string {
 }
 
 func number(v float64) string { return strconv.FormatFloat(v, 'g', -1, 64) }
+
+// branchCell is the default branch name in a Markdown table cell: a "|" ends the cell even inside a code span.
+func branchCell(branch string) string { return strings.ReplaceAll(branch, "|", `\|`) }

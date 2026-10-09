@@ -62,8 +62,9 @@ type baselineFile struct {
 }
 
 // ReadBaseline decodes an engine baseline file. It is a structural check, not engine validation: one JSON
-// object of schema BaselineSchemaV3, at most MaxBaselineBytes, with a state block naming a 64-hex config hash
-// and a measurement profile version, and accepted findings with distinct 32-hex fingerprints and token rule IDs.
+// object of schema BaselineSchemaV3, at most MaxBaselineBytes, with a state block naming a 64-hex config hash, a
+// measurement profile version and the qualifying seam IDs, a metrics block of named values with versions, and
+// accepted findings with distinct 32-hex fingerprints and token rule IDs.
 // Errors never echo keys or values.
 func ReadBaseline(raw []byte) (Baseline, error) {
 	switch {

@@ -225,9 +225,9 @@ and removed, lists them by rule ID and finding ID, names the run, engine identit
 architecture owner must approve the exact head commit. The gate's protected-path rule then governs the merge.
 
 Today the Action captures with plain `archfit baseline`, which accepts all current eligible debt. The added count in
-the body is what keeps that visible to the owner. The App does not accept a re-anchor upload yet. Until the re-anchor
-flow ships, a re-capture after an engine or profile change accepts all current debt. The owner reviews the added
-count before approving.
+the body is what keeps that visible to the owner. After an engine or profile change, the Action runs
+`archfit baseline --reanchor` instead. The App accepts only a re-anchor that keeps debt and seams the protected baseline
+already accepts; see the re-anchor section above.
 
 ### Baseline upload contract
 

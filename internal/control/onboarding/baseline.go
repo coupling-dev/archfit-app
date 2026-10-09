@@ -105,9 +105,11 @@ func (s *service) serveUpload(w http.ResponseWriter, req *http.Request, kind env
 		return
 	}
 
+	// Both kinds share one branch and one PR. A re-upload onto an open PR keeps its title, so the title names the branch's
+	// content for both: a baseline update, which the body qualifies.
 	title, message, body := baselineTitle, baselineMessage, ""
 	if kind == envelope.KindReanchor {
-		title, message, body = reanchorTitle, reanchorMessage, reanchorBody(up, c)
+		message, body = reanchorMessage, reanchorBody(up, c)
 	} else {
 		added, removed := diffAccepted(c)
 		body = baselineBody(up, c, added, removed)

@@ -486,7 +486,7 @@ type Consents interface {
 ### internal/wire/envelope
 
 - **Counterpart**: `internal/wire/envelope/`
-- **Direction**: `onboarding` depends on `wire/envelope` (`KindDiscovery`, `KindBaseline` and `PayloadDigest`; decoding happens inside `Receiver`)
+- **Direction**: `onboarding` depends on `wire/envelope` (`KindDiscovery`, `KindBaseline`, `KindReanchor` and `PayloadDigest`; decoding happens inside `Receiver`)
 - **Strength**: contract
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high
@@ -505,6 +505,7 @@ const (
     KindReport    Kind = "report"    // engine state report, POST /v1/reports
     KindDiscovery Kind = "discovery" // discovery draft policy, POST /v1/discoveries
     KindBaseline  Kind = "baseline"  // captured engine baseline file, POST /v1/baselines
+    KindReanchor  Kind = "reanchor"  // re-anchored baseline, POST /v1/reanchors
 )
 
 // Envelope is what the producer states about a payload. Every field is self-reported:
