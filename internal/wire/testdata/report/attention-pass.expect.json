@@ -1,12 +1,12 @@
 {
-  "producer": "synthetic: hand-edited from report/real-blocked-no-baseline.json (engine v2.3.1) with jq: .verdict=\"needs_attention\" | .decision.hard_gates=\"pass\" | .decision.active_blockers=0 | .findings |= [.[1]] | .agent_tasks=[] | .dimensions.structure.findings=[] | .dimensions.structure.gate=\"pass\"",
+  "producer": "synthetic: hand-edited from report/real-blocked-no-baseline.json (an engine v3.0.0 capture) with jq: .verdict=\"needs_attention\" | .decision.hard_gates=\"pass\" | .decision.active_blockers=0 | .findings |= [.[1]] | .agent_tasks=[] | .dimensions.structure.findings=[] | .dimensions.structure.gate=\"pass\"",
   "decode": "ok",
   "fields": {
     "verdict": "needs_attention",
     "hard_gates": "pass",
     "unevaluated_rule_ids": [],
     "has_profile": true,
-    "profile_version": "archfit.measurement.v1",
+    "profile_version": "archfit.measurement.v2",
     "gate_reference_status": "non_comparable"
   },
   "gate": {

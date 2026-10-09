@@ -1,12 +1,12 @@
 {
-  "producer": "synthetic: hand-edited from report/real-blocked-no-baseline.json (engine v2.3.1) with jq: .comparison.status=\"non_comparable\" | .comparison.base_ref=\"main\" | .comparison.reasons=[\"measurement profile differs: producer go/packages semantics go/packages.v1 vs go/packages.v0\"]",
+  "producer": "synthetic: hand-edited from report/real-blocked-no-baseline.json (an engine v3.0.0 capture) with jq: .comparison.status=\"non_comparable\" | .comparison.base_ref=\"main\" | .comparison.reasons=[\"measurement profile differs: producer go/packages semantics go/packages.v1 vs go/packages.v0\"]",
   "decode": "ok",
   "fields": {
     "verdict": "blocked",
     "hard_gates": "fail",
     "unevaluated_rule_ids": [],
     "has_profile": true,
-    "profile_version": "archfit.measurement.v1",
+    "profile_version": "archfit.measurement.v2",
     "gate_reference_status": "non_comparable"
   },
   "gate": {

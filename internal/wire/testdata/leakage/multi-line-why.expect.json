@@ -1,4 +1,4 @@
 {
-  "producer": "synthetic: hand-edited from report/real-blocked-no-baseline.json (engine v2.3.1) with jq: .findings[0].why=\"package a\\nimport \\\"LEAK-7f3a\\\"\\nfunc A() {}\"",
+  "producer": "synthetic: hand-edited from report/real-blocked-no-baseline.json (an engine v3.0.0 capture) with jq: .findings[0].why=\"package a\\nimport \\\"LEAK-7f3a\\\"\\nfunc A() {}\"",
   "decode": "error"
 }

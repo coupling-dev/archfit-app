@@ -64,11 +64,11 @@ func TestStatusFromRealReports(t *testing.T) {
 		fixture, release string
 		want             []Link
 	}{
-		{"real-blocked-forbidden-and-allowed", corpusEngine, []Link{link("a", "b", 1, StatusViolation), link("a", "c", 1, StatusAdvisory)}},
+		{"real-blocked-forbidden-and-allowed", corpusEngine, []Link{link("a", "b", 1, StatusViolation), link("a", "c", 1, StatusObserved)}},
 		{"real-baselined-comparable", corpusEngine, []Link{link("a", "b", 1, StatusAccepted)}}, // a baselined forbidden edge is never "permitted"
 		{"real-waiver-active", corpusEngine, []Link{link("a", "b", 1, StatusAccepted)}},
 		{"real-waiver-expired", corpusEngine, []Link{link("a", "b", 1, StatusViolation)}},
-		{"real-blocked-no-baseline-v250", "v2.5.0", []Link{link("a", "b", 1, StatusViolation)}}, // seams[].policy: violation
+		{"real-blocked-no-baseline", corpusEngine, []Link{link("a", "b", 1, StatusViolation)}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.fixture, func(t *testing.T) {
@@ -80,11 +80,11 @@ func TestStatusFromRealReports(t *testing.T) {
 	}
 }
 
-// TestStatusFromEngineSeamPolicy reads the v2.5.0 capture of the engine's hexagonal map scenario: every link shows
+// TestStatusFromEngineSeamPolicy reads the v3.0.0 capture of the engine's hexagonal map scenario: every link shows
 // the engine's seams[].policy, the same statuses `archfit map` prints for that run, allowed included.
 func TestStatusFromEngineSeamPolicy(t *testing.T) {
-	const name = "real-seam-policy-v250"
-	got := Build(corpusReport(t, name, "v2.5.0"), corpusFile(t, name+".policy.yaml"))
+	const name = "real-seam-policy"
+	got := Build(corpusReport(t, name, corpusEngine), corpusFile(t, name+".policy.yaml"))
 	want := []Link{
 		link("api", "billing", 1, StatusAccepted),
 		link("api", "stripe", 1, StatusAllowed),

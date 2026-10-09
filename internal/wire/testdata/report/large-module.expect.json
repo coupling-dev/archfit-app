@@ -1,12 +1,12 @@
 {
-  "producer": "synthetic: hand-edited from report/real-blocked-no-baseline.json (engine v2.3.1) with jq -c: [range(150) | \"pkg/a/f\\(1000 + . | tostring | .[1:]).go\"] as $files | [range(25) | \"pkg/b/api/v1/resources/group_\\(100 + . | tostring | .[1:])/**\"] as $globs | .findings[0].locations = [$files[] | {file: ., line: 3}] | .agent_tasks[0].files = ($files + [\"pkg/a/a.go\", \"pkg/b\"] | sort) | .agent_tasks[0].constraints[1] = \"public surface of module \\\"b\\\": [\\($globs | join(\" \"))]\". It models a large module: a real public_api_max finding listed 106 locations, one per declaring file, and a real public-surface constraint was 765 characters; here 150 locations, 152 task files and a 906-character constraint",
+  "producer": "synthetic: hand-edited from report/real-blocked-no-baseline.json (an engine v3.0.0 capture) with jq -c: [range(150) | \"pkg/a/f\\(1000 + . | tostring | .[1:]).go\"] as $files | [range(25) | \"pkg/b/api/v1/resources/group_\\(100 + . | tostring | .[1:])/**\"] as $globs | .findings[0].locations = [$files[] | {file: ., line: 3}] | .agent_tasks[0].files = ($files + [\"pkg/a/a.go\", \"pkg/b\"] | sort) | .agent_tasks[0].constraints[1] = \"public surface of module \\\"b\\\": [\\($globs | join(\" \"))]\". It models a large module: a real public_api_max finding listed 106 locations, one per declaring file, and a real public-surface constraint was 765 characters; here 150 locations, 152 task files and a 906-character constraint",
   "decode": "ok",
   "fields": {
     "verdict": "blocked",
     "hard_gates": "fail",
     "unevaluated_rule_ids": [],
     "has_profile": true,
-    "profile_version": "archfit.measurement.v1",
+    "profile_version": "archfit.measurement.v2",
     "gate_reference_status": "non_comparable"
   },
   "gate": {

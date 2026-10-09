@@ -369,12 +369,12 @@ func TestComparabilityRule(t *testing.T) {
 		hit    bool
 	}{
 		{"nil", nil, "no gate reference", true},
-		{"comparable", &report.Reference{Status: refComparable}, "", false},
-		{"non_comparable", &report.Reference{Status: refNonComparable, Reasons: []string{"model hash differs", "measurement profile differs"}},
+		{"comparable", &report.Reference{Status: refComparable, BaselinePresent: true}, "", false},
+		{"non_comparable", &report.Reference{Status: refNonComparable, Reasons: []string{"model hash differs", "measurement profile differs"}, Drift: []string{"model_hash", "measurement_profile"}, BaselinePresent: true},
 			"model hash differs; measurement profile differs", true},
-		{"not_requested", &report.Reference{Status: refNotRequested}, "", true},
-		{"unknown status", &report.Reference{Status: "COMPARABLE"}, "", true},
-		{"four long reasons", &report.Reference{Status: refNonComparable, Reasons: []string{long, long, long, "fourth"}},
+		{"not_requested", &report.Reference{Status: refNotRequested, BaselinePresent: true}, "", true},
+		{"unknown status", &report.Reference{Status: "COMPARABLE", BaselinePresent: true}, "", true},
+		{"four long reasons", &report.Reference{Status: refNonComparable, Reasons: []string{long, long, long, "fourth"}, BaselinePresent: true},
 			(long + "; " + long + "; " + long)[:200], true},
 	}
 	for _, c := range cases {
@@ -592,5 +592,96 @@ func TestUnapproved(t *testing.T) {
 		if got := slices.ContainsFunc(decided.Reasons, func(r Reason) bool { return r.Code == ReasonOwnerApprovalMissing }); got != want {
 			t.Errorf("Decide with approval %q names owner_approval_missing: %v, want %v", approval, got, want)
 		}
+	}
+}
+
+// TestReferenceConflictsWithTheTrustedBaseline: the engine loaded a baseline exactly when the App trusts one, and a
+// trusted baseline needs a reference that compares. Every other pairing conflicts.
+func TestReferenceConflictsWithTheTrustedBaseline(t *testing.T) {
+	cases := []struct {
+		name    string
+		ref     *report.Reference
+		trusted bool
+		want    bool
+	}{
+		{"no reference, no baseline", nil, false, false},
+		{"no reference, trusted baseline", nil, true, true},
+		{"comparable, present, trusted", &report.Reference{Status: refComparable, BaselinePresent: true}, true, false},
+		{"comparable, no baseline, none trusted", &report.Reference{Status: refComparable}, false, false},
+		{"comparable, present, none trusted", &report.Reference{Status: refComparable, BaselinePresent: true}, false, true},
+		{"comparable, no baseline, trusted", &report.Reference{Status: refComparable}, true, true},
+		{"not comparable, present, trusted", &report.Reference{Status: refNonComparable, BaselinePresent: true}, true, true},
+		{"not comparable, no baseline, none trusted", &report.Reference{Status: refNonComparable}, false, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := ReferenceConflicts(c.ref, c.trusted); got != c.want {
+				t.Errorf("ReferenceConflicts = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+// TestNextNamesTheOwnerActionFromDrift: the drift classes, never the reason text, pick the owner action. A re-anchor
+// crosses a scoring epoch or a measurement profile only; every other class needs a full capture.
+func TestNextNamesTheOwnerActionFromDrift(t *testing.T) {
+	cases := []struct {
+		name  string
+		drift []string
+		next  string
+	}{
+		{"profile", []string{"measurement_profile"}, nextReanchor},
+		{"rubric", []string{"rubric_version"}, nextReanchor},
+		{"profile and rubric", []string{"measurement_profile", "rubric_version"}, nextReanchor},
+		{"classification", []string{"classification_hash"}, nextFullCapture},
+		{"model", []string{"model_hash"}, nextFullCapture},
+		{"labels", []string{"labels_hash"}, nextFullCapture},
+		{"incomplete reference", []string{"reference_incomplete"}, nextFullCapture},
+		{"profile with a policy change", []string{"measurement_profile", "classification_hash"}, nextFullCapture},
+		{"no class given", nil, nextFullCapture},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			o := decide(t, with(gateRef(&report.Reference{Status: refNonComparable, BaselinePresent: true, Drift: c.drift})))
+			r, ok := find(o, ReasonBaselineNotComparable)
+			if !ok {
+				t.Fatalf("baseline_not_comparable missing: %v", codes(o))
+			}
+			if r.Next != c.next {
+				t.Errorf("Next = %q, want %q", r.Next, c.next)
+			}
+		})
+	}
+}
+
+// TestPresenceMismatchNamesTheSide: when the engine and the protected ref disagree about the baseline, the detail
+// names the side that holds one, and the next action is a full capture whatever the drift says.
+func TestPresenceMismatchNamesTheSide(t *testing.T) {
+	cases := []struct {
+		name   string
+		facts  Facts
+		detail string
+	}{
+		{"protected ref has one, engine loaded none",
+			with(gateRef(&report.Reference{Status: refComparable, BaselinePresent: false, Drift: []string{"measurement_profile"}})),
+			presenceDetail(true)},
+		{"engine loaded one, protected ref has none",
+			with(func(f *Facts) { f.Trusted.BaselineDigests = nil }, gateRef(&report.Reference{Status: refComparable, BaselinePresent: true})),
+			presenceDetail(false)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			o := decide(t, c.facts)
+			r, ok := find(o, ReasonBaselineNotComparable)
+			if !ok {
+				t.Fatalf("baseline_not_comparable missing: %v", codes(o))
+			}
+			if r.Detail != c.detail {
+				t.Errorf("detail = %q, want %q", r.Detail, c.detail)
+			}
+			if r.Next != nextFullCapture {
+				t.Errorf("next = %q, want the full capture", r.Next)
+			}
+		})
 	}
 }

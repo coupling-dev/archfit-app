@@ -212,7 +212,7 @@ func loadFixture(t *testing.T, name string) fixture {
 	return f
 }
 
-// approved is the identity of the manifest row new workflows pin (linux/amd64). The corpus captures are v2.3.1
+// approved is the identity of the manifest row new workflows pin (linux/amd64). The corpus captures are v3.0.0
 // documents; every approved release reads them with the same key set.
 var approved = manifest.Current().Identity
 

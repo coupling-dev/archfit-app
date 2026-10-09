@@ -52,9 +52,9 @@ func healthyFacts() Facts {
 			Comparison: report.Comparison{
 				Status:             refNotRequested,
 				ConfigHash:         basePolicy,
-				MeasurementProfile: &report.MeasurementProfile{Version: "archfit.measurement.v1"},
+				MeasurementProfile: &report.MeasurementProfile{Version: "archfit.measurement.v2"},
 			},
-			GateReference: &report.Reference{Status: refComparable, BaseRef: "baseline"},
+			GateReference: &report.Reference{Status: refComparable, BaseRef: "baseline", BaselinePresent: true},
 		},
 		IdentityApproved: true,
 		WorkflowApproved: true,
@@ -124,6 +124,7 @@ func gateRef(ref *report.Reference) func(*Facts) {
 func nonComparable(f *Facts) {
 	f.Report.GateReference = &report.Reference{
 		Status: refNonComparable, BaseRef: "baseline", Reasons: []string{"measurement profile differs"},
+		Drift: []string{"measurement_profile"}, BaselinePresent: true,
 	}
 }
 
@@ -224,6 +225,9 @@ func successAllowed(f Facts) bool {
 		}
 	}
 	if len(f.Trusted.BaselineDigests) > 0 && (r.GateReference == nil || r.GateReference.Status != refComparable) {
+		return false
+	}
+	if r.GateReference != nil && r.GateReference.BaselinePresent != (len(f.Trusted.BaselineDigests) > 0) {
 		return false
 	}
 	return r.Decision.HardGates == gatesPass && len(r.Decision.UnevaluatedRequiredRules) == 0 &&

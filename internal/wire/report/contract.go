@@ -3,30 +3,25 @@ package report
 
 import "slices"
 
-// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v2.3.1 to v2.5.0).
+// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v3.0.0).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
-// engineVersions are the engine releases Decode reads, oldest first. A shadow field tagged `since:"<release>"`
-// is a key that release added; every other key is in all of them. v2.4.0 adds rule types, finding kinds and a
-// config key, but no state key, so its key set is the v2.3.1 key set. v2.4.1 only enumerates the rule types in
-// its config schema; its state schema is byte-identical, so its key set is the v2.3.1 key set too. v2.5.0 adds the
-// optional state key seams[].policy. v2.3.1 and v2.4.0 stay listed after their manifest rows are gone: the corpus
-// fixtures are documents of those releases.
-var engineVersions = []string{"v2.3.1", "v2.4.0", "v2.4.1", "v2.5.0"}
+// engineVersions are the engine releases Decode reads. The App reads v3.0.0 only: earlier releases are not approved
+// and their state documents are not read.
+var engineVersions = []string{"v3.0.0"}
 
-// EngineVersions returns the engine releases whose state document Decode reads, oldest first. Each emits
-// StateSchemaV1; a later release only adds optional keys, so the last key set holds every earlier one.
+// EngineVersions returns the engine releases whose state document Decode reads.
 func EngineVersions() []string {
 	return slices.Clone(engineVersions)
 }
 
-// Report is the no-source transport form of an engine state report. The decoder knows every key of the state
-// schema of each release it reads: keys listed here are kept (length-capped), the other known keys are validated
-// and dropped (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores),
-// and any key that release's schema does not define is a decode error.
+// Report is the no-source transport form of an engine state report. The decoder knows every key of the v3.0.0 state
+// schema: keys listed here are kept (length-capped), the other known keys are validated and dropped (measurement,
+// findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores), and any key the schema does
+// not define is a decode error.
 type Report struct {
 	SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
 	Verdict       string               `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
@@ -59,22 +54,32 @@ type UnevaluatedRule struct {
 type Comparison struct {
 	Status             string              `json:"status"` // "not_requested" | "comparable" | "non_comparable"
 	BaseRef            string              `json:"base_ref,omitempty"`
-	ConfigHash         string              `json:"config_hash,omitempty"` // bare lowercase hex SHA-256 of the raw policy bytes
+	ConfigHash         string              `json:"config_hash,omitempty"`         // bare lowercase hex SHA-256 of the raw policy bytes
+	ClassificationHash string              `json:"classification_hash,omitempty"` // bare lowercase hex SHA-256 of the policy leaves that change measured facts
 	ModelHash          string              `json:"model_hash,omitempty"`
 	LabelsHash         string              `json:"labels_hash,omitempty"` // canonical hash of approved labels; not reproducible from raw bytes
 	RubricVersion      string              `json:"rubric_version,omitempty"`
 	MeasurementProfile *MeasurementProfile `json:"measurement_profile,omitempty"` // nil = unknown identity
 	Reasons            []string            `json:"reasons"`
-	TaskOriginStatus   string              `json:"task_origin_status,omitempty"`
-	TaskOriginReasons  []string            `json:"task_origin_reasons,omitempty"`
+	OriginStatus       string              `json:"origin_status,omitempty"` // "comparable" | "unknown"; presentation only
+	OriginReasons      []string            `json:"origin_reasons,omitempty"`
 }
 
 // Reference is the engine gate's comparison with the persisted baseline (top-level gate_reference).
-// The engine exposes no baseline digest: only whether the baseline it loaded was comparable, and why not.
+// The engine exposes no baseline digest: only whether it loaded a baseline, whether that one was comparable, and
+// the classes of input that made it not comparable. Reasons are engine text for display; decisions read Status,
+// BaselinePresent and Drift.
 type Reference struct {
-	Status  string   `json:"status"`             // "comparable" | "non_comparable" | "not_requested"
-	BaseRef string   `json:"base_ref,omitempty"` // "baseline"
-	Reasons []string `json:"reasons"`            // e.g. "no baseline file was loaded"
+	Status          string   `json:"status"`             // "comparable" | "non_comparable" | "not_requested"
+	BaseRef         string   `json:"base_ref,omitempty"` // "baseline"
+	Reasons         []string `json:"reasons"`            // e.g. "no baseline file was loaded"
+	Drift           []string `json:"drift,omitempty"`    // closed set DriftClasses; empty when comparable
+	BaselinePresent bool     `json:"baseline_present"`   // the engine loaded a baseline file
+}
+
+// DriftClasses are the input classes that can make a reference not comparable (engine decision.DriftClass).
+var DriftClasses = []string{
+	"classification_hash", "model_hash", "labels_hash", "rubric_version", "measurement_profile", "reference_incomplete",
 }
 
 type MeasurementProfile struct {
@@ -104,6 +109,7 @@ type Finding struct {
 	Why                 string     `json:"why"`        // engine-authored, single line, length-capped
 	Constraint          string     `json:"constraint"` // engine-authored, single line, length-capped
 	AllowedAlternatives []string   `json:"allowed_alternatives,omitempty"`
+	Origin              string     `json:"origin,omitempty"` // "introduced" | "pre_existing" | "unknown", only with --base; presentation only
 }
 
 // Active reports whether the finding currently blocks: a gate finding that is new or whose waiver expired.
@@ -181,11 +187,9 @@ type UnknownFact struct {
 }
 
 type Delta struct {
-	Status           string        `json:"status"`
-	Reasons          []string      `json:"reasons,omitempty"`
-	Metrics          []MetricDelta `json:"metrics,omitempty"`
-	NewFindings      []string      `json:"new_findings,omitempty"`
-	ResolvedFindings []string      `json:"resolved_findings,omitempty"`
+	Status  string        `json:"status"`
+	Reasons []string      `json:"reasons,omitempty"`
+	Metrics []MetricDelta `json:"metrics,omitempty"`
 }
 
 type MetricDelta struct {
@@ -218,7 +222,7 @@ type Seam struct {
 	Distance   string `json:"distance"`
 	Volatility string `json:"volatility"`
 	Severity   string `json:"severity,omitempty"`
-	// Policy is what the engine's policy says about the seam (engine v2.5.0 and later): "violation" | "accepted" |
-	// "advisory" | "allowed" | "observed", a closed set. "" = a report from an earlier release, which has no such key.
+	// Policy is what the engine's policy says about the seam: "violation" | "accepted" |
+	// "advisory" | "allowed" | "observed", a closed set. "" = the engine gave the seam no policy.
 	Policy string `json:"policy,omitempty"`
 }

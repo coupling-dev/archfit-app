@@ -16,3 +16,8 @@ rules:
     from: pkg/a/**
     to: pkg/b
     gate: fail
+metrics:
+  coverage:
+    enabled: true
+    gate: fail
+    min_delta: 0

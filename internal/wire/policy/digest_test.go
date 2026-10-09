@@ -23,7 +23,7 @@ func TestDigestKnownVectors(t *testing.T) {
 	}{
 		{"empty", nil, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
 		{"abc", []byte("abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"},
-		{"fixture", base, "061ac761452cf42c43c08346383420f75921017b5dd9dc5b7ee28f7680e715a6"},
+		{"fixture", base, "7d76a7758edfb07c3891a20f35b429c2df3d3e3d500f1ccfe3d8353e22ebef37"},
 		{"fixture CRLF", bytes.ReplaceAll(base, []byte("\n"), []byte("\r\n")), ""},
 		{"fixture BOM", append([]byte("\xef\xbb\xbf"), base...), ""},
 		{"fixture no trailing newline", bytes.TrimSuffix(base, []byte("\n")), ""},
@@ -67,7 +67,7 @@ func TestDigestMatchesEngineConfigHash(t *testing.T) {
 		})
 	}
 
-	// The real engine v2.3.1 capture, pinned independently of its report fixture.
+	// The real engine v3.0.0 capture, pinned independently of its report fixture.
 	const realCapture = "4a18013bab44d922fa67d9e8e699463b2b5284f1c2908b62d2b7c5f607c55574"
 	if got := Digest(fixture(t, realCapturePolicy)); got != realCapture {
 		t.Errorf("real capture Digest = %s, want %s", got, realCapture)

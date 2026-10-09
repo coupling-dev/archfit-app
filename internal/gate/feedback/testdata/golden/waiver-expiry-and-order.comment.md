@@ -15,7 +15,7 @@ Also reported:
 
 ### Findings
 
-**Introduced** (2)
+**Active** (2)
 - **blocking** `no_direct_b_dependency` (medium, expired_waiver): `a` (`pkg/a/a.go`) → `b` (`pkg/b`)
   - Locations: `pkg/a/extra.go:7`
   - Why: Import from pkg/a/** to pkg/b is explicitly forbidden
@@ -42,7 +42,7 @@ Measurement trust: customer-attested.
 - `complexity`: measured; coverage 2/2 (declared modules with complete dependency-chain and degree values); confidence high; gate pass
 - `testability`: partial; coverage 3/3 (classified source files); confidence medium; gate pass
 - `operations`: partial; coverage 0/2 (declared modules with a corroborated deploy unit and qualifying owner); confidence medium; gate pass
-- `drift`: unmeasured; coverage 0/0; confidence unrated; gate not_applicable; change non_comparable, 0 new and 0 resolved findings
+- `drift`: unmeasured; coverage 0/0; confidence unrated; gate not_applicable; change non_comparable
 
 ### Evidence gaps
 
@@ -68,8 +68,8 @@ Measurement trust: customer-attested.
 - Policy digest: `1111111111111111111111111111111111111111111111111111111111111111`
 - Baseline digest: `2222222222222222222222222222222222222222222222222222222222222222` (stated by the producer)
 - Labels digest: `3333333333333333333333333333333333333333333333333333333333333333` (stated by the producer)
-- Measurement profile: version `archfit.measurement.v1`, settings hash `64fb93addd39e92be19fa18ba380fa211a144697946f810bda7c483bc146f73b`
-- Producer identity, claimed: engine v2.3.1, image sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08, linux/amd64
+- Measurement profile: version `archfit.measurement.v2`, settings hash `64fb93addd39e92be19fa18ba380fa211a144697946f810bda7c483bc146f73b`
+- Producer identity, claimed: engine v3.0.0, image sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08, linux/amd64
 
 Measurement is customer-attested: the producer is authenticated, the report content is not independently checked.
 

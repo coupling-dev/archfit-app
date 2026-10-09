@@ -245,7 +245,7 @@ func TestGraphPageBuildsFromArtifact(t *testing.T) {
 	if bytes.Count(payload, []byte("MARKER-")) < 2 {
 		t.Fatal("markers were not placed in the fixture")
 	}
-	rep, err := report.Decode(payload, "v2.3.1")
+	rep, err := report.Decode(payload, "v3.0.0")
 	if err != nil {
 		t.Fatalf("fixture does not decode: %v", err)
 	}
@@ -287,16 +287,16 @@ func TestGraphPageBuildsFromArtifact(t *testing.T) {
 	}
 }
 
-// TestGraphPageShowsTheEngineSeamPolicy: an engine v2.5.0 artifact decodes with the newest release's key set, and
+// TestGraphPageShowsTheEngineSeamPolicy: an engine v3.0.0 artifact decodes, and
 // each link shows the engine's seams[].policy status, allowed included.
 func TestGraphPageShowsTheEngineSeamPolicy(t *testing.T) {
 	e := newEnv(t)
 	c := e.as("alice", permRead)
-	payload, err := os.ReadFile(filepath.Join("..", "..", "wire", "testdata", "report", "real-seam-policy-v250.json"))
+	payload, err := os.ReadFile(filepath.Join("..", "..", "wire", "testdata", "report", "real-seam-policy.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	rep, err := report.Decode(payload, "v2.5.0")
+	rep, err := report.Decode(payload, "v3.0.0")
 	if err != nil {
 		t.Fatalf("capture does not decode: %v", err)
 	}

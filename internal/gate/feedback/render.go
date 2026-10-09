@@ -261,7 +261,7 @@ func findingsBlock(r *report.Report) string {
 		title    string
 		findings []report.Finding
 	}{
-		{"Introduced", introduced},
+		{"Active", introduced},
 		{"Accepted debt — display only", debt},
 		{"Fixed", fixed},
 	} {
@@ -286,6 +286,9 @@ func writeFinding(b *strings.Builder, f report.Finding) {
 		b.WriteString("**blocking** ")
 	}
 	fmt.Fprintf(b, "%s (%s, %s): %s → %s", code(f.RuleID), text(f.Severity), text(f.Status), endpoint(f.Edge.From), endpoint(f.Edge.To))
+	if f.Origin != "" { // display only: the App never decides on origin
+		fmt.Fprintf(b, ", origin %s", text(f.Origin))
+	}
 	if len(f.Locations) > 0 {
 		b.WriteString("\n  - Locations: ")
 		for i, loc := range f.Locations {
@@ -351,7 +354,6 @@ func deltaText(d report.Delta) string {
 		}
 		parts = append(parts, fmt.Sprintf("%s %s → %s (%s)", text(m.Name), number(m.Before), number(m.After), signed(m.Change)))
 	}
-	parts = append(parts, fmt.Sprintf("%d new and %d resolved findings", len(d.NewFindings), len(d.ResolvedFindings)))
 	return strings.Join(parts, ", ")
 }
 
@@ -426,12 +428,18 @@ func gapsBlock(p Publication) string {
 	for _, source := range [][]string{rules, tools, idle, facts, unknowns, producers} {
 		add(source)
 	}
+	trusted := len(p.Trusted.BaselineDigests) > 0
 	switch ref := r.GateReference; {
-	case len(p.Trusted.BaselineDigests) == 0:
+	case !trusted && !verdict.ReferenceConflicts(ref, false):
 		lines = append(lines, "- No baseline: every current violation blocks.")
-	case ref == nil: // verdict step 7a: with a trusted baseline, no reference is not comparable
+	case !verdict.ReferenceConflicts(ref, trusted): // the same rule as verdict step 7a
+	case ref == nil:
 		lines = append(lines, "- Baseline comparison: the report has no gate reference")
-	case ref.Status != "comparable":
+	case ref.Status == "comparable" && trusted:
+		lines = append(lines, "- Baseline comparison: the engine did not load the trusted baseline")
+	case ref.Status == "comparable":
+		lines = append(lines, "- Baseline comparison: the engine loaded a baseline that the App does not trust")
+	default:
 		reasons := []string{"no reason given"}
 		if len(ref.Reasons) > 0 {
 			reasons = ref.Reasons

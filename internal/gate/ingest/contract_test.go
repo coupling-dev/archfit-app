@@ -2,8 +2,6 @@ package ingest
 
 import (
 	"bytes"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -32,7 +30,7 @@ func TestReceivePullRequestReport(t *testing.T) {
 			if want := healthyBinding(s); !reflect.DeepEqual(up.Binding, want) {
 				t.Errorf("binding = %+v, want %+v", up.Binding, want)
 			}
-			wantIdentity := manifest.Identity{EngineVersion: "v2.3.1", ImageDigest: imageDigest, Platform: "linux/amd64"}
+			wantIdentity := manifest.Identity{EngineVersion: "v3.0.0", ImageDigest: imageDigest, Platform: "linux/amd64"}
 			if up.Identity != wantIdentity {
 				t.Errorf("identity = %+v, want %+v", up.Identity, wantIdentity)
 			}
@@ -57,30 +55,18 @@ func TestReceivePullRequestReport(t *testing.T) {
 }
 
 func TestReportKeySetFollowsTheClaimedEngine(t *testing.T) {
-	// A real v2.5.0 capture: its seams carry seams[].policy, a key v2.4.1 does not define.
-	v250 := filepath.Join("..", "..", "wire", "testdata", "report", "real-seam-policy-v250.json")
+	// The App reads the v3.0.0 state document only: an earlier claim is a document the decoder does not read.
 	rows := []struct {
-		name, version, body string // body "" keeps the scenario's v2.3.1 document
-		problems            []Problem
+		name, version string
+		problems      []Problem
 	}{
-		{"v2.3.1", "v2.3.1", "", nil},
-		{"v2.4.0", "v2.4.0", "", nil},
-		{"v2.4.1", "v2.4.1", "", nil},
-		{"v2.5.0", "v2.5.0", "", nil},
-		{"v2.5.0 capture", "v2.5.0", v250, nil},
-		{"v2.5.0 capture claimed as v2.4.1", "v2.4.1", v250, []Problem{ProblemReportInvalid}},
-		{"v9.9.9", "v9.9.9", "", []Problem{ProblemReportInvalid}}, // a release the decoder does not read
+		{"v3.0.0", "v3.0.0", nil},
+		{"v2.5.0", "v2.5.0", []Problem{ProblemReportInvalid}},
+		{"v9.9.9", "v9.9.9", []Problem{ProblemReportInvalid}},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
 			s := prScenario(t)
-			if row.body != "" {
-				raw, err := os.ReadFile(row.body)
-				if err != nil {
-					t.Fatal(err)
-				}
-				s.setBody(raw)
-			}
 			s.env.EngineVersion = row.version
 			up, err := s.receive(t)
 			wantProblems(t, up, err, row.problems...)

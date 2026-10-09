@@ -16,7 +16,7 @@ type Node struct {
 }
 
 // LinkStatus is what the report says about a module pair: the engine's seam policy status when the report carries
-// one (engine v2.5.0 and later), else what the findings on the pair say. It is a display fact, never a check input.
+// one (every engine release the App reads carries it), else what the findings on the pair say. It is a display fact, never a check input.
 type LinkStatus string
 
 const (

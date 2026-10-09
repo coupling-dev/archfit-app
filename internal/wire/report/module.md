@@ -8,9 +8,9 @@
 
 An engine state report is produced in the customer's CI and uploaded to Archfit. The product promise is that no
 source code reaches Archfit. This module is where that promise is enforced on the payload. It mirrors the engine
-state contract `archfit.architecture-state.v1` (engine v2.3.1 to v2.5.0, `archfit.state.schema.json`) as each
-engine release it reads emits it, and turns it into a no-source transport: it knows every key of that release's schema, keeps an
-allowlisted subset under length caps, drops the rest, and refuses anything the schema does not define. Without it,
+state contract `archfit.architecture-state.v1` (engine v3.0.0, `archfit.state.schema.json`) and turns it into a
+no-source transport: it knows every key of that schema, keeps an allowlisted subset under length caps, drops the
+rest, and refuses anything the schema does not define. Without it,
 "schema-valid engine JSON" would be mistaken for "no-source payload" (plan T04): a real report carries source
 identifiers in `agent_tasks[].declarations`.
 
@@ -18,10 +18,10 @@ identifiers in `agent_tasks[].declarations`.
 
 - Define the transport types for verdict, gate decision, comparison identity, gate reference, dimensions,
   coverage, findings, repair tasks and seams.
-- `Decode`: strict JSON decoding against the key set of the engine release the caller names, size cap, enum
-  checks, per-field caps, path rules, single-line rule, duplicate-ID rule; known but non-allowlisted keys are
-  type-checked and dropped.
-- `EngineVersions`: the engine releases `Decode` reads, so that a consumer can tie an approved identity to a key set.
+- `Decode`: strict JSON decoding against the v3.0.0 key set, size cap, enum checks, per-field caps, path rules,
+  single-line rule, duplicate-ID rule; known but non-allowlisted keys are type-checked and dropped.
+- `EngineVersions`: the engine release `Decode` reads (`v3.0.0`), so that a consumer can tie an approved identity to
+  the key set.
 - Preserve what the gate and feedback need, unchanged: `verdict`, `decision.hard_gates`,
   `unevaluated_required_rules`, `comparison.config_hash`, `measurement_profile`, `gate_reference`, both repair
   kinds, task validation commands, empty `locations`.
@@ -34,17 +34,13 @@ Volatility: moderate. It changes with a versioned engine release; the caps are *
 
 ## Encapsulated Knowledge
 
-- The complete key set of the state schema, pinned at engine v2.5.0 (revision
-  `59318b9eec906f54bc7a54d01db634b0c20c0647`, `internal/wire/testdata/schema/`), the union of every listed
-  release's key set, and the split into kept and dropped keys below. Field names and enum values in the Public
-  Contract are taken from that schema, not guessed.
-- The release table: which engine releases `Decode` reads and which release added each key (see "Engine releases
-  and key sets" below).
+- The complete key set of the state schema, pinned at engine v3.0.0 (revision
+  `bbd658f008bcc4bc83e063cf305d20dc4508da2e`, `internal/wire/testdata/schema/`), and the split into kept and
+  dropped keys below. Field names and enum values in the Public Contract are taken from that schema, not guessed.
+- The one engine release `Decode` reads (see "Engine release and key set" below).
 - The decoding technique. `Decode` unmarshals into unexported shadow types that mirror the whole schema, dropped
   keys included, with `DisallowUnknownFields`. That gives "unknown key is an error" and the JSON type check of
   dropped keys for free. It then copies the kept fields into the public types. Dropped values never leave the function.
-  The shadow types are the union of the key sets of every listed release; the pre-pass, not the typed decode,
-  limits a document to the key set of its own release.
 - `encoding/json` alone matches keys case-insensitively, keeps the last duplicate key and accepts trailing data.
   A token pre-pass runs first: every object key of a schema-defined object must match `^[a-z][a-z0-9_]*$`,
   no object repeats a key, nesting depth is at most 16 **[default]**, and input ends after the top-level object.
@@ -59,60 +55,37 @@ Volatility: moderate. It changes with a versioned engine release; the caps are *
 - Error text policy: an error names the JSON location (for example `findings[12].why`) and the rule, never the value.
   The engine release is input too: an unknown one is reported as `engine_version` and the rule, never echoed.
 
-### Engine releases and key sets
+### Engine release and key set
 
-`Decode` takes the engine release whose document it reads; the gate passes the `engine_version` of the upload
-envelope. Each listed release has a key set, and the document must fit that key set exactly: a key the release does
-not define is an unknown key, as before. A release that is not listed is a decode error, so its uploads end
-`action_required` (`report_invalid`), never in a guessed key set.
+`Decode` takes the engine release of the upload envelope. It reads one release: `v3.0.0`. Any other value, the empty
+string included, is a decode error, so the upload ends `action_required` (`report_invalid`), never in a guessed key
+set. The document must fit the v3.0.0 key set exactly: a key that the schema does not define is an unknown key. The
+manifest approves `v3.0.0` with its image digests for `linux/amd64` and `linux/arm64`.
 
-| Release  | Key set                                                           |
-| -------- | ----------------------------------------------------------------- |
-| `v2.3.1` | the pinned state schema without the keys a later release added     |
-| `v2.4.0` | the v2.3.1 key set                                                 |
-| `v2.4.1` | the v2.3.1 key set                                                 |
-| `v2.5.0` | the v2.3.1 key set plus `seams[].policy` (the whole pinned schema) |
-
-- v2.4.0 adds rule types, finding kinds, the config key `guard` and unevaluated-rule reasons of the form
-  `selector matches nothing: <side> <glob>`, but no state key (owner statement). A rule ID is an identifier, a
-  finding kind a token and a reason text, none of them an enum here. Whether every v2.4.0 value also fits its
-  string class is not shown by that statement: only a real v2.4.0 capture proves it.
-- Verified against the release: `archfit.state.schema.json` at tag v2.4.0 (revision
-  `5aefcdc2c5465c2eb7198ea91394bd8cb8ad2b22`) is byte-identical to the pinned v2.3.1 file (SHA-256
-  `acd9a09e…`), and the unmodified capture `real-blocked-no-baseline-v240` has exactly the key paths of the v2.3.1
-  capture and decodes as a v2.4.0 document. The manifest approves v2.4.0 with its image digests; the parent's
-  `TestEveryApprovedEngineVersionHasACapture` holds that capture to it.
-- v2.4.1 only enumerates the allowed `rules[].type` values in the config schema. Verified against the release:
-  `archfit.state.schema.json` at tag v2.4.1 (revision `ca1f593e69ddf41662cbebe6ccb0fb59b09f73fd`) is byte-identical
-  to the pinned v2.3.1 file, and the unmodified capture `real-blocked-no-baseline-v241` is byte-identical to the
-  v2.4.0 capture and decodes as a v2.4.1 document.
-- v2.5.0 adds one state key, the optional `seams[].policy`, with the closed value set `violation`, `accepted`,
-  `advisory`, `allowed`, `observed` (the engine's policy status of the seam). Verified against the release: the
-  `archfit.state.schema.json` diff between tags v2.4.1 and v2.5.0 (revision
-  `59318b9eec906f54bc7a54d01db634b0c20c0647`) adds only that property; the pinned schema is now the v2.5.0 file
-  (SHA-256 `c8f447ea…`). The unmodified capture `real-blocked-no-baseline-v250` equals the v2.4.1 capture except
-  for `"policy":"violation"` on its one seam, and `real-seam-policy-v250` carries `accepted`, `allowed`,
-  `violation` and `observed`. Both decode as v2.5.0 documents and fail as v2.4.1 documents. `Seam.Policy` keeps the
-  value, an enum checked only when the key is present (absent decodes to `""`); the graph shows it, the gate never
-  reads it. The manifest approves v2.5.0 (`current`) and v2.4.1.
-- v2.3.1 and v2.4.0 stay listed although their manifest rows are gone (their upgrade windows are closed): every
-  synthetic corpus fixture is a v2.3.1 document, consumer tests decode them as one, and `real-blocked-no-baseline-v240`
-  is a v2.4.0 document. An upload of either release still decodes and concludes `action_required` on its
-  unapproved identity.
-- A key a later release adds is a shadow field tagged `since:"<release>"`; untagged fields exist in every release.
-  The pre-pass reads the tag when it looks a key up and treats a key of a later release as unknown. A tag that
-  names no listed release makes the key unknown under every release. Within `archfit.architecture-state.v1` a
-  release only adds optional keys, so the newest key set holds every older one.
-- A key the App starts to keep is a kept field with the tag; keeping it is still a reviewed contract change.
-- **Frozen decision core.** The gate decides only from fields every listed release defines: `schema_version`,
-  `verdict`, `decision.hard_gates`, `decision.unevaluated_required_rules` (`rule_id`, `reason`),
-  `comparison.config_hash`, `comparison.measurement_profile.version`, `gate_reference.status` and
-  `gate_reference.reasons`, plus `findings[].id`, `kind` and `status` for `Active`. None of them may carry a
-  `since` tag. A new way to block, or a new value in one of their enums, is a new state schema version, not a key.
+- The v3.0.0 schema has these keys, among others. Kept: `comparison.classification_hash`, `comparison.origin_status`,
+  `comparison.origin_reasons`, `gate_reference.drift`, `gate_reference.baseline_present`, `findings[].origin`,
+  `agent_tasks[].origin` and the optional `seams[].policy`. Dropped, and type-checked: `comparison.introduced_finding_ids`
+  and `comparison.resolved_finding_ids`, with the same two keys of `gate_reference`. The engine writes both lists
+  only with `--base`.
+- `origin` of a finding or a task (`introduced`, `pre_existing`, `unknown`) exists only in a report made with
+  `--base`. `comparison.origin_status` (`comparable`, `unknown`) says whether the origin is known. They are display
+  facts: no decision reads them.
+- `gate_reference.drift` holds the input classes that made the reference not comparable. Its values are a closed set,
+  `DriftClasses`: `classification_hash`, `model_hash`, `labels_hash`, `rubric_version`, `measurement_profile`,
+  `reference_incomplete`. `gate_reference.baseline_present` says whether the engine loaded a baseline file.
+- `seams[].policy` has the closed value set `violation`, `accepted`, `advisory`, `allowed`, `observed` (the engine's
+  policy status of the seam). `Seam.Policy` keeps the value, an enum checked only when the key is present (absent
+  decodes to `""`); the graph shows it, the gate never reads it.
+- A key the App starts to keep is a kept field; keeping it is still a reviewed contract change.
+- **Frozen decision core.** The gate decides only from these fields: `schema_version`, `verdict`,
+  `decision.hard_gates`, `decision.unevaluated_required_rules` (`rule_id`, `reason`), `comparison.config_hash`,
+  `comparison.measurement_profile.version`, `gate_reference.status`, `gate_reference.reasons`,
+  `gate_reference.drift` and `gate_reference.baseline_present`, plus `findings[].id`, `kind` and `status` for
+  `Active`. A new way to block, or a new value in one of their enums, is a new state schema version, not a key.
 
 ### Order of checks
 
-Engine release listed → size over `MaxBytes` → valid UTF-8 → token pre-pass under the release's key set → typed
+Engine release is `v3.0.0` → size over `MaxBytes` → valid UTF-8 → token pre-pass → typed
 decode with unknown fields disallowed → required keys → `schema_version` → enums → collection caps → string rules →
 path rules → duplicate finding IDs. The first failure is returned. No partial `Report` is ever returned.
 
@@ -127,7 +100,8 @@ and not in this list is a decode error.
 | `findings[]`             | `matched_by` (map of string to string; populated in real reports)                |
 | `agent_tasks[]`          | `declarations` (list of syntax facts, below)                                     |
 | `dimensions.*.metrics[]` | `denominator` (`observed`, `total`), `provenance` (list of strings)              |
-| `gate_reference`         | every comparison key except `status`, `base_ref`, `reasons`                      |
+| `comparison`             | `drift`, `baseline_present`, `introduced_finding_ids`, `resolved_finding_ids` (`drift` and `baseline_present` are kept on `gate_reference` only) |
+| `gate_reference`         | every comparison key except `status`, `base_ref`, `reasons`, `drift`, `baseline_present` |
 | `seams[]`                | the seam keys listed below                                                       |
 
 - A syntax fact has `language`, `file`, `module`, `kind`, `name`, `framework` (strings), `exported` (boolean),
@@ -163,13 +137,17 @@ Values outside the set are decode errors. These are the enums the engine schema 
 | `decision.hard_gates`                 | `pass`, `fail`, `unmeasured`                    |
 | `comparison.status`                   | `not_requested`, `comparable`, `non_comparable` |
 | `gate_reference.status`               | same three values                               |
+| `gate_reference.drift[]`              | `classification_hash`, `model_hash`, `labels_hash`, `rubric_version`, `measurement_profile`, `reference_incomplete` |
+| `comparison.origin_status`, if given  | `comparable`, `unknown`                         |
+| `findings[].origin`, if given         | `introduced`, `pre_existing`, `unknown`         |
+| `agent_tasks[].origin`, if given      | `introduced`, `pre_existing`, `unknown`         |
 | `dimensions.*.status`                 | `measured`, `partial`, `unmeasured`             |
 | `agent_tasks[].repair_kind`           | `code_change`, `needs_owner_decision`           |
 | `producers[].partial_basis`, if given | `unresolved_specifiers`, `degraded_precision`   |
-| `seams[].policy`, if given (v2.5.0)   | `violation`, `accepted`, `advisory`, `allowed`, `observed` |
+| `seams[].policy`, if given            | `violation`, `accepted`, `advisory`, `allowed`, `observed` |
 
-Other value sets named in the type comments (`Finding.Status`, `Severity`, `Kind`, `Producer.Status`, `Dimension.Gate`,
-`AgentTask.Origin`) are plain strings in the engine schema. They are checked as tokens only **[default]**; a consumer
+Other value sets named in the type comments (`Finding.Status`, `Severity`, `Kind`, `Producer.Status`, `Dimension.Gate`)
+are plain strings in the engine schema. They are checked as tokens only **[default]**; a consumer
 that meets a value it does not know fails closed or shows it as text.
 
 An empty `partial_basis` (`""`) is accepted and means the same as an absent key: the enum is checked only for a
@@ -192,23 +170,22 @@ caps none of these lists.
 | `seams`                                                         | 50 000  | about 7 400 real seams fill `MaxBytes`                         |
 | `decision.unevaluated_required_rules`                           | 1 000   | one per policy rule                                            |
 | `locations` per finding                                         | 10 000  | one per file of a module, see below                            |
-| `allowed_alternatives` per finding                              | 32      | none emitted by v2.3.1                                         |
+| `allowed_alternatives` per finding                              | 32      | one in the real captures                                       |
 | `constraints` per task                                          | 35      | alternatives plus 3, see below                                 |
 | `validation` per task                                           | 32      | one command in real output                                     |
 | `files` per task                                                | 10 002  | locations plus 2, see below                                    |
 | `metrics`, `unknown` per dimension; `metrics` per delta         | 256     | 15 metrics at most in the real captures                        |
 | `findings` (references) per dimension                           | 10 000  | one per finding                                                |
-| `new_findings`, `resolved_findings` per delta                   | 10 000  | one per finding                                                |
-| `producers`, `unknowns`, `coverage.tools`, every `reasons` list | 64 each | 13 producers with every analyzer on; 3 unknown sentences       |
+| `gate_reference.drift`                                          | 6       | one per drift class                                            |
+| `producers`, `unknowns`, `coverage.tools`, every `reasons` list | 64 each | 13 producers in the polyglot capture (every analyzer on); no unknown sentence in any v3.0.0 capture |
 
 - `locations`: module-scoped rules (`public_api_max`, `syntax_api_size_ceiling`) list one location per file of the
   module. Real reports had 106 and 91; the former cap of 100 turned a real blocked report into `report_invalid`.
   10 000 locations cost 0.3 to 0.8 MiB, so a finding at the cap still leaves room for the rest of the report.
 - `files` per task: the engine's task files are every location file plus the two edge endpoints, so the cap is
   the locations cap plus 2. `constraints` per task: the finding constraint, the rule's rationale
-  (`rationale: <text>`, engine v2.5.0), one per allowed alternative and the target module's public surface, so the
-  alternatives cap plus 3. The former 32 rejected a task whose finding had 31 or 32 alternatives, and the former 34 a
-  v2.5.0 task with a rationale and 32 alternatives.
+  (`rationale: <text>`), one per allowed alternative and the target module's public surface, so the alternatives cap
+  plus 3.
 - `seams` and `findings`: a real report reaches `MaxBytes` long before either cap. 3 059 seams with one advisory
   each measured 5.71 MB, over the cap.
 
@@ -223,16 +200,15 @@ Every kept string is valid UTF-8 without control characters (no CR, LF, tab, NUL
 separators U+2028 and U+2029, which are not control characters but break a single line. All lengths and character
 sets are **[default]**. Classes:
 
-- Finding text, at most 2 000 characters, single line: `Finding.Why`, `Finding.Constraint`. From engine v2.5.0 the
-  engine ends the why with ` — <rationale>` and both with ` (see <docs>)`, texts the policy author writes and the
-  engine does not bound; a real `module_dependencies` why is about 110 characters before them, so the 500 of Text
+- Finding text, at most 2 000 characters, single line: `Finding.Why`, `Finding.Constraint`. The engine ends the why with
+  ` — <rationale>` and both with ` (see <docs>)`, texts the policy author writes and the engine does not bound; a real `module_dependencies` why is about 110 characters before them, so the 500 of Text
   would reject a two-sentence rationale with an ADR path. 2 000 keeps a task goal (`Break the import cycle: ` and
   the why) and the task's `rationale: ` constraint under the 4 096 of Task text. A rationale or docs value over the
   cap, or on more than one line (a YAML `|` or `>` block scalar ends with a line break), makes the report
   `report_invalid`; the user guide says so.
 - Text, at most 500 characters, single line: `AllowedAlternatives[]`,
   `UnknownFact.Fact`, `UnknownFact.Reason`, `UnevaluatedRule.Reason`, `ToolCoverage.Reason`,
-  `DimensionCoverage.Basis`, and every `Reasons[]` list (`Comparison`, `Reference`, `Delta`, `TaskOriginReasons`).
+  `DimensionCoverage.Basis`, and every `Reasons[]` list (`Comparison`, `Reference`, `Delta`, `OriginReasons`).
   Real engine text contains quotes, backticks and dashes, so no character set applies.
 - Task text, at most 4 096 characters, single line: `AgentTask.Goal`, `AgentTask.Constraints[]`. The engine
   composes them from other fields: a goal is a template with both edge paths (up to about 1 200 characters) or
@@ -242,14 +218,13 @@ sets are **[default]**. Classes:
   fixed composition and about 100 public globs at the observed 35 characters each.
 - Command, at most 512 characters, single line: `AgentTask.Validation[]`. No whitespace-separated word equals
   `--refresh` or starts with `--refresh=`. Kept verbatim and in order.
-- Identifier, at most 200 characters, single line: every `ID`, `FindingID`, `RuleID`, `NewFindings[]`,
-  `ResolvedFindings[]`, module names (`Endpoint.Module`, `Seam.FromModule`, `Seam.ToModule`), `Dimension.Name`,
+- Identifier, at most 200 characters, single line: every `ID`, `FindingID`, `RuleID`, module names (`Endpoint.Module`, `Seam.FromModule`, `Seam.ToModule`), `Dimension.Name`,
   `Dimension.Owner`, `UnknownFact.Owner`, `Metric.Name`, `Metric.Unit`, `MetricDelta.Name`, `Tool`, `BaseRef`.
 - Token, at most 64 characters from letters, digits, space and `_ . : / + -`: `Status`, `Kind`, `Severity`,
-  `Confidence`, `Gate`, `Origin`, `Strength`, `Distance`, `Volatility`, `TaskOriginStatus`, `Edge.Kind`. The space
+  `Confidence`, `Gate`, `Strength`, `Distance`, `Volatility`, `Drift[]`, `Edge.Kind`. The space
   is needed: a producer status is literally `timed out`.
 - Version, token characters, at most 128: `MeasurementProfile.Version`, `SemanticsVersion`, `RubricVersion`,
-  `Unknowns[]`. These are engine identifiers; the three unknown sentences of v2.3.1 fit the class.
+  `Unknowns[]`. These are engine identifiers.
 - Tool version, at most 128 characters, single line, every character printable (`unicode.IsPrint`, so no format
   character such as a bidi override or a zero-width space and no space but U+0020): `Producer.ToolVersion`. It is
   the tool's own version output, so free text: the engine emits `go1.27.1` (`go version` without the platform),
@@ -260,13 +235,14 @@ sets are **[default]**. Classes:
   `git version 2.54.0 (Apple Git-157)`, and the comma-joined parser versions of supplied coverage. The engine's
   own profile comparison needs these strings verbatim, so they are not normalized anywhere. A multi-line version
   output is still rejected.
-- Hash: `Comparison.ConfigHash` is `""` or `^[0-9a-f]{64}$`, bare hex without a `sha256:` prefix. `ModelHash`,
+- Hash: `Comparison.ConfigHash` and `Comparison.ClassificationHash` are `""` or `^[0-9a-f]{64}$`, bare hex without a
+  `sha256:` prefix. `ModelHash`,
   `LabelsHash`, `SettingsHash` are token characters, at most 128.
 - Path: `Location.File`, `AgentTask.Files[]`, and `Endpoint.Path` when not empty. Non-empty, at most 512
   characters, forward slashes only, relative, equal to its own `path.Clean` form, no `..` segment, no leading
   `/`, no backslash, no drive prefix (`C:`). A directory or a glob such as `pkg/a/**` is a valid path, and so is `.`,
-  the repository root: engine v2.5.0 names an importer that no module owns by its package directory, `.` for a
-  root package, in `edge.from.path` and in the task's `files` (`real-root-importer-v250`).
+  the repository root: the engine names an importer that no module owns by its package directory, `.` for a
+  root package, in `edge.from.path` and in the task's `files` (`real-root-importer`).
 - Numbers (ranges are **[default]**): `line` 0 to 10 000 000; every count ≥ 0; metric values any finite number;
   integers must be written without fraction or exponent.
 - Finding `id` values are unique across the report. `finding_id` and finding references are not checked against
@@ -275,16 +251,16 @@ sets are **[default]**. Classes:
 ## Public Contract
 
 ```go
-// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v2.3.1 to v2.5.0).
+// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v3.0.0).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
-// Report is the no-source transport form of an engine state report. The decoder knows every key of the state
-// schema of each release it reads: keys listed here are kept (length-capped), the other known keys are validated
-// and dropped (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores),
-// and any key that release's schema does not define is a decode error.
+// Report is the no-source transport form of an engine state report. The decoder knows every key of the engine
+// v3.0.0 state schema: keys listed here are kept (length-capped), the other known keys are validated and dropped
+// (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores), and any key
+// the schema does not define is a decode error.
 type Report struct {
     SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
     Verdict       string               `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
@@ -321,22 +297,32 @@ type UnevaluatedRule struct {
 type Comparison struct {
     Status             string              `json:"status"` // "not_requested" | "comparable" | "non_comparable"
     BaseRef            string              `json:"base_ref,omitempty"`
-    ConfigHash         string              `json:"config_hash,omitempty"` // bare lowercase hex SHA-256 of the raw policy bytes
+    ConfigHash         string              `json:"config_hash,omitempty"`         // bare lowercase hex SHA-256 of the raw policy bytes
+    ClassificationHash string              `json:"classification_hash,omitempty"` // bare lowercase hex SHA-256 of the policy leaves that change measured facts
     ModelHash          string              `json:"model_hash,omitempty"`
     LabelsHash         string              `json:"labels_hash,omitempty"` // canonical hash of approved labels; not reproducible from raw bytes
     RubricVersion      string              `json:"rubric_version,omitempty"`
     MeasurementProfile *MeasurementProfile `json:"measurement_profile,omitempty"` // nil = unknown identity
     Reasons            []string            `json:"reasons"`
-    TaskOriginStatus   string              `json:"task_origin_status,omitempty"`
-    TaskOriginReasons  []string            `json:"task_origin_reasons,omitempty"`
+    OriginStatus       string              `json:"origin_status,omitempty"` // "comparable" | "unknown"; presentation only
+    OriginReasons      []string            `json:"origin_reasons,omitempty"`
 }
 
 // Reference is the engine gate's comparison with the persisted baseline (top-level gate_reference).
-// The engine exposes no baseline digest: only whether the baseline it loaded was comparable, and why not.
+// The engine exposes no baseline digest: only whether it loaded a baseline, whether that one was comparable, and
+// the classes of input that made it not comparable. Reasons are engine text for display; decisions read Status,
+// BaselinePresent and Drift.
 type Reference struct {
-    Status  string   `json:"status"`             // "comparable" | "non_comparable" | "not_requested"
-    BaseRef string   `json:"base_ref,omitempty"` // "baseline"
-    Reasons []string `json:"reasons"`            // e.g. "no baseline file was loaded"
+    Status          string   `json:"status"`             // "comparable" | "non_comparable" | "not_requested"
+    BaseRef         string   `json:"base_ref,omitempty"` // "baseline"
+    Reasons         []string `json:"reasons"`            // e.g. "no baseline file was loaded"
+    Drift           []string `json:"drift,omitempty"`    // closed set DriftClasses; empty when comparable
+    BaselinePresent bool     `json:"baseline_present"`   // the engine loaded a baseline file
+}
+
+// DriftClasses are the input classes that can make a reference not comparable (engine decision.DriftClass).
+var DriftClasses = []string{
+    "classification_hash", "model_hash", "labels_hash", "rubric_version", "measurement_profile", "reference_incomplete",
 }
 
 type MeasurementProfile struct {
@@ -357,17 +343,18 @@ type Producer struct {
 
 ```go
 type Finding struct {
-    ID                  string     `json:"id"`        // 32-hex fingerprint, unique per report
-    Kind                string     `json:"kind"`      // "gate" | "advisory"
+    ID                  string     `json:"id"`   // 32-hex fingerprint, unique per report
+    Kind                string     `json:"kind"` // "gate" | "advisory"
     RuleID              string     `json:"rule_id"`
-    Status              string     `json:"status"`    // "new" | "baseline" | "waived" | "expired_waiver" | "fixed"
-    Severity            string     `json:"severity"`  // "critical" | "high" | "medium" | "low"
+    Status              string     `json:"status"`   // "new" | "baseline" | "waived" | "expired_waiver" | "fixed"
+    Severity            string     `json:"severity"` // "critical" | "high" | "medium" | "low"
     Confidence          string     `json:"confidence"`
     Edge                Edge       `json:"edge"`
-    Locations           []Location `json:"locations"` // may be empty; never invent one
+    Locations           []Location `json:"locations"`  // may be empty; never invent one
     Why                 string     `json:"why"`        // engine-authored, single line, length-capped
     Constraint          string     `json:"constraint"` // engine-authored, single line, length-capped
     AllowedAlternatives []string   `json:"allowed_alternatives,omitempty"`
+    Origin              string     `json:"origin,omitempty"` // "introduced" | "pre_existing" | "unknown", only with --base; presentation only
 }
 
 type Edge struct {
@@ -441,11 +428,9 @@ type UnknownFact struct {
 }
 
 type Delta struct {
-    Status           string        `json:"status"`
-    Reasons          []string      `json:"reasons,omitempty"`
-    Metrics          []MetricDelta `json:"metrics,omitempty"`
-    NewFindings      []string      `json:"new_findings,omitempty"`
-    ResolvedFindings []string      `json:"resolved_findings,omitempty"`
+    Status  string        `json:"status"`
+    Reasons []string      `json:"reasons,omitempty"`
+    Metrics []MetricDelta `json:"metrics,omitempty"`
 }
 
 type MetricDelta struct {
@@ -478,23 +463,23 @@ type Seam struct {
     Distance   string `json:"distance"`
     Volatility string `json:"volatility"`
     Severity   string `json:"severity,omitempty"`
-    // Policy is what the engine's policy says about the seam (engine v2.5.0 and later): "violation" | "accepted" |
-    // "advisory" | "allowed" | "observed", a closed set. "" = a report from an earlier release, which has no such key.
+    // Policy is what the engine's policy says about the seam: "violation" | "accepted" |
+    // "advisory" | "allowed" | "observed", a closed set. "" = the key is absent.
     Policy string `json:"policy,omitempty"`
 }
 ```
 
 ```go
 // Decode strictly parses payload as the no-source transport of the state document engineVersion emits. It
-// fails on: an engineVersion outside EngineVersions, size over MaxBytes, a key that release's state schema
+// fails on: an engineVersion outside EngineVersions, size over MaxBytes, a key the state schema
 // does not define, wrong schema_version, an enum value outside its set, strings over the per-field caps,
 // absolute or parent-escaping paths, multi-line text, or duplicate finding IDs.
 func Decode(payload []byte, engineVersion string) (Report, error)
 ```
 
 ```go
-// EngineVersions returns the engine releases whose state document Decode reads, oldest first. Each emits
-// StateSchemaV1; a later release only adds optional keys, so the last key set holds every earlier one.
+// EngineVersions returns the engine releases whose state document Decode reads: v3.0.0 only. It emits
+// StateSchemaV1.
 func EngineVersions() []string
 ```
 
@@ -512,10 +497,10 @@ Semantics not visible in the signatures:
 
 - `Decode` returns a zero `Report` with every error. Errors are plain `error` values; the caller maps any of them
   to one problem (`report_invalid`). The message names location and rule only.
-- `engineVersion` is compared exactly with the listed releases: no trimming, no `v` added, no ranges. An unlisted
-  release, the empty string included, is an error naming `engine_version`, before the payload is read.
-- `EngineVersions` returns `v2.3.1`, `v2.4.0`, `v2.4.1`, `v2.5.0` today, as a fresh slice on every call. A caller without a bound
-  release that only displays a report (the graph page) passes the last one; the gate passes the envelope's.
+- `engineVersion` is compared exactly with `v3.0.0`: no trimming, no `v` added, no ranges. Any other value, the
+  empty string included, is an error naming `engine_version`, before the payload is read.
+- `EngineVersions` returns `v3.0.0`, as a fresh slice on every call. A caller without a bound release that only
+  displays a report (the graph page) passes it; the gate passes the envelope's.
 - A decoded `Report` owns its memory; it does not alias `payload`.
 - `Decode` never drops, reorders, or rewrites findings, tasks, seams, or validation commands. The only dropped
   input is the dropped-key list. Marshalling a `Report` yields a document without any dropped key.
@@ -542,18 +527,19 @@ table; the `internal/gate` row is computed (LCA root, deeper module two levels d
 | `internal/gate`                  | through gate/ingest, no import   | Contract                      | root / 2 / 2              | High       | Yes       |
 | `internal/control/ui`            | ui depends on report             | Contract                      | root / 2 / 2              | High       | Yes       |
 | `internal/control/ui/graph`      | graph depends on report          | Contract                      | root / 3 / 3              | Moderate   | Yes       |
-| `archfit` engine state (v2.5.0)  | report mirrors the engine schema | Contract (versioned schema)   | outside the tree; highest | Moderate   | Yes       |
+| `archfit` engine state (v3.0.0)  | report mirrors the engine schema | Contract (versioned schema)   | outside the tree; highest | Moderate   | Yes       |
 | `archfit-action` (external repo) | the Action uploads engine state  | Contract                      | outside the tree; highest | Moderate   | Yes       |
 
 Shared knowledge, per counterpart:
 
 - `internal/gate/ingest` holds `MaxBytes` (request size cap, `413`), `Decode` and `Report`. It decodes with the
-  envelope's `engine_version`. A decode error, an unlisted release included, becomes the problem
+  envelope's `engine_version`. A decode error, a release other than `v3.0.0` included, becomes the problem
   `report_invalid`, never a rejection.
 - `internal/gate/verdict` holds `Report`, `Decision`, `UnevaluatedRule`, `Comparison`, `Reference`, `Dimension`,
-  `Finding`. It decides only from the frozen decision core, which every listed release defines: `Verdict`,
+  `Finding`. It decides only from the frozen decision core: `Verdict`,
   `Decision.HardGates`, `Decision.UnevaluatedRequiredRules` (`RuleID`, and `Reason` for the dead-selector prefix),
-  `Comparison.ConfigHash`, `Comparison.MeasurementProfile` (nil or not), and `GateReference.Status` and `Reasons`.
+  `Comparison.ConfigHash`, `Comparison.MeasurementProfile` (nil or not), and `GateReference.Status`, `Reasons`,
+  `Drift` and `BaselinePresent`.
   For the display-only `Detail` of `attention_only` it also reads `Dimension.Status` of the nine engine keys and
   `Finding.Kind` and `Finding.Status`, to name the dimensions not fully measured and count the active diagnostics.
   Those reads never change the conclusion or the reason code. It never reads `AgentTask` (so never its `Origin`),
@@ -565,12 +551,12 @@ Shared knowledge, per counterpart:
   `Report` field of `ingest.Upload`: a `nil` profile or a version different from the manifest entry means the identity
   is not approved. A change to those fields still reaches it.
 - `internal/control/ui` holds `Decode`, `EngineVersions` and `MaxBytes` to read the `archfit-report` workflow
-  artifact for the graph page. The artifact names no release, so it decodes with the newest.
+  artifact for the graph page. The artifact names no release, so it decodes as `v3.0.0`.
 - `internal/control/ui/graph` holds `Report`, `Seam` (`Seam.Policy` included, the status it shows when present),
   `Comparison.ConfigHash` and `Finding.Active`, which decides the links it marks as active gate findings in a
   report without `seams[].policy`.
 - `archfit` engine state: this module holds the whole state schema key set, its enums and required lists, pinned
-  at v2.5.0, revision `59318b9eec906f54bc7a54d01db634b0c20c0647`, and which release added each key. It holds no engine Go types (trust-and-reporting.md §7).
+  at v3.0.0, revision `bbd658f008bcc4bc83e063cf305d20dc4508da2e`. It holds no engine Go types (trust-and-reporting.md §7).
 - `archfit-action` uploads the engine's state file bytes as they are, or with dropped keys stripped. Contract
   coupling through a version constant, strict decoding and shared fixtures tolerates the distance of three repositories.
 
@@ -579,12 +565,9 @@ No counterpart contract is used by this module, so nothing is restated here.
 ## Change Vectors
 
 - A new engine state version: add `StateSchemaV2` and a `DecodeV2` path; v1 stays while approved images emit it.
-- A new engine release within v1: append it to the release table. A release that adds a key also adds the shadow
-  field with `since:"<release>"`, as dropped or, after a privacy review, as kept with a string class and
-  fixtures; earlier releases keep refusing the key. Until then its reports fail closed as `report_invalid`.
-  The App ships this before the engine release is approved in the manifest.
-- Retiring a release: delete its row from the table once the manifest no longer approves it; its `since` tags
-  stay, because later releases still emit those keys.
+- A new engine release within v1: change the pinned schema, the shadow types and the fixtures together. A key the
+  release adds is dropped or, after a privacy review, kept with a string class and fixtures. Until then its reports
+  fail closed as `report_invalid`. The App ships this before the engine release is approved in the manifest.
 - Tuning caps from pilot evidence. Loosening is compatible; tightening follows the parent's versioning rule.
 - Promoting a dropped key to kept (for example metric denominators) after a privacy review.
 - Publishing the kept subset as a JSON Schema artifact for producers: add a `Schema` function here.
@@ -600,12 +583,10 @@ No counterpart contract is used by this module, so nothing is restated here.
 - Enforcement is never filtered by `Origin` or finding `Status`; this module keeps every finding it accepts.
 - Empty `locations` stay empty. No consumer may invent a location.
 - `Decode` is total and bounded: no input panics; work is bounded by `MaxBytes`, the depth cap and the collection caps.
-- Strict within each release: a document gets the key set of the release it names and nothing else. An unlisted
-  release never falls back to another key set.
-- The frozen decision core is defined by every listed release; a field the gate decides from never carries a
-  `since` tag.
+- Strict: a document gets the v3.0.0 key set and nothing else. Any other release is refused, never read with this
+  key set.
 - Errors never contain payload values or the engine release. Callers log IDs, digests, outcomes and timings only.
-- No I/O, no clock, no logging, no mutable globals: the release table is read-only. Standard library only. No other
+- No I/O, no clock, no logging, no mutable globals: the release list is read-only. Standard library only. No other
   internal import, including wire siblings.
 - Transport types only: a `Report` is never persisted. The App verifies it, publishes feedback and drops it.
 
@@ -614,10 +595,8 @@ No counterpart contract is used by this module, so nothing is restated here.
 Fixtures live in `internal/wire/testdata/report/` and `internal/wire/testdata/leakage/`, read by relative path.
 Each fixture has an `.expect.json` sibling recording its producer artifact and expected outcome (see the parent document);
 this module asserts its `decode` and `fields` keys. The pinned engine schema is `internal/wire/testdata/schema/archfit.state.schema.json`.
-This module has no private fixture and no `testdata` folder of its own. Every fixture is a v2.3.1 document except
-the v2.4.0 capture `real-blocked-no-baseline-v240`, the v2.4.1 capture `real-blocked-no-baseline-v241` and the
-v2.5.0 captures `real-blocked-no-baseline-v250`, `real-seam-policy-v250` and `real-root-importer-v250`. The tests decode each fixture as a
-document of its own release, and `TestEveryEngineVersionReadsTheCorpus` decodes each one under every listed release.
+This module has no private fixture and no `testdata` folder of its own. Every fixture is a v3.0.0 document. The tests
+decode each fixture as a v3.0.0 document.
 
 ### Unit Tests
 
@@ -630,22 +609,22 @@ document of its own release, and `TestEveryEngineVersionReadsTheCorpus` decodes 
   **Expected behavior**: at-limit rows, `timed out`, empty and 64-hex hashes and every engine tool-version format decode; every other
   row is an error naming the JSON location.
 - **Test name**: `TestSeamPolicy`
-  **Scenario**: read the `seams[].policy` enum of the pinned schema; on the all-keys fixture, the key absent under v2.5.0
-  and v2.3.1, each enum value, `""`, `permitted`, `Allowed` and `true` under v2.5.0, and `allowed` under v2.4.1.
+  **Scenario**: read the `seams[].policy` enum of the pinned schema; on the all-keys fixture, the key absent, each enum
+  value, `""`, `permitted`, `Allowed` and `true`.
   **Expected behavior**: the schema enum is the five values; absent decodes to `""`; each value is kept; the other rows
-  are errors naming `seams[0].policy` (under v2.4.1: an unknown key at `seams[0]`), and no error echoes the value.
-- **Test name**: `TestSinceTagSelectsTheKeySet`
-  **Scenario**: the pre-pass over a probe type with an untagged key, a key tagged `since:"v2.4.0"` and a key tagged with an unlisted
-  release: the new key under v2.3.1 and under v2.4.0, the unlisted one under the newest release.
-  **Expected behavior**: the new key is an unknown key under v2.3.1 and accepted under v2.4.0; the unlisted one is always unknown.
+  are errors naming `seams[0].policy`, and no error echoes the value.
+- **Test name**: `TestRemovedV2KeysAreUnknown`
+  **Scenario**: the base document with `comparison.task_origin_status` added, and with `new_findings` added to a
+  dimension `delta`.
+  **Expected behavior**: both are decode errors: the v3.0.0 schema does not define these keys.
 - **Test name**: `TestPathRules`
   **Scenario**: table for `locations[].file`, `agent_tasks[].files[]` and `edge.from.path`: `pkg/a/a.go`; `pkg/b`; `pkg/a/**`; empty;
   `.`; `/etc/passwd`; `../x`; `a/../../x`; `a//b`; `a/./b`; `a\b`; `C:/x`; 513 characters.
   **Expected behavior**: the first four (`.` is the repository root) decode everywhere; empty decodes only for an endpoint
   path; the rest are errors.
 - **Test name**: `TestEnums`
-  **Scenario**: one row per schema enum with each allowed value and one unknown value; an empty `partial_basis`; plus unknown
-  values for `Finding.Status`, `Severity` and `Origin`.
+  **Scenario**: one row per schema enum with each allowed value and one unknown value, `origin`, `origin_status` and
+  `gate_reference.drift` included; an empty `partial_basis`; plus unknown values for `Finding.Status` and `Severity`.
   **Expected behavior**: allowed values and the empty `partial_basis` decode; unknown schema-enum values are errors; unknown
   plain-string values decode unchanged.
 - **Test name**: `TestCollectionCaps`
@@ -681,9 +660,9 @@ document of its own release, and `TestEveryEngineVersionReadsTheCorpus` decodes 
 ### Integration Contract Tests
 
 - **Test name**: `TestDecodeRealEngineReport`
-  **Scenario**: the fixture captured from engine v2.3.1 (`real-blocked-no-baseline`): verdict `blocked`, `hard_gates: fail`, one active
+  **Scenario**: the fixture captured from engine v3.0.0 (`real-blocked-no-baseline`): verdict `blocked`, `hard_gates: fail`, one active
   blocker, populated `matched_by`, `gate_reference` `non_comparable` with reason `no baseline file was loaded`, nine dimensions, one seam.
-  **Expected behavior**: decodes; those values, the bare-hex `config_hash`, profile version `archfit.measurement.v1` and the task's
+  **Expected behavior**: decodes; those values, the bare-hex `config_hash`, profile version `archfit.measurement.v2` and the task's
   validation command `archfit check -c .archfit.yaml` equal the recorded expectation.
 - **Test name**: `TestProducerToolVersionsSurvive`
   **Scenario**: the unmodified polyglot capture `real-polyglot-blocked` (cargo, grimp, dependency-cruiser, cargo-modules, scip, jscpd,
@@ -700,33 +679,25 @@ document of its own release, and `TestEveryEngineVersionReadsTheCorpus` decodes 
   **Expected behavior**: no `matched_by`, `declarations`, `measurement`, `provenance`, `denominator`, `hypothesis` or `scores` key anywhere;
   the second decode equals the first; counts of findings, tasks and seams equal the counts in the fixture file.
 - **Test name**: `TestEngineSchemaKeySetIsCovered`
-  **Scenario**: walk the pinned v2.5.0 `internal/wire/testdata/schema/archfit.state.schema.json` and the shadow types by
-  reflection; decode the v2.3.1 capture and the all-keys fixture as v2.3.1, and `real-seam-policy-v250` as v2.5.0.
+  **Scenario**: walk the pinned v3.0.0 `internal/wire/testdata/schema/archfit.state.schema.json` and the shadow types by
+  reflection; decode the real capture, the all-keys fixture and `real-seam-policy`.
   **Expected behavior**: every schema property is a shadow field, and the reverse; kept plus dropped equals the schema key set. A
   missing schema file fails the test; it never skips.
 - **Test name**: `TestRootImporterCapture`
-  **Scenario**: the unmodified v2.5.0 capture `real-root-importer-v250`: a root `main.go` that no module owns imports a module whose
+  **Scenario**: the unmodified capture `real-root-importer`: a root `main.go` that no module owns imports a module whose
   `visible_to` excludes it, under a fail-gated `module_dependencies` rule with `rationale`, `alternatives` and `docs`.
-  **Expected behavior**: decodes as a v2.5.0 document; the finding's `edge.from` is `{module: "", path: "."}`; the task files hold
+  **Expected behavior**: decodes; the finding's `edge.from` is `{module: "", path: "."}`; the task files hold
   `.`; the why ends with ` — <rationale> (see <docs>)`, the constraint with ` (see <docs>)`; the task has the `rationale: ` entry.
 - **Test name**: `TestEngineVersions`
   **Scenario**: call `EngineVersions`, change the returned slice, call it again.
-  **Expected behavior**: `v2.3.1`, `v2.4.0`, `v2.4.1`, `v2.5.0` both times: the caller gets a copy.
-- **Test name**: `TestEveryEngineVersionReadsTheCorpus`
-  **Scenario**: decode every report and leakage fixture once per listed release.
-  **Expected behavior**: under the fixture's own release (a capture's producer release, else v2.3.1) and every other
-  release, the same `Report` or an error alike; except that a fixture with a `seams[].policy` value is an unknown key
-  at `seams[0]` under every release before v2.5.0.
+  **Expected behavior**: `v3.0.0` both times: the caller gets a copy.
 - **Test name**: `TestUnknownEngineVersionIsRefused`
-  **Scenario**: the real capture with the release `""`, `v2.3.0`, `v2.6.0`, `2.3.1`, `v2.3.1 ` (trailing space), `V2.3.1` and one
+  **Scenario**: the real capture with the release `""`, `v2.5.0`, `v2.6.0`, `3.0.0`, `v3.0.0 ` (trailing space), `V3.0.0` and one
   carrying `LEAK-7f3a`.
   **Expected behavior**: each is an error naming `engine_version`, with a zero `Report`; no error contains the marker.
-- **Test name**: `TestSinceTagsNameListedReleases`
-  **Scenario**: walk every shadow field by reflection.
-  **Expected behavior**: every `since` tag names a release of `EngineVersions`.
-- **Test name**: `TestDecisionCoreIsInEveryVersion`
+- **Test name**: `TestDecisionCoreHasShadowFields`
   **Scenario**: walk the shadow fields of the frozen decision core.
-  **Expected behavior**: each one exists and carries no `since` tag.
+  **Expected behavior**: each one has a shadow field.
 - **Test name**: `TestSizeCap`
   **Scenario**: a valid report padded (inside a dropped string) to exactly `MaxBytes`, and to `MaxBytes + 1`.
   **Expected behavior**: the first decodes; the second fails before any parsing.

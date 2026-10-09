@@ -7,7 +7,7 @@ import (
 )
 
 // The image_digest values in manifest.json are the published per-platform digests of
-// ghcr.io/alexei-led/archfit:v2.4.1 and :v2.5.0; action_ref is the archfit-action v1.0.0 commit.
+// ghcr.io/alexei-led/archfit:v3.0.0; action_ref is the archfit-action commit that generated workflows pin.
 // TestManifestHasNoPlaceholdersInRelease fails a build tested with ARCHFIT_RELEASE=1 if a placeholder returns.
 //
 //go:embed manifest.json
@@ -46,7 +46,6 @@ func Current() Entry {
 }
 
 // EngineVersions returns the engine releases the manifest approves, each once, in the order of their first row.
-// During an upgrade window it holds two: the release new workflows pin and the one before it.
 func EngineVersions() []string {
 	return slices.Clone(loaded.versions)
 }

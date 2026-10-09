@@ -256,7 +256,7 @@ The PR body is deterministic and carries IDs, digests and counts only:
   App never commits a baseline to the default branch;
 - "Approving accepts N findings that the baseline on `main` does not accept today", where N counts fingerprints of the
   capture that the protected baseline lacks;
-- a table: accepted findings on the default branch (`none` when absent, `unreadable` when not a readable v2 file), in
+- a table: accepted findings on the default branch (`none` when absent, `unreadable` when not a readable v3 file), in
   this pull request, added, removed (`unknown` when unreadable);
 - the added and the removed findings, one line each, `rule_id` and fingerprint, sorted by rule then fingerprint, at
   most 150 per list **[default]** with an "and N more" line (GitHub refuses a body over 65 536 characters; a listed
@@ -502,7 +502,7 @@ type Envelope struct {
     MergeBaseSHA  string `json:"merge_base_sha"` // "" unless pull_request
     RunID         int64  `json:"run_id"`
     RunAttempt    int    `json:"run_attempt"`
-    EngineVersion string `json:"engine_version"` // e.g. "v2.3.1"
+    EngineVersion string `json:"engine_version"` // e.g. "v3.0.0"
     ImageDigest   string `json:"image_digest"`   // "sha256:<64 hex>"
     Platform      string `json:"platform"`       // e.g. "linux/amd64"
     PayloadDigest  string `json:"payload_digest"`  // "sha256:<64 hex>" of the exact payload bytes
@@ -615,10 +615,10 @@ func Waivers(policy []byte) ([]Waiver, error)
 func Validate(policy []byte) error
 ```
 
-<!-- contract: BaselineSchemaV2, MaxBaselineBytes, Accepted, Baseline, ReadBaseline — restated from internal/wire/policy/module.md -->
+<!-- contract: BaselineSchemaV3, MaxBaselineBytes, Accepted, Baseline, ReadBaseline — restated from internal/wire/policy/module.md -->
 ```go
-// BaselineSchemaV2 is the only engine baseline schema the App reads (engine v2.3.1 writes it).
-const BaselineSchemaV2 = "archfit.baseline.v2"
+// BaselineSchemaV3 is the only engine baseline schema the App reads (engine v3.0.0 writes it).
+const BaselineSchemaV3 = "archfit.baseline.v3"
 
 // MaxBaselineBytes caps a baseline file: 1 MiB, the size github/api reads back from the protected ref.
 const MaxBaselineBytes = 1 << 20
@@ -637,7 +637,7 @@ type Baseline struct {
 }
 
 // ReadBaseline decodes an engine baseline file. It is a structural check, not engine validation: one JSON
-// object of schema BaselineSchemaV2, at most MaxBaselineBytes, with a state block naming a 64-hex config hash
+// object of schema BaselineSchemaV3, at most MaxBaselineBytes, with a state block naming a 64-hex config hash
 // and a measurement profile version, and accepted findings with distinct 32-hex fingerprints and token rule IDs.
 // Errors never echo keys or values.
 func ReadBaseline(raw []byte) (Baseline, error)

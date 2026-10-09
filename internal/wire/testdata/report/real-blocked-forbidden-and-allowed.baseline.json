@@ -1,11 +1,11 @@
 {
-  "schema_version": "archfit.baseline.v2",
+  "schema_version": "archfit.baseline.v3",
   "accepted": [
     {
       "fingerprint": "f4fc3513ff01acabd53c902612c4def0",
       "rule_id": "bc/imbalanced_coupling",
       "kind": "advisory",
-      "severity": "medium"
+      "severity": "critical"
     }
   ],
   "metrics": {
@@ -23,21 +23,22 @@
     },
     "encapsulation": {
       "value": 0,
-      "version": "encapsulation.v1"
+      "version": "encapsulation.v2"
     },
     "unbalanced_edge": {
       "value": 0,
-      "version": "unbalanced_edge.v2"
+      "version": "unbalanced_edge.v3"
     }
   },
   "state": {
     "config_hash": "ceb520c00aa0cf875234c6fb229163f505b916f191090271335f644c077e22d4",
+    "classification_hash": "1664f273bfac18369e4c40802f1e17408ba2b35c438f04179ab7b87a76a909a2",
     "model_hash": "ef1a989e47fd1ea07f3b7fe62691630240b4a35e05e5cfe2c4d3131c7f7184a6",
     "labels_hash": "",
-    "rubric_version": "bc_score.v6",
+    "rubric_version": "bc_score.v7",
     "measurement_profile": {
-      "version": "archfit.measurement.v1",
-      "settings_hash": "3b5d3225b97d46397af0d3ae04ef17bb5bedfe3ecbbc0234b2bf2c20789db048",
+      "version": "archfit.measurement.v2",
+      "settings_hash": "1805e596da49f6a33a1ebc0172ced5114a74800e5c0e1de3509463b028278789",
       "producers": [
         {
           "tool": "ast-grep",
@@ -50,21 +51,6 @@
           "status": "disabled"
         },
         {
-          "tool": "cargo",
-          "semantics_version": "cargo.v1",
-          "status": "absent"
-        },
-        {
-          "tool": "cargo-modules",
-          "semantics_version": "cargo-modules.v1",
-          "status": "absent"
-        },
-        {
-          "tool": "dependency-cruiser",
-          "semantics_version": "dependency-cruiser.v1",
-          "status": "absent"
-        },
-        {
           "tool": "deploy-unit",
           "semantics_version": "deploy-unit.v2",
           "status": "ok"
@@ -72,19 +58,14 @@
         {
           "tool": "git-history",
           "semantics_version": "git-history.recent500-full-fallback.v2",
-          "tool_version": "git version 2.55.0",
+          "tool_version": "git version 2.56.0",
           "status": "ok"
         },
         {
           "tool": "go/packages",
-          "semantics_version": "go/packages.v1",
+          "semantics_version": "go/packages.v2",
           "tool_version": "go1.27.1",
           "status": "ok"
-        },
-        {
-          "tool": "grimp",
-          "semantics_version": "grimp.v2",
-          "status": "absent"
         },
         {
           "tool": "jscpd",
@@ -98,7 +79,7 @@
         },
         {
           "tool": "scip",
-          "semantics_version": "scip.v1",
+          "semantics_version": "scip.v2",
           "status": "disabled"
         }
       ],
@@ -165,7 +146,12 @@
             "unit": "count"
           },
           {
-            "name": "external_edges",
+            "name": "library_edges",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "unmapped_first_party_edges",
             "value": 0,
             "unit": "count"
           },
@@ -220,7 +206,7 @@
       },
       {
         "name": "coupling",
-        "status": "measured",
+        "status": "partial",
         "gate": "warn",
         "coverage": {
           "basis": "cross-boundary edges scored",
@@ -250,16 +236,16 @@
           },
           {
             "name": "critical_band_edges",
-            "value": 0,
+            "value": 1,
             "unit": "count"
           },
           {
             "name": "high_or_worse_edges",
-            "value": 0,
+            "value": 1,
             "unit": "count"
           },
           {
-            "name": "critical_high_distance_edges",
+            "name": "qualifying_edges",
             "value": 0,
             "unit": "count"
           },
@@ -275,7 +261,7 @@
           },
           {
             "name": "tight_seams",
-            "value": 0,
+            "value": 1,
             "unit": "count"
           },
           {
@@ -338,7 +324,7 @@
           },
           {
             "name": "largest_production_file_loc",
-            "value": 6,
+            "value": 5,
             "unit": "count"
           }
         ]

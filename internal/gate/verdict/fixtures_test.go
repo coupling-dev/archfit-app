@@ -43,7 +43,7 @@ type fixtureExpect struct {
 }
 
 // fixtureEngine is the release a synthetic fixture is a document of; a capture names its own release.
-const fixtureEngine = "v2.3.1"
+const fixtureEngine = "v3.0.0"
 
 func loadReport(t *testing.T, name string, e fixtureExpect) *report.Report {
 	t.Helper()

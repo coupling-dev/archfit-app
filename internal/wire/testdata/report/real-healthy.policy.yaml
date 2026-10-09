@@ -41,3 +41,4 @@ coverage:
     - path: coverage.out
       format: go-coverprofile
       sidecar_path: coverage.out.sidecar.json
+

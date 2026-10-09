@@ -244,7 +244,7 @@ fast schema completion stays available independently. A new always-on customer
 agent is not an agreed first-version requirement.
 
 The graph distinguishes observed dependencies by the engine's per-seam policy
-status (`seams[].policy`, engine v2.5.0 and later): a violation, accepted debt,
+status (`seams[].policy`): a violation, accepted debt,
 an advisory, a dependency a blocking rule allows, or an observed one that no
 active finding names and no blocking rule permits. For a report from an older
 engine, the status comes from the report's findings, and no link is ever

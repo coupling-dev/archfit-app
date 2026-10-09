@@ -17,9 +17,9 @@
     "status": "not_requested",
     "config_hash": "4a18013bab44d922fa67d9e8e699463b2b5284f1c2908b62d2b7c5f607c55574",
     "model_hash": "3a374afd1073b1a4a8b4173b219ffa2638995dc9efe00b0527822ce27dc46a95",
-    "rubric_version": "bc_score.v6",
+    "rubric_version": "bc_score.v7",
     "measurement_profile": {
-      "version": "archfit.measurement.v1",
+      "version": "archfit.measurement.v2",
       "settings_hash": "64fb93addd39e92be19fa18ba380fa211a144697946f810bda7c483bc146f73b",
       "producers": [
         {
@@ -87,13 +87,18 @@
       ],
       "unknowns": []
     },
-    "reasons": []
+    "reasons": [],
+    "classification_hash": "1664f273bfac18369e4c40802f1e17408ba2b35c438f04179ab7b87a76a909a2"
   },
   "gate_reference": {
     "status": "non_comparable",
     "base_ref": "baseline",
     "reasons": [
       "no baseline file was loaded"
+    ],
+    "baseline_present": false,
+    "drift": [
+      "reference_incomplete"
     ]
   },
   "measurement": {
@@ -833,7 +838,7 @@
       {
         "tool": "jscpd",
         "status": "disabled",
-        "reason": "clone detection disabled by config — set `analyzers.clones.enabled: true` in .archfit.yaml to enable"
+        "reason": "clone detection disabled by config \u2014 set `analyzers.clones.enabled: true` in .archfit.yaml to enable"
       },
       {
         "tool": "scip",
@@ -923,7 +928,7 @@
           "line": 3
         }
       ],
-      "why": "balanced coupling: functional integration strength × cross_module_same_owner distance × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)",
+      "why": "balanced coupling: functional integration strength \u00d7 cross_module_same_owner distance \u00d7 undeclared volatility \u2192 medium severity (unbalanced coupling \u2192 elevated maintenance effort)",
       "constraint": ""
     }
   ],

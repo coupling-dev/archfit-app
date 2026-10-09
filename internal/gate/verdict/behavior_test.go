@@ -11,7 +11,7 @@ import (
 
 func TestUnknownIdentityNeverComparesEqual(t *testing.T) {
 	profileLess := &report.Reference{Status: refNonComparable, BaseRef: "baseline", Reasons: []string{"baseline carries no measurement profile"}}
-	snapshot := &report.Reference{Status: refNonComparable, BaseRef: "baseline", Reasons: []string{"baseline is a v2.3.0 numerical snapshot"}}
+	snapshot := &report.Reference{Status: refNonComparable, BaseRef: "baseline", Reasons: []string{"baseline is a stale numerical snapshot"}}
 
 	wantCodes(t, decide(t, with(identityOff, noProfile, gateRef(profileLess))),
 		ActionRequired, ReasonProfileMissing, ReasonBaselineNotComparable)
@@ -91,7 +91,7 @@ func TestMissingEvidenceNeverPasses(t *testing.T) {
 
 func TestNonComparableBaselineNeedsOwnerPR(t *testing.T) {
 	for _, reason := range []string{"model hash differs", "measurement profile differs"} {
-		o := decide(t, with(gateRef(&report.Reference{Status: refNonComparable, BaseRef: "baseline", Reasons: []string{reason}})))
+		o := decide(t, with(gateRef(&report.Reference{Status: refNonComparable, BaseRef: "baseline", Reasons: []string{reason}, BaselinePresent: true})))
 		wantCodes(t, o, ActionRequired, ReasonBaselineNotComparable)
 		r := o.Reasons[0]
 		if !strings.Contains(r.Next, "baseline PR") || !strings.Contains(r.Next, "owner") {

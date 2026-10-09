@@ -21,7 +21,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
-// The shared corpus: real engine v2.3.1 captures, defined in internal/wire/module.md.
+// The shared corpus: real engine v3.0.0 captures, defined in internal/wire/module.md.
 const (
 	corpusReport = "../../wire/testdata/report"
 	capturedTwo  = "real-baselined-comparable" // two accepted findings
@@ -39,13 +39,13 @@ func corpus(t *testing.T, name, suffix string) []byte {
 	return raw
 }
 
-// syntheticBaseline is a v2 baseline captured under policyText with the given accepted findings.
+// syntheticBaseline is a v3 baseline captured under policyText with the given accepted findings.
 func syntheticBaseline(policyText []byte, profile string, accepted ...[2]string) []byte {
 	entries := make([]string, len(accepted))
 	for i, a := range accepted {
 		entries[i] = fmt.Sprintf(`{"fingerprint":%q,"rule_id":%q,"kind":"gate"}`, a[0], a[1])
 	}
-	return fmt.Appendf(nil, `{"schema_version":"archfit.baseline.v2","accepted":[%s],`+
+	return fmt.Appendf(nil, `{"schema_version":"archfit.baseline.v3","accepted":[%s],`+
 		`"state":{"config_hash":%q,"measurement_profile":{"version":%q}}}`,
 		strings.Join(entries, ","), policy.Digest(policyText), profile)
 }
@@ -173,7 +173,7 @@ func TestBaselineFirstAdoptionCountsEveryFindingAsAdded(t *testing.T) {
 		t.Fatalf("response = %d %s", res.status, res.raw)
 	}
 	body := f.hub.body(f.repo, baselineBranch)
-	for _, want := range []string{"Approving accepts 2 findings", "| Added | 2 |", "| Removed | 0 |", "no baseline", policy.Digest(labels)} {
+	for _, want := range []string{"Approving accepts 1 finding", "| Added | 1 |", "| Removed | 0 |", "no baseline", policy.Digest(labels)} {
 		if !strings.Contains(body, want) {
 			t.Errorf("PR body does not mention %q:\n%s", want, body)
 		}
@@ -217,8 +217,8 @@ func TestBaselineUnchangedOpensNothing(t *testing.T) {
 
 func TestBaselineReuploadUpdatesTheSamePR(t *testing.T) {
 	policyText := corpus(t, capturedTwo, ".policy.yaml")
-	first := syntheticBaseline(policyText, "archfit.measurement.v1", [2]string{fingerprintA, "no_direct_b_dependency"})
-	second := syntheticBaseline(policyText, "archfit.measurement.v1",
+	first := syntheticBaseline(policyText, "archfit.measurement.v2", [2]string{fingerprintA, "no_direct_b_dependency"})
+	second := syntheticBaseline(policyText, "archfit.measurement.v2",
 		[2]string{fingerprintA, "no_direct_b_dependency"}, [2]string{fingerprintB, "bc/imbalanced_coupling"})
 
 	f := newFixture(t)
@@ -295,7 +295,7 @@ func TestBaselineStatusMapping(t *testing.T) {
 		{name: "a policy, not a baseline", mutate: func(_ *fixture, u *gate.Upload) { u.Payload = policyText }, status: 400, code: "baseline_invalid"},
 		{name: "an engine report", mutate: func(_ *fixture, u *gate.Upload) { u.Payload = corpus(t, capturedTwo, ".json") }, status: 400, code: "baseline_invalid"},
 		{name: "schema v1", mutate: func(_ *fixture, u *gate.Upload) {
-			u.Payload = []byte(strings.Replace(string(capture), "archfit.baseline.v2", "archfit.baseline.v1", 1))
+			u.Payload = []byte(strings.Replace(string(capture), "archfit.baseline.v3", "archfit.baseline.v1", 1))
 		}, status: 400, code: "baseline_invalid"},
 		{name: "policy missing", mutate: func(f *fixture, _ *gate.Upload) { f.hub.remove(f.repo, runHeadSHA, policy.PolicyPath) }, status: 403, code: "policy_missing"},
 		{name: "captured under another policy", mutate: func(f *fixture, _ *gate.Upload) {
@@ -426,8 +426,8 @@ func TestBaselineBodyStaysUnderGitHubLimit(t *testing.T) {
 		return out
 	}
 	f := newFixture(t)
-	f.protect(policyText, nil, syntheticBaseline(policyText, "archfit.measurement.v1", findings(0, 300)...))
-	f.receiver.upload = baselineUpload(f.repo, syntheticBaseline(policyText, "archfit.measurement.v1", findings(300, 3000)...), "")
+	f.protect(policyText, nil, syntheticBaseline(policyText, "archfit.measurement.v2", findings(0, 300)...))
+	f.receiver.upload = baselineUpload(f.repo, syntheticBaseline(policyText, "archfit.measurement.v2", findings(300, 3000)...), "")
 
 	if res := f.postBaseline(t); res.status != 200 {
 		t.Fatalf("response = %d %s", res.status, res.raw)

@@ -1,0 +1,23 @@
+{
+  "producer": {
+    "repository": "github.com/alexei-led/archfit",
+    "revision": "bbd658f008bcc4bc83e063cf305d20dc4508da2e",
+    "engine_version": "v3.0.0",
+    "command": "archfit check --json -c .archfit.yaml -q --refresh; on a scratch Go module (git init, untracked files): billing/api/api.go, shop/shop.go and a root main.go that no module owns importing billing/api; the policy beside this file: billing has visible_to [shop], a fail-gated module_dependencies rule with rationale, alternatives and docs; unmodified; the released binary archfit-v3.0.0-darwin-arm64 from the GitHub release v3.0.0, verified against its SHA256SUMS, on a dev host darwin/arm64, not the pinned image"
+  },
+  "decode": "ok",
+  "fields": {
+    "verdict": "blocked",
+    "hard_gates": "fail",
+    "unevaluated_rule_ids": [],
+    "has_profile": true,
+    "profile_version": "archfit.measurement.v2",
+    "gate_reference_status": "non_comparable"
+  },
+  "gate": {
+    "conclusion": "failure",
+    "reasons": [
+      "blocking_findings"
+    ]
+  }
+}

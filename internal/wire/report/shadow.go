@@ -1,7 +1,7 @@
 package report
 
-// Shadow types mirror the whole state schema, the union of every listed release (pinned: engine v2.5.0, revision
-// 59318b9eec906f54bc7a54d01db634b0c20c0647), dropped keys included; a key a release added carries its since tag.
+// Shadow types mirror the whole state schema (pinned: engine v3.0.0, revision bbd658f008bcc4bc83e063cf305d20dc4508da2e),
+// dropped keys included.
 // Kept required keys and the optional enum seams[].policy are pointers or slices so that nil means absent: the
 // pre-pass rejects null, so nothing else produces nil. Fields marked dropped are type-checked and never copied.
 
@@ -41,13 +41,18 @@ type shadowComparison struct {
 	Status             *string        `json:"status"`
 	BaseRef            string         `json:"base_ref"`
 	ConfigHash         string         `json:"config_hash"`
+	ClassificationHash string         `json:"classification_hash"`
 	ModelHash          string         `json:"model_hash"`
 	LabelsHash         string         `json:"labels_hash"`
 	RubricVersion      string         `json:"rubric_version"`
 	MeasurementProfile *shadowProfile `json:"measurement_profile"`
 	Reasons            []string       `json:"reasons"`
-	TaskOriginStatus   string         `json:"task_origin_status"`
-	TaskOriginReasons  []string       `json:"task_origin_reasons"`
+	Drift              []string       `json:"drift"`
+	BaselinePresent    *bool          `json:"baseline_present"`
+	OriginStatus       *string        `json:"origin_status"`
+	OriginReasons      []string       `json:"origin_reasons"`
+	IntroducedIDs      []string       `json:"introduced_finding_ids"` // dropped
+	ResolvedIDs        []string       `json:"resolved_finding_ids"`   // dropped
 }
 
 type shadowProfile struct {
@@ -86,6 +91,7 @@ type shadowFinding struct {
 	Why                 *string           `json:"why"`
 	Constraint          *string           `json:"constraint"`
 	AllowedAlternatives []string          `json:"allowed_alternatives"`
+	Origin              *string           `json:"origin"`
 }
 
 type shadowEdge struct {
@@ -112,7 +118,7 @@ type shadowTask struct {
 	Constraints  []string           `json:"constraints"`
 	Files        []string           `json:"files"`
 	Validation   []string           `json:"validation"`
-	Origin       string             `json:"origin"`
+	Origin       *string            `json:"origin"`
 	Declarations []shadowSyntaxFact `json:"declarations"` // dropped
 }
 
@@ -177,11 +183,9 @@ type shadowUnknownFact struct {
 }
 
 type shadowDelta struct {
-	Status           *string             `json:"status"`
-	Reasons          []string            `json:"reasons"`
-	Metrics          []shadowMetricDelta `json:"metrics"`
-	NewFindings      []string            `json:"new_findings"`
-	ResolvedFindings []string            `json:"resolved_findings"`
+	Status  *string             `json:"status"`
+	Reasons []string            `json:"reasons"`
+	Metrics []shadowMetricDelta `json:"metrics"`
 }
 
 type shadowMetricDelta struct {
@@ -213,7 +217,7 @@ type shadowSeam struct {
 	Distance   *string `json:"distance"`
 	Volatility *string `json:"volatility"`
 	Severity   string  `json:"severity"`
-	Policy     *string `json:"policy" since:"v2.5.0"`
+	Policy     *string `json:"policy"`
 
 	// Dropped.
 	ScoredEdges          int               `json:"scored_edges"`

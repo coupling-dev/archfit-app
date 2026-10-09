@@ -14,9 +14,9 @@ const (
 
 // minimalBaseline is the smallest file ReadBaseline accepts, with fields replaced by edit.
 func minimalBaseline(edit func(string) string) []byte {
-	doc := `{"schema_version":"archfit.baseline.v2",` +
+	doc := `{"schema_version":"archfit.baseline.v3",` +
 		`"accepted":[{"fingerprint":"ba3803eca947bf3c1b7efa8f37854d5e","rule_id":"no_direct_b_dependency","kind":"gate"}],` +
-		`"state":{"config_hash":"` + strings.Repeat("4a", 32) + `","measurement_profile":{"version":"archfit.measurement.v1"}}}`
+		`"state":{"config_hash":"` + strings.Repeat("4a", 32) + `","measurement_profile":{"version":"archfit.measurement.v2"}}}`
 	if edit != nil {
 		doc = edit(doc)
 	}
@@ -44,7 +44,7 @@ func TestReadBaselineRealCaptures(t *testing.T) {
 	if want := Digest(fixture(t, comparablePolicy)); got.ConfigHash != want {
 		t.Errorf("ConfigHash = %s, want the policy digest %s", got.ConfigHash, want)
 	}
-	if got.ProfileVersion != "archfit.measurement.v1" {
+	if got.ProfileVersion != "archfit.measurement.v2" {
 		t.Errorf("ProfileVersion = %q", got.ProfileVersion)
 	}
 
@@ -68,18 +68,19 @@ func TestReadBaselineRejects(t *testing.T) {
 		{"trailing data", append(minimalBaseline(nil), []byte(` {}`)...)},
 		{"invalid UTF-8", minimalBaseline(replace("no_direct_b_dependency", "no_\xff"))},
 		{"over the cap", append(minimalBaseline(nil), bytes.Repeat([]byte(" "), MaxBaselineBytes)...)},
-		{"schema v1", minimalBaseline(replace("archfit.baseline.v2", "archfit.baseline.v1"))},
-		{"schema missing", minimalBaseline(replace(`"schema_version":"archfit.baseline.v2",`, ""))},
+		{"schema v1", minimalBaseline(replace("archfit.baseline.v3", "archfit.baseline.v1"))},
+		{"schema v2", minimalBaseline(replace("archfit.baseline.v3", "archfit.baseline.v2"))},
+		{"schema missing", minimalBaseline(replace(`"schema_version":"archfit.baseline.v3",`, ""))},
 		{"accepted missing", minimalBaseline(replace(`"accepted":[`, `"other":[`))},
-		{"accepted null", []byte(`{"schema_version":"archfit.baseline.v2","accepted":null,"state":{"config_hash":"` +
-			strings.Repeat("4a", 32) + `","measurement_profile":{"version":"archfit.measurement.v1"}}}`)},
+		{"accepted null", []byte(`{"schema_version":"archfit.baseline.v3","accepted":null,"state":{"config_hash":"` +
+			strings.Repeat("4a", 32) + `","measurement_profile":{"version":"archfit.measurement.v2"}}}`)},
 		{"state missing", minimalBaseline(replace(`"state":`, `"other":`))},
 		{"config hash prefixed", minimalBaseline(replace(`"config_hash":"`, `"config_hash":"sha256:`))},
 		{"config hash empty", minimalBaseline(replace(strings.Repeat("4a", 32), ""))},
 		{"config hash uppercase", minimalBaseline(replace(strings.Repeat("4a", 32), strings.Repeat("4A", 32)))},
 		{"profile missing", minimalBaseline(replace(`"measurement_profile"`, `"other_profile"`))},
-		{"profile version empty", minimalBaseline(replace("archfit.measurement.v1", ""))},
-		{"profile version with space", minimalBaseline(replace("archfit.measurement.v1", "archfit measurement"))},
+		{"profile version empty", minimalBaseline(replace("archfit.measurement.v2", ""))},
+		{"profile version with space", minimalBaseline(replace("archfit.measurement.v2", "archfit measurement"))},
 		{"fingerprint 31 hex", minimalBaseline(replace("ba3803eca947bf3c1b7efa8f37854d5e", "ba3803eca947bf3c1b7efa8f37854d5"))},
 		{"fingerprint uppercase", minimalBaseline(replace("ba3803eca947bf3c1b7efa8f37854d5e", "BA3803ECA947BF3C1B7EFA8F37854D5E"))},
 		{"fingerprint missing", minimalBaseline(replace(`"fingerprint":"ba3803eca947bf3c1b7efa8f37854d5e",`, ""))},
@@ -119,7 +120,7 @@ func TestReadBaselineErrorsNeverEchoValues(t *testing.T) {
 	const marker = "LEAK-BASELINE-7f3a"
 	for _, raw := range [][]byte{
 		minimalBaseline(func(s string) string { return strings.Replace(s, "no_direct_b_dependency", marker+" x", 1) }),
-		minimalBaseline(func(s string) string { return strings.Replace(s, "archfit.baseline.v2", marker, 1) }),
+		minimalBaseline(func(s string) string { return strings.Replace(s, "archfit.baseline.v3", marker, 1) }),
 		[]byte(`{"schema_version":"` + marker + `"`),
 	} {
 		_, err := ReadBaseline(raw)

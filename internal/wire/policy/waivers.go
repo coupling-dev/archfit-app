@@ -17,7 +17,7 @@ type Waiver struct {
 	Expires    time.Time // end of the YYYY-MM-DD day, UTC
 }
 
-// waiverEntry is the engine v2.3.1 WaiverDef. Unknown keys are ignored.
+// waiverEntry is the engine v3.0.0 WaiverDef. Unknown keys are ignored.
 type waiverEntry struct {
 	Rule       yaml.Node `yaml:"rule"`
 	From       yaml.Node `yaml:"from"`

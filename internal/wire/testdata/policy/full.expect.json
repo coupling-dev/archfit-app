@@ -1,5 +1,5 @@
 {
-  "producer": "synthetic: hand-written by the policy module against the engine v2.3.1 config schema; every rule type is one the v2.4.1 schema enumerates",
+  "producer": "synthetic: hand-written by the policy module against the engine v3.0.0 config schema, which is the v2.5.0 schema byte for byte; every rule type is one it enumerates",
   "decode": "ok",
   "fields": {
     "modules": [

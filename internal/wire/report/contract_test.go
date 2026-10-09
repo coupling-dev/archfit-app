@@ -51,12 +51,12 @@ func TestDecodeRealEngineReport(t *testing.T) {
 	if got, want := r.Comparison.ConfigHash, "4a18013bab44d922fa67d9e8e699463b2b5284f1c2908b62d2b7c5f607c55574"; got != want {
 		t.Errorf("config_hash %q, want %q", got, want)
 	}
-	if p := r.Comparison.MeasurementProfile; p == nil || p.Version != "archfit.measurement.v1" || len(p.Producers) != 12 {
+	if p := r.Comparison.MeasurementProfile; p == nil || p.Version != "archfit.measurement.v2" || len(p.Producers) != 8 {
 		t.Errorf("measurement profile %+v", p)
 	}
 	ref := r.GateReference
-	if ref == nil || ref.Status != "non_comparable" || ref.BaseRef != "baseline" ||
-		!slices.Equal(ref.Reasons, []string{"no baseline file was loaded"}) {
+	if ref == nil || ref.Status != "non_comparable" || ref.BaseRef != "baseline" || ref.BaselinePresent ||
+		!slices.Equal(ref.Reasons, []string{"no baseline file was loaded"}) || !slices.Equal(ref.Drift, []string{"reference_incomplete"}) {
 		t.Errorf("gate reference %+v", ref)
 	}
 	if len(r.Dimensions) != 9 || len(r.Seams) != 1 || len(r.Findings) != 2 {
@@ -296,7 +296,7 @@ func TestEngineSchemaKeySetIsCovered(t *testing.T) {
 	// Every key of a real capture and of the all-keys fixture must be a shadow field: both decode strictly.
 	mustDecode(t, loadFixture(t, "report/real-blocked-no-baseline.json"))
 	mustDecode(t, loadFixture(t, baseFixture))
-	mustDecodeAs(t, loadFixture(t, "report/real-seam-policy-v250.json"), seamPolicyRelease)
+	mustDecode(t, loadFixture(t, "report/real-seam-policy.json"))
 
 	w := schemaWalker{t: t, root: parseDoc(t, loadFixture(t, "schema/archfit.state.schema.json"))}
 	w.check("report", w.root, reflect.TypeFor[shadowReport]())
@@ -318,35 +318,25 @@ func shadowFields(loc string, t reflect.Type, visit func(loc string, f reflect.S
 	}
 }
 
-func TestSinceTagsNameListedReleases(t *testing.T) {
-	shadowFields("report", reflect.TypeFor[shadowReport](), func(loc string, f reflect.StructField) {
-		if since, ok := f.Tag.Lookup("since"); ok && !slices.Contains(EngineVersions(), since) {
-			t.Errorf("%s: since %q is not a release Decode reads", loc, since)
-		}
-	})
-}
-
 // decisionCore is what the gate decides from (gate/verdict Decide, the identity check, the receipt) plus the two
-// fields of Finding.Active. Every release Decode reads must define them: none may carry a since tag.
+// fields of Finding.Active. The gate reads the drift classes and the baseline presence of the gate reference.
 var decisionCore = []string{
 	"report.schema_version", "report.verdict", "report.decision", "report.decision.hard_gates",
 	"report.decision.unevaluated_required_rules", "report.decision.unevaluated_required_rules[].rule_id",
 	"report.decision.unevaluated_required_rules[].reason", "report.comparison", "report.comparison.config_hash",
 	"report.comparison.measurement_profile", "report.comparison.measurement_profile.version",
 	"report.gate_reference", "report.gate_reference.status", "report.gate_reference.reasons",
+	"report.gate_reference.drift", "report.gate_reference.baseline_present",
 	"report.findings", "report.findings[].id", "report.findings[].kind", "report.findings[].status",
 }
 
-func TestDecisionCoreIsInEveryVersion(t *testing.T) {
+func TestDecisionCoreHasShadowFields(t *testing.T) {
 	seen := map[string]bool{}
 	shadowFields("report", reflect.TypeFor[shadowReport](), func(loc string, f reflect.StructField) {
 		if !slices.Contains(decisionCore, loc) {
 			return
 		}
 		seen[loc] = true
-		if since, ok := f.Tag.Lookup("since"); ok {
-			t.Errorf("%s is part of the decision core but exists only since %s", loc, since)
-		}
 	})
 	for _, loc := range decisionCore {
 		if !seen[loc] {
@@ -392,41 +382,18 @@ func TestWrongSchemaVersion(t *testing.T) {
 
 func TestEngineVersions(t *testing.T) {
 	got := EngineVersions()
-	if want := []string{"v2.3.1", "v2.4.0", "v2.4.1", "v2.5.0"}; !slices.Equal(got, want) {
+	if want := []string{"v3.0.0"}; !slices.Equal(got, want) {
 		t.Errorf("EngineVersions() = %q, want %q", got, want)
 	}
 	got[0] = "changed"
-	if EngineVersions()[0] != "v2.3.1" {
+	if EngineVersions()[0] != "v3.0.0" {
 		t.Error("EngineVersions() hands out the package's own list")
-	}
-}
-
-// TestEveryEngineVersionReadsTheCorpus: a later release adds keys at most, so every release from a fixture's own
-// one on decodes it to the same Report, or rejects it alike. An earlier release reads it alike too unless it carries
-// a key of a later release: then that key is unknown. The only such key is seams[].policy (v2.5.0).
-func TestEveryEngineVersionReadsTheCorpus(t *testing.T) {
-	for _, name := range append(fixtures(t, "report"), fixtures(t, "leakage")...) {
-		payload, own := loadFixture(t, name), fixtureRelease(t, name)
-		want, wantErr := Decode(payload, own)
-		laterKey := slices.ContainsFunc(want.Seams, func(s Seam) bool { return s.Policy != "" })
-		for i, version := range EngineVersions() {
-			got, err := Decode(payload, version)
-			if laterKey && i < slices.Index(EngineVersions(), seamPolicyRelease) {
-				if err == nil || !strings.Contains(err.Error(), "seams[0]: unknown key") {
-					t.Errorf("%s under %s: err %v, want seams[0]: unknown key", name, version, err)
-				}
-				continue
-			}
-			if (err == nil) != (wantErr == nil) || !reflect.DeepEqual(got, want) {
-				t.Errorf("%s under %s: err %v, want err %v; equal reports %v", name, version, err, wantErr, reflect.DeepEqual(got, want))
-			}
-		}
 	}
 }
 
 func TestUnknownEngineVersionIsRefused(t *testing.T) {
 	payload := loadFixture(t, "report/real-blocked-no-baseline.json")
-	for _, version := range []string{"", "v2.3.0", "v2.6.0", "2.3.1", "v2.3.1 ", "V2.3.1", "v2.3.1-" + leakMarker} {
+	for _, version := range []string{"", "v2.5.0", "v2.6.0", "3.0.0", "v3.0.0 ", "V3.0.0", "v3.0.0-" + leakMarker} {
 		t.Run(version, func(t *testing.T) {
 			r, err := Decode(payload, version)
 			wantError(t, err, "engine_version")
@@ -455,7 +422,7 @@ func TestReportDoesNotAliasPayload(t *testing.T) {
 	}
 }
 
-// TestSeamPolicy: seams[].policy is an optional key of v2.5.0 with a closed value set, the enum of the pinned schema.
+// TestSeamPolicy: seams[].policy is an optional key with a closed value set, the enum of the pinned schema.
 func TestSeamPolicy(t *testing.T) {
 	schema := parseDoc(t, loadFixture(t, "schema/archfit.state.schema.json"))
 	var values []string
@@ -474,16 +441,14 @@ func TestSeamPolicy(t *testing.T) {
 		wantLoc string
 	}
 	rows := []row{
-		{name: "absent under v2.5.0", release: seamPolicyRelease},
-		{name: "absent under v2.3.1", release: fixtureEngine},
-		{name: "empty", release: seamPolicyRelease, value: "", wantLoc: "seams[0].policy"},
-		{name: "outside the set", release: seamPolicyRelease, value: "permitted", wantLoc: "seams[0].policy"},
-		{name: "case differs", release: seamPolicyRelease, value: "Allowed", wantLoc: "seams[0].policy"},
-		{name: "not a string", release: seamPolicyRelease, value: true, wantLoc: "seams[0].policy"},
-		{name: "a v2.5.0 key under v2.4.1", release: "v2.4.1", value: "allowed", wantLoc: "seams[0]"},
+		{name: "absent", release: fixtureEngine},
+		{name: "empty", release: fixtureEngine, value: "", wantLoc: "seams[0].policy"},
+		{name: "outside the set", release: fixtureEngine, value: "permitted", wantLoc: "seams[0].policy"},
+		{name: "case differs", release: fixtureEngine, value: "Allowed", wantLoc: "seams[0].policy"},
+		{name: "not a string", release: fixtureEngine, value: true, wantLoc: "seams[0].policy"},
 	}
 	for _, v := range values {
-		rows = append(rows, row{name: v, release: seamPolicyRelease, value: v, want: v})
+		rows = append(rows, row{name: v, release: fixtureEngine, value: v, want: v})
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
@@ -509,10 +474,10 @@ func TestSeamPolicy(t *testing.T) {
 	}
 }
 
-// TestRootImporterCapture: engine v2.5.0 names an importer that no module owns by its package directory, "." for the
+// TestRootImporterCapture: the engine names an importer that no module owns by its package directory, "." for the
 // repository root, and ends the finding why and constraint with the rule's rationale and docs reference.
 func TestRootImporterCapture(t *testing.T) {
-	r := mustDecodeAs(t, loadFixture(t, "report/real-root-importer-v250.json"), seamPolicyRelease)
+	r := mustDecode(t, loadFixture(t, "report/real-root-importer.json"))
 	if len(r.Findings) != 1 || len(r.AgentTasks) != 1 {
 		t.Fatalf("%d findings, %d tasks, want one each", len(r.Findings), len(r.AgentTasks))
 	}

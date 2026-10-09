@@ -51,7 +51,7 @@ parts and behavior a GitHub user already expects.
 | Owner-approved candidate policy | If the PR changes policy and a base-version owner approved the exact head SHA, the head policy digest is also accepted for that PR only.                                                                         | Keeps atomic code-and-policy PRs.                                   |
 | Approved workflow               | The OIDC workflow ref must equal the path in App settings, and that file must be unchanged between base and head unless owner-approved.                                                                          | A head-authored workflow cannot mint eligibility.                   |
 | Forks                           | Unsupported for the gate in v1: explicit `action_required` with the reason. Recovery is a same-repository branch or the ruleset bypass.                                                                          | No safe fork path without isolated compute.                         |
-| Engine and image identity       | v2.5.0 pinned. Approved versions, image digests, and profiles are a locked manifest shipped in the binary. Unknown identity yields `action_required`.                                                            | Unknown never compares as equal.                                    |
+| Engine and image identity       | v3.0.0 pinned. Approved versions, image digests, and profiles are a locked manifest shipped in the binary. Unknown identity yields `action_required`.                                                            | Unknown never compares as equal.                                    |
 | No-source transport             | Strict allowlist schema: IDs, rule IDs, module names, file paths, line numbers, metrics, engine-authored messages. No snippets, logs, prompts, or raw model output. Seeded leakage fixtures are release tests.   | Paths and module names are disclosed metadata; nothing else leaves. |
 
 ## 4. Governance
@@ -115,7 +115,7 @@ fed by the same server diagnostics, its styles under a CSP nonce, and no blob wo
 | Uninstall           | Delete the installation's KV keys on the webhook. Nothing else exists to clean up.                                     | Follows from storing nothing.                        |
 | Report history      | Whatever GitHub keeps: check runs, comments, and workflow artifacts under the customer's retention.                    | A stated limit, not a gap.                           |
 | GitHub rate limits  | Conditional requests and bounded backoff. On exhaustion the check stays pending and the sweep retries.                 | Never a false green.                                 |
-| Supported languages | What engine v2.3.1 supports: Go, TypeScript, JavaScript, Python, Rust. Pilots start with Go.                           | No claim beyond the engine.                          |
+| Supported languages | What engine v3.0.0 supports: Go, TypeScript, JavaScript, Python, Rust. Pilots start with Go.                           | No claim beyond the engine.                          |
 | Targets             | Feedback within 60 seconds of upload at p95; missed events repaired within one sweep interval; no SLA. **[default]**   | Measurable, modest.                                  |
 
 ## 9. Commercial

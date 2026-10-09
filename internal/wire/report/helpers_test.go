@@ -14,12 +14,9 @@ const (
 	decodeOK    = "ok"
 	decodeError = "error"
 
-	// fixtureEngine is the engine release a synthetic fixture is a document of; v2.4.0 and v2.4.1 share its key set.
-	// A capture is a document of the release its producer names (fixtureRelease).
-	fixtureEngine = "v2.3.1"
-
-	// seamPolicyRelease is the first release with the state key seams[].policy.
-	seamPolicyRelease = "v2.5.0"
+	// fixtureEngine is the engine release a synthetic fixture is a document of. A capture is a document of the
+	// release its producer names (fixtureRelease).
+	fixtureEngine = "v3.0.0"
 )
 
 // fixtureRoot is the shared corpus; its layout and expectation format are defined in internal/wire/module.md.

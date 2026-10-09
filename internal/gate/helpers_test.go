@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -319,13 +320,22 @@ func configHash(h string) func(map[string]any) {
 	return func(doc map[string]any) { doc["comparison"].(map[string]any)["config_hash"] = h }
 }
 
+// gateReference states the engine's gate reference. A reference that compares had a baseline; the one that says no
+// baseline file was loaded has none, and a reference that does not compare names the drift of its reason.
 func gateReference(status string, reasons ...string) func(map[string]any) {
 	return func(doc map[string]any) {
 		list := make([]any, len(reasons))
 		for i, r := range reasons {
 			list[i] = r
 		}
-		doc["gate_reference"] = map[string]any{"status": status, "base_ref": "baseline", "reasons": list}
+		ref := map[string]any{"status": status, "base_ref": "baseline", "reasons": list, "baseline_present": true}
+		if slices.Contains(reasons, "no baseline file was loaded") {
+			ref["baseline_present"] = false
+			ref["drift"] = []any{"reference_incomplete"}
+		} else if status != "comparable" {
+			ref["drift"] = []any{"measurement_profile"}
+		}
+		doc["gate_reference"] = ref
 	}
 }
 

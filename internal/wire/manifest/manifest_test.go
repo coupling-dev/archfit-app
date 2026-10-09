@@ -28,11 +28,11 @@ type row map[string]any
 func validRows() []row {
 	return []row{
 		{
-			"engine_version": "v2.3.1", "image_digest": testDigestAMD, "platform": platformAMD64,
+			"engine_version": "v3.0.0", "image_digest": testDigestAMD, "platform": platformAMD64,
 			"profile_version": "p1", "action_ref": testActionRef, "current": true,
 		},
 		{
-			"engine_version": "v2.3.1", "image_digest": testDigestARM, "platform": platformARM64,
+			"engine_version": "v3.0.0", "image_digest": testDigestARM, "platform": platformARM64,
 			"profile_version": "p1", "action_ref": testActionRef,
 		},
 	}
@@ -142,43 +142,10 @@ func TestManifestValidationRules(t *testing.T) {
 	}
 }
 
-// TestRowsOfSeveralEngineVersions: an upgrade window approves engine N-1 and N together. Rows are keyed by the
-// whole identity, so each release keeps its own images and profile version.
-func TestRowsOfSeveralEngineVersions(t *testing.T) {
-	rows := validRows()
-	rows[0]["current"] = false
-	newer := []row{
-		{
-			"engine_version": "v2.4.0", "image_digest": "sha256:" + strings.Repeat("5", 64), "platform": platformAMD64,
-			"profile_version": "p2", "action_ref": testActionRef, "current": true,
-		},
-		{
-			"engine_version": "v2.4.0", "image_digest": "sha256:" + strings.Repeat("6", 64), "platform": platformARM64,
-			"profile_version": "p2", "action_ref": testActionRef,
-		},
-	}
-	tbl, err := parse(doc(t, 1, append(rows, newer...)))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	if want := []string{"v2.3.1", "v2.4.0"}; !slices.Equal(tbl.versions, want) {
-		t.Errorf("versions = %q, want %q", tbl.versions, want)
-	}
-	if tbl.current.EngineVersion != "v2.4.0" || len(tbl.rows) != 4 {
-		t.Errorf("current %+v, %d rows; want the v2.4.0 amd64 row current among 4", tbl.current.Identity, len(tbl.rows))
-	}
-	for _, r := range append(rows, newer...) {
-		id := Identity{EngineVersion: r["engine_version"].(string), ImageDigest: r["image_digest"].(string), Platform: r["platform"].(string)}
-		if got, ok := tbl.rows[id]; !ok || got.ProfileVersion != r["profile_version"] {
-			t.Errorf("row %+v: %+v, %v", id, got, ok)
-		}
-	}
-}
-
 // TestApprovedEngineVersions lists the shipped releases; change it with manifest.json.
 func TestApprovedEngineVersions(t *testing.T) {
 	got := EngineVersions()
-	if want := []string{"v2.4.1", "v2.5.0"}; !slices.Equal(got, want) {
+	if want := []string{"v3.0.0"}; !slices.Equal(got, want) {
 		t.Errorf("EngineVersions() = %q, want %q", got, want)
 	}
 	got[0] = "changed"
@@ -340,8 +307,8 @@ func TestManifestMatchesFixtureProducers(t *testing.T) {
 }
 
 func TestManifestHasNoPlaceholdersInRelease(t *testing.T) {
-	// The placeholders module.md documents, as "entry index field". None remain: the image digests are the
-	// published v2.4.1 and v2.5.0 ones and the Action commit is archfit-action v1.0.0.
+	// The placeholders module.md documents, as "entry index field". None remain: the image digest is the
+	// published v3.0.0 one and the Action commit is the pinned archfit-action commit.
 	var documented []string
 
 	var file struct {
@@ -396,7 +363,7 @@ func TestUnknownNeverEqualsUnknown(t *testing.T) {
 
 func TestNoRuntimeOverride(t *testing.T) {
 	unlisted := Identity{
-		EngineVersion: "v2.3.1",
+		EngineVersion: "v3.0.0",
 		ImageDigest:   "sha256:" + strings.Repeat("9", 64),
 		Platform:      "linux/amd64",
 	}
@@ -529,23 +496,15 @@ func TestWrongImageIsNotApproved(t *testing.T) {
 	}
 }
 
+// TestOlderEngineIsNotApproved: the App approves the v3.0.0 images only; no older release is read or approved.
 func TestOlderEngineIsNotApproved(t *testing.T) {
-	id := Current().Identity
-	id.EngineVersion = "v2.3.0"
-
-	if got, ok := Lookup(id); ok {
-		t.Errorf("v2.3.0 hit: %+v", got)
-	}
-
-	// The v2.3.1 and v2.4.0 upgrade windows are closed: their published images are no longer approved.
-	for _, closed := range []Identity{
-		{EngineVersion: "v2.3.1", ImageDigest: "sha256:7d4f73248865e11bbfe244cd477bd0ea8e8cbdc0b7fb2baade8e044b618b2793", Platform: "linux/amd64"},
-		{EngineVersion: "v2.3.1", ImageDigest: "sha256:82ab97da8d38af59b02ac522caa70fb2218212c7d15821e0df5cbeb9b04ec9e7", Platform: "linux/arm64"},
-		{EngineVersion: "v2.4.0", ImageDigest: "sha256:6062d0203afa2314633b6fe6ac841471e331f4830cb9bdfd8f62e823be5c2eff", Platform: "linux/amd64"},
-		{EngineVersion: "v2.4.0", ImageDigest: "sha256:bdb0db83ec2945f440d259070c37a5eacb269edcaa6aaf30fbdb19b7ee447e3d", Platform: "linux/arm64"},
+	for _, id := range []Identity{
+		{EngineVersion: "v2.5.0", ImageDigest: "sha256:5752b4fe6d62f4fdd71edf33b4174228e17bd7c3d960b36a67111806ec17686a", Platform: "linux/amd64"},
+		{EngineVersion: "v2.5.0", ImageDigest: "sha256:44d95cbb13519b9f85bd610488ae2dd0051b94a6447ee17087aa202c28ac605c", Platform: "linux/arm64"},
+		{EngineVersion: "v2.4.1", ImageDigest: "sha256:996e044c55eec96303c344bbe327c97b2a17661b1ab626bb94d00d47045c01c7", Platform: "linux/amd64"},
 	} {
-		if got, ok := Lookup(closed); ok {
-			t.Errorf("%s %s hit: %+v", closed.EngineVersion, closed.Platform, got)
+		if got, ok := Lookup(id); ok {
+			t.Errorf("%s %s hit: %+v", id.EngineVersion, id.Platform, got)
 		}
 	}
 }

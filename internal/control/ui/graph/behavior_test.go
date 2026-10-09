@@ -106,6 +106,10 @@ func TestBaselinedViolationIsNeverPermitted(t *testing.T) {
 				rep.Findings[i].Status = status
 			}
 		}
+		// The status comes from the findings only when the engine gave the seam no policy.
+		for i := range rep.Seams {
+			rep.Seams[i].Policy = ""
+		}
 		got := Build(rep, []byte(fixturePolicy))
 		if want := []Link{link("a", "b", 1, StatusAccepted)}; !reflect.DeepEqual(got.Links, want) {
 			t.Errorf("%s: Links = %+v, want %+v", status, got.Links, want)

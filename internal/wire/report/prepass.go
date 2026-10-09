@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"reflect"
-	"slices"
 	"strconv"
 	"strings"
 )
@@ -53,21 +52,19 @@ func formatLoc(path []seg) string {
 // JSON type of its shadow field, and input ends after the top-level object. The keys of a map are free; its
 // duplicates are not.
 type scanner struct {
-	dec     *json.Decoder
-	path    []seg
-	version int // index in engineVersions of the release whose key set applies
-	fields  map[reflect.Type]map[string]field
+	dec    *json.Decoder
+	path   []seg
+	fields map[reflect.Type]map[string]field
 }
 
-// field is one key of a shadow struct: its type and the index in engineVersions of the release that added it.
+// field is one key of a shadow struct: its type.
 type field struct {
-	typ   reflect.Type
-	since int
+	typ reflect.Type
 }
 
-// prepass scans payload against the shadow type root under the key set of engineVersions[version].
-func prepass(payload []byte, root reflect.Type, version int) error {
-	s := &scanner{dec: json.NewDecoder(bytes.NewReader(payload)), version: version, fields: map[reflect.Type]map[string]field{}}
+// prepass scans payload against the shadow type root.
+func prepass(payload []byte, root reflect.Type) error {
+	s := &scanner{dec: json.NewDecoder(bytes.NewReader(payload)), fields: map[reflect.Type]map[string]field{}}
 	s.dec.UseNumber()
 	if tok, err := s.dec.Token(); err != nil || tok != json.Delim('{') {
 		return s.fail("must be a JSON object")
@@ -85,8 +82,7 @@ func (s *scanner) fail(rule string) error {
 	return locError(formatLoc(s.path), rule)
 }
 
-// fieldsOf maps the JSON keys of a shadow struct to its fields. A since tag that names no listed release
-// makes the key unknown under every release.
+// fieldsOf maps the JSON keys of a shadow struct to its fields.
 func (s *scanner) fieldsOf(t reflect.Type) map[string]field {
 	if f, ok := s.fields[t]; ok {
 		return f
@@ -95,13 +91,7 @@ func (s *scanner) fieldsOf(t reflect.Type) map[string]field {
 	for i := range t.NumField() {
 		sf := t.Field(i)
 		key, _, _ := strings.Cut(sf.Tag.Get("json"), ",")
-		since := 0
-		if tag, ok := sf.Tag.Lookup("since"); ok {
-			if since = slices.Index(engineVersions, tag); since < 0 {
-				since = len(engineVersions)
-			}
-		}
-		f[key] = field{typ: sf.Type, since: since}
+		f[key] = field{typ: sf.Type}
 	}
 	s.fields[t] = f
 	return f
@@ -127,10 +117,10 @@ func (s *scanner) object(t reflect.Type, depth int) error {
 			if isDimension(key) {
 				name = key
 			}
-		} else if f, known := s.fieldsOf(t)[key]; known && f.since <= s.version {
+		} else if f, known := s.fieldsOf(t)[key]; known {
 			child, name = f.typ, key
 		} else {
-			return s.fail("unknown key") // a key of a later release too: it is not in this release's key set
+			return s.fail("unknown key")
 		}
 		s.path = append(s.path, seg{name, -1})
 		if err := s.value(child, depth); err != nil {

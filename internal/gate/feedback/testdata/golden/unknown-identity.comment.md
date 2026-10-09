@@ -8,7 +8,7 @@
 
 ### Findings
 
-**Introduced** (2)
+**Active** (2)
 - **blocking** `no_direct_b_dependency` (medium, new): `a` (`pkg/a/a.go`) → `b` (`pkg/b`)
   - Locations: `pkg/a/a.go:3`
   - Why: Import from pkg/a/** to pkg/b is explicitly forbidden
@@ -29,7 +29,7 @@ Measurement trust: customer-attested.
 - `complexity`: measured; coverage 2/2 (declared modules with complete dependency-chain and degree values); confidence high; gate pass
 - `testability`: partial; coverage 3/3 (classified source files); confidence medium; gate pass
 - `operations`: partial; coverage 0/2 (declared modules with a corroborated deploy unit and qualifying owner); confidence medium; gate pass
-- `drift`: unmeasured; coverage 0/0; confidence unrated; gate not_applicable; change non_comparable, 0 new and 0 resolved findings
+- `drift`: unmeasured; coverage 0/0; confidence unrated; gate not_applicable; change non_comparable
 
 ### Evidence gaps
 

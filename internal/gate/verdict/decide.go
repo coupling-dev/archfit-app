@@ -27,6 +27,16 @@ const (
 	deadSelectorPrefix = "selector matches nothing"
 )
 
+// reanchorDrift are the drift classes a re-anchor crosses: a new scoring epoch or measurement profile. A policy,
+// model or label change is never crossed by a re-anchor; it needs a full baseline capture.
+var reanchorDrift = []string{"measurement_profile", "rubric_version"}
+
+// Owner actions for a reference that does not compare. Next names one of them, chosen by referenceNext.
+const (
+	nextReanchor    = "Run `archfit baseline --reanchor` and open a baseline PR that an architecture owner approves."
+	nextFullCapture = "Run `archfit baseline` and open a baseline PR that an architecture owner approves."
+)
+
 // Engine values that only the attention_only Detail reads; the conclusion never depends on them.
 const (
 	dimensionMeasured   = "measured"
@@ -184,8 +194,14 @@ func evidence(rs *reasons, r *report.Report, baselineTrusted bool) {
 	verdict, gates := r.Verdict, r.Decision.HardGates
 	defects, missing := splitRules(r.Decision.UnevaluatedRequiredRules)
 
-	if baselineTrusted && (r.GateReference == nil || r.GateReference.Status != refComparable) {
+	switch {
+	case r.GateReference != nil && r.GateReference.BaselinePresent != baselineTrusted:
+		// The engine and the protected ref disagree about the baseline itself: no drift class describes that.
+		rs.add(ReasonBaselineNotComparable, presenceDetail(baselineTrusted))
+		rs.setNext(ReasonBaselineNotComparable, nextFullCapture)
+	case ReferenceConflicts(r.GateReference, baselineTrusted):
 		rs.add(ReasonBaselineNotComparable, referenceDetail(r.GateReference))
+		rs.setNext(ReasonBaselineNotComparable, referenceNext(r.GateReference))
 	}
 	if !slices.Contains([]string{verdictHealthy, verdictAttention, verdictBlocked}, verdict) ||
 		!slices.Contains([]string{gatesPass, gatesFail, gatesUnmeasured}, gates) {
@@ -277,6 +293,38 @@ func ruleIDs(rules []report.UnevaluatedRule) string {
 		out += " and " + strconv.Itoa(rest) + " more"
 	}
 	return out
+}
+
+// ReferenceConflicts reports whether the engine's gate reference contradicts the trusted baseline (verdict step 7a).
+// A trusted baseline needs a reference that compares. And the engine loaded a baseline exactly when the App trusts
+// one, so any other pairing fails closed. A nil reference conflicts only with a trusted baseline.
+func ReferenceConflicts(ref *report.Reference, baselineTrusted bool) bool {
+	if ref == nil {
+		return baselineTrusted
+	}
+	return (baselineTrusted && ref.Status != refComparable) || ref.BaselinePresent != baselineTrusted
+}
+
+// referenceNext names the owner action from the drift classes only. A class a re-anchor may cross (a scoring epoch
+// or a measurement profile) needs a re-anchor; any other class, or a reference with no classes, needs a full capture.
+func referenceNext(ref *report.Reference) string {
+	if ref == nil || len(ref.Drift) == 0 {
+		return nextFullCapture
+	}
+	for _, class := range ref.Drift {
+		if !slices.Contains(reanchorDrift, class) {
+			return nextFullCapture
+		}
+	}
+	return nextReanchor
+}
+
+// presenceDetail names which side holds a baseline when the engine and the protected ref disagree.
+func presenceDetail(trusted bool) string {
+	if trusted {
+		return "the protected ref has a baseline and the engine loaded none"
+	}
+	return "the engine loaded a baseline and the protected ref has none"
 }
 
 func referenceDetail(ref *report.Reference) string {
