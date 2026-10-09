@@ -1,4 +1,4 @@
 {
-  "producer": "synthetic: hand-written by the policy module against the engine v2.3.1 config schema; the waiver expiry is not a calendar date",
+  "producer": "synthetic: hand-written by the policy module against the engine v3.0.0 config schema; the waiver expiry is not a calendar date",
   "decode": "error"
 }

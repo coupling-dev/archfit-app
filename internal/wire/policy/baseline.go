@@ -7,8 +7,8 @@ import (
 	"unicode/utf8"
 )
 
-// BaselineSchemaV2 is the only engine baseline schema the App reads (engine v2.3.1 writes it).
-const BaselineSchemaV2 = "archfit.baseline.v2"
+// BaselineSchemaV3 is the only engine baseline schema the App reads (engine v3.0.0 writes it).
+const BaselineSchemaV3 = "archfit.baseline.v3"
 
 // MaxBaselineBytes caps a baseline file: 1 MiB, the size github/api reads back from the protected ref.
 const MaxBaselineBytes = 1 << 20
@@ -49,7 +49,7 @@ type baselineFile struct {
 }
 
 // ReadBaseline decodes an engine baseline file. It is a structural check, not engine validation: one JSON
-// object of schema BaselineSchemaV2, at most MaxBaselineBytes, with a state block naming a 64-hex config hash
+// object of schema BaselineSchemaV3, at most MaxBaselineBytes, with a state block naming a 64-hex config hash
 // and a measurement profile version, and accepted findings with distinct 32-hex fingerprints and token rule IDs.
 // Errors never echo keys or values.
 func ReadBaseline(raw []byte) (Baseline, error) {
@@ -64,8 +64,8 @@ func ReadBaseline(raw []byte) (Baseline, error) {
 		return Baseline{}, errors.New("policy: baseline is not one JSON object of the baseline shape")
 	}
 	switch {
-	case f.SchemaVersion == nil || *f.SchemaVersion != BaselineSchemaV2:
-		return Baseline{}, errors.New("policy: baseline schema_version must be " + BaselineSchemaV2)
+	case f.SchemaVersion == nil || *f.SchemaVersion != BaselineSchemaV3:
+		return Baseline{}, errors.New("policy: baseline schema_version must be " + BaselineSchemaV3)
 	case f.Accepted == nil:
 		return Baseline{}, errors.New("policy: baseline accepted is required")
 	case f.State == nil:

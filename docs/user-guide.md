@@ -221,7 +221,7 @@ that matches nothing. Other rules that the engine could not evaluate keep `missi
 | `missing_required_coverage`   | Supply the missing evidence for the listed rules. Approval cannot clear this reason.           |
 | `workflow_not_approved`       | Upload from the workflow named in `.archfit-app.yaml`.                                         |
 | `unknown_engine_identity`     | Use the engine image pinned by the onboarding workflow.                                        |
-| `measurement_profile_missing` | Use engine v2.3.1 or later. The report has no measurement profile.                             |
+| `measurement_profile_missing` | Use the engine image that the onboarding workflow pins. The report has no measurement profile. |
 | `engine_error`                | Read the workflow log. Use the pinned engine image. Run the workflow again.                    |
 | `envelope_mismatch`           | Run the workflow again. The upload did not match the GitHub run.                               |
 | `report_invalid`              | Upload the unmodified engine report. Use the pinned Action version.                            |
@@ -242,24 +242,13 @@ no approval is needed any more.
 
 ### Engine versions
 
-The App approves engine images in a locked manifest. It reads a report with the key set of the engine release
-that the upload names.
+The App approves engine images in a locked manifest. It reads one engine release: v3.0.0. New workflows pin v3.0.0.
 
-- The manifest approves engine v2.5.0 and v2.4.1. New workflows pin v2.5.0. v2.4.1 stays approved during the
-  upgrade window; move your workflow pin to v2.5.0 before it closes. v2.4.0 and v2.3.1 are no longer approved:
-  their reports give `action_required`.
-- Engine v2.5.0 adds config keys: `depends_on` and `visible_to` on a module, the rule type `module_dependencies`,
-  and the rule keys `from_module`, `to_module`, `rationale`, `alternatives` and `docs`. Engine v2.4.1 rejects
-  them. Move your workflow pin to v2.5.0 before you use them.
-- In v2.5.0, `module_review.gate: fail` blocks: a directory of production source that no module owns is a
-  blocking finding. Run the engine on your repository before you move the pin.
-- During an upgrade the App approves two releases: the new release and the release before it. Change the pin
-  in your workflow by pull request.
-- A report from an engine release that the App cannot read gives `report_invalid`. A report from an image that
-  the manifest does not list gives `unknown_engine_identity`. Both end `action_required`. Use the engine image
-  that the onboarding workflow pins.
-- The policy editor validates with the config schema of the release that new workflows pin. If your repository
-  uses the release before it, the editor can accept a key that your engine rejects. The Archfit check on the draft
+- The manifest approves engine v3.0.0 only. A report from any other engine gives `action_required`.
+  Use the engine image that the onboarding workflow pins.
+- A report from an image that the manifest does not list gives `unknown_engine_identity`. A report that the App
+  cannot read gives `report_invalid`. Both end `action_required`.
+- The policy editor validates with the config schema of engine v3.0.0. The Archfit check on the draft
   pull request shows that error.
 
 ### Report limits
@@ -282,7 +271,7 @@ With `gate: required`, an upload over 5 MiB leaves the `archfit/gate` check pend
 `action_required` with `missing_upload` after 60 minutes. A report of about 3 000 seams with one advisory each is
 larger than 5 MiB. The comment shows at most 10 locations for each finding and gives the count of the others.
 
-Engine v2.5.0 adds a rule's `rationale` and `docs` to the why and the constraint of each finding of that rule. Write
+Engine v3.0.0 adds a rule's `rationale` and `docs` to the why and the constraint of each finding of that rule. Write
 both on one line and keep them short: a plain or quoted YAML string, or `>-`. A `|` or `>` block ends with a line
 break, and a why over 2 000 characters is too long. Both make the report `report_invalid`.
 
@@ -389,20 +378,19 @@ Open **Graph** for the repository. The page is read-only.
 
 - Modules come from the policy and are grouped by layer.
 - Links come from the latest default-branch report artifact.
-- Each link has a status. A report from engine v2.5.0 or later gives the status of each seam
-  (`seams[].policy`), and the graph shows it. For an older report, the status comes from the report findings for
-  the module pair.
+- Each link has a status. The report gives the status of each seam (`seams[].policy`), and the graph shows it.
+  If a seam has no policy, the status comes from the report findings for the module pair.
 
   | Status      | Meaning                                                                   |
   | ----------- | ------------------------------------------------------------------------- |
   | `violation` | An active gate finding, or a gate finding of an unknown status, names the pair. The link is red |
   | `accepted`  | A gate finding names the pair, and the baseline or a waiver accepts it                          |
   | `advisory`  | A finding that does not block names the pair                                                    |
-  | `allowed`   | Engine v2.5.0 or later: a blocking allowlist or layer rule permits the pair. The link is green |
-  | `observed`  | Engine v2.5.0 or later: no active finding names the pair, and no blocking rule permits it. A baselined or waived advisory can still name it. Older engines: no current finding names the pair, and a rule can still permit it |
+  | `allowed`   | A blocking allowlist or layer rule permits the pair. The link is green                          |
+  | `observed`  | No active finding names the pair, and no blocking rule permits it. A baselined or waived advisory can still name it |
 
-- Only the engine can mark a link `allowed`. A report from an engine before v2.5.0 has no `allowed` link. A
-  forbidden dependency in the baseline shows as `accepted`, never as `allowed`.
+- Only the engine can mark a link `allowed`. A forbidden dependency in the baseline shows as `accepted`, never as
+  `allowed`.
 - A **Stale** banner appears when the policy differs from the latest report.
 - An **Incomplete** banner appears when the report's hard gates did not pass or the engine did not evaluate all
   required rules. Then an `observed` link can still break a rule that was not evaluated.

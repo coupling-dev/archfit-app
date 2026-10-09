@@ -6,7 +6,7 @@
     "hard_gates": "pass",
     "unevaluated_rule_ids": [],
     "has_profile": true,
-    "profile_version": "archfit.measurement.v1",
+    "profile_version": "archfit.measurement.v2",
     "gate_reference_status": "comparable"
   },
   "gate": {

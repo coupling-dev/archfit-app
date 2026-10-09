@@ -9,10 +9,10 @@
   "merge_base_sha": "3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d",
   "run_id": 17654321098,
   "run_attempt": 1,
-  "engine_version": "v2.5.0",
-  "image_digest": "sha256:5752b4fe6d62f4fdd71edf33b4174228e17bd7c3d960b36a67111806ec17686a",
+  "engine_version": "v3.0.0",
+  "image_digest": "sha256:0eab810538fd8e75115f548154edecfe294ee70e1f13e1a158008ded43119909",
   "platform": "linux/amd64",
-  "payload_digest": "sha256:2f4da18004c697c21e35c8ef67549c82446f7785127f2459461bbe694e5ad368",
+  "payload_digest": "sha256:e6d5602d6d9b6407f377dba0a3c47ceb40fd2f6957894ed39fc30ed8ba07e39c",
   "baseline_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
   "labels_digest": ""
 }

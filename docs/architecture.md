@@ -213,7 +213,7 @@ report. Then it checks, in this order, and the first failure decides:
 2. The run checked out the current head of the default branch. Every later read is at that commit.
 3. The run used the workflow that `.archfit-app.yaml` names.
 4. The engine identity is a row of the locked manifest.
-5. The file is a structurally valid `archfit.baseline.v2` baseline of at most 1 MiB, and its measurement profile is
+5. The file is a structurally valid `archfit.baseline.v3` baseline of at most 1 MiB, and its measurement profile is
    the profile of that manifest row.
 6. Its `state.config_hash` is the digest of the protected `.archfit.yaml`.
 7. The envelope's `labels_digest` is the digest of the protected `.archfit-labels.yaml`, or empty when there is none.
@@ -293,15 +293,9 @@ An engine upgrade needs no flag day. Three `wire` packages share the rule:
   unevaluated required rules, the config hash, the measurement-profile version, and the gate reference.
 - `wire/policy` keeps one engine config schema, the schema of the release that new workflows pin.
 
-The App reads v2.3.1, v2.4.0, v2.4.1 and v2.5.0 reports. v2.4.0 and v2.4.1 add no report key. v2.5.0 adds one
-optional key, `seams[].policy`: the engine's policy status of each seam (`violation`, `accepted`, `advisory`,
-`allowed` or `observed`). The graph shows it; the gate does not read it. The manifest approves the published images
-of v2.4.1 and v2.5.0. New workflows pin v2.5.0 (`current`), and the policy editor uses the v2.5.0 config schema,
-which adds the module allowlists (`depends_on`, `visible_to`), the rule type `module_dependencies`, and the rule
-keys `from_module`, `to_module`, `rationale`, `alternatives` and `docs`. The v2.4.1 rows stay for the upgrade window
-and go once workflows have moved their pin. The v2.3.1 and v2.4.0 windows are closed: their rows are gone, so an
-upload from those releases concludes `action_required`. The decoder still reads v2.3.1 and v2.4.0 documents because
-fixtures of the corpus are documents of those releases.
+The App reads v3.0.0 reports and v3 baselines only. The manifest approves the published images of v3.0.0 and nothing
+else. New workflows pin v3.0.0 (`current`), and the policy editor uses the v3.0.0 config schema. Earlier releases and
+their baselines are not read. A repository captures a new baseline with the v3.0.0 engine.
 Tests in `internal/wire` stop a manifest row for a release that the decoder cannot read, that has no real capture
 in the fixture corpus, or whose config schema is not pinned when new workflows move to it.
 

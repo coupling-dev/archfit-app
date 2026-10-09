@@ -42,7 +42,7 @@ func prFields() map[string]string {
 		"merge_base_sha":  `"` + hex40 + `"`,
 		"run_id":          `17654321098`,
 		"run_attempt":     `1`,
-		"engine_version":  `"v2.3.1"`,
+		"engine_version":  `"v3.0.0"`,
 		"image_digest":    `"sha256:` + hex64 + `"`,
 		"platform":        `"linux/amd64"`,
 		"payload_digest":  `"sha256:` + hex64 + `"`,

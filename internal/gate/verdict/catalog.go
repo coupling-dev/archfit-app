@@ -39,7 +39,7 @@ func lookup(code ReasonCode) (entry, bool) {
 	case ReasonUnknownIdentity:
 		return entry{CategoryEvidence, ActionRequired, "Use the engine image pinned by the Archfit onboarding workflow."}, true
 	case ReasonProfileMissing:
-		return entry{CategoryEvidence, ActionRequired, "Use engine v2.3.1 or later; the report carries no measurement profile."}, true
+		return entry{CategoryEvidence, ActionRequired, "Use the engine image pinned by the Archfit onboarding workflow; the report carries no measurement profile."}, true
 	case ReasonWorkflowNotApproved:
 		return entry{CategoryEvidence, ActionRequired, "Upload from the workflow named in `.archfit-app.yaml`."}, true
 	case ReasonOwnerApprovalMissing:
@@ -76,6 +76,15 @@ func (rs *reasons) has(code ReasonCode) bool {
 		}
 	}
 	return false
+}
+
+// setNext replaces the recovery action of the reason code, when the code is in the list.
+func (rs *reasons) setNext(code ReasonCode, next string) {
+	for i := range *rs {
+		if (*rs)[i].Code == code {
+			(*rs)[i].Next = next
+		}
+	}
 }
 
 func (rs *reasons) add(code ReasonCode, detail string) {

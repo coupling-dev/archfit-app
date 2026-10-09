@@ -206,8 +206,8 @@ func TestDetailCarriesOnlyIdentifiers(t *testing.T) {
 			r.Decision.UnevaluatedRequiredRules[i].Reason = marker
 		}
 		c := &r.Comparison
-		c.BaseRef, c.ModelHash, c.LabelsHash, c.RubricVersion, c.TaskOriginStatus = marker, marker, marker, marker, marker
-		c.Reasons, c.TaskOriginReasons = []string{marker}, []string{marker}
+		c.BaseRef, c.ModelHash, c.LabelsHash, c.RubricVersion, c.OriginStatus = marker, marker, marker, marker, marker
+		c.Reasons, c.OriginReasons = []string{marker}, []string{marker}
 		return r
 	}
 	for _, name := range []string{"all-keys", "blocked", "blocker-and-unevaluated"} {

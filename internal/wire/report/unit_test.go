@@ -3,45 +3,10 @@ package report
 import (
 	"fmt"
 	"maps"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
 )
-
-// TestSinceTagSelectsTheKeySet: a key that a later release adds carries `since:"<release>"`; under an earlier
-// release it is an unknown key. A probe type keeps the rule apart from the one real tagged key, seams[].policy
-// (TestSeamPolicy).
-func TestSinceTagSelectsTheKeySet(t *testing.T) {
-	type probe struct {
-		Old string `json:"old"`
-		New string `json:"new" since:"v2.4.0"`
-		Odd string `json:"odd" since:"v9.9.9"` // a release Decode does not read: never a known key
-	}
-	v231, v240 := slices.Index(engineVersions, "v2.3.1"), slices.Index(engineVersions, "v2.4.0")
-	tests := []struct {
-		name    string
-		version int
-		payload string
-		ok      bool
-	}{
-		{"old key under v2.3.1", v231, `{"old":"x"}`, true},
-		{"new key under v2.3.1", v231, `{"old":"x","new":"y"}`, false},
-		{"new key under v2.4.0", v240, `{"old":"x","new":"y"}`, true},
-		{"key of an unlisted release under the newest", len(engineVersions) - 1, `{"odd":"z"}`, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := prepass([]byte(tt.payload), reflect.TypeFor[probe](), tt.version)
-			if tt.ok != (err == nil) {
-				t.Fatalf("err = %v, want ok = %v", err, tt.ok)
-			}
-			if err != nil && !strings.Contains(err.Error(), "unknown key") {
-				t.Errorf("error %q, want an unknown key", err)
-			}
-		})
-	}
-}
 
 func TestStringClassRules(t *testing.T) {
 	classes := []struct {
@@ -194,6 +159,10 @@ func TestEnums(t *testing.T) {
 		{"agent_tasks[0].repair_kind", []string{"code_change", "needs_owner_decision"}, []any{"agent_tasks", 0, "repair_kind"}},
 		{"producers[0].partial_basis", []string{"unresolved_specifiers", "degraded_precision"},
 			[]any{"comparison", "measurement_profile", "producers", 0, "partial_basis"}},
+		{"comparison.origin_status", []string{"comparable", "unknown"}, []any{"comparison", "origin_status"}},
+		{"findings[0].origin", []string{"introduced", "pre_existing", "unknown"}, []any{"findings", 0, "origin"}},
+		{"agent_tasks[0].origin", []string{"introduced", "pre_existing", "unknown"}, []any{"agent_tasks", 0, "origin"}},
+		{"gate_reference.drift", DriftClasses, []any{"gate_reference", "drift", 0}},
 	}
 	var rows []mutation
 	for _, e := range enums {
@@ -202,20 +171,16 @@ func TestEnums(t *testing.T) {
 		}
 		rows = append(rows, mutation{e.loc + " unknown value", setter("sometimes", e.steps...), e.loc})
 	}
-	rows = append(rows, mutation{"producers[0].partial_basis empty", setter("", enums[len(enums)-1].steps...), ""})
+	rows = append(rows, mutation{"producers[0].partial_basis empty", setter("", "comparison", "measurement_profile", "producers", 0, "partial_basis"), ""})
 	runMutations(t, rows)
 
 	t.Run("unknown plain-string values decode unchanged", func(t *testing.T) {
 		doc := baseDoc(t)
 		set(t, doc, "quarantined", "findings", 0, "status")
 		set(t, doc, "blocker", "findings", 0, "severity")
-		set(t, doc, "inherited", "agent_tasks", 0, "origin")
 		r := mustDecode(t, encode(t, doc))
 		if f := r.Findings[0]; f.Status != "quarantined" || f.Severity != "blocker" {
 			t.Errorf("finding status %q, severity %q", f.Status, f.Severity)
-		}
-		if got := r.AgentTasks[0].Origin; got != "inherited" {
-			t.Errorf("origin %q", got)
 		}
 	})
 }
@@ -262,8 +227,6 @@ func TestCollectionCaps(t *testing.T) {
 		{"dimensions.drift.findings", 10_000, append(drift, "findings"), func(int) any {
 			return map[string]any{"id": "f", "rule_id": "r", "kind": "gate", "severity": "low", "status": "new"}
 		}},
-		{"dimensions.drift.delta.new_findings", 10_000, append(drift, "delta", "new_findings"), text},
-		{"dimensions.drift.delta.resolved_findings", 10_000, append(drift, "delta", "resolved_findings"), text},
 		{"dimensions.drift.delta.metrics", 256, append(drift, "delta", "metrics"),
 			func(int) any { return map[string]any{"name": "m", "before": 1, "after": 2, "change": 1} }},
 		{"dimensions.drift.delta.reasons", 64, append(drift, "delta", "reasons"), text},
@@ -272,8 +235,9 @@ func TestCollectionCaps(t *testing.T) {
 		{"unknowns", 64, append(profile, "unknowns"), text},
 		{"coverage.tools", 64, []any{"coverage", "tools"}, func(int) any { return map[string]any{"tool": "t", "status": "ok"} }},
 		{"comparison.reasons", 64, []any{"comparison", "reasons"}, text},
-		{"comparison.task_origin_reasons", 64, []any{"comparison", "task_origin_reasons"}, text},
+		{"comparison.origin_reasons", 64, []any{"comparison", "origin_reasons"}, text},
 		{"gate_reference.reasons", 64, []any{"gate_reference", "reasons"}, text},
+		{"gate_reference.drift", 6, []any{"gate_reference", "drift"}, func(int) any { return "model_hash" }},
 	}
 	for _, c := range caps {
 		for _, over := range []bool{false, true} {
@@ -308,7 +272,7 @@ func TestCollectionCaps(t *testing.T) {
 
 // TestTaskHoldsWhatItsFindingHolds builds a task the way the engine does (agenttask.Build) from a finding at
 // its caps: files are the location files plus both edge endpoints; constraints are the finding constraint,
-// "rationale: <r>" (v2.5.0), one "allowed alternative: <a>" per alternative and the target module's public surface;
+// "rationale: <r>", one "allowed alternative: <a>" per alternative and the target module's public surface;
 // a cycle goal is "Break the import cycle: " plus the why. The why ends with the rationale, so neither is longer
 // than a why at its cap. A finding that decodes must not yield a task that does not.
 func TestTaskHoldsWhatItsFindingHolds(t *testing.T) {
@@ -353,17 +317,17 @@ func optionalKeys() []string {
 		"gate_reference", "gate_reference.base_ref", "measurement", "measurement.",
 		"gate_reference.config_hash", "gate_reference.model_hash", "gate_reference.labels_hash",
 		"gate_reference.rubric_version", "gate_reference.measurement_profile", "gate_reference.measurement_profile.",
-		"gate_reference.task_origin_status", "gate_reference.task_origin_reasons",
+		"gate_reference.drift", "gate_reference.baseline_present",
 		"decision.unevaluated_required_rules",
 		"comparison.base_ref", "comparison.config_hash", "comparison.model_hash", "comparison.labels_hash",
-		"comparison.rubric_version", "comparison.measurement_profile", "comparison.task_origin_status",
-		"comparison.task_origin_reasons",
+		"comparison.rubric_version", "comparison.measurement_profile", "comparison.classification_hash",
+		"comparison.drift", "comparison.baseline_present", "comparison.origin_status", "comparison.origin_reasons",
+		"comparison.introduced_finding_ids", "comparison.resolved_finding_ids", "findings[].origin",
 		"comparison.measurement_profile.producers[].tool_version",
 		"comparison.measurement_profile.producers[].partial_basis",
 		"findings[].matched_by", "findings[].matched_by.", "findings[].allowed_alternatives",
 		"agent_tasks[].declarations", "agent_tasks[].declarations[].", "agent_tasks[].origin",
 		"dimensions.*.delta", "dimensions.*.delta.reasons", "dimensions.*.delta.metrics",
-		"dimensions.*.delta.new_findings", "dimensions.*.delta.resolved_findings",
 		"dimensions.*.metrics[].denominator", "dimensions.*.metrics[].denominator.", "dimensions.*.metrics[].provenance",
 		"coverage.tools[].reason",
 		"seams[].severity", "seams[].scored_edges", "seams[].abstained_edges", "seams[].critical_edges",

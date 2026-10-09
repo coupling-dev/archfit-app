@@ -11,7 +11,7 @@ import (
 
 func TestUnknownIdentityNeverComparesEqual(t *testing.T) {
 	profileLess := &report.Reference{Status: refNonComparable, BaseRef: "baseline", Reasons: []string{"baseline carries no measurement profile"}}
-	snapshot := &report.Reference{Status: refNonComparable, BaseRef: "baseline", Reasons: []string{"baseline is a v2.3.0 numerical snapshot"}}
+	snapshot := &report.Reference{Status: refNonComparable, BaseRef: "baseline", Reasons: []string{"baseline is a stale numerical snapshot"}}
 
 	wantCodes(t, decide(t, with(identityOff, noProfile, gateRef(profileLess))),
 		ActionRequired, ReasonProfileMissing, ReasonBaselineNotComparable)

@@ -17,7 +17,7 @@ const (
 	maxUnevaluatedRules = 1_000
 	maxLocations        = 10_000 // the engine lists one location per file of a module, unbounded
 	maxAlternatives     = 32
-	maxTaskConstraints  = maxAlternatives + 3 // the finding constraint, the rationale (v2.5.0), one per alternative, the public surface
+	maxTaskConstraints  = maxAlternatives + 3 // the finding constraint, the rationale, one per alternative, the public surface
 	maxTaskValidation   = 32
 	maxTaskFiles        = maxLocations + 2 // every location file and both edge endpoints
 	maxDimensionFacts   = 256              // metrics, unknown, delta metrics
@@ -25,7 +25,7 @@ const (
 	maxSmallList        = 64 // producers, unknowns, coverage.tools, every reasons list
 
 	maxTextLen       = 500
-	maxFindingLen    = 2_000 // a finding why or constraint ends with the rule's rationale and docs reference (v2.5.0)
+	maxFindingLen    = 2_000 // a finding why or constraint ends with the rule's rationale and docs reference
 	maxTaskTextLen   = 4_096 // a task goal or constraint holds a why, two paths or a module's public globs
 	maxCommandLen    = 512
 	maxIdentifierLen = 200
@@ -266,7 +266,7 @@ func isRefreshFlag(word string) bool {
 }
 
 // pathRule accepts a clean, relative, forward-slash path; a directory or a glob is a path, the repository root "."
-// included (engine v2.5.0 names an importer no module owns by its package directory, "." at the root).
+// included (the engine names an importer no module owns by its package directory, "." at the root).
 func pathRule(p string) string {
 	switch {
 	case p == "":

@@ -1,5 +1,5 @@
 {
-  "producer": "synthetic: hand-edited from report/real-blocked-no-baseline.json (engine v2.3.1) with jq: .decision={hard_gates:\"unmeasured\",unevaluated_required_rules:[{rule_id:\"no_direct_b_dependency\",reason:\"required tool `go/packages` was absent\"}],active_blockers:0,attention_dimensions:2,unknown_dimensions:5} | .findings |= [.[1]] | .agent_tasks=[] | .dimensions.structure.findings=[] | .dimensions.structure.status=\"unmeasured\"",
+  "producer": "synthetic: hand-edited from report/real-blocked-no-baseline.json (an engine v3.0.0 capture) with jq: .decision={hard_gates:\"unmeasured\",unevaluated_required_rules:[{rule_id:\"no_direct_b_dependency\",reason:\"required tool `go/packages` was absent\"}],active_blockers:0,attention_dimensions:2,unknown_dimensions:5} | .findings |= [.[1]] | .agent_tasks=[] | .dimensions.structure.findings=[] | .dimensions.structure.status=\"unmeasured\"",
   "decode": "ok",
   "fields": {
     "verdict": "blocked",
@@ -8,7 +8,7 @@
       "no_direct_b_dependency"
     ],
     "has_profile": true,
-    "profile_version": "archfit.measurement.v1",
+    "profile_version": "archfit.measurement.v2",
     "gate_reference_status": "non_comparable"
   },
   "gate": {

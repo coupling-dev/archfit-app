@@ -1,4 +1,4 @@
-# Full engine v2.3.1 policy fixture: layers, modules, rules and two waivers.
+# Full engine v3.0.0 policy fixture: layers, modules, rules and two waivers.
 version: 2
 layers:
   - domain

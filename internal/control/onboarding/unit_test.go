@@ -215,7 +215,7 @@ func TestSanitize(t *testing.T) {
 
 func TestWorkflowTemplate(t *testing.T) {
 	entry := manifest.Entry{
-		Identity:  manifest.Identity{EngineVersion: "v2.3.1", ImageDigest: "sha256:" + strings.Repeat("a1", 32), Platform: "linux/amd64"},
+		Identity:  manifest.Identity{EngineVersion: "v3.0.0", ImageDigest: "sha256:" + strings.Repeat("a1", 32), Platform: "linux/amd64"},
 		ActionRef: strings.Repeat("c0de", 10),
 	}
 	raw, err := renderWorkflow(entry, "trunk", testBaseURL)
@@ -227,7 +227,7 @@ func TestWorkflowTemplate(t *testing.T) {
 	for name, re := range map[string]string{
 		"action pinned by SHA": `(?m)^\s+- uses: \S+/archfit-action@` + entry.ActionRef + `$`,
 		"image digest":         regexp.QuoteMeta(entry.ImageDigest),
-		"engine version":       `v2\.3\.1`,
+		"engine version":       `v3\.0\.0`,
 		"endpoint":             `(?m)^\s+endpoint: "https://archfit\.example"$`,
 		"audience":             `(?m)^\s+audience: "https://archfit\.example"$`,
 		"pull_request trigger": `(?m)^  pull_request:\s*$`,

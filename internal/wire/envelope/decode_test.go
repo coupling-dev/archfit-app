@@ -30,7 +30,7 @@ func TestDecodeFieldRules(t *testing.T) {
 			MergeBaseSHA:  hex40,
 			RunID:         17654321098,
 			RunAttempt:    1,
-			EngineVersion: "v2.3.1",
+			EngineVersion: "v3.0.0",
 			ImageDigest:   "sha256:" + hex64,
 			Platform:      "linux/amd64",
 			PayloadDigest: "sha256:" + hex64,

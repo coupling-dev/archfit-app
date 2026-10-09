@@ -1,25 +1,23 @@
 {
   "producer": {
     "repository": "github.com/alexei-led/archfit",
-    "revision": "f8877d25ba36d84d3780071580d23486e3d794d0",
-    "engine_version": "v2.3.1",
-    "command": "archfit check --json -c .archfit.yaml -q --refresh; on a scratch copy of the engine testdata/fixture-go outside any git repository, unmodified"
+    "revision": "bbd658f008bcc4bc83e063cf305d20dc4508da2e",
+    "engine_version": "v3.0.0",
+    "command": "archfit check --json -c .archfit.yaml -q --refresh; on a scratch copy of the engine testdata/fixture-go at tag v3.0.0 outside any git repository; unmodified; the released binary archfit-v3.0.0-darwin-arm64 from the GitHub release v3.0.0, verified against its SHA256SUMS, on a dev host darwin/arm64, not the pinned image"
   },
   "decode": "ok",
   "fields": {
-    "verdict": "needs_attention",
-    "hard_gates": "unmeasured",
-    "unevaluated_rule_ids": [
-      "no_direct_b_dependency"
-    ],
+    "verdict": "blocked",
+    "hard_gates": "fail",
+    "unevaluated_rule_ids": [],
     "has_profile": true,
-    "profile_version": "archfit.measurement.v1",
+    "profile_version": "archfit.measurement.v2",
     "gate_reference_status": "non_comparable"
   },
   "gate": {
-    "conclusion": "action_required",
+    "conclusion": "failure",
     "reasons": [
-      "missing_required_coverage"
+      "blocking_findings"
     ]
   }
 }

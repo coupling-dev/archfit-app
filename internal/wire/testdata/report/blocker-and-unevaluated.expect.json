@@ -1,5 +1,5 @@
 {
-  "producer": "synthetic: hand-edited from report/real-blocked-no-baseline.json (engine v2.3.1) with jq: .decision.unevaluated_required_rules=[{rule_id:\"layers/no_upward_imports\",reason:\"required tool `dependency-cruiser` was absent\"}]",
+  "producer": "synthetic: hand-edited from report/real-blocked-no-baseline.json (an engine v3.0.0 capture) with jq: .decision.unevaluated_required_rules=[{rule_id:\"layers/no_upward_imports\",reason:\"required tool `dependency-cruiser` was absent\"}]",
   "decode": "ok",
   "fields": {
     "verdict": "blocked",
@@ -8,7 +8,7 @@
       "layers/no_upward_imports"
     ],
     "has_profile": true,
-    "profile_version": "archfit.measurement.v1",
+    "profile_version": "archfit.measurement.v2",
     "gate_reference_status": "non_comparable"
   },
   "gate": {

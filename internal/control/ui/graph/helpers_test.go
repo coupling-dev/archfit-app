@@ -55,7 +55,7 @@ func loadReport(t *testing.T, name string) report.Report {
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
-	rep, err := report.Decode(raw, "v2.3.1")
+	rep, err := report.Decode(raw, "v3.0.0")
 	if err != nil {
 		t.Fatalf("decode fixture %s: %v", name, err)
 	}
@@ -88,7 +88,7 @@ func link(from, to string, count int, status LinkStatus) Link {
 }
 
 // corpusEngine is the engine release of the shared wire corpus's synthetic fixtures and older captures.
-const corpusEngine = "v2.3.1"
+const corpusEngine = "v3.0.0"
 
 // corpusFile reads a file of the shared wire corpus; internal/wire/module.md owns its names.
 func corpusFile(t *testing.T, name string) []byte {

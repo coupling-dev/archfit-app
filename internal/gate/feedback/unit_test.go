@@ -352,11 +352,11 @@ func gapReport(withGaps bool) *report.Report {
 	r := &report.Report{
 		SchemaVersion: report.StateSchemaV1,
 		Verdict:       "blocked",
-		Comparison:    report.Comparison{MeasurementProfile: &report.MeasurementProfile{Version: "archfit.measurement.v1", SettingsHash: "abc"}},
+		Comparison:    report.Comparison{MeasurementProfile: &report.MeasurementProfile{Version: "archfit.measurement.v2", SettingsHash: "abc"}},
 		Dimensions:    map[string]report.Dimension{"coupling": {Status: "measured"}},
 	}
 	if !withGaps {
-		r.GateReference = &report.Reference{Status: "comparable", BaseRef: "baseline"} // the trusted baseline was compared
+		r.GateReference = &report.Reference{Status: "comparable", BaseRef: "baseline", BaselinePresent: true} // the trusted baseline was compared
 		r.Comparison.MeasurementProfile.Producers = []report.Producer{{Tool: "go/packages", Status: "ok"}}
 		r.Coverage.Tools = []report.ToolCoverage{{Tool: "go/packages", Status: "ok"}}
 		return r
@@ -387,6 +387,7 @@ func TestEvidenceGapSources(t *testing.T) {
 	mustContain(t, gaps(p), "None reported")
 
 	p.Trusted.BaselineDigests = nil
+	p.Report.GateReference = &report.Reference{Status: "non_comparable", BaseRef: "baseline", Reasons: []string{"no baseline file was loaded"}}
 	mustContain(t, gaps(p), "No baseline: every current violation blocks.")
 	mustNotContain(t, gaps(p), "None reported")
 
@@ -618,7 +619,7 @@ func TestIdentityLine(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			p.Identity = fullIdentity()
 			full := producerLine(t, render(p))
-			mustContain(t, full, "claimed: engine v2.3.1, image "+p.Identity.ImageDigest+", linux/amd64")
+			mustContain(t, full, "claimed: engine v3.0.0, image "+p.Identity.ImageDigest+", linux/amd64")
 
 			p.Identity = manifest.Identity{}
 			none := producerLine(t, render(p))

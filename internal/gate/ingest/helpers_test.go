@@ -33,7 +33,7 @@ const (
 	prNumber       = 7
 	workflowPath   = ".github/workflows/archfit.yaml"
 	discoveryYAML  = "# LEAK-DISCOVERY-DRAFT\nmodules:\n  - name: shop\n    path: pkg/shop\n"
-	baselineJSON   = `{"schema_version":"archfit.baseline.v2","accepted":[]}`
+	baselineJSON   = `{"schema_version":"archfit.baseline.v3","accepted":[]}`
 )
 
 var (
@@ -124,7 +124,7 @@ func prScenario(t *testing.T) *scenario {
 			MergeBaseSHA:  mergeBaseSHA,
 			RunID:         runID,
 			RunAttempt:    1,
-			EngineVersion: "v2.3.1",
+			EngineVersion: "v3.0.0",
 			ImageDigest:   imageDigest,
 			Platform:      "linux/amd64",
 		},

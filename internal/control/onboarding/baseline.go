@@ -45,7 +45,7 @@ type protectedState int
 const (
 	protectedAbsent protectedState = iota
 	protectedReadable
-	protectedUnreadable // present, but not a readable archfit.baseline.v2 file
+	protectedUnreadable // present, but not a readable archfit.baseline.v3 file
 )
 
 // baselineCheck is everything the PR body states, all read at one default-branch commit.
@@ -233,7 +233,7 @@ func baselineBody(up gate.Upload, c baselineCheck, added, removed []policy.Accep
 	case protectedUnreadable:
 		before, gone = "unreadable", "unknown"
 		line("The %s on %s is not a readable `%s` file, so every accepted finding of this capture counts as added "+
-			"and removals are unknown.", mono(policy.BaselinePath), branch, policy.BaselineSchemaV2)
+			"and removals are unknown.", mono(policy.BaselinePath), branch, policy.BaselineSchemaV3)
 		line("")
 	}
 	line("| Accepted findings | Count |")

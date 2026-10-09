@@ -6,16 +6,19 @@ import (
 	"math"
 	"reflect"
 	"slices"
+	"strings"
 	"unicode/utf8"
 )
 
+// originValues are the engine's origin of a finding or task; they exist only in a report made with --base.
+var originValues = []string{"introduced", "pre_existing", "unknown"}
+
 // Decode strictly parses payload as the no-source transport of the state document engineVersion emits. It
-// fails on: an engineVersion outside EngineVersions, size over MaxBytes, a key that release's state schema
+// fails on: an engineVersion outside EngineVersions, size over MaxBytes, a key the state schema
 // does not define, wrong schema_version, an enum value outside its set, strings over the per-field caps,
 // absolute or parent-escaping paths, multi-line text, or duplicate finding IDs.
 func Decode(payload []byte, engineVersion string) (Report, error) {
-	version := slices.Index(engineVersions, engineVersion)
-	if version < 0 {
+	if !slices.Contains(engineVersions, engineVersion) {
 		// The version is input: it is never echoed.
 		return Report{}, locError("engine_version", "is not a release this decoder reads")
 	}
@@ -25,7 +28,7 @@ func Decode(payload []byte, engineVersion string) (Report, error) {
 	if !utf8.Valid(payload) {
 		return Report{}, locError("payload", "is not valid UTF-8")
 	}
-	if err := prepass(payload, reflect.TypeFor[shadowReport](), version); err != nil {
+	if err := prepass(payload, reflect.TypeFor[shadowReport]()); err != nil {
 		return Report{}, err
 	}
 	var shadow shadowReport
@@ -83,23 +86,35 @@ func (c *checker) comparison(s *shadowComparison) Comparison {
 		Status:             c.comparisonStatus(s.Status),
 		BaseRef:            c.opt("base_ref", s.BaseRef, classIdentifier),
 		ConfigHash:         c.opt("config_hash", s.ConfigHash, classConfigHash),
+		ClassificationHash: c.opt("classification_hash", s.ClassificationHash, classConfigHash),
 		ModelHash:          c.opt("model_hash", s.ModelHash, classVersion),
 		LabelsHash:         c.opt("labels_hash", s.LabelsHash, classVersion),
 		RubricVersion:      c.opt("rubric_version", s.RubricVersion, classVersion),
 		MeasurementProfile: optional(c, "measurement_profile", s.MeasurementProfile, c.profile),
 		Reasons:            stringsOf(c, "reasons", s.Reasons, maxSmallList, true, classText),
-		TaskOriginStatus:   c.opt("task_origin_status", s.TaskOriginStatus, classToken),
-		TaskOriginReasons:  stringsOf(c, "task_origin_reasons", s.TaskOriginReasons, maxSmallList, false, classText),
+		OriginStatus:       c.optEnum("origin_status", s.OriginStatus, "comparable", "unknown"),
+		OriginReasons:      stringsOf(c, "origin_reasons", s.OriginReasons, maxSmallList, false, classText),
 	}
 }
 
-// reference keeps status, base_ref and reasons of gate_reference; its other comparison keys are dropped.
+// reference keeps status, base_ref, reasons, drift and baseline_present of gate_reference; its other comparison
+// keys are dropped.
 func (c *checker) reference(s *shadowComparison) Reference {
-	return Reference{
+	ref := Reference{
 		Status:  c.comparisonStatus(s.Status),
 		BaseRef: c.opt("base_ref", s.BaseRef, classIdentifier),
 		Reasons: stringsOf(c, "reasons", s.Reasons, maxSmallList, true, classText),
+		Drift:   stringsOf(c, "drift", s.Drift, len(DriftClasses), false, classToken),
 	}
+	for i := range s.Drift {
+		if !slices.Contains(DriftClasses, s.Drift[i]) {
+			c.fail(phaseEnum, "drift", "must hold only "+strings.Join(DriftClasses, ", "))
+		}
+	}
+	if s.BaselinePresent != nil {
+		ref.BaselinePresent = *s.BaselinePresent
+	}
+	return ref
 }
 
 func (c *checker) profile(s *shadowProfile) MeasurementProfile {
@@ -203,8 +218,6 @@ func (c *checker) delta(s *shadowDelta) Delta {
 				Change: c.number("change", m.Change),
 			}
 		}),
-		NewFindings:      stringsOf(c, "new_findings", s.NewFindings, maxFindingRefs, false, classIdentifier),
-		ResolvedFindings: stringsOf(c, "resolved_findings", s.ResolvedFindings, maxFindingRefs, false, classIdentifier),
 	}
 }
 
@@ -245,6 +258,7 @@ func (c *checker) finding(s *shadowFinding) Finding {
 		Why:                 c.str("why", s.Why, classFindingText),
 		Constraint:          c.str("constraint", s.Constraint, classFindingText),
 		AllowedAlternatives: stringsOf(c, "allowed_alternatives", s.AllowedAlternatives, maxAlternatives, false, classText),
+		Origin:              c.optEnum("origin", s.Origin, originValues...),
 	}
 	if s.ID != nil {
 		if _, dup := c.ids[f.ID]; dup {
@@ -272,7 +286,7 @@ func (c *checker) task(s *shadowTask) AgentTask {
 		Constraints: stringsOf(c, "constraints", s.Constraints, maxTaskConstraints, true, classTaskText),
 		Files:       stringsOf(c, "files", s.Files, maxTaskFiles, true, classPath),
 		Validation:  stringsOf(c, "validation", s.Validation, maxTaskValidation, true, classCommand),
-		Origin:      c.opt("origin", s.Origin, classToken),
+		Origin:      c.optEnum("origin", s.Origin, originValues...),
 	}
 }
 

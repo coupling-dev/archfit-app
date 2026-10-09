@@ -1,12 +1,12 @@
 {
-  "producer": "synthetic: hand-edited from report/real-blocked-no-baseline.json (engine v2.3.1) with jq: .agent_tasks[0].origin=\"introduced\" | .agent_tasks += [{finding_id:\"coupling-gate\",rule_id:\"bc/coupling_gate\",repair_kind:\"needs_owner_decision\",goal:\"Decide whether the coupling between modules a and b is intended; declare volatility or restructure.\",constraints:[\"Do not baseline the seam without an owner decision\"],files:[],validation:[\"archfit check -c .archfit.yaml --base main --lang go --require-tools\"],origin:\"unknown\"}] | .agent_tasks[1].origin=\"pre_existing\" | .agent_tasks[1].files=[\"pkg/a/**\",\"pkg/b\"]",
+  "producer": "synthetic: hand-edited from report/real-blocked-no-baseline.json (an engine v3.0.0 capture) with jq: .agent_tasks[0].origin=\"introduced\" | .agent_tasks += [{finding_id:\"coupling-gate\",rule_id:\"bc/coupling_gate\",repair_kind:\"needs_owner_decision\",goal:\"Decide whether the coupling between modules a and b is intended; declare volatility or restructure.\",constraints:[\"Do not baseline the seam without an owner decision\"],files:[],validation:[\"archfit check -c .archfit.yaml --base main --lang go --require-tools\"],origin:\"unknown\"}] | .agent_tasks[1].origin=\"pre_existing\" | .agent_tasks[1].files=[\"pkg/a/**\",\"pkg/b\"]",
   "decode": "ok",
   "fields": {
     "verdict": "blocked",
     "hard_gates": "fail",
     "unevaluated_rule_ids": [],
     "has_profile": true,
-    "profile_version": "archfit.measurement.v1",
+    "profile_version": "archfit.measurement.v2",
     "gate_reference_status": "non_comparable"
   },
   "gate": {

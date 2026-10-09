@@ -1,12 +1,12 @@
 {
-  "producer": "synthetic: hand-edited from report/real-blocked-no-baseline.json (engine v2.3.1) with jq -c: .comparison.measurement_profile.producers |= (map(if .tool == \"grimp\" then {tool, semantics_version, tool_version: \"uv 0.12.21 (Homebrew 2026-09-29 aarch64-apple-darwin)\", status: \"partial\"} elif .tool == \"git-history\" then {tool, semantics_version, tool_version: \"git version 2.54.0 (Apple Git-157)\", status} else . end) + [{tool: \"supplied-coverage\", semantics_version: \"supplied-coverage.v1\", tool_version: \"coverage-parser.go-coverprofile.v1,coverage-parser.lcov.v1\", status: \"ok\"}]). The uv string is the grimp row of a real engine v2.3.1 run whose helper could not reach PyPI; the git string is `git --version` of the macOS system git; the coverage string is the comma join of two parser versions (engine internal/extract/coverage/coverage.go:406)",
+  "producer": "synthetic: hand-edited from report/real-blocked-no-baseline.json (an engine v3.0.0 capture) with jq -c: .comparison.measurement_profile.producers |= (map(if .tool == \"grimp\" then {tool, semantics_version, tool_version: \"uv 0.12.21 (Homebrew 2026-09-29 aarch64-apple-darwin)\", status: \"partial\"} elif .tool == \"git-history\" then {tool, semantics_version, tool_version: \"git version 2.54.0 (Apple Git-157)\", status} else . end) + [{tool: \"supplied-coverage\", semantics_version: \"supplied-coverage.v1\", tool_version: \"coverage-parser.go-coverprofile.v1,coverage-parser.lcov.v1\", status: \"ok\"}]). The uv string is the grimp row of a real engine run whose helper could not reach PyPI; the git string is `git --version` of the macOS system git; the coverage string is the comma join of two parser versions (engine internal/extract/coverage/coverage.go:406)",
   "decode": "ok",
   "fields": {
     "verdict": "blocked",
     "hard_gates": "fail",
     "unevaluated_rule_ids": [],
     "has_profile": true,
-    "profile_version": "archfit.measurement.v1",
+    "profile_version": "archfit.measurement.v2",
     "gate_reference_status": "non_comparable"
   },
   "gate": {
