@@ -225,8 +225,9 @@ and removed, lists them by rule ID and finding ID, names the run, engine identit
 architecture owner must approve the exact head commit. The gate's protected-path rule then governs the merge.
 
 Today the Action captures with plain `archfit baseline`, which accepts all current eligible debt. The added count in
-the body is what keeps that visible to the owner. When the engine ships `archfit baseline --reanchor`, a re-capture
-after an engine or profile change should use it, so that the pull request accepts no new finding by construction.
+the body is what keeps that visible to the owner. The App does not accept a re-anchor upload yet. Until the re-anchor
+flow ships, a re-capture after an engine or profile change accepts all current debt. The owner reviews the added
+count before approving.
 
 ### Baseline upload contract
 
@@ -285,13 +286,11 @@ for recovery actions.
 
 An engine upgrade needs no flag day. Three `wire` packages share the rule:
 
-- `wire/manifest` approves engine images by rows. Rows of two releases can exist together during an upgrade:
-  the release that new workflows pin and the release before it.
-- `wire/report` reads a report with the key set of its engine release. Each release has its own key set, and a
-  key of a later release is an unknown key. A release that is not in the list gives `report_invalid`.
-- The gate decides only from fields that every listed release defines: the verdict, the hard gates, the
-  unevaluated required rules, the config hash, the measurement-profile version, and the gate reference.
-- `wire/policy` keeps one engine config schema, the schema of the release that new workflows pin.
+- `wire/manifest` approves engine images by rows. The App approves one release, v3.0.0.
+- `wire/report` reads a report with the key set of v3.0.0. A key that the schema does not define is a decode error.
+- The gate decides from the verdict, the hard gates, the unevaluated required rules, the config hash, the
+  measurement-profile version, and the gate reference.
+- `wire/policy` keeps one engine config schema, the v3.0.0 schema.
 
 The App reads v3.0.0 reports and v3 baselines only. The manifest approves the published images of v3.0.0 and nothing
 else. New workflows pin v3.0.0 (`current`), and the policy editor uses the v3.0.0 config schema. Earlier releases and

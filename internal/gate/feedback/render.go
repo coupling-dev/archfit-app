@@ -435,6 +435,10 @@ func gapsBlock(p Publication) string {
 	case !verdict.ReferenceConflicts(ref, trusted): // the same rule as verdict step 7a
 	case ref == nil:
 		lines = append(lines, "- Baseline comparison: the report has no gate reference")
+	case ref.Status == "comparable" && trusted:
+		lines = append(lines, "- Baseline comparison: the engine did not load the trusted baseline")
+	case ref.Status == "comparable":
+		lines = append(lines, "- Baseline comparison: the engine loaded a baseline that the App does not trust")
 	default:
 		reasons := []string{"no reason given"}
 		if len(ref.Reasons) > 0 {

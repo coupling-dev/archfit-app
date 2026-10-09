@@ -609,6 +609,7 @@ func TestReferenceConflictsWithTheTrustedBaseline(t *testing.T) {
 		{"comparable, present, trusted", &report.Reference{Status: refComparable, BaselinePresent: true}, true, false},
 		{"comparable, no baseline, none trusted", &report.Reference{Status: refComparable}, false, false},
 		{"comparable, present, none trusted", &report.Reference{Status: refComparable, BaselinePresent: true}, false, true},
+		{"comparable, no baseline, trusted", &report.Reference{Status: refComparable}, true, true},
 		{"not comparable, present, trusted", &report.Reference{Status: refNonComparable, BaselinePresent: true}, true, true},
 		{"not comparable, no baseline, none trusted", &report.Reference{Status: refNonComparable}, false, false},
 	}
@@ -648,6 +649,38 @@ func TestNextNamesTheOwnerActionFromDrift(t *testing.T) {
 			}
 			if r.Next != c.next {
 				t.Errorf("Next = %q, want %q", r.Next, c.next)
+			}
+		})
+	}
+}
+
+// TestPresenceMismatchNamesTheSide: when the engine and the protected ref disagree about the baseline, the detail
+// names the side that holds one, and the next action is a full capture whatever the drift says.
+func TestPresenceMismatchNamesTheSide(t *testing.T) {
+	cases := []struct {
+		name   string
+		facts  Facts
+		detail string
+	}{
+		{"protected ref has one, engine loaded none",
+			with(gateRef(&report.Reference{Status: refComparable, BaselinePresent: false, Drift: []string{"measurement_profile"}})),
+			presenceDetail(true)},
+		{"engine loaded one, protected ref has none",
+			with(func(f *Facts) { f.Trusted.BaselineDigests = nil }, gateRef(&report.Reference{Status: refComparable, BaselinePresent: true})),
+			presenceDetail(false)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			o := decide(t, c.facts)
+			r, ok := find(o, ReasonBaselineNotComparable)
+			if !ok {
+				t.Fatalf("baseline_not_comparable missing: %v", codes(o))
+			}
+			if r.Detail != c.detail {
+				t.Errorf("detail = %q, want %q", r.Detail, c.detail)
+			}
+			if r.Next != nextFullCapture {
+				t.Errorf("next = %q, want the full capture", r.Next)
 			}
 		})
 	}

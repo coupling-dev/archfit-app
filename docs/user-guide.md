@@ -217,7 +217,7 @@ that matches nothing. Other rules that the engine could not evaluate keep `missi
 | `policy_mismatch`             | Run the workflow with the policy from the base branch. Run it again if the base changed.       |
 | `baseline_mismatch`           | Run the workflow with the baseline from the base branch.                                       |
 | `labels_mismatch`             | Run the workflow with the labels file from the base branch.                                    |
-| `baseline_not_comparable`     | Open a baseline pull request and get a policy owner approval.                                  |
+| `baseline_not_comparable`     | Capture a new baseline and open a baseline pull request that an architecture owner approves. The recovery line names the command. |
 | `missing_required_coverage`   | Supply the missing evidence for the listed rules. Approval cannot clear this reason.           |
 | `workflow_not_approved`       | Upload from the workflow named in `.archfit-app.yaml`.                                         |
 | `unknown_engine_identity`     | Use the engine image pinned by the onboarding workflow.                                        |

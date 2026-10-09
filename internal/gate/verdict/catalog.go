@@ -25,7 +25,7 @@ func lookup(code ReasonCode) (entry, bool) {
 	case ReasonMissingCoverage:
 		return entry{CategoryEvidence, ActionRequired, "Supply the missing evidence for the listed rules. Approval cannot clear this."}, true
 	case ReasonBaselineNotComparable:
-		return entry{CategoryEvidence, ActionRequired, "Open a baseline PR and get an architecture owner's approval."}, true
+		return entry{CategoryEvidence, ActionRequired, nextFullCapture}, true
 	case ReasonBaselineMismatch:
 		return entry{CategoryEvidence, ActionRequired, "Run the workflow with the baseline from the base branch."}, true
 	case ReasonLabelsMismatch:

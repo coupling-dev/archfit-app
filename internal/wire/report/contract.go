@@ -223,6 +223,6 @@ type Seam struct {
 	Volatility string `json:"volatility"`
 	Severity   string `json:"severity,omitempty"`
 	// Policy is what the engine's policy says about the seam: "violation" | "accepted" |
-	// "advisory" | "allowed" | "observed", a closed set. "" = a report from an earlier release, which has no such key.
+	// "advisory" | "allowed" | "observed", a closed set. "" = the engine gave the seam no policy.
 	Policy string `json:"policy,omitempty"`
 }

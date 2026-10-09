@@ -326,10 +326,12 @@ receipt marker. Block G is in the gate summary only.
    tool over a present language and a language that is not there look the same), so the line claims neither.
    When the protected ref has no baseline (`Trusted.BaselineDigests` empty):
    the line "No baseline: every current violation blocks." When a baseline exists and the gate reference is not
-   comparable, by the rule of `gate/verdict` step 7a (a nil `GateReference`, or any `Status` other than
-   `comparable`, `not_requested` included): one line per entry of its `Reasons`, "no reason given" when it has none,
-   and for a nil reference the line "Baseline comparison: the report has no gate reference". The note therefore
-   appears exactly when verdict reports `baseline_not_comparable`. "None reported" when empty; "No usable report"
+   comparable, by `verdict.ReferenceConflicts` (the rule of `gate/verdict` step 7a: a nil `GateReference` with a
+   trusted baseline, a trusted baseline with a reference whose `Status` is not `comparable`, or a reference whose
+   `BaselinePresent` differs from the trusted baseline): one line per entry of its `Reasons`, "no reason given" when
+   it has none, and for a nil reference the line "Baseline comparison: the report has no gate reference". A
+   reference that says `comparable` but conflicts names the pairing instead. The note therefore appears exactly when
+   verdict reports `baseline_not_comparable`. "None reported" when empty; "No usable report"
    when `Report == nil`.
 8. Inputs and identity: `Receipt.PolicyDigest`, `Receipt.BaselineDigest` (or "no baseline"), `Receipt.LabelsDigest`
    (or "no labels file"), all bare hex; the baseline and labels digests carry their source (table below); measurement profile

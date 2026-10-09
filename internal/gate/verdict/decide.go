@@ -194,7 +194,12 @@ func evidence(rs *reasons, r *report.Report, baselineTrusted bool) {
 	verdict, gates := r.Verdict, r.Decision.HardGates
 	defects, missing := splitRules(r.Decision.UnevaluatedRequiredRules)
 
-	if ReferenceConflicts(r.GateReference, baselineTrusted) {
+	switch {
+	case r.GateReference != nil && r.GateReference.BaselinePresent != baselineTrusted:
+		// The engine and the protected ref disagree about the baseline itself: no drift class describes that.
+		rs.add(ReasonBaselineNotComparable, presenceDetail(baselineTrusted))
+		rs.setNext(ReasonBaselineNotComparable, nextFullCapture)
+	case ReferenceConflicts(r.GateReference, baselineTrusted):
 		rs.add(ReasonBaselineNotComparable, referenceDetail(r.GateReference))
 		rs.setNext(ReasonBaselineNotComparable, referenceNext(r.GateReference))
 	}
@@ -312,6 +317,14 @@ func referenceNext(ref *report.Reference) string {
 		}
 	}
 	return nextReanchor
+}
+
+// presenceDetail names which side holds a baseline when the engine and the protected ref disagree.
+func presenceDetail(trusted bool) string {
+	if trusted {
+		return "the protected ref has a baseline and the engine loaded none"
+	}
+	return "the engine loaded a baseline and the protected ref has none"
 }
 
 func referenceDetail(ref *report.Reference) string {

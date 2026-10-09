@@ -100,7 +100,7 @@ and not in this list is a decode error.
 | `findings[]`             | `matched_by` (map of string to string; populated in real reports)                |
 | `agent_tasks[]`          | `declarations` (list of syntax facts, below)                                     |
 | `dimensions.*.metrics[]` | `denominator` (`observed`, `total`), `provenance` (list of strings)              |
-| `comparison`             | `introduced_finding_ids`, `resolved_finding_ids` (lists of strings)              |
+| `comparison`             | `drift`, `baseline_present`, `introduced_finding_ids`, `resolved_finding_ids` (`drift` and `baseline_present` are kept on `gate_reference` only) |
 | `gate_reference`         | every comparison key except `status`, `base_ref`, `reasons`, `drift`, `baseline_present` |
 | `seams[]`                | the seam keys listed below                                                       |
 
