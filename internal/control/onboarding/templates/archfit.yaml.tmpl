@@ -11,9 +11,9 @@
 # the job's GitHub OIDC token (id-token: write).
 #
 # The Action runs on pull_request, push and workflow_dispatch only and refuses every other event.
-# Reports come from pull_request and push runs. A dispatch runs discovery (a proposed policy) or
-# baseline (accepted debt, proposed as a pull request that an architecture owner approves) on the
-# default branch; discover: true selects discovery.
+# Reports come from pull_request and push runs. A dispatch runs discovery (a proposed policy), baseline
+# (accepted debt) or reanchor (accepted debt carried into a new measurement epoch). Baseline and reanchor
+# are proposed as pull requests that an architecture owner approves, on the default branch only.
 name: archfit
 
 on:
@@ -24,17 +24,14 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: What a dispatched run does. Reports come from pull_request and push runs, so a dispatch picks discovery or baseline
+        description: What a dispatched run does. Reports come from pull_request and push runs, so a dispatch picks discovery, baseline or reanchor
         type: choice
         options:
           - report
           - discovery
           - baseline
+          - reanchor
         default: report
-      discover:
-        description: Propose a policy for review (selects discovery whatever mode says)
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -50,5 +47,4 @@ jobs:
           audience: [[ quote .BaseURL ]]
           engine-version: [[ quote .EngineVersion ]]
           image-digest: [[ quote .ImageDigest ]]
-          mode: ${{ inputs.discover && 'discovery' || inputs.mode }}
-          discover: ${{ inputs.discover }}
+          mode: ${{ inputs.mode }}

@@ -22,6 +22,8 @@ default branch becomes a baseline pull request that an architecture owner approv
 - Serve `POST /v1/baselines`: reuse the gate's `Receiver`, check the producer at the default-branch head, check the capture
   against the approved identity and the protected policy and labels, then open or update the baseline PR on `archfit/baseline`
   with a body that counts the accepted findings added and removed. Never write the default branch.
+- Serve `POST /v1/reanchors`: the same checks, plus the protected baseline's digest and the subset rules of the re-anchor
+  section; then the same pull request on `archfit/baseline`, with a body that states what the re-anchor keeps and drops.
 - Managed discovery: require `ConsentSourceProcessing`, open the onboarding PR, run `Sandbox.Discover` once, commit the draft policy or a clear failure state.
 - Own the `Sandbox` seam and its default ("not available").
 - Never enable the required gate: generated settings always say `gate: advisory`.
@@ -148,7 +150,7 @@ that check, and only for an accepted upload. **[default]** First match wins:
 
 `OpenDraft` is set only when `Get` returns `DraftOpen` or `DraftInReview`; merged, closed and none give nil. Diagnostics, one sentence each: "Start onboarding" /
 "Review and merge PR #n" / "`.archfit-app.yaml` on the default branch is invalid" / "Run discovery
-(workflow_dispatch with `discover`)" / "Review and merge the policy PR #n" / "Waiting for the first run on
+(workflow_dispatch with `mode` set to `discovery`)" / "Review and merge the policy PR #n" / "Waiting for the first run on
 the default branch" / "Advisory feedback is active; an owner enables the gate by PR" / "Required gate is active".
 Managed additions at stage `installed`: `Pulls.PullByHead(r, "archfit/onboarding")`; if the PR is open and its `Body`
 carries the managed marker (see StartManaged), the diagnostic follows the marker: `running` and
@@ -163,12 +165,10 @@ parse counts as stalled.
 - `.archfit-app.yaml` = `settings.Render(Settings{Version: 1, Owners: owners, Gate: GateAdvisory, Workflow: <workflow path>, DataMode: DataCustomer | DataManaged})`.
 - Workflow file from the template with `manifest.Current()`: Action pinned to `ActionRef` (commit SHA), `EngineVersion`,
   `ImageDigest`; triggers exactly `pull_request`, `push` to `r.DefaultBranch` and `workflow_dispatch` (the Action refuses
-  every other event, `workflow_run`, `pull_request_target` and `merge_group` included); dispatch inputs `mode` (choice
-  `report` | `discovery` | `baseline`, default `report`) and boolean `discover` (default `false`), passed to the Action as
-  `mode: ${{ inputs.discover && 'discovery' || inputs.mode }}` and `discover: ${{ inputs.discover }}`. `discover: true`
-  wins over `mode`, because the UI dispatches discovery with `{"discover": "true"}` only and the Action refuses
-  `discover: true` beside `mode: report`; on `pull_request` and `push` both are empty, which the Action reads as
-  `report`. A dispatched `report` is refused by the Action: reports come from `pull_request` and `push` runs.
+  every other event, `workflow_run`, `pull_request_target` and `merge_group` included); the one dispatch input `mode`
+  (choice `report` | `discovery` | `baseline` | `reanchor`, default `report`), passed to the Action as
+  `mode: ${{ inputs.mode }}`. The UI's Discover button dispatches `{"mode": "discovery"}`. A dispatched `report` is refused
+  by the Action: reports come from `pull_request` and `push` runs.
   `permissions: contents: read, id-token: write`; no secrets; no step runs repository scripts.
   `Deps.BaseURL` is written as the Action's upload endpoint and OIDC audience. **[default: Action input names pinned in the plan]**
   Action obligation, stated in the workflow's header comment and the PR body: the Action reads `.archfit.yaml`,
@@ -213,6 +213,24 @@ measurement evidence. The handler never creates or updates a check run or commen
 
 Steps 1 to 4 are one function shared with the baseline upload (`checkProducer`); discovery reads the settings at the
 default branch by name.
+
+### Re-anchored baseline upload (`POST /v1/reanchors`)
+
+After an engine or profile change, the Action runs `archfit baseline --reanchor` in the pinned image with the protected
+baseline mounted read-only. The engine keeps only the accepted debt and seams the protected baseline already has. The
+App does not trust that. It runs `Baseline upload` below with these additions, after step 8 and before the unchanged check:
+
+- The protected `.archfit-baseline.json` at the head commit is absent or not a readable `archfit.baseline.v3` file →
+  `403 reanchor_baseline_missing`.
+- `policy.Digest` of the protected bytes is not `Upload.BaselineDigest` (the envelope's `baseline_digest`, required and
+  64 lowercase hex for `kind: reanchor`) → `403 reanchor_digest_mismatch`.
+- A capture finding whose (fingerprint, rule ID) pair the protected baseline does not accept, or a capture seam not in the
+  protected `state.qualifying_seam_ids` → `403 reanchor_not_subset`. A re-anchor keeps debt; it never accepts new debt.
+
+The pull request body states kept, dropped, added (always `0`), seams no longer qualifying, and each metric whose value
+changes at the same version. Approving resets those metrics. The engine's full report stays in the run's job summary and
+the `archfit-baseline` artifact, and the body names the run. The route is `POST /v1/reanchors`, with `kind: reanchor`.
+The body is the new baseline file only, like `kind: baseline`.
 
 ### Baseline upload (`POST /v1/baselines`)
 
@@ -468,7 +486,7 @@ type Consents interface {
 ### internal/wire/envelope
 
 - **Counterpart**: `internal/wire/envelope/`
-- **Direction**: `onboarding` depends on `wire/envelope` (`KindDiscovery`, `KindBaseline` and `PayloadDigest`; decoding happens inside `Receiver`)
+- **Direction**: `onboarding` depends on `wire/envelope` (`KindDiscovery`, `KindBaseline`, `KindReanchor` and `PayloadDigest`; decoding happens inside `Receiver`)
 - **Strength**: contract
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high
@@ -487,6 +505,7 @@ const (
     KindReport    Kind = "report"    // engine state report, POST /v1/reports
     KindDiscovery Kind = "discovery" // discovery draft policy, POST /v1/discoveries
     KindBaseline  Kind = "baseline"  // captured engine baseline file, POST /v1/baselines
+    KindReanchor  Kind = "reanchor"  // re-anchored baseline, POST /v1/reanchors
 )
 
 // Envelope is what the producer states about a payload. Every field is self-reported:

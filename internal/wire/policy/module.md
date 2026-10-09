@@ -31,7 +31,8 @@ drift between them would turn honest reports into `policy_mismatch`.
   required keys, the few value bounds), and the readers above, each problem with its line and, when known, column.
   It returns nothing exactly when the text is fit to save.
 - `ReadBaseline`: a structural reader of an `archfit.baseline.v3` file: the accepted finding IDs with their rule IDs,
-  the `state.config_hash` the capture ran under, and the measurement profile version. It keeps a foreign or
+  the `state.qualifying_seam_ids` (required, may be empty), the `metrics` values with their versions (required, may be
+  empty), the `state.config_hash` the capture ran under, and the measurement profile version. It keeps a foreign or
   incomplete document out of baseline pull requests.
 - Nothing else. It does no engine validation of policies or baselines: no rule type, selector, ownership, layer or
   cross-key check, which only the engine can do (`archfit config lint`). It does not match waivers or accepted

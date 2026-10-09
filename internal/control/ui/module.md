@@ -868,7 +868,7 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   owner. Owners are GitHub logins or org/team-slug, one per line, each named once." **[default]**, never `Parse`'s error
   text, and onboarding is not called. Then `mode`: `customer` → `StartCustomer`; `managed` → consent check →
   `StartManaged`; anything else `422`.
-- Discover: requires stage `workflow_merged` or later; `Actions.Dispatch(Settings.Workflow, DefaultBranch, {"discover": "true"})`.
+- Discover: requires stage `workflow_merged` or later; `Actions.Dispatch(Settings.Workflow, DefaultBranch, {"mode": "discovery"})`.
 - Editor: branch is `archfit/edit-<lower-case login>`, or a `?branch=` that `proposal.ValidBranch` accepts, else `422`.
   A form `head_sha` is empty (no open draft was loaded) or passes `proposal.ValidHeadSHA`, else `422`; a `?since=` that
   fails `ValidHeadSHA` is ignored. `Proposals.Get`:
@@ -1037,7 +1037,7 @@ their interfaces except where a test says otherwise. The clock is injected.
 - **Test name**: `TestOnboardingAndDiscoverActions`
   **Scenario**: start customer onboarding with two owners; start managed without consent; dispatch discovery before and after `workflow_merged`.
   **Expected behavior**: `StartCustomer` gets the parsed owners; managed without consent redirects to the consent page and never calls
-  `StartManaged`; discovery dispatch is refused before the stage and sends input `discover=true` on the settings workflow after it.
+  `StartManaged`; discovery dispatch is refused before the stage and sends input `mode=discovery` on the settings workflow after it.
 
 ### Boundary Tests
 

@@ -437,6 +437,7 @@ func newSystem(t *testing.T, w *world, o options) *system {
 	s.mux.Handle("POST /v1/reports", s.gate.UploadHandler())
 	s.mux.Handle("POST /v1/discoveries", s.ctl.DiscoveryHandler())
 	s.mux.Handle("POST /v1/baselines", s.ctl.BaselineHandler())
+	s.mux.Handle("POST /v1/reanchors", s.ctl.ReanchorHandler())
 	s.mux.Handle("/", s.ctl.UIHandler())
 	return s
 }

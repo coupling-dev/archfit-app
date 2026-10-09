@@ -73,6 +73,7 @@ The system's contract is its external surface. Everything else is internal.
 | `POST /v1/reports`      | `gate`                    | GitHub Actions OIDC bearer token, audience = App base URL |
 | `POST /v1/discoveries`  | `control` (onboarding)    | same OIDC checks, through the gate's `Receiver`           |
 | `POST /v1/baselines`    | `control` (onboarding)    | same OIDC checks, through the gate's `Receiver`           |
+| `POST /v1/reanchors`    | `control` (onboarding)    | the same checks, plus the protected baseline's digest and subset rules |
 | `POST /webhooks/github` | `app` → `queue`           | `X-Hub-Signature-256`                                     |
 | `POST /internal/webhooks` | `app` → `gate`, `control` (worker role) | Google ID token of the invoker, then `X-Hub-Signature-256` |
 | `POST /internal/sweep`  | `app` → `control`, `gate` | operator bearer token **[default]**; on the worker role the invoker ID token |
@@ -327,7 +328,7 @@ and child (distance 1). Everything that crosses the root is contract coupling, w
    waiver expiry live in the check run; the sweep compares them with the protected ref. No second copy can drift.
 6. **Consumer-owned seams.** `Sandbox` lives with `onboarding`, `Provider` with `assist`, `Store` stands alone
    because both branches use it. Platform implementations are separate packages chosen in `app`.
-7. **Three upload routes, one provenance path.** `/v1/discoveries` and `/v1/baselines` reuse the gate's `Receiver`,
+7. **Four upload routes, one provenance path.** `/v1/discoveries`, `/v1/baselines` and `/v1/reanchors` reuse the gate's `Receiver`,
    so neither can weaken or fork the authentication rules. Discovery and baseline output never satisfy the gate; a
    baseline becomes trusted input only when an owner-approved pull request merges it.
 8. **Advisory mode publishes no `archfit/gate` check [default].** If a ruleset requires the check while settings

@@ -128,7 +128,7 @@ func (st state) diagnostic(now func() time.Time) string {
 		if st.draft != nil {
 			return fmt.Sprintf("Review and merge the policy PR #%d", st.draft.Number)
 		}
-		return "Run discovery (workflow_dispatch with `discover`)"
+		return "Run discovery (workflow_dispatch with `mode` set to `discovery`)"
 	case StagePolicyMerged:
 		return "Waiting for the first run on the default branch"
 	case StageRequired:

@@ -71,6 +71,8 @@ type Onboarding interface {
 	DiscoveryHandler() http.Handler
 	// BaselineHandler serves POST /v1/baselines and opens or updates the baseline PR. It never writes the default branch.
 	BaselineHandler() http.Handler
+	// ReanchorHandler serves POST /v1/reanchors: a re-anchored baseline the App checks against the protected one.
+	ReanchorHandler() http.Handler
 }
 
 type Deps struct {

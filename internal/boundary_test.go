@@ -76,8 +76,8 @@ func TestBothOnboardingModesComplete(t *testing.T) {
 		if resp, page := b.post("/r/"+shopRepo+"/discover", url.Values{"csrf": {b.csrf("/r/" + shopRepo)}}); resp.StatusCode != http.StatusSeeOther {
 			t.Fatalf("dispatch discovery: %d\n%s", resp.StatusCode, page)
 		}
-		if d := w.dispatchesOf(shopRepo); len(d) != 1 || d[0].Ref != "main" || d[0].Inputs["discover"] != "true" {
-			t.Fatalf("dispatches = %+v; want the archfit workflow on main with discover", d)
+		if d := w.dispatchesOf(shopRepo); len(d) != 1 || d[0].Ref != "main" || d[0].Inputs["mode"] != "discovery" {
+			t.Fatalf("dispatches = %+v; want the archfit workflow on main with mode discovery", d)
 		}
 
 		head := discoveryRun(w, shopRepo, 555)

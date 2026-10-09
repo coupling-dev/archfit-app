@@ -41,13 +41,22 @@ func corpus(t *testing.T, name, suffix string) []byte {
 
 // syntheticBaseline is a v3 baseline captured under policyText with the given accepted findings.
 func syntheticBaseline(policyText []byte, profile string, accepted ...[2]string) []byte {
+	return syntheticBaselineWith(policyText, profile, nil, "{}", accepted...)
+}
+
+// syntheticBaselineWith is a v3 baseline with the given qualifying seams and metrics block, a raw JSON object.
+func syntheticBaselineWith(policyText []byte, profile string, seams []string, metrics string, accepted ...[2]string) []byte {
 	entries := make([]string, len(accepted))
 	for i, a := range accepted {
 		entries[i] = fmt.Sprintf(`{"fingerprint":%q,"rule_id":%q,"kind":"gate"}`, a[0], a[1])
 	}
-	return fmt.Appendf(nil, `{"schema_version":"archfit.baseline.v3","accepted":[%s],`+
-		`"state":{"config_hash":%q,"measurement_profile":{"version":%q}}}`,
-		strings.Join(entries, ","), policy.Digest(policyText), profile)
+	quoted := make([]string, len(seams))
+	for i, id := range seams {
+		quoted[i] = fmt.Sprintf("%q", id)
+	}
+	return fmt.Appendf(nil, `{"schema_version":"archfit.baseline.v3","accepted":[%s],"metrics":%s,`+
+		`"state":{"config_hash":%q,"qualifying_seam_ids":[%s],"measurement_profile":{"version":%q}}}`,
+		strings.Join(entries, ","), metrics, policy.Digest(policyText), strings.Join(quoted, ","), profile)
 }
 
 // protect puts the protected inputs on the default branch at runHeadSHA, the head of the capturing run.

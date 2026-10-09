@@ -25,11 +25,19 @@ type Accepted struct {
 	RuleID      string
 }
 
+// MetricValue is one stored metric of a baseline: its value and the version of its definition.
+type MetricValue struct {
+	Value   float64
+	Version string
+}
+
 // Baseline is the App's view of an engine baseline file: what it accepts and what it was captured under.
 type Baseline struct {
-	Accepted       []Accepted // file order
-	ConfigHash     string     // state.config_hash: Digest of the policy the capture ran under
-	ProfileVersion string     // state.measurement_profile.version
+	Accepted          []Accepted // file order
+	QualifyingSeamIDs []string   // state.qualifying_seam_ids: the distributed-monolith seams the capture accepted
+	Metrics           map[string]MetricValue
+	ConfigHash        string // state.config_hash: Digest of the policy the capture ran under
+	ProfileVersion    string // state.measurement_profile.version
 }
 
 // baselineFile is the transport shape. Keys the App does not read are ignored: the engine adds baseline keys
@@ -40,8 +48,13 @@ type baselineFile struct {
 		Fingerprint *string `json:"fingerprint"`
 		RuleID      *string `json:"rule_id"`
 	} `json:"accepted"`
+	Metrics *map[string]*struct {
+		Value   *float64 `json:"value"`
+		Version *string  `json:"version"`
+	} `json:"metrics"`
 	State *struct {
-		ConfigHash         *string `json:"config_hash"`
+		ConfigHash         *string   `json:"config_hash"`
+		QualifyingSeamIDs  *[]string `json:"qualifying_seam_ids"`
 		MeasurementProfile *struct {
 			Version *string `json:"version"`
 		} `json:"measurement_profile"`
@@ -49,8 +62,9 @@ type baselineFile struct {
 }
 
 // ReadBaseline decodes an engine baseline file. It is a structural check, not engine validation: one JSON
-// object of schema BaselineSchemaV3, at most MaxBaselineBytes, with a state block naming a 64-hex config hash
-// and a measurement profile version, and accepted findings with distinct 32-hex fingerprints and token rule IDs.
+// object of schema BaselineSchemaV3, at most MaxBaselineBytes, with a state block naming a 64-hex config hash, a
+// measurement profile version and the qualifying seam IDs, a metrics block of named values with versions, and
+// accepted findings with distinct 32-hex fingerprints and token rule IDs.
 // Errors never echo keys or values.
 func ReadBaseline(raw []byte) (Baseline, error) {
 	switch {
@@ -75,12 +89,34 @@ func ReadBaseline(raw []byte) (Baseline, error) {
 	case f.State.MeasurementProfile == nil || f.State.MeasurementProfile.Version == nil ||
 		!isToken(*f.State.MeasurementProfile.Version, maxProfileLen):
 		return Baseline{}, errors.New("policy: baseline state.measurement_profile.version is required")
+	case f.State.QualifyingSeamIDs == nil:
+		return Baseline{}, errors.New("policy: baseline state.qualifying_seam_ids is required")
+	case f.Metrics == nil:
+		return Baseline{}, errors.New("policy: baseline metrics is required")
 	}
 
 	b := Baseline{
-		Accepted:       make([]Accepted, 0, len(*f.Accepted)),
-		ConfigHash:     *f.State.ConfigHash,
-		ProfileVersion: *f.State.MeasurementProfile.Version,
+		Accepted:          make([]Accepted, 0, len(*f.Accepted)),
+		QualifyingSeamIDs: make([]string, 0, len(*f.State.QualifyingSeamIDs)),
+		Metrics:           make(map[string]MetricValue, len(*f.Metrics)),
+		ConfigHash:        *f.State.ConfigHash,
+		ProfileVersion:    *f.State.MeasurementProfile.Version,
+	}
+	for name, m := range *f.Metrics {
+		switch {
+		case !isToken(name, maxRuleIDLen) || m == nil || m.Value == nil || m.Version == nil || !isToken(*m.Version, maxProfileLen):
+			return Baseline{}, errors.New("policy: baseline metric must name a token with a value and a version token")
+		}
+		b.Metrics[name] = MetricValue{Value: *m.Value, Version: *m.Version}
+	}
+	seenSeam := make(map[string]bool, len(*f.State.QualifyingSeamIDs))
+	for _, id := range *f.State.QualifyingSeamIDs {
+		switch {
+		case !isToken(id, maxRuleIDLen) || seenSeam[id]:
+			return Baseline{}, errors.New("policy: baseline qualifying seam id must be a distinct token")
+		}
+		seenSeam[id] = true
+		b.QualifyingSeamIDs = append(b.QualifyingSeamIDs, id)
 	}
 	seen := make(map[string]bool, len(*f.Accepted))
 	for _, a := range *f.Accepted {

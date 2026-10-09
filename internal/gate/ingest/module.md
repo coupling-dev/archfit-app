@@ -139,6 +139,7 @@ could be published truthfully: the head moved (step 14) and the bytes are not wh
 | `report`    | `pull_request`; `push` when `Claims.Ref == "refs/heads/" + Repo.DefaultBranch`      |
 | `discovery` | `workflow_dispatch`; `push` when `Claims.Ref == "refs/heads/" + Repo.DefaultBranch` |
 | `baseline`  | `workflow_dispatch`; `push` when `Claims.Ref == "refs/heads/" + Repo.DefaultBranch` |
+| `reanchor`  | `workflow_dispatch` only; never `push`                                              |
 
 Everything else, including `workflow_run`, `pull_request_target`, `schedule` and a push to another branch,
 adds `ProblemUnsupportedEvent`. `Binding.Event` is `run.Event` verbatim; for a discovery or baseline upload it
@@ -219,6 +220,7 @@ const (
     KindReport    Kind = "report"    // engine state report, POST /v1/reports
     KindDiscovery Kind = "discovery" // discovery draft policy, POST /v1/discoveries
     KindBaseline  Kind = "baseline"  // captured engine baseline file, POST /v1/baselines
+    KindReanchor  Kind = "reanchor"  // re-anchored baseline, POST /v1/reanchors
 )
 
 // Envelope is what the producer states about a payload. Every field is self-reported:

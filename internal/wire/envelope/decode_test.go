@@ -125,6 +125,36 @@ func TestInputDigestFormats(t *testing.T) {
 		{"null", prFields, "null", false},
 		{"non-empty with kind discovery", discoveryFields, quoted(hex64), false},
 	}
+	// A re-anchor names the protected baseline it carries forward, so its baseline_digest must be a digest.
+	reanchorDigests := []struct {
+		name   string
+		value  string
+		wantOK bool
+	}{
+		{"64 lowercase hex", quoted(hex64), true},
+		{"empty", quoted(""), false},
+		{"sha256 prefix", quoted("sha256:" + hex64), false},
+		{"key absent", "<absent>", false},
+	}
+	for _, c := range reanchorDigests {
+		t.Run("baseline_digest/"+c.name+" with kind reanchor", func(t *testing.T) {
+			fields := reanchorFields()
+			if c.value == "<absent>" {
+				delete(fields, "baseline_digest")
+			} else {
+				fields["baseline_digest"] = c.value
+			}
+			raw := render(fields)
+			if c.wantOK {
+				if got := wantDecoded(t, raw); got.Kind != envelope.KindReanchor || got.BaselineDigest != hex64 {
+					t.Errorf("got kind %q baseline %q", got.Kind, got.BaselineDigest)
+				}
+			} else {
+				wantRejected(t, raw, "baseline_digest")
+			}
+			wantSchemaAgrees(t, raw, c.wantOK)
+		})
+	}
 	for _, field := range []string{"baseline_digest", "labels_digest"} {
 		t.Run(field+"/empty with kind baseline", func(t *testing.T) {
 			raw := render(baselineFields())
