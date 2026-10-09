@@ -216,6 +216,8 @@ Rules of the table:
   When every class is `measurement_profile` or `rubric_version`, the action is a re-anchor: run
   `archfit baseline --reanchor` and open a baseline PR that an architecture owner approves. For any other class, an
   empty `Drift` and a nil reference, the action is a full capture: run `archfit baseline` and open that PR.
+  A `BaselinePresent` mismatch has no drift class to read. Its Detail names the side that holds the baseline ("the protected ref has a baseline and the
+  engine loaded none", or the reverse), and its `Next` is always the full capture.
 - An engine error (process exit 3) produces no report. Nothing is uploaded, the pending check stays, and the sweep
   ends it as `missing_upload`. `engine_error` therefore only names a decoded report whose `Verdict` or `HardGates`
   is outside its enum; the strict decoder of `wire/report` normally rejects that first (`report_invalid`), so this
