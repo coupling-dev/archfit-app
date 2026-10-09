@@ -69,6 +69,7 @@ func TestReadBaselineRejects(t *testing.T) {
 		{"invalid UTF-8", minimalBaseline(replace("no_direct_b_dependency", "no_\xff"))},
 		{"over the cap", append(minimalBaseline(nil), bytes.Repeat([]byte(" "), MaxBaselineBytes)...)},
 		{"schema v1", minimalBaseline(replace("archfit.baseline.v3", "archfit.baseline.v1"))},
+		{"schema v2", minimalBaseline(replace("archfit.baseline.v3", "archfit.baseline.v2"))},
 		{"schema missing", minimalBaseline(replace(`"schema_version":"archfit.baseline.v3",`, ""))},
 		{"accepted missing", minimalBaseline(replace(`"accepted":[`, `"other":[`))},
 		{"accepted null", []byte(`{"schema_version":"archfit.baseline.v3","accepted":null,"state":{"config_hash":"` +

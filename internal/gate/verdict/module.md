@@ -23,15 +23,16 @@ precondition holds.
 
 ## Subdomain Classification
 
-Core. This is the rule set a customer pays for. Volatility: high; the mapping is tuned with every pilot
-and every engine release. The contract (`Facts` in, `Outcome` out) is kept small so that tuning stays inside.
+Core. This is the rule set a customer pays for. Volatility: high; the mapping is tuned with every pilot.
+The contract (`Facts` in, `Outcome` out) is kept small so that tuning stays inside.
 
 ## Encapsulated Knowledge
 
 - The decision order and which step wins.
 - The mapping from engine decision fields (`verdict`, `hard_gates`, `unevaluated_required_rules`,
   `gate_reference.status`) to conclusions.
-- The digest predicate for policy, baseline and labels, and when a non-comparable reference is expected.
+- The digest predicate for policy, baseline and labels, when a non-comparable reference is expected, and which owner
+  action a reference needs (from its drift classes only).
 - The rule that integrity failures cannot be cleared by approval.
 - The category of every reason code and the recovery text of every reason.
 - That task origin and finding status are never inputs of enforcement.
@@ -147,8 +148,8 @@ func Unapproved(t Trusted) bool
 
 - `IdentityApproved`: `manifest.Lookup(Upload.Identity)` hits, **and** the report carries a measurement profile,
   **and** `MeasurementProfile.Version == Entry.ProfileVersion`. Any empty identity field is a miss, so unknown never
-  equals unknown. False when there is no report. The approved profile version of engines v2.4.1 and
-  v2.5.0 is `archfit.measurement.v1`; the value lives in the manifest, not here.
+  equals unknown. False when there is no report. The approved profile version of engine v3.0.0
+  is `archfit.measurement.v2`; the value lives in the manifest, not here.
 - `WorkflowApproved`: settings were found, `Binding.WorkflowPath` is not empty, and it equals
   `Trusted.Settings.Workflow`. `Binding.WorkflowPath` comes from the verified OIDC `job_workflow_ref`. A workflow
   file changed by the PR is a protected path, which `gate/inputs` turns into `ApprovalMissing` until an owner approves.
@@ -175,7 +176,7 @@ never empty.
 | 6b   | `PolicyDigests` not empty and `!Accepts(PolicyDigests, Comparison.ConfigHash)`                                  | `policy_mismatch`             | yes            |
 | 6c   | `!Accepts(Trusted.BaselineDigests, Facts.BaselineDigest)` (digest predicate, below)                             | `baseline_mismatch`           | no             |
 | 6d   | `!Accepts(Trusted.LabelsDigests, Facts.LabelsDigest)`                                                           | `labels_mismatch`             | no             |
-| 7a   | `Trusted.BaselineDigests` not empty and not (`GateReference != nil` and `GateReference.Status == "comparable"`) | `baseline_not_comparable`     | yes            |
+| 7a   | `ReferenceConflicts(GateReference, len(Trusted.BaselineDigests) > 0)` (below)                                   | `baseline_not_comparable`     | yes            |
 | 7b   | `Verdict` or `HardGates` holds a value outside its enum                                                         | `engine_error`                | yes            |
 | 7c   | `HardGates != "fail"` and a dead-selector rule exists (below)                                                   | `policy_defect`               | yes            |
 | 7d   | `HardGates != "fail"` and another unevaluated rule exists, or `HardGates == "unmeasured"` and 7c did not hit    | `missing_required_coverage`   | yes            |
@@ -202,12 +203,19 @@ Rules of the table:
   report itself: customer-attested. They catch an honest producer running with the wrong files; they do not close
   the forged-report gap, which is unchanged.
 - All digests are bare lowercase hex SHA-256 as `policy.Digest` returns them; there is no `sha256:` prefix here.
-- Comparability (7a): when the protected ref has a baseline, the engine gate must have compared against it:
-  `GateReference.Status == "comparable"`. A nil reference, `non_comparable` or `not_requested` is
-  `baseline_not_comparable`. When the protected ref has no baseline the engine reports `non_comparable` with
-  "no baseline file was loaded"; that is expected and ignored **[default]** (6c already requires that the producer
+- Comparability (7a): `ReferenceConflicts(ref, baselineTrusted)` is true when the engine's gate reference contradicts
+  the trusted baseline. `baselineTrusted` is true when the protected ref has a baseline. The engine must have
+  compared against that baseline: `GateReference.Status == "comparable"`. A nil reference, `non_comparable` or
+  `not_requested` is a conflict. The engine must also have loaded a baseline exactly when the App trusts one:
+  `GateReference.BaselinePresent == baselineTrusted`. Any other pairing is a conflict, so this step fails closed.
+  When the protected ref has no baseline, the engine reports `non_comparable` with "no baseline file was loaded"
+  and `baseline_present: false`; that is expected and ignored **[default]** (6c already requires that the producer
   used none). Feedback then discloses "no baseline: every current violation blocks". `Comparison.Status` describes
   the report-only `--base` comparison and is never read: `--base` never substitutes the accepted-debt authority.
+- Owner action (`Next` of `baseline_not_comparable`): only `GateReference.Drift` picks it, never the reason text.
+  When every class is `measurement_profile` or `rubric_version`, the action is a re-anchor: run
+  `archfit baseline --reanchor` and open a baseline PR that an architecture owner approves. For any other class, an
+  empty `Drift` and a nil reference, the action is a full capture: run `archfit baseline` and open that PR.
 - An engine error (process exit 3) produces no report. Nothing is uploaded, the pending check stays, and the sweep
   ends it as `missing_upload`. `engine_error` therefore only names a decoded report whose `Verdict` or `HardGates`
   is outside its enum; the strict decoder of `wire/report` normally rejects that first (`report_invalid`), so this
@@ -290,14 +298,14 @@ Categories of integrity, comparability and `Without` codes are **[default]**. `N
 | `blocking_findings`           | architecture | `failure`             | empty                                                                                                 | "Fix the blocking findings and run the validation command."                                                           |
 | `engine_error`                | evidence     | `action_required`     | `verdict=<value> hard_gates=<value>`, each cut to 32 characters                                       | "Read the Archfit workflow log, use the pinned engine image, re-run the workflow."                                    |
 | `missing_required_coverage`   | evidence     | `action_required`     | rule IDs, comma separated; the first 20, then `and N more` **[default]**                              | "Supply the missing evidence for the listed rules. Approval cannot clear this."                                       |
-| `baseline_not_comparable`     | evidence     | `action_required`     | `GateReference.Reasons`: first 3, 200 characters in total **[default]**; `no gate reference` when nil | "Open a baseline PR and get an architecture owner's approval."                                                        |
+| `baseline_not_comparable`     | evidence     | `action_required`     | `GateReference.Reasons`: first 3, 200 characters in total **[default]**; `no gate reference` when nil | Re-anchor or full capture, by `GateReference.Drift` (rules above).                                                    |
 | `baseline_mismatch`           | evidence     | `action_required`     | claimed digest or `none`                                                                              | "Run the workflow with the baseline from the base branch."                                                            |
 | `labels_mismatch`             | evidence     | `action_required`     | claimed digest or `none`                                                                              | "Run the workflow with the labels file from the base branch."                                                         |
 | `policy_mismatch`             | evidence     | `action_required`     | reported `config_hash`                                                                                | "Run the workflow with the policy from the base branch; re-run if the base changed."                                  |
 | `policy_missing`              | governance   | `action_required`     | empty                                                                                                 | "Merge the Archfit policy PR."                                                                                        |
 | `policy_defect`               | governance   | `action_required`     | rule IDs whose selector matches nothing, comma separated; capped like `missing_required_coverage`     | "Fix the selectors of the listed rules in an owner-approved policy PR, or mark an intentional guard rule guard: true." |
 | `unknown_engine_identity`     | evidence     | `action_required`     | empty                                                                                                 | "Use the engine image pinned by the Archfit onboarding workflow."                                                     |
-| `measurement_profile_missing` | evidence     | `action_required`     | empty                                                                                                 | "Use engine v2.3.1 or later; the report carries no measurement profile."                                              |
+| `measurement_profile_missing` | evidence     | `action_required`     | empty                                                                                                 | "Use the engine image pinned by the Archfit onboarding workflow; the report carries no measurement profile."          |
 | `workflow_not_approved`       | evidence     | `action_required`     | empty                                                                                                 | "Upload from the workflow named in `.archfit-app.yaml`."                                                              |
 | `owner_approval_missing`      | governance   | `action_required`     | changed protected paths                                                                               | "An architecture owner must approve this exact commit."                                                               |
 | `settings_missing`            | governance   | `action_required`     | empty                                                                                                 | "Merge the Archfit onboarding PR to add `.archfit-app.yaml`."                                                         |
@@ -483,16 +491,16 @@ type Trusted struct {
 
 <!-- contract: Report, StateSchemaV1, MaxBytes — restated from internal/wire/report/module.md -->
 ```go
-// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v2.3.1 to v2.5.0).
+// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v3.0.0).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
-// Report is the no-source transport form of an engine state report. The decoder knows every key of the state
-// schema of each release it reads: keys listed here are kept (length-capped), the other known keys are validated
-// and dropped (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores),
-// and any key that release's schema does not define is a decode error.
+// Report is the no-source transport form of an engine state report. The decoder knows every key of the engine
+// v3.0.0 state schema: keys listed here are kept (length-capped), the other known keys are validated and dropped
+// (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores), and any key
+// the schema does not define is a decode error.
 type Report struct {
     SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
     Verdict       string               `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
@@ -531,22 +539,27 @@ type UnevaluatedRule struct {
 type Comparison struct {
     Status             string              `json:"status"` // "not_requested" | "comparable" | "non_comparable"
     BaseRef            string              `json:"base_ref,omitempty"`
-    ConfigHash         string              `json:"config_hash,omitempty"` // bare lowercase hex SHA-256 of the raw policy bytes
+    ConfigHash         string              `json:"config_hash,omitempty"`         // bare lowercase hex SHA-256 of the raw policy bytes
+    ClassificationHash string              `json:"classification_hash,omitempty"` // bare lowercase hex SHA-256 of the policy leaves that change measured facts
     ModelHash          string              `json:"model_hash,omitempty"`
     LabelsHash         string              `json:"labels_hash,omitempty"` // canonical hash of approved labels; not reproducible from raw bytes
     RubricVersion      string              `json:"rubric_version,omitempty"`
     MeasurementProfile *MeasurementProfile `json:"measurement_profile,omitempty"` // nil = unknown identity
     Reasons            []string            `json:"reasons"`
-    TaskOriginStatus   string              `json:"task_origin_status,omitempty"`
-    TaskOriginReasons  []string            `json:"task_origin_reasons,omitempty"`
+    OriginStatus       string              `json:"origin_status,omitempty"` // "comparable" | "unknown"; presentation only
+    OriginReasons      []string            `json:"origin_reasons,omitempty"`
 }
 
 // Reference is the engine gate's comparison with the persisted baseline (top-level gate_reference).
-// The engine exposes no baseline digest: only whether the baseline it loaded was comparable, and why not.
+// The engine exposes no baseline digest: only whether it loaded a baseline, whether that one was comparable, and
+// the classes of input that made it not comparable. Reasons are engine text for display; decisions read Status,
+// BaselinePresent and Drift.
 type Reference struct {
-    Status  string   `json:"status"`             // "comparable" | "non_comparable" | "not_requested"
-    BaseRef string   `json:"base_ref,omitempty"` // "baseline"
-    Reasons []string `json:"reasons"`            // e.g. "no baseline file was loaded"
+    Status          string   `json:"status"`             // "comparable" | "non_comparable" | "not_requested"
+    BaseRef         string   `json:"base_ref,omitempty"` // "baseline"
+    Reasons         []string `json:"reasons"`            // e.g. "no baseline file was loaded"
+    Drift           []string `json:"drift,omitempty"`    // closed set DriftClasses; empty when comparable
+    BaselinePresent bool     `json:"baseline_present"`   // the engine loaded a baseline file
 }
 
 type MeasurementProfile struct {
@@ -568,17 +581,18 @@ type Producer struct {
 <!-- contract: Finding, Edge, Endpoint, Location, AgentTask — restated from internal/wire/report/module.md -->
 ```go
 type Finding struct {
-    ID                  string     `json:"id"`        // 32-hex fingerprint, unique per report
-    Kind                string     `json:"kind"`      // "gate" | "advisory"
+    ID                  string     `json:"id"`   // 32-hex fingerprint, unique per report
+    Kind                string     `json:"kind"` // "gate" | "advisory"
     RuleID              string     `json:"rule_id"`
-    Status              string     `json:"status"`    // "new" | "baseline" | "waived" | "expired_waiver" | "fixed"
-    Severity            string     `json:"severity"`  // "critical" | "high" | "medium" | "low"
+    Status              string     `json:"status"`   // "new" | "baseline" | "waived" | "expired_waiver" | "fixed"
+    Severity            string     `json:"severity"` // "critical" | "high" | "medium" | "low"
     Confidence          string     `json:"confidence"`
     Edge                Edge       `json:"edge"`
-    Locations           []Location `json:"locations"` // may be empty; never invent one
+    Locations           []Location `json:"locations"`  // may be empty; never invent one
     Why                 string     `json:"why"`        // engine-authored, single line, length-capped
     Constraint          string     `json:"constraint"` // engine-authored, single line, length-capped
     AllowedAlternatives []string   `json:"allowed_alternatives,omitempty"`
+    Origin              string     `json:"origin,omitempty"` // "introduced" | "pre_existing" | "unknown", only with --base; presentation only
 }
 
 type Edge struct {
@@ -653,11 +667,9 @@ type UnknownFact struct {
 }
 
 type Delta struct {
-    Status           string        `json:"status"`
-    Reasons          []string      `json:"reasons,omitempty"`
-    Metrics          []MetricDelta `json:"metrics,omitempty"`
-    NewFindings      []string      `json:"new_findings,omitempty"`
-    ResolvedFindings []string      `json:"resolved_findings,omitempty"`
+    Status  string        `json:"status"`
+    Reasons []string      `json:"reasons,omitempty"`
+    Metrics []MetricDelta `json:"metrics,omitempty"`
 }
 
 type MetricDelta struct {
@@ -690,8 +702,8 @@ type Seam struct {
     Distance   string `json:"distance"`
     Volatility string `json:"volatility"`
     Severity   string `json:"severity,omitempty"`
-    // Policy is what the engine's policy says about the seam (engine v2.5.0 and later): "violation" | "accepted" |
-    // "advisory" | "allowed" | "observed", a closed set. "" = a report from an earlier release, which has no such key.
+    // Policy is what the engine's policy says about the seam: "violation" | "accepted" |
+    // "advisory" | "allowed" | "observed", a closed set. "" = the key is absent.
     Policy string `json:"policy,omitempty"`
 }
 ```
@@ -705,7 +717,7 @@ type Seam struct {
 ## Change Vectors
 
 - A new reason code, category, or recovery text.
-- A changed decision order or engine mapping after a pilot or an engine release.
+- A changed decision order or engine mapping after a pilot.
 - A new engine decision field: read it here; the wire type changes in `wire/report`.
 - The independent-observation outcome of trust §5, if that feature ever exists.
 
@@ -734,7 +746,7 @@ type Seam struct {
 - Declared restatement: the prefix `selector matches nothing` is the engine's dead-selector reason (engine Wave 0.3,
   the form `selector matches nothing: <side> <glob>`). The engine owns the text and publishes no code for it. If the
   engine changes it, a dead selector reads as missing evidence: still `action_required`, with the evidence recovery
-  text. Trigger to change: an engine release that changes the reason or adds a structured code.
+  text. Trigger to change: an engine change of the reason or a new structured code.
 - `Detail` holds IDs and digests only, so an `Outcome` is safe to log.
 - No panic on any input, including nil `Report`, nil slices and nil pointers inside `Comparison`.
 
@@ -763,6 +775,12 @@ type Seam struct {
 - **Test name**: `TestComparabilityRule`
   **Scenario**: a trusted baseline exists × `GateReference` nil / `comparable` / `non_comparable` / `not_requested`; no trusted baseline and no claimed baseline with `non_comparable` "no baseline file was loaded"; `Comparison.Status` set to `non_comparable` while the gate reference is comparable.
   **Expected behavior**: `baseline_not_comparable` for nil, `non_comparable` and `not_requested`, with at most three reasons and 200 characters in `Detail`; nothing for `comparable`; the no-baseline case is ignored and can be `success`; `Comparison.Status` changes nothing.
+- **Test name**: `TestReferenceConflictsWithTheTrustedBaseline`
+  **Scenario**: table of `ReferenceConflicts(ref, baselineTrusted)`: nil reference with and without a trusted baseline; `comparable` with `BaselinePresent` true or false; `non_comparable` with a trusted baseline and without one.
+  **Expected behavior**: a conflict for a nil reference with a trusted baseline, for any status other than `comparable` with a trusted baseline, and whenever `BaselinePresent` differs from `baselineTrusted`; no conflict otherwise.
+- **Test name**: `TestNextNamesTheOwnerActionFromDrift`
+  **Scenario**: a `non_comparable` reference with `Drift` `measurement_profile`, `rubric_version`, both, `classification_hash`, `model_hash`, `labels_hash`, `reference_incomplete`, `measurement_profile` with `classification_hash`, and none.
+  **Expected behavior**: the re-anchor `Next` when every class is `measurement_profile` or `rubric_version`; the full-capture `Next` for the others.
 - **Test name**: `TestPolicyDigestSet`
   **Scenario**: `ConfigHash` equal to the base digest, to the approved head digest, to neither, and with empty `PolicyDigests`.
   **Expected behavior**: no reason for the first two; `policy_mismatch` for the third; `policy_missing` (and no `policy_mismatch`) for the empty list, also when `Report` is nil.
@@ -791,7 +809,7 @@ type Seam struct {
 ### Integration Contract Tests
 
 - **Test name**: `TestDecideWireFixtures`
-  **Scenario**: every report fixture of the shared corpus `internal/wire/testdata/report` (names and `.expect.json` format per `internal/wire/module.md`; verdict keeps no copy). A fixture with `decode: "ok"` is decoded with `report.Decode` as a document of its producer's engine release (v2.3.1 for a synthetic fixture); one with `decode: "error"` gives a nil `Report`. The facts are the clean facts of that document: identity and workflow approved, settings found, no approval needed, not suspended, no problems, trusted policy digests = the report's `config_hash`, trusted baseline and labels digests = `policy.Digest` of the `.baseline.json` and `.labels.yaml` siblings (an empty list when there is no sibling), and the same digests as the envelope's claims. The fixture's `facts` object then overrides single facts; an unknown key in `facts` or in the expectation fails the test. The corpus must hold the required fixtures: `healthy`, `attention-pass`, `blocked`, `missing-evidence`, `unknown-identity`, `profile-comparable`, `profile-incompatible`, `invalid-input`, `blocker-and-unevaluated`, `non-applicable-rule`, `locations-empty`, `matched-by-populated`, `repair-kinds`, `waiver-expiry-order`.
+  **Scenario**: every report fixture of the shared corpus `internal/wire/testdata/report` (names and `.expect.json` format per `internal/wire/module.md`; verdict keeps no copy). A fixture with `decode: "ok"` is decoded with `report.Decode` as a v3.0.0 document; one with `decode: "error"` gives a nil `Report`. The facts are the clean facts of that document: identity and workflow approved, settings found, no approval needed, not suspended, no problems, trusted policy digests = the report's `config_hash`, trusted baseline and labels digests = `policy.Digest` of the `.baseline.json` and `.labels.yaml` siblings (an empty list when there is no sibling), and the same digests as the envelope's claims. The fixture's `facts` object then overrides single facts; an unknown key in `facts` or in the expectation fails the test. The corpus must hold the required fixtures: `healthy`, `attention-pass`, `blocked`, `missing-evidence`, `unknown-identity`, `profile-comparable`, `profile-incompatible`, `invalid-input`, `blocker-and-unevaluated`, `non-applicable-rule`, `locations-empty`, `matched-by-populated`, `repair-kinds`, `waiver-expiry-order`.
   **Expected behavior**: `Decide` returns exactly `gate.conclusion` and the code sequence `gate.reasons` of each fixture. For the named fixtures the document also fixes the first reason: `success`/`healthy` for `healthy` and `non-applicable-rule`; `success`/`attention_only` for `attention-pass`; `failure`/`blocking_findings` for `blocked`; `action_required`/`missing_required_coverage` for `missing-evidence`; `action_required`/`measurement_profile_missing` for `unknown-identity`; `action_required`/`baseline_not_comparable` for `profile-incompatible`; `action_required`/`report_invalid` for `invalid-input`; `failure` with `missing_required_coverage` second for `blocker-and-unevaluated`.
 - **Test name**: `TestReasonsZeroDeterminesConclusion`
   **Scenario**: all outcomes produced by the other tests.
@@ -818,7 +836,7 @@ type Seam struct {
 ### Behavior Tests
 
 - **Test name**: `TestUnknownIdentityNeverComparesEqual` (T01)
-  **Scenario**: a report without a measurement profile whose reference also lacks one; a profile-less baseline on the protected ref (`gate_reference.status: non_comparable`); a v2.3.0 numerical snapshot baseline (`non_comparable`).
+  **Scenario**: a report without a measurement profile whose reference also lacks one; a profile-less baseline on the protected ref (`gate_reference.status: non_comparable`); a stale numerical snapshot baseline (`non_comparable`).
   **Expected behavior**: `measurement_profile_missing` for the first; `baseline_not_comparable` for the others; none is `success`.
 - **Test name**: `TestHeadEditsCannotWeakenTheGate` (T12)
   **Scenario**: report computed with a head-edited policy, baseline or labels file (the envelope states the head digests), approval missing; then the same with a clean engine decision; then a head-computed report while `inputs` saw no protected path change (`ApprovalNotRequired`).
@@ -833,7 +851,7 @@ type Seam struct {
   **Scenario**: unmeasured hard gates, unevaluated required rule with `verdict: needs_attention`, out-of-enum verdict, nil report, fork, unsupported event (`workflow_run`), every `Without` code.
   **Expected behavior**: `action_required` each time with its own reason.
 - **Test name**: `TestNonComparableBaselineNeedsOwnerPR` (T15)
-  **Scenario**: model or profile change makes the gate reference `non_comparable` while `verdict` is `healthy` and a baseline exists on the protected ref.
+  **Scenario**: a model or profile change makes the gate reference `non_comparable` while `verdict` is `healthy` and a baseline exists on the protected ref.
   **Expected behavior**: `action_required`, `baseline_not_comparable`; `Next` names the owner-approved baseline PR.
 - **Test name**: `TestBlockerKeepsUnevaluatedRules` (T02)
   **Scenario**: the blocker-plus-unevaluated fixture.

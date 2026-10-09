@@ -169,7 +169,7 @@ type Node struct {
 }
 
 // LinkStatus is what the report says about a module pair: the engine's seam policy status when the report carries
-// one (engine v2.5.0 and later), else what the findings on the pair say. It is a display fact, never a check input.
+// one, else what the findings on the pair say. It is a display fact, never a check input.
 type LinkStatus string
 
 const (
@@ -637,7 +637,7 @@ func Digest(raw []byte) string
 
 <!-- contract: Schema — restated from internal/wire/policy/module.md -->
 ```go
-// Schema returns the engine v2.5.0 config JSON Schema, embedded unchanged, for the editor.
+// Schema returns the engine v3.0.0 config JSON Schema, embedded unchanged, for the editor.
 func Schema() []byte
 ```
 
@@ -729,11 +729,11 @@ func Render(s Settings) []byte
 - **Volatility**: high (this side), moderate (wire/report)
 - **Balanced?**: yes — contract coupling
 - **Shared knowledge**: ui downloads the artifact with `MaxBytes` as the cap, calls `Decode`, and hands the `Report` to
-  `graph.Build` unread. The artifact holds the raw engine state JSON; `Decode` validates it against the state schema of
-  an engine release and reduces it to the no-source form, so fields the decoder drops (measurement, `matched_by`, task
+  `graph.Build` unread. The artifact holds the raw engine state JSON; `Decode` validates it against the engine v3.0.0 state
+  schema and reduces it to the no-source form, so fields the decoder drops (measurement, `matched_by`, task
   declarations, metric provenance, seam scores) never reach a template and ui never renders them. ui parses the artifact
-  in no other way. The artifact comes without the envelope that names its release, so ui passes the last of
-  `EngineVersions`: the newest key set holds every older one, and the graph only displays what it reads.
+  in no other way. The artifact comes without the envelope that names its release, so ui passes the one release of
+  `EngineVersions`, `v3.0.0`.
   `StateSchemaV1` is the constant `Decode` checks. For this module each nested type is opaque:
   - `Decision` is an opaque part of `Report` for this module.
   - `Comparison` is an opaque part of `Report` for this module.
@@ -746,16 +746,16 @@ func Render(s Settings) []byte
 
 <!-- contract: Report, StateSchemaV1, MaxBytes — restated from internal/wire/report/module.md -->
 ```go
-// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v2.3.1 to v2.5.0).
+// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v3.0.0).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
-// Report is the no-source transport form of an engine state report. The decoder knows every key of the state
-// schema of each release it reads: keys listed here are kept (length-capped), the other known keys are validated
-// and dropped (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores),
-// and any key that release's schema does not define is a decode error.
+// Report is the no-source transport form of an engine state report. The decoder knows every key of the engine
+// v3.0.0 state schema: keys listed here are kept (length-capped), the other known keys are validated and dropped
+// (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores), and any key
+// the schema does not define is a decode error.
 type Report struct {
     SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
     Verdict       string               `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
@@ -773,7 +773,7 @@ type Report struct {
 <!-- contract: Decode — restated from internal/wire/report/module.md -->
 ```go
 // Decode strictly parses payload as the no-source transport of the state document engineVersion emits. It
-// fails on: an engineVersion outside EngineVersions, size over MaxBytes, a key that release's state schema
+// fails on: an engineVersion outside EngineVersions, size over MaxBytes, a key the state schema
 // does not define, wrong schema_version, an enum value outside its set, strings over the per-field caps,
 // absolute or parent-escaping paths, multi-line text, or duplicate finding IDs.
 func Decode(payload []byte, engineVersion string) (Report, error)
@@ -781,8 +781,8 @@ func Decode(payload []byte, engineVersion string) (Report, error)
 
 <!-- contract: EngineVersions — restated from internal/wire/report/module.md -->
 ```go
-// EngineVersions returns the engine releases whose state document Decode reads, oldest first. Each emits
-// StateSchemaV1; a later release only adds optional keys, so the last key set holds every earlier one.
+// EngineVersions returns the engine releases whose state document Decode reads: v3.0.0 only. It emits
+// StateSchemaV1.
 func EngineVersions() []string
 ```
 
@@ -902,14 +902,13 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
 - Ready: `Proposals.Get`; head must equal `head_sha`, state must be `DraftOpen`; then `Proposals.Ready(number)`. ui never merges:
   publication is the merge on GitHub under the customer's ruleset and owner approval, the same path as a GitHub-first edit.
 - Graph: settings → `LatestRun(Settings.Workflow, DefaultBranch)` → `Artifact(run.ID, "archfit-report", report.MaxBytes)` →
-  `report.Decode` (with the newest release of `report.EngineVersions`: the artifact names none, and the newest key set
-  holds every older one) → policy text (open draft of the user, else default branch) → `graph.Build`. The artifact is the raw engine
+  `report.Decode` (with the release of `report.EngineVersions`, `v3.0.0`: the artifact names none) → policy text (open draft of the user, else default branch) → `graph.Build`. The artifact is the raw engine
   state JSON; only the decoded no-source `Report` is used. When the chosen policy text fails `policy.Modules` (a broken draft
   pushed on GitHub), ui builds from the default-branch policy instead, the last valid text, and forces the stale banner with
   "the draft does not parse" **[default]**. No run or artifact (GitHub retention): "no report available". Decode error:
   "report unavailable"; never a partial graph. The `View` is embedded as JSON in a `script type="application/json"` element.
   Each link is drawn and listed with its `Status` (`violation`, `accepted`, `advisory`, `allowed`, `observed`), which is also
-  its CSS class. `allowed` comes only from the engine's `seams[].policy` (engine v2.5.0 and later); the page explains that
+  its CSS class. `allowed` comes only from the engine's `seams[].policy`; the page explains that
   accepted debt is never allowed. When `View.Incomplete`, a banner says the report's hard gates did not
   pass or not all required rules were evaluated, so an observed link can still break a rule.
 - Assist: authorize `write`; if `content` differs from the file at `head_sha`, save it first (same rules as Save) and use the
@@ -1024,8 +1023,8 @@ their interfaces except where a test says otherwise. The clock is injected.
   the incomplete banner; marker strings placed in fields the decoder drops (`matched_by`, measurement, task declarations)
   appear nowhere in the page.
 - **Test name**: `TestGraphPageShowsTheEngineSeamPolicy`
-  **Scenario**: the unmodified v2.5.0 capture `real-seam-policy-v250` of the shared wire corpus as the `archfit-report` artifact.
-  **Expected behavior**: the page decodes it (newest release); the embedded JSON equals `graph.Build(report, policy)`; the links
+  **Scenario**: the unmodified capture `real-seam-policy` of the shared wire corpus as the `archfit-report` artifact.
+  **Expected behavior**: the page decodes it; the embedded JSON equals `graph.Build(report, policy)`; the links
   table has rows of class `violation`, `accepted`, `allowed` and `observed`.
 - **Test name**: `TestConsentRecordAndRevoke`
   **Scenario**: an administrator records `managed_llm`, then revokes it.

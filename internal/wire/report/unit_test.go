@@ -501,3 +501,24 @@ func TestValidationCommandRules(t *testing.T) {
 		{"33 commands", setter(many, "agent_tasks", 0, "validation"), loc},
 	})
 }
+
+// TestRemovedV2KeysAreUnknown: the keys that v3.0.0 renamed or removed are unknown keys, so a report that carries
+// one of them is refused rather than read with the key ignored.
+func TestRemovedV2KeysAreUnknown(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		path []any
+		val  any
+	}{
+		{"task_origin_status", []any{"comparison", "task_origin_status"}, "comparable"},
+		{"delta new_findings", []any{"dimensions", "drift", "delta", "new_findings"}, []any{}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			doc := baseDoc(t)
+			set(t, doc, tt.val, tt.path...)
+			if _, err := Decode(encode(t, doc), fixtureEngine); err == nil {
+				t.Errorf("Decode accepted %s, a key of an older engine", tt.name)
+			}
+		})
+	}
+}

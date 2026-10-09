@@ -319,13 +319,14 @@ func shadowFields(loc string, t reflect.Type, visit func(loc string, f reflect.S
 }
 
 // decisionCore is what the gate decides from (gate/verdict Decide, the identity check, the receipt) plus the two
-// fields of Finding.Active.
+// fields of Finding.Active. The gate reads the drift classes and the baseline presence of the gate reference.
 var decisionCore = []string{
 	"report.schema_version", "report.verdict", "report.decision", "report.decision.hard_gates",
 	"report.decision.unevaluated_required_rules", "report.decision.unevaluated_required_rules[].rule_id",
 	"report.decision.unevaluated_required_rules[].reason", "report.comparison", "report.comparison.config_hash",
 	"report.comparison.measurement_profile", "report.comparison.measurement_profile.version",
 	"report.gate_reference", "report.gate_reference.status", "report.gate_reference.reasons",
+	"report.gate_reference.drift", "report.gate_reference.baseline_present",
 	"report.findings", "report.findings[].id", "report.findings[].kind", "report.findings[].status",
 }
 

@@ -297,7 +297,7 @@ func ReferenceConflicts(ref *report.Reference, baselineTrusted bool) bool {
 	if ref == nil {
 		return baselineTrusted
 	}
-	return baselineTrusted && ref.Status != refComparable || ref.BaselinePresent != baselineTrusted
+	return (baselineTrusted && ref.Status != refComparable) || ref.BaselinePresent != baselineTrusted
 }
 
 // referenceNext names the owner action from the drift classes only. A class a re-anchor may cross (a scoring epoch

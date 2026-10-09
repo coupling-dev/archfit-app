@@ -19,7 +19,7 @@ keeps in the Store is a short-lived lease per head SHA, because GitHub has no co
 - Read back the gate check of a head SHA as `CheckState`, including the parsed `Receipt`.
 - Add or refresh the waiver-expiry notice in the comment.
 - Render feedback that is useful without an LLM: verdict, reason and next action first; findings with rule,
-  modules and locations; introduced versus accepted debt; dimensions; a mandatory evidence-gap section;
+  modules and locations; active versus accepted debt; dimensions; a mandatory evidence-gap section;
   input digests and measurement identity; per-dimension completeness and the customer-attested trust statement;
   validation command replay;
   a marker-delimited JSON block of agent tasks that a coding agent on the PR can act on.
@@ -303,15 +303,16 @@ receipt marker. Block G is in the gate summary only.
 4. Waiver notice section (owned by `Warn`).
 5. Findings: blocking first. A finding is shown as blocking when `Finding.Active()` of `wire/report` is true
    (that package owns the status vocabulary; feedback has no formula of its own) **[default, display only: the
-   verdict never reads findings]**. Groups by `Status`: "Introduced"
+   verdict never reads findings]**. Groups by `Status`: "Active"
    (`new`, `expired_waiver`), "Accepted debt — display only" (`baseline`, `waived`), "Fixed" (`fixed`). Per finding:
-   rule ID, severity, `Edge.From.Module` → `Edge.To.Module` (with `Path` when set), locations as `file:line`, `Why`,
+   rule ID, severity, `Edge.From.Module` → `Edge.To.Module` (with `Path` when set), `Origin` when set (shown as
+   ", origin X", display only), locations as `file:line`, `Why`,
    then the policy-permitted repair: `Constraint` and `AllowedAlternatives`. feedback adds no repair of its own and
    invents no access route. At most 50 per group, then "and N more" **[default]**. Grouping never changes the verdict.
 6. Dimensions: the nine engine keys of `Report.Dimensions` in the engine's fixed order (`intent`, `structure`,
    `modularity`, `coupling`, `change_locality`, `complexity`, `testability`, `operations`, `drift`). Per dimension:
    completeness = `Status` (`measured`, `partial`, `unmeasured`) with `Coverage` as "observed/total (basis)",
-   `Confidence`, `Gate`, and the change from `Delta` (status, metric changes, counts of new and resolved findings)
+   `Confidence`, `Gate`, and the change from `Delta` (status and metric changes)
    when present. Measurement trust is not an engine field: the constant "customer-attested" is printed once for the
    block. A missing key is printed as "not reported"; keys outside the nine cannot pass the decoder.
 7. Evidence gaps, always present: `Decision.UnevaluatedRequiredRules` with their reasons (a dead selector shows its
@@ -581,7 +582,7 @@ type Settings struct {
 - **Volatility**: high (feedback side); the schema is moderate
 - **Balanced?**: yes
 - **Shared knowledge**: every string in a `Report` is engine-authored, single-line and length-capped by the
-  decoder, yet still untrusted for Markdown. `Origin` sorts presentation only. `Locations` may be empty.
+  decoder, yet still untrusted for Markdown. `Origin` is shown on a finding line and in the task block; it is presentation only. `Locations` may be empty.
   A report has no exit code, no `needs_attention` flag, no per-dimension trust and no single validation command.
   `Seam` is an opaque part of `Report` for this module and is not rendered. `Metric` values are shown only through `Delta`. `StateSchemaV1` is the schema constant the decoder enforced.
   `Finding.Active()` is the single definition of "active gate finding"; feedback calls it for the "blocking" label,
@@ -599,16 +600,16 @@ func (f Finding) Active() bool
 
 <!-- contract: Report, StateSchemaV1, MaxBytes — restated from internal/wire/report/module.md -->
 ```go
-// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v2.3.1 to v2.5.0).
+// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v3.0.0).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
-// Report is the no-source transport form of an engine state report. The decoder knows every key of the state
-// schema of each release it reads: keys listed here are kept (length-capped), the other known keys are validated
-// and dropped (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores),
-// and any key that release's schema does not define is a decode error.
+// Report is the no-source transport form of an engine state report. The decoder knows every key of the engine
+// v3.0.0 state schema: keys listed here are kept (length-capped), the other known keys are validated and dropped
+// (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores), and any key
+// the schema does not define is a decode error.
 type Report struct {
     SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
     Verdict       string               `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
@@ -647,22 +648,27 @@ type UnevaluatedRule struct {
 type Comparison struct {
     Status             string              `json:"status"` // "not_requested" | "comparable" | "non_comparable"
     BaseRef            string              `json:"base_ref,omitempty"`
-    ConfigHash         string              `json:"config_hash,omitempty"` // bare lowercase hex SHA-256 of the raw policy bytes
+    ConfigHash         string              `json:"config_hash,omitempty"`         // bare lowercase hex SHA-256 of the raw policy bytes
+    ClassificationHash string              `json:"classification_hash,omitempty"` // bare lowercase hex SHA-256 of the policy leaves that change measured facts
     ModelHash          string              `json:"model_hash,omitempty"`
     LabelsHash         string              `json:"labels_hash,omitempty"` // canonical hash of approved labels; not reproducible from raw bytes
     RubricVersion      string              `json:"rubric_version,omitempty"`
     MeasurementProfile *MeasurementProfile `json:"measurement_profile,omitempty"` // nil = unknown identity
     Reasons            []string            `json:"reasons"`
-    TaskOriginStatus   string              `json:"task_origin_status,omitempty"`
-    TaskOriginReasons  []string            `json:"task_origin_reasons,omitempty"`
+    OriginStatus       string              `json:"origin_status,omitempty"` // "comparable" | "unknown"; presentation only
+    OriginReasons      []string            `json:"origin_reasons,omitempty"`
 }
 
 // Reference is the engine gate's comparison with the persisted baseline (top-level gate_reference).
-// The engine exposes no baseline digest: only whether the baseline it loaded was comparable, and why not.
+// The engine exposes no baseline digest: only whether it loaded a baseline, whether that one was comparable, and
+// the classes of input that made it not comparable. Reasons are engine text for display; decisions read Status,
+// BaselinePresent and Drift.
 type Reference struct {
-    Status  string   `json:"status"`             // "comparable" | "non_comparable" | "not_requested"
-    BaseRef string   `json:"base_ref,omitempty"` // "baseline"
-    Reasons []string `json:"reasons"`            // e.g. "no baseline file was loaded"
+    Status          string   `json:"status"`             // "comparable" | "non_comparable" | "not_requested"
+    BaseRef         string   `json:"base_ref,omitempty"` // "baseline"
+    Reasons         []string `json:"reasons"`            // e.g. "no baseline file was loaded"
+    Drift           []string `json:"drift,omitempty"`    // closed set DriftClasses; empty when comparable
+    BaselinePresent bool     `json:"baseline_present"`   // the engine loaded a baseline file
 }
 
 type MeasurementProfile struct {
@@ -684,17 +690,18 @@ type Producer struct {
 <!-- contract: Finding, Edge, Endpoint, Location, AgentTask — restated from internal/wire/report/module.md -->
 ```go
 type Finding struct {
-    ID                  string     `json:"id"`        // 32-hex fingerprint, unique per report
-    Kind                string     `json:"kind"`      // "gate" | "advisory"
+    ID                  string     `json:"id"`   // 32-hex fingerprint, unique per report
+    Kind                string     `json:"kind"` // "gate" | "advisory"
     RuleID              string     `json:"rule_id"`
-    Status              string     `json:"status"`    // "new" | "baseline" | "waived" | "expired_waiver" | "fixed"
-    Severity            string     `json:"severity"`  // "critical" | "high" | "medium" | "low"
+    Status              string     `json:"status"`   // "new" | "baseline" | "waived" | "expired_waiver" | "fixed"
+    Severity            string     `json:"severity"` // "critical" | "high" | "medium" | "low"
     Confidence          string     `json:"confidence"`
     Edge                Edge       `json:"edge"`
-    Locations           []Location `json:"locations"` // may be empty; never invent one
+    Locations           []Location `json:"locations"`  // may be empty; never invent one
     Why                 string     `json:"why"`        // engine-authored, single line, length-capped
     Constraint          string     `json:"constraint"` // engine-authored, single line, length-capped
     AllowedAlternatives []string   `json:"allowed_alternatives,omitempty"`
+    Origin              string     `json:"origin,omitempty"` // "introduced" | "pre_existing" | "unknown", only with --base; presentation only
 }
 
 type Edge struct {
@@ -769,11 +776,9 @@ type UnknownFact struct {
 }
 
 type Delta struct {
-    Status           string        `json:"status"`
-    Reasons          []string      `json:"reasons,omitempty"`
-    Metrics          []MetricDelta `json:"metrics,omitempty"`
-    NewFindings      []string      `json:"new_findings,omitempty"`
-    ResolvedFindings []string      `json:"resolved_findings,omitempty"`
+    Status  string        `json:"status"`
+    Reasons []string      `json:"reasons,omitempty"`
+    Metrics []MetricDelta `json:"metrics,omitempty"`
 }
 
 type MetricDelta struct {
@@ -806,8 +811,8 @@ type Seam struct {
     Distance   string `json:"distance"`
     Volatility string `json:"volatility"`
     Severity   string `json:"severity,omitempty"`
-    // Policy is what the engine's policy says about the seam (engine v2.5.0 and later): "violation" | "accepted" |
-    // "advisory" | "allowed" | "observed", a closed set. "" = a report from an earlier release, which has no such key.
+    // Policy is what the engine's policy says about the seam: "violation" | "accepted" |
+    // "advisory" | "allowed" | "observed", a closed set. "" = the key is absent.
     Policy string `json:"policy,omitempty"`
 }
 ```
@@ -1079,7 +1084,7 @@ type Swap struct {
   owner is `wire/report`, whose decoder accepts exactly these keys and exports no list of them. If the two drift, a
   new engine dimension decodes but is not printed, and a removed one prints "not reported". Trigger to change: a new
   engine dimension; remove the list when `wire/report` exports the keys in order.
-- Task origin and finding status are presentation only; grouping never hides a blocking finding. The "blocking" label
+- Origin and finding status are presentation only; grouping never hides a blocking finding. The "blocking" label
   is `Finding.Active()` of `wire/report`, a display heuristic here; the conclusion always comes from `Outcome`.
 - Engine-authored strings are sanitized before rendering: `<!--`, `-->` and backticks are removed, `<` and `>`
   HTML-escaped, newlines dropped. The agent task JSON is encoded with HTML escaping (`<`). So no report
@@ -1138,7 +1143,7 @@ Golden files hold rendered bodies for the wire fixtures.
   **Expected behavior**: "stated by the producer" on both lines; "from the protected ref" on the mismatched line only; "from the protected ref; no upload" on both lines; "no baseline" and "no labels file" without a label. "stated by the producer" never appears without an upload.
 - **Test name**: `TestIdentityLine`
   **Scenario**: a full `Identity`; the zero `Identity` (sweep publication); an identity whose fields contain marker text.
-  **Expected behavior**: "claimed: engine v2.3.1, image sha256:…, linux/amd64"; "no upload"; sanitized text; never the word "approved" or "verified".
+  **Expected behavior**: "claimed: engine v3.0.0, image sha256:…, linux/amd64"; "no upload"; sanitized text; never the word "approved" or "verified".
 - **Test name**: `TestAnnotationSelection`
   **Scenario**: findings with no, one and many locations, `Line == 0`, live `advisory` and `gate` findings, `baseline`, `waived` and `fixed` findings, and a finding in a file the PR did not change; published on a pull request whose file list names four files, with a truncated list, on a push, with 200 live locations, and with no live located finding. The fake rejects more than 50 annotations in one request, as the client does.
   **Expected behavior**: on the PR only the changed files: whole-file first as `failure` on line 1, then the blocking findings, then the advisory in report order as `warning`; no annotation for `locations: []`, accepted debt, fixed findings or the unchanged file; requests of 50 then 21 on the state check (none on the gate check); one file-list call. The truncated list and the push annotate every file, and the push lists none. 200 locations give 150 annotations, blocking first, in requests of 50. Without a possible annotation the file list is not read.

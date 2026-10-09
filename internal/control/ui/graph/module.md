@@ -61,7 +61,7 @@ type Node struct {
 }
 
 // LinkStatus is what the report says about a module pair: the engine's seam policy status when the report carries
-// one (engine v2.5.0 and later), else what the findings on the pair say. It is a display fact, never a check input.
+// one, else what the findings on the pair say. It is a display fact, never a check input.
 type LinkStatus string
 
 const (
@@ -100,11 +100,11 @@ func Build(rep Report, policy []byte) View
    On a duplicate name the first wins.
 2. Links: one per distinct `(FromModule, ToModule)` of `rep.Seams`. Duplicates merge **[default]**: `Count` is the sum
    of `Edges`. A seam with an empty endpoint is dropped. A seam alone, without `Policy`, gives `observed`.
-3. Engine status: when a seam of the pair has a non-empty `Policy` (engine v2.5.0 and later; wire/report admits only
-   `violation`, `accepted`, `advisory`, `allowed`, `observed`), the link's `Status` is that value, the strongest one
+3. Engine status: when a seam of the pair has a non-empty `Policy` (wire/report admits only `violation`, `accepted`,
+   `advisory`, `allowed`, `observed`), the link's `Status` is that value, the strongest one
    when duplicate seams of the pair differ, and rule 4 does not apply to the pair. Graph shows the engine's status; it
    does not check it against the findings.
-4. Finding status, for a pair no seam `Policy` decided (every pair of a report from an engine before v2.5.0):
+4. Finding status, for a pair no seam `Policy` decided (the `Policy` key is optional):
    `Status` comes from the findings with `Edge.From.Module == From` and `Edge.To.Module == To`. Each finding gives one
    status: `violation` when `Finding.Active()` is true (the rule wire/report owns: today a gate finding with status `new`
    or `expired_waiver`); none when its status is `fixed` (it says nothing about the current tree); `accepted` for a
@@ -131,11 +131,11 @@ func Build(rep Report, policy []byte) View
     like `Stale`.
 
 Stated limits **[default]**: only the engine says "allowed". A relationship the policy permits but the engine did
-not observe is not in a report, and graph does not interpret policy rules. In a report from an engine before v2.5.0
-no link is `allowed`, and `observed` means only that no current finding names the pair: a rule may still permit it.
-In a v2.5.0 report `observed` is the engine's: no active finding names the pair and no blocking rule permits it; a
-baselined or waived advisory can still name the pair. In a v2.5.0 report a pair
-that only a finding names (no seam) keeps the finding status of rule 4.
+not observe is not in a report, and graph does not interpret policy rules. When a seam carries `Policy`, `observed` is
+the engine's: no active finding names the pair and no blocking rule permits it; a baselined or waived advisory can
+still name the pair. When no seam of the pair carries `Policy`, no link is `allowed`, and `observed` means only that
+no current finding names the pair: a rule may still permit it. A pair that only a finding names (no seam) keeps the
+finding status of rule 4.
 
 ## Integrations
 
@@ -167,16 +167,16 @@ that only a finding names (no seam) keeps the finding status of rule 4.
 
 <!-- contract: Report, StateSchemaV1, MaxBytes — restated from internal/wire/report/module.md -->
 ```go
-// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v2.3.1 to v2.5.0).
+// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v3.0.0).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
-// Report is the no-source transport form of an engine state report. The decoder knows every key of the state
-// schema of each release it reads: keys listed here are kept (length-capped), the other known keys are validated
-// and dropped (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores),
-// and any key that release's schema does not define is a decode error.
+// Report is the no-source transport form of an engine state report. The decoder knows every key of the engine
+// v3.0.0 state schema: keys listed here are kept (length-capped), the other known keys are validated and dropped
+// (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores), and any key
+// the schema does not define is a decode error.
 type Report struct {
     SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
     Verdict       string               `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
@@ -215,22 +215,27 @@ type UnevaluatedRule struct {
 type Comparison struct {
     Status             string              `json:"status"` // "not_requested" | "comparable" | "non_comparable"
     BaseRef            string              `json:"base_ref,omitempty"`
-    ConfigHash         string              `json:"config_hash,omitempty"` // bare lowercase hex SHA-256 of the raw policy bytes
+    ConfigHash         string              `json:"config_hash,omitempty"`         // bare lowercase hex SHA-256 of the raw policy bytes
+    ClassificationHash string              `json:"classification_hash,omitempty"` // bare lowercase hex SHA-256 of the policy leaves that change measured facts
     ModelHash          string              `json:"model_hash,omitempty"`
     LabelsHash         string              `json:"labels_hash,omitempty"` // canonical hash of approved labels; not reproducible from raw bytes
     RubricVersion      string              `json:"rubric_version,omitempty"`
     MeasurementProfile *MeasurementProfile `json:"measurement_profile,omitempty"` // nil = unknown identity
     Reasons            []string            `json:"reasons"`
-    TaskOriginStatus   string              `json:"task_origin_status,omitempty"`
-    TaskOriginReasons  []string            `json:"task_origin_reasons,omitempty"`
+    OriginStatus       string              `json:"origin_status,omitempty"` // "comparable" | "unknown"; presentation only
+    OriginReasons      []string            `json:"origin_reasons,omitempty"`
 }
 
 // Reference is the engine gate's comparison with the persisted baseline (top-level gate_reference).
-// The engine exposes no baseline digest: only whether the baseline it loaded was comparable, and why not.
+// The engine exposes no baseline digest: only whether it loaded a baseline, whether that one was comparable, and
+// the classes of input that made it not comparable. Reasons are engine text for display; decisions read Status,
+// BaselinePresent and Drift.
 type Reference struct {
-    Status  string   `json:"status"`             // "comparable" | "non_comparable" | "not_requested"
-    BaseRef string   `json:"base_ref,omitempty"` // "baseline"
-    Reasons []string `json:"reasons"`            // e.g. "no baseline file was loaded"
+    Status          string   `json:"status"`             // "comparable" | "non_comparable" | "not_requested"
+    BaseRef         string   `json:"base_ref,omitempty"` // "baseline"
+    Reasons         []string `json:"reasons"`            // e.g. "no baseline file was loaded"
+    Drift           []string `json:"drift,omitempty"`    // closed set DriftClasses; empty when comparable
+    BaselinePresent bool     `json:"baseline_present"`   // the engine loaded a baseline file
 }
 
 type MeasurementProfile struct {
@@ -252,17 +257,18 @@ type Producer struct {
 <!-- contract: Finding, Edge, Endpoint, Location, AgentTask — restated from internal/wire/report/module.md -->
 ```go
 type Finding struct {
-    ID                  string     `json:"id"`        // 32-hex fingerprint, unique per report
-    Kind                string     `json:"kind"`      // "gate" | "advisory"
+    ID                  string     `json:"id"`   // 32-hex fingerprint, unique per report
+    Kind                string     `json:"kind"` // "gate" | "advisory"
     RuleID              string     `json:"rule_id"`
-    Status              string     `json:"status"`    // "new" | "baseline" | "waived" | "expired_waiver" | "fixed"
-    Severity            string     `json:"severity"`  // "critical" | "high" | "medium" | "low"
+    Status              string     `json:"status"`   // "new" | "baseline" | "waived" | "expired_waiver" | "fixed"
+    Severity            string     `json:"severity"` // "critical" | "high" | "medium" | "low"
     Confidence          string     `json:"confidence"`
     Edge                Edge       `json:"edge"`
-    Locations           []Location `json:"locations"` // may be empty; never invent one
+    Locations           []Location `json:"locations"`  // may be empty; never invent one
     Why                 string     `json:"why"`        // engine-authored, single line, length-capped
     Constraint          string     `json:"constraint"` // engine-authored, single line, length-capped
     AllowedAlternatives []string   `json:"allowed_alternatives,omitempty"`
+    Origin              string     `json:"origin,omitempty"` // "introduced" | "pre_existing" | "unknown", only with --base; presentation only
 }
 
 type Edge struct {
@@ -344,11 +350,9 @@ type UnknownFact struct {
 }
 
 type Delta struct {
-    Status           string        `json:"status"`
-    Reasons          []string      `json:"reasons,omitempty"`
-    Metrics          []MetricDelta `json:"metrics,omitempty"`
-    NewFindings      []string      `json:"new_findings,omitempty"`
-    ResolvedFindings []string      `json:"resolved_findings,omitempty"`
+    Status  string        `json:"status"`
+    Reasons []string      `json:"reasons,omitempty"`
+    Metrics []MetricDelta `json:"metrics,omitempty"`
 }
 
 type MetricDelta struct {
@@ -381,8 +385,8 @@ type Seam struct {
     Distance   string `json:"distance"`
     Volatility string `json:"volatility"`
     Severity   string `json:"severity,omitempty"`
-    // Policy is what the engine's policy says about the seam (engine v2.5.0 and later): "violation" | "accepted" |
-    // "advisory" | "allowed" | "observed", a closed set. "" = a report from an earlier release, which has no such key.
+    // Policy is what the engine's policy says about the seam: "violation" | "accepted" |
+    // "advisory" | "allowed" | "observed", a closed set. "" = the key is absent.
     Policy string `json:"policy,omitempty"`
 }
 ```
@@ -492,20 +496,20 @@ Nothing is mocked.
 ### Integration Contract Tests
 
 - **Test name**: `TestBuildMapsReportToView`
-  **Scenario**: the blocked wire fixture (engine v2.3.1 state JSON decoded by `report.Decode`) with the policy file it was computed from.
+  **Scenario**: the blocked wire fixture (engine v3.0.0 state JSON decoded by `report.Decode`) with the policy file it was computed from.
   **Expected behavior**: nodes equal the policy's modules with correct `Layer` and `PolicyLine`; links equal the fixture's
   seams; exactly the pairs named by active gate findings are violations; `Stale` false.
 - **Test name**: `TestStatusFromRealReports`
-  **Scenario**: engine captures of the shared corpus `internal/wire/testdata/report`, each decoded as a document of its
-  release: the v2.3.1 captures `real-blocked-forbidden-and-allowed`, `real-baselined-comparable`, `real-waiver-active`,
-  `real-waiver-expired`, and the v2.5.0 capture `real-blocked-no-baseline-v250` (`seams[].policy: violation`).
-  **Expected behavior**: `a → b` violation and `a → c` advisory; `a → b` accepted (a baselined forbidden edge is never
+  **Scenario**: engine captures of the shared corpus `internal/wire/testdata/report`: `real-blocked-forbidden-and-allowed`,
+  `real-baselined-comparable`, `real-waiver-active`, `real-waiver-expired` and `real-blocked-no-baseline`
+  (`seams[].policy: violation`).
+  **Expected behavior**: `a → b` violation and `a → c` observed; `a → b` accepted (a baselined forbidden edge is never
   allowed); accepted; violation; violation.
 - **Test name**: `TestStatusFromEngineSeamPolicy`
-  **Scenario**: the v2.5.0 capture `real-seam-policy-v250` (the engine's hexagonal `map` scenario) with its policy file.
+  **Scenario**: the capture `real-seam-policy` (the engine's hexagonal `map` scenario) with its policy file.
   **Expected behavior**: the six links with the engine's statuses, `Count` 1 each: `api → billing` accepted,
   `api → stripe`, `orders → billing` and `stripe → orders` allowed, `billing → stripe` violation, `orders → audit`
-  observed; `Stale` false; `Incomplete` true (two required rules not evaluated).
+  observed; `Stale` false; `Incomplete` true (required rules not evaluated).
 - **Test name**: `TestBuildIsDeterministic`
   **Scenario**: build twice from the same input, and once with seams and findings shuffled.
   **Expected behavior**: three identical views, nodes sorted by name, links by `(From, To)`.

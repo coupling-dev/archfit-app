@@ -560,7 +560,7 @@ func Withdrawal(t Target, current CheckState, tr Trusted) *Publication
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high (gate side); the manifest is moderate
 - **Balanced?**: yes
-- **Shared knowledge**: the manifest is locked in the binary (engine v2.5.0 current, v2.4.1 still approved). `Lookup`
+- **Shared knowledge**: the manifest is locked in the binary (engine v3.0.0, `linux/amd64` and `linux/arm64`). `Lookup`
   is an exact match on all three fields; any empty field is a miss, so unknown never equals unknown. `Current` is not
   used here.
 
@@ -607,16 +607,16 @@ func Current() Entry
 
 <!-- contract: Report, StateSchemaV1, MaxBytes — restated from internal/wire/report/module.md -->
 ```go
-// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v2.3.1 to v2.5.0).
+// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v3.0.0).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
-// Report is the no-source transport form of an engine state report. The decoder knows every key of the state
-// schema of each release it reads: keys listed here are kept (length-capped), the other known keys are validated
-// and dropped (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores),
-// and any key that release's schema does not define is a decode error.
+// Report is the no-source transport form of an engine state report. The decoder knows every key of the engine
+// v3.0.0 state schema: keys listed here are kept (length-capped), the other known keys are validated and dropped
+// (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores), and any key
+// the schema does not define is a decode error.
 type Report struct {
     SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
     Verdict       string               `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
@@ -637,22 +637,27 @@ type Report struct {
 type Comparison struct {
     Status             string              `json:"status"` // "not_requested" | "comparable" | "non_comparable"
     BaseRef            string              `json:"base_ref,omitempty"`
-    ConfigHash         string              `json:"config_hash,omitempty"` // bare lowercase hex SHA-256 of the raw policy bytes
+    ConfigHash         string              `json:"config_hash,omitempty"`         // bare lowercase hex SHA-256 of the raw policy bytes
+    ClassificationHash string              `json:"classification_hash,omitempty"` // bare lowercase hex SHA-256 of the policy leaves that change measured facts
     ModelHash          string              `json:"model_hash,omitempty"`
     LabelsHash         string              `json:"labels_hash,omitempty"` // canonical hash of approved labels; not reproducible from raw bytes
     RubricVersion      string              `json:"rubric_version,omitempty"`
     MeasurementProfile *MeasurementProfile `json:"measurement_profile,omitempty"` // nil = unknown identity
     Reasons            []string            `json:"reasons"`
-    TaskOriginStatus   string              `json:"task_origin_status,omitempty"`
-    TaskOriginReasons  []string            `json:"task_origin_reasons,omitempty"`
+    OriginStatus       string              `json:"origin_status,omitempty"` // "comparable" | "unknown"; presentation only
+    OriginReasons      []string            `json:"origin_reasons,omitempty"`
 }
 
 // Reference is the engine gate's comparison with the persisted baseline (top-level gate_reference).
-// The engine exposes no baseline digest: only whether the baseline it loaded was comparable, and why not.
+// The engine exposes no baseline digest: only whether it loaded a baseline, whether that one was comparable, and
+// the classes of input that made it not comparable. Reasons are engine text for display; decisions read Status,
+// BaselinePresent and Drift.
 type Reference struct {
-    Status  string   `json:"status"`             // "comparable" | "non_comparable" | "not_requested"
-    BaseRef string   `json:"base_ref,omitempty"` // "baseline"
-    Reasons []string `json:"reasons"`            // e.g. "no baseline file was loaded"
+    Status          string   `json:"status"`             // "comparable" | "non_comparable" | "not_requested"
+    BaseRef         string   `json:"base_ref,omitempty"` // "baseline"
+    Reasons         []string `json:"reasons"`            // e.g. "no baseline file was loaded"
+    Drift           []string `json:"drift,omitempty"`    // closed set DriftClasses; empty when comparable
+    BaselinePresent bool     `json:"baseline_present"`   // the engine loaded a baseline file
 }
 
 type MeasurementProfile struct {
@@ -708,7 +713,7 @@ type Envelope struct {
     MergeBaseSHA  string `json:"merge_base_sha"` // "" unless pull_request
     RunID         int64  `json:"run_id"`
     RunAttempt    int    `json:"run_attempt"`
-    EngineVersion string `json:"engine_version"` // e.g. "v2.3.1"
+    EngineVersion string `json:"engine_version"` // e.g. "v3.0.0"
     ImageDigest   string `json:"image_digest"`   // "sha256:<64 hex>"
     Platform      string `json:"platform"`       // e.g. "linux/amd64"
     PayloadDigest  string `json:"payload_digest"`  // "sha256:<64 hex>" of the exact payload bytes
@@ -1000,7 +1005,7 @@ type Swap struct {
 3. `trusted, err := resolver.Resolve(ctx, target, now)`. Error → 503; the pending check stays.
 4. `IdentityApproved` = `manifest.Lookup(u.Identity)` hits **and** `entry.ProfileVersion != ""` **and**
    `u.Report.Comparison.MeasurementProfile != nil` **and** its `Version == entry.ProfileVersion`. A manifest row
-   without a profile version approves nothing, so two empty versions never compare equal (for engines v2.4.1 and v2.5.0 the manifest holds `archfit.measurement.v1`). False when `u.Report == nil`.
+   without a profile version approves nothing, so two empty versions never compare equal (for engine v3.0.0 the manifest holds `archfit.measurement.v2`). False when `u.Report == nil`.
 5. `WorkflowApproved` = `trusted.SettingsFound` **and** `u.Binding.WorkflowPath != ""` **and** it equals
    `trusted.Settings.Workflow`. A workflow file changed by the PR is a protected path; `inputs` then demands owner approval.
 6. `outcome = verdict.Decide(Facts{Problems: u.Problems, BaselineDigest: u.BaselineDigest, LabelsDigest: u.LabelsDigest,
@@ -1280,7 +1285,7 @@ are driven only as far as they go without GitHub. Child internals are tested in 
   **Scenario**: a PR changes code and policy; the engine ran with the head policy; an owner approved the exact head.
   **Expected behavior**: before approval `owner_approval_missing` (and `policy_mismatch`); after approval and re-run `success`; a further commit returns it to `action_required`.
 - **Test name**: `TestNonComparableBaselineRecovery` (T15)
-  **Scenario**: profile upgrade makes `gate_reference.status` `non_comparable` while `verdict` is `healthy`; then an owner-approved baseline PR merges and the workflow re-runs.
+  **Scenario**: a measurement profile that differs from the baseline's makes `gate_reference.status` `non_comparable` while `verdict` is `healthy`; then an owner-approved baseline PR merges and the workflow re-runs.
   **Expected behavior**: `baseline_not_comparable` with the baseline-PR recovery text; `success` only after the new baseline is on the protected ref.
 - **Test name**: `TestDuplicateAndOutOfOrderDelivery` (T03, T11)
   **Scenario**: the same upload twice; an older attempt after a newer one; an upload for a superseded head.

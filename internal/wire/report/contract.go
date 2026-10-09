@@ -9,21 +9,19 @@ const StateSchemaV1 = "archfit.architecture-state.v1"
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
-// engineVersions are the engine releases Decode reads, oldest first. A shadow field tagged `since:"<release>"`
-// is a key that release added; every other key is in all of them. The App reads v3.0.0 only: no engine release
-// before it is approved or read.
+// engineVersions are the engine releases Decode reads. The App reads v3.0.0 only: earlier releases are not approved
+// and their state documents are not read.
 var engineVersions = []string{"v3.0.0"}
 
-// EngineVersions returns the engine releases whose state document Decode reads, oldest first. Each emits
-// StateSchemaV1; a later release only adds optional keys, so the last key set holds every earlier one.
+// EngineVersions returns the engine releases whose state document Decode reads.
 func EngineVersions() []string {
 	return slices.Clone(engineVersions)
 }
 
-// Report is the no-source transport form of an engine state report. The decoder knows every key of the state
-// schema of each release it reads: keys listed here are kept (length-capped), the other known keys are validated
-// and dropped (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores),
-// and any key that release's schema does not define is a decode error.
+// Report is the no-source transport form of an engine state report. The decoder knows every key of the v3.0.0 state
+// schema: keys listed here are kept (length-capped), the other known keys are validated and dropped (measurement,
+// findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores), and any key the schema does
+// not define is a decode error.
 type Report struct {
 	SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
 	Verdict       string               `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
