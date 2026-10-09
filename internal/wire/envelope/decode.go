@@ -31,8 +31,8 @@ func fields() []field {
 			return rule(e.SchemaVersion == SchemaV1, "must equal "+SchemaV1)
 		}},
 		{"kind", 0, func(e *Envelope) string {
-			return rule(e.Kind == KindReport || e.Kind == KindDiscovery || e.Kind == KindBaseline,
-				"must be report, discovery or baseline")
+			return rule(e.Kind == KindReport || e.Kind == KindDiscovery || e.Kind == KindBaseline || e.Kind == KindReanchor,
+				"must be report, discovery, baseline or reanchor")
 		}},
 		{"repository", 0, func(e *Envelope) string {
 			owner, name, ok := strings.Cut(e.Repository, "/")
@@ -64,8 +64,12 @@ func fields() []field {
 		{"payload_digest", 0, func(e *Envelope) string { return prefixedDigest(e.PayloadDigest) }},
 		{"baseline_digest", 0, func(e *Envelope) string {
 			// A baseline upload is the capture itself: the engine loaded no stored baseline to produce it.
-			if e.Kind == KindBaseline {
+			switch e.Kind {
+			case KindBaseline:
 				return rule(e.BaselineDigest == "", "must be empty when kind is baseline")
+			case KindReanchor:
+				// A re-anchor is checked against the protected baseline it carries forward: the digest must name one.
+				return rule(isHex(e.BaselineDigest, digestHexLen), "must be 64 lowercase hex characters when kind is reanchor")
 			}
 			return inputDigest(e, e.BaselineDigest)
 		}},

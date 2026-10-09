@@ -38,11 +38,11 @@ func TestStageDerivation(t *testing.T) {
 		{"invalid settings", setup{settings: []byte("version: 7\nbogus: true\n"), workflow: true}, StageInstalled,
 			"Review and merge PR #1", "`.archfit-app.yaml` on the default branch is invalid", onboardingBranch},
 		{"settings and workflow", setup{settings: advisory, workflow: true}, StageWorkflowMerged,
-			"Review and merge the policy PR #1", "Run discovery (workflow_dispatch with `discover`)", policyBranch},
+			"Review and merge the policy PR #1", "Run discovery (workflow_dispatch with `mode` set to `discovery`)", policyBranch},
 		{"run without check", setup{settings: advisory, workflow: true, run: true}, StageWorkflowMerged,
-			"Review and merge the policy PR #1", "Run discovery (workflow_dispatch with `discover`)", policyBranch},
+			"Review and merge the policy PR #1", "Run discovery (workflow_dispatch with `mode` set to `discovery`)", policyBranch},
 		{"run with check", setup{settings: advisory, workflow: true, run: true, check: true}, StageReportReceived,
-			"Review and merge the policy PR #1", "Run discovery (workflow_dispatch with `discover`)", policyBranch},
+			"Review and merge the policy PR #1", "Run discovery (workflow_dispatch with `mode` set to `discovery`)", policyBranch},
 		{"policy without report", setup{settings: advisory, workflow: true, policy: true}, StagePolicyMerged,
 			"", "Waiting for the first run on the default branch", ""},
 		{"policy and report advisory", setup{settings: advisory, workflow: true, policy: true, run: true, check: true}, StageAdvisory,
@@ -233,12 +233,9 @@ func TestWorkflowTemplate(t *testing.T) {
 		"pull_request trigger": `(?m)^  pull_request:\s*$`,
 		"push to trunk":        `(?m)^  push:\n    branches:\n      - "trunk"$`,
 		"mode choice input": `(?m)^  workflow_dispatch:\n    inputs:\n      mode:\n(.+\n)*?\s+type: choice\n\s+options:\n` +
-			`\s+- report\n\s+- discovery\n\s+- baseline\n\s+default: report$`,
-		"discover input": `(?m)^      discover:\n(.+\n)*?\s+type: boolean\n\s+default: false$`,
-		// discover: true is how the App's Discover button dispatches; it must not collide with the mode default.
-		"mode passed on":     `(?m)^\s+mode: \$\{\{ inputs\.discover && 'discovery' \|\| inputs\.mode \}\}$`,
-		"discover passed on": `(?m)^\s+discover: \$\{\{ inputs\.discover \}\}$`,
-		"permissions":        `(?m)^permissions:\n  contents: read\n  id-token: write\n\n`,
+			`\s+- report\n\s+- discovery\n\s+- baseline\n\s+- reanchor\n\s+default: report$`,
+		"mode passed on": `(?m)^\s+mode: \$\{\{ inputs\.mode \}\}$`,
+		"permissions":    `(?m)^permissions:\n  contents: read\n  id-token: write\n\n`,
 	} {
 		if !regexp.MustCompile(re).MatchString(got) {
 			t.Errorf("%s: no match for %s in\n%s", name, re, got)

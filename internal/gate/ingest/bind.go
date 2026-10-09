@@ -43,7 +43,7 @@ func eligible(kind envelope.Kind, event string, onDefaultBranch bool) bool {
 	case eventPullRequest:
 		return kind == envelope.KindReport
 	case eventDispatch:
-		return kind == envelope.KindDiscovery || kind == envelope.KindBaseline
+		return kind == envelope.KindDiscovery || kind == envelope.KindBaseline || kind == envelope.KindReanchor
 	}
 	return false
 }

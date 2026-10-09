@@ -369,6 +369,10 @@ func (o *fakeOnboarding) BaselineHandler() http.Handler {
 	panic("ui must never mount BaselineHandler")
 }
 
+func (o *fakeOnboarding) ReanchorHandler() http.Handler {
+	panic("ui must never mount ReanchorHandler")
+}
+
 type assistCall struct {
 	mode assist.Mode
 	req  assist.Request

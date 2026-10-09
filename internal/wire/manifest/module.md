@@ -53,7 +53,7 @@ v3.0.0 on `linux/amd64` (`current`) and `linux/arm64`.
     `sha256:416cd49b73dfc1a2057ed07da9f5a65f2e1b47562cec1cdf255f40a3e6220473` on `linux/arm64`.
 
   `action_ref` of every row is the published `archfit-action` release `v1.0.0`, commit
-  `a9cd2ce8d0dc996b258b5faa5145eaf11bd6bc5b` (the tag is annotated; the row holds the commit, never the tag object).
+  `dbc3c1e256bb391c00a7978fcee6558b0cc352ad` (the tag is annotated; the row holds the commit, never the tag object).
   `Lookup` does not read `action_ref`; it is what a generated workflow pins.
 - A placeholder is an `image_digest` or `action_ref` whose hex part is one character repeated. Placeholders are
   forbidden in a release: `TestManifestHasNoPlaceholdersInRelease` fails when the environment variable

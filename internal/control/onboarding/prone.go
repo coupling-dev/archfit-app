@@ -68,7 +68,7 @@ func (s *service) proposeOnboarding(ctx context.Context, r api.Repo, set setting
 }
 
 func onboardingBody(mode settings.DataMode) string {
-	next := "Review and merge this pull request, then run discovery: start the `archfit` workflow with `workflow_dispatch` and `discover` enabled. " +
+	next := "Review and merge this pull request, then run discovery: start the `archfit` workflow with `workflow_dispatch` and `mode` set to `discovery`. " +
 		"Discovery opens a second pull request with a proposed `" + policy.PolicyPath + "`."
 	if mode == settings.DataManaged {
 		next = "Review the proposed `" + policy.PolicyPath + "` that managed discovery adds to this pull request, then merge it."

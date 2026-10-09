@@ -16,7 +16,7 @@ const (
 func minimalBaseline(edit func(string) string) []byte {
 	doc := `{"schema_version":"archfit.baseline.v3",` +
 		`"accepted":[{"fingerprint":"ba3803eca947bf3c1b7efa8f37854d5e","rule_id":"no_direct_b_dependency","kind":"gate"}],` +
-		`"state":{"config_hash":"` + strings.Repeat("4a", 32) + `","measurement_profile":{"version":"archfit.measurement.v2"}}}`
+		`"metrics":{},"state":{"config_hash":"` + strings.Repeat("4a", 32) + `","qualifying_seam_ids":[],"measurement_profile":{"version":"archfit.measurement.v2"}}}`
 	if edit != nil {
 		doc = edit(doc)
 	}
@@ -70,6 +70,11 @@ func TestReadBaselineRejects(t *testing.T) {
 		{"over the cap", append(minimalBaseline(nil), bytes.Repeat([]byte(" "), MaxBaselineBytes)...)},
 		{"schema v1", minimalBaseline(replace("archfit.baseline.v3", "archfit.baseline.v1"))},
 		{"schema v2", minimalBaseline(replace("archfit.baseline.v3", "archfit.baseline.v2"))},
+		{"qualifying seams missing", minimalBaseline(replace(`"qualifying_seam_ids":[],`, ""))},
+		{"metrics missing", minimalBaseline(replace(`"metrics":{},`, ""))},
+		{"metric without version", minimalBaseline(replace(`"metrics":{}`, `"metrics":{"coverage":{"value":1}}`))},
+		{"duplicate seam id", minimalBaseline(replace(`"qualifying_seam_ids":[]`, `"qualifying_seam_ids":["a","a"]`))},
+		{"seam id with space", minimalBaseline(replace(`"qualifying_seam_ids":[]`, `"qualifying_seam_ids":["a b"]`))},
 		{"schema missing", minimalBaseline(replace(`"schema_version":"archfit.baseline.v3",`, ""))},
 		{"accepted missing", minimalBaseline(replace(`"accepted":[`, `"other":[`))},
 		{"accepted null", []byte(`{"schema_version":"archfit.baseline.v3","accepted":null,"state":{"config_hash":"` +

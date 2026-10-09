@@ -72,6 +72,7 @@ func NewWorker(d WorkerDeps) (*Control, error)
 func (c *Control) UIHandler() http.Handler        // "/"
 func (c *Control) DiscoveryHandler() http.Handler // POST /v1/discoveries
 func (c *Control) BaselineHandler() http.Handler  // POST /v1/baselines
+func (c *Control) ReanchorHandler() http.Handler  // POST /v1/reanchors
 // HandleEvent maintains entitlements on installation events and forgets a tenant on uninstall.
 func (c *Control) HandleEvent(ctx context.Context, e Event) error
 // Sweep refreshes every installation's Entitlement record and forgets Store tenants

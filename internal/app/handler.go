@@ -71,6 +71,7 @@ type controlFacade interface {
 	UIHandler() http.Handler
 	DiscoveryHandler() http.Handler
 	BaselineHandler() http.Handler
+	ReanchorHandler() http.Handler
 	HandleEvent(ctx context.Context, e webhook.Event) error
 	Sweep(ctx context.Context) error
 	Grant(ctx context.Context, installationID int64, until time.Time) error
@@ -105,6 +106,7 @@ func newHandler(d handlerDeps) http.Handler {
 		mux.Handle("POST /v1/reports", http.TimeoutHandler(d.gate.UploadHandler(), uploadTimeout, ""))
 		mux.Handle("POST /v1/discoveries", http.TimeoutHandler(d.control.DiscoveryHandler(), controlTimeout, ""))
 		mux.Handle("POST /v1/baselines", http.TimeoutHandler(d.control.BaselineHandler(), controlTimeout, ""))
+		mux.Handle("POST /v1/reanchors", http.TimeoutHandler(d.control.ReanchorHandler(), controlTimeout, ""))
 		mux.HandleFunc("POST /webhooks/github", s.webhook)
 		ui := d.control.UIHandler()
 		mux.Handle(assistRoute, http.TimeoutHandler(ui, assistTimeout, ""))

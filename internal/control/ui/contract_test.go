@@ -389,7 +389,7 @@ func TestOnboardingAndDiscoverActions(t *testing.T) {
 	e.onb.progress.Stage = onboarding.StageWorkflowMerged
 	wantStatus(t, c.post(base+"/discover", nil), http.StatusSeeOther)
 	calls := e.gh.called("Dispatch")
-	if len(calls) != 1 || calls[0].detail != workflow+"@"+mainBranch+" map[discover:true]" || calls[0].installationID != installA {
+	if len(calls) != 1 || calls[0].detail != workflow+"@"+mainBranch+" map[mode:discovery]" || calls[0].installationID != installA {
 		t.Errorf("Dispatch calls = %+v", calls)
 	}
 }

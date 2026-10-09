@@ -62,7 +62,7 @@ The length limits and character sets below (100, 64, 32) are **[default]**; the 
 | `image_digest`    | `^sha256:[0-9a-f]{64}$`                                                               |
 | `platform`        | `^[a-z0-9]+/[a-z0-9]+(/[a-z0-9]+)?$`, at most 32 characters — format only             |
 | `payload_digest`  | `^sha256:[0-9a-f]{64}$`                                                               |
-| `baseline_digest` | `^[0-9a-f]{64}$` or exactly `""` (no file); bare hex; `""` when `kind` is `discovery` or `baseline` |
+| `baseline_digest` | `^[0-9a-f]{64}$` or exactly `""` (no file); bare hex; `""` when `kind` is `discovery` or `baseline`; required (`^[0-9a-f]{64}$`) when `kind` is `reanchor` |
 | `labels_digest`   | `^[0-9a-f]{64}$` or exactly `""` (no file); bare hex; `""` when `kind` is `discovery`               |
 
 Two digest formats exist on purpose. `payload_digest` and `image_digest` keep the `sha256:` prefix **[default]**: they
@@ -70,7 +70,9 @@ are envelope-native values in OCI style. `baseline_digest` and `labels_digest` a
 with the engine-style digest of the protected-ref files, which is bare hex like the engine's `config_hash`. A prefixed
 value in a bare field, or the reverse, is a decode error, so the two can never be confused silently. A discovery
 upload runs before any policy exists, so both input digests must be `""` there **[default]**. A baseline upload is
-the capture itself: `archfit baseline` loads no stored baseline, so `baseline_digest` must be `""`, while
+the capture itself: `archfit baseline` loads no stored baseline, so `baseline_digest` must be `""`. A re-anchor (`kind:
+reanchor`) names the protected baseline it carries forward, so `baseline_digest` is required and must be that file's
+digest, which the App checks against the protected ref. Otherwise
 `labels_digest` states the labels file the capture read, which the App compares with the protected ref.
 
 The `baseline` kind was added inside v1. Under the parent's versioning rule a new accepted value is additive: no
@@ -95,6 +97,7 @@ const (
     KindReport    Kind = "report"    // engine state report, POST /v1/reports
     KindDiscovery Kind = "discovery" // discovery draft policy, POST /v1/discoveries
     KindBaseline  Kind = "baseline"  // captured engine baseline file, POST /v1/baselines
+    KindReanchor  Kind = "reanchor"  // re-anchored baseline, POST /v1/reanchors
 )
 
 // Envelope is what the producer states about a payload. Every field is self-reported:

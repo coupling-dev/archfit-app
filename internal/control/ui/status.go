@@ -131,7 +131,7 @@ func (s *server) discover(w http.ResponseWriter, r *http.Request, sc scope) {
 		s.fail(w, r, sc, err)
 		return
 	}
-	err = s.gh.actions.Dispatch(r.Context(), sc.repo.RepoRef, set.Workflow, sc.repo.DefaultBranch, map[string]string{"discover": "true"})
+	err = s.gh.actions.Dispatch(r.Context(), sc.repo.RepoRef, set.Workflow, sc.repo.DefaultBranch, map[string]string{"mode": "discovery"})
 	if err != nil {
 		s.fail(w, r, sc, err)
 		return

@@ -298,7 +298,7 @@ their baselines are not read. A repository captures a new baseline with the v3.0
 Tests in `internal/wire` stop a manifest row for a release that the decoder cannot read, that has no real capture
 in the fixture corpus, or whose config schema is not pinned when new workflows move to it.
 
-Generated workflows pin `archfit-action` v1.0.0 by commit `a9cd2ce8d0dc996b258b5faa5145eaf11bd6bc5b`, the manifest
+Generated workflows pin `archfit-action` v2.0.0 by commit `dbc3c1e256bb391c00a7978fcee6558b0cc352ad`, the manifest
 `action_ref`. The `action-conformance` CI job checks out that commit and fails when its vendored
 `schema/envelope.v1.schema.json` differs from `internal/wire/envelope/envelope.v1.schema.json`.
 
@@ -431,6 +431,7 @@ The routes come from [`internal/app/handler.go`](../internal/app/handler.go) and
 | `POST /v1/reports`      | `gate`    | GitHub Actions OIDC token  |
 | `POST /v1/discoveries`  | `control` | GitHub Actions OIDC checks |
 | `POST /v1/baselines`    | `control` | GitHub Actions OIDC checks |
+| `POST /v1/reanchors`    | `control` | GitHub Actions OIDC checks, plus the re-anchor subset and digest checks |
 | `POST /webhooks/github` | `app`     | `X-Hub-Signature-256`      |
 | `POST /internal/sweep`  | `app`     | Operator bearer token      |
 | `POST /internal/grants` | `app`     | Operator bearer token      |

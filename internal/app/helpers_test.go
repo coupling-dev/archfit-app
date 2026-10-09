@@ -154,6 +154,10 @@ func (c *fakeControl) BaselineHandler() http.Handler {
 	return namedHandler(c.log, "control.Baseline", http.StatusAccepted)
 }
 
+func (c *fakeControl) ReanchorHandler() http.Handler {
+	return namedHandler(c.log, "control.Reanchor", http.StatusAccepted)
+}
+
 func (c *fakeControl) HandleEvent(ctx context.Context, e webhook.Event) error {
 	c.log.add("control.HandleEvent")
 	c.log.sawContext(ctx)

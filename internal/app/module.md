@@ -184,6 +184,7 @@ func NewLogger(w io.Writer) *slog.Logger
 | `POST /v1/reports`              | `all`, `public`   | `gate.UploadHandler()`                            | gate (OIDC)                                                |
 | `POST /v1/discoveries`          | `all`, `public`   | `control.DiscoveryHandler()`                      | control, through the gate `Receiver` (OIDC)                |
 | `POST /v1/baselines`            | `all`, `public`   | `control.BaselineHandler()`                       | control, through the gate `Receiver` (OIDC)                |
+| `POST /v1/reanchors`            | `all`, `public`   | `control.ReanchorHandler()`                       | control, through the gate `Receiver` (OIDC)                |
 | `POST /webhooks/github`         | `all`, `public`   | `app` intake                                      | `app` (`webhook.VerifyAny`)                                |
 | `POST /internal/webhooks`       | `worker`          | `app` queued webhook processing                   | `app` (invoker ID token, then `webhook.VerifyAny`)         |
 | `POST /internal/sweep`          | `all`             | `app`                                             | `app` (operator bearer token)                              |
@@ -206,6 +207,7 @@ The deadline is the one the handler sees on its request context. `http.TimeoutHa
 | `POST /v1/reports`              | 55 s     | gate upload; target: feedback within 60 seconds                                                              |
 | `POST /v1/discoveries`          | 55 s     | control per-request timeout                                                                                  |
 | `POST /v1/baselines`            | 55 s     | control per-request timeout                                                                                  |
+| `POST /v1/reanchors`            | 55 s     | control per-request timeout                                                                                  |
 | `POST /webhooks/github`         | none     | each enqueue runs detached from the request for 4 s; inline work runs detached: gate 55 s, then control 55 s |
 | `POST /internal/webhooks`       | none     | the half runs under its own deadline (gate 55 s, control 55 s), attached to the dispatch request             |
 | `POST /internal/sweep`          | none     | operator call; no deadline of its own                                                                        |
@@ -380,6 +382,7 @@ func NewWorker(d WorkerDeps) (*Control, error)
 func (c *Control) UIHandler() http.Handler        // "/"
 func (c *Control) DiscoveryHandler() http.Handler // POST /v1/discoveries
 func (c *Control) BaselineHandler() http.Handler  // POST /v1/baselines
+func (c *Control) ReanchorHandler() http.Handler  // POST /v1/reanchors
 // HandleEvent maintains entitlements on installation events and forgets a tenant on uninstall.
 func (c *Control) HandleEvent(ctx context.Context, e Event) error
 // Sweep refreshes every installation's Entitlement record and forgets Store tenants

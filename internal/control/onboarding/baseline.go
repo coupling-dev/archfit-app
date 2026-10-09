@@ -50,29 +50,50 @@ const (
 
 // baselineCheck is everything the PR body states, all read at one default-branch commit.
 type baselineCheck struct {
-	head      string
-	capture   policy.Baseline
-	state     protectedState
-	current   policy.Baseline // set when state == protectedReadable
-	unchanged bool            // the upload is byte-identical to the protected baseline
+	head         string
+	capture      policy.Baseline
+	state        protectedState
+	current      policy.Baseline // set when state == protectedReadable
+	protectedRaw []byte          // the protected file's bytes, when the default branch has one
+	unchanged    bool            // the upload is byte-identical to the protected baseline
 }
 
 func (s *service) BaselineHandler() http.Handler {
 	return http.HandlerFunc(s.serveBaseline)
 }
 
+func (s *service) ReanchorHandler() http.Handler {
+	return http.HandlerFunc(s.serveReanchor)
+}
+
 // serveBaseline turns a baseline captured by the approved workflow into an owner-reviewed pull request.
-// It never writes to the default branch: the only write is a commit on baselineBranch.
 func (s *service) serveBaseline(w http.ResponseWriter, req *http.Request) {
+	s.serveUpload(w, req, envelope.KindBaseline)
+}
+
+// serveReanchor turns a baseline re-anchored after an engine or profile change into an owner-reviewed pull request.
+// The App checks it against the protected baseline itself and trusts nothing the engine said about it.
+func (s *service) serveReanchor(w http.ResponseWriter, req *http.Request) {
+	s.serveUpload(w, req, envelope.KindReanchor)
+}
+
+// serveUpload checks a baseline upload and proposes it as a pull request. It never writes to the default branch:
+// the only write is a commit on baselineBranch.
+func (s *service) serveUpload(w http.ResponseWriter, req *http.Request, kind envelope.Kind) {
 	ctx := req.Context()
-	up, ok := s.receive(w, req, envelope.KindBaseline)
+	up, ok := s.receive(w, req, kind)
 	if !ok {
 		return
 	}
 
 	b := up.Binding
-	log := uploadLog(up)
+	log := uploadLog(up).With("kind", string(kind))
 	c, status, code := s.checkBaseline(ctx, up)
+	var reanchored policy.Baseline
+	if code == "" && kind == envelope.KindReanchor {
+		reanchored, status, code = reanchorCheck(c, up)
+		c.current = reanchored
+	}
 	if code != "" {
 		log.WarnContext(ctx, "baseline upload refused", "outcome", code)
 		writeError(w, status, code)
@@ -84,10 +105,15 @@ func (s *service) serveBaseline(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	added, removed := diffAccepted(c)
-	body := baselineBody(up, c, added, removed)
+	title, message, body := baselineTitle, baselineMessage, ""
+	if kind == envelope.KindReanchor {
+		title, message, body = reanchorTitle, reanchorMessage, reanchorBody(up, c)
+	} else {
+		added, removed := diffAccepted(c)
+		body = baselineBody(up, c, added, removed)
+	}
 	files := []api.FileChange{{Path: policy.BaselinePath, Content: up.Payload}}
-	draft, err := s.proposals.Propose(ctx, changeFor(b.Repo, baselineBranch, baselineTitle, body, baselineMessage, files), "")
+	draft, err := s.proposals.Propose(ctx, changeFor(b.Repo, baselineBranch, title, body, message, files), "")
 	if err == nil {
 		// An open pull request keeps its body on Propose; a re-upload must describe the bytes it committed.
 		err = s.proposals.SetBody(ctx, b.Repo.RepoRef, draft.Number, body)
@@ -98,7 +124,7 @@ func (s *service) serveBaseline(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	log.InfoContext(ctx, "baseline upload proposed", "outcome", "proposed", "pull_request", draft.Number,
-		"head_sha", c.head, "added", len(added), "removed", len(removed))
+		"head_sha", c.head)
 	writeJSON(w, http.StatusOK, map[string]any{"pull_request": draft.Number, "url": draft.URL})
 }
 
@@ -152,6 +178,7 @@ func (s *service) checkBaseline(ctx context.Context, up gate.Upload) (c baseline
 
 	c = baselineCheck{head: head, capture: capture}
 	current, found, err := s.fileAt(ctx, r, head, policy.BaselinePath)
+	c.protectedRaw = current
 	switch {
 	case err != nil:
 		return refuse(unavailable(err))
@@ -246,6 +273,15 @@ func baselineBody(up gate.Upload, c baselineCheck, added, removed []policy.Accep
 	writeFindings(&sb, "Removed", removed)
 
 	line("")
+	writeCaptureAndReview(&sb, up, c, branch)
+	return sb.String()
+}
+
+// writeCaptureAndReview is the part of a baseline PR body that both kinds share: the run, the engine identity, the
+// digests the App checked, and what the owner does next.
+func writeCaptureAndReview(sb *strings.Builder, up gate.Upload, c baselineCheck, branch string) {
+	line := func(format string, args ...any) { fmt.Fprintf(sb, format+"\n", args...) }
+	b := up.Binding
 	line("### Capture")
 	line("")
 	line("- Run %s, attempt %d.", mono(strconv.FormatInt(b.RunID, 10)), b.RunAttempt)
@@ -267,7 +303,6 @@ func baselineBody(up gate.Upload, c baselineCheck, added, removed []policy.Accep
 	line("An architecture owner named in %s on %s must approve the exact head commit of this pull request. "+
 		"Mark it ready for review, approve it, then merge it. The Archfit gate on this pull request checks that approval; "+
 		"a new commit on this branch needs a new approval.", mono(settings.Path), branch)
-	return sb.String()
 }
 
 func writeFindings(sb *strings.Builder, title string, list []policy.Accepted) {

@@ -73,6 +73,13 @@ func baselineFields() map[string]string {
 	return f
 }
 
+func reanchorFields() map[string]string {
+	f := pushFields("workflow_dispatch")
+	f["kind"] = `"reanchor"`
+	f["baseline_digest"] = quoted(hex64)
+	return f
+}
+
 // render writes the object in contract key order; keys outside the contract follow, sorted.
 func render(fields map[string]string) []byte {
 	keys := fieldOrder()

@@ -89,7 +89,7 @@ It runs on `pull_request`, `push` to the default branch, and `workflow_dispatch`
 Pull request and push runs report the architecture state. A manual dispatch selects `mode`: `discovery` proposes a
 policy, and `baseline` captures accepted debt. A dispatch with `mode: report` is refused. See
 [Capture a baseline](#capture-a-baseline).
-The `discover` input selects discovery; the status page button uses it.
+The `mode` input selects the run: `discovery`, `baseline` or `reanchor`. The status page button dispatches `mode: discovery`.
 On a pull request, the Action reads `.archfit.yaml`, `.archfit-baseline.json`, and `.archfit-labels.yaml` per file:
 from the pull request head when the pull request changes that file, otherwise from the tip of the base branch. The
 App accepts a changed file only when an architecture owner approved the exact head commit.
@@ -362,6 +362,25 @@ The generated workflow sets `endpoint`, so the Action uploads the file. It also 
 `archfit-baseline` workflow artifact. A `409` answer (`stale_head` or `stale_attempt`) fails the job: dispatch the
 capture again on the current default-branch head. Without `endpoint` the Action sends nothing; commit the artifact
 as `.archfit-baseline.json` in a pull request that a policy owner approves.
+
+### Re-anchor after an engine or profile change
+
+A change of engine or measurement profile makes the stored baseline non-comparable. The Next line of the gate names the
+action. For a profile or scoring change, re-anchor instead of capturing: a re-anchor keeps the debt the protected
+baseline already accepts, and accepts nothing new.
+
+1. Run the Archfit workflow on the default branch with `mode: reanchor`.
+2. The Action runs `archfit baseline --reanchor` against the protected baseline, and uploads the new file.
+3. The App checks the upload against the protected baseline. It opens the same pull request as a baseline capture.
+4. Read the pull request body. It states what the re-anchor keeps and drops, the seams that stop qualifying, and the
+   metric values that reset. Approving resets those metric values.
+5. Select **Ready for review**, approve the exact head commit, and merge.
+
+| Refusal                      | Recovery                                                                                                 |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `reanchor_baseline_missing`  | The default branch has no readable baseline. Capture a baseline with `mode: baseline` instead.           |
+| `reanchor_digest_mismatch`   | The protected baseline changed during the run. Run the re-anchor again.                                  |
+| `reanchor_not_subset`        | The capture accepts debt or a seam that the protected baseline does not accept. Fix the findings, or capture a full baseline and approve the added debt. |
 
 ## Enable the gate
 
