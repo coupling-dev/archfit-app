@@ -50,6 +50,9 @@ func taskRequest(half, event, delivery string, body []byte, signature string) *h
 func newRoleFixture(role string) *fixture {
 	f := newFixture()
 	f.role = role
+	if role == rolePublic {
+		f.queue = &recordingQueue{}
+	}
 	f.rebuild()
 	return f
 }
@@ -97,7 +100,7 @@ func TestRoleRouteTables(t *testing.T) {
 		},
 		rolePublic: {
 			"healthz": {status: 200}, "upload": {call: "gate.Upload"}, "discovery": {call: "control.Discovery"},
-			"baseline": {call: "control.Baseline"}, "intake": {call: "gate.HandleEvent"}, "ui": {call: "control.UI"},
+			"baseline": {call: "control.Baseline"}, "intake": {status: http.StatusAccepted}, "ui": {call: "control.UI"},
 			"ui page": {call: "control.UI"}, "sweep with the operator token": {status: 404},
 			"grant with the operator token": {status: 404}, "task as the invoker": {status: 404},
 			"sweep as the invoker": {status: 404}, "unknown internal path": {status: 404},
@@ -368,27 +371,31 @@ func TestIntakeQueuesOneTaskPerHalf(t *testing.T) {
 		delivery  string
 		fail      map[string]error
 		wantNames []string
-		wantCalls []string // handlers run inline in the intake request
+		status    int
 		outcome   string
 	}{
 		{name: "both halves queued", event: "pull_request", delivery: delivery,
-			wantNames: []string{delivery + "_gate", delivery + "_control"}, outcome: "accepted"},
-		{name: "a queue failure processes that half inline", event: "pull_request", delivery: delivery,
+			wantNames: []string{delivery + "_gate", delivery + "_control"}, status: http.StatusAccepted, outcome: "accepted"},
+		{name: "a control enqueue failure is not acknowledged", event: "pull_request", delivery: delivery,
 			fail:      map[string]error{delivery + "_control": errors.New("cloudtasks: create task: status 503")},
-			wantNames: []string{delivery + "_gate"}, wantCalls: []string{"control.HandleEvent"}, outcome: "inline_fallback"},
-		{name: "a body too large for a task is processed inline", event: "pull_request", delivery: delivery,
+			wantNames: []string{delivery + "_gate"}, status: http.StatusServiceUnavailable, outcome: "enqueue_failed"},
+		{name: "a gate enqueue failure still attempts control", event: "pull_request", delivery: delivery,
+			fail:      map[string]error{delivery + "_gate": errors.New("cloudtasks: create task: status 503")},
+			wantNames: []string{delivery + "_control"}, status: http.StatusServiceUnavailable, outcome: "enqueue_failed"},
+		{name: "a body too large for a task is rejected without inline work", event: "pull_request", delivery: delivery,
 			fail: map[string]error{
 				delivery + "_gate":    fmt.Errorf("cloudtasks: body: %w", queue.ErrInvalidTask),
 				delivery + "_control": fmt.Errorf("cloudtasks: body: %w", queue.ErrInvalidTask),
 			},
-			wantCalls: []string{"gate.HandleEvent", "control.HandleEvent"}, outcome: "inline_fallback"},
-		{name: "a delivery ID that is no task name is processed inline", event: "pull_request", delivery: "d/1",
+			status: http.StatusServiceUnavailable, outcome: "enqueue_failed"},
+		{name: "an invalid task name is rejected without inline work", event: "pull_request", delivery: "d/1",
 			fail: map[string]error{
 				"d/1_gate":    fmt.Errorf("cloudtasks: task name: %w", queue.ErrInvalidTask),
 				"d/1_control": fmt.Errorf("cloudtasks: task name: %w", queue.ErrInvalidTask),
 			},
-			wantCalls: []string{"gate.HandleEvent", "control.HandleEvent"}, outcome: "inline_fallback"},
-		{name: "an ignored event queues nothing", event: "star", delivery: delivery, outcome: "accepted"},
+			status: http.StatusServiceUnavailable, outcome: "enqueue_failed"},
+		{name: "an ignored event queues nothing", event: "star", delivery: delivery,
+			status: http.StatusAccepted, outcome: "accepted"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -397,31 +404,31 @@ func TestIntakeQueuesOneTaskPerHalf(t *testing.T) {
 			f.role, f.queue = rolePublic, q
 			f.rebuild()
 			rec := f.do(webhookRequest("/webhooks/github", tt.event, tt.delivery, event, sign(testWebhookSecret, event)))
-			if rec.Code != http.StatusAccepted {
-				t.Errorf("status = %d, want 202", rec.Code)
+			if rec.Code != tt.status {
+				t.Errorf("status = %d, want %d", rec.Code, tt.status)
 			}
 			if got := q.names(); !slices.Equal(got, tt.wantNames) {
 				t.Errorf("queued %v, want %v", got, tt.wantNames)
 			}
-			if got := f.calls.get(); !slices.Equal(got, tt.wantCalls) {
-				t.Errorf("inline calls = %v, want %v", got, tt.wantCalls)
+			if got := f.calls.get(); len(got) != 0 {
+				t.Errorf("public intake ran handlers inline: %v", got)
 			}
-			if !strings.Contains(f.logs.String(), `"outcome":"`+tt.outcome+`"`) {
+			if !strings.Contains(f.logs.String(), "\"outcome\":\""+tt.outcome+"\"") {
 				t.Errorf("request line lacks outcome %s: %s", tt.outcome, f.logs.String())
 			}
 		})
 	}
 
-	t.Run("a failing inline fallback keeps the fallback outcome", func(t *testing.T) {
+	t.Run("a public intake without a queue rejects the delivery", func(t *testing.T) {
 		f := newFixture()
 		f.role = rolePublic
-		f.queue = &recordingQueue{fail: map[string]error{delivery + "_gate": errors.New("queue down")}}
-		f.gate.eventErr = errors.New("store: unavailable")
 		f.rebuild()
-		f.do(webhookRequest("/webhooks/github", "pull_request", delivery, event, sign(testWebhookSecret, event)))
-		logs := f.logs.String()
-		if !strings.Contains(logs, `"outcome":"inline_fallback"`) || strings.Contains(logs, `"outcome":"handler_error"`) {
-			t.Errorf("request line must count the fallback: %s", logs)
+		rec := f.do(webhookRequest("/webhooks/github", "pull_request", delivery, event, sign(testWebhookSecret, event)))
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Errorf("status = %d, want 503", rec.Code)
+		}
+		if got := f.calls.get(); len(got) != 0 {
+			t.Errorf("public intake ran handlers inline: %v", got)
 		}
 	})
 

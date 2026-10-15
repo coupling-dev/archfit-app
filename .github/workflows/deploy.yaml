@@ -14,9 +14,10 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'release: build and release this commit. image: release image_digest again. traffic: move traffic back to the named revisions.'
+        description: 'build: build the initial App image only. release: build and release. image: release image_digest again. traffic: restore named revisions.'
         type: choice
         options:
+          - build
           - release
           - image
           - traffic
@@ -60,7 +61,7 @@ jobs:
           service_account: archfit-deploy@coupling-dev-510710.iam.gserviceaccount.com
       - name: Build and push the image
         id: build
-        if: env.MODE == 'release'
+        if: env.MODE == 'release' || env.MODE == 'build'
         run: |
           digest=$(scripts/deploy/build.sh "$GITHUB_SHA")
           echo "digest=$digest" >>"$GITHUB_OUTPUT"

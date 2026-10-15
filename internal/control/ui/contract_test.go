@@ -58,6 +58,18 @@ func (c *client) send(rt route) int {
 	return c.post(rt.path, form).Code
 }
 
+func TestOnboardingOffersOnlyCustomerDiscovery(t *testing.T) {
+	e := newEnv(t)
+	e.onb.progress.Stage = onboarding.StageInstalled
+	res := e.as("alice", permAdmin).get("/r/" + repoName)
+	wantStatus(t, res, http.StatusOK)
+	body := res.Body.String()
+	wantContains(t, body, "Start onboarding", `name="owners"`, `name="mode" value="customer"`)
+	if strings.Contains(body, `value="managed"`) {
+		t.Error("onboarding offers managed discovery without an available sandbox")
+	}
+}
+
 func TestRoutesAndMinimumPermissions(t *testing.T) {
 	for _, rt := range repoRoutes(repoName) {
 		t.Run(rt.method+" "+rt.path, func(t *testing.T) {

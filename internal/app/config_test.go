@@ -60,6 +60,8 @@ func TestLoadDefaultsAndRequired(t *testing.T) {
 	everything.TraceProject, everything.Revision = "coupling-test", "reporter-00001-abc"
 	public := requiredOnly
 	public.Role, public.OperatorTokenFile = "public", ""
+	public.QueueDriver, public.TasksQueue = everything.QueueDriver, everything.TasksQueue
+	public.WorkerURL, public.Invoker = everything.WorkerURL, everything.Invoker
 	worker := requiredOnly
 	worker.Role, worker.WorkerURL, worker.Invoker = "worker", everything.WorkerURL, everything.Invoker
 	workerEnv := func() map[string]string {
@@ -128,7 +130,8 @@ func TestLoadDefaultsAndRequired(t *testing.T) {
 		{name: "unknown role", env: with(requiredEnv(), envRole, "MARKER-batch"), wantErr: envRole},
 		{name: "unknown queue", env: with(requiredEnv(), envQueue, "MARKER-pubsub"), wantErr: envQueue},
 		{name: "cloudtasks in the all role", env: with(cloudEnv(), envRole, "all"), wantErr: envQueue},
-		{name: "public role without the operator token", env: without(with(requiredEnv(), envRole, "public"), envOperatorTokenFile), want: public},
+		{name: "inline queue in the public role", env: with(requiredEnv(), envRole, "public"), wantErr: envQueue},
+		{name: "public role without the operator token", env: without(cloudEnv(), envOperatorTokenFile), want: public},
 		{name: "worker role", env: workerEnv(), want: worker},
 		{name: "worker role without the operator token", env: without(workerEnv(), envOperatorTokenFile), wantErr: envOperatorTokenFile},
 		{name: "worker role without the UI variables", env: without(without(without(workerEnv(), envOAuthClientID), envOAuthSecretFile), envCookieKeyFile),

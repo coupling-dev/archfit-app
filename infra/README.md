@@ -73,7 +73,11 @@ stack reads it. Every secret is a file at `/secrets/<secret>/value`, and its `*_
 | Service          | Ingress       | Invoker check              | Secrets                                                                             | Other settings                                                                          |
 | ---------------- | ------------- | -------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | `archfit-public` | All           | Off (no `allUsers` grant)  | App private key, webhook secret, OAuth secret, cookie key, Anthropic key (optional) | `ARCHFIT_ROLE=public`, `ARCHFIT_QUEUE=cloudtasks`, `ARCHFIT_TASKS_QUEUE`, timeout 330 s |
-| `archfit-worker` | Internal only | On, `archfit-invoker` only | App private key, webhook secret, OAuth secret, cookie key, operator token           | `ARCHFIT_ROLE=worker`, custom audience = worker URL, timeout 600 s                      |
+| `archfit-worker` | Internal only | On, `archfit-invoker` only | App private key, webhook secret, operator token           | `ARCHFIT_ROLE=worker`, custom audience = worker URL, timeout 600 s                      |
+
+When narrowing secret access in an existing deployment, remove the unused mounts from the serving worker revisions
+before revoking their IAM grants. Old revisions and rollback targets can still reference those secrets and fail to start
+after access is revoked. Review this as a staged data/runtime change. Do not apply the data stack alone first.
 
 These settings follow [Roles and routing](../docs/design/cloud/operations.md#roles-and-routing) and
 [Firestore](../docs/design/cloud/operations.md#firestore). Both services also get `ARCHFIT_BASE_URL=https://app.coupling.dev`,
@@ -117,8 +121,9 @@ The design leaves these choices to the implementation. Each one is the simplest 
   `linux_amd64` and `darwin_arm64`.
 - **Imports as import blocks.** The variable `import_existing` (default `true`) turns them on. An import block does
   nothing once its resource is in state. Tests turn it off, because the test framework cannot import.
-- **Secret versions are pinned.** `secret_versions` names the version of each secret. The default is `1`. A new value
-  reaches a service only through a new revision. `latest` is never used.
+- **Secret versions are pinned.** `secret_versions` names the current version of each secret. The default is `1`.
+  During webhook rotation, `webhook_secret_previous_version` mounts another numeric version of the same secret on both
+  services. It defaults to `null`. A new value reaches a service only through a new revision. `latest` is never used.
 - **Secret replication** is user-managed in `europe-west1`, so secrets stay in the one region.
 - **Sizing.** 2 services × 2 instances × 1 vCPU uses the full 4 vCPU quota. During a rollout, new instances can wait
   for quota. Raise the quota before a release needs more (see [Project guardrails](../docs/design/cloud/operations.md#project-guardrails)).
@@ -127,8 +132,8 @@ The design leaves these choices to the implementation. Each one is the simplest 
 - **The uptime check calls the `run.app` URL**, so it works before DNS. `/healthz` does not depend on the host.
 - **The public account can act as the invoker.** A webhook task names the invoker in its own `oidcToken`, and Cloud
   Tasks requires that. The enforced queue-level route still sends the token only to `/internal/webhooks`.
-- **Services keep deletion protection on.** A replaced service would start the placeholder image. See
-  [Roll back](#roll-back).
+- **Services keep deletion protection on.** A replacement requires a reviewed real App image digest and an owner
+  decision. See [Roll back](#roll-back).
 - **The revision name is not ignored.** Cloud Run rejects a kept revision name with a changed template, so Terraform
   lets Cloud Run name each revision it creates.
 - **Workload Identity** matches the numeric repository ID `1373981201`, the ref `refs/heads/main`, and the workflow
@@ -152,9 +157,10 @@ flowchart TD
     C --> D["4 Verify the domain"]
     D --> E["5 Register the GitHub App"]
     E --> F["6 Add secret values"]
-    F --> G["7 Plan and apply runtime"]
+    F --> IMG["6b Build the App image"]
+    IMG --> G["7 Plan and apply runtime"]
     G --> H["8 Add the DNS records"]
-    H --> I["9 Deploy the first image"]
+    H --> I["9 Verify the release pipeline"]
     I --> J["10 Resume processing"]
     J --> K["11 Verify"]
 ```
@@ -216,13 +222,17 @@ tofu -chdir=infra/data plan -out=data.tfplan
 Expected plan summary:
 
 ```text
-Plan: 41 to import, 36 to add, N to change, 0 to destroy.
+Plan: 41 to import, 34 to add, N to change, 0 to destroy.
 ```
 
 - **41 to import:** 25 APIs, 13 quota preferences, the alert policy, its channel, and the essential contact.
-- **36 to add:** Firestore, its backup schedule and the index exemption of `kv.value` (3), 6 secrets and 10 secret
-  grants (16), 4 service accounts and 8 IAM grants (12), the Artifact Registry repository (1), the Workload Identity
-  pool and provider (2), and 2 audit log settings (2).
+- **34 to add:**
+  - Firestore, its backup schedule and the index exemption of `kv.value`: 3.
+  - 6 secrets and 8 secret grants: 14.
+  - 4 service accounts and 8 IAM grants: 12.
+  - Artifact Registry repository: 1.
+  - Workload Identity pool and provider: 2.
+  - Audit log settings: 2.
 - **N to change:** only Terraform-side fields on imported resources, for example `disable_on_destroy`,
   `disable_dependent_services` and `deletion_policy`, and `dimensions` from `null` to `{}` on the ten preferences
   without a region (the same empty value). If a change touches a real setting (a filter, a quota value, an
@@ -277,6 +287,20 @@ gcloud secrets versions access 1 --secret=archfit-github-webhook-secret --projec
 The Anthropic key is optional. To use it, add a version, then add `"archfit-anthropic-key" = "<version>"` to
 `secret_versions` in a pull request. Without that entry the key is not mounted, and managed AI stays off.
 
+### 6b. Build the initial App image
+
+After the data stack exists, run the build-only workflow on `main`:
+
+```sh
+gh workflow run deploy.yaml --ref main -f mode=build
+```
+
+This builds and pushes the real App image without reading or deploying Cloud Run services. Download `build.json` from
+its `release-<run>-<attempt>` artifact. The job summary also names the digest.
+Set `initial_image_digest` to that digest in a local, ignored `infra/runtime/bootstrap.auto.tfvars` file. Keep this input
+for later plans. Terraform uses it only when creating a service; CI owns subsequent image and traffic changes.
+Do not use the engine image or a `hello` placeholder. Keep webhooks inactive and processing paused.
+
 ### 7. Plan and apply the runtime stack
 
 ```sh
@@ -299,8 +323,9 @@ tofu -chdir=infra/runtime apply runtime.tfplan
 tofu -chdir=infra/runtime output dns_records
 ```
 
-The services start with the placeholder image. It answers every request with success and does nothing. The queues
-and the Scheduler are paused.
+The services start with the real App image at `initial_image_digest`. Invalid configuration or unreadable secrets
+stop startup. Requests pass through the App's authentication, not a success-returning placeholder. The queues and the
+Scheduler remain paused until the release checks pass.
 
 ### 8. Add the DNS records
 
@@ -311,7 +336,7 @@ Add each record from `dns_records` at the registrar. For a subdomain this is one
 gcloud beta run domain-mappings describe --domain=app.coupling.dev --region=europe-west1 --project=coupling-dev-510710
 ```
 
-### 9. Deploy the first image
+### 9. Verify the release pipeline
 
 CI deploys through `.github/workflows/deploy.yaml` with the `archfit-deploy` account. The workflow names the outputs
 `workload_identity_provider` and `deploy_service_account` of the data stack. Compare them first:
@@ -375,7 +400,8 @@ The deploy workflow [`.github/workflows/deploy.yaml`](../.github/workflows/deplo
 | Run                                                                 | What it does                                                                    |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | Push to `main`, while the variable `RELEASE_ON_PUSH` is `true`      | Builds the image of the commit and releases it                                  |
-| `gh workflow run deploy.yaml --ref main -f mode=release`            | The same, for the current `main`                                                |
+| `gh workflow run deploy.yaml --ref main -f mode=build`              | Builds the initial App image only; records its digest in `build.json`           |
+| `gh workflow run deploy.yaml --ref main -f mode=release`            | The same release path, for the current `main`                                   |
 | `... -f mode=image -f image_digest=sha256:<digest>`                 | Image rollback: releases an earlier image again with the current secrets        |
 | `... -f mode=traffic -f public_revision=<r> -f worker_revision=<r>` | Traffic rollback: moves traffic back to earlier release revisions (one or both) |
 
@@ -400,7 +426,7 @@ The deploy workflow [`.github/workflows/deploy.yaml`](../.github/workflows/deplo
 ## Routine changes
 
 - Change the code in a pull request. CI checks it. After the merge, run `plan`, review it, and `apply` the saved plan.
-- Apply `data` before `runtime` when a change touches both.
+- Apply `data` before `runtime` when a change touches both, except staged secret-access removal described in [Settings](#settings).
 - After a CI deploy, the runtime plan shows `template[0].revision` changing to `null` on that service: gcloud names
   each revision it deploys. This diff is safe. An apply creates one more revision with the current image and no
   traffic.
@@ -408,6 +434,10 @@ The deploy workflow [`.github/workflows/deploy.yaml`](../.github/workflows/deplo
   creates a new revision of each service that mounts the secret, with the current image. Traffic stays on the revisions
   that CI promoted, so the next release through CI deploys and promotes a revision with the new version. Follow the
   [rotation rules](../docs/design/cloud/security.md#secrets).
+- **Rotate the webhook secret:** set the new current version in `secret_versions` and the old numeric version in
+  `webhook_secret_previous_version`. Apply `runtime`, then release through CI so both serving roles accept both values.
+  Change GitHub's secret, wait for old signed tasks to drain, then set the previous version to `null`, apply and release
+  again before disabling it. See the [rotation rules](../docs/design/cloud/security.md#secrets).
 - **Pause processing** for an incident: `gcloud tasks queues pause archfit-webhooks --location=europe-west1`. The next
   `runtime` plan shows the queue as changed until `paused` matches.
 
@@ -417,10 +447,10 @@ The deploy workflow [`.github/workflows/deploy.yaml`](../.github/workflows/deplo
   is not involved.
 - **A bad infrastructure change:** revert the pull request, then `plan` and `apply` the stack again. An update keeps
   the current image.
-- **A replaced or recreated service** starts with the placeholder image, which answers every webhook and task with
-  success and does nothing. So `deletion_protection` stays on, and a plan that replaces a service fails. If a service
-  must be replaced: pause the queues and the Scheduler first (`paused = true`), set `deletion_protection = false` in a
-  pull request, apply, deploy the real image through CI, then resume.
+- **A replaced or recreated service** starts with the real App image at `initial_image_digest`. Keep
+  `deletion_protection` on. Before an approved replacement, pause processing and webhooks, review the initial digest and
+  current configuration, and follow the first-deployment release checks before resuming. Never use a success-returning
+  placeholder to bypass startup failures.
 - **A runtime resource that must go:** a `destroy` of the runtime stack removes services, queues, the Scheduler, and
   alerts. Data stays. It needs the same steps as a replacement. A deleted queue name cannot be used again for about
   7 days, so prefer a revert.
@@ -454,7 +484,7 @@ tflint --chdir=infra --recursive --config="$PWD/infra/.tflint.hcl"
   change to either.
 - Cloud Logging reads severity only from its own key name. Until the App writes that key, the error-line alert matches
   only platform lines.
-- The inline-fallback alert, the log-based counters for requests and verdicts, and the long-retention log bucket wait
+- Dedicated enqueue-failure counters, the log-based counters for requests and verdicts, and the long-retention log bucket wait
   for the App log lines that they count.
 - A metric-absence condition fires only after its metric had a data point since the policy changed. A sweep that never
   succeeds is caught by the "Sweep job fails" alert instead.

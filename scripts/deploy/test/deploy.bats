@@ -278,6 +278,16 @@ assert_canary_untagged() {
 	[ "$(calls "docker push $tagged$")" = "docker push $tagged" ]
 }
 
+@test "build records a bootstrap image without touching Cloud Run" {
+	run --separate-stderr "$DEPLOY/build.sh" "$GITHUB_SHA"
+	[ "$status" -eq 0 ]
+	[ "$output" = "$FAKE_DIGEST" ]
+	jq -e --arg commit "$GITHUB_SHA" --arg digest "$FAKE_DIGEST" --arg image "$IMAGE" \
+		'.commit == $commit and .digest == $digest and .image == $image' "$RELEASE_DIR/build.json"
+	grep -q "$FAKE_DIGEST" "$GITHUB_STEP_SUMMARY"
+	[ -z "$(calls 'gcloud run')" ]
+}
+
 @test "build reuses the image of a commit that was already pushed" {
 	touch "$FAKE_STATE/pushed"
 	run --separate-stderr "$DEPLOY/build.sh" "$GITHUB_SHA"

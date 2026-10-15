@@ -104,7 +104,10 @@ Rules:
 - The task name comes from the delivery ID. Cloud Tasks rejects a repeated name for 24 hours. Delivery is still
   at-least-once and can be out of order. See [Concurrency](#concurrency).
 - A transient error returns 5xx, and the queue retries for about 2 hours. A permanent error returns success and is logged.
-- If a body is too large for a task (1 MiB), or if the queue is unavailable, intake processes the webhook inline, as today.
+- Public intake returns `202` only when both tasks are accepted. Enqueue failure returns `503` and is logged at
+  error level; no production inline fallback runs. The adapter caps bodies at 900 KiB to leave task-header overhead.
+- GitHub does not automatically redeliver failed webhooks. Investigate failed deliveries and use explicit redelivery
+  or sweep reconciliation. The sweep reconstructs current state; it does not replay every event.
 
 ### Report upload
 
@@ -119,7 +122,7 @@ protected refs, missed uninstalls, and work that a bad release dropped. It recon
 ### Grant
 
 The operator creates a task in the operator queue. The worker checks an operator token, then writes the account record and
-its entitlement in one transaction. Cloud Audit Logs record who created the task.
+its entitlement in one transaction. Cloud Tasks does not audit `CreateTask`; operator-queue access remains owner-only.
 
 ## State
 

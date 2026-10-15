@@ -57,9 +57,10 @@ A task with an `oidcToken` needs the creator to act as that service account: the
 `roles/iam.serviceAccountUser` on the invoker account. The `data` stack in [`infra/`](../../../infra/README.md) grants it.
 
 Task names are `<delivery ID>_gate` and `<delivery ID>_control`. Cloud Tasks refuses a name for up to 24 hours after
-the task ran, so a GitHub redelivery inside that window is a duplicate. Intake processes a webhook inline when the
-queue refuses a task for another reason. The body limit is 900 KiB, under the 1 MiB task limit on the quotas page.
-The `tasks.create` reference names 100 KB; if that limit applies, a larger task is refused and processed inline.
+the task ran, so a GitHub redelivery inside that window is a duplicate. The adapter body limit is 900 KiB, leaving
+room below the task-size limit. Public intake returns `503` if either enqueue fails; no inline fallback runs.
+GitHub does not automatically redeliver failures. Inspect the failed delivery before explicit redelivery, or use sweep
+reconciliation. An oversized payload needs investigation, not repeated submission of the same unsupported task.
 
 ## Project guardrails
 
@@ -135,10 +136,10 @@ The order matters:
    DNS for `coupling.dev` is at the registrar (Namecheap). Verify `coupling.dev` in Google Search Console with the
    owner account, then point `app` at the Cloud Run domain mapping with the CNAME record that the mapping shows.
 3. Register the App with its webhook inactive, and install it nowhere yet.
-4. Create the services with a placeholder image, and the queues and the Scheduler paused.
-   The placeholder answers every request with success and does nothing.
-5. Deploy the first real image through CI: run the deploy workflow by hand. Then turn on releases for each push to
-   `main`.
+4. Run the deploy workflow in build-only mode. Create the services with that real App image digest in
+   `initial_image_digest`, with the queues and the Scheduler paused. No success-returning placeholder is used.
+5. Validate the first runtime and release pipeline: run the deploy workflow in release mode by hand. Then turn on
+   releases for each push to `main`.
 6. Resume the queues and the Scheduler. Activate the webhook. Install the App on one test repository.
    Follow one pull request from webhook to check. Then install it on the invited repositories.
 
@@ -220,7 +221,7 @@ digest, the two new revisions, and the revisions that had traffic before.
   `logging.googleapis.com/trace`, `logging.googleapis.com/spanId` and `logging.googleapis.com/trace_sampled`, read
   from the request's `traceparent` or `X-Cloud-Trace-Context` header. This needs `GOOGLE_CLOUD_PROJECT`. A module
   line that is logged without the request context has no trace; use its IDs.
-- Outcomes on the request line include `inline_fallback`, `transient_error`, `permanent_error`, `swept`,
+- Outcomes on the request line include `enqueue_failed`, `transient_error`, `permanent_error`, `swept`,
   `sweep_rate_limited`, `ready` and `not_ready`. Log-based counters read them.
 - Logs never contain source, report content, tokens, headers, bodies, URL paths, or user names.
 - The default log bucket keeps 30 days. Request and verdict lines also go to a long-retention bucket with Log Analytics.
@@ -232,7 +233,7 @@ task names, and on the worker lines. To follow an upload, start from the request
 ### Metrics and traces
 
 - Use the built-in Cloud Run and Cloud Tasks metrics for traffic, errors, latency, instances, and queue depth.
-- Add a few log-based counters: requests by outcome, verdicts by conclusion, inline fallbacks, and sweep passes.
+- Add a few log-based counters: requests by outcome, verdicts by conclusion, enqueue failures, and sweep passes.
 - Labels must have few values. Never label a metric with an installation, repository, commit, or delivery ID.
 - Cloud Run traces incoming requests without code. OpenTelemetry waits until a slow request needs a breakdown by call.
 
@@ -254,7 +255,7 @@ Alerts go to email and the Google Cloud mobile app. The set must cover:
 - any error line on either service.
 - a missing sweep.
 - a growing webhook queue, and task dispatches that fail, including 401 and 403 that never reach the App.
-- inline fallbacks.
+- enqueue failures. Public intake returns `503`; it never processes a refused task inline.
 - the budget thresholds.
 
 Alerting is free at design time. Pick thresholds during the implementation, and trigger each alert once before launch.

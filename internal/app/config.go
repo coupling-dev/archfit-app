@@ -78,7 +78,7 @@ type Config struct {
 	FirestoreEmulator   string // FIRESTORE_EMULATOR_HOST; host:port, plain HTTP and no credentials
 	SandboxDriver       string // ARCHFIT_SANDBOX, "none" until docs/tech-stack.md picks one
 	Role                string // ARCHFIT_ROLE: "all" (default), "public" or "worker"
-	QueueDriver         string // ARCHFIT_QUEUE: "inline" (default) or "cloudtasks"
+	QueueDriver         string // ARCHFIT_QUEUE: "inline" (local all-role default); public requires "cloudtasks"
 	TasksQueue          string // ARCHFIT_TASKS_QUEUE: "projects/<p>/locations/<l>/queues/<q>"; cloudtasks only
 	WorkerURL           string // ARCHFIT_WORKER_URL: the worker service URL; the dispatch OIDC audience
 	Invoker             string // ARCHFIT_INVOKER: the service account e-mail of the queue and Scheduler dispatches
@@ -148,8 +148,8 @@ func (c Config) validate() error {
 		{envStore, storeDrivers[c.StoreDriver] != nil},
 		{envFirestoreProject, c.StoreDriver != storeFirestore || c.FirestoreProject != ""},
 		{envSandbox, sandboxDrivers[c.SandboxDriver] != nil},
-		// The all role mounts no worker task route, so its tasks must run inline.
-		{envQueue, c.QueueDriver == queueInline || c.QueueDriver == queueCloudTasks && c.Role != roleAll},
+		// Local all-role work is inline; public intake must use the durable queue.
+		{envQueue, c.QueueDriver == queueInline && c.Role != rolePublic || c.QueueDriver == queueCloudTasks && c.Role != roleAll},
 		{envTasksQueue, !enqueuesToCloudTasks || c.TasksQueue != ""},
 		// The worker URL is an OIDC audience, compared byte for byte like the base URL.
 		{envWorkerURL, !needsWorker || strings.HasPrefix(c.WorkerURL, "https://") && !strings.HasSuffix(c.WorkerURL, "/")},

@@ -10,7 +10,7 @@ The [README](../README.md) owns release status and release blockers.
 | New developer                    | [Architecture](architecture.md), then [tech stack](tech-stack.md) |
 | Repository admin or policy owner | [User guide](user-guide.md)                                       |
 | Operator                         | [User guide operator section](user-guide.md#for-the-operator)     |
-| Owner deploying to Google Cloud  | [Infrastructure runbook](../infra/README.md)                      |
+| Owner deploying to Google Cloud  | [Visual cloud architecture](cloud-architecture.html), then [infrastructure runbook](../infra/README.md) |
 | Design reader                    | [Design records](#design-records)                                 |
 
 ## Current behavior

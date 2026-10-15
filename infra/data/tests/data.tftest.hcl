@@ -119,13 +119,11 @@ run "each_secret_is_readable_only_by_its_roles" {
       "archfit-github-webhook-secret|roles/secretmanager.secretAccessor|public",
       "archfit-github-webhook-secret|roles/secretmanager.secretAccessor|worker",
       "archfit-github-oauth-secret|roles/secretmanager.secretAccessor|public",
-      "archfit-github-oauth-secret|roles/secretmanager.secretAccessor|worker",
       "archfit-cookie-key|roles/secretmanager.secretAccessor|public",
-      "archfit-cookie-key|roles/secretmanager.secretAccessor|worker",
       "archfit-operator-token|roles/secretmanager.secretAccessor|worker",
       "archfit-anthropic-key|roles/secretmanager.secretAccessor|public",
     ])
-    error_message = "The public role must not read the operator token; the worker must not read the LLM key."
+    error_message = "Each role gets only its secrets: the worker cannot read OAuth, cookie or LLM secrets; public cannot read the operator token."
   }
 
   assert {

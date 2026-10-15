@@ -81,7 +81,7 @@ type handlerDeps struct {
 	role           string
 	gate           gateFacade
 	control        controlFacade
-	queue          queue.Queue // nil means the inline driver
+	queue          queue.Queue // required for public intake; nil uses the local all-role driver
 	webhookSecrets [][]byte    // the current secret first, then the previous one during a rotation
 	operatorToken  []byte      // nil in the public role
 	workerURL      string      // the audience of invoker ID tokens; worker role only
@@ -130,7 +130,7 @@ func newHandler(d handlerDeps) http.Handler {
 type server struct {
 	handlerDeps
 	operatorSum [sha256.Size]byte
-	inline      queue.Queue // processes in this request; the fallback when s.queue refuses a task
+	inline      queue.Queue // local all-role driver; never a public-service fallback
 	readiness   *readiness
 }
 
@@ -241,10 +241,10 @@ func isolate(f func() error) (err error) {
 	return f()
 }
 
-// webhook is intake: it verifies a delivery and queues it as two tasks, gate first. A verified delivery that
-// parses answers 202 whatever happens next. A real queue retries a failed task; the inline driver does not. With
-// a real queue, a GitHub redelivery inside 24 hours has the same task names and is refused as a duplicate, so the
-// sweep is the recovery path for work that was lost. A task the queue refuses is processed inline, in this request.
+// webhook verifies a delivery and attempts both tasks, gate first. Public intake answers 202 only when both
+// are accepted, or the event is ignored. Enqueue failure answers 503 without an inline fallback. Only the local
+// all role uses the inline driver. Queue retries and sweep reconciliation handle recovery; GitHub does not
+// automatically redeliver failed webhooks.
 func (s *server) webhook(w http.ResponseWriter, r *http.Request) {
 	ri := info(r)
 	ri.deliveryID = loggedID(r.Header.Get(webhook.HeaderDelivery))
@@ -276,13 +276,18 @@ func (s *server) webhook(w http.ResponseWriter, r *http.Request) {
 	if e.Kind != webhook.Ignored {
 		// GitHub drops the connection after 10 seconds; queueing and inline work keep their own deadlines instead.
 		ctx := context.WithoutCancel(r.Context())
+		failed := false
 		for _, half := range []string{halfGate, halfControl} {
 			t := deliveryTask(r.Header, half, body)
 			if err := s.enqueue(ctx, t); err != nil {
-				ri.outcome = outcomeInlineFallback
-				s.log.WarnContext(ctx, "webhook processed inline", "delivery_id", ri.deliveryID, "handler", half, "error", err.Error())
-				_ = s.inline.Enqueue(ctx, t)
+				failed = true
+				ri.outcome = outcomeEnqueueFailed
+				s.log.ErrorContext(ctx, "webhook enqueue failed", "delivery_id", ri.deliveryID, "handler", half, "error", err.Error())
 			}
+		}
+		if failed {
+			http.Error(w, "webhook enqueue failed", http.StatusServiceUnavailable)
+			return
 		}
 	}
 	w.WriteHeader(http.StatusAccepted)
@@ -292,6 +297,9 @@ func (s *server) webhook(w http.ResponseWriter, r *http.Request) {
 // handlers' own deadlines.
 func (s *server) enqueue(ctx context.Context, t queue.Task) error {
 	if s.queue == nil {
+		if s.role != roleAll {
+			return errors.New("webhook queue is not configured")
+		}
 		return s.inline.Enqueue(ctx, t)
 	}
 	ctx, cancel := context.WithTimeout(ctx, enqueueTimeout)
@@ -327,7 +335,7 @@ const (
 	outcomePermanent = "permanent_error"
 	outcomeTransient = "transient_error"
 
-	outcomeInlineFallback = "inline_fallback" // intake: the queue refused a task, so it ran in the request
+	outcomeEnqueueFailed = "enqueue_failed" // intake: at least one task was not accepted
 )
 
 // process verifies and handles one half of a delivery. It returns an error only when a repeat may succeed:
@@ -378,11 +386,10 @@ func (s *server) process(ctx context.Context, t queue.Task) (webhook.Event, stri
 	}
 }
 
-// runInline is the inline driver's handler: it runs in the intake request, which logs the outcome. A fallback
-// outcome stays: it is the counted signal that the queue refused work; the handler error has its own line.
+// runInline processes local all-role work in the request, which logs the outcome.
 func (s *server) runInline(ctx context.Context, t queue.Task) {
 	if _, outcome, _ := s.process(ctx, t); outcome != outcomeDone && outcome != outcomeIgnored {
-		if ri, ok := ctx.Value(requestInfoKey{}).(*requestInfo); ok && ri.outcome != outcomeInlineFallback {
+		if ri, ok := ctx.Value(requestInfoKey{}).(*requestInfo); ok {
 			ri.outcome = "handler_error"
 		}
 	}

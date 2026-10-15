@@ -108,7 +108,8 @@ The status page derives its stage from GitHub on every read.
 
 ### Managed discovery
 
-Managed discovery is not available in this build. `ARCHFIT_SANDBOX=none` is the only sandbox driver.
+Managed discovery is not available in this build and is not offered by the onboarding form.
+`ARCHFIT_SANDBOX=none` is the only sandbox driver. Customer discovery and optional managed AI assistance remain separate.
 
 When a sandbox driver exists, an administrator must record **Managed discovery** consent before source processing.
 The App then clones the repository into an ephemeral sandbox, runs discovery, and deletes the sandbox.

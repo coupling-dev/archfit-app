@@ -35,14 +35,15 @@ override_data {
       secret_readers = {
         "archfit-github-private-key"    = ["public", "worker"]
         "archfit-github-webhook-secret" = ["public", "worker"]
-        "archfit-github-oauth-secret"   = ["public", "worker"]
-        "archfit-cookie-key"            = ["public", "worker"]
+        "archfit-github-oauth-secret"   = ["public"]
+        "archfit-cookie-key"            = ["public"]
         "archfit-operator-token"        = ["worker"]
         "archfit-anthropic-key"         = ["public"]
       }
       deploy_service_account = "archfit-deploy@coupling-dev-510710.iam.gserviceaccount.com"
       notification_channel   = "projects/coupling-dev-510710/notificationChannels/1"
       project_number         = "335297348272"
+      image_repository       = "europe-west1-docker.pkg.dev/coupling-dev-510710/archfit-app/archfit-app"
     }
   }
 }
@@ -50,6 +51,77 @@ override_data {
 variables {
   github_app_id          = "123456"
   github_oauth_client_id = "Iv1.test"
+  initial_image_digest   = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}
+
+run "services_start_with_the_real_digest_pinned_app" {
+  command = plan
+
+  assert {
+    condition = alltrue([
+      for s in google_cloud_run_v2_service.this :
+      s.template[0].containers[0].image == "europe-west1-docker.pkg.dev/coupling-dev-510710/archfit-app/archfit-app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ])
+    error_message = "New services run the real digest-pinned App, never a success-returning placeholder."
+  }
+}
+
+run "initial_image_rejects_a_mutable_tag" {
+  command = plan
+  variables {
+    initial_image_digest = "latest"
+  }
+  expect_failures = [var.initial_image_digest]
+}
+
+run "webhook_rotation_mounts_both_versions_on_each_role" {
+  command = plan
+  variables {
+    webhook_secret_previous_version = "1"
+    secret_versions = {
+      "archfit-github-private-key"    = "1"
+      "archfit-github-webhook-secret" = "2"
+      "archfit-github-oauth-secret"   = "1"
+      "archfit-cookie-key"            = "1"
+      "archfit-operator-token"        = "1"
+    }
+  }
+
+  assert {
+    condition = alltrue([
+      for s in google_cloud_run_v2_service.this :
+      contains([for e in s.template[0].containers[0].env : "${e.name}=${e.value}"], "ARCHFIT_GITHUB_WEBHOOK_SECRET_PREVIOUS_FILE=/secrets/archfit-github-webhook-secret/previous")
+    ])
+    error_message = "Both signature verifiers receive the previous webhook secret during rotation."
+  }
+
+  assert {
+    condition = alltrue([
+      for s in google_cloud_run_v2_service.this :
+      toset([for item in [for v in s.template[0].volumes : v if v.name == "archfit-github-webhook-secret"][0].secret[0].items : "${item.path}=${item.version}"]) == toset(["value=2", "previous=1"])
+    ])
+    error_message = "Rotation mounts two pinned versions of the same secret without adding another secret or IAM grant."
+  }
+}
+
+run "previous_webhook_secret_is_absent_outside_rotation" {
+  command = plan
+
+  assert {
+    condition = alltrue([
+      for s in google_cloud_run_v2_service.this :
+      !contains([for e in s.template[0].containers[0].env : e.name], "ARCHFIT_GITHUB_WEBHOOK_SECRET_PREVIOUS_FILE")
+    ])
+    error_message = "The previous secret file is configured only during rotation."
+  }
+}
+
+run "previous_webhook_version_rejects_latest" {
+  command = plan
+  variables {
+    webhook_secret_previous_version = "latest"
+  }
+  expect_failures = [var.webhook_secret_previous_version]
 }
 
 run "worker_is_internal_and_checks_the_invoker" {
@@ -81,7 +153,7 @@ run "each_service_runs_as_its_own_account_with_at_most_two_instances" {
 
   assert {
     condition     = alltrue([for s in google_cloud_run_v2_service.this : s.deletion_protection != false])
-    error_message = "A replacement would start the placeholder image, so deleting a service must fail."
+    error_message = "Deleting a service must require an explicit owner decision."
   }
 
   assert {
@@ -120,11 +192,17 @@ run "secrets_are_pinned_files_mounted_per_role" {
     condition = toset([for v in google_cloud_run_v2_service.this["worker"].template[0].volumes : v.name]) == toset([
       "archfit-github-private-key",
       "archfit-github-webhook-secret",
-      "archfit-github-oauth-secret",
-      "archfit-cookie-key",
       "archfit-operator-token",
     ])
-    error_message = "The worker mounts every secret it reads, and never the LLM key."
+    error_message = "The worker mounts only its App key, webhook secret and operator token."
+  }
+
+  assert {
+    condition = alltrue([
+      for name in ["ARCHFIT_GITHUB_OAUTH_SECRET_FILE", "ARCHFIT_COOKIE_KEY_FILE", "ARCHFIT_ANTHROPIC_KEY_FILE"] :
+      !contains([for e in google_cloud_run_v2_service.this["worker"].template[0].containers[0].env : e.name], name)
+    ])
+    error_message = "The worker has no file references to OAuth, cookie or LLM secrets."
   }
 
   assert {
@@ -287,6 +365,7 @@ run "roles_get_the_settings_from_operations_md" {
           "ARCHFIT_ROLE=${k}",
           "ARCHFIT_STORE=firestore",
           "ARCHFIT_FIRESTORE_PROJECT=coupling-dev-510710",
+          "GOOGLE_CLOUD_PROJECT=coupling-dev-510710",
           "ARCHFIT_WORKER_URL=https://archfit-worker-335297348272.europe-west1.run.app",
           "ARCHFIT_INVOKER=archfit-invoker@coupling-dev-510710.iam.gserviceaccount.com",
           "ARCHFIT_GITHUB_APP_ID=123456",
