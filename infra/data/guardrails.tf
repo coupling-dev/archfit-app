@@ -98,6 +98,12 @@ resource "google_monitoring_alert_policy" "guardrail" {
     }
   }
 
+  # Copied from the live policy, so the import does not drop the text of the alert email.
+  documentation {
+    content   = "Admin Activity audit log shows a change to a cost or security guardrail of project ${var.project_id}: IAM policy, enabled APIs, quota preferences, a service account key, or a Cloud Run service outside ${var.region}. If you did not make this change, follow the incident response in archfit-app docs/design/cloud/security.md."
+    mime_type = "text/markdown"
+  }
+
   alert_strategy {
     auto_close = "1800s"
     notification_rate_limit {
