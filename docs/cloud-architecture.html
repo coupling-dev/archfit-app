@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Archfit: предлагаемая Google Cloud architecture, GitHub App integration, network flows, secrets и первый deployment. Сверено с кодом, не с live cloud state.">
+  <meta name="color-scheme" content="light">
+  <title>Archfit — Cloud Architecture &amp; GitHub App</title>
+  <style>
+    :root {
+      --ink: #18283c; --muted: #52647a; --paper: #f3f5f9; --card: #fff;
+      --line: #d8e1eb; --navy: #101f33; --teal: #096c61; --teal-soft: #e7f5ef;
+      --violet: #604299; --violet-soft: #f0ecf9; --amber: #805208; --amber-soft: #fff4dd;
+      --blue: #285c97; --blue-soft: #eaf2fc; --radius: 18px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink); background: var(--paper); line-height: 1.65;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-padding-top: 6rem; }
+    body { margin: 0; }
+    a { color: var(--teal); text-underline-offset: .2em; }
+    a:hover { text-decoration-thickness: 2px; }
+    :focus-visible { outline: 3px solid #267fb2; outline-offset: 4px; }
+    .skip { position: absolute; top: -5rem; left: 1rem; z-index: 10; padding: .6rem 1rem; background: white; }
+    .skip:focus { top: 1rem; }
+    .wrap { width: min(1200px, calc(100% - 3rem)); margin-inline: auto; }
+    .topbar { position: sticky; top: 0; z-index: 5; background: #fff; border-bottom: 1px solid var(--line); }
+    .topbar-inner { min-height: 68px; display: flex; align-items: center; gap: 2rem; }
+    .brand { font-size: 1.1rem; font-weight: 800; color: var(--navy); text-decoration: none; white-space: nowrap; }
+    .brand span { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 8px;
+      background: var(--teal); color: white; margin-right: .55rem; font-size: .9rem; }
+    nav { display: flex; gap: 1.2rem; flex: 1; overflow-x: auto; padding-block: .7rem; }
+    nav a { color: var(--muted); font-size: .85rem; text-decoration: none; white-space: nowrap; }
+    nav a:hover { color: var(--teal); }
+    .hero { background: var(--navy); color: white; padding-block: 4.4rem 3.5rem; }
+    .hero-grid { display: grid; grid-template-columns: 1.55fr 1fr; gap: 3rem; align-items: center; }
+    .eyebrow { margin: 0 0 1rem; font-size: .72rem; letter-spacing: .16em; text-transform: uppercase; font-weight: 750; color: var(--teal); }
+    .hero .eyebrow { color: #85ddc1; }
+    h1 { font-size: clamp(2rem, 4.2vw, 3.55rem); line-height: 1.12; letter-spacing: -.045em; margin: 0 0 1.4rem; }
+    h1 em { color: #85ddc1; font-style: normal; }
+    .lead { font-size: 1.05rem; color: #cad6e5; max-width: 650px; }
+    .hero-facts { border: 1px solid #3a4a5e; border-radius: var(--radius); padding: 1.4rem 1.6rem; background: #192b42; }
+    .hero-facts dl { margin: 0; }
+    .hero-facts dl > div { padding-block: .65rem; border-bottom: 1px solid #3a4a5e; }
+    .hero-facts dl > div:last-child { border-bottom: 0; }
+    dt { font-size: .76rem; color: var(--muted); }
+    dd { margin: .15rem 0 0; font-weight: 650; overflow-wrap: anywhere; }
+    .hero-facts dt { color: #adbed2; }
+    .hero-facts dd { font-size: .92rem; }
+    .badge { display: inline-block; border-radius: 5px; padding: .2rem .55rem; font-size: .72rem;
+      line-height: 1.4; font-weight: 750; background: var(--teal-soft); color: var(--teal); }
+    .badge.warn { color: var(--amber); background: var(--amber-soft); }
+    .badge.soft { color: var(--violet); background: var(--violet-soft); }
+    .hero-note { margin-top: 1.6rem; font-size: .82rem; color: #adbed2; max-width: 850px; }
+    main { padding-bottom: 3rem; }
+    section { padding-top: 3.8rem; }
+    .section-head { display: flex; align-items: baseline; gap: 1rem; margin-bottom: 1.3rem; }
+    .section-no { font: 600 .85rem ui-monospace, SFMono-Regular, Consolas, monospace; color: var(--teal); }
+    h2 { margin: 0; font-size: clamp(1.5rem, 2.6vw, 2rem); letter-spacing: -.03em; line-height: 1.25; }
+    h3 { margin: 0 0 .6rem; font-size: 1.08rem; line-height: 1.4; }
+    h4 { margin: 0 0 .35rem; font-size: .96rem; }
+    p { margin: .55rem 0 1rem; }
+    .section-intro { margin-top: -.35rem; max-width: 900px; color: var(--muted); }
+    .grid { display: grid; gap: 1rem; }
+    .three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 1.4rem; min-width: 0; }
+    .card p:last-child { margin-bottom: 0; }
+    .card .kicker { font-size: .73rem; color: var(--muted); font-weight: 700; letter-spacing: .055em; margin-bottom: .6rem; }
+    .card.accent { border-top: 3px solid var(--teal); }
+    .card.cloud { border-top: 3px solid var(--blue); }
+    .card.external { border-top: 3px solid var(--violet); }
+    .small { font-size: .85rem; }
+    .muted { color: var(--muted); }
+    .note { border-left: 3px solid var(--teal); padding: 1rem 1.2rem; background: var(--teal-soft); border-radius: 0 10px 10px 0; margin-top: 1.1rem; }
+    .note.warn { border-color: #ba821c; background: var(--amber-soft); }
+    .note p { margin: 0; }
+    code { font: .83em ui-monospace, SFMono-Regular, Consolas, monospace; padding: .12em .3em;
+      border-radius: 4px; background: #edf1f6; overflow-wrap: anywhere; }
+    .hero code { background: #283b53; color: #e4efff; }
+    ul { padding-left: 1.1rem; margin: .6rem 0; }
+    li { margin-block: .4rem; }
+    .ref { font-size: .76rem; color: var(--muted); margin: 1rem 0 0; }
+    .ref a { color: var(--muted); }
+    figure { margin: 0; }
+    .diagram-panel { background: white; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+    .diagram-scroll { overflow-x: auto; }
+    .diagram-scroll svg { display: block; width: 100%; min-width: 1050px; height: auto; }
+    .diagram-caption { padding: .9rem 1.2rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .82rem; }
+    .diagram-caption strong { color: var(--ink); }
+    .scroll-hint { padding: .7rem 1.2rem 0; font-size: .76rem; color: var(--muted); }
+    .legend { display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; margin-block: 1rem; font-size: .8rem; color: var(--muted); }
+    .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: .45rem; background: var(--teal); }
+    .dot.purple { background: var(--violet); }
+    .dot.orange { background: #a76b0c; }
+    .diagram-panel svg text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #18283c; }
+    .diagram-panel svg .zone-label { font-size: 13px; font-weight: 750; letter-spacing: 1px; }
+    .diagram-panel svg .node-title { font-size: 19px; font-weight: 750; }
+    .diagram-panel svg .node-copy { font-size: 15px; fill: #52647a; }
+    .diagram-panel svg .edge-label { font-size: 13px; font-weight: 650; fill: #3b586b; }
+    .diagram-panel svg .number { font-size: 13px; font-weight: 750; fill: white; text-anchor: middle; }
+    .flow-key { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem; margin-top: 1rem; }
+    .flow-key p { margin: .15rem 0; font-size: .85rem; }
+    .num { display: inline-grid; place-items: center; width: 25px; height: 25px; background: var(--teal);
+      color: white; border-radius: 50%; margin-right: .35rem; font-size: .76rem; font-weight: 800; flex-shrink: 0; }
+    .table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: white; }
+    table { border-collapse: collapse; width: 100%; font-size: .85rem; }
+    caption { text-align: left; font-size: .76rem; padding: .9rem 1rem; color: var(--muted); background: #f8fafc; border-bottom: 1px solid var(--line); }
+    th, td { padding: .85rem 1rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+    th { background: #f5f8fc; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+    tbody tr:last-child td { border-bottom: 0; }
+    td strong { display: inline-block; margin-bottom: .15rem; }
+    .network-table { min-width: 850px; }
+    .secret-table { min-width: 820px; }
+    .check { color: var(--teal); font-weight: 750; }
+    .steps { list-style: none; padding: 0; margin: 0; counter-reset: steps; }
+    .steps > li { counter-increment: steps; display: grid; grid-template-columns: 38px 1fr; gap: .8rem;
+      padding: 1.1rem 0; border-bottom: 1px solid var(--line); margin: 0; break-inside: avoid; }
+    .steps > li::before { content: counter(steps, decimal-leading-zero); width: 34px; height: 34px;
+      display: grid; place-items: center; border: 1px solid #b8d8cf; border-radius: 9px; color: var(--teal); font-size: .8rem; font-weight: 750; }
+    .steps > li:last-child { border-bottom: 0; padding-bottom: 0; }
+    .steps p { margin: .25rem 0 0; font-size: .91rem; color: var(--muted); }
+    details { background: white; border: 1px solid var(--line); border-radius: 12px; margin-top: 1rem; }
+    summary { cursor: pointer; font-weight: 700; padding: 1rem 1.2rem; }
+    summary:hover { color: var(--teal); }
+    .details-body { padding: 0 1.2rem 1.1rem; }
+    .rail { display: grid; grid-template-columns: 1fr 30px 1fr 30px 1fr; align-items: stretch; gap: .3rem; }
+    .rail > .arrow { align-self: center; text-align: center; color: var(--muted); font-size: 1.4rem; }
+    .rail-box { border: 1px solid var(--line); border-radius: 12px; padding: 1rem; background: white; min-width: 0; }
+    .rail-box strong { display: block; font-size: .92rem; margin-bottom: .35rem; }
+    .rail-box p { font-size: .83rem; margin: 0; color: var(--muted); }
+    .lane-title { margin: 1.5rem 0 .8rem; font-size: .79rem; font-weight: 800; color: var(--teal); text-transform: uppercase; letter-spacing: .08em; }
+    .todo { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }
+    .todo .card { padding: 1.1rem 1.2rem; }
+    .todo p { font-size: .87rem; color: var(--muted); margin-bottom: 0; }
+    .sources { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .sources ul { list-style: none; padding: 0; font-size: .83rem; }
+    .sources li { margin-block: .65rem; }
+    footer { border-top: 1px solid var(--line); padding: 1.6rem 0 2.5rem; font-size: .8rem; color: var(--muted); }
+    @media (max-width: 850px) {
+      .hero-grid { grid-template-columns: 1fr; gap: 1.5rem; }
+      .three, .flow-key { grid-template-columns: 1fr; }
+      .hero { padding-block: 3rem 2.5rem; }
+      .topbar-inner { gap: 1rem; }
+      nav { gap: 1rem; }
+      .hero-facts dl { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem 1rem; }
+      .hero-facts dl > div { border: 0; }
+    }
+    @media (max-width: 600px) {
+      .wrap { width: calc(100% - 2rem); }
+      .two, .todo, .sources { grid-template-columns: 1fr; }
+      .topbar-inner { display: block; padding-top: .65rem; }
+      nav { padding-block: .5rem .65rem; }
+      .hero-facts dl { grid-template-columns: 1fr; }
+      section { padding-top: 2.6rem; }
+      .card { padding: 1.15rem; }
+      .rail { grid-template-columns: 1fr; gap: .45rem; }
+      .rail > .arrow { transform: rotate(90deg); font-size: 1.2rem; line-height: 1; }
+      html { scroll-padding-top: 7rem; }
+    }
+    @media print {
+      .topbar, .skip, .scroll-hint { display: none; }
+      .wrap { width: 100%; }
+      .hero { padding: 1rem; print-color-adjust: exact; }
+      section { padding-top: 1.8rem; }
+      .hero-grid { grid-template-columns: 1.5fr 1fr; }
+      .diagram-scroll svg { min-width: 0; }
+      .table-scroll { overflow: visible; }
+      .network-table, .secret-table { min-width: 0; }
+      .card, tr, figure { break-inside: avoid; }
+      .card, .diagram-panel, th, .note { print-color-adjust: exact; }
+      details .details-body { display: block; }
+      body { background: white; font-size: 10pt; }
+    }
+  </style>
+</head>
+<body>
+<a class="skip" href="#main">Перейти к содержанию</a>
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <a class="brand" href="#top"><span aria-hidden="true">A</span>archfit</a>
+    <nav aria-label="Разделы документа">
+      <a href="#approach">Как создавать</a><a href="#runtime">Cloud map</a><a href="#github">GitHub App</a>
+      <a href="#network">Network</a><a href="#secrets">Secrets</a><a href="#delivery">Deployment</a><a href="#launch">До запуска</a>
+    </nav>
+  </div>
+</header>
+
+<div class="hero" id="top">
+  <div class="wrap">
+    <div class="hero-grid">
+      <div>
+        <p class="eyebrow">Architecture briefing · Invite-only beta</p>
+        <h1>Анализ — в GitHub.<br>Контроль — <em>в Google Cloud.</em></h1>
+        <p class="lead">Engine проверяет код в customer CI. GitHub App принимает отчёт, сверяет его с approved policy и публикует checks. Исходники не нужно переносить в облачный analyzer.</p>
+      </div>
+      <aside class="hero-facts" aria-label="Параметры целевого окружения">
+        <dl>
+          <div><dt>Google Cloud project / region</dt><dd>coupling-dev-510710 · europe-west1</dd></div>
+          <div><dt>Публичная точка входа</dt><dd>https://app.coupling.dev</dd></div>
+          <div><dt>Runtime</dt><dd>2 Cloud Run service · один App image</dd></div>
+          <div><dt>Управление</dt><dd>OpenTofu — infrastructure · CI — image и traffic</dd></div>
+        </dl>
+      </aside>
+    </div>
+    <p class="hero-note"><span class="badge warn">Не live inventory</span> Схема сверена с docs и кодом: App <code>8d39eb7</code>, Action <code>dbc3c1e</code>, engine <code>v3.0.0</code>. Учтены локальные hardening changes: worker secrets, queue-only intake, real-image bootstrap, rotation и tracing. Схема показывает конфигурацию в файлах, а не подтверждает наличие ресурсов или применение изменений в Google Cloud.</p>
+  </div>
+</div>
+
+<main class="wrap" id="main">
+  <section id="approach" aria-labelledby="approach-title">
+    <div class="section-head"><span class="section-no">01 /</span><h2 id="approach-title">Не собирать environment вручную</h2></div>
+    <p class="section-intro"><strong>Рекомендация: использовать уже подготовленный OpenTofu-код.</strong> Это Terraform-compatible IaC. Не нужен второй набор ресурсов, созданный командами в Console или через <code>gcloud</code>.</p>
+    <div class="grid three">
+      <article class="card accent">
+        <div class="kicker">ОСНОВНОЙ ИНСТРУМЕНТ</div><h3>OpenTofu / Terraform</h3>
+        <p>Создаёт Firestore, secrets без значений, service accounts, IAM, registry, Cloud Run, queues, Scheduler и monitoring.</p>
+        <p class="small muted">Два stack: <code>infra/data</code> и <code>infra/runtime</code>. Изменения проходят PR → plan → owner approval → apply с workstation.</p>
+      </article>
+      <article class="card external">
+        <div class="kicker">ОГРАНИЧЕННЫЙ BOOTSTRAP</div><h3>Owner + gcloud / Console</h3>
+        <p>Login, проверка project и guardrails, создание state bucket, регистрация GitHub App, secret values, domain verification и DNS.</p>
+        <p class="small muted">Secret values не должны попадать в Terraform variables, state, git или HTML. DNS и billing budget остаются у owner.</p>
+      </article>
+      <article class="card cloud">
+        <div class="kicker">ПОСЛЕ СОЗДАНИЯ INFRASTRUCTURE</div><h3>GitHub Actions</h3>
+        <p>Собирает App image, публикует его в Artifact Registry, выпускает revisions и переключает traffic.</p>
+        <p class="small muted">CI не делает Terraform apply. Image и traffic исключены из Terraform drift через <code>ignore_changes</code>.</p>
+      </article>
+    </div>
+    <div class="note"><p><strong>Почему Google Cloud здесь подходит:</strong> уже написаны Cloud Run, Firestore и Cloud Tasks adapters. Для beta это managed services без VM и Kubernetes. Scale-to-zero уменьшает idle compute, но не гарантирует нулевой счёт: остаются storage, registry, backups, logs и traffic.</p></div>
+    <p class="ref">Основание: <a href="#source-runbook">infra runbook</a>, <a href="#source-runtime">runtime settings</a>, <a href="#source-deploy">deploy workflow</a>.</p>
+  </section>
+
+  <section id="runtime" aria-labelledby="runtime-title">
+    <div class="section-head"><span class="section-no">02 /</span><h2 id="runtime-title">Где установлены компоненты</h2></div>
+    <p class="section-intro">Два App process используют один Go binary и один image. Разделение по ролям, а не два разных продукта. Engine image — другой: он запускается на GitHub runner, не на Cloud Run.</p>
+    <figure class="diagram-panel">
+      <div class="scroll-hint">↔ На узком экране схема прокручивается горизонтально. Номера связей расшифрованы под схемой.</div>
+      <div class="diagram-scroll" tabindex="0" role="region" aria-label="Прокручиваемая схема runtime">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1220 690" role="img" aria-labelledby="runtime-map-title runtime-map-desc">
+          <title id="runtime-map-title">Archfit runtime: GitHub, public Cloud Run, queues, worker и Firestore</title>
+          <desc id="runtime-map-desc">Browser, GitHub webhooks и GitHub Actions обращаются к public service по HTTPS. Public передаёт webhooks в Cloud Tasks. Cloud Tasks и Scheduler вызывают worker с Google ID token. Оба App service используют Firestore и GitHub API. Secret Manager и monitoring показаны ниже отдельными карточками.</desc>
+          <defs>
+            <marker id="arrow-runtime" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10z" fill="#426b78"/></marker>
+          </defs>
+          <rect x="18" y="36" width="266" height="614" rx="18" fill="#f4f0fa" stroke="#c6b7e0" stroke-dasharray="6 5"/>
+          <text class="zone-label" x="38" y="68">ВНЕ GOOGLE CLOUD</text>
+          <rect x="322" y="36" width="880" height="614" rx="18" fill="#eef7f3" stroke="#96bfae" stroke-dasharray="6 5"/>
+          <text class="zone-label" x="344" y="68">GOOGLE CLOUD PROJECT · europe-west1</text>
+          <text class="node-copy" x="344" y="91">Логическая граница project, не VPC и не subnet</text>
+
+          <path d="M260 160 H302 V285 H360" fill="none" stroke="#426b78" stroke-width="2" marker-end="url(#arrow-runtime)"/>
+          <path d="M260 325 H360" fill="none" stroke="#426b78" stroke-width="2" marker-end="url(#arrow-runtime)"/>
+          <path d="M260 525 H306 V385 H360" fill="none" stroke="#426b78" stroke-width="2" marker-end="url(#arrow-runtime)"/>
+          <path d="M630 335 H690" fill="none" stroke="#426b78" stroke-width="2" marker-end="url(#arrow-runtime)"/>
+          <path d="M860 335 H930" fill="none" stroke="#426b78" stroke-width="2" marker-end="url(#arrow-runtime)"/>
+          <path d="M860 164 H1045 V260" fill="none" stroke="#426b78" stroke-width="2" marker-end="url(#arrow-runtime)"/>
+          <text class="edge-label" x="917" y="151">Google ID token</text>
+          <path d="M495 415 V551 H530" fill="none" stroke="#426b78" stroke-width="2" marker-end="url(#arrow-runtime)"/>
+          <path d="M1045 410 V551 H800" fill="none" stroke="#426b78" stroke-width="2" marker-end="url(#arrow-runtime)"/>
+          <text class="edge-label" x="829" y="538">state · runtime IAM</text>
+
+          <rect x="40" y="110" width="220" height="100" rx="12" fill="white" stroke="#c6b7e0"/>
+          <text class="node-title" x="58" y="145">Browser</text><text class="node-copy" x="58" y="172">UI · GitHub OAuth</text><text class="node-copy" x="58" y="194">repo admin / owner</text>
+          <rect x="40" y="275" width="220" height="100" rx="12" fill="white" stroke="#c6b7e0"/>
+          <text class="node-title" x="58" y="310">GitHub</text><text class="node-copy" x="58" y="337">Webhooks · REST API</text><text class="node-copy" x="58" y="359">PR · policy · checks</text>
+          <rect x="40" y="460" width="220" height="130" rx="12" fill="white" stroke="#c6b7e0"/>
+          <text class="node-title" x="58" y="493">Customer CI</text><text class="node-copy" x="58" y="520">archfit-action</text><text class="node-copy" x="58" y="543">→ engine v3.0.0</text><text class="node-copy" x="58" y="568">код анализируется здесь</text>
+
+          <rect x="360" y="255" width="270" height="160" rx="14" fill="white" stroke="#43896d" stroke-width="2"/>
+          <rect x="376" y="271" width="86" height="23" rx="5" fill="#e7f5ef"/>
+          <text x="388" y="287" style="font-size:12px;fill:#096c61;font-weight:750">INTERNET</text>
+          <text class="node-title" x="378" y="324">archfit-public</text><text class="node-copy" x="378" y="350">UI · uploads · webhook intake</text><text class="node-copy" x="378" y="375">App-level authentication</text><text class="node-copy" x="378" y="397">Cloud Run IAM check: off</text>
+
+          <rect x="690" y="275" width="170" height="120" rx="12" fill="white" stroke="#9caec0"/>
+          <text class="node-title" x="707" y="309">Cloud Tasks</text><text class="node-copy" x="707" y="336">webhooks queue</text><text class="node-copy" x="707" y="360">retry · rate limit</text><text class="node-copy" x="707" y="382">fixed worker route</text>
+
+          <rect x="690" y="117" width="170" height="94" rx="12" fill="white" stroke="#9caec0"/>
+          <text class="node-title" x="707" y="150">Scheduler</text><text class="node-copy" x="707" y="176">hourly sweep</text><text class="node-copy" x="707" y="197">reconciliation</text>
+
+          <rect x="930" y="260" width="230" height="150" rx="14" fill="white" stroke="#43896d" stroke-width="2"/>
+          <rect x="946" y="276" width="138" height="23" rx="5" fill="#eaf2fc"/>
+          <text x="958" y="292" style="font-size:12px;fill:#285c97;font-weight:750">INTERNAL INGRESS</text>
+          <text class="node-title" x="948" y="329">archfit-worker</text><text class="node-copy" x="948" y="355">webhooks · sweep · grants</text><text class="node-copy" x="948" y="379">Invoker IAM check: on</text><text class="node-copy" x="948" y="399">нет UI и report upload</text>
+
+          <rect x="530" y="500" width="270" height="104" rx="14" fill="#fff8ec" stroke="#d6b572"/>
+          <text class="node-title" x="550" y="534">Firestore · (default)</text><text class="node-copy" x="550" y="560">entitlements · consent · budget</text><text class="node-copy" x="550" y="584">publication leases · no reports</text>
+
+          <g><circle cx="302" cy="238" r="13" fill="#096c61"/><text class="number" x="302" y="243">1</text></g>
+          <g><circle cx="309" cy="325" r="13" fill="#096c61"/><text class="number" x="309" y="330">2</text></g>
+          <g><circle cx="306" cy="447" r="13" fill="#096c61"/><text class="number" x="306" y="452">3</text></g>
+          <g><circle cx="660" cy="335" r="13" fill="#096c61"/><text class="number" x="660" y="340">4</text></g>
+          <g><circle cx="895" cy="335" r="13" fill="#096c61"/><text class="number" x="895" y="340">5</text></g>
+          <text class="node-copy" x="344" y="631">Также: operator queue → worker; оба App service → GitHub API. Полный список — в Network flow.</text>
+        </svg>
+      </div>
+      <figcaption class="diagram-caption"><strong>Не вся инфраструктура — отдельные серверы.</strong> Cloud Tasks, Scheduler, Firestore и Secret Manager — managed services. Дополнительные общие компоненты показаны ниже, без пересекающихся стрелок.</figcaption>
+    </figure>
+    <div class="flow-key">
+      <p><span class="num">1</span><strong>Browser → public:</strong> HTTPS, OAuth login и session cookie.</p>
+      <p><span class="num">2</span><strong>GitHub → public:</strong> webhook с HMAC signature.</p>
+      <p><span class="num">3</span><strong>CI → public:</strong> JSON report + GitHub OIDC token.</p>
+      <p><span class="num">4</span><strong>Public → Tasks:</strong> verified webhook; не report upload.</p>
+      <p><span class="num">5</span><strong>Tasks → worker:</strong> Google ID token от <code>archfit-invoker</code>.</p>
+      <p><strong>Обратная связь:</strong> public и worker вызывают GitHub API через installation token.</p>
+    </div>
+    <div class="grid three" style="margin-top:1.3rem">
+      <article class="card"><div class="kicker">RUNTIME SHARED SERVICES</div><h3>Secret Manager</h3><p class="small">Секреты монтируются файлами в revisions. Отдельные runtime service accounts и pinned secret versions.</p></article>
+      <article class="card"><div class="kicker">OPERATIONS</div><h3>Logging + Monitoring</h3><p class="small">Logs, uptime, alerts о 5xx, очередях, sweep и guardrail changes. Полнота telemetry отдельно отмечена в checklist.</p></article>
+      <article class="card"><div class="kicker">RELEASE, НЕ ANALYSIS</div><h3>Artifact Registry + GCS</h3><p class="small">Registry хранит App images. GCS bucket хранит Terraform state двух stack. Ни один не является хранилищем customer reports.</p></article>
+    </div>
+    <div class="note"><p><strong>Сеть остаётся простой.</strong> В текущих <code>infra/</code> нет отдельной VPC, subnet, NAT, load balancer или Cloud Armor. Internal ingress worker — настройка Cloud Run, а не «частная VM». HTTPS/TLS на публичном domain обслуживает Cloud Run domain mapping с managed certificate. Исходящие HTTPS-запросы к GitHub и Google APIs не ограничены отдельным egress allowlist.</p></div>
+    <p class="ref">Основание: <a href="#source-runtime">Cloud Run settings</a>, <a href="#source-queues">queues и Scheduler</a>, <a href="#source-routes">role routes</a>.</p>
+  </section>
+
+  <section id="github" aria-labelledby="github-title">
+    <div class="section-head"><span class="section-no">03 /</span><h2 id="github-title">Как это работает как GitHub App</h2></div>
+    <div class="grid three">
+      <article class="card external"><div class="kicker">REPO 1 · ANALYZER</div><h3>archfit</h3><p class="small">CLI и engine image в GHCR. Собирает факты и выпускает architecture-state report. Не получает App private key или cloud credentials.</p></article>
+      <article class="card external"><div class="kicker">REPO 2 · EXECUTION ADAPTER</div><h3>archfit-action</h3><p class="small">Composite Action на customer runner. Action закреплена commit SHA, engine — per-platform image digest. Загружает результат после завершения container.</p></article>
+      <article class="card accent"><div class="kicker">REPO 3 · CONTROL &amp; FEEDBACK</div><h3>archfit-app</h3><p class="small">Cloud Run runtime. Проверяет provenance и approved inputs, обслуживает UI, создаёт checks, comments и reviewable PRs.</p></article>
+    </div>
+    <figure class="diagram-panel" style="margin-top:1rem">
+      <div class="diagram-scroll" tabindex="0" role="region" aria-label="Прокручиваемая схема report и GitHub feedback">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1220 245" role="img" aria-labelledby="github-map-title github-map-desc">
+          <title id="github-map-title">GitHub PR → customer CI → App verification → GitHub checks</title>
+          <desc id="github-map-desc">Pull request запускает customer workflow. Engine в runner выпускает report. Action загружает report с GitHub OIDC token в public App. App проверяет identities и trusted inputs, затем публикует feedback в GitHub через installation token. Worker не находится в синхронном report path.</desc>
+          <defs><marker id="arrow-github" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10z" fill="#426b78"/></marker></defs>
+          <text class="zone-label" x="24" y="35">СИНХРОННЫЙ REPORT PATH · БЕЗ CLOUD TASKS И WORKER</text>
+          <path d="M260 125 H320" fill="none" stroke="#426b78" stroke-width="2" marker-end="url(#arrow-github)"/>
+          <path d="M580 125 H640" fill="none" stroke="#426b78" stroke-width="2" marker-end="url(#arrow-github)"/>
+          <path d="M900 125 H960" fill="none" stroke="#426b78" stroke-width="2" marker-end="url(#arrow-github)"/>
+          <text class="edge-label" x="270" y="106">event</text>
+          <text class="edge-label" x="590" y="106">OIDC</text>
+          <text class="edge-label" x="912" y="106">token</text>
+          <rect x="24" y="65" width="236" height="120" rx="12" fill="#f4f0fa" stroke="#c6b7e0"/>
+          <text class="node-title" x="42" y="101">GitHub · pull request</text>
+          <text class="node-copy" x="42" y="129">code + protected inputs</text>
+          <text class="node-copy" x="42" y="154">owner reviews на GitHub</text>
+          <rect x="320" y="65" width="260" height="120" rx="12" fill="#eaf2fc" stroke="#a8bed8"/>
+          <text class="node-title" x="338" y="101">CI · Action + engine</text>
+          <text class="node-copy" x="338" y="129">source analysis → report</text>
+          <text class="node-copy" x="338" y="154">image pinned by digest</text>
+          <rect x="640" y="65" width="260" height="120" rx="12" fill="#e7f5ef" stroke="#96bfae"/>
+          <text class="node-title" x="658" y="101">GCP · public App</text>
+          <text class="node-copy" x="658" y="129">bind run / SHA / inputs</text>
+          <text class="node-copy" x="658" y="154">decide → GitHub API</text>
+          <rect x="960" y="65" width="236" height="120" rx="12" fill="#f4f0fa" stroke="#c6b7e0"/>
+          <text class="node-title" x="978" y="101">GitHub · feedback</text>
+          <text class="node-copy" x="978" y="129">state · gate · comment</text>
+          <text class="node-copy" x="978" y="154">ruleset управляет merge</text>
+          <text class="node-copy" x="24" y="221">Analysis выполняет engine. Решение о пригодности отчёта — App. Merge protection — GitHub ruleset.</text>
+        </svg>
+      </div>
+      <figcaption class="diagram-caption">Другая линия — подписанные webhooks через queue и worker. Она обслуживает события и recovery, но не заменяет upload отчёта из CI.</figcaption>
+    </figure>
+    <div class="grid two" style="margin-top:1rem">
+      <article class="card">
+        <h3>Один обычный pull request</h3>
+        <ol class="steps">
+          <li><div><h4>GitHub запускает две независимые линии</h4><p>Webhook приходит в public intake → queue → worker. Параллельно customer workflow запускает Action. Worker сам не анализирует исходники.</p></div></li>
+          <li><div><h4>Action готовит trusted inputs</h4><p>Policy, baseline и labels берутся из git blobs. Для PR изменённый файл может браться с head; App примет его только с owner approval на точный head SHA. Иначе доверяет base ref.</p></div></li>
+          <li><div><h4>Engine выполняет check в CI</h4><p>Container получает inputs read-only, но рабочее дерево остаётся writable. GitHub upload token создаётся после выхода container и не передаётся ему.</p></div></li>
+          <li><div><h4>Action отправляет результат в public App</h4><p><code>POST /v1/reports</code>: report, envelope с identities/digests и короткоживущий GitHub Actions OIDC token.</p></div></li>
+          <li><div><h4>App сверяет, а не верит envelope</h4><p>OIDC signature и audience, workflow/run/commit через GitHub API, image manifest, approved policy, baseline/labels и owner approval.</p></div></li>
+          <li><div><h4>GitHub получает feedback</h4><p><code>archfit/state</code>, обновляемый comment и, в required mode, <code>archfit/gate</code>. Upload обрабатывается синхронно на public service, не через Tasks.</p></div></li>
+        </ol>
+      </article>
+      <article class="card">
+        <h3>Что является источником истины</h3>
+        <ul>
+          <li><strong>GitHub protected ref:</strong> <code>.archfit.yaml</code>, <code>.archfit-app.yaml</code>, baseline, labels, approved workflow.</li>
+          <li><strong>GitHub API:</strong> фактические repository, installation, PR, commits, reviews и workflow run.</li>
+          <li><strong>App release manifest:</strong> разрешённые engine image digests, platform и measurement profile.</li>
+          <li><strong>Firestore:</strong> grants/entitlements, consent, LLM budget и краткоживущие publication leases. Не копия repository и не report history.</li>
+        </ul>
+        <div class="note warn"><p><strong>OIDC ≠ независимая проверка анализа.</strong> Он удостоверяет отправителя и claims. Измерение остаётся <em>customer-attested</em>: target-controlled code в CI может влиять на результат. Нельзя называть весь report «verified».</p></div>
+        <p class="small">Report содержит metadata: пути, module names, line numbers, metrics и findings. Это не «нулевая утечка информации». No-source schema запрещает snippets, tool logs и raw model output.</p>
+        <p class="small"><strong>Fork PR:</strong> текущая связка не даёт ему enforceable gate. Action сохраняет artifact без upload, App показывает <code>fork_unsupported</code>. Нельзя включать привилегированный <code>pull_request_target</code> как обход.</p>
+      </article>
+    </div>
+    <details>
+      <summary>Почему три вида OIDC нельзя путать</summary>
+      <div class="details-body">
+        <div class="table-scroll" tabindex="0" role="region" aria-label="Три независимых OIDC контура">
+          <table><thead><tr><th scope="col">Контур</th><th scope="col">Кто выдаёт token</th><th scope="col">Кто проверяет / audience</th><th scope="col">Зачем</th></tr></thead>
+          <tbody>
+            <tr><td>Customer CI → App</td><td>GitHub Actions</td><td>Public App; audience = точный App base URL</td><td>Привязать report к разрешённому workflow и run</td></tr>
+            <tr><td>Release CI → GCP</td><td>GitHub Actions → Google WIF</td><td>Workload Identity provider + IAM binding</td><td>Короткоживущий доступ к <code>archfit-deploy</code>, без JSON key</td></tr>
+            <tr><td>Tasks / Scheduler → worker</td><td>Google, identity <code>archfit-invoker</code></td><td>Cloud Run IAM + App claims; audience = worker URL</td><td>Разрешить внутренние worker routes</td></tr>
+          </tbody></table>
+        </div>
+      </div>
+    </details>
+    <p class="ref">Основание: <a href="#source-action">Action contract</a>, <a href="#source-ingest">ingest</a>, <a href="#source-inputs">trusted inputs</a>, <a href="#source-verdict">verdict</a>, <a href="#source-guide">user guide</a>.</p>
+  </section>
+
+  <section id="network" aria-labelledby="network-title">
+    <div class="section-head"><span class="section-no">04 /</span><h2 id="network-title">Network flow и trust boundaries</h2></div>
+    <p class="section-intro">Публичным является только <code>archfit-public</code>. У него выключен Cloud Run IAM invoker check: request проверяет само приложение. У worker включены и internal ingress, и IAM invoker check.</p>
+    <div class="table-scroll" tabindex="0" role="region" aria-label="Полная таблица сетевых связей">
+      <table class="network-table">
+        <caption>Основные application flows. Secret mounts и release plane вынесены в следующие разделы.</caption>
+        <thead><tr><th scope="col">Откуда → куда</th><th scope="col">Что передаётся</th><th scope="col">Контроль доступа</th><th scope="col">Поведение при сбое</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Browser → public</strong><br>HTTPS, UI и OAuth callback</td><td>Login, policy drafts, user actions</td><td>GitHub OAuth; signed session cookie; repo permissions; CSRF для изменений</td><td>Нет доступа без нужной роли. UI/LLM failure не решает gate.</td></tr>
+          <tr><td><strong>GitHub → public</strong><br><code>/webhooks/github</code></td><td>Webhook body и delivery headers</td><td>HMAC-SHA256 signature текущим или previous webhook secret</td><td>202 только после успешного enqueue обеих tasks; при отказе — 503 и error log, без inline fallback. GitHub сам не повторяет delivery: нужны redelivery или sweep.</td></tr>
+          <tr><td><strong>Public → Cloud Tasks</strong><br>Только webhook queue</td><td>Исходный подписанный payload; отдельно gate/control task</td><td>Runtime SA, queue-scoped enqueue permission; fixed queue target</td><td>Retry на worker transient errors. Дубликаты и out-of-order delivery допустимы.</td></tr>
+          <tr><td><strong>Cloud Tasks → worker</strong><br><code>/internal/webhooks</code></td><td>Webhook body + Google ID token</td><td>Internal ingress; <code>archfit-invoker</code>; App проверяет claims и webhook signature повторно</td><td>Transient error → retry, permanent error → log и остановка retries.</td></tr>
+          <tr><td><strong>Customer runner → public</strong><br><code>/v1/reports</code></td><td>No-source report ≤ 5 MiB, envelope и GitHub OIDC token</td><td>Provenance, run/commit binding, image identity, protected inputs</td><td>Неавторизованный upload отклоняется. Ошибка или отсутствие report не становятся gate success.</td></tr>
+          <tr><td><strong>CI → public</strong><br><code>/v1/discoveries</code>, <code>/v1/baselines</code>, <code>/v1/reanchors</code></td><td>Policy draft или baseline ≤ 1 MiB</td><td>Те же provenance checks; default branch; baseline digest и subset checks для reanchor</td><td>App предлагает PR, но не merge и не принятие долга без owner review.</td></tr>
+          <tr><td><strong>Public / worker → GitHub API</strong><br>HTTPS</td><td>Read approved inputs, create checks/comments/PR, workflow dispatch/rerun</td><td>App JWT → короткоживущий installation access token</td><td>Rate limits и transient errors не дают ложный pass; sweep повторно сверяет GitHub state.</td></tr>
+          <tr><td><strong>Public / worker → Firestore</strong><br>Google REST API, HTTPS</td><td>Tenant state и publication leases</td><td>Собственные runtime SA; <code>roles/datastore.user</code></td><td>Без lease/store не публикуется небезопасный конкурентный результат. Tenant isolation обеспечивает код, не Firestore IAM.</td></tr>
+          <tr><td><strong>Scheduler → worker</strong><br><code>/internal/sweep</code>, каждый час</td><td>Запрос reconciliation</td><td>Google ID token <code>archfit-invoker</code>; operator secret не нужен</td><td>Sweep исправляет missed events по текущему GitHub state, а не replay старых webhook.</td></tr>
+          <tr><td><strong>Owner → operator queue → worker</strong><br><code>/internal/grants</code></td><td>Manual beta grant / clear</td><td>Owner queue access; fixed route; invoker token + <code>X-Archfit-Operator</code></td><td>Public SA не может enqueue в эту queue. Operator token временно присутствует в task payload.</td></tr>
+          <tr><td><strong>Public → Anthropic</strong><br>Только optional managed assist</td><td>JSON Schema, draft policy и user instruction</td><td>Explicit request + consent + budget + API key; managed mode</td><td>Результат — proposal в draft PR. LLM не участвует в gate; без key managed assist выключен.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="grid two" style="margin-top:1rem">
+      <article class="card"><h3>Четыре слоя защиты worker</h3><ol><li>Internal ingress, без прямого internet access.</li><li>Invoker IAM: разрешён <code>archfit-invoker</code>.</li><li>Queue-level target override: webhook task нельзя направить на grants.</li><li>Grants требуют дополнительный operator token.</li></ol><p class="small muted">Internal ingress ограничивает источники, а IAM — identity. Один контроль не заменяет другой. CI проверяет exposure и queue routing после release.</p></article>
+      <article class="card"><h3>Граница доверия остаётся видимой</h3><p class="small">Оба runtime SA имеют доступ ко всему Firestore state. Между tenants нет отдельного IAM perimeter. Компрометация public runtime — серьёзный риск, даже если operator token ему недоступен.</p><p class="small">Deploy SA не получает право менять IAM, но может менять service configuration и запускать код от runtime SA. Это привилегированная identity, не «безопасный uploader».</p><p class="small muted">Cloud Tasks не пишет audit log для <code>CreateTask</code>. Нельзя обещать полный audit создателя grant task. Доступ owner к operator queue должен оставаться ограниченным.</p></article>
+    </div>
+    <p class="ref">Основание: <a href="#source-routes">routes и queue-only intake</a>, <a href="#source-queues">queue IAM / routing</a>, <a href="#source-iam">service accounts</a>, <a href="#source-assist">permitted LLM context</a>.</p>
+  </section>
+
+  <section id="secrets" aria-labelledby="secrets-title">
+    <div class="section-head"><span class="section-no">05 /</span><h2 id="secrets-title">Какие secrets существуют и кто их получает</h2></div>
+    <p class="section-intro">Secret Manager хранит значения. Cloud Run монтирует pinned versions файлами; env содержит <code>*_FILE</code> path, не сам secret. Таблица показывает <strong>текущую IaC-конфигурацию</strong>: worker получает только App key, webhook secret и operator token. Live IAM и serving revisions отдельно не проверены.</p>
+    <div class="table-scroll" tabindex="0" role="region" aria-label="Матрица secret access">
+      <table class="secret-table">
+        <caption>Имена secret ресурсов не являются секретными значениями. Значения при подготовке документа не читались.</caption>
+        <thead><tr><th scope="col">Secret Manager resource</th><th scope="col">Назначение</th><th scope="col">Public</th><th scope="col">Worker</th></tr></thead>
+        <tbody>
+          <tr><td><code>archfit-github-private-key</code></td><td>Подписать App JWT → получить installation token для GitHub API</td><td class="check">Да</td><td class="check">Да</td></tr>
+          <tr><td><code>archfit-github-webhook-secret</code></td><td>Проверить HMAC на intake и повторно после queue</td><td class="check">Да</td><td class="check">Да</td></tr>
+          <tr><td><code>archfit-github-oauth-secret</code></td><td>OAuth browser login</td><td class="check">Да</td><td>Нет</td></tr>
+          <tr><td><code>archfit-cookie-key</code></td><td>Подписать UI session cookie</td><td class="check">Да</td><td>Нет</td></tr>
+          <tr><td><code>archfit-operator-token</code></td><td>Авторизовать manual grant</td><td>Нет</td><td class="check">Да</td></tr>
+          <tr><td><code>archfit-anthropic-key</code></td><td>Optional managed AI; без pinned version не монтируется</td><td class="check">Optional</td><td>Нет</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="grid two" style="margin-top:1rem">
+      <article class="card"><h3>Долгоживущие secrets и временные tokens</h3><p class="small"><strong>Храним:</strong> App private key, webhook/OAuth secrets, cookie key, operator token, optional Anthropic key.</p><p class="small"><strong>Получаем на время:</strong> installation tokens, GitHub upload OIDC, Google access/ID tokens. В IaC не создаются Google service-account JSON keys.</p><p class="small">GitHub App ID, OAuth client ID, project ID и image digest — configuration, не secret values.</p></article>
+      <article class="card"><h3>Rotation и rollback связаны</h3><p class="small">Новая secret version попадает в runtime только с новой revision. Старую оставляют включённой, пока rollback может вернуть revision, которая её использует.</p><p class="small">При compromise старую version отзывают сразу; rollback выполняют старым image с текущими secrets. Для overlap Terraform монтирует webhook_secret_previous_version вторым файлом того же secret на обоих service. По умолчанию previous version не монтируется.</p></article>
+    </div>
+    <div class="note warn"><p><strong>Secret access ограничен в IaC:</strong> OAuth secret и cookie key доступны только public role. Это не подтверждает изменение live IAM до reviewed apply и обновления worker revision. App private key всё ещё попадает в process memory; KMS signing — отдельное будущее усиление, не реализованная защита.</p></div>
+    <p class="ref">Основание: <a href="#source-secrets">secret IAM map</a>, <a href="#source-runtime">mounts</a>, <a href="#source-load">role-specific loading</a>, <a href="#source-security">rotation design</a>.</p>
+  </section>
+
+  <section id="delivery" aria-labelledby="delivery-title">
+    <div class="section-head"><span class="section-no">06 /</span><h2 id="delivery-title">Как создавать и выпускать environment</h2></div>
+    <p class="section-intro">Разделены два контура: lifecycle инфраструктуры и выпуск application image. Это не deploy customer engine: он остаётся в customer CI.</p>
+
+    <p class="lane-title">Infrastructure lane · Owner workstation</p>
+    <div class="rail" role="group" aria-label="Контур создания инфраструктуры">
+      <div class="rail-box"><strong>1. PR + OpenTofu plan</strong><p>Identity/project/region, проверки IaC, live inventory, import существующих guardrails. Plan сохраняется, изменения и replacements просматривает owner.</p></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="rail-box"><strong>2. Два независимых state</strong><p><code>data</code>: Firestore, IAM, secrets, registry, WIF.<br><code>runtime</code>: services, queues, Scheduler, domain, alerts.</p></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="rail-box"><strong>3. Approved plan → apply</strong><p>GCS remote state: <code>coupling-dev-510710-tfstate</code>, prefixes <code>data</code> / <code>runtime</code>. Runtime читает outputs data stack.</p></div>
+    </div>
+    <p class="lane-title">Application release lane · GitHub Actions</p>
+    <div class="rail" role="group" aria-label="Контур выпуска App image">
+      <div class="rail-box"><strong>1. main → OIDC → Google WIF</strong><p>Provider привязан к numeric repository ID, <code>refs/heads/main</code> и конкретному <code>deploy.yaml</code>. Затем identity <code>archfit-deploy</code>.</p></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="rail-box"><strong>2. Build once → image digest</strong><p>App image публикуется в региональный Artifact Registry. Worker и public получают новые revisions без переключения traffic.</p></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="rail-box"><strong>3. Canary → promote → checks</strong><p>Public canary проходит <code>/ready</code>. Затем worker → public promotion. Post-release checks проверяют worker exposure и queue targets.</p></div>
+    </div>
+    <div class="grid two" style="margin-top:1rem">
+      <article class="card"><h3>Что уже подготовлено в репозиториях</h3><ul class="small">
+        <li><code>infra/data</code>, <code>infra/runtime</code>, provider lock files и mock tests.</li>
+        <li>Firestore и Cloud Tasks adapters; role routes и Google identity checks.</li>
+        <li><code>.github/workflows/deploy.yaml</code>, release/check/rollback scripts и tests.</li>
+        <li>App понимает engine v3, Action поддерживает discovery, baseline и reanchor.</li>
+        <li>First-deployment runbook, security и operations docs.</li>
+      </ul></article>
+      <article class="card"><h3>Что эти проверки не доказывают</h3><p class="small"><code>/healthz</code> — process alive. <code>/ready</code> — App key работает с GitHub и Store отвечает. Ни одна проверка не доказывает end-to-end GitHub installation, queue delivery и PR gate.</p><p class="small">Public canary до promotion не получает реальных uploads/webhooks. Post-release check запускается уже после переключения traffic; при failure нужен явный выбор rollback, не обещание автоматического восстановления.</p><p class="small">Rollback scripts поддерживают traffic rollback и повторный release прежнего image. Смена формата Firestore state должна оставаться совместимой с предыдущей revision.</p></article>
+    </div>
+    <p class="ref">Основание: <a href="#source-runbook">first deployment</a>, <a href="#source-wif">WIF restriction</a>, <a href="#source-release">release order</a>, <a href="#source-postcheck">post-release checks</a>.</p>
+  </section>
+
+  <section id="launch" aria-labelledby="launch-title">
+    <div class="section-head"><span class="section-no">07 /</span><h2 id="launch-title">Порядок первого запуска</h2></div>
+    <p class="section-intro">Это план действий, не список уже выполненных операций. Не запускать все команды подряд: каждый apply/deploy требует проверки destination и согласования конкретного plan или image.</p>
+    <div class="card">
+      <ol class="steps">
+        <li><div><h4>Сверить identity, cloud inventory и guardrails</h4><p>Owner account с 2-step verification. Проверить project/region, billing budget, enabled APIs и quotas. Создать или проверить versioned GCS state bucket. Не дублировать существующие ресурсы.</p></div></li>
+        <li><div><h4>Создать data stack по reviewed plan</h4><p>Импортировать подготовленные guardrails. Создать Firestore, IAM, Secret Manager containers, Artifact Registry и WIF. Secret values в plan не добавлять. Firestore location выбирается один раз.</p></div></li>
+        <li><div><h4>Подтвердить домен и зарегистрировать GitHub App</h4><p>Homepage: <code>https://app.coupling.dev</code>. Callback: <code>/auth/callback</code>. Webhook: <code>/webhooks/github</code>, пока inactive. Установку на repos пока не включать.</p></div></li>
+        <li><div><h4>Добавить App IDs и secret values</h4><p>App ID и OAuth client ID нужны runtime plan. Secrets добавить в Secret Manager; pin versions. Затем запустить CI в mode: build, получить build.json и задать initial_image_digest. Этот mode не deploy-ит Cloud Run. Anthropic key необязателен.</p></div></li>
+        <li><div><h4>Создать runtime, DNS и TLS</h4><p>Queues/Scheduler остаются paused. Services сразу стартуют с реальным App image из своего Artifact Registry, закреплённым initial_image_digest. Hello/placeholder image больше нет. Не активировать webhook до проверки runtime и release pipeline.</p></div></li>
+        <li><div><h4>Проверить первый runtime и release pipeline</h4><p>Manual <code>deploy.yaml</code> на main. Проверить canary, promotion и post-release result. Push releases включать через <code>RELEASE_ON_PUSH</code> только после успешного первого запуска.</p></div></li>
+        <li><div><h4>Включить processing и пройти один test repository</h4><p>Согласованным runtime change снять pause, активировать webhook. Install App → OAuth → setup PR → discovery → policy PR → baseline в pinned CI image → owner review. Сначала advisory mode.</p></div></li>
+        <li><div><h4>Проверить failure paths, потом required gate</h4><p>Boundary violation, missing upload, protected-file approval, reanchor, queue retry и sweep. Перед внешними installations проверить rollback, backup restore, secret rotation и alerts. Затем PR с <code>gate: required</code>, только после него — required check в GitHub ruleset.</p></div></li>
+      </ol>
+    </div>
+    <details>
+      <summary>Какие права нужны GitHub App при регистрации</summary>
+      <div class="details-body">
+        <p class="small">По текущему API contract: repository permissions <code>checks: write</code>, <code>pull_requests: write</code>, <code>contents: write</code>, <code>actions: write</code>, <code>workflows: write</code>, <code>metadata: read</code>; organization permission <code>members: read</code> для team owners. Это права самой App, не customer workflow.</p>
+        <p class="small">Customer workflow использует <code>contents: read</code> и <code>id-token: write</code>, без App private key. App installation сначала ограничить одним test repository. Реальные permissions и OIDC claims подтвердить end-to-end.</p>
+        <p class="ref"><a href="#source-github-api">Источник: GitHub API integration contract</a>.</p>
+      </div>
+    </details>
+    <div class="note warn"><p><strong>Не требовать отсутствующий check.</strong> В advisory mode App не публикует <code>archfit/gate</code>. Если заранее добавить его в required checks, merge останется заблокирован. Первую baseline принимают после review; при engine/profile migration используют reanchor, а не молчаливое принятие нового долга.</p></div>
+
+    <h3 style="margin-top:2rem">Видимые ограничения и расхождения</h3>
+    <div class="todo">
+      <article class="card"><span class="badge">Исправлено в IaC</span><h4 style="margin-top:.5rem">Worker secrets ограничены</h4><p>OAuth secret и cookie key исключены из worker IAM и mounts. Mock tests проверяют точный набор доступов и отсутствие лишних file references. Live изменения требуют отдельного reviewed apply.</p></article>
+      <article class="card"><span class="badge">Wired in IaC</span><h4 style="margin-top:.5rem">Webhook rotation без нового secret</h4><p>Опциональный webhook_secret_previous_version монтирует старую pinned version рядом с current на обоих service. Overlap включается только на время rotation; нужен отдельный reviewed apply и release.</p></article>
+      <article class="card"><span class="badge">Wired in IaC</span><h4 style="margin-top:.5rem">Request trace configuration</h4><p>GOOGLE_CLOUD_PROJECT задан для обоих service, чтобы request traces связывались с Cloud Logging. Live correlation и alerts ещё нужно проверить после deployment.</p></article>
+      <article class="card"><span class="badge soft">Design limit</span><h4 style="margin-top:.5rem">Нет managed discovery и sandbox</h4><p>Onboarding предлагает только Customer mode. Отдельный sandbox driver не написан, backend продолжает отказывать без него. Managed AI assist и его consent checks сохранены.</p></article>
+      <article class="card"><span class="badge soft">Beta trade-off</span><h4 style="margin-top:.5rem">Без WAF, staging и organization</h4><p>Эти компоненты не следует рисовать как существующие. Design предусматривает отдельные triggers для staging, Cloud Armor и organization перед расширением.</p></article>
+      <article class="card"><span class="badge soft">Capacity limit</span><h4 style="margin-top:.5rem">0–2 instances на service</h4><p>По 1 vCPU и 512 MiB. Четыре instance заполняют текущую 4-vCPU quota; rollout может ждать capacity. Scale cap и budget alerts — не жёсткий денежный stop.</p></article>
+    </div>
+    <p class="ref">Точные команды: <a href="../infra/README.md">infra/README.md</a>. Launch drills: <a href="design/cloud/operations.md#before-launch">operations → Before launch</a>. Новые infrastructure changes этим документом не применяются.</p>
+  </section>
+
+  <section id="sources" aria-labelledby="sources-title">
+    <div class="section-head"><span class="section-no">08 /</span><h2 id="sources-title">Откуда взята схема</h2></div>
+    <p class="section-intro">При расхождении старых design notes с реализацией здесь показан код. Например, queues уже реализованы; worker не строит UI и больше не получает OAuth secret или cookie key по текущей IaC-конфигурации.</p>
+    <details>
+      <summary>Открыть docs и implementation evidence</summary>
+      <div class="details-body sources">
+        <div>
+          <h3>Cloud и deployment</h3>
+          <ul>
+            <li id="source-runbook"><a href="../infra/README.md">Infrastructure runbook</a> — stacks, bootstrap и first deployment.</li>
+            <li id="source-cloud"><a href="design/cloud/architecture.md">Cloud architecture</a> — rationale и границы beta.</li>
+            <li id="source-security"><a href="design/cloud/security.md">Cloud security</a> — threats, rotation, limits.</li>
+            <li id="source-runtime"><a href="../infra/runtime/services.tf">runtime/services.tf</a> — ingress, env, mounts и scaling.</li>
+            <li id="source-queues"><a href="../infra/runtime/queues.tf">runtime/queues.tf</a> — fixed routes, queues и Scheduler.</li>
+            <li id="source-secrets"><a href="../infra/data/secret_manager.tf">data/secret_manager.tf</a> — actual secret access map.</li>
+            <li id="source-iam"><a href="../infra/data/identities.tf">data/identities.tf</a> — runtime/deploy identities.</li>
+            <li id="source-wif"><a href="../infra/data/workload_identity.tf">data/workload_identity.tf</a> — CI federation restrictions.</li>
+            <li id="source-deploy"><a href="../.github/workflows/deploy.yaml">deploy.yaml</a> — release entry point.</li>
+            <li id="source-release"><a href="../scripts/deploy/release.sh">release.sh</a> — canary, readiness, promotion.</li>
+            <li id="source-postcheck"><a href="../scripts/deploy/check.sh">check.sh</a> — worker exposure и queue routing.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>GitHub App и execution</h3>
+          <ul>
+            <li id="source-routes"><a href="../internal/app/handler.go">app/handler.go</a> — role routes, queue-only webhook intake.</li>
+            <li id="source-load"><a href="../internal/app/config.go">app/config.go</a> — role-specific secret loading.</li>
+            <li id="source-ingest"><a href="../internal/gate/ingest/receive.go">ingest/receive.go</a> — OIDC, envelope и payload checks.</li>
+            <li id="source-inputs"><a href="../internal/gate/inputs/module.md">Gate inputs contract</a> — protected ref и exact-head approval.</li>
+            <li id="source-verdict"><a href="../internal/gate/verdict/decide.go">verdict/decide.go</a> — decision и reference handling.</li>
+            <li id="source-auth"><a href="../internal/github/auth/module.md">GitHub auth contract</a> — App JWT и installation tokens.</li>
+            <li id="source-github-api"><a href="../internal/github/api/module.md">GitHub API contract</a> — required App permissions.</li>
+            <li id="source-assist"><a href="../internal/control/assist/prompt.go">assist/prompt.go</a> — permitted LLM context.</li>
+            <li id="source-guide"><a href="user-guide.md">User guide</a> — onboarding, baseline, gate и reason codes.</li>
+            <li id="source-action"><a href="../../archfit-action/README.md">Action README</a> и <a href="../../archfit-action/scripts/run.sh">run.sh</a> — execution и credential boundaries.</li>
+            <li><a href="../../archfit/docs/guide/migration-v3.md">Engine v3 migration</a> — profile и baseline migration.</li>
+          </ul>
+        </div>
+      </div>
+    </details>
+  </section>
+</main>
+<footer><div class="wrap">Автономный HTML: без CDN, JavaScript, внешних fonts и сетевых запросов при открытии. Links ведут к исходникам в соседних локальных repositories. Cloud commands не запускались; secrets и Terraform state не читались.</div></footer>
+</body>
+</html>

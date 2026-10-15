@@ -25,8 +25,9 @@ single place where it is enforced at runtime.
   `<delivery ID>_gate` and `<delivery ID>_control`. Each task carries the three delivery headers, `Content-Type`,
   `X-Archfit-Half` (`gate` or `control`) and the unchanged body, and nothing else. A task that the queue refuses
   (any `Enqueue` error, for example a body over the task limit, a delivery ID that is no task name, or an
-  unavailable queue) is processed inline in the request, logged as `inline_fallback`. Respond `202` when the
-  signature is valid and the payload parses, whatever happens next. An `Ignored` event queues nothing.
+  unavailable queue) makes public intake respond `503`, logged at error level with outcome `enqueue_failed`.
+  Both halves are attempted, but no refused task runs inline. Respond `202` only when both tasks are accepted.
+  An `Ignored` event queues nothing and answers `202`. The local `all` role retains its inline driver.
   A delivery with a valid signature that `webhook.Parse` refuses answers `400` and queues nothing.
 - Queued webhook processing (the inline driver, and `POST /internal/webhooks` in the `worker` role): verify the
   signature again, parse, and call the handler that `X-Archfit-Half` names, under its own deadline. Error classes:
@@ -76,7 +77,7 @@ single place where it is enforced at runtime.
 - Secret files: every `*_FILE` variable names a text file. `app` reads it, trims leading and trailing white space, and
   refuses an empty result at startup. The cookie key is the trimmed raw bytes of its file, not an encoding of them, and
   `control.New` requires exactly 32 of them.
-- Platform selection: `QueueDriver` `"inline"` → the inline driver; `"cloudtasks"` → `cloudtasks.New` with
+- Platform selection: `QueueDriver` `"inline"` → the local `all` role only; the public role requires `"cloudtasks"`; `"cloudtasks"` → `cloudtasks.New` with
   `ARCHFIT_TASKS_QUEUE`, the URL `ARCHFIT_WORKER_URL` + `/internal/webhooks`, the audience `ARCHFIT_WORKER_URL` and
   the invoker `ARCHFIT_INVOKER`. The worker role never enqueues and ignores `QueueDriver`. The `all` role refuses
   `"cloudtasks"` at startup: it mounts no worker task route, so its tasks would never run. The cloudtasks driver gets
@@ -923,9 +924,9 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   **Scenario**: the public role over a recording queue: both halves accepted; the control task refused with a `503`
   error; both refused with `ErrInvalidTask`; a delivery ID that is no task name; an ignored event. Then the headers
   and body of the tasks for a delivery with extra request headers.
-  **Expected behavior**: `202` each time; tasks named `<delivery>_gate` then `<delivery>_control`; a refused task runs
-  inline and only that one, with the outcome `inline_fallback`, which a failing inline handler does not replace; an
-  ignored event queues nothing; every enqueue has a
+  **Expected behavior**: `202` when both tasks are accepted or the event is ignored; otherwise `503` with
+  `enqueue_failed`. Tasks are named `<delivery>_gate` then `<delivery>_control`; public intake never runs handlers inline,
+  including when no queue is configured. Both halves are attempted; an ignored event queues nothing. Every enqueue has a
   deadline; a task holds exactly the three delivery headers, `Content-Type` and `X-Archfit-Half`, and the unchanged body.
 - **Test name**: `TestQueuedTaskReachesTheWorker`
   **Scenario**: a public intake and a worker joined by a queue that dispatches each task to the worker route with the

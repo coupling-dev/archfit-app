@@ -23,4 +23,9 @@ else
 fi
 
 require_digest "$digest"
+mkdir -p "$RELEASE_DIR"
+jq -n --arg commit "$commit" --arg digest "$digest" --arg image "$IMAGE_REPO@$digest" \
+	'{commit: $commit, digest: $digest, image: $image}' >"$RELEASE_DIR/build.json"
+summary "### App image built" "" "Image: $IMAGE_REPO@$digest" \
+	"Use initial_image_digest=$digest for the first runtime plan. This build step does not deploy Cloud Run."
 printf '%s\n' "$digest"

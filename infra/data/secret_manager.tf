@@ -1,13 +1,12 @@
 # Secret Manager holds the secrets without values. The owner adds every version by hand, so no value enters Terraform
 # state. Each service account can read only the secrets its role mounts. The public role never gets the operator token.
-# The worker still needs the OAuth secret and the cookie key: the App reads them in every role until the worker stops
-# building the UI. Only the public service calls the LLM, so only it gets the Anthropic key.
+# Only the public service serves the UI and calls the LLM, so only it gets the OAuth secret, cookie key and Anthropic key.
 locals {
   secret_readers = {
     "archfit-github-private-key"    = ["public", "worker"]
     "archfit-github-webhook-secret" = ["public", "worker"]
-    "archfit-github-oauth-secret"   = ["public", "worker"]
-    "archfit-cookie-key"            = ["public", "worker"]
+    "archfit-github-oauth-secret"   = ["public"]
+    "archfit-cookie-key"            = ["public"]
     "archfit-operator-token"        = ["worker"]
     "archfit-anthropic-key"         = ["public"]
   }

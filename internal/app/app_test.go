@@ -22,7 +22,7 @@ func startRun(t *testing.T, c Config, log *slog.Logger) (base string, network *n
 	t.Helper()
 	network = &noNetwork{}
 	base, stop = background(t, func(ctx context.Context, ready func(net.Addr)) error {
-		return run(ctx, c, log, &http.Client{Transport: network}, nil, ready)
+		return run(ctx, c, log, &http.Client{Transport: network}, fakeGoogleTokens{}, ready)
 	})
 	return base, network, stop
 }
@@ -317,8 +317,12 @@ func roleConfig(t *testing.T, role string, own []secretField) Config {
 		}[f.env])
 	}
 	c.Role = role
-	if role == roleWorker {
+	if role == roleWorker || role == rolePublic {
 		c.WorkerURL, c.Invoker = testWorkerURL, testInvoker
+	}
+	if role == rolePublic {
+		c.QueueDriver = queueCloudTasks
+		c.TasksQueue = "projects/coupling-test/locations/europe-west1/queues/webhooks"
 	}
 	return c
 }

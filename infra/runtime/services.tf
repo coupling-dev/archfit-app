@@ -34,15 +34,18 @@ locals {
   worker_url = "https://archfit-worker-${local.data.project_number}.${var.region}.run.app"
 
   # The settings from operations.md "Roles and routing" and "Firestore".
-  common_env = {
+  common_env = merge({
     ARCHFIT_BASE_URL               = local.base_url
     ARCHFIT_GITHUB_APP_ID          = var.github_app_id
     ARCHFIT_GITHUB_OAUTH_CLIENT_ID = var.github_oauth_client_id
     ARCHFIT_STORE                  = "firestore"
     ARCHFIT_FIRESTORE_PROJECT      = var.project_id
+    GOOGLE_CLOUD_PROJECT           = var.project_id
     ARCHFIT_WORKER_URL             = local.worker_url
     ARCHFIT_INVOKER                = local.data.service_accounts.invoker
-  }
+    }, var.webhook_secret_previous_version == null ? {} : {
+    ARCHFIT_GITHUB_WEBHOOK_SECRET_PREVIOUS_FILE = "/secrets/archfit-github-webhook-secret/previous"
+  })
 
   role_env = {
     public = merge(local.common_env, {
@@ -74,8 +77,7 @@ resource "google_cloud_run_v2_service" "this" {
   invoker_iam_disabled = each.value.invoker_iam_disabled
   # Cloud Run accepts an ID token for this audience even if the platform changes which URLs it lists.
   custom_audiences = each.key == "worker" ? [local.worker_url] : []
-  # deletion_protection stays on (the default). A replacement would start the placeholder image, which answers every
-  # webhook and task with success, so a plan that replaces a service fails instead.
+  # Keep deletion protection on: replacing a service requires a reviewed bootstrap image and an owner decision.
 
   template {
     service_account = local.data.service_accounts[each.key]
@@ -88,7 +90,7 @@ resource "google_cloud_run_v2_service" "this" {
     }
 
     containers {
-      image = var.placeholder_image
+      image = "${local.data.image_repository}@${var.initial_image_digest}"
 
       resources {
         limits = {
@@ -133,6 +135,13 @@ resource "google_cloud_run_v2_service" "this" {
           items {
             path    = "value"
             version = volumes.value
+          }
+          dynamic "items" {
+            for_each = volumes.key == "archfit-github-webhook-secret" && var.webhook_secret_previous_version != null ? [var.webhook_secret_previous_version] : []
+            content {
+              path    = "previous"
+              version = items.value
+            }
           }
         }
       }

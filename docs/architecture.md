@@ -519,7 +519,7 @@ See [`.env.example`](../.env.example).
 | `FIRESTORE_EMULATOR_HOST`                     | Emulator `host:port`. Plain HTTP and no credentials                                                     |
 | `ARCHFIT_SANDBOX`                             | Sandbox driver. Only `none` exists                                                                      |
 | `ARCHFIT_ROLE`                                | `all` (default), `public`, or `worker`                                                                  |
-| `ARCHFIT_QUEUE`                               | Queue driver of intake: `inline` (default) or `cloudtasks` (`public` role only)                         |
+| `ARCHFIT_QUEUE`                               | Local `all` role defaults to `inline`; `public` requires `cloudtasks`; `worker` never enqueues                         |
 | `ARCHFIT_TASKS_QUEUE`                         | `projects/<p>/locations/<l>/queues/<q>`, for `cloudtasks`                                               |
 | `ARCHFIT_WORKER_URL`                          | Worker service URL, the invoker token audience. No trailing `/`. For `cloudtasks` and the `worker` role |
 | `ARCHFIT_INVOKER`                             | Service account e-mail of queue and Scheduler dispatches. For `cloudtasks` and the `worker` role        |
@@ -529,4 +529,3 @@ See [`.env.example`](../.env.example).
 ### Release blockers
 
 - No GitHub App is registered.
-- Terraform sets no `GOOGLE_CLOUD_PROJECT` and no mount for a previous webhook secret.

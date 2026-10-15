@@ -16,10 +16,25 @@ variable "domain" {
   default     = "app.coupling.dev"
 }
 
-variable "placeholder_image" {
-  description = "Image for a new service. It answers every request with success. CI replaces it; Terraform ignores the image after that."
+variable "initial_image_digest" {
+  description = "Digest of the real App image built before the first runtime apply. CI owns later image and traffic changes."
   type        = string
-  default     = "us-docker.pkg.dev/cloudrun/container/hello"
+
+  validation {
+    condition     = can(regex("^sha256:[0-9a-f]{64}$", var.initial_image_digest))
+    error_message = "Build the App image first and provide its sha256 digest, not a tag or placeholder image."
+  }
+}
+
+variable "webhook_secret_previous_version" {
+  description = "Pinned previous version of archfit-github-webhook-secret during rotation. Null mounts only the current version."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.webhook_secret_previous_version == null || can(regex("^[1-9][0-9]*$", var.webhook_secret_previous_version))
+    error_message = "Use a numeric Secret Manager version for the previous webhook secret, never latest."
+  }
 }
 
 # No defaults until the App is registered (runbook step 5): the runtime stack cannot be applied without them.
