@@ -73,7 +73,7 @@ stack reads it. Every secret is a file at `/secrets/<secret>/value`, and its `*_
 | Service          | Ingress       | Invoker check              | Secrets                                                                             | Other settings                                                                          |
 | ---------------- | ------------- | -------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | `archfit-public` | All           | Off (no `allUsers` grant)  | App private key, webhook secret, OAuth secret, cookie key, Anthropic key (optional) | `ARCHFIT_ROLE=public`, `ARCHFIT_QUEUE=cloudtasks`, `ARCHFIT_TASKS_QUEUE`, timeout 330 s |
-| `archfit-worker` | Internal only | On, `archfit-invoker` only | App private key, webhook secret, operator token           | `ARCHFIT_ROLE=worker`, custom audience = worker URL, timeout 600 s                      |
+| `archfit-worker` | Internal only | On, `archfit-invoker` only | App private key, webhook secret, operator token                                     | `ARCHFIT_ROLE=worker`, custom audience = worker URL, timeout 600 s                      |
 
 When narrowing secret access in an existing deployment, remove the unused mounts from the serving worker revisions
 before revoking their IAM grants. Old revisions and rollback targets can still reference those secrets and fail to start
@@ -259,6 +259,13 @@ Register the App with these settings. Keep the webhook inactive, and install it 
 - Homepage URL: `https://app.coupling.dev`
 - Callback URL: `https://app.coupling.dev/auth/callback`
 - Webhook URL: `https://app.coupling.dev/webhooks/github`, inactive
+- Repository permissions: Actions, Checks, Contents, Pull requests and Workflows read and write; Metadata read
+- Organization permissions: Members read
+- Events: Pull request, Pull request review, Push
+- Installable only on `coupling-dev`
+
+The App is registered as `archfit-review` ("Archfit Review", App ID `5348120`) on `coupling-dev`. Its bot is
+`archfit-review[bot]`. The App reads its slug from GitHub at startup, so a rename needs a new revision.
 
 Then add defaults for `github_app_id` and `github_oauth_client_id` in `infra/runtime/variables.tf` in a pull
 request. These IDs are not secret. Until they have values, the runtime plan stops and asks for them.
