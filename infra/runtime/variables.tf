@@ -37,15 +37,17 @@ variable "webhook_secret_previous_version" {
   }
 }
 
-# No defaults until the App is registered (runbook step 5): the runtime stack cannot be applied without them.
+# The registered App, coupling-dev/archfit-review (runbook step 5). These IDs are not secret.
 variable "github_app_id" {
   description = "GitHub App ID."
   type        = string
+  default     = "5348120"
 }
 
 variable "github_oauth_client_id" {
   description = "GitHub App OAuth client ID."
   type        = string
+  default     = "Iv23lix1DdWQpCdiyYA7"
 }
 
 variable "secret_versions" {
