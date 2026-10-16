@@ -124,8 +124,8 @@ func TestRoutesRequireTheirAuthentication(t *testing.T) {
 	w.allow("alice", demoRepo, "admin")
 	a := startApp(t, w)
 
-	if resp := a.do(httptest.NewRequest(http.MethodGet, baseURL+"/healthz", nil)); drain(resp) != http.StatusOK {
-		t.Errorf("GET /healthz = %d; want 200 without credentials", resp.StatusCode)
+	if resp := a.do(httptest.NewRequest(http.MethodGet, baseURL+"/health", nil)); drain(resp) != http.StatusOK {
+		t.Errorf("GET /health = %d; want 200 without credentials", resp.StatusCode)
 	}
 
 	user := newBrowser(t, a.do)

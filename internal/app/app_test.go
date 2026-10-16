@@ -42,8 +42,8 @@ func TestOptionalDependenciesAreOptional(t *testing.T) {
 	if got := network.requests(); got != 0 {
 		t.Errorf("startup made %d outbound requests, want 0", got)
 	}
-	if resp := send(t, httptest.NewRequest(http.MethodGet, base+"/healthz", nil)); resp.StatusCode != http.StatusOK {
-		t.Errorf("healthz = %d, want 200", resp.StatusCode)
+	if resp := send(t, httptest.NewRequest(http.MethodGet, base+"/health", nil)); resp.StatusCode != http.StatusOK {
+		t.Errorf("health = %d, want 200", resp.StatusCode)
 	}
 	// The real gate refuses an upload without an OIDC token; any 4xx proves the gate route serves.
 	resp := send(t, httptest.NewRequest(http.MethodPost, base+"/v1/reports", strings.NewReader("{}")))
@@ -226,7 +226,7 @@ func TestLogsNeverContainSecretsOrBodies(t *testing.T) {
 	}
 	event := []byte(pullOpenedBody)
 	requests := []*http.Request{
-		httptest.NewRequest(http.MethodGet, base+"/healthz?q=MARKER-query", nil),
+		httptest.NewRequest(http.MethodGet, base+"/health?q=MARKER-query", nil),
 		withAuth(httptest.NewRequest(http.MethodPost, base+"/v1/reports", strings.NewReader(bodyMarker)), "MARKER-oidc-token"),
 		withAuth(httptest.NewRequest(http.MethodPost, base+"/v1/discoveries", strings.NewReader(bodyMarker)), "MARKER-oidc-token"),
 		webhookRequest(base+"/webhooks/github", "pull_request", "d-1", event, sign(testWebhookSecret, event)),
@@ -340,8 +340,8 @@ func TestEachRoleStartsWithOnlyItsSecrets(t *testing.T) {
 	for _, r := range roles {
 		t.Run(r.role+" starts with only its own secrets", func(t *testing.T) {
 			base, network, stop := startRun(t, roleConfig(t, r.role, r.own), slog.New(slog.DiscardHandler))
-			if resp := send(t, httptest.NewRequest(http.MethodGet, base+"/healthz", nil)); resp.StatusCode != http.StatusOK {
-				t.Errorf("healthz = %d, want 200", resp.StatusCode)
+			if resp := send(t, httptest.NewRequest(http.MethodGet, base+"/health", nil)); resp.StatusCode != http.StatusOK {
+				t.Errorf("health = %d, want 200", resp.StatusCode)
 			}
 			if got := network.requests(); got != 0 {
 				t.Errorf("startup made %d outbound requests, want 0", got)

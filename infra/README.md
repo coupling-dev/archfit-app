@@ -101,7 +101,7 @@ All alerts email the owner through the `Owner email` channel.
 
 | Alert                       | Condition                                                                                                                        |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Public health check failing | The uptime check of `/healthz` on the `run.app` URL fails for 10 minutes                                                         |
+| Public health check failing | The uptime check of `/health` on the `run.app` URL fails for 10 minutes                                                          |
 | Public 5xx responses        | At least one 5xx response in 5 minutes                                                                                           |
 | Error log line              | A line with severity `ERROR` or higher on either service                                                                         |
 | Sweep missing               | No scheduled sweep finished (request line of `POST /internal/sweep` with outcome `swept`) in 2 hours. Off while `paused` is true |
@@ -129,7 +129,7 @@ The design leaves these choices to the implementation. Each one is the simplest 
   for quota. Raise the quota before a release needs more (see [Project guardrails](../docs/design/cloud/operations.md#project-guardrails)).
 - **Timeouts.** The public service has 330 s, above the 300 s deadline of the managed assist route. Uploads and the
   other routes stop at 55 s in the App. The worker has 600 s, for the sweep.
-- **The uptime check calls the `run.app` URL**, so it works before DNS. `/healthz` does not depend on the host.
+- **The uptime check calls the `run.app` URL**, so it works before DNS. `/health` does not depend on the host.
 - **The public account can act as the invoker.** A webhook task names the invoker in its own `oidcToken`, and Cloud
   Tasks requires that. The enforced queue-level route still sends the token only to `/internal/webhooks`.
 - **Services keep deletion protection on.** A replacement requires a reviewed real App image digest and an owner
@@ -387,7 +387,7 @@ check. Then install it on the invited repositories.
 
 ```sh
 P=coupling-dev-510710; R=europe-west1
-curl -fsS https://app.coupling.dev/healthz                                           # 200
+curl -fsS https://app.coupling.dev/health                                           # 200
 gcloud run services describe archfit-worker --region=$R --project=$P \
   --format='value(metadata.annotations."run.googleapis.com/ingress")'                # internal
 curl -s -o /dev/null -w '%{http_code}\n' "$(tofu -chdir=infra/runtime output -json service_urls | jq -r .worker)/internal/sweep"  # not 200

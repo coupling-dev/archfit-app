@@ -7,14 +7,14 @@ locals {
   service_selector = join(" OR ", [for n in local.service_names : "\"${n}\""])
 }
 
-# The public health check. It calls the run.app URL, so it works before DNS, and /healthz does not depend on the host.
+# The public health check. It calls the run.app URL, so it works before DNS, and /health does not depend on the host.
 resource "google_monitoring_uptime_check_config" "public_health" {
-  display_name = "archfit public /healthz"
+  display_name = "archfit public /health"
   timeout      = "10s"
   period       = "300s"
 
   http_check {
-    path         = "/healthz"
+    path         = "/health"
     use_ssl      = true
     validate_ssl = true
   }
@@ -35,7 +35,7 @@ resource "google_monitoring_alert_policy" "public_health" {
   notification_channels = local.channels
 
   conditions {
-    display_name = "/healthz fails"
+    display_name = "/health fails"
     condition_threshold {
       filter          = "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND metric.label.check_id=\"${google_monitoring_uptime_check_config.public_health.uptime_check_id}\" AND resource.type=\"uptime_url\""
       comparison      = "COMPARISON_GT"

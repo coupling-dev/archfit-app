@@ -420,13 +420,13 @@ The routes come from [`internal/app/handler.go`](../internal/app/handler.go) and
 
 `ARCHFIT_ROLE` selects the routes. The `all` role, the default, serves every route below except
 `POST /internal/webhooks`. The `public` role serves no `/internal/*` route. The `worker` role serves only
-`GET /healthz`, `GET /ready` and the three worker routes.
+`GET /health`, `GET /ready` and the three worker routes.
 
 ### Service routes
 
 | Method and route        | Owner     | Authentication             |
 | ----------------------- | --------- | -------------------------- |
-| `GET /healthz`          | `app`     | None                       |
+| `GET /health`           | `app`     | None                       |
 | `GET /ready`            | `app`     | None                       |
 | `POST /v1/reports`      | `gate`    | GitHub Actions OIDC token  |
 | `POST /v1/discoveries`  | `control` | GitHub Actions OIDC checks |
@@ -436,7 +436,7 @@ The routes come from [`internal/app/handler.go`](../internal/app/handler.go) and
 | `POST /internal/sweep`  | `app`     | Operator bearer token      |
 | `POST /internal/grants` | `app`     | Operator bearer token      |
 
-`GET /healthz` probes nothing. `GET /ready` proves that the App key works with GitHub (`GET /app` with an App JWT)
+`GET /health` probes nothing. `GET /ready` proves that the App key works with GitHub (`GET /app` with an App JWT)
 and that the store answers (a read of a reserved key). It answers `200`, or `503` with the names of the failed
 checks only. A result is kept for 30 seconds after a pass and 5 seconds after a failure, so frequent calls make at
 most one GitHub request in each window. The path does not end in `z`, because Cloud Run reserves some such paths.

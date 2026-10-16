@@ -38,7 +38,7 @@ func TestLogLinesUseCloudLoggingFieldNames(t *testing.T) {
 	c := validConfig(t)
 	c.TraceProject, c.Revision = testProject, "reporter-00042-abc"
 	base, _, stop := startRun(t, c, NewLogger(logs))
-	r := httptest.NewRequest(http.MethodGet, base+"/healthz", nil)
+	r := httptest.NewRequest(http.MethodGet, base+"/health", nil)
 	r.Header.Set(headerTraceParent, "00-"+testTraceID+"-00f067aa0ba902b7-01")
 	send(t, r)
 	if err := stop(); err != nil {
