@@ -54,5 +54,5 @@ See the [configuration table](docs/architecture.md#configuration).
 Check a running local service:
 
 ```sh
-curl -s localhost:8080/healthz
+curl -s localhost:8080/health
 ```

@@ -99,7 +99,8 @@ func newHandler(d handlerDeps) http.Handler {
 		readiness: &readiness{probes: d.probes, timeout: readyTimeout, now: d.now, log: d.log}}
 	s.inline = queue.NewInline(s.runInline)
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", healthz)
+	// Not /healthz: Cloud Run reserves some paths that end in "z", and its frontend answers /healthz itself.
+	mux.HandleFunc("GET /health", health)
 	// Readiness has no credential on any role: a deploy check through the service URL sends none.
 	mux.HandleFunc(readyRoute, s.ready)
 	if d.role != roleWorker {
@@ -226,7 +227,7 @@ func (s *server) logged(next http.Handler) http.Handler {
 	})
 }
 
-func healthz(w http.ResponseWriter, _ *http.Request) {
+func health(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = io.WriteString(w, `{"status":"ok"}`)
 }

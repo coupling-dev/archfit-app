@@ -89,7 +89,7 @@ single place where it is enforced at runtime.
   (managed discovery reports "not available"); `AnthropicKeyFile` empty → nil `Provider`. `control.New` and `anthropic.New` return errors; both are startup errors (a configured but invalid LLM key must not start silently). `app` passes the same `TokenSource` to `api.New` and to `control.Deps.Tokens`. Unknown driver names are a startup error. New drivers are added here and nowhere else.
 - Readiness (`GET /ready`, every role, no credential): the check of the release canary and of a post-deploy check.
   It is not a startup probe: Cloud Run runs that on every new instance, and a GitHub API outage would then stop new
-  instances, intake included, although intake does not need GitHub. The startup probe is `GET /healthz`. It runs two probes at the same time, under one 5-second deadline **[default]** that includes the GitHub
+  instances, intake included, although intake does not need GitHub. The startup probe is `GET /health`. It runs two probes at the same time, under one 5-second deadline **[default]** that includes the GitHub
   client's own retries and rate-limit waits:
   - `github`: `api.Client.CheckApp`, `GET /app` with a fresh App JWT. It proves that the App key works with GitHub
     and reads no installation.
@@ -180,7 +180,7 @@ func NewLogger(w io.Writer) *slog.Logger
 
 | Method and path                 | Roles             | Handler                                           | Authentication done by                                     |
 | ------------------------------- | ----------------- | ------------------------------------------------- | ---------------------------------------------------------- |
-| `GET /healthz`                  | every role        | `app`: `{"status":"ok"}`; no dependency is probed | none                                                       |
+| `GET /health`                   | every role        | `app`: `{"status":"ok"}`; no dependency is probed | none                                                       |
 | `GET /ready`                    | every role        | `app` readiness: GitHub App key and store probed  | none                                                       |
 | `POST /v1/reports`              | `all`, `public`   | `gate.UploadHandler()`                            | gate (OIDC)                                                |
 | `POST /v1/discoveries`          | `all`, `public`   | `control.DiscoveryHandler()`                      | control, through the gate `Receiver` (OIDC)                |
@@ -204,7 +204,7 @@ The deadline is the one the handler sees on its request context. `http.TimeoutHa
 
 | Route                           | Deadline | Why                                                                                                          |
 | ------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------ |
-| `GET /healthz`                  | none     | answers from memory                                                                                          |
+| `GET /health`                   | none     | answers from memory                                                                                          |
 | `POST /v1/reports`              | 55 s     | gate upload; target: feedback within 60 seconds                                                              |
 | `POST /v1/discoveries`          | 55 s     | control per-request timeout                                                                                  |
 | `POST /v1/baselines`            | 55 s     | control per-request timeout                                                                                  |
@@ -869,7 +869,7 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
 
 - **Test name**: `TestRouteTable`
   **Scenario**: start `Run` with fakes behind every seam; request each row of the Routes table.
-  **Expected behavior**: each path reaches its owner; unknown paths reach the UI handler; `/healthz` answers without touching any dependency.
+  **Expected behavior**: each path reaches its owner; unknown paths reach the UI handler; `/health` answers without touching any dependency.
 - **Test name**: `TestWebhookFanOut`
   **Scenario**: the inline driver: deliver a signed `pull_request` event; then the same event signed with the previous secret; then an event with a bad signature; then an unknown event type.
   **Expected behavior**: gate then control receive the same parsed `Event`; the previous secret → `202` and both halves; bad signature → `401`, no handler called; unknown type → `202`, handlers see `Ignored` or nothing.
@@ -961,7 +961,7 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   **Scenario**: run every route with marker strings in bodies, tokens, and secret files; capture logs.
   **Expected behavior**: no marker appears.
 - **Test name**: `TestLogLinesUseCloudLoggingFieldNames`
-  **Scenario**: `run` with `NewLogger`, a trace project and a revision; `GET /healthz` with a sampled `traceparent`.
+  **Scenario**: `run` with `NewLogger`, a trace project and a revision; `GET /health` with a sampled `traceparent`.
   **Expected behavior**: no line has `level` or `msg`; every line has `role` and `revision`; the request line has
   exactly `time`, `severity`, `message`, `role`, `revision`, the three `logging.googleapis.com/` trace fields,
   `request_id`, `method`, `route`, `status` and `duration_ms`, with severity `INFO` and the trace of the header.
@@ -990,7 +990,7 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   webhook secret, OAuth client ID and secret, cookie key; `worker`: App key, webhook secret, operator token). Then
   each foreign secret file set to a path that does not exist. Then each own setting removed, and each own file set to
   a path that does not exist. Then the public role answers the operator and task routes.
-  **Expected behavior**: each role starts, `/healthz` answers and no request leaves the process; a foreign path does
+  **Expected behavior**: each role starts, `/health` answers and no request leaves the process; a foreign path does
   not stop the startup, because it is never read; every missing or unreadable own secret fails before listening and
   names its variable; the public role answers `404` on every `/internal/*` route.
 - **Test name**: `TestCloudTasksQueueWiring`

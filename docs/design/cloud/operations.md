@@ -173,7 +173,7 @@ flowchart TD
   `GET /ready` (see the worker check limit below).
 - Do not use `GET /ready` as a startup probe. Cloud Run runs a startup probe on every new instance, so a GitHub API
   outage would stop every new instance, intake included, although intake does not need GitHub. The startup probe
-  is `GET /healthz`, which checks only that the process serves.
+  is `GET /health`, which checks only that the process serves.
 - Promote the exact revisions that CI deployed, never "latest". A revision that another change created stays without traffic.
   A release that stops before the public promotion removes the canary tag, so its revision is not reachable.
 - After promotion, check the worker's exposure and the queue routing. See [Worker protection](security.md#worker-protection).

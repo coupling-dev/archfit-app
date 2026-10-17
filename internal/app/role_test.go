@@ -68,7 +68,7 @@ func TestRoleRouteTables(t *testing.T) {
 		req  func() *http.Request
 	}
 	routes := []route{
-		{"healthz", func() *http.Request { return httptest.NewRequest(http.MethodGet, "/healthz", nil) }},
+		{"health", func() *http.Request { return httptest.NewRequest(http.MethodGet, "/health", nil) }},
 		{"upload", func() *http.Request { return httptest.NewRequest(http.MethodPost, "/v1/reports", nil) }},
 		{"discovery", func() *http.Request { return httptest.NewRequest(http.MethodPost, "/v1/discoveries", nil) }},
 		{"baseline", func() *http.Request { return httptest.NewRequest(http.MethodPost, "/v1/baselines", nil) }},
@@ -92,21 +92,21 @@ func TestRoleRouteTables(t *testing.T) {
 	}
 	tables := map[string]map[string]want{
 		roleAll: {
-			"healthz": {status: 200}, "upload": {call: "gate.Upload"}, "discovery": {call: "control.Discovery"},
+			"health": {status: 200}, "upload": {call: "gate.Upload"}, "discovery": {call: "control.Discovery"},
 			"baseline": {call: "control.Baseline"}, "intake": {call: "gate.HandleEvent"}, "ui": {call: "control.UI"},
 			"ui page": {call: "control.UI"}, "sweep with the operator token": {call: "control.Sweep"},
 			"grant with the operator token": {call: "control.Grant"}, "task as the invoker": {status: 404},
 			"sweep as the invoker": {status: 401}, "unknown internal path": {status: 404},
 		},
 		rolePublic: {
-			"healthz": {status: 200}, "upload": {call: "gate.Upload"}, "discovery": {call: "control.Discovery"},
+			"health": {status: 200}, "upload": {call: "gate.Upload"}, "discovery": {call: "control.Discovery"},
 			"baseline": {call: "control.Baseline"}, "intake": {status: http.StatusAccepted}, "ui": {call: "control.UI"},
 			"ui page": {call: "control.UI"}, "sweep with the operator token": {status: 404},
 			"grant with the operator token": {status: 404}, "task as the invoker": {status: 404},
 			"sweep as the invoker": {status: 404}, "unknown internal path": {status: 404},
 		},
 		roleWorker: {
-			"healthz": {status: 200}, "upload": {status: 404}, "discovery": {status: 404}, "baseline": {status: 404},
+			"health": {status: 200}, "upload": {status: 404}, "discovery": {status: 404}, "baseline": {status: 404},
 			"intake": {status: 404}, "ui": {status: 404}, "ui page": {status: 404},
 			"sweep with the operator token": {status: 401}, "grant with the operator token": {status: 401},
 			"task as the invoker": {call: "gate.HandleEvent"}, "sweep as the invoker": {call: "control.Sweep"},

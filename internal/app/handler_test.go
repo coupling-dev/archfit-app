@@ -79,7 +79,7 @@ func TestRouteTable(t *testing.T) {
 		wantStatus int
 		wantCalls  []string
 	}{
-		{"healthz", httptest.NewRequest(http.MethodGet, base+"/healthz", nil), http.StatusOK, nil},
+		{"health", httptest.NewRequest(http.MethodGet, base+"/health", nil), http.StatusOK, nil},
 		{"reports", httptest.NewRequest(http.MethodPost, base+"/v1/reports", nil), http.StatusCreated, []string{"gate.Upload"}},
 		{"discoveries", httptest.NewRequest(http.MethodPost, base+"/v1/discoveries", nil), http.StatusAccepted, []string{"control.Discovery"}},
 		{"baselines", httptest.NewRequest(http.MethodPost, base+"/v1/baselines", nil), http.StatusAccepted, []string{"control.Baseline"}},
@@ -105,8 +105,8 @@ func TestRouteTable(t *testing.T) {
 		})
 	}
 
-	t.Run("healthz body", func(t *testing.T) {
-		rec := f.do(httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	t.Run("health body", func(t *testing.T) {
+		rec := f.do(httptest.NewRequest(http.MethodGet, "/health", nil))
 		if got := rec.Body.String(); got != `{"status":"ok"}` {
 			t.Errorf("body = %q", got)
 		}
@@ -465,7 +465,7 @@ func TestGateServesWhileControlFails(t *testing.T) {
 			return operatorRequest("/internal/sweep", testOperatorToken, "")
 		}, http.StatusOK},
 		{"UI still panics, process still up", nil, func() *http.Request { return httptest.NewRequest(http.MethodGet, "/ui", nil) }, http.StatusInternalServerError},
-		{"healthz", nil, func() *http.Request { return httptest.NewRequest(http.MethodGet, "/healthz", nil) }, http.StatusOK},
+		{"health", nil, func() *http.Request { return httptest.NewRequest(http.MethodGet, "/health", nil) }, http.StatusOK},
 	}
 	for _, st := range steps {
 		if st.prepare != nil {

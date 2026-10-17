@@ -466,7 +466,7 @@ Clear a grant by omitting `until` or sending `null`. A successful request return
 ### Health
 
 ```sh
-curl -s "$ARCHFIT_BASE_URL/healthz"
+curl -s "$ARCHFIT_BASE_URL/health"
 ```
 
 The response is `{"status":"ok"}`.
