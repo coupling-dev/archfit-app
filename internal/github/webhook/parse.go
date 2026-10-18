@@ -80,11 +80,15 @@ type payload struct {
 			Ref string `json:"ref"`
 		} `json:"base"`
 	} `json:"pull_request"`
-	Ref     string `json:"ref"`
-	After   string `json:"after"`
-	Deleted bool   `json:"deleted"`
-	Forced  bool   `json:"forced"`
-	Commits []struct {
+	Sender struct {
+		Login string `json:"login"`
+	} `json:"sender"`
+	PusherType string `json:"pusher_type"`
+	Ref        string `json:"ref"`
+	After      string `json:"after"`
+	Deleted    bool   `json:"deleted"`
+	Forced     bool   `json:"forced"`
+	Commits    []struct {
 		Added    []string `json:"added"`
 		Modified []string `json:"modified"`
 		Removed  []string `json:"removed"`
@@ -135,11 +139,16 @@ func Parse(eventType, deliveryID string, body []byte) (Event, error) {
 	ev.Repo = p.Repository.FullName
 	ev.RepoPrivate = p.Repository.Private
 
-	if kind == DefaultBranchPush {
+	if kind == DefaultBranchPush || kind == BranchPush {
 		ev.HeadSHA = p.After
 		ev.HeadRepo = ev.Repo
-		ev.BaseRef = p.Repository.DefaultBranch
-		ev.ChangedPaths = p.changedPaths()
+		ev.Branch = strings.TrimPrefix(p.Ref, branchRefPrefix)
+		ev.Pusher = p.Sender.Login
+		ev.PusherType = p.PusherType
+		if kind == DefaultBranchPush {
+			ev.BaseRef = p.Repository.DefaultBranch
+			ev.ChangedPaths = p.changedPaths()
+		}
 	} else {
 		if p.PullRequest.Number <= 0 {
 			return Event{}, errNoPullRequest
@@ -159,10 +168,15 @@ func Parse(eventType, deliveryID string, body []byte) (Event, error) {
 
 func (p *payload) kind(eventType string) EventKind {
 	if eventType == typePush {
-		if p.Repository.DefaultBranch != "" && p.Ref == branchRefPrefix+p.Repository.DefaultBranch && !p.Deleted {
+		branch, isBranch := strings.CutPrefix(p.Ref, branchRefPrefix)
+		switch {
+		case p.Deleted || !isBranch || p.Repository.DefaultBranch == "":
+			return Ignored
+		case branch == p.Repository.DefaultBranch:
 			return DefaultBranchPush
+		default:
+			return BranchPush
 		}
-		return Ignored
 	}
 	if kind, ok := actionKinds[eventType][p.Action]; ok {
 		return kind

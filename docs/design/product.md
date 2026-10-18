@@ -134,7 +134,11 @@ architecture owner can authorize it. Code and policy may land atomically in one
 PR; a separate policy PR is not mandatory.
 
 Architecture approval is bound to the exact head SHA and policy snapshot. New
-commits invalidate it. The App may evaluate an owner-approved candidate policy
+commits invalidate it. An owner gives it either by an approving review on that
+head or by pushing that head: the signed push event names the actor, and GitHub
+does not let an author approve their own pull request, so the push is how a sole
+owner authorizes their own change. Owners come from the protected policy, never
+from the head. The App may evaluate an owner-approved candidate policy
 for that exact PR, but must resolve and issue the snapshot itself. It never
 accepts arbitrary head-tree policy as a trusted gate input.
 

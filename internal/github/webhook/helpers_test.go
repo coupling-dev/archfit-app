@@ -46,6 +46,7 @@ var fixtureCases = []fixtureCase{
 	{"push_default_branch.json", "push", Event{
 		Kind: DefaultBranchPush, InstallationID: 5002, Repo: "acme/lib",
 		HeadSHA: "6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192", HeadRepo: "acme/lib", BaseRef: "trunk",
+		Branch: "trunk", Pusher: "octocat",
 		ChangedPaths: []string{".archfit.yaml", "go.mod", "internal/api/handler.go", "legacy/old.go"},
 	}},
 	{"installation_created.json", "installation", Event{Kind: InstallationAdded, InstallationID: 6001}},

@@ -106,6 +106,8 @@ type fakeResolver struct {
 	hook    func(inputs.Target)
 }
 
+func (f *fakeResolver) RecordPusher(context.Context, inputs.Target, string) error { return nil }
+
 func (f *fakeResolver) Resolve(_ context.Context, t inputs.Target, now time.Time) (inputs.Trusted, error) {
 	f.calls = append(f.calls, t)
 	f.nows = append(f.nows, now)

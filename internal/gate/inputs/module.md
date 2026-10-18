@@ -17,7 +17,8 @@ PR that violates it.
 - Read `.archfit-app.yaml`, `.archfit.yaml`, `.archfit-baseline.json` and `.archfit-labels.yaml` at the target's `BaseRef`.
 - Compute raw-byte digests (bare lowercase hex SHA-256) of policy, baseline and labels.
 - Find which protected paths the PR changes.
-- Decide `Approval`: a base-version owner approved this exact head SHA, or not.
+- Decide `Approval`: a base-version owner approved this exact head SHA, or pushed it, or not.
+- Record who pushed a head (`RecordPusher`), from a signed `push` delivery, so that an owner's own push can authorize it.
 - When approved, also accept the head digest of a changed policy, baseline or labels file, for this PR only.
 - Report the earliest upcoming waiver expiry.
 - Read the cached `Entitlement` from the Store and derive `Suspended`.
@@ -95,6 +96,9 @@ type Resolver interface {
     // Resolve reads the protected ref and reviews. It never reads policy, settings, baseline,
     // owners, or CODEOWNERS from the head tree, except to hash an owner-approved candidate.
     Resolve(ctx context.Context, t Target, now time.Time) (Trusted, error)
+    // RecordPusher adds the login that pushed t's head, from a signed push delivery, to the set Resolve reads back.
+    // "" records nothing. Opening a pull request records nothing.
+    RecordPusher(ctx context.Context, t Target, login string) error
 }
 ```
 
@@ -159,7 +163,8 @@ superset stated in `MayBeProtected`.
    does not decode gives the zero `Entitlement`, which means "not suspended" **[default]**. Log the outcome
    (`found`, `missing`, `unreadable`) and the installation ID only. Recovery of a missing record is outside the
    gate: `control`'s sweep backfills it (Observe + Refresh for every installation), so a missed installation
-   webhook delays the trial start by at most one sweep interval. A Store outage never fails `Resolve`; that
+   webhook delays the trial start by at most one sweep interval. A Store outage never fails the entitlement
+   read, so it never fails `Resolve` by itself; only a failed read of a pusher record does (below). That
    publishing then also needs the Store for its lease is `gate/feedback`'s rule, not this module's.
 2. `Suspended = t.Repo.Private && !SuspendAfter.IsZero() && !now.Before(SuspendAfter)`.
 3. Settings: `Repos.File(ref = t.BaseRef, settings.Path)`. `api.ErrNotFound` → return
@@ -177,8 +182,9 @@ superset stated in `MayBeProtected`.
    `ChangedFiles` reports `truncated == true`, any path may have changed: all five paths count as changed (fail closed).
 9. `ProtectedPaths` empty → `ApprovalNotRequired`. Stop.
 10. `t.Fork` → `ApprovalMissing`. Stop. No head file is read for a fork.
-11. Approval from `Pulls.Reviews` (algorithm below). Not granted → `ApprovalMissing`. Stop.
-12. Granted → `ApprovedBy` = the approving login. If the policy path is in `ProtectedPaths`: read it at
+11. Approval from `Pulls.Reviews` (algorithm below). When no owner approved, the pusher of `t.HeadSHA` (below). Neither →
+    `ApprovalMissing`. Stop.
+12. Granted → `ApprovedBy` = the approving or pushing login. If the policy path is in `ProtectedPaths`: read it at
     `ref = t.HeadSHA`, append its digest to `PolicyDigests` (absent at head → nothing appended). Same for
     the baseline and the labels file. Head waivers are parsed from the approved head policy.
 13. `EarliestWaiverExpiry` = the earliest `Waiver.Expires` that is not before `now`, over the base policy
@@ -199,11 +205,40 @@ superset stated in `MayBeProtected`.
 - The first approving owner in review order is `ApprovedBy`.
 - An ordinary approving review by a non-owner confers nothing.
 
+### Pusher authorization
+
+A design rule of the product: anyone may propose a policy change, only an architecture owner can authorize it, and
+GitHub does not let an author approve their own pull request. A sole owner would never get a change through. So an
+owner also authorizes a head by being the one who pushed it.
+
+- `RecordPusher(t, login)` adds `login` to the set stored at `pusher/<lowercase repo full name>/<t.HeadSHA>` under the
+  installation tenant, by compare-and-swap (a few attempts, then an error the queue retries). The caller passes the
+  `sender.login` of a signed `push` delivery: the actor GitHub says moved a branch to that SHA. Git author and
+  committer fields are never read; they are spoofable. An empty login writes nothing. A login already in the set
+  (ignoring case) writes nothing. The set holds at most 32 logins; a further one is not recorded.
+- The set only grows. A later push of the same commit by someone else (a branch cut from it, a mirror, a redelivered
+  event) takes nothing away, so the decision for a head does not depend on the order of events.
+- When no owner approved the head, `Resolve` reads that set. A pusher authorizes the head when the login is an
+  owner by the same rule as a reviewer (login or team member), with owners from `Settings.Owners` at `BaseRef`.
+  The first owner in the set is `ApprovedBy`. Owners named only by the head settings or head CODEOWNERS are not owners.
+- The set is keyed by head SHA, so a later commit is a different key: its pushers decide, and the earlier owner
+  push authorizes nothing new. The authorization is of the commit: an owner who pushes it to any branch
+  authorizes that commit for every pull request whose head it is. An owner who pushes commits written by someone
+  else endorses them.
+- `sender` is the account GitHub names for the push. GitHub does not say which account a push made with a deploy key
+  carries. The gate therefore records nothing for a push whose `pusher_type` is present and not `"user"`. An absent
+  `pusher_type` still trusts `sender` **[open: verify on the pilot with a deploy-key push]**.
+- A fork head has no record (its push happens in the fork) and `Resolve` stops at step 10 anyway: forks stay on a
+  review approval, which they also never get.
+- A failed read of the record is an error, not "no pusher": the decision is retried, never published on a guess.
+  A missing record is "no pusher".
+
 ### Errors
 
 `Resolve` returns an error for any GitHub failure other than "file absent" (including
 `api.ErrRateLimited`, matchable with `errors.Is`). The zero `Trusted` accompanies an error. The caller
-must not publish a passing result on error; the pending check stays. Store failures never return an error.
+must not publish a passing result on error; the pending check stays. A failed Store read of the entitlement never
+returns an error; a failed Store read of a pusher record does, because "no pusher" would publish a guess.
 
 A protected file that exists but cannot be read is such a failure, never "absent": a file over the API client's
 size cap (1 MiB), a 5xx, a timeout. "Absent" is only `api.ErrNotFound`. `Resolve` returns the error, `gate` answers
@@ -215,14 +250,17 @@ size cap (1 MiB), a 5xx, a timeout. "Absent" is only `api.ErrNotFound`. `Resolve
 ### store
 
 - **Counterpart**: internal/store
-- **Direction**: inputs depends on store (read-only: `Get`)
+- **Direction**: inputs depends on store (`Get` of the entitlement and the pusher records, `Put` of a pusher record)
 - **Strength**: contract
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high (inputs side); store is low
 - **Balanced?**: yes
 - **Shared knowledge**: tenant = installation ID; key `EntitlementKey`; value is the JSON of `Entitlement`.
-  `ErrNotFound` is the sentinel of `store` for a missing key; inputs treats it like every other Store error.
-  inputs never calls `Put`, `Delete`, `Add`, `CompareAndSwap`, `DeleteTenant` or `Tenants`. `SystemTenant` is never used here.
+  `ErrNotFound` is the sentinel of `store` for a missing key; for the entitlement inputs treats it like every other
+  Store error, for a pusher record it means "no pusher".
+  Key `pusher/<lowercase repo full name>/<head sha>`; the value is the pushers' logins, one per line. inputs calls
+  only `Get` and, for the pusher record, `CompareAndSwap`; never `Put`, `Delete`, `Add`, `CompareAndSwapAll`,
+  `DeleteTenant` or `Tenants`. `SystemTenant` is never used here.
 
 <!-- contract: Tenant, SystemTenant — restated from internal/store/module.md -->
 ```go
@@ -487,7 +525,8 @@ type Pulls interface {
   `.github/workflows/` exists here only; it restates the directory rule of `wire/settings` (owner: `wire/settings`,
   which exports no constant for it). If the two drift, `MayBeProtected` stops being a superset and a workflow push
   is noticed by the hourly sweep instead of at once. Remove the literal when `wire/settings` exports the directory.
-- The App never writes the baseline or the policy; inputs is read-only on GitHub and on the Store.
+- The App never writes the baseline or the policy; inputs is read-only on GitHub, and on the Store it writes only the
+  pusher record.
 - A Store outage, missing record, or malformed record never means non-payment: `Suspended` is false.
 - Public repositories are never suspended.
 - Fail closed on GitHub errors: return the error; never return partial `Trusted` that could pass.
@@ -518,6 +557,15 @@ failing `Store` stub. `NewMemory` is the in-process Store constructor of `intern
 - **Test name**: `TestApprovalAlgorithm`
   **Scenario**: table: owner approved head; owner approved an older SHA; non-owner approved head; owner approved then requested changes; owner approved then commented; owner approval dismissed; login case differs; team owner with member and with non-member; two owners, second approves.
   **Expected behavior**: granted, missing, missing, missing, granted, missing, granted, granted, missing, granted with the second owner as `ApprovedBy`.
+- **Test name**: `TestPusherAuthorizesOnlyABaseOwnerOfTheExactHead`
+  **Scenario**: a policy change and a recorded pusher: an owner of the head; a member of an owner team; a non-owner; an owner named only by the head settings; an owner who pushed an older head.
+  **Expected behavior**: granted with the pusher as `ApprovedBy`, granted, missing, missing, missing.
+- **Test name**: `TestPusherGrantsNothingForAFork`, `TestEmptyPusherRecordsNothing`
+  **Scenario**: an owner's record for a fork target; an empty login recorded.
+  **Expected behavior**: missing in both.
+- **Test name**: `TestPusherReadFailureFailsClosed`
+  **Scenario**: the Store fails the read of the pusher record.
+  **Expected behavior**: `Resolve` returns the error.
 - **Test name**: `TestSuspendedFormula`
   **Scenario**: table over private/public × `SuspendAfter` zero / future / equal to now / past.
   **Expected behavior**: true only for private with `SuspendAfter` at or before `now`.

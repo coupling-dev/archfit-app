@@ -188,10 +188,24 @@ func (f *fakeGitHub) OpenPulls(_ context.Context, r api.RepoRef) ([]api.Pull, er
 	return out, nil
 }
 
-func (f *fakeGitHub) PullByHead(_ context.Context, r api.RepoRef, _ string) (api.Pull, error) {
+// PullByHead returns the newest pull request of r whose head is branch in r itself, like the real client.
+func (f *fakeGitHub) PullByHead(_ context.Context, r api.RepoRef, branch string) (api.Pull, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return api.Pull{}, cmpErr(f.enter("PullByHead", r), api.ErrNotFound)
+	if err := f.enter("PullByHead", r); err != nil {
+		return api.Pull{}, err
+	}
+	var newest api.Pull
+	found := false
+	for _, p := range f.pulls {
+		if p.HeadRef == branch && strings.EqualFold(p.HeadRepo, r.FullName) && (!found || p.Number > newest.Number) {
+			newest, found = p, true
+		}
+	}
+	if !found {
+		return api.Pull{}, api.ErrNotFound
+	}
+	return newest, nil
 }
 
 func (f *fakeGitHub) ChangedFiles(_ context.Context, r api.RepoRef, number int) ([]string, bool, error) {
@@ -410,9 +424,12 @@ func (v *fakeVerifier) Verify(_ context.Context, token, audience string) (oidc.C
 // operation from any other Store access.
 const leaseKeyPrefix = "feedback/lease/"
 
-// guardStore proves the gate path writes nothing but publication leases: every other write panics, and so does a
-// compare-and-swap outside the lease keys. It records the tenants and keys of other reads, and the tenants of lease
-// operations separately.
+// pusherKeyPrefix is gate/inputs' unexported prefix of the record of who pushed a head, restated for the same reason.
+const pusherKeyPrefix = "pusher/"
+
+// guardStore proves the gate path writes nothing but publication leases and pusher records: every other write panics,
+// and so does a compare-and-swap outside the lease and pusher keys. It records the tenants and keys of other reads,
+// and the tenants of lease and pusher operations separately.
 type guardStore struct {
 	inner store.Store
 	// entitlementErr fails every read except the leases: the control plane's records are unreadable.
@@ -421,21 +438,26 @@ type guardStore struct {
 	down error
 	// beforeLease runs once, at the next lease read, before the lease is taken: what it does happens while that
 	// publisher waits for the lease, between its decision and its first read inside the lease.
-	beforeLease  func()
-	mu           sync.Mutex
-	tenants      []store.Tenant
-	keys         []string
-	leaseTenants []store.Tenant
+	beforeLease   func()
+	mu            sync.Mutex
+	tenants       []store.Tenant
+	keys          []string
+	leaseTenants  []store.Tenant
+	pusherTenants []store.Tenant // tenants of every read and write of a pusher record
 }
 
 func (s *guardStore) Get(ctx context.Context, t store.Tenant, key string) ([]byte, error) {
 	s.mu.Lock()
 	lease := strings.HasPrefix(key, leaseKeyPrefix)
+	pusher := strings.HasPrefix(key, pusherKeyPrefix)
 	var hook func()
-	if lease {
+	switch {
+	case lease:
 		s.leaseTenants = append(s.leaseTenants, t)
 		hook, s.beforeLease = s.beforeLease, nil
-	} else {
+	case pusher:
+		s.pusherTenants = append(s.pusherTenants, t)
+	default:
 		s.tenants = append(s.tenants, t)
 		s.keys = append(s.keys, key)
 	}
@@ -446,18 +468,23 @@ func (s *guardStore) Get(ctx context.Context, t store.Tenant, key string) ([]byt
 	switch {
 	case s.down != nil:
 		return nil, s.down
-	case !lease && s.entitlementErr != nil:
+	case !lease && !pusher && s.entitlementErr != nil:
 		return nil, s.entitlementErr
 	}
 	return s.inner.Get(ctx, t, key)
 }
 
 func (s *guardStore) CompareAndSwap(ctx context.Context, t store.Tenant, key string, old, value []byte) (bool, error) {
-	if !strings.HasPrefix(key, leaseKeyPrefix) {
-		panic("gate path wrote to the Store outside a publication lease: CompareAndSwap")
+	pusher := strings.HasPrefix(key, pusherKeyPrefix)
+	if !pusher && !strings.HasPrefix(key, leaseKeyPrefix) {
+		panic("gate path wrote to the Store outside a publication lease or a pusher record: CompareAndSwap")
 	}
 	s.mu.Lock()
-	s.leaseTenants = append(s.leaseTenants, t)
+	if pusher {
+		s.pusherTenants = append(s.pusherTenants, t)
+	} else {
+		s.leaseTenants = append(s.leaseTenants, t)
+	}
 	s.mu.Unlock()
 	if s.down != nil {
 		return false, s.down
@@ -509,12 +536,18 @@ type fakeResolver struct {
 	err     error
 	targets []inputs.Target
 	nows    []time.Time
+	pushers []string // logins recorded by RecordPusher, in call order
 }
 
 func (r *fakeResolver) Resolve(_ context.Context, t inputs.Target, now time.Time) (inputs.Trusted, error) {
 	r.targets = append(r.targets, t)
 	r.nows = append(r.nows, now)
 	return r.trusted, r.err
+}
+
+func (r *fakeResolver) RecordPusher(_ context.Context, _ inputs.Target, login string) error {
+	r.pushers = append(r.pushers, login)
+	return nil
 }
 
 type fakePublisher struct {

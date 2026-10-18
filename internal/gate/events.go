@@ -2,6 +2,7 @@ package gate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -14,6 +15,9 @@ import (
 	"github.com/alexei-led/archfit-app/internal/github/webhook"
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
+
+// pusherTypeUser is the pusher_type of a push made by a user account.
+const pusherTypeUser = "user"
 
 // Reactions, as logged.
 const (
@@ -29,8 +33,8 @@ const (
 
 // HandleEvent reacts to a verified webhook event: pending check on a new head, fork refusal,
 // owner_approval_missing on a review change that withdraws the approval a receipt relied on, re-run on a
-// review change when the last receipt was owner_approval_missing, and a one-repository sweep when a
-// default-branch push changes a protected path.
+// review change when the last receipt was owner_approval_missing, a pusher record and a re-evaluation of the
+// pull request on a pushed head, and a one-repository sweep when a default-branch push changes a protected path.
 func (g *Gate) HandleEvent(ctx context.Context, e webhook.Event) error {
 	reaction, err := g.react(ctx, e)
 	slog.Default().InfoContext(ctx, "gate event",
@@ -44,18 +48,62 @@ func (g *Gate) react(ctx context.Context, e webhook.Event) (string, error) {
 	case webhook.PullOpened, webhook.PullSynchronized:
 		return g.newHead(ctx, eventTarget(e))
 	case webhook.ReviewChanged:
-		return g.reviewChanged(ctx, eventTarget(e))
-	case webhook.DefaultBranchPush:
-		if !protectedPush(e.ChangedPaths) {
-			return reactionNone, nil
-		}
-		// A rate limit is an error that wraps api.ErrRateLimited: the queue retries the delivery.
-		if _, err := g.sweeper.RunRepo(ctx, eventTarget(e).Repo, g.now()); err != nil {
-			return reactionRepoSweep, fmt.Errorf("gate: repository sweep: %w", err)
-		}
-		return reactionRepoSweep, nil
+		return g.approvalChanged(ctx, eventTarget(e))
+	case webhook.BranchPush, webhook.DefaultBranchPush:
+		return g.branchPushed(ctx, e)
 	}
 	return reactionNone, nil
+}
+
+// branchPushed records who moved the branch to e.HeadSHA, then re-evaluates the pull request on that head: a report
+// may have asked for an owner approval before the record existed. A default-branch push that changes a protected
+// path also runs the repository sweep.
+func (g *Gate) branchPushed(ctx context.Context, e webhook.Event) (string, error) {
+	t := eventTarget(e)
+	if err := g.recordPusher(ctx, t, e); err != nil {
+		return reactionNone, err
+	}
+	reaction, err := g.pullOnHead(ctx, t, e.Branch)
+	if err != nil || e.Kind == webhook.BranchPush || !protectedPush(e.ChangedPaths) {
+		return reaction, err
+	}
+	// A rate limit is an error that wraps api.ErrRateLimited: the queue retries the delivery.
+	if _, err := g.sweeper.RunRepo(ctx, t.Repo, g.now()); err != nil {
+		return reactionRepoSweep, fmt.Errorf("gate: repository sweep: %w", err)
+	}
+	return reactionRepoSweep, nil
+}
+
+// recordPusher records e.Pusher as a pusher of the head. A push whose pusher_type is present and not "user" (a deploy
+// key) records nothing: GitHub does not say whose login sender carries then, and an owner's authorization must not be
+// open to whoever holds a key. An absent pusher_type still trusts sender.
+func (g *Gate) recordPusher(ctx context.Context, t inputs.Target, e webhook.Event) error {
+	if e.PusherType != "" && e.PusherType != pusherTypeUser {
+		slog.Default().InfoContext(ctx, "gate pusher not recorded",
+			"delivery_id", e.DeliveryID, "installation_id", e.InstallationID, "head_sha", e.HeadSHA)
+		return nil
+	}
+	if err := g.resolver.RecordPusher(ctx, t, e.Pusher); err != nil {
+		return fmt.Errorf("gate: record pusher: %w", err)
+	}
+	return nil
+}
+
+// pullOnHead re-evaluates the newest pull request whose head is branch, when that head is the commit just pushed.
+// A pull request from a fork never has a head in this repository, so it is never found here.
+func (g *Gate) pullOnHead(ctx context.Context, t inputs.Target, branch string) (string, error) {
+	pr, err := g.pulls.PullByHead(ctx, t.Repo.RepoRef, branch)
+	if errors.Is(err, api.ErrNotFound) {
+		return reactionNone, nil
+	}
+	if err != nil {
+		return reactionNone, fmt.Errorf("gate: pull request by head: %w", err)
+	}
+	if pr.State != "open" || pr.HeadSHA != t.HeadSHA {
+		return reactionNone, nil
+	}
+	t.PullRequest, t.BaseRef = pr.Number, pr.BaseRef
+	return g.approvalChanged(ctx, t)
 }
 
 // eventTarget builds the target from the signed payload. ID and DefaultBranch stay zero:
@@ -96,12 +144,13 @@ func (g *Gate) newHead(ctx context.Context, t inputs.Target) (string, error) {
 	return reactionNone, nil
 }
 
-// reviewChanged reacts to a review that may withdraw or grant an owner approval. It reads the gate check, decides
-// and writes inside the head's publication lease (Publisher.Reconcile), so no other publication for the head lands
-// in between. A receipt that asks for no action while the approval it needs is gone becomes owner_approval_missing
-// at once, as sweep rule 5a does it. After owner_approval_missing, a review once no approval is missing re-runs the
-// workflow; the check stays as it is until the new upload, so nothing here can turn it green.
-func (g *Gate) reviewChanged(ctx context.Context, t inputs.Target) (string, error) {
+// approvalChanged reacts to an event that may withdraw or grant an owner approval: a review, or a push that records
+// an owner as the pusher of t's head. It reads the gate check, decides and writes inside the head's publication lease
+// (Publisher.Reconcile), so no other publication for the head lands in between. A receipt that asks for no action
+// while the approval it needs is gone becomes owner_approval_missing at once, as sweep rule 5a does it. After
+// owner_approval_missing, an event once no approval is missing re-runs the workflow; the check stays as it is until
+// the new upload, so nothing here can turn it green.
+func (g *Gate) approvalChanged(ctx context.Context, t inputs.Target) (string, error) {
 	reaction := reactionNone
 	err := g.publisher.Reconcile(ctx, t, func(ctx context.Context, current feedback.CheckState) (*feedback.Publication, error) {
 		rc := current.Receipt
@@ -131,7 +180,7 @@ func (g *Gate) reviewChanged(ctx context.Context, t inputs.Target) (string, erro
 		return nil, nil
 	})
 	if err != nil {
-		return reaction, fmt.Errorf("gate: review: %w", err)
+		return reaction, fmt.Errorf("gate: approval: %w", err)
 	}
 	return reaction, nil
 }

@@ -185,8 +185,7 @@ func TestHandleEventReactions(t *testing.T) {
 	})
 
 	nothing := map[string]func(*world, *pull) webhook.Event{
-		"PullClosed":                   func(w *world, p *pull) webhook.Event { return w.event(webhook.PullClosed, p) },
-		"DefaultBranchPush, code only": func(w *world, _ *pull) webhook.Event { return w.pushEvent(w.shop, "pkg/a/a.go", "README.md") },
+		"PullClosed": func(w *world, p *pull) webhook.Event { return w.event(webhook.PullClosed, p) },
 		"InstallationAdded": func(*world, *pull) webhook.Event {
 			return webhook.Event{Kind: webhook.InstallationAdded, InstallationID: shopInstallation}
 		},
@@ -260,7 +259,7 @@ func TestProtectedPushTriggersRepoSweep(t *testing.T) {
 			w.gh.calls = nil
 
 			w.handle(w.pushEvent(w.shop, tc.paths...))
-			calls := len(w.gh.calls)
+			writes := w.gh.writes()
 
 			for p, swept := range stale {
 				want := verdict.ReasonHealthy
@@ -278,8 +277,8 @@ func TestProtectedPushTriggersRepoSweep(t *testing.T) {
 			if len(w.gh.reruns) != wantReruns {
 				t.Errorf("reruns = %v, want %d", w.gh.reruns, wantReruns)
 			}
-			if !tc.swept && calls != 0 {
-				t.Errorf("a source-only push made %d GitHub calls", calls)
+			if !tc.swept && w.gh.writes() != writes {
+				t.Errorf("a source-only push wrote to GitHub")
 			}
 		})
 	}

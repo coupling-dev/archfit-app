@@ -17,6 +17,7 @@ const (
 	PullClosed          EventKind = "pull_closed"
 	ReviewChanged       EventKind = "review_changed" // submitted, edited, dismissed
 	DefaultBranchPush   EventKind = "default_branch_push"
+	BranchPush          EventKind = "branch_push"          // a push to a branch other than the default branch
 	InstallationAdded   EventKind = "installation_added"   // created, or repositories added
 	InstallationRemoved EventKind = "installation_removed" // deleted
 	ReposRemoved        EventKind = "repos_removed"
@@ -34,6 +35,9 @@ type Event struct {
 	HeadSHA        string
 	HeadRepo       string // differs from Repo for forks
 	BaseRef        string
+	Branch         string   // push kinds only: the branch, without "refs/heads/"
+	Pusher         string   // push kinds only: the login that moved the branch; never a git author or committer
+	PusherType     string   // push kinds only: the payload's pusher_type ("user", or a deploy key); "" when absent
 	ChangedPaths   []string // default_branch_push only
 }
 

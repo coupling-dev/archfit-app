@@ -199,7 +199,7 @@ reason applies. The detail lists the dimensions that are not fully measured and 
 
 | Reason                   | Recovery                                                                                                               |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `owner_approval_missing` | Get a policy owner to approve the exact commit.                                                                        |
+| `owner_approval_missing` | Get a policy owner to approve the exact commit, or push it from a policy owner account.                                |
 | `settings_missing`       | Merge the onboarding pull request to add `.archfit-app.yaml`.                                                          |
 | `policy_missing`         | Merge the Archfit policy pull request.                                                                                 |
 | `policy_defect`          | Fix the selectors of the listed rules by owner-approved pull request, or mark an intentional guard rule `guard: true`. |
@@ -296,8 +296,20 @@ Select **Reload the draft**, then apply the edit again.
 
 ### Owner approval
 
-A protected-path change needs approval from a policy owner on the exact head commit.
-A new push cancels the approval. A dismissed review, or a later request for changes from the same owner, also
+A protected-path change needs authorization from a policy owner on the exact head commit. A policy owner authorizes it in
+one of two ways:
+
+- An approving review on that commit.
+- Pushing that commit from the owner's own GitHub account. GitHub does not let an author approve their own pull
+  request, so this is how a sole owner changes a protected file. The App reads the pusher from the signed `push`
+  webhook, never from the git author or committer. If you open the pull request from a branch that someone else
+  pushed, the owner who opens it does not authorize those commits; the pusher does.
+
+Owners are the ones named in `.archfit-app.yaml` on the base branch. A push by anyone else authorizes nothing, and a
+pull request from a fork gets no authorization by push. Pushing someone else's commits from an owner account endorses
+them.
+
+A new push cancels the authorization: the next commit has its own pusher. A dismissed review, or a later request for changes from the same owner, also
 cancels it. The required check then returns to `action_required` with `owner_approval_missing` within the review
 event, or within an hour if the event is lost. No new commit is needed. A new owner approval reruns the workflow,
 and a fresh report sets the result again.

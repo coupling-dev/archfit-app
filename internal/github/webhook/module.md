@@ -44,7 +44,7 @@ delivery ID header are not covered by the signature; only the body is.
   **[default]**: a pending check already exists on the head, and the sweep repairs stale inputs.
 - `pull_request_review`: `submitted`, `edited`, `dismissed` → `ReviewChanged`.
 - `push`: `ref` equals `refs/heads/` + `repository.default_branch` and `deleted` is false → `DefaultBranchPush`;
-  any other ref, a tag, or a deletion → `Ignored`.
+  any other branch ref with `deleted` false → `BranchPush`; a tag or a deletion → `Ignored`.
 - `installation`: `created` → `InstallationAdded`; `deleted` → `InstallationRemoved`; `suspend`, `unsuspend`,
   `new_permissions_accepted` → `Ignored` **[default]**.
 - `installation_repositories`: `added` → `InstallationAdded`; `removed` → `ReposRemoved`.
@@ -56,7 +56,12 @@ delivery ID header are not covered by the signature; only the body is.
 - Pull request kinds and `ReviewChanged`: `PullRequest` = `pull_request.number`, `HeadSHA` = `pull_request.head.sha`,
   `HeadRepo` = `pull_request.head.repo.full_name`, `BaseRef` = `pull_request.base.ref`. A deleted fork has
   `head.repo: null`; `HeadRepo` is then `""`, which differs from `Repo`, so it still reads as a fork.
-- `DefaultBranchPush`: `HeadSHA` = `after`, `BaseRef` = the default branch name, `HeadRepo` = `Repo`, `PullRequest` 0.
+- `DefaultBranchPush`: `HeadSHA` = `after`, `BaseRef` = the default branch name, `HeadRepo` = `Repo`, `PullRequest` 0,
+  `Branch` = `ref` without `refs/heads/`, `Pusher` = `sender.login`.
+- `BranchPush`: as `DefaultBranchPush` for `HeadSHA`, `HeadRepo`, `PullRequest`, `Branch` and `Pusher`; `BaseRef` is `""`
+  and `ChangedPaths` is `nil`. `Pusher` is the actor GitHub names for the push; it is never a git author or
+  committer, which a pusher can set freely. A missing `sender` leaves `Pusher` empty. `PusherType` is the payload's
+  top-level `pusher_type` verbatim, `""` when absent; this package does not judge it.
 - Installation kinds: `Repo` is `""`, `RepoPrivate` false, no pull request fields. Consumers list repositories
   through the API; the repository arrays of these payloads are not surfaced.
 - `Ignored`: `Kind`, `DeliveryID`, and `InstallationID` when the body was parsed and has one; nothing else.
@@ -86,6 +91,7 @@ const (
     PullClosed         EventKind = "pull_closed"
     ReviewChanged      EventKind = "review_changed"      // submitted, edited, dismissed
     DefaultBranchPush  EventKind = "default_branch_push"
+    BranchPush         EventKind = "branch_push"         // a push to a branch other than the default branch
     InstallationAdded  EventKind = "installation_added"  // created, or repositories added
     InstallationRemoved EventKind = "installation_removed" // deleted
     ReposRemoved       EventKind = "repos_removed"
@@ -103,6 +109,9 @@ type Event struct {
     HeadSHA        string
     HeadRepo       string // differs from Repo for forks
     BaseRef        string
+    Branch         string   // push kinds only: the branch, without "refs/heads/"
+    Pusher         string   // push kinds only: the login that moved the branch; never a git author or committer
+    PusherType     string   // push kinds only: the payload's pusher_type ("user", or a deploy key); "" when absent
     ChangedPaths   []string // default_branch_push only
 }
 ```
@@ -127,7 +136,7 @@ const (
 )
 ```
 
-`PullOpened` is the kind for a pull request that needs a first look. `PullSynchronized` is the kind for a new
+`BranchPush` is the kind for a push to a branch other than the default branch. `PullOpened` is the kind for a pull request that needs a first look. `PullSynchronized` is the kind for a new
 head SHA. `PullClosed` is the kind for a closed or merged pull request. `ReviewChanged` is the kind for any
 review change. `DefaultBranchPush` is the kind for a push to the default branch. `InstallationAdded` is the
 kind for a new installation or added repositories. `InstallationRemoved` is the kind for an uninstall.
@@ -149,8 +158,8 @@ the `http.Request`, this package owns what the headers are called.
   incomplete (`installation.id` ≤ 0; empty or slash-less `repository.full_name` for repository kinds;
   `pull_request.number` ≤ 0; a head SHA that is not 40 lowercase hex). An error means "answer `400`, do nothing".
 - A `push` needs `repository.full_name` with a slash before it is classified: the repository object names the
-  default branch. Without it `Parse` errors, even for a push that would map to `Ignored` (another branch, a
-  tag, a deletion). This is the one case where an ignorable delivery of a known type is an error.
+  default branch. Without it `Parse` errors, even for a push that would map to `Ignored` (a tag, a deletion). This
+  is the one case where an ignorable delivery of a known type is an error.
 - A known event type with an unmapped action is `Ignored`, not an error.
 - Because the event type header is unsigned, a body presented under the wrong type either fails the identity
   checks or is `Ignored`. It can never name a repository or installation that the signed body does not contain.
@@ -183,7 +192,8 @@ home of `Event`, so nothing is restated for the consumers below.
 - **Volatility**: High (the gate side)
 - **Balanced?**: Yes
 - **Shared knowledge**: `Event`, `EventKind`. `gate` reacts to `PullOpened`, `PullSynchronized` (pending check or
-  fork refusal, fork = `HeadRepo != Repo`) and `ReviewChanged` (re-run). It builds its repository reference from
+  fork refusal, fork = `HeadRepo != Repo`), `ReviewChanged` (re-run), `BranchPush` and `DefaultBranchPush` (record `Pusher` as
+  the pusher of `HeadSHA`, then re-evaluate the open pull request on that head). It builds its repository reference from
   `InstallationID` and `Repo`, which is why both must come from the signed body.
 
 ### control
@@ -255,6 +265,12 @@ Payload fixtures are trimmed copies of real GitHub deliveries under `testdata/`,
 - **Test name**: `TestParseFields`
   **Scenario**: one fixture per non-ignored kind.
   **Expected behavior**: every `Event` field equals the Field sources rule; unused fields are zero.
+- **Test name**: `TestBranchPushFields`
+  **Scenario**: a push to `feature/x` with a sender, not the default branch.
+  **Expected behavior**: `Kind == BranchPush`; `HeadSHA`, `HeadRepo == Repo`, `Branch == "feature/x"`, `Pusher` from `sender.login`; `BaseRef` and `ChangedPaths` empty.
+- **Test name**: `TestBranchPushCarriesPusherType`
+  **Scenario**: a push to a feature branch with `pusher_type` absent, `"user"` and `"deploy_key"`.
+  **Expected behavior**: `PusherType` is `""`, `"user"`, `"deploy_key"`; `Pusher` is the sender in all three.
 - **Test name**: `TestChangedPaths`
   **Scenario**: table: three commits with overlapping files; a file added then removed; `forced: true`; 2 048 commits;
   3 001 distinct paths; exactly 3 000 paths; no `commits` key; `"commits": []`; `"commits": null`.
@@ -285,9 +301,10 @@ Payload fixtures are trimmed copies of real GitHub deliveries under `testdata/`,
   `full_name` without a slash; PR number 0; head SHA of 39 characters, uppercase, or empty; empty `deliveryID`.
   **Expected behavior**: an error for each; no `Event` with a non-`Ignored` kind is returned.
 - **Test name**: `TestPushWithoutRepositoryIsAnError`
-  **Scenario**: table of pushes that would map to `Ignored` (feature branch, tag, branch deletion), each with
-  `repository` missing, `full_name` empty, and `full_name` without a slash; the same pushes unbroken.
-  **Expected behavior**: an error and the zero `Event` for each broken row; `Ignored` and no error unbroken.
+  **Scenario**: table of pushes (feature branch, tag, branch deletion), each with `repository` missing, `full_name`
+  empty, and `full_name` without a slash; the same pushes unbroken.
+  **Expected behavior**: an error and the zero `Event` for each broken row; unbroken, `BranchPush` for the feature
+  branch and `Ignored` for the tag and the deletion, no error.
 - **Test name**: `TestParseMalformedJSON`
   **Scenario**: truncated JSON, a JSON array, and `null` for each known event type.
   **Expected behavior**: error.
@@ -319,7 +336,8 @@ Payload fixtures are trimmed copies of real GitHub deliveries under `testdata/`,
   **Scenario**: installation created; repositories added; repositories removed; suspend; installation deleted.
   **Expected behavior**: `InstallationAdded`, `InstallationAdded`, `ReposRemoved`, `Ignored`, `InstallationRemoved`;
   each carries the installation ID of its body.
-- **Test name**: `TestDefaultBranchPushOnly`
-  **Scenario**: push to `main` (default), to a feature branch, a tag push, deletion of a branch, push when the default
-  branch is `trunk`.
-  **Expected behavior**: `DefaultBranchPush` only for the default branch of that payload; `Ignored` otherwise.
+- **Test name**: `TestPushKinds`
+  **Scenario**: push to `main` (default), to a feature branch, a tag push, deletion of the default branch and of a
+  feature branch, push when the default branch is `trunk`, push to `main` when the default is `trunk`.
+  **Expected behavior**: `DefaultBranchPush` only for the default branch of that payload; `BranchPush` for another
+  branch; `Ignored` for the tag and for both deletions.

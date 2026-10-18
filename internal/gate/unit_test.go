@@ -280,7 +280,7 @@ func newPipelineFakes() *pipelineFakes {
 		receiver: &fakeReceiver{}, resolver: &fakeResolver{}, publisher: &fakePublisher{},
 		sweeper: &fakeSweeper{}, actions: &fakeActions{},
 	}
-	f.gate = newGate(f.receiver, f.resolver, f.publisher, f.sweeper, f.actions, func() time.Time { return testStart })
+	f.gate = newGate(f.receiver, f.resolver, f.publisher, f.sweeper, f.actions, newFakeGitHub(), func() time.Time { return testStart })
 	return f
 }
 

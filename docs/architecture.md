@@ -342,6 +342,7 @@ The arrows show recovery flow. The sweep does not compute a new report because t
 | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
 | New pull request head                                    | Set a pending required check or refuse a fork                                                                                                                                | None                                  |
 | Push to the default branch that changes a protected path | Sweep that repository                                                                                                                                                        | None                                  |
+| Push to any branch                                       | Record who pushed the head. Then re-evaluate the open pull request on that head, as for a review change                                                                       | None                                  |
 | Review change                                            | Set `owner_approval_missing` when a `success` or `failure` check lost its owner approval; rerun when the last reason was `owner_approval_missing` and no approval is missing | None                                  |
 | Installation added or removed                            | None                                                                                                                                                                         | Start the trial or delete tenant data |
 
@@ -379,6 +380,10 @@ file and the workflow file change no digest in the receipt, so the receipt diges
 or the sweep when the event is lost, then sets the required check to `action_required` with `owner_approval_missing`.
 It requests no rerun: no run can pass until an owner approves the head again, and that approval triggers the rerun.
 The rerun also follows when no approval is needed any more, for example after a base retarget.
+An owner also authorizes a head by pushing it. The `push` webhook names the actor who moved the branch to a commit, and
+the App stores that login under the commit SHA. When the pusher is an owner in the protected settings, the head counts
+as approved, like an approving review on it. A later commit has its own pusher, so the authorization never carries over.
+The App never reads git author or committer fields for this. A pull request from a fork has no such push event.
 The review event and the sweep read the check, read the inputs, decide, and write all inside the head's publication
 lease. So a newer run that turned green while they waited is the result they downgrade, and an approval that
 arrives meanwhile is handled by its own review event after the write. An upload decided before the withdrawal reads

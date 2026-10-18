@@ -63,6 +63,9 @@ type Resolver interface {
 	// Resolve reads the protected ref and reviews. It never reads policy, settings, baseline,
 	// owners, or CODEOWNERS from the head tree, except to hash an owner-approved candidate.
 	Resolve(ctx context.Context, t Target, now time.Time) (Trusted, error)
+	// RecordPusher adds the login that pushed t's head, from a signed push delivery, to the set Resolve reads back.
+	// "" records nothing. Opening a pull request records nothing.
+	RecordPusher(ctx context.Context, t Target, login string) error
 }
 
 // Accepts is the digest predicate of the gate: whether claim is acceptable for one digest list of Trusted.

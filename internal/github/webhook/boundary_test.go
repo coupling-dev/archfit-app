@@ -81,6 +81,7 @@ func TestPushWithoutRepositoryIsAnError(t *testing.T) {
 			return set(pushPayload("refs/heads/main", "main"), "deleted", true)
 		},
 	}
+	kinds := map[string]EventKind{"feature branch": BranchPush}
 	breaks := map[string]func(obj){
 		"missing repository":        func(p obj) { delete(p, "repository") },
 		"empty full_name":           func(p obj) { set(p, "repository.full_name", "") },
@@ -88,8 +89,12 @@ func TestPushWithoutRepositoryIsAnError(t *testing.T) {
 	}
 	for pushName, push := range pushes {
 		t.Run(pushName+"/unbroken", func(t *testing.T) {
-			if ev := mustParse(t, "push", push()); ev.Kind != Ignored {
-				t.Errorf("Kind = %q, want %q", ev.Kind, Ignored)
+			want := Ignored
+			if k, ok := kinds[pushName]; ok {
+				want = k
+			}
+			if ev := mustParse(t, "push", push()); ev.Kind != want {
+				t.Errorf("Kind = %q, want %q", ev.Kind, want)
 			}
 		})
 		for name, mutate := range breaks {
