@@ -2,6 +2,28 @@
 <h1>{{.Repo}}</h1>
 {{with .Body}}
 {{if .Banner}}<p class="banner">{{.Banner}}</p>{{end}}
+{{if .MainState}}
+<section id="main-state">
+  <h2>Default branch</h2>
+  <p><strong>{{.MainState}}</strong>{{if .MainReason}} · {{.MainReason}}{{end}} · <a href="{{.GraphHref}}">Graph</a></p>
+</section>
+<section id="open-pulls">
+  <h2>Open pull requests</h2>
+  {{if .PullsError}}<p class="hint">The open pull requests could not be read. Try again in a minute.</p>
+  {{else}}
+  <ul class="r-pulls">
+  {{range .Pulls}}<li><a href="{{.Href}}">#{{.Number}} {{.Title}}</a> <strong>{{.State}}</strong>{{if .Reason}} <span class="hint">{{.Reason}}</span>{{end}}</li>
+  {{else}}<li class="hint">None.</li>{{end}}
+  </ul>
+  {{if .PullsMore}}<p class="hint">{{.PullsMore}} more open pull requests are not listed here.</p>{{end}}
+  {{end}}
+</section>
+{{end}}
+<section id="setup">
+  <h2>Setup</h2>
+  <ol class="r-steps">{{range .Steps}}<li class="{{if .Done}}done{{else if .Current}}current{{end}}">{{.Label}}</li>{{end}}</ol>
+  {{if .Next}}<p><strong>Next:</strong> {{.Next}}</p>{{end}}
+</section>
 <section>
   <h2>Onboarding</h2>
   <p><strong>{{.Stage}}</strong></p>

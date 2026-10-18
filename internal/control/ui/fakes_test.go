@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -167,6 +169,23 @@ func (g *fakeGH) Pull(_ context.Context, r api.RepoRef, number int) (api.Pull, e
 		return api.Pull{}, api.ErrNotFound
 	}
 	return p, nil
+}
+
+// OpenPulls lists the open pull requests of a repository by number.
+func (g *fakeGH) OpenPulls(_ context.Context, r api.RepoRef) ([]api.Pull, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if err := g.record("OpenPulls", r, ""); err != nil {
+		return nil, err
+	}
+	var open []api.Pull
+	for key, p := range g.pulls {
+		if strings.HasPrefix(key, r.FullName+"#") && p.State == "open" {
+			open = append(open, p)
+		}
+	}
+	slices.SortFunc(open, func(a, b api.Pull) int { return b.Number - a.Number })
+	return open, nil
 }
 
 func (g *fakeGH) Dispatch(_ context.Context, r api.RepoRef, workflowPath, ref string, inputs map[string]string) error {

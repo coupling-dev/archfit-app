@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
@@ -34,6 +36,15 @@ func reached(have, want onboarding.Stage) bool {
 }
 
 type statusBody struct {
+	MainState  string // archfit/state on the default-branch head, a word
+	MainReason string // its title
+	Pulls      []pullRow
+	PullsMore  int  // open pull requests past maxStatusPulls
+	PullsError bool // the list could not be read; the rest of the page stands
+	Steps      []step
+	Next       string // the next setup step, "" when there is none
+	GraphHref  string
+
 	Stage       string
 	Diagnostic  string
 	DraftURL    string
@@ -64,6 +75,12 @@ func (s *server) status(w http.ResponseWriter, r *http.Request, sc scope) {
 	}
 	if d := progress.OpenDraft; d != nil {
 		body.DraftURL, body.DraftState = d.URL, draftWords[d.State]
+	}
+	body.Steps, body.Next = setupSteps(progress.Stage)
+	body.GraphHref = repoPath(sc, "/graph")
+	if reached(progress.Stage, onboarding.StageReportReceived) {
+		body.MainState, body.MainReason = s.defaultBranchState(r.Context(), sc.repo)
+		body.Pulls, body.PullsMore, body.PullsError = s.openPulls(r.Context(), sc)
 	}
 	st, err := s.account.Status(r.Context(), sc.repo.InstallationID, s.now())
 	if err != nil {
@@ -207,4 +224,67 @@ func (s *server) consent(w http.ResponseWriter, r *http.Request, sc scope) {
 		return
 	}
 	seeOther(w, r, repoPath(sc, "/consent"), url.Values{"notice": {"consent"}})
+}
+
+// maxStatusPulls bounds the open pull requests the repository page looks up, one check-runs read each.
+const maxStatusPulls = 20
+
+type pullRow struct {
+	Number int
+	Title  string
+	State  string // archfit/state on the head, a word
+	Reason string // its title: the headline feedback wrote
+	Href   string
+}
+
+type step struct {
+	Label         string
+	Done, Current bool
+}
+
+var stepLabels = map[onboarding.Stage]string{
+	onboarding.StageInstalled: "Installed", onboarding.StageWorkflowMerged: "Workflow merged",
+	onboarding.StageReportReceived: "First report", onboarding.StagePolicyMerged: "Policy merged",
+	onboarding.StageAdvisory: "Advisory", onboarding.StageRequired: "Required",
+}
+
+var nextSteps = map[onboarding.Stage]string{
+	onboarding.StageAdvisory: "Rehearse the gate: one forbidden change must fail and one legitimate change must pass. Then require it with an owner-approved settings pull request that sets gate: required.",
+}
+
+// setupSteps is the onboarding path with the current stage marked, and the advice for the step after it.
+func setupSteps(current onboarding.Stage) ([]step, string) {
+	steps := make([]step, len(stageOrder))
+	for i, st := range stageOrder {
+		steps[i] = step{Label: stepLabels[st], Done: reached(current, st) && st != current, Current: st == current}
+	}
+	return steps, nextSteps[current]
+}
+
+// openPulls reads each open pull request's archfit/state, newest first. A failed list leaves the rest of the page
+// standing; a failed lookup is "unknown" for that row only.
+func (s *server) openPulls(ctx context.Context, sc scope) (rows []pullRow, more int, failed bool) {
+	pulls, err := s.gh.pulls.OpenPulls(ctx, sc.repo.RepoRef)
+	if err != nil {
+		slog.Warn("ui open pull requests unavailable", "repo", sc.repo.FullName, "error", err)
+		return nil, 0, true
+	}
+	if len(pulls) > maxStatusPulls {
+		more, pulls = len(pulls)-maxStatusPulls, pulls[:maxStatusPulls]
+	}
+	rows = make([]pullRow, len(pulls))
+	slots := make(chan struct{}, parallelLookups)
+	var wg sync.WaitGroup
+	for i, p := range pulls {
+		wg.Add(1)
+		slots <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-slots }()
+			state, reason := s.checkWord(ctx, sc.repo.RepoRef, p.HeadSHA, checkState)
+			rows[i] = pullRow{Number: p.Number, Title: p.Title, State: state, Reason: reason, Href: repoPath(sc, "/pull/"+strconv.Itoa(p.Number))}
+		}()
+	}
+	wg.Wait()
+	return rows, more, false
 }

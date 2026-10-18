@@ -407,6 +407,14 @@ baseline already accepts, and accepts nothing new.
 > **CAUTION:** Do not require `archfit/gate` while the settings file has `gate: advisory`.
 > The App does not publish that check in advisory mode. The pull request stays blocked.
 
+## See a repository
+
+Open `/r/<owner>/<repo>`. After the first report the page shows:
+
+- the Archfit result of the default branch, with a link to the graph;
+- the open pull requests, newest first, each with its result and a link to its page (up to 20);
+- the setup steps, with the current one marked and what to do next.
+
 ## See a pull request
 
 Open `/r/<owner>/<repo>/pull/<number>` for the Archfit result of the pull request's head commit.

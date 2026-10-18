@@ -55,6 +55,7 @@ type (
 	}
 	pullReader interface {
 		Pull(ctx context.Context, r api.RepoRef, number int) (api.Pull, error)
+		OpenPulls(ctx context.Context, r api.RepoRef) ([]api.Pull, error)
 	}
 	repoLister interface {
 		UserRepos(ctx context.Context, userToken string) ([]api.Repo, error)
