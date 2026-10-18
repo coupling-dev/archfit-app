@@ -279,11 +279,11 @@ The Action and the engine move together: Action `7efc29b` refuses engine v3.0.0,
 (`dbc3c1e`) refuses v3.0.1. The workflow file is a protected path, so an architecture owner approves the pull
 request. Its own run uses the new pin and passes the identity check.
 
-A baseline stored by engine v3.0.0 stays valid. Engine v3.0.1 no longer writes `state.dimensions` and
-`state.hard_gate_finding_ids`, so the first baseline capture after the move differs from the stored file, and the App
-opens a baseline pull request even when nothing else changed. Review it like any baseline pull request: its body
-lists the findings it adds and removes. When both counts are 0, it only drops the two fields, and merging or closing
-it is safe.
+The stored baseline still loads: the App ignores `state.dimensions` and `state.hard_gate_finding_ids`, which engine
+v3.0.1 no longer writes. It does not compare. The measurement profile records the tool versions inside the engine
+image, and the Go toolchain in the image changed between v3.0.0 and v3.0.1. After the move, every report ends
+`baseline_not_comparable` until the baseline is re-anchored. Merge the pin change first, then
+[re-anchor](#re-anchor-after-an-engine-or-profile-change) on the default branch and merge the baseline pull request.
 
 ### Report limits
 
