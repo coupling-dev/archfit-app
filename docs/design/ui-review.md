@@ -42,6 +42,20 @@ Owner feedback on v1: too many views, too many words, unclear actions. v2 keeps 
 | Prose about the cycle                                | a two-node diagram: 40 imports one way, 1 the other                             |
 | Advisories, locations, policy, YAML always visible   | folded, with the count in the summary                                           |
 
+Codex review of v2 (round 4) restored five things the fold had lost, each without a new tab:
+
+1. Recovery states in place of results: "No report yet", "Action required: report could not be used", "Finish setup".
+   Each has one action and hides counts and tasks it cannot support (Demo select shows them).
+2. Attribution: a folded line under the status chips, "No baseline in this run · PR attribution unavailable ·
+   customer-attested". Advisories say "Also in the master report", not "not this PR's job". The merge box says
+   "Archfit does not block merging", not "Merge allowed"; "Merging is blocked" only with a verified ruleset.
+3. Outdated result: an "Open workflow run" button next to the chip. "Re-run" stays on GitHub until the App can
+   re-run with its own permission.
+4. Trust and evidence limits: the customer-attested sentence and per-dimension coverage and confidence in the
+   Overview evidence fold.
+5. Policy edits are proposals, not owner-only: "Propose change", draft PR, owner approves. Read-only users see
+   "View policy". "Request an exception" appears only when the gate fails, and never clears it by itself.
+
 Rules: status first; one primary action per card; details fold away, but nothing needed to act lives only in a fold.
 The sections below describe v1 screens; their content now sits in the v2 places above.
 

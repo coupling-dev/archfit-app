@@ -130,6 +130,9 @@
       <option value="stale">PR #4 · outdated after #5</option>
       <option value="base">PR #4 · with baseline</option>
       <option value="req">PR #4 · gate required</option>
+      <option value="noreport">PR #4 · no report yet</option>
+      <option value="invalid">PR #4 · report unusable</option>
+      <option value="setup">Repo · setup not finished</option>
     </select></label>
   <button type="button" class="btn sm toggle-src" id="toggle-src" aria-pressed="false">Data sources</button>
   <div class="theme-toggle" role="group" aria-label="Theme">
@@ -148,7 +151,8 @@
 
 <!-- ================= OVERVIEW: is master fine, what do I do? ================= -->
 <section role="tabpanel" id="overview" aria-labelledby="tab-overview" class="stack" style="gap:24px">
-  <div class="hero">
+  <div class="box" data-only="scn:setup"><div class="blankslate"><svg class="oi"><use href="#i-beaker"/></svg><h3>Finish setup to see results</h3><p>The policy PR is open. Merge it on GitHub; the first report arrives with the next push to <code>master</code>.</p><a class="btn sm primary" href="#">Open policy PR</a></div></div>
+  <div class="hero" data-only="scn:nobase scn:stale scn:base scn:req scn:noreport scn:invalid">
     <div class="hero-top">
       <span class="state attention"><svg class="oi"><use href="#i-alert"/></svg>Needs attention</span>
       <code>master</code>
@@ -163,12 +167,12 @@
     </div>
   </div>
 
-  <section class="box" aria-labelledby="h-you">
+  <section class="box" aria-labelledby="h-you" data-only="scn:nobase scn:stale scn:base scn:req scn:noreport scn:invalid">
     <div class="box-head"><h3 id="h-you">Needs you</h3></div>
     <div class="action">
       <span class="ic"><svg class="oi"><use href="#i-pencil"/></svg></span>
-      <div><strong>Declare how often each module changes</strong><span class="meta">All 6 advisories depend on it.</span> <span class="src">dimensions.coupling.unknown[] · matched_by.hypothesis (raw)</span></div>
-      <a class="btn sm primary" href="#">Edit policy</a>
+      <div><strong>Declare how often each module changes</strong><span class="meta">All 6 advisories depend on it. Draft PR · owner approves.</span> <span class="src">dimensions.coupling.unknown[] · matched_by.hypothesis (raw)</span></div>
+      <a class="btn sm primary" href="#">Propose change</a>
     </div>
     <div class="action">
       <span class="ic blue"><svg class="oi"><use href="#i-beaker"/></svg></span>
@@ -178,7 +182,15 @@
   </section>
 
   <section class="box" aria-label="Setup progress">
-    <div class="track">
+    <div class="track" data-only="scn:setup">
+      <div class="st done"><span class="dot"><svg class="oi"><use href="#i-check"/></svg></span>Installed</div>
+      <div class="st now"><span class="dot"></span>Policy</div>
+      <div class="st"><span class="dot"></span>Baseline</div>
+      <div class="st"><span class="dot"></span>Advisory</div>
+      <div class="st"><span class="dot"></span>Rehearse</div>
+      <div class="st"><span class="dot"></span>Required</div>
+    </div>
+    <div class="track" data-only="scn:nobase scn:stale scn:base scn:req scn:noreport scn:invalid">
       <div class="st done"><span class="dot"><svg class="oi"><use href="#i-check"/></svg></span>Installed</div>
       <div class="st done"><span class="dot"><svg class="oi"><use href="#i-check"/></svg></span>Policy #3</div>
       <div class="st done"><span class="dot"><svg class="oi"><use href="#i-check"/></svg></span>Baseline #5</div>
@@ -188,7 +200,7 @@
     </div>
   </section>
 
-  <details class="fold">
+  <details class="fold" data-only="scn:nobase scn:stale scn:base scn:req scn:noreport scn:invalid">
     <summary>Evidence <span class="meta"><span class="key"><i></i>5 measured</span> · <span class="key"><i class="p"></i>3 partial</span> · <span class="key"><i class="n"></i>1 not measured</span></span></summary>
     <div class="fold-body">
       <div class="dims" aria-label="Dimensions">
@@ -199,12 +211,22 @@
         <div class="dim none"><i></i><span>drift</span></div>
       </div>
       <div class="pad stack-sm" style="border-top:1px solid var(--border-muted)">
+        <div class="table-wrap"><table class="data" style="font-size:12px">
+          <thead><tr><th>Dimension</th><th>Coverage</th><th>Confidence</th></tr></thead><tbody>
+          <tr><td>structure</td><td>165 / 624 dependencies in the module map</td><td>high</td></tr>
+          <tr><td>modularity</td><td>0 / 6 modules with a public surface</td><td>low</td></tr>
+          <tr><td>coupling</td><td>77 / 77 cross-module edges · volatility unknown</td><td>medium</td></tr>
+          <tr><td>testability</td><td>156 / 171 files classified · no coverage</td><td>medium</td></tr>
+          <tr><td>operations</td><td>1 / 6 modules with a deploy unit</td><td>medium</td></tr>
+          <tr><td>drift</td><td>no stored reference</td><td>unrated</td></tr>
+          <tr><td class="meta" colspan="3">intent, change, complexity: fully covered, high confidence</td></tr></tbody></table></div>
         <strong style="font-size:13px">To measure more</strong>
         <ul class="meta" style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:2px">
           <li>Declare module volatility and public surfaces in the policy</li>
           <li>Feed test coverage from CI</li>
           <li>Commit deploy manifests for the 5 modules without one</li>
           <li>Drift: measured once a run uses the baseline</li></ul>
+        <p class="meta"><strong>Customer-attested:</strong> the producer is authenticated; the report content is not independently checked.</p>
         <span class="src">dimensions.*.{status,coverage,unknown[]}</span>
       </div>
     </div>
@@ -218,7 +240,7 @@
     <div class="box-row clickable" data-switch="pr" data-value="4" tabindex="0" style="display:flex;gap:12px;align-items:center">
       <svg class="oi success"><use href="#i-pr"/></svg>
       <div style="flex:1;min-width:0"><strong>feat(container): read list options from the CLI flags</strong> <span class="muted">#4</span><div class="meta">alexei-led · module cycle</div></div>
-      <span class="chip warn" data-only="scn:nobase scn:base">violation · advisory</span><span class="chip warn" data-only="scn:stale">outdated · re-run</span><span class="chip bad" data-only="scn:req">gate failing</span></div>
+      <span class="chip warn" data-only="scn:nobase scn:base">violation · advisory</span><span class="chip warn" data-only="scn:stale">outdated · re-run</span><span class="chip bad" data-only="scn:req">gate failing</span><span class="chip" data-only="scn:noreport">no report yet</span><span class="chip warn" data-only="scn:invalid">action required</span></div>
     <div class="box-row" style="display:flex;gap:12px;align-items:center">
       <svg class="oi success"><use href="#i-pr"/></svg>
       <div style="flex:1;min-width:0"><strong>Bump the go-deps group with 7 updates</strong> <span class="muted">#1</span><div class="meta">dependabot[bot] · opened before setup</div></div>
@@ -236,12 +258,19 @@
           <span class="chip ok" data-only="scn:nobase scn:stale scn:base"><svg class="oi sm"><use href="#i-merge"/></svg>advisory · does not block merge</span>
           <span class="chip bad" data-only="scn:req"><svg class="oi sm"><use href="#i-x"/></svg>merge blocked</span>
           <span class="chip warn" data-only="scn:nobase" title="Every finding counts as new, including old debt. New does not mean added by this PR.">no baseline</span>
-          <span class="chip warn" data-only="scn:stale" title="Baseline #5 merged after this run."><svg class="oi sm"><use href="#i-sync"/></svg>outdated · re-run workflow</span>
+          <span class="chip warn" data-only="scn:stale" title="Baseline #5 merged after this run."><svg class="oi sm"><use href="#i-sync"/></svg>outdated: predates baseline #5</span>
+          <span class="state neutral" data-only="scn:noreport"><svg class="oi"><use href="#i-sync"/></svg>No report yet</span>
+          <span class="state attention" data-only="scn:invalid"><svg class="oi"><use href="#i-alert"/></svg>Action required: report could not be used</span>
+          <a class="btn sm" href="#" data-only="scn:stale scn:noreport scn:invalid">Open workflow run ↗</a>
           <span class="meta"><code>9d33f4d</code> · 08:56 UTC</span>
         </div>
+        <details class="meta" data-only="scn:nobase scn:stale scn:base scn:req"><summary style="cursor:pointer"><span data-only="scn:nobase scn:stale">No baseline in this run · </span>PR attribution unavailable · customer-attested</summary>
+          <p style="margin-top:4px;max-width:70ch">"New" means not accepted in a baseline, not "added by this PR": this run did not compare against the base branch. The producer is authenticated; the report content is not independently checked.</p></details>
+        <p class="meta" data-only="scn:noreport">The Archfit workflow has not reported for this commit. It usually takes a few minutes after a push.</p>
+        <p class="meta" data-only="scn:invalid"><code>report_invalid</code>: the upload failed validation, so nothing is shown as passed. Re-run the workflow; if it repeats, check the workflow version.</p>
         <span class="src">gate mode × check conclusion × gate_reference.baseline_present</span>
       </div>
-      <div class="seg" role="group" aria-label="View">
+      <div class="seg" role="group" aria-label="View" data-only="scn:nobase scn:stale scn:base scn:req">
         <button type="button" data-switch="pv" data-value="app" aria-pressed="true">Archfit</button>
         <button type="button" data-switch="pv" data-value="gh" aria-pressed="false">On GitHub</button>
       </div>
@@ -249,6 +278,7 @@
 
     <!-- Archfit view -->
     <div data-only="pv:app" class="stack" style="gap:16px">
+     <div data-only="scn:nobase scn:stale scn:base scn:req" class="stack" style="gap:16px">
       <section class="box">
         <div class="issue">
           <div class="stack-sm" style="gap:10px">
@@ -257,6 +287,7 @@
             <div class="row">
               <button type="button" class="btn sm primary" data-copy="agent-tasks"><svg class="oi sm"><use href="#i-copy"/></svg>Copy fix for agents</button>
               <button type="button" class="btn sm" data-goto="architecture" data-switch="src" data-value="pr4">Show on map</button>
+              <a class="btn sm invisible" href="#" data-only="scn:req" title="Opens a waiver draft PR. Clears the gate only after an owner approves and it merges.">Request an exception</a>
               <span class="meta" id="copy-note"></span>
             </div>
             <span class="src">findings[kind=gate].{edge,locations,constraint} · agent_tasks[]</span>
@@ -290,12 +321,15 @@
             <tr><td><code>pkg_runtime</code> → <code>pkg_container</code></td><td class="num">15</td><td>declare volatility</td></tr>
             <tr><td><code>pkg_runtime</code> → <code>pkg_tc</code></td><td class="num">2</td><td>declare volatility</td></tr>
           </tbody></table></div>
-          <div class="pad meta" style="border-top:1px solid var(--border-muted)">Not this PR's job. The owner handles them on Overview. <span class="src">matched_by.{group_count,hypothesis} (raw)</span></div></div>
+          <div class="pad meta" style="border-top:1px solid var(--border-muted)">Also in the <code>master</code> report. PR attribution unavailable. The owner decides on volatility in Overview. <span class="src">matched_by.{group_count,hypothesis} (raw)</span></div></div>
       </details>
+     </div>
     </div>
 
     <!-- GitHub view -->
     <div data-only="pv:gh" class="stack" style="gap:12px">
+     <p class="meta" data-only="scn:noreport scn:invalid">GitHub shows the same state as the banner above, with the same next step.</p>
+     <div data-only="scn:nobase scn:stale scn:base scn:req" class="stack" style="gap:12px">
       <div class="row"><div class="seg" role="group" aria-label="Version">
         <button type="button" data-switch="ver" data-value="new" aria-pressed="true">Proposed</button>
         <button type="button" data-switch="ver" data-value="today" aria-pressed="false">Today</button></div>
@@ -303,16 +337,16 @@
 
       <div class="mergebox" data-only="ver:new">
         <div data-only="scn:nobase scn:stale scn:base">
-          <div class="mb-row"><span class="mb-icon success"><svg class="oi"><use href="#i-merge"/></svg></span><div><div class="mb-title">Merge allowed</div><div class="meta">Archfit is advisory here</div></div></div>
+          <div class="mb-row"><span class="mb-icon success"><svg class="oi"><use href="#i-merge"/></svg></span><div><div class="mb-title">Archfit does not block merging</div><div class="meta">The gate is advisory in this repository</div></div></div>
           <div class="check-line"><svg class="oi muted"><use href="#i-neutral"/></svg><span class="name">archfit/state</span><span class="desc" data-only="scn:nobase scn:stale">Violation found · advisory · no baseline</span><span class="desc" data-only="scn:base">Violation found · advisory</span></div>
         </div>
         <div data-only="scn:req">
-          <div class="mb-row"><span class="mb-icon danger"><svg class="oi"><use href="#i-x"/></svg></span><div><div class="mb-title">Merging is blocked</div><div class="meta">A required check failed</div></div></div>
+          <div class="mb-row"><span class="mb-icon danger"><svg class="oi"><use href="#i-x"/></svg></span><div><div class="mb-title">Merging is blocked</div><div class="meta">Required check failed · ruleset verified</div></div></div>
           <div class="check-line"><svg class="oi danger"><use href="#i-x"/></svg><span class="name">archfit/gate</span><span class="desc">Required · Gate failing: module cycle</span></div>
         </div>
       </div>
       <div class="mergebox" data-only="ver:today">
-        <div class="mb-row"><span class="mb-icon success"><svg class="oi"><use href="#i-merge"/></svg></span><div><div class="mb-title">Merge allowed</div><div class="meta">Archfit check is neutral</div></div></div>
+        <div class="mb-row"><span class="mb-icon success"><svg class="oi"><use href="#i-merge"/></svg></span><div><div class="mb-title">Archfit does not block merging</div><div class="meta">The check is neutral</div></div></div>
         <div class="check-line"><svg class="oi muted"><use href="#i-neutral"/></svg><span class="name">archfit/state</span><span class="desc">Architecture state: blocked</span></div>
       </div>
 
@@ -334,6 +368,7 @@
           <div class="flash error"><span>Says <strong>Blocked</strong> while merge is allowed. Shows old debt as new.</span></div>
         </div></div>
     </div>
+     </div>
   </div>
 </section>
 
@@ -395,7 +430,7 @@
         <span class="chip ok" data-only="src:master">holds</span><span class="chip bad" data-only="src:pr4">broken by #4</span></div>
       <div class="box-row row-between"><span><strong>Coupling advisories</strong> <span class="meta">medium and up</span></span><span class="chip">never block</span></div>
       <div class="box-row meta">Modules: <code>cmd</code> <code>pkg_chaos</code> <code>pkg_container</code> <code>pkg_runtime</code> <code>pkg_tc</code> <code>pkg_util</code>. Volatility and public surface not declared.</div>
-      <div class="box-row row"><a class="btn sm primary" href="#">Edit policy</a><span class="meta">Saves to a draft PR. An owner approves it on GitHub.</span></div>
+      <div class="box-row row"><a class="btn sm" href="#">Propose policy change</a><span class="meta">Draft PR · owner approves on GitHub. Read-only users see "View policy".</span></div>
     </div>
   </details>
 </section>
