@@ -84,8 +84,19 @@ type Link struct {
 type View struct {
     Nodes      []Node
     Links      []Link
+    Findings   []LinkFinding // what names each link, for the page's detail panel; display only
     Stale      bool
     Incomplete bool
+}
+
+// LinkFinding is one finding that names a drawn link's module pair, as the engine reported it. It explains a link and
+// never decides its Status. Why is engine text: the page must treat it as untrusted.
+type LinkFinding struct {
+    From, To string
+    RuleID   string
+    Kind     string
+    Status   string
+    Why      string
 }
 
 // Build is pure. Nodes come from the policy's modules, links from the report's seams and findings. A link's Status
@@ -129,6 +140,10 @@ func Build(rep Report, policy []byte) View
     `unmeasured`, an empty and an unknown value are all incomplete: the engine did not show that every required rule
     was evaluated and passed, so an `observed` link may still be a forbidden edge it did not evaluate. Display only,
     like `Stale`.
+12. `Findings`: every finding whose `Edge.From.Module`/`Edge.To.Module` pair is a link of the view, except `fixed`
+    ones, as `LinkFinding{From, To, RuleID, Kind, Status, Why}`; at most 5 per pair in report order **[default]**,
+    `Why` clipped to 400 runes with "…" **[default]**; sorted by `(From, To)`, stable. It never changes a `Status`:
+    an advisory on a pair whose engine seam status is `allowed` is listed and the link stays `allowed`. Never nil.
 
 Stated limits **[default]**: only the engine says "allowed". A relationship the policy permits but the engine did
 not observe is not in a report, and graph does not interpret policy rules. When a seam carries `Policy`, `observed` is
@@ -471,6 +486,9 @@ Nothing is mocked.
   declare; seam with an empty `FromModule`.
   **Expected behavior**: one link per pair; `Count` 5 for the duplicate; the self seam is kept; a node with empty `Layer` and
   `PolicyLine` 0 is added for the undeclared module; the empty-endpoint seam is dropped; `observed` everywhere.
+- **Test name**: `TestFindingsExplainDrawnLinks`
+  **Scenario**: a finding on a seam; a fixed finding; a finding with an empty module; an advisory on a pair whose engine seam status is `allowed`; a `Why` longer than 400 runes; 7 findings on one pair and one on a pair that sorts first.
+  **Expected behavior**: one `LinkFinding`; none; none; the advisory listed while the link stays `allowed`; the text clipped to 399 runes plus "…"; 5 for the pair in report order, the other pair first.
 - **Test name**: `TestStatusFollowsFindings`
   **Scenario**: one seam `api → db` and a table of findings on that pair: gate/new; gate/expired_waiver; gate/baseline;
   gate/waived; gate/fixed; advisory/new; advisory/baseline; advisory/fixed; an unknown kind; a gate finding with an

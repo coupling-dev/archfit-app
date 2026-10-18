@@ -196,8 +196,19 @@ type Link struct {
 type View struct {
     Nodes      []Node
     Links      []Link
+    Findings   []LinkFinding // what names each link, for the page's detail panel; display only
     Stale      bool
     Incomplete bool
+}
+
+// LinkFinding is one finding that names a drawn link's module pair, as the engine reported it. It explains a link and
+// never decides its Status. Why is engine text: the page must treat it as untrusted.
+type LinkFinding struct {
+    From, To string
+    RuleID   string
+    Kind     string
+    Status   string
+    Why      string
 }
 
 // Build is pure. Nodes come from the policy's modules, links from the report's seams and findings. A link's Status

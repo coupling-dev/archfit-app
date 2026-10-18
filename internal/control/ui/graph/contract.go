@@ -4,6 +4,7 @@ package graph
 import (
 	"cmp"
 	"slices"
+	"unicode/utf8"
 
 	"github.com/alexei-led/archfit-app/internal/wire/policy"
 	"github.com/alexei-led/archfit-app/internal/wire/report"
@@ -39,9 +40,26 @@ type Link struct {
 type View struct {
 	Nodes      []Node
 	Links      []Link
+	Findings   []LinkFinding // what names each link, for the page's detail panel; display only
 	Stale      bool
 	Incomplete bool
 }
+
+// LinkFinding is one finding that names a drawn link's module pair, as the engine reported it. It explains a link and
+// never decides its Status. Why is engine text: the page must treat it as untrusted.
+type LinkFinding struct {
+	From, To string
+	RuleID   string
+	Kind     string
+	Status   string
+	Why      string
+}
+
+// Display caps of View.Findings.
+const (
+	findingsPerLink = 5   // the first ones in report order
+	whyRunes        = 400 // longer engine text ends with "…"
+)
 
 // Finding vocabulary of wire/report that the status reads. Finding.Active decides an active violation; a gate
 // finding of a status outside this vocabulary is a violation too (fail safe).
@@ -116,10 +134,23 @@ func Build(rep report.Report, policyText []byte) View {
 		}
 	}
 
+	// Findings that name a drawn pair, fixed ones excluded: they say nothing about the current tree.
+	explained := map[pair]int{}
+	findings := []LinkFinding{}
+	for _, f := range rep.Findings {
+		p := pair{f.Edge.From.Module, f.Edge.To.Module}
+		if links[p] == nil || f.Status == statusFixed || explained[p] == findingsPerLink {
+			continue
+		}
+		explained[p]++
+		findings = append(findings, LinkFinding{From: p.from, To: p.to, RuleID: f.RuleID, Kind: f.Kind, Status: f.Status, Why: clip(f.Why)})
+	}
+
 	// Non-nil slices: the parent serializes the view to JSON, where an empty graph is [] and not null.
 	v := View{
 		Nodes:      make([]Node, 0, len(nodes)),
 		Links:      make([]Link, 0, len(links)),
+		Findings:   findings,
 		Stale:      stale,
 		Incomplete: rep.Decision.HardGates != hardGatesPass || len(rep.Decision.UnevaluatedRequiredRules) > 0,
 	}
@@ -133,7 +164,19 @@ func Build(rep report.Report, policyText []byte) View {
 	slices.SortFunc(v.Links, func(a, b Link) int {
 		return cmp.Or(cmp.Compare(a.From, b.From), cmp.Compare(a.To, b.To))
 	})
+	// Stable: within a pair the report order stays.
+	slices.SortStableFunc(v.Findings, func(a, b LinkFinding) int {
+		return cmp.Or(cmp.Compare(a.From, b.From), cmp.Compare(a.To, b.To))
+	})
 	return v
+}
+
+// clip shortens engine text to whyRunes runes.
+func clip(s string) string {
+	if utf8.RuneCountInString(s) <= whyRunes {
+		return s
+	}
+	return string([]rune(s)[:whyRunes-1]) + "…"
 }
 
 // findingStatus is the status one finding gives its pair. A fixed finding says nothing about the current tree:

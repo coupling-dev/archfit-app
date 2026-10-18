@@ -41,6 +41,13 @@
   var nodes = view.Nodes || [],
     links = view.Links || [];
   var policyUrl = root.dataset.policyUrl;
+  // explain maps a link's pair to the findings that name it (View.Findings), in report order.
+  var explain = new Map();
+  (view.Findings || []).forEach(function (f) {
+    var k = key(f.From, f.To);
+    if (!explain.has(k)) explain.set(k, []);
+    explain.get(k).push(f);
+  });
 
   function key(a, b) {
     return JSON.stringify([a, b]);
@@ -762,6 +769,16 @@
         }),
         h("p", { text: MEANING[sel.Status] }),
       );
+      // The findings behind the link, as the engine wrote them: engine text, so textContent only.
+      (explain.get(key(sel.From, sel.To)) || []).forEach(function (f) {
+        detail.append(
+          h("p", { class: "g-finding" }, [
+            h("code", { text: f.RuleID || "(no rule)" }),
+            h("span", { class: "hint", text: " · " + f.Kind + ", " + f.Status }),
+            f.Why ? h("span", { class: "g-why", text: f.Why }) : null,
+          ]),
+        );
+      });
     } else if (selNode !== null) {
       var n = nodes.find(function (x) {
         return x.Name === selNode;

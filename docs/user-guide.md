@@ -411,7 +411,8 @@ latest default-branch report, problems first.
 
 - Status chips at the top count the links per status and filter them. The **Problems** list on the left puts
   violations first, then advisories, then accepted exceptions. Select a problem, an arrow, a matrix cell or a module
-  to see what it means; a module links to its line in the policy.
+  to see what it means; a link lists the findings that name it (rule, kind, status and the engine's text), and a
+  module links to its line in the policy.
 - Modules come from the policy. With declared layers they are grouped in layer bands. Without layers, modules that
   import others are drawn above the modules they import. That is a layout only: position never means a dependency
   is permitted.

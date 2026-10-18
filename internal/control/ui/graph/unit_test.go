@@ -2,6 +2,8 @@ package graph
 
 import (
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit-app/internal/wire/report"
@@ -226,4 +228,51 @@ func TestStatusFollowsEngineSeamPolicy(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFindingsExplainDrawnLinks(t *testing.T) {
+	why := func(f report.Finding, w string) report.Finding { f.Why = w; return f }
+	allowed := seam("api", "db", 2)
+	allowed.Policy = "allowed"
+	long := strings.Repeat("é", whyRunes+10)
+	tests := []struct {
+		name     string
+		seams    []report.Seam
+		findings []report.Finding
+		want     []LinkFinding
+	}{
+		{"one finding on a seam", []report.Seam{seam("api", "db", 2)},
+			[]report.Finding{why(finding("gate", "new", "api", "db"), "forbidden")},
+			[]LinkFinding{{From: "api", To: "db", Kind: "gate", Status: "new", Why: "forbidden"}}},
+		{"a fixed finding explains nothing", []report.Seam{seam("api", "db", 2)},
+			[]report.Finding{finding("gate", "fixed", "api", "db")}, []LinkFinding{}},
+		{"a finding without a module pair is not on the graph", nil,
+			[]report.Finding{finding("gate", "new", "api", "")}, []LinkFinding{}},
+		{"an engine seam status keeps its findings", []report.Seam{allowed},
+			[]report.Finding{finding("advisory", "new", "api", "db")},
+			[]LinkFinding{{From: "api", To: "db", Kind: "advisory", Status: "new"}}},
+		{"long engine text is clipped", []report.Seam{seam("api", "db", 2)},
+			[]report.Finding{why(finding("advisory", "new", "api", "db"), long)},
+			[]LinkFinding{{From: "api", To: "db", Kind: "advisory", Status: "new", Why: strings.Repeat("é", whyRunes-1) + "…"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Build(reportFor(threeModules, tt.seams, tt.findings), []byte(threeModules)).Findings
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Findings = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+
+	t.Run("at most findingsPerLink per pair, in report order, pairs sorted", func(t *testing.T) {
+		var fs []report.Finding
+		for i := range findingsPerLink + 2 {
+			fs = append(fs, why(finding("advisory", "new", "ui", "db"), strconv.Itoa(i)))
+		}
+		fs = append(fs, why(finding("gate", "new", "api", "db"), "first pair"))
+		got := Build(reportFor(threeModules, nil, fs), []byte(threeModules)).Findings
+		if len(got) != findingsPerLink+1 || got[0].From != "api" || got[1].Why != "0" || got[findingsPerLink].Why != strconv.Itoa(findingsPerLink-1) {
+			t.Errorf("Findings = %+v", got)
+		}
+	})
 }
