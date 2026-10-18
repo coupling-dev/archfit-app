@@ -65,7 +65,7 @@ variable "secret_versions" {
 variable "paused" {
   description = "Pause the queues and the Scheduler. They stay paused until the first real image serves."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "worker_paths" {
