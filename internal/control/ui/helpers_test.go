@@ -75,7 +75,7 @@ func newEnv(t *testing.T) *env {
 	}
 	e.handler = newHandler(Deps{
 		Account: e.acct, Consents: e.consents, Onboarding: e.onb, Assist: e.assist, Proposals: e.props, Now: clock,
-	}, github{files: gh, checks: gh, actions: gh, users: gh}, sessions)
+	}, github{files: gh, checks: gh, actions: gh, pulls: gh, users: gh}, sessions)
 
 	e.addRepo(repoName, installA, 10)
 	e.addRepo(otherRepo, installB, 20)
@@ -88,6 +88,10 @@ func (e *env) addRepo(fullName string, installationID, id int64) {
 		RepoRef: api.RepoRef{InstallationID: installationID, FullName: fullName}, ID: id, Private: true, DefaultBranch: mainBranch,
 	}
 	e.gh.heads[fullName+"@"+mainBranch] = sha(int(id))
+	e.gh.pulls[fullName+"#4"] = api.Pull{
+		Number: 4, Title: "feat: read options", Author: "alexei", State: "open", URL: "https://github.com/" + fullName + "/pull/4",
+		HeadSHA: sha(4), HeadRef: "feature", BaseRef: mainBranch,
+	}
 	e.gh.setFile(fullName, mainBranch, policy.PolicyPath, policyText)
 	e.gh.setFile(fullName, mainBranch, settings.Path, settingsText)
 }

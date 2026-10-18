@@ -2,9 +2,12 @@ package ui
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"net/http"
 	"net/url"
 	"os"
@@ -39,6 +42,7 @@ func repoRoutes(fullName string) []route {
 		{http.MethodPost, base + "/policy/check", permRead, formOf("", "", policyText+"# edit\n")},
 		{http.MethodPost, base + "/policy/ready", permWrite, nil}, // the form is filled in by the test: it needs an open draft
 		{http.MethodGet, base + "/graph", permRead, nil},
+		{http.MethodGet, base + "/pull/4", permRead, nil},
 		{http.MethodPost, base + "/assist", permWrite, url.Values{"mode": {"customer"}, "instruction": {"split module a"}, "content": {policyText}}},
 		{http.MethodGet, base + "/consent", permAdmin, nil},
 		{http.MethodPost, base + "/consent", permAdmin, url.Values{"kind": {"managed_llm"}, "action": {"record"}}},
@@ -403,5 +407,78 @@ func TestOnboardingAndDiscoverActions(t *testing.T) {
 	calls := e.gh.called("Dispatch")
 	if len(calls) != 1 || calls[0].detail != workflow+"@"+mainBranch+" map[mode:discovery]" || calls[0].installationID != installA {
 		t.Errorf("Dispatch calls = %+v", calls)
+	}
+}
+
+func TestPullPageShowsTheReportOfItsCheck(t *testing.T) {
+	payload := artifact(t, "real-blocked-no-baseline")
+	sum := sha256.Sum256(payload)
+	digest := "sha256:" + hex.EncodeToString(sum[:])
+	path := "/r/" + repoName + "/pull/4"
+	check := func(e *env, externalID string) {
+		e.gh.checks[repoName+"@"+sha(4)+"#archfit/state"] = []api.CheckRun{{
+			ID: 9, Name: "archfit/state", HeadSHA: sha(4), Status: "completed", Conclusion: "neutral",
+			Title: "Architecture violations found · advisory · no baseline", ExternalID: externalID,
+		}}
+	}
+	tests := []struct {
+		name      string
+		setup     func(e *env)
+		status    int
+		wants     []string
+		notWanted []string
+	}{
+		{"no check on the head", func(*env) {}, http.StatusOK, []string{"feat: read options", noResult, `id="unavailable"`}, []string{`id="result"`}},
+		{"the report of the check", func(e *env) {
+			check(e, "v1:88:1:"+digest)
+			e.gh.artifacts[88] = payload
+		}, http.StatusOK, []string{
+			`id="result"`, "Architecture violations found · advisory · no baseline", "gate: advisory", `id="violations"`,
+			"no_direct_b_dependency", "No baseline in this run", "PR attribution unavailable", "Run 88",
+		}, []string{`id="unavailable"`, "added by this PR"}},
+		{"a report that does not match its check", func(e *env) {
+			check(e, "v1:88:1:sha256:"+strings.Repeat("0", 64))
+			e.gh.artifacts[88] = payload
+		}, http.StatusOK, []string{reportMismatch, "Architecture violations found"}, []string{"no_direct_b_dependency"}},
+		{"an expired report", func(e *env) { check(e, "v1:88:1:"+digest) }, http.StatusOK, []string{reportExpired}, []string{"no_direct_b_dependency"}},
+		{"a result without an upload", func(e *env) { check(e, "v1:0:0:") }, http.StatusOK, []string{noUpload}, nil},
+		{"an unknown pull request", func(e *env) { delete(e.gh.pulls, repoName+"#4") }, http.StatusNotFound, nil, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t)
+			tt.setup(e)
+			res := e.as("alice", permRead).get(path)
+			wantStatus(t, res, tt.status)
+			body := html.UnescapeString(res.Body.String())
+			wantContains(t, body, tt.wants...)
+			for _, s := range tt.notWanted {
+				if strings.Contains(body, s) {
+					t.Errorf("body contains %q", s)
+				}
+			}
+		})
+	}
+}
+
+func TestParseExternalID(t *testing.T) {
+	tests := []struct {
+		id     string
+		run    int64
+		digest string
+		ok     bool
+	}{
+		{"v1:39113331372:1:sha256:2f34", 39113331372, "2f34", true},
+		{"v1:7:1:4444", 7, "4444", true},
+		{"v1:0:0:", 0, "", true},
+		{"v2:7:1:abc", 0, "", false},
+		{"v1:x:1:abc", 0, "", false},
+		{"", 0, "", false},
+	}
+	for _, tt := range tests {
+		run, digest, ok := parseExternalID(tt.id)
+		if run != tt.run || digest != tt.digest || ok != tt.ok {
+			t.Errorf("parseExternalID(%q) = %d, %q, %v; want %d, %q, %v", tt.id, run, digest, ok, tt.run, tt.digest, tt.ok)
+		}
 	}
 }

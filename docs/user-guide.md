@@ -407,6 +407,19 @@ baseline already accepts, and accepts nothing new.
 > **CAUTION:** Do not require `archfit/gate` while the settings file has `gate: advisory`.
 > The App does not publish that check in advisory mode. The pull request stays blocked.
 
+## See a pull request
+
+Open `/r/<owner>/<repo>/pull/<number>` for the Archfit result of the pull request's head commit.
+
+- The headline is the title of the `archfit/state` check, with the gate mode beside it. In advisory mode the check does
+  not block merging.
+- Rule violations are open. Advisories and accepted debt are folded.
+- A folded line says whether this run had a baseline and whether it compared against the base branch. Without that
+  comparison, "new" means not accepted in a baseline, not "added by this pull request".
+- **For coding agents** holds the exact repair tasks of the run.
+- The page shows a report only when it is the one the check was computed from. Otherwise it says why: no result yet,
+  no upload, the report expired, or the report does not match the check.
+
 ## See the graph
 
 Open **Graph** for the repository. The page is read-only. It shows the policy status of module relationships in the

@@ -150,6 +150,7 @@ func pullFixture(number int, state, headRef, headRepo string, mergedAt any) map[
 	return map[string]any{
 		"number": number, "node_id": fmt.Sprintf("PR_%d", number), "state": state, "draft": false, "merged_at": mergedAt,
 		"body": "Body of the pull", "html_url": fmt.Sprintf("https://github.com/o/r/pull/%d", number),
+		"title": fmt.Sprintf("Pull %d", number), "user": map[string]any{"login": "octo"},
 		"updated_at": "2026-09-01T10:00:00Z", "changed_files": 2,
 		"head": map[string]any{"sha": fmt.Sprintf("head%d", number), "ref": headRef, "repo": map[string]any{"full_name": headRepo}},
 		"base": map[string]any{"sha": fmt.Sprintf("base%d", number), "ref": "main", "repo": map[string]any{"full_name": "o/r"}},
@@ -226,7 +227,7 @@ func TestPullsContract(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := Pull{Number: 1, State: "open", Body: "Body of the pull", URL: "https://github.com/o/r/pull/1",
+		want := Pull{Number: 1, Title: "Pull 1", Author: "octo", State: "open", Body: "Body of the pull", URL: "https://github.com/o/r/pull/1",
 			HeadSHA: "head1", HeadRef: "feature", HeadRepo: "o/r", BaseRef: "main", BaseSHA: "base1", MergeBaseSHA: "mb-base1",
 			UpdatedAt: time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)}
 		if same != want {

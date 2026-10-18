@@ -53,6 +53,9 @@ type (
 		LatestRun(ctx context.Context, r api.RepoRef, workflowPath string, f api.RunFilter) (api.WorkflowRun, error)
 		Artifact(ctx context.Context, r api.RepoRef, runID int64, name string, maxBytes int64) ([]byte, error)
 	}
+	pullReader interface {
+		Pull(ctx context.Context, r api.RepoRef, number int) (api.Pull, error)
+	}
 	repoLister interface {
 		UserRepos(ctx context.Context, userToken string) ([]api.Repo, error)
 	}
@@ -62,6 +65,7 @@ type github struct {
 	files   fileReader
 	checks  checkReader
 	actions workflows
+	pulls   pullReader
 	users   repoLister
 }
 
@@ -83,7 +87,7 @@ func New(d Deps) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newHandler(d, github{files: d.GitHub, checks: d.GitHub, actions: d.GitHub, users: d.GitHub}, sessions), nil
+	return newHandler(d, github{files: d.GitHub, checks: d.GitHub, actions: d.GitHub, pulls: d.GitHub, users: d.GitHub}, sessions), nil
 }
 
 func newHandler(d Deps, gh github, sessions session.Sessions) http.Handler {
@@ -130,6 +134,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions) http.Handler {
 	mux.Handle("POST /r/{o}/{n}/policy/check", s.repo(permRead, s.check))
 	mux.Handle("POST /r/{o}/{n}/policy/ready", s.repo(permWrite, s.ready))
 	mux.Handle("GET /r/{o}/{n}/graph", s.repo(permRead, s.graphPage))
+	mux.Handle("GET /r/{o}/{n}/pull/{number}", s.repo(permRead, s.pullPage))
 	mux.Handle("POST /r/{o}/{n}/assist", s.repo(permWrite, s.propose))
 	mux.Handle("GET /r/{o}/{n}/consent", s.repo(permAdmin, s.consentPage))
 	mux.Handle("POST /r/{o}/{n}/consent", s.repo(permAdmin, s.consent))

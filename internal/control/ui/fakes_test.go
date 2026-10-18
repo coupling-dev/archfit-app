@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -37,7 +38,8 @@ type fakeGH struct {
 	checks    map[string][]api.CheckRun    // full name + "@" + sha + "#" + check name
 	runs      map[string][]api.WorkflowRun // full name + "@" + workflow + "@" + branch, newest first
 	artifacts map[int64][]byte
-	fail      map[string]error // method, or method + " " + full name
+	pulls     map[string]api.Pull // full name + "#" + number
+	fail      map[string]error    // method, or method + " " + full name
 	calls     []ghCall
 }
 
@@ -45,7 +47,7 @@ func newFakeGH() *fakeGH {
 	return &fakeGH{
 		repos: map[string]api.Repo{}, perms: map[string]string{}, listed: map[string][]string{},
 		files: map[string][]byte{}, heads: map[string]string{}, checks: map[string][]api.CheckRun{},
-		runs: map[string][]api.WorkflowRun{}, artifacts: map[int64][]byte{}, fail: map[string]error{},
+		runs: map[string][]api.WorkflowRun{}, artifacts: map[int64][]byte{}, pulls: map[string]api.Pull{}, fail: map[string]error{},
 	}
 }
 
@@ -152,6 +154,19 @@ func (g *fakeGH) CheckRuns(_ context.Context, r api.RepoRef, headSHA, name strin
 		return nil, err
 	}
 	return g.checks[r.FullName+"@"+headSHA+"#"+name], nil
+}
+
+func (g *fakeGH) Pull(_ context.Context, r api.RepoRef, number int) (api.Pull, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if err := g.record("Pull", r, strconv.Itoa(number)); err != nil {
+		return api.Pull{}, err
+	}
+	p, ok := g.pulls[r.FullName+"#"+strconv.Itoa(number)]
+	if !ok {
+		return api.Pull{}, api.ErrNotFound
+	}
+	return p, nil
 }
 
 func (g *fakeGH) Dispatch(_ context.Context, r api.RepoRef, workflowPath, ref string, inputs map[string]string) error {
