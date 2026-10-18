@@ -275,11 +275,12 @@ markers; no aggregate score; customer-attested wording.
 10. From the earlier prototype, when data exists: organization overview, "blocked then repaired" loops, agent
     attribution, waiver expiry timeline, agent policy edits held for an owner.
 
-## Open questions for the owner
+## Owner decisions (18 October 2026)
 
-1. Advisory mode and changed inputs: re-run, re-evaluate and publish the resulting conclusion, or leave as is and rely
-   on the App page?
-2. Should the workflow template pass `--base` by default, at the cost of a second checkout?
-3. Ruleset read: worth the extra permission to say "merge is blocked" instead of "gate failing"?
-4. Is "declare volatility" the first decision we want owners to make in the pilot, or should it wait until
-   the gate is required?
+| Question                                               | Decision                                                                          |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| Advisory mode: open PRs after a baseline/policy change | Re-run them and publish the new result, as in required mode                       |
+| PR comparison against the base branch                  | On by default in the workflow template, so the comment can say "added by this PR" |
+| First owner action in the pilot                        | Gate first: rehearse, then require. Volatility later                              |
+| Phase 1 (headline, short comment)                      | Start on a separate branch from `main`; PR only after the owner's OK              |
+| Ruleset read for "merge is blocked"                    | Not now (default). Say "gate failing"                                             |

@@ -170,15 +170,12 @@
   <section class="box" aria-labelledby="h-you" data-only="scn:nobase scn:stale scn:base scn:req scn:noreport scn:invalid">
     <div class="box-head"><h3 id="h-you">Needs you</h3></div>
     <div class="action">
-      <span class="ic"><svg class="oi"><use href="#i-pencil"/></svg></span>
-      <div><strong>Declare how often each module changes</strong><span class="meta">All 6 advisories depend on it. Draft PR · owner approves.</span> <span class="src">dimensions.coupling.unknown[] · matched_by.hypothesis (raw)</span></div>
-      <a class="btn sm primary" href="#">Propose change</a>
-    </div>
-    <div class="action">
       <span class="ic blue"><svg class="oi"><use href="#i-beaker"/></svg></span>
       <div><strong>Rehearse the gate</strong><span class="meta">A bad change must fail, a good one pass. Then require it.</span></div>
-      <a class="btn sm" href="#">Start rehearsal</a>
+      <a class="btn sm primary" href="#">Start rehearsal</a>
     </div>
+    <details class="pad meta" style="border-top:1px solid var(--border-muted)"><summary style="cursor:pointer">Later · declare how often each module changes</summary>
+      <p style="margin-top:6px">All 6 advisories depend on it. They never block, so this waits until the gate is required. <a href="#">Propose change</a> <span class="src">dimensions.coupling.unknown[] · matched_by.hypothesis (raw)</span></p></details>
   </section>
 
   <section class="box" aria-label="Setup progress">
