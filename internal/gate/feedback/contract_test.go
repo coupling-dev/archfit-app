@@ -321,6 +321,13 @@ func TestCommentLinksToTheAppPullPage(t *testing.T) {
 		t.Errorf("the link is not in the head block, before the findings")
 	}
 
+	noticed := blockedPublication(t, headB, 7, 1)
+	noticed.Trusted.Entitlement = inputs.Entitlement{WarnFrom: t0.Add(-time.Hour), Notice: "Trial ends 2026-10-20"}
+	head := renderComment(noticed, t0, "", "https://app.example/r/acme/shop/pull/7")
+	if i, j := strings.Index(head, "Trial ends"), strings.Index(head, "Details in Archfit"); i < 0 || j < i {
+		t.Errorf("the link is not after the entitlement notice:\n%s", head)
+	}
+
 	tests := []struct {
 		name, appURL, fullName, want string
 		pull                         int

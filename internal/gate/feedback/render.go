@@ -226,11 +226,11 @@ func renderState(p Publication) string {
 // link is the App's page of this pull request, or "" for none.
 func renderComment(p Publication, now time.Time, waiver, link string) string {
 	l := layout{head: headBlock(p, true), inputs: inputsBlock(p)}
-	if link != "" {
-		l.head += "\n\n[Details in Archfit](" + link + ")"
-	}
 	if notice := noticeLine(p.Trusted.Entitlement, now); notice != "" {
 		l.head += "\n\n" + notice
+	}
+	if link != "" { // after the notice, as Layout item 3 orders them
+		l.head += "\n\n[Details in Archfit](" + link + ")"
 	}
 	if !suspended(p.Outcome) {
 		l.findings, l.dims, l.gaps = findingsBlock(p.Report), dimensionsBlock(p.Report), gapsBlock(p)

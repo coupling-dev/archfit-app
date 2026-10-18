@@ -1181,7 +1181,7 @@ Golden files hold rendered bodies for the wire fixtures.
   **Expected behavior**: the notice lands before the fold.
 - **Test name**: `TestCommentLinksToTheAppPullPage`
   **Scenario**: a publication on a pull request with an App URL; no App URL; a push; a repository name with a space and a question mark.
-  **Expected behavior**: the "Details in Archfit" link to `/r/acme/shop/pull/7` in the head, before the findings; no link; no link; a path-escaped link.
+  **Expected behavior**: the "Details in Archfit" link to `/r/acme/shop/pull/7` in the head, after an entitlement notice and before the findings; no link; no link; a path-escaped link.
 - **Test name**: `TestAdvisoryCommentNeverSaysBlocking`
   **Scenario**: a blocked publication on an advisory pull request, rendered as comment.
   **Expected behavior**: the advisory headline and the "does not block merging" line; "violation" labels; no "Blocked by" and no "blocking" label; findings before the first fold.
