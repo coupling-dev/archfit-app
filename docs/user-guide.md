@@ -452,7 +452,9 @@ on the pull request links to this page ("Details in Archfit").
 
 - The headline is the title of the `archfit/state` check, with the gate mode beside it. In advisory mode the check does
   not block merging.
-- Rule violations are open. Advisories and accepted debt are folded.
+- Rule violations are open; the two directions of a module cycle are one item. Advisories and accepted debt are
+  folded. **Evidence** lists the dimensions and, folded, what the engine could not measure ("To measure more").
+- GitHub's **Details** link on the Archfit checks opens this page.
 - A folded line says whether this run had a baseline and whether it compared against the base branch. Without that
   comparison, "new" means not accepted in a baseline, not "added by this pull request".
 - **For coding agents** holds the exact repair tasks of the run.

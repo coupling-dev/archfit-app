@@ -43,6 +43,11 @@
 
 {{if .Dimensions}}
 <details id="evidence"><summary><h2>Evidence</h2></summary>
+{{if .Unknowns}}
+<details id="measure-more"><summary>To measure more ({{len .Unknowns}})</summary>
+<ul>{{range .Unknowns}}<li><code>{{.Dimension}}</code>: {{.Fact}} — <span class="hint">{{.Reason}}</span></li>{{end}}</ul>
+</details>
+{{end}}
 <table>
   <thead><tr><th>Dimension</th><th>Status</th><th>Coverage</th><th>Confidence</th><th>Gate</th></tr></thead>
   <tbody>
@@ -56,6 +61,15 @@
 {{end}}
 
 {{define "pullFinding"}}
+{{if .Reverse}}
+<div class="p-finding p-cycle">
+  <p><code>{{.RuleID}}</code> cycle <code>{{.Edge.From.Module}}</code> ⇄ <code>{{.Edge.To.Module}}</code>
+    <span class="hint">{{.Kind}}, {{.Status}}{{if .Severity}}, {{.Severity}}{{end}} · 2 findings</span></p>
+  {{if .Why}}<p>{{.Why}}</p>{{end}}
+  {{if .Constraint}}<p><strong>Fix:</strong> {{.Constraint}}</p>{{end}}
+  {{template "direction" .}}{{template "direction" .Reverse}}
+</div>
+{{else}}
 <div class="p-finding">
   <p><code>{{.RuleID}}</code> {{if .Edge.From.Module}}<code>{{.Edge.From.Module}}</code> → <code>{{.Edge.To.Module}}</code>{{end}}
     <span class="hint">{{.Kind}}, {{.Status}}{{if .Severity}}, {{.Severity}}{{end}}</span>{{if .Introduced}} <span class="p-chip">added by this PR</span>{{end}}</p>
@@ -64,4 +78,11 @@
   {{if .Locations}}<p class="hint">{{range $i, $l := .Shown}}{{if $i}}, {{end}}<code>{{$l.File}}{{if $l.Line}}:{{$l.Line}}{{end}}</code>{{end}}
     {{if .Folded}}<details><summary>and {{len .Folded}} more</summary>{{range $i, $l := .Folded}}{{if $i}}, {{end}}<code>{{$l.File}}{{if $l.Line}}:{{$l.Line}}{{end}}</code>{{end}}</details>{{end}}</p>{{end}}
 </div>
+{{end}}
+{{end}}
+
+{{define "direction"}}
+<p class="hint"><code>{{.Edge.From.Module}}</code> → <code>{{.Edge.To.Module}}</code>{{if .Introduced}} <span class="p-chip">added by this PR</span>{{end}}:
+  {{if not .Locations}}no location reported{{end}}{{range $i, $l := .Shown}}{{if $i}}, {{end}}<code>{{$l.File}}{{if $l.Line}}:{{$l.Line}}{{end}}</code>{{end}}
+  {{if .Folded}}<details><summary>and {{len .Folded}} more</summary>{{range $i, $l := .Folded}}{{if $i}}, {{end}}<code>{{$l.File}}{{if $l.Line}}:{{$l.Line}}{{end}}</code>{{end}}</details>{{end}}</p>
 {{end}}

@@ -36,7 +36,13 @@ const (
 type pullFinding struct {
 	report.Finding
 	Shown, Folded []report.Location
-	Introduced    bool // the engine compared against the base and says this pull request added it
+	Introduced    bool         // the engine compared against the base and says this pull request added it
+	Reverse       *pullFinding // the other direction of a module cycle, shown in the same item; nil otherwise
+}
+
+// unknownRow is one fact the engine could not measure, under "To measure more".
+type unknownRow struct {
+	Dimension, Fact, Reason string
 }
 
 type pullBody struct {
@@ -55,7 +61,8 @@ type pullBody struct {
 	Violations, Advisories, Accepted []pullFinding
 	Omitted                          int // findings past findingsPerList, all groups together
 	Dimensions                       []report.Dimension
-	Tasks                            string // the exact agent_tasks array, indented
+	Unknowns                         []unknownRow // every dimension's unknown facts, in the dimension order
+	Tasks                            string       // the exact agent_tasks array, indented
 	TaskCount                        int
 }
 
@@ -179,14 +186,42 @@ func fillFindings(body *pullBody, rep report.Report) {
 			add(&body.Violations, f)
 		}
 	}
+	body.Violations = pairCycles(body.Violations)
 	for _, key := range []string{"intent", "structure", "modularity", "coupling", "change_locality", "complexity", "testability", "operations", "drift"} {
 		if d, ok := rep.Dimensions[key]; ok {
 			d.Name = key
 			body.Dimensions = append(body.Dimensions, d)
+			for _, u := range d.Unknown {
+				body.Unknowns = append(body.Unknowns, unknownRow{Dimension: key, Fact: u.Fact, Reason: u.Reason})
+			}
 		}
 	}
 	if len(rep.AgentTasks) > 0 {
 		raw, _ := json.MarshalIndent(rep.AgentTasks, "", "  ")
 		body.Tasks, body.TaskCount = string(raw), len(rep.AgentTasks)
 	}
+}
+
+// pairCycles folds the two directions of a module cycle, two findings of one rule with reversed module pairs, into one
+// item, as the PR comment does. Display only: each finding keeps its ID and its locations.
+func pairCycles(fs []pullFinding) []pullFinding {
+	out := make([]pullFinding, 0, len(fs))
+	used := make([]bool, len(fs))
+	for i := range fs {
+		if used[i] {
+			continue
+		}
+		f := fs[i]
+		from, to := f.Edge.From.Module, f.Edge.To.Module
+		for j := i + 1; j < len(fs) && from != "" && to != "" && from != to; j++ {
+			g := fs[j]
+			if !used[j] && g.RuleID == f.RuleID && g.Edge.From.Module == to && g.Edge.To.Module == from {
+				used[j] = true
+				f.Reverse = &g
+				break
+			}
+		}
+		out = append(out, f)
+	}
+	return out
 }

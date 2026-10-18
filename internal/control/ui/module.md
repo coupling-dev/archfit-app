@@ -40,7 +40,8 @@ pilot; product.md leaves usability targets open.
 - The edit branch name `archfit/edit-<login>` **[default]** and the rules that turn a form into a `Change`.
 - How check conclusions, draft states, plans and assist errors are worded for people.
 - The drawing of the graph (vanilla JavaScript and SVG; no SPA framework, no graph library): status chips that filter,
-  a problem list (violations, then advisories, then accepted), a deterministic layout (declared layers as bands;
+  a problem list (violations, then advisories, then accepted; the two directions of a cycle are one row, and selecting
+  it highlights and explains both), a deterministic layout (declared layers as bands;
   without layers, depth after a cycle break, which is a layout and never a permitted direction), focus on problem
   links above 15 modules **[default]**, a matrix view, and the server-rendered tables as the fallback without script or
   above 300 modules. Report strings reach the page only through `textContent` and `setAttribute`.
@@ -537,6 +538,7 @@ type CheckRun struct {
     Name        string
     HeadSHA     string
     ExternalID  string
+    DetailsURL  string // the "Details" link GitHub shows on the check; "" = GitHub's default
     Status      string // "in_progress" | "completed"
     Conclusion  string // "" unless completed
     Title       string
@@ -949,10 +951,11 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   link to the checks on GitHub: no check yet, action required, no upload, report expired (`ErrNotFound`, GitHub retention), report does
   not match its check, report unavailable (decode error). With a report: rule violations open (active gate findings,
   and any status this version does not know), advisories and accepted debt folded, at most 50 per group with the rest
-  counted, 3 locations per finding with the rest folded, a folded line "No baseline in this run · PR attribution
+  counted, 3 locations per finding with the rest folded, the two directions of a module cycle (two findings of one
+  rule with reversed module pairs) as one item with each direction's locations, a folded line "No baseline in this run · PR attribution
   unavailable · customer-attested" from `gate_reference.baseline_present` and `comparison.origin_status`, "added by this
   PR" only when `origin_status` is `comparable` and the finding's `origin` is `introduced`, the exact `agent_tasks`
-  array, and the nine dimensions folded. Engine strings are template data, escaped by `html/template`.
+  array, and the nine dimensions folded, with every dimension's unknown facts in one folded "To measure more" group. Engine strings are template data, escaped by `html/template`.
 - Graph: settings → `LatestRun(Settings.Workflow, {Branch: DefaultBranch, Event: "push", Status: "success"})` → `Artifact(run.ID, "archfit-report", report.MaxBytes)` →
   `report.Decode` (with the last release of `report.EngineVersions`, `v3.0.1`: the artifact names none) → policy text (open draft of the user, else default branch) → `graph.Build`. The artifact is the raw engine
   state JSON; only the decoded no-source `Report` is used. When the chosen policy text fails `policy.Modules` (a broken draft
@@ -1064,6 +1067,9 @@ their interfaces except where a test says otherwise. The clock is injected.
 - **Test name**: `TestStatusPageShowsBranchPullsAndSetup`
   **Scenario**: stage `gate_advisory` with a default-branch check and one open pull request; stage `workflow_merged`; `OpenPulls` failing; 23 more open pull requests.
   **Expected behavior**: the default-branch title, the pull request linked to its page with its check title, the current and done steps, the rehearse advice; no pull request or state lookup before a report, also at `policy_merged`, where "First report" is not done; the ruleset advice at `gate_required`; the fixed wording and a `200`; "4 more" and 21 `CheckRuns` calls.
+- **Test name**: `TestPullPageFoldsACycleAndListsWhatToMeasure`
+  **Scenario**: a report with a cycle's two directions, one other violation, and a coupling unknown fact.
+  **Expected behavior**: one cycle item with both directions' locations, the other violation alone, and "To measure more (1)" with the fact.
 - **Test name**: `TestPullPageNumberMustBeAPull`, `TestPullPageReadsTheGateModeOfTheBase`
   **Scenario**: numbers `0`, `-4`, `x`, `4x`; a pull request whose base branch requires the gate while the default branch is advisory.
   **Expected behavior**: `404` each; "gate: required".

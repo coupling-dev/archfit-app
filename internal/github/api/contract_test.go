@@ -347,7 +347,7 @@ func TestChecksContract(t *testing.T) {
 		})
 		mux.HandleFunc("GET /repos/o/r/commits/abc123/check-runs", func(w http.ResponseWriter, _ *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]any{"total_count": 2, "check_runs": []map[string]any{
-				{"id": 99, "name": "archfit", "head_sha": "abc123", "external_id": "ext-1", "status": "completed",
+				{"id": 99, "name": "archfit", "head_sha": "abc123", "external_id": "ext-1", "details_url": "https://app.example/x", "status": "completed",
 					"conclusion": "success", "started_at": "2026-09-21T08:00:00Z", "app": map[string]any{"id": 4242},
 					"output": map[string]any{"title": "Gate", "summary": "All good", "annotations_count": 50}},
 				{"id": 100, "name": "archfit", "head_sha": "abc123", "status": "completed", "conclusion": "success",
@@ -356,7 +356,7 @@ func TestChecksContract(t *testing.T) {
 		})
 	})
 
-	run := CheckRun{Name: "archfit", HeadSHA: "abc123", ExternalID: "ext-1", Status: "in_progress", Title: "Gate",
+	run := CheckRun{Name: "archfit", HeadSHA: "abc123", ExternalID: "ext-1", DetailsURL: "https://app.example/r/o/r/pull/1", Status: "in_progress", Title: "Gate",
 		Summary: "Working", StartedAt: started}
 	created, err := env.c.CreateCheckRun(ctx, repoA, run)
 	if err != nil {
@@ -366,7 +366,7 @@ func TestChecksContract(t *testing.T) {
 		t.Errorf("created = %+v", created)
 	}
 	body := decodeBody(t, findRequest(t, env.gh.requests(), "POST", "/repos/o/r/check-runs"))
-	wantCreate := map[string]any{"name": "archfit", "head_sha": "abc123", "external_id": "ext-1", "status": "in_progress",
+	wantCreate := map[string]any{"name": "archfit", "head_sha": "abc123", "external_id": "ext-1", "details_url": "https://app.example/r/o/r/pull/1", "status": "in_progress",
 		"started_at": "2026-09-21T08:00:00Z", "output": map[string]any{"title": "Gate", "summary": "Working"}}
 	if !reflect.DeepEqual(body, wantCreate) {
 		t.Errorf("create body = %v\nwant          %v", body, wantCreate)
@@ -399,7 +399,7 @@ func TestChecksContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []CheckRun{{ID: 99, Name: "archfit", HeadSHA: "abc123", ExternalID: "ext-1", Status: "completed",
+	want := []CheckRun{{ID: 99, Name: "archfit", HeadSHA: "abc123", ExternalID: "ext-1", DetailsURL: "https://app.example/x", Status: "completed",
 		Conclusion: "success", Title: "Gate", Summary: "All good", StartedAt: started, AnnotationCount: 50}}
 	if !reflect.DeepEqual(runs, want) {
 		t.Errorf("CheckRuns = %+v\nwant        %+v", runs, want)

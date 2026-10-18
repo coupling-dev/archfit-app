@@ -399,11 +399,20 @@
       );
       return;
     }
+    // The two directions of a cycle are one row: A ⇄ B with both counts. Selecting it shows both directions.
+    var listed = new Set();
     problems.forEach(function (l) {
-      var li = h("li", { tabindex: "0", "data-k": "l" + key(l.From, l.To), class: "g-item " + l.Status + (sel === l ? " sel" : "") }, [
+      if (listed.has(l)) return;
+      var rev = problems.find(function (r) {
+        return r !== l && r.From === l.To && r.To === l.From && !listed.has(r);
+      });
+      listed.add(l);
+      if (rev) listed.add(rev);
+      var label = rev ? h("span", {}, [h("code", { text: l.From }), " ⇄ ", h("code", { text: l.To })]) : pairEl(l);
+      var li = h("li", { tabindex: "0", "data-k": "l" + key(l.From, l.To), class: "g-item " + l.Status + (sel === l || (rev && sel === rev) ? " sel" : "") }, [
         h("i"),
-        pairEl(l),
-        h("span", { class: "hint", text: count(l) }),
+        label,
+        h("span", { class: "hint", text: rev ? count(l) + " · " + count(rev) : count(l) }),
       ]);
       li.addEventListener("click", function () {
         pickLink(l);
@@ -456,6 +465,7 @@
       return (
         (!sel && selNode === null) ||
         l === sel ||
+        (sel && l.From === sel.To && l.To === sel.From) || // a cycle's other direction is part of the selection
         (selNode !== null && (l.From === selNode || l.To === selNode))
       );
     };
@@ -770,16 +780,30 @@
         h("p", { text: MEANING[sel.Status] }),
       );
       // The findings behind the link, as the engine wrote them: engine text, so textContent only.
-      (explain.get(key(sel.From, sel.To)) || []).forEach(function (f) {
-        detail.append(
-          h("p", { class: "g-finding" }, [
-            h("code", { text: f.RuleID || "(no rule)" }),
-            h("span", { class: "hint", text: " · " + f.Kind + ", " + f.Status }),
-            f.Why ? h("span", { class: "g-why", text: f.Why }) : null,
-          ]),
-        );
-        if (f.More) detail.append(h("p", { class: "hint", text: "and " + f.More + " more on the archfit/state check" }));
+      var findingsOf = function (l) {
+        (explain.get(key(l.From, l.To)) || []).forEach(function (f) {
+          detail.append(
+            h("p", { class: "g-finding" }, [
+              h("code", { text: f.RuleID || "(no rule)" }),
+              h("span", { class: "hint", text: " · " + f.Kind + ", " + f.Status }),
+              f.Why ? h("span", { class: "g-why", text: f.Why }) : null,
+            ]),
+          );
+          if (f.More) detail.append(h("p", { class: "hint", text: "and " + f.More + " more on the archfit/state check" }));
+        });
+      };
+      findingsOf(sel);
+      // A cycle: the other direction belongs to the same item.
+      var back = links.find(function (r) {
+        return r.From === sel.To && r.To === sel.From && r.From !== r.To;
       });
+      if (back) {
+        detail.append(
+          h("p", { class: "g-finding" }, [h("strong", { text: "Other direction " }), pairEl(back), " ", h("span", { class: "g-tag " + back.Status, text: LABEL[back.Status] })]),
+          h("p", { class: "hint", text: back.Count ? back.Count + " observed dependencies" : "Named by a finding only." }),
+        );
+        findingsOf(back);
+      }
     } else if (selNode !== null) {
       var n = nodes.find(function (x) {
         return x.Name === selNode;

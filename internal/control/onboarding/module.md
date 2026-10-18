@@ -806,6 +806,7 @@ type CheckRun struct {
     Name        string
     HeadSHA     string
     ExternalID  string
+    DetailsURL  string // the "Details" link GitHub shows on the check; "" = GitHub's default
     Status      string // "in_progress" | "completed"
     Conclusion  string // "" unless completed
     Title       string

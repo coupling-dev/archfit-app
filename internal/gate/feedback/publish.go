@@ -73,6 +73,7 @@ func (s *publisher) Publish(ctx context.Context, p Publication) (err error) {
 	run := api.CheckRun{
 		HeadSHA:    p.Target.HeadSHA,
 		ExternalID: externalID(p.Receipt),
+		DetailsURL: s.pullLink(p.Target), // GitHub's "Details" opens the App's pull request page
 		Status:     statusCompleted,
 		StartedAt:  now,
 	}
@@ -271,12 +272,13 @@ func (s *publisher) Pending(ctx context.Context, t inputs.Target) error {
 	if err == nil && !found {
 		action = actionCreated
 		_, err = s.checks.CreateCheckRun(ctx, t.Repo.RepoRef, api.CheckRun{
-			Name:      gateCheck,
-			HeadSHA:   t.HeadSHA,
-			Status:    statusInProgress,
-			Title:     pendingTitle,
-			Summary:   pendingSummary,
-			StartedAt: s.now(),
+			Name:       gateCheck,
+			HeadSHA:    t.HeadSHA,
+			DetailsURL: s.pullLink(t),
+			Status:     statusInProgress,
+			Title:      pendingTitle,
+			Summary:    pendingSummary,
+			StartedAt:  s.now(),
 		})
 	}
 	slog.Default().InfoContext(ctx, "feedback pending",

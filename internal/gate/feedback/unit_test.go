@@ -829,3 +829,36 @@ func TestWaiverNoticeStaysOutsideFolds(t *testing.T) {
 		t.Errorf("waiver notice placed inside a fold:\n%s", got)
 	}
 }
+
+func TestCycleDirectionsAreOneItem(t *testing.T) {
+	gate := func(rule, from, to, file string) report.Finding {
+		return report.Finding{ID: from + to, Kind: "gate", RuleID: rule, Status: "new", Severity: "high", Why: "cycle " + from + " " + to,
+			Edge:      report.Edge{From: report.Endpoint{Module: from}, To: report.Endpoint{Module: to}},
+			Locations: []report.Location{{File: file, Line: 3}}}
+	}
+	tests := []struct {
+		name      string
+		findings  []report.Finding
+		items     int
+		wantCycle bool
+	}{
+		{"both directions", []report.Finding{gate("no-module-cycles", "a", "b", "a.go"), gate("no-module-cycles", "b", "a", "b.go")}, 1, true},
+		{"one direction", []report.Finding{gate("no-module-cycles", "a", "b", "a.go")}, 1, false},
+		{"two rules", []report.Finding{gate("r1", "a", "b", "a.go"), gate("r2", "b", "a", "b.go")}, 2, false},
+		{"same direction twice", []report.Finding{gate("r1", "a", "b", "a.go"), gate("r1", "a", "b", "c.go")}, 2, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			block := findingsBlock(&report.Report{Findings: tt.findings})
+			if got := strings.Count(block, "\n- **violation**"); got != tt.items {
+				t.Errorf("items = %d, want %d:\n%s", got, tt.items, block)
+			}
+			if got := strings.Contains(block, "cycle `a` ⇄ `b`"); got != tt.wantCycle {
+				t.Errorf("cycle line = %v, want %v:\n%s", got, tt.wantCycle, block)
+			}
+			if tt.wantCycle {
+				mustContain(t, block, "  - `a` → `b`: `a.go:3`", "  - `b` → `a`: `b.go:3`", "**Rule violations** (2)")
+			}
+		})
+	}
+}

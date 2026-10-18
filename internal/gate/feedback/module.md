@@ -320,14 +320,19 @@ receipt marker. Block G is in the gate summary only.
    without a report, or when suspended, it is omitted. Display only: the conclusion still comes from `Outcome`.
 3. `Trusted.Entitlement.Notice`, when `WarnFrom` is set, `now()` is at or past it, and the notice is not empty. In
    the comment only, when `New` got an App URL: the line "[Details in Archfit](<appURL>/r/<owner>/<name>/pull/<n>)",
-   owner and name path-escaped, part of the never-cut head. A push has no pull request page and no link.
+   owner and name path-escaped, part of the never-cut head. A push has no pull request page and no link. The same URL
+   is the `DetailsURL` of every check run feedback writes on a pull request (state, gate, pending gate), so GitHub's
+   "Details" opens the App's page; without it GitHub keeps its default.
 4. Waiver notice section (owned by `Warn`).
 5. Findings: blocking first. A finding is labeled "violation" (never "blocking": in advisory mode nothing blocks) when `Finding.Active()` of `wire/report` is true
    (that package owns the status vocabulary; feedback has no formula of its own) **[default, display only: the
    verdict never reads findings]**. Groups: "Rule violations" (`Finding.Active()`, and any
    status this version does not know), then the remaining `advisory` findings folded in one `<details>` whose summary
    is "N advisories · never block" (`new` or `expired_waiver` only; an advisory of an unknown status stays open), then "Accepted debt — display only" (`baseline`, `waived`), "Fixed" (`fixed`).
-   A cut never leaves a fold open: `cutLines` closes it before "Output truncated.". Per finding:
+   A cut never leaves a fold open: `cutLines` closes it before "Output truncated.". Two findings of one rule whose
+   module pairs are reversed (the two directions of a module cycle) are one item, "cycle `A` ⇄ `B`", with a line per
+   direction and its locations, then the first finding's `Why` and `Constraint`. Display only: the count is still of
+   findings, and each finding keeps its ID. Per finding:
    rule ID, severity, `Edge.From.Module` → `Edge.To.Module` (with `Path` when set), `Origin` when set (shown as
    ", origin X", display only), locations as `file:line`, `Why`,
    then the policy-permitted repair: `Constraint` and `AllowedAlternatives`. feedback adds no repair of its own and
@@ -971,6 +976,7 @@ type CheckRun struct {
     Name        string
     HeadSHA     string
     ExternalID  string
+    DetailsURL  string // the "Details" link GitHub shows on the check; "" = GitHub's default
     Status      string // "in_progress" | "completed"
     Conclusion  string // "" unless completed
     Title       string
@@ -1179,9 +1185,12 @@ Golden files hold rendered bodies for the wire fixtures.
 - **Test name**: `TestWaiverNoticeStaysOutsideFolds`
   **Scenario**: a body whose first `###` heading is inside a fold.
   **Expected behavior**: the notice lands before the fold.
+- **Test name**: `TestCycleDirectionsAreOneItem`
+  **Scenario**: two findings of one rule in both directions; one direction; two rules in both directions; one rule twice in one direction.
+  **Expected behavior**: one item with a line per direction; then one, two and two items, no cycle line.
 - **Test name**: `TestCommentLinksToTheAppPullPage`
   **Scenario**: a publication on a pull request with an App URL; no App URL; a push; a repository name with a space and a question mark.
-  **Expected behavior**: the "Details in Archfit" link to `/r/acme/shop/pull/7` in the head, after an entitlement notice and before the findings; no link; no link; a path-escaped link.
+  **Expected behavior**: the "Details in Archfit" link to `/r/acme/shop/pull/7` in the head, after an entitlement notice and before the findings; no link; no link; a path-escaped link. The state check, the gate check and the pending gate check carry the same URL as `DetailsURL`.
 - **Test name**: `TestAdvisoryCommentNeverSaysBlocking`
   **Scenario**: a blocked publication on an advisory pull request, rendered as comment.
   **Expected behavior**: the advisory headline and the "does not block merging" line; "violation" labels; no "Blocked by" and no "blocking" label; findings before the first fold.
