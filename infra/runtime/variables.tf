@@ -63,7 +63,7 @@ variable "secret_versions" {
 }
 
 variable "paused" {
-  description = "Pause the queues and the Scheduler. They stay paused until the first real image serves."
+  description = "Pause the queues and the Scheduler. They started paused until the first real image served."
   type        = bool
   default     = false
 }
