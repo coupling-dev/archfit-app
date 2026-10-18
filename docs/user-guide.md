@@ -246,14 +246,41 @@ no approval is needed any more.
 
 ### Engine versions
 
-The App approves engine images in a locked manifest. It reads one engine release: v3.0.0. New workflows pin v3.0.0.
+The App approves engine images in a locked manifest. It approves one engine release: v3.0.1. New workflows pin
+v3.0.1 and `archfit-action` commit `7efc29b5a2785fb0537a2617cddf3873b7d27e10` (v2.1.0).
 
-- The manifest approves engine v3.0.0 only. A report from any other engine gives `action_required`.
+- The manifest approves engine v3.0.1 only. A report from any other engine gives `action_required`.
   Use the engine image that the onboarding workflow pins.
-- A report from an image that the manifest does not list gives `unknown_engine_identity`. A report that the App
-  cannot read gives `report_invalid`. Both end `action_required`.
-- The policy editor validates with the config schema of engine v3.0.0. The Archfit check on the draft
+- A report from an image that the manifest does not list gives `unknown_engine_identity`. This includes engine
+  v3.0.0, which the App approved before v3.0.1. A report that the App cannot read gives `report_invalid`. Both end
+  `action_required`.
+- The policy editor validates with the config schema of engine v3.0.1. The Archfit check on the draft
   pull request shows that error.
+- On a pull request the Action compares the head with the merge base (`--base`), so each finding shows whether the
+  pull request introduced it. Origin is for display only: the conclusion does not change. A pull request run takes
+  about two engine passes.
+
+#### Move an installed workflow to a new engine
+
+The App writes `.github/workflows/archfit.yaml` once, in the onboarding pull request, and never updates it. After an
+App release that approves a new engine, a repository on the old pin gets `action_required` with
+`unknown_engine_identity` on every report, and a baseline or re-anchor upload is refused with the same code. Open a
+pull request that changes three values of the Archfit step, and nothing else:
+
+```yaml
+      - uses: alexei-led/archfit-action@7efc29b5a2785fb0537a2617cddf3873b7d27e10
+        with:
+          engine-version: "v3.0.1"
+          image-digest: "sha256:9aac269fa350e643054cbe5ced58426b4ed46000f30d60f49564aa605ece2408"
+```
+
+The Action and the engine move together: Action `7efc29b` refuses engine v3.0.0, and the v3.0.0 Action
+(`dbc3c1e`) refuses v3.0.1. The workflow file is a protected path, so an architecture owner approves the pull
+request. Its own run uses the new pin and passes the identity check.
+
+A baseline stored by engine v3.0.0 stays valid. Engine v3.0.1 no longer writes `state.dimensions` and
+`state.hard_gate_finding_ids`, so the first baseline capture after the move differs from the stored file and the App
+opens a baseline pull request that accepts and removes nothing. Merge it, or close it: both are safe.
 
 ### Report limits
 
