@@ -369,7 +369,8 @@
     });
     chips.replaceChildren();
     if (fresh.length) {
-      // Emphasis, not a filter: off, every link is drawn alike; on, the new ones stand out over the muted rest.
+      // Emphasis, not a filter: on, new links stand out over the muted rest and lead the list; off, links keep their
+      // status style and list order. A new link stays a problem, marked, either way.
       var nb = h(
         "button",
         {
@@ -840,7 +841,7 @@
             h("p", { class: "g-finding" }, [
               h("code", { text: f.RuleID || "(no rule)" }),
               h("span", { class: "hint", text: " · " + f.Kind + ", " + f.Status }),
-              f.Origin ? h("span", { class: "g-origin " + f.Origin, text: ORIGIN[f.Origin] || f.Origin }) : null,
+              pullScope && f.Origin ? h("span", { class: "g-origin " + f.Origin, text: ORIGIN[f.Origin] || f.Origin }) : null,
               f.Why ? h("span", { class: "g-why", text: f.Why }) : null,
             ]),
           );

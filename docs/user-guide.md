@@ -512,8 +512,8 @@ states when there is no report.
   (`origin: introduced`). The link keeps its status: a new forbidden dependency or cycle is still a red `violation`,
   drawn heavier with a dashed halo and a "new" badge.
 - The **New in this PR** chip is on when the pull request added something. It highlights the new links and mutes the
-  rest, which stay visible so the change reads against the existing architecture. Turn it off to draw every link alike.
-  The problem list puts new links first.
+  rest, which stay visible so the change reads against the existing architecture, and puts new links first in the
+  problem list. Turn it off to draw links in their status style and list order; new links stay listed and marked "new".
 - Select a link to see the findings behind it, each marked "added by this PR" or "pre-existing".
 - When the run did not compare with the base branch, a banner says so and no link is marked new. "New" never comes
   from a finding's status.

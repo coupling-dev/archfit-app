@@ -78,7 +78,7 @@
   <tr class="{{.Status}}">
     <td>{{.From}}</td><td>{{.To}}</td>
     <td>{{.Count}}</td>
-    <td>{{.Status}}{{if .Introduced}} · new in this PR{{end}}</td>
+    <td>{{.Status}}{{if and .Introduced $.Body.Pull}} · new in this PR{{end}}</td>
   </tr>
   {{end}}
   </tbody>

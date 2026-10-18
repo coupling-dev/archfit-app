@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/alexei-led/archfit-app/internal/control/ui/graph"
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -28,7 +30,6 @@ type pullScope struct {
 	Conclusion string
 	URL        string // the pull request on GitHub
 	Page       string // the pull request page of the App
-	Report     bool   // the page has the report of the check
 	Compared   bool   // the report compared with the base branch, so a link can be new in this pull request
 	New        int    // links new in this pull request
 }
@@ -65,7 +66,6 @@ func (s *server) buildPullGraph(ctx context.Context, sc scope, number int) (grap
 		body.Unavailable = pull.Unavailable
 		return body, nil
 	}
-	scope.Report = true
 	scope.Compared = rep.Comparison.OriginStatus == originComparable
 	text, ref, err := s.reportPolicy(ctx, sc, pull.Pull, *rep)
 	if err != nil {
@@ -75,13 +75,23 @@ func (s *server) buildPullGraph(ctx context.Context, sc scope, number int) (grap
 	if view.Stale {
 		body.StaleReason = noPolicy
 	}
-	body.setView(view, "https://github.com/"+sc.repo.FullName+"/blob/"+ref+"/"+policy.PolicyPath)
+	body.setView(view, "https://github.com/"+sc.repo.FullName+"/blob/"+escapeRef(ref)+"/"+policy.PolicyPath)
 	for _, l := range view.Links {
 		if l.Introduced {
 			scope.New++
 		}
 	}
 	return body, nil
+}
+
+// escapeRef escapes each segment of a ref for a URL path: a branch name may hold "#" or "?", and "/" separates segments
+// on GitHub as it does in the name.
+func escapeRef(ref string) string {
+	parts := strings.Split(ref, "/")
+	for i, p := range parts {
+		parts[i] = url.PathEscape(p)
+	}
+	return strings.Join(parts, "/")
 }
 
 // reportPolicy finds the policy text the report was computed from, for the module names, layers and lines. The

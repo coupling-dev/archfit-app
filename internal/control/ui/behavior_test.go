@@ -307,6 +307,21 @@ func TestPullGraphStates(t *testing.T) {
 	}
 }
 
+// TestDefaultGraphClaimsNothingNew: "new in this PR" belongs to the pull request graph, even when a default-branch
+// report carries a comparable origin.
+func TestDefaultGraphClaimsNothingNew(t *testing.T) {
+	e := newEnv(t)
+	e.gh.setFile(repoName, mainBranch, ".archfit.yaml", prPolicy)
+	e.publishReport(repoName, prArtifact(t, prPolicy))
+	body := e.as("alice", permRead).get("/r/" + repoName + "/graph").Body.String()
+	wantContains(t, body, "graph-data", "pkg_chaos")
+	for _, s := range []string{"new in this PR", `data-scope="pull"`, `id="not-compared"`, `id="new-count"`} {
+		if strings.Contains(body, s) {
+			t.Errorf("default-branch graph contains %q", s)
+		}
+	}
+}
+
 var actionPattern = regexp.MustCompile(`(?i)(form)?action="[^"]*(merge|approv|publish)`)
 
 func TestUIAndGitHubFirstEditsShareOnePath(t *testing.T) {
