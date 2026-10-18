@@ -254,7 +254,15 @@ overwrite feedback for a newer head. Ordinary feedback needs no LLM.
 Architecture-owner approval is separate authority, not a mandatory separate PR.
 Code and policy may land atomically with approval bound to the exact head and
 policy snapshot. Resolve owner authority from protected policy. Head-edited
-CODEOWNERS cannot grant approval rights. Strict, narrow, expiring exceptions
+CODEOWNERS cannot grant approval rights. An owner authorizes an exact head in
+one of two ways: an approving review on that head, or being the one who pushed
+it. An owner's own push of the exact head is an authorization of that head. It
+is needed because GitHub does not let an author approve their own pull request,
+so a sole owner could otherwise never change policy. The pusher is the actor of
+the signed `push` webhook, never a git author or committer field, which is
+spoofable. A later push is a new head with its own pusher, so the authorization
+never carries over. An owner who pushes commits written by others endorses
+them. A fork head gets no push authorization. Strict, narrow, expiring exceptions
 follow the [product governance rules](product.md#3-architecture-policy-and-authority)
 and T14–T16, not an automatic accepted-debt refresh.
 
