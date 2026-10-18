@@ -673,11 +673,19 @@ type WorkflowRun struct {
     PullRequests []int // PR numbers GitHub associates with the run
 }
 
+// RunFilter narrows LatestRun. Each non-empty field is sent as the GitHub query parameter of the same name.
+type RunFilter struct {
+    Branch string
+    Event  string // e.g. "push", "workflow_dispatch"
+    Status string // a run status or conclusion, e.g. "completed", "success"
+}
+
 type Actions interface {
     Run(ctx context.Context, r RepoRef, runID int64) (WorkflowRun, error)
     Rerun(ctx context.Context, r RepoRef, runID int64) error
     Dispatch(ctx context.Context, r RepoRef, workflowPath, ref string, inputs map[string]string) error
-    LatestRun(ctx context.Context, r RepoRef, workflowPath, branch string) (WorkflowRun, error)
+    // LatestRun is the newest run of the workflow that matches every non-empty field of f.
+    LatestRun(ctx context.Context, r RepoRef, workflowPath string, f RunFilter) (WorkflowRun, error)
     // Artifact downloads the named artifact of a run, capped at maxBytes.
     Artifact(ctx context.Context, r RepoRef, runID int64, name string, maxBytes int64) ([]byte, error)
 }

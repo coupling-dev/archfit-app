@@ -199,11 +199,11 @@ func artifact(t *testing.T, name string) []byte {
 	return bytes.ReplaceAll(raw, []byte(fixtureConfigHash), []byte(policy.Digest([]byte(policyText))))
 }
 
-// publishReport makes payload the archfit-report artifact of the latest default-branch run.
+// publishReport makes payload the archfit-report artifact of the latest default-branch push run.
 func (e *env) publishReport(fullName string, payload []byte) {
+	e.gh.addRun(fullName, workflow, mainBranch, api.WorkflowRun{ID: 77, Event: "push", Status: "completed", Conclusion: "success"})
 	e.gh.mu.Lock()
 	defer e.gh.mu.Unlock()
-	e.gh.runs[fullName+"@"+workflow+"@"+mainBranch] = api.WorkflowRun{ID: 77, Status: "completed", Conclusion: "success"}
 	e.gh.artifacts[77] = payload
 }
 

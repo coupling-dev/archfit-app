@@ -19,6 +19,8 @@ const (
 	baselineBranch   = "archfit/baseline"
 	workflowPath     = ".github/workflows/archfit.yaml"
 	stateCheckName   = "archfit/state" // published only by the App, only for an accepted upload
+	eventPush        = "push"          // GitHub workflow run event
+	runCompleted     = "completed"     // GitHub workflow run status
 
 	sandboxTimeout = 10 * time.Minute
 	stalledAfter   = sandboxTimeout + time.Minute

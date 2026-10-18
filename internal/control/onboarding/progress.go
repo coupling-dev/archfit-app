@@ -84,9 +84,13 @@ func (s *service) installed(ctx context.Context, r api.Repo, settingsInvalid boo
 	return st, nil
 }
 
-// reported is true when the App accepted an upload of the latest default-branch run.
+// reported is true when the App accepted an upload of the latest completed default-branch push run.
 func (s *service) reported(ctx context.Context, r api.Repo, workflow string) (bool, error) {
-	run, err := s.gh.actions.LatestRun(ctx, r.RepoRef, workflow, r.DefaultBranch)
+	// Push only: archfit/state is published for a report upload, and on the default branch only a push run uploads
+	// one. A dispatched discovery, baseline or re-anchor run never does, so it would hide an accepted report.
+	// Completed: a run in progress has not uploaded yet. Its conclusion does not matter; the check is the evidence.
+	f := api.RunFilter{Branch: r.DefaultBranch, Event: eventPush, Status: runCompleted}
+	run, err := s.gh.actions.LatestRun(ctx, r.RepoRef, workflow, f)
 	switch {
 	case errors.Is(err, api.ErrNotFound):
 		return false, nil

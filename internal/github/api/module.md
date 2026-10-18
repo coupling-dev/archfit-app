@@ -134,7 +134,8 @@ a `truncated` result: it returns the paths read so far with `truncated` true.
   `PullRequests` =
   `pull_requests[].number` (GitHub leaves it empty for fork PRs). `Rerun`: `POST .../runs/{id}/rerun`.
 - `Dispatch`: `POST /repos/{r}/actions/workflows/{file name}/dispatches` with `ref` and `inputs`.
-- `LatestRun`: `GET .../workflows/{file name}/runs?branch=&per_page=1`; none → `ErrNotFound`.
+- `LatestRun`: `GET .../workflows/{file name}/runs?per_page=1`, plus `branch`, `event` and `status` for each non-empty
+  `RunFilter` field (GitHub's `status` takes a run status or a conclusion); none → `ErrNotFound`.
 - `Artifact`: `GET .../runs/{id}/artifacts?name=` (newest unexpired; none → `ErrNotFound`), then
   `GET .../artifacts/{id}/zip`, which redirects to blob storage; the `Authorization` header is not forwarded
   across hosts. The zip must hold exactly one regular file; its declared size and the bytes actually read
@@ -303,11 +304,19 @@ type WorkflowRun struct {
     PullRequests []int // PR numbers GitHub associates with the run
 }
 
+// RunFilter narrows LatestRun. Each non-empty field is sent as the GitHub query parameter of the same name.
+type RunFilter struct {
+    Branch string
+    Event  string // e.g. "push", "workflow_dispatch"
+    Status string // a run status or conclusion, e.g. "completed", "success"
+}
+
 type Actions interface {
     Run(ctx context.Context, r RepoRef, runID int64) (WorkflowRun, error)
     Rerun(ctx context.Context, r RepoRef, runID int64) error
     Dispatch(ctx context.Context, r RepoRef, workflowPath, ref string, inputs map[string]string) error
-    LatestRun(ctx context.Context, r RepoRef, workflowPath, branch string) (WorkflowRun, error)
+    // LatestRun is the newest run of the workflow that matches every non-empty field of f.
+    LatestRun(ctx context.Context, r RepoRef, workflowPath string, f RunFilter) (WorkflowRun, error)
     // Artifact downloads the named artifact of a run, capped at maxBytes.
     Artifact(ctx context.Context, r RepoRef, runID int64, name string, maxBytes int64) ([]byte, error)
 }
@@ -572,6 +581,9 @@ One test per role interface; each asserts method, route, credential, request bod
   redirect to another host.
   **Expected behavior**: fields mapped, `WorkflowPath` unchanged; `201`/`204` are success; `ErrNotFound` when no
   run; the redirected request carries no `Authorization` header; file bytes returned.
+- **Test name**: `TestLatestRunSendsOnlySetFilters`
+  **Scenario**: table over `RunFilter`: empty; branch only; branch, event and status; event and status.
+  **Expected behavior**: the query is `per_page=1` plus exactly the set fields under their GitHub names.
 - **Test name**: `TestChangesContract`
   **Scenario**: `EnsureBranch` new, existing, and lost race; `Commit` of two files; `Commit` with identical
   content; non-fast-forward; `EnsurePull` new, existing, lost race; `UpdatePullBody`; `MarkReady` draft and ready.

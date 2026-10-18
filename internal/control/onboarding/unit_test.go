@@ -64,7 +64,7 @@ func TestStageDerivation(t *testing.T) {
 				f.hub.put(r, r.DefaultBranch, ".archfit.yaml", []byte(validPolicy))
 			}
 			if tc.setup.run {
-				run := api.WorkflowRun{ID: 9, HeadSHA: runHeadSHA}
+				run := api.WorkflowRun{ID: 9, Event: "push", Status: "completed", HeadSHA: runHeadSHA}
 				if tc.setup.check {
 					f.hub.setReported(r, run, api.CheckRun{Name: stateCheck, HeadSHA: runHeadSHA})
 				} else {
@@ -121,6 +121,25 @@ func proposeOn(t *testing.T, f *fixture, branch string) {
 		changeFor(f.repo, branch, "title", "body", "message", []api.FileChange{{Path: "x", Content: []byte("x")}}), "")
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestReportedReadsTheLatestCompletedPushRun(t *testing.T) {
+	f := newFixture(t)
+	r := f.repo
+	f.onboard(r, settings.GateAdvisory)
+	f.hub.put(r, r.DefaultBranch, ".archfit.yaml", []byte(validPolicy))
+	f.report(r)
+	unreported := strings.Repeat("2", 40)
+	for _, run := range []api.WorkflowRun{
+		{ID: 10, Event: "workflow_dispatch", Status: "completed", Conclusion: "success", HeadSHA: unreported},
+		{ID: 11, Event: "push", Status: "in_progress", HeadSHA: unreported},
+	} {
+		f.hub.addRun(r, run)
+	}
+
+	if p := mustProgress(t, f.svc, r); p.Stage != StageAdvisory {
+		t.Errorf("stage = %q behind newer dispatch and running runs, want %q", p.Stage, StageAdvisory)
 	}
 }
 

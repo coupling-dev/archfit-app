@@ -258,7 +258,7 @@ func (f *fakeGitHub) Dispatch(_ context.Context, r api.RepoRef, _, _ string, _ m
 	return cmpErr(f.enter("Dispatch", r), errors.New("fake: dispatch is not a gate call"))
 }
 
-func (f *fakeGitHub) LatestRun(_ context.Context, r api.RepoRef, _, _ string) (api.WorkflowRun, error) {
+func (f *fakeGitHub) LatestRun(_ context.Context, r api.RepoRef, _ string, _ api.RunFilter) (api.WorkflowRun, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return api.WorkflowRun{}, cmpErr(f.enter("LatestRun", r), api.ErrNotFound)

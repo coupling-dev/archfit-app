@@ -50,7 +50,7 @@ type (
 	}
 	workflows interface {
 		Dispatch(ctx context.Context, r api.RepoRef, workflowPath, ref string, inputs map[string]string) error
-		LatestRun(ctx context.Context, r api.RepoRef, workflowPath, branch string) (api.WorkflowRun, error)
+		LatestRun(ctx context.Context, r api.RepoRef, workflowPath string, f api.RunFilter) (api.WorkflowRun, error)
 		Artifact(ctx context.Context, r api.RepoRef, runID int64, name string, maxBytes int64) ([]byte, error)
 	}
 	repoLister interface {
