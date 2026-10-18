@@ -11,6 +11,7 @@
     PAD = 24,
     BAND = 22;
   var MAX_ROW = 6; // modules per drawn line
+  var ARC = 40; // the highest a same-line arc may rise: below the gap between lines and the reserved margins
   var FOCUS_LIMIT = 15; // above this many modules the graph starts on problem links
   var MAX_DRAWN = 300; // above this the tables are the view
   var STATUSES = ["violation", "accepted", "advisory", "allowed", "observed"]; // graph.Build precedence
@@ -234,7 +235,7 @@
     var width = PAD * 2 + widest * NODE_W + (widest - 1) * GAP_X;
     var xy = new Map(),
       labels = [],
-      y = PAD;
+      y = PAD + ARC;
     lines.forEach(function (r, li) {
       if (lineBand[li]) {
         labels.push({ text: lineBand[li], y: y });
@@ -249,7 +250,7 @@
     return {
       xy: xy,
       width: width,
-      height: y - ROW_H + NODE_H + PAD + 12,
+      height: y - ROW_H + NODE_H + ARC + PAD,
       labels: labels,
       layered: layered,
     };
@@ -526,7 +527,7 @@
               // A pair in both directions: the second one arcs below.
               var below = pairs.has(key(l.To, l.From)) && l.From > l.To,
                 top = below ? a.y + NODE_H + 2 : a.y - 2,
-                lift = (below ? -1 : 1) * (30 + Math.abs(x2 - x1) / 8);
+                lift = (below ? -1 : 1) * Math.min(ARC, 24 + Math.abs(x2 - x1) / 16);
               d = "M" + x1 + " " + top + " C" + x1 + " " + (top - lift) + " " + x2 + " " + (top - lift) + " " + x2 + " " + top;
               mx = (x1 + x2) / 2;
               my = top - lift * 0.75;
