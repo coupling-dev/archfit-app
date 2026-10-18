@@ -22,6 +22,8 @@ could still work GitHub-first, but onboarding, schema-guided editing and consent
   list its problems by line, save as a commit on a draft branch through `proposal` bound to the head SHA that was
   loaded, show the draft state (draft / awaiting review / published), mark ready for review.
 - Graph: fetch the latest report artifact, decode it, build the view through `graph`, draw it, mark it stale.
+- Pull request page: the result of one pull request's head, from the `archfit/state` check and the report of the
+  run that check names.
 - Assist: turn the form into an `assist.Request`, show the outcome or the pending customer run.
 - Consent: record and revoke `source_processing` and `managed_llm` consent (repository administrators only).
 
@@ -80,6 +82,8 @@ Minimum repository permission in brackets. `{o}/{n}` is only a lookup key for `S
 - `POST /r/{o}/{n}/policy/check` [read] — check the text and save nothing; form `branch`, `head_sha`, `content`.
 - `POST /r/{o}/{n}/policy/ready` [write] — mark the draft PR ready for review; form `branch`, `head_sha`.
 - `GET /r/{o}/{n}/graph` [read] — graph page.
+- `GET /r/{o}/{n}/pull/{number}` [read] — pull request page; a number that is not a positive integer or not a pull
+  request of the repository answers `404`.
 - `POST /r/{o}/{n}/assist` [write] — form `branch`, `head_sha`, `content`, `instruction`, `mode`.
 - `GET /r/{o}/{n}/consent`, `POST /r/{o}/{n}/consent` [admin] — form `kind`, `action` (`record` | `revoke`).
 
@@ -925,6 +929,21 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   beyond authorization, except that an assist refused for problems first read the branch file to compare.
 - Ready: `Proposals.Get`; head must equal `head_sha`, state must be `DraftOpen`; then `Proposals.Ready(number)`. ui never merges:
   publication is the merge on GitHub under the customer's ruleset and owner approval, the same path as a GitHub-first edit.
+- Pull request page: `Pulls.Pull(number)` → the settings file on the pull request's base (gate mode only, shown
+  always; none or unparseable reads as advisory) → `CheckRuns(head, "archfit/state")`, the run with the highest ID. Its
+  `Title` is the headline: feedback already states the effect on merge there, so the page never derives one of its own.
+  A run that concludes `action_required` shows no finding: the sweep keeps the old run in a withdrawn result's
+  `external_id`, so its old report would still match. Its `external_id` is
+  `v1:<run_id>:<attempt>:sha256:<hex>`; run 0 or an unreadable id is "no upload". Then
+  `Artifact(run_id, "archfit-report", report.MaxBytes)`, and the page shows it only when the SHA-256 of the bytes equals
+  the digest in the id: a report is never shown beside a check it did not produce. States, each with fixed wording and a
+  link to the checks on GitHub: no check yet, action required, no upload, report expired (`ErrNotFound`, GitHub retention), report does
+  not match its check, report unavailable (decode error). With a report: rule violations open (active gate findings,
+  and any status this version does not know), advisories and accepted debt folded, at most 50 per group with the rest
+  counted, 3 locations per finding with the rest folded, a folded line "No baseline in this run · PR attribution
+  unavailable · customer-attested" from `gate_reference.baseline_present` and `comparison.origin_status`, "added by this
+  PR" only when `origin_status` is `comparable` and the finding's `origin` is `introduced`, the exact `agent_tasks`
+  array, and the nine dimensions folded. Engine strings are template data, escaped by `html/template`.
 - Graph: settings → `LatestRun(Settings.Workflow, {Branch: DefaultBranch, Event: "push", Status: "success"})` → `Artifact(run.ID, "archfit-report", report.MaxBytes)` →
   `report.Decode` (with the release of `report.EngineVersions`, `v3.0.0`: the artifact names none) → policy text (open draft of the user, else default branch) → `graph.Build`. The artifact is the raw engine
   state JSON; only the decoded no-source `Report` is used. When the chosen policy text fails `policy.Modules` (a broken draft
@@ -1030,6 +1049,15 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Expected behavior**: `303` to login or `401` without a session; `404` below the minimum; success at and above it
   (`200` for a page and for Check, `303` for every other `POST`);
   `/static/` and `/schema/policy.json` answer without a session.
+- **Test name**: `TestPullPageShowsTheReportOfItsCheck`
+  **Scenario**: no check on the head; a check whose external_id names a run whose artifact matches its digest; one whose digest does not match; an expired artifact; run 0; an unknown pull request.
+  **Expected behavior**: "no result yet"; the check title as headline, advisory mode, the violation, the no-baseline and no-attribution line, the run; the mismatch wording and no finding; the expired wording; the no-upload wording; `404`. Also: an `action_required` run over a matching old report shows the action-required wording and no finding; an undecodable report shows "report unavailable"; of two check runs the higher ID wins; "added by this PR" appears only with `origin_status: comparable` and `origin: introduced`.
+- **Test name**: `TestPullPageNumberMustBeAPull`, `TestPullPageReadsTheGateModeOfTheBase`
+  **Scenario**: numbers `0`, `-4`, `x`, `4x`; a pull request whose base branch requires the gate while the default branch is advisory.
+  **Expected behavior**: `404` each; "gate: required".
+- **Test name**: `TestParseExternalID`
+  **Scenario**: a pilot external_id, a bare digest, run 0, another version, a non-numeric run, empty.
+  **Expected behavior**: run and bare hex digest for v1 ids; not ok otherwise.
 - **Test name**: `TestOverviewReadsStateOnDefaultBranchHead`
   **Scenario**: table of repositories: `archfit/state` success on the default-branch head; neutral; no check run; `BranchHead` fails.
   **Expected behavior**: one `BranchHead` and one `CheckRuns(head, "archfit/state")` per repository; the rows read healthy,

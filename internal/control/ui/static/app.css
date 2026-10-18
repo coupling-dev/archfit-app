@@ -82,3 +82,12 @@ button, .button { font: inherit; padding: .35rem .8rem; cursor: pointer; }
 .g-dsm td.advisory, .g-dsm td.accepted { background: color-mix(in srgb, var(--warn) 25%, transparent); }
 .g-dsm td.allowed { background: color-mix(in srgb, var(--good) 20%, transparent); }
 .g-dsm td[tabindex] { cursor: pointer; } .g-dsm td.sel { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* pull request page */
+.p-result { padding: .6rem .8rem; border-left: 4px solid var(--line); }
+.p-result.failure { border-color: var(--bad); } .p-result.neutral { border-color: var(--warn); }
+.p-result.action_required { border-color: var(--warn); } .p-result.success { border-color: var(--good); }
+.p-chip { font-size: .8rem; padding: 0 .45rem; border: 1px solid var(--line); border-radius: 999px; margin-left: .3rem; }
+.p-finding { border-top: 1px solid var(--line); padding: .4rem 0; overflow-wrap: anywhere; }
+.p-finding p { margin: .2rem 0; }
+details > summary h2 { display: inline; font-size: 1.1rem; }
+pre { overflow: auto; max-height: 24rem; }

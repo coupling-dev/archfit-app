@@ -1,0 +1,67 @@
+{{define "content"}}
+{{with .Body}}
+<h1>{{if .Pull.Title}}{{.Pull.Title}}{{else}}Pull request{{end}} <span class="hint">#{{.Pull.Number}}</span></h1>
+<p class="hint">{{if .Pull.Author}}{{.Pull.Author}} · {{end}}{{.Pull.State}} · <code>{{.Pull.HeadRef}}</code> into <code>{{.Pull.BaseRef}}</code> · <a href="{{.Pull.URL}}">View on GitHub</a>
+  {{if .Required}}<span class="p-chip">gate: required</span>{{else}}<span class="p-chip">gate: advisory · does not block merging</span>{{end}}</p>
+
+{{if .Headline}}
+<p class="p-result {{.Conclusion}}" id="result"><strong>{{.Headline}}</strong>
+  <span class="p-chip">archfit/state: {{.Conclusion}}</span></p>
+{{end}}
+
+{{if .Unavailable}}
+<p class="banner" id="unavailable">{{.Unavailable}} <a href="{{.CheckURL}}">Checks on GitHub</a></p>
+{{else}}
+<details class="hint" id="attribution"><summary>{{if .NoBaseline}}No baseline in this run · {{end}}{{if .Compared}}compared with the base branch{{else}}PR attribution unavailable{{end}} · customer-attested</summary>
+  <p>{{if .NoBaseline}}Without a baseline every finding counts as new, including older debt. {{end}}{{if .Compared}}Findings marked "added by this PR" are the ones the engine did not find on the base branch.{{else}}"New" means not accepted in a baseline, not "added by this pull request": this run did not compare against the base branch.{{end}}
+  The producer is authenticated; the report content is not independently checked. Run {{.RunID}}.</p>
+</details>
+
+<section id="violations">
+<h2>Rule violations ({{len .Violations}})</h2>
+{{range .Violations}}{{template "pullFinding" .}}{{else}}<p class="hint">None.</p>{{end}}
+</section>
+
+{{if .Advisories}}
+<details id="advisories"><summary><h2>Advisories ({{len .Advisories}}) · never block</h2></summary>
+{{range .Advisories}}{{template "pullFinding" .}}{{end}}
+</details>
+{{end}}
+{{if .Accepted}}
+<details id="accepted"><summary><h2>Accepted debt ({{len .Accepted}}) · baseline or waiver</h2></summary>
+{{range .Accepted}}{{template "pullFinding" .}}{{end}}
+</details>
+{{end}}
+{{if .Omitted}}<p class="hint">{{.Omitted}} more findings are not listed: each group shows at most 50.</p>{{end}}
+
+{{if .Tasks}}
+<details id="tasks"><summary><h2>For coding agents ({{.TaskCount}})</h2></summary>
+<p class="hint">The exact <code>agent_tasks</code> of this run.</p>
+<pre>{{.Tasks}}</pre>
+</details>
+{{end}}
+
+{{if .Dimensions}}
+<details id="evidence"><summary><h2>Evidence</h2></summary>
+<table>
+  <thead><tr><th>Dimension</th><th>Status</th><th>Coverage</th><th>Confidence</th><th>Gate</th></tr></thead>
+  <tbody>
+  {{range .Dimensions}}<tr><td>{{.Name}}</td><td>{{.Status}}</td><td>{{.Coverage.Observed}} / {{.Coverage.Total}} {{.Coverage.Basis}}</td><td>{{.Confidence}}</td><td>{{.Gate}}</td></tr>{{end}}
+  </tbody>
+</table>
+</details>
+{{end}}
+{{end}}
+{{end}}
+{{end}}
+
+{{define "pullFinding"}}
+<div class="p-finding">
+  <p><code>{{.RuleID}}</code> {{if .Edge.From.Module}}<code>{{.Edge.From.Module}}</code> → <code>{{.Edge.To.Module}}</code>{{end}}
+    <span class="hint">{{.Kind}}, {{.Status}}{{if .Severity}}, {{.Severity}}{{end}}</span>{{if .Introduced}} <span class="p-chip">added by this PR</span>{{end}}</p>
+  {{if .Why}}<p>{{.Why}}</p>{{end}}
+  {{if .Constraint}}<p><strong>Fix:</strong> {{.Constraint}}</p>{{end}}
+  {{if .Locations}}<p class="hint">{{range $i, $l := .Shown}}{{if $i}}, {{end}}<code>{{$l.File}}{{if $l.Line}}:{{$l.Line}}{{end}}</code>{{end}}
+    {{if .Folded}}<details><summary>and {{len .Folded}} more</summary>{{range $i, $l := .Folded}}{{if $i}}, {{end}}<code>{{$l.File}}{{if $l.Line}}:{{$l.Line}}{{end}}</code>{{end}}</details>{{end}}</p>{{end}}
+</div>
+{{end}}

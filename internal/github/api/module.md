@@ -211,6 +211,8 @@ type Repos interface {
 ```go
 type Pull struct {
     Number       int
+    Title        string
+    Author       string // the login of the user who opened it
     State        string // "open" | "closed"
     Merged       bool
     Draft        bool

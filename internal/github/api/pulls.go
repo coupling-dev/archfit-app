@@ -11,7 +11,11 @@ import (
 )
 
 type pullJSON struct {
-	Number       int       `json:"number"`
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	User   *struct {
+		Login string `json:"login"`
+	} `json:"user"`
 	NodeID       string    `json:"node_id"`
 	State        string    `json:"state"`
 	Draft        bool      `json:"draft"`
@@ -43,6 +47,10 @@ func (j pullJSON) pull() Pull {
 	}
 	if j.Head.Repo != nil {
 		p.HeadRepo = j.Head.Repo.FullName
+	}
+	p.Title = j.Title
+	if j.User != nil {
+		p.Author = j.User.Login
 	}
 	return p
 }
