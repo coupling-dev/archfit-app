@@ -33,6 +33,7 @@ type Gate struct {
 	publisher feedback.Publisher
 	sweeper   sweep.Sweeper
 	actions   api.Actions
+	pulls     api.Pulls
 	now       func() time.Time
 }
 
@@ -58,11 +59,11 @@ func compose(gh github, v oidc.Verifier, s store.Store, audience string, c Confi
 	resolver := inputs.New(gh, gh, s)
 	publisher := feedback.New(gh, gh, gh, s, now)
 	return newGate(newReceiver(gh, v, audience), resolver, publisher,
-		sweep.New(gh, gh, gh, resolver, publisher, c), gh, now)
+		sweep.New(gh, gh, gh, resolver, publisher, c), gh, gh, now)
 }
 
-func newGate(rc ingest.Receiver, rs inputs.Resolver, p feedback.Publisher, sw sweep.Sweeper, a api.Actions, now func() time.Time) *Gate {
-	return &Gate{receiver: rc, resolver: rs, publisher: p, sweeper: sw, actions: a, now: now}
+func newGate(rc ingest.Receiver, rs inputs.Resolver, p feedback.Publisher, sw sweep.Sweeper, a api.Actions, pl api.Pulls, now func() time.Time) *Gate {
+	return &Gate{receiver: rc, resolver: rs, publisher: p, sweeper: sw, actions: a, pulls: pl, now: now}
 }
 
 // UploadHandler serves POST /v1/reports.

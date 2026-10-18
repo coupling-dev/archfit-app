@@ -109,7 +109,19 @@ func TestInstallationLifecycle(t *testing.T) {
 	}
 }
 
-func TestDefaultBranchPushOnly(t *testing.T) {
+func TestBranchPushFields(t *testing.T) {
+	payload := set(set(pushPayload("refs/heads/feature/x", "main"), "after", shaA), "sender.login", "octocat")
+	ev := mustParse(t, "push", payload)
+	want := Event{
+		Kind: BranchPush, DeliveryID: testDelivery, InstallationID: 5001, Repo: "acme/shop", RepoPrivate: false,
+		HeadSHA: shaA, HeadRepo: "acme/shop", Branch: "feature/x", Pusher: "octocat",
+	}
+	if !reflect.DeepEqual(ev, want) {
+		t.Errorf("Parse() = %+v, want %+v", ev, want)
+	}
+}
+
+func TestPushKinds(t *testing.T) {
 	const zeroSHA = "0000000000000000000000000000000000000000"
 	tests := []struct {
 		name     string
@@ -118,11 +130,12 @@ func TestDefaultBranchPushOnly(t *testing.T) {
 		wantBase string
 	}{
 		{"push to main (default)", pushPayload("refs/heads/main", "main"), DefaultBranchPush, "main"},
-		{"push to a feature branch", pushPayload("refs/heads/feature/x", "main"), Ignored, ""},
+		{"push to a feature branch", pushPayload("refs/heads/feature/x", "main"), BranchPush, ""},
 		{"tag push", pushPayload("refs/tags/v1.0.0", "main"), Ignored, ""},
 		{"deletion of a branch", set(set(pushPayload("refs/heads/main", "main"), "deleted", true), "after", zeroSHA), Ignored, ""},
+		{"deletion of a feature branch", set(set(pushPayload("refs/heads/feature/x", "main"), "deleted", true), "after", zeroSHA), Ignored, ""},
 		{"default branch is trunk", pushPayload("refs/heads/trunk", "trunk"), DefaultBranchPush, "trunk"},
-		{"push to main when the default is trunk", pushPayload("refs/heads/main", "trunk"), Ignored, ""},
+		{"push to main when the default is trunk", pushPayload("refs/heads/main", "trunk"), BranchPush, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

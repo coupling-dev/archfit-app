@@ -102,11 +102,18 @@ func (r *resolver) Resolve(ctx context.Context, t Target, now time.Time) (Truste
 	if err != nil {
 		return Trusted{}, fmt.Errorf("inputs: reviews: %w", err)
 	}
-	by, err := approver(reviews, s.Owners, t.HeadSHA, func(team, login string) (bool, error) {
+	member := func(team, login string) (bool, error) {
 		return r.pulls.TeamMember(ctx, t.Repo.RepoRef, team, login)
-	})
+	}
+	by, err := approver(reviews, s.Owners, t.HeadSHA, member)
 	if err != nil {
 		return Trusted{}, fmt.Errorf("inputs: team membership: %w", err)
+	}
+	if by == "" {
+		by, err = r.pusher(ctx, t, s.Owners, member)
+		if err != nil {
+			return Trusted{}, err
+		}
 	}
 	if by == "" {
 		return out, nil
@@ -198,6 +205,45 @@ func protectedPaths(changed []string, truncated bool, s settings.Settings) []str
 	return out
 }
 
+// RecordPusher stores the login that opened or pushed t's head, so that Resolve can grant the approval of an owner
+// who pushed it. The record is keyed by the head SHA: a later head has its own record, and an empty login writes
+// nothing.
+func (r *resolver) RecordPusher(ctx context.Context, t Target, login string) error {
+	if login == "" {
+		return nil
+	}
+	if err := r.store.Put(ctx, store.Tenant(t.Repo.InstallationID), pusherKey(t), []byte(login)); err != nil {
+		return fmt.Errorf("inputs: record pusher: %w", err)
+	}
+	return nil
+}
+
+// pusher returns the login that pushed t's head when it is an owner in the protected settings, else "".
+// A store failure is an error, not "no pusher": the decision waits for a retry instead of publishing a wrong one.
+func (r *resolver) pusher(ctx context.Context, t Target, owners []string, member func(team, login string) (bool, error)) (string, error) {
+	raw, err := r.store.Get(ctx, store.Tenant(t.Repo.InstallationID), pusherKey(t))
+	if errors.Is(err, store.ErrNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("inputs: read pusher: %w", err)
+	}
+	login := string(raw)
+	ok, err := isOwner(owners, login, member)
+	if err != nil {
+		return "", fmt.Errorf("inputs: team membership: %w", err)
+	}
+	if !ok {
+		return "", nil
+	}
+	return login, nil
+}
+
+// pusherKey is the Store key of the login that pushed t's head. Repository names compare case-insensitively.
+func pusherKey(t Target) string {
+	return "pusher/" + strings.ToLower(t.Repo.FullName) + "/" + t.HeadSHA
+}
+
 // approver returns the first owner, in review order, whose latest non-comment review approves headSHA; "" if none.
 func approver(reviews []api.Review, owners []string, headSHA string, member func(team, login string) (bool, error)) (string, error) {
 	latest := map[string]int{}
@@ -210,20 +256,32 @@ func approver(reviews []api.Review, owners []string, headSHA string, member func
 		if rv.State != reviewApproved || rv.CommitSHA != headSHA || latest[strings.ToLower(rv.Reviewer)] != i {
 			continue
 		}
-		for _, owner := range owners {
-			ok, err := strings.EqualFold(owner, rv.Reviewer), error(nil)
-			if strings.Contains(owner, "/") {
-				ok, err = member(owner, rv.Reviewer)
-			}
-			if err != nil {
-				return "", err
-			}
-			if ok {
-				return rv.Reviewer, nil
-			}
+		ok, err := isOwner(owners, rv.Reviewer, member)
+		if err != nil {
+			return "", err
+		}
+		if ok {
+			return rv.Reviewer, nil
 		}
 	}
 	return "", nil
+}
+
+// isOwner reports whether login is one of owners: a GitHub login, or a team that member reports as containing it.
+func isOwner(owners []string, login string, member func(team, login string) (bool, error)) (bool, error) {
+	for _, owner := range owners {
+		if !strings.Contains(owner, "/") {
+			if strings.EqualFold(owner, login) {
+				return true, nil
+			}
+			continue
+		}
+		ok, err := member(owner, login)
+		if err != nil || ok {
+			return ok, err
+		}
+	}
+	return false, nil
 }
 
 // earliestExpiry skips expired waivers so that an old expiry does not hide the next one.

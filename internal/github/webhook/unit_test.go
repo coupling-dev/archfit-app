@@ -192,7 +192,7 @@ func TestParseMapping(t *testing.T) {
 		want    EventKind
 	}{
 		{"default branch", pushPayload("refs/heads/main", "main"), DefaultBranchPush},
-		{"other ref", pushPayload("refs/heads/feature", "main"), Ignored},
+		{"other branch", pushPayload("refs/heads/feature", "main"), BranchPush},
 		{"tag", pushPayload("refs/tags/main", "main"), Ignored},
 		{"deletion", set(pushPayload("refs/heads/main", "main"), "deleted", true), Ignored},
 	}

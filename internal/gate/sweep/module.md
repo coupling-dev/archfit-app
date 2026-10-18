@@ -316,6 +316,8 @@ type Resolver interface {
     // Resolve reads the protected ref and reviews. It never reads policy, settings, baseline,
     // owners, or CODEOWNERS from the head tree, except to hash an owner-approved candidate.
     Resolve(ctx context.Context, t Target, now time.Time) (Trusted, error)
+    // RecordPusher stores the login that opened or pushed t's head, which Resolve reads back. "" records nothing.
+    RecordPusher(ctx context.Context, t Target, login string) error
 }
 ```
 

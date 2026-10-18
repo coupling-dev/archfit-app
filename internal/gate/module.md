@@ -42,7 +42,8 @@ feedback are tuned with every pilot. The façade contract is kept small and stab
 
 ```go
 // Deps are the only things the gate path may touch: GitHub, OIDC, the Store and a clock. On the Store the gate
-// path reads the entitlement and writes only gate/feedback's publication leases.
+// path reads the entitlement, and reads and writes the pusher records of gate/inputs; its only other write is
+// gate/feedback's publication leases.
 type Deps struct {
     GitHub   *Client
     OIDC     Verifier
@@ -235,7 +236,8 @@ func New(repos Repos, pulls Pulls, actions Actions, v Verifier, audience string)
 - **Volatility**: high
 - **Balanced?**: yes
 - **Shared knowledge**: `Resolve` reads only the protected ref (plus an owner-approved head digest), returns an
-  error on GitHub failures and never on Store failures. `SettingsFound == false` means "not onboarded".
+  error on GitHub failures and on a failed read of a pusher record (fail closed), never on a failed read of the
+  entitlement. `SettingsFound == false` means "not onboarded".
   `PolicyDigests[0]` and `BaselineDigests[0]` are the first accepted digests: the base digest when the file exists on
   the protected ref, otherwise the owner-approved head digest; the lists are empty when neither exists. The inputs constructor is `New(repos Repos, pulls Pulls, s Store) Resolver`.
   `inputs` owns the digest predicate and the protected path set. The façade compares no digest and names no
@@ -284,6 +286,8 @@ type Resolver interface {
     // Resolve reads the protected ref and reviews. It never reads policy, settings, baseline,
     // owners, or CODEOWNERS from the head tree, except to hash an owner-approved candidate.
     Resolve(ctx context.Context, t Target, now time.Time) (Trusted, error)
+    // RecordPusher stores the login that opened or pushed t's head, which Resolve reads back. "" records nothing.
+    RecordPusher(ctx context.Context, t Target, login string) error
 }
 ```
 
@@ -784,6 +788,7 @@ const (
     PullClosed         EventKind = "pull_closed"
     ReviewChanged      EventKind = "review_changed"      // submitted, edited, dismissed
     DefaultBranchPush  EventKind = "default_branch_push"
+    BranchPush         EventKind = "branch_push"         // a push to a branch other than the default branch
     InstallationAdded  EventKind = "installation_added"  // created, or repositories added
     InstallationRemoved EventKind = "installation_removed" // deleted
     ReposRemoved       EventKind = "repos_removed"
@@ -801,6 +806,8 @@ type Event struct {
     HeadSHA        string
     HeadRepo       string // differs from Repo for forks
     BaseRef        string
+    Branch         string   // push kinds only: the branch, without "refs/heads/"
+    Pusher         string   // push kinds only: the login that moved the branch; never a git author or committer
     ChangedPaths   []string // default_branch_push only
 }
 ```
@@ -920,14 +927,15 @@ type Verifier interface {
 ### store
 
 - **Counterpart**: internal/store
-- **Direction**: gate depends on store (passes `Deps.Store` to `gate/inputs`, which only reads, and to
-  `gate/feedback`, which holds the publication leases)
+- **Direction**: gate depends on store (passes `Deps.Store` to `gate/inputs`, which reads the entitlement and
+  reads and writes the pusher records, and to `gate/feedback`, which holds the publication leases)
 - **Strength**: contract
 - **LCA / Rank / Distance**: root / 1 / 1
 - **Volatility**: high (gate side); store is low
 - **Balanced?**: yes
-- **Shared knowledge**: the gate path calls `Get(Tenant(installationID), EntitlementKey)` inside `gate/inputs`, and
-  `Get` and `CompareAndSwap` on `feedback/lease/<head_sha>` under the same tenant inside `gate/feedback`. It calls no
+- **Shared knowledge**: the gate path calls `Get(Tenant(installationID), EntitlementKey)` inside `gate/inputs`, `Get`
+  and `Put` on `pusher/<repo>/<head_sha>` under the same tenant inside `gate/inputs`, and `Get` and
+  `CompareAndSwap` on `feedback/lease/<head_sha>` under the same tenant inside `gate/feedback`. It calls no
   other Store operation. `ErrNotFound` is the store sentinel for a missing key; for the entitlement it means "not
   suspended", for a lease that the lease is free. `SystemTenant` is never used by the gate, and the gate never
   calls `Tenants`.
@@ -1070,7 +1078,8 @@ Special targets, all through the same flow:
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PullOpened`, `PullSynchronized` | `Resolve`. `!SettingsFound` → nothing. Fork → `Publish(sweep.Without(ReasonForkUnsupported, target, trusted, Receipt{}))`: a zero-run receipt carrying the base digests. Else `Settings.Gate == GateRequired` → `publisher.Pending(target)`. Advisory → nothing. |
 | `ReviewChanged`                  | `Reconcile(target, …)`: inside the lease, a withdrawn approval → `sweep.Withdrawal` (below); reason `owner_approval_missing` and `!verdict.Unapproved(trusted)` **[default: no re-run while an approval is missing]** → `sweep.Rerun`.                           |
-| `DefaultBranchPush`              | `ChangedPaths` empty (= unknown), or `inputs.MayBeProtected(path)` for any changed path → `sweeper.RunRepo(ctx, repo, now)` in the request. Otherwise nothing.                                                                                                   |
+| `BranchPush`                     | `resolver.RecordPusher(target, Pusher)` first, so the record exists before anything decides; a failed write is returned and the queue retries. Then the newest pull request of this repository whose head is `Branch` (`Pulls.PullByHead`): when it is open and its head is `HeadSHA`, run the `ReviewChanged` reaction on it, so a report that arrived before this push is re-evaluated. No such pull request, a closed one or another head → nothing more. A pull request from a fork is never found. |
+| `DefaultBranchPush`              | `RecordPusher` and the pull request lookup as for `BranchPush`; then `ChangedPaths` empty (= unknown), or `inputs.MayBeProtected(path)` for any changed path → `sweeper.RunRepo(ctx, repo, now)` in the request. Otherwise nothing.                                                                                                   |
 | `PullClosed`                     | nothing.                                                                                                                                                                                                                                                         |
 | installation kinds, `Ignored`    | nothing; `control` handles installations.                                                                                                                                                                                                                        |
 
@@ -1154,7 +1163,10 @@ event left undone.
   fabricated-report gap (a trusted workflow running a PR script that forges a clean report) is not closed and not claimed closed.
 - Unknown identity never compares equal: a manifest miss, a missing profile or a profile version mismatch is never approved.
 - The tenant comes from verified OIDC claims (`ResolveRepo`) or the verified webhook; never from the envelope or a client-supplied ID.
-- The gate path reads one Store record, the `Entitlement`, and writes only `gate/feedback`'s publication leases.
+- The gate path reads the `Entitlement` and the pusher records, and writes only the pusher records of `gate/inputs`
+  and `gate/feedback`'s publication leases. A pusher record is `pusher/<repo>/<head_sha>` = the login that pushed the
+  head, written only from a signed `push` delivery. It is kept until the installation is deleted; one small key per
+  pushed head is the accepted growth **[default]**, to be pruned by the sweep if tenants grow large.
   A missing or unreadable `Entitlement` means "not suspended" **[default]**; it never establishes non-payment and
   never blocks a merge by itself (2 second read timeout in `inputs` **[default]**). Recovery of a missing record is
   not the gate's job: `control`'s sweep backfills it (Observe + Refresh for every installation), so a missed
@@ -1278,9 +1290,18 @@ are driven only as far as they go without GitHub. Child internals are tested in 
   **Scenario**: upload, webhook and sweep flows with marker strings in paths and messages, capturing logger.
   **Expected behavior**: IDs, digests, outcomes, timings only.
 
-- **Test name**: `TestStoreWritesOnlyPublicationLeases`
-  **Scenario**: a Store wrapper that panics on `Put`, `Delete`, `Add`, `DeleteTenant`, `Tenants` and on a `CompareAndSwap` outside `feedback/lease/`; a private repository with an entitlement; drive every façade entry point over it: `HandleEvent` (`PullOpened`, `ReviewChanged`, `DefaultBranchPush`), an upload, `Sweep`.
-  **Expected behavior**: no panic; the Store was read at least once; every read outside the leases is `Get` of `EntitlementKey` under the installation's tenant, never `SystemTenant`; every lease operation is under the installation's tenant; the pull's lease is gone afterwards.
+- **Test name**: `TestStoreWritesOnlyPublicationLeasesAndPusherRecords`
+  **Scenario**: a Store wrapper that panics on `Put` outside `pusher/`, `Delete`, `Add`, `DeleteTenant`, `Tenants` and on a `CompareAndSwap` outside `feedback/lease/`; a private repository with an entitlement; drive every façade entry point over it: `HandleEvent` (`PullOpened`, `ReviewChanged`, `DefaultBranchPush`, `BranchPush`), an upload, `Sweep`.
+  **Expected behavior**: no panic; the Store was read at least once; every read outside the leases and the pusher records is `Get` of `EntitlementKey` under the installation's tenant, never `SystemTenant`; every lease operation and every pusher record is under the installation's tenant; a pusher record was written; the pull's lease is gone afterwards.
+- **Test name**: `TestOwnerPushAuthorizesTheHeadItPushed`
+  **Scenario**: an owner's `BranchPush` for the head of a pull request that edits the policy, (1) before the `PullOpened` event and the report, (2) after the report left `owner_approval_missing`, (3) from a member of an owner team.
+  **Expected behavior**: (1) the report is `success`; (2) one re-run of the report's run, the check stays `action_required` until the new upload, which is `success`; (3) as (2). The receipt carries the approved head policy digest.
+- **Test name**: `TestPushDoesNotAuthorizeUnlessAnOwnerPushedTheExactHead`
+  **Scenario**: a non-owner `BranchPush`; an owner push followed by a new head pushed by a non-owner; an owner push of an older head; a head-edited settings file and CODEOWNERS naming the pusher; a push event whose head the pull request no longer has; a push to a branch without a pull request.
+  **Expected behavior**: `owner_approval_missing` or no reaction in every row; no re-run; no write for the last two.
+- **Test name**: `TestPusherRecordNeverAuthorizesAFork`
+  **Scenario**: a pull request whose head repository is a fork; an owner's `BranchPush` with the fork head's SHA.
+  **Expected behavior**: no re-run; the report is `fork_unsupported`.
 
 ### Behavior Tests
 
