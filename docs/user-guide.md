@@ -270,6 +270,7 @@ pull request that changes three values of the Archfit step, and nothing else:
 ```yaml
       - uses: alexei-led/archfit-action@7efc29b5a2785fb0537a2617cddf3873b7d27e10
         with:
+          # endpoint, audience and mode stay as they are
           engine-version: "v3.0.1"
           image-digest: "sha256:9aac269fa350e643054cbe5ced58426b4ed46000f30d60f49564aa605ece2408"
 ```
@@ -279,8 +280,10 @@ The Action and the engine move together: Action `7efc29b` refuses engine v3.0.0,
 request. Its own run uses the new pin and passes the identity check.
 
 A baseline stored by engine v3.0.0 stays valid. Engine v3.0.1 no longer writes `state.dimensions` and
-`state.hard_gate_finding_ids`, so the first baseline capture after the move differs from the stored file and the App
-opens a baseline pull request that accepts and removes nothing. Merge it, or close it: both are safe.
+`state.hard_gate_finding_ids`, so the first baseline capture after the move differs from the stored file, and the App
+opens a baseline pull request even when nothing else changed. Review it like any baseline pull request: its body
+lists the findings it adds and removes. When both counts are 0, it only drops the two fields, and merging or closing
+it is safe.
 
 ### Report limits
 
