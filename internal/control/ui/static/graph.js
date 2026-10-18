@@ -529,8 +529,9 @@
                 top = below ? a.y + NODE_H + 2 : a.y - 2,
                 lift = (below ? -1 : 1) * Math.min(ARC, 24 + Math.abs(x2 - x1) / 16);
               d = "M" + x1 + " " + top + " C" + x1 + " " + (top - lift) + " " + x2 + " " + (top - lift) + " " + x2 + " " + top;
-              mx = (x1 + x2) / 2;
-              my = top - lift * 0.75;
+              // The count sits on the arc near its source (t = 0.3), so nested arcs on one line keep apart badges.
+              mx = 0.784 * x1 + 0.216 * x2;
+              my = top - lift * 0.63;
             } else {
             d =
               "M" +
