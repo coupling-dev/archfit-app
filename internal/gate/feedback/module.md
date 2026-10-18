@@ -285,8 +285,22 @@ is read and `decide` is not called.
 Comment, in order. Check summaries use the same blocks: gate = 1, 2, G, 8, receipt marker; state = 1, 2, 5, 6, 7, 8,
 receipt marker. Block G is in the gate summary only.
 
-1. Markers, then the verdict line: "Passed", "Blocked by architecture findings", or "Action required" **[default]**,
-   then `Reasons[0]`: code, category, `Detail`, `Next`.
+1. Markers, then the headline, which states the effect on merge from the gate mode and the conclusion, never from
+   `Report.Verdict` alone (in advisory mode a blocked verdict publishes a neutral check, so "blocked" would be false):
+
+   | `Report.Verdict`  | advisory pull request (`SettingsFound`, gate not `required`) | required pull request                              |
+   | ----------------- | ------------------------------------------------------------ | -------------------------------------------------- |
+   | `blocked`         | "Architecture violations found · advisory"                   | "Architecture gate failing" (conclusion `failure`) |
+   | `needs_attention` | "Architecture needs attention · advisory"                    | "Architecture gate passed · attention needed"      |
+   | `healthy`         | "Architecture healthy · advisory"                            | "Architecture gate passed"                         |
+
+   A `failure` conclusion outside required mode (verdict `blocked` or `hard_gates: fail`, whatever the verdict says)
+   always reads "Architecture violations found". A push carries no mode suffix ("Architecture violations found"). " · no baseline" is appended when
+   `Trusted.BaselineDigests` is empty. `action_required`, a suspended outcome, or no report keep the fixed lines
+   "Action required", "Architecture gate failing" or "Passed" **[default]**. On an advisory pull request without
+   `action_required` the line "This check does not block merging: the gate is advisory for this repository." follows.
+   Then `Reasons[0]`: code, category, `Detail` (only when not empty), `Next`. The headline is also the title of both
+   check runs (`archfit/state` without a report: "Architecture state: no usable report").
 2. Further reasons, one line each (for example unevaluated rules beside a blocker).
 
    G. Blocking findings (gate summary only, and only when `Outcome.Reasons` holds `blocking_findings`: an outcome
@@ -301,10 +315,12 @@ receipt marker. Block G is in the gate summary only.
    without a report, or when suspended, it is omitted. Display only: the conclusion still comes from `Outcome`.
 3. `Trusted.Entitlement.Notice`, when `WarnFrom` is set, `now()` is at or past it, and the notice is not empty.
 4. Waiver notice section (owned by `Warn`).
-5. Findings: blocking first. A finding is shown as blocking when `Finding.Active()` of `wire/report` is true
+5. Findings: blocking first. A finding is labeled "violation" (never "blocking": in advisory mode nothing blocks) when `Finding.Active()` of `wire/report` is true
    (that package owns the status vocabulary; feedback has no formula of its own) **[default, display only: the
-   verdict never reads findings]**. Groups by `Status`: "Active"
-   (`new`, `expired_waiver`), "Accepted debt — display only" (`baseline`, `waived`), "Fixed" (`fixed`). Per finding:
+   verdict never reads findings]**. Groups: "Rule violations" (`Finding.Active()`, and any
+   status this version does not know), then the remaining `advisory` findings folded in one `<details>` whose summary
+   is "N advisories · never block" (`new` or `expired_waiver` only; an advisory of an unknown status stays open), then "Accepted debt — display only" (`baseline`, `waived`), "Fixed" (`fixed`).
+   A cut never leaves a fold open: `cutLines` closes it before "Output truncated.". Per finding:
    rule ID, severity, `Edge.From.Module` → `Edge.To.Module` (with `Path` when set), `Origin` when set (shown as
    ", origin X", display only), locations as `file:line`, `Why`,
    then the policy-permitted repair: `Constraint` and `AllowedAlternatives`. feedback adds no repair of its own and
@@ -325,7 +341,7 @@ receipt marker. Block G is in the gate summary only.
    unknowns and unevaluated rules. The App cannot tell from a row alone whether the language is present (an absent
    tool over a present language and a language that is not there look the same), so the line claims neither.
    When the protected ref has no baseline (`Trusted.BaselineDigests` empty):
-   the line "No baseline: every current violation blocks." When a baseline exists and the gate reference is not
+   the line "No baseline: every finding counts as new, including older debt. New does not mean added by this pull request." When a baseline exists and the gate reference is not
    comparable, by `verdict.ReferenceConflicts` (the rule of `gate/verdict` step 7a: a nil `GateReference` with a
    trusted baseline, a trusted baseline with a reference whose `Status` is not `comparable`, or a reference whose
    `BaselinePresent` differs from the trusted baseline): one line per entry of its `Reasons`, "no reason given" when
@@ -358,6 +374,11 @@ first trusted digest) and of `gate/sweep` (always the first trusted digest):
 
 The mismatch codes are `baseline_mismatch` and `labels_mismatch`. "stated by the producer" is never printed for a
 digest the App wrote itself. An upload always has an identity: the envelope decoder requires every identity field.
+
+Folds: blocks 6 to 9 are wrapped in one `<details>` with the summary "Evidence, inputs and validation", and block 10
+in one with "For coding agents"; blocks 1 to 5 and G stay open. Agents read the raw Markdown, so the task markers
+parse inside the fold. The waiver notice is placed before the first fold or `###` heading, never inside a fold. The
+size budget reserves the fold lines first.
 
 When `Reasons[0].Category` is `subscription`, blocks G, 5 to 7, 9 and 10 are omitted **[default]**: paid output is suspended, the reason and recovery stay.
 
@@ -1133,13 +1154,25 @@ Golden files hold rendered bodies for the wire fixtures.
   **Expected behavior**: summary and comment ≤ 65 535 bytes; receipt marker, verdict, evidence gaps and inputs block intact; valid UTF-8; valid JSON in the task block; "Output truncated." present.
 - **Test name**: `TestEvidenceGapSources`
   **Scenario**: a report with one unevaluated rule, a `Coverage.Tools` entry with status `timed out`, a `Dimension.Unknown` fact, a profile `Unknowns` entry, a `partial` producer; the same with none of them; no baseline on the protected ref; a trusted baseline with a `non_comparable` reference, a `not_requested` reference, a nil reference and a `comparable` one; the same four without a trusted baseline.
-  **Expected behavior**: each item appears in the evidence-gap section with its reason; "None reported"; the line "No baseline: every current violation blocks."; the reference reasons, "no reason given" for `not_requested` without reasons, and the no-gate-reference line for nil. With a trusted baseline a comparison line is present exactly when `verdict.Decide` reports `baseline_not_comparable` for the same report; without one it is never present.
+  **Expected behavior**: each item appears in the evidence-gap section with its reason; "None reported"; the line "No baseline: every finding counts as new, including older debt. New does not mean added by this pull request."; the reference reasons, "no reason given" for `not_requested` without reasons, and the no-gate-reference line for nil. With a trusted baseline a comparison line is present exactly when `verdict.Decide` reports `baseline_not_comparable` for the same report; without one it is never present.
 - **Test name**: `TestEvidenceGapsDropNoise`
   **Scenario**: coverage rows `ok`, `absent` without a reason (twice), `disabled` with a reason, `timed out` with a reason, `absent` with a reason; producer rows that repeat four of them, one without a coverage row (`git-history: absent`) and one whose status differs from its coverage row; rendered as comment and state summary.
   **Expected behavior**: full lines for the `timed out` row, the `absent` row with a reason, the producer without a coverage row and the producer whose status differs; one line "Analyzers that did not run (absent or disabled): …" naming the reasonless `absent` and the `disabled` tools in report order; no line for a repeated producer, no disabled reason text, no "None reported".
 - **Test name**: `TestGateSummaryNamesBlockers`
   **Scenario**: a report with an advisory, an accepted gate finding and three active gate findings (one located with two locations and two agent tasks, one whole-file with no source module and no task, one without a location); 25 active findings; a blocking outcome without an active finding; a healthy outcome, a suspended outcome and a nil report; the active findings under an `action_required` outcome without `blocking_findings`, and under one with `blocking_findings` as a later reason.
   **Expected behavior**: block G in the gate summary only, in report order, with rule, module pair, first location, 8-character ID prefix and the first task's goal, "(no module)", "no location reported" and "Goal: none reported" where they apply; never the advisory or the accepted finding; the receipt marker stays last; 20 lines then "and 5 more blocking findings"; the "No active gate finding is listed" line; no block for healthy, suspended, nil report, or an outcome without `blocking_findings`; the block when `blocking_findings` is a later reason.
+- **Test name**: `TestHeadlineStatesTheEffectOnMerge`
+  **Scenario**: table of gate mode (advisory, required), target (pull request, push), conclusion, report verdict and trusted baseline (present, absent), plus `action_required` on an advisory pull request.
+  **Expected behavior**: the headline of the Layout table for each row; a `failure` conclusion beside a `healthy` or `needs_attention` verdict reads "Architecture violations found"; " · no baseline" exactly when no baseline is trusted; "Action required" wins.
+- **Test name**: `TestAdvisoryOfUnknownStatusStaysOpen`
+  **Scenario**: an advisory finding with status `new` and one with a status this version does not know.
+  **Expected behavior**: the known one in the advisory fold; the unknown one open under "Rule violations".
+- **Test name**: `TestWaiverNoticeStaysOutsideFolds`
+  **Scenario**: a body whose first `###` heading is inside a fold.
+  **Expected behavior**: the notice lands before the fold.
+- **Test name**: `TestAdvisoryCommentNeverSaysBlocking`
+  **Scenario**: a blocked publication on an advisory pull request, rendered as comment.
+  **Expected behavior**: the advisory headline and the "does not block merging" line; "violation" labels; no "Blocked by" and no "blocking" label; findings before the first fold.
 - **Test name**: `TestDigestSourceLabels`
   **Scenario**: an upload whose claims were accepted; an upload with `baseline_mismatch`; one with `labels_mismatch`; the zero `Identity` (a `sweep.Without` publication); no baseline and no labels file; rendered as comment, gate summary and state summary.
   **Expected behavior**: "stated by the producer" on both lines; "from the protected ref" on the mismatched line only; "from the protected ref; no upload" on both lines; "no baseline" and "no labels file" without a label. "stated by the producer" never appears without an upload.

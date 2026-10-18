@@ -19,7 +19,7 @@ func lookup(code ReasonCode) (entry, bool) {
 	case ReasonAttentionOnly:
 		return entry{CategoryArchitecture, Success, "Advisories never block. Review the listed dimensions and diagnostics on the archfit/state check."}, true
 	case ReasonBlockingFindings:
-		return entry{CategoryArchitecture, Failure, "Fix the blocking findings and run the validation command."}, true
+		return entry{CategoryArchitecture, Failure, "Remove the rule violations, then run the validation command."}, true
 	case ReasonEngineError:
 		return entry{CategoryEvidence, ActionRequired, "Read the Archfit workflow log, use the pinned engine image, re-run the workflow."}, true
 	case ReasonMissingCoverage:

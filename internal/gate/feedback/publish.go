@@ -11,7 +11,6 @@ import (
 	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/report"
-	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
 // stateNeutral is allowed on archfit/state only, which is never a required check, and only for an outcome that
@@ -65,7 +64,7 @@ func (s *publisher) Publish(ctx context.Context, p Publication) (err error) {
 		Status:     statusCompleted,
 		StartedAt:  now,
 	}
-	if isPull && p.Trusted.Settings.Gate == settings.GateRequired {
+	if required(p) { // the same predicate the headline reads, so a title never names a gate that was not written
 		run.Name, run.Conclusion = gateCheck, string(p.Outcome.Conclusion)
 		run.Title, run.Summary = gateTitle(p), renderGate(p)
 		if gate, err = s.writeCheck(ctx, p.Target.Repo.RepoRef, run, p.Receipt); err != nil {
