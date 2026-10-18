@@ -567,6 +567,8 @@ func TestAdvisoryStaleInputsRerun(t *testing.T) {
 		{"baseline merged after the run", advisory("b1"), ptr(receipt(9, verdict.ReasonBlockingFindings)), []verdict.ReasonCode{verdict.ReasonStaleInputs}, 1},
 		{"a re-run that failed earlier is retried", advisory(), ptr(receipt(9, verdict.ReasonStaleInputs)), nil, 1},
 		{"stale but no workflow run to re-run", advisory("b1"), ptr(receipt(0, verdict.ReasonBlockingFindings)), []verdict.ReasonCode{verdict.ReasonStaleInputs}, 0},
+		{"a fork refusal stays", advisory("b1"), ptr(receipt(0, verdict.ReasonForkUnsupported)), nil, 0},
+		{"a suspension stays and is not re-run", advisory("b1"), ptr(receipt(9, verdict.ReasonSuspended)), nil, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -595,3 +597,23 @@ func TestAdvisoryStaleInputsRerun(t *testing.T) {
 }
 
 func ptr(rc feedback.Receipt) *feedback.Receipt { return &rc }
+
+func TestAdvisoryStaleStillWarns(t *testing.T) {
+	w := newWorld(t)
+	tr := trusted()
+	tr.Settings.Gate = settings.GateAdvisory
+	tr.BaselineDigests = []string{"b1"}
+	tr.EarliestWaiverExpiry = t0.Add(2 * day)
+	tg := w.pull(w.repo(1, 11, "acme/shop"), 1, tr)
+	w.check(tg, receipt(9, verdict.ReasonBlockingFindings), t0.Add(-day))
+
+	w.pass(t0)
+	w.pass(t0.Add(time.Hour)) // the receipt is stale_inputs now: rule 0c
+
+	if got := w.reasons()[1]; !reflect.DeepEqual(got, []verdict.ReasonCode{verdict.ReasonStaleInputs}) {
+		t.Errorf("published reasons = %v, want one stale_inputs", got)
+	}
+	if len(w.pub.warnings) != 2 {
+		t.Errorf("warnings = %d, want one per pass: rules 0b and 0c never skip rule 6a", len(w.pub.warnings))
+	}
+}

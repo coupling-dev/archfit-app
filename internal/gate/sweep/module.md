@@ -130,7 +130,7 @@ The first rule whose condition holds ends the evaluation of that pull, whether o
 | #   | Condition                                                                       | Action                                                                                                 | Counter     |
 | --- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ----------- |
 | 0   | `Settings.Gate != GateRequired` (advisory) **[default]**                        | rules 0b, 0c, then rule 6a with `Trusted.EarliestWaiverExpiry`; `AdvisoryState`, never `State`         | `Warned`    |
-| 0b  | advisory, the state check exists and its receipt is stale (below)               | publish `Without(ReasonStaleInputs)`, then re-run                                                      | `Rerun`     |
+| 0b  | advisory, not a fork or suspension refusal, the state check's receipt is stale  | publish `Without(ReasonStaleInputs)`, then re-run                                                      | `Rerun`     |
 | 0c  | advisory, `rc.Reason == stale_inputs`                                           | re-run (a re-run that failed in an earlier pass; the guard makes it a no-op otherwise)                 | `Rerun`     |
 | 1   | `target.Fork`                                                                   | unless `rc.Reason == fork_unsupported`: publish `Without(ReasonForkUnsupported)`                       | —           |
 | 2   | `Trusted.Suspended`                                                             | unless `rc.Reason == subscription_suspended`: publish `Without(ReasonSuspended)`                       | `Suspended` |
@@ -150,6 +150,9 @@ Definitions:
   An advisory result that predates a change of the protected policy, baseline or labels would otherwise stay on the
   pull request with no sign that it is out of date (owner decision, 18 October 2026). Rule 0b withdraws it as
   `stale_inputs`, the same `Without` publication as rule 5b, and re-runs; rule 0c retries the re-run like rule 7c.
+  A fork pull, a suspended installation, and a `fork_unsupported` or `subscription_suspended` receipt are left alone,
+  as rules 1 and 2 come before rule 5b in required mode: a re-run can only refuse again. Rule 6a runs after rules
+  0b and 0c in every case.
   Nothing else of the required rules applies: no pending check, no `missing_upload`, no fork or suspension
   publication, no approval withdrawal, because advisory feedback never blocks and has no gate check to keep honest.
 - Withdrawn receipt: `rc.Conclusion` is `success` or `failure`, and `verdict.Unapproved(Trusted)` holds, the
@@ -803,7 +806,10 @@ calls and serves `State` from what was published; injectable errors. Time is the
   **Expected behavior**: one `Warn` and one `AdvisoryState`; no `State`, `Pending`, `Publish` or `Rerun` call.
 - **Test name**: `TestAdvisoryStaleInputsRerun`
   **Scenario**: advisory pulls with a fresh receipt; no state check; a receipt that predates a new baseline; a `stale_inputs` receipt whose re-run failed earlier; a stale receipt with no workflow run. Each is swept twice.
-  **Expected behavior**: nothing; nothing; one `stale_inputs` publication and one re-run; one re-run; one publication and no re-run. The second pass writes nothing.
+  **Expected behavior**: nothing; nothing; one `stale_inputs` publication and one re-run; one re-run; one publication and no re-run. A stale fork refusal and a stale suspension are left alone and not re-run. The second pass writes nothing.
+- **Test name**: `TestAdvisoryStaleStillWarns`
+  **Scenario**: a stale advisory receipt with a waiver expiring in 2 days, swept twice (rule 0b, then rule 0c).
+  **Expected behavior**: one `stale_inputs` publication and one waiver notice per pass.
 - **Test name**: `TestNotOnboardedIsSkipped`
   **Scenario**: repositories without a settings file on the base; two pulls on the same base.
   **Expected behavior**: no publisher call; `Resolve` called once for that base; `Summary.Pulls` does not count them.
