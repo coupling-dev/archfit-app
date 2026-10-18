@@ -294,7 +294,8 @@ receipt marker. Block G is in the gate summary only.
    | `needs_attention` | "Architecture needs attention · advisory"                    | "Architecture gate passed · attention needed"      |
    | `healthy`         | "Architecture healthy · advisory"                            | "Architecture gate passed"                         |
 
-   A push carries no mode suffix ("Architecture violations found"). " · no baseline" is appended when
+   A `failure` conclusion outside required mode (verdict `blocked` or `hard_gates: fail`, whatever the verdict says)
+   always reads "Architecture violations found". A push carries no mode suffix ("Architecture violations found"). " · no baseline" is appended when
    `Trusted.BaselineDigests` is empty. `action_required`, a suspended outcome, or no report keep the fixed lines
    "Action required", "Architecture gate failing" or "Passed" **[default]**. On an advisory pull request without
    `action_required` the line "This check does not block merging: the gate is advisory for this repository." follows.
@@ -318,7 +319,7 @@ receipt marker. Block G is in the gate summary only.
    (that package owns the status vocabulary; feedback has no formula of its own) **[default, display only: the
    verdict never reads findings]**. Groups: "Rule violations" (`Finding.Active()`, and any
    status this version does not know), then the remaining `advisory` findings folded in one `<details>` whose summary
-   is "N advisories · never block", then "Accepted debt — display only" (`baseline`, `waived`), "Fixed" (`fixed`).
+   is "N advisories · never block" (`new` or `expired_waiver` only; an advisory of an unknown status stays open), then "Accepted debt — display only" (`baseline`, `waived`), "Fixed" (`fixed`).
    A cut never leaves a fold open: `cutLines` closes it before "Output truncated.". Per finding:
    rule ID, severity, `Edge.From.Module` → `Edge.To.Module` (with `Path` when set), `Origin` when set (shown as
    ", origin X", display only), locations as `file:line`, `Why`,
@@ -1162,7 +1163,13 @@ Golden files hold rendered bodies for the wire fixtures.
   **Expected behavior**: block G in the gate summary only, in report order, with rule, module pair, first location, 8-character ID prefix and the first task's goal, "(no module)", "no location reported" and "Goal: none reported" where they apply; never the advisory or the accepted finding; the receipt marker stays last; 20 lines then "and 5 more blocking findings"; the "No active gate finding is listed" line; no block for healthy, suspended, nil report, or an outcome without `blocking_findings`; the block when `blocking_findings` is a later reason.
 - **Test name**: `TestHeadlineStatesTheEffectOnMerge`
   **Scenario**: table of gate mode (advisory, required), target (pull request, push), conclusion, report verdict and trusted baseline (present, absent), plus `action_required` on an advisory pull request.
-  **Expected behavior**: the headline of the Layout table for each row; " · no baseline" exactly when no baseline is trusted; "Action required" wins.
+  **Expected behavior**: the headline of the Layout table for each row; a `failure` conclusion beside a `healthy` or `needs_attention` verdict reads "Architecture violations found"; " · no baseline" exactly when no baseline is trusted; "Action required" wins.
+- **Test name**: `TestAdvisoryOfUnknownStatusStaysOpen`
+  **Scenario**: an advisory finding with status `new` and one with a status this version does not know.
+  **Expected behavior**: the known one in the advisory fold; the unknown one open under "Rule violations".
+- **Test name**: `TestWaiverNoticeStaysOutsideFolds`
+  **Scenario**: a body whose first `###` heading is inside a fold.
+  **Expected behavior**: the notice lands before the fold.
 - **Test name**: `TestAdvisoryCommentNeverSaysBlocking`
   **Scenario**: a blocked publication on an advisory pull request, rendered as comment.
   **Expected behavior**: the advisory headline and the "does not block merging" line; "violation" labels; no "Blocked by" and no "blocking" label; findings before the first fold.

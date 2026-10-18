@@ -765,6 +765,8 @@ func TestHeadlineStatesTheEffectOnMerge(t *testing.T) {
 		{"required attention", withReport(settings.GateRequired, 7, verdict.Success, "needs_attention", true), "Architecture gate passed · attention needed"},
 		{"required healthy", withReport(settings.GateRequired, 7, verdict.Success, "healthy", true), "Architecture gate passed"},
 		{"push", withReport(settings.GateRequired, 0, verdict.Failure, "blocked", true), "Architecture violations found"},
+		{"advisory, hard gates fail beside a healthy verdict", withReport(settings.GateAdvisory, 7, verdict.Failure, "healthy", true), "Architecture violations found · advisory"},
+		{"push, hard gates fail beside needs_attention", withReport(settings.GateRequired, 0, verdict.Failure, "needs_attention", true), "Architecture violations found"},
 		{"action required wins", withReport(settings.GateAdvisory, 7, verdict.ActionRequired, "blocked", false), "Action required"},
 	}
 	for _, tt := range tests {
@@ -802,5 +804,28 @@ func TestCutNeverLeavesAFoldOpen(t *testing.T) {
 	}
 	if !strings.HasSuffix(got, foldClose+"\n\n"+truncatedNote) {
 		t.Errorf("cut does not close the fold before the note:\n%s", got)
+	}
+}
+
+func TestAdvisoryOfUnknownStatusStaysOpen(t *testing.T) {
+	r := &report.Report{Findings: []report.Finding{
+		{ID: "a1", Kind: "advisory", RuleID: "bc/x", Status: "new"},
+		{ID: "a2", Kind: "advisory", RuleID: "bc/y", Status: "regressed"},
+	}}
+	got := findingsBlock(r)
+	open, folded, ok := strings.Cut(got, "<details>")
+	if !ok {
+		t.Fatalf("no advisory fold in %q", got)
+	}
+	mustContain(t, open, "**Rule violations** (1)", "`bc/y`")
+	mustContain(t, folded, "1 advisory · never block", "`bc/x`")
+	mustNotContain(t, folded, "`bc/y`")
+}
+
+func TestWaiverNoticeStaysOutsideFolds(t *testing.T) {
+	body := "## Archfit: Action required\n\n<details>\n<summary>Evidence, inputs and validation</summary>\n\n### Inputs and identity\n\n</details>"
+	got := placeWaiver(body, "NOTICE")
+	if strings.Index(got, "NOTICE") > strings.Index(got, "<details>") {
+		t.Errorf("waiver notice placed inside a fold:\n%s", got)
 	}
 }

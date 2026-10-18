@@ -50,6 +50,8 @@ const (
 	statusBaseline = "baseline"
 	statusWaived   = "waived"
 	statusFixed    = "fixed"
+	statusNew      = "new"
+	statusExpired  = "expired_waiver"
 
 	kindAdvisory = "advisory"
 
@@ -97,7 +99,7 @@ func headline(p Publication) string {
 		h = "Architecture gate passed"
 	case required(p):
 		h = "Architecture gate passed · attention needed"
-	case p.Report.Verdict == verdictBlocked:
+	case c == verdict.Failure || p.Report.Verdict == verdictBlocked: // hard_gates fail blocks whatever the verdict says
 		h = "Architecture violations found"
 	case p.Report.Verdict == verdictHealthy:
 		h = "Architecture healthy"
@@ -283,7 +285,7 @@ func noticeLine(e inputs.Entitlement, now time.Time) string {
 	return "> " + sanitize(e.Notice)
 }
 
-// findingsBlock shows Finding.Active findings as blocking. That is a display heuristic only:
+// findingsBlock labels Finding.Active findings as violations. That is a display heuristic only:
 // the conclusion always comes from the Outcome.
 func findingsBlock(r *report.Report) string {
 	if r == nil {
@@ -302,7 +304,7 @@ func findingsBlock(r *report.Report) string {
 			debt = append(debt, f)
 		case f.Status == statusFixed:
 			fixed = append(fixed, f)
-		case f.Kind == kindAdvisory:
+		case f.Kind == kindAdvisory && (f.Status == statusNew || f.Status == statusExpired):
 			advisories = append(advisories, f)
 		default: // never hide a finding whose status this version does not know
 			violations = append(violations, f)
