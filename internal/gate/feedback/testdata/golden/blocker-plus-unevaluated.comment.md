@@ -1,6 +1,6 @@
 <!-- archfit:comment -->
 <!-- archfit:head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb run 7.1 -->
-## Archfit: Blocked by architecture findings
+## Archfit: Architecture gate failing
 
 - Reason: `blocking_findings` (architecture)
 - Detail: 1 blocking finding
@@ -11,14 +11,24 @@ Also reported:
 
 ### Findings
 
-**Active** (2)
-- **blocking** `no_direct_b_dependency` (medium, new): `a` (`pkg/a/a.go`) → `b` (`pkg/b`)
+**Rule violations** (1)
+- **violation** `no_direct_b_dependency` (medium, new): `a` (`pkg/a/a.go`) → `b` (`pkg/b`)
   - Locations: `pkg/a/a.go:3`
   - Why: Import from pkg/a/** to pkg/b is explicitly forbidden
   - Constraint: Remove the dependency or move the code
+
+<details>
+<summary>1 advisory · never block</summary>
+
+**Advisories** (1)
 - `bc/imbalanced_coupling` (medium, new): `a` (`pkg/a/a.go`) → `b` (`pkg/b`)
   - Locations: `pkg/a/a.go:3`
   - Why: balanced coupling: functional integration strength × cross_module_same_owner distance × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
+
+</details>
+
+<details>
+<summary>Evidence, inputs and validation</summary>
 
 ### Dimensions
 
@@ -70,6 +80,11 @@ Measurement is customer-attested: the producer is authenticated, the report cont
 archfit check -c .archfit.yaml
 ```
 
+</details>
+
+<details>
+<summary>For coding agents</summary>
+
 ### Agent tasks
 
 <!-- archfit:agent-tasks -->
@@ -79,3 +94,5 @@ archfit check -c .archfit.yaml
 ]
 ```
 <!-- /archfit:agent-tasks -->
+
+</details>

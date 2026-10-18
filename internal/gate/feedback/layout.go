@@ -10,6 +10,14 @@ const maxBody = 65535
 
 const truncatedNote = "Output truncated."
 
+// Folds keep the visible part short: the headline, the reasons and the findings stay open; evidence, identity,
+// validation commands and agent tasks fold away. Agents read the raw Markdown, so the task markers still parse.
+const (
+	foldEvidence = "<details>\n<summary>Evidence, inputs and validation</summary>"
+	foldTasks    = "<details>\n<summary>For coding agents</summary>"
+	foldClose    = "</details>"
+)
+
 // commandsBudget keeps a long command list from starving findings and agent tasks.
 const (
 	commandsBudget = 4096
@@ -66,7 +74,7 @@ func cost(block string) int {
 // first. Of the rest, agent tasks give way first (whole tasks), then findings are cut at a line end;
 // dimensions and commands are cut only when even that is not enough.
 func (l layout) assemble(limit int) string {
-	rest := limit + 2 - cost(l.head) - cost(l.inputs) - cost(l.receipt)
+	rest := limit + 2 - cost(l.head) - cost(l.inputs) - cost(l.receipt) - cost(foldEvidence) - cost(foldTasks) - 2*cost(foldClose)
 	l.gaps = cutLines(l.gaps, rest-2) // last resort: only a pathological gap list does not fit
 	rest -= cost(l.gaps)
 
@@ -87,17 +95,29 @@ func (l layout) assemble(limit int) string {
 		tasks = tasksBlock(l.tasks[:n], len(l.tasks)-n)
 	}
 
-	var blocks []string
-	for _, b := range []string{l.head, l.findings, l.dims, l.gaps, l.inputs, commands, tasks} {
-		if b != "" {
-			blocks = append(blocks, b)
-		}
-	}
-	body := strings.Join(blocks, "\n\n")
+	body := join(l.head, l.findings, fold(foldEvidence, join(l.dims, l.gaps, l.inputs, commands)), fold(foldTasks, tasks))
 	if l.receipt == "" {
 		return cutLines(body, limit)
 	}
 	return cutLines(body, limit-cost(l.receipt)) + "\n\n" + l.receipt
+}
+
+// join joins the non-empty blocks with a blank line.
+func join(blocks ...string) string {
+	var kept []string
+	for _, b := range blocks {
+		if b != "" {
+			kept = append(kept, b)
+		}
+	}
+	return strings.Join(kept, "\n\n")
+}
+
+func fold(open, block string) string {
+	if block == "" {
+		return ""
+	}
+	return open + "\n\n" + block + "\n\n" + foldClose
 }
 
 // fitTasks returns how many leading tasks fit into extra bytes on top of the empty task block.
@@ -129,14 +149,18 @@ func cutLines(block string, limit int) string {
 		return block
 	}
 	keep := limit - len(truncatedNote) - 2
-	if keep <= 0 {
+	if keep-len(foldClose)-2 <= 0 {
 		return ""
 	}
-	i := strings.LastIndexByte(block[:keep], '\n')
+	i := strings.LastIndexByte(block[:keep-len(foldClose)-2], '\n')
 	if i <= 0 {
 		return ""
 	}
-	return strings.TrimRight(block[:i], "\n") + "\n\n" + truncatedNote
+	kept := strings.TrimRight(block[:i], "\n")
+	if strings.Count(kept, "<details>") > strings.Count(kept, foldClose) { // a cut never leaves a fold open
+		kept += "\n\n" + foldClose
+	}
+	return kept + "\n\n" + truncatedNote
 }
 
 // commandList is block 9: validation commands printed verbatim or not at all.

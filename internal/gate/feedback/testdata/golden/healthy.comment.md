@@ -1,6 +1,6 @@
 <!-- archfit:comment -->
 <!-- archfit:head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb run 7.1 -->
-## Archfit: Passed
+## Archfit: Architecture gate passed
 
 - Reason: `healthy` (architecture)
 - Detail: report 4444444444444444444444444444444444444444444444444444444444444444
@@ -9,6 +9,9 @@
 ### Findings
 
 No findings reported.
+
+<details>
+<summary>Evidence, inputs and validation</summary>
 
 ### Dimensions
 
@@ -53,6 +56,11 @@ Measurement trust: customer-attested.
 
 Measurement is customer-attested: the producer is authenticated, the report content is not independently checked.
 
+</details>
+
+<details>
+<summary>For coding agents</summary>
+
 ### Agent tasks
 
 <!-- archfit:agent-tasks -->
@@ -60,3 +68,5 @@ Measurement is customer-attested: the producer is authenticated, the report cont
 []
 ```
 <!-- /archfit:agent-tasks -->
+
+</details>

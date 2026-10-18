@@ -13,6 +13,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/manifest"
 	"github.com/alexei-led/archfit-app/internal/wire/report"
+	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
 const (
@@ -49,6 +50,13 @@ const (
 	statusBaseline = "baseline"
 	statusWaived   = "waived"
 	statusFixed    = "fixed"
+	statusNew      = "new"
+	statusExpired  = "expired_waiver"
+
+	kindAdvisory = "advisory"
+
+	verdictHealthy = "healthy"
+	verdictBlocked = "blocked"
 
 	toolOK       = "ok"
 	toolAbsent   = "absent"
@@ -68,13 +76,54 @@ func verdictLine(c verdict.Conclusion) string {
 	case verdict.Success:
 		return "Passed"
 	case verdict.Failure:
-		return "Blocked by architecture findings"
+		return "Architecture gate failing"
 	default:
 		return "Action required"
 	}
 }
 
-func gateTitle(p Publication) string { return verdictLine(p.Outcome.Conclusion) }
+func gateTitle(p Publication) string { return headline(p) }
+
+// headline states the effect on merge. It reads the gate mode and the conclusion, never the verdict alone: in
+// advisory mode a blocked verdict publishes a neutral check, so "blocked" would be false.
+func headline(p Publication) string {
+	c := p.Outcome.Conclusion
+	if c == verdict.ActionRequired || suspended(p.Outcome) || p.Report == nil {
+		return verdictLine(c)
+	}
+	var h string
+	switch {
+	case required(p) && c == verdict.Failure:
+		h = "Architecture gate failing"
+	case required(p) && p.Report.Verdict == verdictHealthy:
+		h = "Architecture gate passed"
+	case required(p):
+		h = "Architecture gate passed · attention needed"
+	case c == verdict.Failure || p.Report.Verdict == verdictBlocked: // hard_gates fail blocks whatever the verdict says
+		h = "Architecture violations found"
+	case p.Report.Verdict == verdictHealthy:
+		h = "Architecture healthy"
+	default:
+		h = "Architecture needs attention"
+	}
+	if advisory(p) {
+		h += " · advisory"
+	}
+	if len(p.Trusted.BaselineDigests) == 0 {
+		h += " · no baseline"
+	}
+	return h
+}
+
+// required reports whether this publication writes archfit/gate; advisory, whether it is a pull request whose
+// feedback never blocks. A push is neither: there is no merge to block.
+func required(p Publication) bool {
+	return p.Target.PullRequest != 0 && p.Trusted.SettingsFound && p.Trusted.Settings.Gate == settings.GateRequired
+}
+
+func advisory(p Publication) bool {
+	return p.Target.PullRequest != 0 && p.Trusted.SettingsFound && p.Trusted.Settings.Gate != settings.GateRequired
+}
 
 func stateTitle(p Publication) string {
 	switch {
@@ -83,7 +132,7 @@ func stateTitle(p Publication) string {
 	case p.Report == nil:
 		return "Architecture state: no usable report"
 	default:
-		return "Architecture state: " + text(p.Report.Verdict)
+		return headline(p)
 	}
 }
 
@@ -201,13 +250,20 @@ func headBlock(p Publication, markers bool) string {
 	if markers {
 		b.WriteString(commentMarker + "\n" + headMarker(p.Target.HeadSHA, p.Receipt) + "\n")
 	}
-	b.WriteString("## Archfit: " + verdictLine(p.Outcome.Conclusion))
+	b.WriteString("## Archfit: " + headline(p))
+	if advisory(p) && p.Outcome.Conclusion != verdict.ActionRequired && !suspended(p.Outcome) {
+		b.WriteString("\n\nThis check does not block merging: the gate is advisory for this repository.")
+	}
 	reasons := p.Outcome.Reasons
 	if len(reasons) == 0 {
 		return b.String()
 	}
 	first := reasons[0]
-	fmt.Fprintf(&b, "\n\n- Reason: %s (%s)\n- Detail: %s\n- Next: %s", code(string(first.Code)), text(string(first.Category)), text(first.Detail), text(first.Next))
+	fmt.Fprintf(&b, "\n\n- Reason: %s (%s)", code(string(first.Code)), text(string(first.Category)))
+	if first.Detail != "" {
+		fmt.Fprintf(&b, "\n- Detail: %s", text(first.Detail))
+	}
+	fmt.Fprintf(&b, "\n- Next: %s", text(first.Next))
 	if len(reasons) == 1 {
 		return b.String()
 	}
@@ -229,16 +285,16 @@ func noticeLine(e inputs.Entitlement, now time.Time) string {
 	return "> " + sanitize(e.Notice)
 }
 
-// findingsBlock shows Finding.Active findings as blocking. That is a display heuristic only:
+// findingsBlock labels Finding.Active findings as violations. That is a display heuristic only:
 // the conclusion always comes from the Outcome.
 func findingsBlock(r *report.Report) string {
 	if r == nil {
 		return ""
 	}
-	var introduced, debt, fixed []report.Finding
+	var violations, advisories, debt, fixed []report.Finding
 	for _, f := range r.Findings {
 		if f.Active() {
-			introduced = append(introduced, f)
+			violations = append(violations, f)
 		}
 	}
 	for _, f := range r.Findings {
@@ -248,8 +304,10 @@ func findingsBlock(r *report.Report) string {
 			debt = append(debt, f)
 		case f.Status == statusFixed:
 			fixed = append(fixed, f)
+		case f.Kind == kindAdvisory && (f.Status == statusNew || f.Status == statusExpired):
+			advisories = append(advisories, f)
 		default: // never hide a finding whose status this version does not know
-			introduced = append(introduced, f)
+			violations = append(violations, f)
 		}
 	}
 	var b strings.Builder
@@ -257,33 +315,38 @@ func findingsBlock(r *report.Report) string {
 	if len(r.Findings) == 0 {
 		b.WriteString("\n\nNo findings reported.")
 	}
-	for _, g := range []struct {
-		title    string
-		findings []report.Finding
-	}{
-		{"Active", introduced},
-		{"Accepted debt — display only", debt},
-		{"Fixed", fixed},
-	} {
-		if len(g.findings) == 0 {
-			continue
+	group := func(title string, findings []report.Finding) {
+		if len(findings) == 0 {
+			return
 		}
-		fmt.Fprintf(&b, "\n\n**%s** (%d)", g.title, len(g.findings))
-		for i, f := range g.findings {
+		fmt.Fprintf(&b, "\n\n**%s** (%d)", title, len(findings))
+		for i, f := range findings {
 			if i == groupCap {
-				fmt.Fprintf(&b, "\n- and %d more", len(g.findings)-groupCap)
+				fmt.Fprintf(&b, "\n- and %d more", len(findings)-groupCap)
 				break
 			}
 			writeFinding(&b, f)
 		}
 	}
+	group("Rule violations", violations)
+	if len(advisories) > 0 { // advisories never block, so they fold away; their count stays visible
+		noun := "advisories"
+		if len(advisories) == 1 {
+			noun = "advisory"
+		}
+		fmt.Fprintf(&b, "\n\n<details>\n<summary>%d %s · never block</summary>", len(advisories), noun)
+		group("Advisories", advisories)
+		b.WriteString("\n\n" + foldClose)
+	}
+	group("Accepted debt — display only", debt)
+	group("Fixed", fixed)
 	return b.String()
 }
 
 func writeFinding(b *strings.Builder, f report.Finding) {
 	b.WriteString("\n- ")
 	if f.Active() {
-		b.WriteString("**blocking** ")
+		b.WriteString("**violation** ")
 	}
 	fmt.Fprintf(b, "%s (%s, %s): %s → %s", code(f.RuleID), text(f.Severity), text(f.Status), endpoint(f.Edge.From), endpoint(f.Edge.To))
 	if f.Origin != "" { // display only: the App never decides on origin
@@ -431,7 +494,7 @@ func gapsBlock(p Publication) string {
 	trusted := len(p.Trusted.BaselineDigests) > 0
 	switch ref := r.GateReference; {
 	case !trusted && !verdict.ReferenceConflicts(ref, false):
-		lines = append(lines, "- No baseline: every current violation blocks.")
+		lines = append(lines, "- No baseline: every finding counts as new, including older debt. New does not mean added by this pull request.")
 	case !verdict.ReferenceConflicts(ref, trusted): // the same rule as verdict step 7a
 	case ref == nil:
 		lines = append(lines, "- Baseline comparison: the report has no gate reference")
