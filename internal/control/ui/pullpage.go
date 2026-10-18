@@ -36,7 +36,27 @@ const (
 type pullFinding struct {
 	report.Finding
 	Shown, Folded []report.Location
-	Introduced    bool // the engine compared against the base and says this pull request added it
+	Introduced    bool         // the engine compared against the base and says this pull request added it
+	Reverse       *pullFinding // the other direction of a module cycle, shown in the same item; nil otherwise
+}
+
+// unknownRow is one fact the engine could not measure, under "To measure more".
+type unknownRow struct {
+	Dimension, Fact, Reason string
+}
+
+// findingList is one group of the page. Its heading counts findings, as the PR comment does, not items.
+type findingList []pullFinding
+
+// Findings counts the findings in the list: an item holding a cycle holds two.
+func (l findingList) Findings() int {
+	n := len(l)
+	for _, f := range l {
+		if f.Reverse != nil {
+			n++
+		}
+	}
+	return n
 }
 
 type pullBody struct {
@@ -52,10 +72,11 @@ type pullBody struct {
 	NoBaseline bool // the engine loaded no baseline: "new" means not accepted, not "added by this pull request"
 	Compared   bool // the engine compared against the base branch, so Introduced is meaningful
 
-	Violations, Advisories, Accepted []pullFinding
-	Omitted                          int // findings past findingsPerList, all groups together
+	Violations, Advisories, Accepted findingList // a cycle's two directions are one item
+	Omitted                          int         // findings past findingsPerList, all groups together
 	Dimensions                       []report.Dimension
-	Tasks                            string // the exact agent_tasks array, indented
+	Unknowns                         []unknownRow // every dimension's unknown facts, in the dimension order
+	Tasks                            string       // the exact agent_tasks array, indented
 	TaskCount                        int
 }
 
@@ -158,7 +179,7 @@ func parseExternalID(id string) (runID int64, digest string, ok bool) {
 func fillFindings(body *pullBody, rep report.Report) {
 	body.NoBaseline = rep.GateReference == nil || !rep.GateReference.BaselinePresent
 	body.Compared = rep.Comparison.OriginStatus == "comparable"
-	add := func(list *[]pullFinding, f report.Finding) {
+	add := func(list *findingList, f report.Finding) {
 		if len(*list) == findingsPerList {
 			body.Omitted++
 			return
@@ -179,14 +200,41 @@ func fillFindings(body *pullBody, rep report.Report) {
 			add(&body.Violations, f)
 		}
 	}
+	body.Violations, body.Advisories, body.Accepted = pairCycles(body.Violations), pairCycles(body.Advisories), pairCycles(body.Accepted)
 	for _, key := range []string{"intent", "structure", "modularity", "coupling", "change_locality", "complexity", "testability", "operations", "drift"} {
 		if d, ok := rep.Dimensions[key]; ok {
 			d.Name = key
 			body.Dimensions = append(body.Dimensions, d)
+			for _, u := range d.Unknown {
+				body.Unknowns = append(body.Unknowns, unknownRow{Dimension: key, Fact: u.Fact, Reason: u.Reason})
+			}
 		}
 	}
 	if len(rep.AgentTasks) > 0 {
 		raw, _ := json.MarshalIndent(rep.AgentTasks, "", "  ")
 		body.Tasks, body.TaskCount = string(raw), len(rep.AgentTasks)
 	}
+}
+
+// pairCycles folds the two directions of a module cycle (report.Finding.Reverses) into one item, as the PR comment
+// does. Display only: each finding keeps its ID and its locations.
+func pairCycles(fs findingList) findingList {
+	out := make(findingList, 0, len(fs))
+	used := make([]bool, len(fs))
+	for i := range fs {
+		if used[i] {
+			continue
+		}
+		f := fs[i]
+		for j := i + 1; j < len(fs); j++ {
+			g := fs[j]
+			if !used[j] && f.Reverses(g.Finding) {
+				used[j] = true
+				f.Reverse = &g
+				break
+			}
+		}
+		out = append(out, f)
+	}
+	return out
 }

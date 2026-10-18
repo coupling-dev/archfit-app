@@ -324,12 +324,18 @@ func findingsBlock(r *report.Report) string {
 			return
 		}
 		fmt.Fprintf(&b, "\n\n**%s** (%d)", title, len(findings))
+		partner := cyclePartners(findings[:min(len(findings), groupCap)]) // pairs past the cap would show past it
 		for i, f := range findings {
 			if i == groupCap {
 				fmt.Fprintf(&b, "\n- and %d more", len(findings)-groupCap)
 				break
 			}
-			writeFinding(&b, f)
+			switch j, ok := partner[i]; {
+			case !ok:
+				writeFinding(&b, f)
+			case j > i:
+				writeCycle(&b, f, findings[j])
+			}
 		}
 	}
 	group("Rule violations", violations)
@@ -347,6 +353,60 @@ func findingsBlock(r *report.Report) string {
 	return b.String()
 }
 
+// cyclePartners pairs the two directions of a module cycle (report.Finding.Reverses), each finding at most once.
+// Display only: each finding keeps its ID, and the gate never reads this.
+func cyclePartners(fs []report.Finding) map[int]int {
+	partner := map[int]int{}
+	for i, f := range fs {
+		if _, done := partner[i]; done {
+			continue
+		}
+		for j := i + 1; j < len(fs); j++ {
+			if _, done := partner[j]; !done && f.Reverses(fs[j]) {
+				partner[i], partner[j] = j, i
+				break
+			}
+		}
+	}
+	return partner
+}
+
+// writeCycle shows both directions of one module cycle as one item, each direction with its own locations.
+func writeCycle(b *strings.Builder, f, g report.Finding) {
+	b.WriteString("\n- ")
+	if f.Active() { // Reverses pairs one kind and status, so g is active exactly when f is
+		b.WriteString("**violation** ")
+	}
+	fmt.Fprintf(b, "%s (%s, %s): cycle %s ⇄ %s", code(f.RuleID), text(f.Severity), text(f.Status), module(f.Edge.From), module(f.Edge.To))
+	for _, d := range []report.Finding{f, g} {
+		fmt.Fprintf(b, "\n  - %s → %s", endpoint(d.Edge.From), endpoint(d.Edge.To))
+		if d.Origin != "" {
+			fmt.Fprintf(b, ", origin %s", text(d.Origin))
+		}
+		b.WriteString(": " + locationList(d.Locations))
+	}
+	writeRepair(b, f)
+}
+
+// locationList is up to locationCap locations as file:line, then "and N more"; "none reported" when empty.
+func locationList(locs []report.Location) string {
+	if len(locs) == 0 {
+		return "none reported"
+	}
+	var b strings.Builder
+	for i, loc := range locs {
+		if i == locationCap {
+			fmt.Fprintf(&b, " and %d more", len(locs)-locationCap)
+			break
+		}
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(location(loc))
+	}
+	return b.String()
+}
+
 func writeFinding(b *strings.Builder, f report.Finding) {
 	b.WriteString("\n- ")
 	if f.Active() {
@@ -356,21 +416,12 @@ func writeFinding(b *strings.Builder, f report.Finding) {
 	if f.Origin != "" { // display only: the App never decides on origin
 		fmt.Fprintf(b, ", origin %s", text(f.Origin))
 	}
-	if len(f.Locations) > 0 {
-		b.WriteString("\n  - Locations: ")
-		for i, loc := range f.Locations {
-			if i == locationCap {
-				fmt.Fprintf(b, " and %d more", len(f.Locations)-locationCap)
-				break
-			}
-			if i > 0 {
-				b.WriteString(", ")
-			}
-			b.WriteString(location(loc))
-		}
-	} else {
-		b.WriteString("\n  - Locations: none reported")
-	}
+	b.WriteString("\n  - Locations: " + locationList(f.Locations))
+	writeRepair(b, f)
+}
+
+// writeRepair writes why the rule fires and the policy-permitted repair.
+func writeRepair(b *strings.Builder, f report.Finding) {
 	fmt.Fprintf(b, "\n  - Why: %s", text(f.Why))
 	if f.Constraint != "" {
 		fmt.Fprintf(b, "\n  - Constraint: %s", text(f.Constraint))

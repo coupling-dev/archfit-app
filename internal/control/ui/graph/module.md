@@ -322,6 +322,10 @@ type AgentTask struct {
 // Active reports whether the finding currently blocks: a gate finding that is new or whose waiver expired.
 // It is the single definition of "active gate finding" for every consumer.
 func (f Finding) Active() bool
+
+// Reverses reports whether f and g are the two directions of one module cycle: one rule, one kind, status and severity,
+// and module pairs that are reversed, non-empty and distinct. Display only: each finding keeps its ID and gate effect.
+func (f Finding) Reverses(g Finding) bool
 ```
 
 <!-- contract: Dimension, DimensionCoverage, Metric, FindingRef, UnknownFact, Delta, MetricDelta, Coverage, ToolCoverage, Seam — restated from internal/wire/report/module.md -->

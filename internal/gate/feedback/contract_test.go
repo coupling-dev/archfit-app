@@ -328,6 +328,24 @@ func TestCommentLinksToTheAppPullPage(t *testing.T) {
 		t.Errorf("the link is not after the entitlement notice:\n%s", head)
 	}
 
+	details := func(name, when string, h *harness) {
+		t.Helper()
+		if got := h.checks.latest(t, headB, name).DetailsURL; got != "https://app.example/r/acme/shop/pull/7" {
+			t.Errorf("%s %s: DetailsURL = %q, want the App pull request page", when, name, got)
+		}
+	}
+	h = newHarness(headB)
+	p := blockedPublication(t, headB, 7, 1)
+	if err := h.pub.Pending(ctx, p.Target); err != nil {
+		t.Fatalf("Pending: %v", err)
+	}
+	details(gateCheck, "pending", h)
+	if err := h.pub.Publish(ctx, p); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	details(gateCheck, "published", h)
+	details(stateCheck, "published", h)
+
 	tests := []struct {
 		name, appURL, fullName, want string
 		pull                         int

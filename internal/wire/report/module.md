@@ -491,6 +491,10 @@ func EngineVersions() []string
 // Active reports whether the finding currently blocks: a gate finding that is new or whose waiver expired.
 // It is the single definition of "active gate finding" for every consumer.
 func (f Finding) Active() bool
+
+// Reverses reports whether f and g are the two directions of one module cycle: one rule, one kind, status and severity,
+// and module pairs that are reversed, non-empty and distinct. Display only: each finding keeps its ID and gate effect.
+func (f Finding) Reverses(g Finding) bool
 ```
 
 `StateSchemaV1` is the only state schema version accepted. `MaxBytes` is the payload cap. Reading the "5 MB" of
@@ -656,6 +660,10 @@ the tests decode each one as the release that produced it (synthetic ones as v3.
   **Scenario**: table over `Kind` and `Status`: `gate` with `new`, `expired_waiver`, `baseline`, `waived`, `fixed`, an unknown status
   and an empty status; `advisory` with `new` and with `expired_waiver`; an unknown kind and an empty kind with `new`.
   **Expected behavior**: true only for `gate` with `new` and `gate` with `expired_waiver`.
+- **Test name**: `TestFindingReverses`
+  **Scenario**: table: `a → b` against `b → a` of the same rule, kind, status and severity; against a different rule,
+  status or severity; against `a → b`; a self pair `a → a`; empty modules.
+  **Expected behavior**: true only for the reversed pair that matches on rule, kind, status and severity.
 - **Test name**: `TestValidationCommandRules`
   **Scenario**: `archfit check -c .archfit.yaml --base main --lang go --require-tools`; a command with `--refresh`; with `--refresh=true`;
   with `--refreshed`; 513 characters; a command with LF; 33 commands.

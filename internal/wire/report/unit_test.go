@@ -447,6 +447,34 @@ func TestDuplicateFindingIDs(t *testing.T) {
 	}
 }
 
+func TestFindingReverses(t *testing.T) {
+	f := func(rule, from, to, status, severity string) Finding {
+		return Finding{RuleID: rule, Kind: "gate", Status: status, Severity: severity,
+			Edge: Edge{From: Endpoint{Module: from}, To: Endpoint{Module: to}}}
+	}
+	ab := f("r", "a", "b", "new", "high")
+	tests := []struct {
+		name string
+		a, b Finding
+		want bool
+	}{
+		{"reversed", ab, f("r", "b", "a", "new", "high"), true},
+		{"other rule", ab, f("s", "b", "a", "new", "high"), false},
+		{"other status", ab, f("r", "b", "a", "baseline", "high"), false},
+		{"other severity", ab, f("r", "b", "a", "new", "low"), false},
+		{"same direction", ab, ab, false},
+		{"self pair", f("r", "a", "a", "new", "high"), f("r", "a", "a", "new", "high"), false},
+		{"empty modules", f("r", "", "", "new", "high"), f("r", "", "", "new", "high"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.a.Reverses(tt.b); got != tt.want {
+				t.Errorf("Reverses() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestFindingActive(t *testing.T) {
 	tests := []struct {
 		kind, status string

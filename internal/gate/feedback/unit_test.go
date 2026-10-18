@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -828,4 +829,58 @@ func TestWaiverNoticeStaysOutsideFolds(t *testing.T) {
 	if strings.Index(got, "NOTICE") > strings.Index(got, "<details>") {
 		t.Errorf("waiver notice placed inside a fold:\n%s", got)
 	}
+}
+
+func TestCycleDirectionsAreOneItem(t *testing.T) {
+	gate := func(rule, from, to, file string) report.Finding {
+		return report.Finding{ID: from + to, Kind: "gate", RuleID: rule, Status: "new", Severity: "high", Why: "cycle " + from + " " + to,
+			Edge:      report.Edge{From: report.Endpoint{Module: from}, To: report.Endpoint{Module: to}},
+			Locations: []report.Location{{File: file, Line: 3}}}
+	}
+	tests := []struct {
+		name      string
+		findings  []report.Finding
+		items     int
+		wantCycle bool
+	}{
+		{"both directions", []report.Finding{gate("no-module-cycles", "a", "b", "a.go"), gate("no-module-cycles", "b", "a", "b.go")}, 1, true},
+		{"one direction", []report.Finding{gate("no-module-cycles", "a", "b", "a.go")}, 1, false},
+		{"two rules", []report.Finding{gate("r1", "a", "b", "a.go"), gate("r2", "b", "a", "b.go")}, 2, false},
+		{"same direction twice", []report.Finding{gate("r1", "a", "b", "a.go"), gate("r1", "a", "b", "c.go")}, 2, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			block := findingsBlock(&report.Report{Findings: tt.findings})
+			if got := strings.Count(block, "\n- **violation**"); got != tt.items {
+				t.Errorf("items = %d, want %d:\n%s", got, tt.items, block)
+			}
+			if got := strings.Contains(block, "cycle `a` ⇄ `b`"); got != tt.wantCycle {
+				t.Errorf("cycle line = %v, want %v:\n%s", got, tt.wantCycle, block)
+			}
+			if tt.wantCycle {
+				mustContain(t, block, "  - `a` → `b`: `a.go:3`", "  - `b` → `a`: `b.go:3`", "**Rule violations** (2)")
+			}
+		})
+	}
+
+	t.Run("a partner past the cap is not pulled in", func(t *testing.T) {
+		fs := []report.Finding{gate("no-module-cycles", "a", "b", "a.go")}
+		for i := range groupCap - 1 {
+			fs = append(fs, gate("r", "m"+strconv.Itoa(i), "n", "m.go"))
+		}
+		fs = append(fs, gate("no-module-cycles", "b", "a", "b.go"))
+		block := findingsBlock(&report.Report{Findings: fs})
+		if got := strings.Count(block, "\n- **violation**"); got != groupCap {
+			t.Errorf("items = %d, want %d", got, groupCap)
+		}
+		mustContain(t, block, "- and 1 more")
+		mustNotContain(t, block, "⇄")
+	})
+
+	t.Run("each direction keeps its path, and the repair keeps its alternatives", func(t *testing.T) {
+		f, g := gate("no-module-cycles", "a", "b", "a.go"), gate("no-module-cycles", "b", "a", "b.go")
+		f.Edge.From.Path, f.AllowedAlternatives = "a/x.go", []string{"invert the dependency"}
+		block := findingsBlock(&report.Report{Findings: []report.Finding{f, g}})
+		mustContain(t, block, "  - `a` (`a/x.go`) → `b`: `a.go:3`", "  - Allowed alternatives: invert the dependency")
+	})
 }

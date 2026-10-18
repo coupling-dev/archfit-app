@@ -16,6 +16,8 @@ import (
 	"github.com/alexei-led/archfit-app/internal/control/proposal"
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
 	"github.com/alexei-led/archfit-app/internal/github/api"
+
+	"github.com/alexei-led/archfit-app/internal/wire/report"
 )
 
 func TestCSRFToken(t *testing.T) {
@@ -242,4 +244,42 @@ func TestWording(t *testing.T) {
 			seen[sentence] = err
 		}
 	})
+}
+
+func TestPullPageFoldsACycleAndListsWhatToMeasure(t *testing.T) {
+	dir := func(from, to, file string) report.Finding {
+		return report.Finding{ID: from + to, Kind: "gate", RuleID: "no-module-cycles", Status: "new", Severity: "high", Why: "a cycle",
+			Edge:      report.Edge{From: report.Endpoint{Module: from}, To: report.Endpoint{Module: to}},
+			Locations: []report.Location{{File: file, Line: 3}}}
+	}
+	accepted := func(f report.Finding) report.Finding { f.Status = "baseline"; return f }
+	rep := report.Report{
+		Findings: []report.Finding{dir("pkg_chaos", "pkg_container", "chaos.go"), dir("pkg_container", "pkg_chaos", "flags.go"), dir("api", "db", "api.go"),
+			accepted(dir("x", "y", "x.go")), accepted(dir("y", "x", "y.go"))},
+		Dimensions: map[string]report.Dimension{
+			"coupling": {Status: "partial", Unknown: []report.UnknownFact{{Fact: "coupling volatility", Reason: "volatility is undeclared"}}},
+		},
+	}
+	var body pullBody
+	fillFindings(&body, rep)
+	if len(body.Violations) != 2 || body.Violations[0].Reverse == nil || body.Violations[0].Reverse.Edge.From.Module != "pkg_container" || body.Violations[1].Reverse != nil {
+		t.Fatalf("violations = %+v, want the cycle as one item and api -> db alone", body.Violations)
+	}
+	if len(body.Accepted) != 1 || body.Accepted[0].Reverse == nil {
+		t.Fatalf("accepted = %+v, want the accepted cycle as one item", body.Accepted)
+	}
+	if len(body.Unknowns) != 1 || body.Unknowns[0].Dimension != "coupling" {
+		t.Fatalf("unknowns = %+v", body.Unknowns)
+	}
+	var out strings.Builder
+	if err := parsePages()["pull"].ExecuteTemplate(&out, "layout", page{Body: body}); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	html := out.String()
+	for _, want := range []string{"cycle <code>pkg_chaos</code> ⇄ <code>pkg_container</code>", "<code>chaos.go:3</code>", "<code>flags.go:3</code>",
+		`id="measure-more"`, "To measure more (1)", "coupling volatility", "Rule violations (3)", "Accepted debt (2)"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("page lacks %q", want)
+		}
+	}
 }

@@ -35,6 +35,7 @@ type checkRunJSON struct {
 	Name       string           `json:"name,omitempty"`
 	HeadSHA    string           `json:"head_sha,omitempty"`
 	ExternalID string           `json:"external_id,omitempty"`
+	DetailsURL string           `json:"details_url,omitempty"`
 	Status     string           `json:"status,omitempty"`
 	Conclusion string           `json:"conclusion,omitempty"`
 	StartedAt  *time.Time       `json:"started_at,omitempty"`
@@ -46,7 +47,7 @@ type checkRunJSON struct {
 
 func (j checkRunJSON) checkRun() CheckRun {
 	run := CheckRun{
-		ID: j.ID, Name: j.Name, HeadSHA: j.HeadSHA, ExternalID: j.ExternalID, Status: j.Status, Conclusion: j.Conclusion,
+		ID: j.ID, Name: j.Name, HeadSHA: j.HeadSHA, ExternalID: j.ExternalID, DetailsURL: j.DetailsURL, Status: j.Status, Conclusion: j.Conclusion,
 	}
 	if j.StartedAt != nil {
 		run.StartedAt = *j.StartedAt
@@ -70,7 +71,7 @@ func checkRunBody(c CheckRun) (checkRunJSON, error) {
 		return checkRunJSON{}, errors.New("github: conclusion on a check run that is not completed")
 	}
 	body := checkRunJSON{
-		Name: c.Name, HeadSHA: c.HeadSHA, ExternalID: c.ExternalID, Status: c.Status, Conclusion: c.Conclusion,
+		Name: c.Name, HeadSHA: c.HeadSHA, ExternalID: c.ExternalID, DetailsURL: c.DetailsURL, Status: c.Status, Conclusion: c.Conclusion,
 	}
 	if !c.StartedAt.IsZero() {
 		started := c.StartedAt.UTC()
