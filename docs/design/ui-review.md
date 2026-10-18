@@ -120,11 +120,11 @@ for the per-link findings. Prototype: `prototypes/graph-proto.js`.
 The headline states the effect on merge. It comes from the protected gate mode (`.archfit-app.yaml` `gate:`, not in the
 report) and the check conclusion, never from `verdict` alone. The raw `verdict` stays in details.
 
-| `verdict`         | gate advisory                            | gate required                               |
-| ----------------- | ---------------------------------------- | ------------------------------------------- |
-| `blocked`         | Architecture violations found · advisory | Architecture gate failing                   |
-| `needs_attention` | Architecture needs attention · advisory  | Architecture gate passed · attention needed |
-| `healthy`         | Architecture healthy · advisory          | Architecture gate passed                    |
+| conclusion, then `verdict`                                        | gate advisory                            | gate required                               |
+| ----------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------- |
+| `failure` (`verdict: blocked` or `hard_gates: fail`, any verdict) | Architecture violations found · advisory | Architecture gate failing                   |
+| `success`, `needs_attention`                                      | Architecture needs attention · advisory  | Architecture gate passed · attention needed |
+| `success`, `healthy`                                              | Architecture healthy · advisory          | Architecture gate passed                    |
 
 - No baseline in the run (`gate_reference.baseline_present = false`): append "· no baseline".
 - `healthy` with no baseline is not an expected current-engine state (drift is then unmeasured, so `needs_attention`).
