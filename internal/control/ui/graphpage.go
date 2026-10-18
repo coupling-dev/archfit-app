@@ -19,7 +19,7 @@ const (
 	eventPush         = "push"
 	conclusionSuccess = "success"
 
-	noReport          = "No report available. GitHub keeps run artifacts for a limited time; run the Archfit workflow on the default branch."
+	noReport          = "No report available. Reports come from push runs on the default branch, and GitHub keeps run artifacts for a limited time."
 	reportUnavailable = "Report unavailable: the latest report could not be read."
 	draftBroken       = "The draft does not parse. The graph shows the policy on the default branch."
 )
