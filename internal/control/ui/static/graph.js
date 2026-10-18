@@ -404,7 +404,8 @@
     problems.forEach(function (l) {
       if (listed.has(l)) return;
       var rev = problems.find(function (r) {
-        return r !== l && r.From === l.To && r.To === l.From && !listed.has(r);
+        // one status, as the comment and the PR page pair: an accepted direction stays under accepted
+        return r !== l && r.Status === l.Status && r.From === l.To && r.To === l.From && !listed.has(r);
       });
       listed.add(l);
       if (rev) listed.add(rev);
@@ -465,7 +466,7 @@
       return (
         (!sel && selNode === null) ||
         l === sel ||
-        (sel && l.From === sel.To && l.To === sel.From) || // a cycle's other direction is part of the selection
+        (sel && l.From === sel.To && l.To === sel.From) || // the other direction, which the detail shows too
         (selNode !== null && (l.From === selNode || l.To === selNode))
       );
     };

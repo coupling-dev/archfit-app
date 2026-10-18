@@ -18,17 +18,17 @@
 </details>
 
 <section id="violations">
-<h2>Rule violations ({{len .Violations}})</h2>
+<h2>Rule violations ({{.Violations.Findings}})</h2>
 {{range .Violations}}{{template "pullFinding" .}}{{else}}<p class="hint">None.</p>{{end}}
 </section>
 
 {{if .Advisories}}
-<details id="advisories"><summary><h2>Advisories ({{len .Advisories}}) · never block</h2></summary>
+<details id="advisories"><summary><h2>Advisories ({{.Advisories.Findings}}) · never block</h2></summary>
 {{range .Advisories}}{{template "pullFinding" .}}{{end}}
 </details>
 {{end}}
 {{if .Accepted}}
-<details id="accepted"><summary><h2>Accepted debt ({{len .Accepted}}) · baseline or waiver</h2></summary>
+<details id="accepted"><summary><h2>Accepted debt ({{.Accepted.Findings}}) · baseline or waiver</h2></summary>
 {{range .Accepted}}{{template "pullFinding" .}}{{end}}
 </details>
 {{end}}

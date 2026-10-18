@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -861,4 +862,25 @@ func TestCycleDirectionsAreOneItem(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("a partner past the cap is not pulled in", func(t *testing.T) {
+		fs := []report.Finding{gate("no-module-cycles", "a", "b", "a.go")}
+		for i := range groupCap - 1 {
+			fs = append(fs, gate("r", "m"+strconv.Itoa(i), "n", "m.go"))
+		}
+		fs = append(fs, gate("no-module-cycles", "b", "a", "b.go"))
+		block := findingsBlock(&report.Report{Findings: fs})
+		if got := strings.Count(block, "\n- **violation**"); got != groupCap {
+			t.Errorf("items = %d, want %d", got, groupCap)
+		}
+		mustContain(t, block, "- and 1 more")
+		mustNotContain(t, block, "⇄")
+	})
+
+	t.Run("each direction keeps its path, and the repair keeps its alternatives", func(t *testing.T) {
+		f, g := gate("no-module-cycles", "a", "b", "a.go"), gate("no-module-cycles", "b", "a", "b.go")
+		f.Edge.From.Path, f.AllowedAlternatives = "a/x.go", []string{"invert the dependency"}
+		block := findingsBlock(&report.Report{Findings: []report.Finding{f, g}})
+		mustContain(t, block, "  - `a` (`a/x.go`) → `b`: `a.go:3`", "  - Allowed alternatives: invert the dependency")
+	})
 }

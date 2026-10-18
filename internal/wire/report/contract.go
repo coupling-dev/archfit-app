@@ -120,6 +120,15 @@ func (f Finding) Active() bool {
 	return f.Kind == "gate" && (f.Status == "new" || f.Status == "expired_waiver")
 }
 
+// Reverses reports whether f and g are the two directions of one module cycle: one rule, one kind, status and severity,
+// and module pairs that are reversed, non-empty and distinct. Display only: each finding keeps its ID and gate effect.
+func (f Finding) Reverses(g Finding) bool {
+	from, to := f.Edge.From.Module, f.Edge.To.Module
+	return from != "" && to != "" && from != to &&
+		g.Edge.From.Module == to && g.Edge.To.Module == from &&
+		f.RuleID == g.RuleID && f.Kind == g.Kind && f.Status == g.Status && f.Severity == g.Severity
+}
+
 type Edge struct {
 	From Endpoint `json:"from"`
 	To   Endpoint `json:"to"`

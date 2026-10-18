@@ -329,10 +329,11 @@ receipt marker. Block G is in the gate summary only.
    verdict never reads findings]**. Groups: "Rule violations" (`Finding.Active()`, and any
    status this version does not know), then the remaining `advisory` findings folded in one `<details>` whose summary
    is "N advisories · never block" (`new` or `expired_waiver` only; an advisory of an unknown status stays open), then "Accepted debt — display only" (`baseline`, `waived`), "Fixed" (`fixed`).
-   A cut never leaves a fold open: `cutLines` closes it before "Output truncated.". Two findings of one rule whose
-   module pairs are reversed (the two directions of a module cycle) are one item, "cycle `A` ⇄ `B`", with a line per
-   direction and its locations, then the first finding's `Why` and `Constraint`. Display only: the count is still of
-   findings, and each finding keeps its ID. Per finding:
+   A cut never leaves a fold open: `cutLines` closes it before "Output truncated.". Two findings of one group that
+   `Finding.Reverses` pairs (the two directions of a module cycle) are one item, "cycle `A` ⇄ `B`", with a line per
+   direction (endpoints with `Path` when set, `Origin`, locations), then the first finding's repair: `Why`,
+   `Constraint`, `AllowedAlternatives`. Only the first 50 findings of a group pair, so a partner past the cap stays in
+   "and N more". Display only: the count is still of findings, and each finding keeps its ID. Per finding:
    rule ID, severity, `Edge.From.Module` → `Edge.To.Module` (with `Path` when set), `Origin` when set (shown as
    ", origin X", display only), locations as `file:line`, `Why`,
    then the policy-permitted repair: `Constraint` and `AllowedAlternatives`. feedback adds no repair of its own and
@@ -631,6 +632,10 @@ type Settings struct {
 // Active reports whether the finding currently blocks: a gate finding that is new or whose waiver expired.
 // It is the single definition of "active gate finding" for every consumer.
 func (f Finding) Active() bool
+
+// Reverses reports whether f and g are the two directions of one module cycle: one rule, one kind, status and severity,
+// and module pairs that are reversed, non-empty and distinct. Display only: each finding keeps its ID and gate effect.
+func (f Finding) Reverses(g Finding) bool
 ```
 
 <!-- contract: Report, StateSchemaV1, MaxBytes — restated from internal/wire/report/module.md -->
@@ -1186,8 +1191,10 @@ Golden files hold rendered bodies for the wire fixtures.
   **Scenario**: a body whose first `###` heading is inside a fold.
   **Expected behavior**: the notice lands before the fold.
 - **Test name**: `TestCycleDirectionsAreOneItem`
-  **Scenario**: two findings of one rule in both directions; one direction; two rules in both directions; one rule twice in one direction.
-  **Expected behavior**: one item with a line per direction; then one, two and two items, no cycle line.
+  **Scenario**: two findings of one rule in both directions; one direction; two rules in both directions; one rule twice
+  in one direction; a partner at index 50, past the cap; a direction with a `Path` and allowed alternatives.
+  **Expected behavior**: one item with a line per direction; then one, two and two items, no cycle line; 50 items, "and
+  1 more" and no cycle; the path and the alternatives are shown.
 - **Test name**: `TestCommentLinksToTheAppPullPage`
   **Scenario**: a publication on a pull request with an App URL; no App URL; a push; a repository name with a space and a question mark.
   **Expected behavior**: the "Details in Archfit" link to `/r/acme/shop/pull/7` in the head, after an entitlement notice and before the findings; no link; no link; a path-escaped link. The state check, the gate check and the pending gate check carry the same URL as `DetailsURL`.
