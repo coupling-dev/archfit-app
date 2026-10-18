@@ -1,6 +1,6 @@
 <!-- archfit:comment -->
 <!-- archfit:head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb run 7.1 -->
-## Archfit: Blocked by architecture findings
+## Archfit: Architecture gate failing
 
 - Reason: `blocking_findings` (architecture)
 - Detail: 1 blocking finding
@@ -8,10 +8,18 @@
 
 ### Findings
 
-**Active** (1)
+<details>
+<summary>1 advisory · never block</summary>
+
+**Advisories** (1)
 - `bc/imbalanced_coupling` (medium, new): `a` (`pkg/a/a.go`) → `b` (`pkg/b`)
   - Locations: `pkg/a/a.go:3`
   - Why: balanced coupling: functional integration strength × cross_module_same_owner distance × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
+
+</details>
+
+<details>
+<summary>Evidence, inputs and validation</summary>
 
 ### Dimensions
 
@@ -56,6 +64,11 @@ Measurement trust: customer-attested.
 
 Measurement is customer-attested: the producer is authenticated, the report content is not independently checked.
 
+</details>
+
+<details>
+<summary>For coding agents</summary>
+
 ### Agent tasks
 
 <!-- archfit:agent-tasks -->
@@ -63,3 +76,5 @@ Measurement is customer-attested: the producer is authenticated, the report cont
 []
 ```
 <!-- /archfit:agent-tasks -->
+
+</details>

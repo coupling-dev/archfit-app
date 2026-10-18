@@ -1059,7 +1059,7 @@ Special targets, all through the same flow:
 - Engine error: `archfit check` exits 3 and writes no report, so nothing is uploaded. The pending gate check stays
   and the sweep ends it as `missing_upload`. The upload path never sees an exit code.
 - No baseline anywhere (none on the protected ref, none claimed): allowed **[default]**. The engine's `non_comparable`
-  reference ("no baseline file was loaded") is ignored by verdict, and feedback discloses that every current violation blocks.
+  reference ("no baseline file was loaded") is ignored by verdict, and feedback discloses that every finding counts as new.
 
 ### HandleEvent
 

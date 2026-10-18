@@ -291,9 +291,9 @@ func TestUsefulWithoutLLM(t *testing.T) {
 		fixture string
 		wants   []string
 	}{
-		{"healthy", []string{"## Archfit: Passed", reasonHealthy.Next, "No findings reported", "dependency-cruiser", "absent"}},
+		{"healthy", []string{"## Archfit: Architecture gate passed", reasonHealthy.Next, "No findings reported", "dependency-cruiser", "absent"}},
 		{"both-repair-kinds", []string{
-			"## Archfit: Blocked by architecture findings", reasonBlocking.Next,
+			"## Archfit: Architecture gate failing", reasonBlocking.Next,
 			"no_direct_b_dependency", "`a` (`pkg/a/a.go`) → `b` (`pkg/b`)", "`pkg/a/a.go:3`",
 			"Import from pkg/a/** to pkg/b is explicitly forbidden", "Remove the dependency or move the code",
 			"archfit check -c .archfit.yaml\n", "archfit check -c .archfit.yaml --base main --lang go --require-tools\n",
@@ -362,7 +362,7 @@ func TestAcceptedDebtIsDisplayOnly(t *testing.T) {
 	mustContain(t, section(gate.Summary, headBlocking), "No active gate finding is listed")
 	comment := h.comments.all()[0].Body
 	verdictBlock, _, _ := strings.Cut(comment, "\n### ")
-	mustContain(t, verdictBlock, "Blocked by architecture findings", "blocking_findings")
+	mustContain(t, verdictBlock, "Architecture gate failing", "blocking_findings")
 
 	findings := section(comment, headFindings)
 	_, debt, ok := strings.Cut(findings, "**Accepted debt — display only**")

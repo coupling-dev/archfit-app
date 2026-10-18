@@ -210,7 +210,7 @@ Rules of the table:
   `GateReference.BaselinePresent == baselineTrusted`. Any other pairing is a conflict, so this step fails closed.
   When the protected ref has no baseline, the engine reports `non_comparable` with "no baseline file was loaded"
   and `baseline_present: false`; that is expected and ignored **[default]** (6c already requires that the producer
-  used none). Feedback then discloses "no baseline: every current violation blocks". `Comparison.Status` describes
+  used none). Feedback then discloses "no baseline: every finding counts as new". `Comparison.Status` describes
   the report-only `--base` comparison and is never read: `--base` never substitutes the accepted-debt authority.
 - Owner action (`Next` of `baseline_not_comparable`): only `GateReference.Drift` picks it, never the reason text.
   When every class is `measurement_profile` or `rubric_version`, the action is a re-anchor: run
@@ -297,7 +297,7 @@ Categories of integrity, comparability and `Without` codes are **[default]**. `N
 | ----------------------------- | ------------ | --------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `healthy`                     | architecture | `success`             | empty                                                                                                 | empty                                                                                                                 |
 | `attention_only`              | architecture | `success`             | `dimensions not fully measured: <keys or none>; active diagnostics: <count>`                          | "Advisories never block. Review the listed dimensions and diagnostics on the archfit/state check."                    |
-| `blocking_findings`           | architecture | `failure`             | empty                                                                                                 | "Fix the blocking findings and run the validation command."                                                           |
+| `blocking_findings`           | architecture | `failure`             | empty                                                                                                 | "Remove the rule violations, then run the validation command."                                                           |
 | `engine_error`                | evidence     | `action_required`     | `verdict=<value> hard_gates=<value>`, each cut to 32 characters                                       | "Read the Archfit workflow log, use the pinned engine image, re-run the workflow."                                    |
 | `missing_required_coverage`   | evidence     | `action_required`     | rule IDs, comma separated; the first 20, then `and N more` **[default]**                              | "Supply the missing evidence for the listed rules. Approval cannot clear this."                                       |
 | `baseline_not_comparable`     | evidence     | `action_required`     | `GateReference.Reasons`: first 3, 200 characters in total **[default]**; `no gate reference` when nil. A `BaselinePresent` mismatch names the side that holds the baseline instead | Re-anchor or full capture, by `GateReference.Drift` (rules above).                                                    |

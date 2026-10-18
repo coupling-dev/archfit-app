@@ -123,6 +123,9 @@ func placeWaiver(body, section string) string {
 		return body
 	}
 	i := strings.Index(body, "\n\n### ")
+	if j := strings.Index(body, "\n\n<details>"); j >= 0 && (i < 0 || j < i) { // the notice stays outside folds
+		i = j
+	}
 	if i < 0 {
 		return body + "\n\n" + section
 	}

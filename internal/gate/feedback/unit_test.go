@@ -311,7 +311,7 @@ func TestTruncation(t *testing.T) {
 		if !utf8.ValidString(body) {
 			t.Errorf("%s is not valid UTF-8", name)
 		}
-		mustContain(t, body, "## Archfit: Blocked by architecture findings", "blocking_findings", reasonBlocking.Next, "missing_required_coverage", fixedTrustSentence, policyDigest)
+		mustContain(t, body, "## Archfit: Architecture gate failing", "blocking_findings", reasonBlocking.Next, "missing_required_coverage", fixedTrustSentence, policyDigest)
 	}
 	for _, body := range []string{comment, state} {
 		mustContain(t, body, "Output truncated.")
@@ -388,7 +388,7 @@ func TestEvidenceGapSources(t *testing.T) {
 
 	p.Trusted.BaselineDigests = nil
 	p.Report.GateReference = &report.Reference{Status: "non_comparable", BaseRef: "baseline", Reasons: []string{"no baseline file was loaded"}}
-	mustContain(t, gaps(p), "No baseline: every current violation blocks.")
+	mustContain(t, gaps(p), "No baseline: every finding counts as new, including older debt.")
 	mustNotContain(t, gaps(p), "None reported")
 
 	p = base
@@ -492,7 +492,7 @@ func TestGateSummaryNamesBlockers(t *testing.T) {
 	want := headBlocking + "\n\n" +
 		"- `no_direct_b_dependency`: `a` → `b` at `pkg/a/a.go:3`, finding `ba3803ec`. Goal: Remove the forbidden dependency.\n" +
 		"- `whole_rule`: (no module) → `db` at `whole.go`, finding `dddd1111`. Goal: none reported\n" +
-		"- `nowhere`: `api` → `db`, no location reported, finding `eeee2222`. Goal: none reported\n\n" + headInputs
+		"- `nowhere`: `api` → `db`, no location reported, finding `eeee2222`. Goal: none reported\n\n" + foldEvidence
 	if !strings.Contains(gate, want) {
 		t.Errorf("gate summary lacks the blocking findings block:\n%s", gate)
 	}
@@ -738,4 +738,69 @@ func TestAnnotationSelection(t *testing.T) {
 			t.Errorf("got %d annotations and %d file lists, want none", len(got), h.pulls.listed)
 		}
 	})
+}
+
+func TestHeadlineStatesTheEffectOnMerge(t *testing.T) {
+	withReport := func(gate settings.GateMode, pull int, c verdict.Conclusion, v string, baseline bool) Publication {
+		p := blockedPublication(t, headB, 7, 1)
+		p.Target.PullRequest = pull
+		p.Trusted.Settings.Gate = gate
+		p.Outcome.Conclusion = c
+		p.Report.Verdict = v
+		if !baseline {
+			p.Trusted.BaselineDigests = nil
+		}
+		return p
+	}
+	tests := []struct {
+		name string
+		p    Publication
+		want string
+	}{
+		{"advisory blocked", withReport(settings.GateAdvisory, 7, verdict.Failure, "blocked", true), "Architecture violations found · advisory"},
+		{"advisory blocked, no baseline", withReport(settings.GateAdvisory, 7, verdict.Failure, "blocked", false), "Architecture violations found · advisory · no baseline"},
+		{"advisory attention", withReport(settings.GateAdvisory, 7, verdict.Success, "needs_attention", true), "Architecture needs attention · advisory"},
+		{"advisory healthy", withReport(settings.GateAdvisory, 7, verdict.Success, "healthy", true), "Architecture healthy · advisory"},
+		{"required failing", withReport(settings.GateRequired, 7, verdict.Failure, "blocked", true), "Architecture gate failing"},
+		{"required attention", withReport(settings.GateRequired, 7, verdict.Success, "needs_attention", true), "Architecture gate passed · attention needed"},
+		{"required healthy", withReport(settings.GateRequired, 7, verdict.Success, "healthy", true), "Architecture gate passed"},
+		{"push", withReport(settings.GateRequired, 0, verdict.Failure, "blocked", true), "Architecture violations found"},
+		{"action required wins", withReport(settings.GateAdvisory, 7, verdict.ActionRequired, "blocked", false), "Action required"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := headline(tt.p); got != tt.want {
+				t.Errorf("headline = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAdvisoryCommentNeverSaysBlocking(t *testing.T) {
+	p := blockedPublication(t, headB, 7, 1)
+	p.Trusted.Settings.Gate = settings.GateAdvisory
+	comment := renderComment(p, t0, "")
+	mustContain(t, comment, "## Archfit: Architecture violations found · advisory", "This check does not block merging", "**violation**")
+	mustNotContain(t, comment, "Blocked by", "**blocking**")
+	if strings.Index(comment, "<details>") < strings.Index(comment, headFindings) {
+		t.Errorf("findings are folded away: %q", comment)
+	}
+	findings := section(comment, headFindings)
+	if v, a := strings.Index(findings, "**Rule violations**"), strings.Index(findings, " · never block</summary>"); v < 0 || a < 0 || a < v {
+		t.Errorf("violations are not open before the folded advisories: %q", findings)
+	}
+}
+
+func TestCutNeverLeavesAFoldOpen(t *testing.T) {
+	block := headFindings + "\n\n<details>\n<summary>9 advisories · never block</summary>\n\n" + strings.Repeat("- advisory line\n", 200) + "\n" + foldClose
+	got := cutLines(block, 400)
+	if len(got) > 400 {
+		t.Errorf("cut is %d bytes, over 400", len(got))
+	}
+	if strings.Count(got, "<details>") != strings.Count(got, foldClose) {
+		t.Errorf("cut left a fold open:\n%s", got)
+	}
+	if !strings.HasSuffix(got, foldClose+"\n\n"+truncatedNote) {
+		t.Errorf("cut does not close the fold before the note:\n%s", got)
+	}
 }
