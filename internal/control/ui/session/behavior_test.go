@@ -110,7 +110,7 @@ func TestSessionEndsAfterTwelveHours(t *testing.T) {
 	f.clock.advance(2 * time.Second)
 
 	if u, ok := f.s.User(requestWith(http.MethodGet, "/r/o/n", c)); ok || u != (User{}) {
-		t.Errorf("User = signed in after 12 h + 1 s")
+		t.Errorf("User = signed in after 8 h + 1 s")
 	}
 	resp := serve(page, requestWith(http.MethodGet, "/r/o/n", c))
 	if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(resp.Header.Get("Location"), "/auth/login") {
