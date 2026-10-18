@@ -51,14 +51,18 @@ button, .button { font: inherit; padding: .35rem .8rem; cursor: pointer; }
 .g-node.advisory rect, .g-node.accepted rect { stroke: var(--warn); }
 .g-node.undeclared rect { stroke-dasharray: 4 3; }
 .g-node.sel rect { stroke: var(--accent); stroke-width: 2.5; }
-.g-node, .g-edge { cursor: pointer; outline: none; }
+.g-node, .g-edge { cursor: pointer; }
+.g-node:focus-visible rect { stroke: var(--accent); stroke-width: 3; }
+.g-node:focus:not(:focus-visible), .g-edge:focus:not(:focus-visible) { outline: none; }
 .g-node.dim, .g-edge.dim { opacity: .18; }
 .g-band { fill: currentColor; opacity: .7; font: 700 11px system-ui, sans-serif; text-transform: uppercase; }
 .g-edge .hit { stroke: transparent; stroke-width: 14; fill: none; }
 .g-edge .line { fill: none; stroke: var(--line); }
 .g-edge.violation .line { stroke: var(--bad); } .g-edge.advisory .line { stroke: var(--warn); }
 .g-edge.accepted .line { stroke: var(--warn); stroke-dasharray: 5 4; } .g-edge.allowed .line { stroke: var(--good); }
-.g-edge:focus .line, .g-edge.sel .line { stroke-width: 4; }
+.g-edge:focus-visible .line, .g-edge.sel .line { stroke-width: 4; }
+.g-edge:focus-visible { outline: 2px solid var(--accent); }
+.g-defs { font-size: .9rem; } .g-defs dt { font-weight: 700; } .g-defs dd { margin: 0 0 .4rem; }
 .gm { fill: var(--line); } .gm.violation { fill: var(--bad); } .gm.advisory, .gm.accepted { fill: var(--warn); } .gm.allowed { fill: var(--good); }
 .g-edge .badge { fill: Canvas; stroke: var(--line); }
 .g-edge.violation .badge { stroke: var(--bad); } .g-edge.advisory .badge, .g-edge.accepted .badge { stroke: var(--warn); }

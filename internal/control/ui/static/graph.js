@@ -24,12 +24,13 @@
     observed: "observed",
   };
   var MEANING = {
-    violation: "An active gate finding names this pair.",
+    violation:
+      "An active gate finding, or a gate finding of a status this version does not know, names this pair.",
     accepted: "A gate finding names this pair, accepted by the baseline or a waiver.",
     advisory: "A finding that does not block names this pair.",
     allowed: "A blocking allowlist or layer rule permits this pair.",
     observed:
-      "No active finding names this pair and no rule permits it. It can still break a rule the report did not evaluate.",
+      "No active finding names this pair. That is not proof that a rule permits it, and it can still break a rule the report did not evaluate.",
   };
 
   var data = document.getElementById("graph-data");
@@ -103,10 +104,27 @@
         if (!byLayer.has(k)) byLayer.set(k, []);
         byLayer.get(k).push(n.Name);
       });
-      byLayer.forEach(function (v, k) {
-        rows.push(v.sort());
-        bands.push(k);
-      });
+      // Bands follow the policy: a layer's position is its first module's policy line; "(no layer)" goes last.
+      var first = function (k) {
+        return Math.min.apply(
+          null,
+          ns
+            .filter(function (n) {
+              return (n.Layer || "(no layer)") === k;
+            })
+            .map(function (n) {
+              return n.Layer && n.PolicyLine ? n.PolicyLine : Infinity;
+            }),
+        );
+      };
+      Array.from(byLayer.keys())
+        .sort(function (a, b) {
+          return first(a) - first(b) || (a < b ? -1 : 1);
+        })
+        .forEach(function (k) {
+          rows.push(byLayer.get(k).sort());
+          bands.push(k);
+        });
     } else {
       var state = new Map(),
         back = new Set();
@@ -248,7 +266,11 @@
     matrixBox = q("g-matrix"),
     note = q("g-note");
   var tables = q("graph-tables");
-  if (!chips || nodes.length === 0 || nodes.length > MAX_DRAWN) return; // the tables stay open as the view
+  if (!chips || nodes.length === 0) return; // the tables stay open as the view
+  if (nodes.length > MAX_DRAWN) {
+    filterable();
+    return;
+  }
   if (tables) tables.open = false;
   root.hidden = false;
   var show = { violation: true, accepted: true, advisory: true, allowed: true, observed: true };
@@ -261,12 +283,31 @@
     return PROBLEM[l.Status];
   });
 
+  // Above MAX_DRAWN the tables are the view, with a filter over their rows.
+  function filterable() {
+    if (!tables) return;
+    var input = h("input", { type: "search", placeholder: "Filter modules and links", "aria-label": "Filter modules and links" });
+    input.addEventListener("input", function () {
+      var v = input.value.toLowerCase();
+      tables.querySelectorAll("#graph-nodes tbody tr, #graph-links tbody tr").forEach(function (row) {
+        row.hidden = row.textContent.toLowerCase().indexOf(v) < 0;
+      });
+    });
+    tables.insertBefore(input, tables.querySelector("summary").nextSibling);
+  }
+  // Enter or Space selects, as on a button.
+  function activate(e) {
+    if (e.key !== "Enter" && e.key !== " ") return false;
+    e.preventDefault();
+    return true;
+  }
   function focused() {
     return hasProblem && (scope === "problems" || (scope === "auto" && nodes.length > FOCUS_LIMIT));
   }
-  function visible(l) {
-    return show[l.Status] && (!focused() || PROBLEM[l.Status]);
-  } // one rule for list, graph and matrix
+  // One rule for the list, the graph and the matrix; the matrix is the full picture, so focus never narrows it.
+  function visible(l, full) {
+    return show[l.Status] && (full || !focused() || PROBLEM[l.Status]);
+  }
   function layoutFor(focus) {
     var k = focus ? "focus" : "all";
     if (!layouts.has(k)) {
@@ -319,14 +360,17 @@
           {
             type: "button",
             class: "g-chip " + s,
-            "aria-pressed": String(show[s]),
+            "aria-pressed": String(show[s] && (PROBLEM[s] || !focused() || mode === "matrix")),
+            "data-k": "s" + s,
             title: MEANING[s],
           },
           [h("i"), h("b", { text: String(c[s]) }), " " + LABEL[s]],
         );
         b.addEventListener("click", function () {
-          show[s] = !show[s];
-          if (!PROBLEM[s] && show[s] && focused()) scope = "all"; // asking for the other links means the full picture
+          if (!PROBLEM[s] && focused() && mode === "graph") {
+            show[s] = true; // asking for the other links means the full picture
+            scope = "all";
+          } else show[s] = !show[s];
           render();
         });
         chips.appendChild(b);
@@ -348,7 +392,7 @@
       return;
     }
     problems.forEach(function (l) {
-      var li = h("li", { tabindex: "0", class: "g-item " + l.Status + (sel === l ? " sel" : "") }, [
+      var li = h("li", { tabindex: "0", "data-k": "l" + key(l.From, l.To), class: "g-item " + l.Status + (sel === l ? " sel" : "") }, [
         h("i"),
         pairEl(l),
         h("span", { class: "hint", text: count(l) }),
@@ -357,7 +401,7 @@
         pickLink(l);
       });
       li.addEventListener("keydown", function (e) {
-        if (e.key === "Enter") pickLink(l);
+        if (activate(e)) pickLink(l);
       });
       list.appendChild(li);
     });
@@ -478,11 +522,15 @@
               yb = b.y + NODE_H + 2,
               bow = 46;
             if (a.y === b.y) {
-              ya = a.y + NODE_H / 2;
-              yb = b.y + NODE_H / 2;
-              x1 += (side * NODE_W) / 2;
-              x2 -= (side * NODE_W) / 2;
-            }
+              // Same line: an arc over both modules, so the count never sits inside a module box.
+              // A pair in both directions: the second one arcs below.
+              var below = pairs.has(key(l.To, l.From)) && l.From > l.To,
+                top = below ? a.y + NODE_H + 2 : a.y - 2,
+                lift = (below ? -1 : 1) * (30 + Math.abs(x2 - x1) / 8);
+              d = "M" + x1 + " " + top + " C" + x1 + " " + (top - lift) + " " + x2 + " " + (top - lift) + " " + x2 + " " + top;
+              mx = (x1 + x2) / 2;
+              my = top - lift * 0.75;
+            } else {
             d =
               "M" +
               x1 +
@@ -502,11 +550,13 @@
               yb;
             mx = (x1 + x2) / 2 + side * bow * 0.75;
             my = (ya + yb) / 2;
+            }
           }
         }
         var g = svgEl("g", {
           class: "g-edge " + l.Status + (related(l) ? "" : " dim") + (l === sel ? " sel" : ""),
           tabindex: PROBLEM[l.Status] ? 0 : -1,
+          "data-k": "e" + key(l.From, l.To),
         });
         g.appendChild(svgEl("path", { d: d, class: "hit" }));
         g.appendChild(
@@ -546,7 +596,7 @@
           pickLink(l);
         });
         g.addEventListener("keydown", function (e) {
-          if (e.key === "Enter") pickLink(l);
+          if (activate(e)) pickLink(l);
         });
         svg.appendChild(g);
       });
@@ -577,6 +627,7 @@
           (on ? "" : " dim") +
           (selNode === n.Name ? " sel" : ""),
         tabindex: 0,
+        "data-k": "n" + JSON.stringify(n.Name),
       });
       g.appendChild(svgEl("rect", { x: p.x, y: p.y, width: NODE_W, height: NODE_H, rx: 6 }));
       g.appendChild(
@@ -592,7 +643,7 @@
         pickNode(n.Name);
       });
       g.addEventListener("keydown", function (e) {
-        if (e.key === "Enter") pickNode(n.Name);
+        if (activate(e)) pickNode(n.Name);
       });
       svg.appendChild(g);
     });
@@ -630,16 +681,17 @@
       order.forEach(function (c) {
         var l = cell.get(key(r, c)),
           td = h("td", { class: r === c ? "self" : "" });
-        if (l && visible(l)) {
+        if (l && visible(l, true)) {
           td.className = l.Status + (sel === l ? " sel" : "");
           td.textContent = l.Count ? String(l.Count) : "·";
           td.title = r + " → " + c + " · " + l.Count + " · " + LABEL[l.Status];
           td.tabIndex = 0;
+          td.setAttribute("data-k", "c" + key(l.From, l.To));
           td.addEventListener("click", function () {
             pickLink(l);
           });
           td.addEventListener("keydown", function (e) {
-            if (e.key === "Enter") pickLink(l);
+            if (activate(e)) pickLink(l);
           });
         }
         tr.appendChild(td);
@@ -742,7 +794,17 @@
       );
     }
   }
+  // Rendering replaces the elements, so keyboard focus moves to the element with the same data-k.
   function render() {
+    var a = document.activeElement,
+      k = a && a.getAttribute && a.getAttribute("data-k");
+    draw();
+    if (!k) return;
+    root.querySelectorAll("[data-k]").forEach(function (e) {
+      if (e.getAttribute("data-k") === k) e.focus();
+    });
+  }
+  function draw() {
     renderChips();
     renderList();
     canvas.hidden = mode !== "graph";

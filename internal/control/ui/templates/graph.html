@@ -36,6 +36,13 @@
 <script type="application/json" id="graph-data">{{.View}}</script>
 <details id="graph-tables" open>
 <summary>Modules and links as tables</summary>
+<dl class="g-defs">
+  <dt>violation</dt><dd>An active gate finding, or a gate finding of a status this version does not know, names the pair.</dd>
+  <dt>accepted</dt><dd>A gate finding names the pair, accepted by the baseline or a waiver. Accepted debt is never allowed.</dd>
+  <dt>advisory</dt><dd>A finding that does not block names the pair.</dd>
+  <dt>allowed</dt><dd>A blocking allowlist or layer rule of the engine permits the pair.</dd>
+  <dt>observed</dt><dd>No active finding names the pair. That is not proof that a rule permits it.</dd>
+</dl>
 <h2>Modules</h2>
 <table id="graph-nodes">
   <thead><tr><th>Module</th><th>Layer</th></tr></thead>

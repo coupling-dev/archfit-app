@@ -405,8 +405,9 @@ latest default-branch report, problems first.
   is permitted.
 - Line width shows the number of observed dependencies. Problem links carry the count.
 - Over 15 modules the graph starts with only the modules and links that have a problem. **Show all** draws everything.
-  **Matrix** shows every pair at any size: rows depend on columns.
-- Without JavaScript, or over 300 modules, the page shows the modules and links as tables.
+  **Matrix** shows every pair, up to 300 modules: rows depend on columns.
+- Without JavaScript, or over 300 modules, the page shows the modules and links as tables, with the status
+  definitions; over 300 modules a filter narrows them.
 - Links come from the latest default-branch report artifact.
 - Each link has a status. The report gives the status of each seam (`seams[].policy`), and the graph shows it.
   If a seam has no policy, the status comes from the report findings for the module pair.
