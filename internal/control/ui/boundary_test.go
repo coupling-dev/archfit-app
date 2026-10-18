@@ -422,8 +422,12 @@ func TestHostileStringsAreEscaped(t *testing.T) {
 	draft := e.props.push(repoName, "archfit/edit-alice", hostilePolicy)
 	e.gh.checks[repoName+"@"+draft.HeadSHA+"#"+checkState] = []api.CheckRun{{Conclusion: "failure", Title: hostileText}}
 	e.publishReport(repoName, artifact(t, "healthy"))
+	pull := e.gh.pulls[repoName+"#4"]
+	pull.Title, pull.Author, pull.HeadRef = hostileText, hostileModule, hostileText
+	e.gh.pulls[repoName+"#4"] = pull
+	e.gh.checks[repoName+"@"+sha(4)+"#"+checkState] = []api.CheckRun{{ID: 1, Conclusion: "neutral", Title: hostileText, ExternalID: "v1:0:0:"}}
 
-	for _, path := range []string{"/", "/r/" + repoName, "/r/" + repoName + "/policy", "/r/" + repoName + "/graph", "/r/" + repoName + "/consent"} {
+	for _, path := range []string{"/", "/r/" + repoName, "/r/" + repoName + "/policy", "/r/" + repoName + "/graph", "/r/" + repoName + "/consent", "/r/" + repoName + "/pull/4"} {
 		res := c.get(path)
 		wantStatus(t, res, http.StatusOK)
 		body := res.Body.String()

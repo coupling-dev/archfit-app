@@ -417,8 +417,9 @@ Open `/r/<owner>/<repo>/pull/<number>` for the Archfit result of the pull reques
 - A folded line says whether this run had a baseline and whether it compared against the base branch. Without that
   comparison, "new" means not accepted in a baseline, not "added by this pull request".
 - **For coding agents** holds the exact repair tasks of the run.
-- The page shows a report only when it is the one the check was computed from. Otherwise it says why: no result yet,
-  no upload, the report expired, or the report does not match the check.
+- The page shows a report only when it is the one the check was computed from, and never under a result that asks
+  for action. Otherwise it says why: no result yet, action required, no upload, the report expired, the report does
+  not match the check, or the report could not be read.
 
 ## See the graph
 

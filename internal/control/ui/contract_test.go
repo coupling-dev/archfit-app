@@ -23,6 +23,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/control/ui/graph"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/report"
+	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
 type route struct {
@@ -443,6 +444,35 @@ func TestPullPageShowsTheReportOfItsCheck(t *testing.T) {
 		{"an expired report", func(e *env) { check(e, "v1:88:1:"+digest) }, http.StatusOK, []string{reportExpired}, []string{"no_direct_b_dependency"}},
 		{"a result without an upload", func(e *env) { check(e, "v1:0:0:") }, http.StatusOK, []string{noUpload}, nil},
 		{"an unknown pull request", func(e *env) { delete(e.gh.pulls, repoName+"#4") }, http.StatusNotFound, nil, nil},
+		{"a withdrawn result keeps its old run but shows no finding", func(e *env) {
+			check(e, "v1:88:1:"+digest)
+			e.gh.checks[repoName+"@"+sha(4)+"#archfit/state"][0].Conclusion = "action_required"
+			e.gh.checks[repoName+"@"+sha(4)+"#archfit/state"][0].Title = "Action required"
+			e.gh.artifacts[88] = payload
+		}, http.StatusOK, []string{actionRequired, "Action required"}, []string{"no_direct_b_dependency", "For coding agents"}},
+		{"a report that does not decode", func(e *env) {
+			broken := []byte(`{"schema_version":"nope"}`)
+			s := sha256.Sum256(broken)
+			check(e, "v1:88:1:sha256:"+hex.EncodeToString(s[:]))
+			e.gh.artifacts[88] = broken
+		}, http.StatusOK, []string{reportUnavailable}, []string{"no_direct_b_dependency"}},
+		{"the newest check run wins", func(e *env) {
+			check(e, "v1:88:1:"+digest)
+			e.gh.artifacts[88] = payload
+			key := repoName + "@" + sha(4) + "#archfit/state"
+			older := api.CheckRun{ID: 3, Name: "archfit/state", Status: "completed", Conclusion: "action_required", Title: "Older", ExternalID: "v1:0:0:"}
+			e.gh.checks[key] = append([]api.CheckRun{older}, e.gh.checks[key]...)
+		}, http.StatusOK, []string{"no_direct_b_dependency"}, []string{"Older"}},
+		{"added by this PR only with a comparison", func(e *env) {
+			compared := bytes.Replace(payload, []byte(`"comparison":{"status":"not_requested"`), []byte(`"comparison":{"status":"not_requested","origin_status":"comparable"`), 1)
+			// The top-level finding is the last object with this id; dimension references come first.
+			id := []byte(`{"id":"ba3803eca947bf3c1b7efa8f37854d5e"`)
+			at := bytes.LastIndex(compared, id) + len(id)
+			compared = append(compared[:at:at], append([]byte(`,"origin":"introduced"`), compared[at:]...)...)
+			s := sha256.Sum256(compared)
+			check(e, "v1:88:1:sha256:"+hex.EncodeToString(s[:]))
+			e.gh.artifacts[88] = compared
+		}, http.StatusOK, []string{"added by this PR", "compared with the base branch"}, []string{"PR attribution unavailable"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -459,6 +489,24 @@ func TestPullPageShowsTheReportOfItsCheck(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPullPageNumberMustBeAPull(t *testing.T) {
+	e := newEnv(t)
+	c := e.as("alice", permRead)
+	for _, n := range []string{"0", "-4", "x", "4x"} {
+		wantStatus(t, c.get("/r/"+repoName+"/pull/"+n), http.StatusNotFound)
+	}
+}
+
+func TestPullPageReadsTheGateModeOfTheBase(t *testing.T) {
+	e := newEnv(t)
+	pull := e.gh.pulls[repoName+"#4"]
+	pull.BaseRef = "release"
+	e.gh.pulls[repoName+"#4"] = pull
+	e.gh.setFile(repoName, "release", settings.Path, strings.Replace(settingsText, "gate: advisory", "gate: required", 1))
+	body := e.as("alice", permRead).get("/r/" + repoName + "/pull/4").Body.String()
+	wantContains(t, body, "gate: required")
 }
 
 func TestParseExternalID(t *testing.T) {

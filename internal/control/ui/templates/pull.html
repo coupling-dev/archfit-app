@@ -1,12 +1,12 @@
 {{define "content"}}
 {{with .Body}}
 <h1>{{if .Pull.Title}}{{.Pull.Title}}{{else}}Pull request{{end}} <span class="hint">#{{.Pull.Number}}</span></h1>
-<p class="hint">{{if .Pull.Author}}{{.Pull.Author}} · {{end}}{{.Pull.State}} · <code>{{.Pull.HeadRef}}</code> into <code>{{.Pull.BaseRef}}</code> · <a href="{{.Pull.URL}}">View on GitHub</a></p>
+<p class="hint">{{if .Pull.Author}}{{.Pull.Author}} · {{end}}{{.Pull.State}} · <code>{{.Pull.HeadRef}}</code> into <code>{{.Pull.BaseRef}}</code> · <a href="{{.Pull.URL}}">View on GitHub</a>
+  {{if .Required}}<span class="p-chip">gate: required</span>{{else}}<span class="p-chip">gate: advisory · does not block merging</span>{{end}}</p>
 
 {{if .Headline}}
 <p class="p-result {{.Conclusion}}" id="result"><strong>{{.Headline}}</strong>
-  <span class="p-chip">archfit/state: {{.Conclusion}}</span>
-  {{if .Required}}<span class="p-chip">gate: required</span>{{else}}<span class="p-chip">gate: advisory · does not block merging</span>{{end}}</p>
+  <span class="p-chip">archfit/state: {{.Conclusion}}</span></p>
 {{end}}
 
 {{if .Unavailable}}
@@ -32,7 +32,7 @@
 {{range .Accepted}}{{template "pullFinding" .}}{{end}}
 </details>
 {{end}}
-{{if .Omitted}}<p class="hint">{{.Omitted}} more findings are on the archfit/state check.</p>{{end}}
+{{if .Omitted}}<p class="hint">{{.Omitted}} more findings are not listed: each group shows at most 50.</p>{{end}}
 
 {{if .Tasks}}
 <details id="tasks"><summary><h2>For coding agents ({{.TaskCount}})</h2></summary>

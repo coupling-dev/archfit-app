@@ -18,17 +18,18 @@ import (
 )
 
 const (
-	stateCheck = "archfit/state" // the check feedback writes on every head, advisory and required
-
 	// external_id of a feedback check run: "v1:<run_id>:<attempt>:<report digest>", the digest "sha256:<hex>".
 	externalIDPrefix = "v1:"
 
-	noResult        = "No Archfit result for this commit yet. The workflow reports a few minutes after a push."
-	noUpload        = "This result came without a report, so there is nothing to show here. The check on GitHub names the reason and the next step."
-	reportExpired   = "GitHub no longer keeps the report of this run. The check on GitHub stays. Re-run the workflow to see the details here."
-	reportMismatch  = "The report of this run does not match its check, so it is not shown. Re-run the workflow."
-	locationsShown  = 3  // per finding, before the rest folds
-	findingsPerList = 50 // per group, the rest counted
+	noResult       = "No Archfit result for this commit yet. The workflow reports a few minutes after a push."
+	noUpload       = "This result came without a report, so there is nothing to show here. The check on GitHub names the reason and the next step."
+	actionRequired = "This result asks for action before its findings mean anything. The check on GitHub names the reason and the next step."
+	reportExpired  = "GitHub no longer keeps the report of this run. The check on GitHub stays. Re-run the workflow to see the details here."
+	reportMismatch = "The report of this run does not match its check, so it is not shown. Re-run the workflow."
+
+	conclusionActionRequired = "action_required"
+	locationsShown           = 3  // per finding, before the rest folds
+	findingsPerList          = 50 // per group, the rest counted
 )
 
 // pullFinding is one finding as the page shows it. Engine strings reach the template as data, never as markup.
@@ -80,13 +81,17 @@ func (s *server) buildPull(ctx context.Context, sc scope, number int) (pullBody,
 		return pullBody{}, err
 	}
 	body := pullBody{Pull: pull, CheckURL: pull.URL + "/checks"}
-	if set, err := s.settings(ctx, sc.repo); err == nil {
-		body.Required = set.Gate == settings.GateRequired
-	} else if !errors.Is(err, errNoSettings) {
+	// The gate reads the settings on the pull request's base, as the published checks do; a base without them is
+	// advisory.
+	if raw, _, err := s.gh.files.File(ctx, sc.repo.RepoRef, pull.BaseRef, settings.Path); err == nil {
+		if set, err := settings.Parse(raw); err == nil {
+			body.Required = set.Gate == settings.GateRequired
+		}
+	} else if !errors.Is(err, api.ErrNotFound) {
 		return pullBody{}, err
 	}
 
-	runs, err := s.gh.checks.CheckRuns(ctx, sc.repo.RepoRef, pull.HeadSHA, stateCheck)
+	runs, err := s.gh.checks.CheckRuns(ctx, sc.repo.RepoRef, pull.HeadSHA, checkState)
 	if err != nil {
 		return pullBody{}, err
 	}
@@ -96,6 +101,13 @@ func (s *server) buildPull(ctx context.Context, sc scope, number int) (pullBody,
 	}
 	run := slices.MaxFunc(runs, func(a, b api.CheckRun) int { return cmp.Compare(a.ID, b.ID) })
 	body.Headline, body.Conclusion = run.Title, run.Conclusion
+	// action_required withdraws a result (stale inputs, an expired waiver, a suspension, a missing approval) or says
+	// the evidence is unusable. The sweep keeps the old run in external_id when it withdraws, so the old report would
+	// still match the digest: findings are never shown under a result that asks for action.
+	if run.Conclusion == conclusionActionRequired {
+		body.Unavailable = actionRequired
+		return body, nil
+	}
 	runID, digest, ok := parseExternalID(run.ExternalID)
 	if !ok || runID == 0 {
 		body.Unavailable = noUpload

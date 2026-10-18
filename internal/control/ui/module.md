@@ -929,13 +929,15 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   beyond authorization, except that an assist refused for problems first read the branch file to compare.
 - Ready: `Proposals.Get`; head must equal `head_sha`, state must be `DraftOpen`; then `Proposals.Ready(number)`. ui never merges:
   publication is the merge on GitHub under the customer's ruleset and owner approval, the same path as a GitHub-first edit.
-- Pull request page: `Pulls.Pull(number)` → settings (gate mode only; no settings reads as advisory) →
-  `CheckRuns(head, "archfit/state")`, the run with the highest ID. Its `Title` is the headline: feedback already states
-  the effect on merge there, so the page never derives one of its own. Its `external_id` is
+- Pull request page: `Pulls.Pull(number)` → the settings file on the pull request's base (gate mode only, shown
+  always; none or unparseable reads as advisory) → `CheckRuns(head, "archfit/state")`, the run with the highest ID. Its
+  `Title` is the headline: feedback already states the effect on merge there, so the page never derives one of its own.
+  A run that concludes `action_required` shows no finding: the sweep keeps the old run in a withdrawn result's
+  `external_id`, so its old report would still match. Its `external_id` is
   `v1:<run_id>:<attempt>:sha256:<hex>`; run 0 or an unreadable id is "no upload". Then
   `Artifact(run_id, "archfit-report", report.MaxBytes)`, and the page shows it only when the SHA-256 of the bytes equals
   the digest in the id: a report is never shown beside a check it did not produce. States, each with fixed wording and a
-  link to the checks on GitHub: no check yet, no upload, report expired (`ErrNotFound`, GitHub retention), report does
+  link to the checks on GitHub: no check yet, action required, no upload, report expired (`ErrNotFound`, GitHub retention), report does
   not match its check, report unavailable (decode error). With a report: rule violations open (active gate findings,
   and any status this version does not know), advisories and accepted debt folded, at most 50 per group with the rest
   counted, 3 locations per finding with the rest folded, a folded line "No baseline in this run · PR attribution
@@ -1049,7 +1051,10 @@ their interfaces except where a test says otherwise. The clock is injected.
   `/static/` and `/schema/policy.json` answer without a session.
 - **Test name**: `TestPullPageShowsTheReportOfItsCheck`
   **Scenario**: no check on the head; a check whose external_id names a run whose artifact matches its digest; one whose digest does not match; an expired artifact; run 0; an unknown pull request.
-  **Expected behavior**: "no result yet"; the check title as headline, advisory mode, the violation, the no-baseline and no-attribution line, the run; the mismatch wording and no finding; the expired wording; the no-upload wording; `404`.
+  **Expected behavior**: "no result yet"; the check title as headline, advisory mode, the violation, the no-baseline and no-attribution line, the run; the mismatch wording and no finding; the expired wording; the no-upload wording; `404`. Also: an `action_required` run over a matching old report shows the action-required wording and no finding; an undecodable report shows "report unavailable"; of two check runs the higher ID wins; "added by this PR" appears only with `origin_status: comparable` and `origin: introduced`.
+- **Test name**: `TestPullPageNumberMustBeAPull`, `TestPullPageReadsTheGateModeOfTheBase`
+  **Scenario**: numbers `0`, `-4`, `x`, `4x`; a pull request whose base branch requires the gate while the default branch is advisory.
+  **Expected behavior**: `404` each; "gate: required".
 - **Test name**: `TestParseExternalID`
   **Scenario**: a pilot external_id, a bare digest, run 0, another version, a non-numeric run, empty.
   **Expected behavior**: run and bare hex digest for v1 ids; not ok otherwise.
