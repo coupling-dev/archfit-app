@@ -29,9 +29,10 @@ const (
 )
 
 type Link struct {
-	From, To string
-	Status   LinkStatus
-	Count    int // observed dependencies of the pair's seams; 0 when only a finding names the pair
+	From, To   string
+	Status     LinkStatus
+	Count      int  // observed dependencies of the pair's seams; 0 when only a finding names the pair
+	Introduced bool // a finding that names the pair is one the engine says this change introduced; display only
 }
 
 // View is a read-only picture. Stale is true when the policy text no longer matches the report's config_hash.
@@ -52,6 +53,7 @@ type LinkFinding struct {
 	RuleID   string
 	Kind     string
 	Status   string
+	Origin   string // "introduced" | "pre_existing" | "unknown"; "" unless the report compared with the base branch
 	Why      string
 	More     int // on the last listed finding of a pair: how many more name the pair and are not listed
 }
@@ -69,6 +71,9 @@ const (
 	statusBaseline = "baseline"
 	statusWaived   = "waived"
 	statusFixed    = "fixed"
+
+	originComparable = "comparable" // Comparison.OriginStatus: the origin of each finding is meaningful
+	originIntroduced = "introduced" // Finding.Origin: the base branch does not have the finding
 
 	hardGatesPass = "pass" // Decision.HardGates; any other value, an unknown one included, is incomplete
 )
@@ -138,11 +143,16 @@ func Build(rep report.Report, policyText []byte) View {
 	// Findings that name a drawn pair, fixed ones excluded: they say nothing about the current tree.
 	// The strongest status first, so the cap never drops the finding that set the link's status; the last listed
 	// one of a capped pair counts the rest.
+	// A link is introduced when a finding behind it is, and only when the report compared with the base branch.
+	compared := rep.Comparison.OriginStatus == originComparable
 	byPair := map[pair][]report.Finding{}
 	for _, f := range rep.Findings {
 		p := pair{f.Edge.From.Module, f.Edge.To.Module}
 		if links[p] != nil && f.Status != statusFixed {
 			byPair[p] = append(byPair[p], f)
+			if compared && f.Origin == originIntroduced {
+				links[p].Introduced = true
+			}
 		}
 	}
 	findings := []LinkFinding{}
@@ -150,6 +160,9 @@ func Build(rep report.Report, policyText []byte) View {
 		slices.SortStableFunc(fs, func(a, b report.Finding) int { return rank(findingStatus(b)) - rank(findingStatus(a)) })
 		for i, f := range fs[:min(len(fs), findingsPerLink)] {
 			lf := LinkFinding{From: p.from, To: p.to, RuleID: f.RuleID, Kind: f.Kind, Status: f.Status, Why: clip(f.Why)}
+			if compared {
+				lf.Origin = f.Origin
+			}
 			if i == findingsPerLink-1 {
 				lf.More = len(fs) - findingsPerLink
 			}
