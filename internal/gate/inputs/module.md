@@ -96,7 +96,8 @@ type Resolver interface {
     // Resolve reads the protected ref and reviews. It never reads policy, settings, baseline,
     // owners, or CODEOWNERS from the head tree, except to hash an owner-approved candidate.
     Resolve(ctx context.Context, t Target, now time.Time) (Trusted, error)
-    // RecordPusher stores the login that opened or pushed t's head, which Resolve reads back. "" records nothing.
+    // RecordPusher adds the login that pushed t's head, from a signed push delivery, to the set Resolve reads back.
+    // "" records nothing. Opening a pull request records nothing.
     RecordPusher(ctx context.Context, t Target, login string) error
 }
 ```
@@ -162,7 +163,8 @@ superset stated in `MayBeProtected`.
    does not decode gives the zero `Entitlement`, which means "not suspended" **[default]**. Log the outcome
    (`found`, `missing`, `unreadable`) and the installation ID only. Recovery of a missing record is outside the
    gate: `control`'s sweep backfills it (Observe + Refresh for every installation), so a missed installation
-   webhook delays the trial start by at most one sweep interval. A Store outage never fails `Resolve`; that
+   webhook delays the trial start by at most one sweep interval. A Store outage never fails the entitlement
+   read, so it never fails `Resolve` by itself; only a failed read of a pusher record does (below). That
    publishing then also needs the Store for its lease is `gate/feedback`'s rule, not this module's.
 2. `Suspended = t.Repo.Private && !SuspendAfter.IsZero() && !now.Before(SuspendAfter)`.
 3. Settings: `Repos.File(ref = t.BaseRef, settings.Path)`. `api.ErrNotFound` → return
@@ -209,14 +211,23 @@ A design rule of the product: anyone may propose a policy change, only an archit
 GitHub does not let an author approve their own pull request. A sole owner would never get a change through. So an
 owner also authorizes a head by being the one who pushed it.
 
-- `RecordPusher(t, login)` writes `pusher/<lowercase repo full name>/<t.HeadSHA>` = `login` under the installation
-  tenant. The caller passes the `sender.login` of a signed `push` delivery: the actor GitHub says moved the branch to
-  that SHA. Git author and committer fields are never read; they are spoofable. An empty login writes nothing.
-- When no owner approved the head, `Resolve` reads that record. The pusher authorizes the head when the login is an
+- `RecordPusher(t, login)` adds `login` to the set stored at `pusher/<lowercase repo full name>/<t.HeadSHA>` under the
+  installation tenant, by compare-and-swap (a few attempts, then an error the queue retries). The caller passes the
+  `sender.login` of a signed `push` delivery: the actor GitHub says moved a branch to that SHA. Git author and
+  committer fields are never read; they are spoofable. An empty login writes nothing. A login already in the set
+  (ignoring case) writes nothing. The set holds at most 32 logins; a further one is not recorded.
+- The set only grows. A later push of the same commit by someone else (a branch cut from it, a mirror, a redelivered
+  event) takes nothing away, so the decision for a head does not depend on the order of events.
+- When no owner approved the head, `Resolve` reads that set. A pusher authorizes the head when the login is an
   owner by the same rule as a reviewer (login or team member), with owners from `Settings.Owners` at `BaseRef`.
-  Owners named only by the head settings or head CODEOWNERS are not owners.
-- The record is keyed by head SHA, so a later commit is a different key: its pusher decides, and the earlier owner
-  push authorizes nothing new. An owner who pushes commits written by someone else endorses them.
+  The first owner in the set is `ApprovedBy`. Owners named only by the head settings or head CODEOWNERS are not owners.
+- The set is keyed by head SHA, so a later commit is a different key: its pushers decide, and the earlier owner
+  push authorizes nothing new. The authorization is of the commit: an owner who pushes it to any branch
+  authorizes that commit for every pull request whose head it is. An owner who pushes commits written by someone
+  else endorses them.
+- `sender` is the account GitHub names for the push. GitHub documents it as the user who triggered the event. It does
+  not say which account a push made with a deploy key carries; if that is the account that added the key, the
+  holder of a write deploy key can push as that account **[unverified limitation: check a deploy-key delivery]**.
 - A fork head has no record (its push happens in the fork) and `Resolve` stops at step 10 anyway: forks stay on a
   review approval, which they also never get.
 - A failed read of the record is an error, not "no pusher": the decision is retried, never published on a guess.
@@ -226,7 +237,8 @@ owner also authorizes a head by being the one who pushed it.
 
 `Resolve` returns an error for any GitHub failure other than "file absent" (including
 `api.ErrRateLimited`, matchable with `errors.Is`). The zero `Trusted` accompanies an error. The caller
-must not publish a passing result on error; the pending check stays. Store failures never return an error.
+must not publish a passing result on error; the pending check stays. A failed Store read of the entitlement never
+returns an error; a failed Store read of a pusher record does, because "no pusher" would publish a guess.
 
 A protected file that exists but cannot be read is such a failure, never "absent": a file over the API client's
 size cap (1 MiB), a 5xx, a timeout. "Absent" is only `api.ErrNotFound`. `Resolve` returns the error, `gate` answers
@@ -244,10 +256,11 @@ size cap (1 MiB), a 5xx, a timeout. "Absent" is only `api.ErrNotFound`. `Resolve
 - **Volatility**: high (inputs side); store is low
 - **Balanced?**: yes
 - **Shared knowledge**: tenant = installation ID; key `EntitlementKey`; value is the JSON of `Entitlement`.
-  `ErrNotFound` is the sentinel of `store` for a missing key; inputs treats it like every other Store error.
-  Key `pusher/<lowercase repo full name>/<head sha>`; the value is the pusher's login. inputs calls only `Get`
-  and, for the pusher record, `Put`; never `Delete`, `Add`, `CompareAndSwap`, `DeleteTenant` or `Tenants`.
-  `SystemTenant` is never used here.
+  `ErrNotFound` is the sentinel of `store` for a missing key; for the entitlement inputs treats it like every other
+  Store error, for a pusher record it means "no pusher".
+  Key `pusher/<lowercase repo full name>/<head sha>`; the value is the pushers' logins, one per line. inputs calls
+  only `Get` and, for the pusher record, `CompareAndSwap`; never `Put`, `Delete`, `Add`, `CompareAndSwapAll`,
+  `DeleteTenant` or `Tenants`. `SystemTenant` is never used here.
 
 <!-- contract: Tenant, SystemTenant — restated from internal/store/module.md -->
 ```go

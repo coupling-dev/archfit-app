@@ -271,7 +271,7 @@ Its one repository is the whole pass, so a stop leaves the work undone, and the 
 - **Volatility**: high
 - **Balanced?**: yes
 - **Shared knowledge**: `Resolve` is fork-safe and reads only the protected ref; it returns an error on GitHub
-  failures and never on Store failures. `Trusted.EarliestWaiverExpiry` is the earliest expiry not before `now`.
+  failures and on a failed read of a pusher record, never on a failed read of the entitlement. `Trusted.EarliestWaiverExpiry` is the earliest expiry not before `now`.
   `Entitlement` is an opaque part of `Trusted` for this module; `Without` hands it to `verdict.Suspended` unread.
   The stale test calls `Accepts`; `Without` calls `First`. `ProtectedPaths` and `MayBeProtected` are not used here.
 
@@ -316,7 +316,8 @@ type Resolver interface {
     // Resolve reads the protected ref and reviews. It never reads policy, settings, baseline,
     // owners, or CODEOWNERS from the head tree, except to hash an owner-approved candidate.
     Resolve(ctx context.Context, t Target, now time.Time) (Trusted, error)
-    // RecordPusher stores the login that opened or pushed t's head, which Resolve reads back. "" records nothing.
+    // RecordPusher adds the login that pushed t's head, from a signed push delivery, to the set Resolve reads back.
+    // "" records nothing. Opening a pull request records nothing.
     RecordPusher(ctx context.Context, t Target, login string) error
 }
 ```
@@ -726,7 +727,8 @@ type Actions interface {
 - A failure for one installation, repository or pull never aborts the pass.
 - Reconciliation window (stated, not zero): a missed event or an expiry is repaired within one sweep interval
   (hourly **[default]**) plus the customer's CI time. During that window the old check result stands.
-- A Store outage inside `Resolve` means "not suspended"; the sweep never suspends on missing data. The same outage
+- A Store outage inside `Resolve` means "not suspended"; the sweep never suspends on missing data. A pull whose pusher
+  record cannot be read counts as an error and keeps its check, like the lease failure below. The same outage
   fails every `Publish`, `Pending`, `Warn` and `Reconcile`, which need `gate/feedback`'s publication lease: each such
   pull counts as an error and its check stays as it was until a pass after the Store is back. The sweep never writes
   `success`; a check that was green, with an approval withdrawn meanwhile, stays green until that pass.

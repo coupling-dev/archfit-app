@@ -262,7 +262,9 @@ so a sole owner could otherwise never change policy. The pusher is the actor of
 the signed `push` webhook, never a git author or committer field, which is
 spoofable. A later push is a new head with its own pusher, so the authorization
 never carries over. An owner who pushes commits written by others endorses
-them. A fork head gets no push authorization. Strict, narrow, expiring exceptions
+them. The authorization is of the commit, not of a branch. A fork head gets no push authorization. The pusher is the
+`sender` GitHub names; GitHub does not say which account a push with a deploy key carries, so a write deploy key may
+act as the account that added it. This is unverified and open. Strict, narrow, expiring exceptions
 follow the [product governance rules](product.md#3-architecture-policy-and-authority)
 and T14–T16, not an automatic accepted-debt refresh.
 

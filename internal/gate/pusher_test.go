@@ -117,6 +117,19 @@ func TestPushDoesNotAuthorizeUnlessAnOwnerPushedTheExactHead(t *testing.T) {
 		w.wantAnswer(w.upload(p, fixtureHealthy, configHash(digest)), 200, "action_required", "owner_approval_missing")
 	})
 
+	t.Run("a later push of the same commit by a non-owner takes nothing away", func(t *testing.T) {
+		w := newWorld(t)
+		p := w.openPull(w.shop, 7)
+		digest := w.editsPolicy(p)
+		w.handle(w.branchPush(p, ownerLogin))
+		cut := w.branchPush(p, outsiderLogin) // a branch cut from the owner's commit
+		cut.Branch = "cut-from-feature"
+		w.handle(cut)
+		w.handle(w.event(webhook.PullOpened, p))
+
+		w.wantAnswer(w.upload(p, fixtureHealthy, configHash(digest)), 200, "success", "healthy")
+	})
+
 	t.Run("a head-edited settings file cannot make its pusher an owner", func(t *testing.T) {
 		w := newWorld(t)
 		p, _ := w.missingApproval(7)

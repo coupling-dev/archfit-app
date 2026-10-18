@@ -427,9 +427,9 @@ const leaseKeyPrefix = "feedback/lease/"
 // pusherKeyPrefix is gate/inputs' unexported prefix of the record of who pushed a head, restated for the same reason.
 const pusherKeyPrefix = "pusher/"
 
-// guardStore proves the gate path writes nothing but publication leases: every other write panics, and so does a
-// compare-and-swap outside the lease keys. It records the tenants and keys of other reads, and the tenants of lease
-// operations separately.
+// guardStore proves the gate path writes nothing but publication leases and pusher records: every other write panics,
+// and so does a compare-and-swap outside the lease and pusher keys. It records the tenants and keys of other reads,
+// and the tenants of lease and pusher operations separately.
 type guardStore struct {
 	inner store.Store
 	// entitlementErr fails every read except the leases: the control plane's records are unreadable.
@@ -475,11 +475,16 @@ func (s *guardStore) Get(ctx context.Context, t store.Tenant, key string) ([]byt
 }
 
 func (s *guardStore) CompareAndSwap(ctx context.Context, t store.Tenant, key string, old, value []byte) (bool, error) {
-	if !strings.HasPrefix(key, leaseKeyPrefix) {
-		panic("gate path wrote to the Store outside a publication lease: CompareAndSwap")
+	pusher := strings.HasPrefix(key, pusherKeyPrefix)
+	if !pusher && !strings.HasPrefix(key, leaseKeyPrefix) {
+		panic("gate path wrote to the Store outside a publication lease or a pusher record: CompareAndSwap")
 	}
 	s.mu.Lock()
-	s.leaseTenants = append(s.leaseTenants, t)
+	if pusher {
+		s.pusherTenants = append(s.pusherTenants, t)
+	} else {
+		s.leaseTenants = append(s.leaseTenants, t)
+	}
 	s.mu.Unlock()
 	if s.down != nil {
 		return false, s.down
@@ -491,17 +496,8 @@ func (s *guardStore) CompareAndSwapAll(context.Context, store.Tenant, []store.Sw
 	panic("gate path wrote to the Store: CompareAndSwapAll")
 }
 
-func (s *guardStore) Put(ctx context.Context, t store.Tenant, key string, value []byte) error {
-	if !strings.HasPrefix(key, pusherKeyPrefix) {
-		panic("gate path wrote to the Store outside a pusher record: Put")
-	}
-	s.mu.Lock()
-	s.pusherTenants = append(s.pusherTenants, t)
-	s.mu.Unlock()
-	if s.down != nil {
-		return s.down
-	}
-	return s.inner.Put(ctx, t, key, value)
+func (s *guardStore) Put(context.Context, store.Tenant, string, []byte) error {
+	panic("gate path wrote to the Store: Put")
 }
 
 func (s *guardStore) Delete(context.Context, store.Tenant, string) error {

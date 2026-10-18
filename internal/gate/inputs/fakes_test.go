@@ -111,7 +111,7 @@ func (f *fakePulls) TeamMember(_ context.Context, _ api.RepoRef, team, login str
 	return false, nil
 }
 
-// stubStore answers Get only; any other Store method panics, which proves inputs is read-only.
+// stubStore answers Get only; any other Store method panics, which proves the paths that use it only read.
 type stubStore struct {
 	store.Store
 	get     func(ctx context.Context) ([]byte, error)

@@ -25,6 +25,17 @@ const (
 	reviewCommented = "COMMENTED"
 )
 
+const (
+	// pusherSep separates the logins of a pusher record; a GitHub login holds no newline.
+	pusherSep = "\n"
+	// maxPushers bounds one record. Past it a further account is not recorded: no real commit is pushed by that many
+	// accounts, and an unbounded value would grow with every push of a hot SHA.
+	maxPushers     = 32
+	recordAttempts = 5
+)
+
+var errRecordContention = errors.New("inputs: record pusher: store contention")
+
 type resolver struct {
 	repos api.Repos
 	pulls api.Pulls
@@ -205,20 +216,42 @@ func protectedPaths(changed []string, truncated bool, s settings.Settings) []str
 	return out
 }
 
-// RecordPusher stores the login that opened or pushed t's head, so that Resolve can grant the approval of an owner
-// who pushed it. The record is keyed by the head SHA: a later head has its own record, and an empty login writes
-// nothing.
+// RecordPusher adds login to the set of accounts that pushed t's head, so that Resolve can grant the approval of an
+// owner among them. The set is keyed by the head SHA: a later head has its own set, and an empty login writes
+// nothing. It only ever grows, so a later push of the same commit by someone else (a branch cut from it, a mirror,
+// a redelivery) cannot take away what an owner's push granted, and the decision does not depend on event order.
 func (r *resolver) RecordPusher(ctx context.Context, t Target, login string) error {
 	if login == "" {
 		return nil
 	}
-	if err := r.store.Put(ctx, store.Tenant(t.Repo.InstallationID), pusherKey(t), []byte(login)); err != nil {
-		return fmt.Errorf("inputs: record pusher: %w", err)
+	tenant, key := store.Tenant(t.Repo.InstallationID), pusherKey(t)
+	for range recordAttempts {
+		old, err := r.store.Get(ctx, tenant, key)
+		var pushers []string
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			old = nil
+		case err != nil:
+			return fmt.Errorf("inputs: record pusher: %w", err)
+		default:
+			pushers = strings.Split(string(old), pusherSep)
+		}
+		known := slices.ContainsFunc(pushers, func(p string) bool { return strings.EqualFold(p, login) })
+		if known || len(pushers) >= maxPushers {
+			return nil
+		}
+		swapped, err := r.store.CompareAndSwap(ctx, tenant, key, old, []byte(strings.Join(append(pushers, login), pusherSep)))
+		if err != nil {
+			return fmt.Errorf("inputs: record pusher: %w", err)
+		}
+		if swapped {
+			return nil
+		}
 	}
-	return nil
+	return errRecordContention // the queue retries the delivery
 }
 
-// pusher returns the login that pushed t's head when it is an owner in the protected settings, else "".
+// pusher returns the first account that pushed t's head and is an owner in the protected settings, else "".
 // A store failure is an error, not "no pusher": the decision waits for a retry instead of publishing a wrong one.
 func (r *resolver) pusher(ctx context.Context, t Target, owners []string, member func(team, login string) (bool, error)) (string, error) {
 	raw, err := r.store.Get(ctx, store.Tenant(t.Repo.InstallationID), pusherKey(t))
@@ -228,18 +261,19 @@ func (r *resolver) pusher(ctx context.Context, t Target, owners []string, member
 	if err != nil {
 		return "", fmt.Errorf("inputs: read pusher: %w", err)
 	}
-	login := string(raw)
-	ok, err := isOwner(owners, login, member)
-	if err != nil {
-		return "", fmt.Errorf("inputs: team membership: %w", err)
+	for _, login := range strings.Split(string(raw), pusherSep) {
+		ok, err := isOwner(owners, login, member)
+		if err != nil {
+			return "", fmt.Errorf("inputs: team membership: %w", err)
+		}
+		if ok {
+			return login, nil
+		}
 	}
-	if !ok {
-		return "", nil
-	}
-	return login, nil
+	return "", nil
 }
 
-// pusherKey is the Store key of the login that pushed t's head. Repository names compare case-insensitively.
+// pusherKey is the Store key of the accounts that pushed t's head. Repository names compare case-insensitively.
 func pusherKey(t Target) string {
 	return "pusher/" + strings.ToLower(t.Repo.FullName) + "/" + t.HeadSHA
 }
