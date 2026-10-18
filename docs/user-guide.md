@@ -409,11 +409,11 @@ baseline already accepts, and accepts nothing new.
 
 ## See a repository
 
-Open `/r/<owner>/<repo>`. After the first report the page shows:
+Open `/r/<owner>/<repo>`. The page always shows the setup steps with the current one marked. In advisory and
+required mode it also says what to do next. After the first report it also shows:
 
 - the Archfit result of the default branch, with a link to the graph;
-- the open pull requests, newest first, each with its result and a link to its page (up to 20);
-- the setup steps, with the current one marked and what to do next.
+- the open pull requests, newest first, each with its result and a link to its page (up to 20).
 
 ## See a pull request
 

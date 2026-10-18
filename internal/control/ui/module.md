@@ -890,8 +890,10 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   and to its check runs **[default]**: report history is what GitHub keeps. The route needs `read`; the page calls
   `Sessions.Authorize(user, "{o}/{n}", "admin")` a second time and shows the onboarding, discover and consent controls
   only when it succeeds. Its error is not an error of the page; the `POST` routes enforce `admin` themselves.
-  Setup steps: the stages of the onboarding path with the current one marked, and fixed advice for the step after
-  `gate_advisory` (rehearse, then require). From `report_received` on, the page also reads `archfit/state` on the
+  Setup steps: the stages of the onboarding path with the current one marked ("First report" is done only once a
+  report arrived: `policy_merged` can come without one), and fixed advice at `gate_advisory` (rehearse, then the
+  settings pull request and the ruleset) and at `gate_required` (the ruleset). At `report_received`, `gate_advisory`
+  and `gate_required` the page also reads `archfit/state` on the
   default-branch head (the overview's word and title, with a link to the graph) and `Pulls.OpenPulls`, newest first:
   at most 20 **[default]**, the rest counted, one `CheckRuns(head, "archfit/state")` each, at most 8 at a time; each
   row links to `/r/{o}/{n}/pull/{number}`. A failed list shows fixed wording and never fails the page; a failed
@@ -1061,7 +1063,7 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Expected behavior**: "no result yet"; the check title as headline, advisory mode, the violation, the no-baseline and no-attribution line, the run; the mismatch wording and no finding; the expired wording; the no-upload wording; `404`. Also: an `action_required` run over a matching old report shows the action-required wording and no finding; an undecodable report shows "report unavailable"; of two check runs the higher ID wins; "added by this PR" appears only with `origin_status: comparable` and `origin: introduced`.
 - **Test name**: `TestStatusPageShowsBranchPullsAndSetup`
   **Scenario**: stage `gate_advisory` with a default-branch check and one open pull request; stage `workflow_merged`; `OpenPulls` failing; 23 more open pull requests.
-  **Expected behavior**: the default-branch title, the pull request linked to its page with its check title, the current and done steps, the rehearse advice; no pull request or state lookup before a report; the fixed wording and a `200`; "4 more" and 21 `CheckRuns` calls.
+  **Expected behavior**: the default-branch title, the pull request linked to its page with its check title, the current and done steps, the rehearse advice; no pull request or state lookup before a report, also at `policy_merged`, where "First report" is not done; the ruleset advice at `gate_required`; the fixed wording and a `200`; "4 more" and 21 `CheckRuns` calls.
 - **Test name**: `TestPullPageNumberMustBeAPull`, `TestPullPageReadsTheGateModeOfTheBase`
   **Scenario**: numbers `0`, `-4`, `x`, `4x`; a pull request whose base branch requires the gate while the default branch is advisory.
   **Expected behavior**: `404` each; "gate: required".

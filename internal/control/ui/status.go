@@ -78,7 +78,7 @@ func (s *server) status(w http.ResponseWriter, r *http.Request, sc scope) {
 	}
 	body.Steps, body.Next = setupSteps(progress.Stage)
 	body.GraphHref = repoPath(sc, "/graph")
-	if reached(progress.Stage, onboarding.StageReportReceived) {
+	if hasReport(progress.Stage) {
 		body.MainState, body.MainReason = s.defaultBranchState(r.Context(), sc.repo)
 		body.Pulls, body.PullsMore, body.PullsError = s.openPulls(r.Context(), sc)
 	}
@@ -249,14 +249,27 @@ var stepLabels = map[onboarding.Stage]string{
 }
 
 var nextSteps = map[onboarding.Stage]string{
-	onboarding.StageAdvisory: "Rehearse the gate: one forbidden change must fail and one legitimate change must pass. Then require it with an owner-approved settings pull request that sets gate: required.",
+	onboarding.StageAdvisory: "Rehearse the gate: one forbidden change must show a rule violation on archfit/state and one " +
+		"legitimate change must not. Then merge an owner-approved settings pull request that sets gate: required, and add " +
+		"archfit/gate as a required check in a GitHub ruleset: the settings alone never block a merge.",
+	onboarding.StageRequired: "Make sure archfit/gate is a required check in a GitHub ruleset. The settings alone never block a merge.",
+}
+
+// hasReport reports whether onboarding has seen a report. policy_merged sorts after report_received on the path but
+// means a merged policy with no report yet.
+func hasReport(st onboarding.Stage) bool {
+	return st == onboarding.StageReportReceived || st == onboarding.StageAdvisory || st == onboarding.StageRequired
 }
 
 // setupSteps is the onboarding path with the current stage marked, and the advice for the step after it.
 func setupSteps(current onboarding.Stage) ([]step, string) {
 	steps := make([]step, len(stageOrder))
 	for i, st := range stageOrder {
-		steps[i] = step{Label: stepLabels[st], Done: reached(current, st) && st != current, Current: st == current}
+		done := reached(current, st) && st != current
+		if st == onboarding.StageReportReceived {
+			done = hasReport(current) && st != current
+		}
+		steps[i] = step{Label: stepLabels[st], Done: done, Current: st == current}
 	}
 	return steps, nextSteps[current]
 }
@@ -266,7 +279,7 @@ func setupSteps(current onboarding.Stage) ([]step, string) {
 func (s *server) openPulls(ctx context.Context, sc scope) (rows []pullRow, more int, failed bool) {
 	pulls, err := s.gh.pulls.OpenPulls(ctx, sc.repo.RepoRef)
 	if err != nil {
-		slog.Warn("ui open pull requests unavailable", "repo", sc.repo.FullName, "error", err)
+		slog.Warn("ui open pull requests unavailable", "repository_id", sc.repo.ID, "installation_id", sc.repo.InstallationID)
 		return nil, 0, true
 	}
 	if len(pulls) > maxStatusPulls {

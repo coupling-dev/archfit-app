@@ -556,6 +556,20 @@ func TestStatusPageShowsBranchPullsAndSetup(t *testing.T) {
 		}
 		wantContains(t, body, `<li class="current">Workflow merged</li>`)
 	})
+	t.Run("a merged policy without a report reads nothing and marks no report", func(t *testing.T) {
+		e := newEnv(t)
+		setup(e, onboarding.StagePolicyMerged)
+		body := e.as("alice", permRead).get(path).Body.String()
+		if strings.Contains(body, `id="main-state"`) || len(e.gh.called("OpenPulls")) != 0 {
+			t.Errorf("state or pull requests read before a report")
+		}
+		wantContains(t, body, `<li class="">First report</li>`, `<li class="current">Policy merged</li>`)
+	})
+	t.Run("required still names the ruleset", func(t *testing.T) {
+		e := newEnv(t)
+		setup(e, onboarding.StageRequired)
+		wantContains(t, e.as("alice", permRead).get(path).Body.String(), "required check in a GitHub ruleset")
+	})
 	t.Run("a failed list leaves the page", func(t *testing.T) {
 		e := newEnv(t)
 		setup(e, onboarding.StageAdvisory)
