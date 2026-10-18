@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -529,4 +530,64 @@ func TestParseExternalID(t *testing.T) {
 			t.Errorf("parseExternalID(%q) = %d, %q, %v; want %d, %q, %v", tt.id, run, digest, ok, tt.run, tt.digest, tt.ok)
 		}
 	}
+}
+
+func TestStatusPageShowsBranchPullsAndSetup(t *testing.T) {
+	setup := func(e *env, stage onboarding.Stage) {
+		e.onb.progress = onboarding.Progress{Stage: stage}
+		e.gh.checks[repoName+"@"+sha(10)+"#"+checkState] = []api.CheckRun{{ID: 1, Conclusion: "neutral", Title: "Architecture needs attention"}}
+		e.gh.checks[repoName+"@"+sha(4)+"#"+checkState] = []api.CheckRun{{ID: 2, Conclusion: "neutral", Title: "Architecture violations found · advisory"}}
+	}
+	path := "/r/" + repoName
+	t.Run("advisory", func(t *testing.T) {
+		e := newEnv(t)
+		setup(e, onboarding.StageAdvisory)
+		body := html.UnescapeString(e.as("alice", permRead).get(path).Body.String())
+		wantContains(t, body, `id="main-state"`, "Architecture needs attention", `href="/r/`+repoName+`/pull/4"`,
+			"#4 feat: read options", "Architecture violations found · advisory", `<li class="current">Advisory</li>`,
+			`<li class="done">Policy merged</li>`, "Rehearse the gate")
+	})
+	t.Run("before the first report there is nothing to read", func(t *testing.T) {
+		e := newEnv(t)
+		setup(e, onboarding.StageWorkflowMerged)
+		body := e.as("alice", permRead).get(path).Body.String()
+		if strings.Contains(body, `id="open-pulls"`) || strings.Contains(body, `id="main-state"`) || len(e.gh.called("OpenPulls")) != 0 {
+			t.Errorf("pull requests looked up before any report")
+		}
+		wantContains(t, body, `<li class="current">Workflow merged</li>`)
+	})
+	t.Run("a merged policy without a report reads nothing and marks no report", func(t *testing.T) {
+		e := newEnv(t)
+		setup(e, onboarding.StagePolicyMerged)
+		body := e.as("alice", permRead).get(path).Body.String()
+		if strings.Contains(body, `id="main-state"`) || len(e.gh.called("OpenPulls")) != 0 {
+			t.Errorf("state or pull requests read before a report")
+		}
+		wantContains(t, body, `<li class="">First report</li>`, `<li class="current">Policy merged</li>`)
+	})
+	t.Run("required still names the ruleset", func(t *testing.T) {
+		e := newEnv(t)
+		setup(e, onboarding.StageRequired)
+		wantContains(t, e.as("alice", permRead).get(path).Body.String(), "required check in a GitHub ruleset")
+	})
+	t.Run("a failed list leaves the page", func(t *testing.T) {
+		e := newEnv(t)
+		setup(e, onboarding.StageAdvisory)
+		e.gh.fail["OpenPulls"] = errors.New("boom")
+		res := e.as("alice", permRead).get(path)
+		wantStatus(t, res, http.StatusOK)
+		wantContains(t, res.Body.String(), "could not be read", "Architecture needs attention")
+	})
+	t.Run("at most maxStatusPulls are looked up", func(t *testing.T) {
+		e := newEnv(t)
+		setup(e, onboarding.StageAdvisory)
+		for n := 100; n < 100+maxStatusPulls+3; n++ {
+			e.gh.pulls[repoName+"#"+strconv.Itoa(n)] = api.Pull{Number: n, Title: "p", State: "open", HeadSHA: sha(n)}
+		}
+		body := e.as("alice", permRead).get(path).Body.String()
+		wantContains(t, body, "4 more open pull requests")
+		if got := len(e.gh.called("CheckRuns")); got != maxStatusPulls+1 {
+			t.Errorf("CheckRuns calls = %d, want %d (one per listed pull request and one for the default branch)", got, maxStatusPulls+1)
+		}
+	})
 }
