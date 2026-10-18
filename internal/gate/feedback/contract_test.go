@@ -127,6 +127,24 @@ func TestStateReadsBack(t *testing.T) {
 	}
 }
 
+func TestAdvisoryStateReadsTheStateCheck(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(headB)
+	target := prTarget(headB)
+	p := blockedPublication(t, headB, 7, 1)
+	p.Trusted.Settings.Gate = settings.GateAdvisory
+	if err := h.pub.Publish(ctx, p); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if got, err := h.pub.State(ctx, target); err != nil || got.Exists {
+		t.Fatalf("State of an advisory head = %+v, %v; want no gate check", got, err)
+	}
+	got, err := h.pub.AdvisoryState(ctx, target)
+	if err != nil || !got.Exists || got.Pending || got.Receipt != p.Receipt {
+		t.Fatalf("AdvisoryState = %+v, %v; want receipt %+v", got, err, p.Receipt)
+	}
+}
+
 func TestWarnIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(headB)

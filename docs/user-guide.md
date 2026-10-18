@@ -148,6 +148,9 @@ The App publishes these items on a pull request:
 - `archfit/gate`, the blocking check when `gate: required`
 - One App comment that the App updates after each run
 
+When the policy, baseline or labels change on the base branch, open pull requests show `stale_inputs` and their
+workflow runs again, in advisory mode too. An old result never stays without that mark.
+
 What each item shows:
 
 - When architecture findings block (reason `blocking_findings`), the `archfit/gate` summary names each blocking

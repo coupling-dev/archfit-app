@@ -129,7 +129,9 @@ The first rule whose condition holds ends the evaluation of that pull, whether o
 
 | #   | Condition                                                                       | Action                                                                                                 | Counter     |
 | --- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ----------- |
-| 0   | `Settings.Gate != GateRequired` (advisory) **[default]**                        | only rule 6a with `Trusted.EarliestWaiverExpiry`; no `State` call                                      | `Warned`    |
+| 0   | `Settings.Gate != GateRequired` (advisory) **[default]**                        | rules 0b, 0c, then rule 6a with `Trusted.EarliestWaiverExpiry`; `AdvisoryState`, never `State`         | `Warned`    |
+| 0b  | advisory, the state check exists and its receipt is stale (below)               | publish `Without(ReasonStaleInputs)`, then re-run                                                      | `Rerun`     |
+| 0c  | advisory, `rc.Reason == stale_inputs`                                           | re-run (a re-run that failed in an earlier pass; the guard makes it a no-op otherwise)                 | `Rerun`     |
 | 1   | `target.Fork`                                                                   | unless `rc.Reason == fork_unsupported`: publish `Without(ReasonForkUnsupported)`                       | —           |
 | 2   | `Trusted.Suspended`                                                             | unless `rc.Reason == subscription_suspended`: publish `Without(ReasonSuspended)`                       | `Suspended` |
 | 3   | `!state.Exists`                                                                 | `Publisher.Pending(target)`                                                                            | `Pended`    |
@@ -144,6 +146,12 @@ The first rule whose condition holds ends the evaluation of that pull, whether o
 
 Definitions:
 
+- Advisory pull requests (rules 0, 0b, 0c): the receipt is the one on `archfit/state`, read with `AdvisoryState`.
+  An advisory result that predates a change of the protected policy, baseline or labels would otherwise stay on the
+  pull request with no sign that it is out of date (owner decision, 18 October 2026). Rule 0b withdraws it as
+  `stale_inputs`, the same `Without` publication as rule 5b, and re-runs; rule 0c retries the re-run like rule 7c.
+  Nothing else of the required rules applies: no pending check, no `missing_upload`, no fork or suspension
+  publication, no approval withdrawal, because advisory feedback never blocks and has no gate check to keep honest.
 - Withdrawn receipt: `rc.Conclusion` is `success` or `failure`, and `verdict.Unapproved(Trusted)` holds, the
   condition of step 5 of `Decide`. `Decide` cannot reach either conclusion with such inputs, so the receipt was
   decided under an owner approval that is gone: the review was dismissed or followed by a request for changes, the
@@ -238,6 +246,7 @@ Termination: what changes in GitHub state after each re-run site, so the next pa
 | Site                         | Why it does not fire again                                                                                                                                                            |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Rule 5a                      | no re-run; the receipt concludes `action_required` with the current digests, so neither 5a nor 5b holds; rule 7b acts once no approval is missing                                     |
+| Rules 0b, 0c                 | as rules 5b and 7c: the `Without` receipt on `archfit/state` carries the current digests and `stale_inputs`, and the guard stops 0c once the attempt advances |
 | Rule 5b                      | the `Without` receipt carries the current digests (or `""` for an empty list), so no stale clause holds; the reason is `stale_inputs`, which leaves only rule 7c                      |
 | Rule 6b                      | the publication sets `StartedAt ≥ e`, and the new receipt carries the next unexpired expiry from `Trusted`, so `StartedAt < e ≤ now` is false                                         |
 | Rules 7a, 7b                 | a successful `Rerun` advances the run's attempt, so the guard blocks; an upload then replaces the reason; no upload → the next pass publishes `missing_upload`, which no rule re-runs |
@@ -387,7 +396,7 @@ type Publication struct {
 // decision. Nothing was written; the caller decides again from the new inputs.
 var ErrStaleInputs error
 
-// CheckState is the gate check currently on a head SHA.
+// CheckState is the gate check (or, from AdvisoryState, the state check) currently on a head SHA.
 type CheckState struct {
     Exists    bool
     Pending   bool      // in_progress, no upload yet
@@ -402,6 +411,9 @@ type Publisher interface {
     // Pending creates the in_progress gate check if none exists on the head SHA.
     Pending(ctx context.Context, t Target) error
     State(ctx context.Context, t Target) (CheckState, error)
+    // AdvisoryState is State for archfit/state: an advisory pull request has no archfit/gate, and its receipt is the
+    // one on the state check. It is never Pending: only archfit/gate is created ahead of an upload.
+    AdvisoryState(ctx context.Context, t Target) (CheckState, error)
     // Warn adds or refreshes the waiver-expiry notice in the PR comment. Idempotent.
     Warn(ctx context.Context, t Target, expiry time.Time) error
     // Reconcile reads the gate check and calls decide with it, then publishes what decide returns, all inside the
@@ -788,7 +800,10 @@ calls and serves `State` from what was published; injectable errors. Time is the
   **Expected behavior**: first pass counts the pull in `Errors` and keeps the `stale_inputs` publication; the second pass makes no `Publish` and exactly one `Rerun` (rule 7c, run still completed at the receipt's attempt); the third pass makes no call.
 - **Test name**: `TestAdvisoryRepositories`
   **Scenario**: advisory settings with a waiver expiring in 2 days, no gate check, a fork pull.
-  **Expected behavior**: one `Warn`; no `State`, `Pending`, `Publish` or `Rerun` call.
+  **Expected behavior**: one `Warn` and one `AdvisoryState`; no `State`, `Pending`, `Publish` or `Rerun` call.
+- **Test name**: `TestAdvisoryStaleInputsRerun`
+  **Scenario**: advisory pulls with a fresh receipt; no state check; a receipt that predates a new baseline; a `stale_inputs` receipt whose re-run failed earlier; a stale receipt with no workflow run. Each is swept twice.
+  **Expected behavior**: nothing; nothing; one `stale_inputs` publication and one re-run; one re-run; one publication and no re-run. The second pass writes nothing.
 - **Test name**: `TestNotOnboardedIsSkipped`
   **Scenario**: repositories without a settings file on the base; two pulls on the same base.
   **Expected behavior**: no publisher call; `Resolve` called once for that base; `Summary.Pulls` does not count them.

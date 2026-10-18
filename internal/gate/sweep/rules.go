@@ -19,7 +19,7 @@ const runCompleted = "completed"
 // holds ends the evaluation, whether or not it had to write; only rule 6a lets the evaluation go on.
 func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted) error {
 	if tr.Settings.Gate != settings.GateRequired { // rule 0
-		return p.warn(ctx, t, tr.EarliestWaiverExpiry)
+		return p.advisory(ctx, t, tr)
 	}
 	state, err := p.publisher.State(ctx, t)
 	if err != nil {
@@ -124,6 +124,31 @@ func expiry(rc feedback.Receipt, tr inputs.Trusted) time.Time {
 }
 
 // warn is rule 6a. It never ends an evaluation.
+// advisory is rule 0. An advisory pull request has no archfit/gate, so its receipt is read from archfit/state. When
+// the protected inputs changed after it, the old result would stay on the pull request with no sign that it is out of
+// date, so the receipt is withdrawn as stale_inputs and the run re-runs, as rules 5b and 7c do in required mode.
+// Nothing is pended and no missing upload is published: advisory feedback never blocks, so a pull request without a
+// report stays as it is.
+func (p *pass) advisory(ctx context.Context, t inputs.Target, tr inputs.Trusted) error {
+	state, err := p.publisher.AdvisoryState(ctx, t)
+	if err != nil {
+		return err
+	}
+	rc := state.Receipt
+	switch {
+	case state.Exists && stale(rc, tr):
+		if err := p.publish(ctx, "0b", t, tr, rc, verdict.ReasonStaleInputs); err != nil {
+			return err
+		}
+		_, err := p.rerun(ctx, "0b", t, rc)
+		return err
+	case rc.Reason == verdict.ReasonStaleInputs:
+		_, err := p.rerun(ctx, "0c", t, rc)
+		return err
+	}
+	return p.warn(ctx, t, tr.EarliestWaiverExpiry)
+}
+
 func (p *pass) warn(ctx context.Context, t inputs.Target, e time.Time) error {
 	if e.IsZero() || !p.now.Before(e) || e.Sub(p.now) > p.cfg.WaiverWarnBefore {
 		return nil

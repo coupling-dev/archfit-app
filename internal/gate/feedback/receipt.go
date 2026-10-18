@@ -102,7 +102,7 @@ func waiverDate(expiry time.Time) string {
 
 func waiverSection(date string) string {
 	return waiverOpen + date + markerClose + "\n" +
-		"> **Waiver expiry:** a waiver ends on " + date + ". After that date its findings block again. Renew the waiver or fix the findings before then.\n" +
+		"> **Waiver expiry:** a waiver ends on " + date + ". After that date its findings count as active violations again. Renew the waiver or fix the findings before then.\n" +
 		waiverClose
 }
 
