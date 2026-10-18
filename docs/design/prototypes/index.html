@@ -112,7 +112,7 @@
 
   <div class="flash"><svg class="oi accent flash-icon"><use href="#i-info"/></svg><div class="stack-sm" style="gap:2px">
     <strong>Baseline merged after this report</strong>
-    <span><a href="#">#5</a> accepted 33 coupling edges into <code>.archfit-baseline.json</code> at 09:17 UTC. The next <code>master</code> run shows them as baseline, not new. Open PRs were re-run against it.</span>
+    <span><a href="#">#5</a> accepted 33 coupling edges into <code>.archfit-baseline.json</code> at 09:17 UTC. The next <code>master</code> run shows them as baseline, not new. Open PRs keep their earlier result until their workflow runs again: advisory mode does not re-run them.</span>
   </div></div>
 
   <div class="layout">
@@ -120,7 +120,7 @@
       <div class="stats" aria-label="Default branch">
         <div><span class="n">0</span><span class="t">rule violations</span><span class="s"><code>no-module-cycles</code> holds</span></div>
         <button type="button" data-goto="decisions"><span class="n">6</span><span class="t">coupling advisories</span><span class="s">33 edges · never block</span></button>
-        <button type="button" data-goto="evidence"><span class="n">5 / 9</span><span class="t">dimensions measured</span><span class="s">3 partial · 1 unmeasured</span></button>
+        <button type="button" data-goto="evidence" data-switch="src" data-value="master"><span class="n">5 / 9</span><span class="t">dimensions measured</span><span class="s">3 partial · 1 unmeasured</span></button>
         <button type="button" data-goto="pull"><span class="n">1</span><span class="t">open PR with violations</span><span class="s">#4 · advisory</span></button>
       </div>
 
@@ -129,7 +129,7 @@
         <div class="box-row item clickable" data-goto="pull" tabindex="0">
           <div class="item-main"><span class="item-title"><svg class="oi success"><use href="#i-pr"/></svg>feat(container): read list options from the CLI flags <span class="muted" style="font-weight:400">#4</span></span>
             <span class="meta">alexei-led · <code>9d33f4d</code> · module cycle <code>pkg_chaos</code> ⇄ <code>pkg_container</code></span></div>
-          <div class="row"><span class="label attention">violations · advisory</span><span class="label">re-run requested</span></div></div>
+          <div class="row"><span class="label attention">violations · advisory</span><span class="label">result predates #5</span></div></div>
         <div class="box-row item">
           <div class="item-main"><span class="item-title"><svg class="oi success"><use href="#i-pr"/></svg>Bump the go-deps group with 7 updates <span class="muted" style="font-weight:400">#1</span></span>
             <span class="meta">dependabot[bot] · opened before Archfit was set up</span></div>
@@ -138,7 +138,7 @@
 
       <section class="box" aria-labelledby="h-need">
         <div class="box-head"><h3 id="h-need">Waiting on an owner</h3><button type="button" class="btn sm" data-goto="decisions">Open decisions</button></div>
-        <div class="box-row item"><div class="item-main"><span class="item-title">Declare volatility for 6 modules</span><span class="meta">All 6 advisories suggest it (<code>declare_volatility</code>). Until then, every cross-module edge scores as critical.</span></div><span class="label done">owner decision</span></div>
+        <div class="box-row item"><div class="item-main"><span class="item-title">Declare volatility for 6 modules</span><span class="meta">All 6 advisories suggest it (<code>declare_volatility</code>). 33 of 78 scored cross-module edges are critical.</span></div><span class="label done">owner decision</span></div>
         <div class="box-row item"><div class="item-main"><span class="item-title">Make the gate required</span><span class="meta">Advisory since #3. Rehearse first: one forbidden change must fail, one legitimate change must pass.</span></div><span class="label done">owner decision</span></div>
       </section>
 
@@ -173,7 +173,7 @@
   <div class="row"><span class="seg-label">Scenario</span>
     <div class="seg" role="group" aria-label="Scenario">
       <button type="button" data-switch="scn" data-value="nobase" aria-pressed="true">Run on 9d33f4d · no baseline</button>
-      <button type="button" data-switch="scn" data-value="stale" aria-pressed="false">#5 merged · inputs changed</button>
+      <button type="button" data-switch="scn" data-value="stale" aria-pressed="false">#5 merged · result outdated</button>
       <button type="button" data-switch="scn" data-value="base" aria-pressed="false">Re-run with baseline · projected</button>
       <button type="button" data-switch="scn" data-value="req" aria-pressed="false">Gate required · projected</button>
     </div></div>
@@ -186,9 +186,9 @@
         <span>1 rule violation: module cycle <code>pkg_chaos</code> ⇄ <code>pkg_container</code>. This advisory check does not block merging.</span>
         <span class="facts"><span><code>archfit/state</code> neutral</span><span>no <code>archfit/gate</code>: gate is advisory</span><span><svg class="oi sm"><use href="#i-clock"/></svg>run 39113331372 · 08:56 UTC</span></span></div></div></div>
       <div class="flash warn" data-only="scn:stale"><div class="result"><svg class="oi attention"><use href="#i-sync"/></svg><div class="stack-sm" style="gap:4px">
-        <h2>Action required: baseline changed after this run</h2>
-        <span>#5 merged a baseline into <code>master</code> at 09:17. The result below used no baseline. A re-run is requested; if none appears, re-run the Archfit workflow.</span>
-        <span class="facts"><span><code>archfit/state</code> action required</span><span><code>stale_inputs</code> · evidence, not an architecture verdict</span></span></div></div></div>
+        <h2>Architecture violations found · advisory · result predates baseline #5</h2>
+        <span>This run used no baseline. #5 accepted one on <code>master</code> at 09:17. Re-run the Archfit workflow to see which findings the baseline accepts. In advisory mode nothing re-runs or flags this by itself.</span>
+        <span class="facts"><span><code>archfit/state</code> neutral · last published 08:56 UTC</span><span>no <code>archfit/gate</code>: gate is advisory</span></span></div></div></div>
       <div class="flash warn" data-only="scn:base"><div class="result"><svg class="oi attention"><use href="#i-alert"/></svg><div class="stack-sm" style="gap:4px">
         <h2>Architecture violations found · advisory</h2>
         <span>1 new rule violation: module cycle <code>pkg_chaos</code> ⇄ <code>pkg_container</code>. The 6 coupling advisories are in the baseline. This advisory check does not block merging.</span>
@@ -247,7 +247,7 @@
       <details class="disclosure box" style="padding:0 16px">
         <summary>For coding agents · 2 tasks · <code>code_change</code></summary>
         <div class="details-body">
-          <p class="meta">Same block as in the PR comment, verbatim from <code>agent_tasks[]</code>. Validation paths <code>/bundle</code> and <code>/src</code> are paths inside the CI job.</p>
+          <p class="meta">Abbreviated preview of <code>agent_tasks[]</code>. The PR comment carries the exact array. Validation paths <code>/bundle</code> and <code>/src</code> are paths inside the CI job.</p>
 <pre><code>[{"finding_id":"0d5aae18e2b632a4796190153b0c89b3","rule_id":"no-module-cycles","repair_kind":"code_change",
   "goal":"Break the dependency cycle among declared modules pkg_chaos, pkg_container by removing one direction of it: drop the pkg_chaos -> pkg_container dependency, or the dependency path from pkg_container back to pkg_chaos. Routing it through another module keeps the cycle.",
   "files":["pkg/chaos/cmd/builder.go", "… 39 more"],
@@ -256,19 +256,19 @@
   "goal":"… drop the pkg_container -> pkg_chaos dependency, or the dependency path from pkg_chaos back to pkg_container …",
   "files":["pkg/container/flags.go"],
   "validation":["archfit check -c /bundle/.archfit.yaml --root /src"]}]</code></pre>
-          <div class="row"><button type="button" class="btn sm"><svg class="oi sm"><use href="#i-copy"/></svg>Copy tasks JSON</button></div>
+          <div class="row"><button type="button" class="btn sm"><svg class="oi sm"><use href="#i-copy"/></svg>Copy full tasks JSON</button><span class="meta">copies the exact array, not this preview</span></div>
         </div>
       </details>
 
-      <div class="row"><button type="button" class="btn sm" data-goto="evidence">Evidence for this run · 9 dimensions</button><button type="button" class="btn sm" data-goto="github">See what GitHub shows</button></div>
+      <div class="row"><button type="button" class="btn sm" data-goto="evidence" data-switch="src" data-value="pr4">Evidence for this run · 9 dimensions</button><button type="button" class="btn sm" data-goto="github">See what GitHub shows</button></div>
     </div>
 
     <aside class="side" aria-label="About this view">
       <div class="side-section"><div class="side-title">Use case</div><p>The PR author, a reviewer, or an owner follows the link from the check or comment. Question: what exactly is wrong, does it block, and what do I change?</p></div>
       <div class="side-section"><div class="side-title">Main point</div><p>The banner: what was found, and whether it blocks merging. The effect comes from the gate mode and the check conclusion, never from <code>verdict</code> alone.</p></div>
       <div class="side-section"><div class="side-title">Data</div>
-        <p><span class="data-tag today">EXISTS TODAY</span> <code>findings[].{id,kind,rule_id,status,severity,edge,locations,why,constraint}</code>, <code>matched_by.{group_count,hypothesis,strength}</code>, <code>gate_reference.baseline_present</code>, <code>comparison.status</code>, <code>agent_tasks[]</code>, check run conclusion.</p>
-        <p><span class="data-tag new">NEW</span> Route <code>/r/{o}/{n}/pull/{number}</code>; report lookup by head SHA and run; ruleset read to say "merge is blocked" (<code>GET /repos/{o}/{n}/rules/branches/{branch}</code>).</p></div>
+        <p><span class="data-tag today">EXISTS TODAY</span> <code>findings[].{id,kind,rule_id,status,severity,edge,locations,why,constraint}</code>, <code>gate_reference.baseline_present</code>, <code>comparison.status</code>, <code>agent_tasks[]</code>, check run conclusion.</p>
+        <p><span class="data-tag new">NEW</span> <code>findings[].matched_by</code> (edge counts, hypothesis) is in the raw artifact but dropped by the App's report projection (<code>internal/wire/report/contract.go</code>). Route <code>/r/{o}/{n}/pull/{number}</code>; report lookup by head SHA and run; ruleset read to say "merge is blocked" (<code>GET /repos/{o}/{n}/rules/branches/{branch}</code>).</p></div>
     </aside>
   </div>
 </section>
@@ -284,7 +284,7 @@
       <button type="button" data-switch="ver" data-value="new" aria-pressed="true">Proposed</button></div></div>
     <div class="row" data-only="ver:new"><span class="seg-label">Scenario</span><div class="seg" role="group" aria-label="Scenario">
       <button type="button" data-switch="scn" data-value="nobase" aria-pressed="true">No baseline</button>
-      <button type="button" data-switch="scn" data-value="stale" aria-pressed="false">Inputs changed</button>
+      <button type="button" data-switch="scn" data-value="stale" aria-pressed="false">Result outdated</button>
       <button type="button" data-switch="scn" data-value="base" aria-pressed="false">With baseline</button>
       <button type="button" data-switch="scn" data-value="req" aria-pressed="false">Gate required</button></div></div>
   </div>
@@ -323,15 +323,10 @@
     <div class="gh-frame">
       <span class="mock-flag">GitHub · merge box</span>
       <div class="mergebox">
-        <div data-only="scn:nobase scn:base">
+        <div data-only="scn:nobase scn:stale scn:base">
           <div class="mb-row"><span class="mb-icon success"><svg class="oi"><use href="#i-check"/></svg></span><div><div class="mb-title">Some checks were not successful</div><div class="meta">1 successful and 1 neutral check</div></div></div>
           <div class="check-line"><svg class="oi success"><use href="#i-check"/></svg><span class="name">archfit</span><span class="desc">GitHub Actions · Successful</span></div>
           <div class="check-line"><svg class="oi muted"><use href="#i-neutral"/></svg><span class="name">archfit/state</span><span class="desc">Architecture violations found · advisory</span></div>
-        </div>
-        <div data-only="scn:stale">
-          <div class="mb-row"><span class="mb-icon attention"><svg class="oi"><use href="#i-alert"/></svg></span><div><div class="mb-title">Some checks were not successful</div><div class="meta">1 successful and 1 action required</div></div></div>
-          <div class="check-line"><svg class="oi success"><use href="#i-check"/></svg><span class="name">archfit</span><span class="desc">GitHub Actions · Successful</span></div>
-          <div class="check-line"><svg class="oi attention"><use href="#i-alert"/></svg><span class="name">archfit/state</span><span class="desc">Action required: baseline changed after this run</span></div>
         </div>
         <div data-only="scn:req">
           <div class="mb-row"><span class="mb-icon danger"><svg class="oi"><use href="#i-x"/></svg></span><div><div class="mb-title">Merging is blocked</div><div class="meta">A required check failed: archfit/gate</div></div></div>
@@ -340,6 +335,7 @@
           <div class="check-line"><svg class="oi success"><use href="#i-check"/></svg><span class="name">archfit</span><span class="desc">GitHub Actions · Successful</span></div>
         </div>
       </div>
+      <p class="meta" data-only="scn:stale"><strong>Outdated:</strong> in advisory mode GitHub keeps the 08:56 result after #5 merges (sweep rule 0 skips advisory repositories). Only the App page can say the result predates the baseline.</p>
       <p class="meta">Check titles carry the headline, so the merge box alone answers "does it block?". In advisory mode the title says "advisory".</p>
     </div>
 
@@ -347,17 +343,15 @@
       <div class="gh-frame">
         <div class="row-between"><span class="mock-flag">GitHub · check run summary · archfit/state</span><span class="size-tag">~1 KB</span></div>
         <div class="comment"><div class="comment-body md">
-          <h2 data-only="scn:nobase">Architecture violations found · advisory · no baseline</h2>
+          <h2 data-only="scn:nobase scn:stale">Architecture violations found · advisory · no baseline</h2>
           <h2 data-only="scn:base">Architecture violations found · advisory</h2>
           <h2 data-only="scn:req">Architecture violations found</h2>
-          <h2 data-only="scn:stale">Action required: baseline changed after this run</h2>
-          <p data-only="scn:nobase scn:base"><strong>Effect:</strong> advisory. This check does not block merging. Set by <code>gate: advisory</code> in <code>.archfit-app.yaml</code> on <code>master</code>.</p>
-          <p data-only="scn:req"><strong>Effect:</strong> reported by <code>archfit/gate</code>, which is required. This check never blocks.</p>
-          <p data-only="scn:stale"><code>stale_inputs</code>: #5 changed the baseline on <code>master</code> after run 39113331372. A re-run is requested. If it does not start, re-run the Archfit workflow. This is about evidence, not the code.</p>
-          <ul data-only="scn:nobase scn:base scn:req"><li><strong>1 rule violation</strong> · module cycle <code>pkg_chaos</code> ⇄ <code>pkg_container</code> (<code>no-module-cycles</code>, 2 findings)</li>
-            <li data-only="scn:nobase">6 coupling advisories · never block</li><li data-only="scn:base scn:req">6 coupling advisories, all in the baseline</li></ul>
-          <div class="gh-note warn" data-only="scn:nobase"><b>No baseline</b>"New" means not accepted yet, not "added by this PR". PR comparison did not run.</div>
-          <p data-only="scn:nobase scn:base scn:req"><strong>Next:</strong> remove one direction of the cycle. Details and repair tasks: <a href="#">Archfit · PR #4</a></p>
+                    <p data-only="scn:nobase scn:stale scn:base"><strong>Effect:</strong> advisory. This check does not block merging. Set by <code>gate: advisory</code> in <code>.archfit-app.yaml</code> on <code>master</code>.</p>
+          <p data-only="scn:req"><strong>Effect:</strong> architecture findings are informational on <code>archfit/state</code>; <code>archfit/gate</code> enforces them and is required.</p>
+          <ul><li><strong>1 rule violation</strong> · module cycle <code>pkg_chaos</code> ⇄ <code>pkg_container</code> (<code>no-module-cycles</code>, 2 findings)</li>
+            <li data-only="scn:nobase scn:stale">6 coupling advisories · never block</li><li data-only="scn:base scn:req">6 coupling advisories, all in the baseline</li></ul>
+          <div class="gh-note warn" data-only="scn:nobase scn:stale"><b>No baseline</b>"New" means not accepted yet, not "added by this PR". PR comparison did not run.</div>
+          <p><strong>Next:</strong> remove one direction of the cycle. Details and repair tasks: <a href="#">Archfit · PR #4</a></p>
           <p class="meta"><code>9d33f4d</code> · run 39113331372 · engine v3.0.0 · customer-attested: the producer is authenticated, the report content is not independently checked.</p>
         </div></div>
         <p class="meta">Annotations on changed lines stay as today (up to 50).</p>
@@ -366,22 +360,18 @@
       <div class="gh-frame">
         <div class="row-between"><span class="mock-flag">GitHub · PR comment by archfit-review[bot]</span><span class="size-tag">~1.5 KB + agent block</span></div>
         <div class="comment"><div class="comment-body md">
-          <div data-only="scn:stale" class="stack-sm">
-            <h2>Archfit · Action required: baseline changed after this run</h2>
-            <p>The baseline on <code>master</code> changed in #5. The findings below come from the previous run and may change. A re-run is requested.</p>
-          </div>
-          <h2 data-only="scn:nobase">Archfit · Architecture violations found · advisory</h2>
+          <h2 data-only="scn:nobase scn:stale">Archfit · Architecture violations found · advisory</h2>
           <h2 data-only="scn:base">Archfit · Architecture violations found · advisory</h2>
           <h2 data-only="scn:req">Archfit · Architecture gate failing</h2>
-          <p data-only="scn:nobase scn:base"><strong>This check does not block merging.</strong> The gate is advisory for this repository.</p>
+          <p data-only="scn:nobase scn:stale scn:base"><strong>This check does not block merging.</strong> The gate is advisory for this repository.</p>
           <p data-only="scn:req"><strong>Merge is blocked</strong> by the required check <code>archfit/gate</code> until the cycle is removed or an owner waives it.</p>
           <h3>Module cycle <code>pkg_chaos</code> ⇄ <code>pkg_container</code></h3>
           <ul><li><code>pkg_chaos</code> → <code>pkg_container</code>: 40 locations, e.g. <code>pkg/chaos/cmd/builder.go:14</code></li>
             <li><code>pkg_container</code> → <code>pkg_chaos</code>: 1 location, <code>pkg/container/flags.go:3</code></li></ul>
           <p><strong>Fix:</strong> remove one direction of the cycle. Routing it through another module keeps the cycle. Rule <code>no-module-cycles</code>.</p>
-          <div class="gh-note warn" data-only="scn:nobase"><b>No baseline yet</b>Every finding counts as new, including older debt. New does not mean added by this PR.</div>
-          <p class="meta" data-only="scn:nobase">Also: 6 coupling advisories, which never block. <a href="#">See them in Archfit</a></p>
-          <p class="meta" data-only="scn:base scn:req scn:stale">Also: 6 coupling advisories, accepted in the baseline. <a href="#">See them in Archfit</a></p>
+          <div class="gh-note warn" data-only="scn:nobase scn:stale"><b>No baseline yet</b>Every finding counts as new, including older debt. New does not mean added by this PR.</div>
+          <p class="meta" data-only="scn:nobase scn:stale">Also: 6 coupling advisories, which never block. <a href="#">See them in Archfit</a></p>
+          <p class="meta" data-only="scn:base scn:req">Also: 6 coupling advisories, accepted in the baseline. <a href="#">See them in Archfit</a></p>
           <details><summary>For coding agents · 2 tasks</summary><pre style="margin-top:8px"><code>&lt;!-- archfit:agent-tasks --&gt;
 [{"finding_id":"0d5aae18…","repair_kind":"code_change", …},
  {"finding_id":"e128caa5…","repair_kind":"code_change", …}]
@@ -401,7 +391,7 @@
         <tr><td>Rule violations, grouped</td><td>—</td><td>one line per group</td><td>group + example locations + fix</td><td>all locations</td></tr>
         <tr><td>Coupling advisories</td><td>—</td><td>count</td><td>count + link</td><td>table</td></tr>
         <tr><td>Baseline / comparison status</td><td>title suffix</td><td>note</td><td>note when missing</td><td>panel</td></tr>
-        <tr><td>Agent tasks</td><td>—</td><td>—</td><td>collapsed block, verbatim</td><td>block + copy</td></tr>
+        <tr><td>Agent tasks</td><td>—</td><td>—</td><td>collapsed block, exact array</td><td>block + copy</td></tr>
         <tr><td>Dimensions, gaps, tools, identity</td><td>—</td><td>trust line only</td><td>trust line only</td><td>Evidence tab</td></tr>
       </tbody></table></div></aside>
 </section>
@@ -499,7 +489,7 @@
               <tr><td><code>pkg_tc</code></td><td><code>pkg/tc/**</code></td><td><span class="label attention">not declared</span></td><td><span class="label attention">undeclared</span></td><td>@alexei-led</td><td><span class="muted">none</span></td></tr>
               <tr><td><code>pkg_util</code></td><td><code>pkg/util/**</code></td><td><span class="label attention">not declared</span></td><td><span class="label attention">undeclared</span></td><td>@alexei-led</td><td><span class="muted">none</span></td></tr>
             </tbody></table></div>
-          <div class="box-foot">Owners from <code>seams[].raw_distance.from_owner</code>. Undeclared volatility and surfaces are why coupling and modularity evidence is partial or low.</div>
+          <div class="box-foot">Owners from <code>seams[].raw_distance.from_owner</code> (raw artifact; not projected today). Undeclared volatility and surfaces are why coupling and modularity evidence is partial or low.</div>
         </section>
       </div>
 
@@ -530,8 +520,8 @@ rules:
       <div class="side-section"><div class="side-title">Use case</div><p>An owner checks what the policy says and where the code strains it, before a decision or after a surprising PR result.</p></div>
       <div class="side-section"><div class="side-title">Main point</div><p>Red is a rule the policy enforces. Yellow is advice. The map never adds meaning the policy lacks: no layers, so no up or down.</p></div>
       <div class="side-section"><div class="side-title">Data</div>
-        <p><span class="data-tag today">EXISTS TODAY</span> <code>seams[].{from_module,to_module,edges,strength,distance,volatility,severity,hypothesis,policy,critical_edges}</code>; policy from <code>master</code>; the graph page <code>/r/{o}/{n}/graph</code>.</p>
-        <p><span class="data-tag new">NEW</span> Evidence from a PR head on the graph (needs the PR report lookup). Owner and deploy unit per module need a module-level field; today they are read off seams.</p></div>
+        <p><span class="data-tag today">EXISTS TODAY</span> <code>seams[].{from_module,to_module,edges,strength,distance,volatility,severity,policy}</code>; policy from <code>master</code>; the graph page <code>/r/{o}/{n}/graph</code>.</p>
+        <p><span class="data-tag new">NEW</span> Evidence from a PR head on the graph (needs the PR report lookup). Critical-edge counts, hypotheses and owners (<code>seams[].{critical_edges,hypothesis,raw_distance}</code>) are in the raw artifact but dropped by the App projection; extend <code>internal/wire/report</code>.</p></div>
     </aside>
   </div>
 </section>
@@ -550,14 +540,14 @@ rules:
           <dt>Fact</dt><dd>Volatility is undeclared on 78 scored cross-module edges. Functional coupling to a module of unknown volatility scores as critical.</dd>
           <dt>Effect today</dt><dd>Advisories only. They never block. The baseline from #5 accepts all 33 edges.</dd>
           <dt>Source</dt><dd><code>dimensions.coupling.unknown[0]</code>, <code>findings[].matched_by.hypothesis</code></dd></dl></div>
-        <div class="box-row opt"><div><strong>Declare volatility</strong><div class="ends">A labels PR sets <code>volatility:</code> or <code>subdomain:</code> per module. Stable targets stop scoring as critical.</div></div><button type="button" class="btn sm" data-sim="Draft PR opened: declare volatility for 6 modules. Approve it on GitHub.">Open labels PR</button></div>
+        <div class="box-row opt"><div><strong>Declare volatility</strong><div class="ends">A policy PR sets <code>modules.&lt;name&gt;.volatility</code> or <code>.subdomain</code> in <code>.archfit.yaml</code>. Declare the actual volatility, then remeasure: scores may change either way.</div></div><button type="button" class="btn sm" data-sim="Opens the policy editor on a draft branch. The draft PR needs owner approval on GitHub.">Open policy editor</button></div>
         <div class="box-row opt"><div><strong>Leave undeclared</strong><div class="ends">Nothing to open. The advisories stay, in the baseline, and coupling evidence stays partial.</div></div><button type="button" class="btn sm" data-sim="Noted. Nothing opened.">Leave as is</button></div>
         <div class="box-foot sim-note" hidden></div>
       </article>
 
       <article class="box" data-decision>
         <div class="box-head"><div class="stack-sm" style="gap:2px"><h3>Make the gate required</h3><span class="meta"><code>gate: advisory</code> in <code>.archfit-app.yaml</code> since #2</span></div><span class="label done">owner decision</span></div>
-        <div class="box-row"><dl class="kv"><dt>Today</dt><dd>Only <code>archfit/state</code> runs, and it never blocks. #4 shows a real violation that could merge.</dd>
+        <div class="box-row"><dl class="kv"><dt>Today</dt><dd>Only <code>archfit/state</code> runs. Architecture findings on it are informational. #4 shows a real violation that could merge.</dd>
           <dt>Before</dt><dd>Rehearse on a throwaway branch: one forbidden change fails, one legitimate change passes.</dd></dl></div>
         <div class="box-row opt"><div><strong>Rehearse</strong><div class="ends">Opens two draft PRs from a throwaway branch.</div></div><button type="button" class="btn sm" data-goto="setup">See steps</button></div>
         <div class="box-row opt"><div><strong>Require</strong><div class="ends">A settings PR sets <code>gate: required</code>. Then add <code>archfit/gate</code> to its own GitHub ruleset.</div></div><button type="button" class="btn sm" disabled aria-disabled="true">After rehearsal</button></div>
@@ -566,7 +556,7 @@ rules:
 
       <section class="box">
         <div class="box-head"><h3>Decided</h3></div>
-        <div class="box-row item"><div class="item-main"><span class="item-title"><svg class="oi done"><use href="#i-merge"/></svg>Accept current coupling as the baseline</span><span class="meta">#5 · 33 edges · merged 09:17 UTC · new findings are now told apart from accepted ones</span></div><span class="label">baseline</span></div>
+        <div class="box-row item"><div class="item-main"><span class="item-title"><svg class="oi done"><use href="#i-merge"/></svg>Accept current coupling as the baseline</span><span class="meta">#5 · 33 edges · merged 09:17 UTC · later runs that use it can tell unaccepted findings from accepted debt</span></div><span class="label">baseline</span></div>
         <div class="box-row item"><div class="item-main"><span class="item-title"><svg class="oi done"><use href="#i-merge"/></svg>Adopt the policy proposed by discovery</span><span class="meta">#3 · 6 modules · <code>no-module-cycles</code> · merged 08:53 UTC</span></div><span class="label">policy</span></div>
       </section>
     </div>
@@ -575,7 +565,7 @@ rules:
       <div class="side-section"><div class="side-title">Main point</div><p>The question, the facts, and where each option ends. No decision is invented: each comes from a report field or a setup step.</p></div>
       <div class="side-section"><div class="side-title">Data</div>
         <p><span class="data-tag today">EXISTS TODAY</span> Hypotheses and unknowns in the report; gate mode in settings; merged setup PRs from GitHub.</p>
-        <p><span class="data-tag new">NEW</span> A labels-file editor or PR template, and a rule that maps report facts to decisions. <code>needs_owner_decision</code> tasks, when the engine emits them, land here too.</p></div>
+        <p><span class="data-tag new">NEW</span> A rule that maps report facts (<code>unknown[]</code>, hypotheses) to decisions. This is App guidance, not an engine-emitted task. <code>needs_owner_decision</code> tasks, when the engine emits them, land here too.</p></div>
     </aside>
   </div>
 </section>
@@ -583,8 +573,11 @@ rules:
 <!-- ================= EVIDENCE ================= -->
 <section role="tabpanel" id="evidence" aria-labelledby="tab-evidence" class="stack" style="gap:20px" hidden>
   <div class="page-head">
-    <div><h1>Evidence · PR #4 · <code style="font-size:18px">9d33f4d</code></h1><p class="lede">What the engine measured, how much of it, and what it could not see. Nine dimensions, no total score.</p></div>
-    <span class="row"><svg class="oi muted"><use href="#i-shield"/></svg><span class="meta">customer-attested</span></span>
+    <div><h1>Evidence</h1><p class="lede">What the engine measured, how much of it, and what it could not see. Nine dimensions, no total score.</p></div>
+    <div class="row"><span class="seg-label">Report</span><div class="seg" role="group" aria-label="Report">
+      <button type="button" data-switch="src" data-value="master" aria-pressed="true">master · aed8b36</button>
+      <button type="button" data-switch="src" data-value="pr4" aria-pressed="false">PR #4 · 9d33f4d</button></div>
+      <span class="row"><svg class="oi muted"><use href="#i-shield"/></svg><span class="meta">customer-attested</span></span></div>
   </div>
   <div class="layout">
     <div class="stack" style="gap:16px">
@@ -594,7 +587,7 @@ rules:
           <thead><tr><th>Dimension</th><th>Status</th><th>Gate</th><th>Coverage</th><th>Confidence</th><th>Unknown</th></tr></thead>
           <tbody>
             <tr><td>intent</td><td><span class="label success">measured</span></td><td>pass</td><td><span class="covbar"><span style="width:100%"></span></span>1 / 1 rules evaluated</td><td>high</td><td class="num">0</td></tr>
-            <tr><td>structure</td><td><span class="label success">measured</span></td><td><span class="label danger">fail</span></td><td><span class="covbar"><span style="width:27%"></span></span>166 / 625 dependencies in the module map</td><td>high</td><td class="num">1</td></tr>
+            <tr><td>structure</td><td><span class="label success">measured</span></td><td><span class="label danger" data-only="src:pr4">fail</span><span data-only="src:master">pass</span></td><td><span class="covbar"><span style="width:27%"></span></span>166 / 625 dependencies in the module map</td><td>high</td><td class="num">1</td></tr>
             <tr><td>modularity</td><td><span class="label success">measured</span></td><td>pass</td><td><span class="covbar"><span style="width:0%"></span></span>0 / 6 modules with a public surface</td><td><span class="label attention">low</span></td><td class="num">1</td></tr>
             <tr><td>coupling</td><td><span class="label attention">partial</span></td><td><span class="label attention">warn</span></td><td><span class="covbar"><span style="width:100%"></span></span>78 / 78 cross-boundary edges</td><td>medium</td><td class="num">1</td></tr>
             <tr><td>change_locality</td><td><span class="label success">measured</span></td><td>pass</td><td><span class="covbar"><span style="width:100%"></span></span>6 / 6 modules in history</td><td>high</td><td class="num">1</td></tr>
@@ -607,13 +600,15 @@ rules:
       </section>
 
       <section class="box">
-        <div class="box-head"><h3>What the engine could not see</h3><span class="meta">15 unknown facts · grouped by what closes them</span></div>
-        <div class="box-row stack-sm"><div class="row-between"><strong>Closed by declaring things in the policy</strong><span class="label done">owner</span></div>
-          <ul class="unknown-list"><li><code>coupling</code>: volatility undeclared on 78 edges</li><li><code>modularity</code>: no module declares a public surface</li><li><code>operations</code>: 5 modules have no corroborating deploy manifest</li></ul></div>
-        <div class="box-row stack-sm"><div class="row-between"><strong>Closed by enabling inputs in the workflow</strong><span class="label">setup</span></div>
-          <ul class="unknown-list"><li><code>testability</code>: coverage is disabled (4 facts)</li><li><code>complexity</code>: function length needs <code>ast-grep</code></li></ul></div>
-        <div class="box-row stack-sm"><div class="row-between"><strong>Closed by the next runs</strong><span class="label">time</span></div>
-          <ul class="unknown-list"><li><code>drift</code>: no comparable stored reference (2 facts). The baseline from #5 is the first.</li></ul></div>
+        <div class="box-head"><h3>What the engine could not see</h3><span class="meta">15 unknown facts · grouped by possible next step</span></div>
+        <div class="box-row stack-sm"><div class="row-between"><strong>Declare in the policy</strong><span class="label done">architecture owner</span></div>
+          <ul class="unknown-list"><li><code>coupling</code>: volatility undeclared on 78 edges. Declare it per module, then remeasure.</li><li><code>modularity</code>: no module declares a public surface</li></ul></div>
+        <div class="box-row stack-sm"><div class="row-between"><strong>Supply deployment evidence</strong><span class="label">repository owner</span></div>
+          <ul class="unknown-list"><li><code>operations</code>: 5 modules have no independently corroborating deploy manifest. A <code>deploy_unit</code> declaration alone does not close this; where it applies, commit the manifests.</li></ul></div>
+        <div class="box-row stack-sm"><div class="row-between"><strong>Feed more inputs from CI</strong><span class="label">setup</span></div>
+          <ul class="unknown-list"><li><code>testability</code>: coverage is disabled (4 facts). Supply coverage that resolves to files, maps to modules, and is fresh.</li><li><code>complexity</code>: enable syntax collection and get complete function extents</li></ul></div>
+        <div class="box-row stack-sm"><div class="row-between"><strong>Re-run with an admissible baseline</strong><span class="label">baseline + CI</span></div>
+          <ul class="unknown-list"><li><code>drift</code>: no comparable stored reference (2 facts). #5 adds a baseline; a run that uses it may measure drift. Time alone closes nothing.</li></ul></div>
         <div class="box-row stack-sm"><div class="row-between"><strong>Outside this report's claim</strong><span class="label">by design</span></div>
           <ul class="unknown-list"><li><code>structure</code>: 459 library dependencies leave the module map</li><li><code>change_locality</code>: commit frequency cannot establish volatility</li><li><code>complexity</code>: no cognitive-complexity analyzer is claimed</li><li><code>operations</code>: runtime topology and supply chain are not observed</li></ul></div>
       </section>
@@ -623,7 +618,7 @@ rules:
           <div class="box-head"><h3>Analyzers</h3><span class="meta">3 ran · 8 did not</span></div>
           <div class="box-row" style="font-size:13px"><span class="label success">ok</span> <code>go/packages</code> <code>loc</code> <code>deploy-unit</code></div>
           <div class="box-row" style="font-size:13px"><span class="label">disabled</span> <code>jscpd</code> <code>scip</code> <code>ast-grep</code> <code>ast-grep/syntax</code><div class="meta" style="margin-top:4px">Opt-in in <code>.archfit.yaml</code> <code>analyzers:</code></div></div>
-          <div class="box-row" style="font-size:13px"><span class="label">absent</span> <code>dependency-cruiser</code> <code>grimp</code> <code>cargo</code> <code>cargo-modules</code><div class="meta" style="margin-top:4px">Not needed: Go only. Not an evidence gap.</div></div>
+          <div class="box-row" style="font-size:13px"><span class="label">absent</span> <code>dependency-cruiser</code> <code>grimp</code> <code>cargo</code> <code>cargo-modules</code><div class="meta" style="margin-top:4px">Absent. This run reports no missing-analyzer coverage gaps.</div></div>
         </section>
         <section class="box">
           <div class="box-head"><h3>Inputs and identity</h3></div>
@@ -631,7 +626,7 @@ rules:
             <dt>Policy</dt><dd><code>c629cc87…8e72</code></dd><dt>Baseline</dt><dd>none in this run</dd><dt>Labels</dt><dd>no labels file</dd>
             <dt>Profile</dt><dd><code>archfit.measurement.v2</code> · <code>eb46ade8…0ef6</code></dd>
             <dt>Producer</dt><dd>engine v3.0.0 · <code>sha256:0eab8105…9909</code> · linux/amd64 · claimed</dd>
-            <dt>Run</dt><dd>39113331372, attempt 1</dd></dl></div>
+            <dt>Run</dt><dd data-only="src:pr4">39113331372, attempt 1</dd><dd data-only="src:master">latest <code>master</code> run</dd></dl></div>
           <div class="box-foot">Customer-attested: the producer is authenticated, the report content is not independently checked.</div>
         </section>
       </div>
@@ -679,7 +674,7 @@ rules:
   <div class="grid-2">
     <div class="box"><div class="blankslate"><svg class="oi"><use href="#i-clock"/></svg><h3>No report yet</h3><p>The Archfit workflow has not reported for <code>9d33f4d</code>. It usually takes a few minutes after a push.</p><a class="btn sm" href="#">Open the workflow run</a></div></div>
     <div class="box"><div class="blankslate"><svg class="oi"><use href="#i-clock"/></svg><h3>Report expired</h3><p>GitHub deleted the artifact after its retention period. The check result on GitHub stays. Re-run the workflow to see details here.</p></div></div>
-    <div class="flash warn"><svg class="oi attention flash-icon"><use href="#i-sync"/></svg><div class="stack-sm" style="gap:2px"><strong>Action required: inputs changed after this run</strong><span><code>stale_inputs</code> · The policy or baseline on <code>master</code> changed. A re-run is requested.</span></div></div>
+    <div class="flash warn"><svg class="oi attention flash-icon"><use href="#i-sync"/></svg><div class="stack-sm" style="gap:2px"><strong>Action required: inputs changed after this run</strong><span><code>stale_inputs</code> · Required gate only. The policy or baseline on <code>master</code> changed; a re-run is requested. In advisory mode the old result stays and the App page says "result predates".</span></div></div>
     <div class="flash warn"><svg class="oi attention flash-icon"><use href="#i-alert"/></svg><div class="stack-sm" style="gap:2px"><strong>Action required: report could not be used</strong><span><code>report_invalid</code> · The upload failed validation. Nothing is shown as passed. Re-run the workflow.</span></div></div>
     <div class="flash"><svg class="oi accent flash-icon"><use href="#i-info"/></svg><div class="stack-sm" style="gap:2px"><strong>Partial evidence</strong><span>3 of 9 dimensions are partial and 1 is unmeasured. The verdict covers only what was measured. <a href="#">See evidence</a></span></div></div>
     <div class="flash error"><svg class="oi danger flash-icon"><use href="#i-x"/></svg><div class="stack-sm" style="gap:2px"><strong>GitHub is rate limiting the App</strong><span>Try again in about a minute. Nothing changed.</span></div></div>
