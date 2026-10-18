@@ -9,7 +9,7 @@
   "merge_base_sha": "3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d",
   "run_id": 17654321098,
   "run_attempt": 1,
-  "engine_version": "v3.0.0",
+  "engine_version": "v3.0.1",
   "image_digest": "sha256:4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c",
   "platform": "linux/amd64",
   "payload_digest": "sha256:f7f23ae7d84a0568fc6d8f0aaad314bbe096f397aa2d3724c84a6118ab0021e5",

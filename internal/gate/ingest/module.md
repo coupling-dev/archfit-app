@@ -236,7 +236,7 @@ type Envelope struct {
     MergeBaseSHA  string `json:"merge_base_sha"` // "" unless pull_request
     RunID         int64  `json:"run_id"`
     RunAttempt    int    `json:"run_attempt"`
-    EngineVersion string `json:"engine_version"` // e.g. "v3.0.0"
+    EngineVersion string `json:"engine_version"` // e.g. "v3.0.1"
     ImageDigest   string `json:"image_digest"`   // "sha256:<64 hex>"
     Platform      string `json:"platform"`       // e.g. "linux/amd64"
     PayloadDigest  string `json:"payload_digest"`  // "sha256:<64 hex>" of the exact payload bytes
@@ -267,8 +267,8 @@ func Schema() []byte
 - **Volatility**: high (ingest side); the schema is moderate
 - **Balanced?**: yes
 - **Shared knowledge**: `MaxBytes` is the upload cap for both kinds. `report.Decode` is the no-source boundary;
-  ingest never inspects report content. It passes the envelope's `EngineVersion`, so the claimed release must be `v3.0.0`; any other release is
-  `ProblemReportInvalid`.
+  ingest never inspects report content. It passes the envelope's `EngineVersion`, so the claimed release must be `v3.0.0` or `v3.0.1` (one key set); any
+  other release is `ProblemReportInvalid`.
   The claim is checked against the manifest later, in `gate`. `Decision` is an opaque part of `Report` for this module.
   `Comparison` is an opaque part of `Report` for this module. `Finding` is an opaque part of `Report` for this module.
   `Dimension` is an opaque part of `Report` for this module. `AgentTask` is an opaque part of `Report` for this module.
@@ -277,14 +277,14 @@ func Schema() []byte
 
 <!-- contract: Report, StateSchemaV1, MaxBytes — restated from internal/wire/report/module.md -->
 ```go
-// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v3.0.0).
+// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v3.0.0 and v3.0.1: one file).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
 // Report is the no-source transport form of an engine state report. The decoder knows every key of the engine
-// v3.0.0 state schema: keys listed here are kept (length-capped), the other known keys are validated and dropped
+// state schema of v3.0.0 and v3.0.1: keys listed here are kept (length-capped), the other known keys are validated and dropped
 // (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores), and any key
 // the schema does not define is a decode error.
 type Report struct {
@@ -588,8 +588,8 @@ requests built with `httptest.NewRequest`. No network.
   **Scenario**: the healthy fixture with matching claims, run, pull and envelope.
   **Expected behavior**: no error, no problems; `Binding` fully filled from GitHub; `Identity`, `BaselineDigest` and `LabelsDigest` copied from the envelope (also when they are `""`); `Digest` equals `envelope.PayloadDigest(body)`; `Report` decoded.
 - **Test name**: `TestReportKeySetFollowsTheClaimedEngine`
-  **Scenario**: the healthy pull request upload with the envelope claiming engine `v3.0.0`, `v2.5.0` and `v9.9.9`.
-  **Expected behavior**: `v3.0.0` decodes with no problem; `v2.5.0` and `v9.9.9`, releases the decoder does not read, give `ProblemReportInvalid` and a nil `Report`, never a rejection; `Identity.EngineVersion` is the claim in every row.
+  **Scenario**: the healthy pull request upload with the envelope claiming engine `v3.0.1`, `v3.0.0`, `v2.5.0` and `v9.9.9`.
+  **Expected behavior**: `v3.0.1` and `v3.0.0` decode with no problem (v3.0.0 is read, not approved: `gate` ends it `unknown_engine_identity`); `v2.5.0` and `v9.9.9`, releases the decoder does not read, give `ProblemReportInvalid` and a nil `Report`, never a rejection; `Identity.EngineVersion` is the claim in every row.
 - **Test name**: `TestReceiveDefaultBranchPush`
   **Scenario**: `push` run on the default branch.
   **Expected behavior**: `PullRequest` 0, `BaseRef` = default branch, no `Pulls` call, no problems. A push to `feature/x` gives `BaseRef` `feature/x` plus `ProblemUnsupportedEvent`; an unbound `pull_request` run (`refs/pull/7/merge`) gives the default branch.

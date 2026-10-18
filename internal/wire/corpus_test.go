@@ -15,6 +15,7 @@ import (
 const (
 	corpusRoot     = "testdata"
 	v300Revision   = "bbd658f008bcc4bc83e063cf305d20dc4508da2e"
+	v301Revision   = "0649e504a6761f565086b342d315110feeb27d77"
 	leakMarker     = "LEAK-7f3a"
 	syntheticLabel = "synthetic: "
 
@@ -55,7 +56,7 @@ var (
 	}
 
 	// pinnedRevisions maps every engine release the corpus holds captures of to that release's source revision.
-	pinnedRevisions = map[string]string{"v3.0.0": v300Revision}
+	pinnedRevisions = map[string]string{"v3.0.0": v300Revision, "v3.0.1": v301Revision}
 
 	revisionPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	reasonPattern   = regexp.MustCompile(`^[a-z]+(_[a-z]+)*$`)

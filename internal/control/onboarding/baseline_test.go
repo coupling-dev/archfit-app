@@ -21,11 +21,12 @@ import (
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
-// The shared corpus: real engine v3.0.0 captures, defined in internal/wire/module.md.
+// The shared corpus: real engine captures, defined in internal/wire/module.md.
 const (
 	corpusReport = "../../wire/testdata/report"
-	capturedTwo  = "real-baselined-comparable" // two accepted findings
+	capturedTwo  = "real-baselined-comparable" // two accepted findings, engine v3.0.0
 	capturedNone = "real-attention-baseline"   // no accepted finding, same policy
+	recaptured   = "real-recaptured-baseline"  // capturedTwo's recipe on engine v3.0.1: the same findings and policy
 	fingerprintA = "ba3803eca947bf3c1b7efa8f37854d5e"
 	fingerprintB = "07af466df8bfd6e77ee485ac01c50a17"
 )
@@ -168,6 +169,48 @@ func TestBaselineUploadOpensBaselinePR(t *testing.T) {
 	}
 	if n := f.hub.forbiddenCalls(); n != 0 {
 		t.Errorf("%d check or Actions write calls", n)
+	}
+}
+
+// TestBaselineRecaptureReadsTheOlderEngineShape: the first engine v3.0.1 capture over a protected v3.0.0 baseline. The
+// v3.0.0 file still carries state.dimensions and state.hard_gate_finding_ids, which v3.0.1 no longer writes, so the
+// bytes differ and a pull request opens; the protected file is read, and the diff of the same findings is empty.
+func TestBaselineRecaptureReadsTheOlderEngineShape(t *testing.T) {
+	policyText := corpus(t, recaptured, ".policy.yaml")
+	current, capture := corpus(t, capturedTwo, ".baseline.json"), corpus(t, recaptured, ".baseline.json")
+	stateKeys := func(raw []byte) map[string]json.RawMessage {
+		var doc struct {
+			State map[string]json.RawMessage `json:"state"`
+		}
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			t.Fatal(err)
+		}
+		return doc.State
+	}
+	for _, key := range []string{"dimensions", "hard_gate_finding_ids"} {
+		if _, ok := stateKeys(current)[key]; !ok {
+			t.Fatalf("the v3.0.0 capture has no state.%s", key)
+		}
+		if _, ok := stateKeys(capture)[key]; ok {
+			t.Fatalf("the v3.0.1 capture has state.%s", key)
+		}
+	}
+
+	f := newFixture(t)
+	f.protect(policyText, nil, current)
+	f.receiver.upload = baselineUpload(f.repo, capture, "")
+
+	if res := f.postBaseline(t); res.status != 200 || res.Unchanged || res.Number != 1 {
+		t.Fatalf("response = %d %s, want 200 with a pull request", res.status, res.raw)
+	}
+	body := f.hub.body(f.repo, baselineBranch)
+	for _, want := range []string{"Approving accepts no finding", "| Added | 0 |", "| Removed | 0 |"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("PR body does not mention %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "not a readable") {
+		t.Errorf("the protected v3.0.0 baseline was not read:\n%s", body)
 	}
 }
 

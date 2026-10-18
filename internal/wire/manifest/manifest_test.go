@@ -145,7 +145,7 @@ func TestManifestValidationRules(t *testing.T) {
 // TestApprovedEngineVersions lists the shipped releases; change it with manifest.json.
 func TestApprovedEngineVersions(t *testing.T) {
 	got := EngineVersions()
-	if want := []string{"v3.0.0"}; !slices.Equal(got, want) {
+	if want := []string{"v3.0.1"}; !slices.Equal(got, want) {
 		t.Errorf("EngineVersions() = %q, want %q", got, want)
 	}
 	got[0] = "changed"
@@ -308,7 +308,7 @@ func TestManifestMatchesFixtureProducers(t *testing.T) {
 
 func TestManifestHasNoPlaceholdersInRelease(t *testing.T) {
 	// The placeholders module.md documents, as "entry index field". None remain: the image digest is the
-	// published v3.0.0 one and the Action commit is the pinned archfit-action commit.
+	// published v3.0.1 one and the Action commit is the pinned archfit-action commit.
 	var documented []string
 
 	var file struct {
@@ -496,9 +496,11 @@ func TestWrongImageIsNotApproved(t *testing.T) {
 	}
 }
 
-// TestOlderEngineIsNotApproved: the App approves the v3.0.0 images only; no older release is read or approved.
+// TestOlderEngineIsNotApproved: the App approves the v3.0.1 images only; no older release is approved.
 func TestOlderEngineIsNotApproved(t *testing.T) {
 	for _, id := range []Identity{
+		{EngineVersion: "v3.0.0", ImageDigest: "sha256:0eab810538fd8e75115f548154edecfe294ee70e1f13e1a158008ded43119909", Platform: "linux/amd64"},
+		{EngineVersion: "v3.0.0", ImageDigest: "sha256:416cd49b73dfc1a2057ed07da9f5a65f2e1b47562cec1cdf255f40a3e6220473", Platform: "linux/arm64"},
 		{EngineVersion: "v2.5.0", ImageDigest: "sha256:5752b4fe6d62f4fdd71edf33b4174228e17bd7c3d960b36a67111806ec17686a", Platform: "linux/amd64"},
 		{EngineVersion: "v2.5.0", ImageDigest: "sha256:44d95cbb13519b9f85bd610488ae2dd0051b94a6447ee17087aa202c28ac605c", Platform: "linux/arm64"},
 		{EngineVersion: "v2.4.1", ImageDigest: "sha256:996e044c55eec96303c344bbe327c97b2a17661b1ab626bb94d00d47045c01c7", Platform: "linux/amd64"},

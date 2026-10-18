@@ -24,7 +24,7 @@ identity could compare as equal to another unknown.
 
 Published language (release identity shared with `archfit` and `archfit-action`). Supporting.
 Volatility: moderate. It changes only with a reviewed engine, image or Action release. The shipped rows are engine
-v3.0.0 on `linux/amd64` (`current`) and `linux/arm64`.
+v3.0.1 on `linux/amd64` (`current`) and `linux/arm64`.
 
 ## Encapsulated Knowledge
 
@@ -47,21 +47,25 @@ v3.0.0 on `linux/amd64` (`current`) and `linux/arm64`.
   rule above is all this package can check alone; it is not an approval of any version string.
 - The values must come from the engine release evidence. `profile_version` (`archfit.measurement.v2`, the engine's
   `MeasurementProfileVersion`, read from the unmodified capture) and the image digests are real:
-  - v3.0.0 (engine source revision `bbd658f008bcc4bc83e063cf305d20dc4508da2e`): the per-platform digests of
-    `ghcr.io/alexei-led/archfit:v3.0.0`,
-    `sha256:0eab810538fd8e75115f548154edecfe294ee70e1f13e1a158008ded43119909` on `linux/amd64` and
-    `sha256:416cd49b73dfc1a2057ed07da9f5a65f2e1b47562cec1cdf255f40a3e6220473` on `linux/arm64`.
+  - v3.0.1 (engine source revision `0649e504a6761f565086b342d315110feeb27d77`): the per-platform digests of
+    `ghcr.io/alexei-led/archfit:v3.0.1` (index `sha256:093eb48344296efb9f36a7c8a7fb969fd950846d8d1028322e800d1e21c7e4aa`,
+    equal to the release's `image-identity.json`),
+    `sha256:9aac269fa350e643054cbe5ced58426b4ed46000f30d60f49564aa605ece2408` on `linux/amd64` and
+    `sha256:19ccd3cb81ea6107ee723e939b0f01d4e8da045204e0a5daa4c004c2baa4faec` on `linux/arm64`. The `linux/amd64`
+    image's own output (the `engine-fixtures` artifact of archfit-action CI at `7efc29b`) carries `archfit.measurement.v2`.
 
-  `action_ref` of every row is the published `archfit-action` release `v1.0.0`, commit
-  `dbc3c1e256bb391c00a7978fcee6558b0cc352ad` (the tag is annotated; the row holds the commit, never the tag object).
+  `action_ref` of every row is the `archfit-action` commit `7efc29b5a2785fb0537a2617cddf3873b7d27e10` (release
+  `v2.1.0`; the row holds the commit, never a tag). That commit runs engine v3.0.1 only and refuses v3.0.0, so the
+  manifest holds no v3.0.0 row: the CI job `action-pin` requires one `action_ref` across the rows.
   `Lookup` does not read `action_ref`; it is what a generated workflow pins.
 - A placeholder is an `image_digest` or `action_ref` whose hex part is one character repeated. Placeholders are
   forbidden in a release: `TestManifestHasNoPlaceholdersInRelease` fails when the environment variable
   `ARCHFIT_RELEASE=1` is set and any row carries one. The release pipeline must run the tests with that variable. The
   variable is read by the test only; it never reaches `Lookup` or `Current`.
-- The synthetic `.envelope.json` siblings in `internal/wire/testdata/report/` state the `current` (v3.0.0
+- The synthetic `.envelope.json` siblings in `internal/wire/testdata/report/` state the `current` (v3.0.1
   `linux/amd64`) row's identity (engine version, image digest, platform; they carry no `action_ref`); `unlisted-image`
-  states v3.0.0 with an unlisted digest. Their reports are v3.0.0 documents. Deleting or moving the row they state means editing `manifest.json` and those envelopes in one commit.
+  states v3.0.1 with an unlisted digest, and `retired-engine` states the former v3.0.0 `linux/amd64` row. Their reports
+  are v3.0.0 documents except `real-pr-origin`, a v3.0.1 capture; the two releases share one key set. Deleting or moving the row they state means editing `manifest.json` and those envelopes in one commit.
 - Validation errors name the entry index, the field and the rule. They never quote a value.
 - "Locked" means: no environment variable, flag, file path, Store key, or network fetch can add or change a row.
   The only way to change it is a reviewed commit to `manifest.json`.
@@ -107,7 +111,7 @@ Semantics not visible in the signatures:
 - `ProfileVersion` is the value the gate compares with the report's `measurement_profile.version`. This module
   does not know the report type; the consumer passes no report in.
 - `Identity` has no JSON tags: it is not a wire form. The consumer builds it from three envelope strings.
-- `EngineVersions` returns a fresh slice on every call, today `v3.0.0`. It approves nothing by itself:
+- `EngineVersions` returns a fresh slice on every call, today `v3.0.1`. It approves nothing by itself:
   `Lookup` on the whole identity stays the only approval. The parent `wire` tests read it to tie every approved
   release to the report decoder, to a real capture and, through `Current`, to the policy schema pin.
 
@@ -122,7 +126,7 @@ consumers (the consumer depends on this module) and its external counterparts. V
 | `internal/gate/ingest`            | ingest depends on manifest         | Contract | root / 2 / 2              | High       | Yes       |
 | `internal/gate/feedback`          | feedback depends on manifest       | Contract | root / 2 / 2              | High       | Yes       |
 | `internal/control/onboarding`     | onboarding depends on manifest     | Contract | root / 2 / 2              | High       | Yes       |
-| `archfit` engine (v3.0.0)         | manifest records released identity | Contract | outside the tree; highest | Moderate   | Yes       |
+| `archfit` engine (v3.0.1)         | manifest records released identity | Contract | outside the tree; highest | Moderate   | Yes       |
 | `archfit-action` (external repo)  | manifest pins one Action commit    | Contract | outside the tree; highest | Moderate   | Yes       |
 
 Rank for `internal/gate`: the LCA is the root, and the deeper module (`wire/manifest`) is two levels below it. The
@@ -181,7 +185,7 @@ tolerates the distance of separate repositories and release cycles.
   defective value; the valid base passes.
 - **Test name**: `TestApprovedEngineVersions`
   **Scenario**: call `EngineVersions`, change the returned slice, call it again.
-  **Expected behavior**: `v3.0.0` both times, a release tag; it changes only together with `manifest.json`.
+  **Expected behavior**: `v3.0.1` both times, a release tag; it changes only together with `manifest.json`.
 - **Test name**: `TestManifestHasNoPlaceholdersInRelease`
   **Scenario**: collect every placeholder value of the embedded rows, as `entry index, field`; read `ARCHFIT_RELEASE`. The
   test never skips.
@@ -230,8 +234,8 @@ tolerates the distance of separate repositories and release cycles.
   **Scenario**: the current identity with one hex character of the image digest changed (T03: wrong image).
   **Expected behavior**: miss.
 - **Test name**: `TestOlderEngineIsNotApproved`
-  **Scenario**: the published v2.5.0 identities on both platforms and the v2.4.1 `linux/amd64` identity.
-  **Expected behavior**: all miss; the manifest holds only v3.0.0 rows.
+  **Scenario**: the published v3.0.0 and v2.5.0 identities on both platforms and the v2.4.1 `linux/amd64` identity.
+  **Expected behavior**: all miss; the manifest holds only v3.0.1 rows.
 - **Test name**: `TestGeneratedWorkflowInputsArePinned`
   **Scenario**: read `Current()` as onboarding would.
   **Expected behavior**: `ActionRef` is a commit SHA and `ImageDigest` a digest; neither is a tag, branch, or `latest`.

@@ -202,6 +202,55 @@ func TestRealEngineCaptureDecodes(t *testing.T) {
 	}
 }
 
+// TestRealPullRequestCaptureCarriesOrigin: the Action runs a pull request check with --base <merge base>. The real
+// v3.0.1 capture keeps every finding's and task's origin, and the gate's inputs stay the head's: config_hash is the
+// digest of the policy the head ran under, and the measurement profile is the approved one.
+func TestRealPullRequestCaptureCarriesOrigin(t *testing.T) {
+	var capture fixture
+	for _, f := range inFolder(loadCorpus(t), folderReport) {
+		if f.Name == "real-pr-origin" {
+			capture = f
+		}
+	}
+	if capture.Name == "" {
+		t.Fatal("report fixture real-pr-origin is missing")
+	}
+	r, err := report.Decode(capture.bytes(t), capture.engine(t))
+	if err != nil {
+		t.Fatalf("report.Decode: %v", err)
+	}
+	const mergeBase = "7a3a7a335ed968cdb3876eac1ba27b3992da249f"
+	if c := r.Comparison; c.Status != "comparable" || c.BaseRef != mergeBase || c.OriginStatus != "comparable" {
+		t.Errorf("comparison status %q, base_ref %q, origin_status %q; want comparable against %s",
+			c.Status, c.BaseRef, c.OriginStatus, mergeBase)
+	}
+	policyBytes, _ := capture.sibling(t, suffixPolicy)
+	if got := policy.Digest(policyBytes); got != r.Comparison.ConfigHash {
+		t.Errorf("config_hash = %s, want the head policy digest %s", r.Comparison.ConfigHash, got)
+	}
+	if p := r.Comparison.MeasurementProfile; p == nil || p.Version != manifest.Current().ProfileVersion {
+		t.Errorf("measurement profile = %+v, want version %s", p, manifest.Current().ProfileVersion)
+	}
+
+	origins := map[string][]string{}
+	for _, f := range r.Findings {
+		origins[f.RuleID] = append(origins[f.RuleID], f.Origin)
+	}
+	want := map[string][]string{
+		"no_direct_b_dependency": {"pre_existing"},
+		"no_c_dependency":        {"introduced"},
+		"bc/imbalanced_coupling": {"pre_existing", "introduced"},
+	}
+	if !reflect.DeepEqual(origins, want) {
+		t.Errorf("finding origins = %v, want %v", origins, want)
+	}
+	for _, task := range r.AgentTasks {
+		if want := map[string]string{"no_direct_b_dependency": "pre_existing", "no_c_dependency": "introduced"}[task.RuleID]; task.Origin != want {
+			t.Errorf("task %s origin = %q, want %q", task.RuleID, task.Origin, want)
+		}
+	}
+}
+
 // TestEveryApprovedEngineVersionIsReadable: the manifest approves only a release whose state key set the report
 // decoder knows, so an approved identity never meets a decoder that cannot read its report.
 func TestEveryApprovedEngineVersionIsReadable(t *testing.T) {
