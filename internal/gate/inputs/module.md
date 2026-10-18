@@ -225,9 +225,9 @@ owner also authorizes a head by being the one who pushed it.
   push authorizes nothing new. The authorization is of the commit: an owner who pushes it to any branch
   authorizes that commit for every pull request whose head it is. An owner who pushes commits written by someone
   else endorses them.
-- `sender` is the account GitHub names for the push. GitHub documents it as the user who triggered the event. It does
-  not say which account a push made with a deploy key carries; if that is the account that added the key, the
-  holder of a write deploy key can push as that account **[unverified limitation: check a deploy-key delivery]**.
+- `sender` is the account GitHub names for the push. GitHub does not say which account a push made with a deploy key
+  carries. The gate therefore records nothing for a push whose `pusher_type` is present and not `"user"`. An absent
+  `pusher_type` still trusts `sender` **[open: verify on the pilot with a deploy-key push]**.
 - A fork head has no record (its push happens in the fork) and `Resolve` stops at step 10 anyway: forks stay on a
   review approval, which they also never get.
 - A failed read of the record is an error, not "no pusher": the decision is retried, never published on a guess.

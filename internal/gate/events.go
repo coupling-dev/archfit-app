@@ -16,6 +16,9 @@ import (
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
+// pusherTypeUser is the pusher_type of a push made by a user account.
+const pusherTypeUser = "user"
+
 // Reactions, as logged.
 const (
 	reactionNone         = "none"
@@ -57,8 +60,8 @@ func (g *Gate) react(ctx context.Context, e webhook.Event) (string, error) {
 // path also runs the repository sweep.
 func (g *Gate) branchPushed(ctx context.Context, e webhook.Event) (string, error) {
 	t := eventTarget(e)
-	if err := g.resolver.RecordPusher(ctx, t, e.Pusher); err != nil {
-		return reactionNone, fmt.Errorf("gate: record pusher: %w", err)
+	if err := g.recordPusher(ctx, t, e); err != nil {
+		return reactionNone, err
 	}
 	reaction, err := g.pullOnHead(ctx, t, e.Branch)
 	if err != nil || e.Kind == webhook.BranchPush || !protectedPush(e.ChangedPaths) {
@@ -69,6 +72,21 @@ func (g *Gate) branchPushed(ctx context.Context, e webhook.Event) (string, error
 		return reactionRepoSweep, fmt.Errorf("gate: repository sweep: %w", err)
 	}
 	return reactionRepoSweep, nil
+}
+
+// recordPusher records e.Pusher as a pusher of the head. A push whose pusher_type is present and not "user" (a deploy
+// key) records nothing: GitHub does not say whose login sender carries then, and an owner's authorization must not be
+// open to whoever holds a key. An absent pusher_type still trusts sender.
+func (g *Gate) recordPusher(ctx context.Context, t inputs.Target, e webhook.Event) error {
+	if e.PusherType != "" && e.PusherType != pusherTypeUser {
+		slog.Default().InfoContext(ctx, "gate pusher not recorded",
+			"delivery_id", e.DeliveryID, "installation_id", e.InstallationID, "head_sha", e.HeadSHA)
+		return nil
+	}
+	if err := g.resolver.RecordPusher(ctx, t, e.Pusher); err != nil {
+		return fmt.Errorf("gate: record pusher: %w", err)
+	}
+	return nil
 }
 
 // pullOnHead re-evaluates the newest pull request whose head is branch, when that head is the commit just pushed.

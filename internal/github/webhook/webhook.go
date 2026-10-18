@@ -37,6 +37,7 @@ type Event struct {
 	BaseRef        string
 	Branch         string   // push kinds only: the branch, without "refs/heads/"
 	Pusher         string   // push kinds only: the login that moved the branch; never a git author or committer
+	PusherType     string   // push kinds only: the payload's pusher_type ("user", or a deploy key); "" when absent
 	ChangedPaths   []string // default_branch_push only
 }
 

@@ -83,11 +83,12 @@ type payload struct {
 	Sender struct {
 		Login string `json:"login"`
 	} `json:"sender"`
-	Ref     string `json:"ref"`
-	After   string `json:"after"`
-	Deleted bool   `json:"deleted"`
-	Forced  bool   `json:"forced"`
-	Commits []struct {
+	PusherType string `json:"pusher_type"`
+	Ref        string `json:"ref"`
+	After      string `json:"after"`
+	Deleted    bool   `json:"deleted"`
+	Forced     bool   `json:"forced"`
+	Commits    []struct {
 		Added    []string `json:"added"`
 		Modified []string `json:"modified"`
 		Removed  []string `json:"removed"`
@@ -143,6 +144,7 @@ func Parse(eventType, deliveryID string, body []byte) (Event, error) {
 		ev.HeadRepo = ev.Repo
 		ev.Branch = strings.TrimPrefix(p.Ref, branchRefPrefix)
 		ev.Pusher = p.Sender.Login
+		ev.PusherType = p.PusherType
 		if kind == DefaultBranchPush {
 			ev.BaseRef = p.Repository.DefaultBranch
 			ev.ChangedPaths = p.changedPaths()

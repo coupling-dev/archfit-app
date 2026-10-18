@@ -1,6 +1,7 @@
 package gate
 
 import (
+	"context"
 	"slices"
 	"testing"
 
@@ -166,6 +167,34 @@ func TestPushDoesNotAuthorizeUnlessAnOwnerPushedTheExactHead(t *testing.T) {
 			t.Errorf("reruns = %v, writes %d → %d", w.gh.reruns, before, w.gh.writes())
 		}
 	})
+}
+
+func TestPusherTypeOtherThanUserRecordsNothing(t *testing.T) {
+	tests := []struct {
+		pusherType string
+		authorized bool
+	}{
+		{"", true}, // absent: sender is trusted
+		{"user", true},
+		{"deploy_key", false},
+		{"something_new", false},
+	}
+	for _, tt := range tests {
+		t.Run("pusher_type "+tt.pusherType, func(t *testing.T) {
+			w := newWorld(t)
+			p, _ := w.missingApproval(7)
+			push := w.branchPush(p, ownerLogin)
+			push.PusherType = tt.pusherType
+
+			w.handle(push)
+			_, err := w.mem.Get(context.Background(), shopInstallation, pusherKeyPrefix+shopName+"/"+p.head)
+			recorded := err == nil
+			reran := slices.Equal(w.gh.reruns, []int64{p.runID})
+			if recorded != tt.authorized || reran != tt.authorized {
+				t.Errorf("recorded = %v, re-run = %v, want both %v", recorded, reran, tt.authorized)
+			}
+		})
+	}
 }
 
 func TestPusherRecordNeverAuthorizesAFork(t *testing.T) {

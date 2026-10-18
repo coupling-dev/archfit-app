@@ -60,7 +60,8 @@ delivery ID header are not covered by the signature; only the body is.
   `Branch` = `ref` without `refs/heads/`, `Pusher` = `sender.login`.
 - `BranchPush`: as `DefaultBranchPush` for `HeadSHA`, `HeadRepo`, `PullRequest`, `Branch` and `Pusher`; `BaseRef` is `""`
   and `ChangedPaths` is `nil`. `Pusher` is the actor GitHub names for the push; it is never a git author or
-  committer, which a pusher can set freely. A missing `sender` leaves `Pusher` empty.
+  committer, which a pusher can set freely. A missing `sender` leaves `Pusher` empty. `PusherType` is the payload's
+  top-level `pusher_type` verbatim, `""` when absent; this package does not judge it.
 - Installation kinds: `Repo` is `""`, `RepoPrivate` false, no pull request fields. Consumers list repositories
   through the API; the repository arrays of these payloads are not surfaced.
 - `Ignored`: `Kind`, `DeliveryID`, and `InstallationID` when the body was parsed and has one; nothing else.
@@ -110,6 +111,7 @@ type Event struct {
     BaseRef        string
     Branch         string   // push kinds only: the branch, without "refs/heads/"
     Pusher         string   // push kinds only: the login that moved the branch; never a git author or committer
+    PusherType     string   // push kinds only: the payload's pusher_type ("user", or a deploy key); "" when absent
     ChangedPaths   []string // default_branch_push only
 }
 ```
@@ -266,6 +268,9 @@ Payload fixtures are trimmed copies of real GitHub deliveries under `testdata/`,
 - **Test name**: `TestBranchPushFields`
   **Scenario**: a push to `feature/x` with a sender, not the default branch.
   **Expected behavior**: `Kind == BranchPush`; `HeadSHA`, `HeadRepo == Repo`, `Branch == "feature/x"`, `Pusher` from `sender.login`; `BaseRef` and `ChangedPaths` empty.
+- **Test name**: `TestBranchPushCarriesPusherType`
+  **Scenario**: a push to a feature branch with `pusher_type` absent, `"user"` and `"deploy_key"`.
+  **Expected behavior**: `PusherType` is `""`, `"user"`, `"deploy_key"`; `Pusher` is the sender in all three.
 - **Test name**: `TestChangedPaths`
   **Scenario**: table: three commits with overlapping files; a file added then removed; `forced: true`; 2 048 commits;
   3 001 distinct paths; exactly 3 000 paths; no `commits` key; `"commits": []`; `"commits": null`.

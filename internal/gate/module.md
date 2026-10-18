@@ -809,6 +809,7 @@ type Event struct {
     BaseRef        string
     Branch         string   // push kinds only: the branch, without "refs/heads/"
     Pusher         string   // push kinds only: the login that moved the branch; never a git author or committer
+    PusherType     string   // push kinds only: the payload's pusher_type ("user", or a deploy key); "" when absent
     ChangedPaths   []string // default_branch_push only
 }
 ```
@@ -1079,7 +1080,7 @@ Special targets, all through the same flow:
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PullOpened`, `PullSynchronized` | `Resolve`. `!SettingsFound` → nothing. Fork → `Publish(sweep.Without(ReasonForkUnsupported, target, trusted, Receipt{}))`: a zero-run receipt carrying the base digests. Else `Settings.Gate == GateRequired` → `publisher.Pending(target)`. Advisory → nothing. |
 | `ReviewChanged`                  | `Reconcile(target, …)`: inside the lease, a withdrawn approval → `sweep.Withdrawal` (below); reason `owner_approval_missing` and `!verdict.Unapproved(trusted)` **[default: no re-run while an approval is missing]** → `sweep.Rerun`.                           |
-| `BranchPush`                     | `resolver.RecordPusher(target, Pusher)` first, so the record exists before anything decides; a failed write is returned and the queue retries. Then the newest pull request of this repository whose head is `Branch` (`Pulls.PullByHead`): when it is open and its head is `HeadSHA`, run the `ReviewChanged` reaction on it, so a report that arrived before this push is re-evaluated. No such pull request, a closed one or another head → nothing more. A pull request from a fork is never found. |
+| `BranchPush`                     | `resolver.RecordPusher(target, Pusher)` first, so the record exists before anything decides; a failed write is returned and the queue retries. Then the newest pull request of this repository whose head is `Branch` (`Pulls.PullByHead`): when it is open and its head is `HeadSHA`, run the `ReviewChanged` reaction on it, so a report that arrived before this push is re-evaluated. A push whose `PusherType` is present and not `"user"` (a deploy key) records nothing and logs `gate pusher not recorded` with the delivery id, never the key; the re-evaluation and the sweep still run. No such pull request, a closed one or another head → nothing more. A pull request from a fork is never found. |
 | `DefaultBranchPush`              | `RecordPusher` and the pull request lookup as for `BranchPush`; then `ChangedPaths` empty (= unknown), or `inputs.MayBeProtected(path)` for any changed path → `sweeper.RunRepo(ctx, repo, now)` in the request. Otherwise nothing.                                                                                                   |
 | `PullClosed`                     | nothing.                                                                                                                                                                                                                                                         |
 | installation kinds, `Ignored`    | nothing; `control` handles installations.                                                                                                                                                                                                                        |
@@ -1300,6 +1301,9 @@ are driven only as far as they go without GitHub. Child internals are tested in 
 - **Test name**: `TestPushDoesNotAuthorizeUnlessAnOwnerPushedTheExactHead`
   **Scenario**: a non-owner `BranchPush`; a non-owner push of the owner's commit to another branch after the owner's push (the owner's authorization stays); an owner push followed by a new head pushed by a non-owner; an owner push of an older head; a head-edited settings file and CODEOWNERS naming the pusher; a push event whose head the pull request no longer has; a push to a branch without a pull request.
   **Expected behavior**: `owner_approval_missing` or no reaction in every row; no re-run; no write for the last two.
+- **Test name**: `TestPusherTypeOtherThanUserRecordsNothing`
+  **Scenario**: an owner's `BranchPush` for a head whose report is `owner_approval_missing`, with `PusherType` absent, `"user"`, `"deploy_key"` and an unknown value.
+  **Expected behavior**: absent and `"user"` record the pusher and re-run the workflow; the other two record nothing and re-run nothing.
 - **Test name**: `TestPusherRecordNeverAuthorizesAFork`
   **Scenario**: a pull request whose head repository is a fork; an owner's `BranchPush` with the fork head's SHA.
   **Expected behavior**: no re-run; the report is `fork_unsupported`.

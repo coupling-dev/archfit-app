@@ -152,3 +152,27 @@ func TestPushKinds(t *testing.T) {
 		})
 	}
 }
+
+func TestBranchPushCarriesPusherType(t *testing.T) {
+	tests := []struct {
+		name       string
+		pusherType any
+		want       string
+	}{
+		{"absent", nil, ""},
+		{"user", "user", "user"},
+		{"deploy key", "deploy_key", "deploy_key"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload := set(pushPayload("refs/heads/feature/x", "main"), "sender.login", "octocat")
+			if tt.pusherType != nil {
+				set(payload, "pusher_type", tt.pusherType)
+			}
+			ev := mustParse(t, "push", payload)
+			if ev.PusherType != tt.want || ev.Pusher != "octocat" {
+				t.Errorf("PusherType = %q, Pusher = %q; want %q, octocat", ev.PusherType, ev.Pusher, tt.want)
+			}
+		})
+	}
+}
