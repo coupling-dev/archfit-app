@@ -574,7 +574,9 @@ func startApp(t *testing.T, w *world) *runningApp {
 	go func() { finished <- app.Run(ctx, c, log) }()
 	t.Cleanup(func() {
 		cancel()
-		<-finished
+		if err := <-finished; err != nil {
+			t.Errorf("app.Run: %v", err)
+		}
 		router.current.Store(nil)
 		slog.SetDefault(prev)
 	})
