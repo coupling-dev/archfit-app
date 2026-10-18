@@ -293,3 +293,60 @@ func TestFindingsExplainDrawnLinks(t *testing.T) {
 		}
 	})
 }
+
+func TestIntroducedLinksNeedAComparison(t *testing.T) {
+	introduced := func(f report.Finding) report.Finding { f.Origin = "introduced"; return f }
+	preExisting := func(f report.Finding) report.Finding { f.Origin = "pre_existing"; return f }
+	fixed := func(f report.Finding) report.Finding { f.Status = "fixed"; return f }
+	tests := []struct {
+		name       string
+		origin     string
+		findings   []report.Finding
+		introduced bool
+		origins    []string
+	}{
+		{"an introduced finding on a comparable run", "comparable",
+			[]report.Finding{introduced(finding("gate", "new", "api", "db"))}, true, []string{"introduced"}},
+		{"the same finding without a comparison claims nothing", "unknown",
+			[]report.Finding{introduced(finding("gate", "new", "api", "db"))}, false, []string{""}},
+		{"a run that did not compare has no origin at all", "",
+			[]report.Finding{introduced(finding("gate", "new", "api", "db"))}, false, []string{""}},
+		{"a pre-existing finding is not new", "comparable",
+			[]report.Finding{preExisting(finding("gate", "new", "api", "db"))}, false, []string{"pre_existing"}},
+		{"a fixed finding is not new", "comparable",
+			[]report.Finding{fixed(introduced(finding("gate", "new", "api", "db")))}, false, nil},
+		{"one introduced finding among others makes the link new", "comparable",
+			[]report.Finding{preExisting(finding("advisory", "new", "api", "db")), introduced(finding("gate", "new", "api", "db"))},
+			true, []string{"introduced", "pre_existing"}}, // the strongest status first
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rep := reportFor(threeModules, []report.Seam{seam("api", "db", 2)}, tt.findings)
+			rep.Comparison.OriginStatus = tt.origin
+			v := Build(rep, []byte(threeModules))
+			if len(v.Links) != 1 || v.Links[0].Introduced != tt.introduced {
+				t.Fatalf("Links = %+v, want Introduced %v", v.Links, tt.introduced)
+			}
+			var origins []string
+			for _, f := range v.Findings {
+				origins = append(origins, f.Origin)
+			}
+			if !reflect.DeepEqual(origins, tt.origins) {
+				t.Errorf("finding origins = %q, want %q", origins, tt.origins)
+			}
+		})
+	}
+}
+
+func TestIntroducedNeverChangesTheStatus(t *testing.T) {
+	gate := finding("gate", "new", "api", "db")
+	gate.Origin = "introduced"
+	allowed := seam("api", "db", 2)
+	allowed.Policy = "allowed"
+	rep := reportFor(threeModules, []report.Seam{allowed}, []report.Finding{gate})
+	rep.Comparison.OriginStatus = "comparable"
+	v := Build(rep, []byte(threeModules))
+	if got := v.Links[0]; got.Status != StatusAllowed || !got.Introduced {
+		t.Errorf("link = %+v, want the engine's allowed status and Introduced", got)
+	}
+}

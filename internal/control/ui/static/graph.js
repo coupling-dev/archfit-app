@@ -41,6 +41,13 @@
   var nodes = view.Nodes || [],
     links = view.Links || [];
   var policyUrl = root.dataset.policyUrl;
+  // A pull request graph emphasises the links new in this PR: Link.Introduced, set by graph.Build only when the report
+  // compared with the base branch. It never changes a link's status, and the other links stay drawn, muted.
+  var pullScope = root.dataset.scope === "pull";
+  var fresh = links.filter(function (l) {
+    return pullScope && l.Introduced;
+  });
+  var ORIGIN = { introduced: "added by this PR", pre_existing: "pre-existing", unknown: "origin unknown" };
   // explain maps a link's pair to the findings that name it (View.Findings), in report order.
   var explain = new Map();
   (view.Findings || []).forEach(function (f) {
@@ -79,6 +86,13 @@
   }
   function count(l) {
     return l.Count ? String(l.Count) : "finding";
+  }
+  function isNew(l) {
+    return pullScope && l.Introduced;
+  }
+  // A problem is a link the list, the badges and focus mode show; a link new in this PR always is one.
+  function problem(l) {
+    return PROBLEM[l.Status] || isNew(l);
   }
 
   // Layout: declared layers make bands in policy order; without layers, depth after a cycle break places importers
@@ -282,14 +296,13 @@
   if (tables) tables.open = false;
   root.hidden = false;
   var show = { violation: true, accepted: true, advisory: true, allowed: true, observed: true };
+  var emphasis = fresh.length > 0; // the "New in this PR" chip, on by default when there is something new
   var scope = "auto",
     mode = "graph",
     sel = null,
     selNode = null,
     layouts = new Map();
-  var hasProblem = links.some(function (l) {
-    return PROBLEM[l.Status];
-  });
+  var hasProblem = links.some(problem);
 
   // Above MAX_DRAWN the tables are the view, with a filter over their rows.
   function filterable() {
@@ -314,7 +327,7 @@
   }
   // One rule for the list, the graph and the matrix; the matrix is the full picture, so focus never narrows it.
   function visible(l, full) {
-    return show[l.Status] && (full || !focused() || PROBLEM[l.Status]);
+    return show[l.Status] && (full || !focused() || problem(l));
   }
   function layoutFor(focus) {
     var k = focus ? "focus" : "all";
@@ -324,7 +337,7 @@
       if (focus) {
         var keep = new Map();
         links.forEach(function (l) {
-          if (PROBLEM[l.Status]) {
+          if (problem(l)) {
             keep.set(l.From, true);
             keep.set(l.To, true);
           }
@@ -332,9 +345,7 @@
         ns = nodes.filter(function (n) {
           return keep.get(n.Name);
         });
-        ls = links.filter(function (l) {
-          return PROBLEM[l.Status];
-        });
+        ls = links.filter(problem);
       }
       layouts.set(k, { nodes: ns, L: layout(ns, ls) });
     }
@@ -357,6 +368,26 @@
       c[l.Status] = (c[l.Status] || 0) + 1;
     });
     chips.replaceChildren();
+    if (fresh.length) {
+      // Emphasis, not a filter: on, new links stand out over the muted rest and lead the list; off, links keep their
+      // status style and list order. A new link stays a problem, marked, either way.
+      var nb = h(
+        "button",
+        {
+          type: "button",
+          class: "g-chip new",
+          "aria-pressed": String(emphasis),
+          "data-k": "snew",
+          title: "Links with a finding the engine did not find on the base branch.",
+        },
+        [h("i"), h("b", { text: String(fresh.length) }), " new in this PR"],
+      );
+      nb.addEventListener("click", function () {
+        emphasis = !emphasis;
+        render();
+      });
+      chips.appendChild(nb);
+    }
     STATUSES.slice()
       .sort(function (a, b) {
         return TRIAGE[a] - TRIAGE[b];
@@ -387,10 +418,14 @@
   function renderList() {
     var problems = links
       .filter(function (l) {
-        return PROBLEM[l.Status] && show[l.Status];
+        return problem(l) && show[l.Status];
       })
       .sort(function (a, b) {
-        return TRIAGE[a.Status] - TRIAGE[b.Status] || b.Count - a.Count;
+        return (
+          (emphasis ? Number(isNew(b)) - Number(isNew(a)) : 0) ||
+          TRIAGE[a.Status] - TRIAGE[b.Status] ||
+          b.Count - a.Count
+        );
       });
     list.replaceChildren();
     if (!problems.length) {
@@ -410,9 +445,10 @@
       listed.add(l);
       if (rev) listed.add(rev);
       var label = rev ? h("span", {}, [h("code", { text: l.From }), " ⇄ ", h("code", { text: l.To })]) : pairEl(l);
-      var li = h("li", { tabindex: "0", "data-k": "l" + key(l.From, l.To), class: "g-item " + l.Status + (sel === l || (rev && sel === rev) ? " sel" : "") }, [
+      var novel = isNew(l) || (rev && isNew(rev));
+      var li = h("li", { tabindex: "0", "data-k": "l" + key(l.From, l.To), class: "g-item " + l.Status + (novel ? " new" : "") + (sel === l || (rev && sel === rev) ? " sel" : "") }, [
         h("i"),
-        label,
+        h("span", {}, [label, novel ? h("span", { class: "g-new", text: "new" }) : null]),
         h("span", { class: "hint", text: rev ? count(l) + " · " + count(rev) : count(l) }),
       ]);
       li.addEventListener("click", function () {
@@ -573,22 +609,32 @@
             }
           }
         }
+        var stand = emphasis && isNew(l);
         var g = svgEl("g", {
-          class: "g-edge " + l.Status + (related(l) ? "" : " dim") + (l === sel ? " sel" : ""),
-          tabindex: PROBLEM[l.Status] ? 0 : -1,
+          class:
+            "g-edge " +
+            l.Status +
+            (stand ? " new" : "") +
+            (emphasis && !isNew(l) ? " muted" : "") +
+            (related(l) ? "" : " dim") +
+            (l === sel ? " sel" : ""),
+          tabindex: problem(l) ? 0 : -1,
           "data-k": "e" + key(l.From, l.To),
         });
         g.appendChild(svgEl("path", { d: d, class: "hit" }));
+        // New in this PR: a halo in the link's own status color under a heavier line, so "new" and the status read
+        // as one mark.
+        if (stand) g.appendChild(svgEl("path", { d: d, class: "halo", "stroke-width": weight(l.Count) + 8 }));
         g.appendChild(
           svgEl("path", {
             d: d,
             class: "line",
-            "stroke-width": weight(l.Count),
+            "stroke-width": weight(l.Count) + (stand ? 1.5 : 0),
             "marker-end": "url(#gm-" + l.Status + ")",
           }),
         );
-        if (PROBLEM[l.Status] || l === sel) {
-          var t = count(l),
+        if (problem(l) || l === sel) {
+          var t = (stand ? "new · " : "") + count(l),
             w = 8 + t.length * 6;
           g.appendChild(
             svgEl("rect", {
@@ -608,7 +654,14 @@
           svgEl(
             "title",
             {},
-            l.From + " → " + l.To + " · " + l.Count + " observed dependencies · " + LABEL[l.Status],
+            l.From +
+              " → " +
+              l.To +
+              " · " +
+              l.Count +
+              " observed dependencies · " +
+              LABEL[l.Status] +
+              (isNew(l) ? " · new in this PR" : ""),
           ),
         );
         g.addEventListener("click", function (e) {
@@ -702,9 +755,9 @@
         var l = cell.get(key(r, c)),
           td = h("td", { class: r === c ? "self" : "" });
         if (l && visible(l, true)) {
-          td.className = l.Status + (sel === l ? " sel" : "");
+          td.className = l.Status + (emphasis && isNew(l) ? " new" : "") + (sel === l ? " sel" : "");
           td.textContent = l.Count ? String(l.Count) : "·";
-          td.title = r + " → " + c + " · " + l.Count + " · " + LABEL[l.Status];
+          td.title = r + " → " + c + " · " + l.Count + " · " + LABEL[l.Status] + (isNew(l) ? " · new in this PR" : "");
           td.tabIndex = 0;
           td.setAttribute("data-k", "c" + key(l.From, l.To));
           td.addEventListener("click", function () {
@@ -771,6 +824,7 @@
           h("strong", {}, [pairEl(sel)]),
           " ",
           h("span", { class: "g-tag " + sel.Status, text: LABEL[sel.Status] }),
+          isNew(sel) ? h("span", { class: "g-tag new", text: "new in this PR" }) : null,
         ]),
         h("p", {
           class: "hint",
@@ -787,6 +841,7 @@
             h("p", { class: "g-finding" }, [
               h("code", { text: f.RuleID || "(no rule)" }),
               h("span", { class: "hint", text: " · " + f.Kind + ", " + f.Status }),
+              pullScope && f.Origin ? h("span", { class: "g-origin " + f.Origin, text: ORIGIN[f.Origin] || f.Origin }) : null,
               f.Why ? h("span", { class: "g-why", text: f.Why }) : null,
             ]),
           );
@@ -800,7 +855,13 @@
       });
       if (back) {
         detail.append(
-          h("p", { class: "g-finding" }, [h("strong", { text: "Other direction " }), pairEl(back), " ", h("span", { class: "g-tag " + back.Status, text: LABEL[back.Status] })]),
+          h("p", { class: "g-finding" }, [
+            h("strong", { text: "Other direction " }),
+            pairEl(back),
+            " ",
+            h("span", { class: "g-tag " + back.Status, text: LABEL[back.Status] }),
+            isNew(back) ? h("span", { class: "g-tag new", text: "new in this PR" }) : null,
+          ]),
           h("p", { class: "hint", text: back.Count ? back.Count + " observed dependencies" : "Named by a finding only." }),
         );
         findingsOf(back);

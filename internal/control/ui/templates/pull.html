@@ -4,6 +4,8 @@
 <p class="hint">{{if .Pull.Author}}{{.Pull.Author}} · {{end}}{{.Pull.State}} · <code>{{.Pull.HeadRef}}</code> into <code>{{.Pull.BaseRef}}</code> · <a href="{{.Pull.URL}}">View on GitHub</a>
   {{if .Required}}<span class="p-chip">gate: required</span>{{else}}<span class="p-chip">gate: advisory · does not block merging</span>{{end}}</p>
 
+<nav class="p-tabs" aria-label="Pull request"><a href="/r/{{$.Repo}}/pull/{{.Pull.Number}}" aria-current="page">Findings</a><a href="/r/{{$.Repo}}/pull/{{.Pull.Number}}/graph" id="pull-graph">Graph</a></nav>
+
 {{if .Headline}}
 <p class="p-result {{.Conclusion}}" id="result"><strong>{{.Headline}}</strong>
   <span class="p-chip">archfit/state: {{.Conclusion}}</span></p>

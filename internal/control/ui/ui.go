@@ -136,6 +136,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions) http.Handler {
 	mux.Handle("POST /r/{o}/{n}/policy/ready", s.repo(permWrite, s.ready))
 	mux.Handle("GET /r/{o}/{n}/graph", s.repo(permRead, s.graphPage))
 	mux.Handle("GET /r/{o}/{n}/pull/{number}", s.repo(permRead, s.pullPage))
+	mux.Handle("GET /r/{o}/{n}/pull/{number}/graph", s.repo(permRead, s.pullGraphPage))
 	mux.Handle("POST /r/{o}/{n}/assist", s.repo(permWrite, s.propose))
 	mux.Handle("GET /r/{o}/{n}/consent", s.repo(permAdmin, s.consentPage))
 	mux.Handle("POST /r/{o}/{n}/consent", s.repo(permAdmin, s.consent))

@@ -26,6 +26,8 @@ tested.
 - Set `Stale` when the policy text is not the policy the report was computed from, or does not parse.
 - Set `Incomplete` when the report's hard gates did not pass or a required rule was not evaluated, so that an
   `observed` link is not read as clean.
+- Mark a link `Introduced` when the engine compared with the base branch and a finding behind it is new in the change,
+  without touching its `Status`.
 
 Graph never edits YAML and never proposes a change. Visual edits are deferred (decisions.md §6).
 
@@ -73,9 +75,10 @@ const (
 )
 
 type Link struct {
-    From, To string
-    Status   LinkStatus
-    Count    int // observed dependencies of the pair's seams; 0 when only a finding names the pair
+    From, To   string
+    Status     LinkStatus
+    Count      int  // observed dependencies of the pair's seams; 0 when only a finding names the pair
+    Introduced bool // a finding that names the pair is one the engine says this change introduced; display only
 }
 
 // View is a read-only picture. Stale is true when the policy text no longer matches the report's config_hash.
@@ -96,6 +99,7 @@ type LinkFinding struct {
     RuleID   string
     Kind     string
     Status   string
+    Origin   string // "introduced" | "pre_existing" | "unknown"; "" unless the report compared with the base branch
     Why      string
     More     int // on the last listed finding of a pair: how many more name the pair and are not listed
 }
@@ -147,6 +151,12 @@ func Build(rep Report, policy []byte) View
     pair **[default]**, the last one carrying `More`, the count not listed; `Why` clipped to 400 runes with "…"
     **[default]**; sorted by `(From, To)`, stable. It never changes a `Status`:
     an advisory on a pair whose engine seam status is `allowed` is listed and the link stays `allowed`. Never nil.
+13. Origin, a projection for a pull request report: only when `rep.Comparison.OriginStatus == "comparable"`, a link
+    is `Introduced` when at least one finding of rule 12 on its pair (any status but `fixed`, the cap ignored) has
+    `Origin == "introduced"`, and each `LinkFinding.Origin` is the finding's `Origin`. Any other `OriginStatus`, an
+    empty one included: no link is `Introduced` and every `Origin` is `""`, so nothing claims what a change added
+    without the engine's comparison. `Introduced` is never inferred from a status (`new` means "not accepted", not
+    "added") and never changes `Status`: an introduced gate finding on a pair stays a `violation`.
 
 Stated limits **[default]**: only the engine says "allowed". A relationship the policy permits but the engine did
 not observe is not in a report, and graph does not interpret policy rules. When a seam carries `Policy`, `observed` is
@@ -178,7 +188,7 @@ finding status of rule 4.
 - **Volatility**: moderate
 - **Balanced?**: yes — contract coupling tolerates the distance
 - **Shared knowledge**: graph reads `Seams` (`FromModule`, `ToModule`, `Edges`, `Policy`), `Findings` (`Kind`, `Status`,
-  `Edge.From.Module`, `Edge.To.Module`), `Comparison.ConfigHash` and `Decision.HardGates` with
+  `Edge.From.Module`, `Edge.To.Module`, `Origin`), `Comparison.ConfigHash`, `Comparison.OriginStatus` and `Decision.HardGates` with
   `Decision.UnevaluatedRequiredRules` (only whether it is empty), and calls `Finding.Active()`, nothing else. `Reference`, `Dimension`, `Coverage`, `AgentTask` and the other types in the fences below are restated
   only because they share a fence with a type graph reads; graph never touches them. `StateSchemaV1` is the constant
   wire/report checks at decode time; `MaxBytes` is the constant that caps a payload; graph uses neither.

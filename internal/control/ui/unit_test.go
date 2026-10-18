@@ -283,3 +283,17 @@ func TestPullPageFoldsACycleAndListsWhatToMeasure(t *testing.T) {
 		}
 	}
 }
+
+func TestEscapeRef(t *testing.T) {
+	for _, tt := range []struct{ ref, want string }{
+		{"main", "main"},
+		{"release/1.2", "release/1.2"},
+		{"release#42", "release%2342"},
+		{"a?b/c d", "a%3Fb/c%20d"},
+		{"0123456789abcdef0123456789abcdef01234567", "0123456789abcdef0123456789abcdef01234567"},
+	} {
+		if got := escapeRef(tt.ref); got != tt.want {
+			t.Errorf("escapeRef(%q) = %q, want %q", tt.ref, got, tt.want)
+		}
+	}
+}

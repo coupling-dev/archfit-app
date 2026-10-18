@@ -105,6 +105,16 @@ problem list, detail panel; the hint paragraph goes; Stale/Incomplete banners, p
 stay as the no-script fallback), `static/app.css` (new link and node classes), and `graph.Build` or the page handler
 for the per-link findings. Prototype: `prototypes/graph-proto.js`.
 
+**Pull request scope** (`/r/{o}/{n}/pull/{number}/graph`): the question becomes "what did this pull request change in
+the architecture?". It draws the report the pull request page shows (the run its `archfit/state` check names), never
+the default branch's. Status stays what `graph.Build` decides; `Link.Introduced` is a projection: a finding behind the
+link has `origin: introduced` and `comparison.origin_status` is `comparable`. Without a comparison a banner says the
+graph cannot show what the pull request added, and nothing is marked new. A "New in this PR (N)" chip, on by default
+when N > 0, is an emphasis rather than a filter: new links keep their status color with a heavier line, a dashed halo
+and a "new" badge, so "new" and "violation" read as one mark; the rest stay drawn, muted. The problem list puts new
+links first, and the detail gives each finding's origin. The pull request page and this page share two tabs,
+Findings and Graph.
+
 ## Surfaces and their jobs
 
 | Surface                 | Who reads it                   | One job                                       |

@@ -2,6 +2,8 @@ package ui
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -209,6 +211,37 @@ func (e *env) publishReport(fullName string, payload []byte) {
 	e.gh.mu.Lock()
 	defer e.gh.mu.Unlock()
 	e.gh.artifacts[77] = payload
+}
+
+// prPolicy is the policy of testdata/pr-cycle.json, a report shaped like coupling-dev/pumba-pilot#11 (engine v3.0.1,
+// --base, origin comparable): two module cycles and two coupling advisories added by the pull request, six accepted ones.
+// It is the real capture internal/wire/testdata/report/real-pr-origin.json with its findings, seams and modules replaced.
+const prPolicy = "version: 2\nmodules:\n  pkg_cmd:\n    paths: [\"pkg/cmd/**\"]\n  pkg_chaos:\n    paths: [\"pkg/chaos/**\"]\n" +
+	"  pkg_container:\n    paths: [\"pkg/container/**\"]\n  pkg_util:\n    paths: [\"pkg/util/**\"]\n"
+
+// prArtifact reads testdata/pr-cycle.json as a report computed from policyText.
+func prArtifact(t *testing.T, policyText string) []byte {
+	t.Helper()
+	raw, err := os.ReadFile("testdata/pr-cycle.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(raw, []byte(fixtureConfigHash)) {
+		t.Fatal("fixture config_hash changed")
+	}
+	return bytes.ReplaceAll(raw, []byte(fixtureConfigHash), []byte(policy.Digest([]byte(policyText))))
+}
+
+// checkPull makes payload the report of run 88, which the archfit/state check on pull request #4's head names.
+func (e *env) checkPull(payload []byte) {
+	sum := sha256.Sum256(payload)
+	e.gh.mu.Lock()
+	defer e.gh.mu.Unlock()
+	e.gh.checks[repoName+"@"+sha(4)+"#"+checkState] = []api.CheckRun{{
+		ID: 9, Name: checkState, HeadSHA: sha(4), Status: "completed", Conclusion: "neutral",
+		Title: "Architecture violations found · advisory", ExternalID: "v1:88:1:sha256:" + hex.EncodeToString(sum[:]),
+	}}
+	e.gh.artifacts[88] = payload
 }
 
 // captureLogs swaps the default logger; tests that use it do not run in parallel.

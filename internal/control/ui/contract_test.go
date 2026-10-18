@@ -23,6 +23,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/control/proposal"
 	"github.com/alexei-led/archfit-app/internal/control/ui/graph"
 	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/alexei-led/archfit-app/internal/wire/policy"
 	"github.com/alexei-led/archfit-app/internal/wire/report"
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
@@ -45,6 +46,7 @@ func repoRoutes(fullName string) []route {
 		{http.MethodPost, base + "/policy/ready", permWrite, nil}, // the form is filled in by the test: it needs an open draft
 		{http.MethodGet, base + "/graph", permRead, nil},
 		{http.MethodGet, base + "/pull/4", permRead, nil},
+		{http.MethodGet, base + "/pull/4/graph", permRead, nil},
 		{http.MethodPost, base + "/assist", permWrite, url.Values{"mode": {"customer"}, "instruction": {"split module a"}, "content": {policyText}}},
 		{http.MethodGet, base + "/consent", permAdmin, nil},
 		{http.MethodPost, base + "/consent", permAdmin, url.Values{"kind": {"managed_llm"}, "action": {"record"}}},
@@ -495,9 +497,62 @@ func TestPullPageShowsTheReportOfItsCheck(t *testing.T) {
 func TestPullPageNumberMustBeAPull(t *testing.T) {
 	e := newEnv(t)
 	c := e.as("alice", permRead)
-	for _, n := range []string{"0", "-4", "x", "4x"} {
+	for _, n := range []string{"0", "-4", "x", "4x", "5"} {
 		wantStatus(t, c.get("/r/"+repoName+"/pull/"+n), http.StatusNotFound)
+		wantStatus(t, c.get("/r/"+repoName+"/pull/"+n+"/graph"), http.StatusNotFound)
 	}
+}
+
+// TestPullGraphDrawsTheReportOfItsCheck: the pull request graph is the report of the run the head's archfit/state
+// check names, the one the pull request page shows, never the default branch's latest report.
+func TestPullGraphDrawsTheReportOfItsCheck(t *testing.T) {
+	e := newEnv(t)
+	e.publishReport(repoName, artifact(t, "healthy"))
+	payload := prArtifact(t, prPolicy)
+	e.checkPull(payload)
+	e.gh.setFile(repoName, sha(4), policy.PolicyPath, prPolicy)
+	rep, err := report.Decode(payload, "v3.0.1")
+	if err != nil {
+		t.Fatalf("fixture does not decode: %v", err)
+	}
+
+	res := e.as("alice", permRead).get("/r/" + repoName + "/pull/4/graph")
+	wantStatus(t, res, http.StatusOK)
+	body := res.Body.String()
+	var got graph.View
+	if err := json.Unmarshal([]byte(embeddedJSON(t, body)), &got); err != nil {
+		t.Fatalf("embedded JSON: %v", err)
+	}
+	if want := graph.Build(rep, []byte(prPolicy)); !reflect.DeepEqual(got, want) {
+		t.Errorf("embedded view = %+v\nwant %+v", got, want)
+	}
+	if got.Stale {
+		t.Error("the head's policy is the report's, yet the view is stale")
+	}
+	for _, call := range e.gh.called("Artifact") {
+		if !strings.HasPrefix(call.detail, "88 ") {
+			t.Errorf("Artifact(%s): the graph read another run than the check's", call.detail)
+		}
+	}
+	if calls := e.gh.called("LatestRun"); len(calls) != 0 {
+		t.Errorf("LatestRun called %d times: the default branch's report has no place here", len(calls))
+	}
+	wantContains(t, html.UnescapeString(body),
+		"feat: read options", "#4", "<code>"+sha(4)[:7]+"</code>", "Architecture violations found · advisory",
+		`href="/r/`+repoName+`/pull/4"`, `href="https://github.com/`+repoName+`/pull/4"`, `data-scope="pull"`,
+		`data-policy-url="https://github.com/`+repoName+`/blob/`+sha(4)+`/.archfit.yaml"`,
+		`id="new-count"`, "4 links have a finding the base branch does not have: new in this PR.")
+	for _, s := range []string{`id="not-compared"`, `id="stale"`} {
+		if strings.Contains(body, s) {
+			t.Errorf("body contains %q", s)
+		}
+	}
+}
+
+func TestPullPageLinksItsGraph(t *testing.T) {
+	e := newEnv(t)
+	body := e.as("alice", permRead).get("/r/" + repoName + "/pull/4").Body.String()
+	wantContains(t, body, `id="pull-graph"`, `href="/r/`+repoName+`/pull/4/graph"`, `aria-current="page">Findings</a>`)
 }
 
 func TestPullPageReadsTheGateModeOfTheBase(t *testing.T) {

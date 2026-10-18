@@ -81,8 +81,8 @@ type pullBody struct {
 }
 
 func (s *server) pullPage(w http.ResponseWriter, r *http.Request, sc scope) {
-	number, err := strconv.Atoi(r.PathValue("number"))
-	if err != nil || number <= 0 {
+	number, ok := pullNumber(r)
+	if !ok {
 		s.fail(w, r, sc, api.ErrNotFound)
 		return
 	}
@@ -94,12 +94,29 @@ func (s *server) pullPage(w http.ResponseWriter, r *http.Request, sc scope) {
 	s.render(w, r, http.StatusOK, "pull", s.newPage(r, sc, "Pull request #"+strconv.Itoa(number), body))
 }
 
-// buildPull reads the pull request, the archfit/state check on its head, and the report of the run that check names.
-// It never shows a report that does not match the check: the digest in the check's external_id must be the report's.
+// pullNumber reads the {number} path value: a positive integer, or not a pull request.
+func pullNumber(r *http.Request) (int, bool) {
+	number, err := strconv.Atoi(r.PathValue("number"))
+	return number, err == nil && number > 0
+}
+
 func (s *server) buildPull(ctx context.Context, sc scope, number int) (pullBody, error) {
+	body, rep, err := s.readPull(ctx, sc, number)
+	if err != nil || rep == nil {
+		return body, err
+	}
+	fillFindings(&body, *rep)
+	return body, nil
+}
+
+// readPull reads the pull request, the archfit/state check on its head, and the report of the run that check names.
+// The pull request page and its graph both read through it, so they always show the same report. It never returns a
+// report that does not match the check: the digest in the check's external_id must be the report's. The report is nil
+// when Unavailable says why there is none.
+func (s *server) readPull(ctx context.Context, sc scope, number int) (pullBody, *report.Report, error) {
 	pull, err := s.gh.pulls.Pull(ctx, sc.repo.RepoRef, number)
 	if err != nil {
-		return pullBody{}, err
+		return pullBody{}, nil, err
 	}
 	body := pullBody{Pull: pull, CheckURL: pull.URL + "/checks"}
 	// The gate reads the settings on the pull request's base, as the published checks do; a base without them is
@@ -109,16 +126,16 @@ func (s *server) buildPull(ctx context.Context, sc scope, number int) (pullBody,
 			body.Required = set.Gate == settings.GateRequired
 		}
 	} else if !errors.Is(err, api.ErrNotFound) {
-		return pullBody{}, err
+		return pullBody{}, nil, err
 	}
 
 	runs, err := s.gh.checks.CheckRuns(ctx, sc.repo.RepoRef, pull.HeadSHA, checkState)
 	if err != nil {
-		return pullBody{}, err
+		return pullBody{}, nil, err
 	}
 	if len(runs) == 0 {
 		body.Unavailable = noResult
-		return body, nil
+		return body, nil, nil
 	}
 	run := slices.MaxFunc(runs, func(a, b api.CheckRun) int { return cmp.Compare(a.ID, b.ID) })
 	body.Headline, body.Conclusion = run.Title, run.Conclusion
@@ -127,36 +144,35 @@ func (s *server) buildPull(ctx context.Context, sc scope, number int) (pullBody,
 	// still match the digest: findings are never shown under a result that asks for action.
 	if run.Conclusion == conclusionActionRequired {
 		body.Unavailable = actionRequired
-		return body, nil
+		return body, nil, nil
 	}
 	runID, digest, ok := parseExternalID(run.ExternalID)
 	if !ok || runID == 0 {
 		body.Unavailable = noUpload
-		return body, nil
+		return body, nil, nil
 	}
 	body.RunID = runID
 
 	payload, err := s.gh.actions.Artifact(ctx, sc.repo.RepoRef, runID, reportArtifact, report.MaxBytes)
 	if errors.Is(err, api.ErrNotFound) {
 		body.Unavailable = reportExpired
-		return body, nil
+		return body, nil, nil
 	}
 	if err != nil {
-		return pullBody{}, err
+		return pullBody{}, nil, err
 	}
 	sum := sha256.Sum256(payload)
 	if hex.EncodeToString(sum[:]) != digest {
 		body.Unavailable = reportMismatch
-		return body, nil
+		return body, nil, nil
 	}
 	releases := report.EngineVersions()
 	rep, err := report.Decode(payload, releases[len(releases)-1])
 	if err != nil {
 		body.Unavailable = reportUnavailable
-		return body, nil
+		return body, nil, nil
 	}
-	fillFindings(&body, rep)
-	return body, nil
+	return body, &rep, nil
 }
 
 // parseExternalID reads "v1:<run_id>:<attempt>:<digest>" and returns the run and the bare hex digest.
@@ -178,7 +194,7 @@ func parseExternalID(id string) (runID int64, digest string, ok bool) {
 
 func fillFindings(body *pullBody, rep report.Report) {
 	body.NoBaseline = rep.GateReference == nil || !rep.GateReference.BaselinePresent
-	body.Compared = rep.Comparison.OriginStatus == "comparable"
+	body.Compared = rep.Comparison.OriginStatus == originComparable
 	add := func(list *findingList, f report.Finding) {
 		if len(*list) == findingsPerList {
 			body.Omitted++

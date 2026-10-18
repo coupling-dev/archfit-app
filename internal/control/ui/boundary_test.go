@@ -405,6 +405,20 @@ func TestNoAssetNeedsInlineStyleOrBlobWorker(t *testing.T) {
 	}
 }
 
+// Report text is untrusted: the scripts build the page from it through textContent and setAttribute only.
+func TestScriptsNeverParseMarkup(t *testing.T) {
+	markup := regexp.MustCompile(`innerHTML|outerHTML|insertAdjacentHTML|document\.write|createContextualFragment|\beval\(|new Function`)
+	for _, name := range []string{"static/graph.js", "static/editor.js"} {
+		raw, err := fs.ReadFile(staticFS, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if m := markup.Find(raw); m != nil {
+			t.Errorf("%s uses %q", name, m)
+		}
+	}
+}
+
 func TestHostileStringsAreEscaped(t *testing.T) {
 	const (
 		hostileRepo   = `acme/<script>alert("repo")</script>`
@@ -427,7 +441,7 @@ func TestHostileStringsAreEscaped(t *testing.T) {
 	e.gh.pulls[repoName+"#4"] = pull
 	e.gh.checks[repoName+"@"+sha(4)+"#"+checkState] = []api.CheckRun{{ID: 1, Conclusion: "neutral", Title: hostileText, ExternalID: "v1:0:0:"}}
 
-	for _, path := range []string{"/", "/r/" + repoName, "/r/" + repoName + "/policy", "/r/" + repoName + "/graph", "/r/" + repoName + "/consent", "/r/" + repoName + "/pull/4"} {
+	for _, path := range []string{"/", "/r/" + repoName, "/r/" + repoName + "/policy", "/r/" + repoName + "/graph", "/r/" + repoName + "/consent", "/r/" + repoName + "/pull/4", "/r/" + repoName + "/pull/4/graph"} {
 		res := c.get(path)
 		wantStatus(t, res, http.StatusOK)
 		body := res.Body.String()
