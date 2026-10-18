@@ -25,6 +25,26 @@ The prototype was rebuilt as a repository-scoped App on the pilot data, with a s
 next to projected ones. A fourth problem came out of the review: **in advisory mode a PR result goes out of date
 silently** when the baseline or policy changes on `master` (see the PR screen).
 
+## Simplification pass (v2)
+
+Owner feedback on v1: too many views, too many words, unclear actions. v2 keeps the content and cuts the surface.
+
+| v1                                                   | v2                                                                              |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------- |
+| 8 tabs                                               | 3 tabs, one question each: Overview, Pull requests, Architecture                |
+| Decisions tab                                        | "Needs you" on Overview: one card per decision, one primary button              |
+| Setup tab                                            | a progress track on Overview                                                    |
+| Evidence tab                                         | a folded strip of 9 dimensions on Overview, with "To measure more"              |
+| On GitHub tab                                        | an "Archfit / On GitHub" switch on the PR page; "Today" vs "Proposed" inside it |
+| States tab                                           | a line in Design notes                                                          |
+| "Use case / Main point / Data" sidebar on every page | removed; field paths appear only with "Data sources" on                         |
+| Scenario buttons on two pages                        | one "Demo" select in the header, marked as prototype-only                       |
+| Prose about the cycle                                | a two-node diagram: 40 imports one way, 1 the other                             |
+| Advisories, locations, policy, YAML always visible   | folded, with the count in the summary                                           |
+
+Rules: status first; one primary action per card; details fold away, but nothing needed to act lives only in a fold.
+The sections below describe v1 screens; their content now sits in the v2 places above.
+
 ## Surfaces and their jobs
 
 | Surface                 | Who reads it                   | One job                                       |

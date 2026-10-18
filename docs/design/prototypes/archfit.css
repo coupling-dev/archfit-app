@@ -470,3 +470,8 @@ dl.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 @media (max-width: 760px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .stats > *:nth-child(3) { border-left: 0; } .stats > *:nth-child(n+3) { border-top: 1px solid var(--border-muted); } }
 .legend .swatch.advisory { border-top: 2px solid var(--attention); }
 .side code { overflow-wrap: anywhere; word-break: break-word; }
+
+/* ---------- data-source annotations: hidden unless "Show data sources" is on ---------- */
+.src { display: none; font: 11px var(--mono); color: var(--attention); }
+:root.show-src .src { display: inline; }
+:root.show-src div.src, :root.show-src p.src { display: block; }

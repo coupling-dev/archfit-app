@@ -6,37 +6,86 @@
 <title>Archfit · pumba-pilot</title>
 <link rel="stylesheet" href="archfit.css">
 <style>
+  .page { max-width: 1012px; }
   .meta { font-size: 12px; color: var(--fg-muted); }
-  .item { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
-  .item-main { min-width: 0; flex: 1 1 320px; display: flex; flex-direction: column; gap: 4px; }
-  .item-title { font-weight: 600; display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .opt { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; align-items: center; }
-  .opt .ends { font-size: 12px; color: var(--fg-muted); }
-  .result { display: flex; gap: 12px; align-items: flex-start; }
-  .result h2 { font-size: 16px; }
-  .result .oi { margin-top: 2px; }
-  .facts { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--fg-muted); }
-  .facts > span { display: inline-flex; align-items: center; gap: 4px; }
-  .cycle { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; font-size: 13px; align-items: baseline; }
-  .loc { font-size: 12px; color: var(--fg-muted); }
-  .steps { display: flex; flex-direction: column; gap: 0; }
-  .step-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 10px 16px; border-top: 1px solid var(--border-muted); }
-  .step-row:first-child { border-top: 0; }
-  .step-row .oi { margin-top: 2px; }
-  .step-row.todo { color: var(--fg-muted); }
-  .step-row.now { background: var(--accent-subtle); }
-  .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
-  @media (max-width: 900px) { .two { grid-template-columns: minmax(0, 1fr); } }
-  .gh-frame { border: 1px dashed var(--attention-border); border-radius: var(--radius-lg); padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-  .unknown-list { margin: 0; padding-left: 18px; font-size: 12px; color: var(--fg-muted); display: flex; flex-direction: column; gap: 2px; }
-  table.data td .label { vertical-align: middle; }
-  .covbar { display: inline-block; width: 64px; height: 6px; border-radius: 999px; background: var(--neutral-subtle); vertical-align: middle; margin-right: 6px; overflow: hidden; }
-  .covbar > span { display: block; height: 100%; background: var(--fg-muted); }
+  .muted-line { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-muted); }
+  .demo { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--attention); border: 1px dashed var(--attention-border); border-radius: var(--radius); padding: 2px 4px 2px 8px; }
+  .demo select { font: 12px var(--font); color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 2px 4px; }
+  .toggle-src[aria-pressed="true"] { color: var(--attention); border-color: var(--attention-border); }
+
+  /* status header */
+  .hero { display: flex; flex-direction: column; gap: 16px; }
+  .hero-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .big { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .big > * { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; background: var(--bg); text-align: left; font: inherit; color: inherit; display: flex; flex-direction: column; gap: 2px; }
+  .big button { cursor: pointer; } .big button:hover { border-color: var(--accent); }
+  .big .n { font-size: 28px; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 8px; }
+  .big .t { font-size: 13px; color: var(--fg-muted); }
+  .big .ok .n { color: var(--success); } .big .warn .n { color: var(--attention); } .big .bad .n { color: var(--danger); }
+  @media (max-width: 640px) { .big { grid-template-columns: minmax(0, 1fr); } }
+
+  /* action card */
+  .action { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 14px 16px; }
+  .action + .action { border-top: 1px solid var(--border-muted); }
+  .action .ic { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--done-subtle); color: var(--done); }
+  .action .ic.blue { background: var(--accent-subtle); color: var(--accent); }
+  .action strong { display: block; }
+  @media (max-width: 640px) { .action { grid-template-columns: 32px minmax(0, 1fr); } .action > :last-child { grid-column: 2; justify-self: start; } }
+
+  /* setup track */
+  .track { display: flex; align-items: flex-start; padding: 16px; overflow-x: auto; }
+  .track .st { flex: 1 1 0; min-width: 84px; display: flex; flex-direction: column; align-items: center; gap: 6px; position: relative; font-size: 12px; color: var(--fg-muted); text-align: center; }
+  .track .st::before { content: ""; position: absolute; top: 9px; left: -50%; right: 50%; height: 2px; background: var(--border); }
+  .track .st:first-child::before { display: none; }
+  .track .st.done::before, .track .st.now::before { background: var(--success); }
+  .track .dot { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--border); background: var(--bg); display: grid; place-items: center; position: relative; }
+  .track .done .dot { background: var(--success); border-color: var(--success); color: #fff; }
+  .track .now .dot { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-subtle); }
+  .track .now { color: var(--fg); font-weight: 600; }
+  .track .dot .oi { width: 12px; height: 12px; }
+
+  /* evidence strip */
+  .dims { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 6px; padding: 16px; }
+  .dim { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--fg-muted); text-align: center; }
+  .dim i { height: 8px; border-radius: 4px; background: var(--success); }
+  .dim.partial i { background: repeating-linear-gradient(90deg, var(--attention) 0 6px, var(--attention-subtle) 6px 10px); }
+  .dim.none i { background: transparent; border: 1px dashed var(--border); }
+  @media (max-width: 760px) { .dims { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 12px; } }
+  .key { display: inline-flex; align-items: center; gap: 4px; }
+  .key i { display: inline-block; width: 14px; height: 6px; border-radius: 3px; background: var(--success); }
+  .key i.p { background: var(--attention); } .key i.n { background: transparent; border: 1px dashed var(--border); }
+
+  /* fold */
+  details.fold { border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); }
+  details.fold > summary { list-style: none; cursor: pointer; padding: 12px 16px; display: flex; align-items: center; gap: 8px; font-weight: 600; flex-wrap: wrap; }
+  details.fold > summary::-webkit-details-marker { display: none; }
+  details.fold > summary::before { content: ""; border-left: 5px solid var(--fg-muted); border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: transform .12s; }
+  details.fold[open] > summary::before { transform: rotate(90deg); }
+  details.fold > summary .meta { font-weight: 400; margin-left: auto; }
+  details.fold > .fold-body { border-top: 1px solid var(--border-muted); }
+  .pad { padding: 12px 16px; }
+
+  /* PR result */
+  .result-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--fg-muted); white-space: nowrap; }
+  .chip.warn { color: var(--attention); border-color: var(--attention-border); }
+  .chip.ok { color: var(--success); border-color: var(--success-border); }
+  .chip.bad { color: var(--danger); border-color: var(--danger-border); }
+  .issue { padding: 16px; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: center; }
+  @media (max-width: 760px) { .issue { grid-template-columns: minmax(0, 1fr); } }
+  .issue h3 { font-size: 16px; display: flex; gap: 8px; align-items: center; }
+  .cyc { max-width: 100%; height: auto; }
+  .cyc text { font: 600 12px var(--mono); fill: var(--fg); }
+  .cyc .lbl { font: 11px var(--font); fill: var(--fg-muted); }
+  .cyc rect { fill: var(--bg-subtle); stroke: var(--border); }
+  .cyc .a { stroke: var(--danger); fill: none; }
+  .cyc .mk { fill: var(--danger); }
+  .crumb-back { font-size: 13px; }
+  .loc-list { font: 12px/1.8 var(--mono); color: var(--fg-muted); }
+
   /* map */
   .m-node rect { fill: var(--bg); stroke: var(--border); }
   .m-node .nm { fill: var(--fg); font: 600 13px var(--mono); }
-  .m-node .sub { fill: var(--fg-muted); font: 11px var(--font); }
-  .m-node.hot rect { stroke: var(--danger); stroke-width: 1.5; }
   .e { stroke: var(--fg-muted); stroke-width: 1.5; fill: none; }
   .e.advisory { stroke: var(--attention); stroke-width: 2; }
   .e.violation { stroke: var(--danger); stroke-width: 2.5; }
@@ -46,7 +95,10 @@
   .cnt rect { fill: var(--bg); stroke: var(--border); }
   .cnt text { fill: var(--fg); font: 600 10px var(--font); }
   .mk-muted { fill: var(--fg-muted); } .mk-att { fill: var(--attention); } .mk-dan { fill: var(--danger); }
-  .m-note { fill: var(--fg-muted); font: 11px var(--font); }
+  .map-grid { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 16px; align-items: start; }
+  .map-grid svg { max-width: 100%; height: auto; }
+  @media (max-width: 900px) { .map-grid { grid-template-columns: minmax(0, 1fr); } }
+
   [data-only]:not(.on) { display: none !important; }
 </style>
 </head>
@@ -57,15 +109,12 @@
   <symbol id="i-x" viewBox="0 0 16 16"><path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"/></symbol>
   <symbol id="i-alert" viewBox="0 0 16 16"><path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"/></symbol>
   <symbol id="i-neutral" viewBox="0 0 16 16"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm3-.75h7a.75.75 0 0 1 0 1.5h-7a.75.75 0 0 1 0-1.5Z"/></symbol>
-  <symbol id="i-dot" viewBox="0 0 16 16"><circle cx="8" cy="8" r="4"/></symbol>
   <symbol id="i-pr" viewBox="0 0 16 16"><path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"/></symbol>
   <symbol id="i-merge" viewBox="0 0 16 16"><path d="M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Z"/></symbol>
-  <symbol id="i-shield" viewBox="0 0 16 16"><path d="M7.467.133a1.748 1.748 0 0 1 1.066 0l5.25 1.68A1.75 1.75 0 0 1 15 3.48V7c0 1.566-.32 3.182-1.303 4.682-.983 1.498-2.585 2.813-5.032 3.855a1.697 1.697 0 0 1-1.33 0c-2.447-1.042-4.049-2.357-5.032-3.855C1.32 10.182 1 8.566 1 7V3.48a1.755 1.755 0 0 1 1.217-1.667Zm.61 1.429a.25.25 0 0 0-.153 0l-5.25 1.68a.25.25 0 0 0-.174.238V7c0 1.358.275 2.666 1.057 3.86.784 1.194 2.121 2.34 4.366 3.297a.196.196 0 0 0 .154 0c2.245-.956 3.582-2.104 4.366-3.298C13.225 9.666 13.5 8.36 13.5 7V3.48a.251.251 0 0 0-.174-.237l-5.25-1.68Z"/></symbol>
-  <symbol id="i-info" viewBox="0 0 16 16"><path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/></symbol>
   <symbol id="i-sync" viewBox="0 0 16 16"><path d="M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z"/></symbol>
-  <symbol id="i-clock" viewBox="0 0 16 16"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm7-3.25v2.992l2.028.812a.75.75 0 0 1-.557 1.392l-2.5-1A.751.751 0 0 1 7 8.25v-3.5a.75.75 0 0 1 1.5 0Z"/></symbol>
-  <symbol id="i-ext" viewBox="0 0 16 16"><path d="M3.75 2h3.5a.75.75 0 0 1 0 1.5h-3.5a.25.25 0 0 0-.25.25v8.5c0 .138.112.25.25.25h8.5a.25.25 0 0 0 .25-.25v-3.5a.75.75 0 0 1 1.5 0v3.5A1.75 1.75 0 0 1 12.25 14h-8.5A1.75 1.75 0 0 1 2 12.25v-8.5C2 2.784 2.784 2 3.75 2Zm6.854-1h4.146a.25.25 0 0 1 .25.25v4.146a.25.25 0 0 1-.427.177L13.03 4.03 9.28 7.78a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042l3.75-3.75-1.543-1.543A.25.25 0 0 1 10.604 1Z"/></symbol>
   <symbol id="i-copy" viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Zm5-5C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 16 16"><path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm.176 4.823L9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064Zm1.238-3.763a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354Z"/></symbol>
+  <symbol id="i-beaker" viewBox="0 0 16 16"><path d="M5 5.782V2.5h-.25a.75.75 0 0 1 0-1.5h6.5a.75.75 0 0 1 0 1.5H11v3.282l3.666 5.76C15.619 13.04 14.543 15 12.767 15H3.233c-1.776 0-2.852-1.96-1.899-3.458Zm-2.4 6.565a.75.75 0 0 0 .633 1.153h9.534a.75.75 0 0 0 .633-1.153L12.225 10.5h-8.45ZM9.5 2.5h-3V6c0 .143-.04.283-.117.403L4.73 9h6.54L9.617 6.403A.746.746 0 0 1 9.5 6Z"/></symbol>
 </svg>
 
 <header class="app-header">
@@ -74,10 +123,15 @@
     Archfit
   </a>
   <nav class="crumbs" aria-label="Repository"><span>coupling-dev</span><span class="sep">/</span><strong>pumba-pilot</strong></nav>
-  <span class="label vis">Private</span>
-  <span class="proto-tag">Prototype · real pilot reports, read-only</span>
   <span class="header-spacer"></span>
-  <span class="user-chip"><span class="avatar">a</span>alexei-led · owner</span>
+  <label class="demo" title="Prototype only: the state of PR #4">Demo
+    <select id="scn" aria-label="Demo state of PR #4">
+      <option value="nobase">PR #4 · no baseline (real)</option>
+      <option value="stale">PR #4 · outdated after #5</option>
+      <option value="base">PR #4 · with baseline</option>
+      <option value="req">PR #4 · gate required</option>
+    </select></label>
+  <button type="button" class="btn sm toggle-src" id="toggle-src" aria-pressed="false">Data sources</button>
   <div class="theme-toggle" role="group" aria-label="Theme">
     <button type="button" data-theme-set="light">Light</button><button type="button" data-theme-set="auto">Auto</button><button type="button" data-theme-set="dark">Dark</button>
   </div>
@@ -86,627 +140,293 @@
 
 <nav class="unav" role="tablist" aria-label="Repository views">
   <button type="button" role="tab" id="tab-overview" aria-controls="overview" aria-selected="true">Overview</button>
-  <button type="button" role="tab" id="tab-pull" aria-controls="pull" aria-selected="false">Pull requests <span class="counter">1</span></button>
-  <button type="button" role="tab" id="tab-github" aria-controls="github" aria-selected="false">On GitHub</button>
+  <button type="button" role="tab" id="tab-pull" aria-controls="pull" aria-selected="false">Pull requests <span class="counter">2</span></button>
   <button type="button" role="tab" id="tab-architecture" aria-controls="architecture" aria-selected="false">Architecture</button>
-  <button type="button" role="tab" id="tab-decisions" aria-controls="decisions" aria-selected="false">Decisions <span class="counter">2</span></button>
-  <button type="button" role="tab" id="tab-evidence" aria-controls="evidence" aria-selected="false">Evidence</button>
-  <button type="button" role="tab" id="tab-setup" aria-controls="setup" aria-selected="false">Setup</button>
-  <button type="button" role="tab" id="tab-states" aria-controls="states" aria-selected="false">States</button>
 </nav>
 
 <main class="page">
 
-<!-- ================= OVERVIEW ================= -->
+<!-- ================= OVERVIEW: is master fine, what do I do? ================= -->
 <section role="tabpanel" id="overview" aria-labelledby="tab-overview" class="stack" style="gap:24px">
-  <div class="page-head">
-    <div class="stack-sm">
-      <div class="row"><span class="state attention"><svg class="oi"><use href="#i-alert"/></svg>Needs attention</span><span class="label">gate: advisory</span></div>
-      <h1>pumba-pilot · <code style="font-size:18px">master</code></h1>
-      <p class="lede">No architecture rule fails on <code>master</code>. Six coupling advisories need an owner choice. Four of nine dimensions have partial or no evidence.</p>
+  <div class="hero">
+    <div class="hero-top">
+      <span class="state attention"><svg class="oi"><use href="#i-alert"/></svg>Needs attention</span>
+      <code>master</code>
+      <span class="label">gate: advisory</span>
+      <span class="muted-line"><svg class="oi sm"><use href="#i-sync"/></svg>report <code>aed8b36</code> predates baseline #5</span>
+      <span class="src">verdict · decision.* · .archfit-app.yaml gate</span>
     </div>
-    <div class="facts" style="flex-direction:column;align-items:flex-end;gap:2px">
-      <span>report of <code>aed8b36</code></span><span>engine v3.0.0 · customer-attested</span>
+    <div class="big">
+      <div class="ok"><span class="n"><svg class="oi"><use href="#i-check"/></svg>0</span><span class="t">rule violations</span></div>
+      <button type="button" class="warn" data-goto="architecture" data-switch="src" data-value="master"><span class="n">6</span><span class="t">coupling advisories · never block</span></button>
+      <button type="button" class="bad" data-goto="pull" data-switch="pr" data-value="4"><span class="n">1</span><span class="t">open PR with a violation</span></button>
     </div>
   </div>
 
-  <div class="flash"><svg class="oi accent flash-icon"><use href="#i-info"/></svg><div class="stack-sm" style="gap:2px">
-    <strong>Baseline merged after this report</strong>
-    <span><a href="#">#5</a> accepted 33 coupling edges into <code>.archfit-baseline.json</code> at 09:17 UTC. The next <code>master</code> run shows them as baseline, not new. Open PRs keep their earlier result until their workflow runs again: advisory mode does not re-run them.</span>
-  </div></div>
+  <section class="box" aria-labelledby="h-you">
+    <div class="box-head"><h3 id="h-you">Needs you</h3></div>
+    <div class="action">
+      <span class="ic"><svg class="oi"><use href="#i-pencil"/></svg></span>
+      <div><strong>Declare how often each module changes</strong><span class="meta">All 6 advisories depend on it.</span> <span class="src">dimensions.coupling.unknown[] · matched_by.hypothesis (raw)</span></div>
+      <a class="btn sm primary" href="#">Edit policy</a>
+    </div>
+    <div class="action">
+      <span class="ic blue"><svg class="oi"><use href="#i-beaker"/></svg></span>
+      <div><strong>Rehearse the gate</strong><span class="meta">A bad change must fail, a good one pass. Then require it.</span></div>
+      <a class="btn sm" href="#">Start rehearsal</a>
+    </div>
+  </section>
 
-  <div class="layout">
-    <div class="stack" style="gap:24px">
-      <div class="stats" aria-label="Default branch">
-        <div><span class="n">0</span><span class="t">rule violations</span><span class="s"><code>no-module-cycles</code> holds</span></div>
-        <button type="button" data-goto="decisions"><span class="n">6</span><span class="t">coupling advisories</span><span class="s">33 edges · never block</span></button>
-        <button type="button" data-goto="evidence" data-switch="src" data-value="master"><span class="n">5 / 9</span><span class="t">dimensions measured</span><span class="s">3 partial · 1 unmeasured</span></button>
-        <button type="button" data-goto="pull"><span class="n">1</span><span class="t">open PR with violations</span><span class="s">#4 · advisory</span></button>
+  <section class="box" aria-label="Setup progress">
+    <div class="track">
+      <div class="st done"><span class="dot"><svg class="oi"><use href="#i-check"/></svg></span>Installed</div>
+      <div class="st done"><span class="dot"><svg class="oi"><use href="#i-check"/></svg></span>Policy #3</div>
+      <div class="st done"><span class="dot"><svg class="oi"><use href="#i-check"/></svg></span>Baseline #5</div>
+      <div class="st now"><span class="dot"></span>Advisory</div>
+      <div class="st"><span class="dot"></span>Rehearse</div>
+      <div class="st"><span class="dot"></span>Required</div>
+    </div>
+  </section>
+
+  <details class="fold">
+    <summary>Evidence <span class="meta"><span class="key"><i></i>5 measured</span> · <span class="key"><i class="p"></i>3 partial</span> · <span class="key"><i class="n"></i>1 not measured</span></span></summary>
+    <div class="fold-body">
+      <div class="dims" aria-label="Dimensions">
+        <div class="dim"><i></i><span>intent</span></div><div class="dim"><i></i><span>structure</span></div>
+        <div class="dim"><i></i><span>modularity</span></div><div class="dim partial"><i></i><span>coupling</span></div>
+        <div class="dim"><i></i><span>change</span></div><div class="dim"><i></i><span>complexity</span></div>
+        <div class="dim partial"><i></i><span>testability</span></div><div class="dim partial"><i></i><span>operations</span></div>
+        <div class="dim none"><i></i><span>drift</span></div>
       </div>
-
-      <section class="box" aria-labelledby="h-prs">
-        <div class="box-head"><h3 id="h-prs">Open pull requests</h3><span class="meta">Latest Archfit result on each head</span></div>
-        <div class="box-row item clickable" data-goto="pull" tabindex="0">
-          <div class="item-main"><span class="item-title"><svg class="oi success"><use href="#i-pr"/></svg>feat(container): read list options from the CLI flags <span class="muted" style="font-weight:400">#4</span></span>
-            <span class="meta">alexei-led · <code>9d33f4d</code> · module cycle <code>pkg_chaos</code> ⇄ <code>pkg_container</code></span></div>
-          <div class="row"><span class="label attention">violations · advisory</span><span class="label">result predates #5</span></div></div>
-        <div class="box-row item">
-          <div class="item-main"><span class="item-title"><svg class="oi success"><use href="#i-pr"/></svg>Bump the go-deps group with 7 updates <span class="muted" style="font-weight:400">#1</span></span>
-            <span class="meta">dependabot[bot] · opened before Archfit was set up</span></div>
-          <span class="label">no Archfit result</span></div>
-      </section>
-
-      <section class="box" aria-labelledby="h-need">
-        <div class="box-head"><h3 id="h-need">Waiting on an owner</h3><button type="button" class="btn sm" data-goto="decisions">Open decisions</button></div>
-        <div class="box-row item"><div class="item-main"><span class="item-title">Declare volatility for 6 modules</span><span class="meta">All 6 advisories suggest it (<code>declare_volatility</code>). 33 of 77 scored cross-module edges are critical.</span></div><span class="label done">owner decision</span></div>
-        <div class="box-row item"><div class="item-main"><span class="item-title">Make the gate required</span><span class="meta">Advisory since #3. Rehearse first: one forbidden change must fail, one legitimate change must pass.</span></div><span class="label done">owner decision</span></div>
-      </section>
-
-      <section class="box" aria-labelledby="h-act">
-        <div class="box-head"><h3 id="h-act">Recent setup activity</h3></div>
-        <div class="box-row item"><div class="item-main"><span class="item-title"><svg class="oi done"><use href="#i-merge"/></svg>Update the Archfit baseline <span class="muted" style="font-weight:400">#5</span></span><span class="meta">archfit-review[bot] · merged 09:17 UTC · 33 coupling edges accepted</span></div><span class="label">baseline</span></div>
-        <div class="box-row item"><div class="item-main"><span class="item-title"><svg class="oi done"><use href="#i-merge"/></svg>Add the Archfit policy proposed by discovery <span class="muted" style="font-weight:400">#3</span></span><span class="meta">merged 08:53 UTC · 6 modules · 1 rule</span></div><span class="label">policy</span></div>
-        <div class="box-row item"><div class="item-main"><span class="item-title"><svg class="oi done"><use href="#i-merge"/></svg>Add Archfit advisory feedback <span class="muted" style="font-weight:400">#2</span></span><span class="meta">merged 08:48 UTC · workflow and <code>.archfit-app.yaml</code></span></div><span class="label">setup</span></div>
-      </section>
+      <div class="pad stack-sm" style="border-top:1px solid var(--border-muted)">
+        <strong style="font-size:13px">To measure more</strong>
+        <ul class="meta" style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:2px">
+          <li>Declare module volatility and public surfaces in the policy</li>
+          <li>Feed test coverage from CI</li>
+          <li>Commit deploy manifests for the 5 modules without one</li>
+          <li>Drift: measured once a run uses the baseline</li></ul>
+        <span class="src">dimensions.*.{status,coverage,unknown[]}</span>
+      </div>
     </div>
-
-    <aside class="side" aria-label="About this view">
-      <div class="side-section"><div class="side-title">Use case</div><p>An owner opens the repository page after setup or a week later. Question: is <code>master</code> in policy, and does anything need me?</p></div>
-      <div class="side-section"><div class="side-title">Main point</div><p>State of the default branch in one badge, then the open PRs, then owner decisions. Counts only. No score.</p></div>
-      <div class="side-section"><div class="side-title">Data</div>
-        <p><span class="data-tag today">EXISTS TODAY</span> <code>verdict</code>, <code>decision.*</code>, <code>findings[]</code>, <code>coverage.{measured,partial,unmeasured}</code> from the latest <code>master</code> artifact. Gate mode from protected <code>.archfit-app.yaml</code>. PR list from <code>GET /pulls</code>.</p>
-        <p><span class="data-tag new">NEW</span> Per-PR latest result on this page: one check-runs read per open PR head. "Baseline merged after this report" compares the report's baseline digest with <code>master</code>.</p></div>
-    </aside>
-  </div>
+  </details>
 </section>
 
-<!-- ================= PULL REQUEST ================= -->
+<!-- ================= PULL REQUESTS: what is wrong, does it block, how to fix? ================= -->
 <section role="tabpanel" id="pull" aria-labelledby="tab-pull" class="stack" style="gap:20px" hidden>
-  <div class="page-head">
-    <div class="stack-sm">
-      <h1>feat(container): read list options from the CLI flags <span class="muted" style="font-weight:400">#4</span></h1>
-      <div class="row"><span class="state success"><svg class="oi"><use href="#i-pr"/></svg>Open</span><span class="meta"><strong>alexei-led</strong> wants to merge into <code>master</code> from <code>feat/container-list-opts-from-flags</code></span></div>
+
+  <section class="box" data-only="pr:list">
+    <div class="box-row clickable" data-switch="pr" data-value="4" tabindex="0" style="display:flex;gap:12px;align-items:center">
+      <svg class="oi success"><use href="#i-pr"/></svg>
+      <div style="flex:1;min-width:0"><strong>feat(container): read list options from the CLI flags</strong> <span class="muted">#4</span><div class="meta">alexei-led · module cycle</div></div>
+      <span class="chip warn" data-only="scn:nobase scn:base">violation · advisory</span><span class="chip warn" data-only="scn:stale">outdated · re-run</span><span class="chip bad" data-only="scn:req">gate failing</span></div>
+    <div class="box-row" style="display:flex;gap:12px;align-items:center">
+      <svg class="oi success"><use href="#i-pr"/></svg>
+      <div style="flex:1;min-width:0"><strong>Bump the go-deps group with 7 updates</strong> <span class="muted">#1</span><div class="meta">dependabot[bot] · opened before setup</div></div>
+      <span class="chip">not checked</span></div>
+  </section>
+
+  <div data-only="pr:4" class="stack" style="gap:16px">
+    <a href="#" class="crumb-back" data-switch="pr" data-value="list">← Pull requests</a>
+    <div class="row-between" style="align-items:flex-start">
+      <div class="stack-sm" style="gap:8px">
+        <h1 style="font-size:20px">feat(container): read list options from the CLI flags <span class="muted" style="font-weight:400">#4</span></h1>
+        <div class="result-bar">
+          <span class="state attention" data-only="scn:nobase scn:stale scn:base"><svg class="oi"><use href="#i-alert"/></svg>Violation found</span>
+          <span class="state danger" data-only="scn:req"><svg class="oi"><use href="#i-x"/></svg>Gate failing</span>
+          <span class="chip ok" data-only="scn:nobase scn:stale scn:base"><svg class="oi sm"><use href="#i-merge"/></svg>advisory · does not block merge</span>
+          <span class="chip bad" data-only="scn:req"><svg class="oi sm"><use href="#i-x"/></svg>merge blocked</span>
+          <span class="chip warn" data-only="scn:nobase" title="Every finding counts as new, including old debt. New does not mean added by this PR.">no baseline</span>
+          <span class="chip warn" data-only="scn:stale" title="Baseline #5 merged after this run."><svg class="oi sm"><use href="#i-sync"/></svg>outdated · re-run workflow</span>
+          <span class="meta"><code>9d33f4d</code> · 08:56 UTC</span>
+        </div>
+        <span class="src">gate mode × check conclusion × gate_reference.baseline_present</span>
+      </div>
+      <div class="seg" role="group" aria-label="View">
+        <button type="button" data-switch="pv" data-value="app" aria-pressed="true">Archfit</button>
+        <button type="button" data-switch="pv" data-value="gh" aria-pressed="false">On GitHub</button>
+      </div>
     </div>
-    <a class="btn sm" href="#">View on GitHub <svg class="oi sm"><use href="#i-ext"/></svg></a>
-  </div>
 
-  <div class="row"><span class="seg-label">Scenario</span>
-    <div class="seg" role="group" aria-label="Scenario">
-      <button type="button" data-switch="scn" data-value="nobase" aria-pressed="true">Run on 9d33f4d · no baseline</button>
-      <button type="button" data-switch="scn" data-value="stale" aria-pressed="false">#5 merged · result outdated</button>
-      <button type="button" data-switch="scn" data-value="base" aria-pressed="false">Re-run with baseline · projected</button>
-      <button type="button" data-switch="scn" data-value="req" aria-pressed="false">Gate required · projected</button>
-    </div></div>
-
-  <div class="layout">
-    <div class="stack" style="gap:16px">
-      <!-- result banner -->
-      <div class="flash warn" data-only="scn:nobase"><div class="result"><svg class="oi attention"><use href="#i-alert"/></svg><div class="stack-sm" style="gap:4px">
-        <h2>Architecture violations found · advisory · no baseline</h2>
-        <span>1 rule violation: module cycle <code>pkg_chaos</code> ⇄ <code>pkg_container</code>. This advisory check does not block merging.</span>
-        <span class="facts"><span><code>archfit/state</code> neutral</span><span>no <code>archfit/gate</code>: gate is advisory</span><span><svg class="oi sm"><use href="#i-clock"/></svg>run 39113331372 · 08:56 UTC</span></span></div></div></div>
-      <div class="flash warn" data-only="scn:stale"><div class="result"><svg class="oi attention"><use href="#i-sync"/></svg><div class="stack-sm" style="gap:4px">
-        <h2>Architecture violations found · advisory · result predates baseline #5</h2>
-        <span>This run used no baseline. #5 accepted one on <code>master</code> at 09:17. Re-run the Archfit workflow to see which findings the baseline accepts. In advisory mode nothing re-runs or flags this by itself.</span>
-        <span class="facts"><span><code>archfit/state</code> neutral · last published 08:56 UTC</span><span>no <code>archfit/gate</code>: gate is advisory</span></span></div></div></div>
-      <div class="flash warn" data-only="scn:base"><div class="result"><svg class="oi attention"><use href="#i-alert"/></svg><div class="stack-sm" style="gap:4px">
-        <h2>Architecture violations found · advisory</h2>
-        <span>1 new rule violation: module cycle <code>pkg_chaos</code> ⇄ <code>pkg_container</code>. The 6 coupling advisories are in the baseline. This advisory check does not block merging.</span>
-        <span class="facts"><span><code>archfit/state</code> neutral</span><span>no <code>archfit/gate</code>: gate is advisory</span><span>projected from #5</span></span></div></div></div>
-      <div class="flash error" data-only="scn:req"><div class="result"><svg class="oi danger"><use href="#i-x"/></svg><div class="stack-sm" style="gap:4px">
-        <h2>Architecture gate failing</h2>
-        <span>1 new rule violation: module cycle <code>pkg_chaos</code> ⇄ <code>pkg_container</code>. <code>archfit/gate</code> is required by ruleset <em>archfit</em> on <code>master</code>, so merge is blocked until the cycle is removed or an owner waives it.</span>
-        <span class="facts"><span><code>archfit/gate</code> failure · <code>blocking_findings</code></span><span><code>archfit/state</code> neutral</span><span>projected</span></span></div></div></div>
-
-      <!-- rule violations -->
-      <section class="box" aria-labelledby="h-viol">
-        <div class="box-head"><h3 id="h-viol">Rule violations <span class="counter">1</span></h3><span class="meta">2 findings, one per direction</span></div>
-        <div class="box-row stack-sm">
-          <div class="row-between"><span class="item-title"><svg class="oi danger"><use href="#i-sync"/></svg>Module cycle <code>pkg_chaos</code> ⇄ <code>pkg_container</code></span>
-            <div class="row"><span class="label danger">violation</span><span class="label" data-only="scn:nobase scn:stale">new · not in baseline</span><span class="label" data-only="scn:base scn:req">new</span></div></div>
-          <span class="meta"><code>no-module-cycles</code> · <code>module_cycle</code> · gate fail in policy · severity high</span>
-          <div class="cycle">
-            <span><code>pkg_chaos</code> → <code>pkg_container</code></span><span class="loc">40 locations, e.g. <code>pkg/chaos/cmd/builder.go:14</code>, <code>pkg/chaos/command.go:10</code></span>
-            <span><code>pkg_container</code> → <code>pkg_chaos</code></span><span class="loc">1 location: <code>pkg/container/flags.go:3</code></span>
+    <!-- Archfit view -->
+    <div data-only="pv:app" class="stack" style="gap:16px">
+      <section class="box">
+        <div class="issue">
+          <div class="stack-sm" style="gap:10px">
+            <h3><span class="label danger">violation</span>Module cycle</h3>
+            <p>Remove one direction. Routing through another module keeps the cycle.</p>
+            <div class="row">
+              <button type="button" class="btn sm primary" data-copy="agent-tasks"><svg class="oi sm"><use href="#i-copy"/></svg>Copy fix for agents</button>
+              <button type="button" class="btn sm" data-goto="architecture" data-switch="src" data-value="pr4">Show on map</button>
+              <span class="meta" id="copy-note"></span>
+            </div>
+            <span class="src">findings[kind=gate].{edge,locations,constraint} · agent_tasks[]</span>
           </div>
-          <p style="font-size:13px"><strong>Fix:</strong> remove one direction of the cycle. Routing the dependency through another module keeps the cycle.</p>
-          <p class="meta">The report does not say which direction this PR added: the PR comparison did not run. Two <code>code_change</code> tasks are in the PR comment for coding agents.</p>
-        </div>
-      </section>
-
-      <!-- advisories -->
-      <section class="box" aria-labelledby="h-adv">
-        <div class="box-head"><h3 id="h-adv">Coupling advisories <span class="counter">6</span></h3><span class="meta">33 critical edges · advisories never block</span></div>
-        <div class="table-wrap"><table class="data">
-          <thead><tr><th>Seam</th><th class="num">Edges</th><th>Why</th><th>Suggested</th><th>Status</th></tr></thead>
-          <tbody>
-            <tr><td><code>cmd</code> → <code>pkg_chaos</code></td><td class="num">6</td><td>functional × cross-module × undeclared</td><td><code>declare_volatility</code></td><td><span class="label" data-only="scn:nobase scn:stale">new</span><span class="label" data-only="scn:base scn:req">baseline</span></td></tr>
-            <tr><td><code>cmd</code> → <code>pkg_runtime</code></td><td class="num">3</td><td>functional × cross-module × undeclared</td><td><code>declare_volatility</code></td><td><span class="label" data-only="scn:nobase scn:stale">new</span><span class="label" data-only="scn:base scn:req">baseline</span></td></tr>
-            <tr><td><code>pkg_chaos</code> → <code>pkg_container</code></td><td class="num">5</td><td>functional × cross-module × undeclared</td><td><code>declare_volatility</code></td><td><span class="label" data-only="scn:nobase scn:stale">new</span><span class="label" data-only="scn:base scn:req">baseline</span></td></tr>
-            <tr><td><code>pkg_chaos</code> → <code>pkg_util</code></td><td class="num">2</td><td>functional × cross-module × undeclared</td><td><code>declare_volatility</code></td><td><span class="label" data-only="scn:nobase scn:stale">new</span><span class="label" data-only="scn:base scn:req">baseline</span></td></tr>
-            <tr><td><code>pkg_runtime</code> → <code>pkg_container</code></td><td class="num">15</td><td>functional × cross-module × undeclared</td><td><code>declare_volatility</code></td><td><span class="label" data-only="scn:nobase scn:stale">new</span><span class="label" data-only="scn:base scn:req">baseline</span></td></tr>
-            <tr><td><code>pkg_runtime</code> → <code>pkg_tc</code></td><td class="num">2</td><td>functional × cross-module × undeclared</td><td><code>declare_volatility</code></td><td><span class="label" data-only="scn:nobase scn:stale">new</span><span class="label" data-only="scn:base scn:req">baseline</span></td></tr>
-          </tbody></table></div>
-        <div class="box-foot">All 6 also appear on <code>master</code> at <code>aed8b36</code>. That is a hint, not the engine's attribution. An owner resolves them under Decisions, not in this PR.</div>
-      </section>
-
-      <!-- reference and comparison -->
-      <section class="box" aria-labelledby="h-ref">
-        <div class="box-head"><h3 id="h-ref">What "new" means here</h3></div>
-        <div class="two" style="padding:12px 16px">
-          <div class="stack-sm"><strong style="font-size:13px">Baseline</strong>
-            <span data-only="scn:nobase scn:stale" class="row"><span class="label attention">none in this run</span></span>
-            <span data-only="scn:base scn:req" class="row"><span class="label success">present</span><code>.archfit-baseline.json</code> from #5</span>
-            <span class="meta">New = not accepted in the baseline. With no baseline, every finding is new, including debt that is years old.</span></div>
-          <div class="stack-sm"><strong style="font-size:13px">PR comparison</strong>
-            <span class="row"><span class="label">not run</span></span>
-            <span class="meta">Introduced vs pre-existing needs a run with <code>--base</code>. The pilot workflow does not pass it, so this page never says "added by this PR".</span></div>
-        </div>
-      </section>
-
-      <details class="disclosure box" style="padding:0 16px">
-        <summary>For coding agents · 2 tasks · <code>code_change</code></summary>
-        <div class="details-body">
-          <p class="meta">Abbreviated preview of <code>agent_tasks[]</code>. The PR comment carries the exact array. Validation paths <code>/bundle</code> and <code>/src</code> are paths inside the CI job.</p>
-<pre><code>[{"finding_id":"0d5aae18e2b632a4796190153b0c89b3","rule_id":"no-module-cycles","repair_kind":"code_change",
-  "goal":"Break the dependency cycle among declared modules pkg_chaos, pkg_container by removing one direction of it: drop the pkg_chaos -> pkg_container dependency, or the dependency path from pkg_container back to pkg_chaos. Routing it through another module keeps the cycle.",
-  "files":["pkg/chaos/cmd/builder.go", "… 39 more"],
-  "validation":["archfit check -c /bundle/.archfit.yaml --root /src"]},
- {"finding_id":"e128caa5c2e58c5eba7cc3bc84157923","rule_id":"no-module-cycles","repair_kind":"code_change",
-  "goal":"… drop the pkg_container -> pkg_chaos dependency, or the dependency path from pkg_chaos back to pkg_container …",
-  "files":["pkg/container/flags.go"],
-  "validation":["archfit check -c /bundle/.archfit.yaml --root /src"]}]</code></pre>
-          <div class="row"><button type="button" class="btn sm" data-copy="agent-tasks"><svg class="oi sm"><use href="#i-copy"/></svg>Copy full tasks JSON</button><script type="application/json" id="agent-tasks">[{"finding_id":"0d5aae18e2b632a4796190153b0c89b3","rule_id":"no-module-cycles","repair_kind":"code_change","goal":"Break the dependency cycle among declared modules pkg_chaos, pkg_container by removing one direction of it: drop the pkg_chaos -> pkg_container dependency, or the dependency path from pkg_container back to pkg_chaos. Routing it through another module keeps the cycle.","constraints":["Remove one direction of the module cycle; routing the dependency through another module keeps the cycle"],"files":["pkg/chaos/cmd/builder.go","pkg/chaos/command.go","pkg/chaos/iptables/cmd/loss.go","pkg/chaos/iptables/iptables.go","pkg/chaos/iptables/loss.go","pkg/chaos/iptables/parse.go","pkg/chaos/lifecycle/cmd/exec.go","pkg/chaos/lifecycle/cmd/kill.go","pkg/chaos/lifecycle/cmd/pause.go","pkg/chaos/lifecycle/cmd/remove.go","pkg/chaos/lifecycle/cmd/restart.go","pkg/chaos/lifecycle/cmd/stop.go","pkg/chaos/lifecycle/exec.go","pkg/chaos/lifecycle/kill.go","pkg/chaos/lifecycle/pause.go","pkg/chaos/lifecycle/remove.go","pkg/chaos/lifecycle/restart.go","pkg/chaos/lifecycle/stop.go","pkg/chaos/netem/cmd/combine.go","pkg/chaos/netem/cmd/corrupt.go","pkg/chaos/netem/cmd/delay.go","pkg/chaos/netem/cmd/duplicate.go","pkg/chaos/netem/cmd/loss.go","pkg/chaos/netem/cmd/loss_ge.go","pkg/chaos/netem/cmd/loss_state.go","pkg/chaos/netem/cmd/rate.go","pkg/chaos/netem/combine.go","pkg/chaos/netem/corrupt.go","pkg/chaos/netem/delay.go","pkg/chaos/netem/duplicate.go","pkg/chaos/netem/loss.go","pkg/chaos/netem/loss_ge.go","pkg/chaos/netem/loss_state.go","pkg/chaos/netem/netem.go","pkg/chaos/netem/parse.go","pkg/chaos/netem/rate.go","pkg/chaos/netem/target.go","pkg/chaos/runner.go","pkg/chaos/stress/cmd/stress.go","pkg/chaos/stress/stress.go"],"validation":["archfit check -c /bundle/.archfit.yaml --root /src"]},{"finding_id":"e128caa5c2e58c5eba7cc3bc84157923","rule_id":"no-module-cycles","repair_kind":"code_change","goal":"Break the dependency cycle among declared modules pkg_chaos, pkg_container by removing one direction of it: drop the pkg_container -> pkg_chaos dependency, or the dependency path from pkg_chaos back to pkg_container. Routing it through another module keeps the cycle.","constraints":["Remove one direction of the module cycle; routing the dependency through another module keeps the cycle"],"files":["pkg/container/flags.go"],"validation":["archfit check -c /bundle/.archfit.yaml --root /src"]}]</script><span class="meta" id="copy-note">copies the exact <code>agent_tasks[]</code> of run 39113331372, not this preview</span></div>
-        </div>
-      </details>
-
-      <div class="row"><button type="button" class="btn sm" data-goto="evidence" data-switch="src" data-value="pr4">Evidence for this run · 9 dimensions</button><button type="button" class="btn sm" data-goto="github">See what GitHub shows</button></div>
-    </div>
-
-    <aside class="side" aria-label="About this view">
-      <div class="side-section"><div class="side-title">Use case</div><p>The PR author, a reviewer, or an owner follows the link from the check or comment. Question: what exactly is wrong, does it block, and what do I change?</p></div>
-      <div class="side-section"><div class="side-title">Main point</div><p>The banner: what was found, and whether it blocks merging. The effect comes from the gate mode and the check conclusion, never from <code>verdict</code> alone.</p></div>
-      <div class="side-section"><div class="side-title">Data</div>
-        <p><span class="data-tag today">EXISTS TODAY</span> <code>findings[].{id,kind,rule_id,status,severity,edge,locations,why,constraint}</code>, <code>gate_reference.baseline_present</code>, <code>comparison.status</code>, <code>agent_tasks[]</code>, check run conclusion.</p>
-        <p><span class="data-tag new">NEW</span> <code>findings[].matched_by</code> (edge counts, hypothesis) is in the raw artifact but dropped by the App's report projection (<code>internal/wire/report/contract.go</code>). Route <code>/r/{o}/{n}/pull/{number}</code>; report lookup by head SHA and run; ruleset read to say "merge is blocked" (<code>GET /repos/{o}/{n}/rules/branches/{branch}</code>).</p></div>
-    </aside>
-  </div>
-</section>
-
-<!-- ================= ON GITHUB ================= -->
-<section role="tabpanel" id="github" aria-labelledby="tab-github" class="stack" style="gap:20px" hidden>
-  <div class="page-head">
-    <div><h1>What GitHub shows on #4</h1><p class="lede">Most people meet Archfit here, not in the App. Three surfaces, each with one job: the merge box says if it blocks, the check says why, the comment says what to change.</p></div>
-  </div>
-  <div class="row" style="gap:16px">
-    <div class="row"><span class="seg-label">Version</span><div class="seg" role="group" aria-label="Version">
-      <button type="button" data-switch="ver" data-value="today" aria-pressed="false">Published today</button>
-      <button type="button" data-switch="ver" data-value="new" aria-pressed="true">Proposed</button></div></div>
-    <div class="row" data-only="ver:new"><span class="seg-label">Scenario</span><div class="seg" role="group" aria-label="Scenario">
-      <button type="button" data-switch="scn" data-value="nobase" aria-pressed="true">No baseline</button>
-      <button type="button" data-switch="scn" data-value="stale" aria-pressed="false">Result outdated</button>
-      <button type="button" data-switch="scn" data-value="base" aria-pressed="false">With baseline</button>
-      <button type="button" data-switch="scn" data-value="req" aria-pressed="false">Gate required</button></div></div>
-  </div>
-
-  <!-- ===== published today ===== -->
-  <div class="stack" data-only="ver:today" style="gap:16px">
-    <div class="flash error"><svg class="oi danger flash-icon"><use href="#i-x"/></svg><div class="stack-sm" style="gap:2px"><strong>Problem: the headline contradicts the effect</strong><span>The comment says "Blocked" and "Fix the blocking findings". The check is neutral, there is no <code>archfit/gate</code>, and GitHub says the PR can merge. It also shows pre-existing debt as new and fits 8 findings, 9 dimensions, 16 gap lines, identity and agent JSON into one comment.</span></div></div>
-    <div class="gh-frame">
-      <span class="mock-flag">GitHub · merge box</span>
-      <div class="mergebox">
-        <div class="mb-row"><span class="mb-icon success"><svg class="oi"><use href="#i-check"/></svg></span><div><div class="mb-title">Some checks were not successful</div><div class="meta">1 successful and 1 neutral check</div></div></div>
-        <div class="check-line"><svg class="oi success"><use href="#i-check"/></svg><span class="name">archfit</span><span class="desc">GitHub Actions · Successful</span></div>
-        <div class="check-line"><svg class="oi muted"><use href="#i-neutral"/></svg><span class="name">archfit/state</span><span class="desc">Architecture state: blocked</span></div>
-        <div class="mb-row"><span class="mb-icon success"><svg class="oi"><use href="#i-merge"/></svg></span><div><div class="mb-title">This branch has no conflicts with the base branch</div><div class="meta">Merging can be performed automatically.</div></div></div>
-      </div>
-    </div>
-    <div class="gh-frame">
-      <div class="row-between"><span class="mock-flag">GitHub · PR comment by archfit-review[bot]</span><span class="size-tag">8 findings · 9 dimensions · 16 gap lines · ~13 KB</span></div>
-      <div class="comment"><div class="comment-body md">
-        <h2>Archfit: Blocked by architecture findings</h2>
-        <ul><li>Reason: <code>blocking_findings</code> (architecture)</li><li>Detail: (none)</li><li>Next: Fix the blocking findings and run the validation command.</li></ul>
-        <h3>Findings</h3><p><strong>Active</strong> (8)</p>
-        <ul><li><strong>blocking</strong> <code>no-module-cycles</code> (high, new): <code>pkg_chaos</code> → <code>pkg_container</code><br><span class="loc">Locations: <code>pkg/chaos/cmd/builder.go:14</code>, <code>pkg/chaos/command.go:10</code>, … and 30 more</span></li>
-          <li><strong>blocking</strong> <code>no-module-cycles</code> (high, new): <code>pkg_container</code> → <code>pkg_chaos</code></li>
-          <li><code>bc/imbalanced_coupling</code> (critical, new): <code>cmd</code> (<code>cmd/commands.go</code>) → <code>pkg_chaos</code> …</li>
-          <li class="faded">… 5 more <code>bc/imbalanced_coupling</code> (critical, new), each with locations and a 200-character "why"</li></ul>
-        <h3 class="faded">Dimensions</h3><p class="faded">9 lines of status, coverage, confidence and gate</p>
-        <h3 class="faded">Evidence gaps</h3><p class="faded">8 analyzers that did not run, 15 unknown facts, "No baseline: every current violation blocks."</p>
-        <h3 class="faded">Inputs and identity · Validation commands · Agent tasks</h3><p class="faded">digests, producer identity, one shell block, a 4 KB JSON block</p>
-      </div></div>
-    </div>
-  </div>
-
-  <!-- ===== proposed ===== -->
-  <div class="stack" data-only="ver:new" style="gap:16px">
-    <div class="gh-frame">
-      <span class="mock-flag">GitHub · merge box</span>
-      <div class="mergebox">
-        <div data-only="scn:nobase scn:stale scn:base">
-          <div class="mb-row"><span class="mb-icon success"><svg class="oi"><use href="#i-check"/></svg></span><div><div class="mb-title">Some checks were not successful</div><div class="meta">1 successful and 1 neutral check</div></div></div>
-          <div class="check-line"><svg class="oi success"><use href="#i-check"/></svg><span class="name">archfit</span><span class="desc">GitHub Actions · Successful</span></div>
-          <div class="check-line"><svg class="oi muted"><use href="#i-neutral"/></svg><span class="name">archfit/state</span><span class="desc">Architecture violations found · advisory</span></div>
-        </div>
-        <div data-only="scn:req">
-          <div class="mb-row"><span class="mb-icon danger"><svg class="oi"><use href="#i-x"/></svg></span><div><div class="mb-title">Merging is blocked</div><div class="meta">A required check failed: archfit/gate</div></div></div>
-          <div class="check-line"><svg class="oi danger"><use href="#i-x"/></svg><span class="name">archfit/gate</span><span class="desc">Required · Architecture gate failing</span></div>
-          <div class="check-line"><svg class="oi muted"><use href="#i-neutral"/></svg><span class="name">archfit/state</span><span class="desc">Architecture violations found</span></div>
-          <div class="check-line"><svg class="oi success"><use href="#i-check"/></svg><span class="name">archfit</span><span class="desc">GitHub Actions · Successful</span></div>
-        </div>
-      </div>
-      <p class="meta" data-only="scn:stale"><strong>Outdated:</strong> in advisory mode GitHub keeps the 08:56 result after #5 merges (sweep rule 0 skips advisory repositories). Only the App page can say the result predates the baseline.</p>
-      <p class="meta">Check titles carry the headline, so the merge box alone answers "does it block?". In advisory mode the title says "advisory".</p>
-    </div>
-
-    <div class="two">
-      <div class="gh-frame">
-        <div class="row-between"><span class="mock-flag">GitHub · check run summary · archfit/state</span><span class="size-tag">~1 KB</span></div>
-        <div class="comment"><div class="comment-body md">
-          <h2 data-only="scn:nobase scn:stale">Architecture violations found · advisory · no baseline</h2>
-          <h2 data-only="scn:base">Architecture violations found · advisory</h2>
-          <h2 data-only="scn:req">Architecture violations found</h2>
-                    <p data-only="scn:nobase scn:stale scn:base"><strong>Effect:</strong> advisory. This check does not block merging. Set by <code>gate: advisory</code> in <code>.archfit-app.yaml</code> on <code>master</code>.</p>
-          <p data-only="scn:req"><strong>Effect:</strong> architecture findings are informational on <code>archfit/state</code>; <code>archfit/gate</code> enforces them and is required.</p>
-          <ul><li><strong>1 rule violation</strong> · module cycle <code>pkg_chaos</code> ⇄ <code>pkg_container</code> (<code>no-module-cycles</code>, 2 findings)</li>
-            <li data-only="scn:nobase scn:stale">6 coupling advisories · never block</li><li data-only="scn:base scn:req">6 coupling advisories, all in the baseline</li></ul>
-          <div class="gh-note warn" data-only="scn:nobase scn:stale"><b>No baseline</b>"New" means not accepted yet, not "added by this PR". PR comparison did not run.</div>
-          <p><strong>Next:</strong> remove one direction of the cycle. Details and repair tasks: <a href="#">Archfit · PR #4</a></p>
-          <p class="meta"><code>9d33f4d</code> · run 39113331372 · engine v3.0.0 · customer-attested: the producer is authenticated, the report content is not independently checked.</p>
-        </div></div>
-        <p class="meta">Annotations on changed lines stay as today (up to 50).</p>
-      </div>
-
-      <div class="gh-frame">
-        <div class="row-between"><span class="mock-flag">GitHub · PR comment by archfit-review[bot]</span><span class="size-tag">~1.5 KB + agent block</span></div>
-        <div class="comment"><div class="comment-body md">
-          <h2 data-only="scn:nobase scn:stale">Archfit · Architecture violations found · advisory</h2>
-          <h2 data-only="scn:base">Archfit · Architecture violations found · advisory</h2>
-          <h2 data-only="scn:req">Archfit · Architecture gate failing</h2>
-          <p data-only="scn:nobase scn:stale scn:base"><strong>This check does not block merging.</strong> The gate is advisory for this repository.</p>
-          <p data-only="scn:req"><strong>Merge is blocked</strong> by the required check <code>archfit/gate</code> until the cycle is removed or an owner waives it.</p>
-          <h3>Module cycle <code>pkg_chaos</code> ⇄ <code>pkg_container</code></h3>
-          <ul><li><code>pkg_chaos</code> → <code>pkg_container</code>: 40 locations, e.g. <code>pkg/chaos/cmd/builder.go:14</code></li>
-            <li><code>pkg_container</code> → <code>pkg_chaos</code>: 1 location, <code>pkg/container/flags.go:3</code></li></ul>
-          <p><strong>Fix:</strong> remove one direction of the cycle. Routing it through another module keeps the cycle. Rule <code>no-module-cycles</code>.</p>
-          <div class="gh-note warn" data-only="scn:nobase scn:stale"><b>No baseline yet</b>Every finding counts as new, including older debt. New does not mean added by this PR.</div>
-          <p class="meta" data-only="scn:nobase scn:stale">Also: 6 coupling advisories, which never block. <a href="#">See them in Archfit</a></p>
-          <p class="meta" data-only="scn:base scn:req">Also: 6 coupling advisories, accepted in the baseline. <a href="#">See them in Archfit</a></p>
-          <details><summary>For coding agents · 2 tasks</summary><p class="meta" style="margin-top:6px">Preview. The real comment carries the exact array between the markers.</p><pre style="margin-top:8px"><code>&lt;!-- archfit:agent-tasks --&gt;
-[{"finding_id":"0d5aae18…","repair_kind":"code_change", …},
- {"finding_id":"e128caa5…","repair_kind":"code_change", …}]
-&lt;!-- /archfit:agent-tasks --&gt;</code></pre></details>
-          <p class="meta"><a href="#">Open in Archfit</a> · <code>9d33f4d</code> · run 39113331372 · customer-attested</p>
-        </div></div>
-        <p class="meta">One comment, updated in place after each run. Dimensions, evidence gaps and identity move to the App.</p>
-      </div>
-    </div>
-  </div>
-
-  <aside class="box" aria-label="Surface rules"><div class="box-head"><h3>Who carries what</h3></div>
-    <div class="table-wrap"><table class="data">
-      <thead><tr><th>Content</th><th>Merge box (check title)</th><th>Check summary</th><th>PR comment</th><th>App PR page</th></tr></thead>
-      <tbody>
-        <tr><td>Headline + effect on merge</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
-        <tr><td>Rule violations, grouped</td><td>—</td><td>one line per group</td><td>group + example locations + fix</td><td>all locations</td></tr>
-        <tr><td>Coupling advisories</td><td>—</td><td>count</td><td>count + link</td><td>table</td></tr>
-        <tr><td>Baseline / comparison status</td><td>title suffix</td><td>note</td><td>note when missing</td><td>panel</td></tr>
-        <tr><td>Agent tasks</td><td>—</td><td>—</td><td>collapsed block, exact array</td><td>block + copy</td></tr>
-        <tr><td>Dimensions, gaps, tools, identity</td><td>—</td><td>trust line only</td><td>trust line only</td><td>Evidence tab</td></tr>
-      </tbody></table></div></aside>
-</section>
-
-<!-- ================= ARCHITECTURE ================= -->
-<section role="tabpanel" id="architecture" aria-labelledby="tab-architecture" class="stack" style="gap:20px" hidden>
-  <div class="page-head">
-    <div><h1>Architecture</h1><p class="lede">The approved policy on <code>master</code>, with the latest evidence on top. Git holds the policy. Every change is a pull request.</p></div>
-    <div class="row"><span class="seg-label">Evidence from</span><div class="seg" role="group" aria-label="Evidence from">
-      <button type="button" data-switch="src" data-value="master" aria-pressed="true">master · aed8b36</button>
-      <button type="button" data-switch="src" data-value="pr4" aria-pressed="false">PR #4 · 9d33f4d</button></div></div>
-  </div>
-  <div class="layout">
-    <div class="stack" style="gap:16px">
-      <div class="row-between">
-        <div class="seg" role="group" aria-label="View">
-          <button type="button" data-switch="view" data-value="map" aria-pressed="true">Map</button>
-          <button type="button" data-switch="view" data-value="rules" aria-pressed="false">Rules and modules</button>
-          <button type="button" data-switch="view" data-value="yaml" aria-pressed="false">.archfit.yaml</button></div>
-        <span class="meta">policy <code>c629cc87…8e72</code> · 6 modules · 1 rule · no layers declared</span>
-      </div>
-
-      <div data-only="view:map" class="stack" style="gap:12px">
-        <div class="legend">
-          <span class="key"><span class="swatch violation"></span>rule violation</span>
-          <span class="key"><span class="swatch advisory"></span>coupling advisory</span>
-          <span class="key"><span class="swatch"></span>observed, balanced</span>
-          <span class="key">Numbers: import edges in the seam. Select a link for details.</span>
-        </div>
-        <div class="graph-wrap">
-          <svg viewBox="0 0 720 360" width="720" height="360" role="img" aria-label="Module map of pumba-pilot">
-            <defs>
-              <marker id="ar-m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-muted" d="M0 0L10 5L0 10z"/></marker>
-              <marker id="ar-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-att" d="M0 0L10 5L0 10z"/></marker>
-              <marker id="ar-d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-dan" d="M0 0L10 5L0 10z"/></marker>
-            </defs>
-            <text class="m-note" x="16" y="24">Layout is by dependency depth. No layers are declared, so position implies no rule.</text>
-            <!-- edges -->
-            <g class="edge" tabindex="0" data-edge="cmd → pkg_chaos|8 edges · 6 critical · functional × cross-module × undeclared volatility|Coupling advisory. Suggested: declare volatility. Never blocks.">
-              <path class="e-hit" d="M300 92 L200 176"/><path class="e advisory" marker-end="url(#ar-a)" d="M300 92 L202 174"/></g>
-            <g class="edge" tabindex="0" data-edge="cmd → pkg_runtime|3 edges · 3 critical · functional × cross-module × undeclared volatility|Coupling advisory. Suggested: declare volatility. Never blocks.">
-              <path class="e-hit" d="M420 92 L520 176"/><path class="e advisory" marker-end="url(#ar-a)" d="M420 92 L518 174"/></g>
-            <g class="edge" tabindex="0" data-edge="cmd → pkg_container|2 edges · contract × cross-module × undeclared volatility|Observed. Balanced: contract coupling across a boundary.">
-              <path class="e-hit" d="M360 92 L360 276"/><path class="e" marker-end="url(#ar-m)" d="M360 92 L360 274"/></g>
-            <g data-only="src:master"><g class="edge" tabindex="0" data-edge="pkg_chaos → pkg_container|40 edges · 5 critical · functional × cross-module × undeclared volatility|Coupling advisory. Suggested: declare volatility. Never blocks.">
-              <path class="e-hit" d="M190 220 L320 276"/><path class="e advisory" marker-end="url(#ar-a)" d="M190 220 L318 275"/></g></g>
-            <g data-only="src:pr4"><g class="edge" tabindex="0" data-edge="pkg_chaos → pkg_container|40 edges · 5 critical · functional × cross-module × undeclared volatility|Rule violation: no-module-cycles (cycle with pkg_container → pkg_chaos). Also a coupling advisory.">
-              <path class="e-hit" d="M180 220 L318 284"/><path class="e violation" marker-end="url(#ar-d)" d="M180 220 L316 283"/></g>
-              <g class="edge" tabindex="0" data-edge="pkg_container → pkg_chaos|1 edge · contract × cross-module · pkg/container/flags.go:3|Rule violation: no-module-cycles. Appears only in PR #4's report, not on master. The engine did not attribute it to the PR.">
-              <path class="e-hit" d="M326 268 L196 212"/><path class="e violation" marker-end="url(#ar-d)" d="M326 268 L198 213"/></g></g>
-            <g class="edge" tabindex="0" data-edge="pkg_chaos → pkg_util|2 edges · 2 critical · functional × cross-module × undeclared volatility|Coupling advisory. Suggested: declare volatility. Never blocks.">
-              <path class="e-hit" d="M140 220 L140 276"/><path class="e advisory" marker-end="url(#ar-a)" d="M140 220 L140 274"/></g>
-            <g class="edge" tabindex="0" data-edge="pkg_runtime → pkg_container|20 edges · 15 critical · functional × cross-module × undeclared volatility|Coupling advisory. Suggested: declare volatility. Never blocks.">
-              <path class="e-hit" d="M530 220 L400 276"/><path class="e advisory" marker-end="url(#ar-a)" d="M530 220 L402 275"/></g>
-            <g class="edge" tabindex="0" data-edge="pkg_runtime → pkg_tc|2 edges · 2 critical · functional × cross-module × undeclared volatility|Coupling advisory. Suggested: declare volatility. Never blocks.">
-              <path class="e-hit" d="M580 220 L580 276"/><path class="e advisory" marker-end="url(#ar-a)" d="M580 220 L580 274"/></g>
-            <!-- counts -->
-            <g class="cnt"><rect x="236" y="124" width="18" height="16" rx="8"/><text x="245" y="136" text-anchor="middle">8</text></g>
-            <g class="cnt"><rect x="466" y="124" width="18" height="16" rx="8"/><text x="475" y="136" text-anchor="middle">3</text></g>
-            <g class="cnt"><rect x="351" y="168" width="18" height="16" rx="8"/><text x="360" y="180" text-anchor="middle">2</text></g>
-            <g class="cnt"><rect x="232" y="232" width="22" height="16" rx="8"/><text x="243" y="244" text-anchor="middle">40</text></g>
-            <g class="cnt" data-only="src:pr4"><rect x="262" y="256" width="18" height="16" rx="8"/><text x="271" y="268" text-anchor="middle">1</text></g>
-            <g class="cnt"><rect x="118" y="240" width="18" height="16" rx="8"/><text x="127" y="252" text-anchor="middle">2</text></g>
-            <g class="cnt"><rect x="456" y="236" width="22" height="16" rx="8"/><text x="467" y="248" text-anchor="middle">20</text></g>
-            <g class="cnt"><rect x="586" y="240" width="18" height="16" rx="8"/><text x="595" y="252" text-anchor="middle">2</text></g>
-            <!-- nodes -->
-            <g class="m-node" tabindex="0"><rect x="300" y="48" width="120" height="44" rx="6"/><text class="nm" x="312" y="67">cmd</text><text class="sub" x="312" y="83">cmd/**</text></g>
-            <g class="m-node" tabindex="0"><rect x="90" y="176" width="130" height="44" rx="6"/><text class="nm" x="102" y="195">pkg_chaos</text><text class="sub" x="102" y="211">pkg/chaos/**</text></g>
-            <g class="m-node" tabindex="0"><rect x="500" y="176" width="130" height="44" rx="6"/><text class="nm" x="512" y="195">pkg_runtime</text><text class="sub" x="512" y="211">pkg/runtime/**</text></g>
-            <g class="m-node" tabindex="0"><rect x="80" y="276" width="120" height="44" rx="6"/><text class="nm" x="92" y="295">pkg_util</text><text class="sub" x="92" y="311">pkg/util/**</text></g>
-            <g class="m-node" tabindex="0"><rect x="296" y="276" width="140" height="44" rx="6"/><text class="nm" x="308" y="295">pkg_container</text><text class="sub" x="308" y="311">pkg/container/**</text></g>
-            <g class="m-node" tabindex="0"><rect x="530" y="276" width="110" height="44" rx="6"/><text class="nm" x="542" y="295">pkg_tc</text><text class="sub" x="542" y="311">pkg/tc/**</text></g>
+          <svg class="cyc" viewBox="0 0 300 130" width="300" height="130" role="img" aria-label="pkg_chaos imports pkg_container in 40 places; pkg_container imports pkg_chaos in 1 place">
+            <defs><marker id="cy" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path class="mk" d="M0 0L10 5L0 10z"/></marker></defs>
+            <rect x="4" y="46" width="104" height="36" rx="6"/><text x="56" y="69" text-anchor="middle">pkg_chaos</text>
+            <rect x="182" y="46" width="114" height="36" rx="6"/><text x="239" y="69" text-anchor="middle">pkg_container</text>
+            <path class="a" stroke-width="4" marker-end="url(#cy)" d="M70 44 Q150 -4 226 44"/>
+            <text class="lbl" x="150" y="14" text-anchor="middle">40 imports</text>
+            <path class="a" stroke-width="1.5" marker-end="url(#cy)" d="M226 84 Q150 132 72 84"/>
+            <text class="lbl" x="150" y="126" text-anchor="middle">1 import · pkg/container/flags.go:3</text>
           </svg>
         </div>
-        <div class="box" aria-live="polite"><div class="box-row" id="edge-detail"><span class="meta">Select a link to see its coupling and verdict.</span></div></div>
-      </div>
-
-      <div data-only="view:rules" class="stack" style="gap:16px">
-        <section class="box">
-          <div class="box-head"><h3>Rules <span class="counter">1</span></h3><span class="meta">Compliance on the selected evidence</span></div>
-          <div class="box-row item"><div class="item-main"><span>Declared modules form no dependency cycle.</span><span class="meta"><code>no-module-cycles</code> · <code>module_cycle</code> · gate fail</span></div>
-            <div class="row"><span class="label">gate fail</span><span class="label success" data-only="src:master">complies</span><span class="label danger" data-only="src:pr4">2 violations</span></div></div>
-          <div class="box-row item"><div class="item-main"><span>Coupling advisories at severity medium and above.</span><span class="meta"><code>coupling.min_severity: medium</code> · <code>bc/imbalanced_coupling</code></span></div><div class="row"><span class="label">never blocks</span><span class="label attention">6 advisories</span></div></div>
-          <div class="box-foot">No layers declared, so no layer rule runs. Declaring layers is a policy PR.</div>
-        </section>
-        <section class="box">
-          <div class="box-head"><h3>Modules <span class="counter">6</span></h3></div>
-          <div class="table-wrap"><table class="data">
-            <thead><tr><th>Module</th><th>Paths</th><th>Public surface</th><th>Volatility</th><th>Owner</th><th>Deploy unit</th></tr></thead>
-            <tbody>
-              <tr><td><code>cmd</code></td><td><code>cmd/**</code></td><td><span class="label attention">not declared</span></td><td><span class="label attention">undeclared</span></td><td>@alexei-led</td><td><code>cmd</code></td></tr>
-              <tr><td><code>pkg_chaos</code></td><td><code>pkg/chaos/**</code></td><td><span class="label attention">not declared</span></td><td><span class="label attention">undeclared</span></td><td>@alexei-led</td><td><span class="muted">none</span></td></tr>
-              <tr><td><code>pkg_container</code></td><td><code>pkg/container/**</code></td><td><span class="label attention">not declared</span></td><td><span class="label attention">undeclared</span></td><td>@alexei-led</td><td><span class="muted">none</span></td></tr>
-              <tr><td><code>pkg_runtime</code></td><td><code>pkg/runtime/**</code></td><td><span class="label attention">not declared</span></td><td><span class="label attention">undeclared</span></td><td>@alexei-led</td><td><span class="muted">none</span></td></tr>
-              <tr><td><code>pkg_tc</code></td><td><code>pkg/tc/**</code></td><td><span class="label attention">not declared</span></td><td><span class="label attention">undeclared</span></td><td>@alexei-led</td><td><span class="muted">none</span></td></tr>
-              <tr><td><code>pkg_util</code></td><td><code>pkg/util/**</code></td><td><span class="label attention">not declared</span></td><td><span class="label attention">undeclared</span></td><td>@alexei-led</td><td><span class="muted">none</span></td></tr>
-            </tbody></table></div>
-          <div class="box-foot">Owners from <code>seams[].raw_distance.from_owner</code> (raw artifact; not projected today). Undeclared volatility and surfaces are why coupling and modularity evidence is partial or low.</div>
-        </section>
-      </div>
-
-      <div data-only="view:yaml" class="stack" style="gap:12px">
-        <div class="row-between"><span class="meta"><code>.archfit.yaml</code> on <code>master</code> · from #3 · read-only</span><a class="btn sm" href="#">Propose a change</a></div>
-<pre><code>version: 2
-coupling:
-  min_severity: medium
-  duplicated_knowledge: score
-languages:
-  go: { enabled: true }
-modules:
-  cmd:           { paths: ["cmd/**"] }
-  pkg_chaos:     { paths: ["pkg/chaos/**"] }
-  pkg_container: { paths: ["pkg/container/**"] }
-  pkg_runtime:   { paths: ["pkg/runtime/**"] }
-  pkg_tc:        { paths: ["pkg/tc/**"] }
-  pkg_util:      { paths: ["pkg/util/**"] }
-rules:
-  - id: no-module-cycles
-    type: module_cycle
-    gate: fail</code></pre>
-        <p class="meta">Flow-style here for space; the file on <code>master</code> is block-style with comments. "Propose a change" opens the existing policy editor (<code>/r/{o}/{n}/policy</code>), which saves to a draft PR.</p>
-      </div>
-    </div>
-
-    <aside class="side" aria-label="About this view">
-      <div class="side-section"><div class="side-title">Use case</div><p>An owner checks what the policy says and where the code strains it, before a decision or after a surprising PR result.</p></div>
-      <div class="side-section"><div class="side-title">Main point</div><p>Red is a rule the policy enforces. Yellow is advice. The map never adds meaning the policy lacks: no layers, so no up or down.</p></div>
-      <div class="side-section"><div class="side-title">Data</div>
-        <p><span class="data-tag today">EXISTS TODAY</span> <code>seams[].{from_module,to_module,edges,strength,distance,volatility,severity,policy}</code>; policy from <code>master</code>; the graph page <code>/r/{o}/{n}/graph</code>.</p>
-        <p><span class="data-tag new">NEW</span> Evidence from a PR head on the graph (needs the PR report lookup). Critical-edge counts, hypotheses and owners (<code>seams[].{critical_edges,hypothesis,raw_distance}</code>) are in the raw artifact but dropped by the App projection; extend <code>internal/wire/report</code>.</p></div>
-    </aside>
-  </div>
-</section>
-
-<!-- ================= DECISIONS ================= -->
-<section role="tabpanel" id="decisions" aria-labelledby="tab-decisions" class="stack" style="gap:20px" hidden>
-  <div class="page-head">
-    <div><h1>Decisions</h1><p class="lede">Only an architecture owner makes these. Each ends as a pull request that an owner approves on GitHub. Code repairs go to the PR author or an agent, not here.</p></div>
-    <span class="label done">2 open</span>
-  </div>
-  <div class="layout">
-    <div class="stack" style="gap:16px">
-      <article class="box" data-decision>
-        <div class="box-head"><div class="stack-sm" style="gap:2px"><h3>Declare volatility for the 6 modules</h3><span class="meta">6 coupling advisories, 33 critical edges · all suggest <code>declare_volatility</code></span></div><span class="label done">owner decision</span></div>
-        <div class="box-row"><dl class="kv">
-          <dt>Fact</dt><dd>Volatility is undeclared on 77 scored cross-module edges on <code>master</code>. Functional coupling to a module of unknown volatility scores as critical.</dd>
-          <dt>Effect today</dt><dd>Advisories only. They never block. The baseline from #5 accepts all 33 edges.</dd>
-          <dt>Source</dt><dd><code>dimensions.coupling.unknown[0]</code>, <code>findings[].matched_by.hypothesis</code></dd></dl></div>
-        <div class="box-row opt"><div><strong>Declare volatility</strong><div class="ends">A policy PR sets <code>modules.&lt;name&gt;.volatility</code> or <code>.subdomain</code> in <code>.archfit.yaml</code>. Declare the actual volatility, then remeasure: scores may change either way.</div></div><button type="button" class="btn sm" data-sim="Opens the policy editor on a draft branch. The draft PR needs owner approval on GitHub.">Open policy editor</button></div>
-        <div class="box-row opt"><div><strong>Leave undeclared</strong><div class="ends">Nothing to open. The advisories stay, in the baseline, and coupling evidence stays partial.</div></div><button type="button" class="btn sm" data-sim="Noted. Nothing opened.">Leave as is</button></div>
-        <div class="box-foot sim-note" hidden></div>
-      </article>
-
-      <article class="box" data-decision>
-        <div class="box-head"><div class="stack-sm" style="gap:2px"><h3>Make the gate required</h3><span class="meta"><code>gate: advisory</code> in <code>.archfit-app.yaml</code> since #2</span></div><span class="label done">owner decision</span></div>
-        <div class="box-row"><dl class="kv"><dt>Today</dt><dd>Only <code>archfit/state</code> runs. Architecture findings on it are informational. #4 shows a real violation that could merge.</dd>
-          <dt>Before</dt><dd>Rehearse on a throwaway branch: one forbidden change fails, one legitimate change passes.</dd></dl></div>
-        <div class="box-row opt"><div><strong>Rehearse</strong><div class="ends">Opens two draft PRs from a throwaway branch.</div></div><button type="button" class="btn sm" data-goto="setup">See steps</button></div>
-        <div class="box-row opt"><div><strong>Require</strong><div class="ends">A settings PR sets <code>gate: required</code>. Then add <code>archfit/gate</code> to its own GitHub ruleset.</div></div><button type="button" class="btn sm" disabled aria-disabled="true">After rehearsal</button></div>
-        <div class="box-foot sim-note" hidden></div>
-      </article>
-
-      <section class="box">
-        <div class="box-head"><h3>Decided</h3></div>
-        <div class="box-row item"><div class="item-main"><span class="item-title"><svg class="oi done"><use href="#i-merge"/></svg>Accept current coupling as the baseline</span><span class="meta">#5 · 33 edges · merged 09:17 UTC · later runs that use it can tell unaccepted findings from accepted debt</span></div><span class="label">baseline</span></div>
-        <div class="box-row item"><div class="item-main"><span class="item-title"><svg class="oi done"><use href="#i-merge"/></svg>Adopt the policy proposed by discovery</span><span class="meta">#3 · 6 modules · <code>no-module-cycles</code> · merged 08:53 UTC</span></div><span class="label">policy</span></div>
       </section>
-    </div>
-    <aside class="side" aria-label="About this view">
-      <div class="side-section"><div class="side-title">Use case</div><p>An owner has ten minutes. Question: what can only I decide, and what happens with each choice?</p></div>
-      <div class="side-section"><div class="side-title">Main point</div><p>The question, the facts, and where each option ends. No decision is invented: each comes from a report field or a setup step.</p></div>
-      <div class="side-section"><div class="side-title">Data</div>
-        <p><span class="data-tag today">EXISTS TODAY</span> Hypotheses and unknowns in the report; gate mode in settings; merged setup PRs from GitHub.</p>
-        <p><span class="data-tag new">NEW</span> A rule that maps report facts (<code>unknown[]</code>, hypotheses) to decisions. This is App guidance, not an engine-emitted task. <code>needs_owner_decision</code> tasks, when the engine emits them, land here too.</p></div>
-    </aside>
-  </div>
-</section>
 
-<!-- ================= EVIDENCE ================= -->
-<section role="tabpanel" id="evidence" aria-labelledby="tab-evidence" class="stack" style="gap:20px" hidden>
-  <div class="page-head">
-    <div><h1>Evidence</h1><p class="lede">What the engine measured, how much of it, and what it could not see. Nine dimensions, no total score.</p></div>
-    <div class="row"><span class="seg-label">Report</span><div class="seg" role="group" aria-label="Report">
-      <button type="button" data-switch="src" data-value="master" aria-pressed="true">master · aed8b36</button>
-      <button type="button" data-switch="src" data-value="pr4" aria-pressed="false">PR #4 · 9d33f4d</button></div>
-      <span class="row"><svg class="oi muted"><use href="#i-shield"/></svg><span class="meta">customer-attested</span></span></div>
-  </div>
-  <div class="layout">
-    <div class="stack" style="gap:16px">
-      <section class="box">
-        <div class="box-head"><h3>Dimensions <span class="counter">9</span></h3><span class="meta">5 measured · 3 partial · 1 unmeasured</span></div>
-        <div class="table-wrap"><table class="data">
-          <thead><tr><th>Dimension</th><th>Status</th><th>Gate</th><th>Coverage</th><th>Confidence</th><th>Unknown</th></tr></thead>
+      <details class="fold">
+        <summary>All 41 locations</summary>
+        <div class="fold-body pad loc-list">pkg/container/flags.go:3<br>pkg/chaos/cmd/builder.go:14 · pkg/chaos/command.go:10 · pkg/chaos/runner.go:7 · pkg/chaos/iptables/iptables.go:8 · pkg/chaos/netem/netem.go:9 · pkg/chaos/stress/stress.go:10 · … 34 more</div>
+      </details>
+
+      <details class="fold">
+        <summary>6 coupling advisories <span class="meta"><span data-only="scn:nobase scn:stale">new</span><span data-only="scn:base scn:req">in baseline</span> · never block</span></summary>
+        <div class="fold-body"><div class="table-wrap"><table class="data">
+          <thead><tr><th>Seam</th><th class="num">Edges</th><th>Suggested</th></tr></thead>
           <tbody>
-            <tr><td>intent</td><td><span class="label success">measured</span></td><td>pass</td><td><span class="covbar"><span style="width:100%"></span></span>1 / 1 rules evaluated</td><td>high</td><td class="num">0</td></tr>
-            <tr><td>structure</td><td><span class="label success">measured</span></td><td><span class="label danger" data-only="src:pr4">fail</span><span data-only="src:master">pass</span></td><td><span class="covbar"><span style="width:27%"></span></span><span data-only="src:master">165 / 624</span><span data-only="src:pr4">166 / 625</span> dependencies in the module map</td><td>high</td><td class="num">1</td></tr>
-            <tr><td>modularity</td><td><span class="label success">measured</span></td><td>pass</td><td><span class="covbar"><span style="width:0%"></span></span>0 / 6 modules with a public surface</td><td><span class="label attention">low</span></td><td class="num">1</td></tr>
-            <tr><td>coupling</td><td><span class="label attention">partial</span></td><td><span class="label attention">warn</span></td><td><span class="covbar"><span style="width:100%"></span></span><span data-only="src:master">77 / 77</span><span data-only="src:pr4">78 / 78</span> cross-boundary edges</td><td>medium</td><td class="num">1</td></tr>
-            <tr><td>change_locality</td><td><span class="label success">measured</span></td><td>pass</td><td><span class="covbar"><span style="width:100%"></span></span>6 / 6 modules in history</td><td>high</td><td class="num">1</td></tr>
-            <tr><td>complexity</td><td><span class="label success">measured</span></td><td>pass</td><td><span class="covbar"><span style="width:100%"></span></span>6 / 6 modules</td><td>high</td><td class="num">2</td></tr>
-            <tr><td>testability</td><td><span class="label attention">partial</span></td><td>pass</td><td><span class="covbar"><span style="width:91%"></span></span><span data-only="src:master">156 / 171</span><span data-only="src:pr4">157 / 172</span> source files classified</td><td>medium</td><td class="num">4</td></tr>
-            <tr><td>operations</td><td><span class="label attention">partial</span></td><td>pass</td><td><span class="covbar"><span style="width:17%"></span></span>1 / 6 modules with deploy unit and owner</td><td>medium</td><td class="num">3</td></tr>
-            <tr><td>drift</td><td><span class="label">unmeasured</span></td><td><span class="muted">n/a</span></td><td><span class="muted">no reference stored</span></td><td><span class="muted">unrated</span></td><td class="num">2</td></tr>
+            <tr><td><code>cmd</code> → <code>pkg_chaos</code></td><td class="num">6</td><td>declare volatility</td></tr>
+            <tr><td><code>cmd</code> → <code>pkg_runtime</code></td><td class="num">3</td><td>declare volatility</td></tr>
+            <tr><td><code>pkg_chaos</code> → <code>pkg_container</code></td><td class="num">5</td><td>declare volatility</td></tr>
+            <tr><td><code>pkg_chaos</code> → <code>pkg_util</code></td><td class="num">2</td><td>declare volatility</td></tr>
+            <tr><td><code>pkg_runtime</code> → <code>pkg_container</code></td><td class="num">15</td><td>declare volatility</td></tr>
+            <tr><td><code>pkg_runtime</code> → <code>pkg_tc</code></td><td class="num">2</td><td>declare volatility</td></tr>
           </tbody></table></div>
-        <div class="box-foot">Coverage is per dimension with its own basis. Never averaged into one percentage.</div>
-      </section>
+          <div class="pad meta" style="border-top:1px solid var(--border-muted)">Not this PR's job. The owner handles them on Overview. <span class="src">matched_by.{group_count,hypothesis} (raw)</span></div></div>
+      </details>
+    </div>
 
-      <section class="box">
-        <div class="box-head"><h3>What the engine could not see</h3><span class="meta">15 unknown facts · grouped by possible next step</span></div>
-        <div class="box-row stack-sm"><div class="row-between"><strong>Declare in the policy</strong><span class="label done">architecture owner</span></div>
-          <ul class="unknown-list"><li><code>coupling</code>: volatility undeclared on <span data-only="src:master">77</span><span data-only="src:pr4">78</span> edges. Declare it per module, then remeasure.</li><li><code>modularity</code>: no module declares a public surface</li></ul></div>
-        <div class="box-row stack-sm"><div class="row-between"><strong>Supply deployment evidence</strong><span class="label">repository owner</span></div>
-          <ul class="unknown-list"><li><code>operations</code>: 5 modules have no independently corroborating deploy manifest. A <code>deploy_unit</code> declaration alone does not close this; where it applies, commit the manifests.</li></ul></div>
-        <div class="box-row stack-sm"><div class="row-between"><strong>Feed more inputs from CI</strong><span class="label">setup</span></div>
-          <ul class="unknown-list"><li><code>testability</code>: coverage is disabled (4 facts). Supply coverage that resolves to files, maps to modules, and is fresh.</li><li><code>complexity</code>: enable syntax collection and get complete function extents</li></ul></div>
-        <div class="box-row stack-sm"><div class="row-between"><strong>Re-run with an admissible baseline</strong><span class="label">baseline + CI</span></div>
-          <ul class="unknown-list"><li><code>drift</code>: no comparable stored reference (2 facts). #5 adds a baseline; a run that uses it may measure drift. Time alone closes nothing.</li></ul></div>
-        <div class="box-row stack-sm"><div class="row-between"><strong>Outside this report's claim</strong><span class="label">by design</span></div>
-          <ul class="unknown-list"><li><code>structure</code>: 459 library dependencies leave the module map</li><li><code>change_locality</code>: commit frequency cannot establish volatility</li><li><code>complexity</code>: no cognitive-complexity analyzer is claimed</li><li><code>operations</code>: runtime topology and supply chain are not observed</li></ul></div>
-      </section>
+    <!-- GitHub view -->
+    <div data-only="pv:gh" class="stack" style="gap:12px">
+      <div class="row"><div class="seg" role="group" aria-label="Version">
+        <button type="button" data-switch="ver" data-value="new" aria-pressed="true">Proposed</button>
+        <button type="button" data-switch="ver" data-value="today" aria-pressed="false">Today</button></div>
+        <span class="mock-flag">Mock of GitHub</span></div>
 
-      <div class="two">
-        <section class="box">
-          <div class="box-head"><h3>Analyzers</h3><span class="meta">3 ran · 8 did not</span></div>
-          <div class="box-row" style="font-size:13px"><span class="label success">ok</span> <code>go/packages</code> <code>loc</code> <code>deploy-unit</code></div>
-          <div class="box-row" style="font-size:13px"><span class="label">disabled</span> <code>jscpd</code> <code>scip</code> <code>ast-grep</code> <code>ast-grep/syntax</code><div class="meta" style="margin-top:4px">Opt-in in <code>.archfit.yaml</code> <code>analyzers:</code></div></div>
-          <div class="box-row" style="font-size:13px"><span class="label">absent</span> <code>dependency-cruiser</code> <code>grimp</code> <code>cargo</code> <code>cargo-modules</code><div class="meta" style="margin-top:4px">Absent. This run reports no missing-analyzer coverage gaps.</div></div>
-        </section>
-        <section class="box">
-          <div class="box-head"><h3>Inputs and identity</h3></div>
-          <div class="box-row"><dl class="kv">
-            <dt>Policy</dt><dd><code>c629cc87…8e72</code></dd><dt>Baseline</dt><dd>none in this run</dd><dt>Labels</dt><dd>no labels file</dd>
-            <dt>Profile</dt><dd><code>archfit.measurement.v2</code> · <code>eb46ade8…0ef6</code></dd>
-            <dt>Producer</dt><dd>engine v3.0.0 · <code>sha256:0eab8105…9909</code> · linux/amd64 · claimed</dd>
-            <dt>Run</dt><dd data-only="src:pr4">39113331372, attempt 1</dd><dd data-only="src:master">latest <code>master</code> run</dd></dl></div>
-          <div class="box-foot">Customer-attested: the producer is authenticated, the report content is not independently checked.</div>
-        </section>
+      <div class="mergebox" data-only="ver:new">
+        <div data-only="scn:nobase scn:stale scn:base">
+          <div class="mb-row"><span class="mb-icon success"><svg class="oi"><use href="#i-merge"/></svg></span><div><div class="mb-title">Merge allowed</div><div class="meta">Archfit is advisory here</div></div></div>
+          <div class="check-line"><svg class="oi muted"><use href="#i-neutral"/></svg><span class="name">archfit/state</span><span class="desc" data-only="scn:nobase scn:stale">Violation found · advisory · no baseline</span><span class="desc" data-only="scn:base">Violation found · advisory</span></div>
+        </div>
+        <div data-only="scn:req">
+          <div class="mb-row"><span class="mb-icon danger"><svg class="oi"><use href="#i-x"/></svg></span><div><div class="mb-title">Merging is blocked</div><div class="meta">A required check failed</div></div></div>
+          <div class="check-line"><svg class="oi danger"><use href="#i-x"/></svg><span class="name">archfit/gate</span><span class="desc">Required · Gate failing: module cycle</span></div>
+        </div>
       </div>
+      <div class="mergebox" data-only="ver:today">
+        <div class="mb-row"><span class="mb-icon success"><svg class="oi"><use href="#i-merge"/></svg></span><div><div class="mb-title">Merge allowed</div><div class="meta">Archfit check is neutral</div></div></div>
+        <div class="check-line"><svg class="oi muted"><use href="#i-neutral"/></svg><span class="name">archfit/state</span><span class="desc">Architecture state: blocked</span></div>
+      </div>
+
+      <div class="comment" data-only="ver:new"><div class="comment-head"><span class="avatar">A</span><strong>archfit-review</strong> bot · one comment, updated each run</div>
+        <div class="comment-body md">
+          <h2 data-only="scn:nobase scn:stale scn:base">⚠️ Violation found · advisory</h2>
+          <h2 data-only="scn:req">❌ Gate failing · merge blocked</h2>
+          <p><strong>Module cycle</strong> <code>pkg_chaos</code> ⇄ <code>pkg_container</code>: 40 imports one way, 1 the other (<code>pkg/container/flags.go:3</code>). Remove one direction.</p>
+          <p class="meta" data-only="scn:nobase scn:stale">No baseline yet, so older debt also shows as new. 6 coupling advisories never block.</p>
+          <p class="meta" data-only="scn:base scn:req">6 coupling advisories are in the baseline.</p>
+          <details><summary>For coding agents · 2 tasks</summary><p class="meta">The exact <code>agent_tasks[]</code> between markers.</p></details>
+          <p class="meta"><a href="#">Details in Archfit</a> · <code>9d33f4d</code> · customer-attested</p>
+        </div></div>
+      <div class="comment" data-only="ver:today"><div class="comment-head"><span class="avatar">A</span><strong>archfit-review</strong> bot</div>
+        <div class="comment-body md">
+          <h2>Archfit: Blocked by architecture findings</h2>
+          <p>Next: Fix the blocking findings and run the validation command.</p>
+          <p class="meta">Then 8 findings with location lists, 9 dimension lines, 16 gap lines, identity, validation, 4 KB of JSON. About 13 KB.</p>
+          <div class="flash error"><span>Says <strong>Blocked</strong> while merge is allowed. Shows old debt as new.</span></div>
+        </div></div>
     </div>
-    <aside class="side" aria-label="About this view">
-      <div class="side-section"><div class="side-title">Use case</div><p>An owner or a skeptical reviewer asks: how much should I trust this result, and what would make it stronger?</p></div>
-      <div class="side-section"><div class="side-title">Main point</div><p>Partial evidence is normal and fixable. Each gap is grouped by a possible next step, so the list ends in actions, not in a wall of text.</p></div>
-      <div class="side-section"><div class="side-title">Data</div>
-        <p><span class="data-tag today">EXISTS TODAY</span> <code>dimensions.*.{status,confidence,gate,coverage,unknown[]}</code>, <code>coverage.tools[]</code>, comparison hashes, envelope digests and producer claims.</p>
-        <p><span class="data-tag new">NEW</span> The next-step grouping is App wording over <code>unknown[].{fact,reason,owner}</code>; the engine does not tag it. Tool applicability is not in the report, so absent tools get no "not needed" label.</p></div>
-    </aside>
   </div>
 </section>
 
-<!-- ================= SETUP ================= -->
-<section role="tabpanel" id="setup" aria-labelledby="tab-setup" class="stack" style="gap:20px" hidden>
-  <div class="page-head">
-    <div><h1>Setup</h1><p class="lede">Each step is a pull request you merge on GitHub. The App never pushes to <code>master</code>.</p></div>
-    <span class="label">you: admin</span>
-  </div>
-  <div class="layout">
-    <div class="stack" style="gap:16px">
-      <section class="box steps" aria-label="Setup steps">
-        <div class="step-row"><svg class="oi success"><use href="#i-check"/></svg><div><strong>Install the GitHub App</strong><div class="meta">archfit-review on coupling-dev/pumba-pilot</div></div><span class="meta">done</span></div>
-        <div class="step-row"><svg class="oi success"><use href="#i-check"/></svg><div><strong>Add the workflow and settings</strong><div class="meta">#2 · <code>.github/workflows/archfit.yaml</code>, <code>.archfit-app.yaml</code> · owners: alexei-led · data mode: customer</div></div><span class="meta">08:48</span></div>
-        <div class="step-row"><svg class="oi success"><use href="#i-check"/></svg><div><strong>Discover and adopt a policy</strong><div class="meta">#3 · 6 modules, <code>no-module-cycles</code></div></div><span class="meta">08:53</span></div>
-        <div class="step-row"><svg class="oi success"><use href="#i-check"/></svg><div><strong>Accept a baseline</strong><div class="meta">#5 · 33 coupling edges</div></div><span class="meta">09:17</span></div>
-        <div class="step-row now"><svg class="oi accent"><use href="#i-dot"/></svg><div><strong>Run advisory</strong><div class="meta">Feedback on every PR, nothing blocks. 1 PR checked so far.</div></div><span class="label accent">now</span></div>
-        <div class="step-row todo"><svg class="oi muted"><use href="#i-dot"/></svg><div><strong>Rehearse</strong><div class="meta">One forbidden change fails, one legitimate change passes, on a throwaway branch.</div></div><span class="meta">next</span></div>
-        <div class="step-row todo"><svg class="oi muted"><use href="#i-dot"/></svg><div><strong>Require the gate</strong><div class="meta">Settings PR <code>gate: required</code>, then <code>archfit/gate</code> in its own ruleset.</div></div><span class="meta">later</span></div>
-      </section>
-      <section class="box"><div class="box-head"><h3>Settings on <code>master</code></h3><span class="meta"><code>.archfit-app.yaml</code> · read-only</span></div>
-        <div class="box-row"><dl class="kv"><dt>Owners</dt><dd>alexei-led</dd><dt>Gate</dt><dd>advisory</dd><dt>Workflow</dt><dd><code>.github/workflows/archfit.yaml</code></dd><dt>Data mode</dt><dd>customer: source code never leaves your CI</dd></dl></div></section>
+<!-- ================= ARCHITECTURE: where does the code strain the policy? ================= -->
+<section role="tabpanel" id="architecture" aria-labelledby="tab-architecture" class="stack" style="gap:16px" hidden>
+  <div class="row-between">
+    <div class="legend">
+      <span class="key"><span class="swatch violation"></span>violation</span>
+      <span class="key"><span class="swatch advisory"></span>advisory</span>
+      <span class="key"><span class="swatch"></span>fine</span>
     </div>
-    <aside class="side" aria-label="About this view">
-      <div class="side-section"><div class="side-title">Use case</div><p>The admin who installed the App asks: what is done, what is next, and is it safe to require?</p></div>
-      <div class="side-section"><div class="side-title">Data</div><p><span class="data-tag today">EXISTS TODAY</span> Onboarding progress on <code>/r/{o}/{n}</code>, settings from <code>master</code>, setup PRs by head ref <code>archfit/*</code>.</p><p><span class="data-tag new">NEW</span> Rehearsal tracking: which two PRs proved fail and pass.</p></div>
-    </aside>
+    <div class="seg" role="group" aria-label="Evidence from">
+      <button type="button" data-switch="src" data-value="master" aria-pressed="true">master</button>
+      <button type="button" data-switch="src" data-value="pr4" aria-pressed="false">with PR #4</button></div>
   </div>
-</section>
 
-<!-- ================= STATES ================= -->
-<section role="tabpanel" id="states" aria-labelledby="tab-states" class="stack" style="gap:20px" hidden>
-  <div class="page-head"><div><h1>States</h1><p class="lede">Every page uses the same wording and the same badge for the same state. Evidence problems are never shown as a verdict on the code.</p></div></div>
-  <div class="grid-2">
-    <div class="box"><div class="blankslate"><svg class="oi"><use href="#i-clock"/></svg><h3>No report yet</h3><p>The Archfit workflow has not reported for <code>9d33f4d</code>. It usually takes a few minutes after a push.</p><a class="btn sm" href="#">Open the workflow run</a></div></div>
-    <div class="box"><div class="blankslate"><svg class="oi"><use href="#i-clock"/></svg><h3>Report expired</h3><p>GitHub deleted the artifact after its retention period. The check result on GitHub stays. Re-run the workflow to see details here.</p></div></div>
-    <div class="flash warn"><svg class="oi attention flash-icon"><use href="#i-sync"/></svg><div class="stack-sm" style="gap:2px"><strong>Action required: inputs changed after this run</strong><span><code>stale_inputs</code> · Required gate only. The policy or baseline on <code>master</code> changed; a re-run is requested. In advisory mode the old result stays and the App page says "result predates".</span></div></div>
-    <div class="flash warn"><svg class="oi attention flash-icon"><use href="#i-alert"/></svg><div class="stack-sm" style="gap:2px"><strong>Action required: report could not be used</strong><span><code>report_invalid</code> · The upload failed validation. Nothing is shown as passed. Re-run the workflow.</span></div></div>
-    <div class="flash"><svg class="oi accent flash-icon"><use href="#i-info"/></svg><div class="stack-sm" style="gap:2px"><strong>Partial evidence</strong><span>3 of 9 dimensions are partial and 1 is unmeasured. The verdict covers only what was measured. <a href="#">See evidence</a></span></div></div>
-    <div class="flash error"><svg class="oi danger flash-icon"><use href="#i-x"/></svg><div class="stack-sm" style="gap:2px"><strong>GitHub is rate limiting the App</strong><span>Try again in about a minute. Nothing changed.</span></div></div>
-    <div class="box"><div class="blankslate"><svg class="oi"><use href="#i-shield"/></svg><h3>Not found</h3><p>The repository does not exist, or you cannot read it. Archfit does not say which.</p></div></div>
-    <div class="box"><div class="box-row stack-sm" aria-busy="true"><span class="meta">Loading…</span><div class="covbar" style="width:60%"><span style="width:30%"></span></div><div class="covbar" style="width:40%"></div></div><div class="box-foot">Pages render on the server from GitHub reads. A slow page shows the header first, never fake numbers.</div></div>
+  <div class="map-grid">
+    <div class="graph-wrap">
+      <svg viewBox="0 0 720 330" width="720" height="330" role="img" aria-label="Module map of pumba-pilot">
+        <defs>
+          <marker id="ar-m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-muted" d="M0 0L10 5L0 10z"/></marker>
+          <marker id="ar-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-att" d="M0 0L10 5L0 10z"/></marker>
+          <marker id="ar-d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-dan" d="M0 0L10 5L0 10z"/></marker>
+        </defs>
+        <g class="edge" tabindex="0" data-edge="cmd → pkg_chaos|8 imports · 6 critical|Advisory: declare volatility."><path class="e-hit" d="M300 72 L200 156"/><path class="e advisory" marker-end="url(#ar-a)" d="M300 72 L202 154"/></g>
+        <g class="edge" tabindex="0" data-edge="cmd → pkg_runtime|3 imports · 3 critical|Advisory: declare volatility."><path class="e-hit" d="M420 72 L520 156"/><path class="e advisory" marker-end="url(#ar-a)" d="M420 72 L518 154"/></g>
+        <g class="edge" tabindex="0" data-edge="cmd → pkg_container|2 imports · contract|Fine: balanced."><path class="e-hit" d="M360 72 L360 256"/><path class="e" marker-end="url(#ar-m)" d="M360 72 L360 254"/></g>
+        <g data-only="src:master"><g class="edge" tabindex="0" data-edge="pkg_chaos → pkg_container|40 imports · 5 critical|Advisory: declare volatility."><path class="e-hit" d="M190 200 L320 256"/><path class="e advisory" marker-end="url(#ar-a)" d="M190 200 L318 255"/></g></g>
+        <g data-only="src:pr4">
+          <g class="edge" tabindex="0" data-edge="pkg_chaos → pkg_container|40 imports|Violation: part of a module cycle."><path class="e-hit" d="M180 200 L318 264"/><path class="e violation" marker-end="url(#ar-d)" d="M180 200 L316 263"/></g>
+          <g class="edge" tabindex="0" data-edge="pkg_container → pkg_chaos|1 import · pkg/container/flags.go:3|Violation: closes the cycle. Only with PR #4."><path class="e-hit" d="M326 248 L196 192"/><path class="e violation" marker-end="url(#ar-d)" d="M326 248 L198 193"/></g></g>
+        <g class="edge" tabindex="0" data-edge="pkg_chaos → pkg_util|2 imports · 2 critical|Advisory: declare volatility."><path class="e-hit" d="M140 200 L140 256"/><path class="e advisory" marker-end="url(#ar-a)" d="M140 200 L140 254"/></g>
+        <g class="edge" tabindex="0" data-edge="pkg_runtime → pkg_container|20 imports · 15 critical|Advisory: declare volatility."><path class="e-hit" d="M530 200 L400 256"/><path class="e advisory" marker-end="url(#ar-a)" d="M530 200 L402 255"/></g>
+        <g class="edge" tabindex="0" data-edge="pkg_runtime → pkg_tc|2 imports · 2 critical|Advisory: declare volatility."><path class="e-hit" d="M580 200 L580 256"/><path class="e advisory" marker-end="url(#ar-a)" d="M580 200 L580 254"/></g>
+        <g class="cnt"><rect x="236" y="104" width="18" height="16" rx="8"/><text x="245" y="116" text-anchor="middle">8</text></g>
+        <g class="cnt"><rect x="466" y="104" width="18" height="16" rx="8"/><text x="475" y="116" text-anchor="middle">3</text></g>
+        <g class="cnt"><rect x="351" y="148" width="18" height="16" rx="8"/><text x="360" y="160" text-anchor="middle">2</text></g>
+        <g class="cnt"><rect x="232" y="212" width="22" height="16" rx="8"/><text x="243" y="224" text-anchor="middle">40</text></g>
+        <g class="cnt" data-only="src:pr4"><rect x="262" y="236" width="18" height="16" rx="8"/><text x="271" y="248" text-anchor="middle">1</text></g>
+        <g class="cnt"><rect x="118" y="220" width="18" height="16" rx="8"/><text x="127" y="232" text-anchor="middle">2</text></g>
+        <g class="cnt"><rect x="456" y="216" width="22" height="16" rx="8"/><text x="467" y="228" text-anchor="middle">20</text></g>
+        <g class="cnt"><rect x="586" y="220" width="18" height="16" rx="8"/><text x="595" y="232" text-anchor="middle">2</text></g>
+        <g class="m-node"><rect x="300" y="28" width="120" height="44" rx="6"/><text class="nm" x="360" y="55" text-anchor="middle">cmd</text></g>
+        <g class="m-node"><rect x="90" y="156" width="130" height="44" rx="6"/><text class="nm" x="155" y="183" text-anchor="middle">pkg_chaos</text></g>
+        <g class="m-node"><rect x="500" y="156" width="130" height="44" rx="6"/><text class="nm" x="565" y="183" text-anchor="middle">pkg_runtime</text></g>
+        <g class="m-node"><rect x="80" y="256" width="120" height="44" rx="6"/><text class="nm" x="140" y="283" text-anchor="middle">pkg_util</text></g>
+        <g class="m-node"><rect x="296" y="256" width="140" height="44" rx="6"/><text class="nm" x="366" y="283" text-anchor="middle">pkg_container</text></g>
+        <g class="m-node"><rect x="530" y="256" width="110" height="44" rx="6"/><text class="nm" x="585" y="283" text-anchor="middle">pkg_tc</text></g>
+      </svg>
+    </div>
+    <div class="box" aria-live="polite"><div class="box-row" id="edge-detail"><span class="meta">Click an arrow.</span></div>
+      <div class="box-foot">No layers declared, so position means nothing. <span class="src">seams[].{edges,strength,severity,policy}</span></div></div>
   </div>
+
+  <details class="fold">
+    <summary>Policy <span class="meta">1 rule · 6 modules · <code>.archfit.yaml</code> on master</span></summary>
+    <div class="fold-body">
+      <div class="box-row row-between"><span><strong>No module cycles</strong> <span class="meta">gate fail</span></span>
+        <span class="chip ok" data-only="src:master">holds</span><span class="chip bad" data-only="src:pr4">broken by #4</span></div>
+      <div class="box-row row-between"><span><strong>Coupling advisories</strong> <span class="meta">medium and up</span></span><span class="chip">never block</span></div>
+      <div class="box-row meta">Modules: <code>cmd</code> <code>pkg_chaos</code> <code>pkg_container</code> <code>pkg_runtime</code> <code>pkg_tc</code> <code>pkg_util</code>. Volatility and public surface not declared.</div>
+      <div class="box-row row"><a class="btn sm primary" href="#">Edit policy</a><span class="meta">Saves to a draft PR. An owner approves it on GitHub.</span></div>
+    </div>
+  </details>
 </section>
 </main>
 
 <div id="notes-backdrop" class="drawer-backdrop" hidden></div>
 <aside id="notes-drawer" class="drawer" hidden aria-label="Design notes">
   <div class="row-between"><h2>Design notes</h2><button type="button" class="btn sm" data-close-notes>Close</button></div>
-  <div class="stack-sm"><h4>Thesis</h4><p class="muted">Coding agents repair what they break through <code>agent_tasks</code>. Architecture owners only make decisions. The App shows both without inventing either.</p></div>
-  <div class="stack-sm"><h4>Rules this prototype keeps</h4><ul class="muted" style="margin:0;padding-left:18px">
-    <li>The headline states the effect on merge from gate mode and check conclusion, never from <code>verdict</code> alone</li>
-    <li>"New" means not in the baseline. "Introduced" needs a PR comparison. Never mix them</li>
-    <li>Evidence problems are action required, never neutral, never a verdict on the code</li>
-    <li>Reports are customer-attested, never "verified"</li>
-    <li>No score, no percentage across dimensions</li>
-    <li>Every change is a PR merged on GitHub</li></ul></div>
-  <div class="stack-sm"><h4>Data</h4><p class="muted">Real pilot reports: <code>master</code> at <code>aed8b36</code> and PR #4 at <code>9d33f4d</code>. "Projected" scenarios apply #5's baseline to the same findings; they are not real runs.</p></div>
+  <div class="stack-sm"><h4>Three pages, three questions</h4><ul class="muted" style="margin:0;padding-left:18px">
+    <li><strong>Overview</strong>: is <code>master</code> fine, and what do I do?</li>
+    <li><strong>Pull request</strong>: what is wrong, does it block, how do I fix it?</li>
+    <li><strong>Architecture</strong>: where does the code strain the policy?</li></ul></div>
+  <div class="stack-sm"><h4>Rules</h4><ul class="muted" style="margin:0;padding-left:18px">
+    <li>Status first. One primary action per card</li>
+    <li>Details fold away. Nothing needed to act lives only in a fold</li>
+    <li>The headline says the effect on merge. Never "blocked" when merge is allowed</li>
+    <li>"New" means not in the baseline, not "added by this PR"</li>
+    <li>No score. Evidence is per dimension</li></ul></div>
+  <div class="stack-sm"><h4>States, same words everywhere</h4><p class="muted">No report yet · Report expired · Outdated, re-run · Action required: &lt;reason&gt; · Not found · Rate limited</p></div>
+  <div class="stack-sm"><h4>Prototype controls</h4><p class="muted"><strong>Demo</strong> switches PR #4 between the real run and projected states. <strong>Data sources</strong> shows which report field feeds each element.</p></div>
   <div class="stack-sm"><h4>Full review</h4><p class="muted"><code>docs/design/ui-review.md</code></p></div>
 </aside>
 
+<script type="application/json" id="agent-tasks">[{"finding_id":"0d5aae18e2b632a4796190153b0c89b3","rule_id":"no-module-cycles","repair_kind":"code_change","goal":"Break the dependency cycle among declared modules pkg_chaos, pkg_container by removing one direction of it: drop the pkg_chaos -> pkg_container dependency, or the dependency path from pkg_container back to pkg_chaos. Routing it through another module keeps the cycle.","constraints":["Remove one direction of the module cycle; routing the dependency through another module keeps the cycle"],"files":["pkg/chaos/cmd/builder.go","pkg/chaos/command.go","pkg/chaos/iptables/cmd/loss.go","pkg/chaos/iptables/iptables.go","pkg/chaos/iptables/loss.go","pkg/chaos/iptables/parse.go","pkg/chaos/lifecycle/cmd/exec.go","pkg/chaos/lifecycle/cmd/kill.go","pkg/chaos/lifecycle/cmd/pause.go","pkg/chaos/lifecycle/cmd/remove.go","pkg/chaos/lifecycle/cmd/restart.go","pkg/chaos/lifecycle/cmd/stop.go","pkg/chaos/lifecycle/exec.go","pkg/chaos/lifecycle/kill.go","pkg/chaos/lifecycle/pause.go","pkg/chaos/lifecycle/remove.go","pkg/chaos/lifecycle/restart.go","pkg/chaos/lifecycle/stop.go","pkg/chaos/netem/cmd/combine.go","pkg/chaos/netem/cmd/corrupt.go","pkg/chaos/netem/cmd/delay.go","pkg/chaos/netem/cmd/duplicate.go","pkg/chaos/netem/cmd/loss.go","pkg/chaos/netem/cmd/loss_ge.go","pkg/chaos/netem/cmd/loss_state.go","pkg/chaos/netem/cmd/rate.go","pkg/chaos/netem/combine.go","pkg/chaos/netem/corrupt.go","pkg/chaos/netem/delay.go","pkg/chaos/netem/duplicate.go","pkg/chaos/netem/loss.go","pkg/chaos/netem/loss_ge.go","pkg/chaos/netem/loss_state.go","pkg/chaos/netem/netem.go","pkg/chaos/netem/parse.go","pkg/chaos/netem/rate.go","pkg/chaos/netem/target.go","pkg/chaos/runner.go","pkg/chaos/stress/cmd/stress.go","pkg/chaos/stress/stress.go"],"validation":["archfit check -c /bundle/.archfit.yaml --root /src"]},{"finding_id":"e128caa5c2e58c5eba7cc3bc84157923","rule_id":"no-module-cycles","repair_kind":"code_change","goal":"Break the dependency cycle among declared modules pkg_chaos, pkg_container by removing one direction of it: drop the pkg_container -> pkg_chaos dependency, or the dependency path from pkg_chaos back to pkg_container. Routing it through another module keeps the cycle.","constraints":["Remove one direction of the module cycle; routing the dependency through another module keeps the cycle"],"files":["pkg/container/flags.go"],"validation":["archfit check -c /bundle/.archfit.yaml --root /src"]}]</script>
 <script src="archfit.js"></script>
 <script>
 (function () {
   "use strict";
-  // Generic switch: [data-switch=g][data-value=v] buttons; [data-only~="g:v"] elements show when g = v.
-  var state = { scn: "nobase", ver: "new", src: "master", view: "map" };
+  var state = { scn: "nobase", pr: "list", pv: "app", ver: "new", src: "master" };
   function apply() {
-    document.querySelectorAll("[data-switch]").forEach(function (b) {
+    document.querySelectorAll("[data-switch][aria-pressed]").forEach(function (b) {
       b.setAttribute("aria-pressed", String(state[b.getAttribute("data-switch")] === b.getAttribute("data-value")));
     });
     document.querySelectorAll("[data-only]").forEach(function (el) {
@@ -715,27 +435,31 @@ rules:
   }
   document.addEventListener("click", function (e) {
     var b = e.target.closest("[data-switch]");
-    if (b) { state[b.getAttribute("data-switch")] = b.getAttribute("data-value"); apply(); }
+    if (!b) return;
+    if (b.tagName === "A") e.preventDefault();
+    state[b.getAttribute("data-switch")] = b.getAttribute("data-value"); apply();
   });
+  document.addEventListener("keydown", function (e) {
+    var r = e.target.closest && e.target.closest(".clickable[data-switch]");
+    if (r && e.key === "Enter") r.click();
+  });
+  // Prototype deep links: ?pr=4&pv=gh&scn=req preset the state.
+  new URLSearchParams(location.search).forEach(function (v, k) { if (k in state) state[k] = v; });
+  document.getElementById("scn").value = state.scn;
+  document.getElementById("scn").addEventListener("change", function (e) { state.scn = e.target.value; apply(); });
   apply();
 
-  document.querySelectorAll(".box-row.clickable[data-goto]").forEach(function (r) {
-    r.addEventListener("keydown", function (e) { if (e.key === "Enter") window.archfitShowTab(r.getAttribute("data-goto")); });
-  });
-
-  document.addEventListener("click", function (e) {
-    var b = e.target.closest("[data-sim]");
-    if (!b) return;
-    var note = b.closest("[data-decision]").querySelector(".sim-note");
-    note.textContent = "Prototype: " + b.getAttribute("data-sim"); note.hidden = false;
+  var srcBtn = document.getElementById("toggle-src");
+  srcBtn.addEventListener("click", function () {
+    srcBtn.setAttribute("aria-pressed", String(document.documentElement.classList.toggle("show-src")));
   });
 
   document.addEventListener("click", function (e) {
     var b = e.target.closest("[data-copy]");
     if (!b) return;
     var text = document.getElementById(b.getAttribute("data-copy")).textContent, note = document.getElementById("copy-note");
-    navigator.clipboard.writeText(text).then(function () { note.textContent = "Copied the exact array (" + text.length + " characters)."; },
-      function () { note.textContent = "Copy failed: the browser blocked clipboard access."; });
+    navigator.clipboard.writeText(text).then(function () { note.textContent = "Copied 2 tasks."; },
+      function () { note.textContent = "Copy blocked by the browser."; });
   });
 
   var detail = document.getElementById("edge-detail");
@@ -743,7 +467,7 @@ rules:
     document.querySelectorAll(".edge.sel").forEach(function (x) { x.classList.remove("sel"); });
     g.classList.add("sel");
     var p = g.getAttribute("data-edge").split("|");
-    detail.innerHTML = "<strong><code>" + p[0] + "</code></strong><div class='meta'>" + p[1] + "</div><div style='margin-top:4px'>" + p[2] + "</div>";
+    detail.innerHTML = "<strong><code>" + p[0] + "</code></strong><div class='meta'>" + p[1] + "</div><div style='margin-top:6px'>" + p[2] + "</div>";
   }
   document.querySelectorAll(".edge").forEach(function (g) {
     g.addEventListener("click", function () { showEdge(g); });
