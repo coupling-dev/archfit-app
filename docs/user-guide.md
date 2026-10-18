@@ -224,8 +224,8 @@ that matches nothing. Other rules that the engine could not evaluate keep `missi
 | `baseline_not_comparable`     | Capture a new baseline and open a baseline pull request that an architecture owner approves. The recovery line names the command. |
 | `missing_required_coverage`   | Supply the missing evidence for the listed rules. Approval cannot clear this reason.           |
 | `workflow_not_approved`       | Upload from the workflow named in `.archfit-app.yaml`.                                         |
-| `unknown_engine_identity`     | Use the engine image pinned by the onboarding workflow.                                        |
-| `measurement_profile_missing` | Use the engine image that the onboarding workflow pins. The report has no measurement profile. |
+| `unknown_engine_identity`     | Move the workflow to the Action commit and engine image the App approves now. See [Move an installed workflow to a new engine](#move-an-installed-workflow-to-a-new-engine). |
+| `measurement_profile_missing` | Move the workflow to the Action commit and engine image the App approves now. See [Move an installed workflow to a new engine](#move-an-installed-workflow-to-a-new-engine). The report has no measurement profile. |
 | `engine_error`                | Read the workflow log. Use the pinned engine image. Run the workflow again.                    |
 | `envelope_mismatch`           | Run the workflow again. The upload did not match the GitHub run.                               |
 | `report_invalid`              | Upload the unmodified engine report. Use the pinned Action version.                            |
@@ -398,7 +398,7 @@ the default branch. A capture equal to the current baseline opens nothing.
 | `stale_head`              | The default branch moved during the capture. Run the workflow again.          |
 | `not_default_branch`      | Run the workflow on the default branch.                                       |
 | `workflow_not_approved`   | Run the workflow named in `.archfit-app.yaml`.                                |
-| `unknown_engine_identity` | Use the engine image pinned by the onboarding workflow.                       |
+| `unknown_engine_identity` | Move the workflow to the Action commit and engine image the App approves now. See [Move an installed workflow to a new engine](#move-an-installed-workflow-to-a-new-engine). |
 | `policy_mismatch`         | Run the workflow again. The capture did not use the policy on the branch tip. |
 | `labels_mismatch`         | Run the workflow again. The capture did not use the labels on the branch tip. |
 | `baseline_invalid`        | Use the unmodified file from `archfit baseline` of the pinned engine.         |

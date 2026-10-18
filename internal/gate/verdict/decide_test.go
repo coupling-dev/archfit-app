@@ -526,6 +526,14 @@ func TestReasonCatalogComplete(t *testing.T) {
 			t.Errorf("%q next = %q, want it to name %s", code, e.next, settings.Path)
 		}
 	}
+	// An installed workflow keeps the pin onboarding wrote, so the identity reasons point to the repin section of the
+	// user guide, never back to the onboarding workflow.
+	const repinSection = `"Move an installed workflow to a new engine"`
+	for _, code := range []ReasonCode{ReasonUnknownIdentity, ReasonProfileMissing} {
+		if e, _ := lookup(code); !strings.Contains(e.next, repinSection) || strings.Contains(e.next, "onboarding") {
+			t.Errorf("%q next = %q, want it to name %s and not the onboarding workflow", code, e.next, repinSection)
+		}
+	}
 }
 
 func TestSuspended(t *testing.T) {

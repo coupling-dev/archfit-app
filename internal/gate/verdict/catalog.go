@@ -37,9 +37,9 @@ func lookup(code ReasonCode) (entry, bool) {
 	case ReasonPolicyDefect:
 		return entry{CategoryGovernance, ActionRequired, "Fix the selectors of the listed rules in an owner-approved policy PR, or mark an intentional guard rule guard: true."}, true
 	case ReasonUnknownIdentity:
-		return entry{CategoryEvidence, ActionRequired, "Use the engine image pinned by the Archfit onboarding workflow."}, true
+		return entry{CategoryEvidence, ActionRequired, "Move the Archfit workflow to the archfit-action commit and engine image the App approves now; see \"Move an installed workflow to a new engine\" in the Archfit user guide."}, true
 	case ReasonProfileMissing:
-		return entry{CategoryEvidence, ActionRequired, "Use the engine image pinned by the Archfit onboarding workflow; the report carries no measurement profile."}, true
+		return entry{CategoryEvidence, ActionRequired, "Move the Archfit workflow to the archfit-action commit and engine image the App approves now; see \"Move an installed workflow to a new engine\" in the Archfit user guide. The report carries no measurement profile."}, true
 	case ReasonWorkflowNotApproved:
 		return entry{CategoryEvidence, ActionRequired, "Upload from the workflow named in `.archfit-app.yaml`."}, true
 	case ReasonOwnerApprovalMissing:
