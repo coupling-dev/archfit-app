@@ -95,7 +95,7 @@ func (c *Client) Dispatch(ctx context.Context, r RepoRef, workflowPath, ref stri
 	return c.send(ctx, k, nil)
 }
 
-func (c *Client) LatestRun(ctx context.Context, r RepoRef, workflowPath, branch string) (WorkflowRun, error) {
+func (c *Client) LatestRun(ctx context.Context, r RepoRef, workflowPath string, f RunFilter) (WorkflowRun, error) {
 	cr, base, err := r.target()
 	if err != nil {
 		return WorkflowRun{}, err
@@ -105,8 +105,10 @@ func (c *Client) LatestRun(ctx context.Context, r RepoRef, workflowPath, branch 
 		return WorkflowRun{}, err
 	}
 	q := url.Values{"per_page": {"1"}}
-	if branch != "" {
-		q.Set("branch", branch)
+	for name, v := range map[string]string{"branch": f.Branch, "event": f.Event, "status": f.Status} {
+		if v != "" {
+			q.Set(name, v)
+		}
 	}
 	var j struct {
 		Runs []workflowRunJSON `json:"workflow_runs"`

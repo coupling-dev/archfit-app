@@ -29,13 +29,13 @@ type ghCall struct {
 // fakeGH is GitHub as ui and session see it: the role-interface methods they call, over maps.
 type fakeGH struct {
 	mu        sync.Mutex
-	repos     map[string]api.Repo        // installed repositories by full name
-	perms     map[string]string          // token + " " + full name → permission
-	listed    map[string][]string        // token → full names UserRepos returns
-	files     map[string][]byte          // full name + "@" + ref + ":" + path
-	heads     map[string]string          // full name + "@" + branch
-	checks    map[string][]api.CheckRun  // full name + "@" + sha + "#" + check name
-	runs      map[string]api.WorkflowRun // full name + "@" + workflow + "@" + branch
+	repos     map[string]api.Repo          // installed repositories by full name
+	perms     map[string]string            // token + " " + full name → permission
+	listed    map[string][]string          // token → full names UserRepos returns
+	files     map[string][]byte            // full name + "@" + ref + ":" + path
+	heads     map[string]string            // full name + "@" + branch
+	checks    map[string][]api.CheckRun    // full name + "@" + sha + "#" + check name
+	runs      map[string][]api.WorkflowRun // full name + "@" + workflow + "@" + branch, newest first
 	artifacts map[int64][]byte
 	fail      map[string]error // method, or method + " " + full name
 	calls     []ghCall
@@ -45,7 +45,7 @@ func newFakeGH() *fakeGH {
 	return &fakeGH{
 		repos: map[string]api.Repo{}, perms: map[string]string{}, listed: map[string][]string{},
 		files: map[string][]byte{}, heads: map[string]string{}, checks: map[string][]api.CheckRun{},
-		runs: map[string]api.WorkflowRun{}, artifacts: map[int64][]byte{}, fail: map[string]error{},
+		runs: map[string][]api.WorkflowRun{}, artifacts: map[int64][]byte{}, fail: map[string]error{},
 	}
 }
 
@@ -160,17 +160,27 @@ func (g *fakeGH) Dispatch(_ context.Context, r api.RepoRef, workflowPath, ref st
 	return g.record("Dispatch", r, fmt.Sprintf("%s@%s %v", workflowPath, ref, inputs))
 }
 
-func (g *fakeGH) LatestRun(_ context.Context, r api.RepoRef, workflowPath, branch string) (api.WorkflowRun, error) {
+// LatestRun filters as GitHub does: status matches a run's status or its conclusion.
+func (g *fakeGH) LatestRun(_ context.Context, r api.RepoRef, workflowPath string, f api.RunFilter) (api.WorkflowRun, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if err := g.record("LatestRun", r, workflowPath+"@"+branch); err != nil {
+	if err := g.record("LatestRun", r, fmt.Sprintf("%s@%s event=%s status=%s", workflowPath, f.Branch, f.Event, f.Status)); err != nil {
 		return api.WorkflowRun{}, err
 	}
-	run, ok := g.runs[r.FullName+"@"+workflowPath+"@"+branch]
-	if !ok {
-		return api.WorkflowRun{}, api.ErrNotFound
+	for _, run := range g.runs[r.FullName+"@"+workflowPath+"@"+f.Branch] {
+		if (f.Event == "" || run.Event == f.Event) && (f.Status == "" || run.Status == f.Status || run.Conclusion == f.Status) {
+			return run, nil
+		}
 	}
-	return run, nil
+	return api.WorkflowRun{}, api.ErrNotFound
+}
+
+// addRun makes run the newest run of workflow on branch.
+func (g *fakeGH) addRun(fullName, workflowPath, branch string, run api.WorkflowRun) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	key := fullName + "@" + workflowPath + "@" + branch
+	g.runs[key] = append([]api.WorkflowRun{run}, g.runs[key]...)
 }
 
 func (g *fakeGH) Artifact(_ context.Context, r api.RepoRef, runID int64, name string, maxBytes int64) ([]byte, error) {

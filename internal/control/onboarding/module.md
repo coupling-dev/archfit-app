@@ -139,9 +139,11 @@ means the default Sandbox: `StartManaged` then returns `ErrNoSandbox` before it 
 ### Progress
 
 All reads are at `r.DefaultBranch`. `ErrNotFound` from `Repos.File` or `Actions.LatestRun` means "absent";
-any other error is returned. "Reported" means: `Actions.LatestRun(r, Settings.Workflow, r.DefaultBranch)`
-finds a run AND `Checks.CheckRuns(r, run.HeadSHA, "archfit/state")` is non-empty. Only the App publishes
-that check, and only for an accepted upload. **[default]** First match wins:
+any other error is returned. "Reported" means: `Actions.LatestRun(r, Settings.Workflow, {Branch: r.DefaultBranch,
+Event: "push", Status: "completed"})` finds a run AND `Checks.CheckRuns(r, run.HeadSHA, "archfit/state")` is non-empty. Only the App publishes
+that check, and only for an accepted upload. Push only: on the default branch only a push run uploads a report;
+a dispatched discovery, baseline or re-anchor run never does and would hide an accepted one. Completed: a run in
+progress has not uploaded yet; its conclusion does not matter. **[default]** First match wins:
 
 1. Settings file absent or not parseable, or `Settings.Workflow` file absent → `installed`. `OpenDraft` = `Get("archfit/onboarding")`.
 2. Policy absent, not reported → `workflow_merged`. Policy absent, reported → `report_received`. `OpenDraft` = `Get("archfit/policy")`.
@@ -835,11 +837,19 @@ type WorkflowRun struct {
     PullRequests []int // PR numbers GitHub associates with the run
 }
 
+// RunFilter narrows LatestRun. Each non-empty field is sent as the GitHub query parameter of the same name.
+type RunFilter struct {
+    Branch string
+    Event  string // e.g. "push", "workflow_dispatch"
+    Status string // a run status or conclusion, e.g. "completed", "success"
+}
+
 type Actions interface {
     Run(ctx context.Context, r RepoRef, runID int64) (WorkflowRun, error)
     Rerun(ctx context.Context, r RepoRef, runID int64) error
     Dispatch(ctx context.Context, r RepoRef, workflowPath, ref string, inputs map[string]string) error
-    LatestRun(ctx context.Context, r RepoRef, workflowPath, branch string) (WorkflowRun, error)
+    // LatestRun is the newest run of the workflow that matches every non-empty field of f.
+    LatestRun(ctx context.Context, r RepoRef, workflowPath string, f RunFilter) (WorkflowRun, error)
     // Artifact downloads the named artifact of a run, capped at maxBytes.
     Artifact(ctx context.Context, r RepoRef, runID int64, name string, maxBytes int64) ([]byte, error)
 }
@@ -974,6 +984,9 @@ Test doubles only at boundaries: in-memory GitHub roles (`Repos`, `Actions`, `Ch
 - **Test name**: `TestStageDerivation`
   **Scenario**: table over (settings, workflow file, policy, latest run, state check, gate mode): nothing; settings only; invalid settings; settings+workflow; +run without check; +run with check; policy without report; policy+report advisory; policy+report required.
   **Expected behavior**: `installed` ×3, `workflow_merged` ×2, `report_received`, `policy_merged`, `gate_advisory`, `gate_required`; each with its diagnostic; `OpenDraft` set only when the matching branch has an open PR.
+- **Test name**: `TestReportedReadsTheLatestCompletedPushRun`
+  **Scenario**: policy merged and a reported push run, then a newer successful dispatch run and a newer push run in progress, neither with a state check.
+  **Expected behavior**: `gate_advisory`: the reported push run decides.
 - **Test name**: `TestManagedMarker`
   **Scenario**: table over PR bodies: no marker; `running` at −5 min; `running` at −12 min; `failed code=timeout`; `complete`; garbled marker; marker on a closed PR.
   **Expected behavior**: no managed diagnostic; running; stalled; failed with the code; review PR; stalled; no managed diagnostic. Render then parse round-trips. A complete body keeps at most 20 notes and the marker last; a note with a backtick, `<img>` and `<details>` appears with the backtick removed and the angle brackets escaped, a note with `<!--` is dropped, and the body holds exactly one marker.

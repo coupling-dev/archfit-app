@@ -129,7 +129,7 @@ func (s *server) editor(w http.ResponseWriter, r *http.Request, sc scope) {
 // assistRun words the customer-mode run requested when the draft head was since. WorkflowRun has no
 // timestamps, so a finished run counts as this request's only once the draft head has moved.
 func (s *server) assistRun(ctx context.Context, repo api.Repo, branch string, draft proposal.Draft, since string) string {
-	run, err := s.gh.actions.LatestRun(ctx, repo.RepoRef, assist.AssistWorkflowPath, branch)
+	run, err := s.gh.actions.LatestRun(ctx, repo.RepoRef, assist.AssistWorkflowPath, api.RunFilter{Branch: branch})
 	switch {
 	case errors.Is(err, api.ErrNotFound):
 		return runPending
@@ -137,7 +137,7 @@ func (s *server) assistRun(ctx context.Context, repo api.Repo, branch string, dr
 		return stateUnknown
 	case run.Status != "completed":
 		return runPending
-	case run.Conclusion != "success":
+	case run.Conclusion != conclusionSuccess:
 		return runFailed
 	case draft.HeadSHA != since:
 		return runCompleted

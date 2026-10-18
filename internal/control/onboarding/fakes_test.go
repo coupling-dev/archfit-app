@@ -38,8 +38,8 @@ type hub struct {
 	files  map[string]map[string][]byte // "owner/name@ref" → path → content
 	heads  map[string]string            // "owner/name@branch" → head commit SHA
 	prs    []*fakePR
-	runs   map[string]api.WorkflowRun // by repository
-	checks map[string][]api.CheckRun  // by repository
+	runs   map[string][]api.WorkflowRun // "owner/name@branch" → runs, newest first
+	checks map[string][]api.CheckRun    // by repository
 	calls  map[string]int
 	failFn func(op, detail string) error
 }
@@ -48,7 +48,7 @@ func newHub() *hub {
 	return &hub{
 		files:  map[string]map[string][]byte{},
 		heads:  map[string]string{},
-		runs:   map[string]api.WorkflowRun{},
+		runs:   map[string][]api.WorkflowRun{},
 		checks: map[string][]api.CheckRun{},
 		calls:  map[string]int{},
 	}
@@ -145,11 +145,20 @@ func (h *hub) paths(r api.Repo, ref string) []string {
 	return out
 }
 
+// setReported makes run the newest default-branch run and checks the repository's only check runs.
 func (h *hub) setReported(r api.Repo, run api.WorkflowRun, checks ...api.CheckRun) {
+	h.addRun(r, run)
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.runs[r.FullName] = run
 	h.checks[r.FullName] = checks
+}
+
+// addRun makes run the newest default-branch run.
+func (h *hub) addRun(r api.Repo, run api.WorkflowRun) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	key := refKey(r.FullName, r.DefaultBranch)
+	h.runs[key] = append([]api.WorkflowRun{run}, h.runs[key]...)
 }
 
 func (h *hub) newest(repo, branch string) *fakePR {
@@ -345,17 +354,19 @@ func (h *hub) Dispatch(ctx context.Context, _ api.RepoRef, _, _ string, _ map[st
 	return h.enter(ctx, "Dispatch", "")
 }
 
-func (h *hub) LatestRun(ctx context.Context, r api.RepoRef, workflowPath, branch string) (api.WorkflowRun, error) {
-	if err := h.enter(ctx, "LatestRun", workflowPath+"@"+branch); err != nil {
+// LatestRun filters as GitHub does: status matches a run's status or its conclusion.
+func (h *hub) LatestRun(ctx context.Context, r api.RepoRef, workflowPath string, f api.RunFilter) (api.WorkflowRun, error) {
+	if err := h.enter(ctx, "LatestRun", workflowPath+"@"+f.Branch); err != nil {
 		return api.WorkflowRun{}, err
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	run, ok := h.runs[r.FullName]
-	if !ok {
-		return api.WorkflowRun{}, api.ErrNotFound
+	for _, run := range h.runs[refKey(r.FullName, f.Branch)] {
+		if (f.Event == "" || run.Event == f.Event) && (f.Status == "" || run.Status == f.Status || run.Conclusion == f.Status) {
+			return run, nil
+		}
 	}
-	return run, nil
+	return api.WorkflowRun{}, api.ErrNotFound
 }
 
 func (h *hub) Artifact(ctx context.Context, _ api.RepoRef, _ int64, _ string, _ int64) ([]byte, error) {

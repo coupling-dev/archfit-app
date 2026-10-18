@@ -15,6 +15,10 @@ import (
 const (
 	reportArtifact = "archfit-report"
 
+	// GitHub run values. Only a push run uploads the report; dispatched runs upload policy or baseline artifacts.
+	eventPush         = "push"
+	conclusionSuccess = "success"
+
 	noReport          = "No report available. GitHub keeps run artifacts for a limited time; run the Archfit workflow on the default branch."
 	reportUnavailable = "Report unavailable: the latest report could not be read."
 	draftBroken       = "The draft does not parse. The graph shows the policy on the default branch."
@@ -85,13 +89,15 @@ func (s *server) buildGraph(ctx context.Context, sc scope) (graphBody, error) {
 	return body, nil
 }
 
-// latestReport downloads the report artifact of the latest default-branch run of the settings workflow.
+// latestReport downloads the report artifact of the latest successful default-branch push run of the settings
+// workflow. A dispatched run or a run still in progress carries no report, so it must not hide the last one.
 func (s *server) latestReport(ctx context.Context, repo api.Repo) ([]byte, error) {
 	set, err := s.settings(ctx, repo)
 	if err != nil {
 		return nil, err
 	}
-	run, err := s.gh.actions.LatestRun(ctx, repo.RepoRef, set.Workflow, repo.DefaultBranch)
+	f := api.RunFilter{Branch: repo.DefaultBranch, Event: eventPush, Status: conclusionSuccess}
+	run, err := s.gh.actions.LatestRun(ctx, repo.RepoRef, set.Workflow, f)
 	if err != nil {
 		return nil, err
 	}

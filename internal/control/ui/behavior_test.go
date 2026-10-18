@@ -2,6 +2,7 @@ package ui
 
 import (
 	"encoding/json"
+	"fmt"
 	"html"
 	"net/http"
 	"net/url"
@@ -182,6 +183,29 @@ func TestGraphWithoutAReport(t *testing.T) {
 	}
 }
 
+func TestGraphReadsTheLatestSuccessfulPushRun(t *testing.T) {
+	e := newEnv(t)
+	c := e.as("alice", permRead)
+	e.publishReport(repoName, artifact(t, "healthy"))
+	for _, run := range []api.WorkflowRun{
+		{ID: 78, Event: "push", Status: "completed", Conclusion: "failure"},
+		{ID: 79, Event: "workflow_dispatch", Status: "completed", Conclusion: "success"},
+		{ID: 80, Event: "push", Status: "in_progress"},
+	} {
+		e.gh.addRun(repoName, workflow, mainBranch, run)
+	}
+
+	res := c.get("/r/" + repoName + "/graph")
+	wantStatus(t, res, http.StatusOK)
+	body := res.Body.String()
+	if strings.Contains(body, "No report available") || !strings.Contains(body, "graph-data") {
+		t.Errorf("no graph from the report of run 77 behind newer dispatch, failed and running runs: %.300s", body)
+	}
+	if calls := e.gh.called("Artifact"); len(calls) != 1 || calls[0].detail != fmt.Sprintf("77 archfit-report %d", report.MaxBytes) {
+		t.Errorf("Artifact calls = %+v, want run 77 only", calls)
+	}
+}
+
 var actionPattern = regexp.MustCompile(`(?i)(form)?action="[^"]*(merge|approv|publish)`)
 
 func TestUIAndGitHubFirstEditsShareOnePath(t *testing.T) {
@@ -359,7 +383,7 @@ func TestCustomerAssistShowsPendingFailedCompleted(t *testing.T) {
 	setRun := func(run api.WorkflowRun) {
 		e.gh.mu.Lock()
 		defer e.gh.mu.Unlock()
-		e.gh.runs[runKey] = run
+		e.gh.runs[runKey] = []api.WorkflowRun{run}
 	}
 
 	if m := credentialField.FindString(c.get(base + "/policy").Body.String()); m != "" {

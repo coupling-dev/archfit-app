@@ -549,11 +549,19 @@ type WorkflowRun struct {
     PullRequests []int // PR numbers GitHub associates with the run
 }
 
+// RunFilter narrows LatestRun. Each non-empty field is sent as the GitHub query parameter of the same name.
+type RunFilter struct {
+    Branch string
+    Event  string // e.g. "push", "workflow_dispatch"
+    Status string // a run status or conclusion, e.g. "completed", "success"
+}
+
 type Actions interface {
     Run(ctx context.Context, r RepoRef, runID int64) (WorkflowRun, error)
     Rerun(ctx context.Context, r RepoRef, runID int64) error
     Dispatch(ctx context.Context, r RepoRef, workflowPath, ref string, inputs map[string]string) error
-    LatestRun(ctx context.Context, r RepoRef, workflowPath, branch string) (WorkflowRun, error)
+    // LatestRun is the newest run of the workflow that matches every non-empty field of f.
+    LatestRun(ctx context.Context, r RepoRef, workflowPath string, f RunFilter) (WorkflowRun, error)
     // Artifact downloads the named artifact of a run, capped at maxBytes.
     Artifact(ctx context.Context, r RepoRef, runID int64, name string, maxBytes int64) ([]byte, error)
 }
@@ -901,11 +909,12 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   beyond authorization, except that an assist refused for problems first read the branch file to compare.
 - Ready: `Proposals.Get`; head must equal `head_sha`, state must be `DraftOpen`; then `Proposals.Ready(number)`. ui never merges:
   publication is the merge on GitHub under the customer's ruleset and owner approval, the same path as a GitHub-first edit.
-- Graph: settings → `LatestRun(Settings.Workflow, DefaultBranch)` → `Artifact(run.ID, "archfit-report", report.MaxBytes)` →
+- Graph: settings → `LatestRun(Settings.Workflow, {Branch: DefaultBranch, Event: "push", Status: "success"})` → `Artifact(run.ID, "archfit-report", report.MaxBytes)` →
   `report.Decode` (with the release of `report.EngineVersions`, `v3.0.0`: the artifact names none) → policy text (open draft of the user, else default branch) → `graph.Build`. The artifact is the raw engine
   state JSON; only the decoded no-source `Report` is used. When the chosen policy text fails `policy.Modules` (a broken draft
   pushed on GitHub), ui builds from the default-branch policy instead, the last valid text, and forces the stale banner with
-  "the draft does not parse" **[default]**. No run or artifact (GitHub retention): "no report available". Decode error:
+  "the draft does not parse" **[default]**. Only a push run uploads `archfit-report`; a dispatched run (discovery, baseline,
+  re-anchor) or a run in progress must not hide the last report. No run or artifact (GitHub retention): "no report available". Decode error:
   "report unavailable"; never a partial graph. The `View` is embedded as JSON in a `script type="application/json"` element.
   Each link is drawn and listed with its `Status` (`violation`, `accepted`, `advisory`, `allowed`, `observed`), which is also
   its CSS class. `allowed` comes only from the engine's `seams[].policy`; the page explains that
@@ -918,7 +927,7 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   settings say `managed` and `Consents.Has(ConsentManagedLLM)`; assist enforces both anyway. Managed success: redirect to the
   editor on the new head with a link to the PR diff. Customer success: redirect to the editor with `?since=<head_sha>`, the
   head the request was bound to; with `since` the editor shows the run state from
-  `Actions.LatestRun(AssistWorkflowPath, branch)`: no run yet or not completed → pending; completed and not `success` → failed;
+  `Actions.LatestRun(AssistWorkflowPath, {Branch: branch})`: no run yet or not completed → pending; completed and not `success` → failed;
   completed and the draft head differs from `since` → completed, reload offered; completed with the head still at `since` →
   pending (that run is an older one). ui keeps no state, so the link beside the state is the workflow's runs page built from
   the authorized repository name and `AssistWorkflowPath`, the same page `Result.RunURL` names **[default]**. `WorkflowRun` has no timestamps, so latency is visible as
@@ -1143,3 +1152,6 @@ their interfaces except where a test says otherwise. The clock is injected.
 - **Test name**: `TestGraphWithoutAReport`
   **Scenario**: the graph page with no workflow run; then with an `archfit-report` artifact that `report.Decode` refuses.
   **Expected behavior**: `200` "No report available"; then `200` "Report unavailable" and no `graph-data` element: never a partial graph.
+- **Test name**: `TestGraphReadsTheLatestSuccessfulPushRun`
+  **Scenario**: a successful push run with the report, then newer runs: a failed push, a successful dispatch, a push in progress.
+  **Expected behavior**: the graph is drawn; the only `Artifact` read is the successful push run's.

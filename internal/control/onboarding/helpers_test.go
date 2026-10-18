@@ -88,7 +88,7 @@ func (f *fixture) onboard(r api.Repo, gateMode settings.GateMode) {
 
 func (f *fixture) report(r api.Repo) {
 	f.hub.setReported(r,
-		api.WorkflowRun{ID: 9, HeadSHA: runHeadSHA, WorkflowPath: workflowPath},
+		api.WorkflowRun{ID: 9, Event: "push", Status: "completed", HeadSHA: runHeadSHA, WorkflowPath: workflowPath},
 		api.CheckRun{ID: 1, Name: stateCheck, HeadSHA: runHeadSHA})
 }
 

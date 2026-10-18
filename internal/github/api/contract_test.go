@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -549,11 +550,11 @@ func TestActionsContract(t *testing.T) {
 		t.Errorf("dispatch body = %s", dispatch.Body)
 	}
 
-	latest, err := env.c.LatestRun(ctx, repoA, ".github/workflows/archfit.yaml", "main")
+	latest, err := env.c.LatestRun(ctx, repoA, ".github/workflows/archfit.yaml", RunFilter{Branch: "main"})
 	if err != nil || !reflect.DeepEqual(latest, want) {
 		t.Errorf("LatestRun = %+v, %v", latest, err)
 	}
-	_, err = env.c.LatestRun(ctx, repoA, ".github/workflows/archfit.yaml", "quiet")
+	_, err = env.c.LatestRun(ctx, repoA, ".github/workflows/archfit.yaml", RunFilter{Branch: "quiet"})
 	wantErrIs(t, "no run", err, ErrNotFound)
 
 	env.gh.reset()
@@ -588,6 +589,39 @@ func TestActionsContract(t *testing.T) {
 	}
 	if n := len(env.gh.requests()); n != 0 {
 		t.Errorf("maxBytes guard sent %d requests", n)
+	}
+}
+
+func TestLatestRunSendsOnlySetFilters(t *testing.T) {
+	ctx := context.Background()
+	env := muxEnv(t, func(mux *http.ServeMux) {
+		mux.HandleFunc("GET /repos/o/r/actions/workflows/archfit.yaml/runs", func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, http.StatusOK, map[string]any{"total_count": 1, "workflow_runs": []any{map[string]any{"id": 55}}})
+		})
+	})
+	tests := []struct {
+		name   string
+		filter RunFilter
+		want   url.Values
+	}{
+		{"none", RunFilter{}, url.Values{"per_page": {"1"}}},
+		{"branch", RunFilter{Branch: "main"}, url.Values{"per_page": {"1"}, "branch": {"main"}}},
+		{"all", RunFilter{Branch: "main", Event: "push", Status: "success"},
+			url.Values{"per_page": {"1"}, "branch": {"main"}, "event": {"push"}, "status": {"success"}}},
+		{"event and status", RunFilter{Event: "push", Status: "completed"},
+			url.Values{"per_page": {"1"}, "event": {"push"}, "status": {"completed"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env.gh.reset()
+			if _, err := env.c.LatestRun(ctx, repoA, ".github/workflows/archfit.yaml", tt.filter); err != nil {
+				t.Fatal(err)
+			}
+			got := findRequest(t, env.gh.requests(), "GET", "/repos/o/r/actions/workflows/archfit.yaml/runs").Query
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("query = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 

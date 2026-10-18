@@ -188,7 +188,7 @@ func repoRefCalls(c *Client, r RepoRef) map[string]func(context.Context) (bool, 
 			return false, c.Dispatch(ctx, r, ".github/workflows/archfit.yaml", "main", nil)
 		},
 		"Actions.LatestRun": func(ctx context.Context) (bool, error) {
-			wr, err := c.LatestRun(ctx, r, ".github/workflows/archfit.yaml", "main")
+			wr, err := c.LatestRun(ctx, r, ".github/workflows/archfit.yaml", RunFilter{Branch: "main"})
 			return wr.ID != 0, err
 		},
 		"Actions.Artifact": func(ctx context.Context) (bool, error) {
