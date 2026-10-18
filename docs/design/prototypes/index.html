@@ -99,6 +99,47 @@
   .map-grid svg { max-width: 100%; height: auto; }
   @media (max-width: 900px) { .map-grid { grid-template-columns: minmax(0, 1fr); } }
 
+
+  /* graph component */
+  .gwrap { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 16px; align-items: start; }
+  @media (max-width: 860px) { .gwrap { grid-template-columns: minmax(0, 1fr); } }
+  .glist { list-style: none; margin: 0; padding: 4px 0; max-height: 360px; overflow-y: auto; }
+  .gitem { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 16px; font-size: 12px; cursor: pointer; }
+  .gitem:hover, .gitem.sel { background: var(--accent-subtle); }
+  .gitem > i, .gchip > i { width: 10px; height: 10px; border-radius: 50%; background: var(--fg-muted); display: inline-block; }
+  .violation > i { background: var(--danger); } .advisory > i { background: var(--attention); } .accepted > i { background: var(--done); }
+  .allowed > i, .observed > i { background: var(--border); }
+  .gchip { display: inline-flex; align-items: center; gap: 6px; font: 12px var(--font); color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; cursor: pointer; }
+  .gchip[aria-pressed="false"] { opacity: .45; text-decoration: line-through; }
+  .gcanvas { padding: 8px; } .gcanvas svg { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+  .gnode rect { fill: var(--bg); stroke: var(--border); stroke-width: 1; }
+  .gnode text { fill: var(--fg); font: 600 12px var(--mono); }
+  .gnode.violation rect { stroke: var(--danger); stroke-width: 2; }
+  .gnode.advisory rect { stroke: var(--attention); }
+  .gnode.sel rect { stroke: var(--accent); stroke-width: 2.5; }
+  .gnode, .gedge { cursor: pointer; outline: none; }
+  .gnode.dim, .gedge.dim { opacity: .18; }
+  .gedge .hit { stroke: transparent; stroke-width: 14; fill: none; }
+  .gedge .line { fill: none; stroke: var(--border); }
+  .gedge.violation .line { stroke: var(--danger); } .gedge.advisory .line { stroke: var(--attention); } .gedge.accepted .line { stroke: var(--done); stroke-dasharray: 5 4; }
+  .gedge:hover .line, .gedge:focus .line, .gedge.sel .line { filter: drop-shadow(0 0 2px var(--accent)); }
+  .gm.violation { fill: var(--danger); } .gm.advisory { fill: var(--attention); } .gm.accepted { fill: var(--done); } .gm.allowed, .gm.observed { fill: var(--border); }
+  .gedge .badge { fill: var(--bg); stroke: var(--border); }
+  .gedge.violation .badge { stroke: var(--danger); } .gedge.advisory .badge { stroke: var(--attention); }
+  .gedge .badge-t { fill: var(--fg); font: 600 10px var(--font); }
+  .chip.violation { color: var(--danger); border-color: var(--danger-border); } .chip.advisory { color: var(--attention); border-color: var(--attention-border); }
+  .chip.accepted { color: var(--done); border-color: var(--done-border); }
+  .linkish { font: inherit; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; }
+  table.gdsm { border-collapse: collapse; font-size: 11px; }
+  table.gdsm th { font-weight: 500; color: var(--fg-muted); padding: 2px 6px; white-space: nowrap; text-align: right; font-family: var(--mono); }
+  table.gdsm thead th { height: 110px; vertical-align: bottom; padding: 0; }
+  table.gdsm thead th span { display: inline-block; writing-mode: vertical-rl; transform: rotate(180deg); padding: 4px 0; }
+  table.gdsm td { width: 18px; height: 18px; border: 1px solid var(--border-muted); text-align: center; padding: 0; font-variant-numeric: tabular-nums; }
+  table.gdsm td.self { background: var(--bg-inset); }
+  table.gdsm td.violation { background: var(--danger); color: #fff; font-weight: 600; }
+  table.gdsm td.advisory { background: var(--attention-subtle); color: var(--attention); }
+  table.gdsm td.accepted { background: var(--done-subtle); color: var(--done); }
+  table.gdsm td.allowed, table.gdsm td.observed { background: var(--neutral-subtle); color: var(--fg-muted); }
   [data-only]:not(.on) { display: none !important; }
 </style>
 </head>
@@ -369,65 +410,44 @@
   </div>
 </section>
 
-<!-- ================= ARCHITECTURE: where does the code strain the policy? ================= -->
+<!-- ================= ARCHITECTURE: does the code follow the approved policy, and where not? ================= -->
 <section role="tabpanel" id="architecture" aria-labelledby="tab-architecture" class="stack" style="gap:16px" hidden>
-  <div class="row-between">
-    <div class="legend">
-      <span class="key"><span class="swatch violation"></span>violation</span>
-      <span class="key"><span class="swatch advisory"></span>advisory</span>
-      <span class="key"><span class="swatch"></span>fine</span>
+  <div id="gproto" class="stack" style="gap:12px">
+    <div class="row-between">
+      <div class="row" data-g-chips aria-label="Show links by status"></div>
+      <div class="row">
+        <div class="seg" role="group" aria-label="Report">
+          <button type="button" data-switch="src" data-value="master" aria-pressed="true">master</button>
+          <button type="button" data-switch="src" data-value="pr4" aria-pressed="false">with PR #4</button>
+          <button type="button" data-switch="src" data-value="big" aria-pressed="false" title="Synthetic, to show scale">40 modules · demo</button></div>
+        <div class="seg" role="group" aria-label="View">
+          <button type="button" data-switch="gview" data-value="graph" aria-pressed="true">Graph</button>
+          <button type="button" data-switch="gview" data-value="matrix" aria-pressed="false">Matrix</button></div>
+      </div>
     </div>
-    <div class="seg" role="group" aria-label="Evidence from">
-      <button type="button" data-switch="src" data-value="master" aria-pressed="true">master</button>
-      <button type="button" data-switch="src" data-value="pr4" aria-pressed="false">with PR #4</button></div>
-  </div>
-
-  <div class="map-grid">
-    <div class="graph-wrap">
-      <svg viewBox="0 0 720 330" width="720" height="330" role="img" aria-label="Module map of pumba-pilot">
-        <defs>
-          <marker id="ar-m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-muted" d="M0 0L10 5L0 10z"/></marker>
-          <marker id="ar-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-att" d="M0 0L10 5L0 10z"/></marker>
-          <marker id="ar-d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-dan" d="M0 0L10 5L0 10z"/></marker>
-        </defs>
-        <g class="edge" tabindex="0" data-edge="cmd → pkg_chaos|8 imports · 6 critical|Advisory: declare volatility."><path class="e-hit" d="M300 72 L200 156"/><path class="e advisory" marker-end="url(#ar-a)" d="M300 72 L202 154"/></g>
-        <g class="edge" tabindex="0" data-edge="cmd → pkg_runtime|3 imports · 3 critical|Advisory: declare volatility."><path class="e-hit" d="M420 72 L520 156"/><path class="e advisory" marker-end="url(#ar-a)" d="M420 72 L518 154"/></g>
-        <g class="edge" tabindex="0" data-edge="cmd → pkg_container|2 imports · contract|Fine: balanced."><path class="e-hit" d="M360 72 L360 256"/><path class="e" marker-end="url(#ar-m)" d="M360 72 L360 254"/></g>
-        <g data-only="src:master"><g class="edge" tabindex="0" data-edge="pkg_chaos → pkg_container|40 imports · 5 critical|Advisory: declare volatility."><path class="e-hit" d="M190 200 L320 256"/><path class="e advisory" marker-end="url(#ar-a)" d="M190 200 L318 255"/></g></g>
-        <g data-only="src:pr4">
-          <g class="edge" tabindex="0" data-edge="pkg_chaos → pkg_container|40 imports|Violation: part of a module cycle."><path class="e-hit" d="M180 200 L318 264"/><path class="e violation" marker-end="url(#ar-d)" d="M180 200 L316 263"/></g>
-          <g class="edge" tabindex="0" data-edge="pkg_container → pkg_chaos|1 import · pkg/container/flags.go:3|Violation: closes the cycle. Only with PR #4."><path class="e-hit" d="M326 248 L196 192"/><path class="e violation" marker-end="url(#ar-d)" d="M326 248 L198 193"/></g></g>
-        <g class="edge" tabindex="0" data-edge="pkg_chaos → pkg_util|2 imports · 2 critical|Advisory: declare volatility."><path class="e-hit" d="M140 200 L140 256"/><path class="e advisory" marker-end="url(#ar-a)" d="M140 200 L140 254"/></g>
-        <g class="edge" tabindex="0" data-edge="pkg_runtime → pkg_container|20 imports · 15 critical|Advisory: declare volatility."><path class="e-hit" d="M530 200 L400 256"/><path class="e advisory" marker-end="url(#ar-a)" d="M530 200 L402 255"/></g>
-        <g class="edge" tabindex="0" data-edge="pkg_runtime → pkg_tc|2 imports · 2 critical|Advisory: declare volatility."><path class="e-hit" d="M580 200 L580 256"/><path class="e advisory" marker-end="url(#ar-a)" d="M580 200 L580 254"/></g>
-        <g class="cnt"><rect x="236" y="104" width="18" height="16" rx="8"/><text x="245" y="116" text-anchor="middle">8</text></g>
-        <g class="cnt"><rect x="466" y="104" width="18" height="16" rx="8"/><text x="475" y="116" text-anchor="middle">3</text></g>
-        <g class="cnt"><rect x="351" y="148" width="18" height="16" rx="8"/><text x="360" y="160" text-anchor="middle">2</text></g>
-        <g class="cnt"><rect x="232" y="212" width="22" height="16" rx="8"/><text x="243" y="224" text-anchor="middle">40</text></g>
-        <g class="cnt" data-only="src:pr4"><rect x="262" y="236" width="18" height="16" rx="8"/><text x="271" y="248" text-anchor="middle">1</text></g>
-        <g class="cnt"><rect x="118" y="220" width="18" height="16" rx="8"/><text x="127" y="232" text-anchor="middle">2</text></g>
-        <g class="cnt"><rect x="456" y="216" width="22" height="16" rx="8"/><text x="467" y="228" text-anchor="middle">20</text></g>
-        <g class="cnt"><rect x="586" y="220" width="18" height="16" rx="8"/><text x="595" y="232" text-anchor="middle">2</text></g>
-        <g class="m-node"><rect x="300" y="28" width="120" height="44" rx="6"/><text class="nm" x="360" y="55" text-anchor="middle">cmd</text></g>
-        <g class="m-node"><rect x="90" y="156" width="130" height="44" rx="6"/><text class="nm" x="155" y="183" text-anchor="middle">pkg_chaos</text></g>
-        <g class="m-node"><rect x="500" y="156" width="130" height="44" rx="6"/><text class="nm" x="565" y="183" text-anchor="middle">pkg_runtime</text></g>
-        <g class="m-node"><rect x="80" y="256" width="120" height="44" rx="6"/><text class="nm" x="140" y="283" text-anchor="middle">pkg_util</text></g>
-        <g class="m-node"><rect x="296" y="256" width="140" height="44" rx="6"/><text class="nm" x="366" y="283" text-anchor="middle">pkg_container</text></g>
-        <g class="m-node"><rect x="530" y="256" width="110" height="44" rx="6"/><text class="nm" x="585" y="283" text-anchor="middle">pkg_tc</text></g>
-      </svg>
+    <div class="gwrap">
+      <aside class="box gside">
+        <div class="box-head"><h3>Problems</h3><span class="meta">violations first</span></div>
+        <ol class="glist" data-g-list></ol>
+        <div class="box-row" data-g-detail aria-live="polite"></div>
+      </aside>
+      <div class="stack-sm" style="min-width:0">
+        <div class="graph-wrap gcanvas" data-g-canvas></div>
+        <div data-g-matrix hidden></div>
+        <p class="meta" data-g-note></p>
+        <span class="src">View.Nodes · View.Links{From,To,Count,Status} — the live page's data, no new fields</span>
+      </div>
     </div>
-    <div class="box" aria-live="polite"><div class="box-row" id="edge-detail"><span class="meta">Click an arrow.</span></div>
-      <div class="box-foot">No layers declared, so position means nothing. <span class="src">seams[].{edges,strength,severity,policy}</span></div></div>
   </div>
 
   <details class="fold">
     <summary>Policy <span class="meta">1 rule · 6 modules · <code>.archfit.yaml</code> on master</span></summary>
     <div class="fold-body">
       <div class="box-row row-between"><span><strong>No module cycles</strong> <span class="meta">gate fail</span></span>
-        <span class="chip ok" data-only="src:master">holds</span><span class="chip bad" data-only="src:pr4">broken by #4</span></div>
+        <span class="chip ok" data-only="src:master">holds</span><span class="chip bad" data-only="src:pr4">broken by #4</span><span class="chip" data-only="src:big">demo</span></div>
       <div class="box-row row-between"><span><strong>Coupling advisories</strong> <span class="meta">medium and up</span></span><span class="chip">never block</span></div>
-      <div class="box-row meta">Modules: <code>cmd</code> <code>pkg_chaos</code> <code>pkg_container</code> <code>pkg_runtime</code> <code>pkg_tc</code> <code>pkg_util</code>. Volatility and public surface not declared.</div>
-      <div class="box-row row"><a class="btn sm" href="#">Propose policy change</a><span class="meta">Draft PR · owner approves on GitHub. Read-only users see "View policy".</span></div>
+      <div class="box-row meta">No layers declared, so the graph ranks modules by dependency depth: importers above, imported below.</div>
+      <div class="box-row row"><a class="btn sm" href="#">Propose policy change</a><span class="meta">Draft PR · owner approves on GitHub.</span></div>
     </div>
   </details>
 </section>
@@ -453,10 +473,11 @@
 
 <script type="application/json" id="agent-tasks">[{"finding_id":"0d5aae18e2b632a4796190153b0c89b3","rule_id":"no-module-cycles","repair_kind":"code_change","goal":"Break the dependency cycle among declared modules pkg_chaos, pkg_container by removing one direction of it: drop the pkg_chaos -> pkg_container dependency, or the dependency path from pkg_container back to pkg_chaos. Routing it through another module keeps the cycle.","constraints":["Remove one direction of the module cycle; routing the dependency through another module keeps the cycle"],"files":["pkg/chaos/cmd/builder.go","pkg/chaos/command.go","pkg/chaos/iptables/cmd/loss.go","pkg/chaos/iptables/iptables.go","pkg/chaos/iptables/loss.go","pkg/chaos/iptables/parse.go","pkg/chaos/lifecycle/cmd/exec.go","pkg/chaos/lifecycle/cmd/kill.go","pkg/chaos/lifecycle/cmd/pause.go","pkg/chaos/lifecycle/cmd/remove.go","pkg/chaos/lifecycle/cmd/restart.go","pkg/chaos/lifecycle/cmd/stop.go","pkg/chaos/lifecycle/exec.go","pkg/chaos/lifecycle/kill.go","pkg/chaos/lifecycle/pause.go","pkg/chaos/lifecycle/remove.go","pkg/chaos/lifecycle/restart.go","pkg/chaos/lifecycle/stop.go","pkg/chaos/netem/cmd/combine.go","pkg/chaos/netem/cmd/corrupt.go","pkg/chaos/netem/cmd/delay.go","pkg/chaos/netem/cmd/duplicate.go","pkg/chaos/netem/cmd/loss.go","pkg/chaos/netem/cmd/loss_ge.go","pkg/chaos/netem/cmd/loss_state.go","pkg/chaos/netem/cmd/rate.go","pkg/chaos/netem/combine.go","pkg/chaos/netem/corrupt.go","pkg/chaos/netem/delay.go","pkg/chaos/netem/duplicate.go","pkg/chaos/netem/loss.go","pkg/chaos/netem/loss_ge.go","pkg/chaos/netem/loss_state.go","pkg/chaos/netem/netem.go","pkg/chaos/netem/parse.go","pkg/chaos/netem/rate.go","pkg/chaos/netem/target.go","pkg/chaos/runner.go","pkg/chaos/stress/cmd/stress.go","pkg/chaos/stress/stress.go"],"validation":["archfit check -c /bundle/.archfit.yaml --root /src"]},{"finding_id":"e128caa5c2e58c5eba7cc3bc84157923","rule_id":"no-module-cycles","repair_kind":"code_change","goal":"Break the dependency cycle among declared modules pkg_chaos, pkg_container by removing one direction of it: drop the pkg_container -> pkg_chaos dependency, or the dependency path from pkg_chaos back to pkg_container. Routing it through another module keeps the cycle.","constraints":["Remove one direction of the module cycle; routing the dependency through another module keeps the cycle"],"files":["pkg/container/flags.go"],"validation":["archfit check -c /bundle/.archfit.yaml --root /src"]}]</script>
 <script src="archfit.js"></script>
+<script src="graph-proto.js"></script>
 <script>
 (function () {
   "use strict";
-  var state = { scn: "nobase", pr: "list", pv: "app", ver: "new", src: "master" };
+  var state = { scn: "nobase", pr: "list", pv: "app", ver: "new", src: "master", gview: "graph" };
   function apply() {
     document.querySelectorAll("[data-switch][aria-pressed]").forEach(function (b) {
       b.setAttribute("aria-pressed", String(state[b.getAttribute("data-switch")] === b.getAttribute("data-value")));
@@ -469,7 +490,10 @@
     var b = e.target.closest("[data-switch]");
     if (!b) return;
     if (b.tagName === "A") e.preventDefault();
-    state[b.getAttribute("data-switch")] = b.getAttribute("data-value"); apply();
+    var key = b.getAttribute("data-switch"), val = b.getAttribute("data-value");
+    state[key] = val; apply();
+    if (window.archfitGraph && key === "src") window.archfitGraph(val);
+    if (window.archfitGraph && key === "gview") window.archfitGraph(null, val);
   });
   document.addEventListener("keydown", function (e) {
     var r = e.target.closest && e.target.closest(".clickable[data-switch]");
@@ -480,6 +504,7 @@
   document.getElementById("scn").value = state.scn;
   document.getElementById("scn").addEventListener("change", function (e) { state.scn = e.target.value; apply(); });
   apply();
+  if (window.archfitGraph) window.archfitGraph(state.src, state.gview);
 
   var srcBtn = document.getElementById("toggle-src");
   srcBtn.addEventListener("click", function () {

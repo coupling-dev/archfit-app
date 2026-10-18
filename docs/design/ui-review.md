@@ -59,6 +59,45 @@ Codex review of v2 (round 4) restored five things the fold had lost, each withou
 Rules: status first; one primary action per card; details fold away, but nothing needed to act lives only in a fold.
 The sections below describe v1 screens; their content now sits in the v2 places above.
 
+## Architecture graph (priority)
+
+Owner feedback on the live page (`/r/{o}/{n}/graph`): it works, but it is unclear and ugly. Causes, from the code:
+layers are columns (`static/graph.js`), and the pilot declares no layers, so all 6 modules stand in one column with
+links looping to the right; a 9-line paragraph explains five statuses; every link looks the same; two tables repeat
+the drawing.
+
+**Question the graph answers:** does the code follow the approved policy, and where not? In 5 seconds: how many
+violations, between which modules.
+
+**Default view**
+
+| Element      | Default                                                                                               |
+| ------------ | ----------------------------------------------------------------------------------------------------- |
+| Status chips | counts per link status, also the filter: violation, advisory, accepted debt, allowed, fine            |
+| Problem list | left side, violations first, then advisories, then accepted debt; each by import count; click focuses |
+| Modules      | boxes ranked by dependency depth (importers above); red border if the module touches a violation      |
+| Links        | color = status; width = import count in 3 steps (1–2, 3–9, 10+); count badge on problem links only    |
+| Fine links   | thin grey, no label; hidden in focus mode                                                             |
+| Cycles       | both directions drawn as two separate curves                                                          |
+| Click        | a link or problem: dims the rest, shows why; a module: its links in and out                           |
+
+**Readable from 6 to 40 modules**
+
+1. Deterministic layout: rank by dependency depth after breaking cycles, two barycenter passes to reduce crossings,
+   ties by name. No force simulation: the same report always draws the same picture.
+2. At most 6 modules per drawn line; a wider rank wraps.
+3. Over 15 modules the graph starts in focus mode: only modules that touch a violation or advisory, with problem links
+   only. "Show all" draws everything.
+4. Matrix view for the full picture at any size: rows import columns, same order as the graph, colored cells.
+5. Over about 60 modules (later): matrix plus search only, grouped by path prefix.
+
+**Data:** none new. The live `View.Nodes` and `View.Links{From, To, Count, Status}` feed it. The "why" text per link
+needs `Finding.Why` joined by module pair, which `graph.Build` already reads.
+
+**Where:** replace `internal/control/ui/static/graph.js` (drawing, layout, filters, matrix) and
+`templates/graph.html` (chips, problem list, detail panel; the hint paragraph goes; the two tables stay only as the
+no-script fallback). Prototype: `prototypes/graph-proto.js`, same input shape.
+
 ## Surfaces and their jobs
 
 | Surface                 | Who reads it                   | One job                                       |
