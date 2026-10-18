@@ -31,7 +31,7 @@ private and can change with a forced re-login.
 - Cookie names, layout and cryptography: AES-256-GCM, 12-byte random nonce, the cookie name as
   additional authenticated data, base64url without padding.
 - Session payload (JSON, inside the ciphertext only): login, user ID, OAuth access token, expiry (Unix seconds).
-- Lifetimes: session 12 hours **[default]**, OAuth state 10 minutes **[default]**, no sliding renewal **[default]**.
+- Lifetimes: session 8 hours, the lifetime of an expiring GitHub user access token (no refresh token is kept), OAuth state 10 minutes **[default]**, no sliding renewal **[default]**.
 - The OAuth state value (32 random bytes, hex) and the rule for a safe return path.
 - The permission order `none < read < write < admin`, and that any unknown permission string counts as `none`.
 - The authorization cache: key, lifetime, size bound, what is cached and what never is.
@@ -240,7 +240,7 @@ GitHub is faked at the `OAuth`, `Users` and `Repos` interfaces. The clock is inj
   **Expected behavior**: the same `User` is returned; two seals of the same user differ (random nonce).
 - **Test name**: `TestCookieRejectsTamperingAndExpiry`
   **Scenario**: table: one flipped bit; truncated value; invalid base64; empty value; sealed with another key; session
-  cookie value presented under the state cookie name; clock 12 h + 1 s later.
+  cookie value presented under the state cookie name; clock 8 h + 1 s later.
   **Expected behavior**: every row opens as "not signed in"; no panic; nothing is logged but an outcome.
 - **Test name**: `TestPermissionOrder`
   **Scenario**: table of `(have, min)` over `none`, `read`, `write`, `admin`, plus `triage`, `""`, `ADMIN`.
@@ -304,5 +304,5 @@ GitHub is faked at the `OAuth`, `Users` and `Repos` interfaces. The clock is inj
   also carries installation A's ID in query, form and header.
   **Expected behavior**: `ErrForbidden`; the supplied IDs are never read; `ResolveRepo` is not called.
 - **Test name**: `TestSessionEndsAfterTwelveHours`
-  **Scenario**: sign in, advance the clock 12 h + 1 s.
+  **Scenario**: sign in, advance the clock 8 h + 1 s.
   **Expected behavior**: `User` returns false; a protected page redirects to login; no GitHub call is made with the old token.

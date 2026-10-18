@@ -13,7 +13,9 @@ const (
 	sessionCookie = "archfit_session"
 	stateCookie   = "archfit_oauth"
 
-	sessionTTL = 12 * time.Hour
+	// GitHub expires a user access token after 8 hours, and the session keeps no refresh token, so the session
+	// cannot outlive the token it carries.
+	sessionTTL = 8 * time.Hour
 	stateTTL   = 10 * time.Minute
 )
 
