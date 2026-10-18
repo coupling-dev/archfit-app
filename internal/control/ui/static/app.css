@@ -41,6 +41,7 @@ button, .button { font: inherit; padding: .35rem .8rem; cursor: pointer; }
 .g-item:hover, .g-item.sel { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .g-detail { border-top: 1px solid var(--line); margin-top: .5rem; padding: .5rem .75rem 0; font-size: .9rem; }
 .g-detail p { margin: .25rem 0; }
+.g-detail { overflow-wrap: anywhere; }
 .g-finding { border-top: 1px dashed var(--line); padding-top: .35rem; }
 .g-why { display: block; margin-top: .2rem; }
 .g-tag { font-size: .8rem; padding: 0 .4rem; border: 1px solid currentColor; border-radius: 999px; }

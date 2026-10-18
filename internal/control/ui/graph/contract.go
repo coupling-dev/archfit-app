@@ -53,6 +53,7 @@ type LinkFinding struct {
 	Kind     string
 	Status   string
 	Why      string
+	More     int // on the last listed finding of a pair: how many more name the pair and are not listed
 }
 
 // Display caps of View.Findings.
@@ -135,15 +136,25 @@ func Build(rep report.Report, policyText []byte) View {
 	}
 
 	// Findings that name a drawn pair, fixed ones excluded: they say nothing about the current tree.
-	explained := map[pair]int{}
-	findings := []LinkFinding{}
+	// The strongest status first, so the cap never drops the finding that set the link's status; the last listed
+	// one of a capped pair counts the rest.
+	byPair := map[pair][]report.Finding{}
 	for _, f := range rep.Findings {
 		p := pair{f.Edge.From.Module, f.Edge.To.Module}
-		if links[p] == nil || f.Status == statusFixed || explained[p] == findingsPerLink {
-			continue
+		if links[p] != nil && f.Status != statusFixed {
+			byPair[p] = append(byPair[p], f)
 		}
-		explained[p]++
-		findings = append(findings, LinkFinding{From: p.from, To: p.to, RuleID: f.RuleID, Kind: f.Kind, Status: f.Status, Why: clip(f.Why)})
+	}
+	findings := []LinkFinding{}
+	for p, fs := range byPair {
+		slices.SortStableFunc(fs, func(a, b report.Finding) int { return rank(findingStatus(b)) - rank(findingStatus(a)) })
+		for i, f := range fs[:min(len(fs), findingsPerLink)] {
+			lf := LinkFinding{From: p.from, To: p.to, RuleID: f.RuleID, Kind: f.Kind, Status: f.Status, Why: clip(f.Why)}
+			if i == findingsPerLink-1 {
+				lf.More = len(fs) - findingsPerLink
+			}
+			findings = append(findings, lf)
+		}
 	}
 
 	// Non-nil slices: the parent serializes the view to JSON, where an empty graph is [] and not null.

@@ -97,6 +97,7 @@ type LinkFinding struct {
     Kind     string
     Status   string
     Why      string
+    More     int // on the last listed finding of a pair: how many more name the pair and are not listed
 }
 
 // Build is pure. Nodes come from the policy's modules, links from the report's seams and findings. A link's Status
@@ -141,8 +142,10 @@ func Build(rep Report, policy []byte) View
     was evaluated and passed, so an `observed` link may still be a forbidden edge it did not evaluate. Display only,
     like `Stale`.
 12. `Findings`: every finding whose `Edge.From.Module`/`Edge.To.Module` pair is a link of the view, except `fixed`
-    ones, as `LinkFinding{From, To, RuleID, Kind, Status, Why}`; at most 5 per pair in report order **[default]**,
-    `Why` clipped to 400 runes with "…" **[default]**; sorted by `(From, To)`, stable. It never changes a `Status`:
+    ones, as `LinkFinding{From, To, RuleID, Kind, Status, Why, More}`. Per pair the strongest status first (the
+    order of rule 6, then report order), so the cap never drops the finding that set the link's status; at most 5 per
+    pair **[default]**, the last one carrying `More`, the count not listed; `Why` clipped to 400 runes with "…"
+    **[default]**; sorted by `(From, To)`, stable. It never changes a `Status`:
     an advisory on a pair whose engine seam status is `allowed` is listed and the link stays `allowed`. Never nil.
 
 Stated limits **[default]**: only the engine says "allowed". A relationship the policy permits but the engine did
@@ -459,11 +462,12 @@ func Modules(policy []byte) ([]ModuleDef, error)
 - Pure: no I/O, no clock, no logging, no globals, no goroutines. Safe for concurrent use by construction.
 - Direct imports: standard library, `wire/report`, `wire/policy`. No YAML library of its own.
 - Never writes or regenerates policy text, so it cannot drop comments or YAML constructs it does not understand.
-- File paths of findings and endpoints (`Endpoint.Path`, `Location.File`) are never copied into the `View`: the picture
-  carries module names, layers, lines of the policy file and counts only.
+- File paths of findings and endpoints (`Endpoint.Path`, `Location.File`) are never copied into the `View`. The
+  picture carries module names, layers, lines of the policy file, counts, and in `Findings` the rule ID, kind, status
+  and `Why` of each finding on a drawn pair. `Why` is engine text and can name a path; it is shown as text only.
 - No score, no aggregate health number. Seam `Strength`, `Distance`, `Volatility` and `Severity` are not shown in v1.
 - Cost is linear in modules + seams + findings. The report decoder caps findings and seams; the parent caps the policy
-  text. Graph adds no cap of its own.
+  text. Graph's own caps are on `Findings`: 5 per pair and 400 runes of `Why`.
 - Inherited: control-plane code, never on the gate path. `Stale` and `Status` are display facts and never an input to a check.
 - Never "allowed" on graph's own reading: only the engine's `seams[].policy` gives `allowed`, and a pair the engine
   decided keeps the engine's status. Without it, a finding is never drawn as a plain observation, and a fixed finding
@@ -488,7 +492,7 @@ Nothing is mocked.
   `PolicyLine` 0 is added for the undeclared module; the empty-endpoint seam is dropped; `observed` everywhere.
 - **Test name**: `TestFindingsExplainDrawnLinks`
   **Scenario**: a finding on a seam; a fixed finding; a finding with an empty module; an advisory on a pair whose engine seam status is `allowed`; a `Why` longer than 400 runes; 7 findings on one pair and one on a pair that sorts first.
-  **Expected behavior**: one `LinkFinding`; none; none; the advisory listed while the link stays `allowed`; the text clipped to 399 runes plus "…"; 5 for the pair in report order, the other pair first.
+  **Expected behavior**: one `LinkFinding`; none; none; the advisory listed while the link stays `allowed`; the text clipped to 399 runes plus "…"; 5 for the pair in report order, the other pair first, the fifth with `More` 2; a gate finding listed after 5 advisories is listed first.
 - **Test name**: `TestStatusFollowsFindings`
   **Scenario**: one seam `api → db` and a table of findings on that pair: gate/new; gate/expired_waiver; gate/baseline;
   gate/waived; gate/fixed; advisory/new; advisory/baseline; advisory/fixed; an unknown kind; a gate finding with an

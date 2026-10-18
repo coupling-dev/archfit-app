@@ -209,6 +209,7 @@ type LinkFinding struct {
     Kind     string
     Status   string
     Why      string
+    More     int // on the last listed finding of a pair: how many more name the pair and are not listed
 }
 
 // Build is pure. Nodes come from the policy's modules, links from the report's seams and findings. A link's Status

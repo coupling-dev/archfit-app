@@ -257,9 +257,14 @@ func TestFindingsExplainDrawnLinks(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := Build(reportFor(threeModules, tt.seams, tt.findings), []byte(threeModules)).Findings
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Findings = %+v, want %+v", got, tt.want)
+			v := Build(reportFor(threeModules, tt.seams, tt.findings), []byte(threeModules))
+			if !reflect.DeepEqual(v.Findings, tt.want) {
+				t.Errorf("Findings = %+v, want %+v", v.Findings, tt.want)
+			}
+			for _, l := range v.Links {
+				if len(tt.seams) == 1 && tt.seams[0].Policy != "" && l.Status != LinkStatus(tt.seams[0].Policy) {
+					t.Errorf("link %s -> %s Status = %q: findings changed the engine's status %q", l.From, l.To, l.Status, tt.seams[0].Policy)
+				}
 			}
 		})
 	}
@@ -271,8 +276,20 @@ func TestFindingsExplainDrawnLinks(t *testing.T) {
 		}
 		fs = append(fs, why(finding("gate", "new", "api", "db"), "first pair"))
 		got := Build(reportFor(threeModules, nil, fs), []byte(threeModules)).Findings
-		if len(got) != findingsPerLink+1 || got[0].From != "api" || got[1].Why != "0" || got[findingsPerLink].Why != strconv.Itoa(findingsPerLink-1) {
+		if len(got) != findingsPerLink+1 || got[0].From != "api" || got[1].Why != "0" || got[findingsPerLink].Why != strconv.Itoa(findingsPerLink-1) || got[findingsPerLink].More != 2 {
 			t.Errorf("Findings = %+v", got)
+		}
+	})
+
+	t.Run("the cap never drops the finding that set the status", func(t *testing.T) {
+		var fs []report.Finding
+		for i := range findingsPerLink {
+			fs = append(fs, why(finding("advisory", "new", "api", "db"), strconv.Itoa(i)))
+		}
+		fs = append(fs, why(finding("gate", "new", "api", "db"), "the violation"))
+		got := Build(reportFor(threeModules, nil, fs), []byte(threeModules)).Findings
+		if len(got) != findingsPerLink || got[0].Why != "the violation" || got[findingsPerLink-1].More != 1 {
+			t.Errorf("Findings = %+v, want the gate finding first and More 1", got)
 		}
 	})
 }

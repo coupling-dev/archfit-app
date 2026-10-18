@@ -778,6 +778,7 @@
             f.Why ? h("span", { class: "g-why", text: f.Why }) : null,
           ]),
         );
+        if (f.More) detail.append(h("p", { class: "hint", text: "and " + f.More + " more on the archfit/state check" }));
       });
     } else if (selNode !== null) {
       var n = nodes.find(function (x) {
