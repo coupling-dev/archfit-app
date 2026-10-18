@@ -138,7 +138,7 @@
 
       <section class="box" aria-labelledby="h-need">
         <div class="box-head"><h3 id="h-need">Waiting on an owner</h3><button type="button" class="btn sm" data-goto="decisions">Open decisions</button></div>
-        <div class="box-row item"><div class="item-main"><span class="item-title">Declare volatility for 6 modules</span><span class="meta">All 6 advisories suggest it (<code>declare_volatility</code>). 33 of 78 scored cross-module edges are critical.</span></div><span class="label done">owner decision</span></div>
+        <div class="box-row item"><div class="item-main"><span class="item-title">Declare volatility for 6 modules</span><span class="meta">All 6 advisories suggest it (<code>declare_volatility</code>). 33 of 77 scored cross-module edges are critical.</span></div><span class="label done">owner decision</span></div>
         <div class="box-row item"><div class="item-main"><span class="item-title">Make the gate required</span><span class="meta">Advisory since #3. Rehearse first: one forbidden change must fail, one legitimate change must pass.</span></div><span class="label done">owner decision</span></div>
       </section>
 
@@ -256,7 +256,7 @@
   "goal":"… drop the pkg_container -> pkg_chaos dependency, or the dependency path from pkg_chaos back to pkg_container …",
   "files":["pkg/container/flags.go"],
   "validation":["archfit check -c /bundle/.archfit.yaml --root /src"]}]</code></pre>
-          <div class="row"><button type="button" class="btn sm"><svg class="oi sm"><use href="#i-copy"/></svg>Copy full tasks JSON</button><span class="meta">copies the exact array, not this preview</span></div>
+          <div class="row"><button type="button" class="btn sm" data-copy="agent-tasks"><svg class="oi sm"><use href="#i-copy"/></svg>Copy full tasks JSON</button><script type="application/json" id="agent-tasks">[{"finding_id":"0d5aae18e2b632a4796190153b0c89b3","rule_id":"no-module-cycles","repair_kind":"code_change","goal":"Break the dependency cycle among declared modules pkg_chaos, pkg_container by removing one direction of it: drop the pkg_chaos -> pkg_container dependency, or the dependency path from pkg_container back to pkg_chaos. Routing it through another module keeps the cycle.","constraints":["Remove one direction of the module cycle; routing the dependency through another module keeps the cycle"],"files":["pkg/chaos/cmd/builder.go","pkg/chaos/command.go","pkg/chaos/iptables/cmd/loss.go","pkg/chaos/iptables/iptables.go","pkg/chaos/iptables/loss.go","pkg/chaos/iptables/parse.go","pkg/chaos/lifecycle/cmd/exec.go","pkg/chaos/lifecycle/cmd/kill.go","pkg/chaos/lifecycle/cmd/pause.go","pkg/chaos/lifecycle/cmd/remove.go","pkg/chaos/lifecycle/cmd/restart.go","pkg/chaos/lifecycle/cmd/stop.go","pkg/chaos/lifecycle/exec.go","pkg/chaos/lifecycle/kill.go","pkg/chaos/lifecycle/pause.go","pkg/chaos/lifecycle/remove.go","pkg/chaos/lifecycle/restart.go","pkg/chaos/lifecycle/stop.go","pkg/chaos/netem/cmd/combine.go","pkg/chaos/netem/cmd/corrupt.go","pkg/chaos/netem/cmd/delay.go","pkg/chaos/netem/cmd/duplicate.go","pkg/chaos/netem/cmd/loss.go","pkg/chaos/netem/cmd/loss_ge.go","pkg/chaos/netem/cmd/loss_state.go","pkg/chaos/netem/cmd/rate.go","pkg/chaos/netem/combine.go","pkg/chaos/netem/corrupt.go","pkg/chaos/netem/delay.go","pkg/chaos/netem/duplicate.go","pkg/chaos/netem/loss.go","pkg/chaos/netem/loss_ge.go","pkg/chaos/netem/loss_state.go","pkg/chaos/netem/netem.go","pkg/chaos/netem/parse.go","pkg/chaos/netem/rate.go","pkg/chaos/netem/target.go","pkg/chaos/runner.go","pkg/chaos/stress/cmd/stress.go","pkg/chaos/stress/stress.go"],"validation":["archfit check -c /bundle/.archfit.yaml --root /src"]},{"finding_id":"e128caa5c2e58c5eba7cc3bc84157923","rule_id":"no-module-cycles","repair_kind":"code_change","goal":"Break the dependency cycle among declared modules pkg_chaos, pkg_container by removing one direction of it: drop the pkg_container -> pkg_chaos dependency, or the dependency path from pkg_chaos back to pkg_container. Routing it through another module keeps the cycle.","constraints":["Remove one direction of the module cycle; routing the dependency through another module keeps the cycle"],"files":["pkg/container/flags.go"],"validation":["archfit check -c /bundle/.archfit.yaml --root /src"]}]</script><span class="meta" id="copy-note">copies the exact <code>agent_tasks[]</code> of run 39113331372, not this preview</span></div>
         </div>
       </details>
 
@@ -372,7 +372,7 @@
           <div class="gh-note warn" data-only="scn:nobase scn:stale"><b>No baseline yet</b>Every finding counts as new, including older debt. New does not mean added by this PR.</div>
           <p class="meta" data-only="scn:nobase scn:stale">Also: 6 coupling advisories, which never block. <a href="#">See them in Archfit</a></p>
           <p class="meta" data-only="scn:base scn:req">Also: 6 coupling advisories, accepted in the baseline. <a href="#">See them in Archfit</a></p>
-          <details><summary>For coding agents · 2 tasks</summary><pre style="margin-top:8px"><code>&lt;!-- archfit:agent-tasks --&gt;
+          <details><summary>For coding agents · 2 tasks</summary><p class="meta" style="margin-top:6px">Preview. The real comment carries the exact array between the markers.</p><pre style="margin-top:8px"><code>&lt;!-- archfit:agent-tasks --&gt;
 [{"finding_id":"0d5aae18…","repair_kind":"code_change", …},
  {"finding_id":"e128caa5…","repair_kind":"code_change", …}]
 &lt;!-- /archfit:agent-tasks --&gt;</code></pre></details>
@@ -537,7 +537,7 @@ rules:
       <article class="box" data-decision>
         <div class="box-head"><div class="stack-sm" style="gap:2px"><h3>Declare volatility for the 6 modules</h3><span class="meta">6 coupling advisories, 33 critical edges · all suggest <code>declare_volatility</code></span></div><span class="label done">owner decision</span></div>
         <div class="box-row"><dl class="kv">
-          <dt>Fact</dt><dd>Volatility is undeclared on 78 scored cross-module edges. Functional coupling to a module of unknown volatility scores as critical.</dd>
+          <dt>Fact</dt><dd>Volatility is undeclared on 77 scored cross-module edges on <code>master</code>. Functional coupling to a module of unknown volatility scores as critical.</dd>
           <dt>Effect today</dt><dd>Advisories only. They never block. The baseline from #5 accepts all 33 edges.</dd>
           <dt>Source</dt><dd><code>dimensions.coupling.unknown[0]</code>, <code>findings[].matched_by.hypothesis</code></dd></dl></div>
         <div class="box-row opt"><div><strong>Declare volatility</strong><div class="ends">A policy PR sets <code>modules.&lt;name&gt;.volatility</code> or <code>.subdomain</code> in <code>.archfit.yaml</code>. Declare the actual volatility, then remeasure: scores may change either way.</div></div><button type="button" class="btn sm" data-sim="Opens the policy editor on a draft branch. The draft PR needs owner approval on GitHub.">Open policy editor</button></div>
@@ -587,12 +587,12 @@ rules:
           <thead><tr><th>Dimension</th><th>Status</th><th>Gate</th><th>Coverage</th><th>Confidence</th><th>Unknown</th></tr></thead>
           <tbody>
             <tr><td>intent</td><td><span class="label success">measured</span></td><td>pass</td><td><span class="covbar"><span style="width:100%"></span></span>1 / 1 rules evaluated</td><td>high</td><td class="num">0</td></tr>
-            <tr><td>structure</td><td><span class="label success">measured</span></td><td><span class="label danger" data-only="src:pr4">fail</span><span data-only="src:master">pass</span></td><td><span class="covbar"><span style="width:27%"></span></span>166 / 625 dependencies in the module map</td><td>high</td><td class="num">1</td></tr>
+            <tr><td>structure</td><td><span class="label success">measured</span></td><td><span class="label danger" data-only="src:pr4">fail</span><span data-only="src:master">pass</span></td><td><span class="covbar"><span style="width:27%"></span></span><span data-only="src:master">165 / 624</span><span data-only="src:pr4">166 / 625</span> dependencies in the module map</td><td>high</td><td class="num">1</td></tr>
             <tr><td>modularity</td><td><span class="label success">measured</span></td><td>pass</td><td><span class="covbar"><span style="width:0%"></span></span>0 / 6 modules with a public surface</td><td><span class="label attention">low</span></td><td class="num">1</td></tr>
-            <tr><td>coupling</td><td><span class="label attention">partial</span></td><td><span class="label attention">warn</span></td><td><span class="covbar"><span style="width:100%"></span></span>78 / 78 cross-boundary edges</td><td>medium</td><td class="num">1</td></tr>
+            <tr><td>coupling</td><td><span class="label attention">partial</span></td><td><span class="label attention">warn</span></td><td><span class="covbar"><span style="width:100%"></span></span><span data-only="src:master">77 / 77</span><span data-only="src:pr4">78 / 78</span> cross-boundary edges</td><td>medium</td><td class="num">1</td></tr>
             <tr><td>change_locality</td><td><span class="label success">measured</span></td><td>pass</td><td><span class="covbar"><span style="width:100%"></span></span>6 / 6 modules in history</td><td>high</td><td class="num">1</td></tr>
             <tr><td>complexity</td><td><span class="label success">measured</span></td><td>pass</td><td><span class="covbar"><span style="width:100%"></span></span>6 / 6 modules</td><td>high</td><td class="num">2</td></tr>
-            <tr><td>testability</td><td><span class="label attention">partial</span></td><td>pass</td><td><span class="covbar"><span style="width:91%"></span></span>157 / 172 source files classified</td><td>medium</td><td class="num">4</td></tr>
+            <tr><td>testability</td><td><span class="label attention">partial</span></td><td>pass</td><td><span class="covbar"><span style="width:91%"></span></span><span data-only="src:master">156 / 171</span><span data-only="src:pr4">157 / 172</span> source files classified</td><td>medium</td><td class="num">4</td></tr>
             <tr><td>operations</td><td><span class="label attention">partial</span></td><td>pass</td><td><span class="covbar"><span style="width:17%"></span></span>1 / 6 modules with deploy unit and owner</td><td>medium</td><td class="num">3</td></tr>
             <tr><td>drift</td><td><span class="label">unmeasured</span></td><td><span class="muted">n/a</span></td><td><span class="muted">no reference stored</span></td><td><span class="muted">unrated</span></td><td class="num">2</td></tr>
           </tbody></table></div>
@@ -602,7 +602,7 @@ rules:
       <section class="box">
         <div class="box-head"><h3>What the engine could not see</h3><span class="meta">15 unknown facts · grouped by possible next step</span></div>
         <div class="box-row stack-sm"><div class="row-between"><strong>Declare in the policy</strong><span class="label done">architecture owner</span></div>
-          <ul class="unknown-list"><li><code>coupling</code>: volatility undeclared on 78 edges. Declare it per module, then remeasure.</li><li><code>modularity</code>: no module declares a public surface</li></ul></div>
+          <ul class="unknown-list"><li><code>coupling</code>: volatility undeclared on <span data-only="src:master">77</span><span data-only="src:pr4">78</span> edges. Declare it per module, then remeasure.</li><li><code>modularity</code>: no module declares a public surface</li></ul></div>
         <div class="box-row stack-sm"><div class="row-between"><strong>Supply deployment evidence</strong><span class="label">repository owner</span></div>
           <ul class="unknown-list"><li><code>operations</code>: 5 modules have no independently corroborating deploy manifest. A <code>deploy_unit</code> declaration alone does not close this; where it applies, commit the manifests.</li></ul></div>
         <div class="box-row stack-sm"><div class="row-between"><strong>Feed more inputs from CI</strong><span class="label">setup</span></div>
@@ -728,6 +728,14 @@ rules:
     if (!b) return;
     var note = b.closest("[data-decision]").querySelector(".sim-note");
     note.textContent = "Prototype: " + b.getAttribute("data-sim"); note.hidden = false;
+  });
+
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-copy]");
+    if (!b) return;
+    var text = document.getElementById(b.getAttribute("data-copy")).textContent, note = document.getElementById("copy-note");
+    navigator.clipboard.writeText(text).then(function () { note.textContent = "Copied the exact array (" + text.length + " characters)."; },
+      function () { note.textContent = "Copy failed: the browser blocked clipboard access."; });
   });
 
   var detail = document.getElementById("edge-detail");

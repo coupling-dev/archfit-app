@@ -48,8 +48,10 @@ report) and the check conclusion, never from `verdict` alone. The raw `verdict` 
 
 - No baseline in the run (`gate_reference.baseline_present = false`): append "· no baseline".
 - `healthy` with no baseline is not an expected current-engine state (drift is then unmeasured, so `needs_attention`).
-- Evidence problems override the matrix in required mode: "Action required: <reason>" with `action_required`, never
-  neutral. Examples: `stale_inputs`, `report_invalid`, `missing_upload`, a non-comparable baseline.
+- Evidence problems override the matrix in both modes: an unusable or ineligible report is published as "Action
+  required: <reason>" with `action_required`, never neutral (`publish.go:105`, no gate-mode condition). Examples:
+  `report_invalid`, `missing_upload`, a non-comparable baseline. The automatic `stale_inputs` withdrawal after a change
+  on `master` runs only in required mode today (`sweep/rules.go:21`).
 - "Merge is blocked" is said only when a ruleset that requires `archfit/gate` is verified. Otherwise "gate failing".
 
 ## Screens
@@ -73,7 +75,7 @@ report) and the check conclusion, never from `verdict` alone. The raw `verdict` 
 - **Changes:** banner per the matrix; rule violations grouped (one cycle, two findings, one per direction, with the
   location count per direction: 40 vs 1 at `pkg/container/flags.go:3`); advisories as a table with status `new` or
   `baseline`; a panel "What new means here" that separates baseline from PR comparison; an abbreviated agent-task
-  preview with "Copy full tasks JSON" (copies the exact array, never the preview).
+  preview with "Copy full tasks JSON", which copies the exact `agent_tasks[]` embedded from the run.
 - **Scenarios in the prototype:** the real run (no baseline); "result outdated" (#5 merged after the run); and two
   projected ones: re-run with the baseline, gate required.
 - **Finding from the review:** in advisory mode nothing marks PR #4 out of date after #5 merges.
@@ -81,8 +83,8 @@ report) and the check conclusion, never from `verdict` alone. The raw `verdict` 
   `stale_inputs` re-run in `internal/gate/module.md` (~line 1073) applies to required mode only. Live check
   117634137811 stayed neutral with its 08:56 result. The App page is the only place that can say "result predates
   baseline #5", by comparing the run's baseline digest with `master`.
-- **Open:** should advisory mode re-run open PRs (and re-publish a neutral, refreshed result) when protected inputs
-  change? It is cheap and removes a silent wrong state. Owner decision.
+- **Open:** should advisory mode re-run open PRs when protected inputs change, re-evaluate, and publish the resulting
+  conclusion (neutral only if the new report is eligible)? It removes a silent wrong state. Owner decision.
 
 ### On GitHub (merge box, check summary, PR comment)
 
@@ -153,61 +155,62 @@ exists), loading (header first, never fake numbers).
 (`internal/wire/report/contract.go:22` drops `findings[].matched_by`, `measurement`, seam scores; `Seam` keeps
 `id, from_module, to_module, edges, strength, distance, volatility, severity, policy`).
 
-| Screen element                     | Source                                                                                           | Exists today?                         | To build                                                   |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------- | ---------------------------------------------------------- |
-| Gate mode, effect on merge         | `.archfit-app.yaml` `gate` on the protected ref; check run conclusion                            | yes                                   | —                                                          |
-| "Merge is blocked"                 | `GET /repos/{o}/{r}/rules/branches/{branch}`                                                     | no                                    | ruleset read; permission check                             |
-| Headline                           | `verdict`, `decision.{hard_gates,active_blockers}`, gate mode, `gate_reference.baseline_present` | yes                                   | new title mapping in `gate/feedback`                       |
-| Violation groups                   | `findings[].{id,kind,rule_id,status,severity,edge,locations,why,constraint}`                     | yes                                   | group by rule + cycle module set                           |
-| Advisory edge count (33)           | `findings[].matched_by.group_count`                                                              | raw                                   | project `matched_by.group_count`                           |
-| Suggested action                   | `findings[].matched_by.hypothesis`, `seams[].hypothesis`                                         | raw                                   | project `hypothesis`                                       |
-| New vs baseline                    | `findings[].status`, `gate_reference.{baseline_present,status,reasons}`                          | yes                                   | —                                                          |
-| Introduced vs pre-existing         | `comparison.{status,origin_status}`, `findings[].origin`                                         | yes, but `not_requested` in the pilot | pass `--base` in the workflow                              |
-| "Result predates baseline #5"      | envelope `baseline_digest` vs baseline on `master`                                               | partly                                | compare on page load; advisory re-run (open)               |
-| Agent tasks                        | `agent_tasks[].{finding_id,rule_id,repair_kind,goal,constraints,files,validation,origin}`        | yes                                   | copy button with the exact array                           |
-| PR page                            | `GET /pulls/{n}`, check runs for the head, the run's report artifact                             | no                                    | route `/r/{o}/{n}/pull/{number}`; lookup by head and run   |
-| Open PRs with latest result        | `GET /pulls`, check runs per head                                                                | no                                    | one check-runs read per open PR (rate limit)               |
-| Map                                | `seams[].{from_module,to_module,edges,strength,distance,volatility,severity,policy}`             | yes                                   | PR-head evidence on the graph                              |
-| Critical edges per seam, owners    | `seams[].{critical_edges,raw_distance.from_owner}`                                               | raw                                   | project them                                               |
-| Dimensions                         | `dimensions.*.{status,confidence,gate,coverage,unknown[]}`                                       | yes                                   | —                                                          |
-| Unknown facts grouped by next step | `dimensions.*.unknown[].{fact,reason,owner}`                                                     | yes                                   | App wording table per `fact`                               |
-| Analyzers                          | `coverage.tools[].{tool,status,reason}`                                                          | yes                                   | —                                                          |
-| Identity                           | `comparison.*_hash`, envelope digests, engine version, image, platform, run id                   | yes                                   | —                                                          |
-| Decisions                          | `unknown[]`, hypotheses, settings, setup PRs (`archfit/*` head refs)                             | partly                                | fact → decision rules; `needs_owner_decision` when emitted |
-| Setup steps                        | onboarding progress on `/r/{o}/{n}`, merged `archfit/*` PRs                                      | yes                                   | rehearsal tracking                                         |
+| Screen element                     | Source                                                                                                                                                                                   | Exists today?                            | To build                                                                                                                                                               |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Gate mode, effect on merge         | `.archfit-app.yaml` `gate` on the protected ref; check run conclusion                                                                                                                    | yes                                      | —                                                                                                                                                                      |
+| "Merge is blocked"                 | `GET /repos/{o}/{r}/rules/branches/{branch}`                                                                                                                                             | no                                       | ruleset read; permission check                                                                                                                                         |
+| Headline                           | `verdict`, `decision.{hard_gates,active_blockers}`, gate mode, `gate_reference.baseline_present`                                                                                         | yes                                      | new title mapping in `gate/feedback`                                                                                                                                   |
+| Violation groups                   | `findings[].{id,kind,rule_id,status,severity,edge,locations,why,constraint}` + raw `findings[].matched_by.{cycle_modules,cycle_pairs_total,locations_total}`                             | partly                                   | project the cycle identity and counts (`decode.go:239` drops `matched_by`); one rule can have several cycles                                                           |
+| Advisory edge count (33)           | `findings[].matched_by.group_count`                                                                                                                                                      | raw                                      | project `matched_by.group_count`                                                                                                                                       |
+| Suggested action                   | `findings[].matched_by.hypothesis`, `seams[].hypothesis`                                                                                                                                 | raw                                      | project `hypothesis`                                                                                                                                                   |
+| New vs baseline                    | `findings[].status`, `gate_reference.{baseline_present,status,reasons}`                                                                                                                  | yes                                      | —                                                                                                                                                                      |
+| Introduced vs pre-existing         | `comparison.{status,origin_status,origin_reasons}`, `findings[].origin` (including `unknown`)                                                                                            | fields yes; `not_requested` in the pilot | compare against an explicit PR reference; render the supplied origin, never infer it                                                                                   |
+| "Result predates baseline #5"      | the selected run's claimed `baseline_digest` vs SHA-256 of the baseline bytes on `master` (not the Git blob SHA); merge time of #5 vs run time                                           | no                                       | bind the page to one run; compute the digest; name the PR that changed it                                                                                              |
+| Agent tasks                        | `agent_tasks[].{finding_id,rule_id,repair_kind,goal,constraints,files,validation,origin}`                                                                                                | yes                                      | copy button with the exact array                                                                                                                                       |
+| PR page                            | `GET /pulls/{n}`, check runs for the head, the run's report artifact                                                                                                                     | no                                       | route `/r/{o}/{n}/pull/{number}`; lookup by head and run                                                                                                               |
+| Open PRs with latest result        | `GET /pulls`, check runs per head                                                                                                                                                        | no                                       | one check-runs read per open PR (rate limit)                                                                                                                           |
+| Map                                | `seams[].{from_module,to_module,edges,strength,distance,volatility,severity,policy}`                                                                                                     | yes                                      | PR-head evidence on the graph                                                                                                                                          |
+| Critical edges per seam, owners    | `seams[].{critical_edges,raw_distance.from_owner,raw_distance.to_owner}`                                                                                                                 | raw                                      | project them                                                                                                                                                           |
+| Dimensions                         | `dimensions.*.{status,confidence,gate,coverage,unknown[]}`                                                                                                                               | yes                                      | —                                                                                                                                                                      |
+| Unknown facts grouped by next step | `dimensions.*.unknown[].{fact,reason,owner}`                                                                                                                                             | yes                                      | App wording table per `fact`                                                                                                                                           |
+| Analyzers                          | `coverage.tools[].{tool,status,reason}`                                                                                                                                                  | yes                                      | —                                                                                                                                                                      |
+| Identity                           | `comparison.*_hash` (retained); envelope digests, engine version, image, platform, run id (claimed)                                                                                      | partly                                   | resolve run and producer identity per page; the graph page has no envelope today (`graphpage.go:54`)                                                                   |
+| Decisions                          | `dimensions.*.unknown[]`, raw `findings[].matched_by.hypothesis` / `seams[].hypothesis`, `agent_tasks[].repair_kind = needs_owner_decision` when emitted, protected settings, GitHub PRs | partly                                   | fact → decision rules (App guidance)                                                                                                                                   |
+| Setup steps                        | current onboarding stage on `/r/{o}/{n}`; merged `archfit/*` PRs                                                                                                                         | partly                                   | baseline and rehearsal stages are not in the onboarding contract (`onboarding/contract.go:46`); PR title/author/merged_at are not in `api.Pull` (`api/contract.go:66`) |
 
 ## Consistency glossary
 
-| Concept                | Word                      | Badge                       | Never                                   |
-| ---------------------- | ------------------------- | --------------------------- | --------------------------------------- |
-| `findings[].kind=gate` | rule violation            | red `violation`             | "blocking" in advisory mode             |
-| `kind=advisory`        | coupling advisory         | yellow count; "never block" | "finding that blocks", "critical issue" |
-| Advisory size          | "6 advisories · 33 edges" | —                           | "33 findings" next to "6 findings"      |
-| `status=new`           | new (not in the baseline) | grey `new`                  | "introduced", "added by this PR"        |
-| `status=baseline`      | baseline                  | grey `baseline`             | "fixed", "ignored"                      |
-| `origin=introduced`    | introduced by this PR     | only when `comparison` ran  | inferred from a `master` snapshot       |
-| Gate mode              | advisory / required       | grey label                  | implied by verdict                      |
-| Check `neutral`        | does not block merging    | grey neutral icon           | "passed", "blocked"                     |
-| `action_required`      | Action required: <reason> | yellow alert                | neutral, or a verdict on the code       |
-| Old result             | result predates <change>  | yellow sync icon            | silent                                  |
-| Dimension coverage     | observed / total + basis  | thin bar per row            | one percentage across dimensions        |
-| Trust                  | customer-attested         | shield icon, muted          | "verified"                              |
-| Owner choice           | owner decision            | purple `owner decision`     | for code repairs                        |
-| Repair                 | `code_change` task        | in the agent block          | owner queue                             |
+| Concept                                         | Word                                                  | Badge                       | Never                                   |
+| ----------------------------------------------- | ----------------------------------------------------- | --------------------------- | --------------------------------------- |
+| `kind=gate`, `status` new or expired_waiver     | rule violation (active)                               | red `violation`             | "blocking" in advisory mode             |
+| `kind=gate`, `status` baseline / waived / fixed | accepted / waived / fixed                             | grey label with that word   | red, or counted as a violation          |
+| `kind=advisory`                                 | advisory; "coupling advisory" only for coupling rules | yellow count; "never block" | "finding that blocks", "critical issue" |
+| Advisory size                                   | "6 advisories · 33 edges"                             | —                           | "33 findings" next to "6 findings"      |
+| `status=new`                                    | new (not in the baseline)                             | grey `new`                  | "introduced", "added by this PR"        |
+| `status=baseline`                               | baseline                                              | grey `baseline`             | "fixed", "ignored"                      |
+| `origin=introduced`                             | introduced by this PR                                 | only when `comparison` ran  | inferred from a `master` snapshot       |
+| Gate mode                                       | advisory / required                                   | grey label                  | implied by verdict                      |
+| Check `neutral`                                 | does not block merging                                | grey neutral icon           | "passed", "blocked"                     |
+| `action_required`                               | Action required: <reason>                             | yellow alert                | neutral, or a verdict on the code       |
+| Old result                                      | result predates <change>                              | yellow sync icon            | silent                                  |
+| Dimension coverage                              | observed / total + basis                              | thin bar per row            | one percentage across dimensions        |
+| Trust                                           | customer-attested                                     | shield icon, muted          | "verified"                              |
+| Owner choice                                    | owner decision                                        | purple `owner decision`     | for code repairs                        |
+| Repair                                          | `code_change` task                                    | in the agent block          | owner queue                             |
 
 ## What Codex challenged and how it was resolved
 
-| #   | Challenge (Codex)                                                                                           | Evidence                                                    | Resolution                                                                                             |
-| --- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| 1   | Old prototype: two green checks, "healthy", invented owner task, "new" shown as "introduced"                | pilot reports, check run 117634137811                       | prototype rebuilt on pilot data                                                                        |
-| 2   | Headline must come from gate mode + check conclusion; gate mode is not in the report                        | `publish.go:68,105`, `.archfit-app.yaml`                    | headline matrix adopted                                                                                |
-| 3   | "16 evidence gaps" is not a canonical count: 15 unknown facts + missing baseline; absent tools are separate | report `dimensions.*.unknown[]`, `coverage.tools[]`         | Evidence groups facts; tools shown apart                                                               |
-| 4   | My "stale → action required" scenario is wrong in advisory mode                                             | `sweep/rules.go:21`; live check still neutral after #5      | scenario renamed "result outdated", neutral; required-mode stale moved to States; open question raised |
-| 5   | Volatility is a `.archfit.yaml` module field, not a labels PR; scores may not drop                          | `archfit.schema.json:382`, `labels.go:75`, engine CLAUDE.md | decision text fixed; opens the policy editor                                                           |
-| 6   | Evidence grouping overclaimed what closes each gap                                                          | `acquisition/coverage.go:200`, `operations` metrics         | regrouped as "possible next step" with conditions                                                      |
-| 7   | Agent preview was labeled verbatim but truncated and invented "… 39 more"                                   | `agent_tasks[]`                                             | labeled preview; copy uses the exact array                                                             |
-| 8   | `matched_by` and seam hypothesis/critical_edges/owners are not in the App projection                        | `wire/report/contract.go:22`, `Seam` struct                 | marked raw/NEW in the prototype and data table                                                         |
-| 9   | Overview's dimensions button opened PR #4 evidence                                                          | navigation                                                  | Evidence has a `master` / PR #4 switch; links set it                                                   |
+| #   | Challenge (Codex)                                                                                           | Evidence                                                    | Resolution                                                                                                                                             |
+| --- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Old prototype: two green checks, "healthy", invented owner task, "new" shown as "introduced"                | pilot reports, check run 117634137811                       | prototype rebuilt on pilot data                                                                                                                        |
+| 2   | Headline must come from gate mode + check conclusion; gate mode is not in the report                        | `publish.go:68,105`, `.archfit-app.yaml`                    | headline matrix adopted                                                                                                                                |
+| 3   | "16 evidence gaps" is not a canonical count: 15 unknown facts + missing baseline; absent tools are separate | report `dimensions.*.unknown[]`, `coverage.tools[]`         | Evidence groups facts; tools shown apart                                                                                                               |
+| 4   | My "stale → action required" scenario is wrong in advisory mode                                             | `sweep/rules.go:21`; live check still neutral after #5      | scenario renamed "result outdated", neutral; required-mode stale moved to States; open question raised                                                 |
+| 5   | Volatility is a `.archfit.yaml` module field, not a labels PR; scores may not drop                          | `archfit.schema.json:382`, `labels.go:75`, engine CLAUDE.md | decision text fixed; opens the policy editor                                                                                                           |
+| 6   | Evidence grouping overclaimed what closes each gap                                                          | `acquisition/coverage.go:200`, `operations` metrics         | regrouped as "possible next step" with conditions                                                                                                      |
+| 7   | Agent preview was labeled verbatim but truncated and invented "… 39 more"                                   | `agent_tasks[]`                                             | preview labeled; prototype copy uses the exact embedded array; GitHub block marked preview                                                             |
+| 8   | `matched_by` and seam hypothesis/critical_edges/owners are not in the App projection                        | `wire/report/contract.go:22`, `Seam` struct                 | marked raw/NEW in the prototype and data table                                                                                                         |
+| 9   | Overview's dimensions button opened PR #4 evidence                                                          | navigation                                                  | Evidence has a `master` / PR #4 switch; links set it; every coverage value follows the source (165/624 vs 166/625, 77 vs 78 edges, 156/171 vs 157/172) |
 
 Agreed without dispute: one comment updated in place; the agent block stays in the comment, collapsed, with its
 markers; no aggregate score; customer-attested wording.
@@ -216,21 +219,21 @@ markers; no aggregate score; customer-attested wording.
 
 ### Now, for the pilot
 
-1. **Fix the headline and check title** in `gate/feedback` per the matrix. No "blocking" in advisory mode. Small Go
-   change in `render.go`; highest value, it removes a false statement on every PR.
-2. **Shorten the comment and the check summary** to the proposed layout; move dimensions, gaps and identity out.
-   Keep the agent block exact.
-3. **Say "no baseline" where it applies** (title suffix, one note). It is already in the report.
-4. **Decide advisory staleness:** re-run open PRs when protected inputs change, also in advisory mode, or at least
-   re-publish with "result predates". Today the pilot shows a wrong state with no signal.
-5. **Pass `--base` in the workflow** so that `origin` exists and "introduced by this PR" can be said honestly.
+1. **Fix the headline and say "no baseline"** in `gate/feedback` per the matrix, together. No "blocking" in advisory
+   mode. Small change in `render.go`; it removes a false statement on every PR.
+2. **Shorten the visible feedback**: headline, effect, grouped violations, counts, next step. Keep dimensions, gaps
+   and identity in collapsed sections until the App PR and Evidence pages exist to link to. Keep the agent block exact.
+3. **Decide advisory refresh** (open question 1). Today the pilot shows an out-of-date result with no signal.
+4. **Add the PR comparison** against an explicit base so that `origin` exists and "introduced by this PR" can be said
+   when the engine says it.
 
 ### Next
 
-6. App PR page route with report lookup by head and run.
-7. Extend the report projection: `matched_by.{group_count,hypothesis}`, `seams[].{critical_edges,hypothesis}`,
-   module owners.
-8. Repository overview with open-PR results; Evidence page with grouped unknowns; States wording in templates.
+5. App PR page and Evidence page, bound to one run, with report lookup by head and run.
+6. Extend the report projection: `matched_by.{group_count,hypothesis,cycle_modules,locations_total}`,
+   `seams[].{critical_edges,hypothesis}`, module owners from both ends.
+7. Then remove the duplicated detail from the comment and check summary, and link to the App instead.
+8. Repository overview with open-PR results; States wording in templates.
 
 ### Later
 
@@ -240,7 +243,8 @@ markers; no aggregate score; customer-attested wording.
 
 ## Open questions for the owner
 
-1. Advisory mode and changed inputs: re-run and re-publish (neutral), or leave as is and rely on the App page?
+1. Advisory mode and changed inputs: re-run, re-evaluate and publish the resulting conclusion, or leave as is and rely
+   on the App page?
 2. Should the workflow template pass `--base` by default, at the cost of a second checkout?
 3. Ruleset read: worth the extra permission to say "merge is blocked" instead of "gate failing"?
 4. Is "declare volatility" the first decision we want owners to make in the pilot, or should it wait until
