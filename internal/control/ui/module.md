@@ -37,7 +37,11 @@ pilot; product.md leaves usability targets open.
 - The CSRF scheme: `hex(HMAC-SHA256(key = User.Token, "archfit-csrf"))` **[default]**, stateless and per session.
 - The edit branch name `archfit/edit-<login>` **[default]** and the rules that turn a form into a `Change`.
 - How check conclusions, draft states, plans and assist errors are worded for people.
-- The drawing of the graph (vanilla JavaScript and SVG, layers as columns **[default]**; no SPA framework, no graph library).
+- The drawing of the graph (vanilla JavaScript and SVG; no SPA framework, no graph library): status chips that filter,
+  a problem list (violations, then advisories, then accepted), a deterministic layout (declared layers as bands;
+  without layers, depth after a cycle break, which is a layout and never a permitted direction), focus on problem
+  links above 15 modules **[default]**, a matrix view, and the server-rendered tables as the fallback without script or
+  above 300 modules. Report strings reach the page only through `textContent` and `setAttribute`.
 - Bounds, each **[default]**: 100 repositories on the overview, 8 parallel lookups, 256 KB policy text, 512 KB request body,
   drawing up to 300 nodes and a filterable list above that.
 

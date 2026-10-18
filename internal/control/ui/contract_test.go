@@ -281,7 +281,7 @@ func TestGraphPageBuildsFromArtifact(t *testing.T) {
 	for _, n := range want.Nodes {
 		wantContains(t, body, fmt.Sprintf(`href="/r/%s/policy#L%d"`, repoName, n.PolicyLine))
 	}
-	wantContains(t, body, "violation")
+	wantContains(t, body, "violation", `id="graph-tables" open`, `id="g-list"`, `id="g-canvas"`, `data-gview="matrix"`)
 	if strings.Contains(body, `id="stale"`) {
 		t.Error("stale banner on a fresh report")
 	}

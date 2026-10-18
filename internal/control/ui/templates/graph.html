@@ -1,5 +1,5 @@
 {{define "content"}}
-<h1>Graph</h1>
+<h1>Architecture</h1>
 {{with .Body}}
 {{if .Unavailable}}
 <p class="banner">{{.Unavailable}}</p>
@@ -12,15 +12,30 @@
 <p class="banner" id="incomplete">Incomplete: the report's hard gates did not pass or not all required rules were
   evaluated. An observed link can still break a rule; read the archfit/state check for the evidence gaps.</p>
 {{end}}
-<p class="hint">Read-only. Modules are grouped by layer. Link status is the engine's seam policy status when the report
-  has one (engine v2.5.0 and later), else it comes from the report's findings. A red violation is an active gate
-  finding or a gate finding of a status this version does not know, accepted is debt accepted by the baseline or a
-  waiver, advisory is a finding that does not block, allowed is a dependency that a blocking allowlist or layer rule
-  of the engine permits, and observed is a dependency that no active finding names and no blocking rule permits (for
-  an engine before v2.5.0: no current finding names it, and a rule can still permit it). Accepted debt is never
-  allowed.</p>
-<div id="graph" data-policy-url="/r/{{$.Repo}}/policy"></div>
+<p class="hint">Policy status of module relationships in the latest report. Read-only.</p>
+<div id="graph" data-policy-url="/r/{{$.Repo}}/policy" hidden>
+  <div class="g-bar">
+    <div id="g-chips" class="g-chips" aria-label="Show links by status"></div>
+    <div class="g-views" role="group" aria-label="View">
+      <button type="button" data-gview="graph" aria-pressed="true">Graph</button><button type="button" data-gview="matrix" aria-pressed="false">Matrix</button>
+    </div>
+  </div>
+  <div class="g-wrap">
+    <aside class="g-side">
+      <h2>Problems</h2>
+      <ol id="g-list" class="g-list"></ol>
+      <div id="g-detail" class="g-detail" aria-live="polite"></div>
+    </aside>
+    <div class="g-main">
+      <div id="g-canvas" class="g-canvas"></div>
+      <div id="g-matrix" hidden></div>
+      <p id="g-note" class="hint"></p>
+    </div>
+  </div>
+</div>
 <script type="application/json" id="graph-data">{{.View}}</script>
+<details id="graph-tables" open>
+<summary>Modules and links as tables</summary>
 <h2>Modules</h2>
 <table id="graph-nodes">
   <thead><tr><th>Module</th><th>Layer</th></tr></thead>
@@ -43,6 +58,7 @@
   {{end}}
   </tbody>
 </table>
+</details>
 <script src="/static/graph.js" defer></script>
 {{end}}
 {{end}}

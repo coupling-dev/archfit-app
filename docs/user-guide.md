@@ -394,9 +394,19 @@ baseline already accepts, and accepts nothing new.
 
 ## See the graph
 
-Open **Graph** for the repository. The page is read-only.
+Open **Graph** for the repository. The page is read-only. It shows the policy status of module relationships in the
+latest default-branch report, problems first.
 
-- Modules come from the policy and are grouped by layer.
+- Status chips at the top count the links per status and filter them. The **Problems** list on the left puts
+  violations first, then advisories, then accepted exceptions. Select a problem, an arrow, a matrix cell or a module
+  to see what it means; a module links to its line in the policy.
+- Modules come from the policy. With declared layers they are grouped in layer bands. Without layers, modules that
+  import others are drawn above the modules they import. That is a layout only: position never means a dependency
+  is permitted.
+- Line width shows the number of observed dependencies. Problem links carry the count.
+- Over 15 modules the graph starts with only the modules and links that have a problem. **Show all** draws everything.
+  **Matrix** shows every pair at any size: rows depend on columns.
+- Without JavaScript, or over 300 modules, the page shows the modules and links as tables.
 - Links come from the latest default-branch report artifact.
 - Each link has a status. The report gives the status of each seam (`seams[].policy`), and the graph shows it.
   If a seam has no policy, the status comes from the report findings for the module pair.
