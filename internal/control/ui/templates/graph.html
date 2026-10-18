@@ -1,19 +1,37 @@
 {{define "content"}}
-<h1>Architecture</h1>
 {{with .Body}}
+{{with .Pull}}
+<h1>{{if .Title}}{{.Title}}{{else}}Pull request{{end}} <span class="hint">#{{.Number}}</span></h1>
+<p class="hint">Head <code>{{.Head}}</code> · <a href="{{.URL}}">View on GitHub</a></p>
+<nav class="p-tabs" aria-label="Pull request"><a href="{{.Page}}">Findings</a><a href="{{.Page}}/graph" aria-current="page">Graph</a></nav>
+{{if .Headline}}
+<p class="p-result {{.Conclusion}}" id="result"><strong>{{.Headline}}</strong>
+  <span class="p-chip">archfit/state: {{.Conclusion}}</span></p>
+{{end}}
+{{else}}
+<h1>Architecture</h1>
+{{end}}
 {{if .Unavailable}}
 <p class="banner">{{.Unavailable}}</p>
 {{else}}
 {{if .View.Stale}}
-<p class="banner" id="stale">Stale: the policy text differs from the policy of the latest report.
+<p class="banner" id="stale">Stale: {{if .Pull}}the policy text differs from the policy of this report.{{else}}the policy text differs from the policy of the latest report.{{end}}
   {{if .StaleReason}}{{.StaleReason}}{{end}}</p>
 {{end}}
+{{with .Pull}}{{if not .Compared}}
+<p class="banner" id="not-compared">This run did not compare with the base branch, so the graph cannot show what this PR added.</p>
+{{end}}{{end}}
 {{if .View.Incomplete}}
 <p class="banner" id="incomplete">Incomplete: the report's hard gates did not pass or not all required rules were
   evaluated. An observed link can still break a rule; read the archfit/state check for the evidence gaps.</p>
 {{end}}
+{{with .Pull}}
+<p class="hint">Policy status of module relationships in the report of this pull request's head. Read-only.
+  {{if .Compared}}<span id="new-count">{{if .New}}{{.New}} {{if eq .New 1}}link has{{else}}links have{{end}} a finding the base branch does not have: new in this PR.{{else}}No link is new in this PR.{{end}}</span>{{end}}</p>
+{{else}}
 <p class="hint">Policy status of module relationships in the latest report. Read-only.</p>
-<div id="graph" data-policy-url="/r/{{$.Repo}}/policy" hidden>
+{{end}}
+<div id="graph" data-policy-url="{{.PolicyURL}}"{{if .Pull}} data-scope="pull"{{end}} hidden>
   <div class="g-bar">
     <div id="g-chips" class="g-chips" aria-label="Show links by status"></div>
     <div class="g-views" role="group" aria-label="View">
@@ -60,7 +78,7 @@
   <tr class="{{.Status}}">
     <td>{{.From}}</td><td>{{.To}}</td>
     <td>{{.Count}}</td>
-    <td>{{.Status}}</td>
+    <td>{{.Status}}{{if .Introduced}} · new in this PR{{end}}</td>
   </tr>
   {{end}}
   </tbody>

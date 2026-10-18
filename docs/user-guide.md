@@ -458,6 +458,7 @@ on the pull request links to this page ("Details in Archfit").
 - A folded line says whether this run had a baseline and whether it compared against the base branch. Without that
   comparison, "new" means not accepted in a baseline, not "added by this pull request".
 - **For coding agents** holds the exact repair tasks of the run.
+- The **Graph** tab draws the same report as a graph. See [The graph of a pull request](#the-graph-of-a-pull-request).
 - The page shows a report only when it is the one the check was computed from, and never under a result that asks
   for action. Otherwise it says why: no result yet, action required, no upload, the report expired, the report does
   not match the check, or the report could not be read.
@@ -498,6 +499,25 @@ latest default-branch report, problems first.
   required rules. Then an `observed` link can still break a rule that was not evaluated.
 
 GitHub keeps report artifacts for a limited time. Run Archfit on the default branch when no report is available.
+
+### The graph of a pull request
+
+Open the **Graph** tab on a pull request page, or `/r/<owner>/<repo>/pull/<number>/graph`. It draws the report of the
+pull request's head, the same report the pull request page shows, never the default-branch report. It shows the same
+states when there is no report.
+
+- The header shows the pull request, its head commit, the `archfit/state` result, and links back to the pull request
+  page and to GitHub.
+- A link is **new in this PR** when at least one finding behind it is one the engine did not find on the base branch
+  (`origin: introduced`). The link keeps its status: a new forbidden dependency or cycle is still a red `violation`,
+  drawn heavier with a dashed halo and a "new" badge.
+- The **New in this PR** chip is on when the pull request added something. It highlights the new links and mutes the
+  rest, which stay visible so the change reads against the existing architecture. Turn it off to draw every link alike.
+  The problem list puts new links first.
+- Select a link to see the findings behind it, each marked "added by this PR" or "pre-existing".
+- When the run did not compare with the base branch, a banner says so and no link is marked new. "New" never comes
+  from a finding's status.
+- Module names and lines come from the policy at the head when the pull request changed it, else from the base branch.
 
 ## Plans and trial
 

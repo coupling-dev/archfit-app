@@ -67,6 +67,19 @@ button, .button { font: inherit; padding: .35rem .8rem; cursor: pointer; }
 .g-edge:focus-visible { outline: 2px solid var(--accent); }
 .g-defs { font-size: .9rem; } .g-defs dt { font-weight: 700; } .g-defs dd { margin: 0 0 .4rem; }
 .gm { fill: var(--line); } .gm.violation { fill: var(--bad); } .gm.advisory, .gm.accepted { fill: var(--warn); } .gm.allowed { fill: var(--good); }
+/* pull request graph: a link new in this PR keeps its status color and gains a dashed halo of that color and a
+   heavier line; with the chip on, the other links stay drawn, muted */
+.g-edge .halo { fill: none; stroke: var(--line); stroke-opacity: .45; stroke-dasharray: 3 3; stroke-linecap: round; }
+.g-edge.violation .halo { stroke: var(--bad); } .g-edge.advisory .halo, .g-edge.accepted .halo { stroke: var(--warn); }
+.g-edge.allowed .halo { stroke: var(--good); }
+.g-edge.muted { opacity: .4; }
+.g-edge.new .badge { stroke-width: 2; }
+.g-chip.new i { background: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+.g-chip.new { font-weight: 600; }
+.g-new { font-size: .7rem; font-weight: 700; text-transform: uppercase; margin-left: .35rem; padding: 0 .3rem; border-radius: 999px; color: var(--accent); border: 1px solid currentColor; }
+.g-tag.new { color: var(--accent); margin-left: .3rem; }
+.g-origin { font-size: .8rem; margin-left: .35rem; } .g-origin.introduced { color: var(--accent); font-weight: 700; }
+.g-dsm td.new { box-shadow: inset 0 0 0 2px var(--accent); }
 .g-edge .badge { fill: Canvas; stroke: var(--line); }
 .g-edge.violation .badge { stroke: var(--bad); } .g-edge.advisory .badge, .g-edge.accepted .badge { stroke: var(--warn); }
 .g-edge .badge-t { fill: currentColor; font: 600 10px system-ui, sans-serif; }
@@ -87,6 +100,10 @@ button, .button { font: inherit; padding: .35rem .8rem; cursor: pointer; }
 .p-result.failure { border-color: var(--bad); } .p-result.neutral { border-color: var(--warn); }
 .p-result.action_required { border-color: var(--warn); } .p-result.success { border-color: var(--good); }
 .p-chip { font-size: .8rem; padding: 0 .45rem; border: 1px solid var(--line); border-radius: 999px; margin-left: .3rem; }
+.p-tabs { display: flex; gap: .25rem; border-bottom: 1px solid var(--line); margin: .75rem 0; }
+.p-tabs a { padding: .4rem .9rem; text-decoration: none; color: inherit; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.p-tabs a[aria-current="page"] { font-weight: 700; border-bottom-color: var(--accent); }
+.p-tabs a:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .p-finding { border-top: 1px solid var(--line); padding: .4rem 0; overflow-wrap: anywhere; }
 .p-finding p { margin: .2rem 0; }
 details > summary h2 { display: inline; font-size: 1.1rem; }

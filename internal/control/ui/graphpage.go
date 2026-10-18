@@ -34,6 +34,20 @@ type graphBody struct {
 	View        graph.View
 	Nodes       []graphNode
 	StaleReason string
+	PolicyURL   string     // the policy text the nodes come from; a module's line is PolicyURL + "#L<line>"
+	Pull        *pullScope // the pull request whose report this is; nil on the default-branch graph
+}
+
+// setView sets the view and links each declared module to its line in the policy text.
+func (b *graphBody) setView(v graph.View, policyURL string) {
+	b.View, b.PolicyURL = v, policyURL
+	for _, n := range v.Nodes {
+		node := graphNode{Node: n}
+		if n.PolicyLine != 0 {
+			node.Href = policyURL + "#L" + strconv.Itoa(n.PolicyLine)
+		}
+		b.Nodes = append(b.Nodes, node)
+	}
 }
 
 func (s *server) graphPage(w http.ResponseWriter, r *http.Request, sc scope) {
@@ -75,17 +89,11 @@ func (s *server) buildGraph(ctx context.Context, sc scope) (graphBody, error) {
 		}
 		body.StaleReason = draftBroken
 	}
-	body.View = graph.Build(rep, text)
+	view := graph.Build(rep, text)
 	if body.StaleReason != "" {
-		body.View.Stale = true
+		view.Stale = true
 	}
-	for _, n := range body.View.Nodes {
-		node := graphNode{Node: n}
-		if n.PolicyLine != 0 {
-			node.Href = repoPath(sc, "/policy") + "#L" + strconv.Itoa(n.PolicyLine)
-		}
-		body.Nodes = append(body.Nodes, node)
-	}
+	body.setView(view, repoPath(sc, "/policy"))
 	return body, nil
 }
 

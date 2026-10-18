@@ -22,6 +22,8 @@ could still work GitHub-first, but onboarding, schema-guided editing and consent
   list its problems by line, save as a commit on a draft branch through `proposal` bound to the head SHA that was
   loaded, show the draft state (draft / awaiting review / published), mark ready for review.
 - Graph: fetch the latest report artifact, decode it, build the view through `graph`, draw it, mark it stale.
+- Pull request graph: the same drawing for the report the pull request page shows, with the links new in this pull
+  request emphasised.
 - Pull request page: the result of one pull request's head, from the `archfit/state` check and the report of the
   run that check names.
 - Assist: turn the form into an `assist.Request`, show the outcome or the pending customer run.
@@ -84,6 +86,8 @@ Minimum repository permission in brackets. `{o}/{n}` is only a lookup key for `S
 - `POST /r/{o}/{n}/policy/check` [read] — check the text and save nothing; form `branch`, `head_sha`, `content`.
 - `POST /r/{o}/{n}/policy/ready` [write] — mark the draft PR ready for review; form `branch`, `head_sha`.
 - `GET /r/{o}/{n}/graph` [read] — graph page.
+- `GET /r/{o}/{n}/pull/{number}/graph` [read] — the graph of the report the pull request page shows; the same `404`
+  rule for the number.
 - `GET /r/{o}/{n}/pull/{number}` [read] — pull request page; a number that is not a positive integer or not a pull
   request of the repository answers `404`.
 - `POST /r/{o}/{n}/assist` [write] — form `branch`, `head_sha`, `content`, `instruction`, `mode`.
@@ -191,9 +195,10 @@ const (
 )
 
 type Link struct {
-    From, To string
-    Status   LinkStatus
-    Count    int // observed dependencies of the pair's seams; 0 when only a finding names the pair
+    From, To   string
+    Status     LinkStatus
+    Count      int  // observed dependencies of the pair's seams; 0 when only a finding names the pair
+    Introduced bool // a finding that names the pair is one the engine says this change introduced; display only
 }
 
 // View is a read-only picture. Stale is true when the policy text no longer matches the report's config_hash.
@@ -214,6 +219,7 @@ type LinkFinding struct {
     RuleID   string
     Kind     string
     Status   string
+    Origin   string // "introduced" | "pre_existing" | "unknown"; "" unless the report compared with the base branch
     Why      string
     More     int // on the last listed finding of a pair: how many more name the pair and are not listed
 }
@@ -956,6 +962,22 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   unavailable · customer-attested" from `gate_reference.baseline_present` and `comparison.origin_status`, "added by this
   PR" only when `origin_status` is `comparable` and the finding's `origin` is `introduced`, the exact `agent_tasks`
   array, and the nine dimensions folded, with every dimension's unknown facts in one folded "To measure more" group. Engine strings are template data, escaped by `html/template`.
+  Two tabs above the result, **Findings** (this page) and **Graph** (the pull request graph).
+- Pull request graph: the lookup of the pull request page, unchanged (one function serves both, so they always show
+  the same report and the same states with the same wording); never `LatestRun` or the default branch's report. The
+  policy text for module names, layers and lines: `.archfit.yaml` at the head SHA, then at the base branch, the first
+  whose `policy.Digest` is the report's `comparison.config_hash` (the Action reads the head's file only when the pull
+  request changes it); with neither, the head's text (else the base's) and the stale banner "Neither the head nor the
+  base branch holds the policy this report was computed from." Module lines link to that file on GitHub at that ref.
+  Display only: the head's text is untrusted and decides nothing. Header: title, number, short head SHA, the
+  `archfit/state` title and conclusion, links to the pull request page and to GitHub. When `comparison.origin_status`
+  is not `comparable`, the banner "This run did not compare with the base branch, so the graph cannot show what this PR
+  added." and no link is new (`graph` rule 13). Otherwise a line counts the links new in this PR, and the script adds
+  a "New in this PR (N)" chip, on by default when N > 0: an emphasis, not a filter. On, a new link keeps its status
+  color, gains a heavier line, a dashed halo of the same color and a "new" badge, and the other links stay drawn,
+  muted; the problem list puts new links first and marks them; the detail lists each finding's origin (added by this
+  PR, pre-existing, origin unknown). A new link always counts as a problem for focus mode. A cycle's two directions
+  stay one problem row when they share a status, marked new when either is.
 - Graph: settings → `LatestRun(Settings.Workflow, {Branch: DefaultBranch, Event: "push", Status: "success"})` → `Artifact(run.ID, "archfit-report", report.MaxBytes)` →
   `report.Decode` (with the last release of `report.EngineVersions`, `v3.0.1`: the artifact names none) → policy text (open draft of the user, else default branch) → `graph.Build`. The artifact is the raw engine
   state JSON; only the decoded no-source `Report` is used. When the chosen policy text fails `policy.Modules` (a broken draft

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -203,6 +204,106 @@ func TestGraphReadsTheLatestSuccessfulPushRun(t *testing.T) {
 	}
 	if calls := e.gh.called("Artifact"); len(calls) != 1 || calls[0].detail != fmt.Sprintf("77 archfit-report %d", report.MaxBytes) {
 		t.Errorf("Artifact calls = %+v, want run 77 only", calls)
+	}
+}
+
+// TestPullGraphShowsWhatThePullRequestAdded reads the graph of a pumba-pilot#11-shaped report as the owner does: the
+// two cycles are new in this PR and stay violations, the accepted coupling advisories are pre-existing, and the
+// links the pull request did not touch are drawn without a "new" claim.
+func TestPullGraphShowsWhatThePullRequestAdded(t *testing.T) {
+	e := newEnv(t)
+	e.checkPull(prArtifact(t, prPolicy))
+	e.gh.setFile(repoName, sha(4), ".archfit.yaml", prPolicy)
+	body := e.as("alice", permRead).get("/r/" + repoName + "/pull/4/graph").Body.String()
+	var v graph.View
+	if err := json.Unmarshal([]byte(embeddedJSON(t, body)), &v); err != nil {
+		t.Fatalf("embedded JSON: %v", err)
+	}
+
+	type got struct {
+		status graph.LinkStatus
+		new    bool
+	}
+	links := map[string]got{}
+	for _, l := range v.Links {
+		links[l.From+" -> "+l.To] = got{l.Status, l.Introduced}
+	}
+	want := map[string]got{
+		"pkg_chaos -> pkg_container": {graph.StatusViolation, true},
+		"pkg_container -> pkg_chaos": {graph.StatusViolation, true},
+		"pkg_chaos -> pkg_util":      {graph.StatusViolation, true},
+		"pkg_util -> pkg_chaos":      {graph.StatusViolation, true},
+		"pkg_cmd -> pkg_chaos":       {graph.StatusObserved, false},
+		"pkg_cmd -> pkg_container":   {graph.StatusObserved, false},
+		"pkg_cmd -> pkg_util":        {graph.StatusObserved, false},
+		"pkg_container -> pkg_util":  {graph.StatusObserved, false},
+	}
+	if !reflect.DeepEqual(links, want) {
+		t.Errorf("links = %+v\nwant %+v", links, want)
+	}
+
+	origins := map[string][]string{}
+	for _, f := range v.Findings {
+		k := f.From + " -> " + f.To
+		origins[k] = append(origins[k], f.RuleID+" "+f.Status+" "+f.Origin)
+	}
+	for k, w := range map[string][]string{
+		"pkg_chaos -> pkg_container": {"no-module-cycles new introduced", "bc/imbalanced_coupling baseline pre_existing"},
+		"pkg_container -> pkg_chaos": {"no-module-cycles new introduced", "bc/imbalanced_coupling new introduced"},
+		"pkg_cmd -> pkg_chaos":       {"bc/imbalanced_coupling baseline pre_existing"},
+	} {
+		if !reflect.DeepEqual(origins[k], w) {
+			t.Errorf("findings of %s = %q, want %q", k, origins[k], w)
+		}
+	}
+	wantContains(t, body, "4 links have a finding the base branch does not have")
+}
+
+func TestPullGraphStates(t *testing.T) {
+	payload := func(t *testing.T) []byte { return prArtifact(t, prPolicy) }
+	tests := []struct {
+		name      string
+		setup     func(t *testing.T, e *env)
+		wants     []string
+		notWanted []string
+	}{
+		{"no check on the head", func(*testing.T, *env) {}, []string{noResult, `href="/r/` + repoName + `/pull/4"`}, []string{"graph-data"}},
+		{"a withdrawn result shows no graph", func(t *testing.T, e *env) {
+			e.checkPull(payload(t))
+			e.gh.checks[repoName+"@"+sha(4)+"#"+checkState][0].Conclusion = conclusionActionRequired
+		}, []string{actionRequired}, []string{"graph-data"}},
+		{"an expired report", func(t *testing.T, e *env) {
+			e.checkPull(payload(t))
+			delete(e.gh.artifacts, 88)
+		}, []string{reportExpired}, []string{"graph-data"}},
+		{"a run that did not compare claims nothing new", func(t *testing.T, e *env) {
+			e.checkPull(bytes.Replace(payload(t), []byte(`"origin_status":"comparable"`), []byte(`"origin_status":"unknown"`), 1))
+			e.gh.setFile(repoName, sha(4), ".archfit.yaml", prPolicy)
+		}, []string{`id="not-compared"`, "This run did not compare with the base branch, so the graph cannot show what this PR added.", "graph-data"},
+			[]string{`"Introduced":true`, `"Origin":"introduced"`, `id="new-count"`}},
+		{"a policy unchanged by the pull request comes from the base", func(t *testing.T, e *env) {
+			e.checkPull(payload(t))
+			e.gh.setFile(repoName, sha(4), ".archfit.yaml", prPolicy+"# edited\n")
+			e.gh.setFile(repoName, mainBranch, ".archfit.yaml", prPolicy)
+		}, []string{`data-policy-url="https://github.com/` + repoName + `/blob/main/.archfit.yaml"`, `"Introduced":true`}, []string{`id="stale"`}},
+		{"no policy of the report anywhere is stale", func(t *testing.T, e *env) {
+			e.checkPull(payload(t))
+		}, []string{`id="stale"`, noPolicy, `data-policy-url="https://github.com/` + repoName + `/blob/main/.archfit.yaml"`}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t)
+			tt.setup(t, e)
+			res := e.as("alice", permRead).get("/r/" + repoName + "/pull/4/graph")
+			wantStatus(t, res, http.StatusOK)
+			body := html.UnescapeString(res.Body.String())
+			wantContains(t, body, tt.wants...)
+			for _, s := range tt.notWanted {
+				if strings.Contains(body, s) {
+					t.Errorf("body contains %q", s)
+				}
+			}
+		})
 	}
 }
 
