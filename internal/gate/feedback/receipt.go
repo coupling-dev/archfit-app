@@ -116,13 +116,17 @@ func currentWaiver(body string) (string, bool) {
 	return date, ok
 }
 
-// placeWaiver puts the section after the verdict block: before the first "### " heading, else at the end.
+// placeWaiver puts the section after the verdict block: before the first "### " heading or fold, whichever
+// comes first, else at the end. It never lands inside a fold.
 // Publish and Warn both use it, so they agree byte for byte.
 func placeWaiver(body, section string) string {
 	if section == "" {
 		return body
 	}
 	i := strings.Index(body, "\n\n### ")
+	if j := strings.Index(body, "\n\n<details>"); j >= 0 && (i < 0 || j < i) { // the notice stays outside folds
+		i = j
+	}
 	if i < 0 {
 		return body + "\n\n" + section
 	}

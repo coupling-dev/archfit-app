@@ -6,6 +6,9 @@
 - Detail: report 4444444444444444444444444444444444444444444444444444444444444444
 - Next: Re-run the Archfit workflow with the pinned action.
 
+<details>
+<summary>Evidence, inputs and validation</summary>
+
 ### Evidence gaps
 
 - No usable report
@@ -19,3 +22,5 @@
 - Producer identity, claimed: engine v3.0.0, image sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08, linux/amd64
 
 Measurement is customer-attested: the producer is authenticated, the report content is not independently checked.
+
+</details>

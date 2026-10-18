@@ -190,7 +190,7 @@ The first reason controls the conclusion. The App keeps later reasons in the com
 | ------------------- | -------------------------------------------------------------------------------------------------------- |
 | `healthy`           | Nothing                                                                                                  |
 | `attention_only`    | Nothing blocks. Advisories never block. Review the listed dimensions and diagnostics on the state check. |
-| `blocking_findings` | Fix the blocking findings and run the validation command.                                                |
+| `blocking_findings` | Remove the rule violations, then run the validation command.                                             |
 
 `attention_only` is a `success`. The engine verdict is `needs_attention`, and no evidence, governance, or subscription
 reason applies. The detail lists the dimensions that are not fully measured and the count of active diagnostics.
