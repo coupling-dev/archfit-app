@@ -1,7 +1,7 @@
 package report
 
-// Shadow types mirror the whole state schema (pinned: engine v3.0.0, revision bbd658f008bcc4bc83e063cf305d20dc4508da2e),
-// dropped keys included.
+// Shadow types mirror the whole state schema (pinned: engine v3.0.1, revision 0649e504a6761f565086b342d315110feeb27d77;
+// the v3.0.0 file is byte-identical), dropped keys included.
 // Kept required keys and the optional enum seams[].policy are pointers or slices so that nil means absent: the
 // pre-pass rejects null, so nothing else produces nil. Fields marked dropped are type-checked and never copied.
 

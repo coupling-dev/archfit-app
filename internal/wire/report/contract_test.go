@@ -382,7 +382,7 @@ func TestWrongSchemaVersion(t *testing.T) {
 
 func TestEngineVersions(t *testing.T) {
 	got := EngineVersions()
-	if want := []string{"v3.0.0"}; !slices.Equal(got, want) {
+	if want := []string{"v3.0.0", "v3.0.1"}; !slices.Equal(got, want) {
 		t.Errorf("EngineVersions() = %q, want %q", got, want)
 	}
 	got[0] = "changed"
@@ -393,7 +393,7 @@ func TestEngineVersions(t *testing.T) {
 
 func TestUnknownEngineVersionIsRefused(t *testing.T) {
 	payload := loadFixture(t, "report/real-blocked-no-baseline.json")
-	for _, version := range []string{"", "v2.5.0", "v2.6.0", "3.0.0", "v3.0.0 ", "V3.0.0", "v3.0.0-" + leakMarker} {
+	for _, version := range []string{"", "v2.5.0", "v2.6.0", "3.0.0", "v3.0.0 ", "V3.0.0", "v3.0.2", "v3.1.0", "v3.0.1-" + leakMarker} {
 		t.Run(version, func(t *testing.T) {
 			r, err := Decode(payload, version)
 			wantError(t, err, "engine_version")

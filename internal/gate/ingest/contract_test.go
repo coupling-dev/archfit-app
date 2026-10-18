@@ -30,7 +30,7 @@ func TestReceivePullRequestReport(t *testing.T) {
 			if want := healthyBinding(s); !reflect.DeepEqual(up.Binding, want) {
 				t.Errorf("binding = %+v, want %+v", up.Binding, want)
 			}
-			wantIdentity := manifest.Identity{EngineVersion: "v3.0.0", ImageDigest: imageDigest, Platform: "linux/amd64"}
+			wantIdentity := manifest.Identity{EngineVersion: "v3.0.1", ImageDigest: imageDigest, Platform: "linux/amd64"}
 			if up.Identity != wantIdentity {
 				t.Errorf("identity = %+v, want %+v", up.Identity, wantIdentity)
 			}
@@ -55,11 +55,14 @@ func TestReceivePullRequestReport(t *testing.T) {
 }
 
 func TestReportKeySetFollowsTheClaimedEngine(t *testing.T) {
-	// The App reads the v3.0.0 state document only: an earlier claim is a document the decoder does not read.
+	// The App reads the v3.0.0 and v3.0.1 state documents (one key set): an earlier or later claim is a document the
+	// decoder does not read. v3.0.0 decodes although the manifest no longer approves it, so the gate names the
+	// identity, not the report.
 	rows := []struct {
 		name, version string
 		problems      []Problem
 	}{
+		{"v3.0.1", "v3.0.1", nil},
 		{"v3.0.0", "v3.0.0", nil},
 		{"v2.5.0", "v2.5.0", []Problem{ProblemReportInvalid}},
 		{"v9.9.9", "v9.9.9", []Problem{ProblemReportInvalid}},

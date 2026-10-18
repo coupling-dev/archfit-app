@@ -1,0 +1,22 @@
+{
+  "producer": "synthetic: byte copy of real-blocked-no-baseline; the case is its envelope, which states the linux/amd64 image of engine v3.0.0, the release the manifest approved before v3.0.1: the report decodes and the identity is not approved",
+  "decode": "ok",
+  "fields": {
+    "verdict": "blocked",
+    "hard_gates": "fail",
+    "unevaluated_rule_ids": [],
+    "has_profile": true,
+    "profile_version": "archfit.measurement.v2",
+    "gate_reference_status": "non_comparable"
+  },
+  "gate": {
+    "conclusion": "action_required",
+    "reasons": [
+      "unknown_engine_identity",
+      "blocking_findings"
+    ]
+  },
+  "facts": {
+    "identity_approved": false
+  }
+}

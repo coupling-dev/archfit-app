@@ -2,6 +2,7 @@ package policy
 
 import (
 	"bytes"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -10,6 +11,7 @@ const (
 	comparableBaseline = "report/real-baselined-comparable.baseline.json"
 	comparablePolicy   = "report/real-baselined-comparable.policy.yaml"
 	emptyBaseline      = "report/real-attention-baseline.baseline.json"
+	recapturedBaseline = "report/real-recaptured-baseline.baseline.json" // comparableBaseline's recipe on engine v3.0.1
 )
 
 // minimalBaseline is the smallest file ReadBaseline accepts, with fields replaced by edit.
@@ -51,6 +53,16 @@ func TestReadBaselineRealCaptures(t *testing.T) {
 	empty, err := ReadBaseline(fixture(t, emptyBaseline))
 	if err != nil || len(empty.Accepted) != 0 || empty.ConfigHash != got.ConfigHash {
 		t.Errorf("empty capture = %+v, %v", empty, err)
+	}
+
+	// Engine v3.0.1 stops writing state.dimensions and state.hard_gate_finding_ids; the schema stays v3. The same
+	// recipe reads to the same view as the v3.0.0 file that still carries them.
+	recaptured, err := ReadBaseline(fixture(t, recapturedBaseline))
+	if err != nil {
+		t.Fatalf("ReadBaseline on the v3.0.1 capture: %v", err)
+	}
+	if !reflect.DeepEqual(recaptured, got) {
+		t.Errorf("v3.0.1 capture = %+v, want the v3.0.0 view %+v", recaptured, got)
 	}
 }
 

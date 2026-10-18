@@ -148,7 +148,7 @@ func Unapproved(t Trusted) bool
 
 - `IdentityApproved`: `manifest.Lookup(Upload.Identity)` hits, **and** the report carries a measurement profile,
   **and** `MeasurementProfile.Version == Entry.ProfileVersion`. Any empty identity field is a miss, so unknown never
-  equals unknown. False when there is no report. The approved profile version of engine v3.0.0
+  equals unknown. False when there is no report. The approved profile version of engine v3.0.1
   is `archfit.measurement.v2`; the value lives in the manifest, not here.
 - `WorkflowApproved`: settings were found, `Binding.WorkflowPath` is not empty, and it equals
   `Trusted.Settings.Workflow`. `Binding.WorkflowPath` comes from the verified OIDC `job_workflow_ref`. A workflow
@@ -306,8 +306,8 @@ Categories of integrity, comparability and `Without` codes are **[default]**. `N
 | `policy_mismatch`             | evidence     | `action_required`     | reported `config_hash`                                                                                | "Run the workflow with the policy from the base branch; re-run if the base changed."                                  |
 | `policy_missing`              | governance   | `action_required`     | empty                                                                                                 | "Merge the Archfit policy PR."                                                                                        |
 | `policy_defect`               | governance   | `action_required`     | rule IDs whose selector matches nothing, comma separated; capped like `missing_required_coverage`     | "Fix the selectors of the listed rules in an owner-approved policy PR, or mark an intentional guard rule guard: true." |
-| `unknown_engine_identity`     | evidence     | `action_required`     | empty                                                                                                 | "Use the engine image pinned by the Archfit onboarding workflow."                                                     |
-| `measurement_profile_missing` | evidence     | `action_required`     | empty                                                                                                 | "Use the engine image pinned by the Archfit onboarding workflow; the report carries no measurement profile."          |
+| `unknown_engine_identity`     | evidence     | `action_required`     | empty                                                                                                 | "Move the Archfit workflow to the archfit-action commit and engine image the App approves now; see "Move an installed workflow to a new engine" in the Archfit user guide."                                                     |
+| `measurement_profile_missing` | evidence     | `action_required`     | empty                                                                                                 | "Move the Archfit workflow to the archfit-action commit and engine image the App approves now; see "Move an installed workflow to a new engine" in the Archfit user guide. The report carries no measurement profile."          |
 | `workflow_not_approved`       | evidence     | `action_required`     | empty                                                                                                 | "Upload from the workflow named in `.archfit-app.yaml`."                                                              |
 | `owner_approval_missing`      | governance   | `action_required`     | changed protected paths                                                                               | "An architecture owner must authorize this exact commit: approve it on GitHub, or push it from an owner account. GitHub does not let an author approve their own pull request; use the App policy editor, where the App authors the commit."                                                               |
 | `settings_missing`            | governance   | `action_required`     | empty                                                                                                 | "Merge the Archfit onboarding PR to add `.archfit-app.yaml`."                                                         |
@@ -493,14 +493,14 @@ type Trusted struct {
 
 <!-- contract: Report, StateSchemaV1, MaxBytes — restated from internal/wire/report/module.md -->
 ```go
-// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v3.0.0).
+// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v3.0.0 and v3.0.1: one file).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
 // Report is the no-source transport form of an engine state report. The decoder knows every key of the engine
-// v3.0.0 state schema: keys listed here are kept (length-capped), the other known keys are validated and dropped
+// state schema of v3.0.0 and v3.0.1: keys listed here are kept (length-capped), the other known keys are validated and dropped
 // (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores), and any key
 // the schema does not define is a decode error.
 type Report struct {
@@ -794,7 +794,7 @@ type Seam struct {
   **Expected behavior**: `measurement_profile_missing`, `unknown_engine_identity`, and only `report_invalid` respectively.
 - **Test name**: `TestReasonCatalogComplete`
   **Scenario**: iterate every `ReasonCode` constant of the contract (twenty-four).
-  **Expected behavior**: each has the catalog category and conclusion (`success` for `healthy` and `attention_only`); every code except `healthy` has a non-empty `Next`; the `Next` texts of `workflow_not_approved` and `settings_missing` name `settings.Path`.
+  **Expected behavior**: each has the catalog category and conclusion (`success` for `healthy` and `attention_only`); every code except `healthy` has a non-empty `Next`; the `Next` texts of `workflow_not_approved` and `settings_missing` name `settings.Path`; those of `unknown_engine_identity` and `measurement_profile_missing` name the user-guide section "Move an installed workflow to a new engine" and never the onboarding workflow, which keeps the pin it was written with.
 - **Test name**: `TestWithout`
   **Scenario**: the six allowed codes, then `ReasonHealthy` and an unknown code.
   **Expected behavior**: `ActionRequired` with one reason each; the last two give `engine_error`.
@@ -811,7 +811,7 @@ type Seam struct {
 ### Integration Contract Tests
 
 - **Test name**: `TestDecideWireFixtures`
-  **Scenario**: every report fixture of the shared corpus `internal/wire/testdata/report` (names and `.expect.json` format per `internal/wire/module.md`; verdict keeps no copy). A fixture with `decode: "ok"` is decoded with `report.Decode` as a v3.0.0 document; one with `decode: "error"` gives a nil `Report`. The facts are the clean facts of that document: identity and workflow approved, settings found, no approval needed, not suspended, no problems, trusted policy digests = the report's `config_hash`, trusted baseline and labels digests = `policy.Digest` of the `.baseline.json` and `.labels.yaml` siblings (an empty list when there is no sibling), and the same digests as the envelope's claims. The fixture's `facts` object then overrides single facts; an unknown key in `facts` or in the expectation fails the test. The corpus must hold the required fixtures: `healthy`, `attention-pass`, `blocked`, `missing-evidence`, `unknown-identity`, `profile-comparable`, `profile-incompatible`, `invalid-input`, `blocker-and-unevaluated`, `non-applicable-rule`, `locations-empty`, `matched-by-populated`, `repair-kinds`, `waiver-expiry-order`.
+  **Scenario**: every report fixture of the shared corpus `internal/wire/testdata/report` (names and `.expect.json` format per `internal/wire/module.md`; verdict keeps no copy). A fixture with `decode: "ok"` is decoded with `report.Decode` as a document of its producer's release (synthetic: v3.0.0); one with `decode: "error"` gives a nil `Report`. The facts are the clean facts of that document: identity and workflow approved, settings found, no approval needed, not suspended, no problems, trusted policy digests = the report's `config_hash`, trusted baseline and labels digests = `policy.Digest` of the `.baseline.json` and `.labels.yaml` siblings (an empty list when there is no sibling), and the same digests as the envelope's claims. The fixture's `facts` object then overrides single facts; an unknown key in `facts` or in the expectation fails the test. The corpus must hold the required fixtures: `healthy`, `attention-pass`, `blocked`, `missing-evidence`, `unknown-identity`, `profile-comparable`, `profile-incompatible`, `invalid-input`, `blocker-and-unevaluated`, `non-applicable-rule`, `locations-empty`, `matched-by-populated`, `repair-kinds`, `waiver-expiry-order`.
   **Expected behavior**: `Decide` returns exactly `gate.conclusion` and the code sequence `gate.reasons` of each fixture. For the named fixtures the document also fixes the first reason: `success`/`healthy` for `healthy` and `non-applicable-rule`; `success`/`attention_only` for `attention-pass`; `failure`/`blocking_findings` for `blocked`; `action_required`/`missing_required_coverage` for `missing-evidence`; `action_required`/`measurement_profile_missing` for `unknown-identity`; `action_required`/`baseline_not_comparable` for `profile-incompatible`; `action_required`/`report_invalid` for `invalid-input`; `failure` with `missing_required_coverage` second for `blocker-and-unevaluated`.
 - **Test name**: `TestReasonsZeroDeterminesConclusion`
   **Scenario**: all outcomes produced by the other tests.

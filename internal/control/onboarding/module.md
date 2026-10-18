@@ -523,7 +523,7 @@ type Envelope struct {
     MergeBaseSHA  string `json:"merge_base_sha"` // "" unless pull_request
     RunID         int64  `json:"run_id"`
     RunAttempt    int    `json:"run_attempt"`
-    EngineVersion string `json:"engine_version"` // e.g. "v3.0.0"
+    EngineVersion string `json:"engine_version"` // e.g. "v3.0.1"
     ImageDigest   string `json:"image_digest"`   // "sha256:<64 hex>"
     Platform      string `json:"platform"`       // e.g. "linux/amd64"
     PayloadDigest  string `json:"payload_digest"`  // "sha256:<64 hex>" of the exact payload bytes
@@ -638,7 +638,7 @@ func Validate(policy []byte) error
 
 <!-- contract: BaselineSchemaV3, MaxBaselineBytes, Accepted, Baseline, ReadBaseline — restated from internal/wire/policy/module.md -->
 ```go
-// BaselineSchemaV3 is the only engine baseline schema the App reads (engine v3.0.0 writes it).
+// BaselineSchemaV3 is the only engine baseline schema the App reads (engines v3.0.0 and v3.0.1 write it).
 const BaselineSchemaV3 = "archfit.baseline.v3"
 
 // MaxBaselineBytes caps a baseline file: 1 MiB, the size github/api reads back from the protected ref.
@@ -1097,6 +1097,12 @@ Test doubles only at boundaries: in-memory GitHub roles (`Repos`, `Actions`, `Ch
   **Scenario**: no protected baseline, with a labels file; a protected baseline of schema v1.
   **Expected behavior**: every captured finding counts as added; the body says there is no baseline yet, or that the
   protected file is not readable and removals are unknown.
+- **Test name**: `TestBaselineRecaptureReadsTheOlderEngineShape`
+  **Scenario**: the protected baseline is the engine v3.0.0 capture `real-baselined-comparable` (it carries
+  `state.dimensions` and `state.hard_gate_finding_ids`); the upload is the v3.0.1 capture of the same recipe,
+  `real-recaptured-baseline`, which has neither.
+  **Expected behavior**: `200` with a pull request (the bytes differ); the protected file is read: added 0, removed 0,
+  "Approving accepts no finding".
 - **Test name**: `TestBaselineUnchangedOpensNothing`
   **Scenario**: the capture is byte-equal to the protected baseline.
   **Expected behavior**: `200 {"unchanged": true}`; no `Propose`, no `SetBody`, no PR.

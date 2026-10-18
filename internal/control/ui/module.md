@@ -666,7 +666,7 @@ func Digest(raw []byte) string
 
 <!-- contract: Schema — restated from internal/wire/policy/module.md -->
 ```go
-// Schema returns the engine v3.0.0 config JSON Schema, embedded unchanged, for the editor.
+// Schema returns the engine v3.0.1 config JSON Schema (byte-identical to v3.0.0), embedded unchanged, for the editor.
 func Schema() []byte
 ```
 
@@ -758,11 +758,11 @@ func Render(s Settings) []byte
 - **Volatility**: high (this side), moderate (wire/report)
 - **Balanced?**: yes — contract coupling
 - **Shared knowledge**: ui downloads the artifact with `MaxBytes` as the cap, calls `Decode`, and hands the `Report` to
-  `graph.Build` unread. The artifact holds the raw engine state JSON; `Decode` validates it against the engine v3.0.0 state
+  `graph.Build` unread. The artifact holds the raw engine state JSON; `Decode` validates it against the engine v3.0.0/v3.0.1 state
   schema and reduces it to the no-source form, so fields the decoder drops (measurement, `matched_by`, task
   declarations, metric provenance, seam scores) never reach a template and ui never renders them. ui parses the artifact
-  in no other way. The artifact comes without the envelope that names its release, so ui passes the one release of
-  `EngineVersions`, `v3.0.0`.
+  in no other way. The artifact comes without the envelope that names its release, so ui passes the last release of
+  `EngineVersions`, `v3.0.1`; both releases share one key set.
   `StateSchemaV1` is the constant `Decode` checks. For this module each nested type is opaque:
   - `Decision` is an opaque part of `Report` for this module.
   - `Comparison` is an opaque part of `Report` for this module.
@@ -775,14 +775,14 @@ func Render(s Settings) []byte
 
 <!-- contract: Report, StateSchemaV1, MaxBytes — restated from internal/wire/report/module.md -->
 ```go
-// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v3.0.0).
+// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v3.0.0 and v3.0.1: one file).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
 // Report is the no-source transport form of an engine state report. The decoder knows every key of the engine
-// v3.0.0 state schema: keys listed here are kept (length-capped), the other known keys are validated and dropped
+// state schema of v3.0.0 and v3.0.1: keys listed here are kept (length-capped), the other known keys are validated and dropped
 // (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores), and any key
 // the schema does not define is a decode error.
 type Report struct {
@@ -810,7 +810,7 @@ func Decode(payload []byte, engineVersion string) (Report, error)
 
 <!-- contract: EngineVersions — restated from internal/wire/report/module.md -->
 ```go
-// EngineVersions returns the engine releases whose state document Decode reads: v3.0.0 only. It emits
+// EngineVersions returns the engine releases whose state document Decode reads: v3.0.0 and v3.0.1, one key set. It emits
 // StateSchemaV1.
 func EngineVersions() []string
 ```
@@ -954,7 +954,7 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   PR" only when `origin_status` is `comparable` and the finding's `origin` is `introduced`, the exact `agent_tasks`
   array, and the nine dimensions folded. Engine strings are template data, escaped by `html/template`.
 - Graph: settings → `LatestRun(Settings.Workflow, {Branch: DefaultBranch, Event: "push", Status: "success"})` → `Artifact(run.ID, "archfit-report", report.MaxBytes)` →
-  `report.Decode` (with the release of `report.EngineVersions`, `v3.0.0`: the artifact names none) → policy text (open draft of the user, else default branch) → `graph.Build`. The artifact is the raw engine
+  `report.Decode` (with the last release of `report.EngineVersions`, `v3.0.1`: the artifact names none) → policy text (open draft of the user, else default branch) → `graph.Build`. The artifact is the raw engine
   state JSON; only the decoded no-source `Report` is used. When the chosen policy text fails `policy.Modules` (a broken draft
   pushed on GitHub), ui builds from the default-branch policy instead, the last valid text, and forces the stale banner with
   "the draft does not parse" **[default]**. Only a push run uploads `archfit-report`; a dispatched run (discovery, baseline,

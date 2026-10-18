@@ -22,7 +22,7 @@ drift between them would turn honest reports into `policy_mismatch`.
   `comparison.config_hash`. For baseline and labels it is the value the producer states in the upload envelope.
 - `Waivers`: read the `waivers:` list of a policy file into `Waiver` values with parsed expiry instants.
 - `Modules`: list the names, layers and line numbers of the policy's `modules:` map, in file order.
-- `Schema`: the engine v3.0.0 config JSON Schema (`archfit.schema.json`), embedded unchanged.
+- `Schema`: the engine v3.0.1 config JSON Schema (`archfit.schema.json`), embedded unchanged.
 - `Validate`: a structural check that a text is plausibly an engine policy: one YAML mapping whose top-level keys
   all belong to the schema's closed key set and include the required `version`. It keeps foreign text (a report,
   a labels file) out of discovery pull requests; `Diagnose`, which contains it, does the same for saved drafts and
@@ -41,12 +41,12 @@ drift between them would turn honest reports into `policy_mismatch`.
 ## Subdomain Classification
 
 Published language owned by the `archfit` repository; this module is the App's pinned, read-only view of it.
-Supporting. Volatility: moderate, tied to engine releases (config schema pinned v3.0.0).
+Supporting. Volatility: moderate, tied to engine releases (config schema pinned v3.0.1).
 
 ## Encapsulated Knowledge
 
 - The digest algorithm and its byte-exactness: SHA-256 over the file bytes as stored in git, bare lowercase hex,
-  no prefix. No YAML or JSON canonicalization, no newline or BOM handling. Verified against engine v3.0.0: the
+  no prefix. No YAML or JSON canonicalization, no newline or BOM handling. Verified against engines v3.0.0 and v3.0.1: the
   engine's `comparison.config_hash` is exactly this value for the policy file. The envelope's `payload_digest`
   is a different format (`sha256:` prefix) owned by `wire/envelope`; the two are never compared with each other.
 - What the engine does not hash. It reports no digest for the baseline or the labels file; `comparison.labels_hash`
@@ -60,14 +60,14 @@ Supporting. Volatility: moderate, tied to engine releases (config schema pinned 
   `public`, `internal`, `layer` and other keys, among them the allowlists `depends_on` and `visible_to`. Only the
   name, `layer` and the key's line are read.
 - The embedded schema file and its provenance: `archfit.schema.json` copied unchanged from the engine repository
-  at revision `bbd658f008bcc4bc83e063cf305d20dc4508da2e` (tag `v3.0.0`). A sibling file `SCHEMA_SOURCE` records the
+  at revision `0649e504a6761f565086b342d315110feeb27d77` (tag `v3.0.1`; byte-identical to tag `v3.0.0`). A sibling file `SCHEMA_SOURCE` records the
   source revision, the source path and the SHA-256 of the copy **[default]**.
 - One pinned schema **[default]**. Its users are `Diagnose`, `Validate`, the assist
   prompt, and `GET /schema/policy.json` (one route for every repository, for editors outside the App). None of them knows which engine release a
   repository runs: that pin is in the repository's workflow file, which the App does not parse. So the schema is
   the one of the release new workflows pin, `manifest.Current().EngineVersion`, and the parent `wire` test
   `TestPolicySchemaFollowsTheCurrentEngine` fails as soon as `current` moves until this file and `SCHEMA_SOURCE`
-  are re-pinned. The pin is v3.0.0. The schema has an `enum` of the twelve rule types in `rules[].type`, so a
+  are re-pinned. The pin is v3.0.1. The schema has an `enum` of the twelve rule types in `rules[].type`, so a
   misspelled type is an enum miss with a "Did you mean" suggestion instead of passing as free text. It has the rule
   keys `guard`, `from_module`, `to_module`, `rationale`, `docs` (text) and `alternatives` (a list of text), and the
   module keys `depends_on` and `visible_to` (lists of module names or selectors). Whether an allowlist entry or a
@@ -109,10 +109,12 @@ Supporting. Volatility: moderate, tied to engine releases (config schema pinned 
 - The YAML library: the same single third-party dependency as `wire/settings`
   (`go.yaml.in/yaml/v3` **[default]** until `docs/tech-stack.md` names one). `Modules` uses its node API for line numbers.
 - The labels file is opaque here. Only its path and digest are known.
-- The baseline keys the App reads, pinned to engine v3.0.0 (`internal/baseline` at the pinned revision):
+- The baseline keys the App reads, pinned to engine v3.0.1 (`internal/baseline` at the pinned revision):
   `schema_version` (`archfit.baseline.v3`), `accepted[].fingerprint` (the finding ID,
   `hex(sha256(…)[:16])`, so 32 lowercase hex), `accepted[].rule_id`, `state.config_hash` (equal to `Digest` of the
-  policy the capture ran under, checked on the corpus captures) and `state.measurement_profile.version`. v3.0.0
+  policy the capture ran under, checked on the corpus captures) and `state.measurement_profile.version`. v3.0.1
+  no longer writes `state.dimensions` or `state.hard_gate_finding_ids`; a v3.0.0 file still carries them, and the
+  reader ignores them like any other key it does not read, so both shapes give the same view. The engine
   writes the profile on every capture; a file without it cannot be bound to an approved identity and is refused.
 
 ### Baseline reading rules
@@ -123,7 +125,7 @@ Supporting. Volatility: moderate, tied to engine releases (config schema pinned 
   the engine adds baseline keys over time (seams, module digests), and the engine's own decoder ignores unknown keys
   too. This is the third deliberate nuance of the parent's "unknown fields are rejected" rule, after the policy
   readers and the report key sets.
-- Required: `schema_version` equal to `BaselineSchemaV2`; `accepted`, a list (empty is fine, `null` is not);
+- Required: `schema_version` equal to `BaselineSchemaV3`; `accepted`, a list (empty is fine, `null` is not);
   `state.config_hash`, 64 lowercase hex; `state.measurement_profile.version`, 1 to 64 token characters.
 - Per accepted entry: `fingerprint` exactly 32 lowercase hex; `rule_id` 1 to 128 characters of `A-Z a-z 0-9 _ . : / + -`;
   fingerprints distinct. These are token classes, so a caller may render both in Markdown code spans unescaped.
@@ -257,7 +259,7 @@ func Waivers(policy []byte) ([]Waiver, error)
 ```
 
 ```go
-// Schema returns the engine v3.0.0 config JSON Schema, embedded unchanged: Diagnose's schema, the assist
+// Schema returns the engine v3.0.1 config JSON Schema (byte-identical to v3.0.0), embedded unchanged: Diagnose's schema, the assist
 // prompt's context, and the file served for editors outside the App.
 func Schema() []byte
 ```
@@ -302,7 +304,7 @@ func Diagnose(policy []byte) []Diagnostic
 `ReadBaseline` is the structural gate for a baseline that is about to be proposed:
 
 ```go
-// BaselineSchemaV3 is the only engine baseline schema the App reads (engine v3.0.0 writes it).
+// BaselineSchemaV3 is the only engine baseline schema the App reads (engines v3.0.0 and v3.0.1 write it).
 const BaselineSchemaV3 = "archfit.baseline.v3"
 
 // MaxBaselineBytes caps a baseline file: 1 MiB, the size github/api reads back from the protected ref.
@@ -322,7 +324,7 @@ type Baseline struct {
 }
 
 // ReadBaseline decodes an engine baseline file. It is a structural check, not engine validation: one JSON
-// object of schema BaselineSchemaV2, at most MaxBaselineBytes, with a state block naming a 64-hex config hash
+// object of schema BaselineSchemaV3, at most MaxBaselineBytes, with a state block naming a 64-hex config hash
 // and a measurement profile version, and accepted findings with distinct 32-hex fingerprints and token rule IDs.
 // Errors never echo keys or values.
 func ReadBaseline(raw []byte) (Baseline, error)
@@ -366,7 +368,7 @@ root coupling table.
 | `internal/control/assist`        | assist depends on policy        | Contract | root / 2 / 2              | High       | Yes       |
 | `internal/control/ui`            | ui depends on policy            | Contract | root / 2 / 2              | High       | Yes       |
 | `internal/control/ui/graph`      | graph depends on policy         | Contract | root / 3 / 3              | Moderate   | Yes       |
-| `archfit` engine config (v3.0.0) | policy follows the engine files | Contract | outside the tree; highest | Moderate   | Yes       |
+| `archfit` engine config (v3.0.1) | policy follows the engine files | Contract | outside the tree; highest | Moderate   | Yes       |
 
 The `control/ui/graph` row exists because the graph's stale flag compares `Digest` of the policy text with the
 report's `config_hash`, and its nodes come from `Modules`, so that both rules live in one place.
@@ -530,7 +532,7 @@ at archfit commit `2d20da8`, copied unchanged: a large real policy that `Diagnos
   **Expected behavior**: `a` at line 3 and `b` at line 6 for the capture; for the full fixture every module of the recorded expectation, in order.
 - **Test name**: `TestSchemaIsThePinnedEngineFile`
   **Scenario**: hash `Schema()` and parse it.
-  **Expected behavior**: the SHA-256 equals the one in `SCHEMA_SOURCE`; the revision there is `bbd658f0…`; valid JSON with `waivers`
+  **Expected behavior**: the SHA-256 equals the one in `SCHEMA_SOURCE`; the revision there is `0649e504…` (tag v3.0.1); valid JSON with `waivers`
   and `modules` properties and a `WaiverDef` that requires `rule`, `reason`, `approved_by`, `expires`; two calls return equal but independent slices.
 - **Test name**: `TestPathConstants`
   **Scenario**: read the constants.
@@ -539,7 +541,9 @@ at archfit commit `2d20da8`, copied unchanged: a large real policy that `Diagnos
   **Scenario**: the real captures `real-baselined-comparable.baseline.json` (two accepted) and
   `real-attention-baseline.baseline.json` (none).
   **Expected behavior**: fingerprints and rule IDs in file order; `ConfigHash` equals `Digest` of the sibling policy;
-  `ProfileVersion` `archfit.measurement.v2`; the empty capture has no accepted entry and the same `ConfigHash`.
+  `ProfileVersion` `archfit.measurement.v2`; the empty capture has no accepted entry and the same `ConfigHash`. The
+  v3.0.1 capture of the same recipe, `real-recaptured-baseline.baseline.json`, has no `state.dimensions` and no
+  `state.hard_gate_finding_ids` and reads to a `Baseline` equal to the v3.0.0 one.
 - **Test name**: `TestReadBaselineIgnoresUnknownKeys`
   **Scenario**: a minimal valid baseline with unknown keys at the root, inside an accepted entry and inside `state`.
   **Expected behavior**: decodes with its one accepted entry.

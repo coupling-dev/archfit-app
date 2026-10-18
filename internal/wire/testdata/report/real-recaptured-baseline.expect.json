@@ -1,0 +1,23 @@
+{
+  "producer": {
+    "repository": "github.com/alexei-led/archfit",
+    "revision": "0649e504a6761f565086b342d315110feeb27d77",
+    "engine_version": "v3.0.1",
+    "command": "archfit baseline -c .archfit.yaml --refresh; archfit check --json -c .archfit.yaml -q --refresh; on a scratch copy of the engine testdata/fixture-go at tag v3.0.1 (git init, untracked files), the recipe of real-baselined-comparable; unmodified; the released binary archfit-v3.0.1-darwin-arm64 from the GitHub release v3.0.1, verified against its SHA256SUMS, on a dev host darwin/arm64, not the pinned image"
+  },
+  "decode": "ok",
+  "fields": {
+    "verdict": "needs_attention",
+    "hard_gates": "pass",
+    "unevaluated_rule_ids": [],
+    "has_profile": true,
+    "profile_version": "archfit.measurement.v2",
+    "gate_reference_status": "comparable"
+  },
+  "gate": {
+    "conclusion": "success",
+    "reasons": [
+      "attention_only"
+    ]
+  }
+}

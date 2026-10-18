@@ -22,7 +22,7 @@ func TestSchemaIsThePinnedEngineFile(t *testing.T) {
 			source[key] = value
 		}
 	}
-	if got, want := source["revision"], "bbd658f008bcc4bc83e063cf305d20dc4508da2e"; got != want {
+	if got, want := source["revision"], "0649e504a6761f565086b342d315110feeb27d77"; got != want {
 		t.Errorf("SCHEMA_SOURCE revision = %q, want %q", got, want)
 	}
 	if got, want := source["path"], "archfit.schema.json"; got != want {

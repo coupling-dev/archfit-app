@@ -1,0 +1,23 @@
+{
+  "producer": {
+    "repository": "github.com/alexei-led/archfit",
+    "revision": "0649e504a6761f565086b342d315110feeb27d77",
+    "engine_version": "v3.0.1",
+    "command": "two commits on a scratch copy of the engine testdata/fixture-go at tag v3.0.1 plus module c and a fail-gated forbidden_dependency rule from pkg/a to pkg/c: the base commit, then pkg/a/use.go imports pkg/c; archfit check --json -c .archfit.yaml -q --refresh --base <base commit>, the run the Action makes on a pull request; unmodified; the released binary archfit-v3.0.1-darwin-arm64 from the GitHub release v3.0.1, verified against its SHA256SUMS, on a dev host darwin/arm64, not the pinned image"
+  },
+  "decode": "ok",
+  "fields": {
+    "verdict": "blocked",
+    "hard_gates": "fail",
+    "unevaluated_rule_ids": [],
+    "has_profile": true,
+    "profile_version": "archfit.measurement.v2",
+    "gate_reference_status": "non_comparable"
+  },
+  "gate": {
+    "conclusion": "failure",
+    "reasons": [
+      "blocking_findings"
+    ]
+  }
+}

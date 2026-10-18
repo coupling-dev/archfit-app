@@ -34,7 +34,7 @@ type Envelope struct {
 	MergeBaseSHA   string `json:"merge_base_sha"` // "" unless pull_request
 	RunID          int64  `json:"run_id"`
 	RunAttempt     int    `json:"run_attempt"`
-	EngineVersion  string `json:"engine_version"`  // e.g. "v3.0.0"
+	EngineVersion  string `json:"engine_version"`  // e.g. "v3.0.1"
 	ImageDigest    string `json:"image_digest"`    // "sha256:<64 hex>"
 	Platform       string `json:"platform"`        // e.g. "linux/amd64"
 	PayloadDigest  string `json:"payload_digest"`  // "sha256:<64 hex>" of the exact payload bytes

@@ -124,7 +124,7 @@ func prScenario(t *testing.T) *scenario {
 			MergeBaseSHA:  mergeBaseSHA,
 			RunID:         runID,
 			RunAttempt:    1,
-			EngineVersion: "v3.0.0",
+			EngineVersion: "v3.0.1",
 			ImageDigest:   imageDigest,
 			Platform:      "linux/amd64",
 		},

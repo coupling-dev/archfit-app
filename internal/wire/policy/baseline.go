@@ -7,7 +7,7 @@ import (
 	"unicode/utf8"
 )
 
-// BaselineSchemaV3 is the only engine baseline schema the App reads (engine v3.0.0 writes it).
+// BaselineSchemaV3 is the only engine baseline schema the App reads (engines v3.0.0 and v3.0.1 write it).
 const BaselineSchemaV3 = "archfit.baseline.v3"
 
 // MaxBaselineBytes caps a baseline file: 1 MiB, the size github/api reads back from the protected ref.
