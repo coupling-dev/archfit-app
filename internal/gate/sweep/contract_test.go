@@ -195,8 +195,11 @@ func TestAdvisoryRepositories(t *testing.T) {
 		t.Errorf("warnings = %+v, want one", w.pub.warnings)
 	}
 	if w.pub.stateCalls != 0 || len(w.pub.pendings) != 0 || len(w.pub.published) != 0 || len(w.actions.runCalls) != 0 {
-		t.Errorf("state calls %d, pendings %d, published %d, run calls %d: want none",
+		t.Errorf("gate state calls %d, pendings %d, published %d, run calls %d: want none",
 			w.pub.stateCalls, len(w.pub.pendings), len(w.pub.published), len(w.actions.runCalls))
+	}
+	if w.pub.advisoryCalls != 1 {
+		t.Errorf("advisory state calls = %d, want 1", w.pub.advisoryCalls)
 	}
 	if want := (Summary{Repos: 1, Pulls: 1, Warned: 1}); sum != want {
 		t.Errorf("summary = %+v, want %+v", sum, want)
@@ -542,5 +545,75 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("logs lack %s:\n%s", want, out)
 		}
+	}
+}
+
+func TestAdvisoryStaleInputsRerun(t *testing.T) {
+	advisory := func(baselines ...string) inputs.Trusted {
+		tr := trusted()
+		tr.Settings.Gate = settings.GateAdvisory
+		tr.BaselineDigests = baselines
+		return tr
+	}
+	tests := []struct {
+		name        string
+		tr          inputs.Trusted
+		check       *feedback.Receipt // nil: no archfit/state on the head
+		wantReasons []verdict.ReasonCode
+		wantReruns  int
+	}{
+		{"fresh receipt", advisory(), ptr(receipt(9, verdict.ReasonHealthy)), nil, 0},
+		{"no report on the head", advisory("b1"), nil, nil, 0},
+		{"baseline merged after the run", advisory("b1"), ptr(receipt(9, verdict.ReasonBlockingFindings)), []verdict.ReasonCode{verdict.ReasonStaleInputs}, 1},
+		{"a re-run that failed earlier is retried", advisory(), ptr(receipt(9, verdict.ReasonStaleInputs)), nil, 1},
+		{"stale but no workflow run to re-run", advisory("b1"), ptr(receipt(0, verdict.ReasonBlockingFindings)), []verdict.ReasonCode{verdict.ReasonStaleInputs}, 0},
+		{"a fork refusal stays", advisory("b1"), ptr(receipt(0, verdict.ReasonForkUnsupported)), nil, 0},
+		{"a suspension stays and is not re-run", advisory("b1"), ptr(receipt(9, verdict.ReasonSuspended)), nil, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := newWorld(t)
+			tg := w.pull(w.repo(1, 11, "acme/shop"), 1, tt.tr)
+			if tt.check != nil {
+				w.check(tg, *tt.check, t0.Add(-day))
+			}
+			w.pass(t0)
+			if got := w.reasons()[1]; !reflect.DeepEqual(got, tt.wantReasons) {
+				t.Errorf("published reasons = %v, want %v", got, tt.wantReasons)
+			}
+			if got := len(w.actions.rerunCalls); got != tt.wantReruns {
+				t.Errorf("re-runs = %d, want %d", got, tt.wantReruns)
+			}
+			if len(w.pub.pendings) != 0 || w.pub.stateCalls != 0 {
+				t.Errorf("pendings %d, gate state calls %d: an advisory pull never gets a gate check", len(w.pub.pendings), w.pub.stateCalls)
+			}
+			before := w.calls()
+			w.pass(t0.Add(time.Hour))
+			if after := w.calls(); after != before {
+				t.Errorf("second pass wrote again: %+v, then %+v", before, after)
+			}
+		})
+	}
+}
+
+func ptr(rc feedback.Receipt) *feedback.Receipt { return &rc }
+
+func TestAdvisoryStaleStillWarns(t *testing.T) {
+	w := newWorld(t)
+	tr := trusted()
+	tr.Settings.Gate = settings.GateAdvisory
+	tr.BaselineDigests = []string{"b1"}
+	tr.EarliestWaiverExpiry = t0.Add(2 * day)
+	tg := w.pull(w.repo(1, 11, "acme/shop"), 1, tr)
+	w.check(tg, receipt(9, verdict.ReasonBlockingFindings), t0.Add(-day))
+
+	w.pass(t0)
+	w.pass(t0.Add(time.Hour)) // the receipt is stale_inputs now: rule 0c
+
+	if got := w.reasons()[1]; !reflect.DeepEqual(got, []verdict.ReasonCode{verdict.ReasonStaleInputs}) {
+		t.Errorf("published reasons = %v, want one stale_inputs", got)
+	}
+	if len(w.pub.warnings) != 2 {
+		t.Errorf("warnings = %d, want one per pass: rules 0b and 0c never skip rule 6a", len(w.pub.warnings))
 	}
 }

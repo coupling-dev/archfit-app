@@ -581,6 +581,10 @@ func (p *fakePublisher) State(_ context.Context, t inputs.Target) (feedback.Chec
 	return p.state, p.stateErr
 }
 
+func (p *fakePublisher) AdvisoryState(ctx context.Context, t inputs.Target) (feedback.CheckState, error) {
+	return p.State(ctx, t)
+}
+
 // Reconcile is State, decide and Publish, as feedback runs them inside the lease.
 func (p *fakePublisher) Reconcile(ctx context.Context, t inputs.Target, decide feedback.Decision) error {
 	current, err := p.State(ctx, t)

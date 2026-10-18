@@ -10,7 +10,7 @@ Also reported:
 - `waiver_expired` (governance): no_direct_b_dependency. Next: Renew the waiver or fix the finding.
 
 <!-- archfit:waiver 2026-10-01 -->
-> **Waiver expiry:** a waiver ends on 2026-10-01. After that date its findings block again. Renew the waiver or fix the findings before then.
+> **Waiver expiry:** a waiver ends on 2026-10-01. After that date its findings count as active violations again. Renew the waiver or fix the findings before then.
 <!-- /archfit:waiver -->
 
 ### Findings

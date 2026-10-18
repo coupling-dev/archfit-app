@@ -473,7 +473,7 @@ type Publication struct {
 // decision. Nothing was written; the caller decides again from the new inputs.
 var ErrStaleInputs error
 
-// CheckState is the gate check currently on a head SHA.
+// CheckState is the gate check (or, from AdvisoryState, the state check) currently on a head SHA.
 type CheckState struct {
     Exists    bool
     Pending   bool      // in_progress, no upload yet
@@ -488,6 +488,9 @@ type Publisher interface {
     // Pending creates the in_progress gate check if none exists on the head SHA.
     Pending(ctx context.Context, t Target) error
     State(ctx context.Context, t Target) (CheckState, error)
+    // AdvisoryState is State for archfit/state: an advisory pull request has no archfit/gate, and its receipt is the
+    // one on the state check. It is never Pending: only archfit/gate is created ahead of an upload.
+    AdvisoryState(ctx context.Context, t Target) (CheckState, error)
     // Warn adds or refreshes the waiver-expiry notice in the PR comment. Idempotent.
     Warn(ctx context.Context, t Target, expiry time.Time) error
     // Reconcile reads the gate check and calls decide with it, then publishes what decide returns, all inside the
@@ -1089,7 +1092,8 @@ Protected default-branch push: `gate/inputs` owns the protected path set, and `M
 caller without settings. The exact fifth protected path is `Settings.Workflow`, which lives on the protected ref, so
 `MayBeProtected` takes the whole `.github/workflows/` directory instead **[default]**: a superset that needs no file
 read; an extra `RunRepo` is harmless because the pass is idempotent. The façade names no path and no directory. `RunRepo` re-resolves every open PR of the repository, so a changed base policy or baseline shows
-as `stale_inputs` (plus a re-run) within the webhook request instead of within the hour. The hourly sweep stays the
+as `stale_inputs` (plus a re-run) within the webhook request instead of within the hour, in advisory mode too
+(sweep rule 0b). The hourly sweep stays the
 recovery path when the push event is lost. A rate limit in `RunRepo` is returned from `HandleEvent`, so the webhook
 queue retries the push.
 

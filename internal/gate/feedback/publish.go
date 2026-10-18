@@ -273,7 +273,15 @@ func (s *publisher) Pending(ctx context.Context, t inputs.Target) error {
 }
 
 func (s *publisher) State(ctx context.Context, t inputs.Target) (CheckState, error) {
-	run, found, err := s.latestRun(ctx, t.Repo.RepoRef, t.HeadSHA, gateCheck)
+	return s.checkState(ctx, t, gateCheck)
+}
+
+func (s *publisher) AdvisoryState(ctx context.Context, t inputs.Target) (CheckState, error) {
+	return s.checkState(ctx, t, stateCheck)
+}
+
+func (s *publisher) checkState(ctx context.Context, t inputs.Target, name string) (CheckState, error) {
+	run, found, err := s.latestRun(ctx, t.Repo.RepoRef, t.HeadSHA, name)
 	if err != nil || !found {
 		return CheckState{}, err
 	}

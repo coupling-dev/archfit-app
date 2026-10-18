@@ -127,14 +127,15 @@ type warning struct {
 
 // fakePublisher serves State from what was published, as feedback does from GitHub.
 type fakePublisher struct {
-	now        time.Time // the publication clock; world.pass sets it
-	states     map[string]feedback.CheckState
-	errs       map[string]error // by "<Method>:<full name>"
-	published  []feedback.Publication
-	pendings   []inputs.Target
-	warnings   []warning
-	stateCalls int
-	waited     func(inputs.Target)
+	now           time.Time // the publication clock; world.pass sets it
+	states        map[string]feedback.CheckState
+	errs          map[string]error // by "<Method>:<full name>"
+	published     []feedback.Publication
+	pendings      []inputs.Target
+	warnings      []warning
+	stateCalls    int
+	advisoryCalls int
+	waited        func(inputs.Target)
 }
 
 func (f *fakePublisher) Publish(_ context.Context, p feedback.Publication) error {
@@ -164,6 +165,15 @@ func (f *fakePublisher) Pending(_ context.Context, t inputs.Target) error {
 func (f *fakePublisher) State(_ context.Context, t inputs.Target) (feedback.CheckState, error) {
 	f.stateCalls++
 	if err := f.errs["State:"+t.Repo.FullName]; err != nil {
+		return feedback.CheckState{}, err
+	}
+	return f.states[checkKey(t)], nil
+}
+
+// AdvisoryState serves the same receipts: the fake keeps one check per head, as an advisory head has one.
+func (f *fakePublisher) AdvisoryState(_ context.Context, t inputs.Target) (feedback.CheckState, error) {
+	f.advisoryCalls++
+	if err := f.errs["AdvisoryState:"+t.Repo.FullName]; err != nil {
 		return feedback.CheckState{}, err
 	}
 	return f.states[checkKey(t)], nil

@@ -49,7 +49,7 @@ type Publication struct {
 // decision. Nothing was written; the caller decides again from the new inputs.
 var ErrStaleInputs = fmt.Errorf("feedback: trusted inputs changed after the decision: %w", errUnwritten)
 
-// CheckState is the gate check currently on a head SHA.
+// CheckState is the gate check (or, from AdvisoryState, the state check) currently on a head SHA.
 type CheckState struct {
 	Exists    bool
 	Pending   bool // in_progress, no upload yet
@@ -64,6 +64,9 @@ type Publisher interface {
 	// Pending creates the in_progress gate check if none exists on the head SHA.
 	Pending(ctx context.Context, t inputs.Target) error
 	State(ctx context.Context, t inputs.Target) (CheckState, error)
+	// AdvisoryState is State for archfit/state: an advisory pull request has no archfit/gate, and its receipt is the
+	// one on the state check. It is never Pending: only archfit/gate is created ahead of an upload.
+	AdvisoryState(ctx context.Context, t inputs.Target) (CheckState, error)
 	// Warn adds or refreshes the waiver-expiry notice in the PR comment. Idempotent.
 	Warn(ctx context.Context, t inputs.Target, expiry time.Time) error
 	// Reconcile reads the gate check and calls decide with it, then publishes what decide returns, all inside the

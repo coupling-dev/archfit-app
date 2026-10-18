@@ -103,6 +103,10 @@ func (s *serialized) State(ctx context.Context, t inputs.Target) (CheckState, er
 	return s.next.State(ctx, t)
 }
 
+func (s *serialized) AdvisoryState(ctx context.Context, t inputs.Target) (CheckState, error) {
+	return s.next.AdvisoryState(ctx, t)
+}
+
 func (s *serialized) Warn(ctx context.Context, t inputs.Target, expiry time.Time) error {
 	return s.hold(ctx, t, func(ctx context.Context) error { return s.next.Warn(ctx, t, expiry) })
 }
