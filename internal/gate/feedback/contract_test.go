@@ -248,7 +248,7 @@ func TestGoldenFeedback(t *testing.T) {
 			if !c.waiver.IsZero() {
 				waiver = c.waiver.Format(time.DateOnly)
 			}
-			comment := renderComment(p, t0, waiver)
+			comment := renderComment(p, t0, waiver, "")
 			state := renderState(p)
 			gate := renderGate(p)
 			golden(t, c.name+".comment", comment)
@@ -305,6 +305,45 @@ func TestGoldenFeedback(t *testing.T) {
 		})
 	}
 
-	both := renderComment(fixturePublication(t, fixtureCases()[11], headB), t0, "")
+	both := renderComment(fixturePublication(t, fixtureCases()[11], headB), t0, "", "")
 	mustContain(t, both, `"repair_kind":"code_change"`, `"repair_kind":"needs_owner_decision"`, "--base main --lang go --require-tools")
+}
+
+func TestCommentLinksToTheAppPullPage(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(headB)
+	if err := h.pub.Publish(ctx, blockedPublication(t, headB, 7, 1)); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	body := h.comments.all()[0].Body
+	mustContain(t, body, "[Details in Archfit](https://app.example/r/acme/shop/pull/7)")
+	if i, j := strings.Index(body, "Details in Archfit"), strings.Index(body, headFindings); i < 0 || i > j {
+		t.Errorf("the link is not in the head block, before the findings")
+	}
+
+	noticed := blockedPublication(t, headB, 7, 1)
+	noticed.Trusted.Entitlement = inputs.Entitlement{WarnFrom: t0.Add(-time.Hour), Notice: "Trial ends 2026-10-20"}
+	head := renderComment(noticed, t0, "", "https://app.example/r/acme/shop/pull/7")
+	if i, j := strings.Index(head, "Trial ends"), strings.Index(head, "Details in Archfit"); i < 0 || j < i {
+		t.Errorf("the link is not after the entitlement notice:\n%s", head)
+	}
+
+	tests := []struct {
+		name, appURL, fullName, want string
+		pull                         int
+	}{
+		{"no App URL", "", "acme/shop", "", 7},
+		{"a push has no pull request page", "https://app.example", "acme/shop", "", 0},
+		{"names are path-escaped", "https://app.example", "acme/a b?", "https://app.example/r/acme/a%20b%3F/pull/7", 7},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &publisher{appURL: tt.appURL}
+			target := prTarget(headB)
+			target.Repo.FullName, target.PullRequest = tt.fullName, tt.pull
+			if got := p.pullLink(target); got != tt.want {
+				t.Errorf("pullLink = %q, want %q", got, tt.want)
+			}
+		})
+	}
 }

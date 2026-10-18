@@ -1004,7 +1004,8 @@ type Swap struct {
 ### Composition
 
 `New(d)` builds, once: `ingest.New(d.GitHub, d.GitHub, d.GitHub, d.OIDC, d.Audience)`,
-`inputs.New(d.GitHub, d.GitHub, d.Store)`, `feedback.New(d.GitHub, d.GitHub, d.GitHub, d.Now)`, and
+`inputs.New(d.GitHub, d.GitHub, d.Store)`, `feedback.New(d.GitHub, d.GitHub, d.GitHub, d.Store, d.Audience, d.Now)` (the audience is the App's base URL, so
+the comment links to the App's pull request page), and
 `sweep.New(d.GitHub, d.GitHub, d.GitHub, resolver, publisher, d.Sweep)`. `verdict` has no constructor.
 `NewReceiver` is `ingest.New` with the same argument pattern. A nil `Deps.Now` means `time.Now` **[default]**.
 `New` delegates to the unexported `compose`, which takes the five `github/api` roles as one interface, and

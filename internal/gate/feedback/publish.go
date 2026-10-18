@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,7 +38,17 @@ type publisher struct {
 	checks   api.Checks
 	comments api.Comments
 	pulls    api.Pulls
+	appURL   string
 	now      func() time.Time
+}
+
+// pullLink is the App's page of the target's pull request; "" without an App URL.
+func (s *publisher) pullLink(t inputs.Target) string {
+	if s.appURL == "" || t.PullRequest == 0 {
+		return ""
+	}
+	owner, name, _ := strings.Cut(t.Repo.FullName, "/")
+	return s.appURL + "/r/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + "/pull/" + strconv.Itoa(t.PullRequest)
 }
 
 func (s *publisher) Publish(ctx context.Context, p Publication) (err error) {
@@ -236,7 +248,7 @@ func (s *publisher) writeComment(ctx context.Context, p Publication, now time.Ti
 		return actionNone, err
 	}
 	if !found {
-		_, err := s.comments.CreateComment(ctx, t.Repo.RepoRef, t.PullRequest, renderComment(p, now, ""))
+		_, err := s.comments.CreateComment(ctx, t.Repo.RepoRef, t.PullRequest, renderComment(p, now, "", s.pullLink(t)))
 		return actionCreated, err
 	}
 	if head, runID, attempt, ok := parseHead(existing.Body); ok && head == t.HeadSHA && newerRun(runID, attempt, p.Receipt) {
@@ -246,7 +258,7 @@ func (s *publisher) writeComment(ctx context.Context, p Publication, now time.Ti
 	if date, ok := currentWaiver(existing.Body); ok && !p.Trusted.EarliestWaiverExpiry.IsZero() && date == waiverDate(p.Trusted.EarliestWaiverExpiry) {
 		waiver = date
 	}
-	body := renderComment(p, now, waiver)
+	body := renderComment(p, now, waiver, s.pullLink(t))
 	if body == existing.Body {
 		return actionUnchanged, nil
 	}

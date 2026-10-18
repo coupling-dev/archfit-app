@@ -139,7 +139,7 @@ func TestLeaseFailsClosed(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			h := newHarness(headB)
-			pub := New(h.checks, h.comments, h.pulls, tt.store(h.store), h.clock.now)
+			pub := New(h.checks, h.comments, h.pulls, tt.store(h.store), "", h.clock.now)
 			p := blockedPublication(t, headB, 7, 1)
 			p.Target = tt.target
 			ctx := context.Background()

@@ -300,7 +300,7 @@ func TestTruncation(t *testing.T) {
 		Report:   stressReport(),
 		Trusted:  trusted(settings.GateRequired),
 	}
-	comment := renderComment(p, t0, "2026-10-01")
+	comment := renderComment(p, t0, "2026-10-01", "")
 	state := renderState(p)
 	gate := renderGate(p)
 
@@ -331,7 +331,7 @@ func TestTruncation(t *testing.T) {
 	mustContain(t, comment, "2000 more tasks did not fit")
 
 	p.Report.Findings = p.Report.Findings[:3]
-	comment = renderComment(p, t0, "")
+	comment = renderComment(p, t0, "", "")
 	if len(comment) > maxBody || !utf8.ValidString(comment) {
 		t.Errorf("comment is %d bytes or invalid UTF-8", len(comment))
 	}
@@ -371,7 +371,7 @@ func gapReport(withGaps bool) *report.Report {
 
 func TestEvidenceGapSources(t *testing.T) {
 	base := blockedPublication(t, headB, 7, 1)
-	gaps := func(p Publication) string { return section(renderComment(p, t0, ""), headGaps) }
+	gaps := func(p Publication) string { return section(renderComment(p, t0, "", ""), headGaps) }
 
 	p := base
 	p.Report = gapReport(true)
@@ -450,7 +450,7 @@ func TestEvidenceGapsDropNoise(t *testing.T) {
 	}
 	p := blockedPublication(t, headB, 7, 1)
 	p.Report = r
-	for name, body := range map[string]string{"comment": renderComment(p, t0, ""), "state": renderState(p)} {
+	for name, body := range map[string]string{"comment": renderComment(p, t0, "", ""), "state": renderState(p)} {
 		gaps := section(body, headGaps)
 		mustContain(t, gaps,
 			"- Tool `scip`: timed out (deadline of 60s passed)\n",
@@ -499,7 +499,7 @@ func TestGateSummaryNamesBlockers(t *testing.T) {
 	if !strings.HasSuffix(gate, "\n"+receiptMarker(p.Receipt)) {
 		t.Errorf("the receipt marker is not the last line")
 	}
-	for name, body := range map[string]string{"comment": renderComment(p, t0, ""), "state": renderState(p)} {
+	for name, body := range map[string]string{"comment": renderComment(p, t0, "", ""), "state": renderState(p)} {
 		if strings.Contains(body, headBlocking) {
 			t.Errorf("%s repeats the gate summary's block", name)
 		}
@@ -585,7 +585,7 @@ func TestDigestSourceLabels(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			p := blockedPublication(t, headB, 7, 1)
 			tc.change(&p)
-			for _, body := range []string{renderComment(p, t0, ""), renderGate(p), renderState(p)} {
+			for _, body := range []string{renderComment(p, t0, "", ""), renderGate(p), renderState(p)} {
 				baseline, labels := line(body, "- Baseline digest"), line(body, "- Labels digest")
 				if !strings.HasSuffix(baseline, tc.baseline) || !strings.HasSuffix(labels, tc.labels) {
 					t.Errorf("lines:\n%s\n%s\nwant the endings %q and %q", baseline, labels, tc.baseline, tc.labels)
@@ -612,7 +612,7 @@ func producerLine(t *testing.T, body string) string {
 func TestIdentityLine(t *testing.T) {
 	p := blockedPublication(t, headB, 7, 1)
 	for name, render := range map[string]func(Publication) string{
-		"comment": func(p Publication) string { return renderComment(p, t0, "") },
+		"comment": func(p Publication) string { return renderComment(p, t0, "", "") },
 		"gate":    func(p Publication) string { return renderGate(p) },
 		"state":   func(p Publication) string { return renderState(p) },
 	} {
@@ -781,7 +781,7 @@ func TestHeadlineStatesTheEffectOnMerge(t *testing.T) {
 func TestAdvisoryCommentNeverSaysBlocking(t *testing.T) {
 	p := blockedPublication(t, headB, 7, 1)
 	p.Trusted.Settings.Gate = settings.GateAdvisory
-	comment := renderComment(p, t0, "")
+	comment := renderComment(p, t0, "", "")
 	mustContain(t, comment, "## Archfit: Architecture violations found · advisory", "This check does not block merging", "**violation**")
 	mustNotContain(t, comment, "Blocked by", "**blocking**")
 	if strings.Index(comment, "<details>") < strings.Index(comment, headFindings) {

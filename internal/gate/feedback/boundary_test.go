@@ -50,7 +50,7 @@ func TestNoVerifiedNoScore(t *testing.T) {
 			p := fixturePublication(t, c, headB)
 			scrub(reflect.ValueOf(p.Report))
 			texts := map[string]string{
-				"comment":     renderComment(p, t0, "2026-10-01"),
+				"comment":     renderComment(p, t0, "2026-10-01", ""),
 				"state":       renderState(p),
 				"gate":        renderGate(p),
 				"gate title":  gateTitle(p),
