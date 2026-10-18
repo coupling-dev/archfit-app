@@ -1,0 +1,247 @@
+# Archfit App UI review: Guardrails prototype on pilot data
+
+Status: design review, 18 October 2026. Prototype: [`prototypes/index.html`](prototypes/index.html).
+Reviewed as a peer chat: Claude designed and edited, Codex reviewed and challenged (read-only).
+
+Inputs: the pilot repository `coupling-dev/pumba-pilot` (Go). Reports: `master` at `aed8b36` and PR #4 at
+`9d33f4d` (adds a module cycle `pkg_chaos` ⇄ `pkg_container`). Live GitHub: the `archfit/state` check run 117634137811,
+the PR #4 comment, setup PRs #2, #3 and the baseline PR #5 (merged 09:17:54Z, after the PR #4 run).
+
+## Summary
+
+The earlier prototype showed a product that the data cannot support yet: an `acme` organization with loops, owner tasks
+the engine does not emit (`needs_owner_decision` for coupling), and two green checks. The real pilot shows three
+problems that matter more:
+
+1. **The headline contradicts the effect.** PR #4 says "Blocked by architecture findings" and "Fix the blocking
+   findings". The gate is advisory, `archfit/state` is neutral, there is no `archfit/gate`, and GitHub lets the PR merge.
+2. **"New" is not "added by this PR".** With no baseline, all 6 coupling advisories on `master` show as new on PR #4.
+   With a baseline, "new" means "not accepted". "Introduced" needs a PR comparison (`--base`), which the pilot
+   workflow does not run.
+3. **Too much in one comment.** About 13 KB: 8 findings with location lists, 9 dimension lines, 16 gap lines, identity,
+   a validation block and a 4 KB JSON block.
+
+The prototype was rebuilt as a repository-scoped App on the pilot data, with a scenario switch that shows the real run
+next to projected ones. A fourth problem came out of the review: **in advisory mode a PR result goes out of date
+silently** when the baseline or policy changes on `master` (see the PR screen).
+
+## Surfaces and their jobs
+
+| Surface                 | Who reads it                     | One job                                  |
+| ----------------------- | -------------------------------- | ---------------------------------------- |
+| Merge box (check title) | everyone on the PR               | Does Archfit block this merge?           |
+| Check run summary       | the author, a reviewer           | Why, in one screen                       |
+| PR comment              | the author and coding agents     | What to change, and the exact repair tasks |
+| App PR page             | anyone who follows the link      | Everything about this run                |
+| App repository pages    | architecture owners, the admin   | State of `master`, decisions, evidence, setup |
+
+## Headline matrix
+
+The headline states the effect on merge. It comes from the protected gate mode (`.archfit-app.yaml` `gate:`, not in the
+report) and the check conclusion, never from `verdict` alone. The raw `verdict` stays in details.
+
+| `verdict`         | gate advisory                              | gate required                               |
+| ----------------- | ------------------------------------------ | ------------------------------------------- |
+| `blocked`         | Architecture violations found · advisory   | Architecture gate failing                   |
+| `needs_attention` | Architecture needs attention · advisory    | Architecture gate passed · attention needed |
+| `healthy`         | Architecture healthy · advisory            | Architecture gate passed                    |
+
+- No baseline in the run (`gate_reference.baseline_present = false`): append "· no baseline".
+- `healthy` with no baseline is not an expected current-engine state (drift is then unmeasured, so `needs_attention`).
+- Evidence problems override the matrix in required mode: "Action required: <reason>" with `action_required`, never
+  neutral. Examples: `stale_inputs`, `report_invalid`, `missing_upload`, a non-comparable baseline.
+- "Merge is blocked" is said only when a ruleset that requires `archfit/gate` is verified. Otherwise "gate failing".
+
+## Screens
+
+### Overview (repository, `master`)
+
+- **Use case:** an owner opens the repository after setup or a week later. Is `master` in policy, does anything need me?
+- **Main point:** one state badge for `master`, then open PRs, then owner decisions. Counts, no score.
+- **Verdict on the old prototype:** organization overview with "blocked then repaired" loops and agent attribution.
+  Good thesis, no data for it in the pilot: one repository, no loop history, no agent PRs. Kept for later.
+- **Changes:** repository-scoped page. Stat strip: 0 rule violations, 6 coupling advisories (33 edges), 5/9 dimensions
+  measured, 1 open PR with violations. Flash "Baseline merged after this report". Open PRs with their latest result,
+  including "no Archfit result" for #1 (opened before setup). Recent setup PRs.
+- **Open:** how to tell "no result because opened before setup" from "workflow did not run" without a run lookup.
+
+### Pull request (App page, new)
+
+- **Use case:** the author, a reviewer or an owner follows the link from the check or comment. What is wrong, does it
+  block, what do I change?
+- **Main point:** the banner: what was found and its effect on merge.
+- **Changes:** banner per the matrix; rule violations grouped (one cycle, two findings, one per direction, with the
+  location count per direction: 40 vs 1 at `pkg/container/flags.go:3`); advisories as a table with status `new` or
+  `baseline`; a panel "What new means here" that separates baseline from PR comparison; an abbreviated agent-task
+  preview with "Copy full tasks JSON" (copies the exact array, never the preview).
+- **Scenarios in the prototype:** the real run (no baseline); "result outdated" (#5 merged after the run); and two
+  projected ones: re-run with the baseline, gate required.
+- **Finding from the review:** in advisory mode nothing marks PR #4 out of date after #5 merges.
+  `internal/gate/sweep/rules.go:21` (rule 0) returns before stale detection for advisory repositories; the
+  `stale_inputs` re-run in `internal/gate/module.md` (~line 1073) applies to required mode only. Live check
+  117634137811 stayed neutral with its 08:56 result. The App page is the only place that can say "result predates
+  baseline #5", by comparing the run's baseline digest with `master`.
+- **Open:** should advisory mode re-run open PRs (and re-publish a neutral, refreshed result) when protected inputs
+  change? It is cheap and removes a silent wrong state. Owner decision.
+
+### On GitHub (merge box, check summary, PR comment)
+
+- **Use case:** most people meet Archfit here and never open the App.
+- **Main point:** the merge box answers "does it block?" from the check title alone.
+- **Changes:** "Published today" next to "Proposed" for all four scenarios.
+  - Check title = headline. Today it is "Architecture state: blocked" (`render.go:86`) and the comment heading is
+    "Blocked by architecture findings" (`render.go:71`).
+  - Check summary (~1 KB): effect and where it comes from; one line per violation group; advisory count; baseline note;
+    next step and App link; SHA, run, engine, the customer-attested sentence.
+  - PR comment (~1.5 KB plus agent block): headline and effect; the cycle with example locations per direction and the
+    fix; "No baseline yet: new does not mean added by this PR"; advisory count and link; the collapsed agent block with
+    the exact `agent_tasks[]` and its markers; SHA and trust line.
+  - Dimensions, evidence gaps, analyzers and identity move to the App.
+- **Rule:** never the word "blocking" in advisory mode. Say "rule violation".
+
+### Architecture
+
+- **Use case:** an owner checks what the policy says and where the code strains it.
+- **Main point:** red is a rule the policy enforces, yellow is advice, grey is observed. The map adds no meaning the
+  policy lacks: no layers are declared, so position is dependency depth and says so.
+- **Changes:** the real 6 modules and 7–8 seams; switch between `master` and PR #4 evidence (PR #4 adds
+  `pkg_container → pkg_chaos` and turns `pkg_chaos → pkg_container` into a violation). Views: Map, Rules and modules,
+  `.archfit.yaml`. Dropped the Charter/Matrix split and the Published/In review/Draft switch: one rule and six modules
+  do not need them. "Propose a change" goes to the existing policy editor.
+
+### Decisions
+
+- **Use case:** an owner with ten minutes. What can only I decide, and where does each option end?
+- **Main point:** the question, the facts, the options, each ending in a PR.
+- **Changes:** two real decisions instead of five invented ones: declare module volatility (all 6 advisories carry
+  `hypothesis = declare_volatility`; coupling unknown "volatility is undeclared on 78 edges"), and make the gate
+  required (after rehearsal). A "Decided" list shows #5 and #3. Code repairs (the cycle) belong to the author or an
+  agent and are not listed.
+- **Codex correction:** volatility is declared in `.archfit.yaml` (`modules.<name>.volatility` or `.subdomain`,
+  `archfit.schema.json:382`), not in the labels file (labels pin strength on a module pair). Do not promise that
+  declaring stops critical scores: functional coupling uses the worse of both ends, so scores may change either way.
+  This is App guidance from report facts, not an engine-emitted owner task.
+
+### Evidence
+
+- **Use case:** how much should I trust this result, and what would make it stronger?
+- **Main point:** partial evidence is normal and fixable. Each gap ends in a possible next step.
+- **Changes:** 9 dimensions with coverage as "observed / total + basis" (no average), confidence, gate, unknown count;
+  the 15 unknown facts grouped by possible next step (declare in the policy; supply deployment evidence; feed more CI
+  inputs; re-run with an admissible baseline; outside this report's claim); analyzers by status; inputs and identity.
+  `master` and PR #4 switch.
+- **Codex corrections:** a `deploy_unit` declaration alone does not close "no corroborating deploy manifest"; coverage
+  facts need supplied, resolvable, attributable and fresh coverage, not only "enable"; time does not close drift; do
+  not label absent analyzers "not needed" (the report has no per-tool applicability; say "this run reports no
+  missing-analyzer coverage gaps").
+
+### Setup
+
+- **Use case:** the admin asks what is done, what is next, and when it is safe to require the gate.
+- **Changes:** steps from real PRs (#2, #3, #5), "advisory" as the current step, then rehearse, then require. Settings
+  read-only from `master`.
+
+### States
+
+One page of the standard states, same wording everywhere: no report yet, report expired (artifact retention), inputs
+changed (required mode), report invalid, partial evidence, rate limited, not found (no confirmation that the repository
+exists), loading (header first, never fake numbers).
+
+## Data and API
+
+"Raw" means the field is in the engine artifact but dropped by the App's report projection
+(`internal/wire/report/contract.go:22` drops `findings[].matched_by`, `measurement`, seam scores; `Seam` keeps
+`id, from_module, to_module, edges, strength, distance, volatility, severity, policy`).
+
+| Screen element                        | Source                                                                                    | Exists today?   | To build                                           |
+| ------------------------------------- | ----------------------------------------------------------------------------------------- | --------------- | -------------------------------------------------- |
+| Gate mode, effect on merge            | `.archfit-app.yaml` `gate` on the protected ref; check run conclusion                     | yes             | —                                                  |
+| "Merge is blocked"                    | `GET /repos/{o}/{r}/rules/branches/{branch}`                                              | no              | ruleset read; permission check                     |
+| Headline                              | `verdict`, `decision.{hard_gates,active_blockers}`, gate mode, `gate_reference.baseline_present` | yes      | new title mapping in `gate/feedback`               |
+| Violation groups                      | `findings[].{id,kind,rule_id,status,severity,edge,locations,why,constraint}`              | yes             | group by rule + cycle module set                   |
+| Advisory edge count (33)              | `findings[].matched_by.group_count`                                                       | raw             | project `matched_by.group_count`                   |
+| Suggested action                      | `findings[].matched_by.hypothesis`, `seams[].hypothesis`                                  | raw             | project `hypothesis`                               |
+| New vs baseline                       | `findings[].status`, `gate_reference.{baseline_present,status,reasons}`                   | yes             | —                                                  |
+| Introduced vs pre-existing            | `comparison.{status,origin_status}`, `findings[].origin`                                  | yes, but `not_requested` in the pilot | pass `--base` in the workflow |
+| "Result predates baseline #5"         | envelope `baseline_digest` vs baseline on `master`                                        | partly          | compare on page load; advisory re-run (open)       |
+| Agent tasks                           | `agent_tasks[].{finding_id,rule_id,repair_kind,goal,constraints,files,validation,origin}` | yes             | copy button with the exact array                   |
+| PR page                               | `GET /pulls/{n}`, check runs for the head, the run's report artifact                      | no              | route `/r/{o}/{n}/pull/{number}`; lookup by head and run |
+| Open PRs with latest result           | `GET /pulls`, check runs per head                                                         | no              | one check-runs read per open PR (rate limit)       |
+| Map                                   | `seams[].{from_module,to_module,edges,strength,distance,volatility,severity,policy}`     | yes             | PR-head evidence on the graph                      |
+| Critical edges per seam, owners       | `seams[].{critical_edges,raw_distance.from_owner}`                                        | raw             | project them                                       |
+| Dimensions                            | `dimensions.*.{status,confidence,gate,coverage,unknown[]}`                                | yes             | —                                                  |
+| Unknown facts grouped by next step    | `dimensions.*.unknown[].{fact,reason,owner}`                                              | yes             | App wording table per `fact`                       |
+| Analyzers                             | `coverage.tools[].{tool,status,reason}`                                                   | yes             | —                                                  |
+| Identity                              | `comparison.*_hash`, envelope digests, engine version, image, platform, run id            | yes             | —                                                  |
+| Decisions                             | `unknown[]`, hypotheses, settings, setup PRs (`archfit/*` head refs)                       | partly          | fact → decision rules; `needs_owner_decision` when emitted |
+| Setup steps                           | onboarding progress on `/r/{o}/{n}`, merged `archfit/*` PRs                               | yes             | rehearsal tracking                                 |
+
+## Consistency glossary
+
+| Concept                 | Word                       | Badge                              | Never                                    |
+| ----------------------- | -------------------------- | ---------------------------------- | ---------------------------------------- |
+| `findings[].kind=gate`  | rule violation             | red `violation`                    | "blocking" in advisory mode              |
+| `kind=advisory`         | coupling advisory          | yellow count; "never block"        | "finding that blocks", "critical issue"  |
+| Advisory size           | "6 advisories · 33 edges"  | —                                  | "33 findings" next to "6 findings"       |
+| `status=new`            | new (not in the baseline)  | grey `new`                         | "introduced", "added by this PR"         |
+| `status=baseline`       | baseline                   | grey `baseline`                    | "fixed", "ignored"                       |
+| `origin=introduced`     | introduced by this PR      | only when `comparison` ran         | inferred from a `master` snapshot        |
+| Gate mode               | advisory / required        | grey label                         | implied by verdict                       |
+| Check `neutral`         | does not block merging     | grey neutral icon                  | "passed", "blocked"                      |
+| `action_required`       | Action required: <reason>  | yellow alert                       | neutral, or a verdict on the code        |
+| Old result              | result predates <change>   | yellow sync icon                   | silent                                   |
+| Dimension coverage      | observed / total + basis   | thin bar per row                   | one percentage across dimensions         |
+| Trust                   | customer-attested          | shield icon, muted                 | "verified"                               |
+| Owner choice            | owner decision             | purple `owner decision`            | for code repairs                         |
+| Repair                  | `code_change` task         | in the agent block                 | owner queue                              |
+
+## What Codex challenged and how it was resolved
+
+| # | Challenge (Codex)                                                                                       | Evidence                                                    | Resolution |
+| - | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ---------- |
+| 1 | Old prototype: two green checks, "healthy", invented owner task, "new" shown as "introduced"            | pilot reports, check run 117634137811                        | prototype rebuilt on pilot data |
+| 2 | Headline must come from gate mode + check conclusion; gate mode is not in the report                    | `publish.go:68,105`, `.archfit-app.yaml`                     | headline matrix adopted |
+| 3 | "16 evidence gaps" is not a canonical count: 15 unknown facts + missing baseline; absent tools are separate | report `dimensions.*.unknown[]`, `coverage.tools[]`      | Evidence groups facts; tools shown apart |
+| 4 | My "stale → action required" scenario is wrong in advisory mode                                         | `sweep/rules.go:21`; live check still neutral after #5       | scenario renamed "result outdated", neutral; required-mode stale moved to States; open question raised |
+| 5 | Volatility is a `.archfit.yaml` module field, not a labels PR; scores may not drop                      | `archfit.schema.json:382`, `labels.go:75`, engine CLAUDE.md  | decision text fixed; opens the policy editor |
+| 6 | Evidence grouping overclaimed what closes each gap                                                       | `acquisition/coverage.go:200`, `operations` metrics          | regrouped as "possible next step" with conditions |
+| 7 | Agent preview was labeled verbatim but truncated and invented "… 39 more"                               | `agent_tasks[]`                                              | labeled preview; copy uses the exact array |
+| 8 | `matched_by` and seam hypothesis/critical_edges/owners are not in the App projection                    | `wire/report/contract.go:22`, `Seam` struct                  | marked raw/NEW in the prototype and data table |
+| 9 | Overview's dimensions button opened PR #4 evidence                                                       | navigation                                                   | Evidence has a `master` / PR #4 switch; links set it |
+
+Agreed without dispute: one comment updated in place; the agent block stays in the comment, collapsed, with its
+markers; no aggregate score; customer-attested wording.
+
+## Recommendations
+
+### Now, for the pilot
+
+1. **Fix the headline and check title** in `gate/feedback` per the matrix. No "blocking" in advisory mode. Small Go
+   change in `render.go`; highest value, it removes a false statement on every PR.
+2. **Shorten the comment and the check summary** to the proposed layout; move dimensions, gaps and identity out.
+   Keep the agent block exact.
+3. **Say "no baseline" where it applies** (title suffix, one note). It is already in the report.
+4. **Decide advisory staleness:** re-run open PRs when protected inputs change, also in advisory mode, or at least
+   re-publish with "result predates". Today the pilot shows a wrong state with no signal.
+5. **Pass `--base` in the workflow** so that `origin` exists and "introduced by this PR" can be said honestly.
+
+### Next
+
+6. App PR page route with report lookup by head and run.
+7. Extend the report projection: `matched_by.{group_count,hypothesis}`, `seams[].{critical_edges,hypothesis}`,
+   module owners.
+8. Repository overview with open-PR results; Evidence page with grouped unknowns; States wording in templates.
+
+### Later
+
+9. Decisions derived from report facts; ruleset read for "merge is blocked"; rehearsal tracking.
+10. From the earlier prototype, when data exists: organization overview, "blocked then repaired" loops, agent
+    attribution, waiver expiry timeline, agent policy edits held for an owner.
+
+## Open questions for the owner
+
+1. Advisory mode and changed inputs: re-run and re-publish (neutral), or leave as is and rely on the App page?
+2. Should the workflow template pass `--base` by default, at the cost of a second checkout?
+3. Ruleset read: worth the extra permission to say "merge is blocked" instead of "gate failing"?
+4. Is "declare volatility" the first decision we want owners to make in the pilot, or should it wait until
+   the gate is required?
