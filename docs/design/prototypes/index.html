@@ -633,10 +633,10 @@ rules:
     </div>
     <aside class="side" aria-label="About this view">
       <div class="side-section"><div class="side-title">Use case</div><p>An owner or a skeptical reviewer asks: how much should I trust this result, and what would make it stronger?</p></div>
-      <div class="side-section"><div class="side-title">Main point</div><p>Partial evidence is normal and fixable. Each gap is grouped by who closes it, so the list ends in actions, not in a wall of text.</p></div>
+      <div class="side-section"><div class="side-title">Main point</div><p>Partial evidence is normal and fixable. Each gap is grouped by a possible next step, so the list ends in actions, not in a wall of text.</p></div>
       <div class="side-section"><div class="side-title">Data</div>
         <p><span class="data-tag today">EXISTS TODAY</span> <code>dimensions.*.{status,confidence,gate,coverage,unknown[]}</code>, <code>coverage.tools[]</code>, comparison hashes, envelope digests and producer claims.</p>
-        <p><span class="data-tag new">NEW</span> The "who closes it" grouping is App wording over <code>unknown[].{fact,reason,owner}</code>; the engine does not tag it. "Absent but not needed" needs the declared languages.</p></div>
+        <p><span class="data-tag new">NEW</span> The next-step grouping is App wording over <code>unknown[].{fact,reason,owner}</code>; the engine does not tag it. Tool applicability is not in the report, so absent tools get no "not needed" label.</p></div>
     </aside>
   </div>
 </section>
