@@ -318,12 +318,16 @@ run "queues_enforce_their_own_route_and_identity" {
   }
 }
 
-run "processing_starts_paused" {
+run "pausing_stops_the_queues_and_the_sweep" {
   command = plan
+
+  variables {
+    paused = true
+  }
 
   assert {
     condition     = alltrue([for q in google_cloud_tasks_queue.this : q.desired_state == "PAUSED"]) && google_cloud_scheduler_job.sweep.paused
-    error_message = "Queues and the Scheduler stay paused until the first real image serves."
+    error_message = "Pausing stops the queues and the Scheduler."
   }
 
   assert {
@@ -337,16 +341,12 @@ run "processing_starts_paused" {
   }
 }
 
-run "resumed_processing_runs_queues_and_watches_the_sweep" {
+run "processing_runs_queues_and_watches_the_sweep" {
   command = plan
-
-  variables {
-    paused = false
-  }
 
   assert {
     condition     = alltrue([for q in google_cloud_tasks_queue.this : q.desired_state == "RUNNING"]) && !google_cloud_scheduler_job.sweep.paused
-    error_message = "Resuming runs the queues and the Scheduler."
+    error_message = "By default the queues and the Scheduler run."
   }
 
   assert {
