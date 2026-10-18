@@ -120,7 +120,9 @@ type Decision func(ctx context.Context, current CheckState) (*Publication, error
 // New returns a Publisher that is safe for concurrent use, also across instances that share s: Publish, Pending,
 // Warn and Reconcile hold a per-head publication lease in s, so that two publishers for one head SHA never interleave
 // their reads and writes. It keeps no other state between calls; GitHub holds the receipts.
-func New(checks Checks, comments Comments, pulls Pulls, s Store, now func() time.Time) Publisher
+// appURL is the App's base URL without a trailing slash (ARCHFIT_BASE_URL); the PR comment links to the App's pull
+// request page under it. "" writes no link.
+func New(checks Checks, comments Comments, pulls Pulls, s Store, appURL string, now func() time.Time) Publisher
 ```
 
 ### Fixed names and markers
@@ -316,7 +318,9 @@ receipt marker. Block G is in the gate summary only.
    findings" **[default]**. When no finding is active (a hard gate that failed without a finding, for example a
    metric ratchet), the block is the line "No active gate finding is listed…" instead. Without `blocking_findings`,
    without a report, or when suspended, it is omitted. Display only: the conclusion still comes from `Outcome`.
-3. `Trusted.Entitlement.Notice`, when `WarnFrom` is set, `now()` is at or past it, and the notice is not empty.
+3. `Trusted.Entitlement.Notice`, when `WarnFrom` is set, `now()` is at or past it, and the notice is not empty. In
+   the comment only, when `New` got an App URL: the line "[Details in Archfit](<appURL>/r/<owner>/<name>/pull/<n>)",
+   owner and name path-escaped, part of the never-cut head. A push has no pull request page and no link.
 4. Waiver notice section (owned by `Warn`).
 5. Findings: blocking first. A finding is labeled "violation" (never "blocking": in advisory mode nothing blocks) when `Finding.Active()` of `wire/report` is true
    (that package owns the status vocabulary; feedback has no formula of its own) **[default, display only: the
@@ -1175,6 +1179,9 @@ Golden files hold rendered bodies for the wire fixtures.
 - **Test name**: `TestWaiverNoticeStaysOutsideFolds`
   **Scenario**: a body whose first `###` heading is inside a fold.
   **Expected behavior**: the notice lands before the fold.
+- **Test name**: `TestCommentLinksToTheAppPullPage`
+  **Scenario**: a publication on a pull request with an App URL; no App URL; a push; a repository name with a space and a question mark.
+  **Expected behavior**: the "Details in Archfit" link to `/r/acme/shop/pull/7` in the head, before the findings; no link; no link; a path-escaped link.
 - **Test name**: `TestAdvisoryCommentNeverSaysBlocking`
   **Scenario**: a blocked publication on an advisory pull request, rendered as comment.
   **Expected behavior**: the advisory headline and the "does not block merging" line; "violation" labels; no "Blocked by" and no "blocking" label; findings before the first fold.

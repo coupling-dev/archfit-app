@@ -64,6 +64,9 @@ type harness struct {
 	pub      Publisher
 }
 
+// appURL is the App base URL the harness publisher links to.
+const appURL = "https://app.example"
+
 func newHarness(prHead string) *harness {
 	h := &harness{
 		checks:   &fakeChecks{},
@@ -72,7 +75,7 @@ func newHarness(prHead string) *harness {
 		clock:    &clock{t: t0},
 		store:    store.NewMemory(),
 	}
-	h.pub = New(h.checks, h.comments, h.pulls, h.store, h.clock.now)
+	h.pub = New(h.checks, h.comments, h.pulls, h.store, appURL, h.clock.now)
 	return h
 }
 

@@ -223,8 +223,12 @@ func renderState(p Publication) string {
 }
 
 // renderComment renders the whole comment. waiver is the date of the notice section to carry, or "".
-func renderComment(p Publication, now time.Time, waiver string) string {
+// link is the App's page of this pull request, or "" for none.
+func renderComment(p Publication, now time.Time, waiver, link string) string {
 	l := layout{head: headBlock(p, true), inputs: inputsBlock(p)}
+	if link != "" {
+		l.head += "\n\n[Details in Archfit](" + link + ")"
+	}
 	if notice := noticeLine(p.Trusted.Entitlement, now); notice != "" {
 		l.head += "\n\n" + notice
 	}

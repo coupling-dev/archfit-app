@@ -409,7 +409,8 @@ baseline already accepts, and accepts nothing new.
 
 ## See a pull request
 
-Open `/r/<owner>/<repo>/pull/<number>` for the Archfit result of the pull request's head commit.
+Open `/r/<owner>/<repo>/pull/<number>` for the Archfit result of the pull request's head commit. The Archfit comment
+on the pull request links to this page ("Details in Archfit").
 
 - The headline is the title of the `archfit/state` check, with the gate mode beside it. In advisory mode the check does
   not block merging.

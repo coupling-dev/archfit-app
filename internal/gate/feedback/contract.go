@@ -82,9 +82,12 @@ type Decision func(ctx context.Context, current CheckState) (*Publication, error
 // New returns a Publisher that is safe for concurrent use, also across instances that share s: Publish, Pending,
 // Warn and Reconcile hold a per-head publication lease in s, so that two publishers for one head SHA never interleave
 // their reads and writes. It keeps no other state between calls; GitHub holds the receipts.
-func New(checks api.Checks, comments api.Comments, pulls api.Pulls, s store.Store, now func() time.Time) Publisher {
+//
+// appURL is the App's base URL without a trailing slash (ARCHFIT_BASE_URL); the PR comment links to the App's pull
+// request page under it. "" writes no link.
+func New(checks api.Checks, comments api.Comments, pulls api.Pulls, s store.Store, appURL string, now func() time.Time) Publisher {
 	return &serialized{
-		next:  &publisher{checks: checks, comments: comments, pulls: pulls, now: now},
+		next:  &publisher{checks: checks, comments: comments, pulls: pulls, appURL: appURL, now: now},
 		store: s,
 		now:   now,
 		wait:  pollWait,

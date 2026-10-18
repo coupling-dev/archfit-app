@@ -306,7 +306,7 @@ func TestUsefulWithoutLLM(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.fixture, func(t *testing.T) {
 			p := fixturePublication(t, cases[tt.fixture], headB)
-			comment := renderComment(p, t0, "")
+			comment := renderComment(p, t0, "", "")
 			mustContain(t, comment, tt.wants...)
 			mustContain(t, renderState(p), tt.wants[0], tt.wants[1])
 			if gaps := section(comment, headGaps); strings.Contains(gaps, "None reported") {
@@ -416,7 +416,7 @@ func TestSuspensionFeedback(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			p := blockedPublication(t, headB, 7, 1)
 			p.Trusted.Entitlement = inputs.Entitlement{WarnFrom: tt.warnFrom, Notice: notice}
-			comment := renderComment(p, t0, "")
+			comment := renderComment(p, t0, "", "")
 			if got := strings.Contains(comment, notice); got != tt.want {
 				t.Errorf("notice shown = %v, want %v", got, tt.want)
 			}
