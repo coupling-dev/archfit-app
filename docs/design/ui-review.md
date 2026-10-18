@@ -66,37 +66,44 @@ layers are columns (`static/graph.js`), and the pilot declares no layers, so all
 links looping to the right; a 9-line paragraph explains five statuses; every link looks the same; two tables repeat
 the drawing.
 
-**Question the graph answers:** does the code follow the approved policy, and where not? In 5 seconds: how many
-violations, between which modules.
+**Question the graph answers:** the policy status of module relationships in this report: does the code follow the
+approved policy, and where not? In 5 seconds: how many violations, between which modules. Findings that name no module
+pair stay on the check and the PR page.
 
 **Default view**
 
-| Element      | Default                                                                                               |
-| ------------ | ----------------------------------------------------------------------------------------------------- |
-| Status chips | counts per link status, also the filter: violation, advisory, accepted debt, allowed, fine            |
-| Problem list | left side, violations first, then advisories, then accepted debt; each by import count; click focuses |
-| Modules      | boxes ranked by dependency depth (importers above); red border if the module touches a violation      |
-| Links        | color = status; width = import count in 3 steps (1–2, 3–9, 10+); count badge on problem links only    |
-| Fine links   | thin grey, no label; hidden in focus mode                                                             |
-| Cycles       | both directions drawn as two separate curves                                                          |
-| Click        | a link or problem: dims the rest, shows why; a module: its links in and out                           |
+| Element      | Default                                                                                                          |
+| ------------ | ---------------------------------------------------------------------------------------------------------------- |
+| Banners      | `View.Stale` and `View.Incomplete` stay, above everything                                                        |
+| Status chips | counts per `Link.Status`, also the filter: violation, advisory, accepted (baseline or waiver), allowed, observed |
+| Problem list | left side, violations first, then advisories, then accepted; each by count; same visibility rule as the graph    |
+| Modules      | ranked by dependency depth when no layers are declared; grouped in declared-layer bands when they are            |
+| Links        | color = `Status` as `graph.Build` sets it (never recomputed); width = observed dependencies in 3 steps           |
+| Observed     | thin grey, no label, named "observed", not "fine": with an incomplete report it can still break a rule           |
+| Cycles       | both directions as two separate curves; a self-link as a loop                                                    |
+| Click        | a link, problem or matrix cell: dims the rest, shows the status meaning and the findings behind it               |
 
 **Readable from 6 to 40 modules**
 
-1. Deterministic layout: rank by dependency depth after breaking cycles, two barycenter passes to reduce crossings,
-   ties by name. No force simulation: the same report always draws the same picture.
+1. Deterministic layout, computed once per report and scope, never per filter, so modules do not move. No layers:
+   depth after a cycle break, two barycenter passes, ties by name. Depth is a layout only, never a permitted direction.
+   Declared layers: bands in the policy's layer order; names alone give no hierarchy.
 2. At most 6 modules per drawn line; a wider rank wraps.
-3. Over 15 modules the graph starts in focus mode: only modules that touch a violation or advisory, with problem links
-   only. "Show all" draws everything.
-4. Matrix view for the full picture at any size: rows import columns, same order as the graph, colored cells.
-5. Over about 60 modules (later): matrix plus search only, grouped by path prefix.
+3. Over 15 modules the graph starts in focus mode: modules and links with a violation, advisory or accepted exception.
+   Showing allowed or observed links switches to the full graph. With no problem link, the full graph.
+4. Matrix view for the full picture at any size: rows depend on columns; position does not establish permission.
+5. Larger repositories (proposal, not validated): matrix plus search, grouped by path prefix.
 
-**Data:** none new. The live `View.Nodes` and `View.Links{From, To, Count, Status}` feed it. The "why" text per link
-needs `Finding.Why` joined by module pair, which `graph.Build` already reads.
+**Data:** existing report facts, but not all reach the page today. `View.Nodes{Name, Layer, PolicyLine}` and
+`View.Links{From, To, Count, Status}` feed the drawing. The detail panel needs a new projection: per link, the findings
+behind it (rule, kind, status, why), so an advisory's text never stands in for an accepted or observed status. An
+allowed link may have no finding. A link with `Count` 0 is finding-only, not proof of zero imports.
 
-**Where:** replace `internal/control/ui/static/graph.js` (drawing, layout, filters, matrix) and
-`templates/graph.html` (chips, problem list, detail panel; the hint paragraph goes; the two tables stay only as the
-no-script fallback). Prototype: `prototypes/graph-proto.js`, same input shape.
+**Where:** `internal/control/ui/static/graph.js` (layout, filters, matrix, detail; DOM built with `textContent` and
+`setAttribute`, `Map` keys for module names, never `innerHTML` with report strings), `templates/graph.html` (chips,
+problem list, detail panel; the hint paragraph goes; Stale/Incomplete banners, policy links and the accessible tables
+stay as the no-script fallback), `static/app.css` (new link and node classes), and `graph.Build` or the page handler
+for the per-link findings. Prototype: `prototypes/graph-proto.js`.
 
 ## Surfaces and their jobs
 

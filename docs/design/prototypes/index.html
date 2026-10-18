@@ -129,6 +129,9 @@
   .gedge .badge-t { fill: var(--fg); font: 600 10px var(--font); }
   .chip.violation { color: var(--danger); border-color: var(--danger-border); } .chip.advisory { color: var(--attention); border-color: var(--attention-border); }
   .chip.accepted { color: var(--done); border-color: var(--done-border); }
+  .gband { fill: var(--fg-muted); font: 600 11px var(--font); letter-spacing: .04em; text-transform: uppercase; }
+  .gnode.undeclared rect { stroke-dasharray: 4 3; }
+  table.gdsm td[tabindex] { cursor: pointer; } table.gdsm td.sel { outline: 2px solid var(--accent); outline-offset: -2px; }
   .linkish { font: inherit; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; }
   table.gdsm { border-collapse: collapse; font-size: 11px; }
   table.gdsm th { font-weight: 500; color: var(--fg-muted); padding: 2px 6px; white-space: nowrap; text-align: right; font-family: var(--mono); }
@@ -413,6 +416,7 @@
 <!-- ================= ARCHITECTURE: does the code follow the approved policy, and where not? ================= -->
 <section role="tabpanel" id="architecture" aria-labelledby="tab-architecture" class="stack" style="gap:16px" hidden>
   <div id="gproto" class="stack" style="gap:12px">
+    <div class="flash warn" data-g-banner hidden><svg class="oi attention flash-icon"><use href="#i-alert"/></svg><span><strong>Incomplete:</strong> the report's hard gates did not pass or not all required rules were evaluated. An observed link can still break a rule.</span></div>
     <div class="row-between">
       <div class="row" data-g-chips aria-label="Show links by status"></div>
       <div class="row">
@@ -435,7 +439,7 @@
         <div class="graph-wrap gcanvas" data-g-canvas></div>
         <div data-g-matrix hidden></div>
         <p class="meta" data-g-note></p>
-        <span class="src">View.Nodes · View.Links{From,To,Count,Status} — the live page's data, no new fields</span>
+        <span class="src">View.Nodes · View.Links{From,To,Count,Status} · View.Stale/Incomplete · NEW: per-link findings for the detail</span>
       </div>
     </div>
   </div>
