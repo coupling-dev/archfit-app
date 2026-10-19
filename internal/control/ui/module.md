@@ -14,8 +14,8 @@ could still work GitHub-first, but onboarding, schema-guided editing and consent
 
 ## Functional Responsibilities
 
-- Serve the web app (`web/`, Svelte 5 built by Vite, embedded from `spa/`) for the overview and the repository page,
-  and its JSON API under `/api/`. The other pages are still server-rendered (`html/template`) with their embedded
+- Serve the web app (`web/`, Svelte 5 built by Vite, embedded from `spa/`) for the overview, the repository page and
+  the pull request page, and its JSON API under `/api/`. The other pages are still server-rendered (`html/template`) with their embedded
   static assets (one stylesheet, two small scripts); each moves to the web app in its own phase
   (`docs/design/ui-redesign.md`, Migration order).
 - Authenticate every request through `session` and authorize every repository page at the needed permission.
@@ -86,6 +86,8 @@ Minimum repository permission in brackets. `{o}/{n}` is only a lookup key for `S
   sign-in needed, no tenant data. A folder or a missing file is `404`; nothing else of the build is served.
 - `GET /r/{o}/{n}` [read] — the shell again, after the repository is authorized, so a repository the user cannot see is
   "Not found" before any script runs. The app fills it from the overview API.
+- `GET /r/{o}/{n}/pull/{number}` [read] — the shell for the pull request page; a number that is not a positive integer
+  answers `404` here, a number that is no pull request of the repository answers `404` from the API.
 
 JSON API: every response is `application/json` with `Cache-Control: no-store` and a body of an explicit type of this
 package, never a stored record. Errors are `{"error": "<sentence>"}` with the status of the mapping below. A `POST`
@@ -116,8 +118,6 @@ Server-rendered pages:
 - `GET /r/{o}/{n}/graph` [read] — graph page.
 - `GET /r/{o}/{n}/pull/{number}/graph` [read] — the graph of the report the pull request page shows; the same `404`
   rule for the number.
-- `GET /r/{o}/{n}/pull/{number}` [read] — the shell; a number that is not a positive integer answers `404` here, a
-  number that is no pull request of the repository answers `404` from the API.
 - `POST /r/{o}/{n}/assist` [write] — form `branch`, `head_sha`, `content`, `instruction`, `mode`.
 - `GET /r/{o}/{n}/consent`, `POST /r/{o}/{n}/consent` [admin] — form `kind`, `action` (`record` | `revoke`).
 
@@ -1006,14 +1006,15 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   the digest in the id: a report is never shown beside a check it did not produce. States, each with fixed wording and a
   link to the checks on GitHub: no check yet, action required, no upload, report expired (`ErrNotFound`, GitHub retention), report does
   not match its check, report unavailable (decode error). With a report, in the groups and words of the PR comment:
-  rule violations open (active gate findings, and any status this version does not know), each dependency cycle among
+  rule violations open (`report.Group`: active gate findings first, then any status this version does not know, which
+  is shown but not labelled a violation), each dependency cycle among
   them (`report.Cycles`, the comment's grouping) as one card with a drawing of the cycle (one box per module, one
   arrow per direction labelled with its location count, styled as the comment's diagram), a row per direction with
   "This PR", its locations and the seam's strength, distance (`report.DistanceWords`) and volatility, then the reason
   once and each distinct repair once; every other violation as its own card. Advisories and accepted debt each one
   folded table with each distinct reason once. At most 50 per group with the rest counted (group counts are of
   findings), 3 locations per finding with the rest folded. "This PR" only when `origin_status` is `comparable`: a
-  cycle direction reads `report.PairOrigin` (the comment's rule, so the comment, this page and the graph agree), any
+  cycle direction reads `report.PairOrigin` (the comment's rule, so the comment and this page agree; the graph adopts it in phase d), any
   other finding its own `origin` (`introduced` is added, `pre_existing` existed before). Badges for "no baseline"
   (`gate_reference.baseline_present`), "compared with base" or "PR attribution unavailable", and "customer-attested";
   the exact `agent_tasks` array with a copy button; the nine dimensions with readable names (the engine key as a
@@ -1162,6 +1163,9 @@ their interfaces except where a test says otherwise. The clock is injected.
 - **Test name**: `TestPullPageNumberMustBeAPull`, `TestPullPageReadsTheGateModeOfTheBase`
   **Scenario**: numbers `0`, `-4`, `x`, `4x`, and `5`, no pull request, on the page, the API and the graph; a pull request whose base branch requires the gate while the default branch is advisory.
   **Expected behavior**: `404` each (`5` on the page only from the API); `required` true.
+- **Test name**: `TestPullPageHidesOriginsWithoutAComparisonAndShowsActiveFirst`
+  **Scenario**: no comparison; a cycle and plain findings with origins; a status this version does not know first in the report.
+  **Expected behavior**: no origin anywhere; the active finding before the unknown one, which is not a violation.
 - **Test name**: `TestPullPageGroupsCyclesAsTheCommentDoes`, `TestPullPageCapsEachGroup`
   **Scenario**: a cycle whose second direction another rule's `pre_existing` finding names, a plain violation, an
   accepted pair, a seam on one direction, two dimensions; then 57 advisories.

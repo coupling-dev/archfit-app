@@ -27,7 +27,6 @@ const (
 	reportMismatch = "The report of this run does not match its check, so it is not shown. Re-run the workflow."
 
 	conclusionActionRequired = "action_required"
-	locationsShown           = 3  // per finding, before the rest folds
 	findingsPerList          = 50 // per group, the rest counted
 )
 

@@ -61,6 +61,7 @@ export interface Finding {
   rule: string;
   rule_id: string;
   meta: string;
+  violation: boolean;
   from: string;
   to: string;
   origin: '' | 'added' | 'existing';

@@ -333,6 +333,30 @@ func TestPullPageGroupsCyclesAsTheCommentDoes(t *testing.T) {
 	}
 }
 
+func TestPullPageHidesOriginsWithoutAComparisonAndShowsActiveFirst(t *testing.T) {
+	f := func(id, status, origin, from, to string) report.Finding {
+		return report.Finding{ID: id, Kind: "gate", RuleID: "r", Status: status, Severity: "high", Origin: origin,
+			Edge: report.Edge{From: report.Endpoint{Module: from}, To: report.Endpoint{Module: to}}}
+	}
+	rep := report.Report{Findings: []report.Finding{
+		f("u", "bogus", "introduced", "p", "q"), // a status this version does not know: shown, not a violation
+		f("a", "new", "introduced", "x", "y"), f("b", "new", "pre_existing", "y", "x"), f("c", "new", "introduced", "api", "db"),
+	}}
+	var b pullJSON
+	fillFindings(&b, rep)
+	if b.Compared || len(b.Cycles) != 1 || len(b.Other) != 2 {
+		t.Fatalf("compared %v, %d cycles, %d other", b.Compared, len(b.Cycles), len(b.Other))
+	}
+	for _, d := range append(b.Cycles[0].Directions, b.Other...) {
+		if d.Origin != "" {
+			t.Errorf("%s → %s reads %q without a comparison", d.From, d.To, d.Origin)
+		}
+	}
+	if b.Other[0].From != "api" || !b.Other[0].Violation || b.Other[1].From != "p" || b.Other[1].Violation {
+		t.Errorf("other = %+v, want the active finding first and the unknown status last, not a violation", b.Other)
+	}
+}
+
 func TestPullPageCapsEachGroup(t *testing.T) {
 	var rep report.Report
 	for i := range findingsPerList + 7 {

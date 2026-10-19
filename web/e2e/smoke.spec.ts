@@ -71,6 +71,7 @@ const direction = (from: string, to: string, origin: string, n: number) => ({
   rule: 'no-module-cycles',
   rule_id: 'no-module-cycles',
   meta: 'high',
+  violation: true,
   from,
   to,
   origin,

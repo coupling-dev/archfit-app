@@ -40,36 +40,9 @@ type groups struct {
 }
 
 func group(r *report.Report) groups {
-	g := groups{compared: r.Comparison.OriginStatus == originComparable}
-	for _, f := range r.Findings {
-		if !g.compared {
-			f.Origin = ""
-		}
-		g.all = append(g.all, f)
-		switch {
-		case f.Active():
-			g.violations = append(g.violations, f)
-		case f.Status == statusBaseline || f.Status == statusWaived:
-			g.debt = append(g.debt, f)
-		case f.Status == statusFixed:
-			g.fixed = append(g.fixed, f)
-		case f.Kind == kindAdvisory && (f.Status == statusNew || f.Status == statusExpired):
-			g.advisories = append(g.advisories, f)
-		default: // never hide a finding whose status this version does not know
-			g.violations = append(g.violations, f)
-		}
-	}
-	slices.SortStableFunc(g.violations, func(a, b report.Finding) int { // Active first, as before the unknown statuses
-		return boolOrder(b.Active()) - boolOrder(a.Active())
-	})
-	// Only the shown violations: cycles is quadratic or worse in the findings, and a report may hold 10 000.
-	g.onCycle = map[string]bool{}
-	for i, c := range report.Cycles(g.violations[:min(len(g.violations), groupCap)]) {
-		if c >= 0 {
-			g.onCycle[g.violations[i].ID] = true
-		}
-	}
-	return g
+	rg := report.Group(*r, groupCap)
+	return groups{compared: rg.Compared, all: rg.All, violations: rg.Violations, advisories: rg.Advisories,
+		debt: rg.Accepted, fixed: rg.Fixed, onCycle: rg.OnCycle}
 }
 
 // findingsBlock is block 5. It labels Finding.Active findings as violations, a display heuristic only: the conclusion
@@ -178,13 +151,6 @@ func series(items []string) string {
 
 // dependency is the module pair of a finding, without paths.
 func dependency(f report.Finding) string { return module(f.Edge.From) + " → " + module(f.Edge.To) }
-
-func boolOrder(v bool) int {
-	if v {
-		return 1
-	}
-	return 0
-}
 
 // tally is the one line that counts every non-empty group, so the size of the problem reads before any detail. It
 // never says "no violations": a hard gate can fail without a finding. cycles counts the dependency cycles among the

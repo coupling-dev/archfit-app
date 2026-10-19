@@ -2,8 +2,62 @@ package report
 
 import "slices"
 
-// Display rules that the PR comment, the pull request page and the graph share, so the three tell the same story about
-// cycles and about what a pull request added. None of them is a gate decision.
+// Display rules that the PR comment and the App's pull request page share, so both tell the same story about cycles
+// and about what a pull request added; the pull request graph adopts them when it moves to the web app (phase d).
+// None of them is a gate decision.
+
+// Groups is a report's findings in the groups the comment and the App show. Display only: the gate decides from the
+// decision, never from these groups.
+type Groups struct {
+	Compared   bool      // the engine compared against the pull request base, so origins mean something
+	All        []Finding // every finding, Origin cleared when not compared
+	Violations []Finding // active gate findings first, then any status this version does not know: never hidden
+	Advisories []Finding
+	Accepted   []Finding // baseline entries and waivers
+	Fixed      []Finding
+	OnCycle    map[string]bool // IDs of the first shown violations that lie on a dependency cycle
+}
+
+// Group sorts a report's findings into Groups. shown is how many violations the caller shows: only those are searched
+// for cycles, because Cycles is quadratic or worse in the findings and a report may hold 10 000.
+func Group(r Report, shown int) Groups {
+	g := Groups{Compared: r.Comparison.OriginStatus == "comparable"}
+	for _, f := range r.Findings {
+		if !g.Compared {
+			f.Origin = ""
+		}
+		g.All = append(g.All, f)
+		switch {
+		case f.Active():
+			g.Violations = append(g.Violations, f)
+		case f.Status == "baseline" || f.Status == "waived":
+			g.Accepted = append(g.Accepted, f)
+		case f.Status == "fixed":
+			g.Fixed = append(g.Fixed, f)
+		case f.Kind == "advisory" && (f.Status == "new" || f.Status == "expired_waiver"):
+			g.Advisories = append(g.Advisories, f)
+		default:
+			g.Violations = append(g.Violations, f)
+		}
+	}
+	slices.SortStableFunc(g.Violations, func(a, b Finding) int { // active first, as before the unknown statuses
+		return boolOrder(b.Active()) - boolOrder(a.Active())
+	})
+	g.OnCycle = map[string]bool{}
+	for i, c := range Cycles(g.Violations[:min(len(g.Violations), shown)]) {
+		if c >= 0 {
+			g.OnCycle[g.Violations[i].ID] = true
+		}
+	}
+	return g
+}
+
+func boolOrder(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
+}
 
 // Pair origins: what the report shows about one direction of a dependency on the pull request base.
 const (

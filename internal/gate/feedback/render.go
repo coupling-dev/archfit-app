@@ -55,8 +55,6 @@ const (
 	statusNew      = "new"
 	statusExpired  = "expired_waiver"
 
-	kindAdvisory = "advisory"
-
 	verdictHealthy = "healthy"
 	verdictBlocked = "blocked"
 

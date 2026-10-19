@@ -10,7 +10,7 @@
 <article class="box finding">
   <div class="box-head">
     <div class="row">
-      <span class="label solid danger">violation</span>
+      {#if f.violation}<span class="label solid danger">violation</span>{/if}
       <strong title={f.rule_id}>{f.rule}</strong>
       <span class="muted small">{f.meta}</span>
     </div>

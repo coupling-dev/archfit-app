@@ -52,8 +52,9 @@ type pullJSON struct {
 type findingJSON struct {
 	Rule         string   `json:"rule"` // the readable name of the rule
 	RuleID       string   `json:"rule_id"`
-	Meta         string   `json:"meta"` // severity, then the status when the group does not say it
-	From         string   `json:"from"` // the module, else the path
+	Meta         string   `json:"meta"`      // severity, then the status when the group does not say it
+	Violation    bool     `json:"violation"` // an active gate finding; a status this version does not know is not
+	From         string   `json:"from"`      // the module, else the path
 	To           string   `json:"to"`
 	Origin       string   `json:"origin"` // report.PairAdded, report.PairExisting or ""
 	Why          string   `json:"why"`
@@ -143,19 +144,10 @@ func pullState(p api.Pull) string {
 
 func fillFindings(body *pullJSON, rep report.Report) {
 	body.NoBaseline = rep.GateReference == nil || !rep.GateReference.BaselinePresent
-	body.Compared = rep.Comparison.OriginStatus == originComparable
-	var violations, advisories, accepted []report.Finding
-	for _, f := range rep.Findings {
-		switch {
-		case f.Status == "fixed":
-		case f.Status == "baseline" || f.Status == "waived":
-			accepted = append(accepted, f)
-		case f.Kind == "advisory" && (f.Status == "new" || f.Status == "expired_waiver"):
-			advisories = append(advisories, f)
-		default: // active gate findings, and any status this version does not know: never hidden
-			violations = append(violations, f)
-		}
-	}
+	// The comment's groups, order and cycle search (report.Group): the page shows the same 50 violations it does.
+	g := report.Group(rep, findingsPerList)
+	body.Compared = g.Compared
+	violations, advisories, accepted := g.Violations, g.Advisories, g.Accepted
 	body.ViolationCount, body.AdvisoryCount, body.AcceptedCount = len(violations), len(advisories), len(accepted)
 	seams := map[[2]string]report.Seam{}
 	for _, sm := range rep.Seams {
@@ -163,7 +155,7 @@ func fillFindings(body *pullJSON, rep report.Report) {
 	}
 	row := func(f report.Finding, origin string) findingJSON {
 		out := findingJSON{
-			Rule: ruleName(f.RuleID), RuleID: f.RuleID, Meta: findingMeta(f), From: endpointName(f.Edge.From),
+			Rule: ruleName(f.RuleID), RuleID: f.RuleID, Meta: findingMeta(f), Violation: f.Active(), From: endpointName(f.Edge.From),
 			To: endpointName(f.Edge.To), Why: f.Why, Fix: f.Constraint, Alternatives: f.AllowedAlternatives,
 			Locations: make([]string, len(f.Locations)),
 		}
@@ -187,17 +179,15 @@ func fillFindings(body *pullJSON, rep report.Report) {
 	}
 
 	// Cycles among the shown violations, as the comment groups them; each direction's origin is report.PairOrigin,
-	// the rule the comment and the graph use, so the three say the same about what this pull request added.
+	// the comment's rule, so both say the same about what this pull request added.
 	vs := shown(violations)
 	comp := report.Cycles(vs)
-	onCycle := map[string]bool{}
 	var members [][]report.Finding
 	for i, c := range comp {
 		if c < 0 {
 			body.Other = append(body.Other, row(vs[i], originWord(vs[i].Origin)))
 			continue
 		}
-		onCycle[vs[i].ID] = true
 		for len(members) <= c {
 			members = append(members, nil)
 		}
@@ -219,7 +209,7 @@ func fillFindings(body *pullJSON, rep report.Report) {
 					cy.Alternatives = append(cy.Alternatives, a)
 				}
 			}
-			cy.Directions = append(cy.Directions, row(f, report.PairOrigin(f, rep.Findings, onCycle)))
+			cy.Directions = append(cy.Directions, row(f, report.PairOrigin(f, g.All, g.OnCycle)))
 		}
 		body.Cycles = append(body.Cycles, cy)
 	}
