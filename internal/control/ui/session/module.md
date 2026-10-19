@@ -16,6 +16,7 @@ and a user whose GitHub access was revoked would keep seeing a tenant's data.
 - Run the GitHub OAuth web flow: login redirect with a state cookie, callback with state check and code exchange, logout.
 - Keep the session in one encrypted, authenticated cookie. There is no server-side session table.
 - Return the signed-in `User` for a request, or "not signed in".
+- End a session on request (`End`), so the UI can drop a session whose GitHub token GitHub no longer accepts.
 - Authorize a user for a repository at a minimum permission, using the user's own OAuth token, and
   return the `Repo` with the authoritative installation ID.
 - Cache authorization results for 60 seconds **[default]** so that a page load does not cost one GitHub call per handler.
@@ -52,8 +53,11 @@ type Sessions interface {
     LogoutHandler() http.Handler
     // User returns the signed-in user, or false.
     User(r *http.Request) (User, bool)
+    // End deletes the session cookie from the response.
+    End(w http.ResponseWriter)
     // Authorize returns the repository if the user has at least minPermission ("read" | "write" | "admin")
     // on it right now (cached for 60 seconds). The Repo carries the authoritative installation ID.
+    // A user token that GitHub rejects gives an error that wraps api.ErrUserTokenRejected: the caller ends the session.
     Authorize(ctx context.Context, u User, fullName, minPermission string) (Repo, error)
 }
 ```
@@ -90,7 +94,13 @@ because it builds the OAuth redirect URL as `BaseURL + "/auth/callback"`.
 - `Authorize` returns `ErrForbidden` when: the permission is below `minPermission`; the permission is `none` or unknown;
   `minPermission` is not one of the three values; `fullName` is not `owner/name`; GitHub answers "not found" for the
   permission or for `Repos.ResolveRepo` (App not installed on it). `ErrForbidden` is the sentinel callers test with `errors.Is`.
+- `Permission` answers `api.ErrUserTokenRejected` (the user's token expired or was revoked): `Authorize` returns an error that
+  wraps it, caches nothing, and logs outcome `token_rejected` at Info. The session cookie can outlive the token, for
+  example after a revocation on GitHub or a cookie sealed by an older build, so this is an expected end of a session, not a fault.
 - Any other GitHub error (including rate limit exhaustion) is returned wrapped and is never cached. No error ever yields a `Repo`.
+  It is logged as `github_error` with the failing `step` (`permission` or `resolve repository`) and the HTTP `status`
+  (`0` when GitHub gave no answer); a rate limit is logged as `rate_limited` with neither.
+- `End` writes the same cookie deletion as logout and nothing else. It does not revoke the token at GitHub **[default]**.
 - `New` returns an error when `CookieKey` is not exactly 32 bytes, or `BaseURL` is not an absolute `https` URL (`http` is
   accepted only for host `localhost`, `127.0.0.1` or `[::1]`). The error names the field, never its value. A bad key
   stops the process at start-up, not at the first login.
@@ -142,7 +152,8 @@ type OAuth interface {
 - **Balanced?**: yes — contract coupling tolerates the distance
 - **Shared knowledge**: `Users.Permission` with the user's token, `Repos.ResolveRepo` with the App JWT. Session calls no
   other method of `Repos`. `ErrNotFound` is the sentinel github/api returns for an unknown or uncovered repository;
-  `ErrRateLimited` is the sentinel it returns after bounded backoff.
+  `ErrRateLimited` is the sentinel it returns after bounded backoff; `ErrUserTokenRejected` is the sentinel it returns for
+  a `401` on the user's token. `api.Status(err)` gives the HTTP status of an answer that maps to no sentinel, for the log.
 
 <!-- contract: Users — restated from internal/github/api/module.md -->
 ```go
@@ -155,7 +166,7 @@ type Users interface {
 }
 ```
 
-<!-- contract: RepoRef, Repo, ErrNotFound, ErrRateLimited — restated from internal/github/api/module.md -->
+<!-- contract: RepoRef, Repo, ErrNotFound, ErrRateLimited, ErrUserTokenRejected — restated from internal/github/api/module.md -->
 ```go
 // RepoRef addresses a repository inside an authenticated installation.
 // Callers build it only from a verified webhook, verified OIDC claims, or an authorized session.
@@ -174,7 +185,14 @@ type Repo struct {
 var (
     ErrNotFound    = errors.New("github: not found")
     ErrRateLimited = errors.New("github: rate limit exhausted") // returned after bounded backoff
+
+    // ErrUserTokenRejected is GitHub's 401 on a user's OAuth token: it expired or was revoked. The token cannot
+    // recover, so the call is not repeated and the user must sign in again.
+    ErrUserTokenRejected = errors.New("github: user token rejected")
 )
+
+// Status returns the HTTP status of a GitHub answer that mapped to no sentinel, or 0 for any other error.
+func Status(err error) int
 ```
 
 <!-- contract: Repos, Installation — restated from internal/github/api/module.md -->
@@ -224,7 +242,7 @@ type Repos interface {
   expired entries are dropped, then the whole cache is cleared. A revoked user loses access within 60 seconds.
 - Safe for concurrent use. One mutex around the cache is enough **[default]**; GitHub calls run outside the lock.
 - One key, no rotation: changing `CookieKey` signs everyone out. Stated limit.
-- Logs carry user ID, repository ID, installation ID, outcome and timing only. Never the token, the code, the state,
+- Logs carry user ID, repository ID, installation ID, outcome, timing and, for `github_error`, the step and HTTP status only. Never the token, the code, the state,
   the cookie value, or the login flow's query string.
 - Standard library only: `crypto/aes`, `crypto/cipher`, `crypto/rand`, `crypto/subtle`, `encoding/base64`, `net/http`.
 - Inherited: session is control-plane code. Nothing on the gate path calls it; its failure never changes a check.
@@ -277,8 +295,8 @@ GitHub is faked at the `OAuth`, `Users` and `Repos` interfaces. The clock is inj
 ### Boundary Tests
 
 - **Test name**: `TestAuthorizeFailsClosedOnGitHubErrors`
-  **Scenario**: table: `Permission` returns `ErrNotFound`, `ErrRateLimited`, a transport error; `ResolveRepo` returns the same three.
-  **Expected behavior**: `ErrNotFound` rows give `ErrForbidden`; the others give a wrapped error; no row returns a `Repo`; no row is cached.
+  **Scenario**: table: `Permission` returns `ErrNotFound`, `ErrRateLimited`, `ErrUserTokenRejected`, a transport error; `ResolveRepo` returns the same three.
+  **Expected behavior**: `ErrNotFound` rows give `ErrForbidden`; the others give a wrapped error (the rejected token wraps `ErrUserTokenRejected`); no row returns a `Repo`; no row is cached.
 - **Test name**: `TestAuthorizeRejectsMalformedFullName`
   **Scenario**: table: empty, `owner`, `a/b/c`, `../x`, a name with a space or a query string.
   **Expected behavior**: `ErrForbidden` and no GitHub call.
@@ -293,6 +311,16 @@ GitHub is faked at the `OAuth`, `Users` and `Repos` interfaces. The clock is inj
 
 ### Behavior Tests
 
+- **Test name**: `TestRejectedUserTokenIsAnInfoOutcomeAndNeverCached`
+  **Scenario**: `Permission` returns an error wrapping `ErrUserTokenRejected`.
+  **Expected behavior**: `Authorize` returns an error that wraps it and is not `ErrForbidden`; no `Repo`; nothing cached; one log line
+  with outcome `token_rejected` at Info.
+- **Test name**: `TestGitHubErrorLogsStepAndStatusOnly`
+  **Scenario**: a real `api.Client` whose transport answers `403` with a recognizable body.
+  **Expected behavior**: the log line has outcome `github_error`, step `permission`, status `403`; it holds no token, body or URL.
+- **Test name**: `TestEndDeletesTheSessionCookie`
+  **Scenario**: `End` on a recorder.
+  **Expected behavior**: the response deletes `archfit_session`.
 - **Test name**: `TestRevokedUserLosesAccessWithinCacheWindow` (T07, T17)
   **Scenario**: user has `write`, is authorized, then GitHub answers `none`; clock advances 61 s.
   **Expected behavior**: the next `Authorize` returns `ErrForbidden`; no later call returns the `Repo`.

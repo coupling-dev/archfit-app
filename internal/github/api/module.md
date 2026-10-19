@@ -59,12 +59,18 @@ needs one. It is a wide leaf on purpose: role interfaces keep each consumer's kn
   `x-ratelimit-reset` is used for the wait only when `x-ratelimit-remaining` is `0`.
 - `401` on a call made with an installation token: call `TokenSource.Invalidate(installationID)`, fetch a fresh
   token, and repeat the request exactly once, for any method (a `401` request did not execute). A second `401`
-  is an error. `401` on an App JWT or user-token call is an error at once.
+  is an error. `401` on an App JWT is an error at once.
+- `401` on a call made with a user token → `ErrUserTokenRejected` at once, no retry: GitHub user tokens expire after
+  8 hours or can be revoked, and a repeat would send the same token. Only `Users` calls and pages of their lists can
+  return it. The caller ends the session and asks for a new sign-in.
 - Other `403` (missing App permission), `409`, `422` → error with method, route template, status and
   `x-github-request-id`. Never the URL's variable parts, the body, or a token.
 - A `TokenSource` error is returned wrapped and treated as opaque.
+- `Status(err)` returns the HTTP status of an answer that maps to no sentinel, else `0`; callers log it to tell
+  `403` from `500`. It exposes nothing else of the error.
 - `Permanent` classifies a returned error for a caller that can repeat the work later: `ErrNotFound` and a final
-  `4xx` (`400`, `422`) are permanent. `401` (the App credential can change), `403` (a secondary rate limit can
+  `4xx` (`400`, `422`) are permanent. `401` (the App credential can change), `ErrUserTokenRejected` (the user must
+  sign in again; no queue repeats a user call), `403` (a secondary rate limit can
   arrive without its headers, so a missing permission is retried too), `408`, `409` (a conflict can clear) and
   every rate limit are not.
 
@@ -178,7 +184,14 @@ type Repo struct {
 var (
     ErrNotFound    = errors.New("github: not found")
     ErrRateLimited = errors.New("github: rate limit exhausted") // returned after bounded backoff
+
+    // ErrUserTokenRejected is GitHub's 401 on a user's OAuth token: it expired or was revoked. The token cannot
+    // recover, so the call is not repeated and the user must sign in again.
+    ErrUserTokenRejected = errors.New("github: user token rejected")
 )
+
+// Status returns the HTTP status of a GitHub answer that mapped to no sentinel, or 0 for any other error.
+func Status(err error) int
 ```
 
 ```go
@@ -523,11 +536,15 @@ the network.
   twice; `408`; `409`; a rate limit beyond the budget; `500`; `503`. Then plain errors: a Store error,
   `context.DeadlineExceeded`, a wrapped `ErrRateLimited`, a wrapped `ErrNotFound`.
   **Expected behavior**: permanent for the first four and for the wrapped `ErrNotFound`; not permanent for the rest.
+- **Test name**: `TestStatusOfAnUnmappedAnswer`
+  **Scenario**: `403` and `422` answers; a `401` on a user token; a plain error.
+  **Expected behavior**: `Status` gives `403`, `422`, `0`, `0`.
 - **Test name**: `TestUnauthorizedInvalidatesAndRetriesOnce`
   **Scenario**: table with a recording `TokenSource` stub: `401` then `200` on `GET`; `401` then `200` on `PATCH`;
-  `401` twice; `401` on an App JWT route; `401` on a `Users` call.
+  `401` twice; `401` on an App JWT route; `401` on a `Users` call; `401` on a later page of a `Users` list.
   **Expected behavior**: `Invalidate(id)` called once, second request carries the new token, success (rows 1–2);
-  error after exactly two requests; error after one request and no `Invalidate` (rows 4–5).
+  error after exactly two requests; error after one request and no `Invalidate` (row 4); `ErrUserTokenRejected` after one request
+  (row 5) and after the request that met the `401` (row 6), with no `Invalidate` and no repeat.
 - **Test name**: `TestBackoffBudget`
   **Scenario**: table: `Retry-After: 2` then `200`; reset in 10 s then `200`; reset in 31 s; three waits of 12 s;
   `ctx` cancelled mid-wait; `503` ×3 then `200` on `GET`; `503` on `PATCH`.
@@ -594,7 +611,7 @@ One test per role interface; each asserts method, route, credential, request bod
   commit; error; exactly one pull in every case; GraphQL mutation sent once, none for the ready pull.
 - **Test name**: `TestUsersContract`
   **Scenario**: `Permission` for admin, push-only, pull-only, `404`, `401`; `UserRepos` over two installations.
-  **Expected behavior**: `admin`, `write`, `read`, `none`, error; repos carry their installation ID; only the
+  **Expected behavior**: `admin`, `write`, `read`, `none`, `ErrUserTokenRejected`; repos carry their installation ID; only the
   user token is ever sent.
 
 ### Boundary Tests

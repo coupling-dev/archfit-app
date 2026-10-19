@@ -108,13 +108,38 @@ func TestPermanent(t *testing.T) {
 			}
 		})
 	}
-	for _, err := range []error{errors.New("store: unavailable"), context.DeadlineExceeded, fmt.Errorf("wrapped: %w", ErrRateLimited)} {
+	for _, err := range []error{errors.New("store: unavailable"), context.DeadlineExceeded, fmt.Errorf("wrapped: %w", ErrRateLimited),
+		fmt.Errorf("wrapped: %w", ErrUserTokenRejected)} {
 		if Permanent(err) {
 			t.Errorf("Permanent(%v) = true, want false", err)
 		}
 	}
 	if !Permanent(fmt.Errorf("gate: resolve inputs: %w", ErrNotFound)) {
 		t.Error("a wrapped ErrNotFound is not permanent")
+	}
+}
+
+func TestStatusOfAnUnmappedAnswer(t *testing.T) {
+	tests := []struct {
+		name  string
+		reply reply
+		want  int
+	}{
+		{"403", reply{status: 403}, 403},
+		{"422", reply{status: 422}, 422},
+		{"user token rejected is a sentinel", reply{status: 401}, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := newEnv(t, script(tt.reply))
+			_, err := env.c.Permission(context.Background(), "user-token", "o/r")
+			if got := Status(err); got != tt.want {
+				t.Errorf("Status(%v) = %d, want %d", err, got, tt.want)
+			}
+		})
+	}
+	if got := Status(errors.New("transport")); got != 0 {
+		t.Errorf("Status(plain error) = %d, want 0", got)
 	}
 }
 
@@ -127,6 +152,7 @@ func TestUnauthorizedInvalidatesAndRetriesOnce(t *testing.T) {
 		wantReqs        int
 		wantInvalidated []int64
 		wantAuth        []string
+		wantRejected    bool
 	}{
 		{
 			name:    "401 then 200 on GET",
@@ -170,7 +196,16 @@ func TestUnauthorizedInvalidatesAndRetriesOnce(t *testing.T) {
 				_, err := c.Permission(context.Background(), "user-token", "o/r")
 				return err
 			},
-			wantErr: true, wantReqs: 1, wantAuth: []string{"Bearer user-token"},
+			wantErr: true, wantReqs: 1, wantAuth: []string{"Bearer user-token"}, wantRejected: true,
+		},
+		{
+			name:    "401 on a later page of a Users list",
+			replies: []reply{{status: 200, body: `{"installations":[{"id":7}]}`}, {status: 401}, {status: 200, body: `{}`}},
+			call: func(c *Client) error {
+				_, err := c.UserRepos(context.Background(), "user-token")
+				return err
+			},
+			wantErr: true, wantReqs: 2, wantAuth: []string{"Bearer user-token", "Bearer user-token"}, wantRejected: true,
 		},
 	}
 	for _, tt := range tests {
@@ -179,6 +214,9 @@ func TestUnauthorizedInvalidatesAndRetriesOnce(t *testing.T) {
 			err := tt.call(env.c)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
+			}
+			if got := errors.Is(err, ErrUserTokenRejected); got != tt.wantRejected {
+				t.Errorf("errors.Is(err, ErrUserTokenRejected) = %v, want %v (err %v)", got, tt.wantRejected, err)
 			}
 			reqs := env.gh.requests()
 			if len(reqs) != tt.wantReqs {

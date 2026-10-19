@@ -3,9 +3,11 @@ package ui
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"regexp"
@@ -685,4 +687,87 @@ func TestAssistOnABrokenDraft(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Incident 2026-10-18: a session cookie outlived its 8 h GitHub user token, GitHub answered 401, and every page
+// was a 502 until the cookie expired. A rejected token now ends the session and asks for a new sign-in.
+func TestExpiredGitHubTokenSignsOutInsteadOfBadGateway(t *testing.T) {
+	rejected := fmt.Errorf("github: GET /repos/{r}: %w", api.ErrUserTokenRejected)
+	sessionDeleted := func(res *httptest.ResponseRecorder) bool {
+		for _, ck := range res.Result().Cookies() {
+			if ck.Name == "archfit_session" {
+				return ck.MaxAge < 0 && ck.Value == ""
+			}
+		}
+		return false
+	}
+	tests := []struct {
+		name     string
+		inject   func(*env)
+		send     func(*client) *httptest.ResponseRecorder
+		want     int
+		location string
+	}{
+		{"repository page", func(e *env) { e.gh.fail["Permission"] = rejected },
+			func(c *client) *httptest.ResponseRecorder { return c.get("/r/" + repoName + "/pull/4") },
+			http.StatusSeeOther, "/auth/login?return=" + url.QueryEscape("/r/"+repoName+"/pull/4")},
+		{"repository page with a query", func(e *env) { e.gh.fail["Permission"] = rejected },
+			func(c *client) *httptest.ResponseRecorder { return c.get("/r/" + repoName + "/policy?x=1") },
+			http.StatusSeeOther, "/auth/login?return=" + url.QueryEscape("/r/"+repoName+"/policy?x=1")},
+		{"form post", func(e *env) { e.gh.fail["Permission"] = rejected },
+			func(c *client) *httptest.ResponseRecorder {
+				return c.post("/r/"+repoName+"/policy", formOf("", "", policyText))
+			},
+			http.StatusUnauthorized, ""},
+		{"overview", func(e *env) { e.gh.fail["UserRepos"] = rejected },
+			func(c *client) *httptest.ResponseRecorder { return c.get("/") },
+			http.StatusSeeOther, "/auth/login?return=" + url.QueryEscape("/")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logs := captureLogs(t)
+			e := newEnv(t)
+			c := e.as("alice", permRead)
+			tt.inject(e)
+
+			res := tt.send(c)
+
+			wantStatus(t, res, tt.want)
+			if got := res.Header().Get("Location"); got != tt.location {
+				t.Errorf("Location = %q, want %q", got, tt.location)
+			}
+			if !sessionDeleted(res) {
+				t.Errorf("Set-Cookie = %q, want the session cookie deleted", res.Header().Values("Set-Cookie"))
+			}
+			if !strings.Contains(logs.String(), `"outcome":"signed_out"`) {
+				t.Errorf("ui request log has no signed_out outcome:\n%s", logs.String())
+			}
+
+			// The browser dropped the cookie: the next request is a plain signed-out one.
+			delete(e.gh.fail, "Permission")
+			delete(e.gh.fail, "UserRepos")
+			if next := c.get("/r/" + repoName); next.Code != http.StatusSeeOther {
+				t.Errorf("request after the sign-out = %d, want 303 to sign in", next.Code)
+			}
+		})
+	}
+
+	t.Run("other GitHub failures stay a bad gateway and keep the session", func(t *testing.T) {
+		for name, key := range map[string]string{"repository page": "Permission", "overview": "UserRepos"} {
+			e := newEnv(t)
+			c := e.as("alice", permRead)
+			e.gh.fail[key] = errors.New("boom")
+			path := "/"
+			if key == "Permission" {
+				path = "/r/" + repoName
+			}
+
+			res := c.get(path)
+
+			wantStatus(t, res, http.StatusBadGateway)
+			if len(res.Result().Cookies()) != 0 {
+				t.Errorf("%s: a 502 changed cookies: %q", name, res.Header().Values("Set-Cookie"))
+			}
+		}
+	})
 }

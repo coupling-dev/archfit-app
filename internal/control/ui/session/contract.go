@@ -22,8 +22,11 @@ type Sessions interface {
 	LogoutHandler() http.Handler
 	// User returns the signed-in user, or false.
 	User(r *http.Request) (User, bool)
+	// End deletes the session cookie from the response.
+	End(w http.ResponseWriter)
 	// Authorize returns the repository if the user has at least minPermission ("read" | "write" | "admin")
 	// on it right now (cached for 60 seconds). The Repo carries the authoritative installation ID.
+	// A user token that GitHub rejects gives an error that wraps api.ErrUserTokenRejected: the caller ends the session.
 	Authorize(ctx context.Context, u User, fullName, minPermission string) (api.Repo, error)
 }
 

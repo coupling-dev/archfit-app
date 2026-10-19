@@ -158,9 +158,11 @@ func (s *sessions) logout(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		return
 	}
-	s.deleteCookie(w, sessionCookie)
+	s.End(w)
 	redirect(w, "/")
 }
+
+func (s *sessions) End(w http.ResponseWriter) { s.deleteCookie(w, sessionCookie) }
 
 // fail answers with the bare status text. Every error path ends here, without a session cookie.
 func (s *sessions) fail(w http.ResponseWriter, r *http.Request, status int, step, outcome string) {

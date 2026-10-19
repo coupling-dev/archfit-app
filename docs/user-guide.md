@@ -78,6 +78,9 @@ Arrows show the order of the customer onboarding flow. A labeled arrow shows the
 10. Wait for the policy pull request.
 11. Review and merge the policy pull request.
 
+A sign-in lasts 8 hours, the lifetime of the GitHub token behind it. When the token has expired or you revoked it on
+GitHub, the next page asks you to sign in again and brings you back to the same page.
+
 PR 1 adds these files:
 
 - `.github/workflows/archfit.yaml`

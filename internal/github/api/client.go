@@ -172,7 +172,7 @@ func (k call) errorf(format string, args ...any) error {
 	return fmt.Errorf("github: %s %s: "+format, append([]any{k.method, k.route}, args...)...)
 }
 
-// do sends k with retries: once after a 401 on an installation token, within waitBudget on rate limits, and
+// do sends k with retries: once after a 401 on an installation token (a 401 on a user token is final), within waitBudget on rate limits, and
 // for GET on 502, 503, 504 and transport errors.
 func (c *Client) do(ctx context.Context, k call) (result, error) {
 	var payload []byte
@@ -230,6 +230,9 @@ func (c *Client) do(ctx context.Context, k call) (result, error) {
 			c.ts.Invalidate(k.cred.instID)
 			reauthed = true
 			continue
+		case resp.status == http.StatusUnauthorized && k.cred.kind == credUser:
+			// The user's token expired or was revoked. A retry sends the same token, so it cannot succeed.
+			return result{}, k.errorf("%w", ErrUserTokenRejected)
 		case rateLimited(resp):
 			wait = c.rateLimitWait(resp.header, &backoff)
 			if waited+wait > waitBudget {

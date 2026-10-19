@@ -804,7 +804,9 @@ func TestUsersContract(t *testing.T) {
 		}
 	}
 	got, err := env.c.Permission(ctx, token, "o/unauth")
-	wantPlainErr(t, "401", err)
+	if !errors.Is(err, ErrUserTokenRejected) {
+		t.Errorf("Permission on 401: err = %v, want ErrUserTokenRejected", err)
+	}
 	if got != "" {
 		t.Errorf("Permission on 401 = %q", got)
 	}

@@ -25,6 +25,7 @@ func TestAuthorizeFailsClosedOnGitHubErrors(t *testing.T) {
 	}{
 		{name: "Permission not found", permissionErr: api.ErrNotFound, wantForbidden: true},
 		{name: "Permission rate limited", permissionErr: api.ErrRateLimited, wantWrapped: api.ErrRateLimited},
+		{name: "Permission token rejected", permissionErr: api.ErrUserTokenRejected, wantWrapped: api.ErrUserTokenRejected},
 		{name: "Permission transport error", permissionErr: errTransport, wantWrapped: errTransport},
 		{name: "ResolveRepo not found", resolveErr: fmt.Errorf("resolve: %w", api.ErrNotFound), wantForbidden: true},
 		{name: "ResolveRepo rate limited", resolveErr: api.ErrRateLimited, wantWrapped: api.ErrRateLimited},
