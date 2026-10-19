@@ -470,19 +470,19 @@ the e-mail is `ARCHFIT_INVOKER` and is verified, and the token is not expired.
 
 ### UI routes
 
-| Method and route                                                         | Authentication                                                                |
-| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
-| `GET /`                                                                  | None. Serves the web app, which shows the landing page or the repository list |
-| `GET /auth/login` and `GET /auth/callback`                               | None                                                                          |
-| `POST /auth/logout`                                                      | GitHub OAuth session and CSRF token                                           |
-| `GET /static/{path}`, `GET /assets/{path}` and `GET /schema/policy.json` | None                                                                          |
-| `GET /api/session` and `GET /api/repos`                                  | GitHub OAuth session                                                          |
-| `GET /r/{o}/{n}` and `GET /api/repos/{o}/{n}/overview`                   | Session with repository `read` permission                                     |
-| `POST /api/repos/{o}/{n}/onboarding` and `/discover`                     | Session with repository `admin` permission, JSON body, CSRF token header      |
-| `GET` and `POST /r/{o}/{n}/consent`                                      | Session with repository `admin` permission                                    |
-| `GET /r/{o}/{n}/policy` and `/graph`, `POST /r/{o}/{n}/policy/check`     | Session with repository `read` permission                                     |
-| `POST /r/{o}/{n}/policy` and `/policy/ready`                             | Session with repository `write` permission                                    |
-| `POST /r/{o}/{n}/assist`                                                 | Session with repository `write` permission                                    |
+| Method and route                                                                                      | Authentication                                                                |
+| ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `GET /`                                                                                               | None. Serves the web app, which shows the landing page or the repository list |
+| `GET /auth/login` and `GET /auth/callback`                                                            | None                                                                          |
+| `POST /auth/logout`                                                                                   | GitHub OAuth session and CSRF token                                           |
+| `GET /static/{path}`, `GET /assets/{path}` and `GET /schema/policy.json`                              | None                                                                          |
+| `GET /api/session` and `GET /api/repos`                                                               | GitHub OAuth session                                                          |
+| `GET /r/{o}/{n}`, `/r/{o}/{n}/pull/{number}`, `GET /api/repos/{o}/{n}/overview` and `/pulls/{number}` | Session with repository `read` permission                                     |
+| `POST /api/repos/{o}/{n}/onboarding` and `/discover`                                                  | Session with repository `admin` permission, JSON body, CSRF token header      |
+| `GET` and `POST /r/{o}/{n}/consent`                                                                   | Session with repository `admin` permission                                    |
+| `GET /r/{o}/{n}/policy` and `/graph`, `POST /r/{o}/{n}/policy/check`                                  | Session with repository `read` permission                                     |
+| `POST /r/{o}/{n}/policy` and `/policy/ready`                                                          | Session with repository `write` permission                                    |
+| `POST /r/{o}/{n}/assist`                                                                              | Session with repository `write` permission                                    |
 
 ## Platform seams
 
