@@ -164,8 +164,13 @@ What each item shows:
   report or run attempt gets a new `archfit/state` check run with its own annotations, so annotations from an
   earlier report do not stay; GitHub shows the newest run. If the App cannot read the list of changed files, the
   check has no annotations for that upload.
-- The comment lists all findings, the evidence gaps, the validation commands, and a JSON block of agent tasks
-  between `<!-- archfit:agent-tasks -->` markers. A coding agent on the pull request can act on that block.
+- The comment starts with the effect on merge, the next step, and one line that counts the rule violations,
+  advisories, accepted and fixed findings (and, with a base comparison, how many this pull request introduced).
+  A dependency cycle is one item: a diagram of the modules with the location count of each direction, then a table
+  of directions with their integration strength, distance and volatility. Advisories, accepted findings and fixed
+  findings are each folded into a table; an explanation that repeats across findings is shown once. The evidence
+  gaps, the validation commands, and a JSON block of agent tasks between `<!-- archfit:agent-tasks -->` markers are
+  folded too. A coding agent on the pull request can act on that block.
 - The evidence gaps show analyzers that did not run (absent or disabled) on one line.
 
 The gate has three conclusions:
@@ -306,7 +311,8 @@ The App reads a complete report or no report. It never shortens a report to make
 
 With `gate: required`, an upload over 5 MiB leaves the `archfit/gate` check pending. The sweep sets it to
 `action_required` with `missing_upload` after 60 minutes. A report of about 3 000 seams with one advisory each is
-larger than 5 MiB. The comment shows at most 10 locations for each finding and gives the count of the others.
+larger than 5 MiB. The comment shows at most 10 locations for each listed finding and 3 for each table row, and gives
+the count of the others.
 
 Engine v3.0.0 adds a rule's `rationale` and `docs` to the why and the constraint of each finding of that rule. Write
 both on one line and keep them short: a plain or quoted YAML string, or `>-`. A `|` or `>` block ends with a line

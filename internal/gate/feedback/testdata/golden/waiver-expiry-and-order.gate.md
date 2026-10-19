@@ -1,8 +1,8 @@
 ## Archfit: Architecture gate failing
 
+- **Next:** Fix the blocking findings, then push.
 - Reason: `blocking_findings` (architecture)
 - Detail: 1 blocking finding
-- Next: Fix the blocking findings, then push.
 
 Also reported:
 - `waiver_expired` (governance): no_direct_b_dependency. Next: Renew the waiver or fix the finding.

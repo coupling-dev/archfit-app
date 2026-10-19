@@ -1,15 +1,16 @@
 ## Archfit: Architecture gate failing
 
+- **Next:** Fix the blocking findings, then push.
 - Reason: `blocking_findings` (architecture)
 - Detail: 1 blocking finding
-- Next: Fix the blocking findings, then push.
 
 Also reported:
 - `waiver_expired` (governance): no_direct_b_dependency. Next: Renew the waiver or fix the finding.
 
 ### Findings
 
-**Rule violations** (1)
+**1 rule violation** · 1 advisory · 1 accepted
+
 - **violation** `no_direct_b_dependency` (medium, expired_waiver): `a` (`pkg/a/a.go`) → `b` (`pkg/b`)
   - Locations: `pkg/a/extra.go:7`
   - Why: Import from pkg/a/** to pkg/b is explicitly forbidden
@@ -18,18 +19,25 @@ Also reported:
 <details>
 <summary>1 advisory · never block</summary>
 
-**Advisories** (1)
-- `bc/imbalanced_coupling` (medium, new): `a` (`pkg/a/a.go`) → `b` (`pkg/b`)
-  - Locations: `pkg/a/a.go:3`
-  - Why: balanced coupling: functional integration strength × cross_module_same_owner distance × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
+| Rule | Dependency | Where | Strength | Distance | Volatility |
+| --- | --- | --- | --- | --- | --- |
+| `bc/imbalanced_coupling` medium, new | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | cross_module_same_owner | undeclared |
+
+- `bc/imbalanced_coupling` · **Why:** balanced coupling: functional integration strength × cross_module_same_owner distance × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
 
 </details>
 
-**Accepted debt — display only** (1)
-- `no_direct_b_dependency` (medium, waived): `a` (`pkg/a/a.go`) → `b` (`pkg/b`)
-  - Locations: `pkg/a/a.go:3`
-  - Why: Import from pkg/a/** to pkg/b is explicitly forbidden
-  - Constraint: Remove the dependency or move the code
+<details>
+<summary>1 accepted · baseline or waiver · display only</summary>
+
+| Rule | Dependency | Where | Strength | Distance | Volatility |
+| --- | --- | --- | --- | --- | --- |
+| `no_direct_b_dependency` medium, waived | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | cross_module_same_owner | undeclared |
+
+- `no_direct_b_dependency` · **Why:** Import from pkg/a/** to pkg/b is explicitly forbidden
+- `no_direct_b_dependency` · **Constraint:** Remove the dependency or move the code
+
+</details>
 
 <details>
 <summary>Evidence, inputs and validation</summary>
@@ -38,15 +46,17 @@ Also reported:
 
 Measurement trust: customer-attested.
 
-- `intent`: measured; coverage 1/1 (declared rules evaluated); confidence high; gate pass
-- `structure`: measured; coverage 1/1 (discovered dependencies resolved inside the declared module map); confidence high; gate fail
-- `modularity`: measured; coverage 1/2 (declared modules with a declared public surface); confidence low; gate pass
-- `coupling`: measured; coverage 1/1 (cross-boundary edges scored); confidence high; gate warn
-- `change_locality`: unmeasured; coverage 0/0; confidence unrated; gate not_applicable
-- `complexity`: measured; coverage 2/2 (declared modules with complete dependency-chain and degree values); confidence high; gate pass
-- `testability`: partial; coverage 3/3 (classified source files); confidence medium; gate pass
-- `operations`: partial; coverage 0/2 (declared modules with a corroborated deploy unit and qualifying owner); confidence medium; gate pass
-- `drift`: unmeasured; coverage 0/0; confidence unrated; gate not_applicable; change non_comparable
+| Dimension | Status | Coverage | Confidence | Gate | Change |
+| --- | --- | --- | --- | --- | --- |
+| `intent` | measured | 1/1 (declared rules evaluated) | high | pass |  |
+| `structure` | measured | 1/1 (discovered dependencies resolved inside the declared module map) | high | **fail** |  |
+| `modularity` | measured | 1/2 (declared modules with a declared public surface) | low | pass |  |
+| `coupling` | measured | 1/1 (cross-boundary edges scored) | high | **warn** |  |
+| `change_locality` | unmeasured | 0/0 | unrated | not_applicable |  |
+| `complexity` | measured | 2/2 (declared modules with complete dependency-chain and degree values) | high | pass |  |
+| `testability` | partial | 3/3 (classified source files) | medium | pass |  |
+| `operations` | partial | 0/2 (declared modules with a corroborated deploy unit and qualifying owner) | medium | pass |  |
+| `drift` | unmeasured | 0/0 | unrated | not_applicable | non_comparable |
 
 ### Evidence gaps
 

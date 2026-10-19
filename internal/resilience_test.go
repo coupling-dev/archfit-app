@@ -171,7 +171,7 @@ func TestSuspensionIsNeitherArchitectureFailureNorSuccess(t *testing.T) {
 	if c.Conclusion != "action_required" || !strings.Contains(c.Summary, "`subscription_suspended` (subscription)") {
 		t.Errorf("archfit/gate = %s; want action_required in category subscription\n%s", c.Conclusion, c.Summary)
 	}
-	if !strings.Contains(c.Summary, "- Next:") || strings.Contains(c.Summary, "- Next: (none)") {
+	if !strings.Contains(c.Summary, "- **Next:**") || strings.Contains(c.Summary, "- **Next:** (none)") {
 		t.Errorf("the suspended check names no recovery action:\n%s", c.Summary)
 	}
 

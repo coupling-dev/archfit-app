@@ -1,8 +1,8 @@
 ## Archfit: Architecture gate failing
 
+- **Next:** Fix the blocking findings, then push.
 - Reason: `blocking_findings` (architecture)
 - Detail: 1 blocking finding
-- Next: Fix the blocking findings, then push.
 
 Also reported:
 - `missing_required_coverage` (evidence): layers/no_upward_imports. Next: Install the required tool in the workflow, then re-run it.

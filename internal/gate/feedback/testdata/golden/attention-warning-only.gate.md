@@ -1,8 +1,8 @@
 ## Archfit: Architecture gate passed · attention needed
 
+- **Next:** Advisories never block. Review the listed dimensions and diagnostics on the archfit/state check.
 - Reason: `attention_only` (architecture)
 - Detail: dimensions not fully measured: change_locality, testability, operations, drift; active diagnostics: 1
-- Next: Advisories never block. Review the listed dimensions and diagnostics on the archfit/state check.
 
 <details>
 <summary>Evidence, inputs and validation</summary>

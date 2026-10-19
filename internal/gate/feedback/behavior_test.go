@@ -365,7 +365,7 @@ func TestAcceptedDebtIsDisplayOnly(t *testing.T) {
 	mustContain(t, verdictBlock, "Architecture gate failing", "blocking_findings")
 
 	findings := section(comment, headFindings)
-	_, debt, ok := strings.Cut(findings, "**Accepted debt — display only**")
+	_, debt, ok := strings.Cut(findings, "<summary>1 accepted · baseline or waiver · display only</summary>")
 	if !ok {
 		t.Fatalf("no accepted debt group in %q", findings)
 	}

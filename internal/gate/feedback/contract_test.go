@@ -276,7 +276,7 @@ func TestGoldenFeedback(t *testing.T) {
 			dims := section(comment, headDimensions)
 			at := -1
 			for _, key := range dimensionOrder {
-				i := strings.Index(dims, "- `"+key+"`")
+				i := strings.Index(dims, "| `"+key+"` |")
 				if i <= at {
 					t.Errorf("dimension %s is missing or out of order", key)
 				}
