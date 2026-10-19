@@ -67,10 +67,80 @@ const installed = {
   can_discover: false,
 };
 
+const direction = (from: string, to: string, origin: string, n: number) => ({
+  rule: 'no-module-cycles',
+  rule_id: 'no-module-cycles',
+  meta: 'high',
+  from,
+  to,
+  origin,
+  why: '',
+  fix: '',
+  alternatives: null,
+  locations: Array.from({ length: n }, (_, i) => `internal/${from}/file${i}.go:${i + 3}`),
+  strength: 'model',
+  distance: 'across modules',
+  volatility: 'high',
+});
+
+const pull = {
+  number: 4,
+  title: 'feat: read options',
+  author: 'alice',
+  state: 'open',
+  head_ref: 'feat/options',
+  base_ref: 'main',
+  head_sha: 'a1b2c3d',
+  url: 'https://github.com/acme/app/pull/4',
+  checks_url: 'https://github.com/acme/app/pull/4/checks',
+  graph_href: '/r/acme/app/pull/4/graph',
+  result: 'violations found',
+  tone: 'danger',
+  headline: 'Architecture violations found · advisory',
+  required: false,
+  unavailable: '',
+  run_id: 88,
+  no_baseline: true,
+  compared: true,
+  violation_count: 3,
+  cycles: [
+    {
+      modules: ['pkg_chaos', 'pkg_container'],
+      rule: 'no-module-cycles',
+      rule_id: 'no-module-cycles',
+      meta: 'high',
+      violation: true,
+      why: 'Modules depend on each other.',
+      fixes: ['Remove one direction.'],
+      alternatives: null,
+      directions: [direction('pkg_chaos', 'pkg_container', 'added', 2), direction('pkg_container', 'pkg_chaos', 'existing', 37)],
+    },
+  ],
+  other: [
+    {
+      ...direction('api', 'db', 'added', 5),
+      rule: 'Imbalanced coupling',
+      rule_id: 'bc/imbalanced_coupling',
+      why: 'API reads the database model.',
+      fix: 'Go through the repository.',
+    },
+  ],
+  advisory_count: 1,
+  advisories: [{ ...direction('ui', 'store', '', 1), rule: 'layering', rule_id: 'layering', why: 'UI skips a layer.' }],
+  accepted_count: 1,
+  accepted: [{ ...direction('x', 'y', '', 1), meta: 'low, baseline' }],
+  omitted: 0,
+  dimensions: [{ key: 'change_locality', name: 'Change locality', status: 'partial', coverage: '3 / 4 modules', confidence: 'medium', gate: 'warn' }],
+  unknowns: [{ dimension: 'Coupling', fact: 'coupling volatility', reason: 'volatility is undeclared' }],
+  tasks: '[\n  {"id": "t1"}\n]',
+  task_count: 1,
+};
+
 interface Mock {
   signedIn?: boolean;
   tokenRejected?: boolean; // the session stands, but GitHub rejects the user's token on the first repository call
   overview?: object;
+  pull?: object;
 }
 
 // open answers /api in the browser from the mock, opens the page, and returns the writes the page sent. Each page records the CSP violations
@@ -94,6 +164,8 @@ async function open(page: Page, path: string, mock: Mock = {}) {
         return json(200, repos);
       case '/api/repos/acme/app/overview':
         return json(200, mock.overview ?? reporting);
+      case '/api/repos/acme/app/pulls/4':
+        return json(200, mock.pull ?? pull);
     }
     return json(404, { error: 'Not found.' });
   });
@@ -171,6 +243,48 @@ test('overview: an admin opens the onboarding pull request', async ({ page }) =>
   expect(w.headers()['x-csrf-token']).toBe(session.csrf);
   expect(w.headers()['content-type']).toBe('application/json');
   expect(w.postDataJSON()).toEqual({ mode: 'customer', owners: 'alice\nacme/platform' });
+});
+
+test('pull request: the cycle drawn as on the comment, then the other findings', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await open(page, '/r/acme/app/pull/4');
+  await expect(page.getByRole('heading', { name: 'feat: read options #4', level: 1 })).toBeVisible();
+  await expect(page.getByRole('link', { name: '#4' })).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('#result')).toHaveText('violations found');
+  await expect(page.getByText('gate: advisory · does not block merging')).toBeVisible();
+  const cycle = page.getByRole('article').filter({ hasText: 'Dependency cycle between pkg_chaos and pkg_container' });
+  await expect(cycle.locator('svg path.arrow')).toHaveCount(2);
+  await expect(cycle.locator('svg path.arrow.added')).toHaveCount(1);
+  await expect(cycle.getByText('37 locations', { exact: true })).toBeAttached();
+  await expect(cycle.getByText('All 37 locations')).toBeVisible();
+  await expect(cycle.getByText('Fix:')).toBeVisible();
+  await expect(page.getByText('Go through the repository.')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Graph' })).toHaveAttribute('href', '/r/acme/app/pull/4/graph');
+  await page.getByText('Advisories · never block').click();
+  await expect(page.getByText('UI skips a layer.')).toBeVisible();
+  await page.getByText('To measure more').click();
+  await expectClean(page);
+
+  await page.getByRole('button', { name: 'Copy 1 task' }).click();
+  await expect(page.getByRole('status')).toHaveText('Copied 1 task.');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(pull.tasks);
+});
+
+test('pull request: a link that is neither the App nor github.com is not rendered', async ({ page }) => {
+  await open(page, '/r/acme/app/pull/4', { pull: { ...pull, url: 'javascript:alert(1)', graph_href: '//evil.example/g' } });
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'View on GitHub' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Graph' })).toHaveCount(0);
+  await expect(page.locator('a[href^="javascript:"], a[href^="//"]')).toHaveCount(0);
+});
+
+test('pull request: no report says why and links the checks', async ({ page }) => {
+  await open(page, '/r/acme/app/pull/4', {
+    pull: { ...pull, unavailable: 'GitHub no longer keeps the report of this run.', cycles: null, other: null, violation_count: 0 },
+  });
+  await expect(page.getByText('GitHub no longer keeps the report')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Checks on GitHub' })).toHaveAttribute('href', pull.checks_url);
+  await expectClean(page);
 });
 
 test('theme: the choice applies at once and survives a reload', async ({ page }) => {

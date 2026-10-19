@@ -57,6 +57,76 @@ export interface Overview {
   checks_url: string;
 }
 
+export interface Finding {
+  rule: string;
+  rule_id: string;
+  meta: string;
+  from: string;
+  to: string;
+  origin: '' | 'added' | 'existing';
+  why: string;
+  fix: string;
+  alternatives: string[] | null;
+  locations: string[];
+  strength: string;
+  distance: string;
+  volatility: string;
+}
+
+export interface Cycle {
+  modules: string[];
+  rule: string;
+  rule_id: string;
+  meta: string;
+  violation: boolean;
+  why: string;
+  fixes: string[] | null;
+  alternatives: string[] | null;
+  directions: Finding[];
+}
+
+export interface Dimension {
+  key: string;
+  name: string;
+  status: string;
+  coverage: string;
+  confidence: string;
+  gate: string;
+}
+
+export interface Pull {
+  number: number;
+  title: string;
+  author: string;
+  state: string;
+  head_ref: string;
+  base_ref: string;
+  head_sha: string;
+  url: string;
+  checks_url: string;
+  graph_href: string;
+  result: string;
+  tone: Tone;
+  headline: string;
+  required: boolean;
+  unavailable: string;
+  run_id: number;
+  no_baseline: boolean;
+  compared: boolean;
+  violation_count: number;
+  cycles: Cycle[] | null;
+  other: Finding[] | null;
+  advisory_count: number;
+  advisories: Finding[] | null;
+  accepted_count: number;
+  accepted: Finding[] | null;
+  omitted: number;
+  dimensions: Dimension[] | null;
+  unknowns: { dimension: string; fact: string; reason: string }[] | null;
+  tasks: string;
+  task_count: number;
+}
+
 export interface Notice {
   notice?: string;
   location?: string;

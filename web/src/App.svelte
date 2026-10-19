@@ -4,6 +4,7 @@
   import { parseRoute } from './lib/route';
   import Landing from './pages/Landing.svelte';
   import Overview from './pages/Overview.svelte';
+  import Pull from './pages/Pull.svelte';
   import Repos from './pages/Repos.svelte';
 
   const route = parseRoute(location.pathname);
@@ -22,13 +23,22 @@
     },
   );
 
-  const title = $derived(route.kind === 'repo' ? route.fullName : signedOut ? 'Sign in' : 'Repositories');
+  const title = $derived(
+    route.kind === 'pull'
+      ? `${route.fullName} #${route.number}`
+      : route.kind === 'repo'
+        ? route.fullName
+        : signedOut
+          ? 'Sign in'
+          : 'Repositories',
+  );
+  const repo = $derived((route.kind === 'repo' || route.kind === 'pull') && session ? route.fullName : '');
   $effect(() => {
     document.title = `${title} · Archfit`;
   });
 </script>
 
-<Header {session} repo={route.kind === 'repo' && session ? route.fullName : ''} />
+<Header {session} {repo} pull={route.kind === 'pull' ? route.number : 0} />
 <main class="page" id="main">
   {#if failure}
     <p class="flash error" role="alert">{failure}</p>
@@ -40,6 +50,8 @@
     <Repos {here} />
   {:else if route.kind === 'repo'}
     <Overview {route} {session} {here} />
+  {:else if route.kind === 'pull'}
+    <Pull {route} {here} />
   {:else}
     <div class="blankslate">
       <h3>Not found</h3>

@@ -404,3 +404,33 @@ textarea {
 .track li.done .mark { border-color: var(--success-emphasis); background: var(--success-emphasis); color: #ffffff; }
 .track li.current { color: var(--fg); font-weight: 600; }
 .track li.current .mark { border-color: var(--accent); color: var(--accent); }
+
+/* ---------- findings ---------- */
+.finding .box-head h3 { font-size: 14px; }
+.locations { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.locations-all > summary { padding: 4px 0; font-weight: 500; font-size: 12px; color: var(--fg-muted); }
+details.fold > summary { list-style: none; cursor: pointer; justify-content: flex-start; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary::before {
+  content: ""; width: 0; height: 0; border-left: 5px solid var(--fg-muted);
+  border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+}
+details.fold[open] > summary::before { transform: rotate(90deg); }
+details.fold:not([open]) > summary { border-bottom: 0; }
+.unav.sub { background: none; padding: 0; }
+.result .box-foot { gap: 8px; }
+
+/* ---------- cycle drawing: the comment's picture; colours from the tokens, so both themes read ---------- */
+.cycle-drawing { overflow-x: auto; }
+.cycle-drawing svg { display: block; max-width: 100%; height: auto; margin: 0 auto; font: 13px var(--font); }
+.cycle-drawing .module rect { fill: var(--bg-subtle); stroke: var(--border); }
+.cycle-drawing .module text { fill: var(--fg); font-family: var(--mono); font-size: 12px; }
+.cycle-drawing .arrow { fill: none; stroke: var(--danger); }
+.cycle-drawing .arrow.existing { stroke: var(--fg-muted); }
+.cycle-drawing .arrowhead path { fill: var(--danger); }
+.cycle-drawing .arrowhead.existing path { fill: var(--fg-muted); }
+.cycle-drawing .arrow-label {
+  fill: var(--fg); font-size: 12px; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round;
+}
+.nowrap { white-space: nowrap; }
+details.disclosure.locations-all { border-top: 0; }

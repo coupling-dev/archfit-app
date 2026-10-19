@@ -1,5 +1,6 @@
 <script lang="ts">
   import { ApiError, explain, getJSON, postJSON, repoAPI, type Notice, type Overview, type Session } from '../lib/api';
+  import { safeHref } from '../lib/route';
 
   let {
     route,
@@ -28,8 +29,9 @@
     failure = notice = '';
     try {
       const res = await postJSON<Notice>(repoAPI(route.owner, route.name, action), session.csrf, payload);
-      if (res.location) {
-        location.assign(res.location);
+      const next = safeHref(res.location);
+      if (next) {
+        location.assign(next);
         return;
       }
       notice = res.notice ?? '';
@@ -80,7 +82,7 @@
         {#if body.draft_url}
           <p>
             Open pull request ({body.draft_state}):
-            <a href={body.draft_url} rel="noreferrer">{body.draft_url}</a>
+            <a href={safeHref(body.draft_url)} rel="noreferrer">{body.draft_url}</a>
           </p>
         {/if}
         {#if body.admin && body.can_start}
@@ -132,7 +134,7 @@
       {:else}
         {#each body.pulls as p (p.number)}
           <div class="box-row row-between">
-            <a href={p.href}>#{p.number} {p.title}</a>
+            <a href={safeHref(p.href)}>#{p.number} {p.title}</a>
             <span class="row">
               <span class="status {p.tone}">{p.state}</span>
               {#if p.reason}<span class="muted small">{p.reason}</span>{/if}
@@ -148,7 +150,7 @@
 
   <p class="muted">
     GitHub keeps the history:
-    <a href={body.pulls_url} rel="noreferrer">Archfit pull requests</a> and
-    <a href={body.checks_url} rel="noreferrer">check runs on the default branch</a>.
+    <a href={safeHref(body.pulls_url)} rel="noreferrer">Archfit pull requests</a> and
+    <a href={safeHref(body.checks_url)} rel="noreferrer">check runs on the default branch</a>.
   </p>
 {/if}
