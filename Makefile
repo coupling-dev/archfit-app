@@ -42,5 +42,19 @@ deploy-check: ## lint the workflows and test the release scripts (needs shellche
 run: ## run the reporter locally
 	go run ./cmd/reporter
 
+# The web app (web/) builds into internal/control/ui/spa, which the binary embeds. Without a build the App serves a
+# notice page, so Go builds and tests need no Node.
+.PHONY: web
+web: ## build the web app into internal/control/ui/spa (needs Node)
+	cd web && npm ci && npm run build
+
+.PHONY: web-check
+web-check: ## type-check, test, build, size-check and smoke-test the web app (needs Node and Playwright's Chromium)
+	cd web && npm ci && npm run ci
+
+.PHONY: web-if-node
+web-if-node:
+	@if command -v node >/dev/null 2>&1; then $(MAKE) web-check; else echo 'node not found: web checks skipped' >&2; fi
+
 .PHONY: all
-all: fmt lint test build ## format, lint, test, and build
+all: fmt lint web-if-node test build ## format, lint, check the web app (when Node is installed), test, and build

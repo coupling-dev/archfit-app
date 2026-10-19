@@ -1,2 +1,9 @@
 # google-github-actions/auth writes its credentials file into the workspace. Keep it out of the build context.
 gha-creds-*.json
+
+# The image builds the web app from source (Dockerfile, stage web); local installs and builds stay out.
+web/node_modules/
+web/test-results/
+web/playwright-report/
+internal/control/ui/spa/
+!internal/control/ui/spa/.gitignore
