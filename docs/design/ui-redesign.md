@@ -122,8 +122,10 @@ they render, the summary can take them too.
 
 ## Frontend stack for phases b to f (PLAN-2, for the owner)
 
-Status: proposal, 19 October 2026. Phases b to f wait for the owner's choice. Phase a (the PR comment) is not
-affected. The owner lifted the old limits (no frontend dependency, no build step, server-rendered pages only); the
+Status: approved, 19 October 2026: stack A, without the no-JavaScript fallback. Built in phase b, with three changes
+to the proposal below: the ported `archfit.css` instead of Tailwind, Svelte Flow and ELK for the graph instead of our
+own SVG component (see Graphs), and the CSP nonce left to phase f, the first page that needs it. Phase a (the PR
+comment) is not affected. The owner lifted the old limits (no frontend dependency, no build step, server-rendered pages only); the
 contracts in `internal/control/ui/module.md` that state them change with this section as the rationale.
 
 Today: `html/template` pages, `go:embed` of `templates` and `static`, 9 KB of CSS, a 31 KB hand-written `graph.js`
@@ -133,10 +135,12 @@ and a 2 KB `editor.js`. CSP `default-src 'self'; script-src 'self'; style-src 's
 
 - **Svelte 5** (runes, TypeScript), built by **Vite**. Plain Vite, not SvelteKit: SvelteKit's static adapter needs an
   inline bootstrap script, so a strict CSP would need hashes for every build.
-- **Tailwind CSS v4**, emitted as one external stylesheet; the tokens of `prototypes/archfit.css` become its theme.
+- **Styles**: `web/src/app.css`, the tokens and components of `prototypes/archfit.css` ported as one external
+  stylesheet. Proposed was Tailwind CSS v4 with those tokens as its theme; the port is the same visual system with
+  no build plugin and no class vocabulary to learn, and it is 4 KB gzip.
 - **bits-ui** (headless, accessible) for dialog, popover, tabs, tooltip and menu; it styles nothing itself.
-- **Graph**: our own SVG component, a port of today's deterministic layout in `graph.js`. No graph library: xyflow
-  and elkjs (about 400 KB) are far over budget for graphs of tens of modules.
+- **Graph**: proposed was our own SVG component, a port of today's layout in `graph.js`. The owner chose by visual
+  quality after a prototype of both: Svelte Flow and ELK, as a lazy chunk on the graph pages (see Graphs).
 - **Policy editor**: CodeMirror 6 (the owner's decision), a separate chunk loaded only on the policy page, with
   `EditorView.cspNonce` so its style elements pass the CSP. It comes from npm through the lockfile instead of the
   vendored bundle planned before.
@@ -154,23 +158,25 @@ Alternatives:
 
 ### Go integration (A)
 
-- `web/` holds the app; `vite build` writes `internal/control/ui/dist`, embedded with `//go:embed all:dist`. A
-  committed `dist/.gitkeep` and a stub `index.html` keep `go build` and `go test` working without Node.
+- `web/` holds the app; `vite build` writes `internal/control/ui/spa`, embedded with `//go:embed all:spa`. The
+  folder holds only a committed `.gitignore`; without a build the shell answers a page that says to run `make web`, so
+  `go build` and `go test` work without Node.
 - Routes: `/assets/*` immutable (hashed file names, `Cache-Control: public, max-age=31536000, immutable`); every
   other non-API `GET` returns `index.html` with `no-cache`; `/api/*` returns JSON with `no-store`.
 - The handlers keep their authorization and change only their output: each page handler becomes a JSON endpoint
   behind the same chain (session, repository authorization, CSRF on writes).
 - `GET /api/session` returns the signed-in login and the CSRF token. The session cookie stays as it is.
-- `index.html` is served through a small Go template that writes the per-response CSP nonce into a `<meta>` element;
-  the policy page passes it to CodeMirror. Nothing else in the page is generated.
+- Phase f: `index.html` is served through a small Go template that writes the per-response CSP nonce into a `<meta>`
+  element; the policy page passes it to CodeMirror. Nothing else in the page is generated. Until then `index.html` is
+  served as built, and `style-src` is `'self'` alone.
 - Forms that work without JavaScript (policy Check and Save) are dropped: the App needs a browser with JavaScript.
   Say so if that is not acceptable; then C is the choice.
 
 ### Build, CI and Docker
 
-- Node only at build time: a `node:<pinned>` Docker stage runs `npm ci && npm run build`, and the Go stage copies
-  `dist` before `go build`. The runtime image stays distroless with the one binary.
-- CI job `web`: `npm ci`, `svelte-check` (types), ESLint, Vitest unit tests, `vite build`, a bundle-size check, then a
+- Node only at build time: a `node:24.15-alpine` Docker stage runs `npm ci && npm run build`, and the Go stage copies
+  `spa` before `go build`. The runtime image stays distroless with the one binary.
+- CI job `web`: `npm ci`, `svelte-check` (types), Vitest unit tests, `vite build`, a bundle-size check, then a
   headless browser (Playwright) smoke test of the built app under the production CSP. The smoke test fails on any
   `securitypolicyviolation` event and on any axe accessibility violation.
 - `make all` runs the web checks when `node` is installed, and says it skipped them otherwise.
@@ -179,7 +185,9 @@ Alternatives:
 ### Bundle budget
 
 - First load of any page: at most 120 KB gzip of JavaScript and 20 KB of CSS. The editor chunk: at most 200 KB gzip,
-  loaded on the policy page only. CI fails above either.
+  loaded on the policy page only. CI fails above either. The graph chunk (about 504 KB gzip, 467 KB of it ELK) loads
+  on the graph pages only; it gets its own limit in phase d.
+- Phase b ships 19 KB of JavaScript and 4 KB of CSS, gzip.
 
 ### Dark mode and accessibility
 
@@ -194,7 +202,7 @@ Alternatives:
 | Invariant | How it holds |
 | --- | --- |
 | No runtime CDN | Every script, style and font is built into `dist` and served by the App. CSP `script-src 'self'` and `font-src 'self'` would block anything else; the smoke test fails on a violation. |
-| CSP without `unsafe-inline` or `unsafe-eval` | Svelte compiles to plain JavaScript (no `eval`); Tailwind is an external file; Vite's modulepreload polyfill is off (`build.modulePreload.polyfill: false`), so `index.html` holds no inline script. Styles set from script go through CSSOM (`element.style`), which CSP allows. CodeMirror's style elements carry a per-response nonce through `EditorView.cspNonce`, with `style-src 'self' 'nonce-…'`. Target: `default-src 'none'; script-src 'self'; style-src 'self' 'nonce-…'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'`. |
+| CSP without `unsafe-inline` or `unsafe-eval` | Svelte compiles to plain JavaScript (no `eval`); styles are one external file and no Svelte transition is used (they insert style elements); Vite's modulepreload polyfill is off (`build.modulePreload.polyfill: false`), so `index.html` holds no inline script. Styles set from script go through CSSOM (`element.style`), which CSP allows. CodeMirror's style elements carry a per-response nonce through `EditorView.cspNonce`, with `style-src 'self' 'nonce-…'`. Target: `default-src 'none'; script-src 'self'; style-src 'self' 'nonce-…'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'`. |
 | CSRF and the session model | The session stays an HttpOnly, Secure, SameSite=Lax cookie that script cannot read. The stateless per-session HMAC token (`csrf.go`) is fetched from `/api/session` and sent as an `X-CSRF-Token` header on every write; the server checks it as today and also requires `Content-Type: application/json`. |
 | Tenant identity only from the authorized session | Endpoints take the installation and repository from the session and the authorized route, never from the request body or a client-held value. The client sends only the `org/repo` path that it shows, and the server authorizes it again. |
 | No secrets in the client | The OAuth token stays in the server-side session. API responses are built from explicit response types, never by serializing a stored record, and a test checks that no response holds a token field. |
@@ -205,7 +213,7 @@ Alternatives:
 1. **b**: the `web/` app, the build, CI and Docker changes, the CSP change, the shell (header, nav, tokens, dark
    mode), `/api/session`, and the overview page. The other pages stay on templates, linked from the new shell.
 2. **c**: the pull request page and the findings components, with the cycle drawn as on the comment.
-3. **d**: both graphs on the new SVG component, with the inspector and the seam fields.
+3. **d**: both graphs on Svelte Flow and ELK, with the inspector and the seam fields.
 4. **e**: Data sharing (decision A), with the inline prompts.
 5. **f**: the policy editor with CodeMirror 6. Then the templates, `graph.js`, `editor.js` and `app.css` are deleted.
 
@@ -283,6 +291,27 @@ Today: the repository graph is a small drawing in a wide frame, with a "Problems
 panel under it, often off-screen. On the PR graph, the edge badges "new · 2" and "new · 40" overlap. Up to three
 left-bordered banners push the graph down. There is no legend for line weight, dashes or halo. Colours differ from the
 prototype: allowed is green here, grey there. The intro "Policy status of module relationships…" is jargon.
+
+Decision (owner, 19 October 2026, after a prototype of both): Svelte Flow (`@xyflow/svelte`) with the ELK layered
+layout (`elkjs`), a lazy chunk of about 504 KB gzip on the graph pages only. ELK gives each direction of a dependency
+its own track, nearly no crossings, and room reserved for labels; the port of `graph.js` drew edges into one point
+and crowded the badges at 7 modules, and dagre loops back edges. It runs under `style-src 'self'`: the xyflow
+stylesheet is an external file and ELK runs on the main thread, with no worker and no `blob:`. ELK edge priority is
+the dependency count, so the heavy direction stays downward.
+
+Notes for phase d (owner, through the manager):
+
+1. Edge novelty follows the comment (phase a2): a dependency is new only when it is added, not when another finding
+   on the same module pair existed before. Only added dependencies get the "new in this PR" halo; an existing cycle
+   edge keeps the violation colour without it. The chip counts added dependencies, so the comment, the PR page and
+   the graph tell the same story.
+2. Fit the view with padding, a minimum zoom and larger node text; module facts on the node (a volatility or
+   subdomain chip).
+3. Count is the line width; integration strength (contract, model, functional, intrusive) is its own visual channel
+   (line style or colour family), with the legend in the book's terms. The inspector shows strength · distance ·
+   volatility · balance; `graph.Build` projects the seam fields.
+4. The legend is compact, collapsible, in the book's wording.
+5. No debug toolbar in production. Svelte Flow is MIT; check the licence text before hiding its attribution.
 
 Target (`prototypes/atlas.html` map, `graph-proto.js`):
 

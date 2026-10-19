@@ -52,14 +52,18 @@ The tests use the standard `testing` package and table-driven cases with `t.Run`
 
 ## Frontend
 
-| Item      | Choice                                                                                                                           |
-| --------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Rendering | Server-rendered `html/template`. No SPA framework                                                                                |
-| Editor    | A plain text area. The server checks syntax and schema on Check and on every save, and lists problems by line. No editor library |
-| Graph     | A small vanilla script renders plain SVG from the JSON view model **[default]**                                                  |
+| Item      | Choice                                                                                                                                                         |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rendering | Svelte 5 and TypeScript, built by Vite into `internal/control/ui/spa` and embedded in the binary; the pages not moved yet stay server-rendered `html/template` |
+| Styles    | One stylesheet, the tokens and components of `docs/design/prototypes/archfit.css`, light and dark                                                              |
+| Editor    | A plain text area. The server checks syntax and schema on Check and on every save, and lists problems by line. No editor library                               |
+| Graph     | A small vanilla script renders plain SVG from the JSON view model **[default]**                                                                                |
+| Tests     | `svelte-check`, Vitest, a bundle budget, and a Playwright smoke test with axe under the production CSP                                                         |
 
-Static assets are the module's own files under `internal/control/ui/static/`. Node is not needed by `make`, CI, or the
-image. The CSP allows no inline style and no worker.
+Node is needed only to build and check the web app (`make web`, `make web-check`, the CI job "Web app" and the image's
+`web` stage); Go builds and tests run without it. Versions are pinned in `web/package-lock.json`. The CSP allows no
+inline style, no inline script, no eval, no worker and no other origin. See
+[UI redesign](design/ui-redesign.md#frontend-stack-for-phases-b-to-f-plan-2-for-the-owner) for the migration.
 
 ## Platform seams
 

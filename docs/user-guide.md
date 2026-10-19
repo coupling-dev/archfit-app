@@ -453,11 +453,16 @@ baseline already accepts, and accepts nothing new.
 
 ## See a repository
 
-Open `/r/<owner>/<repo>`. The page always shows the setup steps with the current one marked. In advisory and
-required mode it also says what to do next. After the first report it also shows:
+Open `/r/<owner>/<repo>`. The page always shows the setup steps with the current one marked. "Needs you" says what to
+do next and, for a repository admin, holds the button that starts onboarding or discovery. After the first report it
+also shows:
 
-- the Archfit result of the default branch, with a link to the graph;
+- the Archfit result of the default branch at the top of the page;
 - the open pull requests, newest first, each with its result and a link to its page (up to 20).
+
+The tabs under the header open the graph (Architecture) and the policy editor (Policy). The header switches between
+the light and the dark theme, or follows the system (Auto); the choice is kept in this browser. The App needs a
+browser with JavaScript.
 
 ## See a pull request
 
@@ -578,6 +583,19 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 ```
 
 Clear a grant by omitting `until` or sending `null`. A successful request returns `204`.
+
+### Build the web app
+
+The overview and the repository page are a web app in `web/`, built into the binary. The release image builds it
+(`Dockerfile`, stage `web`). For a local binary, build it first with Node 24:
+
+```sh
+make web    # npm ci and the build into internal/control/ui/spa
+make build
+```
+
+A binary built without it serves a page that says to run `make web`. `make all` also runs the web app's checks when
+Node is installed; the browser smoke test needs Playwright's Chromium once: `cd web && npx playwright install chromium`.
 
 ### Health
 
