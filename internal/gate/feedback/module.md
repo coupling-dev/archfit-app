@@ -334,21 +334,24 @@ receipt marker. Block G is in the gate summary only.
    advisories · never block" (`advisory` findings that are `new` or `expired_waiver`; an advisory of an unknown
    status stays open with the violations), "N accepted · baseline or waiver · display only" (`baseline`, `waived`),
    "N fixed · display only" (`fixed`). The block opens with one tally line that counts every non-empty group, for
-   example "**4 rule violations** in 1 dependency cycle · 2 advisories · 6 accepted · 6 introduced by this pull
-   request"; the last part appears only when `Comparison.OriginStatus` is `comparable`, and counts findings whose
-   `Origin` is `introduced`. It never says "no violations": a hard gate can fail without a finding. A cut never
+   example "**4 rule violations** · 1 dependency cycle · 2 advisories · 6 accepted · 6 introduced by this pull
+   request"; the cycle part counts cycle items, not their findings. The last part appears only when
+   `Comparison.OriginStatus` is `comparable`, and counts findings whose `Origin` is `introduced`; without that
+   comparison no finding shows an origin either. It never says "no violations": a hard gate can fail without a finding. A cut never
    leaves a fold or a code fence open: `cutLines` closes both before "Output truncated.".
 
    Violations: a finding lies on a dependency cycle when, among the first 50 violations, its `Edge.To.Module` reaches
    its `Edge.From.Module` through findings of the same rule, kind, status and severity (the fields
    `Finding.Reverses` pairs on). Cycle edges of one such class that share a module are one item (one strongly
-   connected component), placed where its first finding is: a heading "#### Dependency cycle between `A` and `B`"
+   connected component). Cycles come first, in the order of their first finding, each with a heading "#### Dependency cycle between `A` and `B`"
    (or "among `A`, `B`, `C`"), a line with the label, rule ID, severity, status and the shared origin, then in the
    comment only a Mermaid flowchart (one node per module, one edge per finding labeled with its location count,
    2/3/4 px wide below 3 / below 10 / from 10 locations, GitHub danger red), then the direction table (below), then
    the first finding's `Why` and every distinct `Constraint` and `AllowedAlternatives`. Mermaid node IDs are
    generated (`m0`, `m1`, …); a label keeps `[A-Za-z0-9_./:@+-]` and writes every other rune as a Mermaid entity code
-   (`#<decimal>;`), so no report string can end a label or the code fence. Every other violation is a list item:
+   (`#<decimal>;`), so no report string can end a label or the code fence. Every other violation follows as a list
+   item, under a heading "#### Other rule violations" when a cycle came before (so the list does not read as part of
+   the cycle):
    label, rule ID, severity, status and origin, `Edge.From.Module` → `Edge.To.Module` (with `Path` when set),
    locations as `file:line` (at most 10, then "and N more"), `Why`, then the policy-permitted repair: `Constraint`
    and `AllowedAlternatives`. feedback adds no repair of its own and invents no access route. At most 50 violations
