@@ -27,7 +27,7 @@ const (
 	reportMismatch = "The report of this run does not match its check, so it is not shown. Re-run the workflow."
 
 	conclusionActionRequired = "action_required"
-	findingsPerList          = 50 // per group, the rest counted
+	findingsPerList          = report.ShownPerGroup // per group, the rest counted
 )
 
 // pullBody is what readPull found: the pull request, its archfit/state check, and why there is no report when there is
