@@ -303,9 +303,12 @@ receipt marker. Block G is in the gate summary only.
    always reads "Architecture violations found". A push carries no mode suffix ("Architecture violations found"). " · no baseline" is appended when
    `Trusted.BaselineDigests` is empty. `action_required`, a suspended outcome, or no report keep the fixed lines
    "Action required", "Architecture gate failing" or "Passed" **[default]**. On an advisory pull request without
-   `action_required` the line "This check does not block merging: the gate is advisory for this repository." follows.
-   Then `Reasons[0]`: code, category, `Detail` (only when not empty), `Next`. The headline is also the title of both
-   check runs (`archfit/state` without a report: "Architecture state: no usable report").
+   `action_required` the line "This check does not block merging: the gate is advisory for this repository." follows;
+   in the comment it is a GitHub `> [!NOTE]` alert, in a check summary plain text (an alert there is not known to
+   render). Then `Reasons[0]`: `Next` first and bold (only when not empty), then code and category, then `Detail`
+   (only when not empty). The headline is also the title of both check runs (`archfit/state` without a report:
+   "Architecture state: no usable report"), so only the comment writes it as a `## Archfit:` heading: GitHub prints
+   the check title right above a check summary, and a heading there would repeat it.
 2. Further reasons, one line each (for example unevaluated rules beside a blocker).
 
    G. Blocking findings (gate summary only, and only when `Outcome.Reasons` holds `blocking_findings`: an outcome
@@ -324,26 +327,54 @@ receipt marker. Block G is in the gate summary only.
    is the `DetailsURL` of every check run feedback writes on a pull request (state, gate, pending gate), so GitHub's
    "Details" opens the App's page; without it GitHub keeps its default.
 4. Waiver notice section (owned by `Warn`).
-5. Findings: blocking first. A finding is labeled "violation" (never "blocking": in advisory mode nothing blocks) when `Finding.Active()` of `wire/report` is true
+5. Findings (`findings.go`). A finding is labeled "violation" (never "blocking": in advisory mode nothing blocks) when `Finding.Active()` of `wire/report` is true
    (that package owns the status vocabulary; feedback has no formula of its own) **[default, display only: the
-   verdict never reads findings]**. Groups: "Rule violations" (`Finding.Active()`, and any
-   status this version does not know), then the remaining `advisory` findings folded in one `<details>` whose summary
-   is "N advisories · never block" (`new` or `expired_waiver` only; an advisory of an unknown status stays open), then "Accepted debt — display only" (`baseline`, `waived`), "Fixed" (`fixed`).
-   A cut never leaves a fold open: `cutLines` closes it before "Output truncated.". Two findings of one group that
-   `Finding.Reverses` pairs (the two directions of a module cycle) are one item, "cycle `A` ⇄ `B`", with a line per
-   direction (endpoints with `Path` when set, `Origin`, locations), then the first finding's repair: `Why`,
-   `Constraint`, `AllowedAlternatives`. Only the first 50 findings of a group pair, so a partner past the cap stays in
-   "and N more". Display only: the count is still of findings, and each finding keeps its ID. Per finding:
-   rule ID, severity, `Edge.From.Module` → `Edge.To.Module` (with `Path` when set), `Origin` when set (shown as
-   ", origin X", display only), locations as `file:line`, `Why`,
-   then the policy-permitted repair: `Constraint` and `AllowedAlternatives`. feedback adds no repair of its own and
-   invents no access route. At most 50 per group, then "and N more" **[default]**. Grouping never changes the verdict.
-6. Dimensions: the nine engine keys of `Report.Dimensions` in the engine's fixed order (`intent`, `structure`,
-   `modularity`, `coupling`, `change_locality`, `complexity`, `testability`, `operations`, `drift`). Per dimension:
-   completeness = `Status` (`measured`, `partial`, `unmeasured`) with `Coverage` as "observed/total (basis)",
-   `Confidence`, `Gate`, and the change from `Delta` (status and metric changes)
-   when present. Measurement trust is not an engine field: the constant "customer-attested" is printed once for the
-   block. A missing key is printed as "not reported"; keys outside the nine cannot pass the decoder.
+   verdict never reads findings]**. Groups: rule violations (`Finding.Active()` first, then any status this version
+   does not know), then three folds, each a `<details>` whose summary carries the count and the effect: "N
+   advisories · never block" (`advisory` findings that are `new` or `expired_waiver`; an advisory of an unknown
+   status stays open with the violations), "N accepted · baseline or waiver · display only" (`baseline`, `waived`),
+   "N fixed · display only" (`fixed`). The block opens with one tally line that counts every non-empty group, for
+   example "**4 rule violations** · 1 dependency cycle · 2 advisories · 6 accepted · 6 introduced by this pull
+   request"; the cycle part counts cycle items, not their findings. The last part appears only when
+   `Comparison.OriginStatus` is `comparable`, and counts findings whose `Origin` is `introduced`; without that
+   comparison no finding shows an origin either. It never says "no violations": a hard gate can fail without a finding. A cut never
+   leaves a fold or a code fence open: `cutLines` closes both before "Output truncated.".
+
+   Violations: a finding lies on a dependency cycle when, among the first 50 violations, its `Edge.To.Module` reaches
+   its `Edge.From.Module` through findings of the same rule, kind, status and severity (the fields
+   `Finding.Reverses` pairs on). Cycle edges of one such class that share a module are one item (one strongly
+   connected component). Cycles come first, in the order of their first finding, each with a heading "#### Dependency cycle between `A` and `B`"
+   (or "among `A`, `B`, `C`"), a line with the label, rule ID, severity, status and the shared origin, then in the
+   comment only a Mermaid flowchart (one node per module, one edge per finding labeled with its location count,
+   2/3/4 px wide below 3 / below 10 / from 10 locations, GitHub danger red), then the direction table (below), then
+   the first finding's `Why` and every distinct `Constraint` and `AllowedAlternatives`. Mermaid node IDs are
+   generated (`m0`, `m1`, …); a label keeps `[A-Za-z0-9_./:@+-]` and writes every other rune as a Mermaid entity code
+   (`#<decimal>;`), so no report string can end a label or the code fence. Every other violation follows as a list
+   item, under a heading "#### Other rule violations" when a cycle came before (so the list does not read as part of
+   the cycle):
+   label, rule ID, severity, status and origin, `Edge.From.Module` → `Edge.To.Module` (with `Path` when set),
+   locations as `file:line` (at most 10, then "and N more"), `Why`, then the policy-permitted repair: `Constraint`
+   and `AllowedAlternatives`. feedback adds no repair of its own and invents no access route. At most 50 violations
+   are shown, then "and N more" **[default]**; a cycle partner past the cap stays in "and N more". Display only: the
+   count is of findings, and each finding keeps its ID. Grouping never changes the verdict.
+
+   Tables (cycle directions and the three folds): one row per finding, at most 50 per fold, then "and N more". Fold
+   rows open with the rule ID, severity, status and origin. Columns: the dependency (endpoints with `Path` when set),
+   where (at most 3 locations, then "and N more"), and, when the report has a `Seam` with the same `FromModule` and
+   `ToModule` for any row, the Balanced Coupling dimensions of that seam: integration strength (`Seam.Strength`),
+   distance (`Seam.Distance`), volatility (`Seam.Volatility`), engine tokens as written; empty for a row without a
+   seam. A `|` in a cell is escaped. Under a fold's table each distinct `Why`, `Constraint` and set of
+   `AllowedAlternatives` is written once with its rule ID, in first-seen order: the engine repeats one explanation
+   for every finding of a rule.
+
+   Origin is shown as "introduced", "pre-existing" or "origin <token>" (display only: the App never decides on
+   origin). Status and severity are the engine's tokens.
+6. Dimensions: a table of the nine engine keys of `Report.Dimensions` in the engine's fixed order (`intent`, `structure`,
+   `modularity`, `coupling`, `change_locality`, `complexity`, `testability`, `operations`, `drift`). Columns:
+   completeness = `Status` (`measured`, `partial`, `unmeasured`), `Coverage` as "observed/total (basis)",
+   `Confidence`, `Gate` (bold when `fail` or `warn`), and, only when some dimension has a `Delta`, a change column
+   (status and metric changes). Measurement trust is not an engine field: the constant "customer-attested" is printed once for the
+   block. A missing key is a row "not reported"; keys outside the nine cannot pass the decoder.
 7. Evidence gaps, always present: `Decision.UnevaluatedRequiredRules` with their reasons (a dead selector shows its
    engine reason, `selector matches nothing: <side> <glob>`, here); `Coverage.Tools` entries whose `Status` is not
    `ok`, except that the rows that did not run, `disabled` ones and `absent` ones without a `Reason`, are folded into
@@ -408,17 +439,17 @@ summary. GitHub appends the annotations of each request, so annotations are only
 publication created.
 
 Size: summaries and the comment stay at or under 65 535 bytes. The receipt marker and blocks 1, 2, 7, 8 are
-budgeted first and never cut. Of the rest, the budget is handed out in this order: block 6, block 9, block 5, block
-10. Block G takes the place of block 5 in the gate summary and is cut the same way. Block 6 is cut at a line end, like block 5, when the never-cut blocks leave it too little room; block 9 takes
+budgeted first and never cut. Of the rest, the budget is handed out in this order: block 6, block 9, block 5, block 10. Block G takes the place of block 5 in the gate summary and is cut the same way. Block 6 is cut at a line end, like block 5, when the never-cut blocks leave it too little room; block 9 takes
 at most its own budget (below) before block 5 gets anything, so a long finding list cannot push the validation
 commands out. Then block 5 is cut at a line end and ends with "Output truncated.", and block 10 shrinks by whole
-tasks into what is left, so tasks give way first and findings second. Cuts never split a UTF-8 sequence or a marker.
+tasks into what is left, so tasks give way first and findings second. Cuts never split a UTF-8 sequence or a marker,
+and never leave a `<details>` fold or a code fence open.
 Block 9 has its own budget of 4 096 bytes and 20 commands, whole commands only, then "N more commands are not
 shown." **[default]**; a command that contains `<!--`, `-->` or a code fence is counted, not printed. The comment
 budget keeps room for the waiver notice section, so `Warn` never needs a size check. Display caps, each ending with
-"and N more" **[default]**: 50 further reasons, 50 evidence gaps per source, 10 locations per finding, 10 metric
-changes per dimension. Last resort, only when the never-cut blocks alone exceed the limit: block 7 is cut at a
-line end.
+"and N more" **[default]**: 50 further reasons, 50 evidence gaps per source, 10 locations per list item, 3 per table
+row, 10 metric changes per dimension. Last resort, only when the never-cut blocks alone exceed the limit: block 7 is
+cut at a line end.
 
 ## Integrations
 
@@ -620,7 +651,7 @@ type Settings struct {
 - **Shared knowledge**: every string in a `Report` is engine-authored, single-line and length-capped by the
   decoder, yet still untrusted for Markdown. `Origin` is shown on a finding line and in the task block; it is presentation only. `Locations` may be empty.
   A report has no exit code, no `needs_attention` flag, no per-dimension trust and no single validation command.
-  `Seam` is an opaque part of `Report` for this module and is not rendered. `Metric` values are shown only through `Delta`. `StateSchemaV1` is the schema constant the decoder enforced.
+  `Seam` is read only for the coupling columns of a dependency table (Strength, Distance, Volatility of the seam with the same modules). `Metric` values are shown only through `Delta`. `StateSchemaV1` is the schema constant the decoder enforced.
   `Finding.Active()` is the single definition of "active gate finding"; feedback calls it for the "blocking" label,
   the group order, block G and the annotation level. For display feedback also reads the finding statuses
   `baseline`, `waived` and `fixed` (debt and fixed groups; no annotation) and the coverage statuses `ok`, `absent` and
@@ -1186,15 +1217,30 @@ Golden files hold rendered bodies for the wire fixtures.
   **Expected behavior**: the headline of the Layout table for each row; a `failure` conclusion beside a `healthy` or `needs_attention` verdict reads "Architecture violations found"; " · no baseline" exactly when no baseline is trusted; "Action required" wins.
 - **Test name**: `TestAdvisoryOfUnknownStatusStaysOpen`
   **Scenario**: an advisory finding with status `new` and one with a status this version does not know.
-  **Expected behavior**: the known one in the advisory fold; the unknown one open under "Rule violations".
+  **Expected behavior**: the known one in the advisory fold; the unknown one open with the violations, counted in the tally.
 - **Test name**: `TestWaiverNoticeStaysOutsideFolds`
   **Scenario**: a body whose first `###` heading is inside a fold.
   **Expected behavior**: the notice lands before the fold.
-- **Test name**: `TestCycleDirectionsAreOneItem`
+- **Test name**: `TestDependencyCyclesAreOneItem`
   **Scenario**: two findings of one rule in both directions; one direction; two rules in both directions; one rule twice
-  in one direction; a partner at index 50, past the cap; a direction with a `Path` and allowed alternatives.
-  **Expected behavior**: one item with a line per direction; then one, two and two items, no cycle line; 50 items, "and
-  1 more" and no cycle; the path and the alternatives are shown.
+  in one direction; three modules in a cycle without a reverse pair; two cycles through one module; two separate
+  cycles; a cycle beside a plain finding; a partner at index 50, past the cap; a direction with a `Path`, allowed
+  alternatives and a constraint both directions share; the check-summary rendering.
+  **Expected behavior**: one cycle item "between `a` and `b`" with a diagram; one, two and two list items and no
+  cycle; one item "among `a`, `b`, `c`" twice; two items; one item and one list item; the tally counts every finding;
+  50 items, "and 1 more" and no cycle; a table row per direction with the path, the alternatives, and the shared
+  constraint once; the same item without a diagram.
+- **Test name**: `TestCycleDiagramAndTablesCannotBeBrokenByReportStrings`
+  **Scenario**: a cycle whose module name holds a quote, a bracket, pipes, backticks, an arrow and a code fence.
+  **Expected behavior**: every diagram line matches the generated Mermaid grammar; exactly one fence pair; every table
+  row keeps its columns.
+- **Test name**: `TestCouplingColumnsComeFromTheSeam`
+  **Scenario**: two advisories with one `Why`; a seam for the first module pair only.
+  **Expected behavior**: strength, distance and volatility of the seam on the first row, empty cells on the second;
+  the `Why` once.
+- **Test name**: `TestCutClosesACodeFence`
+  **Scenario**: a findings block whose diagram is cut in the middle.
+  **Expected behavior**: within the limit, and the fence is closed.
 - **Test name**: `TestCommentLinksToTheAppPullPage`
   **Scenario**: a publication on a pull request with an App URL; no App URL; a push; a repository name with a space and a question mark.
   **Expected behavior**: the "Details in Archfit" link to `/r/acme/shop/pull/7` in the head, after an entitlement notice and before the findings; no link; no link; a path-escaped link. The state check, the gate check and the pending gate check carry the same URL as `DetailsURL`.
@@ -1229,7 +1275,7 @@ Golden files hold rendered bodies for the wire fixtures.
   **Scenario**: `Warn` with no comment; again with the same expiry; with another expiry; then `Publish` with matching and with non-matching `EarliestWaiverExpiry`; `Warn` on a push target.
   **Expected behavior**: one comment created; no call; section replaced; section kept; section dropped; no call.
 - **Test name**: `TestGoldenFeedback` (T02, T11)
-  **Scenario**: render every wire fixture: healthy, warning-only attention, blocked, missing required evidence, unknown identity, incompatible profile, invalid input (nil report), blocker plus unevaluated rule, non-applicable rule, `locations: []`, `matched_by: {}`, both repair kinds, waiver expiry.
+  **Scenario**: render every wire fixture: healthy, warning-only attention, blocked, missing required evidence, unknown identity, incompatible profile, invalid input (nil report), blocker plus unevaluated rule, non-applicable rule, `locations: []`, `matched_by: {}`, both repair kinds, waiver expiry, and the pilot's PR #11 report (engine v3.0.1, advisory mode: one dependency cycle among three modules, coupling advisories, accepted debt).
   **Expected behavior**: golden bodies match; verdict, reason and next action come first; the evidence-gap section exists in each; `repair_kind` values appear unchanged in the JSON block, whose objects have exactly the eight task keys; validation commands from `AgentTasks[].Validation` are de-duplicated and printed verbatim with `--base`, `--lang`, `--require-tools` when present and never `--refresh`; dimensions appear in the engine's fixed order of nine.
 
 ### Boundary Tests

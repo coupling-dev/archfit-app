@@ -16,6 +16,7 @@ const (
 	foldEvidence = "<details>\n<summary>Evidence, inputs and validation</summary>"
 	foldTasks    = "<details>\n<summary>For coding agents</summary>"
 	foldClose    = "</details>"
+	fenceClose   = "\n```"
 )
 
 // commandsBudget keeps a long command list from starving findings and agent tasks.
@@ -148,7 +149,7 @@ func cutLines(block string, limit int) string {
 	if len(block) <= limit {
 		return block
 	}
-	keep := limit - len(truncatedNote) - 2
+	keep := limit - len(truncatedNote) - 2 - len(fenceClose) // room to close a code fence the cut opened
 	if keep-len(foldClose)-2 <= 0 {
 		return ""
 	}
@@ -157,6 +158,9 @@ func cutLines(block string, limit int) string {
 		return ""
 	}
 	kept := strings.TrimRight(block[:i], "\n")
+	if strings.Count("\n"+kept, "\n```")%2 == 1 { // nor a code fence: the rest of the body would render as code
+		kept += fenceClose
+	}
 	if strings.Count(kept, "<details>") > strings.Count(kept, foldClose) { // a cut never leaves a fold open
 		kept += "\n\n" + foldClose
 	}

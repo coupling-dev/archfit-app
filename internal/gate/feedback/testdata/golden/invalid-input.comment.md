@@ -2,9 +2,9 @@
 <!-- archfit:head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb run 7.1 -->
 ## Archfit: Action required
 
+- **Next:** Re-run the Archfit workflow with the pinned action.
 - Reason: `report_invalid` (evidence)
 - Detail: report 4444444444444444444444444444444444444444444444444444444444444444
-- Next: Re-run the Archfit workflow with the pinned action.
 
 <details>
 <summary>Evidence, inputs and validation</summary>

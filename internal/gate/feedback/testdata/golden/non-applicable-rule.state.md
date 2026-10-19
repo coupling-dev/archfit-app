@@ -1,8 +1,6 @@
-## Archfit: Architecture gate passed
-
+- **Next:** Nothing to do.
 - Reason: `healthy` (architecture)
 - Detail: report 4444444444444444444444444444444444444444444444444444444444444444
-- Next: Nothing to do.
 
 ### Findings
 
@@ -15,15 +13,17 @@ No findings reported.
 
 Measurement trust: customer-attested.
 
-- `intent`: measured; coverage 1/1 (declared rules evaluated); confidence high; gate pass
-- `structure`: measured; coverage 1/1 (discovered dependencies resolved inside the declared module map); confidence high; gate pass
-- `modularity`: measured; coverage 1/2 (declared modules with a declared public surface); confidence low; gate pass
-- `coupling`: measured; coverage 1/1 (cross-boundary edges scored); confidence high; gate pass
-- `change_locality`: unmeasured; coverage 0/0; confidence unrated; gate not_applicable
-- `complexity`: measured; coverage 2/2 (declared modules with complete dependency-chain and degree values); confidence high; gate pass
-- `testability`: partial; coverage 3/3 (classified source files); confidence medium; gate pass
-- `operations`: unmeasured; coverage 0/2 (declared modules with a corroborated deploy unit and qualifying owner); confidence medium; gate not_applicable
-- `drift`: unmeasured; coverage 0/0; confidence unrated; gate not_applicable; change non_comparable
+| Dimension | Status | Coverage | Confidence | Gate | Change |
+| --- | --- | --- | --- | --- | --- |
+| `intent` | measured | 1/1 (declared rules evaluated) | high | pass |  |
+| `structure` | measured | 1/1 (discovered dependencies resolved inside the declared module map) | high | pass |  |
+| `modularity` | measured | 1/2 (declared modules with a declared public surface) | low | pass |  |
+| `coupling` | measured | 1/1 (cross-boundary edges scored) | high | pass |  |
+| `change_locality` | unmeasured | 0/0 | unrated | not_applicable |  |
+| `complexity` | measured | 2/2 (declared modules with complete dependency-chain and degree values) | high | pass |  |
+| `testability` | partial | 3/3 (classified source files) | medium | pass |  |
+| `operations` | unmeasured | 0/2 (declared modules with a corroborated deploy unit and qualifying owner) | medium | not_applicable |  |
+| `drift` | unmeasured | 0/0 | unrated | not_applicable | non_comparable |
 
 ### Evidence gaps
 

@@ -1,0 +1,2121 @@
+{
+  "schema_version": "archfit.architecture-state.v1",
+  "verdict": "blocked",
+  "decision": {
+    "hard_gates": "fail",
+    "active_blockers": 4,
+    "attention_dimensions": 2,
+    "unknown_dimensions": 2
+  },
+  "comparison": {
+    "status": "comparable",
+    "base_ref": "3f53e38675a8ab6c453634fb51ebe58b9e5cde19",
+    "config_hash": "fe46f4cf51bfe94679e3fe04b5b0eeb6509b1135754d47ef0c25a9945abf866e",
+    "classification_hash": "1664f273bfac18369e4c40802f1e17408ba2b35c438f04179ab7b87a76a909a2",
+    "model_hash": "a9e3104669b431920fbccc616ece2ae9c1071a4d069bd84d9cad9dd168829f35",
+    "rubric_version": "bc_score.v7",
+    "measurement_profile": {
+      "version": "archfit.measurement.v2",
+      "settings_hash": "eb46ade8e8c37ee1f509da1f83bddfac13e4d162602d9065ccc964e165810ef6",
+      "producers": [
+        {
+          "tool": "ast-grep",
+          "semantics_version": "ast-grep.v1",
+          "status": "disabled"
+        },
+        {
+          "tool": "ast-grep/syntax",
+          "semantics_version": "ast-grep/syntax.v1",
+          "status": "disabled"
+        },
+        {
+          "tool": "deploy-unit",
+          "semantics_version": "deploy-unit.v2",
+          "status": "ok"
+        },
+        {
+          "tool": "git-history",
+          "semantics_version": "git-history.recent500-full-fallback.v2",
+          "tool_version": "git version 2.39.5",
+          "status": "ok"
+        },
+        {
+          "tool": "go/packages",
+          "semantics_version": "go/packages.v2",
+          "tool_version": "go1.26.9",
+          "status": "ok"
+        },
+        {
+          "tool": "jscpd",
+          "semantics_version": "jscpd.v1",
+          "status": "disabled"
+        },
+        {
+          "tool": "loc",
+          "semantics_version": "loc.v1",
+          "status": "ok"
+        },
+        {
+          "tool": "scip",
+          "semantics_version": "scip.v2",
+          "status": "disabled"
+        }
+      ],
+      "unknowns": []
+    },
+    "reasons": [],
+    "origin_status": "comparable",
+    "introduced_finding_ids": [
+      "0d5aae18e2b632a4796190153b0c89b3",
+      "17a7a9622f148c7b21e252903ad0d0f5",
+      "319144b80249170ffb81f245a80bf2a8",
+      "7a7bf383bd982210b467c3a50f62862a",
+      "dd9d76ed1e290e7a210957c96c978a8a",
+      "e128caa5c2e58c5eba7cc3bc84157923"
+    ],
+    "resolved_finding_ids": []
+  },
+  "gate_reference": {
+    "status": "comparable",
+    "base_ref": "baseline",
+    "reasons": [],
+    "baseline_present": true
+  },
+  "measurement": {
+    "source_ref": "worktree",
+    "history_depth": 18,
+    "history_window": "500 commits",
+    "tool_versions": {
+      "go/packages": "go1.26.9"
+    }
+  },
+  "dimensions": {
+    "intent": {
+      "name": "intent",
+      "owner": "policy+assessment/evaluation",
+      "status": "measured",
+      "confidence": "high",
+      "gate": "pass",
+      "coverage": {
+        "basis": "declared rules evaluated",
+        "observed": 1,
+        "total": 1
+      },
+      "metrics": [
+        {
+          "name": "declared_modules",
+          "value": 6,
+          "unit": "count",
+          "provenance": [
+            "policy"
+          ]
+        },
+        {
+          "name": "declared_layers",
+          "value": 0,
+          "unit": "count",
+          "provenance": [
+            "policy"
+          ]
+        },
+        {
+          "name": "declared_rules",
+          "value": 1,
+          "unit": "count",
+          "denominator": {
+            "observed": 1,
+            "total": 1
+          },
+          "provenance": [
+            "policy"
+          ]
+        },
+        {
+          "name": "declared_waivers",
+          "value": 0,
+          "unit": "count",
+          "provenance": [
+            "policy"
+          ]
+        },
+        {
+          "name": "waivers_used",
+          "value": 0,
+          "unit": "count",
+          "provenance": [
+            "assessment/evaluation"
+          ]
+        },
+        {
+          "name": "expired_waivers",
+          "value": 0,
+          "unit": "count",
+          "provenance": [
+            "assessment/evaluation"
+          ]
+        }
+      ],
+      "findings": [],
+      "unknown": []
+    },
+    "structure": {
+      "name": "structure",
+      "owner": "relationship/facts",
+      "status": "measured",
+      "confidence": "high",
+      "gate": "fail",
+      "coverage": {
+        "basis": "discovered dependencies resolved inside the declared module map",
+        "observed": 167,
+        "total": 628
+      },
+      "metrics": [
+        {
+          "name": "internal_edges",
+          "value": 167,
+          "unit": "count",
+          "provenance": [
+            "relationship/analysis"
+          ]
+        },
+        {
+          "name": "library_edges",
+          "value": 461,
+          "unit": "count",
+          "provenance": [
+            "relationship/analysis"
+          ]
+        },
+        {
+          "name": "unmapped_first_party_edges",
+          "value": 0,
+          "unit": "count",
+          "provenance": [
+            "relationship/analysis"
+          ]
+        },
+        {
+          "name": "same_module_edges",
+          "value": 88,
+          "unit": "count",
+          "provenance": [
+            "relationship/analysis"
+          ]
+        },
+        {
+          "name": "connected_modules",
+          "value": 6,
+          "unit": "count",
+          "provenance": [
+            "relationship/analysis"
+          ]
+        },
+        {
+          "name": "cycle",
+          "value": 0,
+          "unit": "count",
+          "provenance": [
+            "assessment/metrics/cycle.v1"
+          ]
+        }
+      ],
+      "findings": [
+        {
+          "id": "0d5aae18e2b632a4796190153b0c89b3",
+          "rule_id": "no-module-cycles",
+          "kind": "gate",
+          "severity": "high",
+          "status": "new"
+        },
+        {
+          "id": "17a7a9622f148c7b21e252903ad0d0f5",
+          "rule_id": "no-module-cycles",
+          "kind": "gate",
+          "severity": "high",
+          "status": "new"
+        },
+        {
+          "id": "e128caa5c2e58c5eba7cc3bc84157923",
+          "rule_id": "no-module-cycles",
+          "kind": "gate",
+          "severity": "high",
+          "status": "new"
+        },
+        {
+          "id": "dd9d76ed1e290e7a210957c96c978a8a",
+          "rule_id": "no-module-cycles",
+          "kind": "gate",
+          "severity": "high",
+          "status": "new"
+        }
+      ],
+      "unknown": [
+        {
+          "fact": "external dependency structure",
+          "reason": "461 dependencies leave the declared module map (461 on libraries, 0 to or from first-party code no module owns), so their direction and layer are outside this claim",
+          "owner": "relationship/facts"
+        }
+      ]
+    },
+    "modularity": {
+      "name": "modularity",
+      "owner": "assessment/metrics",
+      "status": "measured",
+      "confidence": "low",
+      "gate": "pass",
+      "coverage": {
+        "basis": "declared modules with a declared public surface",
+        "observed": 0,
+        "total": 6
+      },
+      "metrics": [
+        {
+          "name": "declared_modules",
+          "value": 6,
+          "unit": "count",
+          "provenance": [
+            "policy"
+          ]
+        },
+        {
+          "name": "public_surface_entries",
+          "value": 0,
+          "unit": "count",
+          "denominator": {
+            "observed": 0,
+            "total": 6
+          },
+          "provenance": [
+            "policy"
+          ]
+        },
+        {
+          "name": "local_coupling_modules",
+          "value": 2,
+          "unit": "count",
+          "provenance": [
+            "relationship/analysis"
+          ]
+        },
+        {
+          "name": "blast_radius",
+          "value": 4,
+          "unit": "count",
+          "provenance": [
+            "assessment/metrics/blast_radius.v2"
+          ]
+        }
+      ],
+      "findings": [],
+      "unknown": [
+        {
+          "fact": "inferred public surface",
+          "reason": "no declared module states a public surface, so inferring one is outside this claim",
+          "owner": "assessment/metrics"
+        }
+      ]
+    },
+    "coupling": {
+      "name": "coupling",
+      "owner": "relationship/analysis",
+      "status": "measured",
+      "confidence": "high",
+      "gate": "warn",
+      "coverage": {
+        "basis": "cross-boundary edges scored",
+        "observed": 79,
+        "total": 79
+      },
+      "metrics": [
+        {
+          "name": "scored_edges",
+          "value": 79,
+          "unit": "count",
+          "denominator": {
+            "observed": 79,
+            "total": 79
+          },
+          "provenance": [
+            "relationship/analysis"
+          ]
+        },
+        {
+          "name": "abstained_edges",
+          "value": 0,
+          "unit": "count",
+          "provenance": [
+            "relationship/analysis"
+          ]
+        },
+        {
+          "name": "declared_external_edges",
+          "value": 0,
+          "unit": "count",
+          "provenance": [
+            "relationship/analysis"
+          ]
+        },
+        {
+          "name": "clone_only_seams",
+          "value": 0,
+          "unit": "count",
+          "provenance": [
+            "relationship/analysis"
+          ]
+        },
+        {
+          "name": "critical_band_edges",
+          "value": 35,
+          "unit": "count",
+          "provenance": [
+            "relationship/analysis"
+          ]
+        },
+        {
+          "name": "high_or_worse_edges",
+          "value": 35,
+          "unit": "count",
+          "provenance": [
+            "relationship/analysis"
+          ]
+        },
+        {
+          "name": "qualifying_edges",
+          "value": 35,
+          "unit": "count",
+          "provenance": [
+            "relationship/analysis"
+          ]
+        },
+        {
+          "name": "seams",
+          "value": 9,
+          "unit": "count",
+          "provenance": [
+            "relationship/analysis"
+          ]
+        },
+        {
+          "name": "distributed_monolith_seams",
+          "value": 8,
+          "unit": "count",
+          "denominator": {
+            "observed": 9,
+            "total": 9
+          },
+          "provenance": [
+            "relationship/analysis"
+          ]
+        },
+        {
+          "name": "tight_seams",
+          "value": 8,
+          "unit": "count",
+          "provenance": [
+            "relationship/analysis"
+          ]
+        },
+        {
+          "name": "unrated_seams",
+          "value": 0,
+          "unit": "count",
+          "provenance": [
+            "relationship/analysis"
+          ]
+        },
+        {
+          "name": "unbalanced_edge",
+          "value": 0,
+          "unit": "count",
+          "provenance": [
+            "assessment/metrics/unbalanced_edge.v3"
+          ]
+        }
+      ],
+      "findings": [
+        {
+          "id": "319144b80249170ffb81f245a80bf2a8",
+          "rule_id": "bc/imbalanced_coupling",
+          "kind": "advisory",
+          "severity": "critical",
+          "status": "new"
+        },
+        {
+          "id": "7a7bf383bd982210b467c3a50f62862a",
+          "rule_id": "bc/imbalanced_coupling",
+          "kind": "advisory",
+          "severity": "critical",
+          "status": "new"
+        }
+      ],
+      "unknown": []
+    },
+    "change_locality": {
+      "name": "change_locality",
+      "owner": "history/git",
+      "status": "measured",
+      "confidence": "high",
+      "gate": "pass",
+      "coverage": {
+        "basis": "declared modules touched in the scanned history window",
+        "observed": 6,
+        "total": 6
+      },
+      "metrics": [
+        {
+          "name": "commits_scanned",
+          "value": 18,
+          "unit": "count",
+          "provenance": [
+            "history/git"
+          ]
+        },
+        {
+          "name": "modules_touched",
+          "value": 6,
+          "unit": "count",
+          "provenance": [
+            "history/git"
+          ]
+        }
+      ],
+      "findings": [],
+      "unknown": [
+        {
+          "fact": "essential vs accidental volatility",
+          "reason": "commit frequency corroborates a declared volatility; it cannot establish one",
+          "owner": "history/git"
+        }
+      ]
+    },
+    "complexity": {
+      "name": "complexity",
+      "owner": "relationship/analysis+syntax+evidence/acquisition",
+      "status": "measured",
+      "confidence": "high",
+      "gate": "pass",
+      "coverage": {
+        "basis": "declared modules with complete dependency-chain and degree values",
+        "observed": 6,
+        "total": 6
+      },
+      "metrics": [
+        {
+          "name": "max_dependency_chain",
+          "value": 2,
+          "unit": "count",
+          "denominator": {
+            "observed": 6,
+            "total": 6
+          },
+          "provenance": [
+            "relationship/analysis"
+          ]
+        },
+        {
+          "name": "module_fan_in_p90",
+          "value": 3,
+          "unit": "count",
+          "denominator": {
+            "observed": 6,
+            "total": 6
+          },
+          "provenance": [
+            "relationship/analysis"
+          ]
+        },
+        {
+          "name": "module_fan_out_p90",
+          "value": 3,
+          "unit": "count",
+          "denominator": {
+            "observed": 6,
+            "total": 6
+          },
+          "provenance": [
+            "relationship/analysis"
+          ]
+        },
+        {
+          "name": "production_files",
+          "value": 90,
+          "unit": "count",
+          "provenance": [
+            "syntax/fileclass"
+          ]
+        },
+        {
+          "name": "production_loc",
+          "value": 8853,
+          "unit": "count",
+          "provenance": [
+            "syntax/fileclass"
+          ]
+        },
+        {
+          "name": "largest_production_file_loc",
+          "value": 298,
+          "unit": "count",
+          "provenance": [
+            "syntax/fileclass"
+          ]
+        }
+      ],
+      "findings": [],
+      "unknown": [
+        {
+          "fact": "function length distribution",
+          "reason": "ast-grep supplied no complete function or method extent for part or all of the out-of-claim size distribution",
+          "owner": "syntax+evidence/acquisition"
+        },
+        {
+          "fact": "cognitive complexity",
+          "reason": "no cognitive-complexity analyzer is claimed; module-graph shape is the architecture-level measure",
+          "owner": "syntax+evidence/acquisition"
+        }
+      ]
+    },
+    "testability": {
+      "name": "testability",
+      "owner": "syntax/fileclass",
+      "status": "partial",
+      "confidence": "medium",
+      "gate": "pass",
+      "coverage": {
+        "basis": "classified source files",
+        "observed": 158,
+        "total": 173
+      },
+      "metrics": [
+        {
+          "name": "test_files",
+          "value": 68,
+          "unit": "count",
+          "provenance": [
+            "syntax/fileclass"
+          ]
+        },
+        {
+          "name": "production_files",
+          "value": 90,
+          "unit": "count",
+          "provenance": [
+            "syntax/fileclass"
+          ]
+        },
+        {
+          "name": "test_to_production_files",
+          "value": 0.7555555555555555,
+          "unit": "ratio",
+          "denominator": {
+            "observed": 68,
+            "total": 90
+          },
+          "provenance": [
+            "syntax/fileclass"
+          ]
+        }
+      ],
+      "findings": [],
+      "unknown": [
+        {
+          "fact": "supplied coverage units",
+          "reason": "coverage is disabled, so no supplied coverage units were observed",
+          "owner": "syntax/fileclass"
+        },
+        {
+          "fact": "coverage path resolution",
+          "reason": "coverage is disabled, so no supplied coverage paths were available to resolve",
+          "owner": "syntax/fileclass"
+        },
+        {
+          "fact": "coverage module attribution",
+          "reason": "coverage is disabled, so no supplied coverage was available to attribute to declared modules",
+          "owner": "syntax/fileclass"
+        },
+        {
+          "fact": "coverage freshness",
+          "reason": "coverage is disabled, so no supplied coverage freshness could be established",
+          "owner": "syntax/fileclass"
+        }
+      ]
+    },
+    "operations": {
+      "name": "operations",
+      "owner": "policy+evidence/acquisition",
+      "status": "partial",
+      "confidence": "medium",
+      "gate": "pass",
+      "coverage": {
+        "basis": "declared modules with a corroborated deploy unit and qualifying owner",
+        "observed": 1,
+        "total": 6
+      },
+      "metrics": [
+        {
+          "name": "modules_with_owner",
+          "value": 6,
+          "unit": "count",
+          "denominator": {
+            "observed": 6,
+            "total": 6
+          },
+          "provenance": [
+            "policy",
+            "evidence/acquisition"
+          ]
+        },
+        {
+          "name": "distinct_owners",
+          "value": 1,
+          "unit": "count",
+          "provenance": [
+            "policy",
+            "evidence/acquisition"
+          ]
+        },
+        {
+          "name": "owners_from_declared",
+          "value": 0,
+          "unit": "count",
+          "provenance": [
+            "policy"
+          ]
+        },
+        {
+          "name": "owners_from_codeowners",
+          "value": 6,
+          "unit": "count",
+          "provenance": [
+            "evidence/acquisition"
+          ]
+        },
+        {
+          "name": "owners_from_git_author_fallback",
+          "value": 0,
+          "unit": "count",
+          "provenance": [
+            "evidence/acquisition"
+          ]
+        },
+        {
+          "name": "declared_deploy_units",
+          "value": 0,
+          "unit": "count",
+          "provenance": [
+            "policy"
+          ]
+        },
+        {
+          "name": "corroborated_deploy_units",
+          "value": 1,
+          "unit": "count",
+          "provenance": [
+            "evidence/acquisition"
+          ]
+        },
+        {
+          "name": "modules_with_corroborated_deploy_unit",
+          "value": 1,
+          "unit": "count",
+          "denominator": {
+            "observed": 1,
+            "total": 6
+          },
+          "provenance": [
+            "evidence/acquisition"
+          ]
+        },
+        {
+          "name": "matching_declared_deploy_units",
+          "value": 0,
+          "unit": "count",
+          "provenance": [
+            "policy",
+            "evidence/acquisition"
+          ]
+        },
+        {
+          "name": "mismatched_declared_deploy_units",
+          "value": 0,
+          "unit": "count",
+          "provenance": [
+            "policy",
+            "evidence/acquisition"
+          ]
+        },
+        {
+          "name": "declared_external_systems",
+          "value": 0,
+          "unit": "count",
+          "provenance": [
+            "policy"
+          ]
+        },
+        {
+          "name": "analyzers_reporting_coverage",
+          "value": 3,
+          "unit": "count",
+          "denominator": {
+            "observed": 3,
+            "total": 3
+          },
+          "provenance": [
+            "evidence/acquisition"
+          ]
+        },
+        {
+          "name": "coverage_gaps",
+          "value": 0,
+          "unit": "count",
+          "provenance": [
+            "evidence/acquisition"
+          ]
+        },
+        {
+          "name": "analyzers_not_applicable",
+          "value": 8,
+          "unit": "count",
+          "provenance": [
+            "evidence/acquisition"
+          ]
+        },
+        {
+          "name": "coverage",
+          "value": 1,
+          "unit": "ratio",
+          "provenance": [
+            "assessment/metrics/coverage.v1"
+          ]
+        }
+      ],
+      "findings": [],
+      "unknown": [
+        {
+          "fact": "corroborated deploy unit",
+          "reason": "one or more declared modules have no independently corroborating deploy manifest",
+          "owner": "policy+evidence/acquisition"
+        },
+        {
+          "fact": "observed runtime topology",
+          "reason": "committed manifests corroborate declared deploy units; they do not observe what is actually running",
+          "owner": "policy+evidence/acquisition"
+        },
+        {
+          "fact": "supply-chain inventory",
+          "reason": "SBOM and vulnerability facts are a separate report family and have no collector in v1",
+          "owner": "policy+evidence/acquisition"
+        }
+      ]
+    },
+    "drift": {
+      "name": "drift",
+      "owner": "assessment/decision",
+      "status": "measured",
+      "confidence": "high",
+      "gate": "pass",
+      "coverage": {
+        "basis": "distributed-monolith seams compared against the stored reference",
+        "observed": 8,
+        "total": 8
+      },
+      "metrics": [
+        {
+          "name": "new_seams",
+          "value": 8,
+          "unit": "count",
+          "provenance": [
+            "assessment/evaluation"
+          ]
+        },
+        {
+          "name": "resolved_seams",
+          "value": 0,
+          "unit": "count",
+          "provenance": [
+            "assessment/evaluation"
+          ]
+        }
+      ],
+      "findings": [],
+      "unknown": [],
+      "delta": {
+        "status": "comparable"
+      }
+    }
+  },
+  "coverage": {
+    "measured": 7,
+    "partial": 2,
+    "unmeasured": 0,
+    "tools": [
+      {
+        "tool": "go/packages",
+        "status": "ok"
+      },
+      {
+        "tool": "dependency-cruiser",
+        "status": "absent"
+      },
+      {
+        "tool": "grimp",
+        "status": "absent"
+      },
+      {
+        "tool": "cargo",
+        "status": "absent"
+      },
+      {
+        "tool": "loc",
+        "status": "ok"
+      },
+      {
+        "tool": "deploy-unit",
+        "status": "ok"
+      },
+      {
+        "tool": "jscpd",
+        "status": "disabled",
+        "reason": "clone detection disabled by config — set `analyzers.clones.enabled: true` in .archfit.yaml to enable"
+      },
+      {
+        "tool": "scip",
+        "status": "disabled",
+        "reason": "opt-in: analyzers.scip.enabled"
+      },
+      {
+        "tool": "ast-grep/syntax",
+        "status": "disabled",
+        "reason": "opt-in: analyzers.syntax.enabled"
+      },
+      {
+        "tool": "ast-grep",
+        "status": "disabled"
+      },
+      {
+        "tool": "cargo-modules",
+        "status": "absent"
+      }
+    ]
+  },
+  "findings": [
+    {
+      "id": "0d5aae18e2b632a4796190153b0c89b3",
+      "kind": "gate",
+      "rule_id": "no-module-cycles",
+      "status": "new",
+      "severity": "high",
+      "confidence": "",
+      "edge": {
+        "from": {
+          "module": "pkg_chaos",
+          "path": ""
+        },
+        "to": {
+          "module": "pkg_container",
+          "path": ""
+        },
+        "kind": "module_dependency"
+      },
+      "matched_by": {
+        "cycle_modules": "pkg_chaos, pkg_container, pkg_util",
+        "cycle_pairs_total": "4",
+        "cycle_size": "3",
+        "from_module": "pkg_chaos",
+        "locations_total": "40",
+        "to_module": "pkg_container"
+      },
+      "locations": [
+        {
+          "file": "pkg/chaos/cmd/builder.go",
+          "line": 14
+        },
+        {
+          "file": "pkg/chaos/command.go",
+          "line": 10
+        },
+        {
+          "file": "pkg/chaos/iptables/cmd/loss.go",
+          "line": 11
+        },
+        {
+          "file": "pkg/chaos/iptables/iptables.go",
+          "line": 8
+        },
+        {
+          "file": "pkg/chaos/iptables/loss.go",
+          "line": 10
+        },
+        {
+          "file": "pkg/chaos/iptables/parse.go",
+          "line": 11
+        },
+        {
+          "file": "pkg/chaos/lifecycle/cmd/exec.go",
+          "line": 11
+        },
+        {
+          "file": "pkg/chaos/lifecycle/cmd/kill.go",
+          "line": 11
+        },
+        {
+          "file": "pkg/chaos/lifecycle/cmd/pause.go",
+          "line": 13
+        },
+        {
+          "file": "pkg/chaos/lifecycle/cmd/remove.go",
+          "line": 11
+        },
+        {
+          "file": "pkg/chaos/lifecycle/cmd/restart.go",
+          "line": 12
+        },
+        {
+          "file": "pkg/chaos/lifecycle/cmd/stop.go",
+          "line": 13
+        },
+        {
+          "file": "pkg/chaos/lifecycle/exec.go",
+          "line": 8
+        },
+        {
+          "file": "pkg/chaos/lifecycle/kill.go",
+          "line": 9
+        },
+        {
+          "file": "pkg/chaos/lifecycle/pause.go",
+          "line": 10
+        },
+        {
+          "file": "pkg/chaos/lifecycle/remove.go",
+          "line": 8
+        },
+        {
+          "file": "pkg/chaos/lifecycle/restart.go",
+          "line": 9
+        },
+        {
+          "file": "pkg/chaos/lifecycle/stop.go",
+          "line": 10
+        },
+        {
+          "file": "pkg/chaos/netem/cmd/combine.go",
+          "line": 11
+        },
+        {
+          "file": "pkg/chaos/netem/cmd/corrupt.go",
+          "line": 12
+        },
+        {
+          "file": "pkg/chaos/netem/cmd/delay.go",
+          "line": 11
+        },
+        {
+          "file": "pkg/chaos/netem/cmd/duplicate.go",
+          "line": 12
+        },
+        {
+          "file": "pkg/chaos/netem/cmd/loss.go",
+          "line": 12
+        },
+        {
+          "file": "pkg/chaos/netem/cmd/loss_ge.go",
+          "line": 11
+        },
+        {
+          "file": "pkg/chaos/netem/cmd/loss_state.go",
+          "line": 11
+        },
+        {
+          "file": "pkg/chaos/netem/cmd/rate.go",
+          "line": 11
+        },
+        {
+          "file": "pkg/chaos/netem/combine.go",
+          "line": 9
+        },
+        {
+          "file": "pkg/chaos/netem/corrupt.go",
+          "line": 10
+        },
+        {
+          "file": "pkg/chaos/netem/delay.go",
+          "line": 11
+        },
+        {
+          "file": "pkg/chaos/netem/duplicate.go",
+          "line": 10
+        },
+        {
+          "file": "pkg/chaos/netem/loss.go",
+          "line": 10
+        },
+        {
+          "file": "pkg/chaos/netem/loss_ge.go",
+          "line": 10
+        },
+        {
+          "file": "pkg/chaos/netem/loss_state.go",
+          "line": 10
+        },
+        {
+          "file": "pkg/chaos/netem/netem.go",
+          "line": 9
+        },
+        {
+          "file": "pkg/chaos/netem/parse.go",
+          "line": 10
+        },
+        {
+          "file": "pkg/chaos/netem/rate.go",
+          "line": 11
+        },
+        {
+          "file": "pkg/chaos/netem/target.go",
+          "line": 10
+        },
+        {
+          "file": "pkg/chaos/runner.go",
+          "line": 7
+        },
+        {
+          "file": "pkg/chaos/stress/cmd/stress.go",
+          "line": 13
+        },
+        {
+          "file": "pkg/chaos/stress/stress.go",
+          "line": 10
+        }
+      ],
+      "why": "Module pkg_chaos depends on pkg_container, and the two are in a dependency cycle among 3 declared modules",
+      "constraint": "Remove one direction of the module cycle; routing the dependency through another module keeps the cycle",
+      "origin": "introduced"
+    },
+    {
+      "id": "17a7a9622f148c7b21e252903ad0d0f5",
+      "kind": "gate",
+      "rule_id": "no-module-cycles",
+      "status": "new",
+      "severity": "high",
+      "confidence": "",
+      "edge": {
+        "from": {
+          "module": "pkg_chaos",
+          "path": ""
+        },
+        "to": {
+          "module": "pkg_util",
+          "path": ""
+        },
+        "kind": "module_dependency"
+      },
+      "matched_by": {
+        "cycle_modules": "pkg_chaos, pkg_container, pkg_util",
+        "cycle_pairs_total": "4",
+        "cycle_size": "3",
+        "from_module": "pkg_chaos",
+        "locations_total": "2",
+        "to_module": "pkg_util"
+      },
+      "locations": [
+        {
+          "file": "pkg/chaos/iptables/parse.go",
+          "line": 12
+        },
+        {
+          "file": "pkg/chaos/netem/parse.go",
+          "line": 11
+        }
+      ],
+      "why": "Module pkg_chaos depends on pkg_util, and the two are in a dependency cycle among 3 declared modules",
+      "constraint": "Remove one direction of the module cycle; routing the dependency through another module keeps the cycle",
+      "origin": "introduced"
+    },
+    {
+      "id": "e128caa5c2e58c5eba7cc3bc84157923",
+      "kind": "gate",
+      "rule_id": "no-module-cycles",
+      "status": "new",
+      "severity": "high",
+      "confidence": "",
+      "edge": {
+        "from": {
+          "module": "pkg_container",
+          "path": ""
+        },
+        "to": {
+          "module": "pkg_chaos",
+          "path": ""
+        },
+        "kind": "module_dependency"
+      },
+      "matched_by": {
+        "cycle_modules": "pkg_chaos, pkg_container, pkg_util",
+        "cycle_pairs_total": "4",
+        "cycle_size": "3",
+        "from_module": "pkg_container",
+        "locations_total": "1",
+        "to_module": "pkg_chaos"
+      },
+      "locations": [
+        {
+          "file": "pkg/container/appfilter.go",
+          "line": 4
+        }
+      ],
+      "why": "Module pkg_container depends on pkg_chaos, and the two are in a dependency cycle among 3 declared modules",
+      "constraint": "Remove one direction of the module cycle; routing the dependency through another module keeps the cycle",
+      "origin": "introduced"
+    },
+    {
+      "id": "dd9d76ed1e290e7a210957c96c978a8a",
+      "kind": "gate",
+      "rule_id": "no-module-cycles",
+      "status": "new",
+      "severity": "high",
+      "confidence": "",
+      "edge": {
+        "from": {
+          "module": "pkg_util",
+          "path": ""
+        },
+        "to": {
+          "module": "pkg_chaos",
+          "path": ""
+        },
+        "kind": "module_dependency"
+      },
+      "matched_by": {
+        "cycle_modules": "pkg_chaos, pkg_container, pkg_util",
+        "cycle_pairs_total": "4",
+        "cycle_size": "3",
+        "from_module": "pkg_util",
+        "locations_total": "1",
+        "to_module": "pkg_chaos"
+      },
+      "locations": [
+        {
+          "file": "pkg/util/flagports.go",
+          "line": 4
+        }
+      ],
+      "why": "Module pkg_util depends on pkg_chaos, and the two are in a dependency cycle among 3 declared modules",
+      "constraint": "Remove one direction of the module cycle; routing the dependency through another module keeps the cycle",
+      "origin": "introduced"
+    },
+    {
+      "id": "335d55e575e36b47a906ba5e7396a727",
+      "kind": "advisory",
+      "rule_id": "bc/imbalanced_coupling",
+      "status": "baseline",
+      "severity": "critical",
+      "confidence": "",
+      "edge": {
+        "from": {
+          "module": "cmd",
+          "path": "cmd/commands.go"
+        },
+        "to": {
+          "module": "pkg_chaos",
+          "path": "pkg/chaos/iptables/cmd"
+        },
+        "kind": "imports"
+      },
+      "matched_by": {
+        "distance": "cross_module",
+        "distance_basis": "module_boundary",
+        "group_count": "6",
+        "group_members": "335d55e575e36b47a906ba5e7396a727,47d7034d8bd0aa2c3fd6d7321e5baf7f,8377db42015d1664c7f7e5b2276fcde7,8eae8eb9df709e2e84471ddbb39f9a9c,b94ca1d9b02e368b07146e4e85360565,d8729f023289c590ed80b02abb66bf05",
+        "hypothesis": "move_functionality",
+        "score": "book",
+        "score_band": "critical",
+        "score_value": "2",
+        "score_version": "bc_score.v7",
+        "strength": "functional",
+        "volatility": "high"
+      },
+      "locations": [
+        {
+          "file": "cmd/commands.go",
+          "line": 7
+        },
+        {
+          "file": "cmd/commands.go",
+          "line": 8
+        },
+        {
+          "file": "cmd/commands.go",
+          "line": 9
+        },
+        {
+          "file": "cmd/commands.go",
+          "line": 10
+        },
+        {
+          "file": "cmd/main.go",
+          "line": 11
+        },
+        {
+          "file": "cmd/runtime.go",
+          "line": 10
+        }
+      ],
+      "why": "balanced coupling: functional integration strength × cross_module distance × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)",
+      "constraint": "",
+      "origin": "pre_existing"
+    },
+    {
+      "id": "57e8e1a409d3563c38f408a6d1a33d31",
+      "kind": "advisory",
+      "rule_id": "bc/imbalanced_coupling",
+      "status": "baseline",
+      "severity": "critical",
+      "confidence": "",
+      "edge": {
+        "from": {
+          "module": "cmd",
+          "path": "cmd/runtime.go"
+        },
+        "to": {
+          "module": "pkg_runtime",
+          "path": "pkg/runtime/containerd"
+        },
+        "kind": "imports"
+      },
+      "matched_by": {
+        "distance": "cross_module",
+        "distance_basis": "module_boundary",
+        "group_count": "3",
+        "group_members": "57e8e1a409d3563c38f408a6d1a33d31,bb31aa361c2b39f9d59409a1e3295480,dd0c222b483eaec864d5a2431c3e9862",
+        "hypothesis": "move_functionality",
+        "score": "book",
+        "score_band": "critical",
+        "score_value": "2",
+        "score_version": "bc_score.v7",
+        "strength": "functional",
+        "volatility": "high"
+      },
+      "locations": [
+        {
+          "file": "cmd/runtime.go",
+          "line": 12
+        },
+        {
+          "file": "cmd/runtime.go",
+          "line": 13
+        },
+        {
+          "file": "cmd/runtime.go",
+          "line": 14
+        }
+      ],
+      "why": "balanced coupling: functional integration strength × cross_module distance × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)",
+      "constraint": "",
+      "origin": "pre_existing"
+    },
+    {
+      "id": "07ee302df14278780d658134813367e8",
+      "kind": "advisory",
+      "rule_id": "bc/imbalanced_coupling",
+      "status": "baseline",
+      "severity": "critical",
+      "confidence": "",
+      "edge": {
+        "from": {
+          "module": "pkg_chaos",
+          "path": "pkg/chaos/iptables/iptables.go"
+        },
+        "to": {
+          "module": "pkg_container",
+          "path": "pkg/container"
+        },
+        "kind": "imports"
+      },
+      "matched_by": {
+        "distance": "cross_module",
+        "distance_basis": "module_boundary",
+        "group_count": "5",
+        "group_members": "07ee302df14278780d658134813367e8,151927aebc1371aaab06e84f32df6f18,3992158907457492dfbdb026cfcbe23f,3f14a92120dc29595a8f2e6685429ca3,923e6999232fcb29d3afbacb20537d68",
+        "hypothesis": "move_functionality",
+        "score": "book",
+        "score_band": "critical",
+        "score_value": "2",
+        "score_version": "bc_score.v7",
+        "strength": "functional",
+        "volatility": "high"
+      },
+      "locations": [
+        {
+          "file": "pkg/chaos/iptables/iptables.go",
+          "line": 8
+        },
+        {
+          "file": "pkg/chaos/netem/netem.go",
+          "line": 9
+        },
+        {
+          "file": "pkg/chaos/netem/target.go",
+          "line": 10
+        },
+        {
+          "file": "pkg/chaos/runner.go",
+          "line": 7
+        },
+        {
+          "file": "pkg/chaos/stress/stress.go",
+          "line": 10
+        }
+      ],
+      "why": "balanced coupling: functional integration strength × cross_module distance × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)",
+      "constraint": "",
+      "origin": "pre_existing"
+    },
+    {
+      "id": "5468bbd9f5c61887db7d99a5df0f891a",
+      "kind": "advisory",
+      "rule_id": "bc/imbalanced_coupling",
+      "status": "baseline",
+      "severity": "critical",
+      "confidence": "",
+      "edge": {
+        "from": {
+          "module": "pkg_chaos",
+          "path": "pkg/chaos/iptables/parse.go"
+        },
+        "to": {
+          "module": "pkg_util",
+          "path": "pkg/util"
+        },
+        "kind": "imports"
+      },
+      "matched_by": {
+        "distance": "cross_module",
+        "distance_basis": "module_boundary",
+        "group_count": "2",
+        "group_members": "5468bbd9f5c61887db7d99a5df0f891a,c719b89e3cec096de073f40b3b9725df",
+        "hypothesis": "move_functionality",
+        "score": "book",
+        "score_band": "critical",
+        "score_value": "2",
+        "score_version": "bc_score.v7",
+        "strength": "functional",
+        "volatility": "high"
+      },
+      "locations": [
+        {
+          "file": "pkg/chaos/iptables/parse.go",
+          "line": 12
+        },
+        {
+          "file": "pkg/chaos/netem/parse.go",
+          "line": 11
+        }
+      ],
+      "why": "balanced coupling: functional integration strength × cross_module distance × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)",
+      "constraint": "",
+      "origin": "pre_existing"
+    },
+    {
+      "id": "319144b80249170ffb81f245a80bf2a8",
+      "kind": "advisory",
+      "rule_id": "bc/imbalanced_coupling",
+      "status": "new",
+      "severity": "critical",
+      "confidence": "",
+      "edge": {
+        "from": {
+          "module": "pkg_container",
+          "path": "pkg/container/appfilter.go"
+        },
+        "to": {
+          "module": "pkg_chaos",
+          "path": "pkg/chaos/cliflags"
+        },
+        "kind": "imports"
+      },
+      "matched_by": {
+        "distance": "cross_module",
+        "distance_basis": "module_boundary",
+        "group_count": "1",
+        "group_members": "319144b80249170ffb81f245a80bf2a8",
+        "hypothesis": "move_functionality",
+        "score": "book",
+        "score_band": "critical",
+        "score_value": "2",
+        "score_version": "bc_score.v7",
+        "strength": "functional",
+        "volatility": "high"
+      },
+      "locations": [
+        {
+          "file": "pkg/container/appfilter.go",
+          "line": 4
+        }
+      ],
+      "why": "balanced coupling: functional integration strength × cross_module distance × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)",
+      "constraint": "",
+      "origin": "introduced"
+    },
+    {
+      "id": "09a64e311064a6b50567be14e6dc5d9d",
+      "kind": "advisory",
+      "rule_id": "bc/imbalanced_coupling",
+      "status": "baseline",
+      "severity": "critical",
+      "confidence": "",
+      "edge": {
+        "from": {
+          "module": "pkg_runtime",
+          "path": "pkg/runtime/containerd/addresses.go"
+        },
+        "to": {
+          "module": "pkg_container",
+          "path": "pkg/container"
+        },
+        "kind": "imports"
+      },
+      "matched_by": {
+        "distance": "cross_module",
+        "distance_basis": "module_boundary",
+        "group_count": "15",
+        "group_members": "09a64e311064a6b50567be14e6dc5d9d,282419e9f2e225d174004477dec83f3c,29d0ebc4eddfb816680e210267c5ebc1,3026e602e14486b622a36b74c0bd73c9,3468ffaccc634f5e9c9e495561327a43,459d3fa900ea420d6d9c4e8225147018,54cb2ae0269f19454057c613339fa2e2,690ef113fa864cb9f373d6002d69c086",
+        "hypothesis": "move_functionality",
+        "score": "book",
+        "score_band": "critical",
+        "score_value": "2",
+        "score_version": "bc_score.v7",
+        "strength": "functional",
+        "volatility": "high"
+      },
+      "locations": [
+        {
+          "file": "pkg/runtime/containerd/addresses.go",
+          "line": 15
+        },
+        {
+          "file": "pkg/runtime/containerd/client.go",
+          "line": 12
+        },
+        {
+          "file": "pkg/runtime/containerd/iptables.go",
+          "line": 7
+        },
+        {
+          "file": "pkg/runtime/containerd/netem.go",
+          "line": 6
+        },
+        {
+          "file": "pkg/runtime/containerd/sidecar.go",
+          "line": 10
+        },
+        {
+          "file": "pkg/runtime/containerd/stress.go",
+          "line": 9
+        },
+        {
+          "file": "pkg/runtime/containerd/stress_sidecar.go",
+          "line": 9
+        },
+        {
+          "file": "pkg/runtime/docker/addresses.go",
+          "line": 7
+        },
+        {
+          "file": "pkg/runtime/docker/exec.go",
+          "line": 9
+        },
+        {
+          "file": "pkg/runtime/docker/iptables.go",
+          "line": 8
+        },
+        {
+          "file": "pkg/runtime/docker/lifecycle.go",
+          "line": 9
+        },
+        {
+          "file": "pkg/runtime/docker/netem.go",
+          "line": 6
+        },
+        {
+          "file": "pkg/runtime/docker/sidecar.go",
+          "line": 12
+        },
+        {
+          "file": "pkg/runtime/docker/stress.go",
+          "line": 9
+        },
+        {
+          "file": "pkg/runtime/podman/stress.go",
+          "line": 13
+        }
+      ],
+      "why": "balanced coupling: functional integration strength × cross_module distance × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)",
+      "constraint": "",
+      "origin": "pre_existing"
+    },
+    {
+      "id": "89a8ff1bd0752cb9f625be9f358df84a",
+      "kind": "advisory",
+      "rule_id": "bc/imbalanced_coupling",
+      "status": "baseline",
+      "severity": "critical",
+      "confidence": "",
+      "edge": {
+        "from": {
+          "module": "pkg_runtime",
+          "path": "pkg/runtime/containerd/netem.go"
+        },
+        "to": {
+          "module": "pkg_tc",
+          "path": "pkg/tc"
+        },
+        "kind": "imports"
+      },
+      "matched_by": {
+        "distance": "cross_module",
+        "distance_basis": "module_boundary",
+        "group_count": "2",
+        "group_members": "89a8ff1bd0752cb9f625be9f358df84a,df09b6ea860f4a640e26a4d88fb04026",
+        "hypothesis": "move_functionality",
+        "score": "book",
+        "score_band": "critical",
+        "score_value": "2",
+        "score_version": "bc_score.v7",
+        "strength": "functional",
+        "volatility": "high"
+      },
+      "locations": [
+        {
+          "file": "pkg/runtime/containerd/netem.go",
+          "line": 7
+        },
+        {
+          "file": "pkg/runtime/docker/netem.go",
+          "line": 7
+        }
+      ],
+      "why": "balanced coupling: functional integration strength × cross_module distance × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)",
+      "constraint": "",
+      "origin": "pre_existing"
+    },
+    {
+      "id": "7a7bf383bd982210b467c3a50f62862a",
+      "kind": "advisory",
+      "rule_id": "bc/imbalanced_coupling",
+      "status": "new",
+      "severity": "critical",
+      "confidence": "",
+      "edge": {
+        "from": {
+          "module": "pkg_util",
+          "path": "pkg/util/flagports.go"
+        },
+        "to": {
+          "module": "pkg_chaos",
+          "path": "pkg/chaos/cliflags"
+        },
+        "kind": "imports"
+      },
+      "matched_by": {
+        "distance": "cross_module",
+        "distance_basis": "module_boundary",
+        "group_count": "1",
+        "group_members": "7a7bf383bd982210b467c3a50f62862a",
+        "hypothesis": "move_functionality",
+        "score": "book",
+        "score_band": "critical",
+        "score_value": "2",
+        "score_version": "bc_score.v7",
+        "strength": "functional",
+        "volatility": "high"
+      },
+      "locations": [
+        {
+          "file": "pkg/util/flagports.go",
+          "line": 4
+        }
+      ],
+      "why": "balanced coupling: functional integration strength × cross_module distance × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)",
+      "constraint": "",
+      "origin": "introduced"
+    }
+  ],
+  "agent_tasks": [
+    {
+      "finding_id": "0d5aae18e2b632a4796190153b0c89b3",
+      "rule_id": "no-module-cycles",
+      "repair_kind": "code_change",
+      "goal": "Break the dependency cycle among declared modules pkg_chaos, pkg_container, pkg_util by removing one direction of it: drop the pkg_chaos -> pkg_container dependency, or the dependency path from pkg_container back to pkg_chaos. Routing it through another module keeps the cycle.",
+      "constraints": [
+        "Remove one direction of the module cycle; routing the dependency through another module keeps the cycle"
+      ],
+      "files": [
+        "pkg/chaos/cmd/builder.go",
+        "pkg/chaos/command.go",
+        "pkg/chaos/iptables/cmd/loss.go",
+        "pkg/chaos/iptables/iptables.go",
+        "pkg/chaos/iptables/loss.go",
+        "pkg/chaos/iptables/parse.go",
+        "pkg/chaos/lifecycle/cmd/exec.go",
+        "pkg/chaos/lifecycle/cmd/kill.go",
+        "pkg/chaos/lifecycle/cmd/pause.go",
+        "pkg/chaos/lifecycle/cmd/remove.go",
+        "pkg/chaos/lifecycle/cmd/restart.go",
+        "pkg/chaos/lifecycle/cmd/stop.go",
+        "pkg/chaos/lifecycle/exec.go",
+        "pkg/chaos/lifecycle/kill.go",
+        "pkg/chaos/lifecycle/pause.go",
+        "pkg/chaos/lifecycle/remove.go",
+        "pkg/chaos/lifecycle/restart.go",
+        "pkg/chaos/lifecycle/stop.go",
+        "pkg/chaos/netem/cmd/combine.go",
+        "pkg/chaos/netem/cmd/corrupt.go",
+        "pkg/chaos/netem/cmd/delay.go",
+        "pkg/chaos/netem/cmd/duplicate.go",
+        "pkg/chaos/netem/cmd/loss.go",
+        "pkg/chaos/netem/cmd/loss_ge.go",
+        "pkg/chaos/netem/cmd/loss_state.go",
+        "pkg/chaos/netem/cmd/rate.go",
+        "pkg/chaos/netem/combine.go",
+        "pkg/chaos/netem/corrupt.go",
+        "pkg/chaos/netem/delay.go",
+        "pkg/chaos/netem/duplicate.go",
+        "pkg/chaos/netem/loss.go",
+        "pkg/chaos/netem/loss_ge.go",
+        "pkg/chaos/netem/loss_state.go",
+        "pkg/chaos/netem/netem.go",
+        "pkg/chaos/netem/parse.go",
+        "pkg/chaos/netem/rate.go",
+        "pkg/chaos/netem/target.go",
+        "pkg/chaos/runner.go",
+        "pkg/chaos/stress/cmd/stress.go",
+        "pkg/chaos/stress/stress.go"
+      ],
+      "validation": [
+        "archfit check -c /bundle/.archfit.yaml --root /src --base 3f53e38675a8ab6c453634fb51ebe58b9e5cde19"
+      ],
+      "origin": "introduced"
+    },
+    {
+      "finding_id": "17a7a9622f148c7b21e252903ad0d0f5",
+      "rule_id": "no-module-cycles",
+      "repair_kind": "code_change",
+      "goal": "Break the dependency cycle among declared modules pkg_chaos, pkg_container, pkg_util by removing one direction of it: drop the pkg_chaos -> pkg_util dependency, or the dependency path from pkg_util back to pkg_chaos. Routing it through another module keeps the cycle.",
+      "constraints": [
+        "Remove one direction of the module cycle; routing the dependency through another module keeps the cycle"
+      ],
+      "files": [
+        "pkg/chaos/iptables/parse.go",
+        "pkg/chaos/netem/parse.go"
+      ],
+      "validation": [
+        "archfit check -c /bundle/.archfit.yaml --root /src --base 3f53e38675a8ab6c453634fb51ebe58b9e5cde19"
+      ],
+      "origin": "introduced"
+    },
+    {
+      "finding_id": "dd9d76ed1e290e7a210957c96c978a8a",
+      "rule_id": "no-module-cycles",
+      "repair_kind": "code_change",
+      "goal": "Break the dependency cycle among declared modules pkg_chaos, pkg_container, pkg_util by removing one direction of it: drop the pkg_util -> pkg_chaos dependency, or the dependency path from pkg_chaos back to pkg_util. Routing it through another module keeps the cycle.",
+      "constraints": [
+        "Remove one direction of the module cycle; routing the dependency through another module keeps the cycle"
+      ],
+      "files": [
+        "pkg/util/flagports.go"
+      ],
+      "validation": [
+        "archfit check -c /bundle/.archfit.yaml --root /src --base 3f53e38675a8ab6c453634fb51ebe58b9e5cde19"
+      ],
+      "origin": "introduced"
+    },
+    {
+      "finding_id": "e128caa5c2e58c5eba7cc3bc84157923",
+      "rule_id": "no-module-cycles",
+      "repair_kind": "code_change",
+      "goal": "Break the dependency cycle among declared modules pkg_chaos, pkg_container, pkg_util by removing one direction of it: drop the pkg_container -> pkg_chaos dependency, or the dependency path from pkg_chaos back to pkg_container. Routing it through another module keeps the cycle.",
+      "constraints": [
+        "Remove one direction of the module cycle; routing the dependency through another module keeps the cycle"
+      ],
+      "files": [
+        "pkg/container/appfilter.go"
+      ],
+      "validation": [
+        "archfit check -c /bundle/.archfit.yaml --root /src --base 3f53e38675a8ab6c453634fb51ebe58b9e5cde19"
+      ],
+      "origin": "introduced"
+    }
+  ],
+  "seams": [
+    {
+      "id": "895ee45caa3a8e984f59523f84892c3afb0ffb3b592627317f495b236f29b9e7",
+      "from_module": "cmd",
+      "to_module": "pkg_chaos",
+      "edges": 8,
+      "scored_edges": 8,
+      "abstained_edges": 0,
+      "strength": "functional",
+      "distance": "cross_module",
+      "volatility": "high",
+      "volatility_provenance": "declared",
+      "severity": "critical",
+      "raw_distance": {
+        "level": "cross_module",
+        "basis": "module_boundary@system",
+        "from_owner": "@alexei-led",
+        "to_owner": "@alexei-led",
+        "same_owner": true,
+        "from_deploy_unit": "cmd",
+        "same_deploy_unit": false,
+        "boundary_crossings": 2,
+        "shared_ancestor": 0
+      },
+      "quadrant": "tight",
+      "scores": {
+        "n": 8,
+        "min": 2,
+        "median": 2,
+        "max": 9,
+        "p10": null,
+        "p90": null,
+        "mean": 3.5
+      },
+      "critical_edges": 6,
+      "high_or_worse_edges": 6,
+      "critical_share_pct": 75,
+      "high_or_worse_share_pct": 75,
+      "confidence": "high",
+      "hypothesis": "move_functionality",
+      "distributed_monolith": true,
+      "policy": "observed"
+    },
+    {
+      "id": "bfee70394d188035313d8c8ce1f4e43c0c2a14a2633bd8284a1f30473bc55bef",
+      "from_module": "cmd",
+      "to_module": "pkg_container",
+      "edges": 2,
+      "scored_edges": 2,
+      "abstained_edges": 0,
+      "strength": "contract",
+      "distance": "cross_module",
+      "volatility": "medium",
+      "volatility_provenance": "declared",
+      "raw_distance": {
+        "level": "cross_module",
+        "basis": "module_boundary@system",
+        "from_owner": "@alexei-led",
+        "to_owner": "@alexei-led",
+        "same_owner": true,
+        "from_deploy_unit": "cmd",
+        "same_deploy_unit": false,
+        "boundary_crossings": 2,
+        "shared_ancestor": 0
+      },
+      "quadrant": "loose",
+      "scores": {
+        "n": 2,
+        "min": 9,
+        "median": 9,
+        "max": 9,
+        "p10": null,
+        "p90": null,
+        "mean": 9
+      },
+      "critical_edges": 0,
+      "high_or_worse_edges": 0,
+      "critical_share_pct": 0,
+      "high_or_worse_share_pct": 0,
+      "confidence": "high",
+      "hypothesis": "balanced",
+      "policy": "observed"
+    },
+    {
+      "id": "eed039d9271a2bb3ebfcc3725de40a4685a98c76842e612ee1211a65e32478d7",
+      "from_module": "cmd",
+      "to_module": "pkg_runtime",
+      "edges": 3,
+      "scored_edges": 3,
+      "abstained_edges": 0,
+      "strength": "functional",
+      "distance": "cross_module",
+      "volatility": "high",
+      "volatility_provenance": "declared",
+      "severity": "critical",
+      "raw_distance": {
+        "level": "cross_module",
+        "basis": "module_boundary@system",
+        "from_owner": "@alexei-led",
+        "to_owner": "@alexei-led",
+        "same_owner": true,
+        "from_deploy_unit": "cmd",
+        "same_deploy_unit": false,
+        "boundary_crossings": 2,
+        "shared_ancestor": 0
+      },
+      "quadrant": "tight",
+      "scores": {
+        "n": 3,
+        "min": 2,
+        "median": 2,
+        "max": 2,
+        "p10": null,
+        "p90": null,
+        "mean": 2
+      },
+      "critical_edges": 3,
+      "high_or_worse_edges": 3,
+      "critical_share_pct": 100,
+      "high_or_worse_share_pct": 100,
+      "confidence": "high",
+      "hypothesis": "move_functionality",
+      "distributed_monolith": true,
+      "policy": "observed"
+    },
+    {
+      "id": "5cd5338679d0a4b00b7eb4c7a6b8409702eb0df50f512f6c8dca7595534b94cc",
+      "from_module": "pkg_chaos",
+      "to_module": "pkg_container",
+      "edges": 40,
+      "scored_edges": 40,
+      "abstained_edges": 0,
+      "strength": "functional",
+      "distance": "cross_module",
+      "volatility": "high",
+      "volatility_provenance": "declared",
+      "severity": "critical",
+      "raw_distance": {
+        "level": "cross_module",
+        "basis": "module_boundary@system",
+        "from_owner": "@alexei-led",
+        "to_owner": "@alexei-led",
+        "same_owner": true,
+        "same_deploy_unit": false,
+        "boundary_crossings": 2,
+        "shared_ancestor": 0
+      },
+      "quadrant": "tight",
+      "scores": {
+        "n": 40,
+        "min": 2,
+        "median": 7,
+        "max": 9,
+        "p10": 2,
+        "p90": 9,
+        "mean": 6.875
+      },
+      "critical_edges": 5,
+      "high_or_worse_edges": 5,
+      "critical_share_pct": 12,
+      "high_or_worse_share_pct": 12,
+      "confidence": "high",
+      "hypothesis": "follow_rule",
+      "distributed_monolith": true,
+      "policy": "violation"
+    },
+    {
+      "id": "6dfd3eb334c3ef50d16f12c5ac036a24f7a8a2a119d02a91c02e395ad188364c",
+      "from_module": "pkg_chaos",
+      "to_module": "pkg_util",
+      "edges": 2,
+      "scored_edges": 2,
+      "abstained_edges": 0,
+      "strength": "functional",
+      "distance": "cross_module",
+      "volatility": "high",
+      "volatility_provenance": "declared",
+      "severity": "critical",
+      "raw_distance": {
+        "level": "cross_module",
+        "basis": "module_boundary@system",
+        "from_owner": "@alexei-led",
+        "to_owner": "@alexei-led",
+        "same_owner": true,
+        "same_deploy_unit": false,
+        "boundary_crossings": 2,
+        "shared_ancestor": 0
+      },
+      "quadrant": "tight",
+      "scores": {
+        "n": 2,
+        "min": 2,
+        "median": 2,
+        "max": 2,
+        "p10": null,
+        "p90": null,
+        "mean": 2
+      },
+      "critical_edges": 2,
+      "high_or_worse_edges": 2,
+      "critical_share_pct": 100,
+      "high_or_worse_share_pct": 100,
+      "confidence": "high",
+      "hypothesis": "follow_rule",
+      "distributed_monolith": true,
+      "policy": "violation"
+    },
+    {
+      "id": "099a5d3cbf8bab5c63342bdbc70452404ba09e4031b311f0bf003f08fa11a360",
+      "from_module": "pkg_container",
+      "to_module": "pkg_chaos",
+      "edges": 1,
+      "scored_edges": 1,
+      "abstained_edges": 0,
+      "strength": "functional",
+      "distance": "cross_module",
+      "volatility": "high",
+      "volatility_provenance": "declared",
+      "severity": "critical",
+      "raw_distance": {
+        "level": "cross_module",
+        "basis": "module_boundary@system",
+        "from_owner": "@alexei-led",
+        "to_owner": "@alexei-led",
+        "same_owner": true,
+        "same_deploy_unit": false,
+        "boundary_crossings": 2,
+        "shared_ancestor": 0
+      },
+      "quadrant": "tight",
+      "scores": {
+        "n": 1,
+        "min": 2,
+        "median": 2,
+        "max": 2,
+        "p10": null,
+        "p90": null,
+        "mean": 2
+      },
+      "critical_edges": 1,
+      "high_or_worse_edges": 1,
+      "critical_share_pct": 100,
+      "high_or_worse_share_pct": 100,
+      "confidence": "high",
+      "hypothesis": "follow_rule",
+      "distributed_monolith": true,
+      "policy": "violation"
+    },
+    {
+      "id": "7effe7be69d751794cd2128fa342bc1aee38e8414bfaefff5685213f53ebd20d",
+      "from_module": "pkg_runtime",
+      "to_module": "pkg_container",
+      "edges": 20,
+      "scored_edges": 20,
+      "abstained_edges": 0,
+      "strength": "functional",
+      "distance": "cross_module",
+      "volatility": "high",
+      "volatility_provenance": "declared",
+      "severity": "critical",
+      "raw_distance": {
+        "level": "cross_module",
+        "basis": "module_boundary@system",
+        "from_owner": "@alexei-led",
+        "to_owner": "@alexei-led",
+        "same_owner": true,
+        "same_deploy_unit": false,
+        "boundary_crossings": 2,
+        "shared_ancestor": 0
+      },
+      "quadrant": "tight",
+      "scores": {
+        "n": 20,
+        "min": 2,
+        "median": 2,
+        "max": 9,
+        "p10": 2,
+        "p90": 7,
+        "mean": 3.35
+      },
+      "critical_edges": 15,
+      "high_or_worse_edges": 15,
+      "critical_share_pct": 75,
+      "high_or_worse_share_pct": 75,
+      "confidence": "high",
+      "hypothesis": "move_functionality",
+      "distributed_monolith": true,
+      "policy": "observed"
+    },
+    {
+      "id": "0d1335351f4c93e61d230839aa8a4087716f6e9c30f3147127ff28126358dfd4",
+      "from_module": "pkg_runtime",
+      "to_module": "pkg_tc",
+      "edges": 2,
+      "scored_edges": 2,
+      "abstained_edges": 0,
+      "strength": "functional",
+      "distance": "cross_module",
+      "volatility": "high",
+      "volatility_provenance": "declared",
+      "severity": "critical",
+      "raw_distance": {
+        "level": "cross_module",
+        "basis": "module_boundary@system",
+        "from_owner": "@alexei-led",
+        "to_owner": "@alexei-led",
+        "same_owner": true,
+        "same_deploy_unit": false,
+        "boundary_crossings": 2,
+        "shared_ancestor": 0
+      },
+      "quadrant": "tight",
+      "scores": {
+        "n": 2,
+        "min": 2,
+        "median": 2,
+        "max": 2,
+        "p10": null,
+        "p90": null,
+        "mean": 2
+      },
+      "critical_edges": 2,
+      "high_or_worse_edges": 2,
+      "critical_share_pct": 100,
+      "high_or_worse_share_pct": 100,
+      "confidence": "high",
+      "hypothesis": "move_functionality",
+      "distributed_monolith": true,
+      "policy": "observed"
+    },
+    {
+      "id": "9153b47b524147d2007f3a2e9d2a29d734e8a8e78a4c19f0e618830485d081e8",
+      "from_module": "pkg_util",
+      "to_module": "pkg_chaos",
+      "edges": 1,
+      "scored_edges": 1,
+      "abstained_edges": 0,
+      "strength": "functional",
+      "distance": "cross_module",
+      "volatility": "high",
+      "volatility_provenance": "declared",
+      "severity": "critical",
+      "raw_distance": {
+        "level": "cross_module",
+        "basis": "module_boundary@system",
+        "from_owner": "@alexei-led",
+        "to_owner": "@alexei-led",
+        "same_owner": true,
+        "same_deploy_unit": false,
+        "boundary_crossings": 2,
+        "shared_ancestor": 0
+      },
+      "quadrant": "tight",
+      "scores": {
+        "n": 1,
+        "min": 2,
+        "median": 2,
+        "max": 2,
+        "p10": null,
+        "p90": null,
+        "mean": 2
+      },
+      "critical_edges": 1,
+      "high_or_worse_edges": 1,
+      "critical_share_pct": 100,
+      "high_or_worse_share_pct": 100,
+      "confidence": "high",
+      "hypothesis": "follow_rule",
+      "distributed_monolith": true,
+      "policy": "violation"
+    }
+  ]
+}

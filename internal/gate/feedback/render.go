@@ -27,6 +27,7 @@ const (
 
 	fixedTrustSentence = "Measurement is customer-attested: the producer is authenticated, the report content is not independently checked."
 	noActiveBlocker    = "- No active gate finding is listed. The engine blocked on a hard gate without one, for example a metric ratchet; read the archfit/state check."
+	advisoryNote       = "This check does not block merging: the gate is advisory for this repository."
 )
 
 // Display caps. Each capped list ends with "and N more".
@@ -217,7 +218,7 @@ func shortID(id string) string {
 func renderState(p Publication) string {
 	l := layout{head: headBlock(p, false), inputs: inputsBlock(p), receipt: receiptMarker(p.Receipt)}
 	if !suspended(p.Outcome) {
-		l.findings, l.dims, l.gaps = findingsBlock(p.Report), dimensionsBlock(p.Report), gapsBlock(p)
+		l.findings, l.dims, l.gaps = findingsBlock(p.Report, false), dimensionsBlock(p.Report), gapsBlock(p)
 	}
 	return l.assemble(maxBody)
 }
@@ -233,7 +234,7 @@ func renderComment(p Publication, now time.Time, waiver, link string) string {
 		l.head += "\n\n[Details in Archfit](" + link + ")"
 	}
 	if !suspended(p.Outcome) {
-		l.findings, l.dims, l.gaps = findingsBlock(p.Report), dimensionsBlock(p.Report), gapsBlock(p)
+		l.findings, l.dims, l.gaps = findingsBlock(p.Report, true), dimensionsBlock(p.Report), gapsBlock(p)
 		if p.Report != nil {
 			l.commands = commands(p.Report.AgentTasks)
 			l.tasks, l.hasTasks = encodeTasks(p.Report.AgentTasks), true
@@ -250,24 +251,36 @@ func renderComment(p Publication, now time.Time, waiver, link string) string {
 
 // headBlock is blocks 1 and 2: markers, verdict line, the deciding reason, then further reasons.
 func headBlock(p Publication, markers bool) string {
-	var b strings.Builder
+	// The comment carries the headline as its heading. A check summary does not: GitHub prints the check title, which
+	// is the headline, right above it.
+	var parts []string
 	if markers {
-		b.WriteString(commentMarker + "\n" + headMarker(p.Target.HeadSHA, p.Receipt) + "\n")
+		parts = append(parts, commentMarker+"\n"+headMarker(p.Target.HeadSHA, p.Receipt)+"\n## Archfit: "+headline(p))
 	}
-	b.WriteString("## Archfit: " + headline(p))
 	if advisory(p) && p.Outcome.Conclusion != verdict.ActionRequired && !suspended(p.Outcome) {
-		b.WriteString("\n\nThis check does not block merging: the gate is advisory for this repository.")
+		if markers { // a GitHub alert in the comment; a check summary keeps plain text
+			parts = append(parts, "> [!NOTE]\n> "+advisoryNote)
+		} else {
+			parts = append(parts, advisoryNote)
+		}
 	}
+	var b strings.Builder
+	b.WriteString(strings.Join(parts, "\n\n"))
 	reasons := p.Outcome.Reasons
 	if len(reasons) == 0 {
 		return b.String()
 	}
+	if b.Len() > 0 {
+		b.WriteString("\n\n")
+	}
 	first := reasons[0]
-	fmt.Fprintf(&b, "\n\n- Reason: %s (%s)", code(string(first.Code)), text(string(first.Category)))
+	if first.Next != "" { // a healthy outcome has no next step; "(none)" in bold would lead the comment
+		fmt.Fprintf(&b, "- **Next:** %s\n", text(first.Next))
+	}
+	fmt.Fprintf(&b, "- Reason: %s (%s)", code(string(first.Code)), text(string(first.Category)))
 	if first.Detail != "" {
 		fmt.Fprintf(&b, "\n- Detail: %s", text(first.Detail))
 	}
-	fmt.Fprintf(&b, "\n- Next: %s", text(first.Next))
 	if len(reasons) == 1 {
 		return b.String()
 	}
@@ -289,178 +302,51 @@ func noticeLine(e inputs.Entitlement, now time.Time) string {
 	return "> " + sanitize(e.Notice)
 }
 
-// findingsBlock labels Finding.Active findings as violations. That is a display heuristic only:
-// the conclusion always comes from the Outcome.
-func findingsBlock(r *report.Report) string {
-	if r == nil {
-		return ""
-	}
-	var violations, advisories, debt, fixed []report.Finding
-	for _, f := range r.Findings {
-		if f.Active() {
-			violations = append(violations, f)
-		}
-	}
-	for _, f := range r.Findings {
-		switch {
-		case f.Active():
-		case f.Status == statusBaseline || f.Status == statusWaived:
-			debt = append(debt, f)
-		case f.Status == statusFixed:
-			fixed = append(fixed, f)
-		case f.Kind == kindAdvisory && (f.Status == statusNew || f.Status == statusExpired):
-			advisories = append(advisories, f)
-		default: // never hide a finding whose status this version does not know
-			violations = append(violations, f)
-		}
-	}
-	var b strings.Builder
-	b.WriteString(headFindings)
-	if len(r.Findings) == 0 {
-		b.WriteString("\n\nNo findings reported.")
-	}
-	group := func(title string, findings []report.Finding) {
-		if len(findings) == 0 {
-			return
-		}
-		fmt.Fprintf(&b, "\n\n**%s** (%d)", title, len(findings))
-		partner := cyclePartners(findings[:min(len(findings), groupCap)]) // pairs past the cap would show past it
-		for i, f := range findings {
-			if i == groupCap {
-				fmt.Fprintf(&b, "\n- and %d more", len(findings)-groupCap)
-				break
-			}
-			switch j, ok := partner[i]; {
-			case !ok:
-				writeFinding(&b, f)
-			case j > i:
-				writeCycle(&b, f, findings[j])
-			}
-		}
-	}
-	group("Rule violations", violations)
-	if len(advisories) > 0 { // advisories never block, so they fold away; their count stays visible
-		noun := "advisories"
-		if len(advisories) == 1 {
-			noun = "advisory"
-		}
-		fmt.Fprintf(&b, "\n\n<details>\n<summary>%d %s · never block</summary>", len(advisories), noun)
-		group("Advisories", advisories)
-		b.WriteString("\n\n" + foldClose)
-	}
-	group("Accepted debt — display only", debt)
-	group("Fixed", fixed)
-	return b.String()
-}
-
-// cyclePartners pairs the two directions of a module cycle (report.Finding.Reverses), each finding at most once.
-// Display only: each finding keeps its ID, and the gate never reads this.
-func cyclePartners(fs []report.Finding) map[int]int {
-	partner := map[int]int{}
-	for i, f := range fs {
-		if _, done := partner[i]; done {
-			continue
-		}
-		for j := i + 1; j < len(fs); j++ {
-			if _, done := partner[j]; !done && f.Reverses(fs[j]) {
-				partner[i], partner[j] = j, i
-				break
-			}
-		}
-	}
-	return partner
-}
-
-// writeCycle shows both directions of one module cycle as one item, each direction with its own locations.
-func writeCycle(b *strings.Builder, f, g report.Finding) {
-	b.WriteString("\n- ")
-	if f.Active() { // Reverses pairs one kind and status, so g is active exactly when f is
-		b.WriteString("**violation** ")
-	}
-	fmt.Fprintf(b, "%s (%s, %s): cycle %s ⇄ %s", code(f.RuleID), text(f.Severity), text(f.Status), module(f.Edge.From), module(f.Edge.To))
-	for _, d := range []report.Finding{f, g} {
-		fmt.Fprintf(b, "\n  - %s → %s", endpoint(d.Edge.From), endpoint(d.Edge.To))
-		if d.Origin != "" {
-			fmt.Fprintf(b, ", origin %s", text(d.Origin))
-		}
-		b.WriteString(": " + locationList(d.Locations))
-	}
-	writeRepair(b, f)
-}
-
-// locationList is up to locationCap locations as file:line, then "and N more"; "none reported" when empty.
-func locationList(locs []report.Location) string {
-	if len(locs) == 0 {
-		return "none reported"
-	}
-	var b strings.Builder
-	for i, loc := range locs {
-		if i == locationCap {
-			fmt.Fprintf(&b, " and %d more", len(locs)-locationCap)
-			break
-		}
-		if i > 0 {
-			b.WriteString(", ")
-		}
-		b.WriteString(location(loc))
-	}
-	return b.String()
-}
-
-func writeFinding(b *strings.Builder, f report.Finding) {
-	b.WriteString("\n- ")
-	if f.Active() {
-		b.WriteString("**violation** ")
-	}
-	fmt.Fprintf(b, "%s (%s, %s): %s → %s", code(f.RuleID), text(f.Severity), text(f.Status), endpoint(f.Edge.From), endpoint(f.Edge.To))
-	if f.Origin != "" { // display only: the App never decides on origin
-		fmt.Fprintf(b, ", origin %s", text(f.Origin))
-	}
-	b.WriteString("\n  - Locations: " + locationList(f.Locations))
-	writeRepair(b, f)
-}
-
-// writeRepair writes why the rule fires and the policy-permitted repair.
-func writeRepair(b *strings.Builder, f report.Finding) {
-	fmt.Fprintf(b, "\n  - Why: %s", text(f.Why))
-	if f.Constraint != "" {
-		fmt.Fprintf(b, "\n  - Constraint: %s", text(f.Constraint))
-	}
-	if len(f.AllowedAlternatives) > 0 {
-		alternatives := make([]string, len(f.AllowedAlternatives))
-		for i, a := range f.AllowedAlternatives {
-			alternatives[i] = text(a)
-		}
-		fmt.Fprintf(b, "\n  - Allowed alternatives: %s", strings.Join(alternatives, "; "))
-	}
-}
-
-func endpoint(e report.Endpoint) string {
-	if e.Path == "" {
-		return module(e)
-	}
-	return module(e) + " (" + code(e.Path) + ")"
-}
-
 func dimensionsBlock(r *report.Report) string {
 	if r == nil {
 		return ""
 	}
+	changes := slices.ContainsFunc(dimensionOrder[:], func(key string) bool { return r.Dimensions[key].Delta != nil })
+	head := "| Dimension | Status | Coverage | Confidence | Gate |"
+	sep := "| --- | --- | --- | --- | --- |"
+	if changes {
+		head, sep = head+" Change |", sep+" --- |"
+	}
 	var b strings.Builder
-	b.WriteString(headDimensions + "\n\nMeasurement trust: customer-attested.\n")
+	b.WriteString(headDimensions + "\n\nMeasurement trust: customer-attested.\n\n" + head + "\n" + sep)
 	for _, key := range dimensionOrder {
 		d, ok := r.Dimensions[key]
 		if !ok {
-			fmt.Fprintf(&b, "\n- `%s`: not reported", key)
+			row := "| `" + key + "` | not reported | | | |"
+			if changes {
+				row += " |"
+			}
+			b.WriteString("\n" + row)
 			continue
 		}
-		fmt.Fprintf(&b, "\n- `%s`: %s; coverage %d/%d%s; confidence %s; gate %s", key,
-			text(d.Status), d.Coverage.Observed, d.Coverage.Total, parens(d.Coverage.Basis), text(d.Confidence), text(d.Gate))
-		if d.Delta != nil {
-			b.WriteString("; change " + deltaText(*d.Delta))
+		row := []string{"`" + key + "`", text(d.Status), fmt.Sprintf("%d/%d%s", d.Coverage.Observed, d.Coverage.Total, parens(d.Coverage.Basis)),
+			text(d.Confidence), gateCell(text(d.Gate))}
+		if changes {
+			change := ""
+			if d.Delta != nil {
+				change = deltaText(*d.Delta)
+			}
+			row = append(row, change)
 		}
+		for i := range row {
+			row[i] = cell(row[i])
+		}
+		b.WriteString("\n| " + strings.Join(row, " | ") + " |")
 	}
 	return b.String()
+}
+
+// gateCell makes a dimension that fails or warns stand out in the table.
+func gateCell(g string) string {
+	if g == "fail" || g == "warn" {
+		return "**" + g + "**"
+	}
+	return g
 }
 
 func deltaText(d report.Delta) string {

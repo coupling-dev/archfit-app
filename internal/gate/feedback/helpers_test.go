@@ -146,6 +146,7 @@ type fixtureCase struct {
 	outcome  verdict.Outcome
 	identity manifest.Identity
 	waiver   time.Time
+	advisory bool // gate mode advisory instead of required
 }
 
 func fixtureCases() []fixtureCase {
@@ -164,6 +165,9 @@ func fixtureCases() []fixtureCase {
 		{name: "matched-by-populated", outcome: outcome(verdict.Failure, reasonBlocking), identity: id},
 		{name: "both-repair-kinds", outcome: outcome(verdict.Failure, reasonBlocking), identity: id},
 		{name: "waiver-expiry-and-order", outcome: outcome(verdict.Failure, reasonBlocking, reasonWaiver), identity: id, waiver: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)},
+		// The pilot's PR #11 report (engine v3.0.1): one dependency cycle among three modules, coupling advisories and
+		// accepted debt, in advisory mode with a baseline.
+		{name: "pilot-pr-cycle", outcome: outcome(verdict.Failure, reasonBlocking), identity: id, advisory: true},
 	}
 }
 
@@ -201,7 +205,11 @@ func receiptFor(o verdict.Outcome, run int64, attempt int) Receipt {
 
 func fixturePublication(t *testing.T, c fixtureCase, head string) Publication {
 	t.Helper()
-	tr := trusted(settings.GateRequired)
+	mode := settings.GateRequired
+	if c.advisory {
+		mode = settings.GateAdvisory
+	}
+	tr := trusted(mode)
 	tr.EarliestWaiverExpiry = c.waiver
 	rc := receiptFor(c.outcome, 7, 1)
 	rc.EarliestWaiverExpiry = c.waiver

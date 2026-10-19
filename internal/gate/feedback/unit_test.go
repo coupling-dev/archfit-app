@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -312,8 +313,9 @@ func TestTruncation(t *testing.T) {
 		if !utf8.ValidString(body) {
 			t.Errorf("%s is not valid UTF-8", name)
 		}
-		mustContain(t, body, "## Archfit: Architecture gate failing", "blocking_findings", reasonBlocking.Next, "missing_required_coverage", fixedTrustSentence, policyDigest)
+		mustContain(t, body, "blocking_findings", reasonBlocking.Next, "missing_required_coverage", fixedTrustSentence, policyDigest)
 	}
+	mustContain(t, comment, "## Archfit: Architecture gate failing")
 	for _, body := range []string{comment, state} {
 		mustContain(t, body, "Output truncated.")
 		mustContain(t, section(body, headGaps), "timed out", "non_comparable")
@@ -789,7 +791,7 @@ func TestAdvisoryCommentNeverSaysBlocking(t *testing.T) {
 		t.Errorf("findings are folded away: %q", comment)
 	}
 	findings := section(comment, headFindings)
-	if v, a := strings.Index(findings, "**Rule violations**"), strings.Index(findings, " · never block</summary>"); v < 0 || a < 0 || a < v {
+	if v, a := strings.Index(findings, "**1 rule violation**"), strings.Index(findings, " · never block</summary>"); v < 0 || a < 0 || a < v {
 		t.Errorf("violations are not open before the folded advisories: %q", findings)
 	}
 }
@@ -813,12 +815,12 @@ func TestAdvisoryOfUnknownStatusStaysOpen(t *testing.T) {
 		{ID: "a1", Kind: "advisory", RuleID: "bc/x", Status: "new"},
 		{ID: "a2", Kind: "advisory", RuleID: "bc/y", Status: "regressed"},
 	}}
-	got := findingsBlock(r)
+	got := findingsBlock(r, true)
 	open, folded, ok := strings.Cut(got, "<details>")
 	if !ok {
 		t.Fatalf("no advisory fold in %q", got)
 	}
-	mustContain(t, open, "**Rule violations** (1)", "`bc/y`")
+	mustContain(t, open, "**1 rule violation**", "`bc/y`")
 	mustContain(t, folded, "1 advisory · never block", "`bc/x`")
 	mustNotContain(t, folded, "`bc/y`")
 }
@@ -831,56 +833,197 @@ func TestWaiverNoticeStaysOutsideFolds(t *testing.T) {
 	}
 }
 
-func TestCycleDirectionsAreOneItem(t *testing.T) {
+func TestDependencyCyclesAreOneItem(t *testing.T) {
 	gate := func(rule, from, to, file string) report.Finding {
 		return report.Finding{ID: from + to, Kind: "gate", RuleID: rule, Status: "new", Severity: "high", Why: "cycle " + from + " " + to,
 			Edge:      report.Edge{From: report.Endpoint{Module: from}, To: report.Endpoint{Module: to}},
 			Locations: []report.Location{{File: file, Line: 3}}}
 	}
+	cyc := func(from, to string) report.Finding { return gate("no-module-cycles", from, to, from+".go") }
 	tests := []struct {
-		name      string
-		findings  []report.Finding
-		items     int
-		wantCycle bool
+		name     string
+		findings []report.Finding
+		items    int // list items outside a cycle
+		cycles   []string
 	}{
-		{"both directions", []report.Finding{gate("no-module-cycles", "a", "b", "a.go"), gate("no-module-cycles", "b", "a", "b.go")}, 1, true},
-		{"one direction", []report.Finding{gate("no-module-cycles", "a", "b", "a.go")}, 1, false},
-		{"two rules", []report.Finding{gate("r1", "a", "b", "a.go"), gate("r2", "b", "a", "b.go")}, 2, false},
-		{"same direction twice", []report.Finding{gate("r1", "a", "b", "a.go"), gate("r1", "a", "b", "c.go")}, 2, false},
+		{"both directions", []report.Finding{cyc("a", "b"), cyc("b", "a")}, 0, []string{"between `a` and `b`"}},
+		{"one direction", []report.Finding{cyc("a", "b")}, 1, nil},
+		{"two rules", []report.Finding{gate("r1", "a", "b", "a.go"), gate("r2", "b", "a", "b.go")}, 2, nil},
+		{"same direction twice", []report.Finding{gate("r1", "a", "b", "a.go"), gate("r1", "a", "b", "c.go")}, 2, nil},
+		{"three modules, no reverse pair", []report.Finding{cyc("a", "b"), cyc("b", "c"), cyc("c", "a")}, 0, []string{"among `a`, `b`, `c`"}},
+		{"two cycles through one module", []report.Finding{cyc("a", "b"), cyc("a", "c"), cyc("b", "a"), cyc("c", "a")}, 0, []string{"among `a`, `b`, `c`"}},
+		{"two separate cycles", []report.Finding{cyc("a", "b"), cyc("c", "d"), cyc("b", "a"), cyc("d", "c")}, 0, []string{"between `a` and `b`", "between `c` and `d`"}},
+		{"a cycle beside a plain finding", []report.Finding{gate("r", "x", "y", "x.go"), cyc("a", "b"), cyc("b", "a")}, 1, []string{"between `a` and `b`"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			block := findingsBlock(&report.Report{Findings: tt.findings})
+			block := findingsBlock(&report.Report{Findings: tt.findings}, true)
 			if got := strings.Count(block, "\n- **violation**"); got != tt.items {
-				t.Errorf("items = %d, want %d:\n%s", got, tt.items, block)
+				t.Errorf("list items = %d, want %d:\n%s", got, tt.items, block)
 			}
-			if got := strings.Contains(block, "cycle `a` ⇄ `b`"); got != tt.wantCycle {
-				t.Errorf("cycle line = %v, want %v:\n%s", got, tt.wantCycle, block)
+			if got := strings.Count(block, "#### Dependency cycle "); got != len(tt.cycles) {
+				t.Errorf("cycles = %d, want %d:\n%s", got, len(tt.cycles), block)
 			}
-			if tt.wantCycle {
-				mustContain(t, block, "  - `a` → `b`: `a.go:3`", "  - `b` → `a`: `b.go:3`", "**Rule violations** (2)")
+			if got := strings.Count(block, "```mermaid"); got != len(tt.cycles) {
+				t.Errorf("diagrams = %d, want %d", got, len(tt.cycles))
 			}
+			for _, c := range tt.cycles {
+				mustContain(t, block, "#### Dependency cycle "+c)
+			}
+			n := len(tt.findings)
+			mustContain(t, block, fmt.Sprintf("**%d rule %s**", n, plural(n, "violation", "violations")))
 		})
 	}
 
+	t.Run("each direction is a table row with its locations, and the repair is said once", func(t *testing.T) {
+		f, g := cyc("a", "b"), cyc("b", "a")
+		f.Edge.From.Path, f.AllowedAlternatives = "a/x.go", []string{"invert the dependency"}
+		f.Constraint, g.Constraint = "remove one direction", "remove one direction"
+		block := findingsBlock(&report.Report{Findings: []report.Finding{f, g}}, true)
+		mustContain(t, block, "| `a` (`a/x.go`) → `b` | `a.go:3` |", "| `b` → `a` | `b.go:3` |",
+			"**Allowed alternatives:** invert the dependency", "**violation** · `no-module-cycles` · high, new")
+		if got := strings.Count(block, "**Constraint:** remove one direction"); got != 1 {
+			t.Errorf("constraint said %d times, want once:\n%s", got, block)
+		}
+	})
+
+	t.Run("a check summary gets the table without a diagram", func(t *testing.T) {
+		block := findingsBlock(&report.Report{Findings: []report.Finding{cyc("a", "b"), cyc("b", "a")}}, false)
+		mustContain(t, block, "#### Dependency cycle between `a` and `b`", "| `a` → `b` |")
+		mustNotContain(t, block, "mermaid")
+	})
+
 	t.Run("a partner past the cap is not pulled in", func(t *testing.T) {
-		fs := []report.Finding{gate("no-module-cycles", "a", "b", "a.go")}
+		fs := []report.Finding{cyc("a", "b")}
 		for i := range groupCap - 1 {
 			fs = append(fs, gate("r", "m"+strconv.Itoa(i), "n", "m.go"))
 		}
-		fs = append(fs, gate("no-module-cycles", "b", "a", "b.go"))
-		block := findingsBlock(&report.Report{Findings: fs})
+		fs = append(fs, cyc("b", "a"))
+		block := findingsBlock(&report.Report{Findings: fs}, true)
 		if got := strings.Count(block, "\n- **violation**"); got != groupCap {
 			t.Errorf("items = %d, want %d", got, groupCap)
 		}
 		mustContain(t, block, "- and 1 more")
-		mustNotContain(t, block, "⇄")
+		mustNotContain(t, block, "Dependency cycle")
 	})
+}
 
-	t.Run("each direction keeps its path, and the repair keeps its alternatives", func(t *testing.T) {
-		f, g := gate("no-module-cycles", "a", "b", "a.go"), gate("no-module-cycles", "b", "a", "b.go")
-		f.Edge.From.Path, f.AllowedAlternatives = "a/x.go", []string{"invert the dependency"}
-		block := findingsBlock(&report.Report{Findings: []report.Finding{f, g}})
-		mustContain(t, block, "  - `a` (`a/x.go`) → `b`: `a.go:3`", "  - Allowed alternatives: invert the dependency")
-	})
+func TestCycleDiagramAndTablesCannotBeBrokenByReportStrings(t *testing.T) {
+	evil := "a\"]|`x`|-->b```"
+	cyc := func(from, to string) report.Finding {
+		return report.Finding{ID: from + to, Kind: "gate", RuleID: "c", Status: "new", Severity: "high",
+			Edge:      report.Edge{From: report.Endpoint{Module: from}, To: report.Endpoint{Module: to}},
+			Locations: []report.Location{{File: "f.go", Line: 1}}}
+	}
+	block := findingsBlock(&report.Report{Findings: []report.Finding{cyc(evil, "b"), cyc("b", evil)}}, true)
+	_, diagram, _ := strings.Cut(block, "```mermaid\n")
+	diagram, _, _ = strings.Cut(diagram, "\n```")
+	syntax := regexp.MustCompile(`^(flowchart LR|  m\d+\["[A-Za-z0-9_\-./:@+#;]*"\]|  m\d+ -->\|"\d+ locations?"\| m\d+|  linkStyle \d+ stroke:#[0-9a-f]{6},stroke-width:\dpx)$`)
+	for _, line := range strings.Split(diagram, "\n") {
+		if !syntax.MatchString(line) {
+			t.Errorf("report string leaks into Mermaid syntax: %q", line)
+		}
+	}
+	if strings.Count(block, "```") != 2 {
+		t.Errorf("a report string opened or closed a code fence:\n%s", block)
+	}
+	for _, row := range strings.Split(block, "\n") {
+		if strings.HasPrefix(row, "| ") && strings.Count(strings.ReplaceAll(row, `\|`, ""), "|") != 3 {
+			t.Errorf("a report string added a table column: %q", row)
+		}
+	}
+}
+
+func TestCouplingColumnsComeFromTheSeam(t *testing.T) {
+	r := &report.Report{
+		Findings: []report.Finding{
+			{ID: "1", Kind: "advisory", RuleID: "bc/imbalanced_coupling", Status: "new", Severity: "critical", Why: "same why",
+				Edge: report.Edge{From: report.Endpoint{Module: "a"}, To: report.Endpoint{Module: "b"}}},
+			{ID: "2", Kind: "advisory", RuleID: "bc/imbalanced_coupling", Status: "new", Severity: "critical", Why: "same why",
+				Edge: report.Edge{From: report.Endpoint{Module: "c"}, To: report.Endpoint{Module: "d"}}},
+		},
+		Seams: []report.Seam{{FromModule: "a", ToModule: "b", Strength: "functional", Distance: "cross_module", Volatility: "high"}},
+	}
+	block := findingsBlock(r, true)
+	mustContain(t, block, "| Rule | Dependency | Where | Strength | Distance | Volatility |",
+		"| `a` → `b` | none reported | functional | cross_module | high |", "| `c` → `d` | none reported |  |  |  |")
+	if got := strings.Count(block, "same why"); got != 1 {
+		t.Errorf("a repeated why is shown %d times, want once", got)
+	}
+}
+
+func TestCutClosesACodeFence(t *testing.T) {
+	block := headFindings + "\n\n```mermaid\n" + strings.Repeat("  m0 --> m1\n", 200) + "```"
+	got := cutLines(block, 400)
+	if len(got) > 400 {
+		t.Errorf("cut is %d bytes, over 400", len(got))
+	}
+	if strings.Count(got, "```")%2 != 0 {
+		t.Errorf("cut left a code fence open:\n%s", got)
+	}
+}
+
+func TestOriginNeedsAComparablePullRequestBase(t *testing.T) {
+	introduced := report.Finding{ID: "1", Kind: "gate", RuleID: "r", Status: "new", Severity: "high", Origin: "introduced",
+		Edge: report.Edge{From: report.Endpoint{Module: "a"}, To: report.Endpoint{Module: "b"}}}
+	tests := []struct {
+		status string
+		shown  bool
+	}{
+		{"comparable", true},
+		{"unknown", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		t.Run("origin_status="+tt.status, func(t *testing.T) {
+			r := &report.Report{Findings: []report.Finding{introduced}, Comparison: report.Comparison{OriginStatus: tt.status}}
+			block := findingsBlock(r, true)
+			if got := strings.Contains(block, "introduced"); got != tt.shown {
+				t.Errorf("introduced shown = %v, want %v:\n%s", got, tt.shown, block)
+			}
+			if tt.shown {
+				mustContain(t, block, "**1 rule violation** · 1 introduced by this pull request", "high, new, introduced")
+			}
+		})
+	}
+}
+
+func TestCyclesAreCountedApartFromViolations(t *testing.T) {
+	cyc := func(rule, from, to string) report.Finding {
+		return report.Finding{ID: from + to, Kind: "gate", RuleID: rule, Status: "new", Severity: "high", Why: rule + " why",
+			Edge: report.Edge{From: report.Endpoint{Module: from}, To: report.Endpoint{Module: to}}}
+	}
+	block := findingsBlock(&report.Report{Findings: []report.Finding{cyc("plain", "x", "y"), cyc("c", "a", "b"), cyc("c", "b", "a")}}, true)
+	mustContain(t, block, "**3 rule violations** · 1 dependency cycle")
+	cycle, other := strings.Index(block, "#### Dependency cycle"), strings.Index(block, "#### Other rule violations")
+	plain := strings.Index(block, "`plain`")
+	if cycle < 0 || other < cycle || plain < other {
+		t.Errorf("want the cycle, then the other violations under their own heading:\n%s", block)
+	}
+}
+
+func TestSameReasonOfTwoRulesIsShownForEach(t *testing.T) {
+	adv := func(id, rule string) report.Finding {
+		return report.Finding{ID: id, Kind: "advisory", RuleID: rule, Status: "new", Severity: "low", Why: "same why",
+			Edge: report.Edge{From: report.Endpoint{Module: id}, To: report.Endpoint{Module: "z"}}}
+	}
+	block := findingsBlock(&report.Report{Findings: []report.Finding{adv("a", "r1"), adv("b", "r2"), adv("c", "r1")}}, true)
+	mustContain(t, block, "`r1` · **Why:** same why", "`r2` · **Why:** same why")
+	if got := strings.Count(block, "same why"); got != 2 {
+		t.Errorf("reason shown %d times, want once per rule:\n%s", got, block)
+	}
+}
+
+func TestEmptyNextStepIsNotWritten(t *testing.T) {
+	reason := reasonHealthy
+	reason.Next = ""
+	o := outcome(verdict.Success, reason)
+	p := Publication{Target: prTarget(headB), Identity: fullIdentity(), Outcome: o, Receipt: receiptFor(o, 1, 1), Trusted: trusted(settings.GateRequired)}
+	for name, body := range map[string]string{"comment": headBlock(p, true), "state": headBlock(p, false)} {
+		mustNotContain(t, body, "Next:")
+		mustContain(t, body, "- Reason: `healthy`")
+		if strings.HasPrefix(body, "\n") {
+			t.Errorf("%s starts with a blank line: %q", name, body)
+		}
+	}
 }
