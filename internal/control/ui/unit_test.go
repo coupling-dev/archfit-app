@@ -299,7 +299,7 @@ func TestPullPageGroupsCyclesAsTheCommentDoes(t *testing.T) {
 			"change_locality": {Status: "measured"},
 		},
 	}
-	var b pullJSON
+	var b findingsJSON
 	fillFindings(&b, rep)
 	if b.ViolationCount != 4 || b.AcceptedCount != 2 || len(b.Accepted) != 2 {
 		t.Fatalf("counts = %d violations, %d accepted (%d rows)", b.ViolationCount, b.AcceptedCount, len(b.Accepted))
@@ -325,7 +325,7 @@ func TestPullPageGroupsCyclesAsTheCommentDoes(t *testing.T) {
 	if !slices.Equal(other, []string{"api>db:added", "pkg_container>pkg_chaos:existing"}) {
 		t.Errorf("other violations = %v", other)
 	}
-	if len(b.Dimensions) != 2 || b.Dimensions[0].Name != "Coupling" || b.Dimensions[0].Coverage != "3 / 4 modules" || b.Dimensions[1].Key != "change_locality" {
+	if len(b.Dimensions) != 2 || b.Dimensions[0].Name != "Coupling" || b.Dimensions[0].Observed != 3 || b.Dimensions[0].Measurable != 4 || b.Dimensions[0].Basis != "modules" || b.Dimensions[1].Key != "change_locality" {
 		t.Errorf("dimensions = %+v, want the engine order with readable names", b.Dimensions)
 	}
 	if len(b.Unknowns) != 1 || b.Unknowns[0].Dimension != "Coupling" {
@@ -342,10 +342,10 @@ func TestPullPageHidesOriginsWithoutAComparisonAndShowsActiveFirst(t *testing.T)
 		f("u", "bogus", "introduced", "p", "q"), // a status this version does not know: shown, not a violation
 		f("a", "new", "introduced", "x", "y"), f("b", "new", "pre_existing", "y", "x"), f("c", "new", "introduced", "api", "db"),
 	}}
-	var b pullJSON
+	var b findingsJSON
 	fillFindings(&b, rep)
-	if b.Compared || len(b.Cycles) != 1 || len(b.Other) != 2 {
-		t.Fatalf("compared %v, %d cycles, %d other", b.Compared, len(b.Cycles), len(b.Other))
+	if len(b.Cycles) != 1 || len(b.Other) != 2 {
+		t.Fatalf("%d cycles, %d other", len(b.Cycles), len(b.Other))
 	}
 	for _, d := range append(b.Cycles[0].Directions, b.Other...) {
 		if d.Origin != "" {
@@ -362,7 +362,7 @@ func TestPullPageCapsEachGroup(t *testing.T) {
 	for i := range findingsPerList + 7 {
 		rep.Findings = append(rep.Findings, report.Finding{ID: strconv.Itoa(i), Kind: "advisory", Status: "new", RuleID: "r"})
 	}
-	var b pullJSON
+	var b findingsJSON
 	fillFindings(&b, rep)
 	if len(b.Advisories) != findingsPerList || b.AdvisoryCount != findingsPerList+7 || b.Omitted != 7 {
 		t.Errorf("%d rows of %d, %d omitted", len(b.Advisories), b.AdvisoryCount, b.Omitted)

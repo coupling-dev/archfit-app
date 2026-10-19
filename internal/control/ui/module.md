@@ -14,9 +14,9 @@ could still work GitHub-first, but onboarding, schema-guided editing and consent
 
 ## Functional Responsibilities
 
-- Serve the web app (`web/`, Svelte 5 built by Vite, embedded from `spa/`) for the overview, the repository page and
-  the pull request page, and its JSON API under `/api/`. The other pages are still server-rendered (`html/template`) with their embedded
-  static assets (one stylesheet, two small scripts); each moves to the web app in its own phase
+- Serve the web app (`web/`, Svelte 5 built by Vite, embedded from `spa/`) for the overview, the repository page,
+  the pull request page and both graph pages, and its JSON API under `/api/`. The other pages are still server-rendered
+  (`html/template`) with their embedded static assets (one stylesheet, one small script); each moves to the web app in its own phase
   (`docs/design/ui-redesign.md`, Migration order).
 - Authenticate every request through `session` and authorize every repository page at the needed permission.
 - Overview: the user's repositories with their latest default-branch `archfit/state` check conclusion. No score.
@@ -24,9 +24,12 @@ could still work GitHub-first, but onboarding, schema-guided editing and consent
 - Policy editor: load the policy into a plain text area, check it on the server (Check, and before every save) and
   list its problems by line, save as a commit on a draft branch through `proposal` bound to the head SHA that was
   loaded, show the draft state (draft / awaiting review / published), mark ready for review.
-- Graph: fetch the latest report artifact, decode it, build the view through `graph`, draw it, mark it stale.
-- Pull request graph: the same drawing for the report the pull request page shows, with the links new in this pull
-  request emphasised.
+- Graph: fetch the latest report artifact, decode it, build the view through `graph`, answer it as JSON, mark it stale.
+  The web app draws it.
+- Pull request graph: the same view for the report the pull request page shows, with each link's origin by the PR
+  comment's rule, so the links this pull request added are the ones the comment calls added.
+- Repository findings: the latest default-branch report's findings in the groups and words of the PR comment, for the
+  overview's counters and list.
 - Pull request page: the result of one pull request's head, from the `archfit/state` check and the report of the
   run that check names.
 - Assist: turn the form into an `assist.Request`, show the outcome or the pending customer run.
@@ -45,12 +48,15 @@ pilot; product.md leaves usability targets open.
   send it as the `csrf` field; the web app reads it from `/api/session` and sends it as the `X-CSRF-Token` header.
 - The edit branch name `archfit/edit-<login>` **[default]** and the rules that turn a form into a `Change`.
 - How check conclusions, draft states, plans and assist errors are worded for people.
-- The drawing of the graph (vanilla JavaScript and SVG; no SPA framework, no graph library): status chips that filter,
-  a problem list (violations, then advisories, then accepted; the two directions of a cycle with one status are one row, and
-  selecting it highlights and explains both), a deterministic layout (declared layers as bands;
-  without layers, depth after a cycle break, which is a layout and never a permitted direction), focus on problem
-  links above 15 modules **[default]**, a matrix view, and the server-rendered tables as the fallback without script or
-  above 300 modules. Report strings reach the page only through `textContent` and `setAttribute`.
+- The drawing of the graph (`web/src/pages/Graph.svelte` with Svelte Flow and ELK, one lazy chunk the first load never
+  fetches): colour is the status, line width the integration strength (contract thinnest, intrusive thickest), a dashed
+  line a strength no seam measured, the label the dependency count, a dashed module one outside the policy, a halo a
+  dependency the pull request added. Status chips that filter, a problem list (violations, then advisories, then
+  accepted; the two directions of a cycle with one status are one row, and selecting it highlights and explains both),
+  an ELK layered layout (declared layers as partitions, in policy order), focus on problem links above 15 modules
+  **[default]**, a matrix view, an inspector with strength, distance, volatility and balance, a folded legend, and
+  filterable tables, which are the only view above 300 modules. Report strings reach the page only as Svelte text and
+  attributes.
 - Bounds, each **[default]**: 100 repositories on the overview, 8 parallel lookups, 256 KB policy text, 512 KB request body,
   drawing up to 300 nodes and a filterable list above that.
 
@@ -88,6 +94,8 @@ Minimum repository permission in brackets. `{o}/{n}` is only a lookup key for `S
   "Not found" before any script runs. The app fills it from the overview API.
 - `GET /r/{o}/{n}/pull/{number}` [read] — the shell for the pull request page; a number that is not a positive integer
   answers `404` here, a number that is no pull request of the repository answers `404` from the API.
+- `GET /r/{o}/{n}/graph` [read] — the shell for the repository graph.
+- `GET /r/{o}/{n}/pull/{number}/graph` [read] — the shell for the pull request graph; the same `404` rule for the number.
 
 JSON API: every response is `application/json` with `Cache-Control: no-store` and a body of an explicit type of this
 package, never a stored record. Errors are `{"error": "<sentence>"}` with the status of the mapping below. A `POST`
@@ -99,6 +107,14 @@ package does not know is `422`, so a body cannot name a repository, a user or an
 - `GET /api/repos/{o}/{n}/pulls/{number}` [read] — the pull request page: header, result, and the report's findings
   in the groups and words of the PR comment (below, Pages). `404` for a number that is not a positive integer or not a
   pull request of the repository.
+- `GET /api/repos/{o}/{n}/pulls/{number}/graph` [read] — `{unavailable, view, stale_reason, policy_href, pull, added}`:
+  the pull request page's header and the `graph.View` of the report its check names, each link's `origin` by the PR
+  comment's rule; `added` counts the links whose origin is `added`. `policy_href` is the policy file on GitHub at the
+  head. The same `404` rule.
+- `GET /api/repos/{o}/{n}/graph` [read] — `{unavailable, view, stale_reason, policy_href, branch}`: the latest
+  default-branch report against the policy on that branch. No link carries an origin.
+- `GET /api/repos/{o}/{n}/findings` [read] — `{unavailable, branch, no_baseline, …}`: the latest default-branch
+  report's findings in the pull request page's groups, without origins.
 - `GET /api/repos/{o}/{n}/overview` [read] — default-branch state, open pull requests with their result, setup steps,
   onboarding progress, entitlement banner, history links, and whether the user may start onboarding or discovery.
   `tone` (`success` | `attention` | `danger` | `accent` | `neutral`) colours a state word; the word is always shown.
@@ -115,9 +131,6 @@ Server-rendered pages:
 - `POST /r/{o}/{n}/policy` [write] — save; form `branch`, `head_sha`, `content`.
 - `POST /r/{o}/{n}/policy/check` [read] — check the text and save nothing; form `branch`, `head_sha`, `content`.
 - `POST /r/{o}/{n}/policy/ready` [write] — mark the draft PR ready for review; form `branch`, `head_sha`.
-- `GET /r/{o}/{n}/graph` [read] — graph page.
-- `GET /r/{o}/{n}/pull/{number}/graph` [read] — the graph of the report the pull request page shows; the same `404`
-  rule for the number.
 - `POST /r/{o}/{n}/assist` [write] — form `branch`, `head_sha`, `content`, `instruction`, `mode`.
 - `GET /r/{o}/{n}/consent`, `POST /r/{o}/{n}/consent` [admin] — form `kind`, `action` (`record` | `revoke`).
 
@@ -906,7 +919,7 @@ type OAuth interface {
   tenant identity in the UI.
 - `graph` turns a `Report` and policy text into a `View`. Pure.
 - ui's own code is handlers, the JSON API (`api.go`), the web app's server side (`spa.go`), templates (`templates/`,
-  transparent folder), static assets (`static/`, transparent folder: `app.css`, `editor.js`, `graph.js`, all embedded
+  transparent folder), static assets (`static/`, transparent folder: `app.css`, `editor.js`, all embedded
   with `go:embed`; no vendored library) and the handler chain. The two children do not know each other.
 - The web app's source is `web/` at the repository root: Svelte 5 and TypeScript, built by plain Vite (not SvelteKit,
   whose bootstrap is an inline script). `npm run build` writes `spa/` (`index.html` and `assets/`), embedded with
@@ -1014,7 +1027,7 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   once and each distinct repair once; every other violation as its own card. Advisories and accepted debt each one
   folded table with each distinct reason once. At most 50 per group with the rest counted (group counts are of
   findings), 3 locations per finding with the rest folded. "This PR" only when `origin_status` is `comparable`: a
-  cycle direction reads `report.PairOrigin` (the comment's rule, so the comment and this page agree; the graph adopts it in phase d), any
+  cycle direction reads `report.PairOrigin` (the comment's rule, so the comment, this page and the graph agree), any
   other finding its own `origin` (`introduced` is added, `pre_existing` existed before). Badges for "no baseline"
   (`gate_reference.baseline_present`), "compared with base" or "PR attribution unavailable", and "customer-attested";
   the exact `agent_tasks` array with a copy button; the nine dimensions with readable names (the engine key as a
@@ -1027,24 +1040,25 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   whose `policy.Digest` is the report's `comparison.config_hash` (the Action reads the head's file only when the pull
   request changes it); with neither, the head's text (else the base's) and the stale banner "Neither the head nor the
   base branch holds the policy this report was computed from." Module lines link to that file on GitHub at that ref.
-  Display only: the head's text is untrusted and decides nothing. Header: title, number, short head SHA, the
-  `archfit/state` title and conclusion, links to the pull request page and to GitHub. When `comparison.origin_status`
-  is not `comparable`, the banner "This run did not compare with the base branch, so the graph cannot show what this PR
-  added." and no link is new (`graph` rule 13). Otherwise a line counts the links new in this PR, and the script adds
-  a "New in this PR (N)" chip, on by default when N > 0: an emphasis, not a filter. On, a new link keeps its status
-  color, gains a heavier line, a dashed halo of the same color and a "new" badge, and the other links stay drawn,
-  muted; the problem list puts new links first and marks them; the detail lists each finding's origin (added by this
-  PR, pre-existing, origin unknown). A new link always counts as a problem for focus mode. A cycle's two directions
-  stay one problem row when they share a status, marked new when either is.
+  Display only: the head's text is untrusted and decides nothing. Header: the pull request page's header and result,
+  with the Graph tab current. When `comparison.origin_status` is not `comparable`, the folded banner "This run did not
+  compare with the base branch, so the graph cannot show what this PR added." and no link carries an origin.
+  Otherwise each link's origin is `report.PairOrigin` of its pair, the PR comment's rule: `added` only when no
+  pre-existing finding names the pair and a finding this pull request introduced off a cycle does. An "N added in this
+  PR" chip, on by default: an emphasis, not a filter. On, an added link keeps its status colour and gains a halo, and
+  the other links stay drawn, muted; the problem list puts added links first and marks them. An added link always
+  counts as a problem for focus mode. A cycle's two directions stay one problem row when they share a status, marked
+  added when either is. Findings carry no origin of their own on the graph: a cycle finding's origin would contradict
+  its link's.
 - Graph: settings → `LatestRun(Settings.Workflow, {Branch: DefaultBranch, Event: "push", Status: "success"})` → `Artifact(run.ID, "archfit-report", report.MaxBytes)` →
   `report.Decode` (with the last release of `report.EngineVersions`, `v3.0.1`: the artifact names none) → policy text (open draft of the user, else default branch) → `graph.Build`. The artifact is the raw engine
   state JSON; only the decoded no-source `Report` is used. When the chosen policy text fails `policy.Modules` (a broken draft
   pushed on GitHub), ui builds from the default-branch policy instead, the last valid text, and forces the stale banner with
   "the draft does not parse" **[default]**. Only a push run uploads `archfit-report`; a dispatched run (discovery, baseline,
   re-anchor) or a run in progress must not hide the last report. No run or artifact (GitHub retention): "no report available". Decode error:
-  "report unavailable"; never a partial graph. The `View` is embedded as JSON in a `script type="application/json"` element.
-  Each link is drawn and listed with its `Status` (`violation`, `accepted`, `advisory`, `allowed`, `observed`), which is also
-  its CSS class. `allowed` comes only from the engine's `seams[].policy`; the page explains that
+  "report unavailable"; never a partial graph. The repository graph never claims "added": ui clears
+  `origin_status` before `graph.Build`. Each link is drawn and listed with its `Status` (`violation`, `accepted`,
+  `advisory`, `allowed`, `observed`), which is also its CSS class. `allowed` comes only from the engine's `seams[].policy`; the page explains that
   accepted debt is never allowed. When `View.Incomplete`, a banner says the report's hard gates did not
   pass or not all required rules were evaluated, so an observed link can still break a rule.
 - Assist: authorize `write`; if `content` differs from the file at `head_sha`, save it first (same rules as Save) and use the
@@ -1189,13 +1203,27 @@ their interfaces except where a test says otherwise. The clock is injected.
   no-op with a notice, not a `409`; the same retry with different content is `409`.
 - **Test name**: `TestGraphPageBuildsFromArtifact`
   **Scenario**: the blocked wire fixture (`hard_gates: fail`, no baseline) as the `archfit-report` artifact of the latest default-branch run.
-  **Expected behavior**: the embedded JSON equals `graph.Build(report, policy)`; node links point to `#L<line>`; no stale banner;
-  the incomplete banner; marker strings placed in fields the decoder drops (`matched_by`, measurement, task declarations)
-  appear nowhere in the page.
+  **Expected behavior**: the shell answers `200`; the graph API's `view` equals `graph.Build(report, policy)`;
+  `policy_href` is the editor; not stale; `incomplete`; marker strings placed in fields the decoder drops
+  (`matched_by`, measurement, task declarations) appear nowhere in the answer.
 - **Test name**: `TestGraphPageShowsTheEngineSeamPolicy`
   **Scenario**: the unmodified capture `real-seam-policy` of the shared wire corpus as the `archfit-report` artifact.
-  **Expected behavior**: the page decodes it; the embedded JSON equals `graph.Build(report, policy)`; the links
-  table has rows of class `violation`, `accepted`, `allowed` and `observed`.
+  **Expected behavior**: the API decodes it; its `view` equals `graph.Build(report, policy)`, with links of status
+  `violation`, `accepted`, `allowed` and `observed`.
+- **Test name**: `TestPullGraphDrawsTheReportOfItsCheck`, `TestPullGraphStates`
+  **Scenario**: a pull request whose head's `archfit/state` check names a run, beside a newer default-branch report;
+  then no check, a withdrawn result, an expired report, a run that did not compare, a policy only the base holds, and
+  no policy of the report anywhere.
+  **Expected behavior**: the view is built from the check's run, never the default branch's; the header is the pull
+  request page's; a state without a report answers its fixed wording and no view; without a comparison no link is
+  added; the policy link is the file at the ref that holds the report's policy, else the view is stale.
+- **Test name**: `TestPullGraphShowsWhatThePullRequestAdded`
+  **Scenario**: a pumba-pilot#11-shaped report: two new cycles over old dependencies, compared with base.
+  **Expected behavior**: both cycles stay violations; exactly one direction of each is `added`, every other link
+  `existing`, as the PR comment says; `added` is 2.
+- **Test name**: `TestDefaultGraphClaimsNothingNew`
+  **Scenario**: a default-branch report that says it compared with a base.
+  **Expected behavior**: no graph link and no finding of the findings API carries an origin.
 - **Test name**: `TestConsentRecordAndRevoke`
   **Scenario**: an administrator records `managed_llm`, then revokes it.
   **Expected behavior**: `Consents.Has` is true then false for the installation of the authorized `Repo`; `By` is the session login.
@@ -1321,7 +1349,7 @@ their interfaces except where a test says otherwise. The clock is injected.
   with no assist call and no commit.
 - **Test name**: `TestGraphWithoutAReport`
   **Scenario**: the graph page with no workflow run; then with an `archfit-report` artifact that `report.Decode` refuses.
-  **Expected behavior**: `200` "No report available"; then `200` "Report unavailable" and no `graph-data` element: never a partial graph.
+  **Expected behavior**: `200` "No report available"; then `200` "Report unavailable" and no view: never a partial graph.
 - **Test name**: `TestGraphReadsTheLatestSuccessfulPushRun`
   **Scenario**: a successful push run with the report, then newer runs: a failed push, a successful dispatch, a push in progress.
   **Expected behavior**: the graph is drawn; the only `Artifact` read is the successful push run's.

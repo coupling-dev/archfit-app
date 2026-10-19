@@ -7,13 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -51,6 +49,9 @@ func repoRoutes(fullName string) []route {
 		{http.MethodGet, base + "/graph", permRead, nil, nil},
 		{http.MethodGet, base + "/pull/4", permRead, nil, nil},
 		{http.MethodGet, api + "/pulls/4", permRead, nil, nil},
+		{http.MethodGet, api + "/pulls/4/graph", permRead, nil, nil},
+		{http.MethodGet, api + "/graph", permRead, nil, nil},
+		{http.MethodGet, api + "/findings", permRead, nil, nil},
 		{http.MethodGet, base + "/pull/4/graph", permRead, nil, nil},
 		{http.MethodPost, base + "/assist", permWrite, url.Values{"mode": {"customer"}, "instruction": {"split module a"}, "content": {policyText}}, nil},
 		{http.MethodGet, base + "/consent", permAdmin, nil, nil},
@@ -148,7 +149,7 @@ func TestRoutesAndMinimumPermissions(t *testing.T) {
 	})
 	t.Run("public assets", func(t *testing.T) {
 		e := newEnv(t)
-		for _, path := range []string{"/static/app.css", "/static/editor.js", "/static/graph.js", "/schema/policy.json", "/assets/app-1a2b.js"} {
+		for _, path := range []string{"/static/app.css", "/static/editor.js", "/schema/policy.json", "/assets/app-1a2b.js"} {
 			res := e.anonymous().get(path)
 			wantStatus(t, res, http.StatusOK)
 			if res.Body.Len() == 0 {
@@ -298,34 +299,26 @@ func TestGraphPageBuildsFromArtifact(t *testing.T) {
 	}
 	e.publishReport(repoName, payload)
 
-	res := c.get("/r/" + repoName + "/graph")
-	wantStatus(t, res, http.StatusOK)
-	body := res.Body.String()
-
-	var got graph.View
-	if err := json.Unmarshal([]byte(embeddedJSON(t, body)), &got); err != nil {
-		t.Fatalf("embedded JSON: %v", err)
-	}
+	wantStatus(t, c.get("/r/"+repoName+"/graph"), http.StatusOK)
+	path := "/api/repos/" + repoName + "/graph"
+	var got graphJSON
+	c.getJSON(path, &got)
 	want := graph.Build(rep, []byte(policyText))
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("embedded view = %+v\nwant %+v", got, want)
+	if got.View == nil || !reflect.DeepEqual(*got.View, want) {
+		t.Errorf("view = %+v\nwant %+v", got.View, want)
 	}
 	if len(want.Nodes) == 0 || len(want.Links) == 0 || want.Stale {
 		t.Fatalf("fixture gives a useless view: %+v", want)
 	}
-	for _, n := range want.Nodes {
-		wantContains(t, body, fmt.Sprintf(`href="/r/%s/policy#L%d"`, repoName, n.PolicyLine))
-	}
-	wantContains(t, body, "violation", `id="graph-tables" open`, `id="g-list"`, `id="g-canvas"`, `data-gview="matrix"`)
-	if strings.Contains(body, `id="stale"`) {
-		t.Error("stale banner on a fresh report")
+	if got.PolicyHref != "/r/"+repoName+"/policy" || got.Branch != mainBranch || got.Pull != nil || got.Unavailable != "" || got.StaleReason != "" {
+		t.Errorf("body = %+v", got)
 	}
 	// hard_gates: fail. An observed link of this report is not proof that the policy permits it.
-	if !want.Incomplete || !strings.Contains(body, `id="incomplete"`) {
-		t.Errorf("Incomplete = %v and no incomplete banner for a report whose hard gates did not pass", want.Incomplete)
+	if !want.Incomplete {
+		t.Error("Incomplete = false for a report whose hard gates did not pass")
 	}
-	if strings.Contains(body, "MARKER-") {
-		t.Error("a field the decoder drops reached the page")
+	if strings.Contains(c.get(path).Body.String(), "MARKER-") {
+		t.Error("a field the decoder drops reached the API")
 	}
 	for _, call := range e.gh.called("Artifact") {
 		if call.detail != fmt.Sprintf("77 archfit-report %d", report.MaxBytes) {
@@ -349,31 +342,20 @@ func TestGraphPageShowsTheEngineSeamPolicy(t *testing.T) {
 	}
 	e.publishReport(repoName, payload)
 
-	res := c.get("/r/" + repoName + "/graph")
-	wantStatus(t, res, http.StatusOK)
-	body := res.Body.String()
-
-	var got graph.View
-	if err := json.Unmarshal([]byte(embeddedJSON(t, body)), &got); err != nil {
-		t.Fatalf("embedded JSON: %v", err)
+	var got graphJSON
+	c.getJSON("/api/repos/"+repoName+"/graph", &got)
+	if want := graph.Build(rep, []byte(policyText)); got.View == nil || !reflect.DeepEqual(*got.View, want) {
+		t.Fatalf("view = %+v\nwant %+v", got.View, want)
 	}
-	if want := graph.Build(rep, []byte(policyText)); !reflect.DeepEqual(got, want) {
-		t.Errorf("embedded view = %+v\nwant %+v", got, want)
+	statuses := map[graph.LinkStatus]bool{}
+	for _, l := range got.View.Links {
+		statuses[l.Status] = true
 	}
-	for _, status := range []string{"violation", "accepted", "allowed", "observed"} {
-		wantContains(t, body, `<tr class="`+status+`">`)
+	for _, s := range []graph.LinkStatus{graph.StatusViolation, graph.StatusAccepted, graph.StatusAllowed, graph.StatusObserved} {
+		if !statuses[s] {
+			t.Errorf("no %s link", s)
+		}
 	}
-}
-
-var graphData = regexp.MustCompile(`(?s)<script type="application/json" id="graph-data">(.*?)</script>`)
-
-func embeddedJSON(t *testing.T, body string) string {
-	t.Helper()
-	m := graphData.FindStringSubmatch(body)
-	if m == nil {
-		t.Fatalf("no embedded graph data in: %.300s", body)
-	}
-	return m[1]
 }
 
 func TestConsentRecordAndRevoke(t *testing.T) {
@@ -477,8 +459,8 @@ func TestPullPageShowsTheReportOfItsCheck(t *testing.T) {
 			if b.ViolationCount == 0 || len(b.Other) == 0 || b.Other[0].RuleID != "no_direct_b_dependency" || b.Other[0].Origin != "" {
 				t.Errorf("violations = %d %+v", b.ViolationCount, b.Other)
 			}
-			if b.GraphHref != "/r/"+repoName+"/pull/4/graph" || b.URL != "https://github.com/"+repoName+"/pull/4" {
-				t.Errorf("links = %q %q", b.GraphHref, b.URL)
+			if b.URL != "https://github.com/"+repoName+"/pull/4" {
+				t.Errorf("url = %q", b.URL)
 			}
 		}},
 		{"a report that does not match its check", func(e *env) {
@@ -573,7 +555,10 @@ func TestPullPageNumberMustBeAPull(t *testing.T) {
 			wantStatus(t, c.get("/r/"+repoName+"/pull/"+n), http.StatusNotFound)
 		}
 		wantStatus(t, c.get("/api/repos/"+repoName+"/pulls/"+n), http.StatusNotFound)
-		wantStatus(t, c.get("/r/"+repoName+"/pull/"+n+"/graph"), http.StatusNotFound)
+		if n != "5" {
+			wantStatus(t, c.get("/r/"+repoName+"/pull/"+n+"/graph"), http.StatusNotFound)
+		}
+		wantStatus(t, c.get("/api/repos/"+repoName+"/pulls/"+n+"/graph"), http.StatusNotFound)
 	}
 }
 
@@ -590,17 +575,13 @@ func TestPullGraphDrawsTheReportOfItsCheck(t *testing.T) {
 		t.Fatalf("fixture does not decode: %v", err)
 	}
 
-	res := e.as("alice", permRead).get("/r/" + repoName + "/pull/4/graph")
-	wantStatus(t, res, http.StatusOK)
-	body := res.Body.String()
-	var got graph.View
-	if err := json.Unmarshal([]byte(embeddedJSON(t, body)), &got); err != nil {
-		t.Fatalf("embedded JSON: %v", err)
+	wantStatus(t, e.as("alice", permRead).get("/r/"+repoName+"/pull/4/graph"), http.StatusOK)
+	var got graphJSON
+	e.as("alice", permRead).getJSON("/api/repos/"+repoName+"/pulls/4/graph", &got)
+	if want := graph.Build(rep, []byte(prPolicy)); got.View == nil || !reflect.DeepEqual(*got.View, want) {
+		t.Fatalf("view = %+v\nwant %+v", got.View, want)
 	}
-	if want := graph.Build(rep, []byte(prPolicy)); !reflect.DeepEqual(got, want) {
-		t.Errorf("embedded view = %+v\nwant %+v", got, want)
-	}
-	if got.Stale {
+	if got.View.Stale || got.StaleReason != "" {
 		t.Error("the head's policy is the report's, yet the view is stale")
 	}
 	for _, call := range e.gh.called("Artifact") {
@@ -611,15 +592,23 @@ func TestPullGraphDrawsTheReportOfItsCheck(t *testing.T) {
 	if calls := e.gh.called("LatestRun"); len(calls) != 0 {
 		t.Errorf("LatestRun called %d times: the default branch's report has no place here", len(calls))
 	}
-	wantContains(t, html.UnescapeString(body),
-		"feat: read options", "#4", "<code>"+sha(4)[:7]+"</code>", "Architecture violations found · advisory",
-		`href="/r/`+repoName+`/pull/4"`, `href="https://github.com/`+repoName+`/pull/4"`, `data-scope="pull"`,
-		`data-policy-url="https://github.com/`+repoName+`/blob/`+sha(4)+`/.archfit.yaml"`,
-		`id="new-count"`, "4 links have a finding the base branch does not have: new in this PR.")
-	for _, s := range []string{`id="not-compared"`, `id="stale"`} {
-		if strings.Contains(body, s) {
-			t.Errorf("body contains %q", s)
+	h := got.Pull
+	if h == nil || h.Number != 4 || h.Title != "feat: read options" || h.HeadSHA != sha(4)[:shortSHA] ||
+		h.Headline != "Architecture violations found · advisory" || h.URL != "https://github.com/"+repoName+"/pull/4" ||
+		!h.Compared || h.Unavailable != "" {
+		t.Errorf("pull header = %+v", h)
+	}
+	if want := "https://github.com/" + repoName + "/blob/" + sha(4) + "/.archfit.yaml"; got.PolicyHref != want {
+		t.Errorf("policy_href = %q, want %q", got.PolicyHref, want)
+	}
+	added := 0
+	for _, l := range got.View.Links {
+		if l.Origin == report.PairAdded {
+			added++
 		}
+	}
+	if got.Added != added || added == 0 {
+		t.Errorf("added = %d, want the %d added links", got.Added, added)
 	}
 }
 

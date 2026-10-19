@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/alexei-led/archfit-app/internal/control/ui/graph"
@@ -21,64 +20,36 @@ const (
 	noPolicy = "Neither the head nor the base branch holds the policy this report was computed from."
 )
 
-// pullScope is the header of a pull request graph: which pull request, which head, what its check says.
-type pullScope struct {
-	Number     int
-	Title      string
-	Head       string // short head SHA
-	Headline   string // the archfit/state title
-	Conclusion string
-	URL        string // the pull request on GitHub
-	Page       string // the pull request page of the App
-	Compared   bool   // the report compared with the base branch, so a link can be new in this pull request
-	New        int    // links new in this pull request
-}
-
-func (s *server) pullGraphPage(w http.ResponseWriter, r *http.Request, sc scope) {
+// apiPullGraph is GET /api/repos/{o}/{n}/pulls/{number}/graph. It draws the report the pull request page shows: the
+// run its archfit/state check names, never the default branch's latest report.
+func (s *server) apiPullGraph(r *http.Request, sc scope) (any, error) {
 	number, ok := pullNumber(r)
 	if !ok {
-		s.fail(w, r, sc, api.ErrNotFound)
-		return
+		return nil, api.ErrNotFound
 	}
-	body, err := s.buildPullGraph(r.Context(), sc, number)
-	if err != nil {
-		s.fail(w, r, sc, err)
-		return
-	}
-	s.render(w, r, http.StatusOK, "graph", s.newPage(r, sc, "Pull request #"+strconv.Itoa(number)+" graph", body))
-}
-
-// buildPullGraph draws the report the pull request page shows: the run its archfit/state check names, never the
-// default branch's latest report.
-func (s *server) buildPullGraph(ctx context.Context, sc scope, number int) (graphBody, error) {
+	ctx := r.Context()
 	pull, rep, err := s.readPull(ctx, sc, number)
 	if err != nil {
-		return graphBody{}, err
+		return nil, err
 	}
-	head := pull.Pull.HeadSHA
-	scope := &pullScope{
-		Number: pull.Pull.Number, Title: pull.Pull.Title, Head: head[:min(len(head), shortSHA)],
-		Headline: pull.Headline, Conclusion: pull.Conclusion, URL: pull.Pull.URL,
-		Page: repoPath(sc, "/pull/"+strconv.Itoa(number)),
-	}
-	body := graphBody{Pull: scope}
+	head := headOf(sc, pull, rep)
+	body := graphJSON{Pull: &head, Branch: sc.repo.DefaultBranch, Unavailable: pull.Unavailable}
 	if rep == nil {
-		body.Unavailable = pull.Unavailable
 		return body, nil
 	}
-	scope.Compared = rep.Comparison.OriginStatus == originComparable
 	text, ref, err := s.reportPolicy(ctx, sc, pull.Pull, *rep)
 	if err != nil {
-		return graphBody{}, err
+		return nil, err
 	}
 	view := graph.Build(*rep, text)
 	if view.Stale {
 		body.StaleReason = noPolicy
 	}
-	body.setView(view, "https://github.com/"+sc.repo.FullName+"/blob/"+escapeRef(ref)+"/"+policy.PolicyPath)
+	body.View = &view
+	body.PolicyHref = "https://github.com/" + sc.repo.FullName + "/blob/" + escapeRef(ref) + "/" + policy.PolicyPath
 	for _, l := range view.Links {
-		if l.Introduced {
-			scope.New++
+		if l.Origin == report.PairAdded {
+			body.Added++
 		}
 	}
 	return body, nil

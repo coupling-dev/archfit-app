@@ -11,9 +11,12 @@ import (
 )
 
 type Node struct {
-	Name       string
-	Layer      string
-	PolicyLine int // 1-based line of the module in the policy YAML; 0 if not found
+	Name       string `json:"name"`
+	Layer      string `json:"layer"`
+	PolicyLine int    `json:"policy_line"` // 1-based line of the module in the policy YAML; 0 if not found
+	// Volatility is the declared volatility the engine gave every seam into the module (Balanced Coupling: the
+	// volatility of the module depended upon); "" when the seams disagree, say undeclared, or there are none.
+	Volatility string `json:"volatility"`
 }
 
 // LinkStatus is what the report says about a module pair: the engine's seam policy status when the report carries
@@ -29,33 +32,42 @@ const (
 )
 
 type Link struct {
-	From, To   string
-	Status     LinkStatus
-	Count      int  // observed dependencies of the pair's seams; 0 when only a finding names the pair
-	Introduced bool // a finding that names the pair is one the engine says this change introduced; display only
+	From   string     `json:"from"`
+	To     string     `json:"to"`
+	Status LinkStatus `json:"status"`
+	Count  int        `json:"count"` // observed dependencies of the pair's seams; 0 when only a finding names the pair
+	// Origin is report.PairOrigin of the pair, the PR comment's rule: report.PairAdded when this change added the
+	// dependency, report.PairExisting when the base had it, "" when the report cannot say or did not compare. Display only.
+	Origin string `json:"origin"`
+	// The coupling of the pair's strongest seam, as the engine measured it; all "" when no seam names the pair.
+	Strength   string `json:"strength"`   // engine token: contract, model, functional, intrusive
+	Distance   string `json:"distance"`   // in words (report.DistanceWords)
+	Volatility string `json:"volatility"` // engine token
+	Imbalance  string `json:"imbalance"`  // the highest seam severity of the pair, the engine's imbalance; "" for none
 }
 
 // View is a read-only picture. Stale is true when the policy text no longer matches the report's config_hash.
 // Incomplete is true when the report's hard gates did not pass or a required rule was not evaluated: an observed
 // link may then still break a rule.
 type View struct {
-	Nodes      []Node
-	Links      []Link
-	Findings   []LinkFinding // what names each link, for the page's detail panel; display only
-	Stale      bool
-	Incomplete bool
+	Nodes      []Node        `json:"nodes"`
+	Links      []Link        `json:"links"`
+	Findings   []LinkFinding `json:"findings"` // what names each link, for the page's inspector; display only
+	Stale      bool          `json:"stale"`
+	Incomplete bool          `json:"incomplete"`
 }
 
 // LinkFinding is one finding that names a drawn link's module pair, as the engine reported it. It explains a link and
-// never decides its Status. Why is engine text: the page must treat it as untrusted.
+// never decides its Status. It carries no origin: what a pull request added is the link's Origin, the comment's rule,
+// and a cycle finding's own origin would contradict it. Why is engine text: the page must treat it as untrusted.
 type LinkFinding struct {
-	From, To string
-	RuleID   string
-	Kind     string
-	Status   string
-	Origin   string // "introduced" | "pre_existing" | "unknown"; "" unless the report compared with the base branch
-	Why      string
-	More     int // on the last listed finding of a pair: how many more name the pair and are not listed
+	From   string `json:"from"`
+	To     string `json:"to"`
+	RuleID string `json:"rule_id"`
+	Kind   string `json:"kind"`
+	Status string `json:"status"`
+	Why    string `json:"why"`
+	More   int    `json:"more"` // on the last listed finding of a pair: how many more name the pair and are not listed
 }
 
 // Display caps of View.Findings.
@@ -72,11 +84,17 @@ const (
 	statusWaived   = "waived"
 	statusFixed    = "fixed"
 
-	originComparable = "comparable" // Comparison.OriginStatus: the origin of each finding is meaningful
-	originIntroduced = "introduced" // Finding.Origin: the base branch does not have the finding
-
 	hardGatesPass = "pass" // Decision.HardGates; any other value, an unknown one included, is incomplete
 )
+
+// strengths are the engine's integration strengths, weakest first; a token outside them ranks below all.
+var strengths = []string{"contract", "model", "functional", "intrusive"}
+
+// declaredVolatility is the volatility a module shows on its node; "undeclared" says nothing about the module.
+var declaredVolatility = []string{"low", "medium", "high"}
+
+// severities are the engine's severities, lowest first.
+var severities = []string{"low", "medium", "high", "critical"}
 
 type pair struct{ from, to string }
 
@@ -101,17 +119,37 @@ func Build(rep report.Report, policyText []byte) View {
 	}
 	// decided holds the pairs whose status the engine gave in seams[].policy: findings never change those.
 	decided := map[pair]bool{}
+	strongest := map[pair]report.Seam{}
+	into := map[string][]string{} // module -> the volatility of each seam into it
 	for _, s := range rep.Seams {
 		if s.FromModule == "" || s.ToModule == "" {
 			continue
 		}
+		p := pair{s.FromModule, s.ToModule}
 		l := link(s.FromModule, s.ToModule)
 		l.Count += s.Edges
 		if s.Policy != "" {
-			if p := LinkStatus(s.Policy); rank(p) > rank(l.Status) {
-				l.Status = p
+			if st := LinkStatus(s.Policy); rank(st) > rank(l.Status) {
+				l.Status = st
 			}
-			decided[pair{s.FromModule, s.ToModule}] = true
+			decided[p] = true
+		}
+		if prev, ok := strongest[p]; !ok || cmp.Or(
+			cmp.Compare(slices.Index(strengths, s.Strength), slices.Index(strengths, prev.Strength)),
+			cmp.Compare(s.Edges, prev.Edges)) > 0 {
+			strongest[p] = s
+		}
+		if slices.Index(severities, s.Severity) > slices.Index(severities, l.Imbalance) {
+			l.Imbalance = s.Severity
+		}
+		into[s.ToModule] = append(into[s.ToModule], s.Volatility)
+	}
+	for p, s := range strongest {
+		l := links[p]
+		l.Strength, l.Volatility = s.Strength, s.Volatility
+		l.Distance = s.Distance
+		if w, ok := report.DistanceWords[s.Distance]; ok {
+			l.Distance = w
 		}
 	}
 	for _, f := range rep.Findings {
@@ -139,20 +177,31 @@ func Build(rep report.Report, policyText []byte) View {
 			}
 		}
 	}
+	for name, vs := range into {
+		if n, ok := nodes[name]; ok && slices.Contains(declaredVolatility, vs[0]) && !slices.ContainsFunc(vs, func(v string) bool { return v != vs[0] }) {
+			n.Volatility = vs[0]
+			nodes[name] = n
+		}
+	}
+
+	// A link's origin is the comment's rule over the comment's groups, so both say the same about what a pull request
+	// added; Group clears every origin when the report did not compare with the base branch.
+	g := report.Group(rep, report.ShownPerGroup)
+	if g.Compared {
+		for p, l := range links {
+			on := report.Finding{Edge: report.Edge{From: report.Endpoint{Module: p.from}, To: report.Endpoint{Module: p.to}}}
+			l.Origin = report.PairOrigin(on, g.All, g.OnCycle)
+		}
+	}
 
 	// Findings that name a drawn pair, fixed ones excluded: they say nothing about the current tree.
 	// The strongest status first, so the cap never drops the finding that set the link's status; the last listed
 	// one of a capped pair counts the rest.
-	// A link is introduced when a finding behind it is, and only when the report compared with the base branch.
-	compared := rep.Comparison.OriginStatus == originComparable
 	byPair := map[pair][]report.Finding{}
 	for _, f := range rep.Findings {
 		p := pair{f.Edge.From.Module, f.Edge.To.Module}
 		if links[p] != nil && f.Status != statusFixed {
 			byPair[p] = append(byPair[p], f)
-			if compared && f.Origin == originIntroduced {
-				links[p].Introduced = true
-			}
 		}
 	}
 	findings := []LinkFinding{}
@@ -160,9 +209,6 @@ func Build(rep report.Report, policyText []byte) View {
 		slices.SortStableFunc(fs, func(a, b report.Finding) int { return rank(findingStatus(b)) - rank(findingStatus(a)) })
 		for i, f := range fs[:min(len(fs), findingsPerLink)] {
 			lf := LinkFinding{From: p.from, To: p.to, RuleID: f.RuleID, Kind: f.Kind, Status: f.Status, Why: clip(f.Why)}
-			if compared {
-				lf.Origin = f.Origin
-			}
 			if i == findingsPerLink-1 {
 				lf.More = len(fs) - findingsPerLink
 			}
@@ -170,7 +216,7 @@ func Build(rep report.Report, policyText []byte) View {
 		}
 	}
 
-	// Non-nil slices: the parent serializes the view to JSON, where an empty graph is [] and not null.
+	// Non-nil slices: the API serializes the view to JSON, where an empty graph is [] and not null.
 	v := View{
 		Nodes:      make([]Node, 0, len(nodes)),
 		Links:      make([]Link, 0, len(links)),
