@@ -1,0 +1,45 @@
+<script lang="ts">
+  import type { Findings } from '../lib/api';
+  import CycleCard from './CycleCard.svelte';
+  import FindingCard from './FindingCard.svelte';
+  import FindingTable from './FindingTable.svelte';
+
+  // A report's findings in the PR comment's groups: the pull request page and the overview show them alike.
+  let { f, compared }: { f: Findings; compared: boolean } = $props();
+
+  const listed = $derived(
+    (f.cycles?.length ?? 0) + (f.other?.length ?? 0) + (f.advisories?.length ?? 0) + (f.accepted?.length ?? 0),
+  );
+</script>
+
+<section class="stack" aria-labelledby="violations">
+  <h2 id="violations">Rule violations <span class="counter">{f.violation_count}</span></h2>
+  {#if f.violation_count === 0}
+    <div class="box blankslate"><p>No rule violations in this run.</p></div>
+  {/if}
+  {#each f.cycles ?? [] as c, i (i)}
+    <CycleCard {c} {compared} />
+  {/each}
+  {#each f.other ?? [] as finding, i (i)}
+    <FindingCard f={finding} />
+  {/each}
+</section>
+
+{#if f.advisories?.length}
+  <FindingTable id="advisories" title="Advisories · never block" count={f.advisory_count} rows={f.advisories} {compared} />
+{/if}
+{#if f.accepted?.length}
+  <FindingTable
+    id="accepted"
+    title="Accepted · baseline or waiver"
+    count={f.accepted_count}
+    rows={f.accepted}
+    {compared}
+  />
+{/if}
+{#if f.omitted}
+  <p class="muted small">{f.omitted} more findings are not listed: each group shows at most 50.</p>
+{/if}
+{#if listed === 0 && f.violation_count === 0}
+  <p class="muted small">The report lists no finding to show.</p>
+{/if}

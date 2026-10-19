@@ -185,9 +185,13 @@ Alternatives:
 ### Bundle budget
 
 - First load of any page: at most 120 KB gzip of JavaScript and 20 KB of CSS. The editor chunk: at most 200 KB gzip,
-  loaded on the policy page only. CI fails above either. The graph chunk (about 504 KB gzip, 467 KB of it ELK) loads
-  on the graph pages only; it gets its own limit in phase d.
-- Phase b ships 19 KB of JavaScript and 4 KB of CSS, gzip.
+  loaded on the policy page only. The graph chunk (`Graph-*`, Svelte Flow and ELK): at most 540 KB gzip of JavaScript
+  and 20 KB of CSS, loaded on the graph pages only; `web/scripts/size.mjs` also fails when the first load includes it.
+  CI fails above any of these.
+- Phase b ships 19 KB of JavaScript and 4 KB of CSS, gzip. Phase d: first load 31 KB and 5 KB; the graph chunk 488 KB
+  (ELK most of it) and 3 KB.
+- Licences: the build writes `assets/licenses-<hash>.txt`, the licence text of every npm package in the bundle
+  (`web/scripts/licenses.ts`; the build fails on a package without one). MIT and EPL-2.0 (ELK) ask for the notice.
 
 ### Dark mode and accessibility
 
@@ -215,7 +219,8 @@ Alternatives:
 2. **c**: the pull request page and the findings components, with the cycle drawn as on the comment.
 3. **d**: both graphs on Svelte Flow and ELK, with the inspector and the seam fields.
 4. **e**: Data sharing (decision A), with the inline prompts.
-5. **f**: the policy editor with CodeMirror 6. Then the templates, `graph.js`, `editor.js` and `app.css` are deleted.
+5. **f**: the policy editor with CodeMirror 6. Then the templates, `editor.js` and `app.css` are deleted (`graph.js`
+   and its template went in phase d).
 
 Each phase is one pull request. A page moves only when its new version covers everything the old one shows.
 
@@ -260,6 +265,7 @@ Target (`prototypes/index.html` Overview):
 
 - A hero row: state pill, `master`, a "gate: advisory" label.
 - Three counters: rule violations, advisories (never block), open pull requests with a violation. Counts, no score.
+  Built in phase d with "open pull requests need attention" as the third (see Graphs).
 - A "Needs you" card with one primary button, holding the next step and the onboarding or discovery action.
 - A progress track that replaces both Setup and Onboarding.
 - Open pull requests as rows with a state pill.
@@ -269,7 +275,7 @@ Target (`prototypes/index.html` Overview):
 
 Built in phase c. The page groups and words findings as the comment does: `report.Cycles`, `report.PairOrigin` and
 the distance words moved from `gate/feedback` into `wire/report`, so the comment and this page share one rule;
-the graph adopts it in phase d. The cycle drawing is our own small SVG (two modules side by side, more on a circle; opposite
+the graph adopted it in phase d. The cycle drawing is our own small SVG (two modules side by side, more on a circle; opposite
 directions bow apart), styled as the comment's Mermaid diagram. The dimensions are a table with readable names, not
 yet a strip. Links from API answers render only when they point into the App or to `https://github.com/`.
 
@@ -304,6 +310,25 @@ its own track, nearly no crossings, and room reserved for labels; the port of `g
 and crowded the badges at 7 modules, and dagre loops back edges. It runs under `style-src 'self'`: the xyflow
 stylesheet is an external file and ELK runs on the main thread, with no worker and no `blob:`. ELK edge priority is
 the dependency count, so the heavy direction stays downward.
+
+Built in phase d. What changed against the notes and the target below, by owner decision (through the manager):
+
+- Width is integration strength, contract thinnest and intrusive thickest; colour stays the status. The dependency
+  count is the edge label and an inspector line, not a width. One dash meaning: strength not measured (no seam names
+  the dependency, or its token is unknown). An accepted dependency is coloured, no longer dashed.
+- "N added in this PR" counts what the comment calls added: each link's origin is `report.PairOrigin` of its pair
+  (`graph.Link.Origin`), so a new finding on a dependency the base had is not added. A finding in the inspector
+  carries no origin of its own: a cycle finding's origin would contradict its link's.
+- Fit view with 6% padding and a zoom between 0.6 and 1; the canvas height follows the layout (360 to 900 px). Nodes
+  show the layer and the volatility every seam into the module agrees on. `hideAttribution` is set: the xyflow licence
+  is MIT, and the bundled notice keeps its text. No debug toolbar, no lock control.
+- ELK runs on the main thread. Measured with Node: 25 ms for pumba-pilot#11 (4 modules, 8 dependencies); on a
+  synthetic dense graph 109 ms at 15 modules, 0.8 s at 30 and 7 s at 60. Focus mode draws only the problem
+  dependencies above 15 modules, but a large graph without problems is drawn whole. Follow-up: a worker or a lower
+  drawing cap.
+- The overview's three counters are rule violations and advisories on the default branch, from the findings API,
+  and "open pull requests need attention": the result of `archfit/state` cannot tell a violation from other
+  attention without the pull request's report.
 
 Notes for phase d (owner, through the manager):
 

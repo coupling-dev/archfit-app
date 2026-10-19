@@ -1,29 +1,45 @@
-// Fails the build when the first load is over budget (docs/design/ui-redesign.md, Bundle budget).
-// First load is every script and stylesheet index.html references; lazy chunks have budgets of their own later.
-import { readFileSync } from 'node:fs';
+// Fails the build when a load is over budget (docs/design/ui-redesign.md, Bundle budget). First load is every script
+// and stylesheet index.html references; the graph pages' lazy chunk (Graph-*) has a budget of its own.
+import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 
 const out = new URL('../../internal/control/ui/spa/', import.meta.url);
-const budget = { js: 120 * 1024, css: 20 * 1024 };
+const KB = 1024;
+const size = (path) => gzipSync(readFileSync(new URL(path, out))).length;
 
 const index = readFileSync(new URL('index.html', out), 'utf8');
-const used = { js: 0, css: 0 };
-for (const [, path] of index.matchAll(/(?:src|href)="\/(assets\/[^"]+\.(?:js|css))"/g)) {
-  const kind = path.endsWith('.css') ? 'css' : 'js';
-  used[kind] += gzipSync(readFileSync(new URL(path, out))).length;
-}
+const first = [...index.matchAll(/(?:src|href)="\/(assets\/[^"]+\.(?:js|css))"/g)].map((m) => m[1]);
+const graph = readdirSync(new URL('assets/', out))
+  .filter((f) => /^Graph-.*\.(js|css)$/.test(f))
+  .map((f) => `assets/${f}`);
+
+const loads = [
+  { name: 'first load', files: first, budget: { js: 120 * KB, css: 20 * KB } },
+  { name: 'graph chunk', files: graph, budget: { js: 540 * KB, css: 20 * KB } },
+];
 let over = false;
-for (const kind of ['js', 'css']) {
-  const line = `${kind}: ${(used[kind] / 1024).toFixed(1)} KB gzip of ${budget[kind] / 1024} KB`;
-  if (used[kind] > budget[kind]) {
-    over = true;
-    console.error(`over budget, ${line}`);
-  } else {
-    console.log(line);
+for (const load of loads) {
+  for (const kind of ['js', 'css']) {
+    const used = load.files.filter((f) => f.endsWith(`.${kind}`)).reduce((n, f) => n + size(f), 0);
+    const line = `${load.name} ${kind}: ${(used / KB).toFixed(1)} KB gzip of ${load.budget[kind] / KB} KB`;
+    if (used > load.budget[kind]) {
+      over = true;
+      console.error(`over budget, ${line}`);
+    } else {
+      console.log(line);
+    }
   }
 }
-if (used.js === 0) {
+if (!first.some((f) => f.endsWith('.js'))) {
   console.error('index.html references no script; is the build broken?');
+  over = true;
+}
+if (!graph.some((f) => f.endsWith('.js'))) {
+  console.error('no Graph-*.js chunk; is the graph page still lazy?');
+  over = true;
+}
+if (first.some((f) => graph.includes(f))) {
+  console.error('the first load includes the graph chunk');
   over = true;
 }
 process.exit(over ? 1 : 0);

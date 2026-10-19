@@ -24,21 +24,28 @@
   );
 
   const title = $derived(
-    route.kind === 'pull'
-      ? `${route.fullName} #${route.number}`
-      : route.kind === 'repo'
-        ? route.fullName
+    route.kind === 'pull' || route.kind === 'pull-graph'
+      ? `${route.fullName} #${route.number}${route.kind === 'pull-graph' ? ' graph' : ''}`
+      : route.kind === 'repo' || route.kind === 'graph'
+        ? `${route.fullName}${route.kind === 'graph' ? ' architecture' : ''}`
         : signedOut
           ? 'Sign in'
           : 'Repositories',
   );
-  const repo = $derived((route.kind === 'repo' || route.kind === 'pull') && session ? route.fullName : '');
+  const repo = $derived(route.kind !== 'home' && route.kind !== 'unknown' && session ? route.fullName : '');
+  // The graph pages carry the drawing libraries: a chunk of their own, loaded on those pages only.
+  const graphPage = () => import('./pages/Graph.svelte');
   $effect(() => {
     document.title = `${title} · Archfit`;
   });
 </script>
 
-<Header {session} {repo} pull={route.kind === 'pull' ? route.number : 0} />
+<Header
+  {session}
+  {repo}
+  pull={route.kind === 'pull' || route.kind === 'pull-graph' ? route.number : 0}
+  graph={route.kind === 'graph'}
+/>
 <main class="page" id="main">
   {#if failure}
     <p class="flash error" role="alert">{failure}</p>
@@ -52,6 +59,14 @@
     <Overview {route} {session} {here} />
   {:else if route.kind === 'pull'}
     <Pull {route} {here} />
+  {:else if route.kind === 'graph' || route.kind === 'pull-graph'}
+    {#await graphPage()}
+      <p class="muted" aria-live="polite">Loading…</p>
+    {:then m}
+      <m.default {route} {here} />
+    {:catch}
+      <p class="flash error" role="alert">The graph could not be loaded. Reload the page.</p>
+    {/await}
   {:else}
     <div class="blankslate">
       <h3>Not found</h3>

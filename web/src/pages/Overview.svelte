@@ -1,6 +1,17 @@
 <script lang="ts">
-  import { ApiError, explain, getJSON, postJSON, repoAPI, type Notice, type Overview, type Session } from '../lib/api';
-  import { safeHref } from '../lib/route';
+  import FindingGroups from '../components/FindingGroups.svelte';
+  import {
+    ApiError,
+    explain,
+    getJSON,
+    postJSON,
+    repoAPI,
+    type Notice,
+    type Overview,
+    type RepoFindings,
+    type Session,
+  } from '../lib/api';
+  import { repoPage, safeHref } from '../lib/route';
 
   let {
     route,
@@ -18,8 +29,16 @@
     failure = explain(e, here);
   }
 
+  // The findings come from the latest report artifact, a slower read: the rest of the page never waits for it.
+  let findings = $state<RepoFindings | null>(null);
+  let findingsFailed = $state(false);
+
   function load() {
     getJSON<Overview>(repoAPI(route.owner, route.name, 'overview')).then((b) => (body = b), failed);
+    getJSON<RepoFindings>(repoAPI(route.owner, route.name, 'findings')).then(
+      (f) => (findings = f),
+      () => (findingsFailed = true),
+    );
   }
   load();
 
@@ -48,6 +67,8 @@
     write('onboarding', { mode: 'customer', owners });
   }
 
+  // An open pull request needs attention when its archfit/state is anything but healthy.
+  const pullsToSee = $derived(body?.pulls?.filter((p) => p.tone !== 'success').length ?? 0);
   const actions = $derived(body !== null && body.admin && (body.can_start || body.can_discover));
   const needsYou = $derived(body !== null && (body.next !== '' || body.diagnostic !== '' || actions));
 </script>
@@ -72,6 +93,28 @@
   {#if !failure}<p class="muted" aria-live="polite">Loading…</p>{/if}
 {:else}
   {#if body.banner}<p class="flash warn">{body.banner}</p>{/if}
+
+  {#if findings && !findings.unavailable}
+    <div class="stats" role="group" aria-label="Counts on {findings.branch}">
+      <div>
+        <span class="n">{findings.violation_count}</span>
+        <span class="t">Rule {findings.violation_count === 1 ? 'violation' : 'violations'}</span>
+        <span class="s">on <code>{findings.branch}</code></span>
+      </div>
+      <div>
+        <span class="n">{findings.advisory_count}</span>
+        <span class="t">{findings.advisory_count === 1 ? 'Advisory' : 'Advisories'}</span>
+        <span class="s">never block</span>
+      </div>
+      {#if !body.pulls_error && body.pulls}
+        <div>
+          <span class="n">{pullsToSee}</span>
+          <span class="t">Open pull {pullsToSee === 1 ? 'request needs' : 'requests need'} attention</span>
+          <span class="s">{body.pulls_more ? `among the ${body.pulls.length} listed` : 'archfit/state not healthy'}</span>
+        </div>
+      {/if}
+    </div>
+  {/if}
 
   {#if needsYou}
     <section class="box" aria-labelledby="needs-you">
@@ -144,6 +187,27 @@
       {/if}
       {#if body.pulls_more}
         <p class="box-foot">{body.pulls_more} more open pull requests are not listed here.</p>
+      {/if}
+    </section>
+  {/if}
+
+  {#if body.main_state}
+    <section class="stack" aria-labelledby="branch-findings">
+      <div class="row-between">
+        <h2 id="branch-findings">Findings on <code>{body.default_branch}</code></h2>
+        <a href={repoPage(route.fullName, '/graph')}>Open the graph</a>
+      </div>
+      {#if findingsFailed}
+        <p class="muted">The latest report could not be read. Try again in a minute.</p>
+      {:else if !findings}
+        <p class="muted" aria-live="polite">Loading the latest report…</p>
+      {:else if findings.unavailable}
+        <p class="muted">{findings.unavailable}</p>
+      {:else}
+        {#if findings.no_baseline}
+          <p class="muted small">Without a baseline every finding counts as new, including older debt.</p>
+        {/if}
+        <FindingGroups f={findings} compared={false} />
       {/if}
     </section>
   {/if}

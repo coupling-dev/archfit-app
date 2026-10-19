@@ -458,7 +458,10 @@ do next and, for a repository admin, holds the button that starts onboarding or 
 also shows:
 
 - the Archfit result of the default branch at the top of the page;
-- the open pull requests, newest first, each with its result and a link to its page (up to 20).
+- three counts: rule violations and advisories in the latest default-branch report, and the open pull requests whose
+  Archfit result needs attention. They are counts, never a score;
+- the open pull requests, newest first, each with its result and a link to its page (up to 20);
+- **Findings on** the default branch: its violations, advisories and accepted debt, grouped as on a pull request page.
 
 The tabs under the header open the graph (Architecture) and the policy editor (Policy). The header switches between
 the light and the dark theme, or follows the system (Auto); the choice is kept in this browser. The App needs a
@@ -487,38 +490,41 @@ on the pull request links to this page ("Details in Archfit").
 
 ## See the graph
 
-Open **Graph** for the repository. The page is read-only. It shows the policy status of module relationships in the
-latest default-branch report, problems first.
+Open **Architecture** for the repository, or `/r/<owner>/<repo>/graph`. The page is read-only. It draws the modules of
+the policy and the dependencies between them in the latest default-branch report, problems first.
 
-- Status chips at the top count the links per status and filter them. The **Problems** list on the left puts
-  violations first, then advisories, then accepted exceptions. Select a problem, an arrow, a matrix cell or a module
-  to see what it means; a link lists up to 5 current findings that name it, the strongest first (rule, kind, status
-  and the engine's text, with a count of any not listed), and a module links to its line in the policy.
-- Modules come from the policy. With declared layers they are grouped in layer bands. Without layers, modules that
-  import others are drawn above the modules they import. That is a layout only: position never means a dependency
-  is permitted.
-- Line width shows the number of observed dependencies. Problem links carry the count.
-- Over 15 modules the graph starts with only the modules and links that have a problem. **Show all** draws everything.
-  **Matrix** shows every pair, up to 300 modules: rows depend on columns.
-- Without JavaScript, or over 300 modules, the page shows the modules and links as tables, with the status
-  definitions; over 300 modules a filter narrows them.
-- Links come from the latest default-branch report artifact.
-- Each link has a status. The report gives the status of each seam (`seams[].policy`), and the graph shows it.
+- Colour is the status of a dependency, line width its integration strength: contract coupling thinnest, then model,
+  functional, and intrusive coupling thickest. A dashed line is a dependency whose strength no seam of the report
+  measured. The label on a line is the number of dependencies between the two modules. A dashed module is not in the
+  policy. **Legend** above the graph says the same.
+- Status chips count the dependencies per status and filter them. The **Problems** list above the graph puts
+  violations first, then advisories, then accepted debt; the two directions of a cycle with one status are one row.
+- Select a problem, a line, a matrix cell or a module (click, or Tab and Enter) to see it in the panel on the right.
+  A dependency shows its status, its integration strength, distance, volatility and balance, up to 5 current findings
+  that name it, the strongest first, and a link to its module in the policy. A module shows its layer, its volatility,
+  its line in the policy and the modules it depends on and is used by.
+- Modules come from the policy. Declared layers are drawn top to bottom in policy order. Position never means a
+  dependency is permitted: only the policy permits one.
+- Over 15 modules the graph starts with only the modules and dependencies that have a problem. **Show all** draws
+  everything. **Matrix** shows every pair: rows depend on columns.
+- **Modules and dependencies as tables**, under the graph, lists the same facts with a filter. Over 300 modules it
+  is the only view.
+- Each dependency has a status. The report gives the status of each seam (`seams[].policy`), and the graph shows it.
   If a seam has no policy, the status comes from the report findings for the module pair.
 
   | Status      | Meaning                                                                   |
   | ----------- | ------------------------------------------------------------------------- |
-  | `violation` | An active gate finding, or a gate finding of an unknown status, names the pair. The link is red |
-  | `accepted`  | A gate finding names the pair, and the baseline or a waiver accepts it                          |
-  | `advisory`  | A finding that does not block names the pair                                                    |
-  | `allowed`   | A blocking allowlist or layer rule permits the pair. The link is green                          |
-  | `observed`  | No active finding names the pair, and no blocking rule permits it. A baselined or waived advisory can still name it |
+  | `violation` | An active gate finding, or a gate finding of an unknown status, names the dependency. Red |
+  | `accepted`  | A gate finding names the dependency, and the baseline or a waiver accepts it              |
+  | `advisory`  | A finding that does not block names the dependency                                        |
+  | `allowed`   | A blocking allowlist or layer rule permits the dependency                                 |
+  | `observed`  | No active finding names the dependency, and no blocking rule permits it. A baselined or waived advisory can still name it |
 
-- Only the engine can mark a link `allowed`. A forbidden dependency in the baseline shows as `accepted`, never as
-  `allowed`.
-- A **Stale** banner appears when the policy differs from the latest report.
-- An **Incomplete** banner appears when the report's hard gates did not pass or the engine did not evaluate all
-  required rules. Then an `observed` link can still break a rule that was not evaluated.
+- Only the engine can mark a dependency `allowed`. A forbidden dependency in the baseline shows as `accepted`, never
+  as `allowed`.
+- A warning says when the policy differs from the one the report was computed from (module names and lines may not
+  match), and when the report's hard gates did not pass or the engine did not evaluate all required rules: then an
+  `observed` dependency can still break a rule that was not evaluated. Open a warning for the reason.
 
 GitHub keeps report artifacts for a limited time. Run Archfit on the default branch when no report is available.
 
@@ -528,17 +534,16 @@ Open the **Graph** tab on a pull request page, or `/r/<owner>/<repo>/pull/<numbe
 pull request's head, the same report the pull request page shows, never the default-branch report. It shows the same
 states when there is no report.
 
-- The header shows the pull request, its head commit, the `archfit/state` result, and links back to the pull request
-  page and to GitHub.
-- A link is **new in this PR** when at least one finding behind it is one the engine did not find on the base branch
-  (`origin: introduced`). The link keeps its status: a new forbidden dependency or cycle is still a red `violation`,
-  drawn heavier with a dashed halo and a "new" badge.
-- The **New in this PR** chip is on when the pull request added something. It highlights the new links and mutes the
-  rest, which stay visible so the change reads against the existing architecture, and puts new links first in the
-  problem list. Turn it off to draw links in their status style and list order; new links stay listed and marked "new".
-- Select a link to see the findings behind it, each marked "added by this PR" or "pre-existing".
-- When the run did not compare with the base branch, a banner says so and no link is marked new. "New" never comes
-  from a finding's status.
+- The header is the pull request page's: the pull request, its head commit, the `archfit/state` result, and a link
+  to GitHub.
+- A dependency is **added in this PR** when the comment says so: a finding this pull request introduced names it and
+  no finding names it from before. A new finding on a dependency the base already had does not make it added. The
+  dependency keeps its status: a new forbidden dependency or cycle direction is still a red `violation`, with a halo.
+- The **N added in this PR** chip is on by default. It highlights the added dependencies and mutes the rest, which
+  stay visible so the change reads against the existing architecture, and puts added ones first in the problem list.
+  Turn it off to draw every dependency alike; added ones stay listed and marked "added".
+- When the run did not compare with the base branch, a warning says so and no dependency is marked added. "Added"
+  never comes from a finding's status.
 - Module names and lines come from the policy at the head when the pull request changed it, else from the base branch.
 
 ## Plans and trial
@@ -589,7 +594,7 @@ Clear a grant by omitting `until` or sending `null`. A successful request return
 
 ### Build the web app
 
-The overview and the repository page are a web app in `web/`, built into the binary. The release image builds it
+The App's pages, except the policy editor and the consent page, are a web app in `web/`, built into the binary. The release image builds it
 (`Dockerfile`, stage `web`). For a local binary, build it first with Node 24:
 
 ```sh

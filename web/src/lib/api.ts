@@ -90,12 +90,15 @@ export interface Dimension {
   key: string;
   name: string;
   status: string;
-  coverage: string;
+  observed: number;
+  measurable: number;
+  basis: string;
   confidence: string;
   gate: string;
 }
 
-export interface Pull {
+// PullHead is the header the pull request page and its graph share.
+export interface PullHead {
   number: number;
   title: string;
   author: string;
@@ -105,7 +108,6 @@ export interface Pull {
   head_sha: string;
   url: string;
   checks_url: string;
-  graph_href: string;
   result: string;
   tone: Tone;
   headline: string;
@@ -114,6 +116,10 @@ export interface Pull {
   run_id: number;
   no_baseline: boolean;
   compared: boolean;
+}
+
+// Findings is a report's findings in the PR comment's groups, its evidence and its agent tasks.
+export interface Findings {
   violation_count: number;
   cycles: Cycle[] | null;
   other: Finding[] | null;
@@ -127,6 +133,11 @@ export interface Pull {
   tasks: string;
   task_count: number;
 }
+
+export type Pull = PullHead & Findings;
+
+// RepoFindings is the latest report of the default branch, for the overview.
+export type RepoFindings = Findings & { unavailable: string; branch: string; no_baseline: boolean };
 
 export interface Notice {
   notice?: string;
