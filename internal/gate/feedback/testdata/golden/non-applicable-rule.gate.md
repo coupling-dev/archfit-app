@@ -1,5 +1,3 @@
-## Archfit: Architecture gate passed
-
 - **Next:** Nothing to do.
 - Reason: `healthy` (architecture)
 - Detail: report 4444444444444444444444444444444444444444444444444444444444444444

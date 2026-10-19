@@ -1,5 +1,3 @@
-## Archfit: Architecture violations found · advisory
-
 This check does not block merging: the gate is advisory for this repository.
 
 - **Next:** Fix the blocking findings, then push.
@@ -8,7 +6,7 @@ This check does not block merging: the gate is advisory for this repository.
 
 ### Findings
 
-**4 rule violations** in 1 dependency cycle · 2 advisories · 6 accepted · 6 introduced by this pull request
+**4 rule violations** · 1 dependency cycle · 2 advisories · 6 accepted · 6 introduced by this pull request
 
 #### Dependency cycle among `pkg_chaos`, `pkg_container`, `pkg_util`
 
@@ -21,8 +19,9 @@ This check does not block merging: the gate is advisory for this repository.
 | `pkg_container` → `pkg_chaos` | `pkg/container/appfilter.go:4` | functional | cross_module | high |
 | `pkg_util` → `pkg_chaos` | `pkg/util/flagports.go:4` | functional | cross_module | high |
 
-- **Why:** Module pkg_chaos depends on pkg_container, and the two are in a dependency cycle among 3 declared modules
-- **Constraint:** Remove one direction of the module cycle; routing the dependency through another module keeps the cycle
+**Why:** Module pkg_chaos depends on pkg_container, and the two are in a dependency cycle among 3 declared modules
+
+**Constraint:** Remove one direction of the module cycle; routing the dependency through another module keeps the cycle
 
 <details>
 <summary>2 advisories · never block</summary>
@@ -32,7 +31,7 @@ This check does not block merging: the gate is advisory for this repository.
 | `bc/imbalanced_coupling` critical, new, introduced | `pkg_container` (`pkg/container/appfilter.go`) → `pkg_chaos` (`pkg/chaos/cliflags`) | `pkg/container/appfilter.go:4` | functional | cross_module | high |
 | `bc/imbalanced_coupling` critical, new, introduced | `pkg_util` (`pkg/util/flagports.go`) → `pkg_chaos` (`pkg/chaos/cliflags`) | `pkg/util/flagports.go:4` | functional | cross_module | high |
 
-- `bc/imbalanced_coupling` · **Why:** balanced coupling: functional integration strength × cross_module distance × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)
+`bc/imbalanced_coupling` · **Why:** balanced coupling: functional integration strength × cross_module distance × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)
 
 </details>
 
@@ -48,7 +47,7 @@ This check does not block merging: the gate is advisory for this repository.
 | `bc/imbalanced_coupling` critical, baseline, pre-existing | `pkg_runtime` (`pkg/runtime/containerd/addresses.go`) → `pkg_container` (`pkg/container`) | `pkg/runtime/containerd/addresses.go:15`, `pkg/runtime/containerd/client.go:12`, `pkg/runtime/containerd/iptables.go:7` and 12 more | functional | cross_module | high |
 | `bc/imbalanced_coupling` critical, baseline, pre-existing | `pkg_runtime` (`pkg/runtime/containerd/netem.go`) → `pkg_tc` (`pkg/tc`) | `pkg/runtime/containerd/netem.go:7`, `pkg/runtime/docker/netem.go:7` | functional | cross_module | high |
 
-- `bc/imbalanced_coupling` · **Why:** balanced coupling: functional integration strength × cross_module distance × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)
+`bc/imbalanced_coupling` · **Why:** balanced coupling: functional integration strength × cross_module distance × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)
 
 </details>
 

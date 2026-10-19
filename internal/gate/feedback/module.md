@@ -305,9 +305,10 @@ receipt marker. Block G is in the gate summary only.
    "Action required", "Architecture gate failing" or "Passed" **[default]**. On an advisory pull request without
    `action_required` the line "This check does not block merging: the gate is advisory for this repository." follows;
    in the comment it is a GitHub `> [!NOTE]` alert, in a check summary plain text (an alert there is not known to
-   render). Then `Reasons[0]`: `Next` first and bold, then code and category, then `Detail` (only when not empty).
-   The headline is also the title of both
-   check runs (`archfit/state` without a report: "Architecture state: no usable report").
+   render). Then `Reasons[0]`: `Next` first and bold (only when not empty), then code and category, then `Detail`
+   (only when not empty). The headline is also the title of both check runs (`archfit/state` without a report:
+   "Architecture state: no usable report"), so only the comment writes it as a `## Archfit:` heading: GitHub prints
+   the check title right above a check summary, and a heading there would repeat it.
 2. Further reasons, one line each (for example unevaluated rules beside a blocker).
 
    G. Blocking findings (gate summary only, and only when `Outcome.Reasons` holds `blocking_findings`: an outcome
@@ -647,7 +648,7 @@ type Settings struct {
 - **Shared knowledge**: every string in a `Report` is engine-authored, single-line and length-capped by the
   decoder, yet still untrusted for Markdown. `Origin` is shown on a finding line and in the task block; it is presentation only. `Locations` may be empty.
   A report has no exit code, no `needs_attention` flag, no per-dimension trust and no single validation command.
-  `Seam` is an opaque part of `Report` for this module and is not rendered. `Metric` values are shown only through `Delta`. `StateSchemaV1` is the schema constant the decoder enforced.
+  `Seam` is read only for the coupling columns of a dependency table (Strength, Distance, Volatility of the seam with the same modules). `Metric` values are shown only through `Delta`. `StateSchemaV1` is the schema constant the decoder enforced.
   `Finding.Active()` is the single definition of "active gate finding"; feedback calls it for the "blocking" label,
   the group order, block G and the annotation level. For display feedback also reads the finding statuses
   `baseline`, `waived` and `fixed` (debt and fixed groups; no annotation) and the coverage statuses `ok`, `absent` and

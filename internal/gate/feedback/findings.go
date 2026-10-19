@@ -26,8 +26,12 @@ func findingsBlock(r *report.Report, diagrams bool) string {
 	if r == nil {
 		return ""
 	}
+	compared := r.Comparison.OriginStatus == originComparable
 	var violations, advisories, debt, fixed []report.Finding
 	for _, f := range r.Findings {
+		if !compared { // origin is presentation only, and means nothing without a PR comparison
+			f.Origin = ""
+		}
 		switch {
 		case f.Active():
 			violations = append(violations, f)
@@ -52,7 +56,7 @@ func findingsBlock(r *report.Report, diagrams bool) string {
 		b.WriteString("\n\nNo findings reported.")
 		return b.String()
 	}
-	if t := tally(r, len(violations), len(advisories), len(debt), len(fixed), cycleCount(violations)); t != "" {
+	if t := tally(r, compared, len(violations), len(advisories), len(debt), len(fixed), cycleCount(violations)); t != "" {
 		b.WriteString("\n\n" + t)
 	}
 	if len(violations) > 0 { // the tally line counts them; no group title repeats it
@@ -72,25 +76,25 @@ func boolOrder(v bool) int {
 }
 
 // tally is the one line that counts every non-empty group, so the size of the problem reads before any detail. It
-// never says "no violations": a hard gate can fail without a finding.
-func tally(r *report.Report, violations, advisories, debt, fixed, cycles int) string {
+// never says "no violations": a hard gate can fail without a finding. cycles counts the dependency cycles among the
+// shown violations, as its own part: not every violation lies on one.
+func tally(r *report.Report, compared bool, violations, advisories, debt, fixed, cycles int) string {
 	var parts []string
 	if violations > 0 {
-		v := fmt.Sprintf("**%d rule %s**", violations, plural(violations, "violation", "violations"))
-		if cycles > 0 {
-			v += fmt.Sprintf(" in %d dependency %s", cycles, plural(cycles, "cycle", "cycles"))
-		}
-		parts = append(parts, v)
+		parts = append(parts, fmt.Sprintf("**%d rule %s**", violations, plural(violations, "violation", "violations")))
 	}
 	for _, g := range []struct {
 		n    int
 		noun string
-	}{{advisories, plural(advisories, "advisory", "advisories")}, {debt, "accepted"}, {fixed, "fixed"}} {
+	}{
+		{cycles, plural(cycles, "dependency cycle", "dependency cycles")},
+		{advisories, plural(advisories, "advisory", "advisories")}, {debt, "accepted"}, {fixed, "fixed"},
+	} {
 		if g.n > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", g.n, g.noun))
 		}
 	}
-	if r.Comparison.OriginStatus == "comparable" { // origin is presentation only, and only with a PR comparison
+	if compared {
 		n := 0
 		for _, f := range r.Findings {
 			if f.Origin == originIntroduced {
@@ -109,32 +113,35 @@ func plural(n int, one, many string) string {
 	return many
 }
 
-// writeViolations writes the first groupCap violations: each dependency cycle as one item with its directions in a
-// table (and a diagram), every other finding as a list item. Display only: the count is still of findings.
+// writeViolations writes the first groupCap violations: each dependency cycle first, as one item with its directions
+// in a table (and a diagram), then every other finding as a list item, under its own heading when a cycle came before,
+// so no list item reads as part of a cycle. Display only: the count is still of findings.
 func writeViolations(b *strings.Builder, fs []report.Finding, seams map[[2]string]report.Seam, diagrams bool) {
 	shown := fs[:min(len(fs), groupCap)] // a cycle partner past the cap would show past it
 	comp := cycles(shown)
-	done := map[int]bool{}
-	listOpen := false
+	n := 0
+	for _, c := range comp {
+		n = max(n, c+1)
+	}
+	members := make([][]report.Finding, n)
+	var plain []report.Finding
 	for i, f := range shown {
-		c := comp[i]
-		switch {
-		case c < 0:
-			if !listOpen {
-				b.WriteString("\n")
-				listOpen = true
-			}
+		if c := comp[i]; c >= 0 {
+			members[c] = append(members[c], f)
+		} else {
+			plain = append(plain, f)
+		}
+	}
+	for _, m := range members {
+		writeCycle(b, m, seams, diagrams)
+	}
+	if len(plain) > 0 {
+		if n > 0 {
+			b.WriteString("\n\n#### Other rule violations")
+		}
+		b.WriteString("\n")
+		for _, f := range plain {
 			writeFinding(b, f)
-		case !done[c]:
-			done[c] = true
-			listOpen = false
-			var members []report.Finding
-			for j, g := range shown {
-				if comp[j] == c {
-					members = append(members, g)
-				}
-			}
-			writeCycle(b, members, seams, diagrams)
 		}
 	}
 	if len(fs) > groupCap {
@@ -252,7 +259,11 @@ func writeCycle(b *strings.Builder, fs []report.Finding, seams map[[2]string]rep
 	b.WriteString("\n\n" + dependencyTable(fs, seams, false))
 	// The engine writes one Why per direction that only swaps the module names; the first one says it. Constraints
 	// and alternatives stay distinct per finding.
-	writeReasons(b, fs, "", true)
+	reasons := slices.Clone(fs)
+	for i := 1; i < len(reasons); i++ {
+		reasons[i].Why = ""
+	}
+	writeReasons(b, reasons, false)
 }
 
 // meta is severity, status and origin; origin only when every finding of the item shares it.
@@ -264,7 +275,10 @@ func meta(f report.Finding, all []report.Finding) string {
 	return strings.Join(parts, ", ")
 }
 
-const originIntroduced = "introduced"
+const (
+	originIntroduced = "introduced"
+	originComparable = "comparable" // Comparison.OriginStatus when the engine compared against the PR base
+)
 
 // originText reads the engine's origin token as a phrase. Display only: the App never decides on origin.
 func originText(o string) string {
@@ -379,28 +393,29 @@ func foldTable(b *strings.Builder, fs []report.Finding, seams map[[2]string]repo
 	if len(fs) > groupCap {
 		fmt.Fprintf(b, "\n\n- and %d more", len(fs)-groupCap)
 	}
-	writeReasons(b, shown, "Rule ", false)
+	writeReasons(b, shown, true)
 	b.WriteString("\n\n" + foldClose)
 }
 
 // writeReasons writes each distinct Why, Constraint and set of allowed alternatives once, in first-seen order: the
 // engine repeats one explanation for every finding of a rule, and repeating it hides the rest.
-func writeReasons(b *strings.Builder, fs []report.Finding, rulePrefix string, firstWhy bool) {
+func writeReasons(b *strings.Builder, fs []report.Finding, withRule bool) {
 	seen := map[string]bool{}
 	var lines []string
 	add := func(rule, label, s string) {
-		if s == "" || seen[label+"\x00"+s] {
+		key := rule + "\x00" + label + "\x00" + s // per rule: another rule's same text is its own explanation
+		if s == "" || seen[key] {
 			return
 		}
-		seen[label+"\x00"+s] = true
+		seen[key] = true
 		prefix := ""
-		if rulePrefix != "" {
+		if withRule {
 			prefix = code(rule) + " · "
 		}
-		lines = append(lines, "- "+prefix+"**"+label+":** "+s)
+		lines = append(lines, prefix+"**"+label+":** "+s)
 	}
-	for i, f := range fs {
-		if i == 0 || !firstWhy {
+	for _, f := range fs {
+		if f.Why != "" {
 			add(f.RuleID, "Why", text(f.Why))
 		}
 		if f.Constraint != "" {
@@ -408,8 +423,9 @@ func writeReasons(b *strings.Builder, fs []report.Finding, rulePrefix string, fi
 		}
 		add(f.RuleID, "Allowed alternatives", alternatives(f.AllowedAlternatives))
 	}
+	// Paragraphs, not a list: a list here would swallow a list that follows it.
 	if len(lines) > 0 {
-		b.WriteString("\n\n" + strings.Join(lines, "\n"))
+		b.WriteString("\n\n" + strings.Join(lines, "\n\n"))
 	}
 }
 

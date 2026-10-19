@@ -1,5 +1,3 @@
-## Archfit: Action required
-
 - **Next:** Install the required tool in the workflow, then re-run it.
 - Reason: `missing_required_coverage` (evidence)
 - Detail: layers/no_upward_imports

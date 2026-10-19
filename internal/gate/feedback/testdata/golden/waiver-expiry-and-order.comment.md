@@ -29,7 +29,7 @@ Also reported:
 | --- | --- | --- | --- | --- | --- |
 | `bc/imbalanced_coupling` medium, new | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | cross_module_same_owner | undeclared |
 
-- `bc/imbalanced_coupling` · **Why:** balanced coupling: functional integration strength × cross_module_same_owner distance × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
+`bc/imbalanced_coupling` · **Why:** balanced coupling: functional integration strength × cross_module_same_owner distance × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
 
 </details>
 
@@ -40,8 +40,9 @@ Also reported:
 | --- | --- | --- | --- | --- | --- |
 | `no_direct_b_dependency` medium, waived | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | cross_module_same_owner | undeclared |
 
-- `no_direct_b_dependency` · **Why:** Import from pkg/a/** to pkg/b is explicitly forbidden
-- `no_direct_b_dependency` · **Constraint:** Remove the dependency or move the code
+`no_direct_b_dependency` · **Why:** Import from pkg/a/** to pkg/b is explicitly forbidden
+
+`no_direct_b_dependency` · **Constraint:** Remove the dependency or move the code
 
 </details>
 

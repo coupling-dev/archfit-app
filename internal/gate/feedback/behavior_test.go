@@ -308,7 +308,11 @@ func TestUsefulWithoutLLM(t *testing.T) {
 			p := fixturePublication(t, cases[tt.fixture], headB)
 			comment := renderComment(p, t0, "", "")
 			mustContain(t, comment, tt.wants...)
-			mustContain(t, renderState(p), tt.wants[0], tt.wants[1])
+			if got, want := "## Archfit: "+stateTitle(p), tt.wants[0]; got != want {
+				t.Errorf("state title = %q, want %q", got, want)
+			}
+			mustContain(t, renderState(p), tt.wants[1])
+			mustNotContain(t, renderState(p), "## Archfit:")
 			if gaps := section(comment, headGaps); strings.Contains(gaps, "None reported") {
 				t.Errorf("missing data is hidden: %q", gaps)
 			}

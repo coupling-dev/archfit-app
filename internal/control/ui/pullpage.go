@@ -232,8 +232,8 @@ func fillFindings(body *pullBody, rep report.Report) {
 	}
 }
 
-// pairCycles folds the two directions of a module cycle (report.Finding.Reverses) into one item, as the PR comment
-// does. Display only: each finding keeps its ID and its locations.
+// pairCycles folds the two directions of a module cycle (report.Finding.Reverses) into one item. Display only: each
+// finding keeps its ID and its locations.
 func pairCycles(fs findingList) findingList {
 	out := make(findingList, 0, len(fs))
 	used := make([]bool, len(fs))

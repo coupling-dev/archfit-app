@@ -313,8 +313,9 @@ func TestTruncation(t *testing.T) {
 		if !utf8.ValidString(body) {
 			t.Errorf("%s is not valid UTF-8", name)
 		}
-		mustContain(t, body, "## Archfit: Architecture gate failing", "blocking_findings", reasonBlocking.Next, "missing_required_coverage", fixedTrustSentence, policyDigest)
+		mustContain(t, body, "blocking_findings", reasonBlocking.Next, "missing_required_coverage", fixedTrustSentence, policyDigest)
 	}
+	mustContain(t, comment, "## Archfit: Architecture gate failing")
 	for _, body := range []string{comment, state} {
 		mustContain(t, body, "Output truncated.")
 		mustContain(t, section(body, headGaps), "timed out", "non_comparable")
@@ -959,5 +960,70 @@ func TestCutClosesACodeFence(t *testing.T) {
 	}
 	if strings.Count(got, "```")%2 != 0 {
 		t.Errorf("cut left a code fence open:\n%s", got)
+	}
+}
+
+func TestOriginNeedsAComparablePullRequestBase(t *testing.T) {
+	introduced := report.Finding{ID: "1", Kind: "gate", RuleID: "r", Status: "new", Severity: "high", Origin: "introduced",
+		Edge: report.Edge{From: report.Endpoint{Module: "a"}, To: report.Endpoint{Module: "b"}}}
+	tests := []struct {
+		status string
+		shown  bool
+	}{
+		{"comparable", true},
+		{"unknown", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		t.Run("origin_status="+tt.status, func(t *testing.T) {
+			r := &report.Report{Findings: []report.Finding{introduced}, Comparison: report.Comparison{OriginStatus: tt.status}}
+			block := findingsBlock(r, true)
+			if got := strings.Contains(block, "introduced"); got != tt.shown {
+				t.Errorf("introduced shown = %v, want %v:\n%s", got, tt.shown, block)
+			}
+			if tt.shown {
+				mustContain(t, block, "**1 rule violation** · 1 introduced by this pull request", "high, new, introduced")
+			}
+		})
+	}
+}
+
+func TestCyclesAreCountedApartFromViolations(t *testing.T) {
+	cyc := func(rule, from, to string) report.Finding {
+		return report.Finding{ID: from + to, Kind: "gate", RuleID: rule, Status: "new", Severity: "high", Why: rule + " why",
+			Edge: report.Edge{From: report.Endpoint{Module: from}, To: report.Endpoint{Module: to}}}
+	}
+	block := findingsBlock(&report.Report{Findings: []report.Finding{cyc("plain", "x", "y"), cyc("c", "a", "b"), cyc("c", "b", "a")}}, true)
+	mustContain(t, block, "**3 rule violations** · 1 dependency cycle")
+	cycle, other := strings.Index(block, "#### Dependency cycle"), strings.Index(block, "#### Other rule violations")
+	plain := strings.Index(block, "`plain`")
+	if cycle < 0 || other < cycle || plain < other {
+		t.Errorf("want the cycle, then the other violations under their own heading:\n%s", block)
+	}
+}
+
+func TestSameReasonOfTwoRulesIsShownForEach(t *testing.T) {
+	adv := func(id, rule string) report.Finding {
+		return report.Finding{ID: id, Kind: "advisory", RuleID: rule, Status: "new", Severity: "low", Why: "same why",
+			Edge: report.Edge{From: report.Endpoint{Module: id}, To: report.Endpoint{Module: "z"}}}
+	}
+	block := findingsBlock(&report.Report{Findings: []report.Finding{adv("a", "r1"), adv("b", "r2"), adv("c", "r1")}}, true)
+	mustContain(t, block, "`r1` · **Why:** same why", "`r2` · **Why:** same why")
+	if got := strings.Count(block, "same why"); got != 2 {
+		t.Errorf("reason shown %d times, want once per rule:\n%s", got, block)
+	}
+}
+
+func TestEmptyNextStepIsNotWritten(t *testing.T) {
+	reason := reasonHealthy
+	reason.Next = ""
+	o := outcome(verdict.Success, reason)
+	p := Publication{Target: prTarget(headB), Identity: fullIdentity(), Outcome: o, Receipt: receiptFor(o, 1, 1), Trusted: trusted(settings.GateRequired)}
+	for name, body := range map[string]string{"comment": headBlock(p, true), "state": headBlock(p, false)} {
+		mustNotContain(t, body, "Next:")
+		mustContain(t, body, "- Reason: `healthy`")
+		if strings.HasPrefix(body, "\n") {
+			t.Errorf("%s starts with a blank line: %q", name, body)
+		}
 	}
 }

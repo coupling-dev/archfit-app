@@ -1,5 +1,3 @@
-## Archfit: Action required
-
 - **Next:** Re-run the Archfit workflow with the pinned action.
 - Reason: `report_invalid` (evidence)
 - Detail: report 4444444444444444444444444444444444444444444444444444444444444444

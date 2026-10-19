@@ -1,5 +1,3 @@
-## Archfit: Architecture violations found · advisory
-
 This check does not block merging: the gate is advisory for this repository.
 
 - **Next:** Fix the blocking findings, then push.

@@ -1,5 +1,3 @@
-## Archfit: Action required
-
 - **Next:** Use the pinned archfit-action version.
 - Reason: `unknown_engine_identity` (evidence)
 - Detail: image sha256:0000

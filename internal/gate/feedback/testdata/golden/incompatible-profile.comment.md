@@ -22,7 +22,7 @@
 | --- | --- | --- | --- | --- | --- |
 | `bc/imbalanced_coupling` medium, new | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | cross_module_same_owner | undeclared |
 
-- `bc/imbalanced_coupling` · **Why:** balanced coupling: functional integration strength × cross_module_same_owner distance × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
+`bc/imbalanced_coupling` · **Why:** balanced coupling: functional integration strength × cross_module_same_owner distance × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
 
 </details>
 

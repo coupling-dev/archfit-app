@@ -251,25 +251,33 @@ func renderComment(p Publication, now time.Time, waiver, link string) string {
 
 // headBlock is blocks 1 and 2: markers, verdict line, the deciding reason, then further reasons.
 func headBlock(p Publication, markers bool) string {
-	var b strings.Builder
+	// The comment carries the headline as its heading. A check summary does not: GitHub prints the check title, which
+	// is the headline, right above it.
+	var parts []string
 	if markers {
-		b.WriteString(commentMarker + "\n" + headMarker(p.Target.HeadSHA, p.Receipt) + "\n")
+		parts = append(parts, commentMarker+"\n"+headMarker(p.Target.HeadSHA, p.Receipt)+"\n## Archfit: "+headline(p))
 	}
-	b.WriteString("## Archfit: " + headline(p))
 	if advisory(p) && p.Outcome.Conclusion != verdict.ActionRequired && !suspended(p.Outcome) {
 		if markers { // a GitHub alert in the comment; a check summary keeps plain text
-			b.WriteString("\n\n> [!NOTE]\n> " + advisoryNote)
+			parts = append(parts, "> [!NOTE]\n> "+advisoryNote)
 		} else {
-			b.WriteString("\n\n" + advisoryNote)
+			parts = append(parts, advisoryNote)
 		}
 	}
+	var b strings.Builder
+	b.WriteString(strings.Join(parts, "\n\n"))
 	reasons := p.Outcome.Reasons
 	if len(reasons) == 0 {
 		return b.String()
 	}
+	if b.Len() > 0 {
+		b.WriteString("\n\n")
+	}
 	first := reasons[0]
-	fmt.Fprintf(&b, "\n\n- **Next:** %s", text(first.Next))
-	fmt.Fprintf(&b, "\n- Reason: %s (%s)", code(string(first.Code)), text(string(first.Category)))
+	if first.Next != "" { // a healthy outcome has no next step; "(none)" in bold would lead the comment
+		fmt.Fprintf(&b, "- **Next:** %s\n", text(first.Next))
+	}
+	fmt.Fprintf(&b, "- Reason: %s (%s)", code(string(first.Code)), text(string(first.Category)))
 	if first.Detail != "" {
 		fmt.Fprintf(&b, "\n- Detail: %s", text(first.Detail))
 	}

@@ -1,5 +1,3 @@
-## Archfit: Action required
-
 - **Next:** Refresh the baseline on the protected branch.
 - Reason: `baseline_not_comparable` (evidence)
 - Detail: measurement profile differs
