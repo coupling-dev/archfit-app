@@ -95,7 +95,9 @@ Minimum repository permission in brackets. `{o}/{n}` is only a lookup key for `S
 
 ### Status mapping
 
-- Not signed in: `303` to `/auth/login?return=<path>` for `GET`, `401` for `POST`.
+- Not signed in: `303` to `/auth/login?return=<path>` for `GET`, `401` for `POST`. A GitHub `401` on the user's token
+  (`api.ErrUserTokenRejected`, from `Authorize` or `UserRepos`) is treated the same way after `Sessions.End`: the cookie
+  is deleted, the answer is the not-signed-in one, and the log outcome is `signed_out`. It is never a `502`.
 - `ErrForbidden` from `Authorize`: `404` **[default]**, so that repository names are not confirmed to outsiders.
   `api.ErrNotFound` from any GitHub call a page does not handle itself: `404` with the same "Not found." wording.
 - Missing or wrong CSRF token: `403`. Body over 512 KB **[default]**: `413`.
@@ -142,8 +144,11 @@ type Sessions interface {
     LogoutHandler() http.Handler
     // User returns the signed-in user, or false.
     User(r *http.Request) (User, bool)
+    // End deletes the session cookie from the response.
+    End(w http.ResponseWriter)
     // Authorize returns the repository if the user has at least minPermission ("read" | "write" | "admin")
     // on it right now (cached for 60 seconds). The Repo carries the authoritative installation ID.
+    // A user token that GitHub rejects gives an error that wraps api.ErrUserTokenRejected: the caller ends the session.
     Authorize(ctx context.Context, u User, fullName, minPermission string) (Repo, error)
 }
 ```
@@ -488,7 +493,7 @@ func ValidHeadSHA(sha string) bool
   of `New`'s signature for this module. `Pull` is the github/api pull-request record; ui never sees one. The check names
   `archfit/state` and `archfit/gate` and the artifact name `archfit-report` are GitHub objects of the root contract.
 
-<!-- contract: RepoRef, Repo, ErrNotFound, ErrRateLimited — restated from internal/github/api/module.md -->
+<!-- contract: RepoRef, Repo, ErrNotFound, ErrRateLimited, ErrUserTokenRejected — restated from internal/github/api/module.md -->
 ```go
 // RepoRef addresses a repository inside an authenticated installation.
 // Callers build it only from a verified webhook, verified OIDC claims, or an authorized session.
@@ -507,6 +512,10 @@ type Repo struct {
 var (
     ErrNotFound    = errors.New("github: not found")
     ErrRateLimited = errors.New("github: rate limit exhausted") // returned after bounded backoff
+
+    // ErrUserTokenRejected is GitHub's 401 on a user's OAuth token: it expired or was revoked. The token cannot
+    // recover, so the call is not repeated and the user must sign in again.
+    ErrUserTokenRejected = errors.New("github: user token rejected")
 )
 ```
 
@@ -877,7 +886,8 @@ type OAuth interface {
    frame-ancestors 'none'` (no inline style, no inline script, no worker: every style is a class in `app.css`),
    `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` **[default]**.
 3. `http.MaxBytesReader` at 512 KB **[default]** on every `POST`.
-4. `Sessions.User`. Missing → login redirect or `401`.
+4. `Sessions.User`. Missing → login redirect or `401`. A later `ErrUserTokenRejected` from `Authorize` or `UserRepos`
+   calls `Sessions.End` and answers the same way.
 5. `POST` only: constant-time compare of form field `csrf` with the token derived from `User.Token`.
 6. Repository routes: `Sessions.Authorize(user, "{o}/{n}", min)`. The returned `Repo` is handed to the page handler as an
    argument and is the only repository identity a page may use.
@@ -1083,6 +1093,11 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Expected behavior**: `303` to login or `401` without a session; `404` below the minimum; success at and above it
   (`200` for a page and for Check, `303` for every other `POST`);
   `/static/` and `/schema/policy.json` answer without a session.
+- **Test name**: `TestExpiredGitHubTokenSignsOutInsteadOfBadGateway`
+  **Scenario**: a signed-in user whose GitHub token is rejected (`ErrUserTokenRejected`) on a repository page, a repository `POST`
+  and the overview; then any other GitHub error on the same routes.
+  **Expected behavior**: the rejected token gives `303` to `/auth/login?return=<path>` (`GET`) or `401` (`POST`), the session cookie
+  deleted, outcome `signed_out`, and the next request is a plain signed-out one. Any other error stays `502` and keeps the cookie.
 - **Test name**: `TestPullPageShowsTheReportOfItsCheck`
   **Scenario**: no check on the head; a check whose external_id names a run whose artifact matches its digest; one whose digest does not match; an expired artifact; run 0; an unknown pull request.
   **Expected behavior**: "no result yet"; the check title as headline, advisory mode, the violation, the no-baseline and no-attribution line, the run; the mismatch wording and no finding; the expired wording; the no-upload wording; `404`. Also: an `action_required` run over a matching old report shows the action-required wording and no finding; an undecodable report shows "report unavailable"; of two check runs the higher ID wins; "added by this PR" appears only with `origin_status: comparable` and `origin: introduced`.

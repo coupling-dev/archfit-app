@@ -108,22 +108,26 @@ func (s *sessions) askFailed(ctx context.Context, u User, start time.Time, step 
 	case errors.Is(err, api.ErrNotFound):
 		s.logAnswer(ctx, slog.LevelInfo, u, api.Repo{}, "not_found", start)
 		return ErrForbidden
+	case errors.Is(err, api.ErrUserTokenRejected):
+		// An expired or revoked token is the user's to renew, not a fault of ours.
+		s.logAnswer(ctx, slog.LevelInfo, u, api.Repo{}, "token_rejected", start)
 	case errors.Is(err, api.ErrRateLimited):
 		s.logAnswer(ctx, slog.LevelWarn, u, api.Repo{}, "rate_limited", start)
 	default:
-		s.logAnswer(ctx, slog.LevelWarn, u, api.Repo{}, "github_error", start)
+		// The step and the GitHub status say where it failed; the error text is not logged.
+		s.logAnswer(ctx, slog.LevelWarn, u, api.Repo{}, "github_error", start, "step", step, "status", api.Status(err))
 	}
 	return fmt.Errorf("session: %s: %w", step, err)
 }
 
-func (s *sessions) logAnswer(ctx context.Context, level slog.Level, u User, repo api.Repo, outcome string, start time.Time) {
-	slog.Default().Log(ctx, level, "session: authorize",
+func (s *sessions) logAnswer(ctx context.Context, level slog.Level, u User, repo api.Repo, outcome string, start time.Time, extra ...any) {
+	slog.Default().Log(ctx, level, "session: authorize", append([]any{
 		"user_id", u.UserID,
 		"repo_id", repo.ID,
 		"installation_id", repo.InstallationID,
 		"outcome", outcome,
 		"duration_ms", s.now().Sub(start).Milliseconds(),
-	)
+	}, extra...)...)
 }
 
 func (s *sessions) cacheGet(key cacheKey) (cacheEntry, bool) {

@@ -25,7 +25,19 @@ type Repo struct {
 var (
 	ErrNotFound    = errors.New("github: not found")
 	ErrRateLimited = errors.New("github: rate limit exhausted") // returned after bounded backoff
+
+	// ErrUserTokenRejected is GitHub's 401 on a user's OAuth token: it expired or was revoked. The token cannot
+	// recover, so the call is not repeated and the user must sign in again.
+	ErrUserTokenRejected = errors.New("github: user token rejected")
 )
+
+// Status returns the HTTP status of a GitHub answer that mapped to no sentinel, or 0 for any other error.
+func Status(err error) int {
+	if se, ok := errors.AsType[*statusError](err); ok {
+		return se.status
+	}
+	return 0
+}
 
 // Permanent reports whether err is a GitHub answer that the same call cannot change when it is repeated:
 // ErrNotFound, or a 4xx status other than 401, 403, 408, 409 and 429. A 403 stays retryable because a secondary

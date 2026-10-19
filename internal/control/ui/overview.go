@@ -39,7 +39,9 @@ func (s *server) overview(w http.ResponseWriter, r *http.Request) {
 
 	repos, err := s.gh.users.UserRepos(r.Context(), u.Token)
 	if err != nil {
-		s.fail(w, r, sc, err)
+		if !s.endIfTokenRejected(w, r, err) {
+			s.fail(w, r, sc, err)
+		}
 		return
 	}
 	sort.Slice(repos, func(i, j int) bool { return repos[i].FullName < repos[j].FullName })

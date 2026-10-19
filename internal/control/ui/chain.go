@@ -118,12 +118,7 @@ func (s *server) signedIn(next func(http.ResponseWriter, *http.Request, session.
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		u, ok := s.sessions.User(r)
 		if !ok {
-			logOf(r).outcome = "signed_out"
-			if r.Method == http.MethodPost {
-				http.Error(w, "not signed in", http.StatusUnauthorized)
-				return
-			}
-			http.Redirect(w, r, "/auth/login?return="+url.QueryEscape(r.URL.RequestURI()), http.StatusSeeOther)
+			signedOut(w, r)
 			return
 		}
 		logOf(r).userID = u.UserID
@@ -141,6 +136,27 @@ func (s *server) signedIn(next func(http.ResponseWriter, *http.Request, session.
 	})
 }
 
+// signedOut answers a request that has no usable session: 401 on POST, else a redirect to sign in that returns here.
+func signedOut(w http.ResponseWriter, r *http.Request) {
+	logOf(r).outcome = "signed_out"
+	if r.Method == http.MethodPost {
+		http.Error(w, "not signed in", http.StatusUnauthorized)
+		return
+	}
+	http.Redirect(w, r, "/auth/login?return="+url.QueryEscape(r.URL.RequestURI()), http.StatusSeeOther)
+}
+
+// endIfTokenRejected ends the session and answers as signed out when GitHub rejected the user's token.
+// It reports whether it answered.
+func (s *server) endIfTokenRejected(w http.ResponseWriter, r *http.Request, err error) bool {
+	if !errors.Is(err, api.ErrUserTokenRejected) {
+		return false
+	}
+	s.sessions.End(w)
+	signedOut(w, r)
+	return true
+}
+
 // formError keeps the body-limit error apart from every other unreadable form.
 func formError(err error) error {
 	var tooLarge *http.MaxBytesError
@@ -156,7 +172,9 @@ func (s *server) repo(minPermission string, next pageFunc) http.Handler {
 		sc := scope{user: u}
 		repo, err := s.sessions.Authorize(r.Context(), u, r.PathValue("o")+"/"+r.PathValue("n"), minPermission)
 		if err != nil {
-			s.fail(w, r, sc, err)
+			if !s.endIfTokenRejected(w, r, err) {
+				s.fail(w, r, sc, err)
+			}
 			return
 		}
 		l := logOf(r)
