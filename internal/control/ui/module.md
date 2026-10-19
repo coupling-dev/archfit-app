@@ -94,6 +94,9 @@ package does not know is `422`, so a body cannot name a repository, a user or an
 
 - `GET /api/session` — `{login, csrf}` of the signed-in user.
 - `GET /api/repos` — `{repos: [{full_name, state, tone, reason}], truncated}`: the overview, first 100 by name.
+- `GET /api/repos/{o}/{n}/pulls/{number}` [read] — the pull request page: header, result, and the report's findings
+  in the groups and words of the PR comment (below, Pages). `404` for a number that is not a positive integer or not a
+  pull request of the repository.
 - `GET /api/repos/{o}/{n}/overview` [read] — default-branch state, open pull requests with their result, setup steps,
   onboarding progress, entitlement banner, history links, and whether the user may start onboarding or discovery.
   `tone` (`success` | `attention` | `danger` | `accent` | `neutral`) colours a state word; the word is always shown.
@@ -113,8 +116,8 @@ Server-rendered pages:
 - `GET /r/{o}/{n}/graph` [read] — graph page.
 - `GET /r/{o}/{n}/pull/{number}/graph` [read] — the graph of the report the pull request page shows; the same `404`
   rule for the number.
-- `GET /r/{o}/{n}/pull/{number}` [read] — pull request page; a number that is not a positive integer or not a pull
-  request of the repository answers `404`.
+- `GET /r/{o}/{n}/pull/{number}` [read] — the shell; a number that is not a positive integer answers `404` here, a
+  number that is no pull request of the repository answers `404` from the API.
 - `POST /r/{o}/{n}/assist` [write] — form `branch`, `head_sha`, `content`, `instruction`, `mode`.
 - `GET /r/{o}/{n}/consent`, `POST /r/{o}/{n}/consent` [admin] — form `kind`, `action` (`record` | `revoke`).
 
@@ -1002,14 +1005,21 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   `Artifact(run_id, "archfit-report", report.MaxBytes)`, and the page shows it only when the SHA-256 of the bytes equals
   the digest in the id: a report is never shown beside a check it did not produce. States, each with fixed wording and a
   link to the checks on GitHub: no check yet, action required, no upload, report expired (`ErrNotFound`, GitHub retention), report does
-  not match its check, report unavailable (decode error). With a report: rule violations open (active gate findings,
-  and any status this version does not know), advisories and accepted debt folded, at most 50 per group with the rest
-  counted, 3 locations per finding with the rest folded, the two directions of a module cycle (`report.Finding.Reverses`)
-  as one item with each direction's locations in every group, group headings counting findings rather than items, a folded line "No baseline in this run · PR attribution
-  unavailable · customer-attested" from `gate_reference.baseline_present` and `comparison.origin_status`, "added by this
-  PR" only when `origin_status` is `comparable` and the finding's `origin` is `introduced`, the exact `agent_tasks`
-  array, and the nine dimensions folded, with every dimension's unknown facts in one folded "To measure more" group. Engine strings are template data, escaped by `html/template`.
-  Two tabs above the result, **Findings** (this page) and **Graph** (the pull request graph).
+  not match its check, report unavailable (decode error). With a report, in the groups and words of the PR comment:
+  rule violations open (active gate findings, and any status this version does not know), each dependency cycle among
+  them (`report.Cycles`, the comment's grouping) as one card with a drawing of the cycle (one box per module, one
+  arrow per direction labelled with its location count, styled as the comment's diagram), a row per direction with
+  "This PR", its locations and the seam's strength, distance (`report.DistanceWords`) and volatility, then the reason
+  once and each distinct repair once; every other violation as its own card. Advisories and accepted debt each one
+  folded table with each distinct reason once. At most 50 per group with the rest counted (group counts are of
+  findings), 3 locations per finding with the rest folded. "This PR" only when `origin_status` is `comparable`: a
+  cycle direction reads `report.PairOrigin` (the comment's rule, so the comment, this page and the graph agree), any
+  other finding its own `origin` (`introduced` is added, `pre_existing` existed before). Badges for "no baseline"
+  (`gate_reference.baseline_present`), "compared with base" or "PR attribution unavailable", and "customer-attested";
+  the exact `agent_tasks` array with a copy button; the nine dimensions with readable names (the engine key as a
+  tooltip) and every unknown fact in one folded "To measure more" group. Engine strings are JSON data that the web
+  app renders as text. Two tabs above the result, **Findings** (this page) and **Graph** (the pull request graph).
+  Links in API answers are shown only when they point into the App or to `https://github.com/` (`safeHref`).
 - Pull request graph: the lookup of the pull request page, unchanged (one function serves both, so they always show
   the same report and the same states with the same wording); never `LatestRun` or the default branch's report. The
   policy text for module names, layers and lines: `.archfit.yaml` at the head SHA, then at the base branch, the first
@@ -1149,13 +1159,15 @@ their interfaces except where a test says otherwise. The clock is injected.
 - **Test name**: `TestStatusPageShowsBranchPullsAndSetup`
   **Scenario**: stage `gate_advisory` with a default-branch check and one open pull request; stage `workflow_merged`; `OpenPulls` failing; 23 more open pull requests.
   **Expected behavior**: through `/api/repos/{o}/{n}/overview`: the default branch, its title and tone, the pull request linked to its page with its check title, the current and done steps, the rehearse advice; no pull request or state lookup before a report, also at `policy_merged`, where "First report" is not done; the ruleset advice at `gate_required`; the fixed wording and a `200`; "4 more" and 21 `CheckRuns` calls.
-- **Test name**: `TestPullPageFoldsACycleAndListsWhatToMeasure`
-  **Scenario**: a report with a cycle's two directions, one other violation, an accepted cycle, and a coupling unknown fact.
-  **Expected behavior**: one cycle item with both directions' locations, the other violation alone, one accepted cycle
-  item, "Rule violations (3)" and "Accepted debt (2)", and "To measure more (1)" with the fact.
 - **Test name**: `TestPullPageNumberMustBeAPull`, `TestPullPageReadsTheGateModeOfTheBase`
-  **Scenario**: numbers `0`, `-4`, `x`, `4x`; a pull request whose base branch requires the gate while the default branch is advisory.
-  **Expected behavior**: `404` each; "gate: required".
+  **Scenario**: numbers `0`, `-4`, `x`, `4x`, and `5`, no pull request, on the page, the API and the graph; a pull request whose base branch requires the gate while the default branch is advisory.
+  **Expected behavior**: `404` each (`5` on the page only from the API); `required` true.
+- **Test name**: `TestPullPageGroupsCyclesAsTheCommentDoes`, `TestPullPageCapsEachGroup`
+  **Scenario**: a cycle whose second direction another rule's `pre_existing` finding names, a plain violation, an
+  accepted pair, a seam on one direction, two dimensions; then 57 advisories.
+  **Expected behavior**: one cycle with both directions, each repair once, origins "" and existing (`report.PairOrigin`),
+  the seam's words on its direction only; the rest as plain violations with their own origin; dimensions in engine
+  order with readable names; 50 rows, a count of 57 and 7 omitted.
 - **Test name**: `TestParseExternalID`
   **Scenario**: a pilot external_id, a bare digest, run 0, another version, a non-numeric run, empty.
   **Expected behavior**: run and bare hex digest for v1 ids; not ok otherwise.
@@ -1313,11 +1325,14 @@ their interfaces except where a test says otherwise. The clock is injected.
 ### Web app tests (`web/`, `make web-check`, CI job "Web app")
 
 - `svelte-check --fail-on-warnings`: types of every component and module.
-- Vitest (`web/src/lib/*.test.ts`): routes (a `.` or `..` owner or name is no route), escaped links and API paths,
+- ESLint (`web/eslint.config.js`): the recommended JavaScript, TypeScript and Svelte rules; `{@html}` is an error.
+- Vitest (`web/src/lib/*.test.ts`): routes (a `.` or `..` owner or name is no route, a pull request number is a
+  positive integer), `safeHref` (only App paths and `https://github.com/`), the cycle drawing's layout and arrow styles, escaped links and API paths,
   the sign-in return link, the theme with and without storage, the API client's CSRF header, error sentences and
   fallbacks.
 - `web/scripts/size.mjs`: the first-load budget above.
 - Playwright smoke (`web/e2e/smoke.spec.ts`): the production build behind `vite preview` with `web/csp.txt` as its
   header and `/api` mocked in the browser. Landing, repositories, overview, starting onboarding and discovery, and the
-  theme toggle; every page has no `securitypolicyviolation` event and no axe violation in light and in dark; the
+  theme toggle, and the pull request page (the cycle drawing, the folds, copying the agent tasks, a link that is
+  neither the App nor GitHub not rendered, a page without a report); every page has no `securitypolicyviolation` event and no axe violation in light and in dark; the
   onboarding write carries the CSRF header and a JSON body.

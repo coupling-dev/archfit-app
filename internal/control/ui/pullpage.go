@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"slices"
@@ -32,33 +31,8 @@ const (
 	findingsPerList          = 50 // per group, the rest counted
 )
 
-// pullFinding is one finding as the page shows it. Engine strings reach the template as data, never as markup.
-type pullFinding struct {
-	report.Finding
-	Shown, Folded []report.Location
-	Introduced    bool         // the engine compared against the base and says this pull request added it
-	Reverse       *pullFinding // the other direction of a module cycle, shown in the same item; nil otherwise
-}
-
-// unknownRow is one fact the engine could not measure, under "To measure more".
-type unknownRow struct {
-	Dimension, Fact, Reason string
-}
-
-// findingList is one group of the page. Its heading counts findings, as the PR comment does, not items.
-type findingList []pullFinding
-
-// Findings counts the findings in the list: an item holding a cycle holds two.
-func (l findingList) Findings() int {
-	n := len(l)
-	for _, f := range l {
-		if f.Reverse != nil {
-			n++
-		}
-	}
-	return n
-}
-
+// pullBody is what readPull found: the pull request, its archfit/state check, and why there is no report when there is
+// none. The pull request page and its graph both start from it.
 type pullBody struct {
 	Pull        api.Pull
 	Unavailable string
@@ -68,45 +42,12 @@ type pullBody struct {
 	Conclusion string // of archfit/state: neutral, success, action_required, …
 	Required   bool   // the protected settings require archfit/gate
 	RunID      int64
-
-	NoBaseline bool // the engine loaded no baseline: "new" means not accepted, not "added by this pull request"
-	Compared   bool // the engine compared against the base branch, so Introduced is meaningful
-
-	Violations, Advisories, Accepted findingList // a cycle's two directions are one item
-	Omitted                          int         // findings past findingsPerList, all groups together
-	Dimensions                       []report.Dimension
-	Unknowns                         []unknownRow // every dimension's unknown facts, in the dimension order
-	Tasks                            string       // the exact agent_tasks array, indented
-	TaskCount                        int
-}
-
-func (s *server) pullPage(w http.ResponseWriter, r *http.Request, sc scope) {
-	number, ok := pullNumber(r)
-	if !ok {
-		s.fail(w, r, sc, api.ErrNotFound)
-		return
-	}
-	body, err := s.buildPull(r.Context(), sc, number)
-	if err != nil {
-		s.fail(w, r, sc, err)
-		return
-	}
-	s.render(w, r, http.StatusOK, "pull", s.newPage(r, sc, "Pull request #"+strconv.Itoa(number), body))
 }
 
 // pullNumber reads the {number} path value: a positive integer, or not a pull request.
 func pullNumber(r *http.Request) (int, bool) {
 	number, err := strconv.Atoi(r.PathValue("number"))
 	return number, err == nil && number > 0
-}
-
-func (s *server) buildPull(ctx context.Context, sc scope, number int) (pullBody, error) {
-	body, rep, err := s.readPull(ctx, sc, number)
-	if err != nil || rep == nil {
-		return body, err
-	}
-	fillFindings(&body, *rep)
-	return body, nil
 }
 
 // readPull reads the pull request, the archfit/state check on its head, and the report of the run that check names.
@@ -190,67 +131,4 @@ func parseExternalID(id string) (runID int64, digest string, ok bool) {
 		return 0, "", false
 	}
 	return runID, strings.TrimPrefix(parts[2], "sha256:"), true
-}
-
-func fillFindings(body *pullBody, rep report.Report) {
-	body.NoBaseline = rep.GateReference == nil || !rep.GateReference.BaselinePresent
-	body.Compared = rep.Comparison.OriginStatus == originComparable
-	add := func(list *findingList, f report.Finding) {
-		if len(*list) == findingsPerList {
-			body.Omitted++
-			return
-		}
-		pf := pullFinding{Finding: f, Introduced: body.Compared && f.Origin == "introduced"}
-		pf.Shown = f.Locations[:min(len(f.Locations), locationsShown)]
-		pf.Folded = f.Locations[len(pf.Shown):]
-		*list = append(*list, pf)
-	}
-	for _, f := range rep.Findings {
-		switch {
-		case f.Status == "fixed":
-		case f.Status == "baseline" || f.Status == "waived":
-			add(&body.Accepted, f)
-		case f.Kind == "advisory" && (f.Status == "new" || f.Status == "expired_waiver"):
-			add(&body.Advisories, f)
-		default: // active gate findings, and any status this version does not know: never hidden
-			add(&body.Violations, f)
-		}
-	}
-	body.Violations, body.Advisories, body.Accepted = pairCycles(body.Violations), pairCycles(body.Advisories), pairCycles(body.Accepted)
-	for _, key := range []string{"intent", "structure", "modularity", "coupling", "change_locality", "complexity", "testability", "operations", "drift"} {
-		if d, ok := rep.Dimensions[key]; ok {
-			d.Name = key
-			body.Dimensions = append(body.Dimensions, d)
-			for _, u := range d.Unknown {
-				body.Unknowns = append(body.Unknowns, unknownRow{Dimension: key, Fact: u.Fact, Reason: u.Reason})
-			}
-		}
-	}
-	if len(rep.AgentTasks) > 0 {
-		raw, _ := json.MarshalIndent(rep.AgentTasks, "", "  ")
-		body.Tasks, body.TaskCount = string(raw), len(rep.AgentTasks)
-	}
-}
-
-// pairCycles folds the two directions of a module cycle (report.Finding.Reverses) into one item. Display only: each
-// finding keeps its ID and its locations.
-func pairCycles(fs findingList) findingList {
-	out := make(findingList, 0, len(fs))
-	used := make([]bool, len(fs))
-	for i := range fs {
-		if used[i] {
-			continue
-		}
-		f := fs[i]
-		for j := i + 1; j < len(fs); j++ {
-			g := fs[j]
-			if !used[j] && f.Reverses(g.Finding) {
-				used[j] = true
-				f.Reverse = &g
-				break
-			}
-		}
-		out = append(out, f)
-	}
-	return out
 }

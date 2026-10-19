@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -274,41 +276,72 @@ func TestWording(t *testing.T) {
 	})
 }
 
-func TestPullPageFoldsACycleAndListsWhatToMeasure(t *testing.T) {
-	dir := func(from, to, file string) report.Finding {
+func TestPullPageGroupsCyclesAsTheCommentDoes(t *testing.T) {
+	dir := func(from, to, file, origin string) report.Finding {
 		return report.Finding{ID: from + to, Kind: "gate", RuleID: "no-module-cycles", Status: "new", Severity: "high", Why: "a cycle",
+			Constraint: "Break " + from + " → " + to, Origin: origin,
 			Edge:      report.Edge{From: report.Endpoint{Module: from}, To: report.Endpoint{Module: to}},
-			Locations: []report.Location{{File: file, Line: 3}}}
+			Locations: []report.Location{{File: file, Line: 3}, {File: file}}}
 	}
 	accepted := func(f report.Finding) report.Finding { f.Status = "baseline"; return f }
+	existing := dir("pkg_container", "pkg_chaos", "old.go", "pre_existing")
+	existing.ID, existing.RuleID = "other-rule", "layering" // the base had this dependency: another rule says so
 	rep := report.Report{
-		Findings: []report.Finding{dir("pkg_chaos", "pkg_container", "chaos.go"), dir("pkg_container", "pkg_chaos", "flags.go"), dir("api", "db", "api.go"),
-			accepted(dir("x", "y", "x.go")), accepted(dir("y", "x", "y.go"))},
+		Comparison: report.Comparison{OriginStatus: originComparable},
+		Findings: []report.Finding{
+			dir("pkg_chaos", "pkg_container", "chaos.go", "introduced"), dir("pkg_container", "pkg_chaos", "flags.go", "introduced"),
+			dir("api", "db", "api.go", "introduced"), existing,
+			accepted(dir("x", "y", "x.go", "")), accepted(dir("y", "x", "y.go", "")),
+		},
+		Seams: []report.Seam{{FromModule: "pkg_chaos", ToModule: "pkg_container", Strength: "model", Distance: "cross_module", Volatility: "high"}},
 		Dimensions: map[string]report.Dimension{
-			"coupling": {Status: "partial", Unknown: []report.UnknownFact{{Fact: "coupling volatility", Reason: "volatility is undeclared"}}},
+			"coupling":        {Status: "partial", Coverage: report.DimensionCoverage{Observed: 3, Total: 4, Basis: "modules"}, Unknown: []report.UnknownFact{{Fact: "coupling volatility", Reason: "volatility is undeclared"}}},
+			"change_locality": {Status: "measured"},
 		},
 	}
-	var body pullBody
-	fillFindings(&body, rep)
-	if len(body.Violations) != 2 || body.Violations[0].Reverse == nil || body.Violations[0].Reverse.Edge.From.Module != "pkg_container" || body.Violations[1].Reverse != nil {
-		t.Fatalf("violations = %+v, want the cycle as one item and api -> db alone", body.Violations)
+	var b pullJSON
+	fillFindings(&b, rep)
+	if b.ViolationCount != 4 || b.AcceptedCount != 2 || len(b.Accepted) != 2 {
+		t.Fatalf("counts = %d violations, %d accepted (%d rows)", b.ViolationCount, b.AcceptedCount, len(b.Accepted))
 	}
-	if len(body.Accepted) != 1 || body.Accepted[0].Reverse == nil {
-		t.Fatalf("accepted = %+v, want the accepted cycle as one item", body.Accepted)
+	if len(b.Cycles) != 1 || !slices.Equal(b.Cycles[0].Modules, []string{"pkg_chaos", "pkg_container"}) || !b.Cycles[0].Violation {
+		t.Fatalf("cycles = %+v, want one between pkg_chaos and pkg_container", b.Cycles)
 	}
-	if len(body.Unknowns) != 1 || body.Unknowns[0].Dimension != "coupling" {
-		t.Fatalf("unknowns = %+v", body.Unknowns)
+	cy := b.Cycles[0]
+	if len(cy.Directions) != 2 || len(cy.Fixes) != 2 || cy.Why != "a cycle" {
+		t.Errorf("cycle = %+v, want two directions and each repair once", cy)
 	}
-	var out strings.Builder
-	if err := parsePages()["pull"].ExecuteTemplate(&out, "layout", page{Body: body}); err != nil {
-		t.Fatalf("render: %v", err)
+	d0, d1 := cy.Directions[0], cy.Directions[1]
+	if d0.Origin != "" || d1.Origin != report.PairExisting {
+		t.Errorf("origins = %q, %q; want the comment's rule: unknown, then existing", d0.Origin, d1.Origin)
 	}
-	html := out.String()
-	for _, want := range []string{"cycle <code>pkg_chaos</code> ⇄ <code>pkg_container</code>", "<code>chaos.go:3</code>", "<code>flags.go:3</code>",
-		`id="measure-more"`, "To measure more (1)", "coupling volatility", "Rule violations (3)", "Accepted debt (2)"} {
-		if !strings.Contains(html, want) {
-			t.Errorf("page lacks %q", want)
-		}
+	if !slices.Equal(d0.Locations, []string{"chaos.go:3", "chaos.go"}) || d0.Strength != "model" || d0.Distance != "across modules" || d1.Strength != "" {
+		t.Errorf("direction = %+v", d0)
+	}
+	var other []string
+	for _, f := range b.Other {
+		other = append(other, f.From+">"+f.To+":"+f.Origin)
+	}
+	if !slices.Equal(other, []string{"api>db:added", "pkg_container>pkg_chaos:existing"}) {
+		t.Errorf("other violations = %v", other)
+	}
+	if len(b.Dimensions) != 2 || b.Dimensions[0].Name != "Coupling" || b.Dimensions[0].Coverage != "3 / 4 modules" || b.Dimensions[1].Key != "change_locality" {
+		t.Errorf("dimensions = %+v, want the engine order with readable names", b.Dimensions)
+	}
+	if len(b.Unknowns) != 1 || b.Unknowns[0].Dimension != "Coupling" {
+		t.Errorf("unknowns = %+v", b.Unknowns)
+	}
+}
+
+func TestPullPageCapsEachGroup(t *testing.T) {
+	var rep report.Report
+	for i := range findingsPerList + 7 {
+		rep.Findings = append(rep.Findings, report.Finding{ID: strconv.Itoa(i), Kind: "advisory", Status: "new", RuleID: "r"})
+	}
+	var b pullJSON
+	fillFindings(&b, rep)
+	if len(b.Advisories) != findingsPerList || b.AdvisoryCount != findingsPerList+7 || b.Omitted != 7 {
+		t.Errorf("%d rows of %d, %d omitted", len(b.Advisories), b.AdvisoryCount, b.Omitted)
 	}
 }
 
