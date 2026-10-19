@@ -27,6 +27,10 @@ Imbalanced coupling · **Why:** balanced coupling: functional integration streng
 <details>
 <summary>Evidence, inputs and validation</summary>
 
+### Decision
+
+- `blocking_findings` (architecture): 1 blocking finding. Next: Fix the blocking findings, then push.
+
 ### Dimensions
 
 | Dimension | Status | Coverage | Confidence | Gate |
@@ -59,10 +63,6 @@ Imbalanced coupling · **Why:** balanced coupling: functional integration streng
 - Dimension `drift`, unknown fact: admissible persisted reference — no comparable architecture-state reference is stored
 - Dimension `drift`, unknown fact: complete two-sided seam identity — two-sided seam identity cannot be compared without an admissible persisted reference
 - Baseline comparison non_comparable: no baseline file was loaded
-
-### Decision
-
-- `blocking_findings` (architecture): 1 blocking finding. Next: Fix the blocking findings, then push.
 
 ### Inputs and identity
 

@@ -381,8 +381,9 @@ receipt marker. Block G is in the gate summary only.
    has a value, where (at most 3 locations, then "and N more"), and, when the report has a `Seam` with the same
    `FromModule` and `ToModule` for any row, the Balanced Coupling dimensions of that seam: integration strength
    (`Seam.Strength`), distance (`Seam.Distance` in the book's words: `same_module` "same module", `cross_module`
-   "across modules", `cross_module_same_owner` "across modules, same owner", `cross_deploy_unit` "across services",
-   `external` "external", any other token as written), volatility (`Seam.Volatility`); empty for a row without a
+   "across modules", `cross_module_same_owner` (engine v2) "across modules, same owner", `cross_module_different_owner`
+   "across modules, different owners", `cross_deploy_unit` "across services", `declared_external` "external", any
+   other token, `unknown` included, as written), volatility (`Seam.Volatility`); empty for a row without a
    seam. A `|` in a cell is escaped. Under a fold's table each distinct `Why`, `Constraint` and set of
    `AllowedAlternatives` is written once with its rule name, in first-seen order: the engine repeats one explanation
    for every finding of a rule. Engine-authored text (`Why`, `Constraint`) is never reworded.
@@ -391,7 +392,8 @@ receipt marker. Block G is in the gate summary only.
    `Origin` as `added` (`introduced`), `existing` (`pre_existing`) or the token. For a cycle direction, the cycle's
    own findings cannot tell (a new cycle is introduced in every direction, also those the base had), so the column
    reads the other findings of the report on the same module pair: `existing` when one is `pre_existing` (the base
-   had the dependency), else `added` when one is `introduced`, else empty. "added", not "new": without a baseline
+   had the dependency), else `added` when one that lies on no dependency cycle is `introduced` (the same new cycle under
+   another rule is introduced in every direction too, so it is no evidence), else empty. "added", not "new": without a baseline
    every finding has status `new`. Limit: an introduced finding on a pair is not proof that the base lacked every
    import between the two modules; a pre-existing finding on the pair wins.
 
@@ -450,7 +452,8 @@ first trusted digest) and of `gate/sweep` (always the first trusted digest):
 The mismatch codes are `baseline_mismatch` and `labels_mismatch`. "stated by the producer" is never printed for a
 digest the App wrote itself. An upload always has an identity: the envelope decoder requires every identity field.
 
-Folds: blocks 6 to 9 are wrapped in one `<details>` with the summary "Evidence, inputs and validation", and block 10
+Folds: blocks 6 to 9 (in the comment led by the Decision block of item 1) are wrapped in one `<details>` with the
+summary "Evidence, inputs and validation", and block 10
 in one with "For coding agents"; blocks 1 to 5 and G stay open. Agents read the raw Markdown, so the task markers
 parse inside the fold. The waiver notice is placed before the first fold or `###` heading, never inside a fold. The
 size budget reserves the fold lines first.
@@ -469,7 +472,7 @@ state run carries the first 50, and further updates of the same run carry the re
 summary. GitHub appends the annotations of each request, so annotations are only ever sent to a run this
 publication created.
 
-Size: summaries and the comment stay at or under 65 535 bytes. The receipt marker and blocks 1, 2, 7, 8 are
+Size: summaries and the comment stay at or under 65 535 bytes. The receipt marker, blocks 1, 2, 7, 8 and the comment's Decision block are
 budgeted first and never cut. Of the rest, the budget is handed out in this order: block 6, block 9, block 5, block 10. Block G takes the place of block 5 in the gate summary and is cut the same way. Block 6 is cut at a line end, like block 5, when the never-cut blocks leave it too little room; block 9 takes
 at most its own budget (below) before block 5 gets anything, so a long finding list cannot push the validation
 commands out. Then block 5 is cut at a line end and ends with "Output truncated.", and block 10 shrinks by whole
@@ -1271,9 +1274,9 @@ Golden files hold rendered bodies for the wire fixtures.
   the `Why` once.
 - **Test name**: `TestCycleDirectionsShowWhatThePullRequestAdded`
   **Scenario**: a new two-way cycle with, on the same pairs, a pre-existing and an introduced advisory; a pre-existing
-  and an introduced finding on one pair; no other finding; no comparison with the base.
+  and an introduced finding on one pair; the same cycle under another rule; no other finding; no comparison with the base.
   **Expected behavior**: "This PR" `existing` (grey, 1 px) and `added` (red, 4 px); `existing` and an empty cell; no
-  column and red edges by count; no column.
+  column and red edges by count, twice; no column.
 - **Test name**: `TestLeadSentenceSaysWhatThePullRequestDid`
   **Scenario**: a cycle closed by the pull request; a cycle whose directions cannot be placed; four introduced
   violations beside a pre-existing one; only pre-existing violations; no comparison; only an advisory.
@@ -1282,7 +1285,8 @@ Golden files hold rendered bodies for the wire fixtures.
 - **Test name**: `TestCommentHeadHasNoReasonCodes`
   **Scenario**: a blocker beside missing coverage.
   **Expected behavior**: the comment head lists both next steps and no code, category or detail; the Decision block
-  lists both reasons with code, category, detail and next step; the state summary keeps its reason line.
+  lists both reasons with code, category, detail and next step and opens the evidence fold; the state summary keeps
+  its reason line.
 - **Test name**: `TestDimensionsStateTrustOnceAndOnlyRealChanges`
   **Scenario**: a delta that is only "comparable", then one with a metric change; the whole comment.
   **Expected behavior**: no Change column, then one with "edges 1 → 2 (+1)"; "customer-attested" once in the comment.
@@ -1401,8 +1405,8 @@ Golden files hold rendered bodies for the wire fixtures.
   **Scenario**: blocked report (`hard_gates: fail`) whose only `gate` finding has status `baseline` and whose task origin is `unknown`, on a PR that changed the finding's file.
   **Expected behavior**: conclusion `failure` from the outcome; the finding is listed under accepted debt without any text that says it is exempt or that the PR is clean; the reason block still says blocking findings exist, and block G says no active gate finding is listed; the accepted finding gets no annotation, the live advisory on the same line one `warning`.
 - **Test name**: `TestSuspensionFeedback` (T21)
-  **Scenario**: suspended outcome with a report; entitlement with `WarnFrom` in the past and not suspended; `WarnFrom` in the future.
-  **Expected behavior**: subscription reason with `Entitlement.Reason` as next action and no findings; the notice line appears; no notice.
+  **Scenario**: suspended outcome with a report compared with the base, whose violations are introduced; entitlement with `WarnFrom` in the past and not suspended; `WarnFrom` in the future.
+  **Expected behavior**: subscription reason with `Entitlement.Reason` as next action, no findings and no lead sentence; the notice line appears; no notice.
 - **Test name**: `TestPendingThenFinal` (T13)
   **Scenario**: `Pending`, then `Publish` of a failure, in required mode.
   **Expected behavior**: the same check run goes from `in_progress` to `completed`/`failure`; no second gate check exists.

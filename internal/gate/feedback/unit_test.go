@@ -1057,6 +1057,10 @@ func TestCycleDirectionsShowWhatThePullRequestAdded(t *testing.T) {
 			[]report.Finding{edge("e1", "advisory", "r", "pre_existing", "a", "b"), edge("e2", "advisory", "r", "introduced", "a", "b")},
 			[]string{"| `a` → `b` | existing |", "| `b` → `a` |  |"},
 			[]string{"linkStyle 0 stroke:#8c959f,stroke-width:1px", "linkStyle 1 stroke:#cf222e,stroke-width:2px"}},
+		{"the same cycle under another rule tells nothing", "comparable",
+			[]report.Finding{edge("o1", "gate", "other-cycles", "introduced", "a", "b"), edge("o2", "gate", "other-cycles", "introduced", "b", "a")},
+			[]string{"| Dependency | Where |", "| `a` → `b` | `a.go:1` |"},
+			[]string{"linkStyle 0 stroke:#cf222e,stroke-width:2px", "linkStyle 1 stroke:#cf222e,stroke-width:2px"}},
 		{"the cycle's own origin tells nothing", "comparable", nil,
 			[]string{"| Dependency | Where |", "| `a` → `b` | `a.go:1` |"},
 			[]string{"linkStyle 0 stroke:#cf222e,stroke-width:2px", "linkStyle 1 stroke:#cf222e,stroke-width:2px"}},
@@ -1132,6 +1136,9 @@ func TestCommentHeadHasNoReasonCodes(t *testing.T) {
 	mustContain(t, section(comment, headDecision),
 		"- `"+string(reasonBlocking.Code)+"` (architecture): "+reasonBlocking.Detail+". Next: "+reasonBlocking.Next,
 		"- `"+string(reasonCoverage.Code)+"` (evidence): "+reasonCoverage.Detail)
+	if _, fold, _ := strings.Cut(comment, foldEvidence+"\n\n"); !strings.HasPrefix(fold, headDecision) {
+		t.Errorf("the Decision block does not open the evidence fold:\n%s", fold)
+	}
 	mustContain(t, renderState(p), "- Reason: `"+string(reasonBlocking.Code)+"`")
 }
 
@@ -1155,7 +1162,8 @@ func TestCouplingWordsFollowBalancedCoupling(t *testing.T) {
 		{"cross_module", "across modules"},
 		{"cross_module_same_owner", "across modules, same owner"},
 		{"cross_deploy_unit", "across services"},
-		{"external", "external"},
+		{"cross_module_different_owner", "across modules, different owners"},
+		{"declared_external", "external"},
 		{"cross_galaxy", "cross_galaxy"},
 	}
 	for _, tt := range tests {

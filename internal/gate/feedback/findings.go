@@ -36,6 +36,7 @@ const (
 type groups struct {
 	compared                                 bool
 	all, violations, advisories, debt, fixed []report.Finding
+	onCycle                                  map[string]bool // IDs of the violations on a dependency cycle, of any rule
 }
 
 func group(r *report.Report) groups {
@@ -61,6 +62,12 @@ func group(r *report.Report) groups {
 	slices.SortStableFunc(g.violations, func(a, b report.Finding) int { // Active first, as before the unknown statuses
 		return boolOrder(b.Active()) - boolOrder(a.Active())
 	})
+	g.onCycle = map[string]bool{}
+	for i, c := range cycles(g.violations) {
+		if c >= 0 {
+			g.onCycle[g.violations[i].ID] = true
+		}
+	}
 	return g
 }
 
@@ -114,7 +121,7 @@ func leadSentence(r *report.Report) string {
 	if len(cycle) > 0 && !slices.ContainsFunc(cycle, func(f report.Finding) bool { return f.Origin != originIntroduced }) {
 		var added, existing []string
 		for _, f := range cycle {
-			switch n := len(f.Locations); pairOrigin(f, g.all, cycle) {
+			switch n := len(f.Locations); pairOrigin(f, g) {
 			case prAdded:
 				added = append(added, dependency(f)+" ("+capped(f.Locations, 1)+")")
 			case prExisting:
@@ -173,17 +180,19 @@ func dependency(f report.Finding) string { return module(f.Edge.From) + " → " 
 
 // pairOrigin is what the report shows about one direction of a cycle on the pull request base. "existing": a finding
 // on the same module pair is pre_existing, so the base had that dependency. "added": none is, and a finding on the pair
-// other than the cycle's own is introduced. "" otherwise: the cycle's own findings cannot tell, because a cycle that is
-// new is introduced in every direction, also in those that existed before. Display only.
-func pairOrigin(f report.Finding, all, cycle []report.Finding) string {
-	same := func(g report.Finding) bool {
-		return g.Edge.From.Module == f.Edge.From.Module && g.Edge.To.Module == f.Edge.To.Module
+// that lies on no cycle is introduced. "" otherwise: cycle findings cannot tell, because a cycle that is new is
+// introduced in every direction, also in those that existed before, and so is the same cycle under another rule.
+// Display only.
+func pairOrigin(f report.Finding, g groups) string {
+	all := g.all
+	same := func(o report.Finding) bool {
+		return o.Edge.From.Module == f.Edge.From.Module && o.Edge.To.Module == f.Edge.To.Module
 	}
-	if slices.ContainsFunc(all, func(g report.Finding) bool { return same(g) && g.Origin == originPreExisting }) {
+	if slices.ContainsFunc(all, func(o report.Finding) bool { return same(o) && o.Origin == originPreExisting }) {
 		return prExisting
 	}
-	if slices.ContainsFunc(all, func(g report.Finding) bool {
-		return same(g) && g.Origin == originIntroduced && !slices.ContainsFunc(cycle, func(c report.Finding) bool { return c.ID == g.ID })
+	if slices.ContainsFunc(all, func(o report.Finding) bool {
+		return same(o) && o.Origin == originIntroduced && !g.onCycle[o.ID]
 	}) {
 		return prAdded
 	}
@@ -256,7 +265,7 @@ func writeViolations(b *strings.Builder, g groups, seams map[[2]string]report.Se
 		}
 	}
 	for _, m := range members {
-		writeCycle(b, m, g.all, seams, diagrams)
+		writeCycle(b, m, g, seams, diagrams)
 	}
 	if len(plain) > 0 {
 		if n > 0 {
@@ -377,9 +386,9 @@ func among(modules []string) string {
 }
 
 // writeCycle writes one dependency cycle: the modules on it, the rule, a diagram, a row per direction, then the
-// distinct repairs. feedback adds no repair of its own: the constraint and alternatives are the engine's. all is
+// distinct repairs. feedback adds no repair of its own: the constraint and alternatives are the engine's. g holds
 // every finding of the report, which tells for each direction whether the base already had it.
-func writeCycle(b *strings.Builder, fs, all []report.Finding, seams map[[2]string]report.Seam, diagrams bool) {
+func writeCycle(b *strings.Builder, fs []report.Finding, g groups, seams map[[2]string]report.Seam, diagrams bool) {
 	modules := cycleModules(fs)
 	label := ""
 	if fs[0].Active() { // one class per cycle, so one label for all
@@ -388,7 +397,7 @@ func writeCycle(b *strings.Builder, fs, all []report.Finding, seams map[[2]strin
 	fmt.Fprintf(b, "\n\n#### Dependency cycle %s\n\n%s%s · %s", among(modules), label, ruleName(fs[0].RuleID), meta(fs[0]))
 	pr := make([]string, len(fs))
 	for i, f := range fs {
-		pr[i] = pairOrigin(f, all, fs)
+		pr[i] = pairOrigin(f, g)
 	}
 	if diagrams {
 		b.WriteString("\n\n" + cycleDiagram(modules, fs, pr))
@@ -454,11 +463,12 @@ func ruleName(id string) string {
 // distanceWords reads the engine's distance tokens in the words of Balanced Coupling; an unknown token is shown as
 // written.
 var distanceWords = map[string]string{
-	"same_module":             "same module",
-	"cross_module":            "across modules",
-	"cross_module_same_owner": "across modules, same owner",
-	"cross_deploy_unit":       "across services",
-	"external":                "external",
+	"same_module":                  "same module",
+	"cross_module":                 "across modules",
+	"cross_module_same_owner":      "across modules, same owner", // engine v2
+	"cross_module_different_owner": "across modules, different owners",
+	"cross_deploy_unit":            "across services",
+	"declared_external":            "external",
 }
 
 func distanceText(token string) string {

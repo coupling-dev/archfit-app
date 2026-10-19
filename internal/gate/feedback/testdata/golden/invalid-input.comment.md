@@ -7,13 +7,13 @@
 <details>
 <summary>Evidence, inputs and validation</summary>
 
-### Evidence gaps
-
-- No usable report
-
 ### Decision
 
 - `report_invalid` (evidence): report 4444444444444444444444444444444444444444444444444444444444444444. Next: Re-run the Archfit workflow with the pinned action.
+
+### Evidence gaps
+
+- No usable report
 
 ### Inputs and identity
 

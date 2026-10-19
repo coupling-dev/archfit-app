@@ -397,13 +397,20 @@ func TestSuspensionFeedback(t *testing.T) {
 		p.Receipt = receiptFor(p.Outcome, 7, 1)
 		p.Trusted.Suspended = true
 		p.Trusted.Entitlement = inputs.Entitlement{SuspendAfter: t0.Add(-time.Hour), Reason: reasonSuspend.Next}
+		p.Report.Comparison.OriginStatus = "comparable"
+		for i := range p.Report.Findings {
+			p.Report.Findings[i].Origin = "introduced"
+		}
+		if leadSentence(p.Report) == "" {
+			t.Fatal("the report must have a lead sentence for the suspension to withhold")
+		}
 		if err := h.pub.Publish(ctx, p); err != nil {
 			t.Fatalf("Publish: %v", err)
 		}
 		state := h.checks.named(headB, stateCheck)[0]
 		for _, body := range []string{h.comments.all()[0].Body, state.Summary, h.checks.named(headB, gateCheck)[0].Summary} {
 			mustContain(t, body, "subscription_suspended", "subscription", reasonSuspend.Next, headInputs)
-			mustNotContain(t, body, headFindings, headDimensions, headGaps, headCommands, headTasks, tasksOpen, "no_direct_b_dependency")
+			mustNotContain(t, body, headFindings, headDimensions, headGaps, headCommands, headTasks, tasksOpen, "no_direct_b_dependency", "This pull request")
 		}
 		if len(state.Annotations) != 0 {
 			t.Errorf("suspended publication carries %d annotations", len(state.Annotations))

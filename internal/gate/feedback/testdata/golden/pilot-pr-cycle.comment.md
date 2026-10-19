@@ -74,6 +74,10 @@ Imbalanced coupling · **Why:** balanced coupling: functional integration streng
 <details>
 <summary>Evidence, inputs and validation</summary>
 
+### Decision
+
+- `blocking_findings` (architecture): 1 blocking finding. Next: Fix the blocking findings, then push.
+
 ### Dimensions
 
 | Dimension | Status | Coverage | Confidence | Gate |
@@ -103,10 +107,6 @@ Imbalanced coupling · **Why:** balanced coupling: functional integration streng
 - Dimension `operations`, unknown fact: corroborated deploy unit — one or more declared modules have no independently corroborating deploy manifest
 - Dimension `operations`, unknown fact: observed runtime topology — committed manifests corroborate declared deploy units; they do not observe what is actually running
 - Dimension `operations`, unknown fact: supply-chain inventory — SBOM and vulnerability facts are a separate report family and have no collector in v1
-
-### Decision
-
-- `blocking_findings` (architecture): 1 blocking finding. Next: Fix the blocking findings, then push.
 
 ### Inputs and identity
 

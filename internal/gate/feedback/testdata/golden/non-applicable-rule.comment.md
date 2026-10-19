@@ -11,6 +11,10 @@ No findings reported.
 <details>
 <summary>Evidence, inputs and validation</summary>
 
+### Decision
+
+- `healthy` (architecture): report 4444444444444444444444444444444444444444444444444444444444444444. Next: Nothing to do.
+
 ### Dimensions
 
 | Dimension | Status | Coverage | Confidence | Gate |
@@ -43,10 +47,6 @@ No findings reported.
 - Dimension `drift`, unknown fact: admissible persisted reference — no comparable architecture-state reference is stored
 - Dimension `drift`, unknown fact: complete two-sided seam identity — two-sided seam identity cannot be compared without an admissible persisted reference
 - Baseline comparison non_comparable: no baseline file was loaded
-
-### Decision
-
-- `healthy` (architecture): report 4444444444444444444444444444444444444444444444444444444444444444. Next: Nothing to do.
 
 ### Inputs and identity
 

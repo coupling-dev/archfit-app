@@ -227,7 +227,7 @@ func renderState(p Publication) string {
 // renderComment renders the whole comment. waiver is the date of the notice section to carry, or "".
 // link is the App's page of this pull request, or "" for none.
 func renderComment(p Publication, now time.Time, waiver, link string) string {
-	l := layout{head: headBlock(p, true), inputs: join(decisionBlock(p), inputsBlock(p))}
+	l := layout{head: headBlock(p, true), decision: decisionBlock(p), inputs: inputsBlock(p)}
 	if notice := noticeLine(p.Trusted.Entitlement, now); notice != "" {
 		l.head += "\n\n" + notice
 	}
@@ -250,7 +250,9 @@ func renderComment(p Publication, now time.Time, waiver, link string) string {
 	return placeWaiver(body, waiverSection(waiver))
 }
 
-// headBlock is blocks 1 and 2: markers, verdict line, the deciding reason, then further reasons.
+// headBlock is blocks 1 and 2. In a check summary (markers false): the advisory note, the deciding reason, then
+// further reasons. In the comment (markers true): markers, the headline as a heading, the advisory alert, then
+// commentHead, which writes the next steps without reason codes; decisionBlock carries those into the evidence fold.
 func headBlock(p Publication, markers bool) string {
 	// The comment carries the headline as its heading. A check summary does not: GitHub prints the check title, which
 	// is the headline, right above it.
