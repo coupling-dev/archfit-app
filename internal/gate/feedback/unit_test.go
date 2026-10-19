@@ -1178,3 +1178,23 @@ func TestCouplingWordsFollowBalancedCoupling(t *testing.T) {
 		t.Errorf("policy rule name = %q, want %q", got, want)
 	}
 }
+
+func TestManyViolationsRenderQuickly(t *testing.T) {
+	fs := make([]report.Finding, 5000)
+	for i := range fs {
+		fs[i] = report.Finding{ID: strconv.Itoa(i), Kind: "gate", RuleID: "layers", Status: "new", Severity: "high", Origin: "introduced",
+			Edge: report.Edge{From: report.Endpoint{Module: "m" + strconv.Itoa(i)}, To: report.Endpoint{Module: "m" + strconv.Itoa(i+1)}}}
+	}
+	r := &report.Report{Findings: fs, Comparison: report.Comparison{OriginStatus: "comparable"}}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		findingsBlock(r, true)
+		leadSentence(r)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("5000 violations in a chain took over 5 s to render")
+	}
+}

@@ -36,7 +36,7 @@ const (
 type groups struct {
 	compared                                 bool
 	all, violations, advisories, debt, fixed []report.Finding
-	onCycle                                  map[string]bool // IDs of the violations on a dependency cycle, of any rule
+	onCycle                                  map[string]bool // IDs of the shown violations on a dependency cycle, of any rule
 }
 
 func group(r *report.Report) groups {
@@ -62,8 +62,9 @@ func group(r *report.Report) groups {
 	slices.SortStableFunc(g.violations, func(a, b report.Finding) int { // Active first, as before the unknown statuses
 		return boolOrder(b.Active()) - boolOrder(a.Active())
 	})
+	// Only the shown violations: cycles is quadratic or worse in the findings, and a report may hold 10 000.
 	g.onCycle = map[string]bool{}
-	for i, c := range cycles(g.violations) {
+	for i, c := range cycles(g.violations[:min(len(g.violations), groupCap)]) {
 		if c >= 0 {
 			g.onCycle[g.violations[i].ID] = true
 		}

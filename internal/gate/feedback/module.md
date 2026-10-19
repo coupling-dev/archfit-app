@@ -393,7 +393,8 @@ receipt marker. Block G is in the gate summary only.
    own findings cannot tell (a new cycle is introduced in every direction, also those the base had), so the column
    reads the other findings of the report on the same module pair: `existing` when one is `pre_existing` (the base
    had the dependency), else `added` when one that lies on no dependency cycle is `introduced` (the same new cycle under
-   another rule is introduced in every direction too, so it is no evidence), else empty. "added", not "new": without a baseline
+   another rule is introduced in every direction too, so it is no evidence; only the first 50 violations are searched
+   for cycles, as for display), else empty. "added", not "new": without a baseline
    every finding has status `new`. Limit: an introduced finding on a pair is not proof that the base lacked every
    import between the two modules; a pre-existing finding on the pair wins.
 
@@ -1290,6 +1291,9 @@ Golden files hold rendered bodies for the wire fixtures.
 - **Test name**: `TestDimensionsStateTrustOnceAndOnlyRealChanges`
   **Scenario**: a delta that is only "comparable", then one with a metric change; the whole comment.
   **Expected behavior**: no Change column, then one with "edges 1 → 2 (+1)"; "customer-attested" once in the comment.
+- **Test name**: `TestManyViolationsRenderQuickly`
+  **Scenario**: 5 000 introduced violations of one rule in a chain, compared with the base.
+  **Expected behavior**: block 5 and the lead sentence render within 5 s: the cycle search sees only the shown 50.
 - **Test name**: `TestCouplingWordsFollowBalancedCoupling`
   **Scenario**: each known distance token and an unknown one; an engine rule and a policy rule.
   **Expected behavior**: the book's words, the unknown token as written; "Imbalanced coupling"; the policy rule ID as a code span.
