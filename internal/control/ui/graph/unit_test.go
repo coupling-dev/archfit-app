@@ -308,6 +308,14 @@ func TestLinkOriginIsTheCommentsRule(t *testing.T) {
 		past = append(past, origin("pre_existing", "p"+strconv.Itoa(i), finding("gate", "new", "ui", "db")))
 	}
 	past = append(past, cycle("introduced", "introduced")...)
+	// a shown cycle, then past the cap a new finding of another rule on one of its directions: the comment adds it
+	shown := cycle("introduced", "introduced")
+	for i := range report.ShownPerGroup {
+		shown = append(shown, origin("pre_existing", "p"+strconv.Itoa(i), finding("gate", "new", "ui", "db")))
+	}
+	other := origin("introduced", "f9", finding("gate", "new", "api", "db"))
+	other.RuleID = "other-rule"
+	shown = append(shown, other)
 	tests := []struct {
 		name     string
 		compared string
@@ -339,6 +347,8 @@ func TestLinkOriginIsTheCommentsRule(t *testing.T) {
 			map[string]string{"api>db": "", "db>api": "existing"}},
 		{"a cycle past the shown violations cannot tell either", "comparable", past,
 			map[string]string{"api>db": "", "db>api": "", "ui>db": "existing"}},
+		{"on a shown cycle's pair a finding past the cap counts as the comment counts it", "comparable", shown,
+			map[string]string{"api>db": "added", "db>api": "", "ui>db": "existing"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -187,13 +187,22 @@ func Build(rep report.Report, policyText []byte) View {
 
 	// A link's origin is the comment's rule over the comment's groups, so both say the same about what a pull request
 	// added; Group clears every origin when the report did not compare with the base branch. Group searches only the
-	// shown violations for cycles, so a violation past the cap counts as one that cannot tell, like a cycle finding:
-	// it never makes a pair added, and a pre-existing one still makes it existing.
+	// shown violations for cycles, so a violation past the cap, off the pairs of the shown cycles, counts as one that
+	// cannot tell, like a cycle finding: it never makes a pair added, and a pre-existing one still makes it existing.
+	// On a shown cycle's pair the comment asks PairOrigin with Group's own OnCycle, so the graph does too.
 	g := report.Group(rep, report.ShownPerGroup)
 	if g.Compared {
+		cyclePairs := map[pair]bool{}
+		for _, f := range g.Violations {
+			if g.OnCycle[f.ID] {
+				cyclePairs[pair{f.Edge.From.Module, f.Edge.To.Module}] = true
+			}
+		}
 		unknown := maps.Clone(g.OnCycle)
 		for _, f := range g.Violations[min(len(g.Violations), report.ShownPerGroup):] {
-			unknown[f.ID] = true
+			if !cyclePairs[pair{f.Edge.From.Module, f.Edge.To.Module}] {
+				unknown[f.ID] = true
+			}
 		}
 		for p, l := range links {
 			on := report.Finding{Edge: report.Edge{From: report.Endpoint{Module: p.from}, To: report.Endpoint{Module: p.to}}}
