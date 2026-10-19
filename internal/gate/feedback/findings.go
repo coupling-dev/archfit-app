@@ -26,8 +26,8 @@ const (
 // What a row says about the pull request base (the "This PR" column). "added", not "new": without a baseline every
 // finding has status new, and new does not mean added by this pull request.
 const (
-	prAdded    = "added"
-	prExisting = "existing"
+	prAdded    = report.PairAdded
+	prExisting = report.PairExisting
 )
 
 // groups is the report's findings sorted into the groups block 5 shows. all holds every finding, with its origin
@@ -64,7 +64,7 @@ func group(r *report.Report) groups {
 	})
 	// Only the shown violations: cycles is quadratic or worse in the findings, and a report may hold 10 000.
 	g.onCycle = map[string]bool{}
-	for i, c := range cycles(g.violations[:min(len(g.violations), groupCap)]) {
+	for i, c := range report.Cycles(g.violations[:min(len(g.violations), groupCap)]) {
 		if c >= 0 {
 			g.onCycle[g.violations[i].ID] = true
 		}
@@ -114,7 +114,7 @@ func leadSentence(r *report.Report) string {
 	}
 	shown := g.violations[:min(len(g.violations), groupCap)]
 	var cycle []report.Finding
-	for i, c := range cycles(shown) {
+	for i, c := range report.Cycles(shown) {
 		if c == 0 {
 			cycle = append(cycle, shown[i])
 		}
@@ -122,7 +122,7 @@ func leadSentence(r *report.Report) string {
 	if len(cycle) > 0 && !slices.ContainsFunc(cycle, func(f report.Finding) bool { return f.Origin != originIntroduced }) {
 		var added, existing []string
 		for _, f := range cycle {
-			switch n := len(f.Locations); pairOrigin(f, g) {
+			switch n := len(f.Locations); report.PairOrigin(f, g.all, g.onCycle) {
 			case prAdded:
 				added = append(added, dependency(f)+" ("+capped(f.Locations, 1)+")")
 			case prExisting:
@@ -179,27 +179,6 @@ func series(items []string) string {
 // dependency is the module pair of a finding, without paths.
 func dependency(f report.Finding) string { return module(f.Edge.From) + " → " + module(f.Edge.To) }
 
-// pairOrigin is what the report shows about one direction of a cycle on the pull request base. "existing": a finding
-// on the same module pair is pre_existing, so the base had that dependency. "added": none is, and a finding on the pair
-// that lies on no cycle is introduced. "" otherwise: cycle findings cannot tell, because a cycle that is new is
-// introduced in every direction, also in those that existed before, and so is the same cycle under another rule.
-// Display only.
-func pairOrigin(f report.Finding, g groups) string {
-	all := g.all
-	same := func(o report.Finding) bool {
-		return o.Edge.From.Module == f.Edge.From.Module && o.Edge.To.Module == f.Edge.To.Module
-	}
-	if slices.ContainsFunc(all, func(o report.Finding) bool { return same(o) && o.Origin == originPreExisting }) {
-		return prExisting
-	}
-	if slices.ContainsFunc(all, func(o report.Finding) bool {
-		return same(o) && o.Origin == originIntroduced && !g.onCycle[o.ID]
-	}) {
-		return prAdded
-	}
-	return ""
-}
-
 func boolOrder(v bool) int {
 	if v {
 		return 1
@@ -251,7 +230,7 @@ func plural(n int, one, many string) string {
 func writeViolations(b *strings.Builder, g groups, seams map[[2]string]report.Seam, diagrams bool) {
 	fs := g.violations
 	shown := fs[:min(len(fs), groupCap)] // a cycle partner past the cap would show past it
-	comp := cycles(shown)
+	comp := report.Cycles(shown)
 	n := 0
 	for _, c := range comp {
 		n = max(n, c+1)
@@ -285,81 +264,10 @@ func writeViolations(b *strings.Builder, g groups, seams map[[2]string]report.Se
 // cycleCount is the number of dependency cycles among the shown violations.
 func cycleCount(fs []report.Finding) int {
 	n := -1
-	for _, c := range cycles(fs[:min(len(fs), groupCap)]) {
+	for _, c := range report.Cycles(fs[:min(len(fs), groupCap)]) {
 		n = max(n, c)
 	}
 	return n + 1
-}
-
-// cycles returns, per finding, the index of the dependency cycle it lies on, or -1. A finding lies on a cycle when
-// its target module reaches its source through findings of the same rule, kind, status and severity (the fields
-// report.Finding.Reverses pairs on). Cycle edges of one such class that share a module are one strongly connected
-// component, so they are one cycle item. Indices follow the first finding of each cycle. Display only.
-func cycles(fs []report.Finding) []int {
-	class := func(f report.Finding) [4]string { return [4]string{f.RuleID, f.Kind, f.Status, f.Severity} }
-	edge := func(f report.Finding) (string, string, bool) {
-		from, to := f.Edge.From.Module, f.Edge.To.Module
-		return from, to, from != "" && to != "" && from != to
-	}
-	reaches := func(c [4]string, start, goal string) bool {
-		seen, queue := map[string]bool{start: true}, []string{start}
-		for len(queue) > 0 {
-			at := queue[0]
-			queue = queue[1:]
-			for _, f := range fs {
-				from, to, ok := edge(f)
-				if !ok || from != at || class(f) != c || seen[to] {
-					continue
-				}
-				if to == goal {
-					return true
-				}
-				seen[to] = true
-				queue = append(queue, to)
-			}
-		}
-		return false
-	}
-
-	parent := make([]int, len(fs))
-	onCycle := make([]bool, len(fs))
-	for i, f := range fs {
-		parent[i] = i
-		from, to, ok := edge(f)
-		onCycle[i] = ok && reaches(class(f), to, from)
-	}
-	root := func(i int) int {
-		for parent[i] != i {
-			i = parent[i]
-		}
-		return i
-	}
-	for i := range fs {
-		for j := i + 1; j < len(fs) && onCycle[i]; j++ {
-			if !onCycle[j] || class(fs[i]) != class(fs[j]) {
-				continue
-			}
-			a1, b1, _ := edge(fs[i])
-			a2, b2, _ := edge(fs[j])
-			if a1 == a2 || a1 == b2 || b1 == a2 || b1 == b2 {
-				parent[root(j)] = root(i)
-			}
-		}
-	}
-	out := make([]int, len(fs))
-	index := map[int]int{}
-	for i := range fs {
-		out[i] = -1
-		if !onCycle[i] {
-			continue
-		}
-		r := root(i)
-		if _, ok := index[r]; !ok {
-			index[r] = len(index)
-		}
-		out[i] = index[r]
-	}
-	return out
 }
 
 func cycleModules(fs []report.Finding) []string {
@@ -398,7 +306,7 @@ func writeCycle(b *strings.Builder, fs []report.Finding, g groups, seams map[[2]
 	fmt.Fprintf(b, "\n\n#### Dependency cycle %s\n\n%s%s · %s", among(modules), label, ruleName(fs[0].RuleID), meta(fs[0]))
 	pr := make([]string, len(fs))
 	for i, f := range fs {
-		pr[i] = pairOrigin(f, g)
+		pr[i] = report.PairOrigin(f, g.all, g.onCycle)
 	}
 	if diagrams {
 		b.WriteString("\n\n" + cycleDiagram(modules, fs, pr))
@@ -448,32 +356,15 @@ func prWord(o string) string {
 	return text(o)
 }
 
-// engineRuleNames are the readable names of the engine's own rules; a policy rule's ID is the name its owner chose.
-var engineRuleNames = map[string]string{
-	"bc/imbalanced_coupling": "Imbalanced coupling",
-	"bc/coupling_gate":       "Coupling gate",
-}
-
 func ruleName(id string) string {
-	if n, ok := engineRuleNames[id]; ok {
+	if n, ok := report.EngineRuleNames[id]; ok {
 		return n
 	}
 	return code(id)
 }
 
-// distanceWords reads the engine's distance tokens in the words of Balanced Coupling; an unknown token is shown as
-// written.
-var distanceWords = map[string]string{
-	"same_module":                  "same module",
-	"cross_module":                 "across modules",
-	"cross_module_same_owner":      "across modules, same owner", // engine v2
-	"cross_module_different_owner": "across modules, different owners",
-	"cross_deploy_unit":            "across services",
-	"declared_external":            "external",
-}
-
 func distanceText(token string) string {
-	if w, ok := distanceWords[token]; ok {
+	if w, ok := report.DistanceWords[token]; ok {
 		return w
 	}
 	return text(token)

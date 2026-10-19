@@ -394,7 +394,7 @@ receipt marker. Block G is in the gate summary only.
    reads the other findings of the report on the same module pair: `existing` when one is `pre_existing` (the base
    had the dependency), else `added` when one that lies on no dependency cycle is `introduced` (the same new cycle under
    another rule is introduced in every direction too, so it is no evidence; only the first 50 violations are searched
-   for cycles, as for display), else empty. "added", not "new": without a baseline
+   for cycles, as for display), else empty (`report.PairOrigin`, shared with the App's pull request page and graph). "added", not "new": without a baseline
    every finding has status `new`. Limit: an introduced finding on a pair is not proof that the base lacked every
    import between the two modules; a pre-existing finding on the pair wins.
 

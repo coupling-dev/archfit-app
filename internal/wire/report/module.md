@@ -25,6 +25,8 @@ identifiers in `agent_tasks[].declarations`.
 - Preserve what the gate and feedback need, unchanged: `verdict`, `decision.hard_gates`,
   `unevaluated_required_rules`, `comparison.config_hash`, `measurement_profile`, `gate_reference`, both repair
   kinds, task validation commands, empty `locations`.
+- The display rules its consumers share (`Cycles`, `PairOrigin`, `EngineRuleNames`, `DistanceWords`), so the PR
+  comment and the App's pages group and word findings the same way.
 - Nothing else. It does not interpret the decision, compare profiles, filter findings, or compute outcomes.
 
 ## Subdomain Classification
@@ -495,6 +497,23 @@ func (f Finding) Active() bool
 // Reverses reports whether f and g are the two directions of one module cycle: one rule, one kind, status and severity,
 // and module pairs that are reversed, non-empty and distinct. Display only: each finding keeps its ID and gate effect.
 func (f Finding) Reverses(g Finding) bool
+
+// Display rules the PR comment (gate/feedback), the pull request page and the graph (control/ui) share, so the three
+// tell the same story. None of them is a gate decision.
+
+// Cycles returns, per finding, the index of the dependency cycle it lies on, or -1: edges of one rule, kind, status
+// and severity whose target reaches their source, grouped by shared modules.
+func Cycles(fs []Finding) []int
+
+const PairAdded, PairExisting = "added", "existing"
+
+// PairOrigin is what the report shows about one direction of a cycle on the pull request base: PairExisting when a
+// finding on the same module pair is pre_existing, else PairAdded when one on the pair that lies on no cycle is
+// introduced, else "".
+func PairOrigin(f Finding, all []Finding, onCycle map[string]bool) string
+
+var EngineRuleNames map[string]string // readable names of the engine's own rules
+var DistanceWords map[string]string   // the engine's distance tokens in the words of Balanced Coupling
 ```
 
 `StateSchemaV1` is the only state schema version accepted. `MaxBytes` is the payload cap. Reading the "5 MB" of
@@ -608,6 +627,12 @@ the tests decode each one as the release that produced it (synthetic ones as v3.
 
 ### Unit Tests
 
+- **Test name**: `TestCycles`, `TestPairOrigin`
+  **Scenario**: two directions; three modules; a path; two rules on reversed pairs; two separate cycles beside a plain
+  edge; edges without a module. Then a cycle direction with a pre_existing, an introduced off-cycle, no other, and a
+  reverse-pair finding.
+  **Expected behavior**: the cycle index per finding, -1 off a cycle and across rules; existing, added, "", "", and
+  existing over added.
 - **Test name**: `TestStringClassRules`
   **Scenario**: table, one row per string class at its limit, one over it, one with LF, a tab, NUL, U+2028 and U+2029, the classes
   including finding text (`why`, `constraint`, 2 000), tool version (128) and task text (`goal`, `constraints[]`, 4 096); token rows with a backtick and with `timed out`;
