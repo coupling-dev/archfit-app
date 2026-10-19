@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { ApiError, getJSON, postJSON, repoAPI, type Notice, type Overview, type Session } from '../lib/api';
-  import { signInHref } from '../lib/route';
+  import { ApiError, explain, getJSON, postJSON, repoAPI, type Notice, type Overview, type Session } from '../lib/api';
 
   let {
     route,
@@ -15,8 +14,7 @@
   let owners = $state('');
 
   function failed(e: ApiError) {
-    if (e.status === 401) location.assign(signInHref(here));
-    else failure = e.message;
+    failure = explain(e, here);
   }
 
   function load() {

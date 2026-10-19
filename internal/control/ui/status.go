@@ -142,6 +142,9 @@ func (s *server) apiStartOnboarding(r *http.Request, sc scope) (any, error) {
 }
 
 func (s *server) apiDiscover(r *http.Request, sc scope) (any, error) {
+	if err := decodeJSON(r, &struct{}{}); err != nil { // the body is {}: the repository comes from the path
+		return nil, err
+	}
 	progress, err := s.onboarding.Progress(r.Context(), sc.repo)
 	if err != nil {
 		return nil, err

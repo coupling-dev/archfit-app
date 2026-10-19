@@ -352,7 +352,7 @@ The arrows show recovery flow. The sweep does not compute a new report because t
 | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
 | New pull request head                                    | Set a pending required check or refuse a fork                                                                                                                                | None                                  |
 | Push to the default branch that changes a protected path | Sweep that repository                                                                                                                                                        | None                                  |
-| Push to any branch                                       | Record who pushed the head. Then re-evaluate the open pull request on that head, as for a review change                                                                       | None                                  |
+| Push to any branch                                       | Record who pushed the head. Then re-evaluate the open pull request on that head, as for a review change                                                                      | None                                  |
 | Review change                                            | Set `owner_approval_missing` when a `success` or `failure` check lost its owner approval; rerun when the last reason was `owner_approval_missing` and no approval is missing | None                                  |
 | Installation added or removed                            | None                                                                                                                                                                         | Start the trial or delete tenant data |
 
@@ -439,17 +439,17 @@ The routes come from [`internal/app/handler.go`](../internal/app/handler.go) and
 
 ### Service routes
 
-| Method and route        | Owner     | Authentication             |
-| ----------------------- | --------- | -------------------------- |
-| `GET /health`           | `app`     | None                       |
-| `GET /ready`            | `app`     | None                       |
-| `POST /v1/reports`      | `gate`    | GitHub Actions OIDC token  |
-| `POST /v1/discoveries`  | `control` | GitHub Actions OIDC checks |
-| `POST /v1/baselines`    | `control` | GitHub Actions OIDC checks |
+| Method and route        | Owner     | Authentication                                                          |
+| ----------------------- | --------- | ----------------------------------------------------------------------- |
+| `GET /health`           | `app`     | None                                                                    |
+| `GET /ready`            | `app`     | None                                                                    |
+| `POST /v1/reports`      | `gate`    | GitHub Actions OIDC token                                               |
+| `POST /v1/discoveries`  | `control` | GitHub Actions OIDC checks                                              |
+| `POST /v1/baselines`    | `control` | GitHub Actions OIDC checks                                              |
 | `POST /v1/reanchors`    | `control` | GitHub Actions OIDC checks, plus the re-anchor subset and digest checks |
-| `POST /webhooks/github` | `app`     | `X-Hub-Signature-256`      |
-| `POST /internal/sweep`  | `app`     | Operator bearer token      |
-| `POST /internal/grants` | `app`     | Operator bearer token      |
+| `POST /webhooks/github` | `app`     | `X-Hub-Signature-256`                                                   |
+| `POST /internal/sweep`  | `app`     | Operator bearer token                                                   |
+| `POST /internal/grants` | `app`     | Operator bearer token                                                   |
 
 `GET /health` probes nothing. `GET /ready` proves that the App key works with GitHub (`GET /app` with an App JWT)
 and that the store answers (a read of a reserved key). It answers `200`, or `503` with the names of the failed
@@ -470,17 +470,19 @@ the e-mail is `ARCHFIT_INVOKER` and is verified, and the token is not expired.
 
 ### UI routes
 
-| Method and route                                                               | Authentication                                  |
-| ------------------------------------------------------------------------------ | ----------------------------------------------- |
-| `GET /`                                                                        | None. Shows the landing page or repository list |
-| `GET /auth/login` and `GET /auth/callback`                                     | None                                            |
-| `POST /auth/logout`                                                            | GitHub OAuth session and CSRF token             |
-| `GET /static/{path}` and `GET /schema/policy.json`                             | None                                            |
-| `GET /r/{o}/{n}`                                                               | Session with repository `read` permission       |
-| `POST /r/{o}/{n}/onboarding`, `/discover`; `GET` and `POST /r/{o}/{n}/consent` | Session with repository `admin` permission      |
-| `GET /r/{o}/{n}/policy` and `/graph`, `POST /r/{o}/{n}/policy/check`           | Session with repository `read` permission       |
-| `POST /r/{o}/{n}/policy` and `/policy/ready`                                   | Session with repository `write` permission      |
-| `POST /r/{o}/{n}/assist`                                                       | Session with repository `write` permission      |
+| Method and route                                                         | Authentication                                                                |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| `GET /`                                                                  | None. Serves the web app, which shows the landing page or the repository list |
+| `GET /auth/login` and `GET /auth/callback`                               | None                                                                          |
+| `POST /auth/logout`                                                      | GitHub OAuth session and CSRF token                                           |
+| `GET /static/{path}`, `GET /assets/{path}` and `GET /schema/policy.json` | None                                                                          |
+| `GET /api/session` and `GET /api/repos`                                  | GitHub OAuth session                                                          |
+| `GET /r/{o}/{n}` and `GET /api/repos/{o}/{n}/overview`                   | Session with repository `read` permission                                     |
+| `POST /api/repos/{o}/{n}/onboarding` and `/discover`                     | Session with repository `admin` permission, JSON body, CSRF token header      |
+| `GET` and `POST /r/{o}/{n}/consent`                                      | Session with repository `admin` permission                                    |
+| `GET /r/{o}/{n}/policy` and `/graph`, `POST /r/{o}/{n}/policy/check`     | Session with repository `read` permission                                     |
+| `POST /r/{o}/{n}/policy` and `/policy/ready`                             | Session with repository `write` permission                                    |
+| `POST /r/{o}/{n}/assist`                                                 | Session with repository `write` permission                                    |
 
 ## Platform seams
 
@@ -534,7 +536,7 @@ See [`.env.example`](../.env.example).
 | `FIRESTORE_EMULATOR_HOST`                     | Emulator `host:port`. Plain HTTP and no credentials                                                     |
 | `ARCHFIT_SANDBOX`                             | Sandbox driver. Only `none` exists                                                                      |
 | `ARCHFIT_ROLE`                                | `all` (default), `public`, or `worker`                                                                  |
-| `ARCHFIT_QUEUE`                               | Local `all` role defaults to `inline`; `public` requires `cloudtasks`; `worker` never enqueues                         |
+| `ARCHFIT_QUEUE`                               | Local `all` role defaults to `inline`; `public` requires `cloudtasks`; `worker` never enqueues          |
 | `ARCHFIT_TASKS_QUEUE`                         | `projects/<p>/locations/<l>/queues/<q>`, for `cloudtasks`                                               |
 | `ARCHFIT_WORKER_URL`                          | Worker service URL, the invoker token audience. No trailing `/`. For `cloudtasks` and the `worker` role |
 | `ARCHFIT_INVOKER`                             | Service account e-mail of queue and Scheduler dispatches. For `cloudtasks` and the `worker` role        |

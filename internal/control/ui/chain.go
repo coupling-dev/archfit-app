@@ -92,7 +92,11 @@ func chain(next http.Handler) http.Handler {
 		defer func() {
 			if p := recover(); p != nil {
 				l.outcome = "panic"
-				if sw.status == 0 {
+				switch {
+				case sw.status != 0:
+				case strings.HasPrefix(r.URL.Path, apiPrefix):
+					writeJSON(sw, r, http.StatusInternalServerError, errorJSON{Error: "internal error"})
+				default:
 					http.Error(sw, "internal error", http.StatusInternalServerError)
 				}
 			}

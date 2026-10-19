@@ -290,7 +290,8 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 	}
 	b := newBrowser(t, a.do)
 	b.signIn("alice")
-	for _, page := range []string{"/", "/r/" + demoRepo, "/r/" + demoRepo + "/policy", "/r/" + demoRepo + "/consent"} {
+	pages := []string{"/", "/api/repos", "/r/" + demoRepo, "/api/repos/" + demoRepo + "/overview", "/r/" + demoRepo + "/policy", "/r/" + demoRepo + "/consent"}
+	for _, page := range pages {
 		if resp, _ := b.get(page); resp.StatusCode != http.StatusOK {
 			t.Fatalf("GET %s: %d", page, resp.StatusCode)
 		}

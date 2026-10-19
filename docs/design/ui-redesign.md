@@ -201,11 +201,11 @@ Alternatives:
 
 | Invariant | How it holds |
 | --- | --- |
-| No runtime CDN | Every script, style and font is built into `dist` and served by the App. CSP `script-src 'self'` and `font-src 'self'` would block anything else; the smoke test fails on a violation. |
+| No runtime CDN | Every script, style and font is built into `internal/control/ui/spa` and served by the App. CSP `script-src 'self'` and `font-src 'self'` would block anything else; the smoke test fails on a violation. |
 | CSP without `unsafe-inline` or `unsafe-eval` | Svelte compiles to plain JavaScript (no `eval`); styles are one external file and no Svelte transition is used (they insert style elements); Vite's modulepreload polyfill is off (`build.modulePreload.polyfill: false`), so `index.html` holds no inline script. Styles set from script go through CSSOM (`element.style`), which CSP allows. CodeMirror's style elements carry a per-response nonce through `EditorView.cspNonce`, with `style-src 'self' 'nonce-…'`. Target: `default-src 'none'; script-src 'self'; style-src 'self' 'nonce-…'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'`. |
 | CSRF and the session model | The session stays an HttpOnly, Secure, SameSite=Lax cookie that script cannot read. The stateless per-session HMAC token (`csrf.go`) is fetched from `/api/session` and sent as an `X-CSRF-Token` header on every write; the server checks it as today and also requires `Content-Type: application/json`. |
 | Tenant identity only from the authorized session | Endpoints take the installation and repository from the session and the authorized route, never from the request body or a client-held value. The client sends only the `org/repo` path that it shows, and the server authorizes it again. |
-| No secrets in the client | The OAuth token stays in the server-side session. API responses are built from explicit response types, never by serializing a stored record, and a test checks that no response holds a token field. |
+| No secrets in the client | The OAuth token stays in the server-side session. API responses are built from explicit response types, never by serializing a stored record, and a test (`TestNoAPIResponseHoldsASecret`) checks that no API answer holds the token or the session cookie. |
 | Every repository endpoint authorizes per request | `/api/repos/{org}/{repo}/…` goes through the same repository-authorization step as the pages today, on every request, with no client-side cache of permissions. A route test fails if a repository endpoint is registered outside that step. |
 
 ### Migration order

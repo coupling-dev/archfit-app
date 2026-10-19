@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, getJSON, postJSON, repoAPI } from './api';
+import { ApiError, explain, getJSON, postJSON, repoAPI } from './api';
 
 function reply(status: number, body: string) {
   const fetch = vi.fn(async () => new Response(body, { status, headers: { 'Content-Type': 'application/json' } }));
@@ -42,6 +42,15 @@ describe('api', () => {
       }),
     );
     await expect(getJSON('/api/x')).rejects.toMatchObject({ status: 0 });
+  });
+
+  it('sends a 401 to sign-in and shows every other failure', () => {
+    const go = vi.fn();
+    expect(explain(new ApiError(401, 'Sign in to continue.'), '/r/acme/app', go)).toBe('');
+    expect(go).toHaveBeenCalledWith('/auth/login?return=%2Fr%2Facme%2Fapp');
+    go.mockClear();
+    expect(explain(new ApiError(503, 'GitHub is rate limiting.'), '/', go)).toBe('GitHub is rate limiting.');
+    expect(go).not.toHaveBeenCalled();
   });
 
   it('escapes the repository in API paths', () => {

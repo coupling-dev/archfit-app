@@ -37,7 +37,7 @@
   {:else if !session}
     <p class="muted" aria-live="polite">Loading…</p>
   {:else if route.kind === 'home'}
-    <Repos />
+    <Repos {here} />
   {:else if route.kind === 'repo'}
     <Overview {route} {session} {here} />
   {:else}

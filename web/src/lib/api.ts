@@ -62,6 +62,8 @@ export interface Notice {
   location?: string;
 }
 
+import { signInHref } from './route';
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -112,6 +114,14 @@ async function answer<T>(res: Response): Promise<T> {
     throw new ApiError(res.status, typeof message === 'string' && message ? message : unreadable);
   }
   return body as T;
+}
+
+// explain is the sentence a page shows for a failed call. A 401 (the session ended, or GitHub rejected the user's token
+// and the server ended it) goes to sign-in instead, returning here.
+export function explain(e: ApiError, here: string, go: (url: string) => void = (url) => location.assign(url)): string {
+  if (e.status !== 401) return e.message;
+  go(signInHref(here));
+  return '';
 }
 
 // repoAPI is the API path of a repository the page shows; each part is escaped, so a name cannot add a segment.

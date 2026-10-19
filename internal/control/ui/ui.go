@@ -140,7 +140,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("POST /api/repos/{o}/{n}/onboarding", s.apiRepo(permAdmin, s.apiStartOnboarding))
 	mux.Handle("POST /api/repos/{o}/{n}/discover", s.apiRepo(permAdmin, s.apiDiscover))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, r, http.StatusNotFound, errorJSON{Error: "Not found."})
+		s.failJSON(w, r, api.ErrNotFound)
 	})
 
 	// Pages still rendered on the server; each moves to the web app in a later phase.

@@ -1,13 +1,15 @@
 <script lang="ts">
-  import { getJSON, type Repos } from '../lib/api';
+  import { explain, getJSON, type ApiError, type Repos } from '../lib/api';
   import { repoPage } from '../lib/route';
+
+  let { here }: { here: string } = $props();
 
   let body = $state<Repos | null>(null);
   let failure = $state('');
 
   getJSON<Repos>('/api/repos').then(
     (b) => (body = b),
-    (e: Error) => (failure = e.message),
+    (e: ApiError) => (failure = explain(e, here)),
   );
 </script>
 

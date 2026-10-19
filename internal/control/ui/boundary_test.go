@@ -263,6 +263,7 @@ func TestOversizedAndInvalidInput(t *testing.T) {
 		{"a field the endpoint does not take", "/onboarding", nil,
 			map[string]string{"mode": "customer", "owners": "alice", "repo": otherRepo}, http.StatusUnprocessableEntity},
 		{"not JSON", "/onboarding", nil, json.RawMessage(`"mode=customer"`), http.StatusUnprocessableEntity},
+		{"a field discovery does not take", "/discover", nil, map[string]string{"repo": otherRepo}, http.StatusUnprocessableEntity},
 		{"malformed head_sha", "/policy", formOf("", "HEAD~1", policyText+"# x\n"), nil, http.StatusUnprocessableEntity},
 		{"7-character head_sha", "/policy", formOf("", "abc1234", policyText+"# x\n"), nil, http.StatusUnprocessableEntity},
 		{"unknown assist mode", "/assist", url.Values{"mode": {"magic"}, "content": {policyText}}, nil, http.StatusUnprocessableEntity},
@@ -516,6 +517,33 @@ func TestHostileStringsAreEscaped(t *testing.T) {
 	}
 }
 
+// The OAuth token stays on the server: no API answer carries it or the session cookie, whatever the route.
+func TestNoAPIResponseHoldsASecret(t *testing.T) {
+	e := newEnv(t)
+	c := e.as("alice", permAdmin)
+	e.publishReport(repoName, artifact(t, "healthy"))
+	api := "/api/repos/" + repoName
+	answers := []*httptest.ResponseRecorder{
+		c.get("/api/session"),
+		c.get("/api/repos"),
+		c.get(api + "/overview"),
+		c.postJSON(api+"/onboarding", onboardingJSON{Mode: "customer", Owners: "alice"}),
+		c.postJSON(api+"/discover", struct{}{}),
+		c.get("/api/nothing"),
+	}
+	secrets := []string{c.token}
+	for _, value := range c.cookies {
+		secrets = append(secrets, value)
+	}
+	for _, res := range answers {
+		for _, secret := range secrets {
+			if strings.Contains(res.Body.String(), secret) {
+				t.Errorf("an API answer (%d) holds %.12q…: %.200s", res.Code, secret, res.Body.String())
+			}
+		}
+	}
+}
+
 func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 	logs := captureLogs(t)
 	e := newEnv(t)
@@ -537,6 +565,8 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 	wantStatus(t, c.post(base+"/consent", url.Values{"kind": {"managed_llm"}, "action": {"record"}}), http.StatusSeeOther)
 	wantStatus(t, c.get(base+"/graph"), http.StatusOK)
 	wantStatus(t, c.get(base), http.StatusOK)
+	wantStatus(t, c.get("/api/repos"), http.StatusOK)
+	wantStatus(t, c.get("/api/repos/"+repoName+"/overview"), http.StatusOK) // reads account.Status, which fails with the marker
 
 	out := logs.String()
 	if !strings.Contains(out, `"route":"POST /r/{o}/{n}/policy"`) || !strings.Contains(out, `"installation_id":1`) {

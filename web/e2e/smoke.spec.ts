@@ -69,10 +69,11 @@ const installed = {
 
 interface Mock {
   signedIn?: boolean;
+  tokenRejected?: boolean; // the session stands, but GitHub rejects the user's token on the first repository call
   overview?: object;
 }
 
-// mockAPI answers /api in the browser and returns the writes the page sent. Each page records the CSP violations
+// open answers /api in the browser from the mock, opens the page, and returns the writes the page sent. Each page records the CSP violations
 // it sees, and every test fails on one.
 async function open(page: Page, path: string, mock: Mock = {}) {
   const writes: Request[] = [];
@@ -85,6 +86,7 @@ async function open(page: Page, path: string, mock: Mock = {}) {
       return json(200, { notice: 'The onboarding pull request is open.' });
     }
     if (mock.signedIn === false) return json(401, { error: 'Sign in to continue.' });
+    if (mock.tokenRejected && url.pathname !== '/api/session') return json(401, { error: 'Sign in to continue.' });
     switch (url.pathname) {
       case '/api/session':
         return json(200, session);
@@ -132,6 +134,11 @@ test('repositories: each default branch as a dot and a word', async ({ page }) =
   await expect(page.getByText('@alice')).toBeVisible();
   await expect(page.locator('form[action="/auth/logout"] input[name="csrf"]')).toHaveValue(session.csrf);
   await expectClean(page);
+});
+
+test('a token GitHub rejects sends the user to sign in, not to an error', async ({ page }) => {
+  await open(page, '/', { tokenRejected: true });
+  await page.waitForURL('/auth/login?return=%2F');
 });
 
 test('overview: state, pull requests, setup and history', async ({ page }) => {

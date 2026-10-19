@@ -185,7 +185,11 @@ func TestStatusMapping(t *testing.T) {
 		e := newEnv(t)
 		c := e.as("alice", permRead)
 		e.onb.panics = true
-		wantStatus(t, c.get("/api/repos/"+repoName+"/overview"), http.StatusInternalServerError)
+		res := c.get("/api/repos/" + repoName + "/overview")
+		wantStatus(t, res, http.StatusInternalServerError)
+		if ct := res.Header().Get("Content-Type"); ct != mediaJSON || res.Body.String() != `{"error":"internal error"}` {
+			t.Errorf("panic on /api answered %q %q, want the JSON error", ct, res.Body.String())
+		}
 	})
 }
 

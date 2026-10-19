@@ -99,8 +99,10 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   `tone` (`success` | `attention` | `danger` | `accent` | `neutral`) colours a state word; the word is always shown.
 - `POST /api/repos/{o}/{n}/onboarding` [admin] — body `{mode: "customer" | "managed", owners}` (owners one per line);
   answers `{notice}`, or `{location}` of the consent page when managed mode needs consent first.
-- `POST /api/repos/{o}/{n}/discover` [admin] — dispatch the discovery run of the Archfit workflow; answers `{notice}`.
-- Any other `/api/…` path: `404` JSON.
+- `POST /api/repos/{o}/{n}/discover` [admin] — body `{}`; dispatch the discovery run of the Archfit workflow; answers
+  `{notice}`.
+- Any other `/api/…` path, or a method an API path does not take: `404` JSON, outcome `not_found`. A panic on an
+  `/api/` path answers `500` JSON.
 
 Server-rendered pages:
 
@@ -1226,6 +1228,9 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Scenario**: repository names, module names, diagnostics and check titles containing HTML and script text.
   **Expected behavior**: escaped in HTML, in the embedded JSON and in API bodies (`<` as `\u003c`); every page carries
   exactly the CSP of the handler chain, with no `'unsafe-inline'` and no `worker-src`.
+- **Test name**: `TestNoAPIResponseHoldsASecret`
+  **Scenario**: every API route, writes included, and an unknown API path, for a signed-in admin.
+  **Expected behavior**: no answer holds the user's OAuth token or the session cookie.
 - **Test name**: `TestWebPreviewUsesTheProductionCSP`
   **Scenario**: read `web/csp.txt`.
   **Expected behavior**: it is the policy the handler chain sends, so the web app's smoke test runs under it.
@@ -1234,7 +1239,8 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Expected behavior**: no `<style>`, no `style=` attribute, no script that sets `.style` or a style attribute, no
   `blob:` and no worker: the CSP blocks all of them.
 - **Test name**: `TestLogsCarryOnlyIdentifiers`
-  **Scenario**: run save, assist, consent and graph with marker strings in content, instruction and report.
+  **Scenario**: run save, assist, consent, graph and the overview APIs with marker strings in content, instruction,
+  report and the entitlement error.
   **Expected behavior**: no marker, token or cookie value in any log line.
 
 ### Behavior Tests
