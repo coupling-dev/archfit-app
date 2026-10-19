@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"strings"
@@ -148,7 +149,13 @@ func TestStatusMapping(t *testing.T) {
 			if tt.inject != nil {
 				tt.inject(e)
 			}
-			res := c.post("/r/"+repoName+tt.path, tt.form)
+			var res *httptest.ResponseRecorder
+			if tt.path == "/onboarding" { // an /api write: the form names the JSON fields
+				res = c.postJSON("/api/repos/"+repoName+tt.path, onboardingJSON{Mode: tt.form.Get("mode"), Owners: tt.form.Get("owners")})
+				wantContains(t, res.Body.String(), `{"error":"`)
+			} else {
+				res = c.post("/r/"+repoName+tt.path, tt.form)
+			}
 			wantStatus(t, res, tt.want)
 			if got := res.Header().Get("Retry-After"); (got == "60") != tt.retryAfter {
 				t.Errorf("Retry-After = %q, want set: %v", got, tt.retryAfter)
@@ -168,7 +175,7 @@ func TestStatusMapping(t *testing.T) {
 		e := newEnv(t)
 		c := e.as("alice", permRead)
 		e.gh.fail["UserRepos"] = api.ErrRateLimited
-		res := c.get("/")
+		res := c.get("/api/repos")
 		wantStatus(t, res, http.StatusServiceUnavailable)
 		if res.Header().Get("Retry-After") != "60" {
 			t.Error("no Retry-After")
@@ -178,7 +185,7 @@ func TestStatusMapping(t *testing.T) {
 		e := newEnv(t)
 		c := e.as("alice", permRead)
 		e.onb.panics = true
-		wantStatus(t, c.get("/r/"+repoName), http.StatusInternalServerError)
+		wantStatus(t, c.get("/api/repos/"+repoName+"/overview"), http.StatusInternalServerError)
 	})
 }
 
@@ -221,10 +228,27 @@ func TestWording(t *testing.T) {
 		}
 	})
 	t.Run("check conclusions", func(t *testing.T) {
-		want := map[string]string{"success": "healthy", "neutral": "attention", "failure": "blocked", "": "in progress", "bogus": "unknown"}
+		want := map[string]string{"success": "healthy", "neutral": "attention", "failure": "violations found", "": "in progress", "bogus": "unknown"}
 		for conclusion, word := range want {
 			if got := conclusionWord(conclusion); got != word {
 				t.Errorf("conclusionWord(%q) = %q, want %q", conclusion, got, word)
+			}
+		}
+	})
+	t.Run("state tones", func(t *testing.T) {
+		want := map[string]string{"success": "success", "neutral": "attention", "failure": "danger", "": "accent", "stale": "neutral"}
+		for conclusion, tone := range want {
+			if got := toneOf(conclusionWord(conclusion)); got != tone {
+				t.Errorf("tone of %q = %q, want %q", conclusion, got, tone)
+			}
+		}
+		words := map[string]bool{stateNone: true, stateUnknown: true}
+		for _, w := range conclusionWords {
+			words[w] = true
+		}
+		for w := range stateTones {
+			if !words[w] {
+				t.Errorf("stateTones colours %q, which no state reads", w)
 			}
 		}
 	})

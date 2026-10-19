@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
@@ -21,7 +22,10 @@ const (
 	permWrite = "write"
 	permAdmin = "admin"
 
-	contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self'; frame-ancestors 'none'"
+	// contentSecurityPolicy is the same string as web/csp.txt, which the web app's preview server and smoke test use;
+	// TestWebPreviewUsesTheProductionCSP keeps them equal.
+	contentSecurityPolicy = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; " +
+		"font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
 )
 
 // scope is what the chain hands to a page: the signed-in user and, on repository routes, the authorized
@@ -136,9 +140,14 @@ func (s *server) signedIn(next func(http.ResponseWriter, *http.Request, session.
 	})
 }
 
-// signedOut answers a request that has no usable session: 401 on POST, else a redirect to sign in that returns here.
+// signedOut answers a request that has no usable session: 401 on POST and on /api (JSON there), else a redirect to
+// sign in that returns here.
 func signedOut(w http.ResponseWriter, r *http.Request) {
 	logOf(r).outcome = "signed_out"
+	if strings.HasPrefix(r.URL.Path, apiPrefix) {
+		writeJSON(w, r, http.StatusUnauthorized, errorJSON{Error: "Sign in to continue."})
+		return
+	}
 	if r.Method == http.MethodPost {
 		http.Error(w, "not signed in", http.StatusUnauthorized)
 		return

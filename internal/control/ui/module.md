@@ -14,7 +14,10 @@ could still work GitHub-first, but onboarding, schema-guided editing and consent
 
 ## Functional Responsibilities
 
-- Serve server-rendered pages (`html/template`) and embedded static assets (one stylesheet, two small scripts).
+- Serve the web app (`web/`, Svelte 5 built by Vite, embedded from `spa/`) for the overview and the repository page,
+  and its JSON API under `/api/`. The other pages are still server-rendered (`html/template`) with their embedded
+  static assets (one stylesheet, two small scripts); each moves to the web app in its own phase
+  (`docs/design/ui-redesign.md`, Migration order).
 - Authenticate every request through `session` and authorize every repository page at the needed permission.
 - Overview: the user's repositories with their latest default-branch `archfit/state` check conclusion. No score.
 - Repository status: onboarding `Progress`, actions to start onboarding or dispatch discovery, entitlement banner.
@@ -36,9 +39,10 @@ pilot; product.md leaves usability targets open.
 
 ## Encapsulated Knowledge
 
-- Routes, templates, static assets, page wording, the HTTP status mapping of every error.
+- Routes, the JSON API, the web app, templates, static assets, page wording, the HTTP status mapping of every error.
 - The handler chain: recover → security headers → body limit → session → CSRF → authorize → page.
-- The CSRF scheme: `hex(HMAC-SHA256(key = User.Token, "archfit-csrf"))` **[default]**, stateless and per session.
+- The CSRF scheme: `hex(HMAC-SHA256(key = User.Token, "archfit-csrf"))` **[default]**, stateless and per session. Forms
+  send it as the `csrf` field; the web app reads it from `/api/session` and sends it as the `X-CSRF-Token` header.
 - The edit branch name `archfit/edit-<login>` **[default]** and the rules that turn a form into a `Change`.
 - How check conclusions, draft states, plans and assist errors are worded for people.
 - The drawing of the graph (vanilla JavaScript and SVG; no SPA framework, no graph library): status chips that filter,
@@ -66,7 +70,7 @@ type Deps struct {
     Now        func() time.Time
 }
 
-// New returns the server-rendered UI mounted at "/". It serves its own static assets.
+// New returns the UI mounted at "/": the embedded web app, its JSON API and the server-rendered pages.
 func New(d Deps) (http.Handler, error)
 ```
 
@@ -74,13 +78,32 @@ func New(d Deps) (http.Handler, error)
 
 Minimum repository permission in brackets. `{o}/{n}` is only a lookup key for `Sessions.Authorize`.
 
-- `GET /` — overview; a landing page with a sign-in link when not signed in.
+- `GET /` — the web app's shell; the app shows the overview, or a landing page with a sign-in link when
+  `/api/session` answers `401`. The shell holds no tenant data.
 - `GET /auth/login`, `GET /auth/callback`, `POST /auth/logout` — handlers of `session`.
 - `GET /static/…`, `GET /schema/policy.json` — embedded assets and `policy.Schema()`; no sign-in needed, no tenant data.
-- `GET /r/{o}/{n}` [read] — status: default-branch state, open pull requests with their result, setup steps,
-  onboarding progress, entitlement banner, links.
-- `POST /r/{o}/{n}/onboarding` [admin] — form `mode` (`customer` | `managed`), `owners` (one per line).
-- `POST /r/{o}/{n}/discover` [admin] — dispatch the discovery run of the Archfit workflow.
+- `GET /assets/…` — the web app's hashed build files, `Cache-Control: public, max-age=31536000, immutable`; no
+  sign-in needed, no tenant data. A folder or a missing file is `404`; nothing else of the build is served.
+- `GET /r/{o}/{n}` [read] — the shell again, after the repository is authorized, so a repository the user cannot see is
+  "Not found" before any script runs. The app fills it from the overview API.
+
+JSON API: every response is `application/json` with `Cache-Control: no-store` and a body of an explicit type of this
+package, never a stored record. Errors are `{"error": "<sentence>"}` with the status of the mapping below. A `POST`
+needs `Content-Type: application/json` (else `415`) and the `X-CSRF-Token` header (else `403`); a body field this
+package does not know is `422`, so a body cannot name a repository, a user or an installation.
+
+- `GET /api/session` — `{login, csrf}` of the signed-in user.
+- `GET /api/repos` — `{repos: [{full_name, state, tone, reason}], truncated}`: the overview, first 100 by name.
+- `GET /api/repos/{o}/{n}/overview` [read] — default-branch state, open pull requests with their result, setup steps,
+  onboarding progress, entitlement banner, history links, and whether the user may start onboarding or discovery.
+  `tone` (`success` | `attention` | `danger` | `accent` | `neutral`) colours a state word; the word is always shown.
+- `POST /api/repos/{o}/{n}/onboarding` [admin] — body `{mode: "customer" | "managed", owners}` (owners one per line);
+  answers `{notice}`, or `{location}` of the consent page when managed mode needs consent first.
+- `POST /api/repos/{o}/{n}/discover` [admin] — dispatch the discovery run of the Archfit workflow; answers `{notice}`.
+- Any other `/api/…` path: `404` JSON.
+
+Server-rendered pages:
+
 - `GET /r/{o}/{n}/policy` [read] — editor; optional `?branch=archfit/…`.
 - `POST /r/{o}/{n}/policy` [write] — save; form `branch`, `head_sha`, `content`.
 - `POST /r/{o}/{n}/policy/check` [read] — check the text and save nothing; form `branch`, `head_sha`, `content`.
@@ -95,12 +118,12 @@ Minimum repository permission in brackets. `{o}/{n}` is only a lookup key for `S
 
 ### Status mapping
 
-- Not signed in: `303` to `/auth/login?return=<path>` for `GET`, `401` for `POST`. A GitHub `401` on the user's token
+- Not signed in: `303` to `/auth/login?return=<path>` for `GET`, `401` for `POST`, `401` JSON on every `/api/` path. A GitHub `401` on the user's token
   (`api.ErrUserTokenRejected`, from `Authorize` or `UserRepos`) is treated the same way after `Sessions.End`: the cookie
   is deleted, the answer is the not-signed-in one, and the log outcome is `signed_out`. It is never a `502`.
 - `ErrForbidden` from `Authorize`: `404` **[default]**, so that repository names are not confirmed to outsiders.
   `api.ErrNotFound` from any GitHub call a page does not handle itself: `404` with the same "Not found." wording.
-- Missing or wrong CSRF token: `403`. Body over 512 KB **[default]**: `413`.
+- Missing or wrong CSRF token: `403`. Body over 512 KB **[default]**: `413`. An `/api/` `POST` that is not JSON: `415`.
 - `ErrStale`, or a `head_sha` that is not the draft head: `409`, the user's text kept in the editor, nothing written.
 - Invalid form, a policy text over 256 KB or not UTF-8, a text `policy.Diagnose` finds problems in, `ErrInvalidRequest`,
   `ErrInvalidProposal`: `422`, text kept. A save or assist refused by `Diagnose` also lists the problems under the editor.
@@ -110,8 +133,9 @@ Minimum repository permission in brackets. `{o}/{n}` is only a lookup key for `S
   `onboarding.ErrAlreadyOnboarded` "This repository is already onboarded. Reload the page to see its state.",
   `onboarding.ErrBusy` "Managed discovery is busy with other repositories. Try again in a few minutes."
 - `ErrRateLimited`: `503` with `Retry-After: 60` **[default]**. Any other upstream error: `502`. Panic: `500`.
-- Every successful `POST` answers `303` to the page that shows the result, except Check: it answers `200` with the
+- Every successful form `POST` answers `303` to the page that shows the result, except Check: it answers `200` with the
   editor, the problem list or "The check found no problems.", because nothing changed that a redirect could show.
+  Every successful `/api/` call answers `200` with its body.
 
 ## Integrations
 
@@ -876,21 +900,32 @@ type OAuth interface {
 - `session` turns a request into a `User` and a repository name into an authorized `Repo`. It is the only source of
   tenant identity in the UI.
 - `graph` turns a `Report` and policy text into a `View`. Pure.
-- ui's own code is handlers, templates (`templates/`, transparent folder), static assets (`static/`, transparent folder:
-  `app.css`, `editor.js`, `graph.js`, all embedded with `go:embed`; no vendored library) and the handler chain. The two children do not know each other.
+- ui's own code is handlers, the JSON API (`api.go`), the web app's server side (`spa.go`), templates (`templates/`,
+  transparent folder), static assets (`static/`, transparent folder: `app.css`, `editor.js`, `graph.js`, all embedded
+  with `go:embed`; no vendored library) and the handler chain. The two children do not know each other.
+- The web app's source is `web/` at the repository root: Svelte 5 and TypeScript, built by plain Vite (not SvelteKit,
+  whose bootstrap is an inline script). `npm run build` writes `spa/` (`index.html` and `assets/`), embedded with
+  `//go:embed all:spa`. The build is not committed: `spa/` holds only its `.gitignore`, and then the shell answers a
+  page that says to run `make web`, so `go build` and `go test` need no Node. The release image builds it
+  (`Dockerfile`, stage `web`). Styles are one stylesheet, `web/src/app.css`, the tokens and components of
+  `docs/design/prototypes/archfit.css`; no CSS framework and no runtime style injection (no Svelte transitions).
 
 ### Handler chain
 
 1. Recover panics → `500`; log route pattern and request ID only.
-2. Security headers: `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self';
-   frame-ancestors 'none'` (no inline style, no inline script, no worker: every style is a class in `app.css`),
-   `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` **[default]**.
+2. Security headers: `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self';
+   connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'self';
+   frame-ancestors 'none'; object-src 'none'` (no inline style, no inline script, no eval, no worker, no other origin:
+   every style is a class in a stylesheet, and Vite's modulepreload polyfill, an inline script, is off),
+   `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` **[default]**. `web/csp.txt` is the same string,
+   for the web app's preview server and smoke test.
 3. `http.MaxBytesReader` at 512 KB **[default]** on every `POST`.
-4. `Sessions.User`. Missing → login redirect or `401`. A later `ErrUserTokenRejected` from `Authorize` or `UserRepos`
+4. `Sessions.User`. Missing → login redirect, `401`, or `401` JSON on `/api/`. A later `ErrUserTokenRejected` from `Authorize` or `UserRepos`
    calls `Sessions.End` and answers the same way.
-5. `POST` only: constant-time compare of form field `csrf` with the token derived from `User.Token`.
-6. Repository routes: `Sessions.Authorize(user, "{o}/{n}", min)`. The returned `Repo` is handed to the page handler as an
-   argument and is the only repository identity a page may use.
+5. `POST` only: constant-time compare of form field `csrf` (pages) or header `X-CSRF-Token` (`/api/`, after the
+   `application/json` check) with the token derived from `User.Token`.
+6. Repository routes: `Sessions.Authorize(user, "{o}/{n}", min)` on every request, pages and `/api/repos/{o}/{n}/…`
+   alike. The returned `Repo` is handed to the handler as an argument and is the only repository identity it may use.
 
 Every response carries an `X-Request-Id` header with the request ID of its log line **[default]**.
 
@@ -912,7 +947,7 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   report arrived: `policy_merged` can come without one), and fixed advice at `gate_advisory` (rehearse, then the
   settings pull request and the ruleset) and at `gate_required` (the ruleset). At `report_received`, `gate_advisory`
   and `gate_required` the page also reads `archfit/state` on the
-  default-branch head (the overview's word and title, with a link to the graph) and `Pulls.OpenPulls`, newest first:
+  default-branch head (the overview's word and title) and `Pulls.OpenPulls`, newest first:
   at most 20 **[default]**, the rest counted, one `CheckRuns(head, "archfit/state")` each, at most 8 at a time; each
   row links to `/r/{o}/{n}/pull/{number}`. A failed list shows fixed wording and never fails the page; a failed
   lookup is "unknown" for its row only.
@@ -1027,8 +1062,8 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
 ## Constraints and Invariants
 
 - Tenant identity only from the authorized session: the installation ID and repository used by any page come from the `Repo`
-  that `Sessions.Authorize` returned (or from `Users.UserRepos` on the overview). IDs in URLs, queries, forms or headers are
-  never read. The `{o}/{n}` path segment is a lookup key and proves nothing.
+  that `Sessions.Authorize` returned (or from `Users.UserRepos` on the overview). IDs in URLs, queries, forms, JSON bodies
+  or headers are never read. The `{o}/{n}` path segment is a lookup key and proves nothing.
 - Every repository handler authorizes on every request, `GET` included. A revoked user loses access within session's 60 second cache **[default]**.
 - No repository score, no aggregate, no ranking, anywhere.
 - Draft, awaiting review and published are pull-request states read from GitHub. ui stores no draft, no version, no lock.
@@ -1044,11 +1079,16 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
 - AI only on an explicit `POST` by a user with `write`. Nothing is auto-published. Model text is never rendered by ui; users
   see proposals as the diff on GitHub. A failed assist request leaves the editor, Check and saving working.
 - `html/template` auto-escaping everywhere; no `template.HTML` for values that came from GitHub, a report, or a form.
-- Static assets and the schema carry no tenant data; everything else requires a session.
+  The web app renders text only through Svelte's escaped interpolation: no `{@html}`, no `innerHTML`.
+- No secrets in the browser: the OAuth token stays in the session cookie (HttpOnly), and API bodies are explicit
+  response types. The CSRF token is the only per-session value the app holds.
+- Static assets, the web app's build and the schema carry no tenant data; everything else requires a session.
 - Logs: request ID, route pattern, status, duration, user ID, repository ID, installation ID, outcome. No form content, no
   policy text, no instruction, no report content, no cookie or token.
 - Inherited: control-plane code. The gate never calls ui; a panic or outage here changes no check. Standard library only
-  on the Go side, and no browser library: the static assets are this module's own files.
+  on the Go side. Browser code comes only from `web/`, built at build time from the npm lockfile and served by the App:
+  no runtime CDN, which the CSP would block anyway. First load of a page: at most 120 KB gzip of JavaScript and 20 KB
+  of CSS **[default]**, checked in CI (`web/scripts/size.mjs`).
 - Declared restatement: three kinds of link are built from the literal host `https://github.com/`: the assist
   workflow's runs page, the pull-request search and the default-branch commits page. `internal/github` owns the
   knowledge of GitHub hosts and publishes no URL builder; `control/assist` (`RunURL`) and `control/onboarding`
@@ -1083,16 +1123,19 @@ their interfaces except where a test says otherwise. The clock is injected.
   The rows include `api.ErrNotFound` → `404` and the three onboarding sentinels `ErrNoSandbox`, `ErrAlreadyOnboarded`,
   `ErrBusy` → `409`, none of them `502`.
 - **Test name**: `TestWording`
-  **Scenario**: table of `DraftState`, `Plan`, check conclusions and assist sentinels.
-  **Expected behavior**: draft / awaiting review / published / closed; a banner only for trial, grace, suspended; one distinct sentence per sentinel.
+  **Scenario**: table of `DraftState`, `Plan`, check conclusions, their tones, and assist sentinels.
+  **Expected behavior**: draft / awaiting review / published / closed; a banner only for trial, grace, suspended; failure
+  reads "violations found" with tone `danger`, never "blocked"; every coloured word is a word some state reads; one
+  distinct sentence per sentinel.
 
 ### Integration Contract Tests
 
 - **Test name**: `TestRoutesAndMinimumPermissions`
   **Scenario**: table of every route × user permission `none`, `read`, `write`, `admin`, and not signed in.
-  **Expected behavior**: `303` to login or `401` without a session; `404` below the minimum; success at and above it
-  (`200` for a page and for Check, `303` for every other `POST`);
-  `/static/` and `/schema/policy.json` answer without a session.
+  **Expected behavior**: `303` to login or `401` without a session (`401` JSON on `/api/`); `404` below the minimum;
+  success at and above it (`200` for a page, for Check and for every `/api/` call, `303` for every other `POST`);
+  `/static/`, `/schema/policy.json` and `/assets/<hashed file>` answer without a session, the last with the immutable
+  cache header; `/assets/`, a missing asset, `/index.html` and an unknown `/api/` path are `404`.
 - **Test name**: `TestExpiredGitHubTokenSignsOutInsteadOfBadGateway`
   **Scenario**: a signed-in user whose GitHub token is rejected (`ErrUserTokenRejected`) on a repository page, a repository `POST`
   and the overview; then any other GitHub error on the same routes.
@@ -1103,7 +1146,7 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Expected behavior**: "no result yet"; the check title as headline, advisory mode, the violation, the no-baseline and no-attribution line, the run; the mismatch wording and no finding; the expired wording; the no-upload wording; `404`. Also: an `action_required` run over a matching old report shows the action-required wording and no finding; an undecodable report shows "report unavailable"; of two check runs the higher ID wins; "added by this PR" appears only with `origin_status: comparable` and `origin: introduced`.
 - **Test name**: `TestStatusPageShowsBranchPullsAndSetup`
   **Scenario**: stage `gate_advisory` with a default-branch check and one open pull request; stage `workflow_merged`; `OpenPulls` failing; 23 more open pull requests.
-  **Expected behavior**: the default-branch title, the pull request linked to its page with its check title, the current and done steps, the rehearse advice; no pull request or state lookup before a report, also at `policy_merged`, where "First report" is not done; the ruleset advice at `gate_required`; the fixed wording and a `200`; "4 more" and 21 `CheckRuns` calls.
+  **Expected behavior**: through `/api/repos/{o}/{n}/overview`: the default branch, its title and tone, the pull request linked to its page with its check title, the current and done steps, the rehearse advice; no pull request or state lookup before a report, also at `policy_merged`, where "First report" is not done; the ruleset advice at `gate_required`; the fixed wording and a `200`; "4 more" and 21 `CheckRuns` calls.
 - **Test name**: `TestPullPageFoldsACycleAndListsWhatToMeasure`
   **Scenario**: a report with a cycle's two directions, one other violation, an accepted cycle, and a coupling unknown fact.
   **Expected behavior**: one cycle item with both directions' locations, the other violation alone, one accepted cycle
@@ -1145,13 +1188,13 @@ their interfaces except where a test says otherwise. The clock is injected.
   row is `422` with ui's fixed wording, without settings' error text, and with no onboarding call.
 - **Test name**: `TestOnboardingAndDiscoverActions`
   **Scenario**: start customer onboarding with two owners; start managed without consent; dispatch discovery before and after `workflow_merged`.
-  **Expected behavior**: `StartCustomer` gets the parsed owners; managed without consent redirects to the consent page and never calls
-  `StartManaged`; discovery dispatch is refused before the stage and sends input `mode=discovery` on the settings workflow after it.
+  **Expected behavior**: through the JSON API: `StartCustomer` gets the parsed owners and the answer is the onboarding
+  notice; managed without consent answers the consent page as `location` and never calls `StartManaged`; discovery dispatch is refused before the stage and sends input `mode=discovery` on the settings workflow after it.
 
 ### Boundary Tests
 
 - **Test name**: `TestTenantIdentityOnlyFromSession` (T07, T17)
-  **Scenario**: a user of installation A sends every route with installation B's ID and repository ID in query, form and headers, and
+  **Scenario**: a user of installation A sends every route with installation B's ID and repository ID in query, form, JSON body and headers, and
   with `{o}/{n}` of a repository in B.
   **Expected behavior**: supplied IDs have no effect; B's repository answers `404`; no Store key of B is read or written; no GitHub
   call uses B's installation.
@@ -1162,12 +1205,14 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Scenario**: table: 16-byte `CookieKey`; `BaseURL` `http://app.example`; relative `BaseURL`; then a valid config.
   **Expected behavior**: `ui.New` returns the `session.New` error and a nil handler for the first three; no panic; a handler for the last.
 - **Test name**: `TestCSRFRequiredOnEveryPost`
-  **Scenario**: every `POST` route, logout included, without a token and with another user's token.
-  **Expected behavior**: `403`; no sibling module or GitHub write is called.
+  **Scenario**: every `POST` route, logout included, without a token and with another user's token; each `/api/` `POST`
+  also with the right token in a form field instead of the header.
+  **Expected behavior**: `403`, and `415` for the form body; no sibling module or GitHub write is called.
 - **Test name**: `TestOversizedAndInvalidInput`
   **Scenario**: table: 600 KB body; 300 KB policy; invalid UTF-8; YAML with a tab indent; 50 owners lines with one malformed;
-  a `head_sha` that is not hex; a 7-character hex `head_sha` (`proposal.ValidHeadSHA` refuses both).
-  **Expected behavior**: `413` for the first, `422` for the rest; nothing is written.
+  a `head_sha` that is not hex; a 7-character hex `head_sha` (`proposal.ValidHeadSHA` refuses both); a 600 KB JSON body,
+  a JSON body with an unknown field, and a body that is not JSON on the onboarding API.
+  **Expected behavior**: `413` for the two oversized bodies, `422` for the rest; nothing is written.
 - **Test name**: `TestSaveRejectsForeignDocuments`
   **Scenario**: table, through save and through assist: one line of prose with a colon; a JSON object with foreign keys; a
   mapping without `version`; a mapping with one unknown top-level key; then a valid policy.
@@ -1179,8 +1224,11 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Expected behavior**: no number that aggregates findings or dimensions, no grade, no percentage, no sort by health.
 - **Test name**: `TestHostileStringsAreEscaped`
   **Scenario**: repository names, module names, diagnostics and check titles containing HTML and script text.
-  **Expected behavior**: escaped in HTML and in the embedded JSON; every page carries exactly the CSP of the handler
-  chain, with no `'unsafe-inline'` and no `worker-src`.
+  **Expected behavior**: escaped in HTML, in the embedded JSON and in API bodies (`<` as `\u003c`); every page carries
+  exactly the CSP of the handler chain, with no `'unsafe-inline'` and no `worker-src`.
+- **Test name**: `TestWebPreviewUsesTheProductionCSP`
+  **Scenario**: read `web/csp.txt`.
+  **Expected behavior**: it is the policy the handler chain sends, so the web app's smoke test runs under it.
 - **Test name**: `TestNoAssetNeedsInlineStyleOrBlobWorker`
   **Scenario**: read every embedded template and static file.
   **Expected behavior**: no `<style>`, no `style=` attribute, no script that sets `.style` or a style attribute, no
@@ -1255,3 +1303,15 @@ their interfaces except where a test says otherwise. The clock is injected.
 - **Test name**: `TestGraphReadsTheLatestSuccessfulPushRun`
   **Scenario**: a successful push run with the report, then newer runs: a failed push, a successful dispatch, a push in progress.
   **Expected behavior**: the graph is drawn; the only `Artifact` read is the successful push run's.
+
+### Web app tests (`web/`, `make web-check`, CI job "Web app")
+
+- `svelte-check --fail-on-warnings`: types of every component and module.
+- Vitest (`web/src/lib/*.test.ts`): routes (a `.` or `..` owner or name is no route), escaped links and API paths,
+  the sign-in return link, the theme with and without storage, the API client's CSRF header, error sentences and
+  fallbacks.
+- `web/scripts/size.mjs`: the first-load budget above.
+- Playwright smoke (`web/e2e/smoke.spec.ts`): the production build behind `vite preview` with `web/csp.txt` as its
+  header and `/api` mocked in the browser. Landing, repositories, overview, starting onboarding and discovery, and the
+  theme toggle; every page has no `securitypolicyviolation` event and no axe violation in light and in dark; the
+  onboarding write carries the CSRF header and a JSON body.

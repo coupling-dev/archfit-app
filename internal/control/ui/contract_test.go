@@ -31,25 +31,29 @@ import (
 type route struct {
 	method, path, min string
 	form              url.Values
+	body              any // a JSON body: an /api write
 }
+
+func (rt route) api() bool { return strings.HasPrefix(rt.path, apiPrefix) }
 
 // repoRoutes is every repository route with its minimum permission and a form that succeeds.
 func repoRoutes(fullName string) []route {
-	base := "/r/" + fullName
+	base, api := "/r/"+fullName, "/api/repos/"+fullName
 	return []route{
-		{http.MethodGet, base, permRead, nil},
-		{http.MethodPost, base + "/onboarding", permAdmin, url.Values{"mode": {"customer"}, "owners": {"alice"}}},
-		{http.MethodPost, base + "/discover", permAdmin, nil},
-		{http.MethodGet, base + "/policy", permRead, nil},
-		{http.MethodPost, base + "/policy", permWrite, formOf("", "", policyText+"# edit\n")},
-		{http.MethodPost, base + "/policy/check", permRead, formOf("", "", policyText+"# edit\n")},
-		{http.MethodPost, base + "/policy/ready", permWrite, nil}, // the form is filled in by the test: it needs an open draft
-		{http.MethodGet, base + "/graph", permRead, nil},
-		{http.MethodGet, base + "/pull/4", permRead, nil},
-		{http.MethodGet, base + "/pull/4/graph", permRead, nil},
-		{http.MethodPost, base + "/assist", permWrite, url.Values{"mode": {"customer"}, "instruction": {"split module a"}, "content": {policyText}}},
-		{http.MethodGet, base + "/consent", permAdmin, nil},
-		{http.MethodPost, base + "/consent", permAdmin, url.Values{"kind": {"managed_llm"}, "action": {"record"}}},
+		{http.MethodGet, base, permRead, nil, nil},
+		{http.MethodGet, api + "/overview", permRead, nil, nil},
+		{http.MethodPost, api + "/onboarding", permAdmin, nil, onboardingJSON{Mode: "customer", Owners: "alice"}},
+		{http.MethodPost, api + "/discover", permAdmin, nil, struct{}{}},
+		{http.MethodGet, base + "/policy", permRead, nil, nil},
+		{http.MethodPost, base + "/policy", permWrite, formOf("", "", policyText+"# edit\n"), nil},
+		{http.MethodPost, base + "/policy/check", permRead, formOf("", "", policyText+"# edit\n"), nil},
+		{http.MethodPost, base + "/policy/ready", permWrite, nil, nil}, // the form is filled in by the test: it needs an open draft
+		{http.MethodGet, base + "/graph", permRead, nil, nil},
+		{http.MethodGet, base + "/pull/4", permRead, nil, nil},
+		{http.MethodGet, base + "/pull/4/graph", permRead, nil, nil},
+		{http.MethodPost, base + "/assist", permWrite, url.Values{"mode": {"customer"}, "instruction": {"split module a"}, "content": {policyText}}, nil},
+		{http.MethodGet, base + "/consent", permAdmin, nil, nil},
+		{http.MethodPost, base + "/consent", permAdmin, url.Values{"kind": {"managed_llm"}, "action": {"record"}}, nil},
 	}
 }
 
@@ -58,6 +62,9 @@ var permissionRank = map[string]int{"none": 0, permRead: 1, permWrite: 2, permAd
 func (c *client) send(rt route) int {
 	if rt.method == http.MethodGet {
 		return c.get(rt.path).Code
+	}
+	if rt.api() {
+		return c.postJSON(rt.path, rt.body).Code
 	}
 	form := url.Values{}
 	for k, v := range rt.form {
@@ -69,11 +76,13 @@ func (c *client) send(rt route) int {
 func TestOnboardingOffersOnlyCustomerDiscovery(t *testing.T) {
 	e := newEnv(t)
 	e.onb.progress.Stage = onboarding.StageInstalled
-	res := e.as("alice", permAdmin).get("/r/" + repoName)
-	wantStatus(t, res, http.StatusOK)
-	body := res.Body.String()
-	wantContains(t, body, "Start onboarding", `name="owners"`, `name="mode" value="customer"`)
-	if strings.Contains(body, `value="managed"`) {
+	var body statusBody
+	e.as("alice", permAdmin).getJSON("/api/repos/"+repoName+"/overview", &body)
+	if !body.Admin || !body.CanStart {
+		t.Errorf("admin = %v, can start = %v; want an administrator who can start onboarding", body.Admin, body.CanStart)
+	}
+	raw := e.signIn("alice").get("/api/repos/" + repoName + "/overview").Body.String()
+	if strings.Contains(raw, "managed") {
 		t.Error("onboarding offers managed discovery without an available sandbox")
 	}
 }
@@ -83,7 +92,7 @@ func TestRoutesAndMinimumPermissions(t *testing.T) {
 		t.Run(rt.method+" "+rt.path, func(t *testing.T) {
 			e := newEnv(t)
 			res := e.anonymous().do(requestOf(rt))
-			if rt.method == http.MethodGet {
+			if rt.method == http.MethodGet && !rt.api() {
 				wantStatus(t, res, http.StatusSeeOther)
 				if got, want := res.Header().Get("Location"), "/auth/login?return="+url.QueryEscape(rt.path); got != want {
 					t.Errorf("Location = %q, want %q", got, want)
@@ -105,7 +114,7 @@ func TestRoutesAndMinimumPermissions(t *testing.T) {
 					if got != http.StatusNotFound {
 						t.Errorf("%s: status = %d, want 404", perm, got)
 					}
-				case rt.method == http.MethodGet, strings.HasSuffix(rt.path, "/policy/check"):
+				case rt.method == http.MethodGet, strings.HasSuffix(rt.path, "/policy/check"), rt.api():
 					if got != http.StatusOK {
 						t.Errorf("%s: status = %d, want 200", perm, got)
 					}
@@ -122,26 +131,35 @@ func TestRoutesAndMinimumPermissions(t *testing.T) {
 		e := newEnv(t)
 		res := e.anonymous().get("/")
 		wantStatus(t, res, http.StatusOK)
-		wantContains(t, res.Body.String(), `href="/auth/login"`)
-		wantStatus(t, e.as("alice", permRead).get("/"), http.StatusOK)
+		wantContains(t, res.Body.String(), `src="/assets/app-1a2b.js"`)
+		for _, path := range []string{"/api/session", "/api/repos"} {
+			wantStatus(t, e.anonymous().get(path), http.StatusUnauthorized)
+			wantStatus(t, e.as("alice", permRead).get(path), http.StatusOK)
+		}
 	})
 	t.Run("logout", func(t *testing.T) {
 		e := newEnv(t)
 		wantStatus(t, e.anonymous().post("/auth/logout", nil), http.StatusUnauthorized)
 		c := e.as("alice", "none")
+		wantStatus(t, c.get("/api/session"), http.StatusOK)
 		wantStatus(t, c.post("/auth/logout", nil), http.StatusSeeOther)
-		wantContains(t, c.get("/").Body.String(), `href="/auth/login"`)
+		wantStatus(t, c.get("/api/session"), http.StatusUnauthorized)
 	})
 	t.Run("public assets", func(t *testing.T) {
 		e := newEnv(t)
-		for _, path := range []string{"/static/app.css", "/static/editor.js", "/static/graph.js", "/schema/policy.json"} {
+		for _, path := range []string{"/static/app.css", "/static/editor.js", "/static/graph.js", "/schema/policy.json", "/assets/app-1a2b.js"} {
 			res := e.anonymous().get(path)
 			wantStatus(t, res, http.StatusOK)
 			if res.Body.Len() == 0 {
 				t.Errorf("%s is empty", path)
 			}
 		}
-		wantStatus(t, e.anonymous().get("/static/"), http.StatusNotFound)
+		if got := e.anonymous().get("/assets/app-1a2b.js").Header().Get("Cache-Control"); got != immutableCache {
+			t.Errorf("asset Cache-Control = %q, want %q", got, immutableCache)
+		}
+		for _, path := range []string{"/static/", "/assets/", "/assets/missing.js", "/index.html", "/api/nothing"} {
+			wantStatus(t, e.anonymous().get(path), http.StatusNotFound)
+		}
 	})
 }
 
@@ -174,13 +192,21 @@ func TestOverviewReadsStateOnDefaultBranchHead(t *testing.T) {
 			e.gh.fail["BranchHead "+row.name] = errors.New("boom")
 		}
 	}
-	res := e.signIn("alice").get("/")
+	c := e.signIn("alice")
+	res := c.get("/api/repos")
 	wantStatus(t, res, http.StatusOK)
 	body := res.Body.String()
+	var got overviewBody
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	states := map[string]string{}
+	for _, r := range got.Repos {
+		states[r.FullName] = r.State
+	}
 	for _, row := range rows {
-		cell := regexp.MustCompile(regexp.QuoteMeta(row.name) + `</a></td>\s*<td>` + regexp.QuoteMeta(row.want) + `</td>`)
-		if !cell.MatchString(body) {
-			t.Errorf("%s: row does not read %q", row.name, row.want)
+		if states[row.name] != row.want {
+			t.Errorf("%s: row reads %q, want %q", row.name, states[row.name], row.want)
 		}
 	}
 	wantContains(t, body, "No new findings", "Coverage is partial")
@@ -377,10 +403,11 @@ func TestOnboardingAndDiscoverActions(t *testing.T) {
 	e := newEnv(t)
 	e.onb.progress = onboarding.Progress{Stage: onboarding.StageInstalled, Diagnostic: "Start onboarding."}
 	c := e.as("alice", permAdmin)
-	base := "/r/" + repoName
+	base := "/api/repos/" + repoName
 
-	res := c.post(base+"/onboarding", url.Values{"mode": {"customer"}, "owners": {"alice\r\n\r\n  acme/platform-team \n"}})
-	wantStatus(t, res, http.StatusSeeOther)
+	res := c.postJSON(base+"/onboarding", onboardingJSON{Mode: "customer", Owners: "alice\r\n\r\n  acme/platform-team \n"})
+	wantStatus(t, res, http.StatusOK)
+	wantContains(t, res.Body.String(), `"notice":"`+notices["onboarding"]+`"`)
 	if len(e.onb.customer) != 1 || !reflect.DeepEqual(e.onb.customer[0].owners, []string{"alice", "acme/platform-team"}) {
 		t.Errorf("StartCustomer calls = %+v", e.onb.customer)
 	}
@@ -388,26 +415,27 @@ func TestOnboardingAndDiscoverActions(t *testing.T) {
 		t.Errorf("StartCustomer repo = %+v", e.onb.customer[0].repo)
 	}
 
-	res = c.post(base+"/onboarding", url.Values{"mode": {"managed"}, "owners": {"alice"}})
-	wantStatus(t, res, http.StatusSeeOther)
-	if got := res.Header().Get("Location"); got != base+"/consent" {
-		t.Errorf("Location = %q, want the consent page", got)
+	res = c.postJSON(base+"/onboarding", onboardingJSON{Mode: "managed", Owners: "alice"})
+	wantStatus(t, res, http.StatusOK)
+	var next noticeJSON
+	if err := json.Unmarshal(res.Body.Bytes(), &next); err != nil || next.Location != "/r/"+repoName+"/consent" {
+		t.Errorf("answer = %s, want the consent page as location", res.Body.String())
 	}
 	if len(e.onb.managed) != 0 {
 		t.Error("StartManaged was called without consent")
 	}
 	_ = e.consents.Record(t.Context(), installA, account.Consent{Kind: account.ConsentSourceProcessing})
-	wantStatus(t, c.post(base+"/onboarding", url.Values{"mode": {"managed"}, "owners": {"alice"}}), http.StatusSeeOther)
+	wantStatus(t, c.postJSON(base+"/onboarding", onboardingJSON{Mode: "managed", Owners: "alice"}), http.StatusOK)
 	if len(e.onb.managed) != 1 {
 		t.Errorf("StartManaged calls = %d, want 1", len(e.onb.managed))
 	}
 
-	wantStatus(t, c.post(base+"/discover", nil), http.StatusConflict)
+	wantStatus(t, c.postJSON(base+"/discover", struct{}{}), http.StatusConflict)
 	if len(e.gh.called("Dispatch")) != 0 {
 		t.Fatal("discovery was dispatched before workflow_merged")
 	}
 	e.onb.progress.Stage = onboarding.StageWorkflowMerged
-	wantStatus(t, c.post(base+"/discover", nil), http.StatusSeeOther)
+	wantStatus(t, c.postJSON(base+"/discover", struct{}{}), http.StatusOK)
 	calls := e.gh.called("Dispatch")
 	if len(calls) != 1 || calls[0].detail != workflow+"@"+mainBranch+" map[mode:discovery]" || calls[0].installationID != installA {
 		t.Errorf("Dispatch calls = %+v", calls)
@@ -593,45 +621,73 @@ func TestStatusPageShowsBranchPullsAndSetup(t *testing.T) {
 		e.gh.checks[repoName+"@"+sha(10)+"#"+checkState] = []api.CheckRun{{ID: 1, Conclusion: "neutral", Title: "Architecture needs attention"}}
 		e.gh.checks[repoName+"@"+sha(4)+"#"+checkState] = []api.CheckRun{{ID: 2, Conclusion: "neutral", Title: "Architecture violations found · advisory"}}
 	}
-	path := "/r/" + repoName
+	path := "/api/repos/" + repoName + "/overview"
+	read := func(e *env) statusBody {
+		var body statusBody
+		e.as("alice", permRead).getJSON(path, &body)
+		return body
+	}
+	stepOf := func(body statusBody, label string) step {
+		for _, s := range body.Steps {
+			if s.Label == label {
+				return s
+			}
+		}
+		t.Fatalf("no step %q in %+v", label, body.Steps)
+		return step{}
+	}
 	t.Run("advisory", func(t *testing.T) {
 		e := newEnv(t)
 		setup(e, onboarding.StageAdvisory)
-		body := html.UnescapeString(e.as("alice", permRead).get(path).Body.String())
-		wantContains(t, body, `id="main-state"`, "Architecture needs attention", `href="/r/`+repoName+`/pull/4"`,
-			"#4 feat: read options", "Architecture violations found · advisory", `<li class="current">Advisory</li>`,
-			`<li class="done">Policy merged</li>`, "Rehearse the gate")
+		body := read(e)
+		if body.DefaultBranch != mainBranch || body.MainState != "attention" || body.MainTone != "attention" || body.MainReason != "Architecture needs attention" {
+			t.Errorf("default branch = %q %q %q", body.DefaultBranch, body.MainState, body.MainReason)
+		}
+		want := pullRow{Number: 4, Title: "feat: read options", State: "attention", Tone: "attention", Reason: "Architecture violations found · advisory", Href: "/r/" + repoName + "/pull/4"}
+		if len(body.Pulls) != 1 || body.Pulls[0] != want {
+			t.Errorf("pulls = %+v, want [%+v]", body.Pulls, want)
+		}
+		if !stepOf(body, "Advisory").Current || !stepOf(body, "Policy merged").Done || !strings.Contains(body.Next, "Rehearse the gate") {
+			t.Errorf("steps = %+v, next = %q", body.Steps, body.Next)
+		}
 	})
 	t.Run("before the first report there is nothing to read", func(t *testing.T) {
 		e := newEnv(t)
 		setup(e, onboarding.StageWorkflowMerged)
-		body := e.as("alice", permRead).get(path).Body.String()
-		if strings.Contains(body, `id="open-pulls"`) || strings.Contains(body, `id="main-state"`) || len(e.gh.called("OpenPulls")) != 0 {
+		body := read(e)
+		if body.MainState != "" || body.Pulls != nil || len(e.gh.called("OpenPulls")) != 0 {
 			t.Errorf("pull requests looked up before any report")
 		}
-		wantContains(t, body, `<li class="current">Workflow merged</li>`)
+		if !stepOf(body, "Workflow merged").Current {
+			t.Errorf("steps = %+v", body.Steps)
+		}
 	})
 	t.Run("a merged policy without a report reads nothing and marks no report", func(t *testing.T) {
 		e := newEnv(t)
 		setup(e, onboarding.StagePolicyMerged)
-		body := e.as("alice", permRead).get(path).Body.String()
-		if strings.Contains(body, `id="main-state"`) || len(e.gh.called("OpenPulls")) != 0 {
+		body := read(e)
+		if body.MainState != "" || len(e.gh.called("OpenPulls")) != 0 {
 			t.Errorf("state or pull requests read before a report")
 		}
-		wantContains(t, body, `<li class="">First report</li>`, `<li class="current">Policy merged</li>`)
+		if first := stepOf(body, "First report"); first.Done || first.Current || !stepOf(body, "Policy merged").Current {
+			t.Errorf("steps = %+v", body.Steps)
+		}
 	})
 	t.Run("required still names the ruleset", func(t *testing.T) {
 		e := newEnv(t)
 		setup(e, onboarding.StageRequired)
-		wantContains(t, e.as("alice", permRead).get(path).Body.String(), "required check in a GitHub ruleset")
+		if next := read(e).Next; !strings.Contains(next, "required check in a GitHub ruleset") {
+			t.Errorf("next = %q", next)
+		}
 	})
 	t.Run("a failed list leaves the page", func(t *testing.T) {
 		e := newEnv(t)
 		setup(e, onboarding.StageAdvisory)
 		e.gh.fail["OpenPulls"] = errors.New("boom")
-		res := e.as("alice", permRead).get(path)
-		wantStatus(t, res, http.StatusOK)
-		wantContains(t, res.Body.String(), "could not be read", "Architecture needs attention")
+		body := read(e)
+		if !body.PullsError || body.MainState != "attention" {
+			t.Errorf("pulls error = %v, main state = %q", body.PullsError, body.MainState)
+		}
 	})
 	t.Run("at most maxStatusPulls are looked up", func(t *testing.T) {
 		e := newEnv(t)
@@ -639,8 +695,10 @@ func TestStatusPageShowsBranchPullsAndSetup(t *testing.T) {
 		for n := 100; n < 100+maxStatusPulls+3; n++ {
 			e.gh.pulls[repoName+"#"+strconv.Itoa(n)] = api.Pull{Number: n, Title: "p", State: "open", HeadSHA: sha(n)}
 		}
-		body := e.as("alice", permRead).get(path).Body.String()
-		wantContains(t, body, "4 more open pull requests")
+		body := read(e)
+		if len(body.Pulls) != maxStatusPulls || body.PullsMore != 4 {
+			t.Errorf("pulls = %d, more = %d; want %d and 4", len(body.Pulls), body.PullsMore, maxStatusPulls)
+		}
 		if got := len(e.gh.called("CheckRuns")); got != maxStatusPulls+1 {
 			t.Errorf("CheckRuns calls = %d, want %d (one per listed pull request and one for the default branch)", got, maxStatusPulls+1)
 		}

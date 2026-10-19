@@ -88,10 +88,11 @@ func New(d Deps) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newHandler(d, github{files: d.GitHub, checks: d.GitHub, actions: d.GitHub, pulls: d.GitHub, users: d.GitHub}, sessions), nil
+	return newHandler(d, github{files: d.GitHub, checks: d.GitHub, actions: d.GitHub, pulls: d.GitHub, users: d.GitHub}, sessions, builtWeb()), nil
 }
 
-func newHandler(d Deps, gh github, sessions session.Sessions) http.Handler {
+// newHandler mounts every route. web is the build of the web app; tests hand in a small one.
+func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Handler {
 	static, err := fs.Sub(staticFS, "static")
 	if err != nil {
 		panic(err) // the embedded folder name is a compile-time constant
@@ -126,10 +127,23 @@ func newHandler(d Deps, gh github, sessions session.Sessions) http.Handler {
 	mux.Handle("POST /auth/logout", s.signedIn(func(w http.ResponseWriter, r *http.Request, _ session.User) {
 		sessions.LogoutHandler().ServeHTTP(w, r)
 	}))
-	mux.HandleFunc("GET /{$}", s.overview)
-	mux.Handle("GET /r/{o}/{n}", s.repo(permRead, s.status))
-	mux.Handle("POST /r/{o}/{n}/onboarding", s.repo(permAdmin, s.startOnboarding))
-	mux.Handle("POST /r/{o}/{n}/discover", s.repo(permAdmin, s.discover))
+	// Pages of the web app: the shell, which the app fills from /api. The repository page still authorizes, so a
+	// repository the user cannot see is "Not found" before any script runs.
+	index := shell(web)
+	mux.HandleFunc("GET /assets/", assets(web))
+	mux.HandleFunc("GET /{$}", index)
+	mux.Handle("GET /r/{o}/{n}", s.repo(permRead, func(w http.ResponseWriter, r *http.Request, _ scope) { index(w, r) }))
+
+	mux.Handle("GET /api/session", s.apiSignedIn(apiSession))
+	mux.Handle("GET /api/repos", s.apiSignedIn(s.apiRepos))
+	mux.Handle("GET /api/repos/{o}/{n}/overview", s.apiRepo(permRead, s.apiStatus))
+	mux.Handle("POST /api/repos/{o}/{n}/onboarding", s.apiRepo(permAdmin, s.apiStartOnboarding))
+	mux.Handle("POST /api/repos/{o}/{n}/discover", s.apiRepo(permAdmin, s.apiDiscover))
+	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, r, http.StatusNotFound, errorJSON{Error: "Not found."})
+	})
+
+	// Pages still rendered on the server; each moves to the web app in a later phase.
 	mux.Handle("GET /r/{o}/{n}/policy", s.repo(permRead, s.editor))
 	mux.Handle("POST /r/{o}/{n}/policy", s.repo(permWrite, s.save))
 	mux.Handle("POST /r/{o}/{n}/policy/check", s.repo(permRead, s.check))

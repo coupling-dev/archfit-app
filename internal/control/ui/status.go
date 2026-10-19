@@ -36,50 +36,52 @@ func reached(have, want onboarding.Stage) bool {
 }
 
 type statusBody struct {
-	MainState  string // archfit/state on the default-branch head, a word
-	MainReason string // its title
-	Pulls      []pullRow
-	PullsMore  int  // open pull requests past maxStatusPulls
-	PullsError bool // the list could not be read; the rest of the page stands
-	Steps      []step
-	Next       string // the next setup step, "" when there is none
-	GraphHref  string
+	DefaultBranch string    `json:"default_branch"`
+	MainState     string    `json:"main_state"`  // archfit/state on the default-branch head, a word; "" before a report
+	MainReason    string    `json:"main_reason"` // its title
+	MainTone      string    `json:"main_tone"`
+	Pulls         []pullRow `json:"pulls"`
+	PullsMore     int       `json:"pulls_more"`  // open pull requests past maxStatusPulls
+	PullsError    bool      `json:"pulls_error"` // the list could not be read; the rest of the page stands
+	Steps         []step    `json:"steps"`
+	Next          string    `json:"next"` // the next setup step, "" when there is none
 
-	Stage       string
-	Diagnostic  string
-	DraftURL    string
-	DraftState  string
-	Banner      string
-	Admin       bool
-	CanStart    bool
-	CanDiscover bool
-	PullsURL    string
-	ChecksURL   string
+	Stage       string `json:"stage"`
+	Diagnostic  string `json:"diagnostic"`
+	DraftURL    string `json:"draft_url"`
+	DraftState  string `json:"draft_state"`
+	Banner      string `json:"banner"`
+	Admin       bool   `json:"admin"`
+	CanStart    bool   `json:"can_start"`
+	CanDiscover bool   `json:"can_discover"`
+	PullsURL    string `json:"pulls_url"`
+	ChecksURL   string `json:"checks_url"`
 }
 
-func (s *server) status(w http.ResponseWriter, r *http.Request, sc scope) {
+// apiStatus is the repository overview: the default branch, open pull requests and the onboarding path.
+func (s *server) apiStatus(r *http.Request, sc scope) (any, error) {
 	progress, err := s.onboarding.Progress(r.Context(), sc.repo)
 	if err != nil {
-		s.fail(w, r, sc, err)
-		return
+		return nil, err
 	}
 	_, adminErr := s.sessions.Authorize(r.Context(), sc.user, sc.repo.FullName, permAdmin)
 	body := statusBody{
-		Stage:       stageWords[progress.Stage],
-		Diagnostic:  progress.Diagnostic,
-		Admin:       adminErr == nil,
-		CanStart:    progress.Stage == onboarding.StageInstalled && progress.OpenDraft == nil,
-		CanDiscover: reached(progress.Stage, onboarding.StageWorkflowMerged),
-		PullsURL:    "https://github.com/" + sc.repo.FullName + "/pulls?q=" + url.QueryEscape("is:pr head:archfit/"),
-		ChecksURL:   "https://github.com/" + sc.repo.FullName + "/commits/" + sc.repo.DefaultBranch,
+		DefaultBranch: sc.repo.DefaultBranch,
+		Stage:         stageWords[progress.Stage],
+		Diagnostic:    progress.Diagnostic,
+		Admin:         adminErr == nil,
+		CanStart:      progress.Stage == onboarding.StageInstalled && progress.OpenDraft == nil,
+		CanDiscover:   reached(progress.Stage, onboarding.StageWorkflowMerged),
+		PullsURL:      "https://github.com/" + sc.repo.FullName + "/pulls?q=" + url.QueryEscape("is:pr head:archfit/"),
+		ChecksURL:     "https://github.com/" + sc.repo.FullName + "/commits/" + sc.repo.DefaultBranch,
 	}
 	if d := progress.OpenDraft; d != nil {
 		body.DraftURL, body.DraftState = d.URL, draftWords[d.State]
 	}
 	body.Steps, body.Next = setupSteps(progress.Stage)
-	body.GraphHref = repoPath(sc, "/graph")
 	if hasReport(progress.Stage) {
 		body.MainState, body.MainReason = s.defaultBranchState(r.Context(), sc.repo)
+		body.MainTone = toneOf(body.MainState)
 		body.Pulls, body.PullsMore, body.PullsError = s.openPulls(r.Context(), sc)
 	}
 	st, err := s.account.Status(r.Context(), sc.repo.InstallationID, s.now())
@@ -88,7 +90,7 @@ func (s *server) status(w http.ResponseWriter, r *http.Request, sc scope) {
 	} else {
 		body.Banner = banner(st)
 	}
-	s.render(w, r, http.StatusOK, "status", s.newPage(r, sc, sc.repo.FullName, body))
+	return body, nil
 }
 
 // parseOwners reads one owner per line; blank lines are skipped. wire/settings owns the owner rule, so the
@@ -107,53 +109,55 @@ func parseOwners(text string) ([]string, error) {
 	return owners, nil
 }
 
-func (s *server) startOnboarding(w http.ResponseWriter, r *http.Request, sc scope) {
-	owners, err := parseOwners(r.PostForm.Get("owners"))
-	if err != nil {
-		s.fail(w, r, sc, err)
-		return
+type onboardingJSON struct {
+	Mode   string `json:"mode"`
+	Owners string `json:"owners"` // one owner per line, as typed
+}
+
+func (s *server) apiStartOnboarding(r *http.Request, sc scope) (any, error) {
+	var in onboardingJSON
+	if err := decodeJSON(r, &in); err != nil {
+		return nil, err
 	}
-	switch r.PostForm.Get("mode") {
+	owners, err := parseOwners(in.Owners)
+	if err != nil {
+		return nil, err
+	}
+	switch in.Mode {
 	case modeCustomer:
 		_, err = s.onboarding.StartCustomer(r.Context(), sc.repo, owners)
 	case modeManaged:
 		if !s.consents.Has(r.Context(), sc.repo.InstallationID, account.ConsentSourceProcessing) {
 			logOf(r).outcome = "consent_needed"
-			seeOther(w, r, repoPath(sc, "/consent"), nil)
-			return
+			return noticeJSON{Location: repoPath(sc, "/consent")}, nil
 		}
 		_, err = s.onboarding.StartManaged(r.Context(), sc.repo, owners)
 	default:
 		err = invalid("Choose customer or managed onboarding.")
 	}
 	if err != nil {
-		s.fail(w, r, sc, err)
-		return
+		return nil, err
 	}
-	seeOther(w, r, repoPath(sc, ""), url.Values{"notice": {"onboarding"}})
+	return noticeJSON{Notice: notices["onboarding"]}, nil
 }
 
-func (s *server) discover(w http.ResponseWriter, r *http.Request, sc scope) {
+func (s *server) apiDiscover(r *http.Request, sc scope) (any, error) {
 	progress, err := s.onboarding.Progress(r.Context(), sc.repo)
 	if err != nil {
-		s.fail(w, r, sc, err)
-		return
+		return nil, err
 	}
 	if !reached(progress.Stage, onboarding.StageWorkflowMerged) {
-		s.fail(w, r, sc, conflict("Discovery needs the Archfit workflow on the default branch. Merge the onboarding pull request first."))
-		return
+		return nil, conflict("Discovery needs the Archfit workflow on the default branch. Merge the onboarding pull request first.")
 	}
 	set, err := s.settings(r.Context(), sc.repo)
 	if err != nil {
-		s.fail(w, r, sc, err)
-		return
+		return nil, err
 	}
 	err = s.gh.actions.Dispatch(r.Context(), sc.repo.RepoRef, set.Workflow, sc.repo.DefaultBranch, map[string]string{"mode": "discovery"})
 	if err != nil {
-		s.fail(w, r, sc, err)
-		return
+		return nil, err
 	}
-	seeOther(w, r, repoPath(sc, ""), url.Values{"notice": {"discover"}})
+	return noticeJSON{Notice: notices["discover"]}, nil
 }
 
 var errNoSettings = conflict("The default branch has no valid " + settings.Path + " yet. Finish onboarding first.")
@@ -230,16 +234,18 @@ func (s *server) consent(w http.ResponseWriter, r *http.Request, sc scope) {
 const maxStatusPulls = 20
 
 type pullRow struct {
-	Number int
-	Title  string
-	State  string // archfit/state on the head, a word
-	Reason string // its title: the headline feedback wrote
-	Href   string
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	State  string `json:"state"` // archfit/state on the head, a word
+	Tone   string `json:"tone"`
+	Reason string `json:"reason"` // its title: the headline feedback wrote
+	Href   string `json:"href"`
 }
 
 type step struct {
-	Label         string
-	Done, Current bool
+	Label   string `json:"label"`
+	Done    bool   `json:"done"`
+	Current bool   `json:"current"`
 }
 
 var stepLabels = map[onboarding.Stage]string{
@@ -295,7 +301,7 @@ func (s *server) openPulls(ctx context.Context, sc scope) (rows []pullRow, more 
 			defer wg.Done()
 			defer func() { <-slots }()
 			state, reason := s.checkWord(ctx, sc.repo.RepoRef, p.HeadSHA, checkState)
-			rows[i] = pullRow{Number: p.Number, Title: p.Title, State: state, Reason: reason, Href: repoPath(sc, "/pull/"+strconv.Itoa(p.Number))}
+			rows[i] = pullRow{Number: p.Number, Title: p.Title, State: state, Tone: toneOf(state), Reason: reason, Href: repoPath(sc, "/pull/"+strconv.Itoa(p.Number))}
 		}()
 	}
 	wg.Wait()

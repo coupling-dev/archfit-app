@@ -32,7 +32,7 @@ func (w *world) seedShop() {
 
 func onboard(t *testing.T, b *browser, mode string) (*http.Response, string) {
 	t.Helper()
-	return b.post("/r/"+shopRepo+"/onboarding", url.Values{"csrf": {b.csrf("/r/" + shopRepo)}, "owners": {owner}, "mode": {mode}})
+	return b.postJSON("/api/repos/"+shopRepo+"/onboarding", map[string]string{"owners": owner, "mode": mode})
 }
 
 func recordConsent(t *testing.T, b *browser, repo, kind string, extra url.Values) {
@@ -58,7 +58,7 @@ func TestBothOnboardingModesComplete(t *testing.T) {
 		b.signIn("alice")
 
 		for range 2 { // the second submit is a retry
-			if resp, page := onboard(t, b, "customer"); resp.StatusCode != http.StatusSeeOther {
+			if resp, page := onboard(t, b, "customer"); resp.StatusCode != http.StatusOK {
 				t.Fatalf("start onboarding: %d\n%s", resp.StatusCode, page)
 			}
 		}
@@ -73,7 +73,7 @@ func TestBothOnboardingModesComplete(t *testing.T) {
 		}
 		w.edit(shopRepo, func(rp *repo) { rp.merge(t, "archfit/onboarding") })
 
-		if resp, page := b.post("/r/"+shopRepo+"/discover", url.Values{"csrf": {b.csrf("/r/" + shopRepo)}}); resp.StatusCode != http.StatusSeeOther {
+		if resp, page := b.postJSON("/api/repos/"+shopRepo+"/discover", struct{}{}); resp.StatusCode != http.StatusOK {
 			t.Fatalf("dispatch discovery: %d\n%s", resp.StatusCode, page)
 		}
 		if d := w.dispatchesOf(shopRepo); len(d) != 1 || d[0].Ref != "main" || d[0].Inputs["mode"] != "discovery" {
@@ -110,9 +110,9 @@ func TestBothOnboardingModesComplete(t *testing.T) {
 		b := newBrowser(t, s.do)
 		b.signIn("alice")
 
-		resp, _ := onboard(t, b, "managed")
-		if resp.StatusCode != http.StatusSeeOther || !strings.HasSuffix(resp.Header.Get("Location"), "/consent") {
-			t.Fatalf("managed onboarding without consent: %d to %q; want the consent page", resp.StatusCode, resp.Header.Get("Location"))
+		resp, page := onboard(t, b, "managed")
+		if resp.StatusCode != http.StatusOK || !strings.Contains(page, `"location":"/r/`+shopRepo+`/consent"`) {
+			t.Fatalf("managed onboarding without consent: %d %s; want the consent page as the next location", resp.StatusCode, page)
 		}
 		if sandbox.count() != 0 || provider.count() != 0 || len(w.pullsOf(shopRepo)) != 0 {
 			t.Errorf("without consent: %d sandbox jobs, %d LLM calls, %d pull requests; want none",
@@ -129,7 +129,7 @@ func TestBothOnboardingModesComplete(t *testing.T) {
 		b.signIn("alice")
 		recordConsent(t, b, shopRepo, "source_processing", nil)
 
-		if resp, page := onboard(t, b, "managed"); resp.StatusCode != http.StatusSeeOther {
+		if resp, page := onboard(t, b, "managed"); resp.StatusCode != http.StatusOK {
 			t.Fatalf("managed onboarding: %d\n%s", resp.StatusCode, page)
 		}
 		w.awaitWrites("the managed discovery job", func() bool {

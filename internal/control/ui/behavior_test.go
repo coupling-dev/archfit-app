@@ -50,13 +50,13 @@ func TestRevokedUserLosesEveryPage(t *testing.T) {
 	for _, path := range []string{"", "/policy", "/graph"} {
 		wantStatus(t, c.get("/r/"+repoName+path), http.StatusOK)
 	}
-	wantContains(t, c.get("/").Body.String(), repoName)
+	wantContains(t, c.get("/api/repos").Body.String(), repoName)
 
 	e.grant("alice", repoName, "none")
 	e.now = e.now.Add(61 * time.Second)
 
 	allNotFound(t, e, c)
-	if strings.Contains(c.get("/").Body.String(), repoName) {
+	if strings.Contains(c.get("/api/repos").Body.String(), repoName) {
 		t.Error("the overview still lists the repository")
 	}
 }
@@ -720,8 +720,11 @@ func TestExpiredGitHubTokenSignsOutInsteadOfBadGateway(t *testing.T) {
 			},
 			http.StatusUnauthorized, ""},
 		{"overview", func(e *env) { e.gh.fail["UserRepos"] = rejected },
-			func(c *client) *httptest.ResponseRecorder { return c.get("/") },
-			http.StatusSeeOther, "/auth/login?return=" + url.QueryEscape("/")},
+			func(c *client) *httptest.ResponseRecorder { return c.get("/api/repos") },
+			http.StatusUnauthorized, ""},
+		{"repository overview", func(e *env) { e.gh.fail["Permission"] = rejected },
+			func(c *client) *httptest.ResponseRecorder { return c.get("/api/repos/" + repoName + "/overview") },
+			http.StatusUnauthorized, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -757,7 +760,7 @@ func TestExpiredGitHubTokenSignsOutInsteadOfBadGateway(t *testing.T) {
 			e := newEnv(t)
 			c := e.as("alice", permRead)
 			e.gh.fail[key] = errors.New("boom")
-			path := "/"
+			path := "/api/repos"
 			if key == "Permission" {
 				path = "/r/" + repoName
 			}

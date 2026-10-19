@@ -99,12 +99,29 @@ var conclusionWords = map[string]string{
 	"":                "in progress",
 	"success":         "healthy",
 	"neutral":         "attention",
-	"failure":         "blocked",
+	"failure":         "violations found", // never "blocked": in advisory mode nothing blocks
 	"action_required": "action required",
 	"cancelled":       "cancelled",
 	"timed_out":       "timed out",
 	"skipped":         "skipped",
 	"stale":           "outdated",
+}
+
+// stateTones colour a state word in the web app; a word not listed is "neutral". The word is always shown next to
+// the colour, so the colour is never the only signal.
+var stateTones = map[string]string{
+	"healthy":          "success",
+	"attention":        "attention",
+	"violations found": "danger",
+	"action required":  "danger",
+	"in progress":      "accent",
+}
+
+func toneOf(word string) string {
+	if t, ok := stateTones[word]; ok {
+		return t
+	}
+	return "neutral"
 }
 
 func conclusionWord(c string) string {

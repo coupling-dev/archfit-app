@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
@@ -41,6 +43,12 @@ const (
 )
 
 var cookieKey = bytes.Repeat([]byte{7}, 32)
+
+// testWeb stands in for the web app build: a shell and one hashed asset.
+var testWeb = fstest.MapFS{
+	"index.html":         {Data: []byte(`<!doctype html><title>Archfit</title><div id="app"></div><script type="module" src="/assets/app-1a2b.js"></script>`)},
+	"assets/app-1a2b.js": {Data: []byte(`console.log("archfit")`)},
+}
 
 func TestMain(m *testing.M) {
 	slog.SetDefault(slog.New(slog.DiscardHandler))
@@ -77,7 +85,7 @@ func newEnv(t *testing.T) *env {
 	}
 	e.handler = newHandler(Deps{
 		Account: e.acct, Consents: e.consents, Onboarding: e.onb, Assist: e.assist, Proposals: e.props, Now: clock,
-	}, github{files: gh, checks: gh, actions: gh, pulls: gh, users: gh}, sessions)
+	}, github{files: gh, checks: gh, actions: gh, pulls: gh, users: gh}, sessions, testWeb)
 
 	e.addRepo(repoName, installA, 10)
 	e.addRepo(otherRepo, installB, 20)
@@ -186,6 +194,34 @@ func (c *client) post(path string, form url.Values) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodPost, baseURL+path, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return c.do(req)
+}
+
+// postJSON sends body as JSON with the session's CSRF token in the header, as the web app does.
+func (c *client) postJSON(path string, body any) *httptest.ResponseRecorder {
+	return c.postJSONWith(path, body, c.csrf())
+}
+
+func (c *client) postJSONWith(path string, body any, csrf string) *httptest.ResponseRecorder {
+	raw, err := json.Marshal(body)
+	if err != nil {
+		c.e.t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, baseURL+path, bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	if csrf != "" {
+		req.Header.Set(csrfHeader, csrf)
+	}
+	return c.do(req)
+}
+
+// getJSON reads an /api endpoint into out and fails the test unless it answers 200.
+func (c *client) getJSON(path string, out any) {
+	c.e.t.Helper()
+	res := c.get(path)
+	wantStatus(c.e.t, res, http.StatusOK)
+	if err := json.Unmarshal(res.Body.Bytes(), out); err != nil {
+		c.e.t.Fatalf("decode %s: %v", path, err)
+	}
 }
 
 func formOf(branch, headSHA, content string) url.Values {

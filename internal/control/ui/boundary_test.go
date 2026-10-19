@@ -2,12 +2,14 @@ package ui
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"html"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"reflect"
 	"regexp"
 	"sort"
@@ -55,9 +57,15 @@ func TestTenantIdentityOnlyFromSession(t *testing.T) {
 			form[k] = v
 		}
 		var req *http.Request
-		if rt.method == http.MethodGet {
+		switch {
+		case rt.method == http.MethodGet:
 			req = httptest.NewRequest(rt.method, baseURL+rt.path+"?"+foreign.Encode(), nil)
-		} else {
+		case rt.api(): // the body is the endpoint's own type: a foreign field in it is refused (TestOversizedAndInvalidInput)
+			raw, _ := json.Marshal(rt.body)
+			req = httptest.NewRequest(rt.method, baseURL+rt.path+"?"+foreign.Encode(), bytes.NewReader(raw))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set(csrfHeader, c.csrf())
+		default:
 			form.Set("csrf", c.csrf())
 			req = httptest.NewRequest(rt.method, baseURL+rt.path+"?"+foreign.Encode(), strings.NewReader(form.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -128,10 +136,10 @@ func TestOverviewShowsOnlyAccessibleRepositories(t *testing.T) {
 	for i, name := range []string{"acme/concealed-1", "acme/concealed-2", "rival/concealed-3", "rival/concealed-4", "other/concealed-5"} {
 		e.addRepo(name, int64(1+i%3), int64(50+i))
 	}
-	res := e.signIn("alice").get("/")
+	res := e.signIn("alice").get("/api/repos")
 	wantStatus(t, res, http.StatusOK)
 	body := res.Body.String()
-	if got := strings.Count(body, `<td><a href="/r/`); got != 3 {
+	if got := strings.Count(body, `"full_name"`); got != 3 {
 		t.Errorf("rows = %d, want 3", got)
 	}
 	if strings.Contains(body, "concealed") || strings.Contains(body, otherRepo) {
@@ -189,7 +197,7 @@ func TestNewRejectsBadSessionConfig(t *testing.T) {
 }
 
 func TestCSRFRequiredOnEveryPost(t *testing.T) {
-	routes := append(repoRoutes(repoName), route{http.MethodPost, "/auth/logout", "", nil})
+	routes := append(repoRoutes(repoName), route{http.MethodPost, "/auth/logout", "", nil, nil})
 	e := newEnv(t)
 	c := e.as("alice", permAdmin)
 	e.props.push(repoName, "archfit/edit-alice", policyText+"# draft\n")
@@ -200,18 +208,34 @@ func TestCSRFRequiredOnEveryPost(t *testing.T) {
 			continue
 		}
 		for name, token := range map[string]string{"no token": "", "token of another user": bob} {
-			form := url.Values{"csrf": {token}}
-			for k, v := range rt.form {
-				form[k] = v
+			var got int
+			if rt.api() {
+				got = c.postJSONWith(rt.path, rt.body, token).Code
+			} else {
+				form := url.Values{"csrf": {token}}
+				for k, v := range rt.form {
+					form[k] = v
+				}
+				got = c.post(rt.path, form).Code
 			}
-			if got := c.post(rt.path, form).Code; got != http.StatusForbidden {
+			if got != http.StatusForbidden {
 				t.Errorf("%s with %s = %d, want 403", rt.path, name, got)
 			}
 		}
+		if !rt.api() {
+			continue
+		}
+		// An /api write takes the token only from the header: a form field or a form body is not enough.
+		form := url.Values{"csrf": {c.csrf()}}
+		req := httptest.NewRequest(http.MethodPost, baseURL+rt.path, strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		if got := c.do(req).Code; got != http.StatusUnsupportedMediaType {
+			t.Errorf("%s as a form = %d, want 415", rt.path, got)
+		}
 	}
 	e.noWrites(t)
-	if body := c.get("/").Body.String(); !strings.Contains(body, "Sign out") {
-		t.Error("a logout without a CSRF token ended the session")
+	if got := c.get("/api/session").Code; got != http.StatusOK {
+		t.Errorf("a logout without a CSRF token ended the session: /api/session = %d", got)
 	}
 }
 
@@ -224,25 +248,34 @@ func TestOversizedAndInvalidInput(t *testing.T) {
 	tests := []struct {
 		name, path string
 		form       url.Values
+		body       any // an /api write instead of a form
 		want       int
 	}{
-		{"600 KB body", "/policy", formOf("", "", "#"+strings.Repeat("a", 600<<10)), http.StatusRequestEntityTooLarge},
-		{"300 KB policy", "/policy", formOf("", "", "#"+strings.Repeat("a", 300<<10)), http.StatusUnprocessableEntity},
-		{"300 KB policy through assist", "/assist", assistForm("#" + strings.Repeat("a", 300<<10)), http.StatusUnprocessableEntity},
-		{"invalid UTF-8", "/policy", formOf("", "", "modules: {}\n# \xff\xfe\n"), http.StatusUnprocessableEntity},
-		{"tab indent", "/policy", formOf("", "", "modules:\n\ta: {}\n"), http.StatusUnprocessableEntity},
-		{"malformed owner", "/onboarding", url.Values{"mode": {"customer"}, "owners": {strings.Join(owners, "\n")}}, http.StatusUnprocessableEntity},
-		{"no owner", "/onboarding", url.Values{"mode": {"customer"}, "owners": {" \n"}}, http.StatusUnprocessableEntity},
-		{"unknown mode", "/onboarding", url.Values{"mode": {"magic"}, "owners": {"alice"}}, http.StatusUnprocessableEntity},
-		{"malformed head_sha", "/policy", formOf("", "HEAD~1", policyText+"# x\n"), http.StatusUnprocessableEntity},
-		{"7-character head_sha", "/policy", formOf("", "abc1234", policyText+"# x\n"), http.StatusUnprocessableEntity},
-		{"unknown assist mode", "/assist", url.Values{"mode": {"magic"}, "content": {policyText}}, http.StatusUnprocessableEntity},
+		{"600 KB body", "/policy", formOf("", "", "#"+strings.Repeat("a", 600<<10)), nil, http.StatusRequestEntityTooLarge},
+		{"600 KB JSON body", "/onboarding", nil, onboardingJSON{Mode: "customer", Owners: strings.Repeat("a", 600<<10)}, http.StatusRequestEntityTooLarge},
+		{"300 KB policy", "/policy", formOf("", "", "#"+strings.Repeat("a", 300<<10)), nil, http.StatusUnprocessableEntity},
+		{"300 KB policy through assist", "/assist", assistForm("#" + strings.Repeat("a", 300<<10)), nil, http.StatusUnprocessableEntity},
+		{"invalid UTF-8", "/policy", formOf("", "", "modules: {}\n# \xff\xfe\n"), nil, http.StatusUnprocessableEntity},
+		{"tab indent", "/policy", formOf("", "", "modules:\n\ta: {}\n"), nil, http.StatusUnprocessableEntity},
+		{"malformed owner", "/onboarding", nil, onboardingJSON{Mode: "customer", Owners: strings.Join(owners, "\n")}, http.StatusUnprocessableEntity},
+		{"no owner", "/onboarding", nil, onboardingJSON{Mode: "customer", Owners: " \n"}, http.StatusUnprocessableEntity},
+		{"unknown mode", "/onboarding", nil, onboardingJSON{Mode: "magic", Owners: "alice"}, http.StatusUnprocessableEntity},
+		{"a field the endpoint does not take", "/onboarding", nil,
+			map[string]string{"mode": "customer", "owners": "alice", "repo": otherRepo}, http.StatusUnprocessableEntity},
+		{"not JSON", "/onboarding", nil, json.RawMessage(`"mode=customer"`), http.StatusUnprocessableEntity},
+		{"malformed head_sha", "/policy", formOf("", "HEAD~1", policyText+"# x\n"), nil, http.StatusUnprocessableEntity},
+		{"7-character head_sha", "/policy", formOf("", "abc1234", policyText+"# x\n"), nil, http.StatusUnprocessableEntity},
+		{"unknown assist mode", "/assist", url.Values{"mode": {"magic"}, "content": {policyText}}, nil, http.StatusUnprocessableEntity},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			e := newEnv(t)
 			c := e.as("alice", permAdmin)
-			wantStatus(t, c.post("/r/"+repoName+tt.path, tt.form), tt.want)
+			if tt.body != nil {
+				wantStatus(t, c.postJSON("/api/repos/"+repoName+tt.path, tt.body), tt.want)
+			} else {
+				wantStatus(t, c.post("/r/"+repoName+tt.path, tt.form), tt.want)
+			}
 			e.noWrites(t)
 		})
 	}
@@ -272,12 +305,12 @@ func TestOwnersRuleIsSettings(t *testing.T) {
 			}))
 			e := newEnv(t)
 			e.onb.progress = onboarding.Progress{Stage: onboarding.StageInstalled}
-			form := url.Values{"mode": {"customer"}, "owners": {"  " + strings.Join(tt.owners, " \r\n\r\n ") + "\n"}}
+			body := onboardingJSON{Mode: "customer", Owners: "  " + strings.Join(tt.owners, " \r\n\r\n ") + "\n"}
 
-			res := e.as("alice", permAdmin).post("/r/"+repoName+"/onboarding", form)
+			res := e.as("alice", permAdmin).postJSON("/api/repos/"+repoName+"/onboarding", body)
 
 			if settingsErr == nil {
-				wantStatus(t, res, http.StatusSeeOther)
+				wantStatus(t, res, http.StatusOK)
 				if len(e.onb.customer) != 1 || !reflect.DeepEqual(e.onb.customer[0].owners, tt.owners) {
 					t.Errorf("StartCustomer calls = %+v, want one with %v", e.onb.customer, tt.owners)
 				}
@@ -360,7 +393,7 @@ func TestNoScoreAnywhere(t *testing.T) {
 			e.publishReport(repoName, artifact(t, fixture))
 			e.acct.status = account.Status{Plan: account.PlanTrial, TrialEnds: e.now.AddDate(0, 0, 9)}
 
-			for _, path := range []string{"/", "/r/" + repoName, "/r/" + repoName + "/policy", "/r/" + repoName + "/graph", "/r/" + repoName + "/consent"} {
+			for _, path := range []string{"/api/repos", "/api/repos/" + repoName + "/overview", "/r/" + repoName + "/policy", "/r/" + repoName + "/graph", "/r/" + repoName + "/consent"} {
 				res := c.get(path)
 				wantStatus(t, res, http.StatusOK)
 				// Policy text and the view model are the customer's own data, not something ui computes.
@@ -370,7 +403,7 @@ func TestNoScoreAnywhere(t *testing.T) {
 				}
 			}
 
-			overview := c.get("/").Body.String()
+			overview := c.get("/api/repos").Body.String()
 			byName := []int{strings.Index(overview, "acme/a-blocked"), strings.Index(overview, "acme/b-attention"), strings.Index(overview, "acme/c-healthy")}
 			if byName[0] < 0 || !sort.IntsAreSorted(byName) {
 				t.Errorf("overview is not sorted by name: %v", byName)
@@ -379,8 +412,20 @@ func TestNoScoreAnywhere(t *testing.T) {
 	}
 }
 
-// wantCSP allows no inline style and no worker beyond 'self': nothing on any page needs either.
-const wantCSP = "default-src 'self'; script-src 'self'; style-src 'self'; frame-ancestors 'none'"
+// wantCSP allows no inline style or script, no eval, no worker and no other origin: nothing on any page needs them.
+const wantCSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; " +
+	"font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+
+// The web app's preview server and smoke test run under web/csp.txt, so they prove nothing unless it is this policy.
+func TestWebPreviewUsesTheProductionCSP(t *testing.T) {
+	raw, err := os.ReadFile("../../../web/csp.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(raw)); got != wantCSP {
+		t.Errorf("web/csp.txt = %q, want the server's %q", got, wantCSP)
+	}
+}
 
 // The CSP holds only while no template or script uses an inline style or a blob worker.
 func TestNoAssetNeedsInlineStyleOrBlobWorker(t *testing.T) {
@@ -441,7 +486,8 @@ func TestHostileStringsAreEscaped(t *testing.T) {
 	e.gh.pulls[repoName+"#4"] = pull
 	e.gh.checks[repoName+"@"+sha(4)+"#"+checkState] = []api.CheckRun{{ID: 1, Conclusion: "neutral", Title: hostileText, ExternalID: "v1:0:0:"}}
 
-	for _, path := range []string{"/", "/r/" + repoName, "/r/" + repoName + "/policy", "/r/" + repoName + "/graph", "/r/" + repoName + "/consent", "/r/" + repoName + "/pull/4", "/r/" + repoName + "/pull/4/graph"} {
+	for _, path := range []string{"/", "/api/repos", "/r/" + repoName, "/api/repos/" + repoName + "/overview", "/r/" + repoName + "/policy",
+		"/r/" + repoName + "/graph", "/r/" + repoName + "/consent", "/r/" + repoName + "/pull/4", "/r/" + repoName + "/pull/4/graph"} {
 		res := c.get(path)
 		wantStatus(t, res, http.StatusOK)
 		body := res.Body.String()
@@ -449,6 +495,9 @@ func TestHostileStringsAreEscaped(t *testing.T) {
 			if strings.Contains(body, raw) {
 				t.Errorf("%s contains unescaped %q", path, raw)
 			}
+		}
+		if strings.HasPrefix(path, apiPrefix) && (strings.Contains(body, "<") || !strings.Contains(body, `\u003c`)) {
+			t.Errorf("%s: JSON does not escape markup: %.200s", path, body)
 		}
 		if csp := res.Header().Get("Content-Security-Policy"); csp != wantCSP {
 			t.Errorf("%s: CSP = %q", path, csp)
