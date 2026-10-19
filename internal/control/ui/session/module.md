@@ -98,8 +98,8 @@ because it builds the OAuth redirect URL as `BaseURL + "/auth/callback"`.
   wraps it, caches nothing, and logs outcome `token_rejected` at Info. The session cookie can outlive the token, for
   example after a revocation on GitHub or a cookie sealed by an older build, so this is an expected end of a session, not a fault.
 - Any other GitHub error (including rate limit exhaustion) is returned wrapped and is never cached. No error ever yields a `Repo`.
-  It is logged as `github_error` (`rate_limited` for a rate limit) with the failing `step` (`permission` or `resolve repository`)
-  and, when GitHub answered, its HTTP `status`.
+  It is logged as `github_error` with the failing `step` (`permission` or `resolve repository`) and the HTTP `status`
+  (`0` when GitHub gave no answer); a rate limit is logged as `rate_limited` with neither.
 - `End` writes the same cookie deletion as logout and nothing else. It does not revoke the token at GitHub **[default]**.
 - `New` returns an error when `CookieKey` is not exactly 32 bytes, or `BaseURL` is not an absolute `https` URL (`http` is
   accepted only for host `localhost`, `127.0.0.1` or `[::1]`). The error names the field, never its value. A bad key
