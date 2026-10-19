@@ -54,6 +54,7 @@ func code(s string) string {
 // layout holds the rendered blocks of one body. Empty blocks are left out.
 type layout struct {
 	head     string // blocks 1 to 3, with the comment markers
+	decision string // the comment's reasons with their codes, first in the evidence fold
 	findings string // block 5
 	dims     string // block 6
 	gaps     string // block 7
@@ -71,11 +72,11 @@ func cost(block string) int {
 	return len(block) + 2
 }
 
-// assemble joins the blocks under limit bytes. Head, gaps, inputs and the receipt marker are budgeted
+// assemble joins the blocks under limit bytes. Head, decision, gaps, inputs and the receipt marker are budgeted
 // first. Of the rest, agent tasks give way first (whole tasks), then findings are cut at a line end;
 // dimensions and commands are cut only when even that is not enough.
 func (l layout) assemble(limit int) string {
-	rest := limit + 2 - cost(l.head) - cost(l.inputs) - cost(l.receipt) - cost(foldEvidence) - cost(foldTasks) - 2*cost(foldClose)
+	rest := limit + 2 - cost(l.head) - cost(l.decision) - cost(l.inputs) - cost(l.receipt) - cost(foldEvidence) - cost(foldTasks) - 2*cost(foldClose)
 	l.gaps = cutLines(l.gaps, rest-2) // last resort: only a pathological gap list does not fit
 	rest -= cost(l.gaps)
 
@@ -96,7 +97,7 @@ func (l layout) assemble(limit int) string {
 		tasks = tasksBlock(l.tasks[:n], len(l.tasks)-n)
 	}
 
-	body := join(l.head, l.findings, fold(foldEvidence, join(l.dims, l.gaps, l.inputs, commands)), fold(foldTasks, tasks))
+	body := join(l.head, l.findings, fold(foldEvidence, join(l.decision, l.dims, l.gaps, l.inputs, commands)), fold(foldTasks, tasks))
 	if l.receipt == "" {
 		return cutLines(body, limit)
 	}

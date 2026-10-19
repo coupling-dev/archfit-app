@@ -2,9 +2,7 @@
 <!-- archfit:head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb run 7.1 -->
 ## Archfit: Architecture gate failing
 
-- **Next:** Fix the blocking findings, then push.
-- Reason: `blocking_findings` (architecture)
-- Detail: 1 blocking finding
+**Next:** Fix the blocking findings, then push.
 
 ### Findings
 
@@ -15,30 +13,32 @@
 
 | Rule | Dependency | Where | Strength | Distance | Volatility |
 | --- | --- | --- | --- | --- | --- |
-| `bc/imbalanced_coupling` medium, new | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | cross_module_same_owner | undeclared |
+| Imbalanced coupling · medium | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared |
 
-`bc/imbalanced_coupling` · **Why:** balanced coupling: functional integration strength × cross_module_same_owner distance × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
+Imbalanced coupling · **Why:** balanced coupling: functional integration strength × cross_module_same_owner distance × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
 
 </details>
 
 <details>
 <summary>Evidence, inputs and validation</summary>
 
+### Decision
+
+- `blocking_findings` (architecture): 1 blocking finding. Next: Fix the blocking findings, then push.
+
 ### Dimensions
 
-Measurement trust: customer-attested.
-
-| Dimension | Status | Coverage | Confidence | Gate | Change |
-| --- | --- | --- | --- | --- | --- |
-| `intent` | measured | 1/1 (declared rules evaluated) | high | pass |  |
-| `structure` | measured | 1/1 (discovered dependencies resolved inside the declared module map) | high | **fail** |  |
-| `modularity` | measured | 1/2 (declared modules with a declared public surface) | low | pass |  |
-| `coupling` | measured | 1/1 (cross-boundary edges scored) | high | **warn** |  |
-| `change_locality` | unmeasured | 0/0 | unrated | not_applicable |  |
-| `complexity` | measured | 2/2 (declared modules with complete dependency-chain and degree values) | high | pass |  |
-| `testability` | partial | 3/3 (classified source files) | medium | pass |  |
-| `operations` | partial | 0/2 (declared modules with a corroborated deploy unit and qualifying owner) | medium | pass |  |
-| `drift` | unmeasured | 0/0 | unrated | not_applicable | non_comparable |
+| Dimension | Status | Coverage | Confidence | Gate |
+| --- | --- | --- | --- | --- |
+| `intent` | measured | 1/1 (declared rules evaluated) | high | pass |
+| `structure` | measured | 1/1 (discovered dependencies resolved inside the declared module map) | high | **fail** |
+| `modularity` | measured | 1/2 (declared modules with a declared public surface) | low | pass |
+| `coupling` | measured | 1/1 (cross-boundary edges scored) | high | **warn** |
+| `change_locality` | unmeasured | 0/0 | unrated | not_applicable |
+| `complexity` | measured | 2/2 (declared modules with complete dependency-chain and degree values) | high | pass |
+| `testability` | partial | 3/3 (classified source files) | medium | pass |
+| `operations` | partial | 0/2 (declared modules with a corroborated deploy unit and qualifying owner) | medium | pass |
+| `drift` | unmeasured | 0/0 | unrated | not_applicable |
 
 ### Evidence gaps
 

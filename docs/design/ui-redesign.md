@@ -34,14 +34,24 @@ break, and what do I change. The comment answers them in the first screen and fo
 
 1. **Effect on merge**: the headline (unchanged matrix) and, in advisory mode, a GitHub `[!NOTE]` alert "This check
    does not block merging". The alert gives the line a colour without the word "blocking".
-2. **Next step first**: `Next` is the first, bold line under the headline; the reason code and detail follow.
+2. **What the pull request did, then the next step**: one sentence from origins and locations only, for example
+   "This pull request closes a dependency cycle among `pkg_chaos`, `pkg_container`, `pkg_util`: it adds
+   `pkg_container` → `pkg_chaos` (`pkg/container/appfilter.go:4`) and `pkg_util` → `pkg_chaos`
+   (`pkg/util/flagports.go:4`); `pkg_chaos` → `pkg_container` (40 locations) and `pkg_chaos` → `pkg_util` (2
+   locations) existed before." Then **Next**. Reason codes, categories and details move to a "Decision" section in the
+   evidence fold (phase a2): "1 blocking finding" counts gate findings and read as a contradiction of "4 rule
+   violations".
 3. **One tally line** counts every group: "**4 rule violations** · 1 dependency cycle · 2 advisories · 6 accepted ·
    6 introduced by this pull request". The last part appears only when the engine compared against the PR base
    (`comparison.origin_status: comparable`), so "introduced" is never claimed without that comparison.
 4. **The violation, drawn**: a dependency cycle is one item, not one item per pair. The App finds the strongly
    connected component from the findings themselves (same rule, kind, status and severity; target reaches source),
    so a three-module cycle with no reverse pair is caught too. The item has a Mermaid flowchart (one edge per
-   direction, labelled with its location count, heavier lines for more locations), then a table of directions.
+   direction, labelled with its location count), then a table of directions. A direction the pull request added is
+   red and wide, one that existed before grey and thin, and the table says so in a "This PR" column (`added`,
+   `existing`). The cycle's own findings are introduced in every direction when the cycle is new, so they cannot tell;
+   the App reads the other findings on the same module pair: a `pre_existing` one proves the base had the dependency,
+   otherwise an `introduced` one marks it added. Without either, the direction stays unmarked.
 
 ```mermaid
 flowchart LR
@@ -52,14 +62,16 @@ flowchart LR
   m0 -->|"2 locations"| m2
   m1 -->|"1 location"| m0
   m2 -->|"1 location"| m0
-  linkStyle 0 stroke:#cf222e,stroke-width:4px
-  linkStyle 1 stroke:#cf222e,stroke-width:2px
-  linkStyle 2 stroke:#cf222e,stroke-width:2px
-  linkStyle 3 stroke:#cf222e,stroke-width:2px
+  linkStyle 0 stroke:#8c959f,stroke-width:1px
+  linkStyle 1 stroke:#8c959f,stroke-width:1px
+  linkStyle 2 stroke:#cf222e,stroke-width:4px
+  linkStyle 3 stroke:#cf222e,stroke-width:4px
 ```
 
 5. **Balanced Coupling in the table**: rows show integration strength, distance and volatility from the report's
-   seam for that module pair. These are kept report fields (`seams[]`); the finding's `matched_by` stays dropped at
+   seam for that module pair, in the book's words: distance "same module", "across modules", "across services",
+   "external"; the engine's own rules by name ("Imbalanced coupling"), and severity as one word, without the
+   status and origin tokens that repeated the group. These are kept report fields (`seams[]`); the finding's `matched_by` stays dropped at
    decode, as the no-source rule requires.
 6. **Each explanation once**: the engine repeats one `why` for every finding of a rule. Under a table each distinct
    `why`, `constraint` and set of alternatives is written once. A cycle shows its first `why` only, because the
@@ -67,7 +79,8 @@ flowchart LR
 7. **Everything that never blocks folds**: advisories, accepted findings (baseline or waiver) and fixed findings are
    each one `<details>` with the count and the effect in the summary, then a table. Before, accepted debt was open.
 8. Evidence, inputs, validation commands and agent tasks stay folded as before; dimensions are a table there, with
-   `fail` and `warn` in bold.
+   `fail` and `warn` in bold, a Change column only when a dimension has metric changes, and the customer-attested
+   trust stated once, under the inputs.
 
 Result on PR #11: the visible part fits one screen (headline, note, next step, tally, cycle diagram and table, four
 folds). The body is 13 KB, of which the agent task JSON is 4 KB and folded.
@@ -83,7 +96,8 @@ folds). The body is 13 KB, of which the agent task JSON is 4 KB and folded.
 ### Check summaries
 
 `archfit/state` uses the same blocks without the heading, the diagram and the alert. GitHub prints the check title,
-which is the headline, right above the summary, so a heading repeated it.
+which is the headline, right above the summary, so a heading repeated it. The check summaries keep the reason code,
+category and detail in their head and have no lead sentence: they are the record that tools and support read.
 
 The diagram and the alert are left out because Mermaid and GitHub alerts are documented for comments, issues and
 Markdown files; their rendering in a check run summary is not verified. If a later check on a scratch repository shows

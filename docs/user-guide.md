@@ -164,10 +164,15 @@ What each item shows:
   report or run attempt gets a new `archfit/state` check run with its own annotations, so annotations from an
   earlier report do not stay; GitHub shows the newest run. If the App cannot read the list of changed files, the
   check has no annotations for that upload.
-- The comment starts with the effect on merge, the next step, and one line that counts the rule violations,
-  advisories, accepted and fixed findings (and, with a base comparison, how many this pull request introduced).
-  A dependency cycle is one item: a diagram of the modules with the location count of each direction, then a table
-  of directions with their integration strength, distance and volatility. Advisories, accepted findings and fixed
+- The comment starts with the effect on merge, then, with a base comparison, one sentence of what this pull request
+  did (for example which dependency cycle it closes and which dependencies it adds), then the next step, and one
+  line that counts the rule violations, advisories, accepted and fixed findings (and, with a base comparison, how
+  many this pull request introduced). The reason codes and their details are in a Decision section at the top of
+  the folded evidence. A dependency cycle is one item: a diagram of the modules with the location count of each
+  direction, then a table of directions with their integration strength, distance and volatility. With a base
+  comparison, a direction this pull request added is red in the diagram and `added` in the table, and one that
+  existed before is grey and `existing`; the App knows this from other findings on the same pair of modules, and
+  leaves a direction unmarked when the report does not say. Advisories, accepted findings and fixed
   findings are each folded into a table; an explanation that repeats across findings is shown once. The evidence
   gaps, the validation commands, and a JSON block of agent tasks between `<!-- archfit:agent-tasks -->` markers are
   folded too. A coding agent on the pull request can act on that block.

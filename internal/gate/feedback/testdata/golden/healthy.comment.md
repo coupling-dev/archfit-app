@@ -2,9 +2,7 @@
 <!-- archfit:head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb run 7.1 -->
 ## Archfit: Architecture gate passed
 
-- **Next:** Nothing to do.
-- Reason: `healthy` (architecture)
-- Detail: report 4444444444444444444444444444444444444444444444444444444444444444
+**Next:** Nothing to do.
 
 ### Findings
 
@@ -13,21 +11,23 @@ No findings reported.
 <details>
 <summary>Evidence, inputs and validation</summary>
 
+### Decision
+
+- `healthy` (architecture): report 4444444444444444444444444444444444444444444444444444444444444444. Next: Nothing to do.
+
 ### Dimensions
 
-Measurement trust: customer-attested.
-
-| Dimension | Status | Coverage | Confidence | Gate | Change |
-| --- | --- | --- | --- | --- | --- |
-| `intent` | measured | 1/1 (declared rules evaluated) | high | pass |  |
-| `structure` | measured | 1/1 (discovered dependencies resolved inside the declared module map) | high | pass |  |
-| `modularity` | measured | 1/2 (declared modules with a declared public surface) | low | pass |  |
-| `coupling` | measured | 1/1 (cross-boundary edges scored) | high | pass |  |
-| `change_locality` | unmeasured | 0/0 | unrated | not_applicable |  |
-| `complexity` | measured | 2/2 (declared modules with complete dependency-chain and degree values) | high | pass |  |
-| `testability` | partial | 3/3 (classified source files) | medium | pass |  |
-| `operations` | partial | 0/2 (declared modules with a corroborated deploy unit and qualifying owner) | medium | pass |  |
-| `drift` | unmeasured | 0/0 | unrated | not_applicable | non_comparable |
+| Dimension | Status | Coverage | Confidence | Gate |
+| --- | --- | --- | --- | --- |
+| `intent` | measured | 1/1 (declared rules evaluated) | high | pass |
+| `structure` | measured | 1/1 (discovered dependencies resolved inside the declared module map) | high | pass |
+| `modularity` | measured | 1/2 (declared modules with a declared public surface) | low | pass |
+| `coupling` | measured | 1/1 (cross-boundary edges scored) | high | pass |
+| `change_locality` | unmeasured | 0/0 | unrated | not_applicable |
+| `complexity` | measured | 2/2 (declared modules with complete dependency-chain and degree values) | high | pass |
+| `testability` | partial | 3/3 (classified source files) | medium | pass |
+| `operations` | partial | 0/2 (declared modules with a corroborated deploy unit and qualifying owner) | medium | pass |
+| `drift` | unmeasured | 0/0 | unrated | not_applicable |
 
 ### Evidence gaps
 

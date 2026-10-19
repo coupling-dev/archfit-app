@@ -300,7 +300,7 @@ func TestUsefulWithoutLLM(t *testing.T) {
 		}},
 		{"missing-required-evidence", []string{
 			"## Archfit: Action required", reasonCoverage.Next,
-			"no_direct_b_dependency", "required tool go/packages was absent", "bc/imbalanced_coupling",
+			"no_direct_b_dependency", "required tool go/packages was absent", "Imbalanced coupling",
 		}},
 	}
 	for _, tt := range tests {
@@ -337,10 +337,13 @@ func TestBlockerKeepsMissingRuleReasons(t *testing.T) {
 	}
 	comment := h.comments.all()[0].Body
 	state := h.checks.named(headB, stateCheck)[0].Summary
-	for _, body := range []string{comment, state, gate.Summary} {
+	for _, body := range []string{state, gate.Summary} {
 		verdictBlock, _, _ := strings.Cut(body, "\n### ")
 		mustContain(t, verdictBlock, "blocking_findings", "missing_required_coverage", "layers/no_upward_imports", reasonCoverage.Next)
 	}
+	verdictBlock, _, _ := strings.Cut(comment, "\n### ")
+	mustContain(t, verdictBlock, reasonBlocking.Next, reasonCoverage.Next)
+	mustContain(t, section(comment, headDecision), "blocking_findings", "missing_required_coverage", "layers/no_upward_imports")
 	for _, body := range []string{comment, state} {
 		mustContain(t, section(body, headGaps), "layers/no_upward_imports", "required tool dependency-cruiser was absent")
 	}
@@ -366,7 +369,8 @@ func TestAcceptedDebtIsDisplayOnly(t *testing.T) {
 	mustContain(t, section(gate.Summary, headBlocking), "No active gate finding is listed")
 	comment := h.comments.all()[0].Body
 	verdictBlock, _, _ := strings.Cut(comment, "\n### ")
-	mustContain(t, verdictBlock, "Architecture gate failing", "blocking_findings")
+	mustContain(t, verdictBlock, "Architecture gate failing", reasonBlocking.Next)
+	mustContain(t, section(comment, headDecision), "blocking_findings")
 
 	findings := section(comment, headFindings)
 	_, debt, ok := strings.Cut(findings, "<summary>1 accepted · baseline or waiver · display only</summary>")
@@ -393,13 +397,20 @@ func TestSuspensionFeedback(t *testing.T) {
 		p.Receipt = receiptFor(p.Outcome, 7, 1)
 		p.Trusted.Suspended = true
 		p.Trusted.Entitlement = inputs.Entitlement{SuspendAfter: t0.Add(-time.Hour), Reason: reasonSuspend.Next}
+		p.Report.Comparison.OriginStatus = "comparable"
+		for i := range p.Report.Findings {
+			p.Report.Findings[i].Origin = "introduced"
+		}
+		if leadSentence(p.Report) == "" {
+			t.Fatal("the report must have a lead sentence for the suspension to withhold")
+		}
 		if err := h.pub.Publish(ctx, p); err != nil {
 			t.Fatalf("Publish: %v", err)
 		}
 		state := h.checks.named(headB, stateCheck)[0]
 		for _, body := range []string{h.comments.all()[0].Body, state.Summary, h.checks.named(headB, gateCheck)[0].Summary} {
 			mustContain(t, body, "subscription_suspended", "subscription", reasonSuspend.Next, headInputs)
-			mustNotContain(t, body, headFindings, headDimensions, headGaps, headCommands, headTasks, tasksOpen, "no_direct_b_dependency")
+			mustNotContain(t, body, headFindings, headDimensions, headGaps, headCommands, headTasks, tasksOpen, "no_direct_b_dependency", "This pull request")
 		}
 		if len(state.Annotations) != 0 {
 			t.Errorf("suspended publication carries %d annotations", len(state.Annotations))
