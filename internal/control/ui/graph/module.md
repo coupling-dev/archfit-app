@@ -169,8 +169,10 @@ func Build(rep Report, policy []byte) View
 13. Origin, a projection for a pull request report: `g := report.Group(rep, report.ShownPerGroup)`; only when
     `g.Compared` (the engine compared with the base branch), each link's `Origin` is
     `report.PairOrigin` of its pair over `g.All` and `g.OnCycle`, the rule the PR comment uses: `existing` when a
-    pre-existing finding names the pair, else `added` when an introduced finding off a cycle does, else `""`. A pair
-    no finding names stays `""`. Without a comparison every `Origin` is `""`, so nothing claims what a change added
+    pre-existing finding names the pair, else `added` when an introduced finding off a cycle does, else `""`. `Group`
+    searches only the first `ShownPerGroup` violations for cycles, so a violation past them counts as on a cycle: it
+    never makes a pair `added` (the comment folds it into "and N more"), and a pre-existing one still makes it
+    `existing`. A pair no finding names stays `""`. Without a comparison every `Origin` is `""`, so nothing claims what a change added
     without the engine's comparison. `Origin` is never inferred from a status (`new` means "not accepted", not
     "added") and never changes `Status`: an added link with a gate finding stays a `violation`.
 14. Coupling: per pair, the seam with the strongest `Strength` (`contract` < `model` < `functional` < `intrusive`; a
@@ -551,8 +553,10 @@ Nothing is mocked.
   `ui → db` violation with `Count` 0; no link for the empty endpoint.
 - **Test name**: `TestLinkOriginIsTheCommentsRule`
   **Scenario**: table: an introduced finding on a pair, compared; the same not compared; a pre-existing finding; a new
-  finding on a dependency the base had; a new cycle over new dependencies; the old direction of a new cycle.
-  **Expected behavior**: `added`; `""`; `existing`; `existing`; `""` for both directions; `existing` for the old one.
+  finding on a dependency the base had; a new cycle over new dependencies; the old direction of a new cycle; a new
+  cycle after `ShownPerGroup` other violations.
+  **Expected behavior**: `added`; `""`; `existing`; `existing`; `""` for both directions; `existing` for the old one;
+  `""` for both directions past the cap.
 - **Test name**: `TestOriginNeverChangesTheStatus`
   **Scenario**: an added link with an active gate finding, and without.
   **Expected behavior**: both statuses equal those of the same report without a comparison.

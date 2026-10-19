@@ -12,7 +12,6 @@
     focusLimit,
     isAdded,
     isProblem,
-    isProblemStatus,
     maxDrawn,
     meaning,
     problemRows,
@@ -62,8 +61,10 @@
   const counts = $derived(
     statuses.map((s) => [s, view ? view.links.filter((l) => l.status === s).length : 0] as const).filter(([, n]) => n),
   );
-  // drawn: whether a status is on the canvas or in the matrix; focus mode draws the problems only.
-  const drawn = (s: Status) => show[s] && (isProblemStatus(s) || !focused || mode === 'matrix');
+  // kept: whether focus mode keeps any dependency of a status (problems, and in a pull request what it added); drawn:
+  // whether the status is on the canvas or in the matrix.
+  const kept = (s: Status) => !focused || mode === 'matrix' || !!part?.links.some((l) => l.status === s);
+  const drawn = (s: Status) => show[s] && kept(s);
   const added = $derived(view ? view.links.filter((l) => isAdded(l, pull)).length : 0);
 </script>
 
@@ -143,7 +144,7 @@
             title={meaning[s]}
             onclick={() => {
               // asking for the other dependencies while focused means the full picture
-              if (!drawn(s) && !isProblemStatus(s) && focused) {
+              if (!kept(s)) {
                 show[s] = true;
                 scope = 'all';
               } else show[s] = !show[s];

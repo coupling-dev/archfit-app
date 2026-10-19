@@ -536,9 +536,10 @@ states when there is no report.
 
 - The header is the pull request page's: the pull request, its head commit, the `archfit/state` result, and a link
   to GitHub.
-- A dependency is **added in this PR** when the comment says so: a finding this pull request introduced names it and
-  no finding names it from before. A new finding on a dependency the base already had does not make it added. The
-  dependency keeps its status: a new forbidden dependency or cycle direction is still a red `violation`, with a halo.
+- A dependency is **added in this PR** when the comment says so: a finding this pull request introduced names it, off
+  a dependency cycle, and no finding names it from before. A new finding on a dependency the base already had does not
+  make it added. Cycle findings cannot say which direction is new, so a cycle that only its own findings name is drawn
+  without a halo. The dependency keeps its status: a new forbidden dependency is still a red `violation`, with a halo.
 - The **N added in this PR** chip is on by default. It highlights the added dependencies and mutes the rest, which
   stay visible so the change reads against the existing architecture, and puts added ones first in the problem list.
   Turn it off to draw every dependency alike; added ones stay listed and marked "added".

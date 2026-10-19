@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { statusWord, type ProblemRow } from '../../lib/graph';
+  import { linkKey, statusWord, type ProblemRow } from '../../lib/graph';
   import { pickLink, ui } from '../../lib/selection.svelte';
 
   // The problems above the canvas: violations, advisories and accepted dependencies, a cycle as one row.
   let { rows }: { rows: ProblemRow[] } = $props();
 
   const selected = (r: ProblemRow) =>
-    ui.sel?.kind === 'link' && (ui.sel.key === r.key || (!!r.back && ui.sel.key === JSON.stringify([r.back.from, r.back.to])));
+    ui.sel?.kind === 'link' && (ui.sel.key === r.key || (!!r.back && ui.sel.key === linkKey(r.back)));
 </script>
 
 <section class="box g-problems" aria-labelledby="problems">

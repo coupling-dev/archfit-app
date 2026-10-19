@@ -302,6 +302,12 @@ func TestLinkOriginIsTheCommentsRule(t *testing.T) {
 			origin(o2, "c2", finding("gate", "new", "db", "api")),
 		}
 	}
+	// report.ShownPerGroup violations the comment shows, then a new cycle it folds into "and N more"
+	var past []report.Finding
+	for i := range report.ShownPerGroup {
+		past = append(past, origin("pre_existing", "p"+strconv.Itoa(i), finding("gate", "new", "ui", "db")))
+	}
+	past = append(past, cycle("introduced", "introduced")...)
 	tests := []struct {
 		name     string
 		compared string
@@ -331,6 +337,8 @@ func TestLinkOriginIsTheCommentsRule(t *testing.T) {
 		{"a direction of a new cycle the base had stays existing", "comparable",
 			append(cycle("introduced", "introduced"), origin("pre_existing", "f3", finding("advisory", "new", "db", "api"))),
 			map[string]string{"api>db": "", "db>api": "existing"}},
+		{"a cycle past the shown violations cannot tell either", "comparable", past,
+			map[string]string{"api>db": "", "db>api": "", "ui>db": "existing"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

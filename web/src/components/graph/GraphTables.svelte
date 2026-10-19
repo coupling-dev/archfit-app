@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { balanceWord, countWord, isAdded, measured, order, statusWord, strengthWord, type View } from '../../lib/graph';
+  import { balanceWord, countWord, isAdded, linkKey, measured, order, statusWord, strengthWord, type View } from '../../lib/graph';
   import { safeHref } from '../../lib/route';
 
   // The graph as two tables: for screen readers, and the whole view when there are too many modules to draw.
@@ -49,7 +49,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each view.links.filter((l) => match(l.from, l.to)) as l (JSON.stringify([l.from, l.to]))}
+          {#each view.links.filter((l) => match(l.from, l.to)) as l (linkKey(l))}
             <tr>
               <td><code>{l.from}</code></td>
               <td><code>{l.to}</code></td>

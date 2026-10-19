@@ -43,15 +43,16 @@
     if (s.kind === 'node') {
       return s.name === name || links.some((l) => (l.from === s.name && l.to === name) || (l.to === s.name && l.from === name));
     }
+    // a selected dependency that is not drawn (hidden by a chip or by focus) dims nothing
     const l = links.find((x) => linkKey(x) === s.key);
-    return !!l && (l.from === name || l.to === name);
+    return !l || l.from === name || l.to === name;
   }
   function relatedLink(l: GLink): boolean {
     const s = ui.sel;
     if (!s) return true;
     if (s.kind === 'node') return l.from === s.name || l.to === s.name;
     const picked = links.find((x) => linkKey(x) === s.key);
-    return !!picked && ((l.from === picked.from && l.to === picked.to) || (l.from === picked.to && l.to === picked.from));
+    return !picked || (l.from === picked.from && l.to === picked.to) || (l.from === picked.to && l.to === picked.from);
   }
 
   $effect(() => {

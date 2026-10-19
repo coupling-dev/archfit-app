@@ -107,10 +107,10 @@ package does not know is `422`, so a body cannot name a repository, a user or an
 - `GET /api/repos/{o}/{n}/pulls/{number}` [read] — the pull request page: header, result, and the report's findings
   in the groups and words of the PR comment (below, Pages). `404` for a number that is not a positive integer or not a
   pull request of the repository.
-- `GET /api/repos/{o}/{n}/pulls/{number}/graph` [read] — `{unavailable, view, stale_reason, policy_href, pull, added}`:
-  the pull request page's header and the `graph.View` of the report its check names, each link's `origin` by the PR
-  comment's rule; `added` counts the links whose origin is `added`. `policy_href` is the policy file on GitHub at the
-  head. The same `404` rule.
+- `GET /api/repos/{o}/{n}/pulls/{number}/graph` [read] — `{unavailable, view, stale_reason, policy_href, branch, pull,
+  added}`: the pull request page's header and the `graph.View` of the report its check names, each link's `origin` by
+  the PR comment's rule; `added` counts the links whose origin is `added`. `policy_href` is the policy file on GitHub
+  at the ref whose text is the report's policy (the head, else the base branch). The same `404` rule.
 - `GET /api/repos/{o}/{n}/graph` [read] — `{unavailable, view, stale_reason, policy_href, branch}`: the latest
   default-branch report against the policy on that branch. No link carries an origin.
 - `GET /api/repos/{o}/{n}/findings` [read] — `{unavailable, branch, no_baseline, …}`: the latest default-branch

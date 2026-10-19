@@ -25,7 +25,7 @@
           <tr>
             <th scope="row">{r}</th>
             {#each names as c (c)}
-              {@const l = cell.get(JSON.stringify([r, c]))}
+              {@const l = cell.get(linkKey({ from: r, to: c }))}
               <td class:self={r === c}>
                 {#if l && show[l.status]}
                   <button
