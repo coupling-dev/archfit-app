@@ -2,9 +2,7 @@
 <!-- archfit:head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb run 7.1 -->
 ## Archfit: Architecture gate passed · attention needed
 
-- **Next:** Advisories never block. Review the listed dimensions and diagnostics on the archfit/state check.
-- Reason: `attention_only` (architecture)
-- Detail: dimensions not fully measured: change_locality, testability, operations, drift; active diagnostics: 1
+**Next:** Advisories never block. Review the listed dimensions and diagnostics on the archfit/state check.
 
 ### Findings
 
@@ -15,9 +13,9 @@
 
 | Rule | Dependency | Where | Strength | Distance | Volatility |
 | --- | --- | --- | --- | --- | --- |
-| `bc/imbalanced_coupling` medium, new | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | cross_module_same_owner | undeclared |
+| Imbalanced coupling · medium | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared |
 
-`bc/imbalanced_coupling` · **Why:** balanced coupling: functional integration strength × cross_module_same_owner distance × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
+Imbalanced coupling · **Why:** balanced coupling: functional integration strength × cross_module_same_owner distance × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
 
 </details>
 
@@ -26,19 +24,17 @@
 
 ### Dimensions
 
-Measurement trust: customer-attested.
-
-| Dimension | Status | Coverage | Confidence | Gate | Change |
-| --- | --- | --- | --- | --- | --- |
-| `intent` | measured | 1/1 (declared rules evaluated) | high | pass |  |
-| `structure` | measured | 1/1 (discovered dependencies resolved inside the declared module map) | high | pass |  |
-| `modularity` | measured | 1/2 (declared modules with a declared public surface) | low | pass |  |
-| `coupling` | measured | 1/1 (cross-boundary edges scored) | high | **warn** |  |
-| `change_locality` | unmeasured | 0/0 | unrated | not_applicable |  |
-| `complexity` | measured | 2/2 (declared modules with complete dependency-chain and degree values) | high | pass |  |
-| `testability` | partial | 3/3 (classified source files) | medium | pass |  |
-| `operations` | partial | 0/2 (declared modules with a corroborated deploy unit and qualifying owner) | medium | pass |  |
-| `drift` | unmeasured | 0/0 | unrated | not_applicable | non_comparable |
+| Dimension | Status | Coverage | Confidence | Gate |
+| --- | --- | --- | --- | --- |
+| `intent` | measured | 1/1 (declared rules evaluated) | high | pass |
+| `structure` | measured | 1/1 (discovered dependencies resolved inside the declared module map) | high | pass |
+| `modularity` | measured | 1/2 (declared modules with a declared public surface) | low | pass |
+| `coupling` | measured | 1/1 (cross-boundary edges scored) | high | **warn** |
+| `change_locality` | unmeasured | 0/0 | unrated | not_applicable |
+| `complexity` | measured | 2/2 (declared modules with complete dependency-chain and degree values) | high | pass |
+| `testability` | partial | 3/3 (classified source files) | medium | pass |
+| `operations` | partial | 0/2 (declared modules with a corroborated deploy unit and qualifying owner) | medium | pass |
+| `drift` | unmeasured | 0/0 | unrated | not_applicable |
 
 ### Evidence gaps
 
@@ -58,6 +54,10 @@ Measurement trust: customer-attested.
 - Dimension `drift`, unknown fact: admissible persisted reference — no comparable architecture-state reference is stored
 - Dimension `drift`, unknown fact: complete two-sided seam identity — two-sided seam identity cannot be compared without an admissible persisted reference
 - Baseline comparison non_comparable: no baseline file was loaded
+
+### Decision
+
+- `attention_only` (architecture): dimensions not fully measured: change_locality, testability, operations, drift; active diagnostics: 1. Next: Advisories never block. Review the listed dimensions and diagnostics on the archfit/state check.
 
 ### Inputs and identity
 

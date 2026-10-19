@@ -305,11 +305,27 @@ receipt marker. Block G is in the gate summary only.
    "Action required", "Architecture gate failing" or "Passed" **[default]**. On an advisory pull request without
    `action_required` the line "This check does not block merging: the gate is advisory for this repository." follows;
    in the comment it is a GitHub `> [!NOTE]` alert, in a check summary plain text (an alert there is not known to
-   render). Then `Reasons[0]`: `Next` first and bold (only when not empty), then code and category, then `Detail`
-   (only when not empty). The headline is also the title of both check runs (`archfit/state` without a report:
+   render). In a check summary, `Reasons[0]` follows: `Next` first and bold (only when not empty), then code and
+   category, then `Detail` (only when not empty). The comment, read by people, writes no reason code, category or
+   detail in its head: after the alert comes the lead sentence (below), then "**Next:**" with the distinct `Next` of
+   every reason (one inline, several as a list, at most 51 then "and N more"); the codes, categories and details are
+   the block "### Decision" at the top of the evidence fold, one line per reason ("`code` (category): detail. Next:
+   …", at most 51 then "and N more"). A detail such as "1 blocking finding" counts gate findings, not the violations the
+   comment lists, so it stays out of the visible part.
+
+   Lead sentence (comment only, not when suspended): one sentence of what the pull request did, from origins and
+   locations only; it picks no repair. Only when `Comparison.OriginStatus` is `comparable` and some violation is
+   shown. When the first dependency cycle (block 5) has `Origin` `introduced` in every finding: "This pull request
+   closes a dependency cycle among `A`, `B`, `C`: it adds `B` → `A` (`file:line` and N more); `A` → `B` (N
+   locations) existed before." ("introduces" when no direction is known to have existed; "between `A` and `B`" for two
+   modules; either clause only when it has a direction, by the rule of the "This PR" column below). Otherwise, with
+   introduced violations: "This pull request introduces N rule violations: `A` → `B`, …" (at most 3 pairs, then "and
+   N more"). When every violation is `pre_existing`: "The rule violations below existed before this pull request."
+   Otherwise no sentence. The headline is also the title of both check runs (`archfit/state` without a report:
    "Architecture state: no usable report"), so only the comment writes it as a `## Archfit:` heading: GitHub prints
    the check title right above a check summary, and a heading there would repeat it.
-2. Further reasons, one line each (for example unevaluated rules beside a blocker).
+2. Further reasons, one line each (for example unevaluated rules beside a blocker), in a check summary; in the
+   comment their `Next` joins the list of item 1 and their codes the Decision block.
 
    G. Blocking findings (gate summary only, and only when `Outcome.Reasons` holds `blocking_findings`: an outcome
    that blocks on evidence, governance or subscription alone names no finding as blocking), so the required check
@@ -344,37 +360,52 @@ receipt marker. Block G is in the gate summary only.
    its `Edge.From.Module` through findings of the same rule, kind, status and severity (the fields
    `Finding.Reverses` pairs on). Cycle edges of one such class that share a module are one item (one strongly
    connected component). Cycles come first, in the order of their first finding, each with a heading "#### Dependency cycle between `A` and `B`"
-   (or "among `A`, `B`, `C`"), a line with the label, rule ID, severity, status and the shared origin, then in the
-   comment only a Mermaid flowchart (one node per module, one edge per finding labeled with its location count,
-   2/3/4 px wide below 3 / below 10 / from 10 locations, GitHub danger red), then the direction table (below), then
+   (or "among `A`, `B`, `C`"), a line with the label, the rule name and the meta (below), then in the
+   comment only a Mermaid flowchart (one node per module, one edge per finding labeled with its location count:
+   `added` red `#cf222e` 4 px, `existing` grey `#8c959f` 1 px, unmarked red 2/3/4 px wide below 3 / below 10 / from
+   10 locations), then the direction table (below), then
    the first finding's `Why` and every distinct `Constraint` and `AllowedAlternatives`. Mermaid node IDs are
    generated (`m0`, `m1`, …); a label keeps `[A-Za-z0-9_./:@+-]` and writes every other rune as a Mermaid entity code
    (`#<decimal>;`), so no report string can end a label or the code fence. Every other violation follows as a list
    item, under a heading "#### Other rule violations" when a cycle came before (so the list does not read as part of
    the cycle):
-   label, rule ID, severity, status and origin, `Edge.From.Module` → `Edge.To.Module` (with `Path` when set),
+   label, rule name, meta and origin ("added by this pull request", "existed before this pull request", "origin
+   <token>"), `Edge.From.Module` → `Edge.To.Module` (with `Path` when set),
    locations as `file:line` (at most 10, then "and N more"), `Why`, then the policy-permitted repair: `Constraint`
    and `AllowedAlternatives`. feedback adds no repair of its own and invents no access route. At most 50 violations
    are shown, then "and N more" **[default]**; a cycle partner past the cap stays in "and N more". Display only: the
    count is of findings, and each finding keeps its ID. Grouping never changes the verdict.
 
    Tables (cycle directions and the three folds): one row per finding, at most 50 per fold, then "and N more". Fold
-   rows open with the rule ID, severity, status and origin. Columns: the dependency (endpoints with `Path` when set),
-   where (at most 3 locations, then "and N more"), and, when the report has a `Seam` with the same `FromModule` and
-   `ToModule` for any row, the Balanced Coupling dimensions of that seam: integration strength (`Seam.Strength`),
-   distance (`Seam.Distance`), volatility (`Seam.Volatility`), engine tokens as written; empty for a row without a
+   rows open with "rule name · meta". Columns: the dependency (endpoints with `Path` when set), "This PR" when any row
+   has a value, where (at most 3 locations, then "and N more"), and, when the report has a `Seam` with the same
+   `FromModule` and `ToModule` for any row, the Balanced Coupling dimensions of that seam: integration strength
+   (`Seam.Strength`), distance (`Seam.Distance` in the book's words: `same_module` "same module", `cross_module`
+   "across modules", `cross_module_same_owner` "across modules, same owner", `cross_deploy_unit` "across services",
+   `external` "external", any other token as written), volatility (`Seam.Volatility`); empty for a row without a
    seam. A `|` in a cell is escaped. Under a fold's table each distinct `Why`, `Constraint` and set of
-   `AllowedAlternatives` is written once with its rule ID, in first-seen order: the engine repeats one explanation
-   for every finding of a rule.
+   `AllowedAlternatives` is written once with its rule name, in first-seen order: the engine repeats one explanation
+   for every finding of a rule. Engine-authored text (`Why`, `Constraint`) is never reworded.
 
-   Origin is shown as "introduced", "pre-existing" or "origin <token>" (display only: the App never decides on
-   origin). Status and severity are the engine's tokens.
+   "This PR" (display only: the App never decides on origin), only with a comparison: in a fold, the finding's own
+   `Origin` as `added` (`introduced`), `existing` (`pre_existing`) or the token. For a cycle direction, the cycle's
+   own findings cannot tell (a new cycle is introduced in every direction, also those the base had), so the column
+   reads the other findings of the report on the same module pair: `existing` when one is `pre_existing` (the base
+   had the dependency), else `added` when one is `introduced`, else empty. "added", not "new": without a baseline
+   every finding has status `new`. Limit: an introduced finding on a pair is not proof that the base lacked every
+   import between the two modules; a pre-existing finding on the pair wins.
+
+   Rule name: the engine's own rules by name (`bc/imbalanced_coupling` "Imbalanced coupling", `bc/coupling_gate`
+   "Coupling gate"); any other rule ID, which its policy owner chose, as a code span. The ID stays in the agent
+   tasks. Meta: `Severity` as the engine's word, then the status only when the group does not imply it (`baseline`;
+   `waived` as "waiver"; `expired_waiver` as "waiver expired"; an unknown token as written; nothing for `new` and
+   `fixed`).
 6. Dimensions: a table of the nine engine keys of `Report.Dimensions` in the engine's fixed order (`intent`, `structure`,
    `modularity`, `coupling`, `change_locality`, `complexity`, `testability`, `operations`, `drift`). Columns:
    completeness = `Status` (`measured`, `partial`, `unmeasured`), `Coverage` as "observed/total (basis)",
    `Confidence`, `Gate` (bold when `fail` or `warn`), and, only when some dimension has a `Delta`, a change column
-   (status and metric changes). Measurement trust is not an engine field: the constant "customer-attested" is printed once for the
-   block. A missing key is a row "not reported"; keys outside the nine cannot pass the decoder.
+   (status and metric changes), only when some `Delta` has metrics: a status alone ("comparable") changes nothing.
+   Measurement trust is not an engine field; block 8 states it once. A missing key is a row "not reported"; keys outside the nine cannot pass the decoder.
 7. Evidence gaps, always present: `Decision.UnevaluatedRequiredRules` with their reasons (a dead selector shows its
    engine reason, `selector matches nothing: <side> <glob>`, here); `Coverage.Tools` entries whose `Status` is not
    `ok`, except that the rows that did not run, `disabled` ones and `absent` ones without a `Reason`, are folded into
@@ -1238,6 +1269,26 @@ Golden files hold rendered bodies for the wire fixtures.
   **Scenario**: two advisories with one `Why`; a seam for the first module pair only.
   **Expected behavior**: strength, distance and volatility of the seam on the first row, empty cells on the second;
   the `Why` once.
+- **Test name**: `TestCycleDirectionsShowWhatThePullRequestAdded`
+  **Scenario**: a new two-way cycle with, on the same pairs, a pre-existing and an introduced advisory; a pre-existing
+  and an introduced finding on one pair; no other finding; no comparison with the base.
+  **Expected behavior**: "This PR" `existing` (grey, 1 px) and `added` (red, 4 px); `existing` and an empty cell; no
+  column and red edges by count; no column.
+- **Test name**: `TestLeadSentenceSaysWhatThePullRequestDid`
+  **Scenario**: a cycle closed by the pull request; a cycle whose directions cannot be placed; four introduced
+  violations beside a pre-existing one; only pre-existing violations; no comparison; only an advisory.
+  **Expected behavior**: "closes … it adds `b` → `a` (`b.go:1`); `a` → `b` (40 locations) existed before."; "introduces a
+  dependency cycle"; "introduces 4 rule violations: … and 1 more."; "existed before this pull request"; no sentence twice.
+- **Test name**: `TestCommentHeadHasNoReasonCodes`
+  **Scenario**: a blocker beside missing coverage.
+  **Expected behavior**: the comment head lists both next steps and no code, category or detail; the Decision block
+  lists both reasons with code, category, detail and next step; the state summary keeps its reason line.
+- **Test name**: `TestDimensionsStateTrustOnceAndOnlyRealChanges`
+  **Scenario**: a delta that is only "comparable", then one with a metric change; the whole comment.
+  **Expected behavior**: no Change column, then one with "edges 1 → 2 (+1)"; "customer-attested" once in the comment.
+- **Test name**: `TestCouplingWordsFollowBalancedCoupling`
+  **Scenario**: each known distance token and an unknown one; an engine rule and a policy rule.
+  **Expected behavior**: the book's words, the unknown token as written; "Imbalanced coupling"; the policy rule ID as a code span.
 - **Test name**: `TestCutClosesACodeFence`
   **Scenario**: a findings block whose diagram is cut in the middle.
   **Expected behavior**: within the limit, and the fence is closed.

@@ -18,6 +18,7 @@ import (
 
 const (
 	headBlocking   = "### Blocking findings"
+	headDecision   = "### Decision"
 	headFindings   = "### Findings"
 	headDimensions = "### Dimensions"
 	headGaps       = "### Evidence gaps"
@@ -226,7 +227,7 @@ func renderState(p Publication) string {
 // renderComment renders the whole comment. waiver is the date of the notice section to carry, or "".
 // link is the App's page of this pull request, or "" for none.
 func renderComment(p Publication, now time.Time, waiver, link string) string {
-	l := layout{head: headBlock(p, true), inputs: inputsBlock(p)}
+	l := layout{head: headBlock(p, true), inputs: join(decisionBlock(p), inputsBlock(p))}
 	if notice := noticeLine(p.Trusted.Entitlement, now); notice != "" {
 		l.head += "\n\n" + notice
 	}
@@ -264,9 +265,12 @@ func headBlock(p Publication, markers bool) string {
 			parts = append(parts, advisoryNote)
 		}
 	}
+	reasons := p.Outcome.Reasons
+	if markers {
+		return commentHead(p, parts)
+	}
 	var b strings.Builder
 	b.WriteString(strings.Join(parts, "\n\n"))
-	reasons := p.Outcome.Reasons
 	if len(reasons) == 0 {
 		return b.String()
 	}
@@ -295,6 +299,57 @@ func headBlock(p Publication, markers bool) string {
 	return b.String()
 }
 
+// commentHead is the head of the comment, the part a person reads: what the pull request did, then the next steps.
+// Reason codes, categories and details stay in the evidence fold (decisionBlock): they are for tools and support,
+// and a detail such as "1 blocking finding" counts gate findings, not the violations the comment lists.
+func commentHead(p Publication, parts []string) string {
+	if !suspended(p.Outcome) {
+		if s := leadSentence(p.Report); s != "" {
+			parts = append(parts, s)
+		}
+	}
+	var next []string
+	for _, r := range p.Outcome.Reasons {
+		if s := text(r.Next); r.Next != "" && !slices.Contains(next, s) {
+			next = append(next, s)
+		}
+	}
+	switch {
+	case len(next) == 1:
+		parts = append(parts, "**Next:** "+next[0])
+	case len(next) > 1:
+		if len(next) > reasonCap+1 {
+			next = append(next[:reasonCap+1:reasonCap+1], fmt.Sprintf("and %d more", len(next)-reasonCap-1))
+		}
+		parts = append(parts, "**Next:**\n- "+strings.Join(next, "\n- "))
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+// decisionBlock lists every reason of the outcome with its code, category, detail and next step. In the comment it
+// sits in the evidence fold; a check summary shows the reasons in its head instead.
+func decisionBlock(p Publication) string {
+	if len(p.Outcome.Reasons) == 0 {
+		return ""
+	}
+	lines := []string{headDecision, ""}
+	for i, r := range p.Outcome.Reasons {
+		if i == reasonCap+1 {
+			lines = append(lines, fmt.Sprintf("- and %d more", len(p.Outcome.Reasons)-reasonCap-1))
+			break
+		}
+		line := fmt.Sprintf("- %s (%s)", code(string(r.Code)), text(string(r.Category)))
+		if r.Detail != "" {
+			line += ": " + text(r.Detail)
+		}
+		if r.Next != "" {
+			line += ". Next: " + text(r.Next)
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
 func noticeLine(e inputs.Entitlement, now time.Time) string {
 	if e.WarnFrom.IsZero() || now.Before(e.WarnFrom) || sanitize(e.Notice) == "" {
 		return ""
@@ -306,14 +361,16 @@ func dimensionsBlock(r *report.Report) string {
 	if r == nil {
 		return ""
 	}
-	changes := slices.ContainsFunc(dimensionOrder[:], func(key string) bool { return r.Dimensions[key].Delta != nil })
+	// A delta without metrics changes nothing to show: its status alone ("comparable") is not a change.
+	changed := func(d report.Dimension) bool { return d.Delta != nil && len(d.Delta.Metrics) > 0 }
+	changes := slices.ContainsFunc(dimensionOrder[:], func(key string) bool { return changed(r.Dimensions[key]) })
 	head := "| Dimension | Status | Coverage | Confidence | Gate |"
 	sep := "| --- | --- | --- | --- | --- |"
 	if changes {
 		head, sep = head+" Change |", sep+" --- |"
 	}
 	var b strings.Builder
-	b.WriteString(headDimensions + "\n\nMeasurement trust: customer-attested.\n\n" + head + "\n" + sep)
+	b.WriteString(headDimensions + "\n\n" + head + "\n" + sep)
 	for _, key := range dimensionOrder {
 		d, ok := r.Dimensions[key]
 		if !ok {
@@ -328,7 +385,7 @@ func dimensionsBlock(r *report.Report) string {
 			text(d.Confidence), gateCell(text(d.Gate))}
 		if changes {
 			change := ""
-			if d.Delta != nil {
+			if changed(d) {
 				change = deltaText(*d.Delta)
 			}
 			row = append(row, change)

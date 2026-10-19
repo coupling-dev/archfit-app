@@ -881,7 +881,7 @@ func TestDependencyCyclesAreOneItem(t *testing.T) {
 		f.Constraint, g.Constraint = "remove one direction", "remove one direction"
 		block := findingsBlock(&report.Report{Findings: []report.Finding{f, g}}, true)
 		mustContain(t, block, "| `a` (`a/x.go`) → `b` | `a.go:3` |", "| `b` → `a` | `b.go:3` |",
-			"**Allowed alternatives:** invert the dependency", "**violation** · `no-module-cycles` · high, new")
+			"**Allowed alternatives:** invert the dependency", "**violation** · `no-module-cycles` · high\n")
 		if got := strings.Count(block, "**Constraint:** remove one direction"); got != 1 {
 			t.Errorf("constraint said %d times, want once:\n%s", got, block)
 		}
@@ -946,7 +946,7 @@ func TestCouplingColumnsComeFromTheSeam(t *testing.T) {
 	}
 	block := findingsBlock(r, true)
 	mustContain(t, block, "| Rule | Dependency | Where | Strength | Distance | Volatility |",
-		"| `a` → `b` | none reported | functional | cross_module | high |", "| `c` → `d` | none reported |  |  |  |")
+		"| Imbalanced coupling · critical | `a` → `b` | none reported | functional | across modules | high |", "| Imbalanced coupling · critical | `c` → `d` | none reported |  |  |  |")
 	if got := strings.Count(block, "same why"); got != 1 {
 		t.Errorf("a repeated why is shown %d times, want once", got)
 	}
@@ -982,7 +982,7 @@ func TestOriginNeedsAComparablePullRequestBase(t *testing.T) {
 				t.Errorf("introduced shown = %v, want %v:\n%s", got, tt.shown, block)
 			}
 			if tt.shown {
-				mustContain(t, block, "**1 rule violation** · 1 introduced by this pull request", "high, new, introduced")
+				mustContain(t, block, "**1 rule violation** · 1 introduced by this pull request", "(high, added by this pull request)")
 			}
 		})
 	}
@@ -1019,11 +1019,154 @@ func TestEmptyNextStepIsNotWritten(t *testing.T) {
 	reason.Next = ""
 	o := outcome(verdict.Success, reason)
 	p := Publication{Target: prTarget(headB), Identity: fullIdentity(), Outcome: o, Receipt: receiptFor(o, 1, 1), Trusted: trusted(settings.GateRequired)}
+	mustContain(t, headBlock(p, false), "- Reason: `healthy`")
 	for name, body := range map[string]string{"comment": headBlock(p, true), "state": headBlock(p, false)} {
 		mustNotContain(t, body, "Next:")
-		mustContain(t, body, "- Reason: `healthy`")
 		if strings.HasPrefix(body, "\n") {
 			t.Errorf("%s starts with a blank line: %q", name, body)
 		}
+	}
+}
+
+func TestCycleDirectionsShowWhatThePullRequestAdded(t *testing.T) {
+	edge := func(id, kind, rule, origin, from, to string) report.Finding {
+		status := "new"
+		if kind == "advisory" && origin == "pre_existing" {
+			status = "baseline"
+		}
+		return report.Finding{ID: id, Kind: kind, RuleID: rule, Status: status, Severity: "high", Origin: origin,
+			Edge:      report.Edge{From: report.Endpoint{Module: from}, To: report.Endpoint{Module: to}},
+			Locations: []report.Location{{File: from + ".go", Line: 1}}}
+	}
+	cycle := []report.Finding{
+		edge("c1", "gate", "no-cycles", "introduced", "a", "b"),
+		edge("c2", "gate", "no-cycles", "introduced", "b", "a"),
+	}
+	tests := []struct {
+		name     string
+		status   string
+		evidence []report.Finding
+		rows     []string
+		styles   []string
+	}{
+		{"one direction existed, the other was added", "comparable",
+			[]report.Finding{edge("e1", "advisory", "bc/imbalanced_coupling", "pre_existing", "a", "b"), edge("e2", "advisory", "bc/imbalanced_coupling", "introduced", "b", "a")},
+			[]string{"| `a` → `b` | existing |", "| `b` → `a` | added |"},
+			[]string{"linkStyle 0 stroke:#8c959f,stroke-width:1px", "linkStyle 1 stroke:#cf222e,stroke-width:4px"}},
+		{"a pre-existing finding wins over an introduced one on the same pair", "comparable",
+			[]report.Finding{edge("e1", "advisory", "r", "pre_existing", "a", "b"), edge("e2", "advisory", "r", "introduced", "a", "b")},
+			[]string{"| `a` → `b` | existing |", "| `b` → `a` |  |"},
+			[]string{"linkStyle 0 stroke:#8c959f,stroke-width:1px", "linkStyle 1 stroke:#cf222e,stroke-width:2px"}},
+		{"the cycle's own origin tells nothing", "comparable", nil,
+			[]string{"| Dependency | Where |", "| `a` → `b` | `a.go:1` |"},
+			[]string{"linkStyle 0 stroke:#cf222e,stroke-width:2px", "linkStyle 1 stroke:#cf222e,stroke-width:2px"}},
+		{"no comparison with the base", "unknown",
+			[]report.Finding{edge("e1", "advisory", "r", "pre_existing", "a", "b")},
+			[]string{"| Dependency | Where |", "| `a` → `b` | `a.go:1` |"},
+			[]string{"linkStyle 0 stroke:#cf222e,stroke-width:2px"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &report.Report{Findings: append(slices.Clone(cycle), tt.evidence...), Comparison: report.Comparison{OriginStatus: tt.status}}
+			block := findingsBlock(r, true)
+			cycleItem, _, _ := strings.Cut(block, "<details>")
+			mustContain(t, cycleItem, tt.rows...)
+			mustContain(t, cycleItem, tt.styles...)
+		})
+	}
+}
+
+func TestLeadSentenceSaysWhatThePullRequestDid(t *testing.T) {
+	f := func(id, kind, origin, from, to string, locs int) report.Finding {
+		status := "new"
+		if kind == "advisory" && origin == "pre_existing" {
+			status = "baseline"
+		}
+		g := report.Finding{ID: id, Kind: kind, RuleID: "r-" + kind, Status: status, Severity: "high", Origin: origin,
+			Edge: report.Edge{From: report.Endpoint{Module: from}, To: report.Endpoint{Module: to}}}
+		for i := range locs {
+			g.Locations = append(g.Locations, report.Location{File: from + ".go", Line: i + 1})
+		}
+		return g
+	}
+	tests := []struct {
+		name     string
+		status   string
+		findings []report.Finding
+		want     string
+	}{
+		{"the pull request closes a cycle", "comparable", []report.Finding{
+			f("c1", "gate", "introduced", "a", "b", 40), f("c2", "gate", "introduced", "b", "a", 1),
+			f("e1", "advisory", "pre_existing", "a", "b", 5), f("e2", "advisory", "introduced", "b", "a", 1),
+		}, "This pull request closes a dependency cycle between `a` and `b`: it adds `b` → `a` (`b.go:1`); `a` → `b` (40 locations) existed before."},
+		{"a cycle whose directions the report cannot place", "comparable", []report.Finding{
+			f("c1", "gate", "introduced", "a", "b", 2), f("c2", "gate", "introduced", "b", "a", 1),
+		}, "This pull request introduces a dependency cycle between `a` and `b`."},
+		{"introduced violations outside a cycle", "comparable", []report.Finding{
+			f("v1", "gate", "introduced", "a", "b", 1), f("v2", "gate", "pre_existing", "c", "d", 1),
+			f("v3", "gate", "introduced", "e", "f", 1), f("v4", "gate", "introduced", "g", "h", 1), f("v5", "gate", "introduced", "i", "j", 1),
+		}, "This pull request introduces 4 rule violations: `a` → `b`, `e` → `f`, `g` → `h` and 1 more."},
+		{"every violation existed before", "comparable", []report.Finding{f("v1", "gate", "pre_existing", "a", "b", 1)},
+			"The rule violations below existed before this pull request."},
+		{"no comparison with the base", "unknown", []report.Finding{f("v1", "gate", "introduced", "a", "b", 1)}, ""},
+		{"no violation", "comparable", []report.Finding{f("e1", "advisory", "introduced", "a", "b", 1)}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := leadSentence(&report.Report{Findings: tt.findings, Comparison: report.Comparison{OriginStatus: tt.status}})
+			if got != tt.want {
+				t.Errorf("lead =\n%q\nwant\n%q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCommentHeadHasNoReasonCodes(t *testing.T) {
+	o := outcome(verdict.Failure, reasonBlocking, reasonCoverage)
+	p := Publication{Target: prTarget(headB), Identity: fullIdentity(), Outcome: o, Receipt: receiptFor(o, 1, 1), Trusted: trusted(settings.GateRequired),
+		Report: &report.Report{}}
+	comment := renderComment(p, t0, "", "")
+	head, _, _ := strings.Cut(comment, "<details>")
+	mustContain(t, head, "**Next:**\n- "+reasonBlocking.Next+"\n- "+reasonCoverage.Next)
+	mustNotContain(t, head, string(reasonBlocking.Code), string(reasonCoverage.Code), reasonBlocking.Detail, "Reason:")
+	mustContain(t, section(comment, headDecision),
+		"- `"+string(reasonBlocking.Code)+"` (architecture): "+reasonBlocking.Detail+". Next: "+reasonBlocking.Next,
+		"- `"+string(reasonCoverage.Code)+"` (evidence): "+reasonCoverage.Detail)
+	mustContain(t, renderState(p), "- Reason: `"+string(reasonBlocking.Code)+"`")
+}
+
+func TestDimensionsStateTrustOnceAndOnlyRealChanges(t *testing.T) {
+	r := &report.Report{Dimensions: map[string]report.Dimension{"drift": {Status: "measured", Delta: &report.Delta{Status: "comparable"}}}}
+	block := dimensionsBlock(r)
+	mustNotContain(t, block, "Change", "comparable", "customer-attested")
+	r.Dimensions["coupling"] = report.Dimension{Status: "measured", Delta: &report.Delta{Status: "comparable", Metrics: []report.MetricDelta{{Name: "edges", Before: 1, After: 2, Change: 1}}}}
+	block = dimensionsBlock(r)
+	mustContain(t, block, "| Change |", "edges 1 → 2 (+1)")
+	o := outcome(verdict.Success, reasonHealthy)
+	p := Publication{Target: prTarget(headB), Identity: fullIdentity(), Outcome: o, Receipt: receiptFor(o, 1, 1), Trusted: trusted(settings.GateRequired), Report: r}
+	if got := strings.Count(renderComment(p, t0, "", ""), "customer-attested"); got != 1 {
+		t.Errorf("trust stated %d times, want once", got)
+	}
+}
+
+func TestCouplingWordsFollowBalancedCoupling(t *testing.T) {
+	tests := []struct{ token, want string }{
+		{"same_module", "same module"},
+		{"cross_module", "across modules"},
+		{"cross_module_same_owner", "across modules, same owner"},
+		{"cross_deploy_unit", "across services"},
+		{"external", "external"},
+		{"cross_galaxy", "cross_galaxy"},
+	}
+	for _, tt := range tests {
+		if got := distanceText(tt.token); got != tt.want {
+			t.Errorf("distanceText(%q) = %q, want %q", tt.token, got, tt.want)
+		}
+	}
+	if got, want := ruleName("bc/imbalanced_coupling"), "Imbalanced coupling"; got != want {
+		t.Errorf("engine rule name = %q, want %q", got, want)
+	}
+	if got, want := ruleName("no-module-cycles"), "`no-module-cycles`"; got != want {
+		t.Errorf("policy rule name = %q, want %q", got, want)
 	}
 }

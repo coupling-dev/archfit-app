@@ -261,7 +261,10 @@ func TestGoldenFeedback(t *testing.T) {
 			}
 			first := c.outcome.Reasons[0]
 			verdictEnd := strings.Index(comment, "\n### ")
-			mustContain(t, comment[:verdictEnd], string(first.Code), string(first.Category), first.Detail, first.Next)
+			mustContain(t, comment[:verdictEnd], first.Next)
+			mustNotContain(t, comment[:verdictEnd], "`"+string(first.Code)+"`")
+			mustContain(t, section(comment, headDecision), string(first.Code), string(first.Category), first.Detail)
+			mustContain(t, state[:strings.Index(state+"\n### ", "\n### ")], string(first.Code), first.Detail, first.Next)
 			for _, body := range []string{comment, state} {
 				if section(body, headGaps) == "" {
 					t.Errorf("no evidence-gap section")
