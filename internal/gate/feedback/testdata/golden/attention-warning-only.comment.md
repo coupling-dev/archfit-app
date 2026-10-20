@@ -9,9 +9,9 @@
 
 | Rule | Dependency | Where | Strength | Distance | Volatility | Suggested move |
 | --- | --- | --- | --- | --- | --- | --- |
-| Imbalanced coupling · medium | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared | Declare the volatility of the module in the policy: undeclared volatility counts as high |
+| Imbalanced coupling · medium | `a` → `b` | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared | Declare the volatility of the module in the policy: undeclared volatility counts as high |
 
-Imbalanced coupling · **Why:** balanced coupling: functional integration strength × distance across modules, same owner × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
+**Why:** unbalanced coupling: elevated maintenance effort (Balanced Coupling: medium severity)
 
 </details>
 
@@ -21,7 +21,7 @@ Imbalanced coupling · **Why:** balanced coupling: functional integration streng
 ### Decision
 
 - Engine verdict **needs attention**: hard gates pass, 0 active blockers, every required rule evaluated
-- `attention_only` (architecture): dimensions not fully measured: change_locality, testability, operations, drift; active diagnostics: 1. Next: Advisories never block. Review the listed dimensions and diagnostics on the archfit/state check.
+- Attention only (architecture): dimensions not fully measured: change_locality, testability, operations, drift; active diagnostics: 1 · code `attention_only`
 
 ### Dimensions
 

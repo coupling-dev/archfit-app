@@ -229,24 +229,17 @@ func renderState(p Publication) string {
 // link is the App's page of this pull request, or "" for none.
 func renderComment(p Publication, now time.Time, waiver, link string) string {
 	l := layout{head: headBlock(p, true), decision: decisionBlock(p), inputs: inputsBlock(p)}
-	var notice string
-	if n := noticeLine(p.Trusted.Entitlement, now); n != "" {
-		notice = n
-	}
-	// The next step sits after the violations it answers; with none to answer it follows the head.
-	tail := join(nextBlock(p), linkLine(link))
-	below := nextBelowFindings(p)
-	if below {
+	notice := noticeLine(p.Trusted.Entitlement, now)
+	// The next step sits after the violations it answers, in a block that is never cut; with none to answer it
+	// follows the head. The notice comes before the link either way.
+	if nextBelowFindings(p) {
 		l.head = join(l.head, notice)
+		l.tail = join(nextBlock(p), linkLine(link))
 	} else {
-		l.head = join(l.head, tail, notice)
+		l.head = join(l.head, nextBlock(p), notice, linkLine(link))
 	}
 	if !suspended(p.Outcome) {
-		if below {
-			l.findings = findings(p.Report, true, tail)
-		} else {
-			l.findings = findingsBlock(p.Report, true)
-		}
+		l.findings, l.folds = findingParts(p.Report, true)
 		l.dims, l.gaps = dimensionsBlock(p.Report), gapsBlock(p)
 		if p.Report != nil {
 			l.commands = commands(p.Report.AgentTasks)
@@ -364,9 +357,9 @@ func nextBlock(p Publication) string {
 	return ""
 }
 
-// decisionBlock is the engine's decision in one line, then every reason of the outcome with its code, category,
-// detail and next step. In the comment it sits in the evidence fold; a check summary shows the reasons in its head
-// instead.
+// decisionBlock is the engine's decision in one line, then every reason of the outcome in words with its category and
+// detail, and its code at the end. In the comment it sits in the evidence fold; a check summary shows the reasons in
+// its head instead.
 func decisionBlock(p Publication) string {
 	lines := engineDecision(p)
 	for i, r := range p.Outcome.Reasons {
@@ -374,19 +367,24 @@ func decisionBlock(p Publication) string {
 			lines = append(lines, fmt.Sprintf("- and %d more", len(p.Outcome.Reasons)-reasonCap-1))
 			break
 		}
-		line := fmt.Sprintf("- %s (%s)", code(string(r.Code)), text(string(r.Category)))
+		// In words first; the code stays for support. The next step is not repeated: it is in the visible part.
+		line := fmt.Sprintf("- %s (%s)", sentenceCase(strings.ReplaceAll(string(r.Code), "_", " ")), text(string(r.Category)))
 		if r.Detail != "" {
 			line += ": " + text(r.Detail)
 		}
-		if r.Next != "" {
-			line += ". Next: " + text(r.Next)
-		}
-		lines = append(lines, line)
+		lines = append(lines, line+fmt.Sprintf(" · code %s", code(string(r.Code))))
 	}
 	if len(lines) == 0 {
 		return ""
 	}
 	return strings.Join(append([]string{headDecision, ""}, lines...), "\n")
+}
+
+func sentenceCase(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 // engineDecision says what the engine decided, whatever the gate mode does with it, so a blocked verdict is never
@@ -483,6 +481,11 @@ func seamChange(d report.Dimension) string {
 	}
 	if added == "" || resolved == "" {
 		return ""
+	}
+	// Every current seam new and none resolved means the stored reference holds no seam at all: say so, or "8 new"
+	// beside a passing result reads as a regression.
+	if n := d.Coverage.Total; n > 0 && added == number(float64(n)) && resolved == "0" {
+		return fmt.Sprintf("the baseline holds no distributed-monolith seam: all %d current seams count as new", n)
 	}
 	return added + " new, " + resolved + " resolved distributed-monolith seams"
 }

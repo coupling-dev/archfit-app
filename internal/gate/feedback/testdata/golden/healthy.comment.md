@@ -12,7 +12,7 @@ No findings reported.
 ### Decision
 
 - Engine verdict **healthy**: hard gates pass, 0 active blockers, every required rule evaluated
-- `healthy` (architecture): report 4444444444444444444444444444444444444444444444444444444444444444. Next: Nothing to do.
+- Healthy (architecture): report 4444444444444444444444444444444444444444444444444444444444444444 · code `healthy`
 
 ### Dimensions
 

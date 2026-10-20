@@ -293,8 +293,8 @@ func TestUsefulWithoutLLM(t *testing.T) {
 	}{
 		{"healthy", []string{"## Archfit: Architecture gate passed", reasonHealthy.Next, "No findings reported", "dependency-cruiser", "absent"}},
 		{"both-repair-kinds", []string{
-			"## Archfit: Architecture gate failing", reasonBlocking.Next,
-			"no_direct_b_dependency", "`a` (`pkg/a/a.go`) → `b` (`pkg/b`)", "`pkg/a/a.go:3`",
+			"## Archfit: Architecture gate failing", "no_direct_b_dependency",
+			"Fix the violations above, then check with `archfit check", "`a` → `b`", "`pkg/a/a.go:3`",
 			"Import from pkg/a/** to pkg/b is explicitly forbidden", "Remove the dependency or move the code",
 			"archfit check -c .archfit.yaml\n", "archfit check -c .archfit.yaml --base main --lang go --require-tools\n",
 		}},

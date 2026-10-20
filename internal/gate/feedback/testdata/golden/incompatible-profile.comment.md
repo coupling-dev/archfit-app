@@ -2,7 +2,7 @@
 <!-- archfit:head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb run 7.1 -->
 ## Archfit: Action required
 
-- **violation** `no_direct_b_dependency` (medium): `a` (`pkg/a/a.go`) → `b` (`pkg/b`)
+- **violation** `no_direct_b_dependency` (medium): `a` → `b`
   - Locations: `pkg/a/a.go:3`
   - Why: Import from pkg/a/** to pkg/b is explicitly forbidden
   - Fix: Remove the dependency or move the code
@@ -10,23 +10,12 @@
 **Next:** Refresh the baseline on the protected branch.
 
 <details>
-<summary>1 advisory · never block</summary>
-
-| Rule | Dependency | Where | Strength | Distance | Volatility | Suggested move |
-| --- | --- | --- | --- | --- | --- | --- |
-| Imbalanced coupling · medium | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared | Declare the volatility of the module in the policy: undeclared volatility counts as high |
-
-Imbalanced coupling · **Why:** balanced coupling: functional integration strength × distance across modules, same owner × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
-
-</details>
-
-<details>
 <summary>Evidence and inputs</summary>
 
 ### Decision
 
 - Engine verdict **blocked**: hard gates fail, 1 active blocker, every required rule evaluated
-- `baseline_not_comparable` (evidence): measurement profile differs. Next: Refresh the baseline on the protected branch.
+- Baseline not comparable (evidence): measurement profile differs · code `baseline_not_comparable`
 
 ### Dimensions
 

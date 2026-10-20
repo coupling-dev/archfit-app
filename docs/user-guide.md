@@ -174,9 +174,10 @@ What each item shows:
   direction with where it occurs. A column that is the same on every row (integration strength, distance,
   volatility) is written once under the table. **Why** says why the directions form a cycle, and **Fix** is the
   engine's own repair. **Next** is a command you can run in your checkout, for example
-  `archfit check --base origin/main`. Advisories (each with a suggested move in the words of Balanced Coupling:
-  introduce a contract, move the functionality, accept, declare the volatility), known issues that were accepted
-  earlier, and fixed issues are each folded into a table; an explanation that repeats across findings is shown once.
+  `archfit check --base origin/<base branch>`. An advisory on a dependency that a violation already lists is shown on that
+  row ("Also reported as"), not as a second item. The other advisories (each with a suggested move in the words of
+  Balanced Coupling: introduce a contract, move the functionality, accept, declare the volatility), known issues that
+  were accepted earlier, and fixed issues are each folded into a table; an explanation that repeats across findings is shown once.
   A tripped metric ratchet reads "metric `name`: before → after (threshold)". The folded evidence starts with a
   Decision section: the engine's verdict, its hard gates and active blockers, and the reason codes with their
   details; an advisory repository still shows a blocked verdict there. The evidence gaps, the dimensions (with the

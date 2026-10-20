@@ -6,34 +6,23 @@ Also reported:
 
 ### Findings
 
-**1 rule violation** · 1 advisory · 1 known issue accepted earlier
+**1 rule violation** · 1 known issue accepted earlier
 
-- **violation** `no_direct_b_dependency` (medium, waiver expired): `a` (`pkg/a/a.go`) → `b` (`pkg/b`)
+- **violation** `no_direct_b_dependency` (medium, waiver expired): `a` → `b`
   - Locations: `pkg/a/extra.go:7`
   - Why: Import from pkg/a/** to pkg/b is explicitly forbidden
   - Fix: Remove the dependency or move the code
-
-<details>
-<summary>1 advisory · never block</summary>
-
-| Rule | Dependency | Where | Strength | Distance | Volatility | Suggested move |
-| --- | --- | --- | --- | --- | --- | --- |
-| Imbalanced coupling · medium | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared | Declare the volatility of the module in the policy: undeclared volatility counts as high |
-
-Imbalanced coupling · **Why:** balanced coupling: functional integration strength × distance across modules, same owner × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
-
-</details>
 
 <details>
 <summary>1 known issue accepted earlier</summary>
 
 | Rule | Dependency | Where | Strength | Distance | Volatility |
 | --- | --- | --- | --- | --- | --- |
-| `no_direct_b_dependency` · medium, waiver | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared |
+| `no_direct_b_dependency` · medium, accepted by waiver | `a` → `b` | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared |
 
-`no_direct_b_dependency` · **Why:** Import from pkg/a/** to pkg/b is explicitly forbidden
+**Why:** Import from pkg/a/** to pkg/b is explicitly forbidden
 
-`no_direct_b_dependency` · **Fix:** Remove the dependency or move the code
+**Fix:** Remove the dependency or move the code
 
 </details>
 

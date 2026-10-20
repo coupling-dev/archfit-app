@@ -25,8 +25,8 @@ identifiers in `agent_tasks[].declarations`.
 - Preserve what the gate and feedback need, unchanged: `verdict`, `decision.hard_gates`,
   `unevaluated_required_rules`, `comparison.config_hash`, `measurement_profile`, `gate_reference`, both repair
   kinds, task validation commands, empty `locations`.
-- The display rules its consumers share (`Group`, `Cycles`, `PairOrigin`, `EngineRuleNames`, `DistanceWords`, `ReadableWhy`,
-  `ShownPerGroup`), so the PR comment, the App's pull request page and its graph group and word findings the same way.
+- The display rules its consumers share (`Group`, `Cycles`, `PairOrigin`, `EngineRuleNames`, `DistanceWords`, `BalancingMoves`, `MetricRulePrefix`,
+  `ReadableWhy`, `ShownPerGroup`), so the PR comment, the App's pull request page and its graph group and word findings the same way.
 - Nothing else. It does not interpret the decision, compare profiles, filter findings, or compute outcomes.
 
 ## Subdomain Classification
@@ -548,6 +548,8 @@ func PairOrigin(f Finding, all []Finding, onCycle map[string]bool) string
 
 var EngineRuleNames map[string]string // readable names of the engine's own rules
 var DistanceWords map[string]string   // the engine's distance tokens in the words of Balanced Coupling
+var BalancingMoves map[string]string  // the engine's seam hypotheses in the words of Balanced Coupling
+const MetricRulePrefix = "metric/"    // starts the rule ID of a metric ratchet finding, which has no module edge
 func ReadableWhy(why string) string   // a Why with each known "<token> distance" as "distance <words>"
 ```
 

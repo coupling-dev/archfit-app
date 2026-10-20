@@ -14,7 +14,7 @@
 ### Decision
 
 - Engine verdict **blocked**: hard gates fail, 1 active blocker, every required rule evaluated
-- `blocking_findings` (architecture). Next: Fix the rule violations, then run archfit check again.
+- Blocking findings (architecture) · code `blocking_findings`
 
 ### Dimensions
 

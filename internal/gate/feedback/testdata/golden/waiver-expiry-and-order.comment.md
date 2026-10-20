@@ -2,7 +2,7 @@
 <!-- archfit:head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb run 7.1 -->
 ## Archfit: Architecture gate failing
 
-- **violation** `no_direct_b_dependency` (medium, waiver expired): `a` (`pkg/a/a.go`) → `b` (`pkg/b`)
+- **violation** `no_direct_b_dependency` (medium, waiver expired): `a` → `b`
   - Locations: `pkg/a/extra.go:7`
   - Why: Import from pkg/a/** to pkg/b is explicitly forbidden
   - Fix: Remove the dependency or move the code
@@ -16,26 +16,15 @@
 <!-- /archfit:waiver -->
 
 <details>
-<summary>1 advisory · never block</summary>
-
-| Rule | Dependency | Where | Strength | Distance | Volatility | Suggested move |
-| --- | --- | --- | --- | --- | --- | --- |
-| Imbalanced coupling · medium | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared | Declare the volatility of the module in the policy: undeclared volatility counts as high |
-
-Imbalanced coupling · **Why:** balanced coupling: functional integration strength × distance across modules, same owner × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
-
-</details>
-
-<details>
 <summary>1 known issue accepted earlier</summary>
 
 | Rule | Dependency | Where | Strength | Distance | Volatility |
 | --- | --- | --- | --- | --- | --- |
-| `no_direct_b_dependency` · medium, waiver | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared |
+| `no_direct_b_dependency` · medium, accepted by waiver | `a` → `b` | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared |
 
-`no_direct_b_dependency` · **Why:** Import from pkg/a/** to pkg/b is explicitly forbidden
+**Why:** Import from pkg/a/** to pkg/b is explicitly forbidden
 
-`no_direct_b_dependency` · **Fix:** Remove the dependency or move the code
+**Fix:** Remove the dependency or move the code
 
 </details>
 
@@ -45,8 +34,8 @@ Imbalanced coupling · **Why:** balanced coupling: functional integration streng
 ### Decision
 
 - Engine verdict **blocked**: hard gates fail, 1 active blocker, every required rule evaluated
-- `blocking_findings` (architecture). Next: Fix the rule violations, then run archfit check again.
-- `waiver_expired` (governance): no_direct_b_dependency. Next: Renew the waiver or fix the finding.
+- Blocking findings (architecture) · code `blocking_findings`
+- Waiver expired (governance): no_direct_b_dependency · code `waiver_expired`
 
 ### Dimensions
 

@@ -313,8 +313,12 @@ func TestTruncation(t *testing.T) {
 		if !utf8.ValidString(body) {
 			t.Errorf("%s is not valid UTF-8", name)
 		}
-		mustContain(t, body, "blocking_findings", reasonBlocking.Next, "missing_required_coverage", fixedTrustSentence, policyDigest)
+		mustContain(t, body, "blocking_findings", "missing_required_coverage", fixedTrustSentence, policyDigest)
 	}
+	mustContain(t, state, reasonBlocking.Next)
+	mustContain(t, gate, reasonBlocking.Next)
+	// The next step and the link are never cut with the violations above them.
+	mustContain(t, comment, "**Next:**", "Fix the violations above, then check with `archfit check")
 	mustContain(t, comment, "## Archfit: Architecture gate failing")
 	for _, body := range []string{comment, state} {
 		mustContain(t, body, "Output truncated.")
@@ -494,7 +498,7 @@ func TestGateSummaryNamesBlockers(t *testing.T) {
 	gate := renderGate(p)
 	want := headBlocking + "\n\n" +
 		"- `no_direct_b_dependency`: `a` → `b` at `pkg/a/a.go:3`, finding `ba3803ec`. Goal: Remove the forbidden dependency.\n" +
-		"- `whole_rule`: (no module) → `db` at `whole.go`, finding `dddd1111`. Goal: none reported\n" +
+		"- `whole_rule`: `pkg/` → `db` at `whole.go`, finding `dddd1111`. Goal: none reported\n" +
 		"- `nowhere`: `api` → `db`, no location reported, finding `eeee2222`. Goal: none reported\n\n" + foldEvidence
 	if !strings.Contains(gate, want) {
 		t.Errorf("gate summary lacks the blocking findings block:\n%s", gate)
@@ -876,7 +880,7 @@ func TestDependencyCyclesAreOneItem(t *testing.T) {
 		f.Edge.From.Path, f.AllowedAlternatives = "a/x.go", []string{"invert the dependency"}
 		f.Constraint, g.Constraint = "remove one direction", "remove one direction"
 		block := findingsBlock(&report.Report{Findings: []report.Finding{f, g}}, true)
-		mustContain(t, block, "| `a` (`a/x.go`) → `b` | `a.go:3` |", "| `b` → `a` | `b.go:3` |",
+		mustContain(t, block, "| `a` → `b` | `a.go:3` |", "| `b` → `a` | `b.go:3` |",
 			"**Allowed alternatives:** invert the dependency", "2 dependencies of this cycle break `no-module-cycles` (high severity).")
 		if got := strings.Count(block, "**Fix:** remove one direction"); got != 1 {
 			t.Errorf("constraint said %d times, want once:\n%s", got, block)
@@ -1132,8 +1136,9 @@ func TestCommentHeadHasNoReasonCodes(t *testing.T) {
 	mustContain(t, head, "**Next:**\n- "+reasonBlocking.Next+"\n- "+reasonCoverage.Next)
 	mustNotContain(t, head, string(reasonBlocking.Code), string(reasonCoverage.Code), reasonCoverage.Detail, "Reason:")
 	mustContain(t, section(comment, headDecision),
-		"- `"+string(reasonBlocking.Code)+"` (architecture). Next: "+reasonBlocking.Next,
-		"- `"+string(reasonCoverage.Code)+"` (evidence): "+reasonCoverage.Detail)
+		"- Blocking findings (architecture) · code `"+string(reasonBlocking.Code)+"`",
+		"- Missing required coverage (evidence): "+reasonCoverage.Detail+" · code `"+string(reasonCoverage.Code)+"`")
+	mustNotContain(t, section(comment, headDecision), "Next:")
 	if _, fold, _ := strings.Cut(comment, foldEvidence+"\n\n"); !strings.HasPrefix(fold, headDecision) {
 		t.Errorf("the Decision block does not open the evidence fold:\n%s", fold)
 	}
@@ -1282,7 +1287,7 @@ func TestSameColumnsFoldIntoTheLineUnderTheTable(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			table, under := dependencyTable(tt.fs, make([]string, len(tt.fs)), seamIndex(tt.seams), false, false)
+			table, under := dependencyTable(tt.fs, make([]string, len(tt.fs)), seamIndex(tt.seams), tableOpts{})
 			mustContain(t, table, tt.table...)
 			if under != tt.under {
 				t.Errorf("line under the table = %q, want %q", under, tt.under)
@@ -1302,18 +1307,18 @@ func TestSuggestedMoveIsInBookWords(t *testing.T) {
 	fs := []report.Finding{adv("a"), adv("b")}
 	pr := make([]string, len(fs))
 
-	table, under := dependencyTable(fs, pr, seamIndex([]report.Seam{seam("a", "introduce_contract"), seam("b", "move_functionality")}), true, true)
+	table, under := dependencyTable(fs, pr, seamIndex([]report.Seam{seam("a", "introduce_contract"), seam("b", "move_functionality")}), tableOpts{rule: true, moves: true})
 	mustContain(t, table, "| Suggested move |", report.BalancingMoves["introduce_contract"], report.BalancingMoves["move_functionality"])
 	mustNotContain(t, under, "Suggested move")
 
-	table, under = dependencyTable(fs, pr, seamIndex([]report.Seam{seam("a", "move_functionality"), seam("b", "move_functionality")}), true, true)
+	table, under = dependencyTable(fs, pr, seamIndex([]report.Seam{seam("a", "move_functionality"), seam("b", "move_functionality")}), tableOpts{rule: true, moves: true})
 	mustNotContain(t, table, "Suggested move")
 	mustContain(t, under, "**Suggested move:** "+report.BalancingMoves["move_functionality"]+".")
 
-	table, _ = dependencyTable(fs, pr, seamIndex([]report.Seam{seam("a", "a_move_from_a_later_engine"), seam("b", "")}), true, true)
+	table, _ = dependencyTable(fs, pr, seamIndex([]report.Seam{seam("a", "a_move_from_a_later_engine"), seam("b", "")}), tableOpts{rule: true, moves: true})
 	mustContain(t, table, "a_move_from_a_later_engine")
 
-	table, _ = dependencyTable(fs, pr, seamIndex([]report.Seam{seam("a", "introduce_contract")}), true, false)
+	table, _ = dependencyTable(fs, pr, seamIndex([]report.Seam{seam("a", "introduce_contract")}), tableOpts{rule: true})
 	mustNotContain(t, table, "Suggested move")
 }
 
@@ -1379,4 +1384,137 @@ func TestLeadSentenceForAnAddedDependencyThatFormsACycle(t *testing.T) {
 		t.Errorf("lead = %q, want %q", got, want)
 	}
 	mustNotContain(t, got, ".go", "/")
+}
+
+func TestNextStepAndLinkSurviveACutOfTheViolations(t *testing.T) {
+	long := strings.Repeat("x", 1900)
+	r := &report.Report{Verdict: "blocked"}
+	for i := range groupCap {
+		var locs []report.Location
+		for j := range locationCap {
+			locs = append(locs, report.Location{File: fmt.Sprintf("pkg/m%02d/file%02d.go", i, j), Line: j + 1})
+		}
+		r.Findings = append(r.Findings, report.Finding{ID: fmt.Sprintf("%032x", i), Kind: "gate", RuleID: fmt.Sprintf("rule_%02d", i), Status: "new",
+			Severity: "high", Why: long, Constraint: long, Locations: locs,
+			Edge: report.Edge{From: report.Endpoint{Module: fmt.Sprintf("a%02d", i)}, To: report.Endpoint{Module: "z"}}})
+	}
+	o := outcome(verdict.Failure, reasonBlocking)
+	p := Publication{Target: prTarget(headB), Identity: fullIdentity(), Outcome: o, Receipt: receiptFor(o, 7, 1), Report: r, Trusted: trusted(settings.GateRequired)}
+	link := "https://app.example/r/acme/shop/pull/7"
+
+	comment := renderComment(p, t0, "", link)
+	if len(comment) > maxBody {
+		t.Fatalf("comment is %d bytes, over %d", len(comment), maxBody)
+	}
+	mustContain(t, comment, "Output truncated.", "**Next:** Fix the violations above, then check with `archfit check --base origin/main`.", "[Details in Archfit]("+link+")")
+	if cut, next := strings.Index(comment, "Output truncated."), strings.Index(comment, "**Next:**"); cut < 0 || next < cut {
+		t.Errorf("the next step is not after the cut violations: cut at %d, next at %d", cut, next)
+	}
+	mustContain(t, comment, "<summary>Evidence and inputs</summary>", "<summary>For coding agents</summary>") // nothing after the tail is lost either
+}
+
+func TestAnAdvisoryOnAViolationsPairJoinsItsRow(t *testing.T) {
+	gate := func(from, to string) report.Finding {
+		return report.Finding{ID: "g" + from + to, Kind: "gate", RuleID: "no-module-cycles", Status: "new", Severity: "high",
+			Edge: report.Edge{From: report.Endpoint{Module: from}, To: report.Endpoint{Module: to}}}
+	}
+	advisory := func(from, to string) report.Finding {
+		return report.Finding{ID: "a" + from + to, Kind: "advisory", RuleID: "bc/imbalanced_coupling", Status: "new", Severity: "critical",
+			Edge: report.Edge{From: report.Endpoint{Module: from, Path: "pkg/" + from}, To: report.Endpoint{Module: to}}}
+	}
+	covered := &report.Report{Findings: []report.Finding{gate("a", "b"), gate("b", "a"), advisory("a", "b")}}
+	block := findingsBlock(covered, true)
+	mustContain(t, block, "| Dependency | Where | Also reported as |", "| `a` → `b` | none reported | Imbalanced coupling · critical |", "| `b` → `a` | none reported |  |")
+	mustNotContain(t, block, "<details>", "advisor")
+
+	mixed := &report.Report{Findings: append(covered.Findings, advisory("c", "d"))}
+	block = findingsBlock(mixed, true)
+	mustContain(t, block, "<summary>1 advisory · on other dependencies · never block</summary>", "`c` → `d`")
+	mustContain(t, findingsBlock(mixed, false), "1 advisory on other dependencies")
+
+	alone := &report.Report{Findings: []report.Finding{advisory("c", "d")}}
+	mustContain(t, findingsBlock(alone, true), "<summary>1 advisory · never block</summary>")
+}
+
+func TestLegendSaysWhatRedMeansWhenSomeDirectionsAreUnplaced(t *testing.T) {
+	tests := []struct {
+		name string
+		pr   []string
+		want string
+	}{
+		{"all placed", []string{prAdded, prExisting}, "_Red: added by this pull request · grey: already there · label: locations in code that use the dependency_"},
+		{"some unplaced", []string{prAdded, ""}, "_Red: added by this pull request, or not known to have existed before · grey: already there · label: locations in code that use the dependency_"},
+		{"none placed", []string{"", ""}, "_Label and width: locations in code that use the dependency_"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := diagramLegend(tt.pr); got != tt.want {
+				t.Errorf("legend = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestImbalancedCouplingWhyIsOneSentence(t *testing.T) {
+	engine := "balanced coupling: functional integration strength × cross_module distance × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)"
+	tests := []struct{ name, why, want string }{
+		{"the engine's sentence", engine, "functional coupling across a module boundary to a volatile target: a change on one side forces a change on the other (Balanced Coupling: critical severity)"},
+		{"another rule", "Import from a to b is forbidden", "Import from a to b is forbidden"},
+		{"a sentence of another shape", "balanced coupling: odd", "balanced coupling: odd"},
+		{"a distance token only", "the cross_module distance is wide", "the distance across modules is wide"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := readableWhy(tt.why); got != tt.want {
+				t.Errorf("readableWhy = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDriftSaysSoWhenTheBaselineHoldsNoSeam(t *testing.T) {
+	drift := func(added, resolved, compared float64) report.Dimension {
+		return report.Dimension{Coverage: report.DimensionCoverage{Observed: int(compared), Total: int(compared)}, Delta: &report.Delta{Status: "comparable"},
+			Metrics: []report.Metric{{Name: "new_seams", Value: added}, {Name: "resolved_seams", Value: resolved}}}
+	}
+	tests := []struct {
+		name string
+		dim  report.Dimension
+		want string
+	}{
+		{"every current seam new, none resolved", drift(8, 0, 8), "the baseline holds no distributed-monolith seam: all 8 current seams count as new"},
+		{"some new", drift(2, 0, 8), "2 new, 0 resolved distributed-monolith seams"},
+		{"all new but one resolved", drift(3, 1, 4), "3 new, 1 resolved distributed-monolith seams"},
+		{"nothing changed", drift(0, 0, 5), "0 new, 0 resolved distributed-monolith seams"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := seamChange(tt.dim); got != tt.want {
+				t.Errorf("seamChange = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLinkFollowsTheNoticeWhenNoViolationIsListed(t *testing.T) {
+	o := outcome(verdict.Success, reasonHealthy)
+	p := Publication{Target: prTarget(headB), Identity: fullIdentity(), Outcome: o, Receipt: receiptFor(o, 7, 1), Report: &report.Report{Verdict: "healthy"}, Trusted: trusted(settings.GateRequired)}
+	p.Trusted.Entitlement = inputs.Entitlement{WarnFrom: t0.Add(-time.Hour), Notice: "Trial ends 2026-10-20"}
+	got := renderComment(p, t0, "", "https://app.example/r/acme/shop/pull/7")
+	if n, l := strings.Index(got, "Trial ends"), strings.Index(got, "Details in Archfit"); n < 0 || l < n {
+		t.Errorf("the link is not after the notice:\n%s", got)
+	}
+}
+
+func TestAssembleKeepsTheTailWhenTheFindingsAreCut(t *testing.T) {
+	tail := "**Next:** " + strings.Repeat("do it ", 50) // more than the slack a cut leaves, so an unbudgeted tail would not fit
+	l := layout{head: "HEAD", findings: strings.Repeat("a violation line\n", 100), tail: tail, receipt: "<!-- receipt -->"}
+	got := l.assemble(600)
+	if len(got) > 600 {
+		t.Errorf("body is %d bytes, over 600", len(got))
+	}
+	mustContain(t, got, "HEAD", "Output truncated.", tail, "<!-- receipt -->")
+	if cut, next := strings.Index(got, "Output truncated."), strings.Index(got, "**Next:**"); next < cut {
+		t.Errorf("the tail is before the cut:\n%s", got)
+	}
 }

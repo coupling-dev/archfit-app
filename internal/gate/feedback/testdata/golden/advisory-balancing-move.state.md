@@ -13,12 +13,12 @@ This check does not block merging: the gate is advisory for this repository.
 
 | Dependency | Where | Suggested move |
 | --- | --- | --- |
-| `orders` (`pkg/orders/price.go`) → `pricing` (`pkg/pricing`) | `pkg/orders/price.go:3` | Introduce a contract: lower the integration strength, so the target can change without breaking this module |
-| `billing` (`pkg/billing/rate.go`) → `pricing` (`pkg/pricing`) | `pkg/billing/rate.go:3` | Move the functionality: lower the distance, so the coupled code lives in one module |
+| `orders` → `pricing` | `pkg/orders/price.go:3` | Introduce a contract: lower the integration strength, so the target can change without breaking this module |
+| `billing` → `pricing` | `pkg/billing/rate.go:3` | Move the functionality: lower the distance, so the coupled code lives in one module |
 
 On every row: Imbalanced coupling · high · functional coupling · across modules, same owner · high volatility.
 
-Imbalanced coupling · **Why:** balanced coupling: functional integration strength × distance across modules × high volatility → high severity
+**Why:** balanced coupling: functional integration strength × distance across modules × high volatility → high severity
 
 </details>
 

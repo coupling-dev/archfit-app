@@ -9,9 +9,9 @@
 
 | Rule | Dependency | Where | Strength | Distance | Volatility | Suggested move |
 | --- | --- | --- | --- | --- | --- | --- |
-| Imbalanced coupling · medium | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared | Declare the volatility of the module in the policy: undeclared volatility counts as high |
+| Imbalanced coupling · medium | `a` → `b` | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared | Declare the volatility of the module in the policy: undeclared volatility counts as high |
 
-Imbalanced coupling · **Why:** balanced coupling: functional integration strength × distance across modules, same owner × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
+**Why:** unbalanced coupling: elevated maintenance effort (Balanced Coupling: medium severity)
 
 </details>
 
@@ -21,7 +21,7 @@ Imbalanced coupling · **Why:** balanced coupling: functional integration streng
 ### Decision
 
 - Engine verdict **blocked**: hard gates not measured, 0 active blockers, 1 required rule not evaluated
-- `missing_required_coverage` (evidence): layers/no_upward_imports. Next: Install the required tool in the workflow, then re-run it.
+- Missing required coverage (evidence): layers/no_upward_imports · code `missing_required_coverage`
 
 ### Dimensions
 

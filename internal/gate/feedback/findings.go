@@ -2,6 +2,7 @@ package feedback
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -37,24 +38,50 @@ type groups struct {
 	compared                                 bool
 	all, violations, advisories, debt, fixed []report.Finding
 	onCycle                                  map[string]bool // IDs of the shown violations on a dependency cycle, of any rule
+	// covered maps the module pair of a violation to what the report also says about that pair as an advisory: the
+	// advisory is the same dependency under another rule, so it joins the violation's row instead of a section of its own.
+	covered map[[2]string][]string
 }
+
+func pairOf(f report.Finding) [2]string { return [2]string{f.Edge.From.Module, f.Edge.To.Module} }
 
 func group(r *report.Report) groups {
 	rg := report.Group(*r, groupCap)
-	return groups{compared: rg.Compared, all: rg.All, violations: rg.Violations, advisories: rg.Advisories,
-		debt: rg.Accepted, fixed: rg.Fixed, onCycle: rg.OnCycle}
+	g := groups{compared: rg.Compared, all: rg.All, violations: rg.Violations, debt: rg.Accepted, fixed: rg.Fixed,
+		onCycle: rg.OnCycle, covered: map[[2]string][]string{}}
+	pairs := map[[2]string]bool{}
+	for _, f := range rg.Violations {
+		if p := pairOf(f); p[0] != "" && p[1] != "" {
+			pairs[p] = true
+		}
+	}
+	for _, f := range rg.Advisories {
+		p := pairOf(f)
+		if !pairs[p] {
+			g.advisories = append(g.advisories, f)
+			continue
+		}
+		if note := ruleName(f.RuleID) + " · " + meta(f); !slices.Contains(g.covered[p], note) {
+			g.covered[p] = append(g.covered[p], note)
+		}
+	}
+	return g
 }
 
-// findingsBlock is block 5. It labels Finding.Active findings as violations, a display heuristic only: the conclusion
-// always comes from the Outcome. diagrams adds a Mermaid graph per dependency cycle; only the comment asks for it,
-// because a check summary is not known to render Mermaid. The comment also drops the heading and the tally line: its
-// head already says the verdict and the one thing the pull request did, and the picture follows at once.
-func findingsBlock(r *report.Report, diagrams bool) string { return findings(r, diagrams, "") }
+// findingsBlock is block 5, whole. It labels Finding.Active findings as violations, a display heuristic only: the
+// conclusion always comes from the Outcome. diagrams adds a Mermaid graph per dependency cycle; only the comment asks
+// for it, because a check summary is not known to render Mermaid. The comment also drops the heading and the tally
+// line: its head already says the verdict and the one thing the pull request did, and the picture follows at once.
+func findingsBlock(r *report.Report, diagrams bool) string {
+	open, folds := findingParts(r, diagrams)
+	return join(open, folds)
+}
 
-// findings is findingsBlock with tail, the next step, written after the violations and before the folds.
-func findings(r *report.Report, diagrams bool, tail string) string {
+// findingParts is findingsBlock in two parts: the violations, and the folds that never block. The comment puts the
+// next step between them and cuts the folds first.
+func findingParts(r *report.Report, diagrams bool) (open, folds string) {
 	if r == nil {
-		return ""
+		return "", ""
 	}
 	g := group(r)
 	seams := seamIndex(r.Seams)
@@ -65,7 +92,7 @@ func findings(r *report.Report, diagrams bool, tail string) string {
 	}
 	if len(r.Findings) == 0 {
 		b.WriteString("\n\nNo findings reported.")
-		return strings.TrimLeft(b.String(), "\n")
+		return strings.TrimLeft(b.String(), "\n"), ""
 	}
 	if t := tally(g); t != "" && !diagrams {
 		b.WriteString("\n\n" + t)
@@ -73,13 +100,21 @@ func findings(r *report.Report, diagrams bool, tail string) string {
 	if len(g.violations) > 0 {
 		writeViolations(&b, g, seams, diagrams)
 	}
-	if tail != "" {
-		b.WriteString("\n\n" + tail)
+	var f strings.Builder
+	otherAdvisories := len(g.covered) > 0
+	foldTable(&f, g.advisories, seams, "advisory", "advisories", advisoryEffect(otherAdvisories), true)
+	foldTable(&f, g.debt, seams, "known issue accepted earlier", "known issues accepted earlier", "", false)
+	foldTable(&f, g.fixed, seams, "known issue fixed", "known issues fixed", "", false)
+	return strings.TrimLeft(b.String(), "\n"), strings.TrimLeft(f.String(), "\n")
+}
+
+// advisoryEffect is what the advisory fold says beside its count. When an advisory sits on a dependency a violation
+// above already lists, it joined that violation's row, so the fold counts only the advisories on other dependencies.
+func advisoryEffect(others bool) string {
+	if others {
+		return "on other dependencies · never block"
 	}
-	foldTable(&b, g.advisories, seams, "advisory", "advisories", "never block", true)
-	foldTable(&b, g.debt, seams, "known issue accepted earlier", "known issues accepted earlier", "", false)
-	foldTable(&b, g.fixed, seams, "known issue fixed", "known issues fixed", "", false)
-	return strings.TrimLeft(b.String(), "\n")
+	return "never block"
 }
 
 // leadSentence says in one sentence what the pull request did to the rule violations, from origins and locations
@@ -152,7 +187,15 @@ func series(items []string) string {
 }
 
 // dependency is the module pair of a finding, without paths.
-func dependency(f report.Finding) string { return module(f.Edge.From) + " → " + module(f.Edge.To) }
+func dependency(f report.Finding) string { return node(f.Edge.From) + " → " + node(f.Edge.To) }
+
+// node names one end of a dependency by its module; an end no module owns is named by its path, so it is not lost.
+func node(e report.Endpoint) string {
+	if e.Module == "" && e.Path != "" {
+		return code(e.Path)
+	}
+	return module(e)
+}
 
 func isMetric(f report.Finding) bool { return strings.HasPrefix(f.RuleID, report.MetricRulePrefix) }
 
@@ -176,6 +219,13 @@ func subject(f report.Finding) string {
 		s += " (" + text(threshold) + ")"
 	}
 	return s
+}
+
+func advisoryTail(others bool) string {
+	if others {
+		return " on other dependencies"
+	}
+	return ""
 }
 
 // tally is the one line of the check summary that counts every non-empty group, so the size of the problem reads
@@ -203,7 +253,7 @@ func tally(g groups) string {
 		n    int
 		noun string
 	}{
-		{len(g.advisories), plural(len(g.advisories), "advisory", "advisories")},
+		{len(g.advisories), plural(len(g.advisories), "advisory", "advisories") + advisoryTail(len(g.covered) > 0)},
 		{len(g.debt), plural(len(g.debt), "known issue accepted earlier", "known issues accepted earlier")},
 		{len(g.fixed), plural(len(g.fixed), "known issue fixed", "known issues fixed")},
 	} {
@@ -317,7 +367,11 @@ func writeCycle(b *strings.Builder, fs []report.Finding, g groups, seams map[[2]
 	}
 	n := len(fs)
 	fmt.Fprintf(b, "\n\n%d %s of this cycle %s %s (%s).", n, plural(n, "dependency", "dependencies"), verb, ruleName(fs[0].RuleID), severityMeta(fs[0]))
-	table, shared := dependencyTable(fs, pr, seams, false, false)
+	also := make([]string, len(fs))
+	for i, f := range fs {
+		also[i] = strings.Join(g.covered[pairOf(f)], "; ")
+	}
+	table, shared := dependencyTable(fs, pr, seams, tableOpts{also: also})
 	b.WriteString("\n\n" + table)
 	if shared != "" {
 		b.WriteString("\n\n" + shared)
@@ -332,12 +386,18 @@ func writeCycle(b *strings.Builder, fs []report.Finding, g groups, seams map[[2]
 	writeReasons(b, reasons, false)
 }
 
-// diagramLegend is the line under a cycle diagram: what the colours and labels mean.
+// diagramLegend is the line under a cycle diagram: what the colours and labels mean. A direction the report cannot
+// place is drawn red too, so with a mix the legend says so.
 func diagramLegend(pr []string) string {
-	if slices.ContainsFunc(pr, func(s string) bool { return s != "" }) {
-		return "_Red: added by this pull request · grey: already there · label: locations in code that use the dependency_"
+	known := slices.ContainsFunc(pr, func(s string) bool { return s != "" })
+	if !known {
+		return "_Label and width: locations in code that use the dependency_"
 	}
-	return "_Label and width: locations in code that use the dependency_"
+	red := "added by this pull request"
+	if slices.Contains(pr, "") {
+		red += ", or not known to have existed before"
+	}
+	return "_Red: " + red + " · grey: already there · label: locations in code that use the dependency_"
 }
 
 // severityMeta is meta with the severity named as one: "high severity, waiver expired".
@@ -358,7 +418,9 @@ func meta(f report.Finding) string {
 	case statusExpired:
 		parts = append(parts, "waiver expired")
 	case statusWaived:
-		parts = append(parts, "waiver")
+		parts = append(parts, "accepted by waiver")
+	case statusBaseline:
+		parts = append(parts, "accepted in the baseline")
 	default:
 		parts = append(parts, text(f.Status))
 	}
@@ -459,6 +521,12 @@ func seamIndex(seams []report.Seam) map[[2]string]report.Seam {
 	return out
 }
 
+// tableOpts are the optional columns of a dependency table.
+type tableOpts struct {
+	rule, moves bool
+	also        []string // per row; nil for none
+}
+
 // column is one column of a dependency table. phrase turns a value that is the same on every row into words for the
 // line under the table; a column without phrase is never folded away.
 type column struct {
@@ -473,10 +541,10 @@ func same(s []string) bool {
 
 // dependencyTable is one row per finding: the dependency, what it is on the pull request base when pr says so for any
 // row ("This PR"), where it occurs, and, when the report has a seam for any row, its integration strength, distance
-// and volatility. withRule adds the rule and its meta for mixed groups; moves adds the balancing move of the seam.
-// With two rows or more, a column that holds the same value on every row is not a column: its value goes into the
+// and volatility. opts.rule adds the rule and its meta for mixed groups; opts.moves adds the balancing move of the seam;
+// opts.also is, per row, the advisory the report also has on the same dependency. With two rows or more, a column that holds the same value on every row is not a column: its value goes into the
 // second result, the line under the table, together with a move that is the same on every row.
-func dependencyTable(fs []report.Finding, pr []string, seams map[[2]string]report.Seam, withRule, moves bool) (table, shared string) {
+func dependencyTable(fs []report.Finding, pr []string, seams map[[2]string]report.Seam, opts tableOpts) (table, shared string) {
 	seamOf := func(f report.Finding) (report.Seam, bool) {
 		s, ok := seams[[2]string{f.Edge.From.Module, f.Edge.To.Module}]
 		return s, ok
@@ -500,15 +568,10 @@ func dependencyTable(fs []report.Finding, pr []string, seams map[[2]string]repor
 	identity := func(v string) string { return v }
 
 	var cols []column
-	if withRule {
+	if opts.rule {
 		cols = append(cols, column{"Rule", cellsOf(func(_ int, f report.Finding) string { return ruleName(f.RuleID) + " · " + meta(f) }), identity})
 	}
-	cols = append(cols, column{head: "Dependency", cells: cellsOf(func(_ int, f report.Finding) string {
-		if isMetric(f) {
-			return subject(f)
-		}
-		return endpoint(f.Edge.From) + " → " + endpoint(f.Edge.To)
-	})})
+	cols = append(cols, column{head: "Dependency", cells: cellsOf(func(_ int, f report.Finding) string { return subject(f) })})
 	if slices.ContainsFunc(pr, func(s string) bool { return s != "" }) {
 		cols = append(cols, column{"This PR", slices.Clone(pr), func(v string) string {
 			switch v {
@@ -527,8 +590,11 @@ func dependencyTable(fs []report.Finding, pr []string, seams map[[2]string]repor
 			column{"Distance", seamCells(func(s report.Seam) string { return distanceText(s.Distance) }), identity},
 			column{"Volatility", seamCells(func(s report.Seam) string { return text(s.Volatility) }), func(v string) string { return v + " volatility" }})
 	}
+	if opts.also != nil && slices.ContainsFunc(opts.also, func(v string) bool { return v != "" }) {
+		cols = append(cols, column{"Also reported as", opts.also, func(v string) string { return "also reported as " + v }})
+	}
 	var move []string
-	if moves {
+	if opts.moves {
 		move = seamCells(func(s report.Seam) string { return moveWords(s.Hypothesis) })
 		if !slices.ContainsFunc(move, func(v string) bool { return v != "" }) {
 			move = nil
@@ -601,7 +667,7 @@ func foldTable(b *strings.Builder, fs []report.Finding, seams map[[2]string]repo
 	if effect != "" {
 		summary += " · " + effect
 	}
-	table, shared := dependencyTable(shown, pr, seams, true, moves)
+	table, shared := dependencyTable(shown, pr, seams, tableOpts{rule: true, moves: moves})
 	fmt.Fprintf(b, "\n\n<details>\n<summary>%s</summary>\n\n%s", summary, table)
 	if shared != "" {
 		b.WriteString("\n\n" + shared)
@@ -609,8 +675,31 @@ func foldTable(b *strings.Builder, fs []report.Finding, seams map[[2]string]repo
 	if len(fs) > groupCap {
 		fmt.Fprintf(b, "\n\n- and %d more", len(fs)-groupCap)
 	}
-	writeReasons(b, shown, true)
+	writeReasons(b, shown, distinctRules(shown) > 1)
 	b.WriteString("\n\n" + foldClose)
+}
+
+// distinctRules is how many rules the findings come from: one rule is already named in the line under the table.
+func distinctRules(fs []report.Finding) int {
+	seen := map[string]bool{}
+	for _, f := range fs {
+		seen[f.RuleID] = true
+	}
+	return len(seen)
+}
+
+// balancedWhy says the engine's imbalanced-coupling Why in one sentence: the formula it prints ("functional
+// integration strength × distance … × high volatility") is the three columns of the table beside it. Any other text
+// stays as written.
+var balancedWhy = regexp.MustCompile(`^balanced coupling: .* → (\w+) severity \((.+)\)$`)
+
+func readableWhy(why string) string {
+	why = report.ReadableWhy(why)
+	m := balancedWhy.FindStringSubmatch(why)
+	if m == nil {
+		return why
+	}
+	return strings.Replace(m[2], " → ", ": ", 1) + " (Balanced Coupling: " + m[1] + " severity)"
 }
 
 // writeReasons writes each distinct Why, Fix (the engine's constraint) and set of allowed alternatives once, in first-seen order: the
@@ -632,7 +721,7 @@ func writeReasons(b *strings.Builder, fs []report.Finding, withRule bool) {
 	}
 	for _, f := range fs {
 		if f.Why != "" {
-			add(f.RuleID, "Why", text(report.ReadableWhy(f.Why)))
+			add(f.RuleID, "Why", text(readableWhy(f.Why)))
 		}
 		if f.Constraint != "" {
 			add(f.RuleID, "Fix", text(f.Constraint))
@@ -669,25 +758,17 @@ func writeFinding(b *strings.Builder, f report.Finding) {
 	default:
 		m += ", origin " + text(f.Origin)
 	}
-	fmt.Fprintf(b, "%s (%s): %s", ruleName(f.RuleID), m, subjectWithPaths(f))
+	fmt.Fprintf(b, "%s (%s): %s", ruleName(f.RuleID), m, subject(f))
 	if len(f.Locations) > 0 || !isMetric(f) { // a metric ratchet has no place in the code
 		b.WriteString("\n  - Locations: " + capped(f.Locations, locationCap))
 	}
-	fmt.Fprintf(b, "\n  - Why: %s", text(report.ReadableWhy(f.Why)))
+	fmt.Fprintf(b, "\n  - Why: %s", text(readableWhy(f.Why)))
 	if f.Constraint != "" {
 		fmt.Fprintf(b, "\n  - Fix: %s", text(f.Constraint))
 	}
 	if len(f.AllowedAlternatives) > 0 {
 		fmt.Fprintf(b, "\n  - Allowed alternatives: %s", alternatives(f.AllowedAlternatives))
 	}
-}
-
-// subjectWithPaths is subject with the paths of the two endpoints, as the list item shows it.
-func subjectWithPaths(f report.Finding) string {
-	if isMetric(f) {
-		return subject(f)
-	}
-	return endpoint(f.Edge.From) + " → " + endpoint(f.Edge.To)
 }
 
 // capped is up to limit locations as file:line, then "and N more"; "none reported" when empty.
@@ -707,11 +788,4 @@ func capped(locs []report.Location, limit int) string {
 		b.WriteString(location(loc))
 	}
 	return b.String()
-}
-
-func endpoint(e report.Endpoint) string {
-	if e.Path == "" {
-		return module(e)
-	}
-	return module(e) + " (" + code(e.Path) + ")"
 }

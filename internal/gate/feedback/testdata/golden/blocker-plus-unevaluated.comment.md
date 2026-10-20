@@ -2,7 +2,7 @@
 <!-- archfit:head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb run 7.1 -->
 ## Archfit: Architecture gate failing
 
-- **violation** `no_direct_b_dependency` (medium): `a` (`pkg/a/a.go`) → `b` (`pkg/b`)
+- **violation** `no_direct_b_dependency` (medium): `a` → `b`
   - Locations: `pkg/a/a.go:3`
   - Why: Import from pkg/a/** to pkg/b is explicitly forbidden
   - Fix: Remove the dependency or move the code
@@ -12,24 +12,13 @@
 - Install the required tool in the workflow, then re-run it.
 
 <details>
-<summary>1 advisory · never block</summary>
-
-| Rule | Dependency | Where | Strength | Distance | Volatility | Suggested move |
-| --- | --- | --- | --- | --- | --- | --- |
-| Imbalanced coupling · medium | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared | Declare the volatility of the module in the policy: undeclared volatility counts as high |
-
-Imbalanced coupling · **Why:** balanced coupling: functional integration strength × distance across modules, same owner × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
-
-</details>
-
-<details>
 <summary>Evidence and inputs</summary>
 
 ### Decision
 
 - Engine verdict **blocked**: hard gates fail, 1 active blocker, 1 required rule not evaluated
-- `blocking_findings` (architecture). Next: Fix the rule violations, then run archfit check again.
-- `missing_required_coverage` (evidence): layers/no_upward_imports. Next: Install the required tool in the workflow, then re-run it.
+- Blocking findings (architecture) · code `blocking_findings`
+- Missing required coverage (evidence): layers/no_upward_imports · code `missing_required_coverage`
 
 ### Dimensions
 

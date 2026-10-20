@@ -146,7 +146,8 @@ type fixtureCase struct {
 	outcome  verdict.Outcome
 	identity manifest.Identity
 	waiver   time.Time
-	advisory bool // gate mode advisory instead of required
+	advisory bool   // gate mode advisory instead of required
+	base     string // the pull request's base branch; "main" when empty
 }
 
 func fixtureCases() []fixtureCase {
@@ -171,7 +172,7 @@ func fixtureCases() []fixtureCase {
 		{name: "advisory-balancing-move", outcome: outcome(verdict.Success, reasonAttention), identity: id, advisory: true},
 		// The pilot's PR #11 report (engine v3.0.1): one dependency cycle among three modules, coupling advisories and
 		// accepted debt, in advisory mode with a baseline.
-		{name: "pilot-pr-cycle", outcome: outcome(verdict.Failure, reasonBlocking), identity: id, advisory: true},
+		{name: "pilot-pr-cycle", outcome: outcome(verdict.Failure, reasonBlocking), identity: id, advisory: true, base: "master"},
 	}
 }
 
@@ -217,8 +218,12 @@ func fixturePublication(t *testing.T, c fixtureCase, head string) Publication {
 	tr.EarliestWaiverExpiry = c.waiver
 	rc := receiptFor(c.outcome, 7, 1)
 	rc.EarliestWaiverExpiry = c.waiver
+	target := prTarget(head)
+	if c.base != "" {
+		target.BaseRef = c.base
+	}
 	return Publication{
-		Target:   prTarget(head),
+		Target:   target,
 		Identity: c.identity,
 		Outcome:  c.outcome,
 		Receipt:  rc,

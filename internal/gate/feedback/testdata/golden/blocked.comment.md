@@ -9,9 +9,9 @@
 
 | Rule | Dependency | Where | Strength | Distance | Volatility | Suggested move |
 | --- | --- | --- | --- | --- | --- | --- |
-| Imbalanced coupling · medium | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared | Declare the volatility of the module in the policy: undeclared volatility counts as high |
+| Imbalanced coupling · medium | `a` → `b` | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared | Declare the volatility of the module in the policy: undeclared volatility counts as high |
 
-Imbalanced coupling · **Why:** balanced coupling: functional integration strength × distance across modules, same owner × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
+**Why:** unbalanced coupling: elevated maintenance effort (Balanced Coupling: medium severity)
 
 </details>
 
@@ -20,11 +20,11 @@ Imbalanced coupling · **Why:** balanced coupling: functional integration streng
 
 | Rule | Dependency | Where | Strength | Distance | Volatility |
 | --- | --- | --- | --- | --- | --- |
-| `no_direct_b_dependency` · medium, baseline | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared |
+| `no_direct_b_dependency` · medium, accepted in the baseline | `a` → `b` | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared |
 
-`no_direct_b_dependency` · **Why:** Import from pkg/a/** to pkg/b is explicitly forbidden
+**Why:** Import from pkg/a/** to pkg/b is explicitly forbidden
 
-`no_direct_b_dependency` · **Fix:** Remove the dependency or move the code
+**Fix:** Remove the dependency or move the code
 
 </details>
 
@@ -34,7 +34,7 @@ Imbalanced coupling · **Why:** balanced coupling: functional integration streng
 ### Decision
 
 - Engine verdict **blocked**: hard gates fail, 1 active blocker, every required rule evaluated
-- `blocking_findings` (architecture). Next: Fix the rule violations, then run archfit check again.
+- Blocking findings (architecture) · code `blocking_findings`
 
 ### Dimensions
 

@@ -501,7 +501,7 @@ const MaxBytes = 5 << 20
 
 // Report is the no-source transport form of an engine state report. The decoder knows every key of the engine
 // state schema of v3.0.0 and v3.0.1: keys listed here are kept (length-capped), the other known keys are validated and dropped
-// (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores), and any key
+// (measurement, findings[].matched_by except MatchedByKeys, agent_tasks[].declarations, metric provenance, seam scores), and any key
 // the schema does not define is a decode error.
 type Report struct {
     SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
@@ -595,7 +595,19 @@ type Finding struct {
     Constraint          string     `json:"constraint"` // engine-authored, single line, length-capped
     AllowedAlternatives []string   `json:"allowed_alternatives,omitempty"`
     Origin              string     `json:"origin,omitempty"` // "introduced" | "pre_existing" | "unknown", only with --base; presentation only
+    // MatchedBy holds only the MatchedByKeys of the engine's matched_by; a metric ratchet names its numbers there.
+    MatchedBy map[string]string `json:"matched_by,omitempty"`
 }
+
+// The matched_by keys a consumer shows. The engine writes more keys; the others stay out of the App.
+const (
+    MatchedByMetric    = "metric"
+    MatchedByBefore    = "before"
+    MatchedByAfter     = "after"
+    MatchedByThreshold = "threshold"
+)
+
+var MatchedByKeys = []string{MatchedByMetric, MatchedByBefore, MatchedByAfter, MatchedByThreshold}
 
 type Edge struct {
     From Endpoint `json:"from"`
@@ -707,6 +719,10 @@ type Seam struct {
     // Policy is what the engine's policy says about the seam: "violation" | "accepted" |
     // "advisory" | "allowed" | "observed", a closed set. "" = the key is absent.
     Policy string `json:"policy,omitempty"`
+    // Hypothesis is the engine's balancing move for the seam: "balanced" | "accept_low_volatility" |
+    // "introduce_contract" | "move_functionality" | "declare_volatility" | "expected_by_role" | "follow_rule".
+    // "" = the engine gave no move.
+    Hypothesis string `json:"hypothesis,omitempty"`
 }
 ```
 

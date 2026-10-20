@@ -55,7 +55,9 @@ func code(s string) string {
 type layout struct {
 	head     string // blocks 1 to 3, with the comment markers
 	decision string // the comment's reasons with their codes, first in the evidence fold
-	findings string // block 5
+	findings string // block 5, the violations
+	tail     string // the next step and the link: never cut, after the violations and before the folds
+	folds    string // block 5, advisories, accepted debt and fixed findings: cut after the violations
 	dims     string // block 6
 	gaps     string // block 7
 	inputs   string // block 8
@@ -72,11 +74,12 @@ func cost(block string) int {
 	return len(block) + 2
 }
 
-// assemble joins the blocks under limit bytes. Head, decision, gaps, inputs and the receipt marker are budgeted
-// first. Of the rest, agent tasks give way first (whole tasks), then findings are cut at a line end;
-// dimensions and commands are cut only when even that is not enough.
+// assemble joins the blocks under limit bytes. Head, tail, decision, gaps, inputs and the receipt marker are budgeted
+// first: the next step and the link to the App stay when the violations above them are cut. Of the rest, agent tasks
+// give way first (whole tasks), then the folds and the findings are cut at a line end; dimensions and commands are
+// cut only when even that is not enough.
 func (l layout) assemble(limit int) string {
-	rest := limit + 2 - cost(l.head) - cost(l.decision) - cost(l.inputs) - cost(l.receipt) - cost(foldEvidence) - cost(foldTasks) - 2*cost(foldClose)
+	rest := limit + 2 - cost(l.head) - cost(l.tail) - cost(l.decision) - cost(l.inputs) - cost(l.receipt) - cost(foldEvidence) - cost(foldTasks) - 2*cost(foldClose)
 	l.gaps = cutLines(l.gaps, rest-2) // last resort: only a pathological gap list does not fit
 	rest -= cost(l.gaps)
 
@@ -91,13 +94,15 @@ func (l layout) assemble(limit int) string {
 	rest -= cost(commands)
 	l.findings = cutLines(l.findings, rest-2)
 	rest -= cost(l.findings)
+	l.folds = cutLines(l.folds, rest-2)
+	rest -= cost(l.folds)
 
 	tasks := noTasks
 	if n := fitTasks(l.tasks, rest); n > 0 {
 		tasks = tasksBlock(l.tasks[:n], len(l.tasks)-n)
 	}
 
-	body := join(l.head, l.findings, fold(foldEvidence, join(l.decision, l.dims, l.gaps, l.inputs, commands)), fold(foldTasks, tasks))
+	body := join(l.head, l.findings, l.tail, l.folds, fold(foldEvidence, join(l.decision, l.dims, l.gaps, l.inputs, commands)), fold(foldTasks, tasks))
 	if l.receipt == "" {
 		return cutLines(body, limit)
 	}
