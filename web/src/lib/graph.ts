@@ -191,7 +191,13 @@ export function problemRows(
   for (const l of shown) {
     if (listed.has(l)) continue;
     const back = shown.find(
-      (r) => r !== l && !listed.has(r) && r.status === l.status && r.from === l.to && r.to === l.from,
+      (r) =>
+        r !== l &&
+        !listed.has(r) &&
+        r.status === l.status &&
+        r.accepted === l.accepted && // one row, one word: gate debt and an accepted advisory stay two rows
+        r.from === l.to &&
+        r.to === l.from,
     );
     listed.add(l);
     if (back) listed.add(back);

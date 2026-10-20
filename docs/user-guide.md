@@ -561,7 +561,8 @@ the policy and the dependencies between them in the latest default-branch report
   | `observed`  | No current finding names the dependency, and no blocking rule permits it                  |
 
 - Only the engine can mark a dependency `allowed`. A forbidden dependency in the baseline shows as `accepted
-  violation`, never as `allowed`. The accepted dependencies are the ones the overview counts as accepted.
+  violation`, never as `allowed`. A dependency the overview counts as accepted shows as accepted, unless a violation
+  on the same pair outranks it.
 - A warning says when the policy differs from the one the report was computed from (module names and lines may not
   match), and when the report's hard gates did not pass or the engine did not evaluate all required rules: then an
   `observed` dependency can still break a rule that was not evaluated. Open a warning for the reason.

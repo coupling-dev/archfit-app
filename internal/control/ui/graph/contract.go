@@ -27,7 +27,8 @@ type Node struct {
 const VolatilityUndeclared = "undeclared"
 
 // LinkStatus is what the report says about a module pair: the engine's seam policy status when the report carries
-// one (every engine release the App reads carries it), else what the findings on the pair say. It is a display fact, never a check input.
+// one (every engine release the App reads carries it), raised to advisory or accepted by the findings on the pair;
+// else what the findings on the pair say. It is a display fact, never a check input.
 type LinkStatus string
 
 const (
@@ -147,6 +148,10 @@ func Build(rep report.Report, policyText []byte) View {
 		if s.Policy != "" {
 			if st := LinkStatus(s.Policy); rank(st) > rank(l.Status) {
 				l.Status = st
+			}
+			// The engine's "accepted" is accepted gate debt, also when its finding names the pair by endpoint path only.
+			if s.Policy == string(StatusAccepted) {
+				l.Accepted = AcceptedViolation
 			}
 			decided[p] = true
 		}

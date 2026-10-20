@@ -198,7 +198,10 @@ func TestStatusFollowsEngineSeamPolicy(t *testing.T) {
 		want     []Link
 	}{
 		{"violation", []report.Seam{withPolicy("api", "db", 1, "violation")}, nil, []Link{link("api", "db", 1, StatusViolation)}},
-		{"accepted", []report.Seam{withPolicy("api", "db", 1, "accepted")}, nil, []Link{link("api", "db", 1, StatusAccepted)}},
+		{"accepted", []report.Seam{withPolicy("api", "db", 1, "accepted")}, nil, []Link{accepted(link("api", "db", 1, StatusAccepted), AcceptedViolation)}},
+		// The engine's accepted is gate debt: an accepted advisory on the pair never makes it read as an advisory.
+		{"engine accepted, an accepted advisory names the pair", []report.Seam{withPolicy("api", "db", 1, "accepted")},
+			[]report.Finding{finding("advisory", "baseline", "api", "db")}, []Link{accepted(link("api", "db", 1, StatusAccepted), AcceptedViolation)}},
 		{"advisory", []report.Seam{withPolicy("api", "db", 1, "advisory")}, nil, []Link{link("api", "db", 1, StatusAdvisory)}},
 		{"allowed", []report.Seam{withPolicy("api", "db", 1, "allowed")}, nil, []Link{link("api", "db", 1, StatusAllowed)}},
 		{"observed", []report.Seam{withPolicy("api", "db", 1, "observed")}, nil, []Link{link("api", "db", 1, StatusObserved)}},
@@ -503,7 +506,7 @@ func TestAcceptedNamesWhatItAccepts(t *testing.T) {
 }
 
 // The overview counts report.Group's Accepted; the graph shows each of those findings' pairs as accepted, also where
-// the engine's seam policy is "observed" (no active finding) or "allowed".
+// the engine's seam policy is "observed" (no active finding) or "allowed", unless a violation on the pair outranks it.
 func TestGraphAcceptsWhatTheOverviewCounts(t *testing.T) {
 	withPolicy := func(from, to, policy string) report.Seam {
 		s := seam(from, to, 1)
@@ -529,5 +532,14 @@ func TestGraphAcceptsWhatTheOverviewCounts(t *testing.T) {
 	}
 	if len(accepted) != 3 || !reflect.DeepEqual(shown, accepted) {
 		t.Errorf("accepted links %v, want report.Group's %v", shown, accepted)
+	}
+
+	// A violation on the same pair outranks its accepted debt.
+	rep.Findings = append(rep.Findings, finding("gate", "new", "api", "db"))
+	rep.Seams[0].Policy = "violation"
+	for _, l := range Build(rep, []byte(threeModules)).Links {
+		if l.From == "api" && l.To == "db" && l.Status != StatusViolation {
+			t.Errorf("api -> db = %q, want the violation over its accepted advisory", l.Status)
+		}
 	}
 }

@@ -46,8 +46,8 @@ Layout, colors and interaction are not here; they are the web app's.
 
 - The rule that the engine's seam policy status, when present, decides a link's violations, and findings only raise
   it to `advisory` or `accepted`: the engine owns the rules, but its `observed` means "no active finding" and leaves
-  out advisories and accepted debt, which the overview counts (report.Group). The graph shows the same accepted
-  findings the overview counts.
+  out advisories and accepted debt, which the overview counts (report.Group). Each accepted finding the
+  overview counts makes its pair accepted unless a violation on the pair outranks it.
 - The status a finding gives its pair, and the precedence when several findings or seams name it. Which findings are active
   (a violation) is not graph's knowledge: `report.Finding.Active()` of wire/report decides, the same rule the gate's
   feedback uses. Graph knows only the accepted statuses (`baseline`, `waived`), the `fixed` status and the `gate`
@@ -78,7 +78,8 @@ type Node struct {
 const VolatilityUndeclared = "undeclared"
 
 // LinkStatus is what the report says about a module pair: the engine's seam policy status when the report carries
-// one, else what the findings on the pair say. It is a display fact, never a check input.
+// one, raised to advisory or accepted by the findings on the pair; else what the findings on the pair say. It is a
+// display fact, never a check input.
 type LinkStatus string
 
 const (
@@ -169,8 +170,9 @@ func Build(rep Report, policy []byte) View
    strongest wins: `violation` > `accepted` > `advisory` > `observed`. Findings with an empty module on either side do
    not change a link. Findings never give `allowed`. The policy text never sets a status: graph does not evaluate
    rules. The full order, used for duplicate seams too, is the engine's: `violation` > `accepted` > `advisory` >
-   `allowed` > `observed`. `Accepted` is `violation` when an accepted `gate` finding names the pair, else `advisory`
-   when an accepted one does, else `""`.
+   `allowed` > `observed`. `Accepted` is `violation` when a seam of the pair carries the engine's `accepted` (accepted
+   gate debt, also when its finding names the pair by endpoint path only) or an accepted `gate` finding names the
+   pair, else `advisory` when an accepted one does, else `""`.
 5. A finding that gives a status to a pair without a seam still yields a link, `Count` 0 **[default]**: a violation or
    accepted debt is never hidden because the seam list is incomplete. A fixed finding yields no link.
 6. A link endpoint that the policy does not declare gets a node with that name, empty `Layer`, `PolicyLine` 0.
@@ -542,7 +544,8 @@ func Modules(policy []byte) ([]ModuleDef, error)
 - Never "allowed" on graph's own reading: only the engine's `seams[].policy` gives `allowed`, and a finding never
   makes a pair the engine decided a violation. A finding is never drawn as a plain observation, and a fixed finding
   never draws a link.
-- The accepted links are the pairs of report.Group's Accepted: the graph and the overview never disagree on them.
+- Every pair of a finding in report.Group's Accepted is drawn accepted unless a violation on the pair outranks it;
+  the engine's seam policy `accepted` marks a pair accepted too, as accepted gate debt.
 
 ## Test Specification
 
@@ -575,11 +578,13 @@ Nothing is mocked.
   finding on the pair gives `violation`: the rule is wire/report's.
 - **Test name**: `TestStatusFollowsEngineSeamPolicy`
   **Scenario**: table over seams with `Policy`: each of the five values alone; `allowed` with a gate/new finding on the
-  pair; `observed` with an advisory/baseline finding on the pair; `observed` with an advisory/new one; duplicate seams `allowed`, `violation`, `observed`
+  pair; `observed` with an advisory/baseline finding on the pair; `observed` with an advisory/new one; `accepted`
+  with an advisory/baseline finding on the pair; duplicate seams `allowed`, `violation`, `observed`
   (`Edges` 2, 3, 1); duplicate seams `observed` and `allowed`; a seam without `Policy` and a gate/baseline finding; an
   `allowed` seam `api → db` and a gate/new finding on `ui → db` with no seam; a `violation` seam with an empty endpoint.
-  **Expected behavior**: the seam's value each time; the gate finding does not make the `allowed` pair a violation;
-  `accepted` with `Accepted` advisory; `advisory`; `violation` with `Count` 6 and `allowed` with `Count` 2 for the
+  **Expected behavior**: the seam's value each time, `accepted` with `Accepted` violation; the gate finding does not
+  make the `allowed` pair a violation; `accepted` with `Accepted` advisory; `advisory`; `Accepted` violation, the
+  engine's gate debt over the advisory; `violation` with `Count` 6 and `allowed` with `Count` 2 for the
   duplicates; `accepted` with `Accepted` violation without `Policy`; `api → db` allowed and
   `ui → db` violation with `Count` 0; no link for the empty endpoint.
 - **Test name**: `TestLinkOriginIsTheCommentsRule`
@@ -608,8 +613,10 @@ Nothing is mocked.
   gate finding beside an accepted advisory; a new advisory.
   **Expected behavior**: `Accepted` advisory, advisory, violation, violation, `""`.
 - **Test name**: `TestGraphAcceptsWhatTheOverviewCounts`
-  **Scenario**: accepted findings on `observed` and `allowed` seams, a new advisory, and report.Group of the same report.
-  **Expected behavior**: the accepted links are exactly the pairs of report.Group's Accepted.
+  **Scenario**: accepted findings on `observed` and `allowed` seams, a new advisory, and report.Group of the same report;
+  then an active gate finding and a `violation` seam on one accepted pair.
+  **Expected behavior**: the accepted links are exactly the pairs of report.Group's Accepted; then that pair is a
+  violation.
 - **Test name**: `TestFindingWithoutSeamStillDraws`
   **Scenario**: gate/new on `ui → db`, gate/baseline on `api → ui`, advisory/new on `db → api` and gate/fixed on `db → ui`,
   with no seams.

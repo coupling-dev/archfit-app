@@ -49,7 +49,10 @@
         <dt>Layer</dt>
         <dd>{node.layer || 'none declared'}</dd>
         <dt>Declared</dt>
-        <dd>{moduleVolatility(node) || 'unknown: the policy is not the one the report used'}</dd>
+        <dd>
+          {moduleVolatility(node) ||
+            (view.stale ? 'unknown: the policy is not the one the report used' : 'nothing: not in the policy')}
+        </dd>
         <dt>Policy</dt>
         <dd>
           {#if policyLine(node.policy_line)}<a href={policyLine(node.policy_line)}>Open in the policy</a>{:else}not in the

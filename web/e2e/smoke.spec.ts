@@ -610,6 +610,7 @@ test('graph: the canvas, the inspector and the matrix', async ({ page }) => {
   }).toPass();
   await page.keyboard.press('Enter');
   await expect(inspector.getByRole('heading', { name: 'Module' })).toBeVisible();
+  await expect(inspector).toContainText('volatility high');
   await expect(inspector.getByRole('link', { name: 'Open in the policy' })).toHaveAttribute(
     'href',
     '/r/acme/app/policy#L9',
@@ -620,6 +621,12 @@ test('graph: the canvas, the inspector and the matrix', async ({ page }) => {
   await page.getByRole('button', { name: 'violation', exact: false }).filter({ hasText: '2' }).first().click();
   await expect(page.getByRole('button', { name: 'api to db, 12, violation' })).toHaveCount(0);
   await expectClean(page);
+
+  // a module the report's own policy does not name: no claim that the policy is stale
+  await page.getByRole('button', { name: 'Graph', exact: true }).click();
+  await page.locator('.g-node', { hasText: 'legacy' }).click();
+  await expect(inspector).toContainText('nothing: not in the policy');
+  await expect(inspector).not.toContainText('not the one the report used');
 
   await page.getByText('Modules and dependencies as tables').click();
   await expect(page.getByRole('table', { name: 'Dependencies' })).toContainText('not measured');

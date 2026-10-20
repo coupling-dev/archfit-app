@@ -53,7 +53,7 @@ function arrowStyle(d: Direction): Pick<Arrow, 'kind' | 'width'> {
 }
 
 // Rect is an area by its centre and size: a module's box or an arrow's label.
-export interface Rect {
+interface Rect {
   x: number;
   y: number;
   w: number;
@@ -61,11 +61,11 @@ export interface Rect {
 }
 
 // labelArea is the area an arrow's label covers, centred on (x, y).
-export function labelArea(text: string, x: number, y: number): Rect {
+function labelArea(text: string, x: number, y: number): Rect {
   return { x, y, w: text.length * labelGlyph + 8, h: labelH };
 }
 
-export function overlaps(a: Rect, b: Rect): boolean {
+function overlaps(a: Rect, b: Rect): boolean {
   return Math.abs(a.x - b.x) * 2 < a.w + b.w && Math.abs(a.y - b.y) * 2 < a.h + b.h;
 }
 

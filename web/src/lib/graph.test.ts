@@ -122,6 +122,20 @@ describe('problemRows', () => {
     link('g', 'h', 'allowed', 7),
   ];
 
+  it('keeps accepted gate debt and an accepted advisory apart', () => {
+    const debt = [
+      link('a', 'b', 'accepted', 10, { accepted: 'advisory' }),
+      link('b', 'a', 'accepted', 1, { accepted: 'violation' }),
+      link('c', 'd', 'accepted', 2, { accepted: 'advisory' }),
+      link('d', 'c', 'accepted', 1, { accepted: 'advisory' }),
+    ];
+    expect(problemRows(debt, false, false, all).map((r) => [r.link.from, r.back?.from ?? ''])).toEqual([
+      ['a', ''],
+      ['c', 'd'],
+      ['b', ''],
+    ]);
+  });
+
   it('pairs the two directions of a cycle and keeps statuses apart', () => {
     const rows = problemRows(links, false, false, all);
     expect(rows.map((r) => [r.link.from, r.link.to, r.back?.from ?? ''])).toEqual([

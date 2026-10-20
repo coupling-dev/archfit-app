@@ -265,62 +265,94 @@ func New(c Config, o OAuth, u Users, repos Repos, now func() time.Time) (Session
 - **Balanced?**: yes — parent and child
 - **Shared knowledge**: ui supplies a decoded `Report` and the policy text, gets a `View`, serializes it as JSON into
   the page, links each node to `/r/{o}/{n}/policy#L<PolicyLine>` when the line is not 0, shows the stale banner
-  when `Stale`, and the incomplete banner (`id="incomplete"`) when `Incomplete`. The template and the script use a
-  link's `Status` as its CSS class and print it as is.
+  when `Stale`, and the incomplete banner (`id="incomplete"`) when `Incomplete`. The web app uses a link's `Status`
+  as its CSS class and prints it, an accepted one with its `Accepted` ("accepted violation", "accepted advisory").
 
 <!-- contract: View, Node, Link, LinkStatus, Build — restated from internal/control/ui/graph/module.md -->
 ```go
 type Node struct {
-    Name       string
-    Layer      string
-    PolicyLine int // 1-based line of the module in the policy YAML; 0 if not found
+    Name       string `json:"name"`
+    Layer      string `json:"layer"`
+    PolicyLine int    `json:"policy_line"` // 1-based line of the module in the policy YAML; 0 if not found
+    // Volatility and Subdomain are what the policy the report was computed from declares for the module. Volatility is
+    // VolatilityUndeclared when it declares neither. Both are "" when the policy text is not the report's (View.Stale)
+    // or does not name the module: the node then claims nothing. A seam's volatility is no module fact: on a
+    // functional dependency the engine takes the worse of its two ends.
+    Volatility string `json:"volatility"`
+    Subdomain  string `json:"subdomain"`
 }
 
+// VolatilityUndeclared is Node.Volatility for a module whose policy declares neither a volatility nor a subdomain.
+const VolatilityUndeclared = "undeclared"
+
 // LinkStatus is what the report says about a module pair: the engine's seam policy status when the report carries
-// one, else what the findings on the pair say. It is a display fact, never a check input.
+// one, raised to advisory or accepted by the findings on the pair; else what the findings on the pair say. It is a
+// display fact, never a check input.
 type LinkStatus string
 
 const (
     StatusViolation LinkStatus = "violation" // an active gate finding (wire/report Finding.Active), or a gate finding of unknown status, names the pair
-    StatusAccepted  LinkStatus = "accepted"  // a gate finding accepted by the baseline or a waiver names the pair
-    StatusAdvisory  LinkStatus = "advisory"  // another finding that is not fixed names the pair
+    StatusAccepted  LinkStatus = "accepted"  // a finding accepted by the baseline or a waiver names the pair (report.Group's Accepted)
+    StatusAdvisory  LinkStatus = "advisory"  // another finding that is not fixed and not a violation names the pair
     StatusAllowed   LinkStatus = "allowed"   // engine seam policy only: a fail-gated allowlist or layer rule permits the pair
     StatusObserved  LinkStatus = "observed"  // engine seam policy: no active finding names the pair and no rule permits it; without one: no current finding names the pair
 )
 
 type Link struct {
-    From, To   string
-    Status     LinkStatus
-    Count      int  // observed dependencies of the pair's seams; 0 when only a finding names the pair
-    Introduced bool // a finding that names the pair is one the engine says this change introduced; display only
+    From   string     `json:"from"`
+    To     string     `json:"to"`
+    Status LinkStatus `json:"status"`
+    Count  int        `json:"count"` // observed dependencies of the pair's seams; 0 when only a finding names the pair
+    // Origin is report.PairOrigin of the pair, the PR comment's rule: report.PairAdded when this change added the
+    // dependency, report.PairExisting when the base had it, "" when the report cannot say or did not compare. Display only.
+    Origin string `json:"origin"`
+    // The coupling of the pair's strongest seam, as the engine measured it; all "" when no seam names the pair.
+    Strength   string `json:"strength"`   // engine token: contract, model, functional, intrusive
+    Distance   string `json:"distance"`   // in words (report.DistanceWords)
+    Volatility string `json:"volatility"` // engine token, the seam's: on a functional dependency the worse end's
+    // VolatilitySource is the engine's volatility_provenance of that seam: declared, inherited, cascade, undeclared.
+    VolatilitySource string `json:"volatility_source"`
+    Imbalance        string `json:"imbalance"` // the highest seam severity of the pair, the engine's imbalance; "" for none
+    // Accepted is what the accepted findings on the pair accept: AcceptedViolation when one is a gate finding, else
+    // AcceptedAdvisory; "" when none names the pair. The page names it, so gate debt never reads as an advisory.
+    Accepted string `json:"accepted"`
 }
+
+// Link.Accepted values.
+const (
+    AcceptedViolation = "violation"
+    AcceptedAdvisory  = "advisory"
+)
 
 // View is a read-only picture. Stale is true when the policy text no longer matches the report's config_hash.
 // Incomplete is true when the report's hard gates did not pass or a required rule was not evaluated: an observed
 // link may then still break a rule.
 type View struct {
-    Nodes      []Node
-    Links      []Link
-    Findings   []LinkFinding // what names each link, for the page's detail panel; display only
-    Stale      bool
-    Incomplete bool
+    Nodes      []Node        `json:"nodes"`
+    Links      []Link        `json:"links"`
+    Findings   []LinkFinding `json:"findings"` // what names each link, for the page's inspector; display only
+    Stale      bool          `json:"stale"`
+    Incomplete bool          `json:"incomplete"`
 }
 
 // LinkFinding is one finding that names a drawn link's module pair, as the engine reported it. It explains a link and
-// never decides its Status. Why is engine text: the page must treat it as untrusted.
+// never decides its Status. It carries no origin: what a pull request added is the link's Origin, the comment's rule,
+// and a cycle finding's own origin would contradict it. Why is engine text: the page must treat it as untrusted.
 type LinkFinding struct {
-    From, To string
-    RuleID   string
-    Kind     string
-    Status   string
-    Origin   string // "introduced" | "pre_existing" | "unknown"; "" unless the report compared with the base branch
-    Why      string
-    More     int // on the last listed finding of a pair: how many more name the pair and are not listed
+    From   string `json:"from"`
+    To     string `json:"to"`
+    RuleID string `json:"rule_id"`
+    Kind   string `json:"kind"`
+    Status string `json:"status"`
+    Why    string `json:"why"`
+    More   int    `json:"more"` // on the last listed finding of a pair: how many more name the pair and are not listed
 }
 
 // Build is pure. Nodes come from the policy's modules, links from the report's seams and findings. A link's Status
-// is the engine's seams[].policy when a seam of the pair carries it; otherwise it comes from the findings that name
-// the pair. Graph never computes a status from the policy text.
+// starts at the engine's seams[].policy when a seam of the pair carries it. The findings that name the pair raise it:
+// on a pair the engine gave a policy, only to advisory or accepted, since the engine's "observed" means no active
+// finding and says nothing about advisories and accepted debt; the engine decides its violations. Graph never
+// computes a status from the policy text.
 func Build(rep Report, policy []byte) View
 ```
 
