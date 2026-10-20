@@ -616,9 +616,9 @@ func ValidHeadSHA(sha string) bool
 - **Volatility**: high (this side), low (github/api)
 - **Balanced?**: yes — contract coupling
 - **Shared knowledge**: `Deps.GitHub` is used as `Repos` (`File`, `BranchHead`; and whole, with `Users`, as the
-  argument of `session.New`), `Checks` (`CheckRuns`, read only), `Actions` (`LatestRun`, `Dispatch`), `Users`
-  (`UserRepos`), and the `*Client` readers `PullSummary`, `OpenPulls`, `ArtifactID` and `ArtifactByID`, which ui
-  declares as its own small interfaces. ui builds `FileChange` values. `ErrNotFound` is the sentinel for a
+  argument of `session.New`), `Checks` (`CheckRuns`, read only), `Pulls` (`OpenPulls`), `Actions` (`LatestRun`,
+  `Dispatch`), `Users` (`UserRepos`), and the `*Client` readers outside the role interfaces `PullSummary`, `ArtifactID`
+  and `ArtifactByID`, which ui declares as its own small interfaces. ui builds `FileChange` values. `ErrNotFound` is the sentinel for a
   missing file, run or artifact; `ErrRateLimited` is the sentinel after bounded backoff. `TokenSource` is an opaque part
   of `New`'s signature for this module. `Pull` is the github/api pull-request record; ui reads it without the merge
 base. `WithCallStats` counts the GitHub round trips of one request for its log line. The check names
@@ -1081,7 +1081,8 @@ only: never a URL, a route of GitHub's or a token.
 ### Reads side by side
 
 Independent GitHub reads of one request run concurrently, and each part fails the answer exactly as when they ran in
-turn: the results are judged in the old order.
+turn: the results are judged in the old order. A panic in a part is raised again on the request's goroutine once the
+others are done, so the handler chain's recover still answers `500` and the process keeps serving.
 
 - Pull request page and graph: after `PullSummary`, the settings on the base and the report (check, artifact, digest,
   decode) at once. A settings error other than none fails the answer first, then the report's own state. The graph
@@ -1336,11 +1337,14 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Scenario**: stage `gate_advisory` with a default-branch check and one open pull request; stage `workflow_merged`; `OpenPulls` failing; for an administrator, `CheckRuns`, `OpenPulls`, the entitlement and the consent all failing at once; 23 more open pull requests.
   **Expected behavior**: through `/api/repos/{o}/{n}/overview`: the default branch, its title and tone, the pull request linked to its page with its check title, the current and done steps, the rehearse advice; no pull request or state lookup before a report, also at `policy_merged`, where "First report" is not done; the ruleset advice at `gate_required`; the fixed wording and a `200`; a `200` with admin true, managed AI `unknown`, the state `unknown`, the pulls error, no banner and the steps; "4 more" and 21 `CheckRuns` calls.
 - **Test name**: `TestPullPartsFailAsWhenReadInTurn`
-  **Scenario**: a pull request on base `release`, rate limited in turn on: the settings at the base; the report download; the policy at the head (graph); the policy at the base while the head's is the report's (graph).
-  **Expected behavior**: `503`; `503`; `503`; `200`.
+  **Scenario**: a pull request on base `release`, rate limited in turn on: the settings at the base; the report download; both, the download failing with a plain error; the policy at the head (graph); the policy at the base while the head's is the report's (graph).
+  **Expected behavior**: `503`; `503`; `503` (the settings' error, not the report's `502`); `503`; `200`.
+- **Test name**: `TestTogetherRaisesAPanicOnTheCallersGoroutine`
+  **Scenario**: two parts side by side, one panics.
+  **Expected behavior**: the panic reaches the caller after the other part ran.
 - **Test name**: `TestReportCacheBoundsItsBytes`, `TestReportCacheIsPerRepository`
-  **Scenario**: a 10-byte cache: two 4-byte payloads, the first read again, a third, then one of 12 bytes; the same artifact ID read twice for one repository, then for a repository of another installation.
-  **Expected behavior**: the first and third kept, the second evicted, the 12-byte one never kept, 8 bytes held; one download for the first repository, a second download for the other, which gets its own bytes.
+  **Scenario**: a 10-byte cache: two 4-byte payloads, the first read again, a third, then one of 12 bytes; the same artifact ID read twice for one repository, then for another repository of the same installation, and for the same name under another installation.
+  **Expected behavior**: the first and third kept, the second evicted, the 12-byte one never kept, 8 bytes held; one download for the first repository, a second download for the other, which gets its own bytes, in both cases.
 - **Test name**: `TestPullPageAndGraphDownloadTheReportOnce`, `TestReportCacheHitStillAuthorizes`
   **Scenario**: the pull request page then its graph; a user without access after the report is cached.
   **Expected behavior**: two artifact listings, one download; `404` and no listing for the refused request.

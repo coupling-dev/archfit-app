@@ -42,15 +42,15 @@ func (s *service) derive(ctx context.Context, r api.Repo) (state, error) {
 	// The three reads run side by side and are judged in order: the policy and the report count only once the
 	// workflow is there, so their errors never fail a repository that has none.
 	var (
-		wg                           sync.WaitGroup
 		workflowFound, policyFound   bool
 		reported                     bool
 		workflowErr, policyErr, rErr error
 	)
-	wg.Go(func() { _, workflowFound, workflowErr = s.file(ctx, r, set.Workflow) })
-	wg.Go(func() { _, policyFound, policyErr = s.file(ctx, r, policy.PolicyPath) })
-	wg.Go(func() { reported, rErr = s.reported(ctx, r, set.Workflow) })
-	wg.Wait()
+	together(
+		func() { _, workflowFound, workflowErr = s.file(ctx, r, set.Workflow) },
+		func() { _, policyFound, policyErr = s.file(ctx, r, policy.PolicyPath) },
+		func() { reported, rErr = s.reported(ctx, r, set.Workflow) },
+	)
 	switch {
 	case workflowErr != nil:
 		return state{}, fmt.Errorf("onboarding: read workflow: %w", workflowErr)
@@ -148,4 +148,29 @@ func (st state) diagnostic(now func() time.Time) string {
 		return "Required gate is active"
 	}
 	return "Advisory feedback is active; an owner enables the gate by PR"
+}
+
+// together runs fns side by side and returns when all have. A panic in one is raised again on the caller's goroutine
+// once the others are done, so the caller's recover still sees it. ui keeps the same helper: two small copies cost less
+// than a package of their own.
+func together(fns ...func()) {
+	var (
+		wg     sync.WaitGroup
+		once   sync.Once
+		thrown any
+	)
+	for _, fn := range fns {
+		wg.Go(func() {
+			defer func() {
+				if p := recover(); p != nil {
+					once.Do(func() { thrown = p })
+				}
+			}()
+			fn()
+		})
+	}
+	wg.Wait()
+	if thrown != nil {
+		panic(thrown)
+	}
 }

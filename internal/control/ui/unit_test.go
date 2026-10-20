@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -368,4 +369,15 @@ func TestEscapeRef(t *testing.T) {
 			t.Errorf("escapeRef(%q) = %q, want %q", tt.ref, got, tt.want)
 		}
 	}
+}
+
+func TestTogetherRaisesAPanicOnTheCallersGoroutine(t *testing.T) {
+	var ran atomic.Bool
+	defer func() {
+		if p := recover(); p != "boom" || !ran.Load() {
+			t.Errorf("recovered %v, other part ran %v; want boom after the other part", p, ran.Load())
+		}
+	}()
+	together(func() { ran.Store(true) }, func() { panic("boom") })
+	t.Error("together returned after a panic")
 }

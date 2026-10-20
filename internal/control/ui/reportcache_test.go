@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -28,30 +29,36 @@ func TestReportCacheBoundsItsBytes(t *testing.T) {
 	}
 }
 
-// One repository never reads another's artifact from the cache, even under the same artifact ID.
+// One repository never reads another's artifact from the cache, even under the same artifact ID: each part of the
+// key keeps them apart on its own.
 func TestReportCacheIsPerRepository(t *testing.T) {
-	gh := newFakeGH()
-	gh.artifacts[5] = []byte("report of acme/app")
-	s := &server{gh: github{actions: gh}, reports: newReportCache(reportCacheBytes)}
-	a := api.RepoRef{InstallationID: 1, FullName: "acme/app"}
-	b := api.RepoRef{InstallationID: 2, FullName: "other/app"}
+	cached := api.RepoRef{InstallationID: 1, FullName: "acme/app"}
+	for _, other := range []api.RepoRef{
+		{InstallationID: 1, FullName: "acme/other"}, // the same installation
+		{InstallationID: 2, FullName: "acme/app"},   // the same name, as another installation sees it
+	} {
+		t.Run(other.FullName+"@"+strconv.FormatInt(other.InstallationID, 10), func(t *testing.T) {
+			gh := newFakeGH()
+			gh.artifacts[5] = []byte("report of the first")
+			s := &server{gh: github{actions: gh}, reports: newReportCache(reportCacheBytes)}
+			for range 2 {
+				if _, err := s.reportPayload(context.Background(), cached, 5); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if n := len(gh.called("ArtifactByID")); n != 1 {
+				t.Fatalf("downloads = %d, want the second read from the cache", n)
+			}
 
-	for _, r := range []api.RepoRef{a, a} {
-		if _, err := s.reportPayload(context.Background(), r, 5); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if n := len(gh.called("ArtifactByID")); n != 1 {
-		t.Fatalf("downloads = %d, want the second read of acme/app from the cache", n)
-	}
-
-	gh.artifacts[5] = []byte("report of other/app")
-	got, err := s.reportPayload(context.Background(), b, 5)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, []byte("report of other/app")) || len(gh.called("ArtifactByID")) != 2 {
-		t.Errorf("other/app read %q after %d downloads, want its own artifact, downloaded", got, len(gh.called("ArtifactByID")))
+			gh.artifacts[5] = []byte("report of the other")
+			got, err := s.reportPayload(context.Background(), other, 5)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, []byte("report of the other")) || len(gh.called("ArtifactByID")) != 2 {
+				t.Errorf("read %q after %d downloads, want its own artifact, downloaded", got, len(gh.called("ArtifactByID")))
+			}
+		})
 	}
 }
 

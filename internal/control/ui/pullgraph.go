@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 
 	"github.com/alexei-led/archfit-app/internal/control/ui/graph"
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -75,11 +74,10 @@ func (s *server) reportPolicy(ctx context.Context, sc scope, pull api.Pull, rep 
 	// head's text is not the report's, as when they were read in turn.
 	refs := []string{pull.HeadSHA, pull.BaseRef}
 	texts, errs := make([][]byte, len(refs)), make([]error, len(refs))
-	var wg sync.WaitGroup
-	for i, r := range refs {
-		wg.Go(func() { texts[i], _, errs[i] = s.gh.files.File(ctx, sc.repo.RepoRef, r, policy.PolicyPath) })
-	}
-	wg.Wait()
+	together(
+		func() { texts[0], _, errs[0] = s.gh.files.File(ctx, sc.repo.RepoRef, refs[0], policy.PolicyPath) },
+		func() { texts[1], _, errs[1] = s.gh.files.File(ctx, sc.repo.RepoRef, refs[1], policy.PolicyPath) },
+	)
 	for i, r := range refs {
 		t, err := texts[i], errs[i]
 		if errors.Is(err, api.ErrNotFound) {

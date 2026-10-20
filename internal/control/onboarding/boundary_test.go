@@ -502,15 +502,18 @@ func TestProgressErrors(t *testing.T) {
 	}
 
 	// The workflow, the policy and the report are read side by side but judged in that order.
-	errPolicy := errors.New("policy unreadable")
+	errWorkflow, errPolicy, errRun := errors.New("workflow unreadable"), errors.New("policy unreadable"), errors.New("runs unreadable")
 	inOrder := []struct {
 		name      string
 		workflow  error
+		policy    error
 		wantErr   error
 		wantStage Stage
 	}{
-		{"without a workflow the other failures do not count", api.ErrNotFound, nil, StageInstalled},
-		{"the workflow's failure comes first", api.ErrRateLimited, api.ErrRateLimited, ""},
+		{"without a workflow the other failures do not count", api.ErrNotFound, errPolicy, nil, StageInstalled},
+		{"the workflow's failure comes first", errWorkflow, errPolicy, errWorkflow, ""},
+		{"then the policy's", nil, errPolicy, errPolicy, ""},
+		{"then the report's", nil, nil, errRun, ""},
 	}
 	for _, tc := range inOrder {
 		t.Run(tc.name, func(t *testing.T) {
@@ -520,11 +523,11 @@ func TestProgressErrors(t *testing.T) {
 			f.hub.failWhen(func(op, detail string) error {
 				switch {
 				case op == "LatestRun":
-					return api.ErrRateLimited
+					return errRun
 				case op != "File" || detail == settings.Path:
 					return nil
 				case detail == policy.PolicyPath:
-					return errPolicy
+					return tc.policy
 				}
 				return tc.workflow
 			})

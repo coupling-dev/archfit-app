@@ -9,8 +9,8 @@ import (
 	"github.com/alexei-led/archfit-app/internal/wire/report"
 )
 
-// reportCacheBytes bounds the report artifacts one instance keeps **[default]**: a few hundred typical reports or a
-// dozen at the 5 MiB cap, a small share of the instance's 512 MiB.
+// reportCacheBytes bounds the report artifacts one instance keeps **[default]**: a few thousand typical reports of
+// some kilobytes, or six at the 5 MiB cap, a small share of the instance's 512 MiB.
 const reportCacheBytes = 32 << 20
 
 // artifactKey names one repository's artifact. The repository is part of the key, so one repository never reads

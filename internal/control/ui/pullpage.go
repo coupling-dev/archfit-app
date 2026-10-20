@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/report"
@@ -66,9 +65,10 @@ func (s *server) readPull(ctx context.Context, sc scope, number int) (pullBody, 
 	var (
 		required    bool
 		settingsErr error
-		wg          sync.WaitGroup
+		body        pullBody
+		rep         *report.Report
 	)
-	wg.Go(func() {
+	together(func() {
 		// The gate reads the settings on the pull request's base, as the published checks do; a base without them is
 		// advisory.
 		raw, _, err := s.gh.files.File(ctx, sc.repo.RepoRef, pull.BaseRef, settings.Path)
@@ -81,9 +81,7 @@ func (s *server) readPull(ctx context.Context, sc scope, number int) (pullBody, 
 			settingsErr = err
 			cancel()
 		}
-	})
-	body, rep, err := s.pullReport(ctx, sc, pull)
-	wg.Wait()
+	}, func() { body, rep, err = s.pullReport(ctx, sc, pull) })
 	if settingsErr != nil {
 		return pullBody{}, nil, settingsErr
 	}

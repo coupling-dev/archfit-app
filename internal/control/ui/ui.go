@@ -30,7 +30,7 @@ type Deps struct {
 	Now        func() time.Time
 }
 
-// The parts of the github/api role interfaces ui calls.
+// The parts of github/api ui calls: role-interface methods and the *Client readers kept for the UI.
 type (
 	fileReader interface {
 		File(ctx context.Context, r api.RepoRef, ref, path string) (content []byte, blobSHA string, err error)
