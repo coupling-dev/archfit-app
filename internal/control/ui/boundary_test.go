@@ -376,7 +376,8 @@ func TestSaveRejectsForeignDocuments(t *testing.T) {
 	}
 }
 
-var customerData = regexp.MustCompile(`(?s)"content":"(?:[^"\\]|\\.)*"|<script type="application/json".*?</script>`)
+// The shell's nonce is random base64 and can read as "32/5"; it is not a number the page shows.
+var customerData = regexp.MustCompile(`(?s)"content":"(?:[^"\\]|\\.)*"|<script type="application/json".*?</script>|<meta name="csp-nonce" content="[^"]*">`)
 
 var scorePattern = regexp.MustCompile(`(?i)\bscor(e|es|ing)\b|\bgrades?\b|\brank(ed|ing)?\b|\btotals?\b|\d\s*%|\d+\s*/\s*\d+|\b\d+ (of|out of) \d+\b`)
 
