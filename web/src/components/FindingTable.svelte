@@ -58,7 +58,7 @@
                 >{/if}
             </td>
             {#if compared}<td><Origin origin={f.origin} /></td>{/if}
-            <td><Locations locations={f.locations} /></td>
+            <td><Locations locations={f.locations} total={f.locations_total} /></td>
           </tr>
         {/each}
       </tbody>

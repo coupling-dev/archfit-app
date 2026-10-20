@@ -595,7 +595,8 @@ type Finding struct {
     Constraint          string     `json:"constraint"` // engine-authored, single line, length-capped
     AllowedAlternatives []string   `json:"allowed_alternatives,omitempty"`
     Origin              string     `json:"origin,omitempty"` // "introduced" | "pre_existing" | "unknown", only with --base; presentation only
-    // MatchedBy holds only the MatchedByKeys of the engine's matched_by; a metric ratchet names its numbers there.
+    // MatchedBy holds only the MatchedByKeys of the engine's matched_by: a metric ratchet names its numbers there, and a
+    // dependency finding its full location count (the engine lists at most 50 locations).
     MatchedBy map[string]string `json:"matched_by,omitempty"`
 }
 
@@ -605,9 +606,12 @@ const (
     MatchedByBefore    = "before"
     MatchedByAfter     = "after"
     MatchedByThreshold = "threshold"
+    // MatchedByLocationsTotal is the deduplicated location count of a dependency finding, whose Locations the engine
+    // caps at 50.
+    MatchedByLocationsTotal = "locations_total"
 )
 
-var MatchedByKeys = []string{MatchedByMetric, MatchedByBefore, MatchedByAfter, MatchedByThreshold}
+var MatchedByKeys = []string{MatchedByMetric, MatchedByBefore, MatchedByAfter, MatchedByThreshold, MatchedByLocationsTotal}
 
 type Edge struct {
     From Endpoint `json:"from"`

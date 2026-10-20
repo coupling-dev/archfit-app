@@ -390,7 +390,7 @@ receipt marker. Block G is in the gate summary only.
    this cycle break `<rule>` (<severity> severity)." (a cycle of non-active findings says "are reported under"), then the
    table, then "**Why:**" and "**Fix:**". Further cycles, and every cycle in a check summary, have a heading "#### Dependency
    cycle between `A` and `B`" (or "among `A`, `B` and `C`"; "Another dependency cycle …" after the first in the comment).
-   "**Why:**" describes the cycle from what the table shows, not the engine's per-direction text, which only swaps two
+   "**Why:**" describes the cycle from what the table shows (`report.CycleWhy`, which the App's pull request page shares), not the engine's per-direction text, which only swaps two
    module names and names the first pair: "Each of the N dependencies lies on a cycle: from its target, dependencies lead
    back to its source, so the M modules depend on each other." Limit: the engine reports at most 200 pairs of one
    cycle (`matched_by.cycle_pairs_total` says how many it found; the App drops that key), so N is the number shown.
@@ -400,7 +400,8 @@ receipt marker. Block G is in the gate summary only.
    a label or the code fence. Every other violation follows as a list item, under a heading "#### Other rule violations"
    when a cycle came before (so the list does not read as part of the cycle): label, rule name, meta and origin
    ("added by this pull request", "existed before this pull request", "origin <token>"), `Edge.From.Module` →
-   `Edge.To.Module`, locations as `file:line` (at most 10, then "and N more"), `Why`, then the
+   `Edge.To.Module`, locations as `file:line` (at most 10, then "and N more", N counted to the engine's full count
+   `report.LocationsTotal`: the engine lists at most 50 and puts the total in `matched_by.locations_total`), `Why`, then the
    policy-permitted repair: "Fix:" (`Constraint`) and `AllowedAlternatives`. A **metric ratchet** finding (rule ID starts
    with `report.MetricRulePrefix`, `metric/`) has no module edge and no location: its subject is "metric `<name>`:
    <before> → <after> (<threshold>)" from `Finding.MatchedBy`, never "(no module) → (no module)"; without those keys it is
@@ -411,7 +412,7 @@ receipt marker. Block G is in the gate summary only.
 
    Tables (cycle directions and the three folds): one row per finding, at most 50 per fold, then "and N more". Fold
    rows open with "rule name · meta". Columns: the dependency (`module → module` in every table and list, paths only in "Where"), "This PR" when any row
-   has a value, where (at most 3 locations, then "and N more"), and, when the report has a `Seam` with the same
+   has a value, where (at most 3 locations, then "and N more" to `report.LocationsTotal`), and, when the report has a `Seam` with the same
    `FromModule` and `ToModule` for any row, the Balanced Coupling dimensions of that seam: integration strength
    (`Seam.Strength`), distance (`Seam.Distance` in the book's words: `same_module` "same module", `cross_module`
    "across modules", `cross_module_same_owner` (engine v2) "across modules, same owner", `cross_module_different_owner`
@@ -423,10 +424,10 @@ receipt marker. Block G is in the gate summary only.
    where columns never fold. A `|` in a cell is escaped. Under a fold's table each distinct `Why`, `Fix` and set of
    `AllowedAlternatives` is written once with its rule name, in first-seen order: the engine repeats one explanation for
    every finding of a rule. Engine-authored text (`Why`, `Constraint`) is never reworded, with two exceptions: a distance
-   token in a `Why` reads as the table's (`report.ReadableWhy`: "distance across modules", never "cross_module distance"),
-   and the imbalanced-coupling `Why` ("balanced coupling: <formula> → <band> severity (<explanation>)") is said in one
-   sentence, "<explanation with → as a colon> (Balanced Coupling: <band> severity)", because the formula is the three
-   columns beside it; a `Why` of any other shape stays as written. A fold's reasons carry the rule name only when the
+   token in a `Why` reads as the table's ("distance across modules", never "cross_module distance"), and the
+   imbalanced-coupling `Why` ("balanced coupling: <formula> → <band> severity (<explanation>)") is said in one sentence,
+   "<explanation with → as a colon> (Balanced Coupling: <band> severity)", because the formula is the three columns
+   beside it. Both are `report.ReadableWhy`, which every App page shares; a `Why` of any other shape stays as written. A fold's reasons carry the rule name only when the
    fold holds more than one rule: one rule is already named in the line under the table.
 
    **Suggested move** (advisory fold only): when a row's `Seam` has a `Hypothesis`, the table has a "Suggested move"
@@ -453,12 +454,14 @@ receipt marker. Block G is in the gate summary only.
    `fixed`).
 6. Dimensions: a table of the nine engine keys of `Report.Dimensions` in the engine's fixed order (`intent`, `structure`,
    `modularity`, `coupling`, `change_locality`, `complexity`, `testability`, `operations`, `drift`). Columns:
-   completeness = `Status` (`measured`, `partial`, `unmeasured`), "Measured" = `Coverage` as "observed/total (basis)"
+   completeness = `Status` (`measured`, `partial`, `unmeasured`), "Measured" = `Coverage` as `observed/total ("basis")`, the
+   basis in quotes because it is the engine's text
    (not "Coverage": the engine's basis names its own denominator, for example "classified source files", and "coverage"
    next to testability reads as test coverage), `Confidence`, "Result" = `Gate` of the dimension (bold when `fail` or
    `warn`; not "Gate", which is the repository's check), and, only when some dimension has something to show, a change
    column: a `Delta` with metrics (status and metric changes), or for `drift` a comparable `Delta` with the dimension's
-   metrics `new_seams` and `resolved_seams` ("N new, M resolved distributed-monolith seams"; the engine puts the counts in
+   metrics `new_seams` and `resolved_seams` ("N tight cross-module seams at high volatility new since the baseline, M
+   resolved": the App's words for the engine's seams, because "distributed monolith" is only right across a deploy unit; the engine puts the counts in
    the dimension's metrics, not in the delta). A status alone ("comparable") changes nothing. Measurement trust is not an
    engine field; block 8 states it once. A missing key is a row "not reported"; keys outside the nine cannot pass the decoder.
 7. Evidence gaps, always present: `Decision.UnevaluatedRequiredRules` with their reasons (a dead selector shows its
@@ -512,7 +515,7 @@ required rule evaluated" (`Report.Verdict`, `Decision.HardGates` as "hard gates 
 line says "The gate is advisory for this repository: the engine's verdict does not block merging." One line per reason
 follows, in words with its category and detail and its code last ("Blocking findings (architecture) · code
 `blocking_findings`"); the next step is not repeated there, it is in the visible part. The drift row of the dimensions
-table says "the baseline holds no distributed-monolith seam: all N current seams count as new" when every current seam is
+table says "N tight cross-module seams at high volatility, new since the baseline: it holds none" when every current seam is
 new and none resolved (the stored reference then holds no seam), instead of "N new" beside a passing result.
 
 Folds: blocks 6 to 9 (in the comment led by the Decision block) are wrapped in one `<details>` with the
@@ -750,7 +753,7 @@ type Settings struct {
 - **Shared knowledge**: every string in a `Report` is engine-authored, single-line and length-capped by the
   decoder, yet still untrusted for Markdown. `Origin` is shown on a finding line and in the task block; it is presentation only. `Locations` may be empty.
   A report has no exit code, no `needs_attention` flag, no per-dimension trust and no single validation command.
-  `Seam` is read only for the coupling columns of a dependency table (Strength, Distance, Volatility of the seam with the same modules) and for its `Hypothesis`, the "Suggested move" of an advisory. `Finding.MatchedBy` holds only the four ratchet keys (`metric`, `before`, `after`, `threshold`) and is read only to name a metric ratchet; the decoder drops every other `matched_by` key. `Metric` values are shown only through `Delta`. `StateSchemaV1` is the schema constant the decoder enforced.
+  `Seam` is read only for the coupling columns of a dependency table (Strength, Distance, Volatility of the seam with the same modules) and for its `Hypothesis`, the "Suggested move" of an advisory. `Finding.MatchedBy` holds only the five `MatchedByKeys`: the four ratchet keys (`metric`, `before`, `after`, `threshold`), read to name a metric ratchet, and `locations_total`, read through `report.LocationsTotal` for every location count; the decoder drops every other `matched_by` key. `Metric` values are shown only through `Delta`. `StateSchemaV1` is the schema constant the decoder enforced.
   `Finding.Active()` is the single definition of "active gate finding"; feedback calls it for the "blocking" label,
   the group order, block G and the annotation level. For display feedback also reads the finding statuses
   `baseline`, `waived` and `fixed` (debt and fixed groups; no annotation) and the coverage statuses `ok`, `absent` and
@@ -872,7 +875,8 @@ type Finding struct {
     Constraint          string     `json:"constraint"` // engine-authored, single line, length-capped
     AllowedAlternatives []string   `json:"allowed_alternatives,omitempty"`
     Origin              string     `json:"origin,omitempty"` // "introduced" | "pre_existing" | "unknown", only with --base; presentation only
-    // MatchedBy holds only the MatchedByKeys of the engine's matched_by; a metric ratchet names its numbers there.
+    // MatchedBy holds only the MatchedByKeys of the engine's matched_by: a metric ratchet names its numbers there, and a
+    // dependency finding its full location count (the engine lists at most 50 locations).
     MatchedBy map[string]string `json:"matched_by,omitempty"`
 }
 
@@ -882,9 +886,12 @@ const (
     MatchedByBefore    = "before"
     MatchedByAfter     = "after"
     MatchedByThreshold = "threshold"
+    // MatchedByLocationsTotal is the deduplicated location count of a dependency finding, whose Locations the engine
+    // caps at 50.
+    MatchedByLocationsTotal = "locations_total"
 )
 
-var MatchedByKeys = []string{MatchedByMetric, MatchedByBefore, MatchedByAfter, MatchedByThreshold}
+var MatchedByKeys = []string{MatchedByMetric, MatchedByBefore, MatchedByAfter, MatchedByThreshold, MatchedByLocationsTotal}
 
 type Edge struct {
     From Endpoint `json:"from"`
@@ -1403,7 +1410,7 @@ Golden files hold rendered bodies for the wire fixtures.
   **Expected behavior**: "Engine verdict **blocked**: hard gates fail, 4 active blockers, 1 required rule not evaluated"; the advisory line only in advisory mode; "needs attention" and "hard gates not measured" read as words.
 - **Test name**: `TestDriftCountsAreShownOnlyWhenTheEngineCompared`
   **Scenario**: the drift dimension with `new_seams` and `resolved_seams` under a comparable delta, a non-comparable one, one count missing, no delta.
-  **Expected behavior**: "8 new, 0 resolved distributed-monolith seams" only for the first.
+  **Expected behavior**: "8 tight cross-module seams at high volatility new since the baseline, 0 resolved" only for the first.
 - **Test name**: `TestLeadSentenceForAnAddedDependencyThatFormsACycle`
   **Scenario**: a cycle whose one direction is placed as added and none as existing.
   **Expected behavior**: "This pull request adds 1 dependency that forms a dependency cycle between `A` and `B`."; no path.
@@ -1419,12 +1426,12 @@ Golden files hold rendered bodies for the wire fixtures.
 - **Test name**: `TestLegendSaysWhatRedMeansWhenSomeDirectionsAreUnplaced`
   **Scenario**: all directions placed, some unplaced, none placed.
   **Expected behavior**: three legends; only the second says "or not known to have existed before".
-- **Test name**: `TestImbalancedCouplingWhyIsOneSentence`
-  **Scenario**: the engine's imbalanced-coupling `Why`; another rule's; a `Why` of a similar but different shape; a bare distance token.
-  **Expected behavior**: one sentence with the band; the other three as written (the distance token read as words).
+- **Test name**: `TestLocationCountsUseTheEnginesFullCount`
+  **Scenario**: a cycle direction and a plain violation with 50 listed locations and `matched_by.locations_total` 120.
+  **Expected behavior**: the diagram label "120 locations", "and 117 more" in the cycle table, "and 110 more" in the list item; no count of 50.
 - **Test name**: `TestDriftSaysSoWhenTheBaselineHoldsNoSeam`
   **Scenario**: every current seam new and none resolved; some new; all new but one resolved; none changed.
-  **Expected behavior**: "the baseline holds no distributed-monolith seam: all N current seams count as new" only for the first; counts for the rest.
+  **Expected behavior**: "N tight cross-module seams at high volatility, new since the baseline: it holds none" only for the first; counts for the rest.
 - **Test name**: `TestLinkFollowsTheNoticeWhenNoViolationIsListed`
   **Scenario**: a healthy publication with an entitlement notice and an App link.
   **Expected behavior**: the link is after the notice.

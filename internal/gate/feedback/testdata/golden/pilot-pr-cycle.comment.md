@@ -71,15 +71,15 @@ On every row: Imbalanced coupling · critical, accepted in the baseline · exist
 
 | Dimension | Status | Measured | Confidence | Result | Change |
 | --- | --- | --- | --- | --- | --- |
-| `intent` | measured | 1/1 (declared rules evaluated) | high | pass |  |
-| `structure` | measured | 167/628 (discovered dependencies resolved inside the declared module map) | high | **fail** |  |
-| `modularity` | measured | 0/6 (declared modules with a declared public surface) | low | pass |  |
-| `coupling` | measured | 79/79 (cross-boundary edges scored) | high | **warn** |  |
-| `change_locality` | measured | 6/6 (declared modules touched in the scanned history window) | high | pass |  |
-| `complexity` | measured | 6/6 (declared modules with complete dependency-chain and degree values) | high | pass |  |
-| `testability` | partial | 158/173 (classified source files) | medium | pass |  |
-| `operations` | partial | 1/6 (declared modules with a corroborated deploy unit and qualifying owner) | medium | pass |  |
-| `drift` | measured | 8/8 (distributed-monolith seams compared against the stored reference) | high | pass | the baseline holds no distributed-monolith seam: all 8 current seams count as new |
+| `intent` | measured | 1/1 ("declared rules evaluated") | high | pass |  |
+| `structure` | measured | 167/628 ("discovered dependencies resolved inside the declared module map") | high | **fail** |  |
+| `modularity` | measured | 0/6 ("declared modules with a declared public surface") | low | pass |  |
+| `coupling` | measured | 79/79 ("cross-boundary edges scored") | high | **warn** |  |
+| `change_locality` | measured | 6/6 ("declared modules touched in the scanned history window") | high | pass |  |
+| `complexity` | measured | 6/6 ("declared modules with complete dependency-chain and degree values") | high | pass |  |
+| `testability` | partial | 158/173 ("classified source files") | medium | pass |  |
+| `operations` | partial | 1/6 ("declared modules with a corroborated deploy unit and qualifying owner") | medium | pass |  |
+| `drift` | measured | 8/8 ("distributed-monolith seams compared against the stored reference") | high | pass | 8 tight cross-module seams at high volatility, new since the baseline: it holds none |
 
 ### Evidence gaps
 

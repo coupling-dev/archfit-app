@@ -44,7 +44,7 @@
             <tr>
               <td class="nowrap"><code>{d.from}</code> → <code>{d.to}</code></td>
               {#if compared}<td><Origin origin={d.origin} /></td>{/if}
-              <td><Locations locations={d.locations} /></td>
+              <td><Locations locations={d.locations} total={d.locations_total} /></td>
               {#if coupling}
                 <td>{d.strength}</td>
                 <td>{d.distance}</td>

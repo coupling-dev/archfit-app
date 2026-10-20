@@ -447,7 +447,7 @@ func dimensionsBlock(r *report.Report) string {
 			b.WriteString("\n" + row)
 			continue
 		}
-		row := []string{"`" + key + "`", text(d.Status), fmt.Sprintf("%d/%d%s", d.Coverage.Observed, d.Coverage.Total, parens(d.Coverage.Basis)),
+		row := []string{"`" + key + "`", text(d.Status), fmt.Sprintf("%d/%d%s", d.Coverage.Observed, d.Coverage.Total, quoted(d.Coverage.Basis)),
 			text(d.Confidence), resultCell(strings.ReplaceAll(text(d.Gate), "_", " "))}
 		if changes {
 			change := seamChange(d)
@@ -464,30 +464,35 @@ func dimensionsBlock(r *report.Report) string {
 	return b.String()
 }
 
-// seamChange is the drift dimension's count of distributed-monolith seams that are new or gone against the stored
-// reference, only when the engine compared. The counts are metrics of the dimension, not of its delta.
+// seamChange is the drift dimension's count of seams that are new or gone against the stored reference, only when the
+// engine compared. The counts are metrics of the dimension, not of its delta. The engine counts the seams of its coupling
+// gate (functional, intrusive or symmetric coupling across a module boundary at high volatility); the App says that in
+// Balanced Coupling words and keeps "distributed monolith" for a deploy-unit boundary, as the engine does in its reasons.
 func seamChange(d report.Dimension) string {
 	if d.Delta == nil || d.Delta.Status != originComparable {
 		return ""
 	}
-	var added, resolved string
+	added, resolved := -1.0, -1.0
 	for _, m := range d.Metrics {
 		switch m.Name {
 		case "new_seams":
-			added = number(m.Value)
+			added = m.Value
 		case "resolved_seams":
-			resolved = number(m.Value)
+			resolved = m.Value
 		}
 	}
-	if added == "" || resolved == "" {
+	if added < 0 || resolved < 0 {
 		return ""
+	}
+	seams := func(v float64) string {
+		return number(v) + " tight cross-module " + plural(int(v), "seam", "seams") + " at high volatility"
 	}
 	// Every current seam new and none resolved means the stored reference holds no seam at all: say so, or "8 new"
 	// beside a passing result reads as a regression.
-	if n := d.Coverage.Total; n > 0 && added == number(float64(n)) && resolved == "0" {
-		return fmt.Sprintf("the baseline holds no distributed-monolith seam: all %d current seams count as new", n)
+	if n := d.Coverage.Total; n > 0 && added == float64(n) && resolved == 0 {
+		return seams(added) + ", new since the baseline: it holds none"
 	}
-	return added + " new, " + resolved + " resolved distributed-monolith seams"
+	return seams(added) + " new since the baseline, " + number(resolved) + " resolved"
 }
 
 // resultCell makes a dimension that fails or warns stand out in the table.
@@ -508,6 +513,14 @@ func deltaText(d report.Delta) string {
 		parts = append(parts, fmt.Sprintf("%s %s → %s (%s)", text(m.Name), number(m.Before), number(m.After), signed(m.Change)))
 	}
 	return strings.Join(parts, ", ")
+}
+
+// quoted is the engine's own basis text, in quotes after the counts: the words are the engine's, not the App's.
+func quoted(s string) string {
+	if s = sanitize(s); s != "" {
+		return ` ("` + s + `")`
+	}
+	return ""
 }
 
 // parens is an optional engine-authored qualifier.
