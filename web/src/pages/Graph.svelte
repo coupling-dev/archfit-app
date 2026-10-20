@@ -5,7 +5,9 @@
   import Legend from '../components/graph/Legend.svelte';
   import Matrix from '../components/graph/Matrix.svelte';
   import ProblemList from '../components/graph/ProblemList.svelte';
+  import DecisionLine from '../components/DecisionLine.svelte';
   import PullHead from '../components/PullHead.svelte';
+  import SeamSummary from '../components/graph/SeamSummary.svelte';
   import { explain, getJSON, repoAPI, type ApiError } from '../lib/api';
   import {
     acceptedRows,
@@ -78,6 +80,7 @@
 {:else}
   {#if body.pull}
     <PullHead head={body.pull} fullName={route.fullName} current="graph" />
+    <DecisionLine decision={body.pull.decision} />
   {:else}
     <div class="page-head">
       <div class="stack-sm">
@@ -127,6 +130,7 @@
         </div>
       {/if}
     </div>
+    <SeamSummary links={view.links} />
 
     <div class="g-bar">
       <div class="row" role="group" aria-label="Show dependencies by status">

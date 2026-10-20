@@ -42,6 +42,11 @@ const link = (from: string, to: string, status: Status, count = 1, more: Partial
   volatility_source: '',
   imbalance: '',
   accepted: '',
+  move: '',
+  quadrant: '',
+  crossing: '',
+  container: '',
+  distributed_monolith: false,
   ...more,
 });
 const all: Record<Status, boolean> = { violation: true, advisory: true, accepted: true, allowed: true, observed: true };

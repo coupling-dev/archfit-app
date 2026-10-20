@@ -203,5 +203,13 @@ var BalancingMoves = map[string]string{
 	"balanced":              "Balanced: no change needed",
 }
 
+// BalancingMove is the words of BalancingMoves for a hypothesis, the token as written when it has none, "" for none.
+func BalancingMove(h string) string {
+	if w, ok := BalancingMoves[h]; ok {
+		return w
+	}
+	return h
+}
+
 // MetricRulePrefix starts the rule ID of a metric ratchet finding, which has no module edge.
 const MetricRulePrefix = "metric/"

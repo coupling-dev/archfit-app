@@ -1,5 +1,6 @@
 <script lang="ts">
   import FindingGroups from '../components/FindingGroups.svelte';
+  import DecisionLine from '../components/DecisionLine.svelte';
   import PullHead from '../components/PullHead.svelte';
   import { basisText, resultWord } from '../lib/evidence';
   import { explain, getJSON, repoAPI, type ApiError, type Pull } from '../lib/api';
@@ -37,6 +38,7 @@
   <p class="muted" aria-live="polite">Loading…</p>
 {:else}
   <PullHead head={body} fullName={route.fullName} current="findings" />
+  <DecisionLine decision={body.decision} />
 
   {#if body.unavailable}
     <p class="flash warn">

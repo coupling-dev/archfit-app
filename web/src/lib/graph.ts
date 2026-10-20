@@ -26,6 +26,12 @@ export interface GLink {
   volatility_source: string; // the engine's provenance: declared, inherited, cascade, undeclared
   imbalance: string;
   accepted: '' | 'violation' | 'advisory'; // what an accepted link accepts
+  // The engine's balance reading of the strongest seam (lib/seam.ts words them); '' when it gives none.
+  move: string; // the balancing move, worded as the PR comment words it
+  quadrant: string;
+  crossing: string; // the boundary raw_distance.basis names
+  container: string; // the module holding both ends, or "system"
+  distributed_monolith: boolean; // the engine's flag: strong coupling across a module boundary at high volatility
 }
 
 export interface GFinding {
@@ -111,8 +117,14 @@ const problemStatus: Record<Status, boolean> = {
 
 // Integration strength, the main axis of Balanced Coupling, is the line width: weakest thinnest. A dependency the engine
 // measured no strength for is drawn thin and dashed.
-export const strengths = ['contract', 'model', 'functional', 'intrusive'] as const;
-export const strengthWidth: Record<string, number> = { contract: 1.5, model: 2.5, functional: 3.5, intrusive: 5 };
+export const strengths = ['contract', 'model', 'functional', 'symmetric', 'intrusive'] as const;
+export const strengthWidth: Record<string, number> = {
+  contract: 1.5,
+  model: 2.5,
+  functional: 3.5,
+  symmetric: 4.25,
+  intrusive: 5,
+};
 export const unmeasuredWidth = 1.5;
 export const acceptedWidth = 1.5;
 
@@ -120,6 +132,7 @@ export const strengthWord: Record<string, string> = {
   contract: 'contract coupling',
   model: 'model coupling',
   functional: 'functional coupling',
+  symmetric: 'symmetric coupling',
   intrusive: 'intrusive coupling',
 };
 

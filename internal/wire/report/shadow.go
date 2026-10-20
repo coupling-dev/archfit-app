@@ -221,22 +221,23 @@ type shadowSeam struct {
 	// A token, not a closed set: a provenance a later engine adds reads as text rather than failing the report.
 	VolatilityProvenance string `json:"volatility_provenance"`
 	Hypothesis           string `json:"hypothesis"`
+	// Shown only, each read against its closed set or kind; never failing the report.
+	Quadrant            string            `json:"quadrant"`
+	DistributedMonolith bool              `json:"distributed_monolith"`
+	RawDistance         shadowRawDistance `json:"raw_distance"` // basis kept; the rest dropped
 
 	// Dropped.
-	ScoredEdges         int               `json:"scored_edges"`
-	AbstainedEdges      int               `json:"abstained_edges"`
-	CriticalEdges       int               `json:"critical_edges"`
-	HighOrWorseEdges    int               `json:"high_or_worse_edges"`
-	CriticalSharePct    int               `json:"critical_share_pct"`
-	HighOrWorseSharePct int               `json:"high_or_worse_share_pct"`
-	Quadrant            string            `json:"quadrant"`
-	LabelEvidenceHash   string            `json:"label_evidence_hash"`
-	Confidence          string            `json:"confidence"`
-	RoleExpectation     string            `json:"role_expectation"`
-	Labels              []string          `json:"labels"`
-	DistributedMonolith bool              `json:"distributed_monolith"`
-	RawDistance         shadowRawDistance `json:"raw_distance"`
-	Scores              shadowScores      `json:"scores"`
+	ScoredEdges         int          `json:"scored_edges"`
+	AbstainedEdges      int          `json:"abstained_edges"`
+	CriticalEdges       int          `json:"critical_edges"`
+	HighOrWorseEdges    int          `json:"high_or_worse_edges"`
+	CriticalSharePct    int          `json:"critical_share_pct"`
+	HighOrWorseSharePct int          `json:"high_or_worse_share_pct"`
+	LabelEvidenceHash   string       `json:"label_evidence_hash"`
+	Confidence          string       `json:"confidence"`
+	RoleExpectation     string       `json:"role_expectation"`
+	Labels              []string     `json:"labels"`
+	Scores              shadowScores `json:"scores"`
 }
 
 type shadowRawDistance struct {

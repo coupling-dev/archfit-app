@@ -257,4 +257,20 @@ type Seam struct {
 	// "introduce_contract" | "move_functionality" | "declare_volatility" | "expected_by_role" | "follow_rule".
 	// "" = the engine gave no move.
 	Hypothesis string `json:"hypothesis,omitempty"`
+	// Quadrant is the engine's strength and distance quadrant: "cohesive" | "loose" | "low_cohesion" | "tight"; "" when
+	// absent or outside that set.
+	Quadrant string `json:"quadrant,omitempty"`
+	// DistributedMonolith is the engine's flag (relationship.QualifiesDistributedMonolith): a scored edge of intrusive
+	// strength, or functional or symmetric from a role that is not cohesive, across a module boundary at high
+	// volatility. Absent reads false.
+	DistributedMonolith bool         `json:"distributed_monolith,omitempty"`
+	RawDistance         SeamDistance `json:"raw_distance"` // only its basis is kept
+}
+
+// SeamDistance is what the engine measured the distance on.
+type SeamDistance struct {
+	// Basis is "<crossed>@<container>": the boundary the distance crosses ("module_boundary" | "ownership" |
+	// "deploy_unit" | "declared_external") and the module that holds both ends, or "system". "" when no edge was
+	// scored, the crossing is outside that set, or the container is not an identifier.
+	Basis string `json:"basis,omitempty"`
 }
