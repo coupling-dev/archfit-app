@@ -12,9 +12,12 @@ import (
 
 const consentKeyPrefix = "consent/"
 
+// consentRecord holds the login as it was when the consent was recorded. by_id is absent from a record written
+// before the App stored it; such a record stays valid.
 type consentRecord struct {
 	Kind ConsentKind `json:"kind"`
 	By   string      `json:"by"`
+	ByID int64       `json:"by_id,omitempty"`
 	At   time.Time   `json:"at"`
 }
 
@@ -39,9 +42,12 @@ func (c *consents) Record(ctx context.Context, installationID int64, in Consent)
 	if err != nil {
 		return err
 	}
-	rec := consentRecord{Kind: in.Kind, By: in.By, At: in.At.UTC()}
+	rec := consentRecord{Kind: in.Kind, By: in.By, ByID: in.ByID, At: in.At.UTC()}
 	if err := rec.validate(); err != nil {
 		return err
+	}
+	if rec.ByID <= 0 {
+		return errors.New("account: consent without an administrator user ID")
 	}
 	b, err := json.Marshal(rec)
 	if err != nil {
@@ -65,17 +71,31 @@ func (c *consents) Revoke(ctx context.Context, installationID int64, k ConsentKi
 }
 
 func (c *consents) Has(ctx context.Context, installationID int64, k ConsentKind) bool {
+	_, ok, err := c.Get(ctx, installationID, k)
+	return ok && err == nil
+}
+
+func (c *consents) Get(ctx context.Context, installationID int64, k ConsentKind) (Consent, bool, error) {
 	t, err := tenantOf(installationID)
 	if err != nil {
-		return false
+		return Consent{}, false, err
 	}
 	b, err := c.s.Get(ctx, t, consentKeyPrefix+string(k))
+	if errors.Is(err, store.ErrNotFound) {
+		return Consent{}, false, nil
+	}
 	if err != nil {
-		return false
+		return Consent{}, false, fmt.Errorf("account: read consent: %w", err)
 	}
 	var rec consentRecord
 	if err := json.Unmarshal(b, &rec); err != nil {
-		return false
+		return Consent{}, false, fmt.Errorf("account: decode consent: %w", err)
 	}
-	return rec.Kind == k && rec.validate() == nil
+	if rec.Kind != k {
+		return Consent{}, false, fmt.Errorf("account: consent key %q holds kind %q", k, rec.Kind)
+	}
+	if err := rec.validate(); err != nil {
+		return Consent{}, false, err
+	}
+	return Consent(rec), true, nil
 }

@@ -30,7 +30,7 @@ func (h *harness) event(kind webhook.EventKind, id int64) {
 func (h *harness) consent(id int64, kinds ...account.ConsentKind) {
 	h.t.Helper()
 	for _, k := range kinds {
-		if err := h.c.consents.Record(ctx, id, account.Consent{Kind: k, By: "alice", At: h.clock.Now()}); err != nil {
+		if err := h.c.consents.Record(ctx, id, account.Consent{Kind: k, By: "alice", ByID: 1, At: h.clock.Now()}); err != nil {
 			h.t.Fatalf("Record(%s): %v", k, err)
 		}
 	}
@@ -206,20 +206,20 @@ func TestReplayedAndForgedInstallationIDs(t *testing.T) {
 			t.Errorf("TrialEnds = %v, want %v", s.TrialEnds, t0.Add(30*day))
 		}
 	})
-	t.Run("UI form with a foreign installation ID", func(t *testing.T) {
+	t.Run("UI write with a foreign installation ID", func(t *testing.T) {
 		b := newBrowser(t, h.c.UIHandler())
 		b.signIn("alice")
-		form := hiddenFields(b.get("/r/org7/app/consent").Body.String())
-		form.Set("kind", string(account.ConsentSourceProcessing))
-		form.Set("action", "record")
-		form.Set("installation_id", "8")
-		form.Set("installation", "8")
+		allow := map[string]string{"kind": string(account.ConsentSourceProcessing), "action": "allow"}
+		forged := map[string]string{"kind": string(account.ConsentSourceProcessing), "action": "allow", "installation_id": "8"}
 
-		if rec := b.do(http.MethodPost, "/r/org7/app/consent", form); rec.Code != http.StatusSeeOther {
-			t.Fatalf("POST /r/org7/app/consent = %d, want 303", rec.Code)
+		if rec := b.postJSON("/api/repos/org7/app/data-sharing", forged); rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("a body naming installation 8 = %d, want 422", rec.Code)
 		}
-		if rec := b.do(http.MethodPost, "/r/org8/app/consent", form); rec.Code != http.StatusNotFound {
-			t.Errorf("POST /r/org8/app/consent = %d, want 404", rec.Code)
+		if rec := b.postJSON("/api/repos/org7/app/data-sharing?installation_id=8&installation=8", allow); rec.Code != http.StatusOK {
+			t.Fatalf("POST /api/repos/org7/app/data-sharing = %d, want 200", rec.Code)
+		}
+		if rec := b.postJSON("/api/repos/org8/app/data-sharing", allow); rec.Code != http.StatusNotFound {
+			t.Errorf("POST /api/repos/org8/app/data-sharing = %d, want 404", rec.Code)
 		}
 		if !h.c.consents.Has(ctx, 7, account.ConsentSourceProcessing) {
 			t.Error("consent was not recorded for the session's tenant")

@@ -102,7 +102,7 @@ func TestInvalidInstallationID(t *testing.T) {
 		}
 		ops["Forget"] = func(ctx context.Context) error { return a.Forget(ctx, id) }
 		ops["Record"] = func(ctx context.Context) error {
-			return c.Record(ctx, id, Consent{Kind: ConsentManagedLLM, By: "octocat", At: day(0)})
+			return c.Record(ctx, id, Consent{Kind: ConsentManagedLLM, By: "octocat", ByID: 1, At: day(0)})
 		}
 		ops["Revoke"] = func(ctx context.Context) error { return c.Revoke(ctx, id, ConsentManagedLLM) }
 		for name, op := range ops {
@@ -113,6 +113,9 @@ func TestInvalidInstallationID(t *testing.T) {
 		if c.Has(ctx, id, ConsentManagedLLM) {
 			t.Errorf("Has(%d) = true", id)
 		}
+		if _, ok, err := c.Get(ctx, id, ConsentManagedLLM); ok || err == nil {
+			t.Errorf("Get(%d) = %v, %v; want false and an error", id, ok, err)
+		}
 		if n := s.count(); n != 0 {
 			t.Errorf("id %d: %d Store calls, want 0: %v", id, n, s.calls)
 		}
@@ -121,12 +124,13 @@ func TestInvalidInstallationID(t *testing.T) {
 
 func TestConsentRejectsInvalid(t *testing.T) {
 	ctx := context.Background()
-	valid := Consent{Kind: ConsentSourceProcessing, By: "octocat", At: day(0)}
+	valid := Consent{Kind: ConsentSourceProcessing, By: "octocat", ByID: 1, At: day(0)}
 
 	invalid := map[string]func(*Consent){
 		"unknown kind": func(c *Consent) { c.Kind = "telemetry" },
 		"empty By":     func(c *Consent) { c.By = "" },
 		"zero At":      func(c *Consent) { c.At = time.Time{} },
+		"no user ID":   func(c *Consent) { c.ByID = 0 },
 	}
 	for name, mutate := range invalid {
 		t.Run(name, func(t *testing.T) {
@@ -151,6 +155,19 @@ func TestConsentRejectsInvalid(t *testing.T) {
 		if c.Has(ctx, instA, valid.Kind) {
 			t.Error("Has = true")
 		}
+		if _, ok, err := c.Get(ctx, instA, valid.Kind); ok || !errors.Is(err, errBoom) {
+			t.Errorf("Get = %v, %v; want false and the Store error, never a plain \"not recorded\"", ok, err)
+		}
+	})
+
+	t.Run("a record from before the user ID is still a consent", func(t *testing.T) {
+		s := store.NewMemory()
+		_, c, _, _ := newTest(s)
+		mustNil(t, s.Put(ctx, store.Tenant(instA), "consent/managed_llm", []byte(`{"kind":"managed_llm","by":"octocat","at":"2026-09-01T00:00:00Z"}`)))
+		got, ok, err := c.Get(ctx, instA, ConsentManagedLLM)
+		if !ok || err != nil || got.By != "octocat" || got.ByID != 0 || !c.Has(ctx, instA, ConsentManagedLLM) {
+			t.Errorf("Get = %+v, %v, %v; want octocat with no user ID, and Has true", got, ok, err)
+		}
 	})
 
 	for name, value := range map[string]string{
@@ -164,6 +181,9 @@ func TestConsentRejectsInvalid(t *testing.T) {
 			mustNil(t, s.Put(ctx, store.Tenant(instA), "consent/source_processing", []byte(value)))
 			if c.Has(ctx, instA, ConsentSourceProcessing) {
 				t.Error("Has = true")
+			}
+			if _, ok, err := c.Get(ctx, instA, ConsentSourceProcessing); ok || err == nil {
+				t.Errorf("Get = %v, %v; want false and an error", ok, err)
 			}
 		})
 	}
@@ -264,7 +284,7 @@ func TestOnlyDocumentedKeys(t *testing.T) {
 	_, err := a.Status(ctx, instA, now)
 	mustNil(t, err)
 	for _, k := range []ConsentKind{ConsentSourceProcessing, ConsentManagedLLM} {
-		mustNil(t, c.Record(ctx, instA, Consent{Kind: k, By: "octocat", At: now}))
+		mustNil(t, c.Record(ctx, instA, Consent{Kind: k, By: "octocat", ByID: 1, At: now}))
 		c.Has(ctx, instA, k)
 		mustNil(t, c.Revoke(ctx, instA, k))
 	}

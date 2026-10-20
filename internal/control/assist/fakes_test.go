@@ -130,6 +130,11 @@ func (f *fakeConsents) Has(_ context.Context, _ int64, k account.ConsentKind) bo
 	return !f.down && f.granted[k]
 }
 
+// Get is never called: the guard asks Has, and who consented is the UI's to show.
+func (f *fakeConsents) Get(context.Context, int64, account.ConsentKind) (account.Consent, bool, error) {
+	panic("assist reads only Has")
+}
+
 type settleCall struct {
 	reserved, actual int64
 	ctxErr           error

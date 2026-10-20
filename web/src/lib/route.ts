@@ -1,5 +1,5 @@
 // The pages of the web app. The server serves the same shell for each and has already authorized the repository of
-// a repository page; the policy and consent pages are still server-rendered links.
+// a repository page; the policy page is still a server-rendered link.
 
 export interface Repo {
   owner: string;
@@ -9,11 +9,11 @@ export interface Repo {
 
 export type Route =
   | { kind: 'home' }
-  | ({ kind: 'repo' | 'graph' } & Repo)
+  | ({ kind: 'repo' | 'graph' | 'data-sharing' } & Repo)
   | ({ kind: 'pull' | 'pull-graph'; number: number } & Repo)
   | { kind: 'unknown' };
 
-const repoPath = /^\/r\/([^/]+)\/([^/]+)(?:\/pull\/([1-9][0-9]{0,9}))?(\/graph)?\/?$/;
+const repoPath = /^\/r\/([^/]+)\/([^/]+)(?:(?:\/pull\/([1-9][0-9]{0,9}))?(\/graph)?|(\/data-sharing))\/?$/;
 
 export function parseRoute(pathname: string): Route {
   if (pathname === '/') return { kind: 'home' };
@@ -29,6 +29,7 @@ export function parseRoute(pathname: string): Route {
   } catch {
     return { kind: 'unknown' };
   }
+  if (m[5]) return { kind: 'data-sharing', ...repo };
   const graph = m[4] !== undefined;
   if (m[3]) return { kind: graph ? 'pull-graph' : 'pull', number: Number(m[3]), ...repo };
   return { kind: graph ? 'graph' : 'repo', ...repo };

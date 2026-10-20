@@ -44,6 +44,7 @@ pull request is the authoritative validation, and merging that pull request on G
         {{if .OfferManaged}}<option value="managed">managed: Archfit calls the AI provider</option>{{end}}
       </select>
     </label>
+    {{if .ManagedOff}}<p class="hint">{{.ManagedOff}}{{if .DataSharingURL}} <a href="{{.DataSharingURL}}">Allow it in Data sharing</a>{{end}}</p>{{end}}
     <button type="submit" formaction="/r/{{$.Repo}}/assist">Propose</button>
   </fieldset>
 </form>

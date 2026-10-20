@@ -74,7 +74,7 @@ func TestBudgetExhaustionTouchesNothingElse(t *testing.T) {
 	a, c, b, _ := newTest(s)
 	now := day(3)
 	mustNil(t, a.Observe(ctx, instA, true, now))
-	mustNil(t, c.Record(ctx, instA, Consent{Kind: ConsentManagedLLM, By: "octocat", At: now}))
+	mustNil(t, c.Record(ctx, instA, Consent{Kind: ConsentManagedLLM, By: "octocat", ByID: 1, At: now}))
 	before := rawKey(t, s, instA, gate.EntitlementKey)
 
 	mustNil(t, b.Reserve(ctx, capMicroUSD, now))

@@ -10,6 +10,7 @@
     type Overview,
     type RepoFindings,
     type Session,
+    type ShareState,
   } from '../lib/api';
   import { repoPage, safeHref } from '../lib/route';
 
@@ -67,6 +68,7 @@
     write('onboarding', { mode: 'customer', owners });
   }
 
+  const shareWords: Record<ShareState, string> = { allowed: 'allowed', not_allowed: 'not allowed', unknown: 'cannot tell' };
   // An open pull request needs attention when its archfit/state is anything but healthy.
   const pullsToSee = $derived(body?.pulls?.filter((p) => p.tone !== 'success').length ?? 0);
   const actions = $derived(body !== null && body.admin && (body.can_start || body.can_discover));
@@ -209,6 +211,16 @@
         {/if}
         <FindingGroups f={findings} compared={false} />
       {/if}
+    </section>
+  {/if}
+
+  {#if body.admin && body.managed_ai}
+    <section class="box" aria-labelledby="admin">
+      <div class="box-head"><h2 id="admin">Administration</h2></div>
+      <div class="box-row row">
+        <a href={repoPage(route.fullName, '/data-sharing')}>Data sharing</a>
+        <span class="muted small">Managed AI: {shareWords[body.managed_ai]}</span>
+      </div>
     </section>
   {/if}
 

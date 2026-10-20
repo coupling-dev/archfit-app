@@ -483,6 +483,11 @@ func (f *fakeConsents) Has(_ context.Context, _ int64, k account.ConsentKind) bo
 	return f.has
 }
 
+// Get is never called: the guard asks Has, and who consented is the UI's to show.
+func (f *fakeConsents) Get(context.Context, int64, account.ConsentKind) (account.Consent, bool, error) {
+	panic("onboarding reads only Has")
+}
+
 // TokenSource fake.
 
 type tokenCall struct {

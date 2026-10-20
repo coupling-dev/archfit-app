@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
@@ -54,8 +55,9 @@ func repoRoutes(fullName string) []route {
 		{http.MethodGet, api + "/findings", permRead, nil, nil},
 		{http.MethodGet, base + "/pull/4/graph", permRead, nil, nil},
 		{http.MethodPost, base + "/assist", permWrite, url.Values{"mode": {"customer"}, "instruction": {"split module a"}, "content": {policyText}}, nil},
-		{http.MethodGet, base + "/consent", permAdmin, nil, nil},
-		{http.MethodPost, base + "/consent", permAdmin, url.Values{"kind": {"managed_llm"}, "action": {"record"}}, nil},
+		{http.MethodGet, base + "/data-sharing", permAdmin, nil, nil},
+		{http.MethodGet, api + "/data-sharing", permAdmin, nil, nil},
+		{http.MethodPost, api + "/data-sharing", permAdmin, nil, dataSharingJSON{Kind: "managed_llm", Action: actionAllow}},
 	}
 }
 
@@ -83,7 +85,8 @@ func TestOnboardingOffersOnlyCustomerDiscovery(t *testing.T) {
 	if !body.Admin || !body.CanStart {
 		t.Errorf("admin = %v, can start = %v; want an administrator who can start onboarding", body.Admin, body.CanStart)
 	}
-	raw := e.signIn("alice").get("/api/repos/" + repoName + "/overview").Body.String()
+	// managed_ai is the Data sharing row, which names a consent and offers nothing.
+	raw := strings.Replace(e.signIn("alice").get("/api/repos/"+repoName+"/overview").Body.String(), `"managed_ai":`, "", 1)
 	if strings.Contains(raw, "managed") {
 		t.Error("onboarding offers managed discovery without an available sandbox")
 	}
@@ -358,28 +361,214 @@ func TestGraphPageShowsTheEngineSeamPolicy(t *testing.T) {
 	}
 }
 
-func TestConsentRecordAndRevoke(t *testing.T) {
+func TestDataSharingAllowAndRevoke(t *testing.T) {
 	e := newEnv(t)
 	c := e.as("alice", permAdmin)
-	path := "/r/" + repoName + "/consent"
-
-	wantStatus(t, c.post(path, url.Values{"kind": {"managed_llm"}, "action": {"record"}}), http.StatusSeeOther)
-	if !e.consents.Has(t.Context(), installA, account.ConsentManagedLLM) {
-		t.Fatal("consent not recorded for the installation of the authorized repository")
+	path := "/api/repos/" + repoName + "/data-sharing"
+	feature := func(t *testing.T, body dataSharingBody, kind account.ConsentKind) featureJSON {
+		t.Helper()
+		for _, f := range body.Features {
+			if f.Kind == string(kind) {
+				return f
+			}
+		}
+		t.Fatalf("no %s in %+v", kind, body)
+		return featureJSON{}
 	}
+	allow := dataSharingJSON{Kind: string(account.ConsentManagedLLM), Action: actionAllow}
+	revoke := dataSharingJSON{Kind: string(account.ConsentManagedLLM), Action: actionRevoke}
+
+	var before dataSharingBody
+	c.getJSON(path, &before)
+	ai := feature(t, before, account.ConsentManagedLLM)
+	owner, _, _ := strings.Cut(repoName, "/")
+	if before.Owner != owner || ai.Allowed || ai.By != "" || ai.At != "" || len(before.Features) != len(sharedFeatures) {
+		t.Errorf("before = %+v", before)
+	}
+	if want := []precondition{{ai.Checks[0].Label, checkNotMet}, {ai.Checks[1].Label, checkMet}}; !reflect.DeepEqual(ai.Checks, want) {
+		t.Errorf("checks = %+v; want the consent unmet and data_mode: managed met", ai.Checks)
+	}
+	if discovery := feature(t, before, account.ConsentSourceProcessing); discovery.Note == "" || len(discovery.Checks) != 1 {
+		t.Errorf("managed discovery = %+v; want the note that the App does not start it, and only the consent to check", discovery)
+	}
+
+	res := c.postJSON(path, allow)
+	wantStatus(t, res, http.StatusOK)
 	got := e.consents.recorded[installA][account.ConsentManagedLLM]
-	if got.By != "alice" || !got.At.Equal(e.now) || got.Kind != account.ConsentManagedLLM {
-		t.Errorf("consent = %+v", got)
+	alice := e.user("alice")
+	if got.By != "alice" || got.ByID != alice.UserID || !got.At.Equal(e.now) || got.Kind != account.ConsentManagedLLM {
+		t.Errorf("consent = %+v; want alice (%d) at %v", got, alice.UserID, e.now)
 	}
-	wantContains(t, c.get(path).Body.String(), "<strong>recorded</strong>", "whole GitHub App installation")
+	var after dataSharingBody
+	if err := json.Unmarshal(res.Body.Bytes(), &after); err != nil {
+		t.Fatal(err)
+	}
+	if ai := feature(t, after, account.ConsentManagedLLM); !ai.Allowed || ai.By != "alice" || ai.At != e.now.UTC().Format(time.RFC3339) ||
+		ai.Checks[0].State != checkMet || after.Notice == "" {
+		t.Errorf("after allow = %+v", after)
+	}
 
-	wantStatus(t, c.post(path, url.Values{"kind": {"managed_llm"}, "action": {"revoke"}}), http.StatusSeeOther)
+	t.Run("allowing again keeps who allowed it and when", func(t *testing.T) {
+		writes := e.consents.writes
+		e.now = e.now.Add(time.Hour)
+		wantStatus(t, e.as("bob", permAdmin).postJSON(path, allow), http.StatusOK)
+		if again := e.consents.recorded[installA][account.ConsentManagedLLM]; again != got || e.consents.writes != writes {
+			t.Errorf("consent = %+v after %d writes; want %+v unchanged", again, e.consents.writes-writes, got)
+		}
+	})
+
+	wantStatus(t, c.postJSON(path, revoke), http.StatusOK)
 	if e.consents.Has(t.Context(), installA, account.ConsentManagedLLM) {
 		t.Error("consent still recorded after revoke")
 	}
-	for _, form := range []url.Values{{"kind": {"everything"}, "action": {"record"}}, {"kind": {"managed_llm"}, "action": {"sell"}}} {
-		wantStatus(t, c.post(path, form), http.StatusUnprocessableEntity)
+	wantStatus(t, c.postJSON(path, revoke), http.StatusOK) // revoking nothing is not an error
+
+	for _, body := range []any{
+		dataSharingJSON{Kind: "everything", Action: actionAllow},
+		dataSharingJSON{Kind: "managed_llm", Action: "record"},
+		dataSharingJSON{Kind: "managed_llm"},
+		dataSharingJSON{Action: actionAllow},
+	} {
+		wantStatus(t, c.postJSON(path, body), http.StatusBadRequest)
 	}
+	if e.consents.Has(t.Context(), installA, account.ConsentManagedLLM) {
+		t.Error("a refused write recorded a consent")
+	}
+}
+
+func TestDataSharingNeverShowsAnOutageAsNotAllowed(t *testing.T) {
+	e := newEnv(t)
+	c := e.as("alice", permAdmin)
+	_ = e.consents.Record(t.Context(), installA, account.Consent{Kind: account.ConsentManagedLLM, By: "alice", ByID: 1, At: e.now})
+	e.consents.readErr = errors.New("store down")
+	writes := e.consents.writes
+
+	path := "/api/repos/" + repoName + "/data-sharing"
+	wantStatus(t, c.get(path), http.StatusBadGateway)
+	wantStatus(t, c.postJSON(path, dataSharingJSON{Kind: string(account.ConsentManagedLLM), Action: actionAllow}), http.StatusBadGateway)
+	if e.consents.writes != writes {
+		t.Error("allow wrote a consent it could not read first")
+	}
+	var body statusBody
+	c.getJSON("/api/repos/"+repoName+"/overview", &body)
+	if body.ManagedAI != checkUnknown {
+		t.Errorf("overview managed_ai = %q, want %q", body.ManagedAI, checkUnknown)
+	}
+
+	t.Run("a change saved but not read back does not say nothing changed", func(t *testing.T) {
+		e := newEnv(t)
+		e.consents.readErrAfterWrite = errors.New("store down")
+		res := e.as("alice", permAdmin).postJSON(path, dataSharingJSON{Kind: string(account.ConsentManagedLLM), Action: actionAllow})
+		wantStatus(t, res, http.StatusBadGateway)
+		wantContains(t, res.Body.String(), "The change was saved")
+		if _, ok := e.consents.recorded[installA][account.ConsentManagedLLM]; !ok {
+			t.Error("the consent was not recorded")
+		}
+	})
+}
+
+func TestDataSharingReadsTheRepositorySettings(t *testing.T) {
+	for _, tt := range []struct {
+		name, settings, want string
+	}{
+		{"managed", settingsText, checkMet},
+		{"customer", strings.Replace(settingsText, "data_mode: managed", "data_mode: customer", 1), checkNotMet},
+		{"no settings yet", "", checkUnknown},
+		{"invalid settings", "version: [", checkUnknown},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t)
+			if tt.settings == "" {
+				e.gh.deleteFile(repoName, mainBranch, settings.Path)
+			} else {
+				e.gh.setFile(repoName, mainBranch, settings.Path, tt.settings)
+			}
+			var body dataSharingBody
+			e.as("alice", permAdmin).getJSON("/api/repos/"+repoName+"/data-sharing", &body)
+			for _, f := range body.Features {
+				if f.Kind == string(account.ConsentManagedLLM) && f.Checks[len(f.Checks)-1].State != tt.want {
+					t.Errorf("data_mode check = %+v, want %s", f.Checks, tt.want)
+				}
+			}
+		})
+	}
+}
+
+func TestOverviewNamesDataSharingOnlyToAnAdministrator(t *testing.T) {
+	e := newEnv(t)
+	overview := "/api/repos/" + repoName + "/overview"
+	var body statusBody
+	e.as("alice", permAdmin).getJSON(overview, &body)
+	if body.ManagedAI != "not_allowed" {
+		t.Errorf("before consent: managed_ai = %q, want not_allowed", body.ManagedAI)
+	}
+	_ = e.consents.Record(t.Context(), installA, account.Consent{Kind: account.ConsentManagedLLM, By: "alice", ByID: 1, At: e.now})
+	before := len(e.consents.touched)
+	e.as("alice", permAdmin).getJSON(overview, &body)
+	if body.ManagedAI != "allowed" || len(e.consents.touched)-before != 1 {
+		t.Errorf("after consent: managed_ai = %q after %d consent reads; want allowed after one", body.ManagedAI, len(e.consents.touched)-before)
+	}
+
+	before = len(e.consents.touched)
+	raw := e.as("bob", permWrite).get(overview).Body.String()
+	if strings.Contains(raw, "managed_ai") || len(e.consents.touched) != before {
+		t.Errorf("a writer's overview read the consent or names it: %.200s", raw)
+	}
+}
+
+func TestEditorSaysWhyManagedModeIsOff(t *testing.T) {
+	policyPage := "/r/" + repoName + "/policy"
+	sharing := `href="/r/` + repoName + `/data-sharing"`
+	option := `<option value="managed">`
+	customer := strings.Replace(settingsText, "data_mode: managed", "data_mode: customer", 1)
+	for _, tt := range []struct {
+		name     string
+		perm     string
+		settings string
+		consent  bool
+		want     []string
+		absent   []string
+	}{
+		{"customer settings", permAdmin, customer, true, []string{"data_mode: customer"}, []string{option, sharing}},
+		{"invalid settings", permAdmin, "version: [", true, []string{"no valid " + settings.Path}, []string{option, sharing, "onboarding"}},
+		{"no consent, administrator", permAdmin, settingsText, false, []string{"not allowed for acme", sharing}, []string{option}},
+		{"no consent, writer", permWrite, settingsText, false, []string{"not allowed for acme"}, []string{option, sharing}},
+		{"offered", permWrite, settingsText, true, []string{option}, []string{"Managed mode is off", sharing}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t)
+			e.gh.setFile(repoName, mainBranch, settings.Path, tt.settings)
+			if tt.consent {
+				_ = e.consents.Record(t.Context(), installA, account.Consent{Kind: account.ConsentManagedLLM, By: "alice", ByID: 1, At: e.now})
+			}
+			page := e.as("alice", tt.perm).get(policyPage).Body.String()
+			wantContains(t, page, tt.want...)
+			for _, s := range tt.absent {
+				if strings.Contains(page, s) {
+					t.Errorf("the page contains %q", s)
+				}
+			}
+		})
+	}
+}
+
+func TestOldConsentPageMovedToDataSharing(t *testing.T) {
+	path := "/r/" + repoName + "/consent"
+	for _, perm := range []string{"none", permRead, permWrite} {
+		e := newEnv(t)
+		res := e.as("alice", perm).get(path)
+		wantStatus(t, res, http.StatusNotFound)
+		if loc := res.Header().Get("Location"); loc != "" {
+			t.Errorf("%s: Location %q tells a non-administrator the repository exists", perm, loc)
+		}
+	}
+	e := newEnv(t)
+	res := e.as("alice", permAdmin).get(path)
+	wantStatus(t, res, http.StatusPermanentRedirect)
+	if loc := res.Header().Get("Location"); loc != "/r/"+repoName+"/data-sharing" {
+		t.Errorf("Location = %q", loc)
+	}
+	wantStatus(t, e.as("alice", permAdmin).get("/r/"+otherRepo+"/consent"), http.StatusNotFound)
 }
 
 func TestOnboardingAndDiscoverActions(t *testing.T) {
@@ -401,8 +590,8 @@ func TestOnboardingAndDiscoverActions(t *testing.T) {
 	res = c.postJSON(base+"/onboarding", onboardingJSON{Mode: "managed", Owners: "alice"})
 	wantStatus(t, res, http.StatusOK)
 	var next noticeJSON
-	if err := json.Unmarshal(res.Body.Bytes(), &next); err != nil || next.Location != "/r/"+repoName+"/consent" {
-		t.Errorf("answer = %s, want the consent page as location", res.Body.String())
+	if err := json.Unmarshal(res.Body.Bytes(), &next); err != nil || next.Location != "/r/"+repoName+"/data-sharing" {
+		t.Errorf("answer = %s, want Data sharing as location", res.Body.String())
 	}
 	if len(e.onb.managed) != 0 {
 		t.Error("StartManaged was called without consent")

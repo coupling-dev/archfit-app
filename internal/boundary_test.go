@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -35,14 +34,12 @@ func onboard(t *testing.T, b *browser, mode string) (*http.Response, string) {
 	return b.postJSON("/api/repos/"+shopRepo+"/onboarding", map[string]string{"owners": owner, "mode": mode})
 }
 
-func recordConsent(t *testing.T, b *browser, repo, kind string, extra url.Values) {
+// recordConsent allows one managed feature on the Data sharing page; query is appended to the API path as is.
+func recordConsent(t *testing.T, b *browser, repo, kind, query string) {
 	t.Helper()
-	form := url.Values{"csrf": {b.csrf("/r/" + repo + "/consent")}, "kind": {kind}, "action": {"record"}}
-	for k, v := range extra {
-		form[k] = v
-	}
-	if resp, page := b.post("/r/"+repo+"/consent", form); resp.StatusCode != http.StatusSeeOther {
-		t.Fatalf("recording %s consent: %d\n%s", kind, resp.StatusCode, page)
+	body := map[string]string{"kind": kind, "action": "allow"}
+	if resp, page := b.postJSON("/api/repos/"+repo+"/data-sharing"+query, body); resp.StatusCode != http.StatusOK {
+		t.Fatalf("allowing %s: %d\n%s", kind, resp.StatusCode, page)
 	}
 }
 
@@ -111,8 +108,8 @@ func TestBothOnboardingModesComplete(t *testing.T) {
 		b.signIn("alice")
 
 		resp, page := onboard(t, b, "managed")
-		if resp.StatusCode != http.StatusOK || !strings.Contains(page, `"location":"/r/`+shopRepo+`/consent"`) {
-			t.Fatalf("managed onboarding without consent: %d %s; want the consent page as the next location", resp.StatusCode, page)
+		if resp.StatusCode != http.StatusOK || !strings.Contains(page, `"location":"/r/`+shopRepo+`/data-sharing"`) {
+			t.Fatalf("managed onboarding without consent: %d %s; want Data sharing as the next location", resp.StatusCode, page)
 		}
 		if sandbox.count() != 0 || provider.count() != 0 || len(w.pullsOf(shopRepo)) != 0 {
 			t.Errorf("without consent: %d sandbox jobs, %d LLM calls, %d pull requests; want none",
@@ -127,7 +124,7 @@ func TestBothOnboardingModesComplete(t *testing.T) {
 		s := newSystem(t, w, options{sandbox: sandbox, provider: provider})
 		b := newBrowser(t, s.do)
 		b.signIn("alice")
-		recordConsent(t, b, shopRepo, "source_processing", nil)
+		recordConsent(t, b, shopRepo, "source_processing", "")
 
 		if resp, page := onboard(t, b, "managed"); resp.StatusCode != http.StatusOK {
 			t.Fatalf("managed onboarding: %d\n%s", resp.StatusCode, page)
@@ -157,7 +154,7 @@ func TestBothOnboardingModesComplete(t *testing.T) {
 		s := newSystem(t, w, options{})
 		b := newBrowser(t, s.do)
 		b.signIn("alice")
-		recordConsent(t, b, shopRepo, "source_processing", nil)
+		recordConsent(t, b, shopRepo, "source_processing", "")
 
 		resp, page := onboard(t, b, "managed")
 		if resp.StatusCode != http.StatusConflict || !strings.Contains(page, "not available") {
@@ -290,7 +287,7 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 	}
 	b := newBrowser(t, a.do)
 	b.signIn("alice")
-	pages := []string{"/", "/api/repos", "/r/" + demoRepo, "/api/repos/" + demoRepo + "/overview", "/r/" + demoRepo + "/policy", "/r/" + demoRepo + "/consent"}
+	pages := []string{"/", "/api/repos", "/r/" + demoRepo, "/api/repos/" + demoRepo + "/overview", "/r/" + demoRepo + "/policy", "/r/" + demoRepo + "/data-sharing", "/api/repos/" + demoRepo + "/data-sharing"}
 	for _, page := range pages {
 		if resp, _ := b.get(page); resp.StatusCode != http.StatusOK {
 			t.Fatalf("GET %s: %d", page, resp.StatusCode)
@@ -346,10 +343,14 @@ func TestClientSuppliedInstallationIDIsIgnored(t *testing.T) {
 		t.Errorf("an envelope carrying installation_id answered %+v; want 400", got)
 	}
 
-	// UI: form fields and query name the victim.
+	// UI: the body and the query name the victim.
 	b := newBrowser(t, s.do)
 	b.signIn("alice")
-	recordConsent(t, b, demoRepo, "source_processing", url.Values{"installation_id": {victim}, "installation": {victim}})
+	forged := map[string]string{"kind": "source_processing", "action": "allow", "installation_id": victim}
+	if resp, _ := b.postJSON("/api/repos/"+demoRepo+"/data-sharing", forged); resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("a body naming an installation answered %d; want 422", resp.StatusCode)
+	}
+	recordConsent(t, b, demoRepo, "source_processing", "?installation_id="+victim+"&installation="+victim)
 	if resp, _ := b.get("/r/" + demoRepo + "?installation_id=" + victim); resp.StatusCode != http.StatusOK {
 		t.Fatalf("repository page: %d", resp.StatusCode)
 	}
@@ -413,7 +414,7 @@ func TestUninstallLeavesNoKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	b := enableManagedAssist(t, s) // records managed_llm consent
-	recordConsent(t, b, demoRepo, "source_processing", nil)
+	recordConsent(t, b, demoRepo, "source_processing", "")
 	if resp := requestAssist(t, b, f.policy); resp.StatusCode != http.StatusSeeOther || provider.count() != 1 {
 		t.Fatalf("assist: status %d after %d provider calls; want 303 after 1", resp.StatusCode, provider.count())
 	}

@@ -2,6 +2,7 @@
   import Header from './Header.svelte';
   import { ApiError, getJSON, type Session } from './lib/api';
   import { parseRoute } from './lib/route';
+  import DataSharing from './pages/DataSharing.svelte';
   import Landing from './pages/Landing.svelte';
   import Overview from './pages/Overview.svelte';
   import Pull from './pages/Pull.svelte';
@@ -28,9 +29,11 @@
       ? `${route.fullName} #${route.number}${route.kind === 'pull-graph' ? ' graph' : ''}`
       : route.kind === 'repo' || route.kind === 'graph'
         ? `${route.fullName}${route.kind === 'graph' ? ' architecture' : ''}`
-        : signedOut
-          ? 'Sign in'
-          : 'Repositories',
+        : route.kind === 'data-sharing'
+          ? `${route.fullName} data sharing`
+          : signedOut
+            ? 'Sign in'
+            : 'Repositories',
   );
   const repo = $derived(route.kind !== 'home' && route.kind !== 'unknown' && session ? route.fullName : '');
   // The graph pages carry the drawing libraries: a chunk of their own, loaded on those pages only.
@@ -43,8 +46,8 @@
 <Header
   {session}
   {repo}
+  tab={route.kind === 'repo' ? 'overview' : route.kind === 'graph' ? 'graph' : ''}
   pull={route.kind === 'pull' || route.kind === 'pull-graph' ? route.number : 0}
-  graph={route.kind === 'graph'}
 />
 <main class="page" id="main">
   {#if failure}
@@ -57,6 +60,8 @@
     <Repos {here} />
   {:else if route.kind === 'repo'}
     <Overview {route} {session} {here} />
+  {:else if route.kind === 'data-sharing'}
+    <DataSharing {route} {session} {here} />
   {:else if route.kind === 'pull'}
     <Pull {route} {here} />
   {:else if route.kind === 'graph' || route.kind === 'pull-graph'}

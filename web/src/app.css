@@ -405,6 +405,16 @@ textarea {
 .track li.current { color: var(--fg); font-weight: 600; }
 .track li.current .mark { border-color: var(--accent); color: var(--accent); }
 
+/* Checklist: a mark plus the words, the state in screen-reader text; colour is never the only signal */
+.checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.checks li { display: flex; align-items: center; gap: 8px; }
+.checks .mark {
+  width: 20px; height: 20px; border-radius: 50%; display: inline-grid; place-items: center; flex: none;
+  border: 2px solid var(--border); background: var(--bg); font-size: 11px; font-weight: 600; color: var(--fg-muted);
+}
+.checks li.met .mark { border-color: var(--success-emphasis); background: var(--success-emphasis); color: #ffffff; }
+.checks li.unknown .mark { border-style: dashed; }
+
 /* ---------- findings ---------- */
 .finding .box-head h3 { font-size: 14px; }
 .locations { display: inline-flex; flex-wrap: wrap; gap: 4px; }

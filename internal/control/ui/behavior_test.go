@@ -390,7 +390,7 @@ func TestUIAndGitHubFirstEditsShareOnePath(t *testing.T) {
 		t.Errorf("commits = %d, want 2", e.props.commits)
 	}
 
-	for _, path := range []string{base, base + "/policy", base + "/graph", base + "/consent"} {
+	for _, path := range []string{base, base + "/policy", base + "/graph", base + "/data-sharing"} {
 		if m := actionPattern.FindString(c.get(path).Body.String()); m != "" {
 			t.Errorf("%s offers %q", path, m)
 		}

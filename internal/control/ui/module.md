@@ -8,16 +8,16 @@
 
 UI is the browser surface of Archfit: sign-in, the organization overview, repository status and
 onboarding actions, the YAML policy editor with drafts as pull requests, the read-only graph, the
-explicit AI request, consent pages and the entitlement banner. It holds no state of its own: every
+explicit AI request, the Data sharing page and the entitlement banner. It holds no state of its own: every
 page is derived from GitHub and the control-plane modules at request time. Without it customers
 could still work GitHub-first, but onboarding, schema-guided editing and consent would have no home.
 
 ## Functional Responsibilities
 
 - Serve the web app (`web/`, Svelte 5 built by Vite, embedded from `spa/`) for the overview, the repository page,
-  the pull request page and both graph pages, and its JSON API under `/api/`. The other pages are still server-rendered
-  (`html/template`) with their embedded static assets (one stylesheet, one small script); each moves to the web app in its own phase
-  (`docs/design/ui-redesign.md`, Migration order).
+  the pull request page, both graph pages and Data sharing, and its JSON API under `/api/`. The policy editor is still
+  server-rendered (`html/template`) with its embedded static assets (one stylesheet, one small script); it moves to the
+  web app in phase f (`docs/design/ui-redesign.md`, Migration order).
 - Authenticate every request through `session` and authorize every repository page at the needed permission.
 - Overview: the user's repositories with their latest default-branch `archfit/state` check conclusion. No score.
 - Repository status: onboarding `Progress`, actions to start onboarding or dispatch discovery, entitlement banner.
@@ -33,7 +33,9 @@ could still work GitHub-first, but onboarding, schema-guided editing and consent
 - Pull request page: the result of one pull request's head, from the `archfit/state` check and the report of the
   run that check names.
 - Assist: turn the form into an `assist.Request`, show the outcome or the pending customer run.
-- Consent: record and revoke `source_processing` and `managed_llm` consent (repository administrators only).
+- Data sharing: per managed feature, what leaves the customer's environment, who allowed it and when, and the
+  preconditions it still needs; allow and revoke `source_processing` and `managed_llm` consent (repository administrators
+  only). The editor says why managed mode is off and links an administrator to this page.
 
 ## Subdomain Classification
 
@@ -96,6 +98,9 @@ Minimum repository permission in brackets. `{o}/{n}` is only a lookup key for `S
   answers `404` here, a number that is no pull request of the repository answers `404` from the API.
 - `GET /r/{o}/{n}/graph` [read] — the shell for the repository graph.
 - `GET /r/{o}/{n}/pull/{number}/graph` [read] — the shell for the pull request graph; the same `404` rule for the number.
+- `GET /r/{o}/{n}/data-sharing` [admin] — the shell, for the Data sharing page.
+- `GET /r/{o}/{n}/consent` [admin] — `308` to `/r/{o}/{n}/data-sharing`. It stays behind the admin check, so for anyone
+  else it is the same `404` as a repository they cannot see.
 
 JSON API: every response is `application/json` with `Cache-Control: no-store` and a body of an explicit type of this
 package, never a stored record. Errors are `{"error": "<sentence>"}` with the status of the mapping below. A `POST`
@@ -118,10 +123,21 @@ package does not know is `422`, so a body cannot name a repository, a user or an
 - `GET /api/repos/{o}/{n}/overview` [read] — default-branch state, open pull requests with their result, setup steps,
   onboarding progress, entitlement banner, history links, and whether the user may start onboarding or discovery.
   `tone` (`success` | `attention` | `danger` | `accent` | `neutral`) colours a state word; the word is always shown.
+  For an administrator `managed_ai` is `allowed` | `not_allowed` | `unknown` (the consent could not be read): one Store
+  read and no GitHub call more than the admin check the answer already makes.
 - `POST /api/repos/{o}/{n}/onboarding` [admin] — body `{mode: "customer" | "managed", owners}` (owners one per line);
-  answers `{notice}`, or `{location}` of the consent page when managed mode needs consent first.
+  answers `{notice}`, or `{location}` of the Data sharing page when managed mode needs consent first.
 - `POST /api/repos/{o}/{n}/discover` [admin] — body `{}`; dispatch the discovery run of the Archfit workflow; answers
   `{notice}`.
+- `GET /api/repos/{o}/{n}/data-sharing` [admin] — `{owner, features: [{kind, title, leaves, note?, allowed, by?, at?,
+  checks: [{label, state}]}]}`. `owner` is the account whose repositories a consent covers; `by` is the login as it was
+  when the consent was recorded (`Record` has always required one; records older than `by_id` lack only the ID); `at` is RFC 3339 UTC. `state` is `met` |
+  `not_met` | `unknown`. Managed AI also checks the repository settings for `data_mode: managed`; settings that cannot
+  be read leave that check `unknown`. A consent that cannot be read answers `502`, never "not allowed".
+- `POST /api/repos/{o}/{n}/data-sharing` [admin] — body `{kind, action: "allow" | "revoke"}`; a kind not in the
+  server's list or another action is `400`. Answers the `GET` body plus `notice`. Both actions are idempotent: allowing an
+  allowed feature keeps its `by` and `at` and writes nothing; revoking nothing is `200`. `by`, the user ID and `at`
+  come from the session and the server clock; the installation from the authorized repository.
 - Any other `/api/…` path, or a method an API path does not take: `404` JSON, outcome `not_found`. A panic on an
   `/api/` path answers `500` JSON.
 
@@ -132,7 +148,6 @@ Server-rendered pages:
 - `POST /r/{o}/{n}/policy/check` [read] — check the text and save nothing; form `branch`, `head_sha`, `content`.
 - `POST /r/{o}/{n}/policy/ready` [write] — mark the draft PR ready for review; form `branch`, `head_sha`.
 - `POST /r/{o}/{n}/assist` [write] — form `branch`, `head_sha`, `content`, `instruction`, `mode`.
-- `GET /r/{o}/{n}/consent`, `POST /r/{o}/{n}/consent` [admin] — form `kind`, `action` (`record` | `revoke`).
 
 ### Status mapping
 
@@ -142,6 +157,9 @@ Server-rendered pages:
 - `ErrForbidden` from `Authorize`: `404` **[default]**, so that repository names are not confirmed to outsiders.
   `api.ErrNotFound` from any GitHub call a page does not handle itself: `404` with the same "Not found." wording.
 - Missing or wrong CSRF token: `403`. Body over 512 KB **[default]**: `413`. An `/api/` `POST` that is not JSON: `415`.
+- A Data sharing `POST` naming a kind not in the server's list, or an action other than `allow` or `revoke`: `400`.
+  A Data sharing change that was written but cannot be read back: `502` "The change was saved, but it could not be read
+  back. Reload the page."; the page then reads the state again.
 - `ErrStale`, or a `head_sha` that is not the draft head: `409`, the user's text kept in the editor, nothing written.
 - Invalid form, a policy text over 256 KB or not UTF-8, a text `policy.Diagnose` finds problems in, `ErrInvalidRequest`,
   `ErrInvalidProposal`: `422`, text kept. A save or assist refused by `Diagnose` also lists the problems under the editor.
@@ -285,7 +303,7 @@ func Build(rep Report, policy []byte) View
 - **LCA / Rank / Distance**: control / 1 / 1
 - **Volatility**: high
 - **Balanced?**: yes
-- **Shared knowledge**: `Account.Status` for the banner (ui calls no other `Account` method); `Consents.Record`, `Revoke`, `Has`.
+- **Shared knowledge**: `Account.Status` for the banner (ui calls no other `Account` method); `Consents.Record`, `Revoke`, `Has`, `Get`.
   `ErrBudgetExhausted` is the sentinel of account's budget that reaches ui only through `assist`.
 
 <!-- contract: Account, Status, Plan — restated from internal/control/account/module.md -->
@@ -332,7 +350,8 @@ const (
 
 type Consent struct {
     Kind ConsentKind
-    By   string // GitHub login of the administrator
+    By   string // GitHub login of the administrator, as it was when the consent was recorded
+    ByID int64  // GitHub user ID of the administrator; 0 on a record written before the App stored it
     At   time.Time
 }
 
@@ -344,6 +363,9 @@ type Consents interface {
     Revoke(ctx context.Context, installationID int64, k ConsentKind) error
     // Has is false on any error: no consent, no call.
     Has(ctx context.Context, installationID int64, k ConsentKind) bool
+    // Get answers who recorded the consent and when. Unlike Has it tells "not recorded" (false, nil) from "cannot
+    // tell" (an error: the Store failed or the record is corrupt), so a page never shows an outage as "not allowed".
+    Get(ctx context.Context, installationID int64, k ConsentKind) (Consent, bool, error)
 }
 ```
 
@@ -356,7 +378,7 @@ type Consents interface {
 - **Volatility**: high
 - **Balanced?**: yes
 - **Shared knowledge**: `Progress`, `StartCustomer`, `StartManaged`. ui never mounts `DiscoveryHandler` or `BaselineHandler` (the façade does).
-  Before `StartManaged` ui checks `Consents.Has(ConsentSourceProcessing)` and sends the administrator to the consent page
+  Before `StartManaged` ui checks `Consents.Has(ConsentSourceProcessing)` and sends the administrator to the Data sharing page
   when it is false **[default]**. `ErrNoSandbox` is the sentinel onboarding returns when managed discovery is not
   configured; ui shows "managed discovery is not available". `ErrAlreadyOnboarded` and `ErrBusy` are the sentinels
   of a refused start; ui maps all three to `409` (Status mapping), never to the `502` of an upstream failure.
@@ -959,8 +981,8 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   trial end date, grace, suspended with the recovery sentence; nothing for `public` and `granted`. A `Status` error hides the
   banner and is logged; it never fails the page. History is a link to the repository's pull requests from `archfit/` branches
   and to its check runs **[default]**: report history is what GitHub keeps. The route needs `read`; the page calls
-  `Sessions.Authorize(user, "{o}/{n}", "admin")` a second time and shows the onboarding, discover and consent controls
-  only when it succeeds. Its error is not an error of the page; the `POST` routes enforce `admin` themselves.
+  `Sessions.Authorize(user, "{o}/{n}", "admin")` a second time and shows the onboarding and discover controls and the
+  Data sharing row (`managed_ai`) only when it succeeds. Its error is not an error of the page; the `POST` routes enforce `admin` themselves.
   Setup steps: the stages of the onboarding path with the current one marked ("First report" is done only once a
   report arrived: `policy_merged` can come without one), and fixed advice at `gate_advisory` (rehearse, then the
   settings pull request and the ruleset) and at `gate_required` (the ruleset). At `report_received`, `gate_advisory`
@@ -1065,7 +1087,10 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   new head. Owner decision: when `content` equals the file the editor would load for the branch (after the CRLF rule) and
   `Diagnose` finds problems in it, nothing is saved and the request goes ahead on the loaded head, so a user can ask AI
   to fix a broken draft; the answer is checked by `Diagnose` in assist. A changed text with problems is refused as for Save; then `Assist.Propose(mode, Request{Repo, Branch, HeadSHA, Instruction, By: login})`. Managed is offered only when
-  settings say `managed` and `Consents.Has(ConsentManagedLLM)`; assist enforces both anyway. Managed success: redirect to the
+  settings say `managed` and `Consents.Get(ConsentManagedLLM)` finds a consent; assist enforces both anyway. When it is not
+  offered the AI box says why: no valid settings file on the default branch, `data_mode` is not `managed`, the consent could not be read, or managed AI is
+  not allowed for the owner, with a link to Data sharing for an administrator. Settings that fail to read for another reason
+  give no reason. Managed success: redirect to the
   editor on the new head with a link to the PR diff. Customer success: redirect to the editor with `?since=<head_sha>`, the
   head the request was bound to; with `since` the editor shows the run state from
   `Actions.LatestRun(AssistWorkflowPath, {Branch: branch})`: no run yet or not completed → pending; completed and not `success` → failed;
@@ -1073,10 +1098,15 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   pending (that run is an older one). ui keeps no state, so the link beside the state is the workflow's runs page built from
   the authorized repository name and `AssistWorkflowPath`, the same page `Result.RunURL` names **[default]**. `WorkflowRun` has no timestamps, so latency is visible as
   the pending state and the link, not as a duration. Stated limit.
-- Consent: `GET` shows both kinds with `Consents.Has` and a plain disclosure of what leaves the customer's environment.
-  `POST record` → `Consents.Record(repo.InstallationID, Consent{Kind, By: login, At: now})`; `revoke` → `Consents.Revoke`. Consent
-  is per installation while the permission check is per repository: a repository administrator consents for the installation,
-  and the page says so **[default]**. Managed features additionally need `data_mode: managed` in the owner-approved settings of each repository.
+- Data sharing: `GET` reads each kind with `Consents.Get` and says what leaves the customer's environment, who allowed it and
+  when, and the preconditions; managed discovery carries the note that the App does not start it yet (owner decision A1:
+  nothing is removed, and a recorded consent can still be revoked). `allow` → `Consents.Get`, then `Consents.Record(repo.InstallationID,
+  Consent{Kind, By: login, ByID: user ID, At: now})` only when none is recorded; `revoke` → `Consents.Revoke`. Each accepted
+  action writes one `Info` audit line `ui consent` with `outcome` (`consent_recorded` | `consent_kept` | `consent_revoked`),
+  `kind` (the server's constant), `installation_id` and `user_id`; nothing of the request body. Consent is per installation
+  while the permission check is per repository: a repository administrator consents for every repository of the owner the
+  App can access, and the page says so **[default]**. Managed AI additionally needs `data_mode: managed` in the
+  owner-approved settings of each repository.
 
 ## Change Vectors
 
@@ -1224,9 +1254,31 @@ their interfaces except where a test says otherwise. The clock is injected.
 - **Test name**: `TestDefaultGraphClaimsNothingNew`
   **Scenario**: a default-branch report that says it compared with a base.
   **Expected behavior**: no graph link and no finding of the findings API carries an origin.
-- **Test name**: `TestConsentRecordAndRevoke`
-  **Scenario**: an administrator records `managed_llm`, then revokes it.
-  **Expected behavior**: `Consents.Has` is true then false for the installation of the authorized `Repo`; `By` is the session login.
+- **Test name**: `TestDataSharingAllowAndRevoke`
+  **Scenario**: an administrator reads Data sharing, allows `managed_llm`, another administrator allows it again, it is revoked
+  twice; then bodies with an unknown kind, an unknown action, no action and no kind.
+  **Expected behavior**: before: not allowed, the consent check unmet, `data_mode: managed` met, discovery with its note and one
+  check; after allow: the session login, user ID and clock under the authorized installation, and the answer says who and
+  when; allowing again writes nothing and keeps both; both revokes `200`; the refused bodies `400` and record nothing.
+- **Test name**: `TestDataSharingNeverShowsAnOutageAsNotAllowed`
+  **Scenario**: a recorded consent, then `Consents.Get` fails.
+  **Expected behavior**: `GET` and `POST allow` answer `502` and write nothing; the overview says `managed_ai: unknown`.
+  A write that succeeds but cannot be read back answers `502` with "The change was saved", never "Nothing was changed".
+- **Test name**: `TestDataSharingReadsTheRepositorySettings`
+  **Scenario**: settings with `data_mode: managed`, `customer`, none, invalid.
+  **Expected behavior**: the `data_mode` check is `met`, `not_met`, `unknown`, `unknown`.
+- **Test name**: `TestOverviewNamesDataSharingOnlyToAnAdministrator`
+  **Scenario**: the overview for an administrator before and after a consent, and for a writer.
+  **Expected behavior**: `not_allowed`, then `allowed` after one consent read; the writer's answer has no `managed_ai` and
+  reads no consent.
+- **Test name**: `TestEditorSaysWhyManagedModeIsOff`
+  **Scenario**: customer settings; invalid settings; managed settings without consent for an administrator and a writer; with consent.
+  **Expected behavior**: the reason names `data_mode: customer`, or "not allowed for acme" with the Data sharing link for the
+  administrator only; with consent the managed option and no reason.
+- **Test name**: `TestOldConsentPageMovedToDataSharing`
+  **Scenario**: `GET /r/{o}/{n}/consent` as no, read, write and admin permission, and for another repository.
+  **Expected behavior**: `404` with no `Location` below admin; `308` to `/data-sharing` for an administrator; `404` for the other
+  repository.
 - **Test name**: `TestOwnersRuleIsSettings`
   **Scenario**: table of submitted owners: `-alice` (a leading hyphen, which wire/settings accepts); a team; `alice` and
   `Alice`; `not a login!`; 101 owners; only blank lines. Each row is also run through `settings.Parse(settings.Render(…))`.
@@ -1235,7 +1287,7 @@ their interfaces except where a test says otherwise. The clock is injected.
 - **Test name**: `TestOnboardingAndDiscoverActions`
   **Scenario**: start customer onboarding with two owners; start managed without consent; dispatch discovery before and after `workflow_merged`.
   **Expected behavior**: through the JSON API: `StartCustomer` gets the parsed owners and the answer is the onboarding
-  notice; managed without consent answers the consent page as `location` and never calls `StartManaged`; discovery dispatch is refused before the stage and sends input `mode=discovery` on the settings workflow after it.
+  notice; managed without consent answers the Data sharing page as `location` and never calls `StartManaged`; discovery dispatch is refused before the stage and sends input `mode=discovery` on the settings workflow after it.
 
 ### Boundary Tests
 
@@ -1283,9 +1335,10 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Expected behavior**: no `<style>`, no `style=` attribute, no script that sets `.style` or a style attribute, no
   `blob:` and no worker: the CSP blocks all of them.
 - **Test name**: `TestLogsCarryOnlyIdentifiers`
-  **Scenario**: run save, assist, consent, graph and the overview APIs with marker strings in content, instruction,
-  report and the entitlement error.
-  **Expected behavior**: no marker, token or cookie value in any log line.
+  **Scenario**: run save, assist, Data sharing (refused bodies with marker kind and action, allow twice, revoke), graph and the
+  overview APIs with marker strings in content, instruction, report and the entitlement error.
+  **Expected behavior**: no marker, token or cookie value in any log line; exactly three `ui consent` audit lines at `INFO`
+  (`consent_recorded`, `consent_kept`, `consent_revoked`), each with kind, installation ID and user ID.
 
 ### Behavior Tests
 

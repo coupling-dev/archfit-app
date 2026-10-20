@@ -146,9 +146,15 @@ func TestConsentRoundTrip(t *testing.T) {
 	if c.Has(ctx, instA, k) {
 		t.Error("Has before Record = true")
 	}
-	mustNil(t, c.Record(ctx, instA, Consent{Kind: k, By: "octocat", At: day(1)}))
+	if _, ok, err := c.Get(ctx, instA, k); ok || err != nil {
+		t.Errorf("Get before Record = %v, %v; want false, nil", ok, err)
+	}
+	mustNil(t, c.Record(ctx, instA, Consent{Kind: k, By: "octocat", ByID: 1, At: day(1)}))
 	if !c.Has(ctx, instA, k) {
 		t.Error("Has after Record = false")
+	}
+	if got, ok, err := c.Get(ctx, instA, k); !ok || err != nil || got != (Consent{Kind: k, By: "octocat", ByID: 1, At: day(1).UTC()}) {
+		t.Errorf("Get after Record = %+v, %v, %v; want octocat (1) at %v", got, ok, err, day(1))
 	}
 	if c.Has(ctx, instA, ConsentSourceProcessing) {
 		t.Error("Has for the other kind = true")
@@ -159,6 +165,9 @@ func TestConsentRoundTrip(t *testing.T) {
 	mustNil(t, c.Revoke(ctx, instA, k))
 	if c.Has(ctx, instA, k) {
 		t.Error("Has after Revoke = true")
+	}
+	if _, ok, err := c.Get(ctx, instA, k); ok || err != nil {
+		t.Errorf("Get after Revoke = %v, %v; want false, nil", ok, err)
 	}
 	mustNil(t, c.Revoke(ctx, instA, k))
 }
@@ -223,8 +232,8 @@ func TestForgetDeletesTenantOnly(t *testing.T) {
 	keys := []string{recordKeyName, gate.EntitlementKey, "consent/managed_llm", "consent/source_processing"}
 	for _, id := range []int64{instA, instB} {
 		mustNil(t, a.Observe(ctx, id, true, day(0)))
-		mustNil(t, c.Record(ctx, id, Consent{Kind: ConsentManagedLLM, By: "octocat", At: day(0)}))
-		mustNil(t, c.Record(ctx, id, Consent{Kind: ConsentSourceProcessing, By: "octocat", At: day(0)}))
+		mustNil(t, c.Record(ctx, id, Consent{Kind: ConsentManagedLLM, By: "octocat", ByID: 1, At: day(0)}))
+		mustNil(t, c.Record(ctx, id, Consent{Kind: ConsentSourceProcessing, By: "octocat", ByID: 1, At: day(0)}))
 	}
 	mustNil(t, b.Reserve(ctx, 3_000_000, day(0)))
 	wantB := map[string][]byte{}

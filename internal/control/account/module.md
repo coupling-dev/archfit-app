@@ -19,7 +19,7 @@ spend would have no cap.
 - Rewrite the gate's `Entitlement` record on every `Observe`, `Grant`, `Refresh`: suspension instant,
   warning instant, notice text, suspension reason with the recovery action.
 - Apply and clear operator grants; log each grant by installation ID.
-- Record, revoke and answer consent per installation and kind. No consent, no call.
+- Record, revoke and answer consent per installation and kind, with who recorded it and when. No consent, no call.
 - Reserve and settle the managed-LLM budget atomically against a hard monthly cap.
 - Delete every key of an installation on uninstall.
 
@@ -34,7 +34,8 @@ provider may replace manual grants. The `Entitlement` record shape is stable: it
 - The private record, Store key `account`, JSON `{"first_private_at": RFC 3339, "grant_until": RFC 3339}`, zero times omitted.
 - The durations: trial 30 d, grace 7 d, warn 7 d before, "1 day left" inside the last 24 h. **[default]**
 - The plan state machine and the mapping from plan to `Entitlement` fields and texts.
-- Consent key layout `consent/<kind>`, value JSON `{"kind","by","at"}`.
+- Consent key layout `consent/<kind>`, value JSON `{"kind","by","by_id","at"}`. `by` is the login as it was when the consent
+  was recorded; `by_id` is the GitHub user ID, absent from a record written before it was stored. Such a record stays valid.
 - Budget key layout `llm-budget/<YYYY-MM>` (UTC month of `now`) under `SystemTenant`; cap `20_000_000` micro-USD (USD 20). **[default]**
 - Reserve-then-compensate as the way to enforce a cap with only `Store.Add`.
 - The update cycle of the record and the entitlement: read both keys, compute, write both with one
@@ -86,7 +87,8 @@ const (
 
 type Consent struct {
     Kind ConsentKind
-    By   string // GitHub login of the administrator
+    By   string // GitHub login of the administrator, as it was when the consent was recorded
+    ByID int64  // GitHub user ID of the administrator; 0 on a record written before the App stored it
     At   time.Time
 }
 
@@ -98,6 +100,9 @@ type Consents interface {
     Revoke(ctx context.Context, installationID int64, k ConsentKind) error
     // Has is false on any error: no consent, no call.
     Has(ctx context.Context, installationID int64, k ConsentKind) bool
+    // Get answers who recorded the consent and when. Unlike Has it tells "not recorded" (false, nil) from "cannot
+    // tell" (an error: the Store failed or the record is corrupt), so a page never shows an outage as "not allowed".
+    Get(ctx context.Context, installationID int64, k ConsentKind) (Consent, bool, error)
 }
 ```
 
@@ -172,7 +177,10 @@ The gate decides suspension itself from `SuspendAfter`, repository privacy and i
 - `Status`: read `R`, compute. Missing record → `PlanPublic`, nil error. Writes nothing.
 - `Forget`: `Store.DeleteTenant`. Idempotent.
 - Any Store read error other than `ErrNotFound` returns the error and **writes nothing**.
-- `Record` rejects an unknown `Kind`, empty `By`, or zero `At`. `Revoke` deletes the key; revoking a missing consent is not an error.
+- `Record` rejects an unknown `Kind`, empty `By`, `ByID <= 0`, or zero `At`. `Revoke` deletes the key; revoking a missing consent is
+  not an error.
+- `Get`: a missing key is `(zero, false, nil)`; a Store error, a corrupt value or an invalid installation ID is an error, never
+  `false, nil`. `Has` is `Get` with every error read as false.
 - `Reserve`: `maxCostMicroUSD <= 0` is an error. `Add(+max)`; if the result exceeds the cap, `Add(−max)` and return `ErrBudgetExhausted`.
   A Store error is returned as is (not `ErrBudgetExhausted`); the caller makes no LLM call either way.
 - `Settle`: `reserved <= 0` or `actual < 0` is an error and nothing is booked; `actual == 0` is valid (the vendor rejected the call).
@@ -335,8 +343,8 @@ cycle reads again. Consents use `Put`, `Get` and `Delete` on their own key: they
   **Expected behavior**: two writes with identical `Entitlement` bytes; the `account` record is only checked: never
   `Put`, and every swap of it carries its stored bytes.
 - **Test name**: `TestConsentRoundTrip`
-  **Scenario**: `Has` before `Record`; after `Record`; after `Revoke`; `Revoke` again; the other kind.
-  **Expected behavior**: false, true, false, nil error, false.
+  **Scenario**: `Has` and `Get` before `Record`; after `Record`; after `Revoke`; `Revoke` again; the other kind.
+  **Expected behavior**: false, true, false, nil error, false; `Get` after `Record` returns the login, user ID and UTC time recorded.
 - **Test name**: `TestBudgetReserveSettle`
   **Scenario**: reserve 5 000 000 four times, a fifth time, settle one with actual 1 000 000, reserve 4 000 000; then settle table for a 5 000 000 reservation: actual 0, actual 2 000 000, actual 5 000 000 (failed call, outcome unknown), actual 6 000 000.
   **Expected behavior**: four succeed (counter exactly at the cap is allowed); fifth `ErrBudgetExhausted` and the counter is back at 20 000 000; after settle 16 000 000; the last reserve succeeds; the settle rows change the counter by −5 000 000, −3 000 000, 0 and +1 000 000: pure arithmetic, no cost is assumed for a failure.
@@ -354,10 +362,12 @@ cycle reads again. Consents use `Put`, `Get` and `Delete` on their own key: they
   **Expected behavior**: `Observe`, `Refresh`, `Status` return an error and write nothing; they do not reset the trial.
 - **Test name**: `TestInvalidInstallationID`
   **Scenario**: `installationID` 0 and −1 on every operation of the three interfaces.
-  **Expected behavior**: error (or `false` for `Has`); no `SystemTenant` key is read or written.
+  **Expected behavior**: error (or `false` for `Has`, `false` and an error for `Get`); no `SystemTenant` key is read or written.
 - **Test name**: `TestConsentRejectsInvalid`
-  **Scenario**: unknown kind, empty `By`, zero `At`; `Has` with a failing Store; `Has` with a corrupt value.
-  **Expected behavior**: `Record` errors and writes nothing; `Has` is false.
+  **Scenario**: unknown kind, empty `By`, zero `At`, no user ID; `Has` and `Get` with a failing Store and with a corrupt value; a
+  record written before the user ID.
+  **Expected behavior**: `Record` errors and writes nothing; `Has` is false and `Get` returns an error; the old record is a
+  consent with `ByID` 0.
 - **Test name**: `TestBudgetRejectsAndFailsClosed`
   **Scenario**: `Reserve(0)`, `Reserve(-1)`; `Add` fails on reserve; the compensating `Add` fails.
   **Expected behavior**: errors; a Store error is not `ErrBudgetExhausted`; after a failed compensation the counter is higher, never lower.

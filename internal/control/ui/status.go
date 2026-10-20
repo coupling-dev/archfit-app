@@ -52,6 +52,7 @@ type statusBody struct {
 	DraftState  string `json:"draft_state"`
 	Banner      string `json:"banner"`
 	Admin       bool   `json:"admin"`
+	ManagedAI   string `json:"managed_ai,omitempty"` // for an administrator: allowed, not_allowed or unknown
 	CanStart    bool   `json:"can_start"`
 	CanDiscover bool   `json:"can_discover"`
 	PullsURL    string `json:"pulls_url"`
@@ -77,6 +78,9 @@ func (s *server) apiStatus(r *http.Request, sc scope) (any, error) {
 	}
 	if d := progress.OpenDraft; d != nil {
 		body.DraftURL, body.DraftState = d.URL, draftWords[d.State]
+	}
+	if body.Admin {
+		body.ManagedAI = s.managedAIWord(r.Context(), sc)
 	}
 	body.Steps, body.Next = setupSteps(progress.Stage)
 	if hasReport(progress.Stage) {
@@ -129,7 +133,7 @@ func (s *server) apiStartOnboarding(r *http.Request, sc scope) (any, error) {
 	case modeManaged:
 		if !s.consents.Has(r.Context(), sc.repo.InstallationID, account.ConsentSourceProcessing) {
 			logOf(r).outcome = "consent_needed"
-			return noticeJSON{Location: repoPath(sc, "/consent")}, nil
+			return noticeJSON{Location: repoPath(sc, "/data-sharing")}, nil
 		}
 		_, err = s.onboarding.StartManaged(r.Context(), sc.repo, owners)
 	default:
@@ -179,58 +183,6 @@ func (s *server) settings(ctx context.Context, repo api.Repo) (settings.Settings
 		return settings.Settings{}, errNoSettings
 	}
 	return set, nil
-}
-
-type consentRow struct {
-	Kind       account.ConsentKind
-	Title      string
-	Disclosure string
-	Recorded   bool
-}
-
-var consentKinds = []consentRow{
-	{
-		Kind:  account.ConsentSourceProcessing,
-		Title: "Managed discovery",
-		Disclosure: "Archfit clones the repository into a short-lived sandbox to propose a first policy. " +
-			"Source code leaves your environment for the duration of that job and is deleted with the sandbox.",
-	},
-	{
-		Kind:  account.ConsentManagedLLM,
-		Title: "Managed AI",
-		Disclosure: "When a user asks for a proposal in managed mode, the draft policy text and the instruction are sent " +
-			"to the AI provider. No source code and no report is sent.",
-	},
-}
-
-func (s *server) consentPage(w http.ResponseWriter, r *http.Request, sc scope) {
-	rows := slices.Clone(consentKinds)
-	for i := range rows {
-		rows[i].Recorded = s.consents.Has(r.Context(), sc.repo.InstallationID, rows[i].Kind)
-	}
-	s.render(w, r, http.StatusOK, "consent", s.newPage(r, sc, "Consent", rows))
-}
-
-func (s *server) consent(w http.ResponseWriter, r *http.Request, sc scope) {
-	kind := account.ConsentKind(r.PostForm.Get("kind"))
-	if kind != account.ConsentSourceProcessing && kind != account.ConsentManagedLLM {
-		s.fail(w, r, sc, invalid("Unknown consent."))
-		return
-	}
-	var err error
-	switch r.PostForm.Get("action") {
-	case "record":
-		err = s.consents.Record(r.Context(), sc.repo.InstallationID, account.Consent{Kind: kind, By: sc.user.Login, At: s.now()})
-	case "revoke":
-		err = s.consents.Revoke(r.Context(), sc.repo.InstallationID, kind)
-	default:
-		err = invalid("Unknown action.")
-	}
-	if err != nil {
-		s.fail(w, r, sc, err)
-		return
-	}
-	seeOther(w, r, repoPath(sc, "/consent"), url.Values{"notice": {"consent"}})
 }
 
 // maxStatusPulls bounds the open pull requests the repository page looks up, one check-runs read each.

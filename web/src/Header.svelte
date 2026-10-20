@@ -3,13 +3,14 @@
   import { repoPage } from './lib/route';
   import { applyTheme, saveTheme, storedTheme, themes, type Theme } from './lib/theme';
 
-  // pull is the pull request number on a pull request page or its graph, 0 elsewhere; graph is the repository graph.
+  // tab is the current tab of a repository page, '' on a page in no tab (a pull request page, Data sharing); pull is the
+  // pull request number on a pull request page or its graph, 0 elsewhere.
   let {
     session,
     repo = '',
+    tab = '',
     pull = 0,
-    graph = false,
-  }: { session: Session | null; repo?: string; pull?: number; graph?: boolean } = $props();
+  }: { session: Session | null; repo?: string; tab?: 'overview' | 'graph' | ''; pull?: number } = $props();
 
   let theme = $state<Theme>(storedTheme());
   const themeNames: Record<Theme, string> = { auto: 'Auto', light: 'Light', dark: 'Dark' };
@@ -20,12 +21,12 @@
     saveTheme(t);
   }
 
-  // Policy is still a server-rendered page of the App. A pull request page is in no tab.
+  // Policy is still a server-rendered page of the App.
   const tabs = $derived(
     repo
       ? [
-          { label: 'Overview', href: repoPage(repo), current: !pull && !graph },
-          { label: 'Architecture', href: repoPage(repo, '/graph'), current: graph },
+          { label: 'Overview', href: repoPage(repo), current: tab === 'overview' },
+          { label: 'Architecture', href: repoPage(repo, '/graph'), current: tab === 'graph' },
           { label: 'Policy', href: repoPage(repo, '/policy'), current: false },
         ]
       : [],
@@ -45,7 +46,7 @@
       <span class="sep" aria-hidden="true">/</span>
       <span>{repo.split('/')[0]}</span>
       <span class="sep" aria-hidden="true">/</span>
-      <strong><a href={repoPage(repo)} aria-current={pull || graph ? undefined : 'page'}>{repo.split('/')[1]}</a></strong>
+      <strong><a href={repoPage(repo)} aria-current={tab === 'overview' ? 'page' : undefined}>{repo.split('/')[1]}</a></strong>
       {#if pull}
         <span class="sep" aria-hidden="true">/</span>
         <a href={repoPage(repo, `/pull/${pull}`)} aria-current="page">#{pull}</a>

@@ -218,7 +218,7 @@ Alternatives:
    mode), `/api/session`, and the overview page. The other pages stay on templates, linked from the new shell.
 2. **c**: the pull request page and the findings components, with the cycle drawn as on the comment.
 3. **d**: both graphs on Svelte Flow and ELK, with the inspector and the seam fields.
-4. **e**: Data sharing (decision A), with the inline prompts.
+4. **e**: Data sharing (decision A). The editor says why managed mode is off; its inline Allow comes with phase f.
 5. **f**: the policy editor with CodeMirror 6. Then the templates, `editor.js` and `app.css` are deleted (`graph.js`
    and its template went in phase d).
 
@@ -379,6 +379,24 @@ Proposal (no behaviour removed):
 - **B**: in-context prompts only. The route stays, reachable from those prompts.
 
 **Decided (owner, 19 October 2026): A.**
+
+Built in phase e (decisions A1 and B1, with the manager's review):
+
+- `/r/{o}/{n}/data-sharing` is a page of the web app, admin only. One card per feature: what leaves your environment,
+  "Allowed by @login on 20 October 2026" (the login as it was then; a record older than the user ID still has its login), a checklist of
+  preconditions, and Allow or Revoke. The scope reads "every repository of `<owner>` that the Archfit App can access"
+  instead of "installation".
+- The repository overview gives an administrator an Administration row, "Data sharing · Managed AI: allowed", from one
+  Store read. The nav never shows it; `/consent` redirects with `308`, behind the same admin check.
+- **A1**: the managed discovery card stays, with the note that the App does not start it yet. An existing consent can
+  still be revoked.
+- **B1**: the template editor says why managed mode is off and links an administrator to Data sharing. The inline Allow
+  button comes with the phase f editor, on the same `POST`.
+- `account.Consents.Get` tells "not recorded" from "cannot tell", so a Store outage is an error (`502`), never
+  "not allowed". `Has` stays the fail-closed guard. A consent now also records the GitHub user ID.
+- Allow and revoke are idempotent: allowing again keeps who and when. Each writes one audit log line with outcome, kind,
+  installation ID and user ID.
+
 
 ### Policy editor (phase f)
 

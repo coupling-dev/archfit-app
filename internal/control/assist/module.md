@@ -190,7 +190,8 @@ const (
 
 type Consent struct {
     Kind ConsentKind
-    By   string // GitHub login of the administrator
+    By   string // GitHub login of the administrator, as it was when the consent was recorded
+    ByID int64  // GitHub user ID of the administrator; 0 on a record written before the App stored it
     At   time.Time
 }
 
@@ -202,6 +203,9 @@ type Consents interface {
     Revoke(ctx context.Context, installationID int64, k ConsentKind) error
     // Has is false on any error: no consent, no call.
     Has(ctx context.Context, installationID int64, k ConsentKind) bool
+    // Get answers who recorded the consent and when. Unlike Has it tells "not recorded" (false, nil) from "cannot
+    // tell" (an error: the Store failed or the record is corrupt), so a page never shows an outage as "not allowed".
+    Get(ctx context.Context, installationID int64, k ConsentKind) (Consent, bool, error)
 }
 ```
 
