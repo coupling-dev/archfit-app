@@ -3,7 +3,8 @@
   import { repoPage } from './lib/route';
   import { applyTheme, saveTheme, storedTheme, themes, type Theme } from './lib/theme';
 
-  let { session, repo = '' }: { session: Session | null; repo?: string } = $props();
+  // overview is false on a repository page outside the tabs (Data sharing): no tab is current there.
+  let { session, repo = '', overview = true }: { session: Session | null; repo?: string; overview?: boolean } = $props();
 
   let theme = $state<Theme>(storedTheme());
   const themeNames: Record<Theme, string> = { auto: 'Auto', light: 'Light', dark: 'Dark' };
@@ -14,11 +15,11 @@
     saveTheme(t);
   }
 
-  // Overview is this page; the other tabs are still server-rendered pages of the App.
+  // The other tabs are still server-rendered pages of the App.
   const tabs = $derived(
     repo
       ? [
-          { label: 'Overview', href: repoPage(repo), current: true },
+          { label: 'Overview', href: repoPage(repo), current: overview },
           { label: 'Architecture', href: repoPage(repo, '/graph'), current: false },
           { label: 'Policy', href: repoPage(repo, '/policy'), current: false },
         ]
@@ -39,7 +40,7 @@
       <span class="sep" aria-hidden="true">/</span>
       <span>{repo.split('/')[0]}</span>
       <span class="sep" aria-hidden="true">/</span>
-      <strong><a href={repoPage(repo)} aria-current="page">{repo.split('/')[1]}</a></strong>
+      <strong><a href={repoPage(repo)} aria-current={overview ? 'page' : undefined}>{repo.split('/')[1]}</a></strong>
     </nav>
   {/if}
   <span class="header-spacer"></span>

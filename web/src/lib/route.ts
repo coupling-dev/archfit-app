@@ -1,10 +1,15 @@
 // The pages of the web app. The server serves the same shell for each and has already authorized the repository of
 // a repository page; every other page of the App is still a server-rendered link.
 
-export type Route =
-  { kind: 'home' } | { kind: 'repo'; owner: string; name: string; fullName: string } | { kind: 'unknown' };
+export interface Repo {
+  owner: string;
+  name: string;
+  fullName: string;
+}
 
-const repoPath = /^\/r\/([^/]+)\/([^/]+)\/?$/;
+export type Route = { kind: 'home' } | ({ kind: 'repo' | 'data-sharing' } & Repo) | { kind: 'unknown' };
+
+const repoPath = /^\/r\/([^/]+)\/([^/]+)(\/data-sharing)?\/?$/;
 
 export function parseRoute(pathname: string): Route {
   if (pathname === '/') return { kind: 'home' };
@@ -15,7 +20,7 @@ export function parseRoute(pathname: string): Route {
     const name = decodeURIComponent(m[2]);
     // GitHub has no repository or owner named "." or "..", and either would climb out of an API path.
     if ([owner, name].some((p) => p === '.' || p === '..')) return { kind: 'unknown' };
-    return { kind: 'repo', owner, name, fullName: `${owner}/${name}` };
+    return { kind: m[3] ? 'data-sharing' : 'repo', owner, name, fullName: `${owner}/${name}` };
   } catch {
     return { kind: 'unknown' };
   }

@@ -51,6 +51,7 @@ export interface Overview {
   draft_state: string;
   banner: string;
   admin: boolean;
+  managed_ai?: ShareState; // for an administrator only
   can_start: boolean;
   can_discover: boolean;
   pulls_url: string;
@@ -60,6 +61,31 @@ export interface Overview {
 export interface Notice {
   notice?: string;
   location?: string;
+}
+
+// unknown is "could not be read", never "not allowed".
+export type ShareState = 'allowed' | 'not_allowed' | 'unknown';
+
+export interface Precondition {
+  label: string;
+  state: 'met' | 'not_met' | 'unknown';
+}
+
+export interface SharedFeature {
+  kind: string;
+  title: string;
+  leaves: string;
+  note?: string;
+  allowed: boolean;
+  by?: string; // the login as it was when the consent was recorded
+  at?: string; // RFC 3339
+  checks: Precondition[];
+}
+
+export interface DataSharing {
+  owner: string;
+  features: SharedFeature[];
+  notice?: string;
 }
 
 import { signInHref } from './route';

@@ -2,6 +2,7 @@
   import Header from './Header.svelte';
   import { ApiError, getJSON, type Session } from './lib/api';
   import { parseRoute } from './lib/route';
+  import DataSharing from './pages/DataSharing.svelte';
   import Landing from './pages/Landing.svelte';
   import Overview from './pages/Overview.svelte';
   import Repos from './pages/Repos.svelte';
@@ -22,13 +23,22 @@
     },
   );
 
-  const title = $derived(route.kind === 'repo' ? route.fullName : signedOut ? 'Sign in' : 'Repositories');
+  const title = $derived(
+    route.kind === 'repo'
+      ? route.fullName
+      : route.kind === 'data-sharing'
+        ? `${route.fullName} data sharing`
+        : signedOut
+          ? 'Sign in'
+          : 'Repositories',
+  );
+  const repo = $derived((route.kind === 'repo' || route.kind === 'data-sharing') && session ? route.fullName : '');
   $effect(() => {
     document.title = `${title} · Archfit`;
   });
 </script>
 
-<Header {session} repo={route.kind === 'repo' && session ? route.fullName : ''} />
+<Header {session} {repo} overview={route.kind === 'repo'} />
 <main class="page" id="main">
   {#if failure}
     <p class="flash error" role="alert">{failure}</p>
@@ -40,6 +50,8 @@
     <Repos {here} />
   {:else if route.kind === 'repo'}
     <Overview {route} {session} {here} />
+  {:else if route.kind === 'data-sharing'}
+    <DataSharing {route} {session} {here} />
   {:else}
     <div class="blankslate">
       <h3>Not found</h3>
