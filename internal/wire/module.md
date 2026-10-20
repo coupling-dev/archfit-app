@@ -164,7 +164,7 @@ Required report fixtures (plan T02): `healthy`, `attention-pass` (verdict `needs
 gates), `blocked`, `missing-evidence` (`hard_gates: unmeasured`), `unknown-identity`, `profile-comparable` (symmetric
 partial with a recognized `partial_basis`), `profile-incompatible` (`gate_reference.status: non_comparable`),
 `invalid-input`, `blocker-and-unevaluated`, `non-applicable-rule`, `locations-empty`, `matched-by-populated`
-(decodes; `matched_by` keeps only `metric`, `before`, `after` and `threshold`, and no other key is in any output), `repair-kinds`, `waiver-expiry-order`, and
+(decodes; `matched_by` keeps only `metric`, `before`, `after`, `threshold` and `locations_total`, and no other key is in any output), `repair-kinds`, `waiver-expiry-order`, and
 `real-blocked-no-baseline`. The last one is captured unmodified from the real engine v3.0.0 on a two-module Go
 repository: verdict `blocked`, `hard_gates: fail`, no baseline file, so `gate_reference` is `non_comparable` with
 reason `no baseline file was loaded`; its policy file ships beside it and its facts have empty trusted baseline and

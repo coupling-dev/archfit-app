@@ -6,6 +6,7 @@ import (
 	"math"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -292,11 +293,16 @@ func (c *checker) task(s *shadowTask) AgentTask {
 }
 
 // matchedBy keeps the MatchedByKeys, each value checked as text; every other key is dropped unchecked, as before.
+// locations_total is kept only as a non-negative integer and dropped otherwise: a count of locations is shown only,
+// and LocationsTotal falls back to the listed locations, so a bad count never fails the report.
 func (c *checker) matchedBy(m map[string]string) map[string]string {
 	var kept map[string]string
 	for _, key := range MatchedByKeys {
 		v, ok := m[key]
 		if !ok {
+			continue
+		}
+		if n, err := strconv.Atoi(v); key == MatchedByLocationsTotal && (err != nil || n < 0) {
 			continue
 		}
 		if kept == nil {

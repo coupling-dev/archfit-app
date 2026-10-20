@@ -112,7 +112,8 @@ type Finding struct {
 	Constraint          string     `json:"constraint"` // engine-authored, single line, length-capped
 	AllowedAlternatives []string   `json:"allowed_alternatives,omitempty"`
 	Origin              string     `json:"origin,omitempty"` // "introduced" | "pre_existing" | "unknown", only with --base; presentation only
-	// MatchedBy holds only the MatchedByKeys of the engine's matched_by; a metric ratchet names its numbers there.
+	// MatchedBy holds only the MatchedByKeys of the engine's matched_by: a metric ratchet names its numbers there, and a
+	// dependency finding its full location count (the engine lists at most 50 locations).
 	MatchedBy map[string]string `json:"matched_by,omitempty"`
 }
 
@@ -122,10 +123,13 @@ const (
 	MatchedByBefore    = "before"
 	MatchedByAfter     = "after"
 	MatchedByThreshold = "threshold"
+	// MatchedByLocationsTotal is the deduplicated location count of a dependency finding, whose Locations the engine
+	// caps at 50 (archfit rules_dependency.go maxFindingLocations).
+	MatchedByLocationsTotal = "locations_total"
 )
 
 // MatchedByKeys are the matched_by keys Decode keeps.
-var MatchedByKeys = []string{MatchedByMetric, MatchedByBefore, MatchedByAfter, MatchedByThreshold}
+var MatchedByKeys = []string{MatchedByMetric, MatchedByBefore, MatchedByAfter, MatchedByThreshold, MatchedByLocationsTotal}
 
 // Active reports whether the finding currently blocks: a gate finding that is new or whose waiver expired.
 // It is the single definition of "active gate finding" for every consumer.
