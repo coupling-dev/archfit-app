@@ -39,7 +39,7 @@ type graphJSON struct {
 func (s *server) apiGraph(r *http.Request, sc scope) (any, error) {
 	ctx := r.Context()
 	body := graphJSON{Branch: sc.repo.DefaultBranch}
-	rep, _, unavailable, err := s.latestDecoded(ctx, sc.repo)
+	rep, unavailable, err := s.latestDecoded(ctx, sc.repo)
 	if err != nil || unavailable != "" {
 		body.Unavailable = unavailable
 		return body, err
@@ -71,7 +71,6 @@ type repoFindingsJSON struct {
 	Unavailable string `json:"unavailable"`
 	Branch      string `json:"branch"`
 	NoBaseline  bool   `json:"no_baseline"`
-	Blocked     bool   `json:"blocked"` // the engine's verdict is blocked: the overview never shows "attention" over it
 	findingsJSON
 }
 
@@ -79,56 +78,48 @@ type repoFindingsJSON struct {
 // holds up the rest of the page.
 func (s *server) apiFindings(r *http.Request, sc scope) (any, error) {
 	body := repoFindingsJSON{Branch: sc.repo.DefaultBranch}
-	rep, reportHead, unavailable, err := s.latestDecoded(r.Context(), sc.repo)
+	rep, unavailable, err := s.latestDecoded(r.Context(), sc.repo)
 	if err != nil || unavailable != "" {
 		body.Unavailable = unavailable
 		return body, err
 	}
 	body.NoBaseline = noBaseline(*rep)
-	// The latest report may be an older commit's while the head's run is still going: its verdict says nothing about
-	// the head's check, so only a report of the head itself may be shown over it. A failed lookup claims nothing.
-	if head, err := s.gh.files.BranchHead(r.Context(), sc.repo.RepoRef, sc.repo.DefaultBranch); err == nil && head == reportHead {
-		body.Blocked = isBlocked(*rep)
-	}
 	fillFindings(&body.findingsJSON, *rep)
 	return body, nil
 }
 
-// latestDecoded is the latest default-branch report and the commit its run analyzed, or the reason there is none.
-// "Added by this PR" belongs to a pull request, so the report's origins are dropped even when a default-branch report
-// says it compared.
-func (s *server) latestDecoded(ctx context.Context, repo api.Repo) (rep *report.Report, head, unavailable string, err error) {
-	payload, head, err := s.latestReport(ctx, repo)
+// latestDecoded is the latest default-branch report, or the reason there is none. "Added by this PR" belongs to a pull
+// request, so the report's origins are dropped even when a default-branch report says it compared.
+func (s *server) latestDecoded(ctx context.Context, repo api.Repo) (*report.Report, string, error) {
+	payload, err := s.latestReport(ctx, repo)
 	if errors.Is(err, api.ErrNotFound) || errors.Is(err, errNoSettings) {
-		return nil, "", noReport, nil
+		return nil, noReport, nil
 	}
 	if err != nil {
-		return nil, "", "", err
+		return nil, "", err
 	}
 	// The artifact carries no envelope that names its engine release. The App only displays it, and the newest
 	// release's key set holds every older one, so the newest is the one to read it with.
 	releases := report.EngineVersions()
-	decoded, err := report.Decode(payload, releases[len(releases)-1])
+	rep, err := report.Decode(payload, releases[len(releases)-1])
 	if err != nil {
-		return nil, "", reportUnavailable, nil
+		return nil, reportUnavailable, nil
 	}
-	decoded.Comparison.OriginStatus = ""
-	return &decoded, head, "", nil
+	rep.Comparison.OriginStatus = ""
+	return &rep, "", nil
 }
 
 // latestReport downloads the report artifact of the latest successful default-branch push run of the settings
-// workflow, and the commit that run analyzed. A dispatched run or a run still in progress carries no report, so it
-// must not hide the last one.
-func (s *server) latestReport(ctx context.Context, repo api.Repo) (payload []byte, head string, err error) {
+// workflow. A dispatched run or a run still in progress carries no report, so it must not hide the last one.
+func (s *server) latestReport(ctx context.Context, repo api.Repo) ([]byte, error) {
 	set, err := s.settings(ctx, repo)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	f := api.RunFilter{Branch: repo.DefaultBranch, Event: eventPush, Status: conclusionSuccess}
 	run, err := s.gh.actions.LatestRun(ctx, repo.RepoRef, set.Workflow, f)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	payload, err = s.reportPayload(ctx, repo.RepoRef, run.ID)
-	return payload, run.HeadSHA, err
+	return s.reportPayload(ctx, repo.RepoRef, run.ID)
 }

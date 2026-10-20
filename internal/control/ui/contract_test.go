@@ -590,6 +590,39 @@ func TestOldConsentPageMovedToDataSharing(t *testing.T) {
 	wantStatus(t, e.as("alice", permAdmin).get("/r/"+otherRepo+"/consent"), http.StatusNotFound)
 }
 
+// Each stage offers only its own action: an overview never shows a button for a step that is not the next one.
+func TestOverviewOffersOnlyTheStepsAction(t *testing.T) {
+	draft := &proposal.Draft{URL: "https://github.com/" + repoName + "/pull/9", State: proposal.DraftOpen}
+	tests := []struct {
+		name            string
+		progress        onboarding.Progress
+		start, discover bool
+	}{
+		{"installed", onboarding.Progress{Stage: onboarding.StageInstalled}, true, false},
+		{"installed, onboarding pull request open", onboarding.Progress{Stage: onboarding.StageInstalled, OpenDraft: draft}, false, false},
+		{"workflow merged", onboarding.Progress{Stage: onboarding.StageWorkflowMerged}, false, true},
+		{"workflow merged, policy pull request open", onboarding.Progress{Stage: onboarding.StageWorkflowMerged, OpenDraft: draft}, false, false},
+		{"report received, no policy", onboarding.Progress{Stage: onboarding.StageReportReceived}, false, true},
+		{"policy merged", onboarding.Progress{Stage: onboarding.StagePolicyMerged}, false, false},
+		{"gate advisory", onboarding.Progress{Stage: onboarding.StageAdvisory}, false, false},
+		{"gate required", onboarding.Progress{Stage: onboarding.StageRequired}, false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t)
+			e.onb.progress = tt.progress
+			var b statusBody
+			e.as("alice", permAdmin).getJSON("/api/repos/"+repoName+"/overview", &b)
+			if b.CanStart != tt.start || b.CanDiscover != tt.discover {
+				t.Errorf("can_start = %v, can_discover = %v, want %v, %v", b.CanStart, b.CanDiscover, tt.start, tt.discover)
+			}
+			if tt.discover && b.Next != discoverNext.next {
+				t.Errorf("next = %q, want the discovery step", b.Next)
+			}
+		})
+	}
+}
+
 func TestOnboardingAndDiscoverActions(t *testing.T) {
 	e := newEnv(t)
 	e.onb.progress = onboarding.Progress{Stage: onboarding.StageInstalled, Diagnostic: "Start onboarding."}
@@ -675,7 +708,7 @@ func TestPullPageShowsTheReportOfItsCheck(t *testing.T) {
 			check(e, "v1:88:1:sha256:"+strings.Repeat("0", 64))
 			e.gh.artifacts[88] = payload
 		}, http.StatusOK, func(t *testing.T, b pullJSON) {
-			if b.Unavailable != reportMismatch || findings(b) != 0 || b.Result != "attention" {
+			if b.Unavailable != reportMismatch || findings(b) != 0 || b.Result != "violations found" { // the title says it, no report needed
 				t.Errorf("body = %+v", b)
 			}
 		}},
@@ -913,7 +946,7 @@ func TestStatusPageShowsBranchPullsAndSetup(t *testing.T) {
 		if body.DefaultBranch != mainBranch || body.MainState != "attention" || body.MainTone != "attention" || body.MainReason != "Architecture needs attention" {
 			t.Errorf("default branch = %q %q %q", body.DefaultBranch, body.MainState, body.MainReason)
 		}
-		want := pullRow{Number: 4, Title: "feat: read options", State: "attention", Tone: "attention", Reason: "Architecture violations found · advisory", Href: "/r/" + repoName + "/pull/4"}
+		want := pullRow{Number: 4, Title: "feat: read options", State: "violations found", Tone: "danger", Reason: "Architecture violations found · advisory", Href: "/r/" + repoName + "/pull/4"}
 		if len(body.Pulls) != 1 || body.Pulls[0] != want {
 			t.Errorf("pulls = %+v, want [%+v]", body.Pulls, want)
 		}

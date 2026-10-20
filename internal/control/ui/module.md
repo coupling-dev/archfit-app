@@ -62,7 +62,7 @@ pilot; product.md leaves usability targets open.
   request graph the other dependencies it added; a direction whose reverse is a problem too says "cycle"), a folded
   "Accepted earlier" group (accepted debt this pull request did not add, drawn thin and faint),
   an ELK layered layout (declared layers as partitions, in policy order), focus on problem links above 15 modules
-  **[default]**, a matrix view, an inspector with strength, distance, volatility and balance, a legend open by default, and
+  **[default]**, a matrix view, an inspector with strength, distance, volatility and balance, a one-line legend (status colours, line width = integration strength, the rarer marks folded under "More"), and
   filterable tables, which are the only view above 300 modules. Report strings reach the page only as Svelte text and
   attributes.
 - Bounds, each **[default]**: 100 repositories on the overview, 8 parallel lookups, 256 KB policy text, 512 KB request body,
@@ -130,11 +130,8 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   at the ref whose text is the report's policy (the head, else the base branch). The same `404` rule.
 - `GET /api/repos/{o}/{n}/graph` [read] — `{unavailable, view, stale_reason, policy_href, branch}`: the latest
   default-branch report against the policy on that branch. No link carries an origin.
-- `GET /api/repos/{o}/{n}/findings` [read] — `{unavailable, branch, no_baseline, blocked, …}`: the latest default-branch
-  report's findings in the pull request page's groups, without origins. `blocked` is the engine's verdict (`blocked`
-  or `hard_gates: fail`), set only when the report's run analyzed the default branch's current head: the overview's
-  default-branch state then shows "violations found" over a neutral check, never "attention". The rows of open pull
-  requests and of the repository list still show their check's word, since ui reads no report for them.
+- `GET /api/repos/{o}/{n}/findings` [read] — `{unavailable, branch, no_baseline, …}`: the latest default-branch
+  report's findings in the pull request page's groups, without origins.
 - `GET /api/repos/{o}/{n}/overview` [read] — default-branch state, open pull requests with their result, setup steps,
   onboarding progress, entitlement banner, history links, and whether the user may start onboarding or discovery.
   `next` is the next setup step in one sentence and `next_how` its details, both from the onboarding stage.
@@ -1324,8 +1321,9 @@ their interfaces except where a test says otherwise. The clock is injected.
 - **Test name**: `TestWording`
   **Scenario**: table of `DraftState`, `Plan`, check conclusions, their tones, and assist sentinels.
   **Expected behavior**: draft / awaiting review / published / closed; a banner only for trial, grace, suspended; failure
-  reads "violations found" with tone `danger`, never "blocked"; every coloured word is a word some state reads; one
-  distinct sentence per sentinel.
+  reads "violations found" with tone `danger`, never "blocked"; a neutral check whose title starts with
+  `report.HeadlineViolations` or `report.HeadlineGateFailing` reads "violations found" too (`stateWord`), every other
+  neutral one "attention"; every coloured word is a word some state reads; one distinct sentence per sentinel.
 
 ### Integration Contract Tests
 

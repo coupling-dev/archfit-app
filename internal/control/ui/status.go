@@ -71,7 +71,7 @@ func (s *server) apiStatus(r *http.Request, sc scope) (any, error) {
 		Stage:         stageWords[progress.Stage],
 		Diagnostic:    progress.Diagnostic,
 		CanStart:      progress.Stage == onboarding.StageInstalled && progress.OpenDraft == nil,
-		CanDiscover:   reached(progress.Stage, onboarding.StageWorkflowMerged),
+		CanDiscover:   discoveryStep(progress),
 		PullsURL:      "https://github.com/" + sc.repo.FullName + "/pulls?q=" + url.QueryEscape("is:pr head:archfit/"),
 		ChecksURL:     "https://github.com/" + sc.repo.FullName + "/commits/" + sc.repo.DefaultBranch,
 	}
@@ -80,6 +80,9 @@ func (s *server) apiStatus(r *http.Request, sc scope) (any, error) {
 	}
 	var next nextStep
 	body.Steps, next = setupSteps(progress.Stage)
+	if body.CanDiscover {
+		next = discoverNext
+	}
 	body.Next, body.NextHow = next.next, next.how
 
 	// The parts below never fail the page, each says so in its own field, and each writes only its own fields: they
@@ -240,6 +243,19 @@ var nextSteps = map[onboarding.Stage]nextStep{
 		next: "Make archfit/gate a required check in a GitHub ruleset.",
 		how:  "The settings alone never block a merge.",
 	},
+}
+
+// discoverNext is the step of a repository with the workflow and no policy: its button is "Run discovery".
+var discoverNext = nextStep{
+	next: "Run discovery: it proposes a first policy as a pull request.",
+	how: "Discovery runs in your own workflow (workflow_dispatch with mode: discovery); source code never leaves your " +
+		"CI. Its proposal arrives as a pull request that the policy owners review and merge.",
+}
+
+// discoveryStep reports whether running discovery is this step's action: the workflow is merged, no policy yet, and no
+// policy pull request open (then the step is to review it). From the merged policy on, discovery is no step of the way.
+func discoveryStep(p onboarding.Progress) bool {
+	return (p.Stage == onboarding.StageWorkflowMerged || p.Stage == onboarding.StageReportReceived) && p.OpenDraft == nil
 }
 
 // hasReport reports whether onboarding has seen a report. policy_merged sorts after report_received on the path but

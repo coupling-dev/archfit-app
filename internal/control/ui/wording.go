@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
 	"github.com/alexei-led/archfit-app/internal/control/assist"
@@ -10,6 +11,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/control/proposal"
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
 	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/alexei-led/archfit-app/internal/wire/report"
 )
 
 const (
@@ -19,9 +21,6 @@ const (
 	stateNone       = "no state yet"
 	stateUnknown    = "unknown"
 	stateViolations = "violations found"
-
-	verdictBlocked = "blocked" // Report.Verdict
-	hardGatesFail  = "fail"    // Decision.HardGates
 )
 
 // userError is a refusal ui decides itself: its status, its log outcome and the sentence shown.
@@ -126,6 +125,16 @@ func toneOf(word string) string {
 		return t
 	}
 	return "neutral"
+}
+
+// stateWord is a check run as one word, the same wherever it is shown. An advisory check that found violations is
+// neutral, so its headline decides: "violations found", never "attention" over the engine's blocked verdict.
+func stateWord(conclusion, title string) string {
+	if conclusion == "neutral" &&
+		(strings.HasPrefix(title, report.HeadlineViolations) || strings.HasPrefix(title, report.HeadlineGateFailing)) {
+		return stateViolations
+	}
+	return conclusionWord(conclusion)
 }
 
 func conclusionWord(c string) string {

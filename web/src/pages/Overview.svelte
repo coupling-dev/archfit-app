@@ -72,13 +72,6 @@
   // An open pull request needs attention when its archfit/state is anything but healthy.
   const pullsToSee = $derived(body?.pulls?.filter((p) => p.tone !== 'success').length ?? 0);
   const actions = $derived(body !== null && body.admin && (body.can_start || body.can_discover));
-  // The check of an advisory repository is neutral ("attention") whatever the engine found. The engine's blocked verdict
-  // is never hidden behind it.
-  const hero = $derived.by(() => {
-    if (!body) return { state: '', tone: '' };
-    if (body.main_tone === 'attention' && findings?.blocked) return { state: 'violations found', tone: 'danger' };
-    return { state: body.main_state, tone: body.main_tone };
-  });
   const needsYou = $derived(body !== null && (body.next !== '' || body.diagnostic !== '' || actions));
 </script>
 
@@ -87,7 +80,7 @@
     <h1>{route.fullName}</h1>
     {#if body?.main_state}
       <div class="hero">
-        <span class="state {hero.tone}">{hero.state}</span>
+        <span class="state {body.main_tone}">{body.main_state}</span>
         <span class="muted">on <code>{body.default_branch}</code></span>
         {#if body.main_reason}<span class="muted">{body.main_reason}</span>{/if}
       </div>
@@ -138,7 +131,8 @@
             </details>
           {/if}
         {/if}
-        {#if body.diagnostic}<p>{body.diagnostic}</p>{/if}
+        <!-- One sentence: the next step when there is one, else onboarding's own word for the stage. -->
+        {#if body.diagnostic && !body.next}<p>{body.diagnostic}</p>{/if}
         {#if body.draft_url}
           <p>
             Open pull request ({body.draft_state}):

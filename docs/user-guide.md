@@ -500,8 +500,9 @@ Open `/r/<owner>/<repo>`. The page always shows the setup steps with the current
 do next in one sentence (**How** folds the details) and, for a repository admin, holds the button that starts
 onboarding or discovery. After the first report it also shows:
 
-- the Archfit result of the default branch at the top of the page. An advisory repository's check is neutral, so the
-  page shows "violations found" when the engine's verdict is blocked, never "attention" over it;
+- the Archfit result of the default branch at the top of the page. An advisory repository's check is neutral, so every
+  page reads its headline: a check that found violations reads "violations found" on the overview, the repository
+  list, the open pull requests and the pull request page alike, never "attention";
 - three counts: rule violations and advisories in the latest default-branch report, and the open pull requests whose
   Archfit result needs attention. They are counts, never a score;
 - the open pull requests, newest first, each with its result and a link to its page (up to 20);
@@ -545,7 +546,7 @@ the policy and the dependencies between them in the latest default-branch report
 - Colour is the status of a dependency, line width its integration strength: contract coupling thinnest, then model,
   functional, and intrusive coupling thickest. A dashed line is a dependency whose strength no seam of the report
   measured. The label on a line is the number of imports behind the dependency. A dashed module is not in the
-  policy. **Legend** above the graph says the same.
+  policy. The legend above the graph is one line, colours and line width; **More** folds the rest.
 - The unit on the graph is a **dependency**: one module that depends on another (A → B). A cycle between two modules
   is two dependencies. Status chips count the dependencies per status and filter them. The **Problems** list above the
   graph holds the violations, then the advisories, one row each (a cycle's rows say "cycle"); on the repository graph

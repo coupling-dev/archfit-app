@@ -65,6 +65,13 @@ func boolOrder(v bool) int {
 	return 0
 }
 
+// Check-run headlines the App writes when the engine found violations. In advisory mode such a check is neutral, so
+// the App's pages read the headline, never the conclusion alone, to say "violations found" wherever the check is shown.
+const (
+	HeadlineViolations  = "Architecture violations found" // advisory pull request, or a push: the engine's verdict is blocked
+	HeadlineGateFailing = "Architecture gate failing"     // required gate: archfit/gate fails
+)
+
 // Pair origins: what the report shows about one direction of a dependency on the pull request base.
 const (
 	PairAdded    = "added"

@@ -226,6 +226,24 @@ func TestWording(t *testing.T) {
 			}
 		}
 	})
+	t.Run("a check reads the same everywhere", func(t *testing.T) {
+		tests := []struct{ conclusion, title, want string }{
+			{"neutral", "Architecture violations found · advisory · no baseline", "violations found"},
+			{"neutral", "Architecture violations found", "violations found"}, // a push: no gate mode
+			{"neutral", "Architecture gate failing · no baseline", "violations found"},
+			{"neutral", "Architecture needs attention · advisory", "attention"},
+			{"neutral", "Architecture gate passed · attention needed", "attention"},
+			{"neutral", "", "attention"},
+			{"success", "Architecture violations found", "healthy"}, // the conclusion is never overruled upward
+			{"action_required", "Architecture gate failing", "action required"},
+			{"failure", "New violations", "violations found"},
+		}
+		for _, tt := range tests {
+			if got := stateWord(tt.conclusion, tt.title); got != tt.want {
+				t.Errorf("stateWord(%q, %q) = %q, want %q", tt.conclusion, tt.title, got, tt.want)
+			}
+		}
+	})
 	t.Run("state tones", func(t *testing.T) {
 		want := map[string]string{"success": "success", "neutral": "attention", "failure": "danger", "": "accent", "stale": "neutral"}
 		for conclusion, tone := range want {

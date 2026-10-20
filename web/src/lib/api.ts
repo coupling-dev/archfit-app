@@ -143,7 +143,6 @@ export type RepoFindings = Findings & {
   unavailable: string;
   branch: string;
   no_baseline: boolean;
-  blocked: boolean; // the engine's verdict is blocked
 };
 
 export interface Notice {

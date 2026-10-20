@@ -139,10 +139,7 @@ func headOf(sc scope, pull pullBody, rep *report.Report) pullHead {
 		Headline: pull.Headline, Required: pull.Required, Unavailable: pull.Unavailable, RunID: pull.RunID,
 	}
 	if pull.Headline != "" || pull.Conclusion != "" {
-		h.Result = conclusionWord(pull.Conclusion)
-		if h.Result == conclusionWords["neutral"] && rep != nil && isBlocked(*rep) {
-			h.Result = stateViolations // an advisory check is neutral, but the engine's verdict is never hidden
-		}
+		h.Result = stateWord(pull.Conclusion, pull.Headline)
 		h.Tone = toneOf(h.Result)
 	}
 	if rep != nil {
@@ -150,11 +147,6 @@ func headOf(sc scope, pull pullBody, rep *report.Report) pullHead {
 		h.Compared = rep.Comparison.OriginStatus == originComparable
 	}
 	return h
-}
-
-// isBlocked is the engine's own verdict: violations that block when the gate is required, whatever the mode.
-func isBlocked(rep report.Report) bool {
-	return rep.Verdict == verdictBlocked || rep.Decision.HardGates == hardGatesFail
 }
 
 // noBaseline: without a baseline every finding counts as new, older debt included.
