@@ -63,7 +63,7 @@ pilot; product.md leaves usability targets open.
   "Accepted earlier" group (accepted debt this pull request did not add, drawn thin and faint),
   an ELK layered layout (declared layers as partitions, in policy order), focus on problem links above 15 modules
   **[default]**, a matrix view, an inspector with strength, distance, volatility and balance, then the engine's
-  balance reading of the dependency (below), a legend open by default, and
+  balance reading of the dependency (below), a one-line legend (status colours, line width = integration strength, the rarer marks folded under "More"), and
   filterable tables, which are the only view above 300 modules. Report strings reach the page only as Svelte text and
   attributes.
 - Bounds, each **[default]**: 100 repositories on the overview, 8 parallel lookups, 256 KB policy text, 512 KB request body,
@@ -131,11 +131,11 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   at the ref whose text is the report's policy (the head, else the base branch). The same `404` rule.
 - `GET /api/repos/{o}/{n}/graph` [read] — `{unavailable, view, stale_reason, policy_href, branch}`: the latest
   default-branch report against the policy on that branch. No link carries an origin.
-- `GET /api/repos/{o}/{n}/findings` [read] — `{unavailable, branch, no_baseline, blocked, …}`: the latest default-branch
-  report's findings in the pull request page's groups, without origins. `blocked` is the engine's verdict (`blocked`
-  or `hard_gates: fail`), set only when the report's run analyzed the default branch's current head: the overview's
-  default-branch state then shows "violations found" over a neutral check, never "attention". The rows of open pull
-  requests and of the repository list still show their check's word, since ui reads no report for them.
+- `GET /api/repos/{o}/{n}/findings` [read] — `{unavailable, branch, no_baseline, attention_reason, …}`: the latest
+  default-branch report's findings in the pull request page's groups, without origins. `attention_reason`, only for
+  the verdict `needs_attention`, follows the engine's rule in its order: active advisories, required rules not
+  evaluated (or `hard_gates: unmeasured`), then the dimensions partially measured and those not measured. The overview
+  shows it under the default-branch state only when that state reads "attention".
 - `GET /api/repos/{o}/{n}/overview` [read] — default-branch state, open pull requests with their result, setup steps,
   onboarding progress, entitlement banner, history links, and whether the user may start onboarding or discovery.
   `next` is the next setup step in one sentence and `next_how` its details, both from the onboarding stage.
@@ -1193,7 +1193,8 @@ others are done, so the handler chain's recover still answers `500` and the proc
   them (`report.Cycles`, the comment's grouping) as one card with a drawing of the cycle (one box per module, one
   arrow per direction labelled with its location count, styled as the comment's diagram), a row per direction with
   "This PR", its locations and the seam's strength, distance (`report.DistanceWords`) and volatility, then the reason
-  once and each distinct repair once; every other violation as its own card. Advisories and accepted debt each one
+  once and each distinct repair once; every other violation as its own card. An advisory on a violation's dependency joins that violation's row as
+  "Also reported as" (`report.SplitCovered`, the comment's rule) and is not counted among the advisories. Advisories and accepted debt each one
   folded table with each distinct reason once, the seam's suggested move among them, in the PR comment's words
   (`report.BalancingMove`; a token this version does not know as written). A finding whose agent task the engine marks
   `needs_owner_decision` carries an "owner decision" label; the path the engine suggests is not shown: wire/report
@@ -1355,8 +1356,9 @@ their interfaces except where a test says otherwise. The clock is injected.
 - **Test name**: `TestWording`
   **Scenario**: table of `DraftState`, `Plan`, check conclusions, their tones, and assist sentinels.
   **Expected behavior**: draft / awaiting review / published / closed; a banner only for trial, grace, suspended; failure
-  reads "violations found" with tone `danger`, never "blocked"; every coloured word is a word some state reads; one
-  distinct sentence per sentinel.
+  reads "violations found" with tone `danger`, never "blocked"; a neutral check whose title starts with
+  `report.HeadlineViolations` or `report.HeadlineGateFailing` reads "violations found" too (`stateWord`), every other
+  neutral one "attention"; every coloured word is a word some state reads; one distinct sentence per sentinel.
 - **Test name**: `TestMetricSubjectReadsAsTheComment`
   **Scenario**: table: a metric finding with the metric, before, after and threshold; without the metric and
   threshold; without after; a finding that is not a metric.
@@ -1379,9 +1381,15 @@ their interfaces except where a test says otherwise. The clock is injected.
   deleted, outcome `signed_out`, and the next request is a plain signed-out one. Any other error stays `502` and keeps the cookie.
 - **Test name**: `TestPullPageStatesTheEngineDecision`
   **Scenario**: the pilot's PR report as captured; then with an unevaluated required rule, an attribution note and an
-  agent task `needs_owner_decision` on one advisory.
-  **Expected behavior**: decision `fail` with 4 blockers and empty lists, every advisory's move the words of
-  `follow_rule` and none an owner decision; the rule with its reason, the note, and exactly one owner decision.
+  agent task `needs_owner_decision` on one advisory moved to a dependency no violation names (pkg_cmd → pkg_util).
+  **Expected behavior**: decision `fail` with 4 blockers and empty lists; no advisory listed or counted, both new ones
+  "Imbalanced coupling · critical" in the `also` of their cycle directions; then the rule with its reason, the note,
+  one advisory with the words of `follow_rule` as its move, and exactly one owner decision.
+- **Test name**: `TestAttentionReasonFollowsTheEngine`
+  **Scenario**: table: healthy; blocked; needs_attention with two partial dimensions; with advisories, an unevaluated
+  rule and one partial and one unmeasured dimension; with `hard_gates: unmeasured` and three unmeasured dimensions.
+  **Expected behavior**: `""`; `""`; "testability and operations are partially measured"; the four reasons in the
+  engine's order; "a hard gate could not be measured; intent, structure and drift are not measured".
 - **Test name**: `TestPullPageShowsTheReportOfItsCheck`
   **Scenario**: no check on the head; a check whose external_id names a run whose artifact matches its digest; one whose digest does not match; an expired artifact; run 0; an unknown pull request.
   **Expected behavior**: "no result yet"; the check title as headline, advisory mode, the violation, the no-baseline and no-attribution line, the run; the mismatch wording and no finding; the expired wording; the no-upload wording; `404`. Also: an `action_required` run over a matching old report shows the action-required wording and no finding; an undecodable report shows "report unavailable"; of two check runs the higher ID wins; "added by this PR" appears only with `origin_status: comparable` and `origin: introduced`.

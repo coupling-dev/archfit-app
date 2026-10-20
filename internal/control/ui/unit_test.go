@@ -226,6 +226,24 @@ func TestWording(t *testing.T) {
 			}
 		}
 	})
+	t.Run("a check reads the same everywhere", func(t *testing.T) {
+		tests := []struct{ conclusion, title, want string }{
+			{"neutral", "Architecture violations found · advisory · no baseline", "violations found"},
+			{"neutral", "Architecture violations found", "violations found"}, // a push: no gate mode
+			{"neutral", "Architecture gate failing · no baseline", "violations found"},
+			{"neutral", "Architecture needs attention · advisory", "attention"},
+			{"neutral", "Architecture gate passed · attention needed", "attention"},
+			{"neutral", "", "attention"},
+			{"success", "Architecture violations found", "healthy"}, // the conclusion is never overruled upward
+			{"action_required", "Architecture gate failing", "action required"},
+			{"failure", "New violations", "violations found"},
+		}
+		for _, tt := range tests {
+			if got := stateWord(tt.conclusion, tt.title); got != tt.want {
+				t.Errorf("stateWord(%q, %q) = %q, want %q", tt.conclusion, tt.title, got, tt.want)
+			}
+		}
+	})
 	t.Run("state tones", func(t *testing.T) {
 		want := map[string]string{"success": "success", "neutral": "attention", "failure": "danger", "": "accent", "stale": "neutral"}
 		for conclusion, tone := range want {
@@ -399,6 +417,45 @@ func TestMetricSubjectReadsAsTheComment(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := metricSubject(report.Finding{RuleID: tt.rule, MatchedBy: tt.matchedBy}); got != tt.want {
 				t.Errorf("metricSubject = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAttentionReasonFollowsTheEngine(t *testing.T) {
+	dims := func(status map[string]string) map[string]report.Dimension {
+		out := map[string]report.Dimension{}
+		for _, d := range dimensionOrder {
+			out[d.key] = report.Dimension{Status: "measured"}
+		}
+		for k, s := range status {
+			out[k] = report.Dimension{Status: s}
+		}
+		return out
+	}
+	advisory := report.Finding{ID: "a", Kind: "advisory", Status: "new"}
+	tests := []struct {
+		name string
+		rep  report.Report
+		want string
+	}{
+		{"healthy says nothing", report.Report{Verdict: "healthy", Dimensions: dims(nil)}, ""},
+		{"blocked says nothing", report.Report{Verdict: "blocked", Dimensions: dims(map[string]string{"drift": "unmeasured"})}, ""},
+		{"the pilot's master", report.Report{Verdict: "needs_attention",
+			Dimensions: dims(map[string]string{"testability": "partial", "operations": "partial"})},
+			"testability and operations are partially measured"},
+		{"advisories, a rule, one of each", report.Report{Verdict: "needs_attention", Findings: []report.Finding{advisory, advisory},
+			Decision:   report.Decision{HardGates: "unmeasured", UnevaluatedRequiredRules: []report.UnevaluatedRule{{RuleID: "r"}}},
+			Dimensions: dims(map[string]string{"coupling": "partial", "drift": "unmeasured"})},
+			"2 advisories; 1 required rule not evaluated; coupling is partially measured; drift is not measured"},
+		{"hard gates unmeasured without a rule", report.Report{Verdict: "needs_attention", Decision: report.Decision{HardGates: "unmeasured"},
+			Dimensions: dims(map[string]string{"intent": "unmeasured", "structure": "unmeasured", "drift": "unmeasured"})},
+			"a hard gate could not be measured; intent, structure and drift are not measured"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := attentionReason(tt.rep); got != tt.want {
+				t.Errorf("attentionReason = %q, want %q", got, tt.want)
 			}
 		})
 	}

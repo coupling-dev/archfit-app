@@ -498,10 +498,12 @@ baseline already accepts, and accepts nothing new.
 
 Open `/r/<owner>/<repo>`. The page always shows the setup steps with the current one marked. "Needs you" says what to
 do next in one sentence (**How** folds the details) and, for a repository admin, holds the button that starts
-onboarding or discovery. After the first report it also shows:
+onboarding or discovery, only when that is the step's action. After the first report it also shows:
 
-- the Archfit result of the default branch at the top of the page. An advisory repository's check is neutral, so the
-  page shows "violations found" when the engine's verdict is blocked, never "attention" over it;
+- the Archfit result of the default branch at the top of the page, and when it reads "attention", why, in the latest
+  report's terms (advisories, a rule not evaluated, dimensions partially or not measured). An advisory repository's
+  check is neutral, so every page reads its headline: a check that found violations reads "violations found" on the overview, the repository
+  list, the open pull requests and the pull request page alike, never "attention";
 - three counts: rule violations and advisories in the latest default-branch report, and the open pull requests whose
   Archfit result needs attention. They are counts, never a score;
 - the open pull requests, newest first, each with its result and a link to its page (up to 20);
@@ -521,7 +523,9 @@ on the pull request links to this page ("Details in Archfit").
 - Rule violations are open. Each dependency cycle is one card with the same drawing as the comment: one arrow per
   direction with its location count, red and wide when this pull request added it, grey and thin when it existed
   before. A table under the drawing lists each direction with its locations and, when the report has them, its
-  integration strength, distance and volatility. Advisories and accepted debt are folded tables. **Evidence** lists
+  integration strength, distance and volatility. An advisory on the same dependency as a violation is shown in that
+  violation's row ("Also reported as"), as on the comment, and is not counted again. The other advisories and the
+  accepted debt are folded tables. **Evidence** lists
   the dimensions and, folded, what the engine could not measure ("To measure more").
 - GitHub's **Details** link on the Archfit checks opens this page.
 - Badges under the result say whether the gate is required or advisory, whether this run had a baseline, whether it
@@ -545,7 +549,7 @@ the policy and the dependencies between them in the latest default-branch report
 - Colour is the status of a dependency, line width its integration strength: contract coupling thinnest, then model,
   functional, and intrusive coupling thickest. A dashed line is a dependency whose strength no seam of the report
   measured. The label on a line is the number of imports behind the dependency. A dashed module is not in the
-  policy. **Legend** above the graph says the same.
+  policy. The legend above the graph is one line, colours and line width; **More** folds the rest.
 - The unit on the graph is a **dependency**: one module that depends on another (A → B). A cycle between two modules
   is two dependencies. Status chips count the dependencies per status and filter them. The **Problems** list above the
   graph holds the violations, then the advisories, one row each (a cycle's rows say "cycle"); on the repository graph

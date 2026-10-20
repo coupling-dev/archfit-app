@@ -82,5 +82,5 @@ func (s *server) checkWord(ctx context.Context, ref api.RepoRef, headSHA, name s
 			latest = run
 		}
 	}
-	return conclusionWord(latest.Conclusion), latest.Title
+	return stateWord(latest.Conclusion, latest.Title), latest.Title
 }

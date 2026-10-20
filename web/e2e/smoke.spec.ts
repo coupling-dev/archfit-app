@@ -54,7 +54,7 @@ const reporting = {
   admin: true,
   managed_ai: 'not_allowed',
   can_start: false,
-  can_discover: true,
+  can_discover: false, // discovery is no step once the policy is merged
   pulls_url: 'https://github.com/acme/app/pulls',
   checks_url: 'https://github.com/acme/app/commits/main',
 };
@@ -72,6 +72,17 @@ const installed = {
   banner: '',
   can_start: true,
   can_discover: false,
+};
+
+const workflowMerged = {
+  ...installed,
+  steps: steps(1),
+  next: 'Run discovery: it proposes a first policy as a pull request.',
+  next_how: 'Discovery runs in your own workflow.',
+  stage: 'Workflow merged',
+  diagnostic: 'Run discovery (workflow_dispatch with `mode` set to `discovery`)',
+  can_start: false,
+  can_discover: true,
 };
 
 const aiChecks = (allowed: boolean) => [
@@ -130,6 +141,7 @@ const direction = (from: string, to: string, origin: string, n: number) => ({
   move: '',
   metric: '',
   owner_decision: false,
+  also: null as string[] | null,
 });
 
 const pull = {
@@ -168,7 +180,7 @@ const pull = {
       fixes: ['Remove one direction.'],
       alternatives: null,
       directions: [
-        direction('pkg_chaos', 'pkg_container', 'added', 2),
+        { ...direction('pkg_chaos', 'pkg_container', 'added', 2), also: ['Imbalanced coupling · critical'] },
         direction('pkg_container', 'pkg_chaos', 'existing', 37),
       ],
     },
@@ -236,9 +248,9 @@ const findings = {
   unavailable: '',
   branch: 'main',
   compared: false,
-  blocked: true,
   advisory_count: 1,
   advisories: pull.advisories.slice(0, 1),
+  attention_reason: '1 advisory; testability and operations are partially measured',
 };
 
 const gnode = (name: string, layer: string, policy_line: number, volatility = '', subdomain = '') => ({
@@ -531,9 +543,10 @@ test('a token GitHub rejects sends the user to sign in, not to an error', async 
 test('overview: state, pull requests, setup and history', async ({ page }) => {
   const writes = await open(page, '/r/acme/app');
   await expect(page.getByRole('heading', { name: 'acme/app', level: 1 })).toBeVisible();
-  // the check is neutral ("attention") in advisory mode; the engine's blocked verdict is not hidden behind it
-  await expect(page.locator('.hero .state')).toHaveText('violations found');
-  await expect(page.locator('.hero .state.danger')).toBeVisible();
+  await expect(page.locator('.hero .state.attention')).toHaveText('attention');
+  await expect(page.locator('#attention-reason')).toHaveText(
+    'In the latest report: 1 advisory; testability and operations are partially measured.',
+  );
   await expect(page.getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole('link', { name: 'Policy' })).toHaveAttribute('href', '/r/acme/app/policy');
   await expect(page.getByRole('link', { name: '#4 feat: read options' })).toHaveAttribute('href', '/r/acme/app/pull/4');
@@ -555,9 +568,20 @@ test('overview: state, pull requests, setup and history', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'Data sharing' })).toHaveAttribute('href', '/r/acme/app/data-sharing');
   await expect(page.getByText('Managed AI: not allowed')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Consent' })).toHaveCount(0);
+  // the next step is the gate, so no button for another step: one sentence, one action
+  const needs = page.getByRole('region', { name: 'Needs you' });
+  await expect(needs.getByRole('button')).toHaveCount(0);
   await expectClean(page);
+  expect(writes).toEqual([]);
+});
 
-  await page.getByRole('button', { name: 'Run discovery in your workflow' }).click();
+test('overview: discovery is offered at its own step and runs in the workflow', async ({ page }) => {
+  const writes = await open(page, '/r/acme/app', { overview: workflowMerged });
+  const needs = page.getByRole('region', { name: 'Needs you' });
+  await expect(needs).toContainText('Run discovery: it proposes a first policy');
+  await expect(needs).not.toContainText('workflow_dispatch with'); // the diagnostic yields to the one-sentence step
+  await expectClean(page);
+  await needs.getByRole('button', { name: 'Run discovery in your workflow' }).click();
   await expect(page.getByRole('status')).toBeVisible();
   expect(writes.map((w) => w.url())).toEqual([expect.stringMatching(/\/api\/repos\/acme\/app\/discover$/)]);
 });
@@ -591,6 +615,9 @@ test('pull request: the cycle drawn as on the comment, then the other findings',
   await expect(cycle.getByText('37 locations', { exact: true })).toBeAttached();
   await expect(cycle.getByText('All 37 locations')).toBeVisible();
   await expect(cycle.getByText('Fix:')).toBeVisible();
+  // an advisory on a violation's dependency joins its row, as on the comment
+  await expect(cycle.getByRole('columnheader', { name: 'Also reported as' })).toBeVisible();
+  await expect(cycle.getByRole('row', { name: /pkg_chaos → pkg_container/ })).toContainText('Imbalanced coupling · critical');
   await expect(page.getByText('Go through the repository.')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Graph' })).toHaveAttribute('href', '/r/acme/app/pull/4/graph');
   await expect(page.locator('#decision')).toContainText('Engine decision: hard gates failed on 3 findings.');
@@ -661,6 +688,13 @@ test('graph: the canvas, the inspector and the matrix', async ({ page }) => {
   await expect(page.locator('.g-node', { hasText: 'ui' })).toContainText('subdomain core');
   await expect(page.locator('#incomplete')).toBeVisible();
   await expect(page.getByRole('button', { name: /added in this PR/ })).toHaveCount(0);
+  // the legend is one line: colours and line width; the rarer marks fold under More
+  const legend = page.getByRole('group', { name: 'Legend' });
+  await expect(legend).toContainText('line width = integration strength');
+  await expect(legend.getByText('not in the policy')).toBeHidden();
+  await legend.getByText('More').click();
+  await expect(legend.getByText('not in the policy')).toBeVisible();
+  await legend.getByText('More').click();
   const problems = page.getByRole('region', { name: /Problems/ });
   // one unit: a dependency is one module → another, so the cycle is two rows and the chip says the same number
   await expect(page.locator('#g-unit')).toHaveText('5 dependencies:');

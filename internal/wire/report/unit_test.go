@@ -664,3 +664,41 @@ func TestBalancingMoveWordsAKnownHypothesisOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestSplitCovered(t *testing.T) {
+	f := func(id, from, to string) Finding {
+		return Finding{ID: id, Edge: Edge{From: Endpoint{Module: from}, To: Endpoint{Module: to}}}
+	}
+	ids := func(fs []Finding) []string {
+		out := []string{}
+		for _, f := range fs {
+			out = append(out, f.ID)
+		}
+		return out
+	}
+	violations := []Finding{f("v1", "a", "b"), f("v2", "", "c")}
+	tests := []struct {
+		name       string
+		advisories []Finding
+		rest       []string
+		covered    map[[2]string][]string
+	}{
+		{"same pair joins the violation", []Finding{f("x", "a", "b")}, []string{}, map[[2]string][]string{{"a", "b"}: {"x"}}},
+		{"the other direction is its own dependency", []Finding{f("x", "b", "a")}, []string{"x"}, map[[2]string][]string{}},
+		{"a violation without a module covers nothing", []Finding{f("x", "", "c")}, []string{"x"}, map[[2]string][]string{}},
+		{"two on one pair keep report order", []Finding{f("x", "a", "b"), f("y", "c", "d"), f("z", "a", "b")}, []string{"y"},
+			map[[2]string][]string{{"a", "b"}: {"x", "z"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rest, covered := SplitCovered(violations, tt.advisories)
+			got := map[[2]string][]string{}
+			for p, fs := range covered {
+				got[p] = ids(fs)
+			}
+			if !reflect.DeepEqual(ids(rest), tt.rest) || !reflect.DeepEqual(got, tt.covered) {
+				t.Errorf("rest = %v, covered = %v; want %v, %v", ids(rest), got, tt.rest, tt.covered)
+			}
+		})
+	}
+}

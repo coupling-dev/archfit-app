@@ -591,6 +591,39 @@ func TestOldConsentPageMovedToDataSharing(t *testing.T) {
 	wantStatus(t, e.as("alice", permAdmin).get("/r/"+otherRepo+"/consent"), http.StatusNotFound)
 }
 
+// Each stage offers only its own action: an overview never shows a button for a step that is not the next one.
+func TestOverviewOffersOnlyTheStepsAction(t *testing.T) {
+	draft := &proposal.Draft{URL: "https://github.com/" + repoName + "/pull/9", State: proposal.DraftOpen}
+	tests := []struct {
+		name            string
+		progress        onboarding.Progress
+		start, discover bool
+	}{
+		{"installed", onboarding.Progress{Stage: onboarding.StageInstalled}, true, false},
+		{"installed, onboarding pull request open", onboarding.Progress{Stage: onboarding.StageInstalled, OpenDraft: draft}, false, false},
+		{"workflow merged", onboarding.Progress{Stage: onboarding.StageWorkflowMerged}, false, true},
+		{"workflow merged, policy pull request open", onboarding.Progress{Stage: onboarding.StageWorkflowMerged, OpenDraft: draft}, false, false},
+		{"report received, no policy", onboarding.Progress{Stage: onboarding.StageReportReceived}, false, true},
+		{"policy merged", onboarding.Progress{Stage: onboarding.StagePolicyMerged}, false, false},
+		{"gate advisory", onboarding.Progress{Stage: onboarding.StageAdvisory}, false, false},
+		{"gate required", onboarding.Progress{Stage: onboarding.StageRequired}, false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t)
+			e.onb.progress = tt.progress
+			var b statusBody
+			e.as("alice", permAdmin).getJSON("/api/repos/"+repoName+"/overview", &b)
+			if b.CanStart != tt.start || b.CanDiscover != tt.discover {
+				t.Errorf("can_start = %v, can_discover = %v, want %v, %v", b.CanStart, b.CanDiscover, tt.start, tt.discover)
+			}
+			if tt.discover && b.Next != discoverNext.next {
+				t.Errorf("next = %q, want the discovery step", b.Next)
+			}
+		})
+	}
+}
+
 func TestOnboardingAndDiscoverActions(t *testing.T) {
 	e := newEnv(t)
 	e.onb.progress = onboarding.Progress{Stage: onboarding.StageInstalled, Diagnostic: "Start onboarding."}
@@ -676,7 +709,7 @@ func TestPullPageShowsTheReportOfItsCheck(t *testing.T) {
 			check(e, "v1:88:1:sha256:"+strings.Repeat("0", 64))
 			e.gh.artifacts[88] = payload
 		}, http.StatusOK, func(t *testing.T, b pullJSON) {
-			if b.Unavailable != reportMismatch || findings(b) != 0 || b.Result != "attention" {
+			if b.Unavailable != reportMismatch || findings(b) != 0 || b.Result != "violations found" { // the title says it, no report needed
 				t.Errorf("body = %+v", b)
 			}
 		}},
@@ -860,13 +893,25 @@ func TestPullPageStatesTheEngineDecision(t *testing.T) {
 		if b.Decision == nil || !reflect.DeepEqual(*b.Decision, want) {
 			t.Errorf("decision = %+v, want %+v", b.Decision, want)
 		}
-		if len(b.Advisories) == 0 {
-			t.Fatal("no advisory to read")
+		// Both new advisories lie on the cycle's dependencies: they join those rows, as on the comment, and are not
+		// counted again among the advisories.
+		if len(b.Advisories) != 0 || b.AdvisoryCount != 0 {
+			t.Errorf("advisories = %d listed, %d counted; want both on the violations' rows", len(b.Advisories), b.AdvisoryCount)
 		}
-		for _, f := range b.Advisories {
-			if f.Move != report.BalancingMoves["follow_rule"] || f.OwnerDecision {
-				t.Errorf("advisory %s -> %s: move %q, owner decision %v", f.From, f.To, f.Move, f.OwnerDecision)
+		also := map[string][]string{}
+		for _, c := range b.Cycles {
+			for _, d := range c.Directions {
+				if len(d.Also) > 0 {
+					also[d.From+" -> "+d.To] = d.Also
+				}
 			}
+		}
+		want2 := map[string][]string{
+			"pkg_container -> pkg_chaos": {"Imbalanced coupling · critical"},
+			"pkg_util -> pkg_chaos":      {"Imbalanced coupling · critical"},
+		}
+		if !reflect.DeepEqual(also, want2) {
+			t.Errorf("also reported = %v, want %v", also, want2)
 		}
 	})
 
@@ -874,6 +919,9 @@ func TestPullPageStatesTheEngineDecision(t *testing.T) {
 		doc["decision"].(map[string]any)["unevaluated_required_rules"] = []any{map[string]any{"rule_id": "layers", "reason": "selector matches no module"}}
 		doc["comparison"].(map[string]any)["origin_reasons"] = []any{"base report lacks finding identities"}
 		advisory := doc["findings"].([]any)[4].(map[string]any)
+		// on a dependency no violation names, so it stays an advisory of its own
+		edge := advisory["edge"].(map[string]any)
+		edge["from"].(map[string]any)["module"], edge["to"].(map[string]any)["module"] = "pkg_cmd", "pkg_util"
 		doc["agent_tasks"] = []any{map[string]any{"finding_id": advisory["id"], "rule_id": advisory["rule_id"],
 			"repair_kind": "needs_owner_decision", "goal": "Decide", "constraints": []any{}, "files": []any{}, "validation": []any{}}}
 		b := read(t, doc)
@@ -889,6 +937,9 @@ func TestPullPageStatesTheEngineDecision(t *testing.T) {
 		}
 		if owners != 1 {
 			t.Errorf("owner decisions = %d, want the one finding its task names", owners)
+		}
+		if len(b.Advisories) != 1 || b.Advisories[0].Move != report.BalancingMoves["follow_rule"] {
+			t.Errorf("advisories = %+v, want the one on pkg_cmd -> pkg_util with its seam's balancing move", b.Advisories)
 		}
 	})
 }
@@ -973,7 +1024,7 @@ func TestStatusPageShowsBranchPullsAndSetup(t *testing.T) {
 		if body.DefaultBranch != mainBranch || body.MainState != "attention" || body.MainTone != "attention" || body.MainReason != "Architecture needs attention" {
 			t.Errorf("default branch = %q %q %q", body.DefaultBranch, body.MainState, body.MainReason)
 		}
-		want := pullRow{Number: 4, Title: "feat: read options", State: "attention", Tone: "attention", Reason: "Architecture violations found · advisory", Href: "/r/" + repoName + "/pull/4"}
+		want := pullRow{Number: 4, Title: "feat: read options", State: "violations found", Tone: "danger", Reason: "Architecture violations found · advisory", Href: "/r/" + repoName + "/pull/4"}
 		if len(body.Pulls) != 1 || body.Pulls[0] != want {
 			t.Errorf("pulls = %+v, want [%+v]", body.Pulls, want)
 		}

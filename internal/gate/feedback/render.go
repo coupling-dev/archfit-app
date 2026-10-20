@@ -77,7 +77,7 @@ func verdictLine(c verdict.Conclusion) string {
 	case verdict.Success:
 		return "Passed"
 	case verdict.Failure:
-		return "Architecture gate failing"
+		return report.HeadlineGateFailing
 	default:
 		return "Action required"
 	}
@@ -95,13 +95,13 @@ func headline(p Publication) string {
 	var h string
 	switch {
 	case required(p) && c == verdict.Failure:
-		h = "Architecture gate failing"
+		h = report.HeadlineGateFailing
 	case required(p) && p.Report.Verdict == verdictHealthy:
 		h = "Architecture gate passed"
 	case required(p):
 		h = "Architecture gate passed · attention needed"
 	case c == verdict.Failure || p.Report.Verdict == verdictBlocked: // hard_gates fail blocks whatever the verdict says
-		h = "Architecture violations found"
+		h = report.HeadlineViolations
 	case p.Report.Verdict == verdictHealthy:
 		h = "Architecture healthy"
 	default:

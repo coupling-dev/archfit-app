@@ -566,6 +566,16 @@ const PairAdded, PairExisting = "added", "existing"
 // introduced, else "".
 func PairOrigin(f Finding, all []Finding, onCycle map[string]bool) string
 
+// SplitCovered splits advisories by the violations' module pairs. An advisory on the same ordered, non-empty module
+// pair as a violation is that dependency under another rule: it joins the violation's row ("also reported as") and is
+// not counted among the advisories. covered holds those per pair in report order; rest is every other advisory. The
+// reverse direction is another dependency and is not covered.
+func SplitCovered(violations, advisories []Finding) (rest []Finding, covered map[[2]string][]Finding)
+
+// Headlines the App writes on a check that found violations; a neutral check is read by its headline (control/ui).
+const HeadlineViolations = "Architecture violations found"
+const HeadlineGateFailing = "Architecture gate failing"
+
 var EngineRuleNames map[string]string // readable names of the engine's own rules
 var DistanceWords map[string]string   // the engine's distance tokens in the words of Balanced Coupling
 var BalancingMoves map[string]string  // the engine's seam hypotheses in the words of Balanced Coupling
@@ -769,6 +779,10 @@ the tests decode each one as the release that produced it (synthetic ones as v3.
   **Scenario**: `archfit check -c .archfit.yaml --base main --lang go --require-tools`; a command with `--refresh`; with `--refresh=true`;
   with `--refreshed`; 513 characters; a command with LF; 33 commands.
   **Expected behavior**: the first and `--refreshed` decode verbatim; the rest are errors.
+- **Test name**: `TestSplitCovered`
+  **Scenario**: table: an advisory on a violation's pair; on the reverse pair; a violation without a module; two
+  advisories on one pair around another.
+  **Expected behavior**: covered on that pair; rest; rest; both covered in report order and the other in rest.
 - **Test name**: `TestBalancingMoveWordsAKnownHypothesisOnly`
   **Scenario**: `introduce_contract`, a token this version does not know, `""`.
   **Expected behavior**: the `BalancingMoves` words; the token as written; `""`.

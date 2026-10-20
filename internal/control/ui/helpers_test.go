@@ -274,12 +274,8 @@ func artifact(t *testing.T, name string) []byte {
 }
 
 // publishReport makes payload the archfit-report artifact of the latest default-branch push run.
-// publishReport makes payload the report of the latest successful push run, a run of the default branch's head.
 func (e *env) publishReport(fullName string, payload []byte) {
-	e.gh.mu.Lock()
-	head := e.gh.heads[fullName+"@"+mainBranch]
-	e.gh.mu.Unlock()
-	e.gh.addRun(fullName, workflow, mainBranch, api.WorkflowRun{ID: 77, Event: "push", Status: "completed", Conclusion: "success", HeadSHA: head})
+	e.gh.addRun(fullName, workflow, mainBranch, api.WorkflowRun{ID: 77, Event: "push", Status: "completed", Conclusion: "success"})
 	e.gh.mu.Lock()
 	defer e.gh.mu.Unlock()
 	e.gh.artifacts[77] = payload

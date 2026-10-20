@@ -11,6 +11,7 @@
     c.modules.length === 2 ? `between ${c.modules[0]} and ${c.modules[1]}` : `among ${c.modules.join(', ')}`,
   );
   const coupling = $derived(c.directions.some((d) => d.strength || d.distance || d.volatility));
+  const also = $derived(c.directions.some((d) => d.also?.length));
 </script>
 
 <article class="box finding">
@@ -35,6 +36,7 @@
               <th scope="col">Distance</th>
               <th scope="col">Volatility</th>
             {/if}
+            {#if also}<th scope="col">Also reported as</th>{/if}
           </tr>
         </thead>
         <tbody>
@@ -48,6 +50,7 @@
                 <td>{d.distance}</td>
                 <td>{d.volatility}</td>
               {/if}
+              {#if also}<td>{d.also?.join('; ') ?? ''}</td>{/if}
             </tr>
           {/each}
         </tbody>
