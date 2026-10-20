@@ -949,8 +949,10 @@ func Render(s Settings) []byte
 - **Balanced?**: yes — contract coupling
 - **Shared knowledge**: ui downloads the artifact with `MaxBytes` as the cap, calls `Decode`, and hands the `Report` to
   `graph.Build` unread. The artifact holds the raw engine state JSON; `Decode` validates it against the engine v3.0.0/v3.0.1 state
-  schema and reduces it to the no-source form, so fields the decoder drops (measurement, `matched_by`, task
-  declarations, metric provenance, seam scores) never reach a template and ui never renders them. ui parses the artifact
+  schema and reduces it to the no-source form, so fields the decoder drops (measurement, `matched_by` but its
+  `MatchedByKeys`, task declarations, metric provenance, seam scores) never reach a template and ui never renders them.
+  Of `Finding.MatchedBy` ui reads the metric ratchet's `metric`, `before`, `after` and `threshold` (`metricSubject`)
+  and a dependency finding's `locations_total` (through `report.LocationsTotal`). ui parses the artifact
   in no other way. The artifact comes without the envelope that names its release, so ui passes the last release of
   `EngineVersions`, `v3.0.1`; both releases share one key set. The pull request page also reads the decision
   (`HardGates`, `ActiveBlockers`, `UnevaluatedRequiredRules`), `Comparison.OriginReasons`, each seam's `Hypothesis`
@@ -975,8 +977,8 @@ const MaxBytes = 5 << 20
 
 // Report is the no-source transport form of an engine state report. The decoder knows every key of the engine
 // state schema of v3.0.0 and v3.0.1: keys listed here are kept (length-capped), the other known keys are validated and dropped
-// (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores), and any key
-// the schema does not define is a decode error.
+// (measurement, findings[].matched_by except MatchedByKeys, agent_tasks[].declarations, metric provenance, seam scores),
+// and any key the schema does not define is a decode error.
 type Report struct {
     SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
     Verdict       string               `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
@@ -1474,7 +1476,7 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Scenario**: the blocked wire fixture (`hard_gates: fail`, no baseline) as the `archfit-report` artifact of the latest default-branch run.
   **Expected behavior**: the shell answers `200`; the graph API's `view` equals `graph.Build(report, policy)`;
   `policy_href` is the editor; not stale; `incomplete`; marker strings placed in fields the decoder drops
-  (`matched_by`, measurement, task declarations) appear nowhere in the answer.
+  (a `matched_by` key outside `MatchedByKeys`, measurement, task declarations) appear nowhere in the answer.
 - **Test name**: `TestGraphPageShowsTheEngineSeamPolicy`
   **Scenario**: the unmodified capture `real-seam-policy` of the shared wire corpus as the `archfit-report` artifact.
   **Expected behavior**: the API decodes it; its `view` equals `graph.Build(report, policy)`, with links of status
