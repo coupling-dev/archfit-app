@@ -41,12 +41,12 @@ describe('cycle layout', () => {
 
   it('keeps every box inside the drawing', () => {
     const modules = ['internal/control/ui', 'internal/gate/feedback', 'internal/wire/report', 'cmd/reporter', 'x'];
-    const { width, height, boxes } = layout(modules, []);
+    const { width, height, top, boxes } = layout(modules, []);
     for (const b of boxes) {
       expect(b.x - b.w / 2).toBeGreaterThanOrEqual(0);
       expect(b.x + b.w / 2).toBeLessThanOrEqual(width);
-      expect(b.y - b.h / 2).toBeGreaterThanOrEqual(0);
-      expect(b.y + b.h / 2).toBeLessThanOrEqual(height);
+      expect(b.y - b.h / 2).toBeGreaterThanOrEqual(top);
+      expect(b.y + b.h / 2).toBeLessThanOrEqual(top + height);
     }
   });
 
@@ -94,6 +94,22 @@ describe('cycle layout', () => {
     expect(boxes[0].x).toBe(boxes[1].x);
     expect(boxes[1].y).toBeGreaterThan(boxes[0].y);
     expect(arrows.map((a) => a.label)).toEqual(['2 locations', '37 locations']);
+  });
+
+  it('crops a circle to what it holds, so no empty band is left under a cycle of three (pumba-pilot#11)', () => {
+    const three = ['pkg_chaos', 'pkg_container', 'pkg_util'];
+    const ring = [
+      dir('pkg_chaos', 'pkg_container', '', 40),
+      dir('pkg_chaos', 'pkg_util', '', 2),
+      dir('pkg_container', 'pkg_chaos', 'added', 1),
+      dir('pkg_util', 'pkg_chaos', 'added', 1),
+    ];
+    const { top, height, boxes, arrows } = layout(three, ring);
+    const bottom = Math.max(...boxes.map((b) => b.y + b.h / 2), ...arrows.map((a) => a.ly + 8));
+    const upper = Math.min(...boxes.map((b) => b.y - b.h / 2));
+    expect(upper - top).toBeLessThanOrEqual(16 + 1);
+    expect(top + height - bottom).toBeLessThanOrEqual(16 + 40); // a bowed curve may sit below the lowest box
+    expect(top + height - bottom).toBeGreaterThanOrEqual(0);
   });
 
   it('keeps a cycle of three on its circle, so no arrow runs under a module', () => {

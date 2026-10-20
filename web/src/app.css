@@ -316,6 +316,9 @@ table.data th { text-align: left; font-weight: 600; color: var(--fg-muted); font
 table.data td { padding: 8px 12px; border-bottom: 1px solid var(--border-muted); vertical-align: top; }
 table.data tr:last-child td { border-bottom: 0; }
 table.data td.num, table.data th.num { text-align: right; font-variant-numeric: tabular-nums; }
+/* A dimension that fails or warns stands out, as on the comment; the word says it, the colour only repeats it. */
+table.data td.result-fail { color: var(--danger); font-weight: 600; }
+table.data td.result-warn { color: var(--attention); font-weight: 600; }
 /* Narrow: a findings table shows each row as a block, every cell labelled, and the strength, distance and volatility on
    one line, so no column is off-screen and no row is as tall as its narrowest column makes it. */
 @media (max-width: 640px) {
@@ -333,6 +336,8 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 
 /* ---------- details / disclosure ---------- */
 details.disclosure { border-top: 1px solid var(--border-muted); }
+/* The rule separates a fold from what precedes it; first in its box there is nothing to separate. */
+details.disclosure:first-child { border-top: 0; }
 details.disclosure > summary {
   list-style: none; cursor: pointer; padding: 10px 0; font-weight: 600; display: flex; align-items: center; gap: 8px;
 }
