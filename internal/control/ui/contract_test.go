@@ -938,6 +938,9 @@ func TestPullPageStatesTheEngineDecision(t *testing.T) {
 		if owners != 1 {
 			t.Errorf("owner decisions = %d, want the one finding its task names", owners)
 		}
+		if len(b.Advisories) != 1 || b.Advisories[0].Move != report.BalancingMoves["follow_rule"] {
+			t.Errorf("advisories = %+v, want the one on pkg_cmd -> pkg_util with its seam's balancing move", b.Advisories)
+		}
 	})
 }
 

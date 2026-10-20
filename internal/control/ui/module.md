@@ -1381,9 +1381,15 @@ their interfaces except where a test says otherwise. The clock is injected.
   deleted, outcome `signed_out`, and the next request is a plain signed-out one. Any other error stays `502` and keeps the cookie.
 - **Test name**: `TestPullPageStatesTheEngineDecision`
   **Scenario**: the pilot's PR report as captured; then with an unevaluated required rule, an attribution note and an
-  agent task `needs_owner_decision` on one advisory.
-  **Expected behavior**: decision `fail` with 4 blockers and empty lists, every advisory's move the words of
-  `follow_rule` and none an owner decision; the rule with its reason, the note, and exactly one owner decision.
+  agent task `needs_owner_decision` on one advisory moved to a dependency no violation names (pkg_cmd → pkg_util).
+  **Expected behavior**: decision `fail` with 4 blockers and empty lists; no advisory listed or counted, both new ones
+  "Imbalanced coupling · critical" in the `also` of their cycle directions; then the rule with its reason, the note,
+  one advisory with the words of `follow_rule` as its move, and exactly one owner decision.
+- **Test name**: `TestAttentionReasonFollowsTheEngine`
+  **Scenario**: table: healthy; blocked; needs_attention with two partial dimensions; with advisories, an unevaluated
+  rule and one partial and one unmeasured dimension; with `hard_gates: unmeasured` and three unmeasured dimensions.
+  **Expected behavior**: `""`; `""`; "testability and operations are partially measured"; the four reasons in the
+  engine's order; "a hard gate could not be measured; intent, structure and drift are not measured".
 - **Test name**: `TestPullPageShowsTheReportOfItsCheck`
   **Scenario**: no check on the head; a check whose external_id names a run whose artifact matches its digest; one whose digest does not match; an expired artifact; run 0; an unknown pull request.
   **Expected behavior**: "no result yet"; the check title as headline, advisory mode, the violation, the no-baseline and no-attribution line, the run; the mismatch wording and no finding; the expired wording; the no-upload wording; `404`. Also: an `action_required` run over a matching old report shows the action-required wording and no finding; an undecodable report shows "report unavailable"; of two check runs the higher ID wins; "added by this PR" appears only with `origin_status: comparable` and `origin: introduced`.
