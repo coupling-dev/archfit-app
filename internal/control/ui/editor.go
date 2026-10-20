@@ -351,7 +351,8 @@ func (s *server) apiSavePolicy(r *http.Request, sc scope) (any, error) {
 	}
 	if !changed {
 		body, err := s.policyPage(r.Context(), sc, e.branch, "")
-		if err == nil && body.HeadSHA != draft.HeadSHA {
+		// The head is only read back for an open draft: a merged or closed one has no head on the page.
+		if err == nil && isOpen(draft) && body.HeadSHA != draft.HeadSHA {
 			err = proposal.ErrStale
 		}
 		body.Notice = notices["unchanged"]

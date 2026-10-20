@@ -179,6 +179,7 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   offers to discard it and load the draft. A write whose read-back finds another draft head than the one it left (a push
   in between): `409` "The change was saved, but the draft changed again on GitHub since. Discard your edits and load the
   draft.", so the page never takes that head as the base of the text it keeps.
+  A save with no change answers `409` only for an open draft; a merged or closed one has no head on the page to compare.
 - An invalid branch or head, a policy text over 256 KB or not UTF-8, a text `policy.Diagnose` finds problems in,
   `ErrInvalidRequest`, `ErrInvalidProposal`: `422`, nothing written, the text kept in the page. A save or assist refused
   by `Diagnose` also carries the problems, which the page lists above the editor.
@@ -1407,6 +1408,7 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Expected behavior**: save, ready and assist of tab two each answer `409` with the sentence that says to reload the draft; the branch holds only tab one's
   commit; the PR is not marked ready. A save whose read-back finds a newer head (a push right after the commit) answers
   `409` "The change was saved, but the draft changed again on GitHub since…", never that newer head as the page's base.
+  A no-op save after the draft merged answers `200`, not `409`.
 - **Test name**: `TestInvalidYAMLIsRefusedAndGraphGoesStale` (T17)
   **Scenario**: save broken YAML; then open the graph while the draft differs from the report's policy.
   **Expected behavior**: `422` and no commit; before the edit the healthy report shows no incomplete banner; the graph page

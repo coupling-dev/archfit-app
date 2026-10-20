@@ -119,6 +119,23 @@ func TestStaleDraftCannotBePublishedUnnoticed(t *testing.T) {
 		}
 	})
 
+	t.Run("a no-op save after the draft was merged is not stale", func(t *testing.T) {
+		e := newEnv(t)
+		c := e.as("alice", permWrite)
+		a := e.props.push(repoName, editBranchAlice, policyText+"# draft\n").HeadSHA
+		d := e.props.drafts[repoName+"@"+editBranchAlice]
+		// merged: the page reads the default branch, which now holds the merged text
+		d.State = proposal.DraftMerged
+		e.gh.mu.Lock()
+		e.gh.files[repoName+"@"+mainBranch+":.archfit.yaml"] = []byte(policyText + "# draft\n")
+		e.gh.mu.Unlock()
+
+		wantStatus(t, c.postJSON(policyAPI, editOf("", a, policyText+"# draft\n")), http.StatusOK)
+		if e.props.commits != 1 {
+			t.Errorf("commits = %d, want the one pushed draft only", e.props.commits)
+		}
+	})
+
 	t.Run("the draft moves between the save and its read-back", func(t *testing.T) {
 		e := newEnv(t)
 		c := e.as("alice", permWrite)
