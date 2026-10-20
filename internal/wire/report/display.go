@@ -200,6 +200,56 @@ var EngineRuleNames = map[string]string{
 	"bc/coupling_gate":       "Coupling gate",
 }
 
+// RuleName is a rule's readable name: an engine rule's from EngineRuleNames, a policy rule's ID as its owner chose it.
+func RuleName(id string) string {
+	if n, ok := EngineRuleNames[id]; ok {
+		return n
+	}
+	return id
+}
+
+// FindingMeta is a finding's severity, then its status as a word when the group it is listed in does not already say
+// it, in the comment's words: a new or fixed finding is its severity alone, an accepted one is "accepted in the
+// baseline" or "accepted by waiver". The comment keeps its own copy, which escapes Markdown.
+func FindingMeta(f Finding) string {
+	switch f.Status {
+	case "new", "fixed":
+		return f.Severity
+	case "expired_waiver":
+		return f.Severity + ", waiver expired"
+	case "waived":
+		return f.Severity + ", accepted by waiver"
+	case "baseline":
+		return f.Severity + ", accepted in the baseline"
+	}
+	return f.Severity + ", " + f.Status
+}
+
+// EngineVerdict is the engine's decision as the comment states it, whatever the gate mode does with it: the verdict
+// ("blocked") and the rest of the line ("hard gates fail, 2 active blockers, every required rule evaluated").
+func EngineVerdict(r Report) (verdict, detail string) {
+	gates := map[string]string{"pass": "hard gates pass", "fail": "hard gates fail", "unmeasured": "hard gates not measured"}
+	gate, ok := gates[r.Decision.HardGates]
+	if !ok {
+		gate = "hard gates " + r.Decision.HardGates
+	}
+	n := r.Decision.ActiveBlockers
+	detail = fmt.Sprintf("%s, %d active %s", gate, n, plural(n, "blocker", "blockers"))
+	if u := len(r.Decision.UnevaluatedRequiredRules); u > 0 {
+		detail += fmt.Sprintf(", %d required %s not evaluated", u, plural(u, "rule", "rules"))
+	} else {
+		detail += ", every required rule evaluated"
+	}
+	return strings.ReplaceAll(r.Verdict, "_", " "), detail
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
 // DistanceWords reads the engine's distance tokens in the words of Balanced Coupling; an unknown token is shown as
 // written.
 var DistanceWords = map[string]string{

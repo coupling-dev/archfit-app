@@ -128,6 +128,8 @@ export interface PullHead {
 
 // Decision is the engine's decision on the report, as it states it.
 export interface Decision {
+  verdict: string; // the engine's verdict in words: "blocked", "needs attention", "healthy"
+  detail: string; // the rest of the comment's line: hard gates, active blockers, required rules
   hard_gates: string; // pass, fail or unmeasured
   blockers: number; // decision.active_blockers
   unevaluated: { rule_id: string; reason: string }[];
@@ -143,6 +145,9 @@ export interface Findings {
   advisories: Finding[] | null;
   accepted_count: number;
   accepted: Finding[] | null;
+  advisories_elsewhere: boolean; // an advisory joined a violation's row, so the rest are on other dependencies
+  fixed_count: number;
+  fixed: Finding[] | null; // known issues the report no longer finds
   omitted: number;
   dimensions: Dimension[] | null;
   unknowns: { dimension: string; fact: string; reason: string }[] | null;

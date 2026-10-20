@@ -371,6 +371,8 @@ type LinkFinding struct {
     From   string `json:"from"`
     To     string `json:"to"`
     RuleID string `json:"rule_id"`
+    Rule   string `json:"rule"` // report.RuleName: the readable name, as on the pull request page and the comment
+    Meta   string `json:"meta"` // report.FindingMeta: severity and status, as there
     Kind   string `json:"kind"`
     Status string `json:"status"`
     Why    string `json:"why"`
@@ -1216,16 +1218,21 @@ others are done, so the handler chain's recover still answers `500` and the proc
   arrow per direction labelled with its location count, styled as the comment's diagram), a row per direction with
   "This PR", its locations and the seam's strength, distance (`report.DistanceWords`) and volatility, then the reason
   once and each distinct repair once; every other violation as its own card. An advisory on a violation's dependency joins that violation's row as
-  "Also reported as" (`report.SplitCovered`, the comment's rule) and is not counted among the advisories. Advisories and accepted debt each one
-  folded table with each distinct reason once, the seam's suggested move among them, in the PR comment's words
+  "Also reported as" (`report.SplitCovered`, the comment's rule) and is not counted among the advisories; the advisory
+  group then reads "Advisories on other dependencies · never block" (`advisories_elsewhere`: any advisory covered,
+  over all violations), as the comment does. Advisories, "Known issues
+  accepted earlier" and "Known issues fixed" (`fixed`, `fixed_count`: the comment's last group) each one folded table
+  with the seam's strength, distance and volatility and each distinct reason once; the seam's suggested move only for
+  the advisories, never for accepted or fixed debt, in the PR comment's words
   (`report.BalancingMove`; a token this version does not know as written). A finding whose agent task the engine marks
   `needs_owner_decision` carries an "owner decision" label; the path the engine suggests is not shown: wire/report
   does not keep `matched_by.suggested_path`. A finding that names no dependency (a metric ratchet `metric/<name>`)
   reads as the comment's subject, "metric <name>: before → after (threshold)" from its kept `matched_by` keys, never an
   empty pair. Under the header, on this page and the pull request graph, the engine's
-  decision: "hard gates failed on N findings" (`decision.active_blockers`), "hard gates failed without a blocking
-  finding" or "hard gates could not be measured", each required rule it could not evaluate with its reason, and
-  `comparison.origin_reasons` as attribution notes; nothing when the gates passed and it notes nothing. At most 50 per group with the rest counted (group counts are of
+  decision, always, in the comment's words (`report.EngineVerdict`, `decision.verdict` and `decision.detail`): "Engine
+  verdict blocked: hard gates fail, N active blockers, every required rule evaluated"; then each required rule it could
+  not evaluate with its reason, and `comparison.origin_reasons` as attribution notes. With the hard gates failing and no
+  violation listed, the page never says "No rule violations": it points to the verdict. At most 50 per group with the rest counted (group counts are of
   findings), 3 locations per finding with the rest folded. "This PR" only when `origin_status` is `comparable`: a
   cycle direction reads `report.PairOrigin` (the comment's rule, so the comment, this page and the graph agree), any
   other finding its own `origin` (`introduced` is added, `pre_existing` existed before). Badges for the gate
@@ -1246,7 +1253,7 @@ others are done, so the handler chain's recover still answers `500` and the proc
   with the Graph tab current. When `comparison.origin_status` is not `comparable`, the folded banner "This run did not
   compare with the base branch, so the graph cannot show what this PR added." and no link carries an origin.
   Otherwise each link's origin is `report.PairOrigin` of its pair, the PR comment's rule: `added` only when no
-  pre-existing finding names the pair and a finding this pull request introduced off a cycle does. An "N added in this
+  pre-existing finding names the pair and a finding this pull request introduced off a cycle does. An "N added by this
   PR" chip, on by default: an emphasis, not a filter. On, an added link keeps its status colour and gains a halo, and
   the other links stay drawn, muted; the problem list puts added links first and marks them. An added link always
   counts as a problem for focus mode. A cycle's two directions stay one problem row when they share a status, marked
@@ -1268,10 +1275,12 @@ others are done, so the handler chain's recover still answers `500` and the proc
   "report unavailable"; never a partial graph. The repository graph never claims "added": ui clears
   `origin_status` before `graph.Build`. Each link is drawn and listed with its `Status` (`violation`, `accepted`,
   `advisory`, `allowed`, `observed`), which is also its CSS class. `allowed` comes only from the engine's `seams[].policy`; the page explains that
-  accepted debt is never allowed. When `View.Incomplete`, a banner says a required rule was not evaluated or a dimension the gate applies to
-  measured nothing, so an observed link can still break a rule. A failed hard gate shows no banner: its violations are
+  accepted debt is never allowed. When `View.Incomplete`, a banner says a required rule was not evaluated or a hard gate could not be measured (a
+  dimension the gate applies to measured nothing), so an observed link can still break a rule. A failed hard gate shows no banner: its violations are
   the message. The web app counts one unit on the graph pages, a dependency (an ordered pair of modules, so a cycle is
-  two): chips, the Problems list and the inspector add up. Problems are the violations and advisories (and in a pull
+  two): chips ("N with a violation", "N with an advisory", then the other statuses), the Problems list and the
+  inspector add up; an import count reads "N imports" in the tables, the inspector and the matrix. Balance reads
+  "balanced" for the engine's none and low bands (no balancing move below medium), else "imbalanced · <band>". Problems are the violations and advisories (and in a pull
   request what it added); accepted debt sits in a collapsed "Accepted earlier" group and is drawn thin and faint. The
   number on a line is its import count.
 - Assist: authorize `write`; if `content` differs from the file at `head_sha`, save it first (same rules as Save) and use the
@@ -1404,9 +1413,13 @@ their interfaces except where a test says otherwise. The clock is injected.
 - **Test name**: `TestPullPageStatesTheEngineDecision`
   **Scenario**: the pilot's PR report as captured; then with an unevaluated required rule, an attribution note and an
   agent task `needs_owner_decision` on one advisory moved to a dependency no violation names (pkg_cmd → pkg_util).
-  **Expected behavior**: decision `fail` with 4 blockers and empty lists; no advisory listed or counted, both new ones
+  **Expected behavior**: decision `blocked` / "hard gates fail, 4 active blockers, every required rule evaluated", `fail` with 4 blockers and empty lists; no advisory listed or counted, both new ones
   "Imbalanced coupling · critical" in the `also` of their cycle directions; then the rule with its reason, the note,
   one advisory with the words of `follow_rule` as its move, and exactly one owner decision.
+- **Test name**: `TestPullPageListsTheKnownIssuesFixedAsTheCommentDoes`
+  **Scenario**: a new, a baseline and a fixed finding.
+  **Expected behavior**: one fixed row (`old → gone`, meta "high"); the fixed finding counts as neither a violation
+  nor accepted debt.
 - **Test name**: `TestAttentionReasonFollowsTheEngine`
   **Scenario**: table: healthy; blocked; needs_attention with two partial dimensions; with advisories, an unevaluated
   rule and one partial and one unmeasured dimension; with `hard_gates: unmeasured` and three unmeasured dimensions.
@@ -1706,6 +1719,6 @@ their interfaces except where a test says otherwise. The clock is injected.
   the worker, the inspector's balance reading of a flagged dependency and the count line, and a worker that fails to load reported instead of a layout that never ends; a server error page (its sentence, no repository tabs) and the footer's licences link; a repository the user cannot see and one
   that does not exist shown the same, as the API's "Not found." with no repository tabs; a page asking its data beside
   `/api/session`, its skeleton up until both answer; a save's `404` shown on the policy page with the editor's text kept;
-  a long policy scrolls inside the editor (at most 60% of the viewport) and a line link scrolls to its line; every page keeps its content and footer at most 1280px wide and centred, and has no sideways scroll at 390px; every page has no
+  a long policy scrolls inside the editor (at most 60% of the viewport) and a line link scrolls to its line; every page keeps its content and footer at most 1280px wide and centred, and has no sideways scroll at 390px; on a phone a two-module cycle stacks its modules in a column and its labels render at 11px or more (a longer cycle keeps its size and scrolls in its box); the pull request page states the engine verdict, the known issues accepted earlier with their coupling and no suggested move, and the known issues fixed; policy edits are entered with one input event per string, so key order cannot race CodeMirror's DOM reading; every page has no
   `securitypolicyviolation` event and no axe violation in light and in dark; the onboarding write carries the CSRF
   header and a JSON body.

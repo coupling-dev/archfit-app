@@ -56,7 +56,7 @@
             <th scope="col">From</th>
             <th scope="col">To</th>
             <th scope="col">Status</th>
-            <th scope="col" class="num">Dependencies</th>
+            <th scope="col" class="num">Imports</th>
             <th scope="col">Strength · distance · volatility · balance</th>
           </tr>
         </thead>

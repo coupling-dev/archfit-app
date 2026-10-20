@@ -163,6 +163,8 @@ const pull = {
   no_baseline: true,
   compared: true,
   decision: {
+    verdict: 'blocked',
+    detail: 'hard gates fail, 3 active blockers, 1 required rule not evaluated',
     hard_gates: 'fail',
     blockers: 3,
     unevaluated: [{ rule_id: 'layers', reason: 'selector matches no module' }],
@@ -178,7 +180,7 @@ const pull = {
       violation: true,
       why: 'Modules depend on each other.',
       fixes: ['Remove one direction.'],
-      alternatives: null,
+      alternatives: ['pkg_shared'],
       directions: [
         { ...direction('pkg_chaos', 'pkg_container', 'added', 2), also: ['Imbalanced coupling · critical'] },
         direction('pkg_container', 'pkg_chaos', 'existing', 37),
@@ -195,6 +197,7 @@ const pull = {
     },
   ],
   advisory_count: 2,
+  advisories_elsewhere: true,
   advisories: [
     {
       ...direction('ui', 'store', '', 1),
@@ -213,7 +216,18 @@ const pull = {
     },
   ],
   accepted_count: 1,
-  accepted: [{ ...direction('x', 'y', '', 1), meta: 'low, baseline' }],
+  accepted: [
+    {
+      ...direction('x', 'y', '', 1),
+      meta: 'low, accepted in the baseline',
+      strength: 'model',
+      distance: 'across modules',
+      volatility: 'low',
+      move: 'Accept it: the target rarely changes, so the strength costs little',
+    },
+  ],
+  fixed_count: 1,
+  fixed: [{ ...direction('old', 'gone', '', 1), rule: 'no-module-cycles', why: 'Was a cycle.' }],
   omitted: 0,
   dimensions: [
     {
@@ -317,6 +331,8 @@ const view = {
       from: 'api',
       to: 'db',
       rule_id: 'no-module-cycles',
+      rule: 'no-module-cycles',
+      meta: 'high',
       kind: 'gate',
       status: 'new',
       why: 'api and db depend on each other.',
@@ -574,7 +590,7 @@ test('overview: state, pull requests, setup and history', async ({ page }) => {
   const counts = page.getByRole('group', { name: 'Counts on main' });
   await expect(counts).toContainText('3 Rule violations');
   await expect(counts).toContainText('1 Advisory never block');
-  await expect(counts).toContainText('0 Open pull requests need attention');
+  await expect(counts).toContainText('0 Open pull requests not healthy');
   await expect(page.getByRole('heading', { name: 'Findings on main' })).toBeVisible();
   await expect(page.getByText('Go through the repository.')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Open the graph' })).toHaveAttribute('href', '/r/acme/app/graph');
@@ -635,9 +651,13 @@ test('pull request: the cycle drawn as on the comment, then the other findings',
   );
   await expect(page.getByText('Go through the repository.')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Graph' })).toHaveAttribute('href', '/r/acme/app/pull/4/graph');
-  await expect(page.locator('#decision')).toContainText('Engine decision: hard gates failed on 3 findings.');
+  await expect(page.locator('#decision')).toContainText(
+    'Engine verdict blocked: hard gates fail, 3 active blockers, 1 required rule not evaluated',
+  );
+  await expect(cycle.getByText('Allowed alternatives:')).toBeVisible();
+  await expect(cycle.locator('.cycle-legend')).toHaveText(/added by this PR\s*existed before/);
   await expect(page.locator('#decision')).toContainText('layers: selector matches no module');
-  await page.getByText('Advisories · never block').click();
+  await page.getByText('Advisories on other dependencies · never block').click();
   await expect(page.getByText('UI skips a layer.')).toBeVisible();
   const advisories = page.locator('#advisories');
   await expect(advisories).toContainText(
@@ -646,6 +666,14 @@ test('pull request: the cycle drawn as on the comment, then the other findings',
   await expect(advisories.getByText('owner decision')).toBeVisible();
   await expect(advisories).toContainText('metric fan_out: 3 → 5 (at most 4)');
   await expect(advisories).not.toContainText('(no module)');
+  // known debt: its coupling, and no move to make
+  await page.getByText('Known issues accepted earlier').click();
+  const accepted = page.locator('#accepted');
+  await expect(accepted.getByRole('columnheader', { name: 'Volatility' })).toBeVisible();
+  await expect(accepted).toContainText('model');
+  await expect(accepted).not.toContainText('Suggested move');
+  await page.getByText('Known issues fixed').click();
+  await expect(page.locator('#fixed')).toContainText('old → gone');
   await page.getByText('To measure more').click();
   const evidence = page.getByRole('table');
   await expect(evidence.getByRole('columnheader', { name: 'Result' })).toBeVisible();
@@ -702,7 +730,7 @@ test('graph: the canvas, the inspector and the matrix', async ({ page }) => {
   await expect(page.locator('.g-node', { hasText: 'api' })).toContainText('volatility undeclared');
   await expect(page.locator('.g-node', { hasText: 'ui' })).toContainText('subdomain core');
   await expect(page.locator('#incomplete')).toBeVisible();
-  await expect(page.getByRole('button', { name: /added in this PR/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /added by this PR/ })).toHaveCount(0);
   // the legend is one line: colours and line width; the rarer marks fold under More
   const legend = page.getByRole('group', { name: 'Legend' });
   await expect(legend).toContainText('line width = integration strength');
@@ -713,7 +741,7 @@ test('graph: the canvas, the inspector and the matrix', async ({ page }) => {
   const problems = page.getByRole('region', { name: /Problems/ });
   // one unit: a dependency is one module → another, so the cycle is two rows and the chip says the same number
   await expect(page.locator('#g-unit')).toHaveText('5 dependencies:');
-  await expect(page.getByRole('button', { name: '2 violations' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '2 with a violation' })).toBeVisible();
   await expect(problems.getByRole('heading', { name: /Problems/ })).toContainText('2');
   const active = problems.locator('.g-rows').first().getByRole('button');
   await expect(active).toHaveCount(2);
@@ -747,6 +775,7 @@ test('graph: the canvas, the inspector and the matrix', async ({ page }) => {
     '1 dependency couples strongly across a module boundary at high volatility.',
   );
   await expect(inspector).toContainText('api and db depend on each other.');
+  await expect(inspector.locator('.g-finding')).toContainText('no-module-cycles · high');
   await expect(inspector).toContainText('Other direction · a cycle');
   await expect(inspector.getByRole('link', { name: /Open api in the policy/ })).toHaveAttribute(
     'href',
@@ -768,9 +797,9 @@ test('graph: the canvas, the inspector and the matrix', async ({ page }) => {
   );
 
   await page.getByRole('button', { name: 'Matrix' }).click();
-  await expect(page.getByRole('button', { name: 'api to db, 12, violation' })).toBeVisible();
-  await page.getByRole('button', { name: '2 violations' }).click();
-  await expect(page.getByRole('button', { name: 'api to db, 12, violation' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'api to db, 12 imports, violation' })).toBeVisible();
+  await page.getByRole('button', { name: '2 with a violation' }).click();
+  await expect(page.getByRole('button', { name: 'api to db, 12 imports, violation' })).toHaveCount(0);
   await expectClean(page);
 
   // a module the report's own policy does not name: no claim that the policy is stale
@@ -787,7 +816,7 @@ test('graph: the incomplete banner shows only when the report says it is', async
   await open(page, '/r/acme/app/graph', { graph: { ...repoGraph, view: { ...view, incomplete: false } } });
   await expect(page.locator('.g-node')).toHaveCount(4);
   await expect(page.locator('#incomplete')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: '2 violations' })).toBeVisible(); // a failed gate is the violations
+  await expect(page.getByRole('button', { name: '2 with a violation' })).toBeVisible(); // a failed gate is the violations
 });
 
 test('graph: a repository with only accepted debt has no problems and draws it faint', async ({ page }) => {
@@ -807,13 +836,13 @@ test('pull request graph: the header, and a halo only on what the PR added', asy
   await open(page, '/r/acme/app/pull/4/graph');
   await expect(page.getByRole('heading', { name: 'feat: read options #4', level: 1 })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Graph' })).toHaveAttribute('aria-current', 'page');
-  await expect(page.getByRole('button', { name: '1 added in this PR' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: '1 added by this PR' })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('.g-edge .halo')).toHaveCount(1);
   await expect(page.getByRole('button', { name: /^api to db, .*, added by this PR$/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /^db to api, .*violation, contract coupling$/ })).toBeVisible();
   await expectClean(page);
 
-  await page.getByRole('button', { name: '1 added in this PR' }).click();
+  await page.getByRole('button', { name: '1 added by this PR' }).click();
   await expect(page.locator('.g-edge .halo')).toHaveCount(0);
   await page.locator('.g-node', { hasText: 'db' }).click();
   await expect(page.getByRole('complementary').getByRole('link', { name: 'Open in the policy' })).toHaveAttribute(
@@ -935,7 +964,7 @@ test('policy: Check and Save send the text, the head and the CSRF header', async
   await expect(editor).toContainText('rules: []');
   await editor.click();
   await page.keyboard.press('ControlOrMeta+End');
-  await page.keyboard.type('# edited');
+  await page.keyboard.insertText('# edited');
   await expect(page.getByText('unsaved edits')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Ready for review' })).toBeDisabled();
   const text = 'version: 2\nmodlues: {}\nrules: []\n# edited';
@@ -1037,13 +1066,16 @@ test('policy: Propose saves the edits first and keeps text typed while it runs',
   await expect(editor).toContainText('rules: []');
   await editor.click();
   await page.keyboard.press('ControlOrMeta+End');
-  await page.keyboard.type('# mine');
+  // One input event per string: CodeMirror reads typed keys back from the DOM, and fast keys on a slow runner can land
+  // out of order ("mreo"). insertText is one change at the cursor, as a paste or an IME commit.
+  await page.keyboard.insertText('# mine');
+  await expect(editor).toContainText('# mine');
   await page.getByRole('textbox', { name: 'Instruction', exact: true }).fill('split module a');
   await page.getByRole('button', { name: 'Propose' }).click();
   await expect.poll(() => writes.length).toBe(2);
   await editor.click();
   await page.keyboard.press('ControlOrMeta+End');
-  await page.keyboard.type(' and more');
+  await page.keyboard.insertText(' and more');
   release();
   await expect(page.getByText('AI proposal in your CI: queued or running')).toBeVisible();
   await expect(editor).toContainText('# mine and more');
@@ -1072,7 +1104,7 @@ test('policy: a CRLF file is not an edit, and saves with CRLF', async ({ page })
   await expect(page.getByText('unsaved edits')).toHaveCount(0);
   await editor.click();
   await page.keyboard.press('ControlOrMeta+End');
-  await page.keyboard.type('# edited');
+  await page.keyboard.insertText('# edited');
   await page.getByRole('button', { name: 'Save to draft PR' }).click();
   await expect(page.getByRole('status')).toHaveText('Saved as a commit on the draft pull request.');
   expect(writes[0].postDataJSON().content).toBe('version: 2\r\nrules: []\r\n# edited');
@@ -1158,6 +1190,22 @@ test('every page: no sideways scroll at phone width', async ({ page }) => {
     const width = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(width, path).toBeLessThanOrEqual(390);
   }
+});
+
+test('pull request: on a phone the cycle stacks, and its labels stay readable', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, '/r/acme/app/pull/4');
+  const label = page.locator('.cycle-drawing .arrow-label').first();
+  await expect(label).toBeVisible();
+  // the rendered height of 12px text: at least 11px, so the drawing is not scaled down
+  expect((await label.boundingBox())!.height).toBeGreaterThanOrEqual(11);
+  const boxes = await page.locator('.cycle-drawing .module rect').evaluateAll((rs) =>
+    rs.map((r) => {
+      const b = r.getBoundingClientRect();
+      return Math.round(b.x + b.width / 2);
+    }),
+  );
+  expect(new Set(boxes).size).toBe(1);
 });
 
 test('policy: a long policy scrolls inside the editor, and a line link scrolls to it', async ({ page }) => {

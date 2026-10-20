@@ -3,16 +3,29 @@
 
   let { modules, directions }: { modules: string[]; directions: Direction[] } = $props();
 
-  const drawing = $derived(layout(modules, directions));
+  // Below this width the wide drawing would scale its labels too small to read: a pair stacks instead, and a longer
+  // cycle keeps its own size and scrolls sideways in its box.
+  const narrowBelow = 480;
+  let boxWidth = $state(0);
+  const narrow = $derived(boxWidth > 0 && boxWidth < narrowBelow);
+  const drawing = $derived(layout(modules, directions, narrow));
   // Marker IDs must be unique on the page, which can hold several cycles.
   const id = `cycle-${Math.random().toString(36).slice(2, 8)}`;
   const kinds = ['added', 'existing', 'cycle'] as const;
+  // The legend names only the kinds of arrow drawn.
+  const meaning: Record<(typeof kinds)[number], string> = {
+    added: 'added by this PR',
+    existing: 'existed before',
+    cycle: 'in the cycle; wider = more locations',
+  };
+  const shown = $derived(kinds.filter((k) => drawing.arrows.some((a) => a.kind === k)));
 </script>
 
-<div class="cycle-drawing">
+<div class="cycle-drawing" bind:clientWidth={boxWidth}>
   <svg
     viewBox="0 0 {drawing.width} {drawing.height}"
     width={drawing.width}
+    class:natural={narrow && modules.length > 2}
     role="img"
     aria-label="Dependency cycle among {modules.join(', ')}; the table below lists each direction"
   >
@@ -49,4 +62,7 @@
       </g>
     {/each}
   </svg>
+  <ul class="cycle-legend" aria-label="Legend">
+    {#each shown as kind (kind)}<li><i class="swatch {kind}" aria-hidden="true"></i>{meaning[kind]}</li>{/each}
+  </ul>
 </div>

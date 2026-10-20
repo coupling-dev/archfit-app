@@ -7,7 +7,7 @@
 {#each fixes as fix, i (i)}<p><strong>Fix:</strong> {fix}</p>{/each}
 {#if alternatives.length}
   <p>
-    <strong>Allowed instead:</strong>
+    <strong>Allowed alternatives:</strong>
     {#each alternatives as a, i (i)}{#if i}, {/if}<code>{a}</code>{/each}
   </p>
 {/if}

@@ -38,6 +38,8 @@ export interface GFinding {
   from: string;
   to: string;
   rule_id: string;
+  rule: string; // the readable name, as on the pull request page
+  meta: string; // severity and status, as there
   kind: string;
   status: string;
   why: string;
@@ -91,10 +93,10 @@ export function linkVolatility(l: GLink): string {
   return from && from !== 'declared' && from !== l.volatility ? `${l.volatility} (${from})` : l.volatility;
 }
 
-// statusCount words a count of dependencies of one status, for the chips.
-export function statusCount(s: Status, n: number): string {
-  if (n === 1) return statusWord[s];
-  return s === 'violation' ? 'violations' : s === 'advisory' ? 'advisories' : statusWord[s];
+// statusCount words a count of dependencies of one status, for the chips: the chips count dependencies, so a
+// dependency "with a violation", never "violations", which the findings count.
+export function statusCount(s: Status): string {
+  return s === 'violation' ? 'with a violation' : s === 'advisory' ? 'with an advisory' : statusWord[s];
 }
 
 export const meaning: Record<Status, string> = {
@@ -184,8 +186,10 @@ export function dependencyWord(n: number): string {
   return `${n} ${n === 1 ? 'dependency' : 'dependencies'}`;
 }
 
-// balanceWord reads the engine's seam severity: an imbalance only when it reported one.
+// balanceWord reads the engine's seam severity. The engine counts the none and low bands as balanced (its balancing
+// hypothesis needs no move below medium), so only medium and worse read as imbalanced.
 export function balanceWord(l: GLink): string {
+  if (l.imbalance === 'none' || l.imbalance === 'low') return 'balanced';
   if (l.imbalance) return `imbalanced · ${l.imbalance}`;
   return measured(l) ? 'no imbalance reported' : 'not measured';
 }

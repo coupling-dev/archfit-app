@@ -5,17 +5,27 @@
   import FindingTable from './FindingTable.svelte';
 
   // A report's findings in the PR comment's groups: the pull request page and the overview show them alike.
-  let { f, compared }: { f: Findings; compared: boolean } = $props();
+  // gatesFail is the engine's hard gates failing: then no violation listed never reads as nothing wrong.
+  let { f, compared, gatesFail = false }: { f: Findings; compared: boolean; gatesFail?: boolean } = $props();
 
   const listed = $derived(
-    (f.cycles?.length ?? 0) + (f.other?.length ?? 0) + (f.advisories?.length ?? 0) + (f.accepted?.length ?? 0),
+    (f.cycles?.length ?? 0) +
+      (f.other?.length ?? 0) +
+      (f.advisories?.length ?? 0) +
+      (f.accepted?.length ?? 0) +
+      (f.fixed?.length ?? 0),
   );
 </script>
 
 <section class="stack" aria-labelledby="violations">
   <h2 id="violations">Rule violations <span class="counter">{f.violation_count}</span></h2>
   {#if f.violation_count === 0}
-    <div class="box blankslate"><p>No rule violations in this run.</p></div>
+    <div class="box blankslate">
+      <p>
+        {#if gatesFail}No rule violation is listed, but the engine's hard gates fail: the engine verdict above says
+          why.{:else}No rule violations in this run.{/if}
+      </p>
+    </div>
   {/if}
   {#each f.cycles ?? [] as c, i (i)}
     <CycleCard {c} {compared} />
@@ -26,16 +36,19 @@
 </section>
 
 {#if f.advisories?.length}
-  <FindingTable id="advisories" title="Advisories · never block" count={f.advisory_count} rows={f.advisories} {compared} />
+  <FindingTable id="advisories" title={f.advisories_elsewhere ? 'Advisories on other dependencies · never block' : 'Advisories · never block'} count={f.advisory_count} rows={f.advisories} {compared} moves />
 {/if}
 {#if f.accepted?.length}
   <FindingTable
     id="accepted"
-    title="Accepted earlier"
+    title="Known issues accepted earlier"
     count={f.accepted_count}
     rows={f.accepted}
     {compared}
   />
+{/if}
+{#if f.fixed?.length}
+  <FindingTable id="fixed" title="Known issues fixed" count={f.fixed_count} rows={f.fixed} compared={false} />
 {/if}
 {#if f.omitted}
   <p class="muted small">{f.omitted} more findings are not listed: each group shows at most 50.</p>

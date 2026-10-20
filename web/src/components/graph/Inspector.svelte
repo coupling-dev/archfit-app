@@ -79,7 +79,7 @@
         <dd>{view.links.filter((l) => isProblem(l, pull)).length}</dd>
         <dt>Accepted earlier</dt>
         <dd>{view.links.filter((l) => isAcceptedEarlier(l, pull)).length}</dd>
-        {#if pull}<dt>Added in this PR</dt>
+        {#if pull}<dt>Added by this PR</dt>
           <dd>{view.links.filter((l) => isAdded(l, pull)).length}</dd>{/if}
       </dl>
     </div>
@@ -93,7 +93,7 @@
         <li>
           <button type="button" class="g-pick {l.status}" onclick={() => pickLink(linkKey(l))}>
             <span><i aria-hidden="true"></i><code>{l[end]}</code></span>
-            <span class="muted small">{linkStatusWord(l)} · {l.count || '·'}</span>
+            <span class="muted small">{linkStatusWord(l)} · {countWord(l)}</span>
           </button>
         </li>
       {/each}
@@ -125,8 +125,8 @@
   {#each findingsOf(view, l) as f, i (i)}
     <div class="g-finding">
       <p>
-        <code>{f.rule_id || '(no rule)'}</code>
-        <span class="muted small">{f.kind}, {f.status}</span>
+        <strong title={f.rule_id}>{f.rule || '(no rule)'}</strong>
+        <span class="muted small">· {f.meta}</span>
       </p>
       {#if f.why}<p class="small">{f.why}</p>{/if}
       {#if f.more}<p class="muted small">and {f.more} more on the archfit/state check</p>{/if}

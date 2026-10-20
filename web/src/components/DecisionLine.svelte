@@ -1,17 +1,14 @@
 <script lang="ts">
   import type { Decision } from '../lib/api';
-  import { decisionWord } from '../lib/seam';
 
-  // The engine's decision under the pull request's headline: its hard gates, the required rules it could not evaluate
-  // and what it says about attribution. Nothing when the gates passed and it notes nothing.
+  // The engine's decision under the pull request's headline, always, in the comment's words: its verdict, hard gates,
+  // active blockers and required rules, then the rules it could not evaluate and what it says about attribution.
   let { decision }: { decision?: Decision } = $props();
-
-  const gates = $derived(decision ? decisionWord(decision) : '');
 </script>
 
-{#if decision && (gates || decision.unevaluated.length || decision.origin_reasons.length)}
+{#if decision}
   <div class="stack-sm small" id="decision">
-    {#if gates}<p><strong>Engine decision:</strong> {gates}</p>{/if}
+    <p><strong>Engine verdict {decision.verdict}:</strong> {decision.detail}</p>
     {#if decision.unevaluated.length}
       <p>Required rules not evaluated:</p>
       <ul>

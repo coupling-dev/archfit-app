@@ -52,13 +52,13 @@
     {#if body.no_baseline || !body.compared}
       <p class="muted small">
         {#if body.no_baseline}Without a baseline every finding counts as new, including older debt.{/if}
-        {#if body.compared}"Added by this PR" means the engine did not find it on the base branch.{:else}"New" means not
-          accepted in a baseline, not "added by this pull request": this run did not compare against the base branch.{/if}
+        {#if body.compared}"added by this PR" means the engine did not find it on the base branch.{:else}This run did
+          not compare against the base branch, so the page does not say what this pull request added.{/if}
         The producer is authenticated; the report content is not independently checked.
       </p>
     {/if}
 
-    <FindingGroups f={body} compared={body.compared} />
+    <FindingGroups f={body} compared={body.compared} gatesFail={body.decision?.hard_gates === 'fail'} />
 
     {#if body.tasks}
       <section class="box" aria-labelledby="tasks">
