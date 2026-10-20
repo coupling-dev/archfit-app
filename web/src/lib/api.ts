@@ -233,6 +233,7 @@ export interface Checked {
   notice: string;
 }
 
+import { refused } from './gate';
 import { signInHref } from './route';
 
 // ApiError is a failed call: the sentence to show and, for a refused policy text, its problems.
@@ -298,6 +299,15 @@ async function answer<T>(res: Response): Promise<T> {
 export function explain(e: ApiError, here: string, go: (url: string) => void = (url) => location.assign(url)): string {
   if (e.status !== 401) return e.message;
   go(signInHref(here));
+  return '';
+}
+
+// explainLoad is explain for the read that fills a page. Its 404 (a repository that does not exist or the user cannot
+// see, a pull request that is not one) replaces the whole page, as the server's error page did. Never for a write: a
+// write's 404 stays a sentence on the page, so a form or the editor keeps what the user typed.
+export function explainLoad(e: ApiError, here: string, go?: (url: string) => void): string {
+  if (e.status !== 404) return explain(e, here, go);
+  refused.set(e.message);
   return '';
 }
 

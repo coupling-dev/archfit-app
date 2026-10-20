@@ -3,7 +3,6 @@ package ui
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"html"
 	"net/http"
@@ -84,6 +83,9 @@ func TestTenantIdentityOnlyFromSession(t *testing.T) {
 	e.publishReport(repoName, artifact(t, "healthy"))
 
 	for _, rt := range repoRoutes(otherRepo) {
+		if !rt.authorized() {
+			continue
+		}
 		if got := send(c, rt); got != http.StatusNotFound {
 			t.Errorf("%s %s = %d, want 404", rt.method, rt.path, got)
 		}
@@ -99,7 +101,8 @@ func TestTenantIdentityOnlyFromSession(t *testing.T) {
 
 	e.gh.mu.Lock()
 	for _, call := range e.gh.calls {
-		if call.installationID == installB || call.fullName == otherRepo {
+		// The user's own permission lookup, with the user's token, is how B's repository is refused: no App call.
+		if call.method != "Permission" && (call.installationID == installB || call.fullName == otherRepo) {
 			t.Errorf("GitHub call for installation B: %+v", call)
 		}
 	}
@@ -635,7 +638,6 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 // An error page is the shell with the documented status: the shell's CSP with a fresh nonce, and the app shows the
 // sentence of explain from the app-error meta tag. An error's own text never reaches the page.
 func TestErrorPagesAreTheShell(t *testing.T) {
-	const internal = "dial tcp 10.0.0.7:443: secret-host refused"
 	tests := []struct {
 		name     string
 		setup    func(e *env)
@@ -643,14 +645,9 @@ func TestErrorPagesAreTheShell(t *testing.T) {
 		status   int
 		sentence string
 	}{
-		{"a repository the user cannot see", func(*env) {}, "/r/acme/hidden", http.StatusNotFound, "Not found."},
 		{"a pull request number that is not one", func(*env) {}, "/r/" + repoName + "/pull/0", http.StatusNotFound, "Not found."},
 		{"a path of no page", func(*env) {}, "/static/app.css", http.StatusNotFound, "Not found."},
 		{"a route's path with a method it does not take", func(*env) {}, "/auth/logout", http.StatusNotFound, "Not found."},
-		{"GitHub fails with its own text", func(e *env) { e.gh.fail["Permission"] = errors.New(internal) }, "/r/" + repoName,
-			http.StatusBadGateway, "GitHub or an Archfit service failed. Nothing was changed. Try again."},
-		{"GitHub rate limits", func(e *env) { e.gh.fail["Permission"] = fmt.Errorf("%w: %s", api.ErrRateLimited, internal) }, "/r/" + repoName,
-			http.StatusServiceUnavailable, "GitHub is rate limiting Archfit. Try again in a minute."},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -675,4 +672,43 @@ func TestErrorPagesAreTheShell(t *testing.T) {
 
 	ok := newEnv(t).as("alice", permRead).get("/r/" + repoName)
 	wantContains(t, ok.Body.String(), `<meta name="app-error" content="">`)
+}
+
+// A repository page is one shell for every repository: one the user reads, one of another tenant, one that does not
+// exist. The bytes and headers are the same but for the nonce, and serving it asks GitHub nothing. The API then answers
+// a repository the user cannot see exactly as one that does not exist.
+func TestRepositoryPagesAreOneShell(t *testing.T) {
+	e := newEnv(t)
+	c := e.as("alice", permRead)
+	unnonced := func(res *httptest.ResponseRecorder) string {
+		m := shellNonce.FindStringSubmatch(res.Header().Get("Content-Security-Policy"))
+		if m == nil {
+			t.Fatalf("no nonce in %q", res.Header().Get("Content-Security-Policy"))
+		}
+		h := res.Header().Clone()
+		h.Del("X-Request-Id") // per request, as the nonce
+		return strings.ReplaceAll(fmt.Sprint(res.Code, h, res.Body.String()), m[1], "NONCE")
+	}
+	for _, suffix := range []string{"", "/graph", "/pull/4", "/pull/4/graph", "/policy", "/data-sharing"} {
+		var want string
+		for _, repo := range []string{repoName, otherRepo, "acme/missing"} {
+			res := c.get("/r/" + repo + suffix)
+			wantStatus(t, res, http.StatusOK)
+			got := unnonced(res)
+			if want == "" {
+				want = got
+			} else if got != want {
+				t.Errorf("/r/%s%s differs from the shell of %s%s:\n%s\nwant\n%s", repo, suffix, repoName, suffix, got, want)
+			}
+		}
+	}
+	if n := len(e.gh.called("Permission")); n != 0 {
+		t.Errorf("serving the pages asked GitHub %d times, want none", n)
+	}
+
+	hidden, missing := c.get("/api/repos/"+otherRepo+"/overview"), c.get("/api/repos/acme/missing/overview")
+	wantStatus(t, hidden, http.StatusNotFound)
+	if hidden.Code != missing.Code || hidden.Body.String() != missing.Body.String() {
+		t.Errorf("hidden = %d %q, missing = %d %q: want the same answer", hidden.Code, hidden.Body, missing.Code, missing.Body)
+	}
 }

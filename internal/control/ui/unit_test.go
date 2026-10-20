@@ -20,6 +20,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 
+	"github.com/alexei-led/archfit-app/internal/wire/policy"
 	"github.com/alexei-led/archfit-app/internal/wire/report"
 )
 
@@ -438,6 +439,38 @@ func TestMetricSubjectReadsAsTheComment(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := metricSubject(report.Finding{RuleID: tt.rule, MatchedBy: tt.matchedBy}); got != tt.want {
 				t.Errorf("metricSubject = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// Reads that do not depend on each other are in flight together: each case's reads meet, which reads made in turn
+// never do.
+func TestIndependentReadsMeet(t *testing.T) {
+	published := func(e *env) { e.publishReport(repoName, artifact(t, "healthy")) }
+	tests := []struct {
+		name  string
+		path  string
+		setup func(e *env)
+		keys  []string
+	}{
+		{"repository graph: the policy beside the report", "/graph", published,
+			[]string{"ArtifactID", "File " + mainBranch + ":" + policy.PolicyPath}},
+		{"pull request graph: the policy beside the report", "/pulls/4/graph", func(e *env) { e.checkPull(prArtifact(t, prPolicy)) },
+			[]string{"ArtifactID", "File " + sha(4) + ":" + policy.PolicyPath}},
+		{"overview: the default branch and the pull requests beside the progress", "/overview",
+			func(e *env) { e.onb.progress.Stage = onboarding.StageAdvisory }, []string{"Progress", "BranchHead", "OpenPulls"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t)
+			c := e.as("alice", permRead)
+			tt.setup(e)
+			m := newMeeting(tt.keys...)
+			e.gh.meet, e.onb.meet = m, m
+			wantStatus(t, c.get("/api/repos/"+repoName+tt.path), http.StatusOK)
+			if !m.met() {
+				t.Errorf("%q were not in flight together", tt.keys)
 			}
 		})
 	}

@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, explain, getJSON, postJSON, repoAPI } from './api';
+import { get } from 'svelte/store';
+import { ApiError, explain, explainLoad, getJSON, postJSON, repoAPI } from './api';
+import { refused } from './gate';
 
 function reply(status: number, body: string) {
   const fetch = vi.fn(async () => new Response(body, { status, headers: { 'Content-Type': 'application/json' } }));
@@ -59,6 +61,20 @@ describe('api', () => {
     go.mockClear();
     expect(explain(new ApiError(503, 'GitHub is rate limiting.'), '/', go)).toBe('GitHub is rate limiting.');
     expect(go).not.toHaveBeenCalled();
+  });
+
+  it("replaces the page with its own read's 404, never with a write's", () => {
+    const go = vi.fn();
+    expect(explain(new ApiError(404, 'Not found.'), '/r/acme/app/policy', go)).toBe('Not found.');
+    expect(get(refused)).toBe('');
+    expect(explainLoad(new ApiError(404, 'Not found.'), '/r/acme/secret', go)).toBe('');
+    expect(get(refused)).toBe('Not found.');
+    expect(go).not.toHaveBeenCalled();
+    refused.set('');
+    expect(explainLoad(new ApiError(503, 'GitHub is rate limiting.'), '/', go)).toBe('GitHub is rate limiting.');
+    expect(explainLoad(new ApiError(401, 'Sign in to continue.'), '/r/acme/app', go)).toBe('');
+    expect(go).toHaveBeenCalledWith('/auth/login?return=%2Fr%2Facme%2Fapp');
+    expect(get(refused)).toBe('');
   });
 
   it('escapes the repository in API paths', () => {

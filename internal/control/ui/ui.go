@@ -109,27 +109,29 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("POST /auth/logout", s.signedIn(func(w http.ResponseWriter, r *http.Request, _ session.User) {
 		sessions.LogoutHandler().ServeHTTP(w, r)
 	}))
-	// Pages of the web app: the shell, which the app fills from /api. The repository page still authorizes, so a
-	// repository the user cannot see is "Not found" before any script runs.
+	// Pages of the web app: the shell, which the app fills from /api. A repository page asks only for a session, no
+	// GitHub call: the shell is the same bytes for every repository, one that exists or not, visible or not (the nonce
+	// aside), and carries none of its data. Every /api/repos route authorizes per request, and the app shows its "Not
+	// found." the same way for a repository that does not exist and one the user cannot see.
 	index := func(w http.ResponseWriter, _ *http.Request) { s.shell.serve(w, http.StatusOK, "") }
 	mux.HandleFunc("GET /assets/", assets(web))
 	mux.HandleFunc("GET "+licensesRoute, licenses(web))
 	mux.HandleFunc("GET /{$}", index)
-	page := func(w http.ResponseWriter, r *http.Request, _ scope) { index(w, r) }
-	pullPage := func(w http.ResponseWriter, r *http.Request, _ scope) {
+	page := s.signedIn(func(w http.ResponseWriter, r *http.Request, _ session.User) { index(w, r) })
+	pullPage := s.signedIn(func(w http.ResponseWriter, r *http.Request, _ session.User) {
 		if _, ok := pullNumber(r); !ok {
 			s.fail(w, r, api.ErrNotFound)
 			return
 		}
 		index(w, r)
-	}
-	mux.Handle("GET /r/{o}/{n}", s.repo(permRead, page))
-	mux.Handle("GET /r/{o}/{n}/graph", s.repo(permRead, page))
-	mux.Handle("GET /r/{o}/{n}/pull/{number}", s.repo(permRead, pullPage))
-	mux.Handle("GET /r/{o}/{n}/pull/{number}/graph", s.repo(permRead, pullPage))
-	mux.Handle("GET /r/{o}/{n}/data-sharing", s.repo(permAdmin, page))
-	mux.Handle("GET /r/{o}/{n}/policy", s.repo(permRead, page))
-	mux.Handle("GET /r/{o}/{n}/consent", s.repo(permAdmin, consentMoved))
+	})
+	mux.Handle("GET /r/{o}/{n}", page)
+	mux.Handle("GET /r/{o}/{n}/graph", page)
+	mux.Handle("GET /r/{o}/{n}/pull/{number}", pullPage)
+	mux.Handle("GET /r/{o}/{n}/pull/{number}/graph", pullPage)
+	mux.Handle("GET /r/{o}/{n}/data-sharing", page)
+	mux.Handle("GET /r/{o}/{n}/policy", page)
+	mux.Handle("GET /r/{o}/{n}/consent", s.signedIn(consentMoved))
 
 	mux.Handle("GET /api/session", s.apiSignedIn(apiSession))
 	mux.Handle("GET /api/repos", s.apiSignedIn(s.apiRepos))

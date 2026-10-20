@@ -1,6 +1,9 @@
 <script lang="ts">
   import Header from './Header.svelte';
+  import Skeleton from './components/Skeleton.svelte';
   import { ApiError, getJSON, type Session } from './lib/api';
+  import { prefetch } from './lib/early';
+  import { refused } from './lib/gate';
   import { parseRoute, serverError } from './lib/route';
   import DataSharing from './pages/DataSharing.svelte';
   import Landing from './pages/Landing.svelte';
@@ -10,13 +13,23 @@
 
   const route = parseRoute(location.pathname);
   const here = location.pathname + location.search;
-  // The server's error page is this shell with the error's sentence; it then shows instead of the route.
-  const pageError = serverError(document.querySelector('meta[name="app-error"]')?.getAttribute('content'));
+  // The server's error page is this shell with the error's sentence; it then shows instead of the route, as does a
+  // repository API's 404 (lib/gate).
+  const serverSentence = serverError(document.querySelector('meta[name="app-error"]')?.getAttribute('content'));
+  const pageError = $derived(serverSentence || $refused);
 
   // loading, then the signed-in session, signed out (401), or a failure to show.
   let session = $state<Session | null>(null);
   let signedOut = $state(false);
   let failure = $state('');
+
+  // The page's first reads and its chunk start beside the session, so the page waits for the slowest, not their sum.
+  if (!serverSentence) prefetch(route);
+  // The graph pages carry the drawing libraries and the policy page the editor: each a chunk of its own, loaded on
+  // those pages only.
+  const graphPage = route.kind === 'graph' || route.kind === 'pull-graph' ? import('./pages/Graph.svelte') : null;
+  const policyPage = route.kind === 'policy' ? import('./pages/Policy.svelte') : null;
+  for (const chunk of [graphPage, policyPage]) chunk?.catch(() => {}); // a page shown later handles the failure
 
   getJSON<Session>('/api/session').then(
     (s) => (session = s),
@@ -42,10 +55,6 @@
   const repo = $derived(
     !pageError && route.kind !== 'home' && route.kind !== 'unknown' && session ? route.fullName : '',
   );
-  // The graph pages carry the drawing libraries and the policy page the editor: each a chunk of its own, loaded on
-  // those pages only.
-  const graphPage = () => import('./pages/Graph.svelte');
-  const policyPage = () => import('./pages/Policy.svelte');
   $effect(() => {
     document.title = `${title} · Archfit`;
   });
@@ -68,7 +77,7 @@
   {:else if signedOut}
     <Landing {here} />
   {:else if !session}
-    <p class="muted" aria-live="polite">Loading…</p>
+    <Skeleton rows={4} />
   {:else if route.kind === 'home'}
     <Repos {here} />
   {:else if route.kind === 'repo'}
@@ -77,17 +86,17 @@
     <DataSharing {route} {session} {here} />
   {:else if route.kind === 'pull'}
     <Pull {route} {here} />
-  {:else if route.kind === 'graph' || route.kind === 'pull-graph'}
-    {#await graphPage()}
-      <p class="muted" aria-live="polite">Loading…</p>
+  {:else if (route.kind === 'graph' || route.kind === 'pull-graph') && graphPage}
+    {#await graphPage}
+      <Skeleton rows={6} />
     {:then m}
       <m.default {route} {here} />
     {:catch}
       <p class="flash error" role="alert">The graph could not be loaded. Reload the page.</p>
     {/await}
-  {:else if route.kind === 'policy'}
-    {#await policyPage()}
-      <p class="muted" aria-live="polite">Loading…</p>
+  {:else if route.kind === 'policy' && policyPage}
+    {#await policyPage}
+      <Skeleton rows={6} />
     {:then m}
       <m.default {route} {session} {here} />
     {:catch}

@@ -278,8 +278,8 @@ const MaxBytes = 5 << 20
 
 // Report is the no-source transport form of an engine state report. The decoder knows every key of the engine
 // state schema of v3.0.0 and v3.0.1: keys listed here are kept (length-capped), the other known keys are validated and dropped
-// (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores), and any key
-// the schema does not define is a decode error.
+// (measurement, findings[].matched_by except MatchedByKeys, agent_tasks[].declarations, metric provenance, seam scores),
+// and any key the schema does not define is a decode error.
 type Report struct {
     SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
     Verdict       string               `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
@@ -372,7 +372,22 @@ type Finding struct {
     Constraint          string     `json:"constraint"` // engine-authored, single line, length-capped
     AllowedAlternatives []string   `json:"allowed_alternatives,omitempty"`
     Origin              string     `json:"origin,omitempty"` // "introduced" | "pre_existing" | "unknown", only with --base; presentation only
+    // MatchedBy holds only the MatchedByKeys of the engine's matched_by: a metric ratchet names its numbers there, and a
+    // dependency finding its full location count (the engine lists at most 50 locations).
+    MatchedBy map[string]string `json:"matched_by,omitempty"`
 }
+
+// The matched_by keys a consumer shows. The engine writes more keys; the others stay out of the App.
+const (
+    MatchedByMetric         = "metric"
+    MatchedByBefore         = "before"
+    MatchedByAfter          = "after"
+    MatchedByThreshold      = "threshold"
+    MatchedByLocationsTotal = "locations_total" // the deduplicated location count of a dependency finding
+)
+
+// MatchedByKeys are the matched_by keys Decode keeps.
+var MatchedByKeys = []string{MatchedByMetric, MatchedByBefore, MatchedByAfter, MatchedByThreshold, MatchedByLocationsTotal}
 
 type Edge struct {
     From Endpoint `json:"from"`

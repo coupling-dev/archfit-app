@@ -8,7 +8,9 @@
   import DecisionLine from '../components/DecisionLine.svelte';
   import PullHead from '../components/PullHead.svelte';
   import SeamSummary from '../components/graph/SeamSummary.svelte';
-  import { explain, getJSON, repoAPI, type ApiError } from '../lib/api';
+  import Skeleton from '../components/Skeleton.svelte';
+  import { explainLoad, repoAPI, type ApiError } from '../lib/api';
+  import { firstJSON } from '../lib/early';
   import {
     acceptedRows,
     dependencyWord,
@@ -45,9 +47,9 @@
 
   function load() {
     const path = route.number ? `pulls/${route.number}/graph` : 'graph';
-    getJSON<Graph>(repoAPI(route.owner, route.name, path)).then(
+    firstJSON<Graph>(repoAPI(route.owner, route.name, path)).then(
       (b) => (body = b),
-      (e: ApiError) => (failure = explain(e, here)),
+      (e: ApiError) => (failure = explainLoad(e, here)),
     );
   }
   load();
@@ -76,7 +78,7 @@
 {#if failure}
   <p class="flash error" role="alert">{failure}</p>
 {:else if !body}
-  <p class="muted" aria-live="polite">Loading…</p>
+  <Skeleton rows={6} />
 {:else}
   {#if body.pull}
     <PullHead head={body.pull} fullName={route.fullName} current="graph" />

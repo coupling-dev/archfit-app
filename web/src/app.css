@@ -623,3 +623,12 @@ details.disclosure.locations-all { border-top: 0; }
 .plain { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 fieldset { border: 0; margin: 0; padding: 0; }
 legend { font-weight: 600; padding: 0; margin-bottom: 4px; }
+
+/* Skeleton: a section still loading. The pulse stops under prefers-reduced-motion (the rule above). */
+.skeleton { display: grid; gap: 10px; padding: 16px 0; }
+.skeleton.box { padding: 16px; border: 1px solid var(--border-muted); border-radius: var(--radius); }
+.skeleton-line { display: block; height: 12px; border-radius: 6px; background: var(--border-muted); animation: skeleton-pulse 1.4s ease-in-out infinite; }
+.skeleton-line:nth-child(3n + 1) { width: 60%; }
+.skeleton-line:nth-child(3n + 2) { width: 90%; }
+.skeleton-line:nth-child(3n) { width: 75%; }
+@keyframes skeleton-pulse { 50% { opacity: 0.45; } }
