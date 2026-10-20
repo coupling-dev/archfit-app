@@ -165,18 +165,24 @@ What each item shows:
   report or run attempt gets a new `archfit/state` check run with its own annotations, so annotations from an
   earlier report do not stay; GitHub shows the newest run. If the App cannot read the list of changed files, the
   check has no annotations for that upload.
-- The comment starts with the effect on merge, then, with a base comparison, one sentence of what this pull request
-  did (for example which dependency cycle it closes and which dependencies it adds), then the next step, and one
-  line that counts the rule violations, advisories, accepted and fixed findings (and, with a base comparison, how
-  many this pull request introduced). The reason codes and their details are in a Decision section at the top of
-  the folded evidence. A dependency cycle is one item: a diagram of the modules with the location count of each
-  direction, then a table of directions with their integration strength, distance and volatility. With a base
-  comparison, a direction this pull request added is red in the diagram and `added` in the table, and one that
-  existed before is grey and `existing`; the App knows this from other findings on the same pair of modules, and
-  leaves a direction unmarked when the report does not say. Advisories, accepted findings and fixed
-  findings are each folded into a table; an explanation that repeats across findings is shown once. The evidence
-  gaps, the validation commands, and a JSON block of agent tasks between `<!-- archfit:agent-tasks -->` markers are
-  folded too. A coding agent on the pull request can act on that block.
+- The comment starts with the verdict as a heading. With a base comparison, one plain sentence follows: what this pull
+  request changed (for example "adds 2 dependencies that close a dependency cycle among `a`, `b` and `c`"). A
+  dependency cycle is then one picture: a diagram of the modules with the location count of each direction, and one
+  line that says what the colours mean. With a base comparison, a direction this pull request added is red and
+  `added` in the table, and one that existed before is grey and `existing`; the App knows this from other findings on
+  the same pair of modules, and leaves a direction unmarked when the report does not say. The table lists each
+  direction with where it occurs. A column that is the same on every row (integration strength, distance,
+  volatility) is written once under the table. **Why** says why the directions form a cycle, and **Fix** is the
+  engine's own repair. **Next** is a command you can run in your checkout, for example
+  `archfit check --base origin/main`. Advisories (each with a suggested move in the words of Balanced Coupling:
+  introduce a contract, move the functionality, accept, declare the volatility), known issues that were accepted
+  earlier, and fixed issues are each folded into a table; an explanation that repeats across findings is shown once.
+  A tripped metric ratchet reads "metric `name`: before → after (threshold)". The folded evidence starts with a
+  Decision section: the engine's verdict, its hard gates and active blockers, and the reason codes with their
+  details; an advisory repository still shows a blocked verdict there. The evidence gaps, the dimensions (with the
+  new and resolved distributed-monolith seams of the drift dimension), the validation commands as the Archfit
+  workflow ran them, and a JSON block of agent tasks between `<!-- archfit:agent-tasks -->` markers are folded too.
+  A coding agent on the pull request can act on that block.
 - The evidence gaps show analyzers that did not run (absent or disabled) on one line.
 
 The gate has three conclusions:
@@ -207,7 +213,7 @@ The first reason controls the conclusion. The App keeps later reasons in the com
 | ------------------- | -------------------------------------------------------------------------------------------------------- |
 | `healthy`           | Nothing                                                                                                  |
 | `attention_only`    | Nothing blocks. Advisories never block. Review the listed dimensions and diagnostics on the state check. |
-| `blocking_findings` | Remove the rule violations, then run the validation command.                                             |
+| `blocking_findings` | Fix the rule violations, then run archfit check again.                                                    |
 
 `attention_only` is a `success`. The engine verdict is `needs_attention`, and no evidence, governance, or subscription
 reason applies. The detail lists the dimensions that are not fully measured and the count of active diagnostics.

@@ -3,6 +3,7 @@ package feedback
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -23,11 +24,11 @@ const (
 	headDimensions = "### Dimensions"
 	headGaps       = "### Evidence gaps"
 	headInputs     = "### Inputs and identity"
-	headCommands   = "### Validation commands"
+	headCommands   = "### Validation commands (as run in the Archfit workflow)"
 	headTasks      = "### Agent tasks"
 
 	fixedTrustSentence = "Measurement is customer-attested: the producer is authenticated, the report content is not independently checked."
-	noActiveBlocker    = "- No active gate finding is listed. The engine blocked on a hard gate without one, for example a metric ratchet; read the archfit/state check."
+	noActiveBlocker    = "- The outcome names blocking findings, but the report lists no active gate finding. Read the archfit/state check."
 	advisoryNote       = "This check does not block merging: the gate is advisory for this repository."
 )
 
@@ -178,15 +179,17 @@ func blockersBlock(p Publication) string {
 			break
 		}
 		where := ", no location reported"
-		if len(f.Locations) > 0 {
+		switch {
+		case len(f.Locations) > 0:
 			where = " at " + location(f.Locations[0])
+		case isMetric(f): // a metric ratchet has no place in the code
+			where = ""
 		}
 		goal := "none reported"
 		if g, ok := goals[f.ID]; ok {
 			goal = text(g)
 		}
-		fmt.Fprintf(&b, "\n- %s: %s → %s%s, finding %s. Goal: %s",
-			code(f.RuleID), module(f.Edge.From), module(f.Edge.To), where, code(shortID(f.ID)), goal)
+		fmt.Fprintf(&b, "\n- %s: %s%s, finding %s. Goal: %s", code(f.RuleID), subject(f), where, code(shortID(f.ID)), goal)
 	}
 	return b.String()
 }
@@ -226,14 +229,25 @@ func renderState(p Publication) string {
 // link is the App's page of this pull request, or "" for none.
 func renderComment(p Publication, now time.Time, waiver, link string) string {
 	l := layout{head: headBlock(p, true), decision: decisionBlock(p), inputs: inputsBlock(p)}
-	if notice := noticeLine(p.Trusted.Entitlement, now); notice != "" {
-		l.head += "\n\n" + notice
+	var notice string
+	if n := noticeLine(p.Trusted.Entitlement, now); n != "" {
+		notice = n
 	}
-	if link != "" { // after the notice, as Layout item 3 orders them
-		l.head += "\n\n[Details in Archfit](" + link + ")"
+	// The next step sits after the violations it answers; with none to answer it follows the head.
+	tail := join(nextBlock(p), linkLine(link))
+	below := nextBelowFindings(p)
+	if below {
+		l.head = join(l.head, notice)
+	} else {
+		l.head = join(l.head, tail, notice)
 	}
 	if !suspended(p.Outcome) {
-		l.findings, l.dims, l.gaps = findingsBlock(p.Report, true), dimensionsBlock(p.Report), gapsBlock(p)
+		if below {
+			l.findings = findings(p.Report, true, tail)
+		} else {
+			l.findings = findingsBlock(p.Report, true)
+		}
+		l.dims, l.gaps = dimensionsBlock(p.Report), gapsBlock(p)
 		if p.Report != nil {
 			l.commands = commands(p.Report.AgentTasks)
 			l.tasks, l.hasTasks = encodeTasks(p.Report.AgentTasks), true
@@ -248,27 +262,27 @@ func renderComment(p Publication, now time.Time, waiver, link string) string {
 	return placeWaiver(body, waiverSection(waiver))
 }
 
+func linkLine(link string) string {
+	if link == "" {
+		return ""
+	}
+	return "[Details in Archfit](" + link + ")"
+}
+
 // headBlock is blocks 1 and 2. In a check summary (markers false): the advisory note, the deciding reason, then
-// further reasons. In the comment (markers true): markers, the headline as a heading, the advisory alert, then
-// commentHead, which writes the next steps without reason codes; decisionBlock carries those into the evidence fold.
+// further reasons. In the comment (markers true): markers, the headline as a heading, then commentHead. The advisory
+// mode is in the headline, so the comment has no note box for it.
 func headBlock(p Publication, markers bool) string {
 	// The comment carries the headline as its heading. A check summary does not: GitHub prints the check title, which
 	// is the headline, right above it.
-	var parts []string
 	if markers {
-		parts = append(parts, commentMarker+"\n"+headMarker(p.Target.HeadSHA, p.Receipt)+"\n## Archfit: "+headline(p))
+		return commentHead(p, commentMarker+"\n"+headMarker(p.Target.HeadSHA, p.Receipt)+"\n## Archfit: "+headline(p))
 	}
+	var parts []string
 	if advisory(p) && p.Outcome.Conclusion != verdict.ActionRequired && !suspended(p.Outcome) {
-		if markers { // a GitHub alert in the comment; a check summary keeps plain text
-			parts = append(parts, "> [!NOTE]\n> "+advisoryNote)
-		} else {
-			parts = append(parts, advisoryNote)
-		}
+		parts = append(parts, advisoryNote)
 	}
 	reasons := p.Outcome.Reasons
-	if markers {
-		return commentHead(p, parts)
-	}
 	var b strings.Builder
 	b.WriteString(strings.Join(parts, "\n\n"))
 	if len(reasons) == 0 {
@@ -299,40 +313,62 @@ func headBlock(p Publication, markers bool) string {
 	return b.String()
 }
 
-// commentHead is the head of the comment, the part a person reads: what the pull request did, then the next steps.
-// Reason codes, categories and details stay in the evidence fold (decisionBlock): they are for tools and support,
-// and a detail such as "1 blocking finding" counts gate findings, not the violations the comment lists.
-func commentHead(p Publication, parts []string) string {
-	if !suspended(p.Outcome) {
-		if s := leadSentence(p.Report); s != "" {
-			parts = append(parts, s)
-		}
+// commentHead is the head of the comment, the part a person reads: the headline, then in one sentence what the pull
+// request did. Reason codes, categories and details stay in the evidence fold (decisionBlock): they are for tools and
+// support, and a detail such as "1 blocking finding" counts gate findings, not the violations the comment lists.
+func commentHead(p Publication, headline string) string {
+	if suspended(p.Outcome) {
+		return headline
 	}
+	return join(headline, leadSentence(p.Report))
+}
+
+// safeRef is a branch name that is safe to put in a command a person copies: no shell metacharacter, no option.
+var safeRef = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
+
+// nextBelowFindings reports whether the comment lists violations, so that the next step follows them.
+func nextBelowFindings(p Publication) bool {
+	return !suspended(p.Outcome) && p.Report != nil && len(group(p.Report).violations) > 0
+}
+
+// nextBlock is the next step of the outcome, each distinct one once. For blocking findings it is a command the
+// person can run in a checkout, not the name of one that only the Archfit workflow knows.
+func nextBlock(p Publication) string {
 	var next []string
+	below := nextBelowFindings(p)
 	for _, r := range p.Outcome.Reasons {
-		if s := text(r.Next); r.Next != "" && !slices.Contains(next, s) {
+		if r.Next == "" {
+			continue
+		}
+		s := text(r.Next)
+		if below && r.Code == verdict.ReasonBlockingFindings {
+			cmd := "archfit check"
+			if safeRef.MatchString(p.Target.BaseRef) && !strings.Contains(p.Target.BaseRef, "..") {
+				cmd += " --base origin/" + p.Target.BaseRef
+			}
+			s = "Fix the violations above, then check with " + code(cmd) + "."
+		}
+		if !slices.Contains(next, s) {
 			next = append(next, s)
 		}
 	}
 	switch {
 	case len(next) == 1:
-		parts = append(parts, "**Next:** "+next[0])
+		return "**Next:** " + next[0]
 	case len(next) > 1:
 		if len(next) > reasonCap+1 {
 			next = append(next[:reasonCap+1:reasonCap+1], fmt.Sprintf("and %d more", len(next)-reasonCap-1))
 		}
-		parts = append(parts, "**Next:**\n- "+strings.Join(next, "\n- "))
+		return "**Next:**\n- " + strings.Join(next, "\n- ")
 	}
-	return strings.Join(parts, "\n\n")
+	return ""
 }
 
-// decisionBlock lists every reason of the outcome with its code, category, detail and next step. In the comment it
-// sits in the evidence fold; a check summary shows the reasons in its head instead.
+// decisionBlock is the engine's decision in one line, then every reason of the outcome with its code, category,
+// detail and next step. In the comment it sits in the evidence fold; a check summary shows the reasons in its head
+// instead.
 func decisionBlock(p Publication) string {
-	if len(p.Outcome.Reasons) == 0 {
-		return ""
-	}
-	lines := []string{headDecision, ""}
+	lines := engineDecision(p)
 	for i, r := range p.Outcome.Reasons {
 		if i == reasonCap+1 {
 			lines = append(lines, fmt.Sprintf("- and %d more", len(p.Outcome.Reasons)-reasonCap-1))
@@ -347,7 +383,37 @@ func decisionBlock(p Publication) string {
 		}
 		lines = append(lines, line)
 	}
-	return strings.Join(lines, "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+	return strings.Join(append([]string{headDecision, ""}, lines...), "\n")
+}
+
+// engineDecision says what the engine decided, whatever the gate mode does with it, so a blocked verdict is never
+// hidden behind "advisory": the engine's verdict, its hard gates, its active blockers, the required rules it could
+// not evaluate.
+func engineDecision(p Publication) []string {
+	r := p.Report
+	if r == nil || suspended(p.Outcome) {
+		return nil
+	}
+	gates := map[string]string{"pass": "hard gates pass", "fail": "hard gates fail", "unmeasured": "hard gates not measured"}
+	gate, ok := gates[r.Decision.HardGates]
+	if !ok {
+		gate = "hard gates " + text(r.Decision.HardGates)
+	}
+	n := r.Decision.ActiveBlockers
+	line := fmt.Sprintf("- Engine verdict **%s**: %s, %d active %s", strings.ReplaceAll(text(r.Verdict), "_", " "), gate, n, plural(n, "blocker", "blockers"))
+	if u := len(r.Decision.UnevaluatedRequiredRules); u > 0 {
+		line += fmt.Sprintf(", %d required %s not evaluated", u, plural(u, "rule", "rules"))
+	} else {
+		line += ", every required rule evaluated"
+	}
+	lines := []string{line}
+	if advisory(p) {
+		lines = append(lines, "- The gate is advisory for this repository: the engine's verdict does not block merging.")
+	}
+	return lines
 }
 
 func noticeLine(e inputs.Entitlement, now time.Time) string {
@@ -362,9 +428,11 @@ func dimensionsBlock(r *report.Report) string {
 		return ""
 	}
 	// A delta without metrics changes nothing to show: its status alone ("comparable") is not a change.
-	changed := func(d report.Dimension) bool { return d.Delta != nil && len(d.Delta.Metrics) > 0 }
+	changed := func(d report.Dimension) bool {
+		return d.Delta != nil && len(d.Delta.Metrics) > 0 || seamChange(d) != ""
+	}
 	changes := slices.ContainsFunc(dimensionOrder[:], func(key string) bool { return changed(r.Dimensions[key]) })
-	head := "| Dimension | Status | Coverage | Confidence | Gate |"
+	head := "| Dimension | Status | Measured | Confidence | Result |"
 	sep := "| --- | --- | --- | --- | --- |"
 	if changes {
 		head, sep = head+" Change |", sep+" --- |"
@@ -382,10 +450,10 @@ func dimensionsBlock(r *report.Report) string {
 			continue
 		}
 		row := []string{"`" + key + "`", text(d.Status), fmt.Sprintf("%d/%d%s", d.Coverage.Observed, d.Coverage.Total, parens(d.Coverage.Basis)),
-			text(d.Confidence), gateCell(text(d.Gate))}
+			text(d.Confidence), resultCell(strings.ReplaceAll(text(d.Gate), "_", " "))}
 		if changes {
-			change := ""
-			if changed(d) {
+			change := seamChange(d)
+			if d.Delta != nil && len(d.Delta.Metrics) > 0 {
 				change = deltaText(*d.Delta)
 			}
 			row = append(row, change)
@@ -398,8 +466,29 @@ func dimensionsBlock(r *report.Report) string {
 	return b.String()
 }
 
-// gateCell makes a dimension that fails or warns stand out in the table.
-func gateCell(g string) string {
+// seamChange is the drift dimension's count of distributed-monolith seams that are new or gone against the stored
+// reference, only when the engine compared. The counts are metrics of the dimension, not of its delta.
+func seamChange(d report.Dimension) string {
+	if d.Delta == nil || d.Delta.Status != originComparable {
+		return ""
+	}
+	var added, resolved string
+	for _, m := range d.Metrics {
+		switch m.Name {
+		case "new_seams":
+			added = number(m.Value)
+		case "resolved_seams":
+			resolved = number(m.Value)
+		}
+	}
+	if added == "" || resolved == "" {
+		return ""
+	}
+	return added + " new, " + resolved + " resolved distributed-monolith seams"
+}
+
+// resultCell makes a dimension that fails or warns stand out in the table.
+func resultCell(g string) string {
 	if g == "fail" || g == "warn" {
 		return "**" + g + "**"
 	}

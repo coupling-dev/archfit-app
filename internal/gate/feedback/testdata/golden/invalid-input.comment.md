@@ -5,7 +5,7 @@
 **Next:** Re-run the Archfit workflow with the pinned action.
 
 <details>
-<summary>Evidence, inputs and validation</summary>
+<summary>Evidence and inputs</summary>
 
 ### Decision
 

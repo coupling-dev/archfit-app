@@ -1,8 +1,7 @@
 This check does not block merging: the gate is advisory for this repository.
 
-- **Next:** Remove the rule violations, then run the validation command.
+- **Next:** Fix the rule violations, then run archfit check again.
 - Reason: `blocking_findings` (architecture)
-- Detail: 1 blocking finding
 
 ### Blocking findings
 
@@ -12,7 +11,7 @@ This check does not block merging: the gate is advisory for this repository.
 - `no-module-cycles`: `pkg_util` → `pkg_chaos` at `pkg/util/flagports.go:4`, finding `dd9d76ed`. Goal: Break the dependency cycle among declared modules pkg_chaos, pkg_container, pkg_util by removing one direction of it: drop the pkg_util -&gt; pkg_chaos dependency, or the dependency path from pkg_chaos back to pkg_util. Routing it through another module keeps the cycle.
 
 <details>
-<summary>Evidence, inputs and validation</summary>
+<summary>Evidence and inputs</summary>
 
 ### Inputs and identity
 

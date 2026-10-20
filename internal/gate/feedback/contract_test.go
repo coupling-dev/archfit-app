@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
+	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
@@ -184,8 +185,8 @@ func TestWarnIsIdempotent(t *testing.T) {
 	if !strings.Contains(body, waiverSection("2026-11-05")) || !strings.Contains(body, "archfit:head") {
 		t.Errorf("matching expiry: the section was not kept: %.300q", body)
 	}
-	if i, j := strings.Index(body, waiverOpen), strings.Index(body, headFindings); i < 0 || j < 0 || i > j {
-		t.Errorf("the section is not after the verdict block")
+	if i, j := strings.Index(body, waiverOpen), strings.Index(body, "<details>"); i < 0 || j < 0 || i > j {
+		t.Errorf("the section is not before the folds")
 	}
 
 	// Warn on a published comment inserts at the same place Publish uses.
@@ -261,7 +262,11 @@ func TestGoldenFeedback(t *testing.T) {
 			}
 			first := c.outcome.Reasons[0]
 			verdictEnd := strings.Index(comment, "\n### ")
-			mustContain(t, comment[:verdictEnd], first.Next)
+			if first.Code == verdict.ReasonBlockingFindings && p.Report != nil && len(group(p.Report).violations) > 0 {
+				mustContain(t, comment[:verdictEnd], "Fix the violations above, then check with `archfit check")
+			} else {
+				mustContain(t, comment[:verdictEnd], first.Next)
+			}
 			mustNotContain(t, comment[:verdictEnd], "`"+string(first.Code)+"`")
 			mustContain(t, section(comment, headDecision), string(first.Code), string(first.Category), first.Detail)
 			mustContain(t, state[:strings.Index(state+"\n### ", "\n### ")], string(first.Code), first.Detail, first.Next)
@@ -320,8 +325,8 @@ func TestCommentLinksToTheAppPullPage(t *testing.T) {
 	}
 	body := h.comments.all()[0].Body
 	mustContain(t, body, "[Details in Archfit](https://app.example/r/acme/shop/pull/7)")
-	if i, j := strings.Index(body, "Details in Archfit"), strings.Index(body, headFindings); i < 0 || i > j {
-		t.Errorf("the link is not in the head block, before the findings")
+	if i, j := strings.Index(body, "Details in Archfit"), strings.Index(body, "<details>"); i < 0 || i > j {
+		t.Errorf("the link is not in the visible part, before the folds")
 	}
 
 	noticed := blockedPublication(t, headB, 7, 1)

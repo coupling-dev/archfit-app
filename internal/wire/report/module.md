@@ -103,7 +103,7 @@ and not in this list is a decode error.
 | Location                 | Dropped keys                                                                     |
 | ------------------------ | -------------------------------------------------------------------------------- |
 | root                     | `measurement` (`source_ref`, `history_depth`, `history_window`, `tool_versions`) |
-| `findings[]`             | `matched_by` (map of string to string; populated in real reports)                |
+| `findings[]`             | `matched_by` (map of string to string; populated in real reports), except the four keys below |
 | `agent_tasks[]`          | `declarations` (list of syntax facts, below)                                     |
 | `dimensions.*.metrics[]` | `denominator` (`observed`, `total`), `provenance` (list of strings)              |
 | `comparison`             | `drift`, `baseline_present`, `introduced_finding_ids`, `resolved_finding_ids` (`drift` and `baseline_present` are kept on `gate_reference` only) |
@@ -115,10 +115,17 @@ and not in this list is a decode error.
   report. Declarations are always dropped, whatever they contain.
 - Dropped seam keys: `scored_edges`, `abstained_edges`, `critical_edges`, `high_or_worse_edges`, `critical_share_pct`,
   `high_or_worse_share_pct` (integers); `quadrant`, `label_evidence_hash`, `confidence`,
-  `role_expectation`, `hypothesis` (strings); `labels` (list of strings); `distributed_monolith` (boolean);
+  `role_expectation` (strings); `labels` (list of strings); `distributed_monolith` (boolean);
   `raw_distance` (object: `level`, `basis`, `from_owner`, `to_owner`, `from_deploy_unit`, `to_deploy_unit` strings,
   `same_owner`, `same_deploy_unit` booleans, `boundary_crossings`, `shared_ancestor` integers); `scores` (object: `n`,
   `min`, `median`, `max` integers, `p10`, `p90` integer or `null`, `mean` number).
+- Kept from `matched_by`, as text (`Finding.MatchedBy`, `MatchedByKeys`): `metric`, `before`, `after`, `threshold`. A metric
+  ratchet finding (`metric/<name>`) has no module edge; these four keys are the only place that names its numbers, and
+  the PR comment shows them as "metric <name>: before → after (threshold)". They hold a metric name and numbers the engine
+  computed, never source. Every other `matched_by` key (globs, group members, cycle data) stays dropped, unchecked.
+  The allow-list is closed: another key is a reviewed contract change, and is kept only when something renders it.
+- Kept from a seam: `hypothesis` (`Seam.Hypothesis`, a token, optional): the engine's balancing move, which the PR comment
+  shows as the "Suggested move" of an advisory.
 - Dropped keys may be absent even where the engine schema requires them **[default]**, so a producer may strip them before upload.
 - Dropped strings carry no length cap of their own; `MaxBytes` bounds them.
 
@@ -265,8 +272,8 @@ const MaxBytes = 5 << 20
 
 // Report is the no-source transport form of an engine state report. The decoder knows every key of the engine
 // state schema of v3.0.0 and v3.0.1: keys listed here are kept (length-capped), the other known keys are validated and dropped
-// (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores), and any key
-// the schema does not define is a decode error.
+// (measurement, findings[].matched_by except MatchedByKeys, agent_tasks[].declarations, metric provenance, seam
+// scores), and any key the schema does not define is a decode error.
 type Report struct {
     SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
     Verdict       string               `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
@@ -361,7 +368,19 @@ type Finding struct {
     Constraint          string     `json:"constraint"` // engine-authored, single line, length-capped
     AllowedAlternatives []string   `json:"allowed_alternatives,omitempty"`
     Origin              string     `json:"origin,omitempty"` // "introduced" | "pre_existing" | "unknown", only with --base; presentation only
+    // MatchedBy holds only the MatchedByKeys of the engine's matched_by; a metric ratchet names its numbers there.
+    MatchedBy map[string]string `json:"matched_by,omitempty"`
 }
+
+// The matched_by keys a consumer shows. The engine writes more keys; the others stay out of the App.
+const (
+    MatchedByMetric    = "metric"
+    MatchedByBefore    = "before"
+    MatchedByAfter     = "after"
+    MatchedByThreshold = "threshold"
+)
+
+var MatchedByKeys = []string{MatchedByMetric, MatchedByBefore, MatchedByAfter, MatchedByThreshold}
 
 type Edge struct {
     From Endpoint `json:"from"`
@@ -476,6 +495,10 @@ type Seam struct {
     // Policy is what the engine's policy says about the seam: "violation" | "accepted" |
     // "advisory" | "allowed" | "observed", a closed set. "" = the key is absent.
     Policy string `json:"policy,omitempty"`
+    // Hypothesis is the engine's balancing move for the seam: "balanced" | "accept_low_volatility" |
+    // "introduce_contract" | "move_functionality" | "declare_volatility" | "expected_by_role" | "follow_rule".
+    // "" = the engine gave no move.
+    Hypothesis string `json:"hypothesis,omitempty"`
 }
 ```
 
@@ -616,7 +639,8 @@ No counterpart contract is used by this module, so nothing is restated here.
 - No-source transport (decisions.md §3): IDs, rule IDs, module names, file paths, line numbers, metrics and
   engine-authored messages only. No snippets, logs, prompts, or raw model output. Paths and module names are
   disclosed metadata; that residual exposure is documented, not hidden.
-- Source identifiers never survive decoding: `declarations` and `matched_by` are dropped always, not when convenient.
+- Source identifiers never survive decoding: `declarations` is dropped always, and so is every `matched_by` key outside the
+  four of `MatchedByKeys`, which hold a metric name and numbers; not when convenient.
 - The kept set is closed: keeping another field is a reviewed contract change, never a decoder relaxation.
 - Decoding never judges the decision. It checks the schema's enums and the no-source properties; outcome logic is the gate's.
 - Enforcement is never filtered by `Origin` or finding `Status`; this module keeps every finding it accepts.
@@ -735,8 +759,8 @@ the tests decode each one as the release that produced it (synthetic ones as v3.
   profile presence and version, and `GateReference.Status` equal the recorded values.
 - **Test name**: `TestMarshalledReportHasNoDroppedKey`
   **Scenario**: decode each valid fixture, marshal the `Report`, inspect the JSON, decode it again.
-  **Expected behavior**: no `matched_by`, `declarations`, `measurement`, `provenance`, `denominator`, `hypothesis` or `scores` key anywhere;
-  the second decode equals the first; counts of findings, tasks and seams equal the counts in the fixture file.
+  **Expected behavior**: no `declarations`, `measurement`, `provenance`, `denominator` or `scores` key anywhere, and no `matched_by` key
+  outside `MatchedByKeys`; the second decode equals the first; counts of findings, tasks and seams equal the counts in the fixture file.
 - **Test name**: `TestEngineSchemaKeySetIsCovered`
   **Scenario**: walk the pinned v3.0.1 `internal/wire/testdata/schema/archfit.state.schema.json` and the shadow types by
   reflection; decode the real capture, the all-keys fixture and `real-seam-policy`.
@@ -775,8 +799,14 @@ the tests decode each one as the release that produced it (synthetic ones as v3.
   **Expected behavior**: every one fails to decode; no error string contains the marker.
 - **Test name**: `TestDeclarationsNeverSurvive` (release test, T04)
   **Scenario**: the leakage fixture whose task has a `declarations` entry named `LEAK-7f3a_handler`, whose finding has `matched_by` values
-  with the marker, and whose seam `hypothesis` has it too.
+  with the marker, and whose seam `role_expectation` has it too.
   **Expected behavior**: decodes; the marker appears nowhere in the `Report`, in its marshalled JSON, or in its `%+v` formatting.
+- **Test name**: `TestMatchedByKeepsOnlyTheAllowList`
+  **Scenario**: a finding whose `matched_by` holds `metric`, `before`, `after`, `threshold`, `from_glob` and `cycle_modules`; a seam with `hypothesis` `introduce_contract`.
+  **Expected behavior**: `Finding.MatchedBy` equals the four allow-listed keys; `Seam.Hypothesis` is `introduce_contract`; the marshalled `Report` holds no other key's value.
+- **Test name**: `TestKeptMatchedByAndHypothesisAreChecked`
+  **Scenario**: a kept `matched_by` value and a `hypothesis` with a line break; a dropped `matched_by` value with a line break; an absent `hypothesis`.
+  **Expected behavior**: the first two fail naming `findings[0].matched_by.before` and `seams[0].hypothesis`; the other two decode.
 - **Test name**: `TestUnknownFieldAtEveryLevel`
   **Scenario**: add one unknown key to each schema object in turn, kept and dropped ones (`producers[]`, `locations[]`, `edge.from`,
   `declarations[]`, `raw_distance`, `scores`, `measurement`).

@@ -1,72 +1,79 @@
 This check does not block merging: the gate is advisory for this repository.
 
-- **Next:** Remove the rule violations, then run the validation command.
+- **Next:** Fix the rule violations, then run archfit check again.
 - Reason: `blocking_findings` (architecture)
-- Detail: 1 blocking finding
 
 ### Findings
 
-**4 rule violations** · 1 dependency cycle · 2 advisories · 6 accepted · 6 introduced by this pull request
+**1 dependency cycle** (4 dependencies) · 2 advisories · 6 known issues accepted earlier
 
-#### Dependency cycle among `pkg_chaos`, `pkg_container`, `pkg_util`
+#### Dependency cycle among `pkg_chaos`, `pkg_container` and `pkg_util`
 
-**violation** · `no-module-cycles` · high
+4 dependencies of this cycle break `no-module-cycles` (high severity).
 
-| Dependency | This PR | Where | Strength | Distance | Volatility |
-| --- | --- | --- | --- | --- | --- |
-| `pkg_chaos` → `pkg_container` | existing | `pkg/chaos/cmd/builder.go:14`, `pkg/chaos/command.go:10`, `pkg/chaos/iptables/cmd/loss.go:11` and 37 more | functional | across modules | high |
-| `pkg_chaos` → `pkg_util` | existing | `pkg/chaos/iptables/parse.go:12`, `pkg/chaos/netem/parse.go:11` | functional | across modules | high |
-| `pkg_container` → `pkg_chaos` | added | `pkg/container/appfilter.go:4` | functional | across modules | high |
-| `pkg_util` → `pkg_chaos` | added | `pkg/util/flagports.go:4` | functional | across modules | high |
+| Dependency | This PR | Where |
+| --- | --- | --- |
+| `pkg_chaos` → `pkg_container` | existing | `pkg/chaos/cmd/builder.go:14`, `pkg/chaos/command.go:10`, `pkg/chaos/iptables/cmd/loss.go:11` and 37 more |
+| `pkg_chaos` → `pkg_util` | existing | `pkg/chaos/iptables/parse.go:12`, `pkg/chaos/netem/parse.go:11` |
+| `pkg_container` → `pkg_chaos` | added | `pkg/container/appfilter.go:4` |
+| `pkg_util` → `pkg_chaos` | added | `pkg/util/flagports.go:4` |
 
-**Why:** Module pkg_chaos depends on pkg_container, and the two are in a dependency cycle among 3 declared modules
+On every row: functional coupling · across modules · high volatility.
 
-**Constraint:** Remove one direction of the module cycle; routing the dependency through another module keeps the cycle
+**Why:** Each of the 4 dependencies lies on a cycle: from its target, dependencies lead back to its source, so the 3 modules depend on each other.
+
+**Fix:** Remove one direction of the module cycle; routing the dependency through another module keeps the cycle
 
 <details>
 <summary>2 advisories · never block</summary>
 
-| Rule | Dependency | This PR | Where | Strength | Distance | Volatility |
-| --- | --- | --- | --- | --- | --- | --- |
-| Imbalanced coupling · critical | `pkg_container` (`pkg/container/appfilter.go`) → `pkg_chaos` (`pkg/chaos/cliflags`) | added | `pkg/container/appfilter.go:4` | functional | across modules | high |
-| Imbalanced coupling · critical | `pkg_util` (`pkg/util/flagports.go`) → `pkg_chaos` (`pkg/chaos/cliflags`) | added | `pkg/util/flagports.go:4` | functional | across modules | high |
+| Dependency | Where |
+| --- | --- |
+| `pkg_container` (`pkg/container/appfilter.go`) → `pkg_chaos` (`pkg/chaos/cliflags`) | `pkg/container/appfilter.go:4` |
+| `pkg_util` (`pkg/util/flagports.go`) → `pkg_chaos` (`pkg/chaos/cliflags`) | `pkg/util/flagports.go:4` |
+
+On every row: Imbalanced coupling · critical · added by this pull request · functional coupling · across modules · high volatility.
+
+**Suggested move:** A rule violation covers this pair: follow its Fix.
 
 Imbalanced coupling · **Why:** balanced coupling: functional integration strength × distance across modules × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)
 
 </details>
 
 <details>
-<summary>6 accepted · baseline or waiver · display only</summary>
+<summary>6 known issues accepted earlier</summary>
 
-| Rule | Dependency | This PR | Where | Strength | Distance | Volatility |
-| --- | --- | --- | --- | --- | --- | --- |
-| Imbalanced coupling · critical, baseline | `cmd` (`cmd/commands.go`) → `pkg_chaos` (`pkg/chaos/iptables/cmd`) | existing | `cmd/commands.go:7`, `cmd/commands.go:8`, `cmd/commands.go:9` and 3 more | functional | across modules | high |
-| Imbalanced coupling · critical, baseline | `cmd` (`cmd/runtime.go`) → `pkg_runtime` (`pkg/runtime/containerd`) | existing | `cmd/runtime.go:12`, `cmd/runtime.go:13`, `cmd/runtime.go:14` | functional | across modules | high |
-| Imbalanced coupling · critical, baseline | `pkg_chaos` (`pkg/chaos/iptables/iptables.go`) → `pkg_container` (`pkg/container`) | existing | `pkg/chaos/iptables/iptables.go:8`, `pkg/chaos/netem/netem.go:9`, `pkg/chaos/netem/target.go:10` and 2 more | functional | across modules | high |
-| Imbalanced coupling · critical, baseline | `pkg_chaos` (`pkg/chaos/iptables/parse.go`) → `pkg_util` (`pkg/util`) | existing | `pkg/chaos/iptables/parse.go:12`, `pkg/chaos/netem/parse.go:11` | functional | across modules | high |
-| Imbalanced coupling · critical, baseline | `pkg_runtime` (`pkg/runtime/containerd/addresses.go`) → `pkg_container` (`pkg/container`) | existing | `pkg/runtime/containerd/addresses.go:15`, `pkg/runtime/containerd/client.go:12`, `pkg/runtime/containerd/iptables.go:7` and 12 more | functional | across modules | high |
-| Imbalanced coupling · critical, baseline | `pkg_runtime` (`pkg/runtime/containerd/netem.go`) → `pkg_tc` (`pkg/tc`) | existing | `pkg/runtime/containerd/netem.go:7`, `pkg/runtime/docker/netem.go:7` | functional | across modules | high |
+| Dependency | Where |
+| --- | --- |
+| `cmd` (`cmd/commands.go`) → `pkg_chaos` (`pkg/chaos/iptables/cmd`) | `cmd/commands.go:7`, `cmd/commands.go:8`, `cmd/commands.go:9` and 3 more |
+| `cmd` (`cmd/runtime.go`) → `pkg_runtime` (`pkg/runtime/containerd`) | `cmd/runtime.go:12`, `cmd/runtime.go:13`, `cmd/runtime.go:14` |
+| `pkg_chaos` (`pkg/chaos/iptables/iptables.go`) → `pkg_container` (`pkg/container`) | `pkg/chaos/iptables/iptables.go:8`, `pkg/chaos/netem/netem.go:9`, `pkg/chaos/netem/target.go:10` and 2 more |
+| `pkg_chaos` (`pkg/chaos/iptables/parse.go`) → `pkg_util` (`pkg/util`) | `pkg/chaos/iptables/parse.go:12`, `pkg/chaos/netem/parse.go:11` |
+| `pkg_runtime` (`pkg/runtime/containerd/addresses.go`) → `pkg_container` (`pkg/container`) | `pkg/runtime/containerd/addresses.go:15`, `pkg/runtime/containerd/client.go:12`, `pkg/runtime/containerd/iptables.go:7` and 12 more |
+| `pkg_runtime` (`pkg/runtime/containerd/netem.go`) → `pkg_tc` (`pkg/tc`) | `pkg/runtime/containerd/netem.go:7`, `pkg/runtime/docker/netem.go:7` |
+
+On every row: Imbalanced coupling · critical, baseline · existed before this pull request · functional coupling · across modules · high volatility.
 
 Imbalanced coupling · **Why:** balanced coupling: functional integration strength × distance across modules × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)
 
 </details>
 
 <details>
-<summary>Evidence, inputs and validation</summary>
+<summary>Evidence and inputs</summary>
 
 ### Dimensions
 
-| Dimension | Status | Coverage | Confidence | Gate |
-| --- | --- | --- | --- | --- |
-| `intent` | measured | 1/1 (declared rules evaluated) | high | pass |
-| `structure` | measured | 167/628 (discovered dependencies resolved inside the declared module map) | high | **fail** |
-| `modularity` | measured | 0/6 (declared modules with a declared public surface) | low | pass |
-| `coupling` | measured | 79/79 (cross-boundary edges scored) | high | **warn** |
-| `change_locality` | measured | 6/6 (declared modules touched in the scanned history window) | high | pass |
-| `complexity` | measured | 6/6 (declared modules with complete dependency-chain and degree values) | high | pass |
-| `testability` | partial | 158/173 (classified source files) | medium | pass |
-| `operations` | partial | 1/6 (declared modules with a corroborated deploy unit and qualifying owner) | medium | pass |
-| `drift` | measured | 8/8 (distributed-monolith seams compared against the stored reference) | high | pass |
+| Dimension | Status | Measured | Confidence | Result | Change |
+| --- | --- | --- | --- | --- | --- |
+| `intent` | measured | 1/1 (declared rules evaluated) | high | pass |  |
+| `structure` | measured | 167/628 (discovered dependencies resolved inside the declared module map) | high | **fail** |  |
+| `modularity` | measured | 0/6 (declared modules with a declared public surface) | low | pass |  |
+| `coupling` | measured | 79/79 (cross-boundary edges scored) | high | **warn** |  |
+| `change_locality` | measured | 6/6 (declared modules touched in the scanned history window) | high | pass |  |
+| `complexity` | measured | 6/6 (declared modules with complete dependency-chain and degree values) | high | pass |  |
+| `testability` | partial | 158/173 (classified source files) | medium | pass |  |
+| `operations` | partial | 1/6 (declared modules with a corroborated deploy unit and qualifying owner) | medium | pass |  |
+| `drift` | measured | 8/8 (distributed-monolith seams compared against the stored reference) | high | pass | 8 new, 0 resolved distributed-monolith seams |
 
 ### Evidence gaps
 

@@ -47,8 +47,12 @@ func group(r *report.Report) groups {
 
 // findingsBlock is block 5. It labels Finding.Active findings as violations, a display heuristic only: the conclusion
 // always comes from the Outcome. diagrams adds a Mermaid graph per dependency cycle; only the comment asks for it,
-// because a check summary is not known to render Mermaid.
-func findingsBlock(r *report.Report, diagrams bool) string {
+// because a check summary is not known to render Mermaid. The comment also drops the heading and the tally line: its
+// head already says the verdict and the one thing the pull request did, and the picture follows at once.
+func findingsBlock(r *report.Report, diagrams bool) string { return findings(r, diagrams, "") }
+
+// findings is findingsBlock with tail, the next step, written after the violations and before the folds.
+func findings(r *report.Report, diagrams bool, tail string) string {
 	if r == nil {
 		return ""
 	}
@@ -56,27 +60,32 @@ func findingsBlock(r *report.Report, diagrams bool) string {
 	seams := seamIndex(r.Seams)
 
 	var b strings.Builder
-	b.WriteString(headFindings)
+	if !diagrams {
+		b.WriteString(headFindings)
+	}
 	if len(r.Findings) == 0 {
 		b.WriteString("\n\nNo findings reported.")
-		return b.String()
+		return strings.TrimLeft(b.String(), "\n")
 	}
-	if t := tally(r, g.compared, len(g.violations), len(g.advisories), len(g.debt), len(g.fixed), cycleCount(g.violations)); t != "" {
+	if t := tally(g); t != "" && !diagrams {
 		b.WriteString("\n\n" + t)
 	}
-	if len(g.violations) > 0 { // the tally line counts them; no group title repeats it
+	if len(g.violations) > 0 {
 		writeViolations(&b, g, seams, diagrams)
 	}
-	foldTable(&b, g.advisories, seams, "advisory", "advisories", "never block")
-	foldTable(&b, g.debt, seams, "accepted", "accepted", "baseline or waiver · display only")
-	foldTable(&b, g.fixed, seams, "fixed", "fixed", "display only")
-	return b.String()
+	if tail != "" {
+		b.WriteString("\n\n" + tail)
+	}
+	foldTable(&b, g.advisories, seams, "advisory", "advisories", "never block", true)
+	foldTable(&b, g.debt, seams, "known issue accepted earlier", "known issues accepted earlier", "", false)
+	foldTable(&b, g.fixed, seams, "known issue fixed", "known issues fixed", "", false)
+	return strings.TrimLeft(b.String(), "\n")
 }
 
 // leadSentence says in one sentence what the pull request did to the rule violations, from origins and locations
-// only, before the next step. It is about the first dependency cycle when that one is introduced, else about the
-// introduced violations; "" without a comparison with the pull request base or without a violation to speak of.
-// It picks no repair: which direction to remove stays the engine's constraint.
+// only. It is about the first dependency cycle when that one is introduced, else about the introduced violations; ""
+// without a comparison with the pull request base or without a violation to speak of. It names no path and picks no
+// repair: which direction to remove stays the engine's Fix.
 func leadSentence(r *report.Report) string {
 	if r == nil {
 		return ""
@@ -93,36 +102,29 @@ func leadSentence(r *report.Report) string {
 		}
 	}
 	if len(cycle) > 0 && !slices.ContainsFunc(cycle, func(f report.Finding) bool { return f.Origin != originIntroduced }) {
-		var added, existing []string
+		added, existing := 0, 0
 		for _, f := range cycle {
-			switch n := len(f.Locations); report.PairOrigin(f, g.all, g.onCycle) {
+			switch report.PairOrigin(f, g.all, g.onCycle) {
 			case prAdded:
-				added = append(added, dependency(f)+" ("+capped(f.Locations, 1)+")")
+				added++
 			case prExisting:
-				existing = append(existing, fmt.Sprintf("%s (%d %s)", dependency(f), n, plural(n, "location", "locations")))
+				existing++
 			}
 		}
-		verb := "introduces"
-		if len(existing) > 0 {
-			verb = "closes"
+		among := among(cycleModules(cycle))
+		switch {
+		case added > 0 && existing > 0:
+			return fmt.Sprintf("This pull request adds %d %s that %s a dependency cycle %s.", added, plural(added, "dependency", "dependencies"), plural(added, "closes", "close"), among)
+		case added > 0:
+			return fmt.Sprintf("This pull request adds %d %s that %s a dependency cycle %s.", added, plural(added, "dependency", "dependencies"), plural(added, "forms", "form"), among)
+		default:
+			return "This pull request introduces a dependency cycle " + among + "."
 		}
-		s := "This pull request " + verb + " a dependency cycle " + among(cycleModules(cycle))
-		if len(added) > 0 {
-			s += ": it adds " + series(added)
-		}
-		if len(existing) > 0 {
-			sep := ": "
-			if len(added) > 0 {
-				sep = "; "
-			}
-			s += sep + series(existing) + " existed before"
-		}
-		return s + "."
 	}
 	var introduced []string
 	for _, f := range g.violations {
 		if f.Origin == originIntroduced {
-			introduced = append(introduced, dependency(f))
+			introduced = append(introduced, subject(f))
 		}
 	}
 	if len(introduced) == 0 {
@@ -152,33 +154,62 @@ func series(items []string) string {
 // dependency is the module pair of a finding, without paths.
 func dependency(f report.Finding) string { return module(f.Edge.From) + " → " + module(f.Edge.To) }
 
-// tally is the one line that counts every non-empty group, so the size of the problem reads before any detail. It
-// never says "no violations": a hard gate can fail without a finding. cycles counts the dependency cycles among the
-// shown violations, as its own part: not every violation lies on one.
-func tally(r *report.Report, compared bool, violations, advisories, debt, fixed, cycles int) string {
-	var parts []string
-	if violations > 0 {
-		parts = append(parts, fmt.Sprintf("**%d rule %s**", violations, plural(violations, "violation", "violations")))
+func isMetric(f report.Finding) bool { return strings.HasPrefix(f.RuleID, report.MetricRulePrefix) }
+
+// subject is what a finding is about: its module pair, or for a metric ratchet, which has no edge, the metric with
+// the numbers the engine reported.
+func subject(f report.Finding) string {
+	if !isMetric(f) {
+		return dependency(f)
 	}
-	for _, g := range []struct {
+	name := f.MatchedBy[report.MatchedByMetric]
+	if name == "" {
+		name = strings.TrimPrefix(f.RuleID, report.MetricRulePrefix)
+	}
+	s := "metric " + code(name)
+	before, after, threshold := f.MatchedBy[report.MatchedByBefore], f.MatchedBy[report.MatchedByAfter], f.MatchedBy[report.MatchedByThreshold]
+	if before == "" || after == "" {
+		return s
+	}
+	s += ": " + text(before) + " → " + text(after)
+	if threshold != "" {
+		s += " (" + text(threshold) + ")"
+	}
+	return s
+}
+
+// tally is the one line of the check summary that counts every non-empty group, so the size of the problem reads
+// before any detail. A dependency cycle is counted once, with its dependencies; the other violations are counted
+// apart, never again. It never says "no violations": a hard gate can fail without a finding.
+func tally(g groups) string {
+	cycles, onCycle := cycleCount(g.violations), 0
+	for _, c := range report.Cycles(g.violations[:min(len(g.violations), groupCap)]) {
+		if c >= 0 {
+			onCycle++
+		}
+	}
+	var parts []string
+	if cycles > 0 {
+		parts = append(parts, fmt.Sprintf("**%d %s** (%d %s)", cycles, plural(cycles, "dependency cycle", "dependency cycles"), onCycle, plural(onCycle, "dependency", "dependencies")))
+	}
+	if other := len(g.violations) - onCycle; other > 0 {
+		noun := plural(other, "rule violation", "rule violations")
+		if cycles > 0 {
+			noun = plural(other, "other rule violation", "other rule violations")
+		}
+		parts = append(parts, fmt.Sprintf("**%d %s**", other, noun))
+	}
+	for _, c := range []struct {
 		n    int
 		noun string
 	}{
-		{cycles, plural(cycles, "dependency cycle", "dependency cycles")},
-		{advisories, plural(advisories, "advisory", "advisories")}, {debt, "accepted"}, {fixed, "fixed"},
+		{len(g.advisories), plural(len(g.advisories), "advisory", "advisories")},
+		{len(g.debt), plural(len(g.debt), "known issue accepted earlier", "known issues accepted earlier")},
+		{len(g.fixed), plural(len(g.fixed), "known issue fixed", "known issues fixed")},
 	} {
-		if g.n > 0 {
-			parts = append(parts, fmt.Sprintf("%d %s", g.n, g.noun))
+		if c.n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", c.n, c.noun))
 		}
-	}
-	if compared {
-		n := 0
-		for _, f := range r.Findings {
-			if f.Origin == originIntroduced {
-				n++
-			}
-		}
-		parts = append(parts, fmt.Sprintf("%d introduced by this pull request", n))
 	}
 	return strings.Join(parts, " · ")
 }
@@ -210,8 +241,8 @@ func writeViolations(b *strings.Builder, g groups, seams map[[2]string]report.Se
 			plain = append(plain, f)
 		}
 	}
-	for _, m := range members {
-		writeCycle(b, m, g, seams, diagrams)
+	for i, m := range members {
+		writeCycle(b, m, g, seams, diagrams, i == 0)
 	}
 	if len(plain) > 0 {
 		if n > 0 {
@@ -248,7 +279,7 @@ func cycleModules(fs []report.Finding) []string {
 	return modules
 }
 
-// among names the modules of a cycle: "between `a` and `b`", or "among `a`, `b`, `c`".
+// among names the modules of a cycle: "between `a` and `b`", or "among `a`, `b` and `c`".
 func among(modules []string) string {
 	names := make([]string, len(modules))
 	for i, m := range modules {
@@ -257,34 +288,65 @@ func among(modules []string) string {
 	if len(names) == 2 {
 		return "between " + names[0] + " and " + names[1]
 	}
-	return "among " + strings.Join(names, ", ")
+	return "among " + series(names)
 }
 
-// writeCycle writes one dependency cycle: the modules on it, the rule, a diagram, a row per direction, then the
-// distinct repairs. feedback adds no repair of its own: the constraint and alternatives are the engine's. g holds
-// every finding of the report, which tells for each direction whether the base already had it.
-func writeCycle(b *strings.Builder, fs []report.Finding, g groups, seams map[[2]string]report.Seam, diagrams bool) {
+// writeCycle writes one dependency cycle: its picture (comment only), what it breaks, a row per direction and the
+// distinct fixes. feedback adds no fix of its own: the constraint and alternatives are the engine's. g holds every
+// finding of the report, which tells for each direction whether the base already had it. In the comment the lead
+// cycle has no heading, so the picture follows the headline's sentence at once; the check summary always has one.
+func writeCycle(b *strings.Builder, fs []report.Finding, g groups, seams map[[2]string]report.Seam, diagrams, lead bool) {
 	modules := cycleModules(fs)
-	label := ""
-	if fs[0].Active() { // one class per cycle, so one label for all
-		label = "**violation** · "
-	}
-	fmt.Fprintf(b, "\n\n#### Dependency cycle %s\n\n%s%s · %s", among(modules), label, ruleName(fs[0].RuleID), meta(fs[0]))
 	pr := make([]string, len(fs))
 	for i, f := range fs {
 		pr[i] = report.PairOrigin(f, g.all, g.onCycle)
 	}
-	if diagrams {
-		b.WriteString("\n\n" + cycleDiagram(modules, fs, pr))
+	if !diagrams || !lead {
+		kind := "Dependency cycle"
+		if diagrams {
+			kind = "Another dependency cycle"
+		}
+		fmt.Fprintf(b, "\n\n#### %s %s", kind, among(modules))
 	}
-	b.WriteString("\n\n" + dependencyTable(fs, pr, seams, false))
-	// The engine writes one Why per direction that only swaps the module names; the first one says it. Constraints
-	// and alternatives stay distinct per finding.
+	if diagrams {
+		b.WriteString("\n\n" + cycleDiagram(modules, fs, pr) + "\n\n" + diagramLegend(pr))
+	}
+	verb := "break"
+	if !fs[0].Active() {
+		verb = "are reported under"
+	}
+	n := len(fs)
+	fmt.Fprintf(b, "\n\n%d %s of this cycle %s %s (%s).", n, plural(n, "dependency", "dependencies"), verb, ruleName(fs[0].RuleID), severityMeta(fs[0]))
+	table, shared := dependencyTable(fs, pr, seams, false, false)
+	b.WriteString("\n\n" + table)
+	if shared != "" {
+		b.WriteString("\n\n" + shared)
+	}
+	// The engine writes one Why per direction that only swaps the module names, and names the first pair. The cycle
+	// is described from what the directions show: each one leads back to its own source.
+	fmt.Fprintf(b, "\n\n**Why:** Each of the %d dependencies lies on a cycle: from its target, dependencies lead back to its source, so the %d modules depend on each other.", n, len(modules))
 	reasons := slices.Clone(fs)
-	for i := 1; i < len(reasons); i++ {
+	for i := range reasons {
 		reasons[i].Why = ""
 	}
 	writeReasons(b, reasons, false)
+}
+
+// diagramLegend is the line under a cycle diagram: what the colours and labels mean.
+func diagramLegend(pr []string) string {
+	if slices.ContainsFunc(pr, func(s string) bool { return s != "" }) {
+		return "_Red: added by this pull request · grey: already there · label: locations in code that use the dependency_"
+	}
+	return "_Label and width: locations in code that use the dependency_"
+}
+
+// severityMeta is meta with the severity named as one: "high severity, waiver expired".
+func severityMeta(f report.Finding) string {
+	severity, rest, found := strings.Cut(meta(f), ", ")
+	if !found {
+		return severity + " severity"
+	}
+	return severity + " severity, " + rest
 }
 
 // meta is the severity, then the status as a word when the group does not already say it: a violation or an advisory
@@ -343,9 +405,11 @@ func distanceText(token string) string {
 func cycleDiagram(modules []string, fs []report.Finding, pr []string) string {
 	id := map[string]string{}
 	lines := []string{"```mermaid", "flowchart LR"}
+	var nodeIDs []string
 	for i, m := range modules {
 		id[m] = "m" + strconv.Itoa(i)
-		lines = append(lines, fmt.Sprintf("  %s[\"%s\"]", id[m], mermaidText(m)))
+		nodeIDs = append(nodeIDs, id[m])
+		lines = append(lines, fmt.Sprintf("  %s(\"%s\")", id[m], mermaidText(m)))
 	}
 	var styles []string
 	for i, f := range fs {
@@ -365,6 +429,8 @@ func cycleDiagram(modules []string, fs []report.Finding, pr []string) string {
 		styles = append(styles, fmt.Sprintf("  linkStyle %d stroke:%s,stroke-width:%dpx", i, color, width))
 	}
 	lines = append(lines, styles...)
+	// A transparent fill keeps the text colour of the viewer's theme readable, light or dark.
+	lines = append(lines, "  classDef module fill:transparent,stroke:"+existingEdgeColor+",stroke-width:1px", "  class "+strings.Join(nodeIDs, ",")+" module")
 	return strings.Join(append(lines, "```"), "\n")
 }
 
@@ -393,59 +459,136 @@ func seamIndex(seams []report.Seam) map[[2]string]report.Seam {
 	return out
 }
 
+// column is one column of a dependency table. phrase turns a value that is the same on every row into words for the
+// line under the table; a column without phrase is never folded away.
+type column struct {
+	head   string
+	cells  []string
+	phrase func(value string) string
+}
+
+func same(s []string) bool {
+	return len(s) > 0 && s[0] != "" && !slices.ContainsFunc(s, func(v string) bool { return v != s[0] })
+}
+
 // dependencyTable is one row per finding: the dependency, what it is on the pull request base when pr says so for any
 // row ("This PR"), where it occurs, and, when the report has a seam for any row, its integration strength, distance
-// and volatility. withRule adds the rule and its meta for mixed groups.
-func dependencyTable(fs []report.Finding, pr []string, seams map[[2]string]report.Seam, withRule bool) string {
-	coupling := slices.ContainsFunc(fs, func(f report.Finding) bool {
-		_, ok := seams[[2]string{f.Edge.From.Module, f.Edge.To.Module}]
-		return ok
-	})
-	origins := slices.ContainsFunc(pr, func(s string) bool { return s != "" })
-	var head []string
-	if withRule {
-		head = append(head, "Rule")
+// and volatility. withRule adds the rule and its meta for mixed groups; moves adds the balancing move of the seam.
+// With two rows or more, a column that holds the same value on every row is not a column: its value goes into the
+// second result, the line under the table, together with a move that is the same on every row.
+func dependencyTable(fs []report.Finding, pr []string, seams map[[2]string]report.Seam, withRule, moves bool) (table, shared string) {
+	seamOf := func(f report.Finding) (report.Seam, bool) {
+		s, ok := seams[[2]string{f.Edge.From.Module, f.Edge.To.Module}]
+		return s, ok
 	}
-	head = append(head, "Dependency")
-	if origins {
-		head = append(head, "This PR")
-	}
-	head = append(head, "Where")
-	if coupling {
-		head = append(head, "Strength", "Distance", "Volatility")
-	}
-	rows := []string{"| " + strings.Join(head, " | ") + " |", "|" + strings.Repeat(" --- |", len(head))}
-	for i, f := range fs {
-		var row []string
-		if withRule {
-			row = append(row, ruleName(f.RuleID)+" · "+meta(f))
+	coupling := slices.ContainsFunc(fs, func(f report.Finding) bool { _, ok := seamOf(f); return ok })
+	cellsOf := func(each func(i int, f report.Finding) string) []string {
+		out := make([]string, len(fs))
+		for i, f := range fs {
+			out[i] = each(i, f)
 		}
-		row = append(row, endpoint(f.Edge.From)+" → "+endpoint(f.Edge.To))
-		if origins {
-			row = append(row, pr[i])
-		}
-		row = append(row, capped(f.Locations, tableLocationCap))
-		if coupling {
-			s, ok := seams[[2]string{f.Edge.From.Module, f.Edge.To.Module}]
-			if !ok {
-				row = append(row, "", "", "")
-			} else {
-				row = append(row, text(s.Strength), distanceText(s.Distance), text(s.Volatility))
+		return out
+	}
+	seamCells := func(value func(report.Seam) string) []string {
+		return cellsOf(func(_ int, f report.Finding) string {
+			if s, ok := seamOf(f); ok {
+				return value(s)
 			}
+			return ""
+		})
+	}
+	identity := func(v string) string { return v }
+
+	var cols []column
+	if withRule {
+		cols = append(cols, column{"Rule", cellsOf(func(_ int, f report.Finding) string { return ruleName(f.RuleID) + " · " + meta(f) }), identity})
+	}
+	cols = append(cols, column{head: "Dependency", cells: cellsOf(func(_ int, f report.Finding) string {
+		if isMetric(f) {
+			return subject(f)
 		}
-		for i := range row {
-			row[i] = cell(row[i])
+		return endpoint(f.Edge.From) + " → " + endpoint(f.Edge.To)
+	})})
+	if slices.ContainsFunc(pr, func(s string) bool { return s != "" }) {
+		cols = append(cols, column{"This PR", slices.Clone(pr), func(v string) string {
+			switch v {
+			case prAdded:
+				return "added by this pull request"
+			case prExisting:
+				return "existed before this pull request"
+			}
+			return v
+		}})
+	}
+	cols = append(cols, column{head: "Where", cells: cellsOf(func(_ int, f report.Finding) string { return capped(f.Locations, tableLocationCap) })})
+	if coupling {
+		cols = append(cols,
+			column{"Strength", seamCells(func(s report.Seam) string { return text(s.Strength) }), func(v string) string { return v + " coupling" }},
+			column{"Distance", seamCells(func(s report.Seam) string { return distanceText(s.Distance) }), identity},
+			column{"Volatility", seamCells(func(s report.Seam) string { return text(s.Volatility) }), func(v string) string { return v + " volatility" }})
+	}
+	var move []string
+	if moves {
+		move = seamCells(func(s report.Seam) string { return moveWords(s.Hypothesis) })
+		if !slices.ContainsFunc(move, func(v string) bool { return v != "" }) {
+			move = nil
+		}
+	}
+	if move != nil && len(fs) > 1 && same(move) {
+		shared = "**Suggested move:** " + move[0] + "."
+	} else if move != nil {
+		cols = append(cols, column{head: "Suggested move", cells: move})
+	}
+
+	var kept []column
+	var words []string
+	for _, c := range cols {
+		if len(fs) > 1 && c.phrase != nil && same(c.cells) {
+			words = append(words, c.phrase(c.cells[0]))
+			continue
+		}
+		kept = append(kept, c)
+	}
+	if len(words) > 0 {
+		line := "On every row: " + strings.Join(words, " · ") + "."
+		if shared != "" {
+			line += "\n\n" + shared
+		}
+		shared = line
+	}
+
+	heads := make([]string, len(kept))
+	for i, c := range kept {
+		heads[i] = c.head
+	}
+	rows := []string{"| " + strings.Join(heads, " | ") + " |", "|" + strings.Repeat(" --- |", len(kept))}
+	for i := range fs {
+		row := make([]string, len(kept))
+		for j, c := range kept {
+			row[j] = cell(c.cells[i])
 		}
 		rows = append(rows, "| "+strings.Join(row, " | ")+" |")
 	}
-	return strings.Join(rows, "\n")
+	return strings.Join(rows, "\n"), shared
+}
+
+// moveWords reads a seam hypothesis in book words; a token this version does not know is shown as written.
+func moveWords(h string) string {
+	if h == "" {
+		return ""
+	}
+	if w, ok := report.BalancingMoves[h]; ok {
+		return w
+	}
+	return text(h)
 }
 
 // cell escapes the table delimiter; GitHub reads "\|" as a pipe, inside code spans too.
 func cell(s string) string { return strings.ReplaceAll(s, "|", `\|`) }
 
-// foldTable writes a group that never blocks as one fold: the count in the summary, a table, then its reasons.
-func foldTable(b *strings.Builder, fs []report.Finding, seams map[[2]string]report.Seam, one, many, effect string) {
+// foldTable writes a group that never blocks as one fold: the count and the effect in the summary, a table, then its
+// reasons. effect "" is left out when the count already says it.
+func foldTable(b *strings.Builder, fs []report.Finding, seams map[[2]string]report.Seam, one, many, effect string, moves bool) {
 	if len(fs) == 0 {
 		return
 	}
@@ -454,7 +597,15 @@ func foldTable(b *strings.Builder, fs []report.Finding, seams map[[2]string]repo
 	for i, f := range shown {
 		pr[i] = prWord(f.Origin)
 	}
-	fmt.Fprintf(b, "\n\n<details>\n<summary>%d %s · %s</summary>\n\n%s", len(fs), plural(len(fs), one, many), effect, dependencyTable(shown, pr, seams, true))
+	summary := fmt.Sprintf("%d %s", len(fs), plural(len(fs), one, many))
+	if effect != "" {
+		summary += " · " + effect
+	}
+	table, shared := dependencyTable(shown, pr, seams, true, moves)
+	fmt.Fprintf(b, "\n\n<details>\n<summary>%s</summary>\n\n%s", summary, table)
+	if shared != "" {
+		b.WriteString("\n\n" + shared)
+	}
 	if len(fs) > groupCap {
 		fmt.Fprintf(b, "\n\n- and %d more", len(fs)-groupCap)
 	}
@@ -462,7 +613,7 @@ func foldTable(b *strings.Builder, fs []report.Finding, seams map[[2]string]repo
 	b.WriteString("\n\n" + foldClose)
 }
 
-// writeReasons writes each distinct Why, Constraint and set of allowed alternatives once, in first-seen order: the
+// writeReasons writes each distinct Why, Fix (the engine's constraint) and set of allowed alternatives once, in first-seen order: the
 // engine repeats one explanation for every finding of a rule, and repeating it hides the rest.
 func writeReasons(b *strings.Builder, fs []report.Finding, withRule bool) {
 	seen := map[string]bool{}
@@ -484,7 +635,7 @@ func writeReasons(b *strings.Builder, fs []report.Finding, withRule bool) {
 			add(f.RuleID, "Why", text(report.ReadableWhy(f.Why)))
 		}
 		if f.Constraint != "" {
-			add(f.RuleID, "Constraint", text(f.Constraint))
+			add(f.RuleID, "Fix", text(f.Constraint))
 		}
 		add(f.RuleID, "Allowed alternatives", alternatives(f.AllowedAlternatives))
 	}
@@ -518,15 +669,25 @@ func writeFinding(b *strings.Builder, f report.Finding) {
 	default:
 		m += ", origin " + text(f.Origin)
 	}
-	fmt.Fprintf(b, "%s (%s): %s → %s", ruleName(f.RuleID), m, endpoint(f.Edge.From), endpoint(f.Edge.To))
-	b.WriteString("\n  - Locations: " + capped(f.Locations, locationCap))
+	fmt.Fprintf(b, "%s (%s): %s", ruleName(f.RuleID), m, subjectWithPaths(f))
+	if len(f.Locations) > 0 || !isMetric(f) { // a metric ratchet has no place in the code
+		b.WriteString("\n  - Locations: " + capped(f.Locations, locationCap))
+	}
 	fmt.Fprintf(b, "\n  - Why: %s", text(report.ReadableWhy(f.Why)))
 	if f.Constraint != "" {
-		fmt.Fprintf(b, "\n  - Constraint: %s", text(f.Constraint))
+		fmt.Fprintf(b, "\n  - Fix: %s", text(f.Constraint))
 	}
 	if len(f.AllowedAlternatives) > 0 {
 		fmt.Fprintf(b, "\n  - Allowed alternatives: %s", alternatives(f.AllowedAlternatives))
 	}
+}
+
+// subjectWithPaths is subject with the paths of the two endpoints, as the list item shows it.
+func subjectWithPaths(f report.Finding) string {
+	if isMetric(f) {
+		return subject(f)
+	}
+	return endpoint(f.Edge.From) + " → " + endpoint(f.Edge.To)
 }
 
 // capped is up to limit locations as file:line, then "and N more"; "none reported" when empty.

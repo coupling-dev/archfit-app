@@ -13,7 +13,7 @@ const truncatedNote = "Output truncated."
 // Folds keep the visible part short: the headline, the reasons and the findings stay open; evidence, identity,
 // validation commands and agent tasks fold away. Agents read the raw Markdown, so the task markers still parse.
 const (
-	foldEvidence = "<details>\n<summary>Evidence, inputs and validation</summary>"
+	foldEvidence = "<details>\n<summary>Evidence and inputs</summary>"
 	foldTasks    = "<details>\n<summary>For coding agents</summary>"
 	foldClose    = "</details>"
 	fenceClose   = "\n```"

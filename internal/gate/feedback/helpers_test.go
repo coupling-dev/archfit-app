@@ -127,7 +127,7 @@ func outcome(c verdict.Conclusion, reasons ...verdict.Reason) verdict.Outcome {
 
 var (
 	reasonHealthy  = verdict.Reason{Code: verdict.ReasonHealthy, Category: verdict.CategoryArchitecture, Detail: "report " + reportDigest, Next: "Nothing to do."}
-	reasonBlocking = verdict.Reason{Code: verdict.ReasonBlockingFindings, Category: verdict.CategoryArchitecture, Detail: "1 blocking finding", Next: "Remove the rule violations, then run the validation command."} // the catalog's Next
+	reasonBlocking = verdict.Reason{Code: verdict.ReasonBlockingFindings, Category: verdict.CategoryArchitecture, Next: "Fix the rule violations, then run archfit check again."} // the catalog's Next
 	reasonCoverage = verdict.Reason{Code: verdict.ReasonMissingCoverage, Category: verdict.CategoryEvidence, Detail: "layers/no_upward_imports", Next: "Install the required tool in the workflow, then re-run it."}
 	reasonInvalid  = verdict.Reason{Code: verdict.ReasonReportInvalid, Category: verdict.CategoryEvidence, Detail: "report " + reportDigest, Next: "Re-run the Archfit workflow with the pinned action."}
 	reasonIdentity = verdict.Reason{Code: verdict.ReasonUnknownIdentity, Category: verdict.CategoryEvidence, Detail: "image sha256:0000", Next: "Use the pinned archfit-action version."}
@@ -165,6 +165,10 @@ func fixtureCases() []fixtureCase {
 		{name: "matched-by-populated", outcome: outcome(verdict.Failure, reasonBlocking), identity: id},
 		{name: "both-repair-kinds", outcome: outcome(verdict.Failure, reasonBlocking), identity: id},
 		{name: "waiver-expiry-and-order", outcome: outcome(verdict.Failure, reasonBlocking, reasonWaiver), identity: id, waiver: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)},
+		// A tripped metric ratchet is one finding without a module edge, in required mode.
+		{name: "metric-ratchet", outcome: outcome(verdict.Failure, reasonBlocking), identity: id},
+		// Two advisories whose seams carry different balancing moves, in advisory mode with nothing blocking.
+		{name: "advisory-balancing-move", outcome: outcome(verdict.Success, reasonAttention), identity: id, advisory: true},
 		// The pilot's PR #11 report (engine v3.0.1): one dependency cycle among three modules, coupling advisories and
 		// accepted debt, in advisory mode with a baseline.
 		{name: "pilot-pr-cycle", outcome: outcome(verdict.Failure, reasonBlocking), identity: id, advisory: true},
