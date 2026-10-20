@@ -3,7 +3,10 @@
 
   let { modules, directions }: { modules: string[]; directions: Direction[] } = $props();
 
-  const drawing = $derived(layout(modules, directions));
+  // Below this width the side-by-side drawing scales its labels too small to read: the modules stack instead.
+  const narrowBelow = 480;
+  let boxWidth = $state(0);
+  const drawing = $derived(layout(modules, directions, boxWidth > 0 && boxWidth < narrowBelow));
   // Marker IDs must be unique on the page, which can hold several cycles.
   const id = `cycle-${Math.random().toString(36).slice(2, 8)}`;
   const kinds = ['added', 'existing', 'cycle'] as const;
@@ -16,7 +19,7 @@
   const shown = $derived(kinds.filter((k) => drawing.arrows.some((a) => a.kind === k)));
 </script>
 
-<div class="cycle-drawing">
+<div class="cycle-drawing" bind:clientWidth={boxWidth}>
   <svg
     viewBox="0 0 {drawing.width} {drawing.height}"
     width={drawing.width}

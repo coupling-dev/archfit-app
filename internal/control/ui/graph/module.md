@@ -148,6 +148,8 @@ type LinkFinding struct {
     From   string `json:"from"`
     To     string `json:"to"`
     RuleID string `json:"rule_id"`
+    Rule   string `json:"rule"` // report.RuleName: the readable name, as on the pull request page and the comment
+    Meta   string `json:"meta"` // report.FindingMeta: severity and status, as there
     Kind   string `json:"kind"`
     Status string `json:"status"`
     Why    string `json:"why"`

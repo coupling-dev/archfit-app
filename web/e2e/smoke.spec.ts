@@ -959,7 +959,7 @@ test('policy: Check and Save send the text, the head and the CSRF header', async
   await expect(editor).toContainText('rules: []');
   await editor.click();
   await page.keyboard.press('ControlOrMeta+End');
-  await page.keyboard.type('# edited');
+  await page.keyboard.insertText('# edited');
   await expect(page.getByText('unsaved edits')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Ready for review' })).toBeDisabled();
   const text = 'version: 2\nmodlues: {}\nrules: []\n# edited';
@@ -1048,13 +1048,16 @@ test('policy: Propose saves the edits first and keeps text typed while it runs',
   await expect(editor).toContainText('rules: []');
   await editor.click();
   await page.keyboard.press('ControlOrMeta+End');
-  await page.keyboard.type('# mine');
+  // One input event per string: CodeMirror reads typed keys back from the DOM, and fast keys on a slow runner can land
+  // out of order ("mreo"). insertText is one change at the cursor, as a paste or an IME commit.
+  await page.keyboard.insertText('# mine');
+  await expect(editor).toContainText('# mine');
   await page.getByRole('textbox', { name: 'Instruction', exact: true }).fill('split module a');
   await page.getByRole('button', { name: 'Propose' }).click();
   await expect.poll(() => writes.length).toBe(2);
   await editor.click();
   await page.keyboard.press('ControlOrMeta+End');
-  await page.keyboard.type(' and more');
+  await page.keyboard.insertText(' and more');
   release();
   await expect(page.getByText('AI proposal in your CI: queued or running')).toBeVisible();
   await expect(editor).toContainText('# mine and more');
@@ -1083,7 +1086,7 @@ test('policy: a CRLF file is not an edit, and saves with CRLF', async ({ page })
   await expect(page.getByText('unsaved edits')).toHaveCount(0);
   await editor.click();
   await page.keyboard.press('ControlOrMeta+End');
-  await page.keyboard.type('# edited');
+  await page.keyboard.insertText('# edited');
   await page.getByRole('button', { name: 'Save to draft PR' }).click();
   await expect(page.getByRole('status')).toHaveText('Saved as a commit on the draft pull request.');
   expect(writes[0].postDataJSON().content).toBe('version: 2\r\nrules: []\r\n# edited');
@@ -1140,6 +1143,22 @@ test('every page: no sideways scroll at phone width', async ({ page }) => {
     const width = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(width, path).toBeLessThanOrEqual(390);
   }
+});
+
+test('pull request: on a phone the cycle stacks, and its labels stay readable', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, '/r/acme/app/pull/4');
+  const label = page.locator('.cycle-drawing .arrow-label').first();
+  await expect(label).toBeVisible();
+  // the rendered height of 12px text: at least 11px, so the drawing is not scaled down
+  expect((await label.boundingBox())!.height).toBeGreaterThanOrEqual(11);
+  const boxes = await page.locator('.cycle-drawing .module rect').evaluateAll((rs) =>
+    rs.map((r) => {
+      const b = r.getBoundingClientRect();
+      return Math.round(b.x + b.width / 2);
+    }),
+  );
+  expect(new Set(boxes).size).toBe(1);
 });
 
 test('policy: a long policy scrolls inside the editor, and a line link scrolls to it', async ({ page }) => {

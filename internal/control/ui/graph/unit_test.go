@@ -238,6 +238,10 @@ func TestStatusFollowsEngineSeamPolicy(t *testing.T) {
 
 func TestFindingsExplainDrawnLinks(t *testing.T) {
 	why := func(f report.Finding, w string) report.Finding { f.Why = w; return f }
+	named := func(f report.Finding, rule, severity string) report.Finding {
+		f.RuleID, f.Severity = rule, severity
+		return f
+	}
 	allowed := seam("api", "db", 2)
 	allowed.Policy = "allowed"
 	long := strings.Repeat("é", whyRunes+10)
@@ -253,6 +257,10 @@ func TestFindingsExplainDrawnLinks(t *testing.T) {
 		{"an engine distance reads in the tables' words", []report.Seam{seam("api", "db", 2)},
 			[]report.Finding{why(finding("advisory", "new", "api", "db"), "cross_module distance at high volatility")},
 			[]LinkFinding{{From: "api", To: "db", Kind: "advisory", Status: "new", Why: "distance across modules at high volatility"}}},
+		{"the rule by its name and meta, as on the pull request page", []report.Seam{seam("api", "db", 2)},
+			[]report.Finding{named(finding("advisory", "baseline", "api", "db"), "bc/imbalanced_coupling", "high")},
+			[]LinkFinding{{From: "api", To: "db", RuleID: "bc/imbalanced_coupling", Rule: "Imbalanced coupling",
+				Meta: "high, baseline", Kind: "advisory", Status: "baseline"}}},
 		{"a fixed finding explains nothing", []report.Seam{seam("api", "db", 2)},
 			[]report.Finding{finding("gate", "fixed", "api", "db")}, []LinkFinding{}},
 		{"a finding without a module pair is not on the graph", nil,

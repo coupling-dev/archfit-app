@@ -520,13 +520,16 @@ Open `/r/<owner>/<repo>/pull/<number>` for the Archfit result of the pull reques
 on the pull request links to this page ("Details in Archfit").
 
 - The headline is the title of the `archfit/state` check, with the gate mode beside it. In advisory mode the check does
-  not block merging.
+  not block merging. Under it, always, the engine's verdict in the comment's words, for example "Engine verdict
+  blocked: hard gates fail, 3 active blockers, every required rule evaluated".
 - Rule violations are open. Each dependency cycle is one card with the same drawing as the comment: one arrow per
   direction with its location count, red and wide when this pull request added it, grey and thin when it existed
-  before. A table under the drawing lists each direction with its locations and, when the report has them, its
+  before; a legend under the drawing names the arrows it uses. On a phone the modules stack top to bottom, so the
+  labels stay readable. A table under the drawing lists each direction with its locations and, when the report has them, its
   integration strength, distance and volatility. An advisory on the same dependency as a violation is shown in that
-  violation's row ("Also reported as"), as on the comment, and is not counted again. The other advisories and the
-  accepted debt are folded tables. **Evidence** lists
+  violation's row ("Also reported as"), as on the comment, and is not counted again; the rest are "Advisories on
+  other dependencies". The advisories, the known issues accepted earlier and the known issues fixed are folded tables,
+  with each dependency's strength, distance and volatility. Only an advisory carries a suggested move. **Evidence** lists
   the dimensions and, folded, what the engine could not measure ("To measure more").
 - GitHub's **Details** link on the Archfit checks opens this page.
 - Badges under the result say whether the gate is required or advisory, whether this run had a baseline, whether it
@@ -552,14 +555,15 @@ the policy and the dependencies between them in the latest default-branch report
   measured. The label on a line is the number of imports behind the dependency. A dashed module is not in the
   policy. The legend above the graph is one line, colours and line width; **More** folds the rest.
 - The unit on the graph is a **dependency**: one module that depends on another (A → B). A cycle between two modules
-  is two dependencies. Status chips count the dependencies per status and filter them. The **Problems** list above the
+  is two dependencies. Status chips count the dependencies per status ("2 with a violation", "1 with an advisory") and
+  filter them; the Findings tab counts findings. The **Problems** list above the
   graph holds the violations, then the advisories, one row each (a cycle's rows say "cycle"); on the repository graph
   its number is the sum of those two chips. On a pull request graph it also holds every other dependency the pull
   request added, accepted or not. Accepted debt is no problem: it sits in **Accepted earlier**, folded under the list,
   and is drawn thin and faint. A repository with no violation or advisory shows no problem.
 - Select a problem, a line, a matrix cell or a module (click, or Tab and Enter) to see it in the panel on the right.
-  A dependency shows its status, its integration strength, distance, volatility and balance, up to 5 current findings
-  that name it, the strongest first, and a link to its module in the policy. Its volatility is the engine's for that
+  A dependency shows its status, its integration strength, distance, volatility and balance (the engine's low and none
+  bands read "balanced"; medium and worse "imbalanced"), up to 5 current findings that name it by rule name, the strongest first, and a link to its module in the policy. Its volatility is the engine's for that
   dependency: on functional coupling, the more volatile of the two modules. A source other than the declaration is
   named, for example `high (cascade)`. A module shows its layer, the volatility or subdomain the policy declares for it
   (`volatility undeclared` when it declares neither), its line in the policy and the modules it depends on and is

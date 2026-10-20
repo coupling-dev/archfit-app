@@ -577,6 +577,18 @@ const HeadlineViolations = "Architecture violations found"
 const HeadlineGateFailing = "Architecture gate failing"
 
 var EngineRuleNames map[string]string // readable names of the engine's own rules
+
+// RuleName is a rule's readable name: an engine rule's from EngineRuleNames, a policy rule's ID as written.
+func RuleName(id string) string
+
+// FindingMeta is a finding's severity, then its status as a word ("waiver", "waiver expired", "baseline"); a new or
+// fixed finding is its severity alone, as its group already says it.
+func FindingMeta(f Finding) string
+
+// EngineVerdict is the engine's decision in the comment's words: the verdict with "_" read as a space, and the rest of
+// the line: "hard gates fail|pass|not measured, N active blocker(s), M required rule(s) not evaluated" or ", every
+// required rule evaluated". The comment and the pull request page both print it.
+func EngineVerdict(r Report) (verdict, detail string)
 var DistanceWords map[string]string   // the engine's distance tokens in the words of Balanced Coupling
 var BalancingMoves map[string]string  // the engine's seam hypotheses in the words of Balanced Coupling
 func BalancingMove(h string) string   // BalancingMoves[h], else h as written; "" for none
@@ -783,6 +795,12 @@ the tests decode each one as the release that produced it (synthetic ones as v3.
   **Scenario**: table: an advisory on a violation's pair; on the reverse pair; a violation without a module; two
   advisories on one pair around another.
   **Expected behavior**: covered on that pair; rest; rest; both covered in report order and the other in rest.
+- **Test name**: `TestEngineVerdictInTheCommentsWords`
+  **Scenario**: table: blocked with 2 blockers; with 1; failed with none; needs_attention, hard gates unmeasured, two
+  unevaluated rules; healthy.
+  **Expected behavior**: "blocked" / "hard gates fail, 2 active blockers, every required rule evaluated"; "1 active
+  blocker"; "0 active blockers"; "needs attention" / "hard gates not measured, 0 active blockers, 2 required rules not
+  evaluated"; "healthy" / "hard gates pass, 0 active blockers, every required rule evaluated".
 - **Test name**: `TestBalancingMoveWordsAKnownHypothesisOnly`
   **Scenario**: `introduce_contract`, a token this version does not know, `""`.
   **Expected behavior**: the `BalancingMoves` words; the token as written; `""`.

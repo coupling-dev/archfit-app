@@ -437,6 +437,9 @@ textarea {
 .locations { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .locations-all > summary { padding: 4px 0; font-weight: 500; font-size: 12px; color: var(--fg-muted); }
 details.fold > summary { list-style: none; cursor: pointer; justify-content: flex-start; }
+/* The marker, the title and its count stay on one line; a long title wraps within itself. */
+details.fold > summary { flex-wrap: nowrap; }
+details.fold > summary > h2 { min-width: 0; }
 details.fold > summary::-webkit-details-marker { display: none; }
 details.fold > summary::before {
   content: ""; width: 0; height: 0; border-left: 5px solid var(--fg-muted);

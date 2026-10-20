@@ -54,8 +54,8 @@ describe('cycle layout', () => {
   // 12px text, at most 7px a glyph, 14px tall.
   type Area = { x: number; y: number; w: number; h: number };
   const overlaps = (a: Area, b: Area) => Math.abs(a.x - b.x) * 2 < a.w + b.w && Math.abs(a.y - b.y) * 2 < a.h + b.h;
-  const clear = (modules: string[], directions: Direction[]) => {
-    const { boxes, arrows } = layout(modules, directions);
+  const clear = (modules: string[], directions: Direction[], column = false) => {
+    const { boxes, arrows } = layout(modules, directions, column);
     const labels = arrows.filter((a) => a.label).map((a) => ({ x: a.lx, y: a.ly, w: a.label.length * 7, h: 14 }));
     labels.forEach((l, i) => {
       for (const b of boxes) expect(overlaps(l, b), `label ${i} covers ${b.module}`).toBe(false);
@@ -83,6 +83,27 @@ describe('cycle layout', () => {
       ],
     );
     expect(arrows.map((a) => a.label)).toEqual(['40 locations', '2 locations', '1 location', '1 location']);
+  });
+
+  // A phone's box is about 320px wide: the column must fit it unscaled, so its 12px labels stay 12px.
+  it('stacks a pair in a column narrow enough for a phone, labels clear', () => {
+    const pair = [dir('pkg_chaos', 'pkg_container', 'added', 2), dir('pkg_container', 'pkg_chaos', 'existing', 37)];
+    const arrows = clear(['pkg_chaos', 'pkg_container'], pair, true);
+    const { width, boxes } = layout(['pkg_chaos', 'pkg_container'], pair, true);
+    expect(width).toBeLessThanOrEqual(320);
+    expect(boxes[0].x).toBe(boxes[1].x);
+    expect(boxes[1].y).toBeGreaterThan(boxes[0].y);
+    expect(arrows.map((a) => a.label)).toEqual(['2 locations', '37 locations']);
+  });
+
+  it('keeps every box of a column inside the drawing', () => {
+    const modules = ['internal/control/ui', 'internal/gate/feedback', 'internal/wire/report'];
+    const { width, height, boxes } = layout(modules, [], true);
+    for (const b of boxes) {
+      expect(b.x - b.w / 2).toBeGreaterThanOrEqual(0);
+      expect(b.x + b.w / 2).toBeLessThanOrEqual(width);
+      expect(b.y + b.h / 2).toBeLessThanOrEqual(height);
+    }
   });
 
   it('caps the size of the largest cycle the comment draws', () => {
