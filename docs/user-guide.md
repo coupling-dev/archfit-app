@@ -537,27 +537,31 @@ the policy and the dependencies between them in the latest default-branch report
   violations first, then advisories, then accepted debt; the two directions of a cycle with one status are one row.
 - Select a problem, a line, a matrix cell or a module (click, or Tab and Enter) to see it in the panel on the right.
   A dependency shows its status, its integration strength, distance, volatility and balance, up to 5 current findings
-  that name it, the strongest first, and a link to its module in the policy. A module shows its layer, its volatility,
-  its line in the policy and the modules it depends on and is used by.
+  that name it, the strongest first, and a link to its module in the policy. Its volatility is the engine's for that
+  dependency: on functional coupling, the more volatile of the two modules. A source other than the declaration is
+  named, for example `high (cascade)`. A module shows its layer, the volatility or subdomain the policy declares for it
+  (`volatility undeclared` when it declares neither), its line in the policy and the modules it depends on and is
+  used by. When the policy is not the one the report was computed from, a module shows no volatility.
 - Modules come from the policy. Declared layers are drawn top to bottom in policy order. Position never means a
   dependency is permitted: only the policy permits one.
 - Over 15 modules the graph starts with only the modules and dependencies that have a problem. **Show all** draws
   everything. **Matrix** shows every pair: rows depend on columns.
 - **Modules and dependencies as tables**, under the graph, lists the same facts with a filter. Over 300 modules it
   is the only view.
-- Each dependency has a status. The report gives the status of each seam (`seams[].policy`), and the graph shows it.
-  If a seam has no policy, the status comes from the report findings for the module pair.
+- Each dependency has a status. The report gives the status of each seam (`seams[].policy`), and the graph starts from
+  it. The findings for the module pair add what the seam status leaves out: an advisory, or debt the baseline or a
+  waiver accepts. If a seam has no policy, the status comes from those findings alone.
 
   | Status      | Meaning                                                                   |
   | ----------- | ------------------------------------------------------------------------- |
   | `violation` | An active gate finding, or a gate finding of an unknown status, names the dependency. Red |
-  | `accepted`  | A gate finding names the dependency, and the baseline or a waiver accepts it              |
+  | `accepted`  | A finding names the dependency, and the baseline or a waiver accepts it: `accepted violation` or `accepted advisory` |
   | `advisory`  | A finding that does not block names the dependency                                        |
   | `allowed`   | A blocking allowlist or layer rule permits the dependency                                 |
-  | `observed`  | No active finding names the dependency, and no blocking rule permits it. A baselined or waived advisory can still name it |
+  | `observed`  | No current finding names the dependency, and no blocking rule permits it                  |
 
-- Only the engine can mark a dependency `allowed`. A forbidden dependency in the baseline shows as `accepted`, never
-  as `allowed`.
+- Only the engine can mark a dependency `allowed`. A forbidden dependency in the baseline shows as `accepted
+  violation`, never as `allowed`. The accepted dependencies are the ones the overview counts as accepted.
 - A warning says when the policy differs from the one the report was computed from (module names and lines may not
   match), and when the report's hard gates did not pass or the engine did not evaluate all required rules: then an
   `observed` dependency can still break a rule that was not evaluated. Open a warning for the reason.

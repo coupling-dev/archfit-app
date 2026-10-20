@@ -8,8 +8,9 @@
 
 Graph turns one engine report plus the current policy text into a read-only picture of modules and
 dependencies that the UI can draw. It keeps three product promises in one pure function: each observed
-dependency carries what the report says about it (the engine's seam policy status when the report has one, else what
-its findings say: a violation, accepted debt, an advisory, or nothing), a module can be found in the YAML, and a
+dependency carries what the report says about it (the engine's seam policy status when the report has one, raised by
+the accepted debt and advisories it leaves out, else what its findings say: a violation, accepted debt, an advisory,
+or nothing), a module can be found in the YAML, and a
 picture that no longer matches the policy text is marked stale instead of looking current. Graph never infers
 "allowed" itself: only the engine's `seams[].policy` can say a dependency is allowed, and a baselined forbidden edge
 is accepted debt, never allowed. Without it this logic would sit in templates and JavaScript where it cannot be
@@ -17,18 +18,19 @@ tested.
 
 ## Functional Responsibilities
 
-- Build one `Node` per module declared in the policy, with its layer, its line in the YAML, and the volatility every
-  seam into it agrees on.
+- Build one `Node` per module declared in the policy, with its layer, its line in the YAML, and the volatility or
+  subdomain that policy declares for it when the policy is the one the report was computed from.
 - Build one `Link` per observed module-to-module seam of the report, and per module pair a current finding names, in
   a stable order.
 - Give each link its `Status`: the engine's `seams[].policy` of the pair when a seam carries it (`violation`,
-  `accepted`, `advisory`, `allowed`, or `observed`); otherwise the status the report's findings on that module pair
-  give: `violation`, `accepted`, `advisory`, or `observed`.
+  `accepted`, `advisory`, `allowed`, or `observed`), raised to `advisory` or `accepted` by the findings on the pair;
+  otherwise the status the report's findings on that module pair give: `violation`, `accepted`, `advisory`, or
+  `observed`. An accepted link says what it accepts: a violation (gate debt) or an advisory.
 - Set `Stale` when the policy text is not the policy the report was computed from, or does not parse.
 - Set `Incomplete` when the report's hard gates did not pass or a required rule was not evaluated, so that an
   `observed` link is not read as clean.
-- Give each link the coupling of its strongest seam (strength, distance in words, volatility) and the worst
-  imbalance the engine reported on the pair.
+- Give each link the coupling of its strongest seam (strength, distance in words, volatility and where the engine
+  took it from) and the worst imbalance the engine reported on the pair.
 - Give each link its `Origin` by the PR comment's rule (`report.PairOrigin`) when the engine compared with the base
   branch, without touching its `Status`.
 
@@ -42,13 +44,14 @@ Layout, colors and interaction are not here; they are the web app's.
 
 ## Encapsulated Knowledge
 
-- The rule that the engine's seam policy status, when present, is the link's status, and findings do not change it:
-  the engine owns the rules and computes the status from the same findings, so a second reading here could only
-  disagree with it (for example, the engine counts only an active advisory, a baselined one names nothing).
+- The rule that the engine's seam policy status, when present, decides a link's violations, and findings only raise
+  it to `advisory` or `accepted`: the engine owns the rules, but its `observed` means "no active finding" and leaves
+  out advisories and accepted debt, which the overview counts (report.Group). The graph shows the same accepted
+  findings the overview counts.
 - The status a finding gives its pair, and the precedence when several findings or seams name it. Which findings are active
   (a violation) is not graph's knowledge: `report.Finding.Active()` of wire/report decides, the same rule the gate's
   feedback uses. Graph knows only the accepted statuses (`baseline`, `waived`), the `fixed` status and the `gate`
-  kind, the display vocabulary feedback reads too. A `gate` finding with any other status is drawn as a violation
+  kind, the display vocabulary feedback reads too. Accepted is report.Group's rule: `baseline` or `waived`, any kind. A `gate` finding with any other status is drawn as a violation
   (fail safe), as feedback treats an unknown status as live.
 - How duplicate seams, seams to undeclared modules, and findings without a seam are normalized.
 - The ordering rule of the output.
@@ -63,10 +66,16 @@ type Node struct {
     Name       string `json:"name"`
     Layer      string `json:"layer"`
     PolicyLine int    `json:"policy_line"` // 1-based line of the module in the policy YAML; 0 if not found
-    // Volatility is the declared volatility the engine gave every seam into the module (Balanced Coupling: the
-    // volatility of the module depended upon); "" when the seams disagree, say undeclared, or there are none.
+    // Volatility and Subdomain are what the policy the report was computed from declares for the module. Volatility is
+    // VolatilityUndeclared when it declares neither. Both are "" when the policy text is not the report's (View.Stale)
+    // or does not name the module: the node then claims nothing. A seam's volatility is no module fact: on a
+    // functional dependency the engine takes the worse of its two ends.
     Volatility string `json:"volatility"`
+    Subdomain  string `json:"subdomain"`
 }
+
+// VolatilityUndeclared is Node.Volatility for a module whose policy declares neither a volatility nor a subdomain.
+const VolatilityUndeclared = "undeclared"
 
 // LinkStatus is what the report says about a module pair: the engine's seam policy status when the report carries
 // one, else what the findings on the pair say. It is a display fact, never a check input.
@@ -74,8 +83,8 @@ type LinkStatus string
 
 const (
     StatusViolation LinkStatus = "violation" // an active gate finding (wire/report Finding.Active), or a gate finding of unknown status, names the pair
-    StatusAccepted  LinkStatus = "accepted"  // a gate finding accepted by the baseline or a waiver names the pair
-    StatusAdvisory  LinkStatus = "advisory"  // another finding that is not fixed names the pair
+    StatusAccepted  LinkStatus = "accepted"  // a finding accepted by the baseline or a waiver names the pair (report.Group's Accepted)
+    StatusAdvisory  LinkStatus = "advisory"  // another finding that is not fixed and not a violation names the pair
     StatusAllowed   LinkStatus = "allowed"   // engine seam policy only: a fail-gated allowlist or layer rule permits the pair
     StatusObserved  LinkStatus = "observed"  // engine seam policy: no active finding names the pair and no rule permits it; without one: no current finding names the pair
 )
@@ -91,9 +100,20 @@ type Link struct {
     // The coupling of the pair's strongest seam, as the engine measured it; all "" when no seam names the pair.
     Strength   string `json:"strength"`   // engine token: contract, model, functional, intrusive
     Distance   string `json:"distance"`   // in words (report.DistanceWords)
-    Volatility string `json:"volatility"` // engine token
-    Imbalance  string `json:"imbalance"`  // the highest seam severity of the pair, the engine's imbalance; "" for none
+    Volatility string `json:"volatility"` // engine token, the seam's: on a functional dependency the worse end's
+    // VolatilitySource is the engine's volatility_provenance of that seam: declared, inherited, cascade, undeclared.
+    VolatilitySource string `json:"volatility_source"`
+    Imbalance        string `json:"imbalance"` // the highest seam severity of the pair, the engine's imbalance; "" for none
+    // Accepted is what the accepted findings on the pair accept: AcceptedViolation when one is a gate finding, else
+    // AcceptedAdvisory; "" when none names the pair. The page names it, so gate debt never reads as an advisory.
+    Accepted string `json:"accepted"`
 }
+
+// Link.Accepted values.
+const (
+    AcceptedViolation = "violation"
+    AcceptedAdvisory  = "advisory"
+)
 
 // View is a read-only picture. Stale is true when the policy text no longer matches the report's config_hash.
 // Incomplete is true when the report's hard gates did not pass or a required rule was not evaluated: an observed
@@ -120,8 +140,10 @@ type LinkFinding struct {
 }
 
 // Build is pure. Nodes come from the policy's modules, links from the report's seams and findings. A link's Status
-// is the engine's seams[].policy when a seam of the pair carries it; otherwise it comes from the findings that name
-// the pair. Graph never computes a status from the policy text.
+// starts at the engine's seams[].policy when a seam of the pair carries it. The findings that name the pair raise it:
+// on a pair the engine gave a policy, only to advisory or accepted, since the engine's "observed" means no active
+// finding and says nothing about advisories and accepted debt; the engine decides its violations. Graph never
+// computes a status from the policy text.
 func Build(rep Report, policy []byte) View
 ```
 
@@ -132,21 +154,23 @@ func Build(rep Report, policy []byte) View
 2. Links: one per distinct `(FromModule, ToModule)` of `rep.Seams`. Duplicates merge **[default]**: `Count` is the sum
    of `Edges`. A seam with an empty endpoint is dropped. A seam alone, without `Policy`, gives `observed`.
 3. Engine status: when a seam of the pair has a non-empty `Policy` (wire/report admits only `violation`, `accepted`,
-   `advisory`, `allowed`, `observed`), the link's `Status` is that value, the strongest one
-   when duplicate seams of the pair differ, and rule 4 does not apply to the pair. Graph shows the engine's status; it
-   does not check it against the findings.
-4. Finding status, for a pair no seam `Policy` decided (the `Policy` key is optional):
-   `Status` comes from the findings with `Edge.From.Module == From` and `Edge.To.Module == To`. Each finding gives one
+   `advisory`, `allowed`, `observed`), the link's `Status` starts at that value, the strongest one when duplicate
+   seams of the pair differ. Rule 4 then raises it by the pair's findings, except that a finding's `violation` is
+   ignored: the engine decides a pair's violations, and graph does not check the engine's status against the findings.
+   The engine's `observed` says only that no active finding names the pair, so an accepted or new advisory still shows.
+4. Finding status: `Status` comes from the findings with `Edge.From.Module == From` and `Edge.To.Module == To`. Each finding gives one
    status: `violation` when `Finding.Active()` is true (the rule wire/report owns: today a gate finding with status `new`
-   or `expired_waiver`); none when its status is `fixed` (it says nothing about the current tree); `accepted` for a
-   `gate` finding with status `baseline` or `waived`; `violation` for a `gate` finding with any other status, one this
+   or `expired_waiver`); `accepted` for status `baseline` or `waived`, any kind (report.Group's Accepted, the overview's
+   count); none when its status is `fixed` (it says nothing about the current tree); `violation` for a `gate` finding
+   with any other status, one this
    version does not know included (fail safe: feedback treats an unknown status as live); `advisory` for every other
    finding, an advisory of any status and a kind this version does not know included, so a finding is never drawn as
    a plain observation. The
    strongest wins: `violation` > `accepted` > `advisory` > `observed`. Findings with an empty module on either side do
    not change a link. Findings never give `allowed`. The policy text never sets a status: graph does not evaluate
    rules. The full order, used for duplicate seams too, is the engine's: `violation` > `accepted` > `advisory` >
-   `allowed` > `observed`.
+   `allowed` > `observed`. `Accepted` is `violation` when an accepted `gate` finding names the pair, else `advisory`
+   when an accepted one does, else `""`.
 5. A finding that gives a status to a pair without a seam still yields a link, `Count` 0 **[default]**: a violation or
    accepted debt is never hidden because the seam list is incomplete. A fixed finding yields no link.
 6. A link endpoint that the policy does not declare gets a node with that name, empty `Layer`, `PolicyLine` 0.
@@ -176,16 +200,20 @@ func Build(rep Report, policy []byte) View
     without the engine's comparison. `Origin` is never inferred from a status (`new` means "not accepted", not
     "added") and never changes `Status`: an added link with a gate finding stays a `violation`.
 14. Coupling: per pair, the seam with the strongest `Strength` (`contract` < `model` < `functional` < `intrusive`; a
-    token outside them ranks below all), then the most `Edges`, gives `Strength`, `Volatility`, and `Distance` in
+    token outside them ranks below all), then the most `Edges`, gives `Strength`, `Volatility`, `VolatilitySource`
+    (the seam's `VolatilityProvenance`), and `Distance` in
     `report.DistanceWords` (a token outside them as written). `Imbalance` is the highest `Severity` of the pair's
     seams (`low` < `medium` < `high` < `critical`). A pair only a finding names has none of them.
-15. Node volatility: when every seam into a module carries the same `Volatility` and it is `low`, `medium` or
-    `high`, the node shows it, an undeclared module included; otherwise `""`.
+15. Node volatility: only when `Stale` is false (the policy text is the report's), a declared module's node carries
+    the `ModuleDef`'s `Volatility` and `Subdomain`, and `Volatility` is `undeclared` when it declares neither. A stale
+    policy, or a module the policy does not declare, gives both `""`: the node claims nothing rather than guess. A
+    seam's `Volatility` is never a node's: on a functional dependency the engine takes the worse of the two ends, so a
+    module declared `low` behind a `high` caller has `high` seams into it.
 
 Stated limits **[default]**: only the engine says "allowed". A relationship the policy permits but the engine did
 not observe is not in a report, and graph does not interpret policy rules. When a seam carries `Policy`, `observed` is
-the engine's: no active finding names the pair and no blocking rule permits it; a baselined or waived advisory can
-still name the pair. When no seam of the pair carries `Policy`, no link is `allowed`, and `observed` means only that
+the engine's: no active finding names the pair and no blocking rule permits it; a baselined or waived advisory that
+names the pair makes it `accepted`, a new one `advisory`. When no seam of the pair carries `Policy`, no link is `allowed`, and `observed` means only that
 no current finding names the pair: a rule may still permit it. A pair that only a finding names (no seam) keeps the
 finding status of rule 4.
 
@@ -442,6 +470,7 @@ type Seam struct {
     Strength   string `json:"strength"`
     Distance   string `json:"distance"`
     Volatility string `json:"volatility"`
+    VolatilityProvenance string `json:"volatility_provenance,omitempty"` // declared | inherited | cascade | undeclared
     Severity   string `json:"severity,omitempty"`
     // Policy is what the engine's policy says about the seam: "violation" | "accepted" |
     // "advisory" | "allowed" | "observed", a closed set. "" = the key is absent.
@@ -510,9 +539,10 @@ func Modules(policy []byte) ([]ModuleDef, error)
 - Cost is linear in modules + seams + findings. The report decoder caps findings and seams; the parent caps the policy
   text. Graph's own caps are on `Findings`: 5 per pair and 400 runes of `Why`.
 - Inherited: control-plane code, never on the gate path. `Stale` and `Status` are display facts and never an input to a check.
-- Never "allowed" on graph's own reading: only the engine's `seams[].policy` gives `allowed`, and a pair the engine
-  decided keeps the engine's status. Without it, a finding is never drawn as a plain observation, and a fixed finding
+- Never "allowed" on graph's own reading: only the engine's `seams[].policy` gives `allowed`, and a finding never
+  makes a pair the engine decided a violation. A finding is never drawn as a plain observation, and a fixed finding
   never draws a link.
+- The accepted links are the pairs of report.Group's Accepted: the graph and the overview never disagree on them.
 
 ## Test Specification
 
@@ -540,16 +570,17 @@ Nothing is mocked.
   unknown status; that one beside gate/baseline; gate/new on `db → api`; gate/new with an empty `To.Module`; no
   finding; advisory, baseline and new together; advisory and waived together.
   **Expected behavior**: `violation` for the first two and for the gate finding with an unknown status (also beside
-  baseline); `accepted` for baseline and waived; `observed` for fixed findings, the other direction, the empty module and
-  no finding; `advisory` for advisories and unknown kinds; `violation` and `accepted` win the last two rows. Every active
+  baseline); `accepted` for baseline and waived, advisory/baseline included; `observed` for fixed findings, the other
+  direction, the empty module and no finding; `advisory` for new advisories and unknown kinds; `violation` and `accepted` win the last two rows. Every active
   finding on the pair gives `violation`: the rule is wire/report's.
 - **Test name**: `TestStatusFollowsEngineSeamPolicy`
   **Scenario**: table over seams with `Policy`: each of the five values alone; `allowed` with a gate/new finding on the
-  pair; `observed` with an advisory/baseline finding on the pair; duplicate seams `allowed`, `violation`, `observed`
+  pair; `observed` with an advisory/baseline finding on the pair; `observed` with an advisory/new one; duplicate seams `allowed`, `violation`, `observed`
   (`Edges` 2, 3, 1); duplicate seams `observed` and `allowed`; a seam without `Policy` and a gate/baseline finding; an
   `allowed` seam `api → db` and a gate/new finding on `ui → db` with no seam; a `violation` seam with an empty endpoint.
-  **Expected behavior**: the seam's value each time; the finding does not change an engine status; `violation` with
-  `Count` 6 and `allowed` with `Count` 2 for the duplicates; `accepted` without `Policy`; `api → db` allowed and
+  **Expected behavior**: the seam's value each time; the gate finding does not make the `allowed` pair a violation;
+  `accepted` with `Accepted` advisory; `advisory`; `violation` with `Count` 6 and `allowed` with `Count` 2 for the
+  duplicates; `accepted` with `Accepted` violation without `Policy`; `api → db` allowed and
   `ui → db` violation with `Count` 0; no link for the empty endpoint.
 - **Test name**: `TestLinkOriginIsTheCommentsRule`
   **Scenario**: table: an introduced finding on a pair, compared; the same not compared; a pre-existing finding; a new
@@ -566,14 +597,24 @@ Nothing is mocked.
   one; an unknown strength beside `contract`; two equal strengths; a pair only a finding names.
   **Expected behavior**: the seam's facts, distance in words; the token as written; the stronger seam's facts and the
   worse imbalance of the two; `contract`; the seam with more dependencies; no coupling.
-- **Test name**: `TestNodeShowsTheVolatilityItsSeamsAgreeOn`
-  **Scenario**: seams into `db` that agree; into `api` that disagree; into `ui` only `undeclared`; into `cache`, a
-  module the policy does not declare.
-  **Expected behavior**: `db` high; `api` and `ui` `""`; `cache` medium.
+- **Test name**: `TestNodeShowsWhatTheReportsPolicyDeclares`
+  **Scenario**: the report's policy declares `chaos` high, `util` low, `domain` subdomain core and `plain` nothing;
+  a functional seam `chaos → util` with `high` from `declared`; a seam into `cache`, not in the policy; then the same
+  report with an edited policy.
+  **Expected behavior**: high, low, subdomain core, `undeclared`, nothing for `cache`; util stays low; the link keeps
+  the seam's high from `declared`. With the edited policy every node claims nothing and the view is stale.
+- **Test name**: `TestAcceptedNamesWhatItAccepts`
+  **Scenario**: an `observed` seam and: an accepted advisory; a waived advisory; an accepted gate finding; a waived
+  gate finding beside an accepted advisory; a new advisory.
+  **Expected behavior**: `Accepted` advisory, advisory, violation, violation, `""`.
+- **Test name**: `TestGraphAcceptsWhatTheOverviewCounts`
+  **Scenario**: accepted findings on `observed` and `allowed` seams, a new advisory, and report.Group of the same report.
+  **Expected behavior**: the accepted links are exactly the pairs of report.Group's Accepted.
 - **Test name**: `TestFindingWithoutSeamStillDraws`
   **Scenario**: gate/new on `ui → db`, gate/baseline on `api → ui`, advisory/new on `db → api` and gate/fixed on `db → ui`,
   with no seams.
-  **Expected behavior**: three links with `Count` 0: `violation`, `accepted`, `advisory`; no link for the fixed finding.
+  **Expected behavior**: three links with `Count` 0: `violation`, `accepted` (`Accepted` violation), `advisory`; no
+  link for the fixed finding.
 
 ### Integration Contract Tests
 
@@ -585,13 +626,14 @@ Nothing is mocked.
   **Scenario**: engine captures of the shared corpus `internal/wire/testdata/report`: `real-blocked-forbidden-and-allowed`,
   `real-baselined-comparable`, `real-waiver-active`, `real-waiver-expired` and `real-blocked-no-baseline`
   (`seams[].policy: violation`).
-  **Expected behavior**: `a → b` violation and `a → c` observed; `a → b` accepted (a baselined forbidden edge is never
+  **Expected behavior**: `a → b` violation and `a → c` accepted (an allowed pair a baselined advisory names); `a → b` accepted (a baselined forbidden edge is never
   allowed); accepted; violation; violation.
 - **Test name**: `TestStatusFromEngineSeamPolicy`
   **Scenario**: the capture `real-seam-policy` (the engine's hexagonal `map` scenario) with its policy file.
-  **Expected behavior**: the six links with the engine's statuses, `Count` 1 each: `api → billing` accepted,
-  `api → stripe`, `orders → billing` and `stripe → orders` allowed, `billing → stripe` violation, `orders → audit`
-  observed; `Stale` false; `Incomplete` true (required rules not evaluated).
+  **Expected behavior**: the six links, `Count` 1 each: `api → billing` accepted, `stripe → orders` allowed and
+  `billing → stripe` violation as the engine says; `api → stripe`, `orders → billing` (engine allowed) and
+  `orders → audit` (engine observed) accepted by the baselined advisories on them; `Stale` false; `Incomplete` true
+  (required rules not evaluated).
 - **Test name**: `TestBuildIsDeterministic`
   **Scenario**: build twice from the same input, and once with seams and findings shuffled.
   **Expected behavior**: three identical views, nodes sorted by name, links by `(From, To)`.
