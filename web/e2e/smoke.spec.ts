@@ -451,7 +451,12 @@ test('graph: the canvas, the inspector and the matrix', async ({ page }) => {
     '/r/acme/app/policy#L3',
   );
 
-  await page.locator('.g-node', { hasText: 'db' }).focus();
+  // Selecting a dependency re-renders the nodes it dims: focus until it holds, or Enter reaches the problem row.
+  const db = page.locator('.g-node', { hasText: 'db' });
+  await expect(async () => {
+    await db.focus();
+    await expect(db).toBeFocused({ timeout: 200 });
+  }).toPass();
   await page.keyboard.press('Enter');
   await expect(inspector.getByRole('heading', { name: 'Module' })).toBeVisible();
   await expect(inspector.getByRole('link', { name: 'Open in the policy' })).toHaveAttribute(
