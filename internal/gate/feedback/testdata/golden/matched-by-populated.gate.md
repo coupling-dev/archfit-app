@@ -1,13 +1,12 @@
-- **Next:** Remove the rule violations, then run the validation command.
+- **Next:** Fix the rule violations, then run archfit check again.
 - Reason: `blocking_findings` (architecture)
-- Detail: 1 blocking finding
 
 ### Blocking findings
 
-- No active gate finding is listed. The engine blocked on a hard gate without one, for example a metric ratchet; read the archfit/state check.
+- The outcome names blocking findings, but the report lists no active gate finding. Read the archfit/state check.
 
 <details>
-<summary>Evidence, inputs and validation</summary>
+<summary>Evidence and inputs</summary>
 
 ### Inputs and identity
 

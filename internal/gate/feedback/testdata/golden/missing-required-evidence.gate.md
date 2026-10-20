@@ -3,7 +3,7 @@
 - Detail: layers/no_upward_imports
 
 <details>
-<summary>Evidence, inputs and validation</summary>
+<summary>Evidence and inputs</summary>
 
 ### Inputs and identity
 

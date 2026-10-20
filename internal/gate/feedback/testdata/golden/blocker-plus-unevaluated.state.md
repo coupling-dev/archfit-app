@@ -1,46 +1,34 @@
-- **Next:** Remove the rule violations, then run the validation command.
+- **Next:** Fix the rule violations, then run archfit check again.
 - Reason: `blocking_findings` (architecture)
-- Detail: 1 blocking finding
 
 Also reported:
 - `missing_required_coverage` (evidence): layers/no_upward_imports. Next: Install the required tool in the workflow, then re-run it.
 
 ### Findings
 
-**1 rule violation** · 1 advisory
+**1 rule violation**
 
-- **violation** `no_direct_b_dependency` (medium): `a` (`pkg/a/a.go`) → `b` (`pkg/b`)
+- **violation** `no_direct_b_dependency` (medium): `a` → `b`
   - Locations: `pkg/a/a.go:3`
   - Why: Import from pkg/a/** to pkg/b is explicitly forbidden
-  - Constraint: Remove the dependency or move the code
+  - Fix: Remove the dependency or move the code
 
 <details>
-<summary>1 advisory · never block</summary>
-
-| Rule | Dependency | Where | Strength | Distance | Volatility |
-| --- | --- | --- | --- | --- | --- |
-| Imbalanced coupling · medium | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared |
-
-Imbalanced coupling · **Why:** balanced coupling: functional integration strength × distance across modules, same owner × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
-
-</details>
-
-<details>
-<summary>Evidence, inputs and validation</summary>
+<summary>Evidence and inputs</summary>
 
 ### Dimensions
 
-| Dimension | Status | Coverage | Confidence | Gate |
+| Dimension | Status | Measured | Confidence | Result |
 | --- | --- | --- | --- | --- |
 | `intent` | measured | 1/1 (declared rules evaluated) | high | pass |
 | `structure` | measured | 1/1 (discovered dependencies resolved inside the declared module map) | high | **fail** |
 | `modularity` | measured | 1/2 (declared modules with a declared public surface) | low | pass |
 | `coupling` | measured | 1/1 (cross-boundary edges scored) | high | **warn** |
-| `change_locality` | unmeasured | 0/0 | unrated | not_applicable |
+| `change_locality` | unmeasured | 0/0 | unrated | not applicable |
 | `complexity` | measured | 2/2 (declared modules with complete dependency-chain and degree values) | high | pass |
 | `testability` | partial | 3/3 (classified source files) | medium | pass |
 | `operations` | partial | 0/2 (declared modules with a corroborated deploy unit and qualifying owner) | medium | pass |
-| `drift` | unmeasured | 0/0 | unrated | not_applicable |
+| `drift` | unmeasured | 0/0 | unrated | not applicable |
 
 ### Evidence gaps
 

@@ -85,7 +85,7 @@ func TestSourceIdentifiersNeverSurviveDecoding(t *testing.T) {
 		t.Fatalf("leakage fixture %q is missing", survivingLeakageFixture)
 	}
 	raw := surviving.bytes(t)
-	for _, carrier := range []string{`"declarations"`, `"matched_by"`, `"hypothesis"`} {
+	for _, carrier := range []string{`"declarations"`, `"matched_by"`, `"role_expectation"`} {
 		if !strings.Contains(string(raw), carrier) {
 			t.Fatalf("the fixture has no %s key to carry the marker", carrier)
 		}

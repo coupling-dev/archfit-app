@@ -122,5 +122,5 @@ func (s *server) latestReport(ctx context.Context, repo api.Repo) ([]byte, error
 	if err != nil {
 		return nil, err
 	}
-	return s.gh.actions.Artifact(ctx, repo.RepoRef, run.ID, reportArtifact, report.MaxBytes)
+	return s.reportPayload(ctx, repo.RepoRef, run.ID)
 }

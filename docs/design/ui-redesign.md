@@ -478,3 +478,20 @@ overlap.
   between two modules, a label moves along its arrow until it covers no module and no other label (unlabelled when
   none is free: the table lists every direction), and the radius stops at 480 px for the largest cycle the comment
   draws.
+
+### Latency (phase g2)
+
+The same check timed the overview at 3.2 s, the findings at 1.4 s and a pull request graph at 2.6 s. A trace of the
+code, not a measurement, found every GitHub read of a page made one after another, at roughly 150 to 250 ms each.
+
+- Reads that do not depend on each other run side by side, and each part still fails the page exactly as before:
+  the results are judged in the old order. The overview's optional parts (administrator check, default-branch state,
+  open pull requests, plan banner) still never fail it.
+- The pull request pages read the pull request without the compare call: the merge base serves the gate, never the
+  page. The gate's own read is unchanged.
+- One instance keeps the report artifacts it downloaded, up to 32 MiB, keyed by installation, repository and
+  artifact ID, behind the per-request authorization; every request still lists the run's artifacts as the
+  installation, and the pull request page still checks the digest. So the Graph tab no longer downloads the report
+  the Findings tab just read.
+- The `ui request` log line counts the GitHub calls of the request and their summed time (`gh_calls`, `gh_ms`), so
+  the next check reads the gain from production logs instead of a trace.
