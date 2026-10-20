@@ -276,7 +276,7 @@ func ReadableWhy(why string) string {
 var BalancingMoves = map[string]string{
 	"introduce_contract":    "Introduce a contract: lower the integration strength, so the target can change without breaking this module",
 	"move_functionality":    "Move the functionality: lower the distance, so the coupled code lives in one module",
-	"accept_low_volatility": "Accept it: the target rarely changes, so the strength costs little",
+	"accept_low_volatility": "Accept it: the coupled code rarely changes, so the strength costs little",
 	"declare_volatility":    "Declare the volatility of the module in the policy: undeclared volatility counts as high",
 	"expected_by_role":      "Expected for the role of the module: no change needed",
 	"follow_rule":           "A rule violation covers this pair: follow its Fix",

@@ -367,8 +367,14 @@ dl.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .blankslate p { color: var(--fg-muted); max-width: 56ch; font-size: 13px; }
 
 /* ---------- footer ---------- */
-.app-footer { max-width: 1280px; margin: 0 auto; padding: 0 24px 24px; font-size: 12px; color: var(--fg-muted); }
+/* Muted, under a thin rule as wide as the page's content. */
+.app-footer {
+  width: min(1232px, calc(100% - 48px)); margin: 8px auto 0; padding: 16px 0 32px;
+  border-top: 1px solid var(--border-muted); font-size: 12px; color: var(--fg-muted);
+}
 .app-footer a { color: inherit; }
+.app-footer a:hover { color: var(--accent); }
+@media (max-width: 640px) { .app-footer { width: calc(100% - 32px); } }
 
 /* ---------- stat strip (counts, never a score) ---------- */
 .stats { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
@@ -410,6 +416,11 @@ textarea {
 .track li.done .mark { border-color: var(--success-emphasis); background: var(--success-emphasis); color: #ffffff; }
 .track li.current { color: var(--fg); font-weight: 600; }
 .track li.current .mark { border-color: var(--accent); color: var(--accent); }
+/* Narrow: one step per line, so a wrapped connector never starts a line. */
+@media (max-width: 640px) {
+  .track { flex-direction: column; }
+  .track li + li::before { display: none; }
+}
 
 /* Checklist: a mark plus the words, the state in screen-reader text; colour is never the only signal */
 .checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -601,7 +612,9 @@ details.disclosure.locations-all { border-top: 0; }
 .problems ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
 .editor { border-top: 1px solid var(--border-muted); }
 .push-right { margin-left: auto; }
-/* No inner scroll: the page scrolls, so the wheel is never trapped inside the editor. */
+/* A fixed height with its own scroll, as on GitHub: the toolbar and the AI box stay near on a long policy. */
+.editor .cm-editor { height: 60vh; min-height: 240px; }
+.editor .cm-scroller { overflow: auto; }
 .editor .cm-editor.cm-focused { outline: 2px solid var(--accent); outline-offset: -2px; }
 .plain { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 fieldset { border: 0; margin: 0; padding: 0; }
