@@ -1213,15 +1213,19 @@ test('pull request: on a phone the cycle stacks, and its labels stay readable', 
     const fit = await wrap.evaluate((w) => w.scrollWidth <= w.clientWidth);
     expect(fit).toBe(true);
   }
-  const slack = await page.locator('table.cards tbody tr:visible').evaluateAll((rows) =>
-    rows.map((tr) => {
-      const cells = [...tr.children].map((c) => c.getBoundingClientRect()).filter((r) => r.height > 0);
-      const bottom = Math.max(...cells.map((r) => r.bottom));
-      return Math.round(tr.getBoundingClientRect().bottom - bottom);
+  // a cell as tall as its row but not its content is the empty block: each cell's box against what it renders, with
+  // room for its padding and its label's line
+  const slack = await page.locator('table.cards tbody td:visible').evaluateAll((cells) =>
+    cells.map((td) => {
+      const content = document.createRange();
+      content.selectNodeContents(td);
+      const rects = [...content.getClientRects()].filter((r) => r.width > 0 && r.height > 0);
+      const used = Math.max(...rects.map((r) => r.bottom)) - Math.min(...rects.map((r) => r.top));
+      return Math.round(td.getBoundingClientRect().height - used);
     }),
   );
   expect(slack.length).toBeGreaterThan(0);
-  for (const s of slack) expect(s).toBeLessThanOrEqual(16);
+  for (const s of slack) expect(s).toBeLessThanOrEqual(32);
   await expect(page.locator('table.cards td.sdv').first()).toBeVisible();
 });
 
