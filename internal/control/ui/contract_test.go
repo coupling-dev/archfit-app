@@ -162,7 +162,7 @@ func TestRoutesAndMinimumPermissions(t *testing.T) {
 	})
 	t.Run("public assets", func(t *testing.T) {
 		e := newEnv(t)
-		for _, path := range []string{"/static/app.css", "/schema/policy.json", "/assets/app-1a2b.js"} {
+		for _, path := range []string{"/schema/policy.json", "/assets/app-1a2b.js", licensesRoute} {
 			res := e.anonymous().get(path)
 			wantStatus(t, res, http.StatusOK)
 			if res.Body.Len() == 0 {
@@ -172,7 +172,11 @@ func TestRoutesAndMinimumPermissions(t *testing.T) {
 		if got := e.anonymous().get("/assets/app-1a2b.js").Header().Get("Cache-Control"); got != immutableCache {
 			t.Errorf("asset Cache-Control = %q, want %q", got, immutableCache)
 		}
-		for _, path := range []string{"/static/", "/assets/", "/assets/missing.js", "/index.html", "/api/nothing"} {
+		licences := e.anonymous().get(licensesRoute)
+		if got := licences.Header().Get("Cache-Control"); got != "no-cache" || licences.Body.String() != string(testWeb["assets/licenses-9f8e.txt"].Data) {
+			t.Errorf("licences: Cache-Control %q, body %q; want no-cache and the build's licence file", got, licences.Body.String())
+		}
+		for _, path := range []string{"/static/app.css", "/assets/", "/assets/missing.js", "/index.html", "/api/nothing"} {
 			wantStatus(t, e.anonymous().get(path), http.StatusNotFound)
 		}
 	})

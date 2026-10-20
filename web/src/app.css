@@ -362,8 +362,12 @@ dl.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 /* ---------- blankslate ---------- */
 .blankslate { padding: 32px 24px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .blankslate .oi { width: 24px; height: 24px; color: var(--fg-muted); }
-.blankslate h3 { font-size: 16px; }
+.blankslate :is(h1, h3) { font-size: 16px; }
 .blankslate p { color: var(--fg-muted); max-width: 56ch; font-size: 13px; }
+
+/* ---------- footer ---------- */
+.app-footer { max-width: 1280px; margin: 0 auto; padding: 0 24px 24px; font-size: 12px; color: var(--fg-muted); }
+.app-footer a { color: inherit; }
 
 /* ---------- stat strip (counts, never a score) ---------- */
 .stats { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }

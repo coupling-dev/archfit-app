@@ -54,3 +54,12 @@ export function safeHref(url: string | undefined | null): string | undefined {
   if (url.startsWith('https://github.com/')) return url;
   return undefined;
 }
+
+// errorPlaceholder is the app-error meta tag's content in index.html; the server replaces it on every response.
+const errorPlaceholder = '__APP_ERROR__';
+
+// serverError is the sentence of a server error page: the server answered the page with an error status and put the
+// sentence in the app-error meta tag. Empty on a page, and for the placeholder of a build served without the App.
+export function serverError(content: string | null | undefined): string {
+  return !content || content === errorPlaceholder ? '' : content;
+}

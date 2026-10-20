@@ -326,6 +326,7 @@ interface Mock {
   policy?: object; // fields of the policy page that differ from policy()
   refuseSave?: boolean; // the save is refused with the problems of the text
   holdAssist?: Promise<void>; // the AI request answers once this settles
+  serverError?: { status: number; sentence: string }; // the server answers the page as its error page
 }
 
 // open answers /api in the browser from the mock, opens the page, and returns the writes the page sent. Each page records the CSP violations
@@ -404,6 +405,18 @@ async function open(page: Page, path: string, mock: Mock = {}) {
     }
     return json(404, { error: 'Not found.' });
   });
+  if (mock.serverError) {
+    // The server's error page is the shell with its status and the sentence in the app-error meta tag.
+    const { status, sentence } = mock.serverError;
+    await page.route(`**${path}`, async (route) => {
+      const res = await route.fetch({ url: new URL('/', route.request().url()).href });
+      await route.fulfill({
+        status,
+        headers: res.headers(),
+        body: (await res.text()).replace('__APP_ERROR__', sentence),
+      });
+    });
+  }
   await page.addInitScript(() => {
     const seen: string[] = [];
     (window as unknown as { cspViolations: string[] }).cspViolations = seen;
@@ -840,4 +853,19 @@ test('policy: a CRLF file is not an edit, and saves with CRLF', async ({ page })
   await expect(page.getByRole('status')).toHaveText('Saved as a commit on the draft pull request.');
   expect(writes[0].postDataJSON().content).toBe('version: 2\r\nrules: []\r\n# edited');
   await expectClean(page);
+});
+
+test('error page: the server sentence, no repository tabs, under the CSP', async ({ page }) => {
+  await open(page, '/r/acme/hidden', { serverError: { status: 404, sentence: 'Not found.' } });
+  await expect(page.getByRole('heading', { name: 'This page cannot be shown' })).toBeVisible();
+  await expect(page.getByText('Not found.')).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Repository' })).toHaveCount(0);
+  await expect(page).toHaveTitle('Error · Archfit');
+  await expect(page.getByRole('link', { name: 'Third-party licences' })).toHaveAttribute('href', '/licenses.txt');
+  await expectClean(page);
+});
+
+test('every page links the third-party licences', async ({ page }) => {
+  await open(page, '/r/acme/app');
+  await expect(page.getByRole('link', { name: 'Third-party licences' })).toHaveAttribute('href', '/licenses.txt');
 });

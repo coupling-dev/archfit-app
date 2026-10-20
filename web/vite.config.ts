@@ -5,9 +5,10 @@ import { licenses } from './scripts/licenses.ts';
 
 // The production policy, from the file the Go test compares with the server's header.
 const csp = readFileSync(new URL('./csp.txt', import.meta.url), 'utf8').trim();
+const lic = licenses();
 
 export default defineConfig({
-  plugins: [svelte(), licenses()],
+  plugins: [svelte(), lic.app],
   build: {
     // The Go binary embeds this folder (internal/control/ui/spa.go). scripts/clean.mjs empties it first and keeps
     // its .gitignore, which emptyOutDir would delete.
@@ -17,9 +18,11 @@ export default defineConfig({
     modulePreload: { polyfill: false },
     // Inlined assets would be data: URLs; every asset stays a file served from 'self'.
     assetsInlineLimit: 0,
-    // The graph pages' chunk is about 500 KB gzip, ELK most of it; scripts/size.mjs holds its budget.
+    // The layout worker is about 470 KB gzip, ELK all of it; scripts/size.mjs holds its budget.
     chunkSizeWarningLimit: 2000,
   },
+  // The graph's layout worker, an ES module like the app: its licences are collected by the same plugin.
+  worker: { format: 'es', plugins: () => [lic.worker] },
   preview: { headers: { 'Content-Security-Policy': csp } },
   test: { include: ['src/**/*.test.ts'] },
 });

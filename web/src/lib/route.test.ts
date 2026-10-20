@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseRoute, repoPage, safeHref, signInHref } from './route';
+import { parseRoute, repoPage, safeHref, serverError, signInHref } from './route';
 
 describe('parseRoute', () => {
   it.each([
@@ -60,5 +60,17 @@ describe('safeHref', () => {
     [undefined, undefined],
   ])('%s', (url, want) => {
     expect(safeHref(url)).toBe(want);
+  });
+});
+
+describe('serverError', () => {
+  it.each([
+    ['Not found.', 'Not found.'],
+    ['', ''],
+    [null, ''],
+    [undefined, ''],
+    ['__APP_ERROR__', ''],
+  ])('%s', (content, want) => {
+    expect(serverError(content)).toBe(want);
   });
 });

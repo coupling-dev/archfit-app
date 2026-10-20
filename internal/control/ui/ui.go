@@ -1,13 +1,10 @@
-// Package ui is the server-rendered control-plane web UI.
+// Package ui is the control-plane web UI: the embedded web app, its JSON API and the sign-in routes.
 package ui
 
 import (
 	"context"
-	"embed"
-	"html/template"
 	"io/fs"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
@@ -19,12 +16,6 @@ import (
 	"github.com/alexei-led/archfit-app/internal/github/auth"
 	"github.com/alexei-led/archfit-app/internal/wire/policy"
 )
-
-//go:embed templates
-var templatesFS embed.FS
-
-//go:embed static
-var staticFS embed.FS
 
 type Deps struct {
 	OAuth      auth.OAuth // ui builds its own session child from OAuth, CookieKey and BaseURL
@@ -79,10 +70,10 @@ type server struct {
 	assist     assist.Assist
 	proposals  proposal.Proposals
 	now        func() time.Time
-	pages      map[string]*template.Template
+	shell      shellPage
 }
 
-// New returns the server-rendered UI mounted at "/". It serves its own static assets.
+// New returns the UI mounted at "/". It serves the web app's build from the binary.
 func New(d Deps) (http.Handler, error) {
 	sessions, err := session.New(session.Config{CookieKey: d.CookieKey, BaseURL: d.BaseURL}, d.OAuth, d.GitHub, d.GitHub, d.Now)
 	if err != nil {
@@ -93,10 +84,6 @@ func New(d Deps) (http.Handler, error) {
 
 // newHandler mounts every route. web is the build of the web app; tests hand in a small one.
 func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Handler {
-	static, err := fs.Sub(staticFS, "static")
-	if err != nil {
-		panic(err) // the embedded folder name is a compile-time constant
-	}
 	s := &server{
 		gh:         gh,
 		sessions:   sessions,
@@ -106,18 +93,10 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 		assist:     d.Assist,
 		proposals:  d.Proposals,
 		now:        d.Now,
-		pages:      parsePages(),
+		shell:      newShell(web),
 	}
 
 	mux := http.NewServeMux()
-	files := http.StripPrefix("/static/", http.FileServerFS(static))
-	mux.HandleFunc("GET /static/", func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/") { // no directory listings
-			http.NotFound(w, r)
-			return
-		}
-		files.ServeHTTP(w, r)
-	})
 	mux.HandleFunc("GET /schema/policy.json", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/schema+json")
 		_, _ = w.Write(policy.Schema())
@@ -129,13 +108,14 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	}))
 	// Pages of the web app: the shell, which the app fills from /api. The repository page still authorizes, so a
 	// repository the user cannot see is "Not found" before any script runs.
-	index := shell(web)
+	index := func(w http.ResponseWriter, _ *http.Request) { s.shell.serve(w, http.StatusOK, "") }
 	mux.HandleFunc("GET /assets/", assets(web))
+	mux.HandleFunc("GET "+licensesRoute, licenses(web))
 	mux.HandleFunc("GET /{$}", index)
 	page := func(w http.ResponseWriter, r *http.Request, _ scope) { index(w, r) }
-	pullPage := func(w http.ResponseWriter, r *http.Request, sc scope) {
+	pullPage := func(w http.ResponseWriter, r *http.Request, _ scope) {
 		if _, ok := pullNumber(r); !ok {
-			s.fail(w, r, sc, api.ErrNotFound)
+			s.fail(w, r, api.ErrNotFound)
 			return
 		}
 		index(w, r)
@@ -166,6 +146,10 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("POST /api/repos/{o}/{n}/assist", s.apiRepo(permWrite, s.apiAssist))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		s.failJSON(w, r, api.ErrNotFound)
+	})
+	// Any other path is the app's "Not found" page, under the shell's CSP.
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		s.fail(w, r, api.ErrNotFound)
 	})
 
 	return chain(mux)

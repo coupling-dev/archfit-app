@@ -45,10 +45,11 @@ const (
 
 var cookieKey = bytes.Repeat([]byte{7}, 32)
 
-// testWeb stands in for the web app build: a shell and one hashed asset.
+// testWeb stands in for the web app build: a shell, one hashed asset and the licence file.
 var testWeb = fstest.MapFS{
-	"index.html":         {Data: []byte(`<!doctype html><meta name="csp-nonce" content="__CSP_NONCE__"><title>Archfit</title><div id="app"></div><script type="module" src="/assets/app-1a2b.js"></script>`)},
-	"assets/app-1a2b.js": {Data: []byte(`console.log("archfit")`)},
+	"index.html":               {Data: []byte(`<!doctype html><meta name="csp-nonce" content="__CSP_NONCE__"><meta name="app-error" content="__APP_ERROR__"><title>Archfit</title><div id="app"></div><script type="module" src="/assets/app-1a2b.js"></script>`)},
+	"assets/app-1a2b.js":       {Data: []byte(`console.log("archfit")`)},
+	"assets/licenses-9f8e.txt": {Data: []byte("Third-party software in the Archfit web app.\n")},
 }
 
 func TestMain(m *testing.M) {
