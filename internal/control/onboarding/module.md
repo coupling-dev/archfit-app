@@ -161,7 +161,8 @@ latest completed push run as a hint. The next derive of the repository starts th
 when the fresh settings name the same workflow and the fresh latest run the same head; otherwise it reads again with
 the fresh value. Every read still runs on every derive, and failures are judged in the same order. Hints hold the two
 parameters only, at most 4096 **[default]**, least recently used out first, keyed by installation ID and repository
-full name. A warm derive waits for one round trip instead of three; a stale hint costs the reads made ahead.
+full name. A warm derive waits for one round trip instead of three; a stale hint costs the reads made ahead once, and
+settings that are gone or invalid drop the hint.
 
 `OpenDraft` is set only when `Get` returns `DraftOpen` or `DraftInReview`; merged, closed and none give nil. Diagnostics, one sentence each: "Start onboarding" /
 "Review and merge PR #n" / "`.archfit-app.yaml` on the default branch is invalid" / "Run discovery

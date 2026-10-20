@@ -51,15 +51,69 @@ func TestWarmReadsMeet(t *testing.T) {
 			wantStatus(t, c.get("/api/repos/"+repoName+tt.path), http.StatusOK)
 			m := newMeeting(tt.keys...)
 			e.gh.meet = m
+			before := len(e.gh.calls)
 			wantStatus(t, c.get("/api/repos/"+repoName+tt.path), http.StatusOK)
 			if !m.met() {
 				t.Errorf("%q were not in flight together", tt.keys)
+			}
+			// The reads made ahead are the answers: none is made again in turn.
+			for _, key := range tt.keys {
+				if n := countKey(e.gh.calls[before:], key); n != 1 {
+					t.Errorf("%s read %d times, want once", key, n)
+				}
 			}
 		})
 	}
 }
 
-// A hint the fresh reads no longer confirm is dropped: the page reads again with what GitHub says now.
+// countKey counts the calls a meeting key names: a method, or a method and its detail.
+func countKey(calls []ghCall, key string) int {
+	method, detail, withDetail := strings.Cut(key, " ")
+	n := 0
+	for _, c := range calls {
+		if c.method == method && (!withDetail || c.detail == detail) {
+			n++
+		}
+	}
+	return n
+}
+
+// A chain the fresh reads say is gone (no settings, no run, no pull request) leaves no hint to read ahead with.
+func TestGoneChainDropsItsHint(t *testing.T) {
+	tests := []struct {
+		name    string
+		path    string
+		setup   func(e *env)
+		gone    func(e *env)
+		status  int
+		notRead string
+	}{
+		{"settings removed", "/findings", func(e *env) { e.publishReport(repoName, artifact(t, "healthy")) },
+			func(e *env) { e.gh.deleteFile(repoName, mainBranch, settings.Path) }, http.StatusOK, "LatestRun"},
+		{"no run left", "/findings", func(e *env) { e.publishReport(repoName, artifact(t, "healthy")) },
+			func(e *env) { e.gh.mu.Lock(); clear(e.gh.runs); e.gh.mu.Unlock() }, http.StatusOK, "ArtifactID"},
+		{"pull request gone", "/pulls/4", func(e *env) { e.checkPull(prArtifact(t, prPolicy)) },
+			func(e *env) { e.gh.mu.Lock(); delete(e.gh.pulls, repoName+"#4"); e.gh.mu.Unlock() }, http.StatusNotFound, "CheckRuns"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t)
+			c := e.as("alice", permRead)
+			tt.setup(e)
+			wantStatus(t, c.get("/api/repos/"+repoName+tt.path), http.StatusOK)
+			tt.gone(e)
+			wantStatus(t, c.get("/api/repos/"+repoName+tt.path), tt.status)
+
+			before := len(e.gh.calls)
+			wantStatus(t, c.get("/api/repos/"+repoName+tt.path), tt.status)
+			if n := countKey(e.gh.calls[before:], tt.notRead); n != 0 {
+				t.Errorf("%s read %d times after the chain was gone, want none", tt.notRead, n)
+			}
+		})
+	}
+}
+
+// A hint the fresh reads no longer confirm does not count: the page reads again with what GitHub says now.
 func TestStaleHintIsReadAgain(t *testing.T) {
 	t.Run("pull request", func(t *testing.T) {
 		required := strings.Replace(settingsText, "gate: advisory", "gate: required", 1)

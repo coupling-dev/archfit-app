@@ -39,15 +39,42 @@ func TestWarmProgressReadsMeet(t *testing.T) {
 
 	m := newMeeting("File "+settings.Path, "File "+workflowPath, "File "+policy.PolicyPath, "LatestRun", "CheckRuns")
 	f.hub.meet = m
+	before := len(f.hub.readsOf(f.repo.FullName))
 	if got := f.progress(t, f.repo); got != StageAdvisory {
 		t.Errorf("stage = %q, want %q", got, StageAdvisory)
 	}
 	if !m.met() {
 		t.Error("the warm reads were not in flight together")
 	}
+	// The reads made ahead are the answers: none is made again in turn.
+	want := []string{"CheckRuns " + runHeadSHA + "#" + stateCheck, "File " + policy.PolicyPath, "File " + settings.Path,
+		"File " + workflowPath, "LatestRun " + workflowPath + "@" + f.repo.DefaultBranch}
+	slices.Sort(want)
+	if got := slices.Sorted(slices.Values(f.hub.readsOf(f.repo.FullName)[before:])); !slices.Equal(got, want) {
+		t.Errorf("warm reads = %q, want each once: %q", got, want)
+	}
 }
 
-// A hint the fresh reads no longer confirm is dropped: the progress reads again with what GitHub says now, and a read
+// Without settings there is nothing to read ahead: the hint goes, and the next derive reads only the settings' way.
+func TestGoneSettingsDropTheProgressHint(t *testing.T) {
+	f := newFixture(t)
+	f.advisory(f.repo)
+	f.progress(t, f.repo)
+	f.hub.remove(f.repo, f.repo.DefaultBranch, settings.Path)
+	f.progress(t, f.repo)
+
+	before := len(f.hub.readsOf(f.repo.FullName))
+	if got := f.progress(t, f.repo); got != StageInstalled {
+		t.Errorf("stage = %q, want %q", got, StageInstalled)
+	}
+	for _, read := range f.hub.readsOf(f.repo.FullName)[before:] {
+		if strings.HasPrefix(read, "LatestRun") || strings.HasPrefix(read, "CheckRuns") || read == "File "+workflowPath {
+			t.Errorf("%s: read ahead with the hint of settings that are gone", read)
+		}
+	}
+}
+
+// A hint the fresh reads no longer confirm does not count: the progress reads again with what GitHub says now, and a read
 // made ahead with the stale parameter never fails it.
 func TestStaleProgressHintIsReadAgain(t *testing.T) {
 	newer := api.WorkflowRun{ID: 10, Event: "push", Status: "completed", HeadSHA: strings.Repeat("2", 40), WorkflowPath: workflowPath}

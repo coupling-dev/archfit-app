@@ -146,13 +146,22 @@ func (s *server) latestReport(ctx context.Context, repo api.Repo) ([]byte, error
 	)
 	reads := []func(){func() { set, err = s.settings(ctx, repo) }}
 	if hinted {
-		reads = append(reads, run.ahead(h.workflow, latest), artifact.ahead(h.run, artifactID))
+		reads = append(reads, run.ahead(h.workflow, latest))
+		if h.run != 0 {
+			reads = append(reads, artifact.ahead(h.run, artifactID))
+		}
 	}
 	together(reads...)
+	if errors.Is(err, errNoSettings) {
+		s.hints.drop(key)
+	}
 	if err != nil {
 		return nil, err
 	}
 	latestRun, err := run.at(set.Workflow, latest)
+	if errors.Is(err, api.ErrNotFound) {
+		s.hints.put(key, hint{workflow: set.Workflow})
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -68,6 +68,16 @@ func (c *hints) put(k hintKey, h hint) {
 	}
 }
 
+// drop forgets k's hint once the fresh reads say there is nothing to read ahead, so a gone chain stops costing reads.
+func (c *hints) drop(k hintKey) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if e, ok := c.byKey[k]; ok {
+		c.order.Remove(e)
+		delete(c.byKey, k)
+	}
+}
+
 // guess is a read made ahead with a hinted parameter, side by side with the read that tells the real one.
 type guess[P comparable, T any] struct {
 	param P

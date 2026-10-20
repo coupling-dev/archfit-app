@@ -63,6 +63,7 @@ func (s *service) derive(ctx context.Context, r api.Repo) (state, error) {
 	}
 	set, parseErr := settings.Parse(raw)
 	if !found || parseErr != nil {
+		s.hints.drop(key)
 		return s.installed(ctx, r, found && parseErr != nil)
 	}
 
