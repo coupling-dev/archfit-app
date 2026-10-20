@@ -141,6 +141,7 @@ const direction = (from: string, to: string, origin: string, n: number) => ({
   move: '',
   metric: '',
   owner_decision: false,
+  also: null as string[] | null,
 });
 
 const pull = {
@@ -179,7 +180,7 @@ const pull = {
       fixes: ['Remove one direction.'],
       alternatives: null,
       directions: [
-        direction('pkg_chaos', 'pkg_container', 'added', 2),
+        { ...direction('pkg_chaos', 'pkg_container', 'added', 2), also: ['Imbalanced coupling · critical'] },
         direction('pkg_container', 'pkg_chaos', 'existing', 37),
       ],
     },
@@ -249,6 +250,7 @@ const findings = {
   compared: false,
   advisory_count: 1,
   advisories: pull.advisories.slice(0, 1),
+  attention_reason: '1 advisory; testability and operations are partially measured',
 };
 
 const gnode = (name: string, layer: string, policy_line: number, volatility = '', subdomain = '') => ({
@@ -542,6 +544,9 @@ test('overview: state, pull requests, setup and history', async ({ page }) => {
   const writes = await open(page, '/r/acme/app');
   await expect(page.getByRole('heading', { name: 'acme/app', level: 1 })).toBeVisible();
   await expect(page.locator('.hero .state.attention')).toHaveText('attention');
+  await expect(page.locator('#attention-reason')).toHaveText(
+    'In the latest report: 1 advisory; testability and operations are partially measured.',
+  );
   await expect(page.getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole('link', { name: 'Policy' })).toHaveAttribute('href', '/r/acme/app/policy');
   await expect(page.getByRole('link', { name: '#4 feat: read options' })).toHaveAttribute('href', '/r/acme/app/pull/4');
@@ -610,6 +615,9 @@ test('pull request: the cycle drawn as on the comment, then the other findings',
   await expect(cycle.getByText('37 locations', { exact: true })).toBeAttached();
   await expect(cycle.getByText('All 37 locations')).toBeVisible();
   await expect(cycle.getByText('Fix:')).toBeVisible();
+  // an advisory on a violation's dependency joins its row, as on the comment
+  await expect(cycle.getByRole('columnheader', { name: 'Also reported as' })).toBeVisible();
+  await expect(cycle.getByRole('row', { name: /pkg_chaos → pkg_container/ })).toContainText('Imbalanced coupling · critical');
   await expect(page.getByText('Go through the repository.')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Graph' })).toHaveAttribute('href', '/r/acme/app/pull/4/graph');
   await expect(page.locator('#decision')).toContainText('Engine decision: hard gates failed on 3 findings.');

@@ -84,6 +84,10 @@
         <span class="muted">on <code>{body.default_branch}</code></span>
         {#if body.main_reason}<span class="muted">{body.main_reason}</span>{/if}
       </div>
+      <!-- Why "attention", in the engine's terms, when the latest report says so: never over another word. -->
+      {#if body.main_tone === 'attention' && findings?.attention_reason}
+        <p class="muted small" id="attention-reason">In the latest report: {findings.attention_reason}.</p>
+      {/if}
     {/if}
   </div>
 </div>

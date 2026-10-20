@@ -77,6 +77,7 @@ export interface Finding {
   move: string; // the engine's balancing move for the seam, worded as the PR comment words it; '' for none
   metric: string; // a metric ratchet, which has no edge: "metric <name>: before → after (threshold)"
   owner_decision: boolean; // the engine leaves the move to the repository's owner
+  also: string[] | null; // on a violation: the advisories on the same dependency, "rule · severity", as the comment says
 }
 
 export interface Cycle {
@@ -155,6 +156,7 @@ export type RepoFindings = Findings & {
   unavailable: string;
   branch: string;
   no_baseline: boolean;
+  attention_reason: string; // why the engine's verdict is needs_attention; '' otherwise
 };
 
 export interface Notice {

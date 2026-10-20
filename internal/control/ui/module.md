@@ -131,8 +131,11 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   at the ref whose text is the report's policy (the head, else the base branch). The same `404` rule.
 - `GET /api/repos/{o}/{n}/graph` [read] — `{unavailable, view, stale_reason, policy_href, branch}`: the latest
   default-branch report against the policy on that branch. No link carries an origin.
-- `GET /api/repos/{o}/{n}/findings` [read] — `{unavailable, branch, no_baseline, …}`: the latest default-branch
-  report's findings in the pull request page's groups, without origins.
+- `GET /api/repos/{o}/{n}/findings` [read] — `{unavailable, branch, no_baseline, attention_reason, …}`: the latest
+  default-branch report's findings in the pull request page's groups, without origins. `attention_reason`, only for
+  the verdict `needs_attention`, follows the engine's rule in its order: active advisories, required rules not
+  evaluated (or `hard_gates: unmeasured`), then the dimensions partially measured and those not measured. The overview
+  shows it under the default-branch state only when that state reads "attention".
 - `GET /api/repos/{o}/{n}/overview` [read] — default-branch state, open pull requests with their result, setup steps,
   onboarding progress, entitlement banner, history links, and whether the user may start onboarding or discovery.
   `next` is the next setup step in one sentence and `next_how` its details, both from the onboarding stage.
@@ -1190,7 +1193,8 @@ others are done, so the handler chain's recover still answers `500` and the proc
   them (`report.Cycles`, the comment's grouping) as one card with a drawing of the cycle (one box per module, one
   arrow per direction labelled with its location count, styled as the comment's diagram), a row per direction with
   "This PR", its locations and the seam's strength, distance (`report.DistanceWords`) and volatility, then the reason
-  once and each distinct repair once; every other violation as its own card. Advisories and accepted debt each one
+  once and each distinct repair once; every other violation as its own card. An advisory on a violation's dependency joins that violation's row as
+  "Also reported as" (`report.SplitCovered`, the comment's rule) and is not counted among the advisories. Advisories and accepted debt each one
   folded table with each distinct reason once, the seam's suggested move among them, in the PR comment's words
   (`report.BalancingMove`; a token this version does not know as written). A finding whose agent task the engine marks
   `needs_owner_decision` carries an "owner decision" label; the path the engine suggests is not shown: wire/report

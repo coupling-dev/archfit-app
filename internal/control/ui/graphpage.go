@@ -71,6 +71,8 @@ type repoFindingsJSON struct {
 	Unavailable string `json:"unavailable"`
 	Branch      string `json:"branch"`
 	NoBaseline  bool   `json:"no_baseline"`
+	// AttentionReason is why the engine's verdict is needs_attention when it is: "" for any other verdict.
+	AttentionReason string `json:"attention_reason"`
 	findingsJSON
 }
 
@@ -83,7 +85,7 @@ func (s *server) apiFindings(r *http.Request, sc scope) (any, error) {
 		body.Unavailable = unavailable
 		return body, err
 	}
-	body.NoBaseline = noBaseline(*rep)
+	body.NoBaseline, body.AttentionReason = noBaseline(*rep), attentionReason(*rep)
 	fillFindings(&body.findingsJSON, *rep)
 	return body, nil
 }

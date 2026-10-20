@@ -49,20 +49,13 @@ func group(r *report.Report) groups {
 	rg := report.Group(*r, groupCap)
 	g := groups{compared: rg.Compared, all: rg.All, violations: rg.Violations, debt: rg.Accepted, fixed: rg.Fixed,
 		onCycle: rg.OnCycle, covered: map[[2]string][]string{}}
-	pairs := map[[2]string]bool{}
-	for _, f := range rg.Violations {
-		if p := pairOf(f); p[0] != "" && p[1] != "" {
-			pairs[p] = true
-		}
-	}
-	for _, f := range rg.Advisories {
-		p := pairOf(f)
-		if !pairs[p] {
-			g.advisories = append(g.advisories, f)
-			continue
-		}
-		if note := ruleName(f.RuleID) + " · " + meta(f); !slices.Contains(g.covered[p], note) {
-			g.covered[p] = append(g.covered[p], note)
+	var covered map[[2]string][]report.Finding
+	g.advisories, covered = report.SplitCovered(rg.Violations, rg.Advisories)
+	for p, fs := range covered {
+		for _, f := range fs {
+			if note := ruleName(f.RuleID) + " · " + meta(f); !slices.Contains(g.covered[p], note) {
+				g.covered[p] = append(g.covered[p], note)
+			}
 		}
 	}
 	return g

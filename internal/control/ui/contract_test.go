@@ -893,13 +893,25 @@ func TestPullPageStatesTheEngineDecision(t *testing.T) {
 		if b.Decision == nil || !reflect.DeepEqual(*b.Decision, want) {
 			t.Errorf("decision = %+v, want %+v", b.Decision, want)
 		}
-		if len(b.Advisories) == 0 {
-			t.Fatal("no advisory to read")
+		// Both new advisories lie on the cycle's dependencies: they join those rows, as on the comment, and are not
+		// counted again among the advisories.
+		if len(b.Advisories) != 0 || b.AdvisoryCount != 0 {
+			t.Errorf("advisories = %d listed, %d counted; want both on the violations' rows", len(b.Advisories), b.AdvisoryCount)
 		}
-		for _, f := range b.Advisories {
-			if f.Move != report.BalancingMoves["follow_rule"] || f.OwnerDecision {
-				t.Errorf("advisory %s -> %s: move %q, owner decision %v", f.From, f.To, f.Move, f.OwnerDecision)
+		also := map[string][]string{}
+		for _, c := range b.Cycles {
+			for _, d := range c.Directions {
+				if len(d.Also) > 0 {
+					also[d.From+" -> "+d.To] = d.Also
+				}
 			}
+		}
+		want2 := map[string][]string{
+			"pkg_container -> pkg_chaos": {"Imbalanced coupling · critical"},
+			"pkg_util -> pkg_chaos":      {"Imbalanced coupling · critical"},
+		}
+		if !reflect.DeepEqual(also, want2) {
+			t.Errorf("also reported = %v, want %v", also, want2)
 		}
 	})
 
@@ -907,6 +919,9 @@ func TestPullPageStatesTheEngineDecision(t *testing.T) {
 		doc["decision"].(map[string]any)["unevaluated_required_rules"] = []any{map[string]any{"rule_id": "layers", "reason": "selector matches no module"}}
 		doc["comparison"].(map[string]any)["origin_reasons"] = []any{"base report lacks finding identities"}
 		advisory := doc["findings"].([]any)[4].(map[string]any)
+		// on a dependency no violation names, so it stays an advisory of its own
+		edge := advisory["edge"].(map[string]any)
+		edge["from"].(map[string]any)["module"], edge["to"].(map[string]any)["module"] = "pkg_cmd", "pkg_util"
 		doc["agent_tasks"] = []any{map[string]any{"finding_id": advisory["id"], "rule_id": advisory["rule_id"],
 			"repair_kind": "needs_owner_decision", "goal": "Decide", "constraints": []any{}, "files": []any{}, "validation": []any{}}}
 		b := read(t, doc)

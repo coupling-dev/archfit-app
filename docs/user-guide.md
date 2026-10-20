@@ -498,10 +498,11 @@ baseline already accepts, and accepts nothing new.
 
 Open `/r/<owner>/<repo>`. The page always shows the setup steps with the current one marked. "Needs you" says what to
 do next in one sentence (**How** folds the details) and, for a repository admin, holds the button that starts
-onboarding or discovery. After the first report it also shows:
+onboarding or discovery, only when that is the step's action. After the first report it also shows:
 
-- the Archfit result of the default branch at the top of the page. An advisory repository's check is neutral, so every
-  page reads its headline: a check that found violations reads "violations found" on the overview, the repository
+- the Archfit result of the default branch at the top of the page, and when it reads "attention", why, in the latest
+  report's terms (advisories, a rule not evaluated, dimensions partially or not measured). An advisory repository's
+  check is neutral, so every page reads its headline: a check that found violations reads "violations found" on the overview, the repository
   list, the open pull requests and the pull request page alike, never "attention";
 - three counts: rule violations and advisories in the latest default-branch report, and the open pull requests whose
   Archfit result needs attention. They are counts, never a score;
@@ -522,7 +523,9 @@ on the pull request links to this page ("Details in Archfit").
 - Rule violations are open. Each dependency cycle is one card with the same drawing as the comment: one arrow per
   direction with its location count, red and wide when this pull request added it, grey and thin when it existed
   before. A table under the drawing lists each direction with its locations and, when the report has them, its
-  integration strength, distance and volatility. Advisories and accepted debt are folded tables. **Evidence** lists
+  integration strength, distance and volatility. An advisory on the same dependency as a violation is shown in that
+  violation's row ("Also reported as"), as on the comment, and is not counted again. The other advisories and the
+  accepted debt are folded tables. **Evidence** lists
   the dimensions and, folded, what the engine could not measure ("To measure more").
 - GitHub's **Details** link on the Archfit checks opens this page.
 - Badges under the result say whether the gate is required or advisory, whether this run had a baseline, whether it

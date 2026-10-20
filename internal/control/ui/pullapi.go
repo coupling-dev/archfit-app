@@ -88,6 +88,9 @@ type findingJSON struct {
 	Metric       string   `json:"metric"` // a metric ratchet, which has no edge: "metric <name>: before → after (threshold)"
 	// OwnerDecision: the engine's agent task for the finding needs the owner's decision (a policy change), not code.
 	OwnerDecision bool `json:"owner_decision"`
+	// Also: on a violation, the advisories the report has on the same dependency, as the comment words them ("rule ·
+	// severity"). They are not listed again among the advisories (report.SplitCovered).
+	Also []string `json:"also"`
 }
 
 // cycleJSON is one dependency cycle among the shown violations: its modules and a row per direction, with the reason
@@ -127,6 +130,67 @@ var dimensionOrder = []struct{ key, name string }{
 	{"intent", "Intent"}, {"structure", "Structure"}, {"modularity", "Modularity"}, {"coupling", "Coupling"},
 	{"change_locality", "Change locality"}, {"complexity", "Complexity"}, {"testability", "Testability"},
 	{"operations", "Operations"}, {"drift", "Drift"},
+}
+
+const (
+	verdictNeedsAttention = "needs_attention" // Report.Verdict
+	hardGatesUnmeasured   = "unmeasured"      // Decision.HardGates
+	dimensionMeasured     = "measured"
+	dimensionPartial      = "partial"
+)
+
+// attentionReason says why the engine's verdict is needs_attention, in the order of the engine's own rule: active
+// advisories, a required rule it could not evaluate, then every dimension not fully measured. "" for another verdict.
+func attentionReason(rep report.Report) string {
+	if rep.Verdict != verdictNeedsAttention {
+		return ""
+	}
+	var reasons []string
+	if n := len(report.Group(rep, 0).Advisories); n > 0 {
+		reasons = append(reasons, plural(n, "advisory", "advisories"))
+	}
+	if n := len(rep.Decision.UnevaluatedRequiredRules); n > 0 {
+		reasons = append(reasons, plural(n, "required rule", "required rules")+" not evaluated")
+	} else if rep.Decision.HardGates == hardGatesUnmeasured {
+		reasons = append(reasons, "a hard gate could not be measured")
+	}
+	var partial, unmeasured []string
+	for _, d := range dimensionOrder {
+		dim, ok := rep.Dimensions[d.key]
+		switch {
+		case !ok || dim.Status == dimensionMeasured:
+		case dim.Status == dimensionPartial:
+			partial = append(partial, strings.ToLower(d.name))
+		default:
+			unmeasured = append(unmeasured, strings.ToLower(d.name))
+		}
+	}
+	if len(partial) > 0 {
+		reasons = append(reasons, andList(partial)+" "+plural2(len(partial), "is", "are")+" partially measured")
+	}
+	if len(unmeasured) > 0 {
+		reasons = append(reasons, andList(unmeasured)+" "+plural2(len(unmeasured), "is", "are")+" not measured")
+	}
+	return strings.Join(reasons, "; ")
+}
+
+func plural(n int, one, many string) string {
+	return strconv.Itoa(n) + " " + plural2(n, one, many)
+}
+
+func plural2(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
+// andList joins words as a sentence does: "a", "a and b", "a, b and c".
+func andList(ws []string) string {
+	if len(ws) < 2 {
+		return strings.Join(ws, "")
+	}
+	return strings.Join(ws[:len(ws)-1], ", ") + " and " + ws[len(ws)-1]
 }
 
 // apiPull is the pull request page: GET /api/repos/{o}/{n}/pulls/{number}.
@@ -210,8 +274,18 @@ func pullState(p api.Pull) string {
 func fillFindings(body *findingsJSON, rep report.Report) {
 	// The comment's groups, order and cycle search (report.Group): the page shows the same 50 violations it does.
 	g := report.Group(rep, findingsPerList)
-	violations, advisories, accepted := g.Violations, g.Advisories, g.Accepted
+	// An advisory on a violation's dependency joins the violation's row, as on the comment; the rest are the advisories.
+	advisories, covered := report.SplitCovered(g.Violations, g.Advisories)
+	violations, accepted := g.Violations, g.Accepted
 	body.ViolationCount, body.AdvisoryCount, body.AcceptedCount = len(violations), len(advisories), len(accepted)
+	also := func(r findingJSON, f report.Finding) findingJSON {
+		for _, a := range covered[[2]string{f.Edge.From.Module, f.Edge.To.Module}] {
+			if note := ruleName(a.RuleID) + " · " + findingMeta(a); !slices.Contains(r.Also, note) {
+				r.Also = append(r.Also, note)
+			}
+		}
+		return r
+	}
 	ownerDecides := map[string]bool{}
 	for _, t := range rep.AgentTasks {
 		if t.RepairKind == repairOwnerDecision {
@@ -255,7 +329,7 @@ func fillFindings(body *findingsJSON, rep report.Report) {
 	var members [][]report.Finding
 	for i, c := range comp {
 		if c < 0 {
-			body.Other = append(body.Other, row(vs[i], originWord(vs[i].Origin)))
+			body.Other = append(body.Other, also(row(vs[i], originWord(vs[i].Origin)), vs[i]))
 			continue
 		}
 		for len(members) <= c {
@@ -279,7 +353,7 @@ func fillFindings(body *findingsJSON, rep report.Report) {
 					cy.Alternatives = append(cy.Alternatives, a)
 				}
 			}
-			cy.Directions = append(cy.Directions, row(f, report.PairOrigin(f, g.All, g.OnCycle)))
+			cy.Directions = append(cy.Directions, also(row(f, report.PairOrigin(f, g.All, g.OnCycle)), f))
 		}
 		body.Cycles = append(body.Cycles, cy)
 	}

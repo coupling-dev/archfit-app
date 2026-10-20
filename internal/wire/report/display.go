@@ -72,6 +72,30 @@ const (
 	HeadlineGateFailing = "Architecture gate failing"     // required gate: archfit/gate fails
 )
 
+// SplitCovered splits advisories by the violations' module pairs. An advisory on the pair of a violation is the same
+// dependency under another rule, so it joins that violation's row ("also reported as") instead of a section of its
+// own: covered holds those per pair, in report order; rest is every other advisory. The comment and the App's pages
+// both split this way, so their advisory counts agree.
+func SplitCovered(violations, advisories []Finding) (rest []Finding, covered map[[2]string][]Finding) {
+	pairs := map[[2]string]bool{}
+	for _, f := range violations {
+		if p := modulePair(f); p[0] != "" && p[1] != "" {
+			pairs[p] = true
+		}
+	}
+	covered = map[[2]string][]Finding{}
+	for _, f := range advisories {
+		if p := modulePair(f); pairs[p] {
+			covered[p] = append(covered[p], f)
+			continue
+		}
+		rest = append(rest, f)
+	}
+	return rest, covered
+}
+
+func modulePair(f Finding) [2]string { return [2]string{f.Edge.From.Module, f.Edge.To.Module} }
+
 // Pair origins: what the report shows about one direction of a dependency on the pull request base.
 const (
 	PairAdded    = "added"
