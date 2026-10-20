@@ -62,7 +62,8 @@ The tests use the standard `testing` package and table-driven cases with `t.Run`
 | Tests     | `svelte-check`, ESLint, Vitest, a bundle budget, and a Playwright smoke test with axe under the production CSP                                                 |
 
 Node is needed only to build and check the web app (`make web`, `make web-check`, the CI job "Web app" and the image's
-`web` stage); Go builds and tests run without it. Versions are pinned in `web/package-lock.json`. The CSP allows no
+`web` stage); Go builds and tests run without it. Versions are pinned in `web/package-lock.json`. The smoke test
+serves the build on `E2E_PORT`, or on a free port when it is unset, so checks in two worktrees can run at once. The CSP allows no
 inline style, no inline script, no eval, no worker but a same-origin file (`worker-src 'self'`, the graph's layout) and
 no other origin. The one exception is the shell's per-response nonce in `style-src`, for CodeMirror's style element. See
 [UI redesign](design/ui-redesign.md#frontend-stack-for-phases-b-to-f-plan-2-for-the-owner) for the migration.
