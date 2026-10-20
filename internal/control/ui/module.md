@@ -1153,9 +1153,10 @@ then the chain in turn, never a wrong page.
 - Hints hold parameters only (a base branch, a head SHA, a workflow path, a run ID), never an answer: at most 4096
   **[default]**, least recently used out first, keyed by installation ID, repository full name and pull request number
   (0 for the default branch). They sit behind the per-request authorization, as the report cache does, and one
-  repository's hints never become another's reads.
-- Not made ahead: the overview's onboarding progress (settings, then the workflow, the policy and the latest run's
-  check) lives in `onboarding` and stays three reads in turn.
+  repository's hints never become another's reads. A chain the fresh reads say is gone (no settings, no pull request)
+  drops its hint, and one without a run keeps only the workflow, so it stops costing reads made ahead.
+- Status: `onboarding.Progress` makes its own reads ahead (onboarding module, Progress), so the overview waits for
+  its slowest part, the default-branch state or the open pull requests: two reads in turn each.
 - Tests: the warm chains meet at the fake GitHub's barrier (`TestWarmReadsMeet`), a hint the fresh reads contradict
   is read again (`TestStaleHintIsReadAgain`), hints stay with their repository (`TestHintsStayWithTheirRepository`).
 

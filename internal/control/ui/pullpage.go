@@ -83,6 +83,9 @@ func (s *server) readPull(ctx context.Context, sc scope, number int, also ...fun
 		}
 	}
 	together(reads...)
+	if errors.Is(err, api.ErrNotFound) {
+		s.hints.drop(key)
+	}
 	if err != nil {
 		return pullBody{}, nil, err
 	}

@@ -526,5 +526,25 @@ Production after g3: the pull request page about 2.0 s, its graph 1.24 s, the fi
   costs the reads made ahead, then the chain runs in turn as before.
 - Hints: at most 4096 per instance, keyed by installation, repository and pull request, behind the per-request
   authorization like the report cache.
-- The overview stays at three reads in turn: its onboarding progress (settings, then the workflow, the policy and the
-  latest run's check) belongs to `onboarding`, which takes no hint.
+- The overview stayed at three reads in turn in g4: its onboarding progress (settings, then the workflow, the policy
+  and the latest run's check) belongs to `onboarding`. Phase g5 gives it the same hint.
+- Production after g4, warm, from Chrome:
+
+  | API | Before | After |
+  |---|---|---|
+  | pull request page | 1.8 s | 0.56 s |
+  | pull request graph | 1.5 s | 0.56 s |
+  | repository graph | 1.7 s | 0.84 s |
+  | findings | 1.6 s | 0.51 s |
+  | overview | 2.0 s | 1.15 s |
+
+### Latency (phase g5)
+
+The overview was the only API over 1 s warm: its onboarding progress read the settings, then the workflow, the policy
+and the latest run, then that run's check.
+
+- `onboarding` leaves the settings' workflow path and the latest run's head SHA as a hint, and starts every progress
+  read beside the settings with them, each counted only when the fresh settings and run name the same. Every read
+  still runs, failures are judged in the old order, and a stale hint (new settings, a new run) reads again.
+- Warm, the progress waits for one round trip. The overview then waits for its default-branch state and its open pull
+  requests, each a list and then the checks: two round trips.
