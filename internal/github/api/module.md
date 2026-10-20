@@ -498,8 +498,8 @@ type TokenSource interface {
   `proposal`: `Changes`, `Pulls` (`PullByHead` for a branch's draft in any state).
   `onboarding`: `Repos`, `Pulls` (`PullByHead`), `Checks` (`CheckRuns` for the report-received stage), `Actions`, `Changes`.
   `assist`: `Repos`, `Actions`, `Changes`.
-  `ui`: `Users`, `Repos`, `Checks`, `Actions`, `Changes`, the `*Client` readers `PullSummary`, `ArtifactID`,
-  `ArtifactByID`, and `WithCallStats`.
+  `ui`: `Users`, `Repos`, `Checks`, `Pulls` (`OpenPulls`), `Actions`, `Changes`, the `*Client` readers
+  `PullSummary`, `ArtifactID`, `ArtifactByID`, and `WithCallStats`.
   `session`: `Users`, `Repos`.
 
 ### GitHub REST API (external)
