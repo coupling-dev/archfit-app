@@ -212,7 +212,7 @@ Alternatives:
 | CSRF and the session model | The session stays an HttpOnly, Secure, SameSite=Lax cookie that script cannot read. The stateless per-session HMAC token (`csrf.go`) is fetched from `/api/session` and sent as an `X-CSRF-Token` header on every write; the server checks it as today and also requires `Content-Type: application/json`. |
 | Tenant identity only from the authorized session | Endpoints take the installation and repository from the session and the authorized route, never from the request body or a client-held value. The client sends only the `org/repo` path that it shows, and the server authorizes it again. |
 | No secrets in the client | The OAuth token stays in the server-side session. API responses are built from explicit response types, never by serializing a stored record, and a test (`TestNoAPIResponseHoldsASecret`) checks that no API answer holds the token or the session cookie. |
-| Every repository endpoint authorizes per request | `/api/repos/{org}/{repo}/…` goes through the same repository-authorization step as the pages today, on every request, with no client-side cache of permissions. A route test fails if a repository endpoint is registered outside that step. |
+| Every repository endpoint authorizes per request | `/api/repos/{org}/{repo}/…` goes through the repository-authorization step on every request, with no client-side cache of permissions. A route test fails if a repository endpoint is registered outside that step. Since g3 the repository pages are the shell alone, the same bytes for every repository, and need only a session. |
 
 ### Migration order
 
@@ -495,3 +495,23 @@ code, not a measurement, found every GitHub read of a page made one after anothe
   the Findings tab just read.
 - The `ui request` log line counts the GitHub calls of the request and their summed time (`gh_calls`, `gh_ms`), so
   the next check reads the gain from production logs instead of a trace.
+
+### Latency (phase g3)
+
+Production logs after g2 showed about 300 ms per GitHub round trip and 1.2 to 1.9 s per page API, with the page shell
+itself waiting on a cold authorization (three GitHub calls) before its first byte.
+
+- A repository page needs only a session: the shell is the same bytes for every repository, apart from the nonce,
+  and asks GitHub nothing. Authorization moved wholly into the API, which still authorizes every request; a
+  repository the user cannot see answers its `404` exactly as one that does not exist, and the app shows it as the
+  error page.
+- More reads run side by side: the repository graph reads its policy text beside the report, the pull request graph
+  reads both policy texts right after the pull request, and the overview reads the default branch and the open pull
+  requests beside the onboarding progress (dropped when no report came in yet).
+- The artifact listing stays on every request: it is GitHub's answer to whether the report still exists, so the
+  report cache replaces only the download. An artifact that expired or was deleted reads as gone, cache or not.
+- The web app starts a page's first reads and its lazy chunk beside `/api/session`, and draws the page frame with
+  grey skeletons until each section's answer comes.
+- Not done: guessing a dependent read from the previous request's answer (it would cut most pages to one round
+  trip, at the cost of a state cache and a double read on a miss). It comes back, with the production numbers, if
+  the warm median of an API stays over 1 s.
