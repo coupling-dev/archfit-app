@@ -73,6 +73,7 @@ type server struct {
 	now        func() time.Time
 	shell      shellPage
 	reports    *reportCache
+	hints      *hints
 }
 
 // New returns the UI mounted at "/". It serves the web app's build from the binary.
@@ -97,6 +98,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 		now:        d.Now,
 		shell:      newShell(web),
 		reports:    newReportCache(reportCacheBytes),
+		hints:      newHints(),
 	}
 
 	mux := http.NewServeMux()

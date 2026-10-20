@@ -512,6 +512,19 @@ itself waiting on a cold authorization (three GitHub calls) before its first byt
   report cache replaces only the download. An artifact that expired or was deleted reads as gone, cache or not.
 - The web app starts a page's first reads and its lazy chunk beside `/api/session`, and draws the page frame with
   grey skeletons until each section's answer comes.
-- Not done: guessing a dependent read from the previous request's answer (it would cut most pages to one round
-  trip, at the cost of a state cache and a double read on a miss). It comes back, with the production numbers, if
-  the warm median of an API stays over 1 s.
+- Not done in g3: guessing a dependent read from the previous request's answer. Phase g4 does it.
+
+### Latency (phase g4)
+
+Production after g3: the pull request page about 2.0 s, its graph 1.24 s, the findings 1.19 s, the repository graph
+1.09 s, each a chain of three reads in turn, each read naming the next one's parameter.
+
+- Each chain starts all its reads at once with the parameters its previous request found (a base branch, a head SHA,
+  a workflow path, a run ID), and counts each only when the fresh read before it names the same. Every fresh read
+  still runs on every request, the artifact listing included; a hint holds no answer and never replaces a read.
+- Warm, the four APIs wait for one round trip instead of three. A stale hint (a new push, a new run, other settings)
+  costs the reads made ahead, then the chain runs in turn as before.
+- Hints: at most 4096 per instance, keyed by installation, repository and pull request, behind the per-request
+  authorization like the report cache.
+- The overview stays at three reads in turn: its onboarding progress (settings, then the workflow, the policy and the
+  latest run's check) belongs to `onboarding`, which takes no hint.

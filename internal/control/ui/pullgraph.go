@@ -30,7 +30,7 @@ func (s *server) apiPullGraph(r *http.Request, sc scope) (any, error) {
 	ctx := r.Context()
 	// The policy texts need only the pull request: they are read beside its report, and judged once it is known.
 	var texts policyTexts
-	pull, rep, err := s.readPull(ctx, sc, number, func(p api.Pull) { texts = s.policyTexts(ctx, sc, p) })
+	pull, rep, err := s.readPull(ctx, sc, number, func(head, base string) { texts = s.policyTexts(ctx, sc, head, base) })
 	if err != nil {
 		return nil, err
 	}
@@ -74,13 +74,13 @@ type policyTexts struct {
 }
 
 // policyTexts reads both texts side by side: the head's first, then the base's (reportPolicy judges them in order).
-func (s *server) policyTexts(ctx context.Context, sc scope, pull api.Pull) (p policyTexts) {
+func (s *server) policyTexts(ctx context.Context, sc scope, head, base string) (p policyTexts) {
 	together(
 		func() {
-			p.texts[0], _, p.errs[0] = s.gh.files.File(ctx, sc.repo.RepoRef, pull.HeadSHA, policy.PolicyPath)
+			p.texts[0], _, p.errs[0] = s.gh.files.File(ctx, sc.repo.RepoRef, head, policy.PolicyPath)
 		},
 		func() {
-			p.texts[1], _, p.errs[1] = s.gh.files.File(ctx, sc.repo.RepoRef, pull.BaseRef, policy.PolicyPath)
+			p.texts[1], _, p.errs[1] = s.gh.files.File(ctx, sc.repo.RepoRef, base, policy.PolicyPath)
 		},
 	)
 	return p

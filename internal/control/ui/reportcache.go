@@ -68,13 +68,15 @@ func (c *reportCache) put(k artifactKey, payload []byte) {
 	}
 }
 
-// reportPayload is the report artifact of a run. Listing the run's artifacts names the newest one; its download
-// comes from the cache when this repository already fetched it. Callers check its digest as they did before.
-func (s *server) reportPayload(ctx context.Context, repo api.RepoRef, runID int64) ([]byte, error) {
-	id, err := s.gh.actions.ArtifactID(ctx, repo, runID, reportArtifact)
-	if err != nil {
-		return nil, err
-	}
+// artifactIDs reads the report artifact of a run: listing the run's artifacts names the newest one. Every chain lists
+// it on every request, so an artifact GitHub no longer keeps is never shown from the cache.
+func (s *server) artifactIDs(ctx context.Context, repo api.RepoRef) func(runID int64) (int64, error) {
+	return func(runID int64) (int64, error) { return s.gh.actions.ArtifactID(ctx, repo, runID, reportArtifact) }
+}
+
+// reportByID is the report artifact GitHub listed as id; its download comes from the cache when this repository
+// already fetched it. Callers check its digest as they did before.
+func (s *server) reportByID(ctx context.Context, repo api.RepoRef, id int64) ([]byte, error) {
 	k := artifactKey{repo.InstallationID, repo.FullName, id}
 	if payload, ok := s.reports.get(k); ok {
 		return payload, nil
