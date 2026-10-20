@@ -195,7 +195,7 @@ knowledge of every entry below; nothing is restated because this file is the nor
 - **Volatility**: Moderate
 - **Balanced?**: Yes
 - **Shared knowledge**: the whole Public Contract. It uses `Get` and `CompareAndSwapAll` for `account` and
-  `entitlement` (both keys in one call, from the bytes it read), `Put`/`Get`/`Delete` for `consent/<kind>`; `Add` on
+  `entitlement` (both keys in one call, from the bytes it read), `CompareAndSwap` (create only)/`Get`/`Delete` for `consent/<kind>`; `Add` on
   `SystemTenant` key `llm-budget/<YYYY-MM>` (reserve, roll back, settle); `DeleteTenant` on uninstall.
 
 ### gate and control façades

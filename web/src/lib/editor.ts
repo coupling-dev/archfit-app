@@ -112,7 +112,7 @@ function stateOf(text: string, o: EditorOptions): EditorState {
       // Tab is not bound: YAML takes no tab characters, and Tab must leave the editor for the keyboard.
       keymap.of([...defaultKeymap, ...historyKeymap, ...foldKeymap, ...searchKeymap]),
       EditorView.updateListener.of((u) => {
-        if (u.docChanged) o.onChange(u.state.doc.toString());
+        if (u.docChanged) o.onChange(u.state.sliceDoc());
       }),
     ],
   });
@@ -138,5 +138,5 @@ export function goToLine(view: EditorView, n: number) {
 }
 
 export function textOf(view: EditorView): string {
-  return view.state.doc.toString();
+  return view.state.sliceDoc();
 }

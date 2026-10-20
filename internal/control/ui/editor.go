@@ -317,16 +317,24 @@ func (s *server) saveDraft(ctx context.Context, sc scope, e edit) (draft proposa
 	return draft, err == nil, err
 }
 
-// written answers a write that GitHub took: the page read again, with the notice. A page that cannot be read
-// back says the change was saved, never that nothing was.
-func (s *server) written(ctx context.Context, sc scope, branch, since, notice string) (any, error) {
+// written answers a write that GitHub took: the page read again, with the notice. head is the draft head the write
+// left; a page read at another head means the draft moved again in between, and the page must not take that head as
+// the base of the text it keeps. A page that cannot be read back says the change was saved, never that nothing was.
+func (s *server) written(ctx context.Context, sc scope, branch, head, since, notice string) (any, error) {
 	body, err := s.policyPage(ctx, sc, branch, since)
 	if err != nil {
 		return nil, errSavedUnread
 	}
+	if body.HeadSHA != head {
+		return nil, errSavedMoved
+	}
 	body.Notice = notice
 	return body, nil
 }
+
+// errSavedMoved is a 409 like a stale save, so the page offers to discard the edits and load the draft.
+var errSavedMoved = &userError{http.StatusConflict, "stale",
+	"The change was saved, but the draft changed again on GitHub since. Discard your edits and load the draft."}
 
 func (s *server) apiSavePolicy(r *http.Request, sc scope) (any, error) {
 	var in editJSON
@@ -337,16 +345,19 @@ func (s *server) apiSavePolicy(r *http.Request, sc scope) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, changed, err := s.saveDraft(r.Context(), sc, e)
+	draft, changed, err := s.saveDraft(r.Context(), sc, e)
 	if err != nil {
 		return nil, err
 	}
 	if !changed {
 		body, err := s.policyPage(r.Context(), sc, e.branch, "")
+		if err == nil && body.HeadSHA != draft.HeadSHA {
+			err = proposal.ErrStale
+		}
 		body.Notice = notices["unchanged"]
 		return body, err
 	}
-	return s.written(r.Context(), sc, e.branch, "", notices["saved"])
+	return s.written(r.Context(), sc, e.branch, draft.HeadSHA, "", notices["saved"])
 }
 
 type readyJSON struct {
@@ -377,7 +388,7 @@ func (s *server) apiReady(r *http.Request, sc scope) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.written(r.Context(), sc, e.branch, "", notices["ready"])
+	return s.written(r.Context(), sc, e.branch, e.headSHA, "", notices["ready"])
 }
 
 type assistJSON struct {
@@ -428,7 +439,7 @@ func (s *server) apiAssist(r *http.Request, sc scope) (any, error) {
 		return nil, err
 	}
 	if res.Mode == assist.ModeCustomer {
-		return s.written(r.Context(), sc, e.branch, e.headSHA, notices["requested"])
+		return s.written(r.Context(), sc, e.branch, e.headSHA, e.headSHA, notices["requested"])
 	}
-	return s.written(r.Context(), sc, e.branch, "", notices["proposed"])
+	return s.written(r.Context(), sc, e.branch, res.Draft.HeadSHA, "", notices["proposed"])
 }

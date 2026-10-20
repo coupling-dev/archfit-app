@@ -281,7 +281,7 @@ type Swap struct {
 
 `ErrNotFound` is the sentinel `Get` returns for a missing key; here it means "zero record", never an error.
 `CompareAndSwapAll` writes `account` and `entitlement` together; `false` means another writer came first, and the
-cycle reads again. Consents use `Put`, `Get` and `Delete` on their own key: they derive nothing.
+cycle reads again. Consents use `CompareAndSwap` (create only, `old = nil`), `Get` and `Delete` on their own key: they derive nothing.
 `Tenants` is never called here; the `control` façade uses it for orphan cleanup and then calls `Forget`.
 
 ### Consumers (inbound, contract strength, all balanced)

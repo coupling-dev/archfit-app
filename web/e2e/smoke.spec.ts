@@ -325,6 +325,7 @@ interface Mock {
   pullGraph?: object;
   policy?: object; // fields of the policy page that differ from policy()
   refuseSave?: boolean; // the save is refused with the problems of the text
+  holdAssist?: Promise<void>; // the AI request answers once this settles
 }
 
 // open answers /api in the browser from the mock, opens the page, and returns the writes the page sent. Each page records the CSP violations
@@ -356,9 +357,11 @@ async function open(page: Page, path: string, mock: Mock = {}) {
             notice: 'Saved as a commit on the draft pull request.',
           });
         case '/api/repos/acme/app/assist':
+          await mock.holdAssist;
           return json(200, {
             ...policy(allowed, mock.policy),
             content: sent.content,
+            head_sha: sent.head_sha,
             diagnostics: [],
             since: head,
             run: { state: 'pending', url: 'https://github.com/acme/app/actions/workflows/archfit-assist.yaml' },
@@ -787,5 +790,54 @@ test('policy: a customer-mode request follows the run in your CI', async ({ page
       mode: 'customer',
     },
   ]);
+  await expectClean(page);
+});
+
+test('policy: Propose saves the edits first and keeps text typed while it runs', async ({ page }) => {
+  let release = () => {};
+  const writes = await open(page, '/r/acme/app/policy', { holdAssist: new Promise((r) => (release = r)) });
+  const editor = page.getByRole('textbox', { name: 'Policy text, .archfit.yaml' });
+  await expect(editor).toContainText('rules: []');
+  await editor.click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.type('# mine');
+  await page.getByRole('textbox', { name: 'Instruction', exact: true }).fill('split module a');
+  await page.getByRole('button', { name: 'Propose' }).click();
+  await expect.poll(() => writes.length).toBe(2);
+  await editor.click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.type(' and more');
+  release();
+  await expect(page.getByText('AI proposal in your CI: queued or running')).toBeVisible();
+  await expect(editor).toContainText('# mine and more');
+  await expect(page.getByText('unsaved edits')).toBeVisible();
+  const mine = 'version: 2\nmodlues: {}\nrules: []\n# mine';
+  expect(writes.map((w) => [new URL(w.url()).pathname, w.postDataJSON()])).toEqual([
+    ['/api/repos/acme/app/policy', { branch: 'archfit/edit-alice', head_sha: head, content: mine }],
+    [
+      '/api/repos/acme/app/assist',
+      {
+        branch: 'archfit/edit-alice',
+        head_sha: 'b'.repeat(40),
+        content: mine,
+        instruction: 'split module a',
+        mode: 'customer',
+      },
+    ],
+  ]);
+  await expectClean(page);
+});
+
+test('policy: a CRLF file is not an edit, and saves with CRLF', async ({ page }) => {
+  const writes = await open(page, '/r/acme/app/policy', { policy: { content: 'version: 2\r\nrules: []\r\n' } });
+  const editor = page.getByRole('textbox', { name: 'Policy text, .archfit.yaml' });
+  await expect(editor).toContainText('rules: []');
+  await expect(page.getByText('unsaved edits')).toHaveCount(0);
+  await editor.click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.type('# edited');
+  await page.getByRole('button', { name: 'Save to draft PR' }).click();
+  await expect(page.getByRole('status')).toHaveText('Saved as a commit on the draft pull request.');
+  expect(writes[0].postDataJSON().content).toBe('version: 2\r\nrules: []\r\n# edited');
   await expectClean(page);
 });

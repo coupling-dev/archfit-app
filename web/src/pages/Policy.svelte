@@ -132,16 +132,18 @@
       if (view) showProblems(view, problems);
     });
 
-  const save = () =>
-    act('save', async () => {
-      const res = await postJSON<PolicyPage>(api('policy'), session.csrf, {
-        branch: base.branch,
-        head_sha: base.head_sha,
-        content: current(),
-      });
-      accept(res, false);
-      notice = res.notice ?? '';
+  // write saves the text the editor holds; the answer becomes the base, and edits typed meanwhile stay unsaved.
+  async function write(content: string) {
+    const res = await postJSON<PolicyPage>(api('policy'), session.csrf, {
+      branch: base.branch,
+      head_sha: base.head_sha,
+      content,
     });
+    accept(res, false);
+    notice = res.notice ?? '';
+  }
+
+  const save = () => act('save', () => write(current()));
 
   const ready = () =>
     act('ready', async () => {
@@ -156,15 +158,20 @@
   const propose = (e: SubmitEvent) => {
     e.preventDefault();
     return act('propose', async () => {
+      // Save first, as its own request: when the AI request then fails, the page already has the head the save left.
+      const sent = current();
+      if (sent !== base.content) await write(sent);
       const res = await postJSON<PolicyPage>(api('assist'), session.csrf, {
         branch: base.branch,
         head_sha: base.head_sha,
-        content: current(),
+        content: sent,
         instruction,
         mode,
       });
-      // Managed mode answers with the proposal on the draft; customer mode with the saved text and the run.
-      accept(res, res.content !== current());
+      // Managed mode answers with the proposal on the draft; customer mode with the saved text and the run. Text typed
+      // while the request ran is kept: the page then is behind the draft and offers to discard the edits.
+      if (current() === sent) accept(res, true);
+      else page = { ...res, diagnostics: problems };
       notice = res.notice ?? '';
       if (res.since) {
         since = res.since;

@@ -118,6 +118,22 @@ func TestStaleDraftCannotBePublishedUnnoticed(t *testing.T) {
 			t.Errorf("branch holds %q", got)
 		}
 	})
+
+	t.Run("the draft moves between the save and its read-back", func(t *testing.T) {
+		e := newEnv(t)
+		c := e.as("alice", permWrite)
+		a := e.props.push(repoName, editBranchAlice, policyText+"# draft\n").HeadSHA
+		e.props.pushAfter = policyText + "# pushed on GitHub\n"
+
+		res := c.postJSON(policyAPI, editOf("", a, policyText+"# mine\n"))
+		wantStatus(t, res, http.StatusConflict)
+		if got := decodeAs[errorJSON](t, res).Error; got != errSavedMoved.msg {
+			t.Errorf("error %q, want %q", got, errSavedMoved.msg)
+		}
+		if got := e.onBranch(); got != e.props.pushAfter {
+			t.Errorf("branch holds %q, want the commit pushed after the save", got)
+		}
+	})
 }
 
 func TestInvalidYAMLIsRefusedAndGraphGoesStale(t *testing.T) {

@@ -176,7 +176,9 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   A Data sharing change that was written but cannot be read back: `502` "The change was saved, but it could not be read
   back. Reload the page."; the page then reads the state again.
 - `ErrStale`, or a `head_sha` that is not the draft head: `409`, nothing written; the page keeps the user's text and
-  offers to discard it and load the draft.
+  offers to discard it and load the draft. A write whose read-back finds another draft head than the one it left (a push
+  in between): `409` "The change was saved, but the draft changed again on GitHub since. Discard your edits and load the
+  draft.", so the page never takes that head as the base of the text it keeps.
 - An invalid branch or head, a policy text over 256 KB or not UTF-8, a text `policy.Diagnose` finds problems in,
   `ErrInvalidRequest`, `ErrInvalidProposal`: `422`, nothing written, the text kept in the page. A save or assist refused
   by `Diagnose` also carries the problems, which the page lists above the editor.
@@ -1125,7 +1127,9 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   offered the AI box says why: no valid settings file on the default branch, `data_mode` is not `managed`, the consent could not be read, or managed AI is
   not allowed for the owner, with an inline Allow (the Data sharing `POST`) and a link to Data sharing for an administrator.
   Settings that fail to read for another reason give no reason. The AI box is its own form (a 3-row instruction, mode as two
-  radios, managed disabled with its reason, Propose), so Enter in the instruction never saves. Managed success: the page
+  radios, managed disabled with its reason, Propose), so Enter in the instruction never saves. With unsaved edits the page
+  saves them first as its own `POST …/policy`, so a failed AI request leaves the page on the head the save left; text
+  typed while the request runs is kept, and the answer then only updates the state around it. Managed success: the page
   on the new head, the proposal in the editor, with the PR link. Customer success: the page with `since=<head_sha>`, the
   head the request was bound to, which the app also puts into its URL; with `since` the page shows the run state from
   `Actions.LatestRun(AssistWorkflowPath, {Branch: branch})`: no run yet or not completed → pending; completed and not `success` → failed;
@@ -1401,7 +1405,8 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Scenario**: two tabs load head `a…`; tab one saves (head `b…`); tab two saves, then presses ready; also: tab two loaded from the
   default branch before any draft existed.
   **Expected behavior**: save, ready and assist of tab two each answer `409` with the sentence that says to reload the draft; the branch holds only tab one's
-  commit; the PR is not marked ready.
+  commit; the PR is not marked ready. A save whose read-back finds a newer head (a push right after the commit) answers
+  `409` "The change was saved, but the draft changed again on GitHub since…", never that newer head as the page's base.
 - **Test name**: `TestInvalidYAMLIsRefusedAndGraphGoesStale` (T17)
   **Scenario**: save broken YAML; then open the graph while the draft differs from the report's policy.
   **Expected behavior**: `422` and no commit; before the edit the healthy report shows no incomplete banner; the graph page
@@ -1432,7 +1437,7 @@ their interfaces except where a test says otherwise. The clock is injected.
   with an invalid one, no run; no Store key is written and the page asks for no credential.
 - **Test name**: `TestCheckListsProblemsAndSavesNothing`
   **Scenario**: table, posted to Check by a user with `read`: an unknown key and an enum miss, each with a close match; the
-  same text with CRLF line ends; a tab indent; a comment-only text; an `<img>` tag as a key; a valid policy.
+  same text with CRLF line ends; a tab indent; a comment-only text; a valid policy.
   **Expected behavior**: `200`; the problems with line, column and "Did you mean", and the problems notice; the same
   line numbers for CRLF; a problem without a line has neither; the valid policy has none and "The check found no
   problems."; nothing is written and GitHub is not asked for the policy or the draft.

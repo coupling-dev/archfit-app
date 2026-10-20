@@ -178,23 +178,23 @@ func NewLogger(w io.Writer) *slog.Logger
 
 ### Routes
 
-| Method and path                 | Roles             | Handler                                           | Authentication done by                                     |
-| ------------------------------- | ----------------- | ------------------------------------------------- | ---------------------------------------------------------- |
-| `GET /health`                   | every role        | `app`: `{"status":"ok"}`; no dependency is probed | none                                                       |
-| `GET /ready`                    | every role        | `app` readiness: GitHub App key and store probed  | none                                                       |
-| `POST /v1/reports`              | `all`, `public`   | `gate.UploadHandler()`                            | gate (OIDC)                                                |
-| `POST /v1/discoveries`          | `all`, `public`   | `control.DiscoveryHandler()`                      | control, through the gate `Receiver` (OIDC)                |
-| `POST /v1/baselines`            | `all`, `public`   | `control.BaselineHandler()`                       | control, through the gate `Receiver` (OIDC)                |
-| `POST /v1/reanchors`            | `all`, `public`   | `control.ReanchorHandler()`                       | control, through the gate `Receiver` (OIDC)                |
-| `POST /webhooks/github`         | `all`, `public`   | `app` intake                                      | `app` (`webhook.VerifyAny`)                                |
-| `POST /internal/webhooks`       | `worker`          | `app` queued webhook processing                   | `app` (invoker ID token, then `webhook.VerifyAny`)         |
-| `POST /internal/sweep`          | `all`             | `app`                                             | `app` (operator bearer token)                              |
-| `POST /internal/sweep`          | `worker`          | `app`                                             | `app` (invoker ID token)                                   |
-| `POST /internal/grants`         | `all`             | `app`                                             | `app` (operator bearer token)                              |
-| `POST /internal/grants`         | `worker`          | `app`                                             | `app` (invoker ID token and operator token)                |
-| any other `/internal/*`         | every role        | `404`                                             | none                                                       |
-| `POST /r/{owner}/{name}/assist` | `all`, `public`   | `control.UIHandler()`, under the long deadline    | control (session)                                          |
-| `/` and everything else         | `all`, `public`   | `control.UIHandler()`                             | control (session)                                          |
+| Method and path                         | Roles           | Handler                                           | Authentication done by                             |
+| --------------------------------------- | --------------- | ------------------------------------------------- | -------------------------------------------------- |
+| `GET /health`                           | every role      | `app`: `{"status":"ok"}`; no dependency is probed | none                                               |
+| `GET /ready`                            | every role      | `app` readiness: GitHub App key and store probed  | none                                               |
+| `POST /v1/reports`                      | `all`, `public` | `gate.UploadHandler()`                            | gate (OIDC)                                        |
+| `POST /v1/discoveries`                  | `all`, `public` | `control.DiscoveryHandler()`                      | control, through the gate `Receiver` (OIDC)        |
+| `POST /v1/baselines`                    | `all`, `public` | `control.BaselineHandler()`                       | control, through the gate `Receiver` (OIDC)        |
+| `POST /v1/reanchors`                    | `all`, `public` | `control.ReanchorHandler()`                       | control, through the gate `Receiver` (OIDC)        |
+| `POST /webhooks/github`                 | `all`, `public` | `app` intake                                      | `app` (`webhook.VerifyAny`)                        |
+| `POST /internal/webhooks`               | `worker`        | `app` queued webhook processing                   | `app` (invoker ID token, then `webhook.VerifyAny`) |
+| `POST /internal/sweep`                  | `all`           | `app`                                             | `app` (operator bearer token)                      |
+| `POST /internal/sweep`                  | `worker`        | `app`                                             | `app` (invoker ID token)                           |
+| `POST /internal/grants`                 | `all`           | `app`                                             | `app` (operator bearer token)                      |
+| `POST /internal/grants`                 | `worker`        | `app`                                             | `app` (invoker ID token and operator token)        |
+| any other `/internal/*`                 | every role      | `404`                                             | none                                               |
+| `POST /api/repos/{owner}/{name}/assist` | `all`, `public` | `control.UIHandler()`, under the long deadline    | control (session)                                  |
+| `/` and everything else                 | `all`, `public` | `control.UIHandler()`                             | control (session)                                  |
 
 The `worker` role answers `404` for every route it does not mount, the UI included.
 
@@ -202,19 +202,19 @@ The `worker` role answers `404` for every route it does not mount, the UI includ
 
 The deadline is the one the handler sees on its request context. `http.TimeoutHandler` answers `503` when it passes.
 
-| Route                           | Deadline | Why                                                                                                          |
-| ------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------ |
-| `GET /health`                   | none     | answers from memory                                                                                          |
-| `POST /v1/reports`              | 55 s     | gate upload; target: feedback within 60 seconds                                                              |
-| `POST /v1/discoveries`          | 55 s     | control per-request timeout                                                                                  |
-| `POST /v1/baselines`            | 55 s     | control per-request timeout                                                                                  |
-| `POST /v1/reanchors`            | 55 s     | control per-request timeout                                                                                  |
-| `POST /webhooks/github`         | none     | each enqueue runs detached from the request for 4 s; inline work runs detached: gate 55 s, then control 55 s |
-| `POST /internal/webhooks`       | none     | the half runs under its own deadline (gate 55 s, control 55 s), attached to the dispatch request             |
-| `POST /internal/sweep`          | none     | operator call; no deadline of its own                                                                        |
-| `POST /internal/grants`         | none     | operator call; no deadline of its own                                                                        |
-| `POST /r/{owner}/{name}/assist` | 300 s    | managed assist; the sum below                                                                                |
-| `/` and everything else         | 55 s     | control per-request timeout                                                                                  |
+| Route                                   | Deadline | Why                                                                                                          |
+| --------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------ |
+| `GET /health`                           | none     | answers from memory                                                                                          |
+| `POST /v1/reports`                      | 55 s     | gate upload; target: feedback within 60 seconds                                                              |
+| `POST /v1/discoveries`                  | 55 s     | control per-request timeout                                                                                  |
+| `POST /v1/baselines`                    | 55 s     | control per-request timeout                                                                                  |
+| `POST /v1/reanchors`                    | 55 s     | control per-request timeout                                                                                  |
+| `POST /webhooks/github`                 | none     | each enqueue runs detached from the request for 4 s; inline work runs detached: gate 55 s, then control 55 s |
+| `POST /internal/webhooks`               | none     | the half runs under its own deadline (gate 55 s, control 55 s), attached to the dispatch request             |
+| `POST /internal/sweep`                  | none     | operator call; no deadline of its own                                                                        |
+| `POST /internal/grants`                 | none     | operator call; no deadline of its own                                                                        |
+| `POST /api/repos/{owner}/{name}/assist` | 300 s    | managed assist; the sum below                                                                                |
+| `/` and everything else                 | 55 s     | control per-request timeout                                                                                  |
 
 `control` measured the managed assist route end to end at about 285 seconds worst case: ui save 60 s, assist pre-checks
 30 s, provider 150 s, settle 5 s (detached), propose 40 s. A shorter route deadline cancels the provider call and the
@@ -830,8 +830,8 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
 - Tenant identity is never taken from a request here. `/internal/grants` is operator-authenticated and is the single place an installation ID arrives in a body; it is logged with the operator action.
 - Webhook body cap 25 MB **[default]**; bodies are never logged. Unknown events answer `202` and do nothing.
 - The server write timeout is greater than every route deadline. Raising a route deadline means raising the write timeout with it.
-- Declared restatement: the mux pattern `POST /r/{owner}/{name}/assist` repeats one row of the route table of
-  `internal/control/ui` (there `POST /r/{o}/{n}/assist`), because `control.UIHandler()` is one opaque handler and only
+- Declared restatement: the mux pattern `POST /api/repos/{owner}/{name}/assist` repeats one row of the route table of
+  `internal/control/ui` (there `POST /api/repos/{o}/{n}/assist`), because `control.UIHandler()` is one opaque handler and only
   this route needs the long deadline. Owner of the rule: `control/ui`. If ui renames or moves the route, requests still
   reach ui through `/`, but under 55 seconds: the provider call is cancelled and the full reservation is settled for
   nothing. Remove the restatement when `control` publishes the assist route as its own handler or publishes the pattern.
@@ -943,9 +943,9 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   `400` and no call; `400` and no call; `401`.
 - **Test name**: `TestRouteDeadlines`
   **Scenario**: table over the route classes with fake handlers that record `ctx.Deadline()` and return at once: `POST /v1/reports`,
-  `POST /v1/discoveries`, `POST /v1/baselines`, `GET /`, `POST /r/o/n/policy`, `GET /r/o/n/assist`, `POST /r/o/n/assist`, `POST /r/o/n/assist/x`; the two webhook halves;
+  `POST /v1/discoveries`, `POST /v1/baselines`, `GET /`, `POST /api/repos/o/n/policy`, `GET /api/repos/o/n/assist`, `POST /api/repos/o/n/assist`, `POST /api/repos/o/n/assist/x`, the old `POST /r/o/n/assist`; the two webhook halves;
   the operator routes. No sleeping.
-  **Expected behavior**: 55 s for every row except `POST /r/o/n/assist`, which sees 300 s; the inline webhook halves each see 55 s although the
+  **Expected behavior**: 55 s for every row except `POST /api/repos/o/n/assist`, which sees 300 s; the inline webhook halves each see 55 s although the
   request has no deadline; the operator routes see no deadline; the server write timeout is greater than every one of them.
 
 - **Test name**: `TestImportsStayInsideTheDesign`
