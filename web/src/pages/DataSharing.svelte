@@ -41,7 +41,7 @@
     }
   }
 
-  const marks = { met: '✓', not_met: '', unknown: '?' } as const;
+  const marks = { met: '✓', not_met: '✗', unknown: '?' } as const;
 </script>
 
 <div class="page-head">

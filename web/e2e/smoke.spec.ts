@@ -44,7 +44,8 @@ const reporting = {
   pulls_more: 2,
   pulls_error: false,
   steps: steps(4),
-  next: 'Rehearse the gate on a pull request.',
+  next: 'Make the gate required. Rehearse it first on one forbidden and one legitimate change.',
+  next_how: 'A forbidden change must show a rule violation on archfit/state. Then merge the settings pull request.',
   stage: 'Gate is advisory',
   diagnostic: '',
   draft_url: '',
@@ -188,13 +189,24 @@ const pull = {
       confidence: 'medium',
       gate: 'warn',
     },
+    {
+      key: 'testability',
+      name: 'Testability',
+      status: 'partial',
+      observed: 3,
+      measurable: 3,
+      basis: 'classified source files',
+      confidence: 'medium',
+      gate: 'pass',
+    },
+    { key: 'drift', name: 'Drift', status: 'unmeasured', observed: 0, measurable: 0, basis: '', confidence: 'low', gate: 'not_applicable' },
   ],
   unknowns: [{ dimension: 'Coupling', fact: 'coupling volatility', reason: 'volatility is undeclared' }],
   tasks: '[\n  {"id": "t1"}\n]',
   task_count: 1,
 };
 
-const findings = { ...pull, unavailable: '', branch: 'main', compared: false };
+const findings = { ...pull, unavailable: '', branch: 'main', compared: false, blocked: true };
 
 const gnode = (name: string, layer: string, policy_line: number, volatility = '', subdomain = '') => ({
   name,
@@ -472,13 +484,20 @@ test('a token GitHub rejects sends the user to sign in, not to an error', async 
 test('overview: state, pull requests, setup and history', async ({ page }) => {
   const writes = await open(page, '/r/acme/app');
   await expect(page.getByRole('heading', { name: 'acme/app', level: 1 })).toBeVisible();
-  await expect(page.locator('.state.attention')).toHaveText('attention');
+  // the check is neutral ("attention") in advisory mode; the engine's blocked verdict is not hidden behind it
+  await expect(page.locator('.hero .state')).toHaveText('violations found');
+  await expect(page.locator('.hero .state.danger')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole('link', { name: 'Policy' })).toHaveAttribute('href', '/r/acme/app/policy');
   await expect(page.getByRole('link', { name: '#4 feat: read options' })).toHaveAttribute('href', '/r/acme/app/pull/4');
   await expect(page.getByText('2 more open pull requests')).toBeVisible();
   await expect(page.getByText('The trial ends')).toBeVisible();
   await expect(page.getByText('Advisory (current step)')).toBeAttached();
+  const needsYou = page.getByRole('region', { name: 'Needs you' });
+  await expect(needsYou).toContainText('Make the gate required.');
+  await expect(needsYou.getByText('Then merge the settings pull request.')).toBeHidden();
+  await needsYou.getByText('How', { exact: true }).click();
+  await expect(needsYou.getByText('Then merge the settings pull request.')).toBeVisible();
   const counts = page.getByRole('group', { name: 'Counts on main' });
   await expect(counts).toContainText('3 Rule violations');
   await expect(counts).toContainText('1 Advisory never block');
@@ -517,7 +536,7 @@ test('pull request: the cycle drawn as on the comment, then the other findings',
   await expect(page.getByRole('heading', { name: 'feat: read options #4', level: 1 })).toBeVisible();
   await expect(page.getByRole('link', { name: '#4' })).toHaveAttribute('aria-current', 'page');
   await expect(page.locator('#result')).toHaveText('violations found');
-  await expect(page.getByText('gate: advisory · does not block merging')).toBeVisible();
+  await expect(page.getByText('Advisory: does not block merging')).toBeVisible();
   const cycle = page.getByRole('article').filter({ hasText: 'Dependency cycle between pkg_chaos and pkg_container' });
   await expect(cycle.locator('svg path.arrow')).toHaveCount(2);
   await expect(cycle.locator('svg path.arrow.added')).toHaveCount(1);
@@ -529,6 +548,12 @@ test('pull request: the cycle drawn as on the comment, then the other findings',
   await page.getByText('Advisories · never block').click();
   await expect(page.getByText('UI skips a layer.')).toBeVisible();
   await page.getByText('To measure more').click();
+  const evidence = page.getByRole('table');
+  await expect(evidence.getByRole('columnheader', { name: 'Result' })).toBeVisible();
+  await expect(evidence.getByRole('columnheader', { name: 'Gate' })).toHaveCount(0);
+  await expect(evidence.getByRole('row', { name: /Testability/ })).toContainText('classified source files: 3 of 3');
+  await expect(evidence.getByRole('row', { name: /Drift/ })).toContainText('nothing to measure');
+  await expect(evidence.getByRole('row', { name: /Drift/ })).toContainText('not applicable');
   await expectClean(page);
 
   await page.getByRole('button', { name: 'Copy 1 task' }).click();
@@ -569,7 +594,7 @@ test('graph: the canvas, the inspector and the matrix', async ({ page }) => {
   await expect(page.locator('.g-edge')).toHaveCount(5);
   // width is integration strength; a dependency with no measured strength is dashed
   await expect(
-    page.getByRole('button', { name: /^api to db, 12 dependencies, violation, intrusive coupling/ }).locator('.line'),
+    page.getByRole('button', { name: /^api to db, 12 imports, violation, intrusive coupling/ }).locator('.line'),
   ).toHaveAttribute('stroke-width', '5');
   await expect(page.locator('.g-edge.unmeasured')).toHaveCount(1);
   await expect(page.locator('.g-node.undeclared')).toHaveText('legacy');
@@ -580,17 +605,28 @@ test('graph: the canvas, the inspector and the matrix', async ({ page }) => {
   await expect(page.locator('#incomplete')).toBeVisible();
   await expect(page.getByRole('button', { name: /added in this PR/ })).toHaveCount(0);
   const problems = page.getByRole('region', { name: /Problems/ });
-  await expect(problems.getByRole('button')).toHaveCount(2); // the cycle as one row, then accepted
-  await expect(problems.getByRole('button').first()).toContainText('⇄');
-  await expect(problems.getByRole('button').last()).toContainText('accepted advisory');
+  // one unit: a dependency is one module → another, so the cycle is two rows and the chip says the same number
+  await expect(page.locator('#g-unit')).toHaveText('5 dependencies:');
+  await expect(page.getByRole('button', { name: '2 violations' })).toBeVisible();
+  await expect(problems.getByRole('heading', { name: /Problems/ })).toContainText('2');
+  const active = problems.locator('.g-rows').first().getByRole('button');
+  await expect(active).toHaveCount(2);
+  await expect(active.first()).toContainText('cycle');
+  // accepted debt is no problem: its own group, collapsed
+  const acceptedGroup = problems.locator('details.g-accepted');
+  await expect(acceptedGroup.locator('summary')).toContainText('Accepted earlier');
+  await expect(acceptedGroup.locator('summary')).toContainText('1');
+  await expect(acceptedGroup).not.toHaveAttribute('open', '');
+  await expect(page.locator('.g-edge.accepted .line')).toHaveAttribute('stroke-width', '1.5');
   await expectClean(page);
 
-  await problems.getByRole('button').last().click();
+  await acceptedGroup.locator('summary').click();
+  await acceptedGroup.getByRole('button').click();
   const accepted = page.getByRole('complementary');
   await expect(accepted.locator('.g-tag')).toHaveText('accepted advisory');
   await expect(accepted).toContainText('high (cascade)');
 
-  await problems.getByRole('button').first().click();
+  await active.first().click();
   const inspector = page.getByRole('complementary');
   await expect(inspector.getByRole('heading', { name: 'Dependency' })).toBeVisible();
   await expect(inspector).toContainText('intrusive coupling');
@@ -618,7 +654,7 @@ test('graph: the canvas, the inspector and the matrix', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Matrix' }).click();
   await expect(page.getByRole('button', { name: 'api to db, 12, violation' })).toBeVisible();
-  await page.getByRole('button', { name: 'violation', exact: false }).filter({ hasText: '2' }).first().click();
+  await page.getByRole('button', { name: '2 violations' }).click();
   await expect(page.getByRole('button', { name: 'api to db, 12, violation' })).toHaveCount(0);
   await expectClean(page);
 
@@ -630,6 +666,22 @@ test('graph: the canvas, the inspector and the matrix', async ({ page }) => {
 
   await page.getByText('Modules and dependencies as tables').click();
   await expect(page.getByRole('table', { name: 'Dependencies' })).toContainText('not measured');
+});
+
+test('graph: the incomplete banner shows only when the report says it is', async ({ page }) => {
+  await open(page, '/r/acme/app/graph', { graph: { ...repoGraph, view: { ...view, incomplete: false } } });
+  await expect(page.locator('.g-node')).toHaveCount(4);
+  await expect(page.locator('#incomplete')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '2 violations' })).toBeVisible(); // a failed gate is the violations
+});
+
+test('graph: a repository with only accepted debt has no problems and draws it faint', async ({ page }) => {
+  const calm = { ...view, incomplete: false, links: view.links.filter((l) => l.status === 'accepted' || l.status === 'allowed') };
+  await open(page, '/r/acme/app/graph', { graph: { ...repoGraph, view: calm } });
+  const problems = page.getByRole('region', { name: /Problems/ });
+  await expect(problems.getByText('No violation or advisory is shown.')).toBeVisible();
+  await expect(problems.locator('details.g-accepted summary')).toContainText('1');
+  await expect(page.locator('.g-node.violation, .g-node.advisory, .g-node.accepted')).toHaveCount(0);
 });
 
 test('pull request graph: the header, and a halo only on what the PR added', async ({ page }) => {
@@ -692,6 +744,9 @@ test('data sharing: what leaves, who allowed it, and Allow', async ({ page }) =>
   await expect(ai.getByText('Not allowed', { exact: true })).toBeVisible();
   await expect(ai.getByText('(to do)')).toBeAttached();
   const discovery = page.getByRole('region', { name: 'Managed discovery' });
+  // read-only state as a cross or a tick, never an empty circle that looks like a radio input
+  await expect(ai.locator('.checks li.not_met .mark')).toHaveText('✗');
+  await expect(discovery.locator('.checks li.met .mark')).toHaveText('✓');
   await expect(discovery.getByText('Allowed by @carol on 1 September 2026')).toBeVisible();
   await expect(discovery.getByText('The App does not start managed discovery yet.', { exact: false })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Overview' })).not.toHaveAttribute('aria-current', 'page');
@@ -746,6 +801,10 @@ test('policy: the editor under the CSP, with the problems as a list and as marks
     'https://github.com/acme/app/pull/9',
   );
   await expect(page.getByText('Checked by Archfit (current step)')).toBeAttached();
+  // the AI box is under the editor: the toolbar takes the user to it
+  await expect(page.locator('#policy-hint')).toHaveText('Check validates the schema. The Archfit check on the draft pull request validates the rest.');
+  await page.getByRole('button', { name: 'Ask AI for a proposal' }).click();
+  await expect(page.getByRole('textbox', { name: 'Instruction' })).toBeFocused();
   await expectClean(page);
 });
 

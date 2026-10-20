@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { countWord, lineWidth, linkStatusWord, measured, smooth, strengthWord, type GLink } from '../../lib/graph';
+  import { acceptedWidth, countWord, lineWidth, linkStatusWord, measured, smooth, strengthWord, type GLink } from '../../lib/graph';
   import { pickLink } from '../../lib/selection.svelte';
   import type { Edge, EdgeProps } from '@xyflow/svelte';
 
@@ -25,7 +25,8 @@
   const at = $derived(data.label ?? { x: data.pts[Math.floor(data.pts.length / 2)][0], y: data.pts[Math.floor(data.pts.length / 2)][1] });
   const text = $derived(String(l.count || '·'));
   const w = $derived(12 + text.length * 7);
-  const width = $derived(lineWidth(l));
+  // Accepted debt is drawn thin and faint, so a repository with no active problem does not look alarming.
+  const width = $derived(l.status === 'accepted' ? Math.min(lineWidth(l), acceptedWidth) : lineWidth(l));
   const name = $derived(
     `${l.from} to ${l.to}, ${countWord(l)}, ${linkStatusWord(l)}, ${measured(l) ? strengthWord[l.strength] : 'strength not measured'}${data.added ? ', added by this PR' : ''}`,
   );

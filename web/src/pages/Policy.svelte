@@ -188,6 +188,13 @@
       notice = 'Managed AI is allowed.';
     });
 
+  // The AI box sits under the editor, out of sight on a long policy: the toolbar takes the user to it.
+  function askAI() {
+    const box = document.getElementById('ai-title')?.closest('section');
+    box?.scrollIntoView({ block: 'center' });
+    box?.querySelector('textarea')?.focus({ preventScroll: true });
+  }
+
   const discard = () => act('reload', () => load(true));
 
   function show(d: Diagnostic) {
@@ -261,10 +268,12 @@
       {:else}
         <span class="disabled-reason">Saving needs write access to {route.fullName}.</span>
       {/if}
+      {#if page.can_write}
+        <button class="btn push-right" type="button" onclick={askAI}>Ask AI for a proposal</button>
+      {/if}
     </div>
     <p class="box-row small muted" id="policy-hint">
-      Check validates the text against the policy schema only. The Archfit check on the draft pull request is the
-      authoritative validation. Full checks run in CI with <code>archfit config lint</code>.
+      Check validates the schema. The Archfit check on the draft pull request validates the rest.
     </p>
     {#if problems.length}
       <div class="box-row problems" role="region" aria-labelledby="problems-title">

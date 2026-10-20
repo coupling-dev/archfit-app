@@ -35,16 +35,22 @@
     </div>
     <div class="box-foot row">
       {#if head.required}
-        <span class="label danger">gate: required</span>
+        <span class="label danger" title="archfit/gate is a required check: a failing result blocks the merge.">Required gate</span>
       {:else}
-        <span class="label">gate: advisory · does not block merging</span>
+        <span class="label" title="The settings on the base branch do not require archfit/gate.">Advisory: does not block merging</span>
       {/if}
       {#if !head.unavailable}
-        {#if head.no_baseline}<span class="label attention">no baseline</span>{/if}
-        {#if head.compared}<span class="label accent">compared with base</span>{:else}<span class="label"
-            >PR attribution unavailable</span
-          >{/if}
-        <span>customer-attested · run {head.run_id}</span>
+        {#if head.no_baseline}
+          <span class="label attention" title="Without a baseline every finding counts as new, including older debt.">No baseline</span>
+        {/if}
+        {#if head.compared}
+          <span class="label accent" title="The engine compared this head with the base branch, so each finding says whether this pull request added it.">Compared with base branch</span>
+        {:else}
+          <span class="label" title="This run did not compare with the base branch, so nothing can be called added by this pull request.">Not compared with base branch</span>
+        {/if}
+        <span class="muted" title="The report comes from your CI run. Archfit authenticates who produced it; it does not check the content.">
+          {#if safeHref(head.checks_url)}<a href={safeHref(head.checks_url)} rel="noreferrer">Run {head.run_id}</a>{:else}Run {head.run_id}{/if}
+        </span>
       {/if}
     </div>
   </section>
