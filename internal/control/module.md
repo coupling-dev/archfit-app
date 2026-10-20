@@ -627,7 +627,7 @@ fake `Sandbox` and `Provider`, and a fixed clock.
   **Scenario**: table: `ListInstallations` errors (`ErrRateLimited`, generic); returns an empty list with nil error; `Tenants` errors; `Forget` errors for one of two orphans.
   **Expected behavior**: no key deleted in the first three rows; refresh still ran when the list was available; in the last row the other orphan is forgotten and `Sweep` returns nil.
 - **Test name**: `TestRevokedAccessSchedulesNothing`
-  **Scenario**: after uninstall, GitHub answers 404 for the installation; call `Sweep`, a UI page for its repository, and a discovery upload.
+  **Scenario**: after uninstall, GitHub answers 404 for the installation; call `Sweep`, the UI overview API for its repository, and a discovery upload.
   **Expected behavior**: sweep does not list it; UI authorization fails; upload is rejected by the `Receiver`; no sandbox job, no LLM call, no key written (T07).
 - **Test name**: `TestReplayedAndForgedInstallationIDs`
   **Scenario**: replay `InstallationAdded` ten times; send a UI form and a discovery envelope carrying another tenant's installation ID.

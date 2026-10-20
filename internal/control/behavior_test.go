@@ -273,8 +273,8 @@ func TestControlFailureNeverReachesTheGate(t *testing.T) {
 	if err := h.c.Grant(ctx, 7, h.clock.Now().Add(day)); err == nil {
 		t.Error("Grant = nil, want the error returned to app")
 	}
-	if rec := b.get("/r/org7/app"); rec.Code < 400 {
-		t.Errorf("UI page = %d, want an error page", rec.Code)
+	if rec := b.get("/api/repos/org7/app/overview"); rec.Code < 400 {
+		t.Errorf("UI overview = %d, want an error", rec.Code)
 	}
 	if rec := h.upload("{}"); rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("discovery upload = %d, want 503", rec.Code)

@@ -160,8 +160,8 @@ func TestRevokedAccessSchedulesNothing(t *testing.T) {
 	}
 	// The session child caches an authorization briefly; past that, GitHub's 404 decides.
 	h.clock.Add(time.Hour)
-	if rec := b.get("/r/org7/app"); rec.Code != http.StatusNotFound {
-		t.Errorf("GET /r/org7/app = %d, want 404", rec.Code)
+	if rec := b.get("/api/repos/org7/app/overview"); rec.Code != http.StatusNotFound {
+		t.Errorf("GET /api/repos/org7/app/overview = %d, want 404", rec.Code)
 	}
 	form.Set("mode", "managed")
 	form.Set("owners", "org7/owners")
