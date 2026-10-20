@@ -96,14 +96,9 @@ describe('cycle layout', () => {
     expect(arrows.map((a) => a.label)).toEqual(['2 locations', '37 locations']);
   });
 
-  it('keeps every box of a column inside the drawing', () => {
-    const modules = ['internal/control/ui', 'internal/gate/feedback', 'internal/wire/report'];
-    const { width, height, boxes } = layout(modules, [], true);
-    for (const b of boxes) {
-      expect(b.x - b.w / 2).toBeGreaterThanOrEqual(0);
-      expect(b.x + b.w / 2).toBeLessThanOrEqual(width);
-      expect(b.y + b.h / 2).toBeLessThanOrEqual(height);
-    }
+  it('keeps a cycle of three on its circle, so no arrow runs under a module', () => {
+    const modules = ['a', 'b', 'c'];
+    expect(layout(modules, [], true)).toEqual(layout(modules, []));
   });
 
   it('caps the size of the largest cycle the comment draws', () => {

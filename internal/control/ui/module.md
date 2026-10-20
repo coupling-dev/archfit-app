@@ -1197,7 +1197,8 @@ others are done, so the handler chain's recover still answers `500` and the proc
   "This PR", its locations and the seam's strength, distance (`report.DistanceWords`) and volatility, then the reason
   once and each distinct repair once; every other violation as its own card. An advisory on a violation's dependency joins that violation's row as
   "Also reported as" (`report.SplitCovered`, the comment's rule) and is not counted among the advisories; the advisory
-  group then reads "Advisories on other dependencies · never block", as the comment does. Advisories, "Known issues
+  group then reads "Advisories on other dependencies · never block" (`advisories_elsewhere`: any advisory covered,
+  over all violations), as the comment does. Advisories, "Known issues
   accepted earlier" and "Known issues fixed" (`fixed`, `fixed_count`: the comment's last group) each one folded table
   with the seam's strength, distance and volatility and each distinct reason once; the seam's suggested move only for
   the advisories, never for accepted or fixed debt, in the PR comment's words
@@ -1671,6 +1672,6 @@ their interfaces except where a test says otherwise. The clock is injected.
   nonce, the problems as a list and as marks, a `#L<n>` hash and a problem selecting their line, Check and Save sending
   the text, the base head and the CSRF header, a refused save keeping the text, a reader offered no write, managed mode
   off with its reason and the inline Allow, and a customer-mode request following its run; the graph pages, laid out by
-  the worker, the inspector's balance reading of a flagged dependency and the count line, and a worker that fails to load reported instead of a layout that never ends; a server error page (its sentence, no repository tabs) and the footer's licences link; a long policy scrolls inside the editor (at most 60% of the viewport) and a line link scrolls to its line; every page keeps its content and footer at most 1280px wide and centred, and has no sideways scroll at 390px; on a phone a cycle stacks its modules in a column and its labels render at 11px or more; the pull request page states the engine verdict, the known issues accepted earlier with their coupling and no suggested move, and the known issues fixed; policy edits are entered with one input event per string, so key order cannot race CodeMirror's DOM reading; every page has no
+  the worker, the inspector's balance reading of a flagged dependency and the count line, and a worker that fails to load reported instead of a layout that never ends; a server error page (its sentence, no repository tabs) and the footer's licences link; a long policy scrolls inside the editor (at most 60% of the viewport) and a line link scrolls to its line; every page keeps its content and footer at most 1280px wide and centred, and has no sideways scroll at 390px; on a phone a two-module cycle stacks its modules in a column and its labels render at 11px or more (a longer cycle keeps its size and scrolls in its box); the pull request page states the engine verdict, the known issues accepted earlier with their coupling and no suggested move, and the known issues fixed; policy edits are entered with one input event per string, so key order cannot race CodeMirror's DOM reading; every page has no
   `securitypolicyviolation` event and no axe violation in light and in dark; the onboarding write carries the CSRF
   header and a JSON body.

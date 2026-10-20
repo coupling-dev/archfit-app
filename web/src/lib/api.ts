@@ -144,6 +144,7 @@ export interface Findings {
   advisories: Finding[] | null;
   accepted_count: number;
   accepted: Finding[] | null;
+  advisories_elsewhere: boolean; // an advisory joined a violation's row, so the rest are on other dependencies
   fixed_count: number;
   fixed: Finding[] | null; // known issues the report no longer finds
   omitted: number;

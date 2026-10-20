@@ -260,7 +260,7 @@ func TestFindingsExplainDrawnLinks(t *testing.T) {
 		{"the rule by its name and meta, as on the pull request page", []report.Seam{seam("api", "db", 2)},
 			[]report.Finding{named(finding("advisory", "baseline", "api", "db"), "bc/imbalanced_coupling", "high")},
 			[]LinkFinding{{From: "api", To: "db", RuleID: "bc/imbalanced_coupling", Rule: "Imbalanced coupling",
-				Meta: "high, baseline", Kind: "advisory", Status: "baseline"}}},
+				Meta: "high, accepted in the baseline", Kind: "advisory", Status: "baseline"}}},
 		{"a fixed finding explains nothing", []report.Seam{seam("api", "db", 2)},
 			[]report.Finding{finding("gate", "fixed", "api", "db")}, []LinkFinding{}},
 		{"a finding without a module pair is not on the graph", nil,

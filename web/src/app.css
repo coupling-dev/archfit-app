@@ -453,6 +453,7 @@ details.fold:not([open]) > summary { border-bottom: 0; }
 /* ---------- cycle drawing: the comment's picture; colours from the tokens, so both themes read ---------- */
 .cycle-drawing { overflow-x: auto; }
 .cycle-drawing svg { display: block; max-width: 100%; height: auto; margin: 0 auto; font: 13px var(--font); }
+.cycle-drawing svg.natural { max-width: none; }
 .cycle-drawing .module rect { fill: var(--bg-subtle); stroke: var(--border); }
 .cycle-drawing .module text { fill: var(--fg); font-family: var(--mono); font-size: 12px; }
 .cycle-drawing .arrow { fill: none; stroke: var(--danger); }

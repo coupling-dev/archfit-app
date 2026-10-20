@@ -197,6 +197,7 @@ const pull = {
     },
   ],
   advisory_count: 2,
+  advisories_elsewhere: true,
   advisories: [
     {
       ...direction('ui', 'store', '', 1),
@@ -218,7 +219,7 @@ const pull = {
   accepted: [
     {
       ...direction('x', 'y', '', 1),
-      meta: 'low, baseline',
+      meta: 'low, accepted in the baseline',
       strength: 'model',
       distance: 'across modules',
       volatility: 'low',

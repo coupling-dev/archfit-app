@@ -208,15 +208,18 @@ func RuleName(id string) string {
 }
 
 // FindingMeta is a finding's severity, then its status as a word when the group it is listed in does not already say
-// it.
+// it, in the comment's words: a new or fixed finding is its severity alone, an accepted one is "accepted in the
+// baseline" or "accepted by waiver". The comment keeps its own copy, which escapes Markdown.
 func FindingMeta(f Finding) string {
 	switch f.Status {
+	case "new", "fixed":
+		return f.Severity
 	case "expired_waiver":
 		return f.Severity + ", waiver expired"
 	case "waived":
-		return f.Severity + ", waiver"
-	case "new", "fixed":
-		return f.Severity
+		return f.Severity + ", accepted by waiver"
+	case "baseline":
+		return f.Severity + ", accepted in the baseline"
 	}
 	return f.Severity + ", " + f.Status
 }

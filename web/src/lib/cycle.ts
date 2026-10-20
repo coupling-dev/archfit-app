@@ -83,8 +83,9 @@ function clip(b: Box, tx: number, ty: number): [number, number] {
   return [b.x + dx * s, b.y + dy * s];
 }
 
-// layout places the modules side by side or on a circle; column stacks them top to bottom, for a narrow screen, where
-// the wide drawing would be scaled down until its labels cannot be read.
+// layout places the modules side by side or on a circle; column stacks a pair top to bottom, for a narrow screen, where
+// the wide drawing would be scaled down until its labels cannot be read. A longer cycle stays a circle: in a column its
+// arrows between non-adjacent modules would run under the modules between them.
 export function layout(
   modules: string[],
   directions: Direction[],
@@ -93,11 +94,11 @@ export function layout(
   const n = modules.length;
   const sizes = modules.map((m) => Math.ceil(shorten(m).length * charWidth) + 2 * pad);
   const widest = Math.max(...sizes);
-  if (column) {
+  if (column && n === 2) {
     // A curve bows half its control point's offset; its label sits on the curve, so both fit in half the width.
-    const bow = (Math.max(n - 1, 1) * columnGap * columnBend) / 2 + widestLabel / 2;
+    const bow = (columnGap * columnBend) / 2 + widestLabel / 2;
     const width = Math.ceil(Math.max(widest, 2 * bow) + 2 * pad);
-    const height = Math.ceil((n - 1) * columnGap + boxH + 2 * pad);
+    const height = Math.ceil(columnGap + boxH + 2 * pad);
     const boxes = modules.map((module, i) => ({
       module,
       label: shorten(module),

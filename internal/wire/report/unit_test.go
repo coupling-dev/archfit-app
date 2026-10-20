@@ -730,3 +730,18 @@ func TestEngineVerdictInTheCommentsWords(t *testing.T) {
 		})
 	}
 }
+
+func TestFindingMetaInTheCommentsWords(t *testing.T) {
+	for status, want := range map[string]string{
+		"new":            "high",
+		"fixed":          "high",
+		"expired_waiver": "high, waiver expired",
+		"waived":         "high, accepted by waiver",
+		"baseline":       "high, accepted in the baseline",
+		"later":          "high, later",
+	} {
+		if got := FindingMeta(Finding{Severity: "high", Status: status}); got != want {
+			t.Errorf("FindingMeta(%s) = %q, want %q", status, got, want)
+		}
+	}
+}

@@ -55,16 +55,17 @@ type decisionJSON struct {
 
 // findingsJSON is a report's findings in the comment's groups, its evidence and its agent tasks.
 type findingsJSON struct {
-	ViolationCount int           `json:"violation_count"` // findings, a cycle's directions each counted
-	Cycles         []cycleJSON   `json:"cycles"`
-	Other          []findingJSON `json:"other"` // the shown violations on no cycle
-	AdvisoryCount  int           `json:"advisory_count"`
-	Advisories     []findingJSON `json:"advisories"`
-	AcceptedCount  int           `json:"accepted_count"`
-	Accepted       []findingJSON `json:"accepted"`
-	FixedCount     int           `json:"fixed_count"`
-	Fixed          []findingJSON `json:"fixed"`   // known issues the report no longer finds, as the comment's last group
-	Omitted        int           `json:"omitted"` // findings past findingsPerList, all groups together
+	ViolationCount      int           `json:"violation_count"` // findings, a cycle's directions each counted
+	Cycles              []cycleJSON   `json:"cycles"`
+	Other               []findingJSON `json:"other"` // the shown violations on no cycle
+	AdvisoryCount       int           `json:"advisory_count"`
+	AdvisoriesElsewhere bool          `json:"advisories_elsewhere"` // some advisory joined a violation's row: the rest are on other dependencies
+	Advisories          []findingJSON `json:"advisories"`
+	AcceptedCount       int           `json:"accepted_count"`
+	Accepted            []findingJSON `json:"accepted"`
+	FixedCount          int           `json:"fixed_count"`
+	Fixed               []findingJSON `json:"fixed"`   // known issues the report no longer finds, as the comment's last group
+	Omitted             int           `json:"omitted"` // findings past findingsPerList, all groups together
 
 	Dimensions []dimensionJSON `json:"dimensions"`
 	Unknowns   []unknownRow    `json:"unknowns"`
@@ -284,6 +285,7 @@ func fillFindings(body *findingsJSON, rep report.Report) {
 	violations, accepted := g.Violations, g.Accepted
 	body.ViolationCount, body.AdvisoryCount, body.AcceptedCount = len(violations), len(advisories), len(accepted)
 	body.FixedCount = len(g.Fixed)
+	body.AdvisoriesElsewhere = len(covered) > 0
 	also := func(r findingJSON, f report.Finding) findingJSON {
 		for _, a := range covered[[2]string{f.Edge.From.Module, f.Edge.To.Module}] {
 			if note := report.RuleName(a.RuleID) + " · " + report.FindingMeta(a); !slices.Contains(r.Also, note) {

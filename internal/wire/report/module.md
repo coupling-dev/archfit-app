@@ -581,8 +581,8 @@ var EngineRuleNames map[string]string // readable names of the engine's own rule
 // RuleName is a rule's readable name: an engine rule's from EngineRuleNames, a policy rule's ID as written.
 func RuleName(id string) string
 
-// FindingMeta is a finding's severity, then its status as a word ("waiver", "waiver expired", "baseline"); a new or
-// fixed finding is its severity alone, as its group already says it.
+// FindingMeta is a finding's severity, then its status in the comment's words ("accepted in the baseline", "accepted
+// by waiver", "waiver expired"); a new or fixed finding is its severity alone, as its group already says it.
 func FindingMeta(f Finding) string
 
 // EngineVerdict is the engine's decision in the comment's words: the verdict with "_" read as a space, and the rest of
@@ -801,6 +801,10 @@ the tests decode each one as the release that produced it (synthetic ones as v3.
   **Expected behavior**: "blocked" / "hard gates fail, 2 active blockers, every required rule evaluated"; "1 active
   blocker"; "0 active blockers"; "needs attention" / "hard gates not measured, 0 active blockers, 2 required rules not
   evaluated"; "healthy" / "hard gates pass, 0 active blockers, every required rule evaluated".
+- **Test name**: `TestFindingMetaInTheCommentsWords`
+  **Scenario**: severity high with status new, fixed, expired_waiver, waived, baseline and one this version does not know.
+  **Expected behavior**: "high"; "high"; "high, waiver expired"; "high, accepted by waiver"; "high, accepted in the
+  baseline"; "high, later".
 - **Test name**: `TestBalancingMoveWordsAKnownHypothesisOnly`
   **Scenario**: `introduce_contract`, a token this version does not know, `""`.
   **Expected behavior**: the `BalancingMoves` words; the token as written; `""`.

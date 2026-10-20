@@ -15,10 +15,6 @@
       (f.accepted?.length ?? 0) +
       (f.fixed?.length ?? 0),
   );
-  // An advisory on a violation's dependency joined that row, so the rest are on other dependencies, as on the comment.
-  const covered = $derived(
-    [...(f.cycles ?? []).flatMap((c) => c.directions), ...(f.other ?? [])].some((r) => r.also?.length),
-  );
 </script>
 
 <section class="stack" aria-labelledby="violations">
@@ -40,7 +36,7 @@
 </section>
 
 {#if f.advisories?.length}
-  <FindingTable id="advisories" title={covered ? 'Advisories on other dependencies · never block' : 'Advisories · never block'} count={f.advisory_count} rows={f.advisories} {compared} moves />
+  <FindingTable id="advisories" title={f.advisories_elsewhere ? 'Advisories on other dependencies · never block' : 'Advisories · never block'} count={f.advisory_count} rows={f.advisories} {compared} moves />
 {/if}
 {#if f.accepted?.length}
   <FindingTable

@@ -3,10 +3,12 @@
 
   let { modules, directions }: { modules: string[]; directions: Direction[] } = $props();
 
-  // Below this width the side-by-side drawing scales its labels too small to read: the modules stack instead.
+  // Below this width the wide drawing would scale its labels too small to read: a pair stacks instead, and a longer
+  // cycle keeps its own size and scrolls sideways in its box.
   const narrowBelow = 480;
   let boxWidth = $state(0);
-  const drawing = $derived(layout(modules, directions, boxWidth > 0 && boxWidth < narrowBelow));
+  const narrow = $derived(boxWidth > 0 && boxWidth < narrowBelow);
+  const drawing = $derived(layout(modules, directions, narrow));
   // Marker IDs must be unique on the page, which can hold several cycles.
   const id = `cycle-${Math.random().toString(36).slice(2, 8)}`;
   const kinds = ['added', 'existing', 'cycle'] as const;
@@ -23,6 +25,7 @@
   <svg
     viewBox="0 0 {drawing.width} {drawing.height}"
     width={drawing.width}
+    class:natural={narrow && modules.length > 2}
     role="img"
     aria-label="Dependency cycle among {modules.join(', ')}; the table below lists each direction"
   >

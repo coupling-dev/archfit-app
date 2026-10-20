@@ -524,8 +524,8 @@ on the pull request links to this page ("Details in Archfit").
   blocked: hard gates fail, 3 active blockers, every required rule evaluated".
 - Rule violations are open. Each dependency cycle is one card with the same drawing as the comment: one arrow per
   direction with its location count, red and wide when this pull request added it, grey and thin when it existed
-  before; a legend under the drawing names the arrows it uses. On a phone the modules stack top to bottom, so the
-  labels stay readable. A table under the drawing lists each direction with its locations and, when the report has them, its
+  before; a legend under the drawing names the arrows it uses. On a phone a cycle of two modules stacks top to
+  bottom, and a longer one keeps its size and scrolls sideways, so the labels stay readable. A table under the drawing lists each direction with its locations and, when the report has them, its
   integration strength, distance and volatility. An advisory on the same dependency as a violation is shown in that
   violation's row ("Also reported as"), as on the comment, and is not counted again; the rest are "Advisories on
   other dependencies". The advisories, the known issues accepted earlier and the known issues fixed are folded tables,
