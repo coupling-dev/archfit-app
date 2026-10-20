@@ -65,6 +65,15 @@ func (c *Client) getPull(ctx context.Context, r RepoRef, number int) (pullJSON, 
 	return j, c.send(ctx, k, &j)
 }
 
+// PullSummary is Pull without the merge base: one call fewer, for a reader that does not use MergeBaseSHA.
+func (c *Client) PullSummary(ctx context.Context, r RepoRef, number int) (Pull, error) {
+	j, err := c.getPull(ctx, r, number)
+	if err != nil {
+		return Pull{}, err
+	}
+	return j.pull(), nil
+}
+
 func (c *Client) Pull(ctx context.Context, r RepoRef, number int) (Pull, error) {
 	j, err := c.getPull(ctx, r, number)
 	if err != nil {
