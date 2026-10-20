@@ -45,6 +45,7 @@ export interface Overview {
   pulls_error: boolean;
   steps: Step[];
   next: string;
+  next_how: string;
   stage: string;
   diagnostic: string;
   draft_url: string;
@@ -150,7 +151,12 @@ export interface Findings {
 export type Pull = PullHead & Findings;
 
 // RepoFindings is the latest report of the default branch, for the overview.
-export type RepoFindings = Findings & { unavailable: string; branch: string; no_baseline: boolean };
+export type RepoFindings = Findings & {
+  unavailable: string;
+  branch: string;
+  no_baseline: boolean;
+  blocked: boolean; // the engine's verdict is blocked
+};
 
 export interface Notice {
   notice?: string;

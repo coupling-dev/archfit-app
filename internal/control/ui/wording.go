@@ -16,8 +16,12 @@ const (
 	retryAfterSeconds = "60"
 	dateLayout        = "2 January 2006"
 
-	stateNone    = "no state yet"
-	stateUnknown = "unknown"
+	stateNone       = "no state yet"
+	stateUnknown    = "unknown"
+	stateViolations = "violations found"
+
+	verdictBlocked = "blocked" // Report.Verdict
+	hardGatesFail  = "fail"    // Decision.HardGates
 )
 
 // userError is a refusal ui decides itself: its status, its log outcome and the sentence shown.
@@ -99,7 +103,7 @@ var conclusionWords = map[string]string{
 	"":                "in progress",
 	"success":         "healthy",
 	"neutral":         "attention",
-	"failure":         "violations found", // never "blocked": in advisory mode nothing blocks
+	"failure":         stateViolations, // never "blocked": in advisory mode nothing blocks
 	"action_required": "action required",
 	"cancelled":       "cancelled",
 	"timed_out":       "timed out",
@@ -110,11 +114,11 @@ var conclusionWords = map[string]string{
 // stateTones colour a state word in the web app; a word not listed is "neutral". The word is always shown next to
 // the colour, so the colour is never the only signal.
 var stateTones = map[string]string{
-	"healthy":          "success",
-	"attention":        "attention",
-	"violations found": "danger",
-	"action required":  "danger",
-	"in progress":      "accent",
+	"healthy":         "success",
+	"attention":       "attention",
+	stateViolations:   "danger",
+	"action required": "danger",
+	"in progress":     "accent",
 }
 
 func toneOf(word string) string {

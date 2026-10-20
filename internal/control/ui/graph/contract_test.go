@@ -178,25 +178,34 @@ func TestStaleFollowsPolicyDigest(t *testing.T) {
 	}
 }
 
-// An observed link is not proof that the policy permits it when the engine did not finish evaluating its rules.
-func TestIncompleteFollowsDecision(t *testing.T) {
+// An observed link is not proof that the policy permits it when a required rule went unevaluated or a gated dimension
+// measured nothing. A failed hard gate is the violation itself, so it is not incomplete.
+func TestIncompleteFollowsRequiredFacts(t *testing.T) {
 	unevaluated := []report.UnevaluatedRule{{RuleID: "no_direct_b_dependency", Reason: "required tool go/packages was absent"}}
+	dim := func(status, gate string) map[string]report.Dimension {
+		return map[string]report.Dimension{"structure": {Status: status, Gate: gate}}
+	}
 	tests := []struct {
 		name       string
 		decision   report.Decision
+		dimensions map[string]report.Dimension
 		incomplete bool
 	}{
-		{"hard gates pass", report.Decision{HardGates: "pass"}, false},
-		{"hard gates pass with an unevaluated rule", report.Decision{HardGates: "pass", UnevaluatedRequiredRules: unevaluated}, true},
-		{"hard gates unmeasured", report.Decision{HardGates: "unmeasured", UnevaluatedRequiredRules: unevaluated}, true},
-		{"hard gates fail", report.Decision{HardGates: "fail"}, true},
-		{"hard gates unknown", report.Decision{HardGates: "PASS"}, true},
-		{"zero decision", report.Decision{}, true},
+		{"hard gates pass, nothing unevaluated", report.Decision{HardGates: "pass"}, dim("measured", "pass"), false},
+		{"hard gates fail is the violation, not incomplete", report.Decision{HardGates: "fail"}, dim("measured", "fail"), false},
+		{"unevaluated required rule", report.Decision{HardGates: "pass", UnevaluatedRequiredRules: unevaluated}, dim("measured", "pass"), true},
+		{"unevaluated required rule with hard gates unmeasured", report.Decision{HardGates: "unmeasured", UnevaluatedRequiredRules: unevaluated}, dim("measured", "pass"), true},
+		{"hard gates unmeasured", report.Decision{HardGates: "unmeasured"}, dim("measured", "pass"), true},
+		{"gated dimension unmeasured", report.Decision{HardGates: "fail"}, dim("unmeasured", "fail"), true},
+		{"gated dimension partial", report.Decision{HardGates: "pass"}, dim("partial", "pass"), false},
+		{"unmeasured dimension the gate does not apply to", report.Decision{HardGates: "pass"}, dim("unmeasured", "not_applicable"), false},
+		{"no dimensions and no decision", report.Decision{}, nil, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rep := reportFor(threeModules, []report.Seam{seam("api", "db", 1)}, nil)
 			rep.Decision = tt.decision
+			rep.Dimensions = tt.dimensions
 			if got := Build(rep, []byte(threeModules)).Incomplete; got != tt.incomplete {
 				t.Errorf("Incomplete = %v, want %v", got, tt.incomplete)
 			}
@@ -205,7 +214,7 @@ func TestIncompleteFollowsDecision(t *testing.T) {
 	if Build(loadReport(t, healthyFixture), []byte(fixturePolicy)).Incomplete {
 		t.Error("the healthy fixture is incomplete")
 	}
-	if !Build(loadReport(t, blockedFixture), []byte(fixturePolicy)).Incomplete {
-		t.Error("the blocked fixture (hard_gates: fail) is complete")
+	if Build(loadReport(t, blockedFixture), []byte(fixturePolicy)).Incomplete {
+		t.Error("the blocked fixture (hard_gates: fail, nothing unevaluated) is incomplete")
 	}
 }

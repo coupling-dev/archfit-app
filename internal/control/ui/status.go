@@ -44,7 +44,8 @@ type statusBody struct {
 	PullsMore     int       `json:"pulls_more"`  // open pull requests past maxStatusPulls
 	PullsError    bool      `json:"pulls_error"` // the list could not be read; the rest of the page stands
 	Steps         []step    `json:"steps"`
-	Next          string    `json:"next"` // the next setup step, "" when there is none
+	Next          string    `json:"next"`     // the next setup step in one sentence, "" when there is none
+	NextHow       string    `json:"next_how"` // its details, shown behind "How"
 
 	Stage       string `json:"stage"`
 	Diagnostic  string `json:"diagnostic"`
@@ -77,7 +78,9 @@ func (s *server) apiStatus(r *http.Request, sc scope) (any, error) {
 	if d := progress.OpenDraft; d != nil {
 		body.DraftURL, body.DraftState = d.URL, draftWords[d.State]
 	}
-	body.Steps, body.Next = setupSteps(progress.Stage)
+	var next nextStep
+	body.Steps, next = setupSteps(progress.Stage)
+	body.Next, body.NextHow = next.next, next.how
 
 	// The parts below never fail the page, each says so in its own field, and each writes only its own fields: they
 	// run side by side.
@@ -223,11 +226,20 @@ var stepLabels = map[onboarding.Stage]string{
 	onboarding.StageAdvisory: "Advisory", onboarding.StageRequired: "Required",
 }
 
-var nextSteps = map[onboarding.Stage]string{
-	onboarding.StageAdvisory: "Rehearse the gate: one forbidden change must show a rule violation on archfit/state and one " +
-		"legitimate change must not. Then merge an owner-approved settings pull request that sets gate: required, and add " +
-		"archfit/gate as a required check in a GitHub ruleset: the settings alone never block a merge.",
-	onboarding.StageRequired: "Make sure archfit/gate is a required check in a GitHub ruleset. The settings alone never block a merge.",
+// nextStep is the advice for the step after the current one: one sentence, and the details behind "How".
+type nextStep struct{ next, how string }
+
+var nextSteps = map[onboarding.Stage]nextStep{
+	onboarding.StageAdvisory: {
+		next: "Make the gate required. Rehearse it first on one forbidden and one legitimate change.",
+		how: "A forbidden change must show a rule violation on archfit/state and a legitimate change must not. Then merge an " +
+			"owner-approved settings pull request that sets gate: required, and add archfit/gate as a required check in a " +
+			"GitHub ruleset: the settings alone never block a merge.",
+	},
+	onboarding.StageRequired: {
+		next: "Make archfit/gate a required check in a GitHub ruleset.",
+		how:  "The settings alone never block a merge.",
+	},
 }
 
 // hasReport reports whether onboarding has seen a report. policy_merged sorts after report_received on the path but
@@ -237,7 +249,7 @@ func hasReport(st onboarding.Stage) bool {
 }
 
 // setupSteps is the onboarding path with the current stage marked, and the advice for the step after it.
-func setupSteps(current onboarding.Stage) ([]step, string) {
+func setupSteps(current onboarding.Stage) ([]step, nextStep) {
 	steps := make([]step, len(stageOrder))
 	for i, st := range stageOrder {
 		done := reached(current, st) && st != current

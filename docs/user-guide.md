@@ -497,10 +497,11 @@ baseline already accepts, and accepts nothing new.
 ## See a repository
 
 Open `/r/<owner>/<repo>`. The page always shows the setup steps with the current one marked. "Needs you" says what to
-do next and, for a repository admin, holds the button that starts onboarding or discovery. After the first report it
-also shows:
+do next in one sentence (**How** folds the details) and, for a repository admin, holds the button that starts
+onboarding or discovery. After the first report it also shows:
 
-- the Archfit result of the default branch at the top of the page;
+- the Archfit result of the default branch at the top of the page. An advisory repository's check is neutral, so the
+  page shows "violations found" when the engine's verdict is blocked, never "attention" over it;
 - three counts: rule violations and advisories in the latest default-branch report, and the open pull requests whose
   Archfit result needs attention. They are counts, never a score;
 - the open pull requests, newest first, each with its result and a link to its page (up to 20);
@@ -523,8 +524,13 @@ on the pull request links to this page ("Details in Archfit").
   integration strength, distance and volatility. Advisories and accepted debt are folded tables. **Evidence** lists
   the dimensions and, folded, what the engine could not measure ("To measure more").
 - GitHub's **Details** link on the Archfit checks opens this page.
-- Badges under the result say whether this run had a baseline and whether it compared against the base branch.
+- Badges under the result say whether the gate is required or advisory, whether this run had a baseline, whether it
+  compared against the base branch, and which run it is (a link to the checks), with its report `customer-attested`:
+  Archfit authenticates the producer, not the content. Hover a badge for its meaning. A required gate blocks merging
+  only where a GitHub ruleset requires `archfit/gate`.
   Without that comparison, "new" means not accepted in a baseline, not "added by this pull request".
+- **Evidence** has one row per dimension: what the engine measured, in its own words and counts ("classified source
+  files: 3 of 3"), its confidence, and its **Result**: pass, warn or fail.
 - **For coding agents** holds the exact repair tasks of the run; **Copy** puts them on the clipboard.
 - The **Graph** tab draws the same report as a graph. See [The graph of a pull request](#the-graph-of-a-pull-request).
 - The page shows a report only when it is the one the check was computed from, and never under a result that asks
@@ -538,10 +544,14 @@ the policy and the dependencies between them in the latest default-branch report
 
 - Colour is the status of a dependency, line width its integration strength: contract coupling thinnest, then model,
   functional, and intrusive coupling thickest. A dashed line is a dependency whose strength no seam of the report
-  measured. The label on a line is the number of dependencies between the two modules. A dashed module is not in the
+  measured. The label on a line is the number of imports behind the dependency. A dashed module is not in the
   policy. **Legend** above the graph says the same.
-- Status chips count the dependencies per status and filter them. The **Problems** list above the graph puts
-  violations first, then advisories, then accepted debt; the two directions of a cycle with one status are one row.
+- The unit on the graph is a **dependency**: one module that depends on another (A → B). A cycle between two modules
+  is two dependencies. Status chips count the dependencies per status and filter them. The **Problems** list above the
+  graph holds the violations, then the advisories, one row each (a cycle's rows say "cycle"); on the repository graph
+  its number is the sum of those two chips. On a pull request graph it also holds every other dependency the pull
+  request added, accepted or not. Accepted debt is no problem: it sits in **Accepted earlier**, folded under the list,
+  and is drawn thin and faint. A repository with no violation or advisory shows no problem.
 - Select a problem, a line, a matrix cell or a module (click, or Tab and Enter) to see it in the panel on the right.
   A dependency shows its status, its integration strength, distance, volatility and balance, up to 5 current findings
   that name it, the strongest first, and a link to its module in the policy. Its volatility is the engine's for that
@@ -571,8 +581,9 @@ the policy and the dependencies between them in the latest default-branch report
   violation`, never as `allowed`. A dependency the overview counts as accepted shows as accepted, unless a violation
   on the same pair outranks it.
 - A warning says when the policy differs from the one the report was computed from (module names and lines may not
-  match), and when the report's hard gates did not pass or the engine did not evaluate all required rules: then an
-  `observed` dependency can still break a rule that was not evaluated. Open a warning for the reason.
+  match), and when the report is incomplete: the engine did not evaluate a required rule, or a dimension the gate
+  applies to measured nothing. Then an `observed` dependency can still break a rule that was not evaluated. A failed
+  hard gate shows no such warning: the violations are the message. Open a warning for the reason.
 
 GitHub keeps report artifacts for a limited time. Run Archfit on the default branch when no report is available.
 

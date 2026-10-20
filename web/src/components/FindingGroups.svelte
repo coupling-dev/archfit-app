@@ -31,7 +31,7 @@
 {#if f.accepted?.length}
   <FindingTable
     id="accepted"
-    title="Accepted · baseline or waiver"
+    title="Accepted earlier"
     count={f.accepted_count}
     rows={f.accepted}
     {compared}

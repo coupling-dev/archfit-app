@@ -5,7 +5,7 @@
   let { pull }: { pull: boolean } = $props();
 </script>
 
-<details class="g-legend">
+<details class="g-legend" open>
   <summary>Legend</summary>
   <dl>
     <dt>Colour</dt>
@@ -32,7 +32,9 @@
       </span>
     </dd>
     <dt>Label</dt>
-    <dd>the number of dependencies between the two modules; · when only a finding names them</dd>
+    <dd>the number of imports behind the dependency; · when only a finding names the two modules</dd>
+    <dt>Faint, thin</dt>
+    <dd>accepted earlier: known debt, not a problem</dd>
     <dt>Dashed module</dt>
     <dd>not in the policy</dd>
     {#if pull}

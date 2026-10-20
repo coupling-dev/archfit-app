@@ -12,6 +12,8 @@ import {
   moduleVolatility,
   order,
   problemRows,
+  acceptedRows,
+  isAcceptedEarlier,
   smooth,
   worst,
   type GLink,
@@ -122,35 +124,23 @@ describe('problemRows', () => {
     link('a', 'b', 'violation', 2),
     link('b', 'a', 'violation', 40),
     link('c', 'd', 'advisory', 9),
-    link('d', 'c', 'accepted', 3), // another status: its own row
+    link('d', 'c', 'accepted', 3),
     link('e', 'f', 'observed', 5, { origin: 'added' }),
     link('g', 'h', 'allowed', 7),
   ];
 
-  it('keeps accepted gate debt and an accepted advisory apart', () => {
-    const debt = [
-      link('a', 'b', 'accepted', 10, { accepted: 'advisory' }),
-      link('b', 'a', 'accepted', 1, { accepted: 'violation' }),
-      link('c', 'd', 'accepted', 2, { accepted: 'advisory' }),
-      link('d', 'c', 'accepted', 1, { accepted: 'advisory' }),
-      link('x', 'y', 'violation', 3, { accepted: 'violation' }), // a subtype on a violation never splits its cycle
-      link('y', 'x', 'violation', 1),
-    ];
-    expect(problemRows(debt, false, false, all).map((r) => [r.link.from, r.back?.from ?? ''])).toEqual([
-      ['x', 'y'],
-      ['a', ''],
-      ['c', 'd'],
-      ['b', ''],
+  it('is one row per active dependency: a cycle is two, accepted debt is none', () => {
+    const rows = problemRows(links, false, false, all);
+    expect(rows.map((r) => [r.link.from, r.link.to, r.cycle])).toEqual([
+      ['b', 'a', true],
+      ['a', 'b', true],
+      ['c', 'd', false],
     ]);
   });
 
-  it('pairs the two directions of a cycle and keeps statuses apart', () => {
-    const rows = problemRows(links, false, false, all);
-    expect(rows.map((r) => [r.link.from, r.link.to, r.back?.from ?? ''])).toEqual([
-      ['b', 'a', 'a'],
-      ['c', 'd', ''],
-      ['d', 'c', ''],
-    ]);
+  it('adds up with the chips: rows are the violations plus the advisories', () => {
+    const n = (s: string) => links.filter((l) => l.status === s).length;
+    expect(problemRows(links, false, false, all)).toHaveLength(n('violation') + n('advisory'));
   });
 
   it('lists what the pull request added, first with emphasis on', () => {
@@ -162,8 +152,41 @@ describe('problemRows', () => {
 
   it('follows the status filter', () => {
     const rows = problemRows(links, false, false, { ...all, violation: false });
-    expect(rows.map((r) => r.link.status)).toEqual(['advisory', 'accepted']);
+    expect(rows.map((r) => r.link.status)).toEqual(['advisory']);
   });
+});
+
+describe('acceptedRows', () => {
+  const links = [
+    link('a', 'b', 'accepted', 2, { accepted: 'advisory' }),
+    link('b', 'a', 'accepted', 9, { accepted: 'violation' }),
+    link('c', 'd', 'violation', 1),
+  ];
+
+  it('is the accepted dependencies only, the biggest first', () => {
+    expect(acceptedRows(links, false, all).map((l) => l.from)).toEqual(['b', 'a']);
+  });
+
+  it('follows the accepted filter', () => {
+    expect(acceptedRows(links, false, { ...all, accepted: false })).toEqual([]);
+  });
+
+  it('leaves out what the pull request added: that is a problem, listed once', () => {
+    const added = link('e', 'f', 'accepted', 1, { accepted: 'violation', origin: 'added' });
+    const pr = [...links, added];
+    expect(acceptedRows(pr, true, all)).not.toContain(added);
+    expect(problemRows(pr, true, false, all).map((r) => r.link)).toContain(added);
+    expect(acceptedRows(pr, false, all)).toContain(added); // the repository graph claims nothing added
+  });
+});
+
+describe('isAcceptedEarlier', () => {
+  it.each([
+    ['accepted, existing', link('a', 'b', 'accepted', 1, { origin: 'existing' }), true, true],
+    ['accepted, added in this PR', link('a', 'b', 'accepted', 1, { origin: 'added' }), true, false],
+    ['accepted, added, on the repository graph', link('a', 'b', 'accepted', 1, { origin: 'added' }), false, true],
+    ['a violation', link('a', 'b', 'violation', 1), true, false],
+  ])('%s', (_, l, pull, want) => expect(isAcceptedEarlier(l, pull)).toBe(want));
 });
 
 describe('focus', () => {
@@ -187,6 +210,7 @@ describe('worst', () => {
     const ls = [link('a', 'b', 'accepted'), link('c', 'a', 'violation'), link('a', 'd', 'allowed')];
     expect(worst(ls, 'a')).toBe('violation');
     expect(worst(ls, 'd')).toBe('');
+    expect(worst([link('a', 'b', 'accepted')], 'a')).toBe('');
   });
 });
 

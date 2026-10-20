@@ -10,6 +10,8 @@
   import SeamSummary from '../components/graph/SeamSummary.svelte';
   import { explain, getJSON, repoAPI, type ApiError } from '../lib/api';
   import {
+    acceptedRows,
+    dependencyWord,
     focus,
     focusLimit,
     isAdded,
@@ -60,6 +62,7 @@
   const part = $derived(view ? (focused ? focus(view, pull) : { nodes: view.nodes, links: view.links }) : null);
   const drawnLinks = $derived(part ? part.links.filter((l) => show[l.status]) : []);
   const rows = $derived(view ? problemRows(view.links, pull, ui.emphasis, show) : []);
+  const accepted = $derived(view ? acceptedRows(view.links, pull, show) : []);
   const counts = $derived(
     statuses.map((s) => [s, view ? view.links.filter((l) => l.status === s).length : 0] as const).filter(([, n]) => n),
   );
@@ -112,8 +115,8 @@
           <details>
             <summary>The report is incomplete: an observed dependency can still break a rule.</summary>
             <p class="small">
-              Its hard gates did not pass, or a required rule was not evaluated. Read the archfit/state check for the
-              evidence gaps.
+              A required rule was not evaluated, or a dimension the gate applies to measured nothing. Read the
+              archfit/state check for the evidence gaps.
             </p>
           </details>
         </div>
@@ -131,6 +134,7 @@
 
     <div class="g-bar">
       <div class="row" role="group" aria-label="Show dependencies by status">
+        <span class="muted small" id="g-unit">{dependencyWord(view.links.length)}:</span>
         {#if pull && body.pull?.compared}
           <button
             type="button"
@@ -171,7 +175,7 @@
         {view.nodes.length} modules are too many to draw. The tables below are the view.
       </p>
     {:else}
-      <ProblemList {rows} />
+      <ProblemList {rows} {accepted} />
       <div class="g-grid">
         <div class="stack-sm">
           {#if mode === 'graph' && part}

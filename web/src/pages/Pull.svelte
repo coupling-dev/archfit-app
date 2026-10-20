@@ -2,6 +2,7 @@
   import FindingGroups from '../components/FindingGroups.svelte';
   import DecisionLine from '../components/DecisionLine.svelte';
   import PullHead from '../components/PullHead.svelte';
+  import { basisText, resultWord } from '../lib/evidence';
   import { explain, getJSON, repoAPI, type ApiError, type Pull } from '../lib/api';
   import { safeHref, type Repo } from '../lib/route';
 
@@ -84,9 +85,9 @@
               <tr>
                 <th scope="col">Dimension</th>
                 <th scope="col">Status</th>
-                <th scope="col">Coverage</th>
+                <th scope="col">Measured</th>
                 <th scope="col">Confidence</th>
-                <th scope="col">Gate</th>
+                <th scope="col">Result</th>
               </tr>
             </thead>
             <tbody>
@@ -94,9 +95,9 @@
                 <tr>
                   <td><span title={d.key}>{d.name}</span></td>
                   <td>{d.status}</td>
-                  <td>{d.observed} / {d.measurable}{d.basis ? ` ${d.basis}` : ''}</td>
+                  <td>{basisText(d)}</td>
                   <td>{d.confidence}</td>
-                  <td>{d.gate}</td>
+                  <td>{resultWord(d.gate)}</td>
                 </tr>
               {/each}
             </tbody>
