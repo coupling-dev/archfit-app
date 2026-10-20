@@ -445,6 +445,11 @@ details.fold:not([open]) > summary { border-bottom: 0; }
 .cycle-drawing .arrow.existing { stroke: var(--fg-muted); }
 .cycle-drawing .arrowhead path { fill: var(--danger); }
 .cycle-drawing .arrowhead.existing path { fill: var(--fg-muted); }
+.cycle-legend { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px; font-size: 12px; color: var(--fg-muted); }
+.cycle-legend li { display: flex; align-items: center; gap: 6px; }
+.cycle-legend .swatch { display: inline-block; width: 20px; height: 2px; background: var(--danger); }
+.cycle-legend .swatch.added { height: 4px; }
+.cycle-legend .swatch.existing { background: var(--fg-muted); }
 .cycle-drawing .arrow-label {
   fill: var(--fg); font-size: 12px; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round;
 }

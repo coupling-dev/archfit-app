@@ -395,19 +395,9 @@ func engineDecision(p Publication) []string {
 	if r == nil || suspended(p.Outcome) {
 		return nil
 	}
-	gates := map[string]string{"pass": "hard gates pass", "fail": "hard gates fail", "unmeasured": "hard gates not measured"}
-	gate, ok := gates[r.Decision.HardGates]
-	if !ok {
-		gate = "hard gates " + text(r.Decision.HardGates)
-	}
-	n := r.Decision.ActiveBlockers
-	line := fmt.Sprintf("- Engine verdict **%s**: %s, %d active %s", strings.ReplaceAll(text(r.Verdict), "_", " "), gate, n, plural(n, "blocker", "blockers"))
-	if u := len(r.Decision.UnevaluatedRequiredRules); u > 0 {
-		line += fmt.Sprintf(", %d required %s not evaluated", u, plural(u, "rule", "rules"))
-	} else {
-		line += ", every required rule evaluated"
-	}
-	lines := []string{line}
+	// Decode admits only the engine's verdict and hard-gate values, so the words need no escaping.
+	verdict, detail := report.EngineVerdict(*r)
+	lines := []string{fmt.Sprintf("- Engine verdict **%s**: %s", text(verdict), detail)}
 	if advisory(p) {
 		lines = append(lines, "- The gate is advisory for this repository: the engine's verdict does not block merging.")
 	}

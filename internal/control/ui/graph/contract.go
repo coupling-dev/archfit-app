@@ -97,6 +97,8 @@ type LinkFinding struct {
 	From   string `json:"from"`
 	To     string `json:"to"`
 	RuleID string `json:"rule_id"`
+	Rule   string `json:"rule"` // the readable name, as on the pull request page and the comment
+	Meta   string `json:"meta"` // severity and status, as there
 	Kind   string `json:"kind"`
 	Status string `json:"status"`
 	Why    string `json:"why"`
@@ -279,7 +281,7 @@ func Build(rep report.Report, policyText []byte) View {
 	for p, fs := range byPair {
 		slices.SortStableFunc(fs, func(a, b report.Finding) int { return rank(findingStatus(b)) - rank(findingStatus(a)) })
 		for i, f := range fs[:min(len(fs), findingsPerLink)] {
-			lf := LinkFinding{From: p.from, To: p.to, RuleID: f.RuleID, Kind: f.Kind, Status: f.Status, Why: clip(report.ReadableWhy(f.Why))}
+			lf := LinkFinding{From: p.from, To: p.to, RuleID: f.RuleID, Rule: report.RuleName(f.RuleID), Meta: report.FindingMeta(f), Kind: f.Kind, Status: f.Status, Why: clip(report.ReadableWhy(f.Why))}
 			if i == findingsPerLink-1 {
 				lf.More = len(fs) - findingsPerLink
 			}

@@ -702,3 +702,31 @@ func TestSplitCovered(t *testing.T) {
 		})
 	}
 }
+
+func TestEngineVerdictInTheCommentsWords(t *testing.T) {
+	cases := []struct {
+		name            string
+		r               Report
+		verdict, detail string
+	}{
+		{"blocked", Report{Verdict: "blocked", Decision: Decision{HardGates: "fail", ActiveBlockers: 2}},
+			"blocked", "hard gates fail, 2 active blockers, every required rule evaluated"},
+		{"one blocker", Report{Verdict: "blocked", Decision: Decision{HardGates: "fail", ActiveBlockers: 1}},
+			"blocked", "hard gates fail, 1 active blocker, every required rule evaluated"},
+		{"failed without a blocker", Report{Verdict: "blocked", Decision: Decision{HardGates: "fail"}},
+			"blocked", "hard gates fail, 0 active blockers, every required rule evaluated"},
+		{"unevaluated", Report{Verdict: "needs_attention", Decision: Decision{HardGates: "unmeasured",
+			UnevaluatedRequiredRules: []UnevaluatedRule{{RuleID: "a"}, {RuleID: "b"}}}},
+			"needs attention", "hard gates not measured, 0 active blockers, 2 required rules not evaluated"},
+		{"healthy", Report{Verdict: "healthy", Decision: Decision{HardGates: "pass"}},
+			"healthy", "hard gates pass, 0 active blockers, every required rule evaluated"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			v, d := EngineVerdict(c.r)
+			if v != c.verdict || d != c.detail {
+				t.Errorf("EngineVerdict = %q, %q; want %q, %q", v, d, c.verdict, c.detail)
+			}
+		})
+	}
+}

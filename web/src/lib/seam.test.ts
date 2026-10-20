@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GLink } from './graph';
-import { crossesWord, crossingWord, decisionWord, flaggedSummary, flagWord, quadrantWord } from './seam';
+import { crossesWord, crossingWord, flaggedSummary, flagWord, quadrantWord } from './seam';
 
 const link = (more: Partial<GLink> = {}): GLink => ({
   from: 'a',
@@ -31,7 +31,7 @@ describe('seam words', () => {
     ['deploy_unit', 'deploy-unit boundary'],
     ['ownership', 'owner boundary'],
     ['module_boundary', 'module boundary'],
-    ['declared_external', 'module boundary'],
+    ['declared_external', 'external-system boundary'],
     ['', ''],
   ])('names the %s crossing as the engine gate does', (crossing, want) => {
     expect(crossingWord(crossing)).toBe(want);
@@ -68,16 +68,5 @@ describe('seam words', () => {
     expect(flaggedSummary([flagged('module_boundary'), flagged('deploy_unit'), flagged('ownership')])).toBe(
       '3 dependencies couple strongly across a module boundary at high volatility; 1 of them across a deploy unit, a distributed monolith.',
     );
-  });
-
-  it.each([
-    ['fail', 4, 'hard gates failed on 4 findings.'],
-    ['fail', 1, 'hard gates failed on 1 finding.'],
-    ['fail', 0, 'hard gates failed without a blocking finding; the archfit/state check says why.'],
-    ['unmeasured', 0, 'hard gates could not be measured; the archfit/state check lists what is missing.'],
-    ['pass', 0, ''],
-    ['later', 2, ''],
-  ])('states hard gates %s with %d blockers', (hard_gates, blockers, want) => {
-    expect(decisionWord({ hard_gates, blockers })).toBe(want);
   });
 });

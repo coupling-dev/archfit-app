@@ -889,7 +889,8 @@ func TestPullPageStatesTheEngineDecision(t *testing.T) {
 
 	t.Run("as the pilot's report gives it", func(t *testing.T) {
 		b := read(t, doc)
-		want := decisionJSON{HardGates: "fail", Blockers: 4, Unevaluated: []report.UnevaluatedRule{}, OriginReasons: []string{}}
+		want := decisionJSON{Verdict: "blocked", Detail: "hard gates fail, 4 active blockers, every required rule evaluated",
+			HardGates: "fail", Blockers: 4, Unevaluated: []report.UnevaluatedRule{}, OriginReasons: []string{}}
 		if b.Decision == nil || !reflect.DeepEqual(*b.Decision, want) {
 			t.Errorf("decision = %+v, want %+v", b.Decision, want)
 		}

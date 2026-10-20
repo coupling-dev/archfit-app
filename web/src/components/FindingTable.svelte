@@ -1,5 +1,6 @@
 <script lang="ts">
-  // A group that never blocks (advisories, accepted debt): one fold, a table, then each distinct reason once.
+  // A group that never blocks (advisories, accepted debt, fixed issues): one fold, a table, then each distinct reason
+  // once. moves: the engine's balancing move is offered for live advisories only, never for accepted or fixed debt.
   import type { Finding } from '../lib/api';
   import { ownerDecisionTitle } from '../lib/seam';
   import Locations from './Locations.svelte';
@@ -11,7 +12,10 @@
     count,
     rows,
     compared,
-  }: { id: string; title: string; count: number; rows: Finding[]; compared: boolean } = $props();
+    moves = false,
+  }: { id: string; title: string; count: number; rows: Finding[]; compared: boolean; moves?: boolean } = $props();
+
+  const coupling = $derived(rows.some((f) => f.strength || f.distance || f.volatility));
 
   const reasons = $derived.by(() => {
     const seen: Record<string, true> = {}; // a local, not state: a plain record
@@ -20,7 +24,7 @@
       for (const [label, text] of [
         ['Why', f.why],
         ['Fix', f.fix],
-        ['Suggested move', f.move ? `${f.move}.` : ''],
+        ['Suggested move', moves && f.move ? `${f.move}.` : ''],
       ]) {
         const key = `${f.rule_id}\u0000${label}\u0000${text}`;
         if (text && !seen[key]) {
@@ -43,6 +47,11 @@
           <th scope="col">Dependency</th>
           {#if compared}<th scope="col">This PR</th>{/if}
           <th scope="col">Where</th>
+          {#if coupling}
+            <th scope="col">Strength</th>
+            <th scope="col">Distance</th>
+            <th scope="col">Volatility</th>
+          {/if}
         </tr>
       </thead>
       <tbody>
@@ -59,6 +68,11 @@
             </td>
             {#if compared}<td><Origin origin={f.origin} /></td>{/if}
             <td><Locations locations={f.locations} /></td>
+            {#if coupling}
+              <td>{f.strength}</td>
+              <td>{f.distance}</td>
+              <td>{f.volatility}</td>
+            {/if}
           </tr>
         {/each}
       </tbody>

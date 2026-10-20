@@ -115,7 +115,7 @@
       {#if !body.pulls_error && body.pulls}
         <div>
           <span class="n">{pullsToSee}</span>
-          <span class="t">Open pull {pullsToSee === 1 ? 'request needs' : 'requests need'} attention</span>
+          <span class="t">Open pull {pullsToSee === 1 ? 'request' : 'requests'} not healthy</span>
           <span class="s">{body.pulls_more ? `among the ${body.pulls.length} listed` : 'archfit/state not healthy'}</span>
         </div>
       {/if}

@@ -7,6 +7,13 @@
   // Marker IDs must be unique on the page, which can hold several cycles.
   const id = `cycle-${Math.random().toString(36).slice(2, 8)}`;
   const kinds = ['added', 'existing', 'cycle'] as const;
+  // The legend names only the kinds of arrow drawn.
+  const meaning: Record<(typeof kinds)[number], string> = {
+    added: 'added by this PR',
+    existing: 'existed before',
+    cycle: 'in the cycle; wider = more locations',
+  };
+  const shown = $derived(kinds.filter((k) => drawing.arrows.some((a) => a.kind === k)));
 </script>
 
 <div class="cycle-drawing">
@@ -49,4 +56,7 @@
       </g>
     {/each}
   </svg>
+  <ul class="cycle-legend" aria-label="Legend">
+    {#each shown as kind (kind)}<li><i class="swatch {kind}" aria-hidden="true"></i>{meaning[kind]}</li>{/each}
+  </ul>
 </div>
