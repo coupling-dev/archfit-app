@@ -351,6 +351,7 @@ review, owner approval, merged.
   (`#L12`) opens the policy at that line.
 - The editor has YAML highlighting, line numbers, folding, undo and search (Ctrl+F or Cmd+F). Tab is not an indent:
   it moves to the next control, as YAML takes no tabs.
+- The editor has a fixed height and scrolls on its own, so the buttons stay close on a long policy.
 - **Save**, **Ready for review** and the AI box need `write` permission. With `read`, the page shows the policy and
   **Check** only.
 - **Ready for review** needs the edits saved first. Leaving the page with unsaved edits asks first.

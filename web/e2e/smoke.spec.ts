@@ -236,7 +236,16 @@ const pull = {
       confidence: 'medium',
       gate: 'pass',
     },
-    { key: 'drift', name: 'Drift', status: 'unmeasured', observed: 0, measurable: 0, basis: '', confidence: 'low', gate: 'not_applicable' },
+    {
+      key: 'drift',
+      name: 'Drift',
+      status: 'unmeasured',
+      observed: 0,
+      measurable: 0,
+      basis: '',
+      confidence: 'low',
+      gate: 'not_applicable',
+    },
   ],
   unknowns: [{ dimension: 'Coupling', fact: 'coupling volatility', reason: 'volatility is undeclared' }],
   tasks: '[\n  {"id": "t1"}\n]',
@@ -617,7 +626,9 @@ test('pull request: the cycle drawn as on the comment, then the other findings',
   await expect(cycle.getByText('Fix:')).toBeVisible();
   // an advisory on a violation's dependency joins its row, as on the comment
   await expect(cycle.getByRole('columnheader', { name: 'Also reported as' })).toBeVisible();
-  await expect(cycle.getByRole('row', { name: /pkg_chaos → pkg_container/ })).toContainText('Imbalanced coupling · critical');
+  await expect(cycle.getByRole('row', { name: /pkg_chaos → pkg_container/ })).toContainText(
+    'Imbalanced coupling · critical',
+  );
   await expect(page.getByText('Go through the repository.')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Graph' })).toHaveAttribute('href', '/r/acme/app/pull/4/graph');
   await expect(page.locator('#decision')).toContainText('Engine decision: hard gates failed on 3 findings.');
@@ -776,7 +787,11 @@ test('graph: the incomplete banner shows only when the report says it is', async
 });
 
 test('graph: a repository with only accepted debt has no problems and draws it faint', async ({ page }) => {
-  const calm = { ...view, incomplete: false, links: view.links.filter((l) => l.status === 'accepted' || l.status === 'allowed') };
+  const calm = {
+    ...view,
+    incomplete: false,
+    links: view.links.filter((l) => l.status === 'accepted' || l.status === 'allowed'),
+  };
   await open(page, '/r/acme/app/graph', { graph: { ...repoGraph, view: calm } });
   const problems = page.getByRole('region', { name: /Problems/ });
   await expect(problems.getByText('No violation or advisory is shown.')).toBeVisible();
@@ -902,7 +917,9 @@ test('policy: the editor under the CSP, with the problems as a list and as marks
   );
   await expect(page.getByText('Checked by Archfit (current step)')).toBeAttached();
   // the AI box is under the editor: the toolbar takes the user to it
-  await expect(page.locator('#policy-hint')).toHaveText('Check validates the schema. The Archfit check on the draft pull request validates the rest.');
+  await expect(page.locator('#policy-hint')).toHaveText(
+    'Check validates the schema. The Archfit check on the draft pull request validates the rest.',
+  );
   await page.getByRole('button', { name: 'Ask AI for a proposal' }).click();
   await expect(page.getByRole('textbox', { name: 'Instruction' })).toBeFocused();
   await expectClean(page);
@@ -1055,7 +1072,48 @@ test('error page: the server sentence, no repository tabs, under the CSP', async
   await expectClean(page);
 });
 
-test('every page links the third-party licences', async ({ page }) => {
-  await open(page, '/r/acme/app');
-  await expect(page.getByRole('link', { name: 'Third-party licences' })).toHaveAttribute('href', '/licenses.txt');
+const everyPage = [
+  '/',
+  '/r/acme/app',
+  '/r/acme/app/pull/4',
+  '/r/acme/app/graph',
+  '/r/acme/app/pull/4/graph',
+  '/r/acme/app/data-sharing',
+  '/r/acme/app/policy',
+];
+
+test('every page: content at most 1280px and centred, the licences in the footer', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  for (const path of everyPage) {
+    await page.unrouteAll();
+    await open(page, path);
+    await expect(page.getByRole('link', { name: 'Third-party licences' })).toHaveAttribute('href', '/licenses.txt');
+    for (const box of [await page.locator('main').boundingBox(), await page.locator('footer').boundingBox()]) {
+      expect(box!.width, path).toBeLessThanOrEqual(1280);
+      expect(Math.abs(box!.x - (1600 - box!.x - box!.width)), path).toBeLessThanOrEqual(1);
+    }
+  }
+});
+
+test('every page: no sideways scroll at phone width', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const path of everyPage) {
+    await page.unrouteAll();
+    await open(page, path);
+    await expect(page.locator('footer')).toBeVisible();
+    const width = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(width, path).toBeLessThanOrEqual(390);
+  }
+});
+
+test('policy: a long policy scrolls inside the editor, and a line link scrolls to it', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const content = ['version: 2', 'rules: []', ...Array.from({ length: 200 }, (_, i) => `# note ${i}`)].join('\n');
+  await open(page, '/r/acme/app/policy#L150', { policy: { content } });
+  const editor = page.locator('.editor .cm-editor');
+  await expect(page.locator('.cm-activeLine')).toHaveText('# note 147');
+  await expect(page.locator('.cm-activeLine')).toBeInViewport();
+  expect((await editor.boundingBox())!.height).toBeLessThanOrEqual(800 * 0.6 + 1);
+  const scroller = await page.locator('.editor .cm-scroller').evaluate((e) => [e.scrollHeight, e.clientHeight]);
+  expect(scroller[0]).toBeGreaterThan(scroller[1]);
 });
