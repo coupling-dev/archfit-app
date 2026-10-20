@@ -951,30 +951,45 @@ func TestPullPageStatesTheEngineDecision(t *testing.T) {
 // The pull request page and its graph read their parts side by side, yet each part fails the answer exactly as when
 // they were read in turn.
 func TestPullPartsFailAsWhenReadInTurn(t *testing.T) {
-	baseSettings, download := "File release:"+settings.Path, "ArtifactByID"
+	baseSettings, listing, download := "File release:"+settings.Path, "ArtifactID", "ArtifactByID"
 	tests := []struct {
-		name string
-		path string
-		fail map[string]error
-		want int
+		name     string
+		path     string
+		fail     map[string]error
+		want     int
+		coldOnly bool // a warm page has the report in its cache, so it downloads nothing
 	}{
-		{"settings of the base", "/pulls/4", map[string]error{baseSettings: api.ErrRateLimited}, http.StatusServiceUnavailable},
-		{"the report", "/pulls/4", map[string]error{download: api.ErrRateLimited}, http.StatusServiceUnavailable},
-		{"both, the settings' first", "/pulls/4", map[string]error{baseSettings: api.ErrRateLimited, download: errors.New("boom")}, http.StatusServiceUnavailable},
-		{"the policy of the head", "/pulls/4/graph", map[string]error{"File " + sha(4) + ":" + policy.PolicyPath: api.ErrRateLimited}, http.StatusServiceUnavailable},
-		{"the policy of the base, once the head's is the report's", "/pulls/4/graph", map[string]error{"File release:" + policy.PolicyPath: api.ErrRateLimited}, http.StatusOK},
+		{"settings of the base", "/pulls/4", map[string]error{baseSettings: api.ErrRateLimited}, http.StatusServiceUnavailable, false},
+		{"the report's listing", "/pulls/4", map[string]error{listing: api.ErrRateLimited}, http.StatusServiceUnavailable, false},
+		{"the report's download", "/pulls/4", map[string]error{download: api.ErrRateLimited}, http.StatusServiceUnavailable, true},
+		{"both, the settings' first", "/pulls/4", map[string]error{baseSettings: api.ErrRateLimited, listing: errors.New("boom")}, http.StatusServiceUnavailable, false},
+		{"the check", "/pulls/4", map[string]error{"CheckRuns": api.ErrRateLimited}, http.StatusServiceUnavailable, false},
+		{"the policy of the head", "/pulls/4/graph", map[string]error{"File " + sha(4) + ":" + policy.PolicyPath: api.ErrRateLimited}, http.StatusServiceUnavailable, false},
+		{"the policy of the base, once the head's is the report's", "/pulls/4/graph", map[string]error{"File release:" + policy.PolicyPath: api.ErrRateLimited}, http.StatusOK, false},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			e := newEnv(t)
-			pull := e.gh.pulls[repoName+"#4"]
-			pull.BaseRef = "release"
-			e.gh.pulls[repoName+"#4"] = pull
-			e.checkPull(prArtifact(t, prPolicy))
-			e.gh.setFile(repoName, sha(4), policy.PolicyPath, prPolicy)
-			maps.Copy(e.gh.fail, tt.fail)
-			wantStatus(t, e.as("alice", permRead).get("/api/repos/"+repoName+tt.path), tt.want)
-		})
+		// Warm, the first request left its hint: the same reads are made ahead, and must fail the page the same way.
+		for _, warm := range []bool{false, true} {
+			if warm && tt.coldOnly {
+				continue
+			}
+			t.Run(fmt.Sprintf("%s, warm %v", tt.name, warm), func(t *testing.T) {
+				e := newEnv(t)
+				c := e.as("alice", permRead)
+				pull := e.gh.pulls[repoName+"#4"]
+				pull.BaseRef = "release"
+				e.gh.pulls[repoName+"#4"] = pull
+				e.checkPull(prArtifact(t, prPolicy))
+				e.gh.setFile(repoName, sha(4), policy.PolicyPath, prPolicy)
+				if warm {
+					wantStatus(t, c.get("/api/repos/"+repoName+tt.path), http.StatusOK)
+				}
+				e.gh.mu.Lock()
+				maps.Copy(e.gh.fail, tt.fail)
+				e.gh.mu.Unlock()
+				wantStatus(t, c.get("/api/repos/"+repoName+tt.path), tt.want)
+			})
+		}
 	}
 }
 

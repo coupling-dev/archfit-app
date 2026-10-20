@@ -74,11 +74,28 @@ func TestStaleHintIsReadAgain(t *testing.T) {
 				e.nameRun(sha(5), 89, prArtifact(t, policyText))
 			}, 89, false},
 			{"the check names another run", func(e *env) { e.nameRun(sha(4), 89, prArtifact(t, policyText)) }, 89, false},
+			// A read made ahead with a stale parameter fails: its error is not the page's.
+			{"the head moved, its old check fails", func(e *env) {
+				e.gh.pulls[repoName+"#4"] = withHead(e.gh.pulls[repoName+"#4"], sha(5))
+				e.nameRun(sha(5), 89, prArtifact(t, policyText))
+				e.gh.fail["CheckRuns "+sha(4)+"#"+checkState] = api.ErrRateLimited
+			}, 89, false},
+			{"the check names another run, the old run's listing fails", func(e *env) {
+				e.nameRun(sha(4), 89, prArtifact(t, policyText))
+				e.gh.fail["ArtifactID 88 "+reportArtifact] = api.ErrRateLimited
+			}, 89, false},
 			{"the base moved", func(e *env) {
 				p := e.gh.pulls[repoName+"#4"]
 				p.BaseRef = "develop"
 				e.gh.pulls[repoName+"#4"] = p
 				e.gh.setFile(repoName, "develop", settings.Path, required)
+			}, 88, true},
+			{"the base moved, the old base's settings fail", func(e *env) {
+				p := e.gh.pulls[repoName+"#4"]
+				p.BaseRef = "develop"
+				e.gh.pulls[repoName+"#4"] = p
+				e.gh.setFile(repoName, "develop", settings.Path, required)
+				e.gh.fail["File "+mainBranch+":"+settings.Path] = api.ErrRateLimited
 			}, 88, true},
 		}
 		for _, tt := range tests {
@@ -111,6 +128,15 @@ func TestStaleHintIsReadAgain(t *testing.T) {
 				e.gh.setFile(repoName, mainBranch, settings.Path, strings.Replace(settingsText, workflow, other, 1))
 				e.gh.addRun(repoName, other, mainBranch, newer)
 			}},
+			{"a newer run, the old run's listing fails", func(e *env) {
+				e.gh.addRun(repoName, workflow, mainBranch, newer)
+				e.gh.fail["ArtifactID 77 "+reportArtifact] = api.ErrRateLimited
+			}},
+			{"another workflow, the old one's latest run fails", func(e *env) {
+				e.gh.setFile(repoName, mainBranch, settings.Path, strings.Replace(settingsText, workflow, other, 1))
+				e.gh.addRun(repoName, other, mainBranch, newer)
+				e.gh.fail["LatestRun "+workflow+"@"+mainBranch+" event=push status=success"] = api.ErrRateLimited
+			}},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -135,6 +161,42 @@ func TestStaleHintIsReadAgain(t *testing.T) {
 			})
 		}
 	})
+}
+
+// The pull request graph reads the policy texts again at the fresh head: the hinted head's text is not this report's.
+func TestStaleHintReadsThePolicyAgain(t *testing.T) {
+	e := newEnv(t)
+	c := e.as("alice", permRead)
+	e.checkPull(prArtifact(t, prPolicy))
+	e.gh.setFile(repoName, sha(4), policy.PolicyPath, prPolicy)
+	wantStatus(t, c.get("/api/repos/"+repoName+"/pulls/4/graph"), http.StatusOK)
+
+	e.gh.pulls[repoName+"#4"] = withHead(e.gh.pulls[repoName+"#4"], sha(5))
+	e.nameRun(sha(5), 89, prArtifact(t, policyText))
+	e.gh.setFile(repoName, sha(5), policy.PolicyPath, policyText)
+	var got graphJSON
+	c.getJSON("/api/repos/"+repoName+"/pulls/4/graph", &got)
+	if !strings.Contains(got.PolicyHref, "/blob/"+sha(5)+"/") || got.StaleReason != "" {
+		t.Errorf("policy %q, stale %q; want the text at the new head, current", got.PolicyHref, got.StaleReason)
+	}
+}
+
+// Warm, every read is made ahead, and each fails the page as it did when read in turn.
+func TestWarmLatestReportFailsAsInTurn(t *testing.T) {
+	for _, fail := range []string{"File " + mainBranch + ":" + settings.Path, "LatestRun", "ArtifactID"} {
+		for _, path := range []string{"/findings", "/graph"} {
+			t.Run(fail+" "+path, func(t *testing.T) {
+				e := newEnv(t)
+				c := e.as("alice", permRead)
+				e.publishReport(repoName, artifact(t, "healthy"))
+				wantStatus(t, c.get("/api/repos/"+repoName+path), http.StatusOK)
+				e.gh.mu.Lock()
+				e.gh.fail[fail] = api.ErrRateLimited
+				e.gh.mu.Unlock()
+				wantStatus(t, c.get("/api/repos/"+repoName+path), http.StatusServiceUnavailable)
+			})
+		}
+	}
 }
 
 func withHead(p api.Pull, head string) api.Pull {
