@@ -195,7 +195,7 @@ export function problemRows(
         r !== l &&
         !listed.has(r) &&
         r.status === l.status &&
-        r.accepted === l.accepted && // one row, one word: gate debt and an accepted advisory stay two rows
+        (l.status !== 'accepted' || r.accepted === l.accepted) && // gate debt and an accepted advisory stay two rows
         r.from === l.to &&
         r.to === l.from,
     );

@@ -172,7 +172,7 @@ func Build(rep Report, policy []byte) View
    rules. The full order, used for duplicate seams too, is the engine's: `violation` > `accepted` > `advisory` >
    `allowed` > `observed`. `Accepted` is `violation` when a seam of the pair carries the engine's `accepted` (accepted
    gate debt, also when its finding names the pair by endpoint path only) or an accepted `gate` finding names the
-   pair, else `advisory` when an accepted one does, else `""`.
+   pair, else `advisory` when an accepted one does, else `""`; always `""` on a link whose `Status` is not `accepted`.
 5. A finding that gives a status to a pair without a seam still yields a link, `Count` 0 **[default]**: a violation or
    accepted debt is never hidden because the seam list is incomplete. A fixed finding yields no link.
 6. A link endpoint that the policy does not declare gets a node with that name, empty `Layer`, `PolicyLine` 0.
@@ -616,7 +616,7 @@ Nothing is mocked.
   **Scenario**: accepted findings on `observed` and `allowed` seams, a new advisory, and report.Group of the same report;
   then an active gate finding and a `violation` seam on one accepted pair.
   **Expected behavior**: the accepted links are exactly the pairs of report.Group's Accepted; then that pair is a
-  violation.
+  violation that accepts nothing (`Accepted` `""`).
 - **Test name**: `TestFindingWithoutSeamStillDraws`
   **Scenario**: gate/new on `ui → db`, gate/baseline on `api → ui`, advisory/new on `db → api` and gate/fixed on `db → ui`,
   with no seams.

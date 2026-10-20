@@ -191,6 +191,13 @@ func Build(rep report.Report, policyText []byte) View {
 		}
 	}
 
+	// Accepted names what an accepted link accepts: a link a violation outranks accepts nothing.
+	for _, l := range links {
+		if l.Status != StatusAccepted {
+			l.Accepted = ""
+		}
+	}
+
 	nodes := make(map[string]Node, len(defs))
 	for _, d := range defs {
 		if _, dup := nodes[d.Name]; dup {

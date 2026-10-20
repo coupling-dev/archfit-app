@@ -128,8 +128,11 @@ describe('problemRows', () => {
       link('b', 'a', 'accepted', 1, { accepted: 'violation' }),
       link('c', 'd', 'accepted', 2, { accepted: 'advisory' }),
       link('d', 'c', 'accepted', 1, { accepted: 'advisory' }),
+      link('x', 'y', 'violation', 3, { accepted: 'violation' }), // a subtype on a violation never splits its cycle
+      link('y', 'x', 'violation', 1),
     ];
     expect(problemRows(debt, false, false, all).map((r) => [r.link.from, r.back?.from ?? ''])).toEqual([
+      ['x', 'y'],
       ['a', ''],
       ['c', 'd'],
       ['b', ''],

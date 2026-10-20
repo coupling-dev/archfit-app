@@ -538,8 +538,8 @@ func TestGraphAcceptsWhatTheOverviewCounts(t *testing.T) {
 	rep.Findings = append(rep.Findings, finding("gate", "new", "api", "db"))
 	rep.Seams[0].Policy = "violation"
 	for _, l := range Build(rep, []byte(threeModules)).Links {
-		if l.From == "api" && l.To == "db" && l.Status != StatusViolation {
-			t.Errorf("api -> db = %q, want the violation over its accepted advisory", l.Status)
+		if l.From == "api" && l.To == "db" && (l.Status != StatusViolation || l.Accepted != "") {
+			t.Errorf("api -> db = %q accepting %q, want the violation over its accepted advisory, accepting nothing", l.Status, l.Accepted)
 		}
 	}
 }
