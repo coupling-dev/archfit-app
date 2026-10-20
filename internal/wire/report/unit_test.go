@@ -649,8 +649,31 @@ func TestKeptMatchedByAndHypothesisAreChecked(t *testing.T) {
 		{"kept matched_by key with a line break", setter(map[string]any{"before": "0\n1"}, "findings", 0, "matched_by"), "findings[0].matched_by.before"},
 		{"hypothesis with a line break", setter("a\nb", "seams", 0, "hypothesis"), "seams[0].hypothesis"},
 		{"dropped matched_by key with a line break", setter(map[string]any{"from_glob": "a\nb"}, "findings", 0, "matched_by"), ""},
+		{"locations_total with a line break", setter(map[string]any{"locations_total": "1\n2"}, "findings", 0, "matched_by"), ""},
 		{"hypothesis absent", deleter("seams", 0, "hypothesis"), ""},
 	})
+}
+
+func TestLocationsTotalIsKeptOnlyAsACount(t *testing.T) {
+	for _, tt := range []struct {
+		value string
+		kept  bool
+	}{
+		{"120", true},
+		{"0", true},
+		{"-1", false},
+		{"pkg/secret/handler.go", false},
+		{"", false},
+	} {
+		t.Run(tt.value, func(t *testing.T) {
+			doc := baseDoc(t)
+			set(t, doc, map[string]any{"locations_total": tt.value}, "findings", 0, "matched_by")
+			got, ok := mustDecode(t, encode(t, doc)).Findings[0].MatchedBy[MatchedByLocationsTotal]
+			if ok != tt.kept || (ok && got != tt.value) {
+				t.Errorf("locations_total = %q (kept %v), want kept %v", got, ok, tt.kept)
+			}
+		})
+	}
 }
 
 func TestBalancingMoveWordsAKnownHypothesisOnly(t *testing.T) {

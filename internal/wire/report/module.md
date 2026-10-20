@@ -111,7 +111,7 @@ and not in this list is a decode error.
 | Location                 | Dropped keys                                                                     |
 | ------------------------ | -------------------------------------------------------------------------------- |
 | root                     | `measurement` (`source_ref`, `history_depth`, `history_window`, `tool_versions`) |
-| `findings[]`             | `matched_by` (map of string to string; populated in real reports), except the four keys below |
+| `findings[]`             | `matched_by` (map of string to string; populated in real reports), except the five keys below |
 | `agent_tasks[]`          | `declarations` (list of syntax facts, below)                                     |
 | `dimensions.*.metrics[]` | `denominator` (`observed`, `total`), `provenance` (list of strings)              |
 | `comparison`             | `drift`, `baseline_present`, `introduced_finding_ids`, `resolved_finding_ids` (`drift` and `baseline_present` are kept on `gate_reference` only) |
@@ -130,7 +130,8 @@ and not in this list is a decode error.
   `locations_total`. A metric ratchet finding (`metric/<name>`) has no module edge; the first four keys are the only place
   that names its numbers, and the PR comment shows them as "metric <name>: before → after (threshold)". The engine lists
   at most 50 locations of a dependency finding and writes the deduplicated full count in `locations_total`, so a count
-  of locations reads the full number (`LocationsTotal`). They hold a metric name and numbers the engine computed, never
+  of locations reads the full number (`LocationsTotal`). `locations_total` is kept only as a non-negative integer;
+  any other value is dropped, never an error, and the count falls back to the listed locations. They hold a metric name and numbers the engine computed, never
   source. Every other `matched_by` key (globs, group members, cycle data) stays dropped, unchecked.
   The allow-list is closed: another key is a reviewed contract change, and is kept only when something renders it.
 - Kept from a seam: `hypothesis` (`Seam.Hypothesis`, a token, optional): the engine's balancing move, which the PR comment
@@ -779,7 +780,7 @@ the tests decode each one as the release that produced it (synthetic ones as v3.
   **Scenario**: the engine's imbalanced-coupling `Why`; another rule's; a `Why` of a similar but different shape; a bare distance token.
   **Expected behavior**: "<explanation, → as a colon> (Balanced Coupling: <band> severity)"; the other three as written (the distance token read as words).
 - **Test name**: `TestCycleWhyDescribesTheCycle`
-  **Scenario**: 2 directions between 2 modules; 5 directions among 4.
+  **Scenario**: 4 directions among 3 modules.
   **Expected behavior**: "Each of the N dependencies lies on a cycle: from its target, dependencies lead back to its source, so the M modules depend on each other."
 - **Test name**: `TestLocationsTotalIsTheEnginesFullCount`
   **Scenario**: table: 50 listed with `locations_total` 120; no key; a count below the listed ones; a value that is not a number; no locations.
@@ -866,11 +867,14 @@ the tests decode each one as the release that produced it (synthetic ones as v3.
   with the marker, and whose seam `role_expectation` has it too.
   **Expected behavior**: decodes; the marker appears nowhere in the `Report`, in its marshalled JSON, or in its `%+v` formatting.
 - **Test name**: `TestMatchedByKeepsOnlyTheAllowList`
-  **Scenario**: a finding whose `matched_by` holds `metric`, `before`, `after`, `threshold`, `from_glob` and `cycle_modules`; a seam with `hypothesis` `introduce_contract`.
-  **Expected behavior**: `Finding.MatchedBy` equals the four allow-listed keys; `Seam.Hypothesis` is `introduce_contract`; the marshalled `Report` holds no other key's value.
+  **Scenario**: a finding whose `matched_by` holds `metric`, `before`, `after`, `threshold`, `locations_total`, `from_glob` and `cycle_modules`; a seam with `hypothesis` `introduce_contract`.
+  **Expected behavior**: `Finding.MatchedBy` equals the five allow-listed keys; `Seam.Hypothesis` is `introduce_contract`; the marshalled `Report` holds no other key's value.
 - **Test name**: `TestKeptMatchedByAndHypothesisAreChecked`
-  **Scenario**: a kept `matched_by` value and a `hypothesis` with a line break; a dropped `matched_by` value with a line break; an absent `hypothesis`.
-  **Expected behavior**: the first two fail naming `findings[0].matched_by.before` and `seams[0].hypothesis`; the other two decode.
+  **Scenario**: a kept `matched_by` value and a `hypothesis` with a line break; a dropped `matched_by` value with a line break; a `locations_total` with a line break; an absent `hypothesis`.
+  **Expected behavior**: the first two fail naming `findings[0].matched_by.before` and `seams[0].hypothesis`; the other three decode.
+- **Test name**: `TestLocationsTotalIsKeptOnlyAsACount`
+  **Scenario**: `locations_total` as `120`, `0`, `-1`, a file path, and empty.
+  **Expected behavior**: only `120` and `0` are kept; the others are dropped without an error.
 - **Test name**: `TestUnknownFieldAtEveryLevel`
   **Scenario**: add one unknown key to each schema object in turn, kept and dropped ones (`producers[]`, `locations[]`, `edge.from`,
   `declarations[]`, `raw_distance`, `scores`, `measurement`).
