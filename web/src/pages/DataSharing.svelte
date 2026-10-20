@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { ApiError, explain, getJSON, postJSON, repoAPI, type DataSharing, type Session } from '../lib/api';
+  import Skeleton from '../components/Skeleton.svelte';
+  import { ApiError, explain, explainLoad, postJSON, repoAPI, type DataSharing, type Session } from '../lib/api';
+  import { firstJSON } from '../lib/early';
   import { repoPage, type Repo } from '../lib/route';
   import { allowedLine, checkWords } from '../lib/sharing';
 
@@ -14,13 +16,13 @@
 
   // load shows the state on the server; a page that cannot read it shows no state and no button.
   function load(): Promise<void> {
-    return getJSON<DataSharing>(api()).then(
+    return firstJSON<DataSharing>(api()).then(
       (b) => {
         body = b;
       },
       (e: ApiError) => {
         body = null;
-        failure ||= explain(e, here);
+        failure ||= explainLoad(e, here);
       },
     );
   }
@@ -98,7 +100,7 @@
     </section>
   {/each}
 {:else if !failure}
-  <p class="muted" aria-live="polite">Loading…</p>
+  <Skeleton rows={4} />
 {/if}
 
 <p><a href={repoPage(route.fullName)}>Back to {route.fullName}</a></p>

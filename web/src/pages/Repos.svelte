@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { explain, getJSON, type ApiError, type Repos } from '../lib/api';
+  import Skeleton from '../components/Skeleton.svelte';
+  import { explain, type ApiError, type Repos } from '../lib/api';
+  import { firstJSON } from '../lib/early';
   import { repoPage } from '../lib/route';
 
   let { here }: { here: string } = $props();
@@ -7,7 +9,7 @@
   let body = $state<Repos | null>(null);
   let failure = $state('');
 
-  getJSON<Repos>('/api/repos').then(
+  firstJSON<Repos>('/api/repos').then(
     (b) => (body = b),
     (e: ApiError) => (failure = explain(e, here)),
   );
@@ -23,7 +25,7 @@
 {#if failure}
   <p class="flash error" role="alert">{failure}</p>
 {:else if !body}
-  <p class="muted" aria-live="polite">Loading…</p>
+  <Skeleton rows={4} />
 {:else if body.repos.length === 0}
   <div class="box blankslate">
     <h3>No repository yet</h3>

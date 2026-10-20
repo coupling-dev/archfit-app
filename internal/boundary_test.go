@@ -351,10 +351,10 @@ func TestClientSuppliedInstallationIDIsIgnored(t *testing.T) {
 		t.Errorf("a body naming an installation answered %d; want 422", resp.StatusCode)
 	}
 	recordConsent(t, b, demoRepo, "source_processing", "?installation_id="+victim+"&installation="+victim)
-	if resp, _ := b.get("/r/" + demoRepo + "?installation_id=" + victim); resp.StatusCode != http.StatusOK {
-		t.Fatalf("repository page: %d", resp.StatusCode)
+	if resp, _ := b.get("/api/repos/" + demoRepo + "/overview?installation_id=" + victim); resp.StatusCode != http.StatusOK {
+		t.Fatalf("repository overview: %d", resp.StatusCode)
 	}
-	if resp, _ := b.get("/r/" + shopRepo + "?installation_id=" + fmt.Sprint(demoInstallation)); resp.StatusCode != http.StatusNotFound {
+	if resp, _ := b.get("/api/repos/" + shopRepo + "/overview?installation_id=" + fmt.Sprint(demoInstallation)); resp.StatusCode != http.StatusNotFound {
 		t.Errorf("a repository of another tenant answered %d; want 404", resp.StatusCode)
 	}
 
@@ -454,7 +454,7 @@ func TestUninstallLeavesNoKeys(t *testing.T) {
 
 	// The session outlives the installation; the tenant is gone for it too.
 	s.clock.add(2 * time.Minute)
-	if resp, _ := b.get("/r/" + demoRepo); resp.StatusCode != http.StatusNotFound {
-		t.Errorf("the repository page answered %d after the uninstall; want 404", resp.StatusCode)
+	if resp, _ := b.get("/api/repos/" + demoRepo + "/overview"); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("the repository overview answered %d after the uninstall; want 404", resp.StatusCode)
 	}
 }

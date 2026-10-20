@@ -373,7 +373,7 @@ func TestGateSurvivesControlPlaneFailure(t *testing.T) {
 		// The UI cannot be made to panic from outside; it is made to fail instead: GitHub refuses every user token.
 		w.fail(http.StatusInternalServerError, -1, func(r *http.Request) bool { return callerOf(r).user != "" })
 		s.clock.add(2 * time.Minute) // past the session's permission cache
-		if resp, _ := b.get("/r/" + demoRepo); resp.StatusCode < 500 {
+		if resp, _ := b.get("/api/repos/" + demoRepo + "/overview"); resp.StatusCode < 500 {
 			t.Fatalf("the UI answered %d while GitHub refuses user tokens; want 5xx", resp.StatusCode)
 		}
 

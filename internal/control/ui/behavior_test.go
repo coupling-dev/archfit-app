@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"reflect"
 	"regexp"
 	"slices"
@@ -37,6 +36,9 @@ func (e *env) onBranch() string {
 func allNotFound(t *testing.T, e *env, c *client) {
 	t.Helper()
 	for _, rt := range repoRoutes(repoName) {
+		if !rt.authorized() {
+			continue
+		}
 		if got := c.send(rt); got != http.StatusNotFound {
 			t.Errorf("%s %s = %d, want 404", rt.method, rt.path, got)
 		}
@@ -795,12 +797,9 @@ func TestExpiredGitHubTokenSignsOutInsteadOfBadGateway(t *testing.T) {
 		want     int
 		location string
 	}{
-		{"repository page", func(e *env) { e.gh.fail["Permission"] = rejected },
-			func(c *client) *httptest.ResponseRecorder { return c.get("/r/" + repoName + "/pull/4") },
-			http.StatusSeeOther, "/auth/login?return=" + url.QueryEscape("/r/"+repoName+"/pull/4")},
-		{"repository page with a query", func(e *env) { e.gh.fail["Permission"] = rejected },
-			func(c *client) *httptest.ResponseRecorder { return c.get("/r/" + repoName + "/policy?x=1") },
-			http.StatusSeeOther, "/auth/login?return=" + url.QueryEscape("/r/"+repoName+"/policy?x=1")},
+		{"pull request", func(e *env) { e.gh.fail["Permission"] = rejected },
+			func(c *client) *httptest.ResponseRecorder { return c.get("/api/repos/" + repoName + "/pulls/4") },
+			http.StatusUnauthorized, ""},
 		{"save", func(e *env) { e.gh.fail["Permission"] = rejected },
 			func(c *client) *httptest.ResponseRecorder { return c.postJSON(policyAPI, editOf("", "", policyText)) },
 			http.StatusUnauthorized, ""},
@@ -841,13 +840,13 @@ func TestExpiredGitHubTokenSignsOutInsteadOfBadGateway(t *testing.T) {
 	}
 
 	t.Run("other GitHub failures stay a bad gateway and keep the session", func(t *testing.T) {
-		for name, key := range map[string]string{"repository page": "Permission", "overview": "UserRepos"} {
+		for name, key := range map[string]string{"repository overview": "Permission", "overview": "UserRepos"} {
 			e := newEnv(t)
 			c := e.as("alice", permRead)
 			e.gh.fail[key] = errors.New("boom")
 			path := "/api/repos"
 			if key == "Permission" {
-				path = "/r/" + repoName
+				path = "/api/repos/" + repoName + "/overview"
 			}
 
 			res := c.get(path)

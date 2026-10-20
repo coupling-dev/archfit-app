@@ -62,9 +62,44 @@ type statusBody struct {
 
 // apiStatus is the repository overview: the default branch, open pull requests and the onboarding path.
 func (s *server) apiStatus(r *http.Request, sc scope) (any, error) {
-	progress, err := s.onboarding.Progress(r.Context(), sc.repo)
-	if err != nil {
-		return nil, err
+	// Every read starts at once, side by side. The default branch and the open pull requests count only once a report
+	// came in, which the onboarding progress tells last: they are read on the chance and dropped without one, so the
+	// page waits for the slowest read, not for their sum. Each part writes only its own variables.
+	ctx := r.Context()
+	var (
+		progress    onboarding.Progress
+		progressErr error
+		admin       bool
+		managedAI   string
+		bannerText  string
+		main        struct{ state, reason string }
+		pulls       struct {
+			rows   []pullRow
+			more   int
+			failed bool
+		}
+	)
+	together(
+		func() { progress, progressErr = s.onboarding.Progress(ctx, sc.repo) },
+		func() {
+			_, adminErr := s.sessions.Authorize(ctx, sc.user, sc.repo.FullName, permAdmin)
+			if admin = adminErr == nil; admin {
+				managedAI = s.managedAIWord(ctx, sc)
+			}
+		},
+		func() {
+			st, err := s.account.Status(ctx, sc.repo.InstallationID, s.now())
+			if err != nil {
+				slog.Warn("ui entitlement status unavailable", "installation_id", sc.repo.InstallationID)
+				return
+			}
+			bannerText = banner(st)
+		},
+		func() { main.state, main.reason = s.defaultBranchState(ctx, sc.repo) },
+		func() { pulls.rows, pulls.more, pulls.failed = s.openPulls(ctx, sc) },
+	)
+	if progressErr != nil {
+		return nil, progressErr
 	}
 	body := statusBody{
 		DefaultBranch: sc.repo.DefaultBranch,
@@ -74,6 +109,9 @@ func (s *server) apiStatus(r *http.Request, sc scope) (any, error) {
 		CanDiscover:   discoveryStep(progress),
 		PullsURL:      "https://github.com/" + sc.repo.FullName + "/pulls?q=" + url.QueryEscape("is:pr head:archfit/"),
 		ChecksURL:     "https://github.com/" + sc.repo.FullName + "/commits/" + sc.repo.DefaultBranch,
+		Admin:         admin,
+		ManagedAI:     managedAI,
+		Banner:        bannerText,
 	}
 	if d := progress.OpenDraft; d != nil {
 		body.DraftURL, body.DraftState = d.URL, draftWords[d.State]
@@ -84,36 +122,10 @@ func (s *server) apiStatus(r *http.Request, sc scope) (any, error) {
 		next = discoverNext
 	}
 	body.Next, body.NextHow = next.next, next.how
-
-	// The parts below never fail the page, each says so in its own field, and each writes only its own fields: they
-	// run side by side.
-	ctx := r.Context()
-	parts := []func(){
-		func() {
-			_, adminErr := s.sessions.Authorize(ctx, sc.user, sc.repo.FullName, permAdmin)
-			if body.Admin = adminErr == nil; body.Admin {
-				body.ManagedAI = s.managedAIWord(ctx, sc)
-			}
-		},
-		func() {
-			st, err := s.account.Status(ctx, sc.repo.InstallationID, s.now())
-			if err != nil {
-				slog.Warn("ui entitlement status unavailable", "installation_id", sc.repo.InstallationID)
-				return
-			}
-			body.Banner = banner(st)
-		},
-	}
 	if hasReport(progress.Stage) {
-		parts = append(parts,
-			func() {
-				body.MainState, body.MainReason = s.defaultBranchState(ctx, sc.repo)
-				body.MainTone = toneOf(body.MainState)
-			},
-			func() { body.Pulls, body.PullsMore, body.PullsError = s.openPulls(ctx, sc) },
-		)
+		body.MainState, body.MainReason, body.MainTone = main.state, main.reason, toneOf(main.state)
+		body.Pulls, body.PullsMore, body.PullsError = pulls.rows, pulls.more, pulls.failed
 	}
-	together(parts...)
 	return body, nil
 }
 

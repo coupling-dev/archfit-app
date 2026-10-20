@@ -5,10 +5,12 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
+	"github.com/alexei-led/archfit-app/internal/control/ui/session"
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
@@ -218,8 +220,9 @@ func (s *server) managedMode(ctx context.Context, sc scope) (offer bool, off, da
 	return false, off, dataSharing
 }
 
-// consentMoved sends the old consent page to Data sharing. It stays behind the admin check, so the redirect never
-// tells a non-administrator that the repository exists.
-func consentMoved(w http.ResponseWriter, r *http.Request, sc scope) {
-	http.Redirect(w, r, repoPath(sc, "/data-sharing"), http.StatusPermanentRedirect)
+// consentMoved sends the old consent page to Data sharing. It reads only the path, the same for every repository, so
+// the redirect never tells anyone that the repository exists; the Data sharing API then authorizes.
+func consentMoved(w http.ResponseWriter, r *http.Request, _ session.User) {
+	to := "/r/" + url.PathEscape(r.PathValue("o")) + "/" + url.PathEscape(r.PathValue("n")) + "/data-sharing"
+	http.Redirect(w, r, to, http.StatusPermanentRedirect)
 }

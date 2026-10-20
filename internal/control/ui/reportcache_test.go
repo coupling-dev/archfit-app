@@ -92,3 +92,32 @@ func TestReportCacheHitStillAuthorizes(t *testing.T) {
 		t.Errorf("artifact listings = %d: a refused request reached the report", n)
 	}
 }
+
+// The artifact listing is GitHub's answer to whether the report still exists, so it runs on every request: once the
+// artifact is gone (expired, or deleted by its owner), the page says so though the cache still holds the report.
+func TestCachedReportOfAnUnlistedArtifactIsGone(t *testing.T) {
+	e := newEnv(t)
+	c := e.as("alice", permRead)
+	e.checkPull(prArtifact(t, prPolicy))
+	e.publishReport(repoName, artifact(t, "healthy"))
+	var pull pullJSON
+	var findings repoFindingsJSON
+	c.getJSON("/api/repos/"+repoName+"/pulls/4", &pull)
+	c.getJSON("/api/repos/"+repoName+"/findings", &findings)
+	if pull.Unavailable != "" || findings.Unavailable != "" {
+		t.Fatalf("first reads: %q, %q; want both reports", pull.Unavailable, findings.Unavailable)
+	}
+
+	e.gh.mu.Lock()
+	clear(e.gh.artifacts)
+	e.gh.mu.Unlock()
+	pull, findings = pullJSON{}, repoFindingsJSON{}
+	c.getJSON("/api/repos/"+repoName+"/pulls/4", &pull)
+	c.getJSON("/api/repos/"+repoName+"/findings", &findings)
+	if pull.Unavailable != reportExpired || pull.ViolationCount != 0 {
+		t.Errorf("pull request: unavailable %q with %d violations, want %q", pull.Unavailable, pull.ViolationCount, reportExpired)
+	}
+	if findings.Unavailable != noReport || findings.ViolationCount != 0 {
+		t.Errorf("findings: unavailable %q with %d violations, want %q", findings.Unavailable, findings.ViolationCount, noReport)
+	}
+}

@@ -1,5 +1,5 @@
-// The pages of the web app. The server serves the same shell for each and has already authorized the repository of
-// a repository page.
+// The pages of the web app. The server serves the same shell for each, whatever the repository; every API read of a
+// repository page is authorized on its own.
 
 export interface Repo {
   owner: string;
@@ -35,7 +35,7 @@ export function parseRoute(pathname: string): Route {
   return { kind: graph ? 'graph' : 'repo', ...repo };
 }
 
-// repoPage is the App path of a repository page, for links; the server authorizes it again on every request.
+// repoPage is the App path of a repository page, for links; the server authorizes its reads on every request.
 export function repoPage(fullName: string, suffix = ''): string {
   const [owner, name] = fullName.split('/');
   return `/r/${encodeURIComponent(owner)}/${encodeURIComponent(name)}${suffix}`;

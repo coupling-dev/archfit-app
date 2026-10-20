@@ -413,8 +413,10 @@ interface Mock {
   pullGraph?: object;
   policy?: object; // fields of the policy page that differ from policy()
   refuseSave?: boolean; // the save is refused with the problems of the text
+  saveNotFound?: boolean; // the save answers 404, as when write access went away
   holdAssist?: Promise<void>; // the AI request answers once this settles
   serverError?: { status: number; sentence: string }; // the server answers the page as its error page
+  holdSession?: Promise<void>; // /api/session answers once this settles
 }
 
 // open answers /api in the browser from the mock, opens the page, and returns the writes the page sent. Each page records the CSP violations
@@ -433,6 +435,7 @@ async function open(page: Page, path: string, mock: Mock = {}) {
         case '/api/repos/acme/app/policy/check':
           return json(200, { diagnostics: [], notice: 'The check found no problems.' });
         case '/api/repos/acme/app/policy':
+          if (mock.saveNotFound) return json(404, { error: 'Not found.' });
           if (mock.refuseSave)
             return json(422, {
               error: 'The policy has problems, listed above the editor. Nothing was saved.',
@@ -469,6 +472,7 @@ async function open(page: Page, path: string, mock: Mock = {}) {
     if (mock.tokenRejected && url.pathname !== '/api/session') return json(401, { error: 'Sign in to continue.' });
     switch (url.pathname) {
       case '/api/session':
+        await mock.holdSession;
         return json(200, session);
       case '/api/repos':
         return json(200, repos);
@@ -966,6 +970,19 @@ test('policy: a refused save lists the problems and keeps the text', async ({ pa
   await expectClean(page);
 });
 
+test("policy: a save's 404 is a sentence on the page, and the editor keeps its text", async ({ page }) => {
+  await open(page, '/r/acme/app/policy', { saveNotFound: true });
+  const editor = page.getByRole('textbox', { name: 'Policy text, .archfit.yaml' });
+  await editor.click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' # kept');
+  await page.getByRole('button', { name: 'Save to draft PR' }).click();
+  await expect(page.getByRole('alert')).toContainText('Not found.');
+  await expect(page.getByRole('heading', { name: 'This page cannot be shown' })).toHaveCount(0);
+  await expect(editor).toContainText('# kept');
+  await expectClean(page);
+});
+
 test('policy: a reader can check but is offered no write', async ({ page }) => {
   await open(page, '/r/acme/app/policy', { policy: { can_write: false, can_ready: false, managed: { offer: false } } });
   await expect(page.getByText('Saving needs write access to acme/app.')).toBeVisible();
@@ -1059,6 +1076,35 @@ test('policy: a CRLF file is not an edit, and saves with CRLF', async ({ page })
   await page.getByRole('button', { name: 'Save to draft PR' }).click();
   await expect(page.getByRole('status')).toHaveText('Saved as a commit on the draft pull request.');
   expect(writes[0].postDataJSON().content).toBe('version: 2\r\nrules: []\r\n# edited');
+  await expectClean(page);
+});
+
+test("a repository the user cannot see reads as one that does not exist: the API's Not found, no tabs", async ({
+  page,
+}) => {
+  const shown: string[] = [];
+  for (const path of ['/r/acme/hidden', '/r/acme/missing/pull/4']) {
+    await open(page, path);
+    await expect(page.getByRole('heading', { name: 'This page cannot be shown' })).toBeVisible();
+    await expect(page.getByText('Not found.')).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Repository' })).toHaveCount(0);
+    await expect(page).toHaveTitle('Error · Archfit');
+    shown.push(await page.locator('main').innerHTML());
+  }
+  expect(shown[0]).toBe(shown[1]);
+  await expectClean(page);
+});
+
+test('a page reads its data beside the session and shows its frame at once', async ({ page }) => {
+  let release = () => {};
+  const holdSession = new Promise<void>((resolve) => (release = resolve));
+  const overview = page.waitForRequest('**/api/repos/acme/app/overview');
+  await open(page, '/r/acme/app', { holdSession });
+  await overview; // asked before the session answered
+  await expect(page.getByRole('status', { name: 'Loading' })).toBeVisible();
+  release();
+  await expect(page.getByRole('heading', { name: 'acme/app' })).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Loading' })).toHaveCount(0);
   await expectClean(page);
 });
 

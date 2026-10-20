@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"slices"
 	"strconv"
@@ -43,6 +44,62 @@ type fakeGH struct {
 	pulls     map[string]api.Pull // full name + "#" + number
 	fail      map[string]error    // method, method + " " + full name, or method + " " + the call's detail
 	calls     []ghCall
+	meet      *meeting // set before the request: the calls that must be in flight together
+}
+
+// meeting holds the first call of each key it names until every key has arrived, so reads made in turn never meet.
+// A key is a method, or a method and the call's detail as in fakeGH.fail. A read that never comes leaves the others
+// to go on after a timeout, and the meeting reports the miss.
+type meeting struct {
+	mu      sync.Mutex
+	arrived map[string]bool
+	all     chan struct{}
+	missed  bool
+}
+
+func newMeeting(keys ...string) *meeting {
+	m := &meeting{arrived: map[string]bool{}, all: make(chan struct{})}
+	for _, k := range keys {
+		m.arrived[k] = false
+	}
+	return m
+}
+
+func (m *meeting) arrive(method, detail string) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	key := ""
+	for _, k := range []string{method + " " + detail, method} {
+		if arrived, named := m.arrived[k]; named && !arrived {
+			key = k
+			break
+		}
+	}
+	if key == "" {
+		m.mu.Unlock()
+		return
+	}
+	m.arrived[key] = true
+	if !slices.Contains(slices.Collect(maps.Values(m.arrived)), false) {
+		close(m.all)
+	}
+	m.mu.Unlock()
+	select {
+	case <-m.all:
+	case <-time.After(2 * time.Second):
+		m.mu.Lock()
+		m.missed = true
+		m.mu.Unlock()
+	}
+}
+
+// met is true when every key arrived while the others were still in flight.
+func (m *meeting) met() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return !m.missed && !slices.Contains(slices.Collect(maps.Values(m.arrived)), false)
 }
 
 func newFakeGH() *fakeGH {
@@ -91,7 +148,7 @@ func (g *fakeGH) deleteFile(fullName, ref, path string) {
 func (g *fakeGH) Permission(_ context.Context, userToken, fullName string) (string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if err := g.fail["Permission"]; err != nil {
+	if err := g.record("Permission", api.RepoRef{FullName: fullName}, ""); err != nil {
 		return "", err
 	}
 	if p, ok := g.perms[userToken+" "+fullName]; ok {
@@ -128,6 +185,7 @@ func (g *fakeGH) ResolveRepo(_ context.Context, fullName string) (api.Repo, erro
 }
 
 func (g *fakeGH) File(_ context.Context, r api.RepoRef, ref, path string) ([]byte, string, error) {
+	g.meet.arrive("File", ref+":"+path)
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if err := g.record("File", r, ref+":"+path); err != nil {
@@ -146,6 +204,7 @@ func (g *fakeGH) File(_ context.Context, r api.RepoRef, ref, path string) ([]byt
 }
 
 func (g *fakeGH) BranchHead(_ context.Context, r api.RepoRef, branch string) (string, error) {
+	g.meet.arrive("BranchHead", branch)
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if err := g.record("BranchHead", r, branch); err != nil {
@@ -159,6 +218,7 @@ func (g *fakeGH) BranchHead(_ context.Context, r api.RepoRef, branch string) (st
 }
 
 func (g *fakeGH) CheckRuns(_ context.Context, r api.RepoRef, headSHA, name string) ([]api.CheckRun, error) {
+	g.meet.arrive("CheckRuns", headSHA)
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if err := g.record("CheckRuns", r, headSHA+"#"+name); err != nil {
@@ -168,6 +228,7 @@ func (g *fakeGH) CheckRuns(_ context.Context, r api.RepoRef, headSHA, name strin
 }
 
 func (g *fakeGH) PullSummary(_ context.Context, r api.RepoRef, number int) (api.Pull, error) {
+	g.meet.arrive("PullSummary", "")
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if err := g.record("PullSummary", r, strconv.Itoa(number)); err != nil {
@@ -182,6 +243,7 @@ func (g *fakeGH) PullSummary(_ context.Context, r api.RepoRef, number int) (api.
 
 // OpenPulls lists the open pull requests of a repository by number.
 func (g *fakeGH) OpenPulls(_ context.Context, r api.RepoRef) ([]api.Pull, error) {
+	g.meet.arrive("OpenPulls", "")
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if err := g.record("OpenPulls", r, ""); err != nil {
@@ -205,6 +267,7 @@ func (g *fakeGH) Dispatch(_ context.Context, r api.RepoRef, workflowPath, ref st
 
 // LatestRun filters as GitHub does: status matches a run's status or its conclusion.
 func (g *fakeGH) LatestRun(_ context.Context, r api.RepoRef, workflowPath string, f api.RunFilter) (api.WorkflowRun, error) {
+	g.meet.arrive("LatestRun", workflowPath)
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if err := g.record("LatestRun", r, fmt.Sprintf("%s@%s event=%s status=%s", workflowPath, f.Branch, f.Event, f.Status)); err != nil {
@@ -228,6 +291,7 @@ func (g *fakeGH) addRun(fullName, workflowPath, branch string, run api.WorkflowR
 
 // ArtifactID names a run's artifact by the run's ID: the fake keeps one artifact per run.
 func (g *fakeGH) ArtifactID(_ context.Context, r api.RepoRef, runID int64, name string) (int64, error) {
+	g.meet.arrive("ArtifactID", "")
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if err := g.record("ArtifactID", r, fmt.Sprintf("%d %s", runID, name)); err != nil {
@@ -435,9 +499,11 @@ type fakeOnboarding struct {
 	startErr error
 	customer []startCall
 	managed  []startCall
+	meet     *meeting // as fakeGH.meet, under the key "Progress"
 }
 
 func (o *fakeOnboarding) Progress(context.Context, api.Repo) (onboarding.Progress, error) {
+	o.meet.arrive("Progress", "")
 	if o.panics {
 		panic("boom")
 	}

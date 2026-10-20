@@ -52,8 +52,9 @@ func pullNumber(r *http.Request) (int, bool) {
 // readPull reads the pull request, the archfit/state check on its head, and the report of the run that check names.
 // The pull request page and its graph both read through it, so they always show the same report. It never returns a
 // report that does not match the check: the digest in the check's external_id must be the report's. The report is nil
-// when Unavailable says why there is none.
-func (s *server) readPull(ctx context.Context, sc scope, number int) (pullBody, *report.Report, error) {
+// when Unavailable says why there is none. Each of also runs side by side with those reads, once the pull request is
+// known, for a read that needs only the pull request.
+func (s *server) readPull(ctx context.Context, sc scope, number int, also ...func(api.Pull)) (pullBody, *report.Report, error) {
 	pull, err := s.gh.pulls.PullSummary(ctx, sc.repo.RepoRef, number)
 	if err != nil {
 		return pullBody{}, nil, err
@@ -68,7 +69,7 @@ func (s *server) readPull(ctx context.Context, sc scope, number int) (pullBody, 
 		body        pullBody
 		rep         *report.Report
 	)
-	together(func() {
+	reads := []func(){func() {
 		// The gate reads the settings on the pull request's base, as the published checks do; a base without them is
 		// advisory.
 		raw, _, err := s.gh.files.File(ctx, sc.repo.RepoRef, pull.BaseRef, settings.Path)
@@ -81,7 +82,11 @@ func (s *server) readPull(ctx context.Context, sc scope, number int) (pullBody, 
 			settingsErr = err
 			cancel()
 		}
-	}, func() { body, rep, err = s.pullReport(ctx, sc, pull) })
+	}, func() { body, rep, err = s.pullReport(ctx, sc, pull) }}
+	for _, fn := range also {
+		reads = append(reads, func() { fn(pull) })
+	}
+	together(reads...)
 	if settingsErr != nil {
 		return pullBody{}, nil, settingsErr
 	}

@@ -17,7 +17,8 @@ could still work GitHub-first, but onboarding, schema-guided editing and consent
 - Serve the web app (`web/`, Svelte 5 built by Vite, embedded from `spa/`) for the overview, the repository page,
   the pull request page, both graph pages, Data sharing and the policy editor, and its JSON API under `/api/`. ui
   renders no HTML of its own: an error page is the same shell with the error's status and sentence.
-- Authenticate every request through `session` and authorize every repository page at the needed permission.
+- Authenticate every request through `session` and authorize every repository API call at the needed permission. A
+  repository page is the shell, the same for every repository, and needs only a session.
 - Overview: the user's repositories with their latest default-branch `archfit/state` check conclusion. No score.
 - Repository status: onboarding `Progress`, actions to start onboarding or dispatch discovery, entitlement banner.
 - Policy editor: load the policy into a CodeMirror 6 editor (YAML, line numbers, folding, history, search), check it
@@ -45,7 +46,13 @@ pilot; product.md leaves usability targets open.
 ## Encapsulated Knowledge
 
 - Routes, the JSON API, the web app, templates, static assets, page wording, the HTTP status mapping of every error.
-- The handler chain: recover → security headers → body limit → session → CSRF → authorize → page.
+- The handler chain: recover → security headers → body limit → session → CSRF → authorize (API) → handler.
+- How a page loads (`web/src/lib/early.ts`): its first reads (`firstPaths`, those with no input but the path) and its
+  lazy chunk start beside `/api/session`, not after it; each is authorized on its own, the page takes the answer once
+  when it mounts, and a read no page takes is dropped quietly. Until an answer comes, the frame and a grey skeleton of
+  each section (`components/Skeleton.svelte`, CSS only, still under reduced motion). A `404` from the read that fills a
+  page replaces the page with the error page's "This page cannot be shown" and no repository tabs (`explainLoad`,
+  `lib/gate.ts`); a write's `404` stays a sentence on the page, so a form or the editor keeps what the user typed.
 - The CSRF scheme: `hex(HMAC-SHA256(key = User.Token, "archfit-csrf"))` **[default]**, stateless and per session. The
   web app reads it from `/api/session` and sends it as the `X-CSRF-Token` header; the one form left, Sign out, sends
   it as the `csrf` field.
@@ -91,7 +98,11 @@ func New(d Deps) (http.Handler, error)
 
 ### Routes
 
-Minimum repository permission in brackets. `{o}/{n}` is only a lookup key for `Sessions.Authorize`.
+Minimum repository permission in brackets. `{o}/{n}` is only a lookup key for `Sessions.Authorize`. A repository page
+(`/r/…`) needs only a session: it is the shell, the same bytes for every repository, one that exists or not, visible or
+not, apart from the nonce, and it makes no GitHub call **[decided, g3]**. The repository's data and every permission
+check are in the API, which authorizes on every request; a repository the user cannot see answers its `404` exactly
+as one that does not exist, and the app shows that answer as the error page, with no repository tabs.
 
 - `GET /` — the web app's shell; the app shows the overview, or a landing page with a sign-in link when
   `/api/session` answers `401`. The shell holds no tenant data.
@@ -102,17 +113,16 @@ Minimum repository permission in brackets. `{o}/{n}` is only a lookup key for `S
   build. No sign-in needed, no tenant data.
 - `GET /assets/…` — the web app's hashed build files, `Cache-Control: public, max-age=31536000, immutable`; no
   sign-in needed, no tenant data. A folder or a missing file is `404`; nothing else of the build is served.
-- `GET /r/{o}/{n}` [read] — the shell again, after the repository is authorized, so a repository the user cannot see is
-  "Not found" before any script runs. The app fills it from the overview API.
-- `GET /r/{o}/{n}/pull/{number}` [read] — the shell for the pull request page; a number that is not a positive integer
+- `GET /r/{o}/{n}` [session] — the shell again. The app fills it from the overview API.
+- `GET /r/{o}/{n}/pull/{number}` [session] — the shell for the pull request page; a number that is not a positive integer
   answers `404` here, a number that is no pull request of the repository answers `404` from the API.
-- `GET /r/{o}/{n}/graph` [read] — the shell for the repository graph.
-- `GET /r/{o}/{n}/pull/{number}/graph` [read] — the shell for the pull request graph; the same `404` rule for the number.
-- `GET /r/{o}/{n}/data-sharing` [admin] — the shell, for the Data sharing page.
-- `GET /r/{o}/{n}/policy` [read] — the shell, for the policy editor; the app reads `?branch=` and `?since=` from its
+- `GET /r/{o}/{n}/graph` [session] — the shell for the repository graph.
+- `GET /r/{o}/{n}/pull/{number}/graph` [session] — the shell for the pull request graph; the same `404` rule for the number.
+- `GET /r/{o}/{n}/data-sharing` [session] — the shell, for the Data sharing page; its API needs admin.
+- `GET /r/{o}/{n}/policy` [session] — the shell, for the policy editor; the app reads `?branch=` and `?since=` from its
   own URL and a `#L<n>` hash selects that line.
-- `GET /r/{o}/{n}/consent` [admin] — `308` to `/r/{o}/{n}/data-sharing`. It stays behind the admin check, so for anyone
-  else it is the same `404` as a repository they cannot see.
+- `GET /r/{o}/{n}/consent` [session] — `308` to `/r/{o}/{n}/data-sharing`, from the path alone: the same answer for
+  every repository, so it confirms nothing.
 
 JSON API: every response is `application/json` with `Cache-Control: no-store` and a body of an explicit type of this
 package, never a stored record. Errors are `{"error": "<sentence>"}` with the status of the mapping below; a policy text refused by
@@ -939,8 +949,10 @@ func Render(s Settings) []byte
 - **Balanced?**: yes — contract coupling
 - **Shared knowledge**: ui downloads the artifact with `MaxBytes` as the cap, calls `Decode`, and hands the `Report` to
   `graph.Build` unread. The artifact holds the raw engine state JSON; `Decode` validates it against the engine v3.0.0/v3.0.1 state
-  schema and reduces it to the no-source form, so fields the decoder drops (measurement, `matched_by`, task
-  declarations, metric provenance, seam scores) never reach a template and ui never renders them. ui parses the artifact
+  schema and reduces it to the no-source form, so fields the decoder drops (measurement, `matched_by` but its
+  `MatchedByKeys`, task declarations, metric provenance, seam scores) never reach a template and ui never renders them.
+  Of `Finding.MatchedBy` ui reads the metric ratchet's `metric`, `before`, `after` and `threshold` (`metricSubject`)
+  and a dependency finding's `locations_total` (through `report.LocationsTotal`). ui parses the artifact
   in no other way. The artifact comes without the envelope that names its release, so ui passes the last release of
   `EngineVersions`, `v3.0.1`; both releases share one key set. The pull request page also reads the decision
   (`HardGates`, `ActiveBlockers`, `UnevaluatedRequiredRules`), `Comparison.OriginReasons`, each seam's `Hypothesis`
@@ -965,8 +977,8 @@ const MaxBytes = 5 << 20
 
 // Report is the no-source transport form of an engine state report. The decoder knows every key of the engine
 // state schema of v3.0.0 and v3.0.1: keys listed here are kept (length-capped), the other known keys are validated and dropped
-// (measurement, findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores), and any key
-// the schema does not define is a decode error.
+// (measurement, findings[].matched_by except MatchedByKeys, agent_tasks[].declarations, metric provenance, seam scores),
+// and any key the schema does not define is a decode error.
 type Report struct {
     SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
     Verdict       string               `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
@@ -1078,8 +1090,8 @@ type OAuth interface {
    calls `Sessions.End` and answers the same way.
 5. `POST` only: constant-time compare of form field `csrf` (Sign out) or header `X-CSRF-Token` (`/api/`, after the
    `application/json` check) with the token derived from `User.Token`.
-6. Repository routes: `Sessions.Authorize(user, "{o}/{n}", min)` on every request, pages and `/api/repos/{o}/{n}/…`
-   alike. The returned `Repo` is handed to the handler as an argument and is the only repository identity it may use.
+6. `/api/repos/{o}/{n}/…`: `Sessions.Authorize(user, "{o}/{n}", min)` on every request. The returned `Repo` is handed
+   to the handler as an argument and is the only repository identity it may use. A repository page stops at step 4.
 
 Every response carries an `X-Request-Id` header with the request ID of its log line **[default]**. That line, `ui request`
 at `INFO`, one per request, also carries `gh_calls` and `gh_ms`: the GitHub round trips the request made (session's
@@ -1106,11 +1118,21 @@ turn: the results are judged in the old order. A panic in a part is raised again
 others are done, so the handler chain's recover still answers `500` and the process keeps serving.
 
 - Pull request page and graph: after `PullSummary`, the settings on the base and the report (check, artifact, digest,
-  decode) at once. A settings error other than none fails the answer first, then the report's own state. The graph
-  reads the policy at the head and at the base at once: the base's text or failure counts only when the head's text is
-  not the report's.
-- Status: after `Onboarding.Progress`, the `admin` check (then the managed-AI consent), the default-branch state, the
-  open pull requests and `Account.Status` at once. None of them fails the page.
+  decode) at once; the graph reads the policy at the head and at the base beside them. A settings error other than
+  none fails the answer first, then the report's own state. The base's policy text or failure counts only when the
+  head's text is not the report's, and neither counts without a report.
+- Repository graph: the report and the policy text (the user's open draft, else the default branch) at once; the text
+  counts only once there is a report.
+- Status: `Onboarding.Progress`, the `admin` check (then the managed-AI consent), the default-branch state, the open
+  pull requests and `Account.Status` at once. The default-branch state and the pull requests count only once the
+  progress says a report came in: before one they are read on the chance and dropped, up to 23 calls (the branch head
+  and its check, the open pull requests and the check of each of up to 20) spent so the page waits for its slowest
+  read, not their sum. Only the progress fails the page.
+- The artifact listing (`ArtifactID`) runs on every request: it is GitHub's answer to whether the report still
+  exists (it expires, or its owner deletes it), so the report cache only ever replaces the download, never the
+  listing **[decided, g3]**.
+- Tests prove the overlap without timing: the fake GitHub holds the named reads until all of them are in flight, so
+  reads made in turn never meet (`TestIndependentReadsMeet`).
 
 ### Pages
 
@@ -1370,14 +1392,14 @@ their interfaces except where a test says otherwise. The clock is injected.
 - **Test name**: `TestRoutesAndMinimumPermissions`
   **Scenario**: table of every route × user permission `none`, `read`, `write`, `admin`, and not signed in.
   **Expected behavior**: `303` to login or `401` without a session (`401` JSON on `/api/`); `404` below the minimum;
-  success at and above it (`200` for a page and for every `/api/` call);
+  success at and above it (`200` for a page and for every `/api/` call); a repository page `200` for any signed-in user;
   `/schema/policy.json`, `/assets/<hashed file>` and `/licenses.txt` answer without a session, the asset with the
   immutable cache header and the licences with `no-cache`; `/static/app.css`, `/assets/`, a missing asset,
   `/index.html` and an unknown `/api/` path are `404`.
 - **Test name**: `TestExpiredGitHubTokenSignsOutInsteadOfBadGateway`
-  **Scenario**: a signed-in user whose GitHub token is rejected (`ErrUserTokenRejected`) on a repository page, a save
-  and the overview; then any other GitHub error on the same routes.
-  **Expected behavior**: the rejected token gives `303` to `/auth/login?return=<path>` (a page) or `401` JSON (`/api/`), the session cookie
+  **Scenario**: a signed-in user whose GitHub token is rejected (`ErrUserTokenRejected`) on the pull request API, a save,
+  the overview and the repository overview; then any other GitHub error on the repository overview and the overview.
+  **Expected behavior**: the rejected token gives `401` JSON, the session cookie
   deleted, outcome `signed_out`, and the next request is a plain signed-out one. Any other error stays `502` and keeps the cookie.
 - **Test name**: `TestPullPageStatesTheEngineDecision`
   **Scenario**: the pilot's PR report as captured; then with an unevaluated required rule, an attribution note and an
@@ -1395,7 +1417,11 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Expected behavior**: "no result yet"; the check title as headline, advisory mode, the violation, the no-baseline and no-attribution line, the run; the mismatch wording and no finding; the expired wording; the no-upload wording; `404`. Also: an `action_required` run over a matching old report shows the action-required wording and no finding; an undecodable report shows "report unavailable"; of two check runs the higher ID wins; "added by this PR" appears only with `origin_status: comparable` and `origin: introduced`.
 - **Test name**: `TestStatusPageShowsBranchPullsAndSetup`
   **Scenario**: stage `gate_advisory` with a default-branch check and one open pull request; stage `workflow_merged`; `OpenPulls` failing; for an administrator, `CheckRuns`, `OpenPulls`, the entitlement and the consent all failing at once; 23 more open pull requests.
-  **Expected behavior**: through `/api/repos/{o}/{n}/overview`: the default branch, its title and tone, the pull request linked to its page with its check title, the current and done steps, the rehearse advice; no pull request or state lookup before a report, also at `policy_merged`, where "First report" is not done; the ruleset advice at `gate_required`; the fixed wording and a `200`; a `200` with admin true, managed AI `unknown`, the state `unknown`, the pulls error, no banner and the steps; "4 more" and 21 `CheckRuns` calls.
+  **Expected behavior**: through `/api/repos/{o}/{n}/overview`: the default branch, its title and tone, the pull request linked to its page with its check title, the current and done steps, the rehearse advice; no pull request or state shown before a report, also at `policy_merged`, where "First report" is not done; the ruleset advice at `gate_required`; the fixed wording and a `200`; a `200` with admin true, managed AI `unknown`, the state `unknown`, the pulls error, no banner and the steps; "4 more" and 21 `CheckRuns` calls.
+- **Test name**: `TestPolicyReadFailsNothingWithoutAReport`
+  **Scenario**: the repository graph with no report and its policy read rate limited; the pull request graph with no check run
+  and both policy reads rate limited.
+  **Expected behavior**: `200` saying there is no report, and no result on the head, each without a view.
 - **Test name**: `TestPullPartsFailAsWhenReadInTurn`
   **Scenario**: a pull request on base `release`, rate limited in turn on: the settings at the base; the report download; both, the download failing with a plain error; the policy at the head (graph); the policy at the base while the head's is the report's (graph).
   **Expected behavior**: `503`; `503`; `503` (the settings' error, not the report's `502`); `503`; `200`.
@@ -1408,6 +1434,16 @@ their interfaces except where a test says otherwise. The clock is injected.
 - **Test name**: `TestPullPageAndGraphDownloadTheReportOnce`, `TestReportCacheHitStillAuthorizes`
   **Scenario**: the pull request page then its graph; a user without access after the report is cached.
   **Expected behavior**: two artifact listings, one download; `404` and no listing for the refused request.
+- **Test name**: `TestCachedReportOfAnUnlistedArtifactIsGone`
+  **Scenario**: the pull request page and the findings read once, so the cache holds both reports; then GitHub lists no
+  artifact any more.
+  **Expected behavior**: the pull request page says the report expired, the findings say there is no report, neither with a
+  finding.
+- **Test name**: `TestIndependentReadsMeet`
+  **Scenario**: the repository graph, the pull request graph and the overview, each with the fake GitHub holding its named
+  reads until all are in flight: the artifact listing and the policy text; the artifact listing and the head's policy;
+  the onboarding progress, the branch head and the open pull requests.
+  **Expected behavior**: `200`, and each set met; reads made in turn would wait out the timeout and fail.
 - **Test name**: `TestPullPageNumberMustBeAPull`, `TestPullPageReadsTheGateModeOfTheBase`
   **Scenario**: numbers `0`, `-4`, `x`, `4x`, and `5`, no pull request, on the page, the API and the graph; a pull request whose base branch requires the gate while the default branch is advisory.
   **Expected behavior**: `404` each (`5` on the page only from the API); `required` true.
@@ -1440,7 +1476,7 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Scenario**: the blocked wire fixture (`hard_gates: fail`, no baseline) as the `archfit-report` artifact of the latest default-branch run.
   **Expected behavior**: the shell answers `200`; the graph API's `view` equals `graph.Build(report, policy)`;
   `policy_href` is the editor; not stale; `incomplete`; marker strings placed in fields the decoder drops
-  (`matched_by`, measurement, task declarations) appear nowhere in the answer.
+  (a `matched_by` key outside `MatchedByKeys`, measurement, task declarations) appear nowhere in the answer.
 - **Test name**: `TestGraphPageShowsTheEngineSeamPolicy`
   **Scenario**: the unmodified capture `real-seam-policy` of the shared wire corpus as the `archfit-report` artifact.
   **Expected behavior**: the API decodes it; its `view` equals `graph.Build(report, policy)`, with links of status
@@ -1483,9 +1519,9 @@ their interfaces except where a test says otherwise. The clock is injected.
   with `managed.data_sharing` for the administrator only; with consent `managed.offer` and no reason; a reader gets
   `can_write` false and no managed state at all.
 - **Test name**: `TestOldConsentPageMovedToDataSharing`
-  **Scenario**: `GET /r/{o}/{n}/consent` as no, read, write and admin permission, and for another repository.
-  **Expected behavior**: `404` with no `Location` below admin; `308` to `/data-sharing` for an administrator; `404` for the other
-  repository.
+  **Scenario**: `GET /r/{o}/{n}/consent` with no, read and admin permission, on the user's repository, another tenant's and one
+  that does not exist.
+  **Expected behavior**: `308` to that repository's `/data-sharing` every time, with no permission lookup.
 - **Test name**: `TestOwnersRuleIsSettings`
   **Scenario**: table of submitted owners: `-alice` (a leading hyphen, which wire/settings accepts); a team; `alice` and
   `Alice`; `not a login!`; 101 owners; only blank lines. Each row is also run through `settings.Parse(settings.Render(…))`.
@@ -1498,10 +1534,17 @@ their interfaces except where a test says otherwise. The clock is injected.
 
 ### Boundary Tests
 
+- **Test name**: `TestRepositoryPagesAreOneShell`
+  **Scenario**: every repository page (overview, graph, pull request, its graph, policy, Data sharing) for the user's
+  repository, another tenant's and one that does not exist; then the overview API of the other tenant's and the missing one.
+  **Expected behavior**: `200` and the same status, headers and bytes for all three but the nonce and the request ID; no
+  GitHub permission lookup; the two API answers identical `404`s.
+
 - **Test name**: `TestTenantIdentityOnlyFromSession` (T07, T17)
   **Scenario**: a user of installation A sends every route with installation B's ID and repository ID in query, form, JSON body and headers, and
   with `{o}/{n}` of a repository in B.
-  **Expected behavior**: supplied IDs have no effect; B's repository answers `404`; no Store key of B is read or written; no GitHub
+  **Expected behavior**: supplied IDs have no effect; every API route of B's repository answers `404` (its pages are the shell, the
+  same for every repository); no Store key of B is read or written; no GitHub
   call uses B's installation.
 - **Test name**: `TestOverviewShowsOnlyAccessibleRepositories` (T17)
   **Scenario**: GitHub lists three repositories for the user; the fake holds five more in the same and other installations.
@@ -1543,10 +1586,9 @@ their interfaces except where a test says otherwise. The clock is injected.
   `index.html` carries that placeholder in `<meta name="csp-nonce">` and `__APP_ERROR__` in `<meta name="app-error">`,
   so the web app's smoke test runs under the production policy.
 - **Test name**: `TestErrorPagesAreTheShell`
-  **Scenario**: a repository the user cannot see, a pull request number that is not one, a path of no page, a route's
-  path with a method it does not take (`GET /auth/logout`), a GitHub failure and a rate limit whose errors carry
-  internal text.
-  **Expected behavior**: `404`, `404`, `404`, `404`, `502`, `503`; each the shell with its CSP and a nonce, `no-store`, and the
+  **Scenario**: a pull request number that is not one, a path of no page, a route's path with a method it does not take
+  (`GET /auth/logout`).
+  **Expected behavior**: `404` each; each the shell with its CSP and a nonce, `no-store`, and the
   wording table's sentence in the app-error meta tag; no internal text and no placeholder in the page. A page that
   succeeds has an empty app-error meta tag.
 - **Test name**: `TestShellNonceIsFreshPerResponse`
@@ -1568,10 +1610,11 @@ their interfaces except where a test says otherwise. The clock is injected.
 
 - **Test name**: `TestRevokedUserLosesEveryPage` (T07, T17)
   **Scenario**: a signed-in user with `write` loses repository access at GitHub; 61 seconds pass.
-  **Expected behavior**: status, editor, graph and every `POST` answer `404`; the overview no longer lists the repository.
+  **Expected behavior**: every API route of the repository, `POST` included, answers `404`; the overview no longer lists the
+  repository.
 - **Test name**: `TestRemovedRepositoryDisappears` (T07)
   **Scenario**: the repository is removed from the installation while the user keeps `admin` on it.
-  **Expected behavior**: `404` on its pages; no write is attempted.
+  **Expected behavior**: `404` on every API route of it; no write is attempted.
 - **Test name**: `TestStaleDraftCannotBePublishedUnnoticed` (T17)
   **Scenario**: two tabs load head `a…`; tab one saves (head `b…`); tab two saves, then presses ready; also: tab two loaded from the
   default branch before any draft existed.
@@ -1642,7 +1685,8 @@ their interfaces except where a test says otherwise. The clock is injected.
 - Vitest (`web/src/lib/*.test.ts`): routes (a `.` or `..` owner or name is no route, a pull request number is a
   positive integer), `safeHref` (only App paths and `https://github.com/`), `serverError` (the app-error meta tag, the
   placeholder read as none), the cycle drawing's layout and arrow styles,
-  escaped links and API paths, the sign-in return link, the theme with and without storage, the API client's CSRF
+  escaped links and API paths, the sign-in return link, the early reads of each route taken once then read again and a failed one
+  handed to its page, a page read's `404` replacing the page and a write's never, the theme with and without storage, the API client's CSRF
   header, error sentences, fallbacks and the problems of a refused policy; the draft timeline, `#L<n>` links, problem
   places, and the editor's marks (from the column to the end of the line, a line past the end on the last line, none
   for a problem of the whole text); the balance words: every quadrant worded, the crossings as the engine gate
@@ -1659,6 +1703,9 @@ their interfaces except where a test says otherwise. The clock is injected.
   nonce, the problems as a list and as marks, a `#L<n>` hash and a problem selecting their line, Check and Save sending
   the text, the base head and the CSRF header, a refused save keeping the text, a reader offered no write, managed mode
   off with its reason and the inline Allow, and a customer-mode request following its run; the graph pages, laid out by
-  the worker, the inspector's balance reading of a flagged dependency and the count line, and a worker that fails to load reported instead of a layout that never ends; a server error page (its sentence, no repository tabs) and the footer's licences link; a long policy scrolls inside the editor (at most 60% of the viewport) and a line link scrolls to its line; every page keeps its content and footer at most 1280px wide and centred, and has no sideways scroll at 390px; every page has no
+  the worker, the inspector's balance reading of a flagged dependency and the count line, and a worker that fails to load reported instead of a layout that never ends; a server error page (its sentence, no repository tabs) and the footer's licences link; a repository the user cannot see and one
+  that does not exist shown the same, as the API's "Not found." with no repository tabs; a page asking its data beside
+  `/api/session`, its skeleton up until both answer; a save's `404` shown on the policy page with the editor's text kept;
+  a long policy scrolls inside the editor (at most 60% of the viewport) and a line link scrolls to its line; every page keeps its content and footer at most 1280px wide and centred, and has no sideways scroll at 390px; every page has no
   `securitypolicyviolation` event and no axe violation in light and in dark; the onboarding write carries the CSRF
   header and a JSON body.
