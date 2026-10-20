@@ -86,7 +86,7 @@ type shadowFinding struct {
 	Severity            *string           `json:"severity"`
 	Confidence          *string           `json:"confidence"`
 	Edge                *shadowEdge       `json:"edge"`
-	MatchedBy           map[string]string `json:"matched_by"` // dropped
+	MatchedBy           map[string]string `json:"matched_by"` // only MatchedByKeys are kept
 	Locations           []shadowLocation  `json:"locations"`
 	Why                 *string           `json:"why"`
 	Constraint          *string           `json:"constraint"`
@@ -220,8 +220,8 @@ type shadowSeam struct {
 	Policy     *string `json:"policy"`
 	// A token, not a closed set: a provenance a later engine adds reads as text rather than failing the report.
 	VolatilityProvenance string `json:"volatility_provenance"`
-	// Tokens too, for the same reason.
-	Hypothesis          string            `json:"hypothesis"`
+	Hypothesis           string `json:"hypothesis"`
+	// Shown only, each read against its closed set or kind; never failing the report.
 	Quadrant            string            `json:"quadrant"`
 	DistributedMonolith bool              `json:"distributed_monolith"`
 	RawDistance         shadowRawDistance `json:"raw_distance"` // basis kept; the rest dropped

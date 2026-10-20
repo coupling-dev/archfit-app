@@ -3,6 +3,7 @@ package report
 import (
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -618,6 +619,48 @@ func TestReadableWhy(t *testing.T) {
 	for _, tt := range tests {
 		if got := ReadableWhy(tt.in); got != tt.want {
 			t.Errorf("ReadableWhy(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestMatchedByKeepsOnlyTheAllowList(t *testing.T) {
+	doc := baseDoc(t)
+	set(t, doc, map[string]any{
+		"metric": "cycle_count", "before": "0", "after": "2", "threshold": "max_new 0",
+		"from_glob": "pkg/secret/**", "cycle_modules": "a, b",
+	}, "findings", 0, "matched_by")
+	set(t, doc, "introduce_contract", "seams", 0, "hypothesis")
+	r := mustDecode(t, encode(t, doc))
+
+	want := map[string]string{"metric": "cycle_count", "before": "0", "after": "2", "threshold": "max_new 0"}
+	if got := r.Findings[0].MatchedBy; !reflect.DeepEqual(got, want) {
+		t.Errorf("matched_by = %v, want only %v", got, want)
+	}
+	if got := r.Seams[0].Hypothesis; got != "introduce_contract" {
+		t.Errorf("hypothesis = %q, want introduce_contract", got)
+	}
+	if strings.Contains(string(encode(t, r)), "pkg/secret") {
+		t.Error("a key outside the allow-list survives in the marshalled report")
+	}
+}
+
+func TestKeptMatchedByAndHypothesisAreChecked(t *testing.T) {
+	runMutations(t, []mutation{
+		{"kept matched_by key with a line break", setter(map[string]any{"before": "0\n1"}, "findings", 0, "matched_by"), "findings[0].matched_by.before"},
+		{"hypothesis with a line break", setter("a\nb", "seams", 0, "hypothesis"), "seams[0].hypothesis"},
+		{"dropped matched_by key with a line break", setter(map[string]any{"from_glob": "a\nb"}, "findings", 0, "matched_by"), ""},
+		{"hypothesis absent", deleter("seams", 0, "hypothesis"), ""},
+	})
+}
+
+func TestBalancingMoveWordsAKnownHypothesisOnly(t *testing.T) {
+	for h, want := range map[string]string{
+		"introduce_contract": BalancingMoves["introduce_contract"],
+		"split_module":       "split_module",
+		"":                   "",
+	} {
+		if got := BalancingMove(h); got != want {
+			t.Errorf("BalancingMove(%q) = %q, want %q", h, got, want)
 		}
 	}
 }

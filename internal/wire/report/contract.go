@@ -22,8 +22,8 @@ func EngineVersions() []string {
 
 // Report is the no-source transport form of an engine state report. The decoder knows every key of the state schema
 // of v3.0.0 and v3.0.1: keys listed here are kept (length-capped), the other known keys are validated and dropped (measurement,
-// findings[].matched_by, agent_tasks[].declarations, metric provenance, seam scores), and any key the schema does
-// not define is a decode error.
+// findings[].matched_by except MatchedByKeys, agent_tasks[].declarations, metric provenance, seam scores), and any key
+// the schema does not define is a decode error.
 type Report struct {
 	SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
 	Verdict       string               `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
@@ -112,7 +112,20 @@ type Finding struct {
 	Constraint          string     `json:"constraint"` // engine-authored, single line, length-capped
 	AllowedAlternatives []string   `json:"allowed_alternatives,omitempty"`
 	Origin              string     `json:"origin,omitempty"` // "introduced" | "pre_existing" | "unknown", only with --base; presentation only
+	// MatchedBy holds only the MatchedByKeys of the engine's matched_by; a metric ratchet names its numbers there.
+	MatchedBy map[string]string `json:"matched_by,omitempty"`
 }
+
+// The matched_by keys a consumer shows. The engine writes more keys; the others stay out of the App.
+const (
+	MatchedByMetric    = "metric"
+	MatchedByBefore    = "before"
+	MatchedByAfter     = "after"
+	MatchedByThreshold = "threshold"
+)
+
+// MatchedByKeys are the matched_by keys Decode keeps.
+var MatchedByKeys = []string{MatchedByMetric, MatchedByBefore, MatchedByAfter, MatchedByThreshold}
 
 // Active reports whether the finding currently blocks: a gate finding that is new or whose waiver expired.
 // It is the single definition of "active gate finding" for every consumer.
@@ -240,14 +253,16 @@ type Seam struct {
 	// Policy is what the engine's policy says about the seam: "violation" | "accepted" |
 	// "advisory" | "allowed" | "observed", a closed set. "" = the engine gave the seam no policy.
 	Policy string `json:"policy,omitempty"`
-	// Hypothesis is the engine's balancing move for the seam, a token: "move_functionality" | "introduce_contract" |
-	// "accept_low_volatility" | "declare_volatility" | "expected_by_role" | "follow_rule" | "balanced"; "" when the
-	// engine names none. A hypothesis, not an instruction.
+	// Hypothesis is the engine's balancing move for the seam: "balanced" | "accept_low_volatility" |
+	// "introduce_contract" | "move_functionality" | "declare_volatility" | "expected_by_role" | "follow_rule".
+	// "" = the engine gave no move.
 	Hypothesis string `json:"hypothesis,omitempty"`
-	// Quadrant is the engine's balance quadrant, a token: "cohesive" | "loose" | "low_cohesion" | "tight"; "" when absent.
+	// Quadrant is the engine's strength and distance quadrant: "cohesive" | "loose" | "low_cohesion" | "tight"; "" when
+	// absent or outside that set.
 	Quadrant string `json:"quadrant,omitempty"`
-	// DistributedMonolith is the engine's flag: an active edge in the critical band across owners or deploy units.
-	// Absent reads false.
+	// DistributedMonolith is the engine's flag (relationship.QualifiesDistributedMonolith): a scored edge of intrusive
+	// strength, or functional or symmetric from a role that is not cohesive, across a module boundary at high
+	// volatility. Absent reads false.
 	DistributedMonolith bool         `json:"distributed_monolith,omitempty"`
 	RawDistance         SeamDistance `json:"raw_distance"` // only its basis is kept
 }
@@ -255,6 +270,7 @@ type Seam struct {
 // SeamDistance is what the engine measured the distance on.
 type SeamDistance struct {
 	// Basis is "<crossed>@<container>": the boundary the distance crosses ("module_boundary" | "ownership" |
-	// "deploy_unit" | "declared_external") and the module that holds both ends, or "system". "" when no edge was scored.
+	// "deploy_unit" | "declared_external") and the module that holds both ends, or "system". "" when no edge was
+	// scored, the crossing is outside that set, or the container is not an identifier.
 	Basis string `json:"basis,omitempty"`
 }

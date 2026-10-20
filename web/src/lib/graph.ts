@@ -27,7 +27,7 @@ export interface GLink {
   imbalance: string;
   accepted: '' | 'violation' | 'advisory'; // what an accepted link accepts
   // The engine's balance reading of the strongest seam (lib/seam.ts words them); '' when it gives none.
-  hypothesis: string;
+  move: string; // the balancing move, worded as the PR comment words it
   quadrant: string;
   crossing: string; // the boundary raw_distance.basis names
   container: string; // the module holding both ends, or "system"

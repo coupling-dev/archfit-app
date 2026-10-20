@@ -54,21 +54,47 @@ func pullNumber(r *http.Request) (int, bool) {
 // report that does not match the check: the digest in the check's external_id must be the report's. The report is nil
 // when Unavailable says why there is none.
 func (s *server) readPull(ctx context.Context, sc scope, number int) (pullBody, *report.Report, error) {
-	pull, err := s.gh.pulls.Pull(ctx, sc.repo.RepoRef, number)
+	pull, err := s.gh.pulls.PullSummary(ctx, sc.repo.RepoRef, number)
 	if err != nil {
 		return pullBody{}, nil, err
 	}
-	body := pullBody{Pull: pull, CheckURL: pull.URL + "/checks"}
-	// The gate reads the settings on the pull request's base, as the published checks do; a base without them is
-	// advisory.
-	if raw, _, err := s.gh.files.File(ctx, sc.repo.RepoRef, pull.BaseRef, settings.Path); err == nil {
-		if set, err := settings.Parse(raw); err == nil {
-			body.Required = set.Gate == settings.GateRequired
+	// The base's settings and the head's report do not depend on each other: they are read side by side. A failure
+	// of either fails the page as it did when they were read in turn, the settings' first.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var (
+		required    bool
+		settingsErr error
+		body        pullBody
+		rep         *report.Report
+	)
+	together(func() {
+		// The gate reads the settings on the pull request's base, as the published checks do; a base without them is
+		// advisory.
+		raw, _, err := s.gh.files.File(ctx, sc.repo.RepoRef, pull.BaseRef, settings.Path)
+		switch {
+		case err == nil:
+			if set, err := settings.Parse(raw); err == nil {
+				required = set.Gate == settings.GateRequired
+			}
+		case !errors.Is(err, api.ErrNotFound):
+			settingsErr = err
+			cancel()
 		}
-	} else if !errors.Is(err, api.ErrNotFound) {
+	}, func() { body, rep, err = s.pullReport(ctx, sc, pull) })
+	if settingsErr != nil {
+		return pullBody{}, nil, settingsErr
+	}
+	if err != nil {
 		return pullBody{}, nil, err
 	}
+	body.Required = required
+	return body, rep, nil
+}
 
+// pullReport reads the archfit/state check on the pull request's head and the report of the run it names.
+func (s *server) pullReport(ctx context.Context, sc scope, pull api.Pull) (pullBody, *report.Report, error) {
+	body := pullBody{Pull: pull, CheckURL: pull.URL + "/checks"}
 	runs, err := s.gh.checks.CheckRuns(ctx, sc.repo.RepoRef, pull.HeadSHA, checkState)
 	if err != nil {
 		return pullBody{}, nil, err
@@ -93,7 +119,7 @@ func (s *server) readPull(ctx context.Context, sc scope, number int) (pullBody, 
 	}
 	body.RunID = runID
 
-	payload, err := s.gh.actions.Artifact(ctx, sc.repo.RepoRef, runID, reportArtifact, report.MaxBytes)
+	payload, err := s.reportPayload(ctx, sc.repo.RepoRef, runID)
 	if errors.Is(err, api.ErrNotFound) {
 		body.Unavailable = reportExpired
 		return body, nil, nil

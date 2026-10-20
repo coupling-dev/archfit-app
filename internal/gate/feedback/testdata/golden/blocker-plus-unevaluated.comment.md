@@ -2,51 +2,37 @@
 <!-- archfit:head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb run 7.1 -->
 ## Archfit: Architecture gate failing
 
-**Next:**
-- Remove the rule violations, then run the validation command.
-- Install the required tool in the workflow, then re-run it.
-
-### Findings
-
-**1 rule violation** · 1 advisory
-
-- **violation** `no_direct_b_dependency` (medium): `a` (`pkg/a/a.go`) → `b` (`pkg/b`)
+- **violation** `no_direct_b_dependency` (medium): `a` → `b`
   - Locations: `pkg/a/a.go:3`
   - Why: Import from pkg/a/** to pkg/b is explicitly forbidden
-  - Constraint: Remove the dependency or move the code
+  - Fix: Remove the dependency or move the code
+
+**Next:**
+- Fix the violations above, then check with `archfit check --base origin/main`.
+- Install the required tool in the workflow, then re-run it.
 
 <details>
-<summary>1 advisory · never block</summary>
-
-| Rule | Dependency | Where | Strength | Distance | Volatility |
-| --- | --- | --- | --- | --- | --- |
-| Imbalanced coupling · medium | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared |
-
-Imbalanced coupling · **Why:** balanced coupling: functional integration strength × distance across modules, same owner × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
-
-</details>
-
-<details>
-<summary>Evidence, inputs and validation</summary>
+<summary>Evidence and inputs</summary>
 
 ### Decision
 
-- `blocking_findings` (architecture): 1 blocking finding. Next: Remove the rule violations, then run the validation command.
-- `missing_required_coverage` (evidence): layers/no_upward_imports. Next: Install the required tool in the workflow, then re-run it.
+- Engine verdict **blocked**: hard gates fail, 1 active blocker, 1 required rule not evaluated
+- Blocking findings (architecture) · code `blocking_findings`
+- Missing required coverage (evidence): layers/no_upward_imports · code `missing_required_coverage`
 
 ### Dimensions
 
-| Dimension | Status | Coverage | Confidence | Gate |
+| Dimension | Status | Measured | Confidence | Result |
 | --- | --- | --- | --- | --- |
 | `intent` | measured | 1/1 (declared rules evaluated) | high | pass |
 | `structure` | measured | 1/1 (discovered dependencies resolved inside the declared module map) | high | **fail** |
 | `modularity` | measured | 1/2 (declared modules with a declared public surface) | low | pass |
 | `coupling` | measured | 1/1 (cross-boundary edges scored) | high | **warn** |
-| `change_locality` | unmeasured | 0/0 | unrated | not_applicable |
+| `change_locality` | unmeasured | 0/0 | unrated | not applicable |
 | `complexity` | measured | 2/2 (declared modules with complete dependency-chain and degree values) | high | pass |
 | `testability` | partial | 3/3 (classified source files) | medium | pass |
 | `operations` | partial | 0/2 (declared modules with a corroborated deploy unit and qualifying owner) | medium | pass |
-| `drift` | unmeasured | 0/0 | unrated | not_applicable |
+| `drift` | unmeasured | 0/0 | unrated | not applicable |
 
 ### Evidence gaps
 
@@ -78,7 +64,7 @@ Imbalanced coupling · **Why:** balanced coupling: functional integration streng
 
 Measurement is customer-attested: the producer is authenticated, the report content is not independently checked.
 
-### Validation commands
+### Validation commands (as run in the Archfit workflow)
 
 ```sh
 archfit check -c .archfit.yaml

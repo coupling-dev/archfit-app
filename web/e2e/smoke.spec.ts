@@ -126,7 +126,8 @@ const direction = (from: string, to: string, origin: string, n: number) => ({
   strength: 'model',
   distance: 'across modules',
   volatility: 'high',
-  hypothesis: '',
+  move: '',
+  metric: '',
   owner_decision: false,
 });
 
@@ -187,10 +188,16 @@ const pull = {
       rule: 'layering',
       rule_id: 'layering',
       why: 'UI skips a layer.',
-      hypothesis: 'move_functionality',
+      move: 'Move the functionality: lower the distance, so the coupled code lives in one module',
       owner_decision: true,
     },
-    { ...direction('', '', '', 0), rule: 'metric/fan_out', rule_id: 'metric/fan_out', meta: 'medium' },
+    {
+      ...direction('', '', '', 0),
+      rule: 'metric/fan_out',
+      rule_id: 'metric/fan_out',
+      meta: 'medium',
+      metric: 'metric fan_out: 3 → 5 (at most 4)',
+    },
   ],
   accepted_count: 1,
   accepted: [{ ...direction('x', 'y', '', 1), meta: 'low, baseline' }],
@@ -240,7 +247,7 @@ const glink = (from: string, to: string, status: string, count: number, more: ob
   volatility_source: 'undeclared',
   imbalance: '',
   accepted: '',
-  hypothesis: '',
+  move: '',
   quadrant: '',
   crossing: '',
   container: '',
@@ -260,7 +267,7 @@ const view = {
       strength: 'intrusive',
       imbalance: 'medium',
       volatility: 'high',
-      hypothesis: 'follow_rule',
+      move: 'A rule violation covers this pair: follow its Fix',
       quadrant: 'tight',
       crossing: 'module_boundary',
       container: 'system',
@@ -571,10 +578,10 @@ test('pull request: the cycle drawn as on the comment, then the other findings',
   await expect(page.getByText('UI skips a layer.')).toBeVisible();
   const advisories = page.locator('#advisories');
   await expect(advisories).toContainText(
-    'layering · Suggested move: Move the shared functionality into one module: that removes the boundary.',
+    'layering · Suggested move: Move the functionality: lower the distance, so the coupled code lives in one module.',
   );
   await expect(advisories.getByText('owner decision')).toBeVisible();
-  await expect(advisories).toContainText('metric fan_out');
+  await expect(advisories).toContainText('metric fan_out: 3 → 5 (at most 4)');
   await expect(advisories).not.toContainText('(no module)');
   await page.getByText('To measure more').click();
   await expectClean(page);
@@ -646,7 +653,7 @@ test('graph: the canvas, the inspector and the matrix', async ({ page }) => {
   await expect(inspector).toContainText(
     'Flagged: intrusive coupling across the module boundary at high volatility (container system).',
   );
-  await expect(inspector).toContainText('Fix the rule violation on this dependency.');
+  await expect(inspector).toContainText('A rule violation covers this pair: follow its Fix.');
   await expect(inspector).toContainText('tight: strong coupling across a boundary');
   await expect(inspector).toContainText('the module boundary, within system');
   await expect(page.locator('#flagged')).toHaveText(

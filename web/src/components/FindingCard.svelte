@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Finding } from '../lib/api';
-  import { metricWord, ownerDecisionTitle } from '../lib/seam';
+  import { ownerDecisionTitle } from '../lib/seam';
   import Locations from './Locations.svelte';
   import Origin from './Origin.svelte';
   import Reasons from './Reasons.svelte';
@@ -22,7 +22,7 @@
     {#if f.from || f.to}
       <p class="row"><code>{f.from}</code><span aria-label="depends on">→</span><code>{f.to}</code></p>
     {:else}
-      <p class="muted small">{metricWord(f.rule_id)}</p>
+      <p class="muted small">{f.metric || 'no dependency'}</p>
     {/if}
     <Reasons why={f.why} fixes={f.fix ? [f.fix] : []} alternatives={f.alternatives ?? []} />
     <div class="row"><span class="muted small">Where:</span> <Locations locations={f.locations} /></div>

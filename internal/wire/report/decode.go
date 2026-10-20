@@ -236,7 +236,7 @@ func (c *checker) coverage(s *shadowCoverage) Coverage {
 	}
 }
 
-// finding drops matched_by.
+// finding keeps only the MatchedByKeys of matched_by.
 func (c *checker) finding(s *shadowFinding) Finding {
 	f := Finding{
 		ID:         c.str("id", s.ID, classIdentifier),
@@ -259,6 +259,7 @@ func (c *checker) finding(s *shadowFinding) Finding {
 		Constraint:          c.str("constraint", s.Constraint, classFindingText),
 		AllowedAlternatives: stringsOf(c, "allowed_alternatives", s.AllowedAlternatives, maxAlternatives, false, classText),
 		Origin:              c.optEnum("origin", s.Origin, originValues...),
+		MatchedBy:           c.matchedBy(s.MatchedBy),
 	}
 	if s.ID != nil {
 		if _, dup := c.ids[f.ID]; dup {
@@ -290,28 +291,45 @@ func (c *checker) task(s *shadowTask) AgentTask {
 	}
 }
 
-// The engine's balance readings of a seam (archfit internal/relationship/seam.go). Closed here: anything else reads as
-// absent.
+// matchedBy keeps the MatchedByKeys, each value checked as text; every other key is dropped unchecked, as before.
+func (c *checker) matchedBy(m map[string]string) map[string]string {
+	var kept map[string]string
+	for _, key := range MatchedByKeys {
+		v, ok := m[key]
+		if !ok {
+			continue
+		}
+		if kept == nil {
+			kept = map[string]string{}
+		}
+		kept[key] = c.opt("matched_by."+key, v, classText)
+	}
+	return kept
+}
+
+// Display-only seam readings closed here, from the engine's constants (archfit internal/relationship/seam.go and
+// coupling/coupling.go): anything else reads as absent and never fails the report.
 var (
-	hypotheses = []string{"balanced", "accept_low_volatility", "introduce_contract", "move_functionality",
-		"declare_volatility", "expected_by_role", "follow_rule"}
 	quadrants = []string{"cohesive", "loose", "low_cohesion", "tight"}
 	crossings = []string{"module_boundary", "ownership", "deploy_unit", "declared_external"}
 )
 
 // distanceBasis keeps "<crossed>@<container>" when the crossing is one the engine names and the container is an
-// identifier, else "".
-func (c *checker) distanceBasis(basis string) string {
+// identifier, else "": a basis is shown only, so it never fails the report.
+func distanceBasis(basis string) string {
 	crossed, container, ok := strings.Cut(basis, "@")
 	if !ok || known(crossed, crossings...) == "" {
 		return ""
 	}
-	return crossed + "@" + c.opt("raw_distance.basis", container, classIdentifier)
+	if _, rule := stringRule(container, classIdentifier); rule != "" {
+		return ""
+	}
+	return basis
 }
 
-// seam keeps the identity, the edge count, the three coupling dimensions, the engine's policy status and its balance
-// reading (hypothesis, quadrant, distributed monolith, what the distance crosses); scores, owners and evidence are
-// dropped.
+// seam keeps the identity, the edge count, the three coupling dimensions, the engine's policy status, its balancing
+// move and its balance reading (quadrant, distributed monolith, what the distance crosses); scores, owners and evidence
+// are dropped.
 func (c *checker) seam(s *shadowSeam) Seam {
 	return Seam{
 		ID:                   c.str("id", s.ID, classIdentifier),
@@ -324,9 +342,9 @@ func (c *checker) seam(s *shadowSeam) Seam {
 		Severity:             c.opt("severity", s.Severity, classToken),
 		VolatilityProvenance: c.opt("volatility_provenance", s.VolatilityProvenance, classToken),
 		Policy:               c.optEnum("policy", s.Policy, "violation", "accepted", "advisory", "allowed", "observed"),
-		Hypothesis:           known(s.Hypothesis, hypotheses...),
+		Hypothesis:           c.opt("hypothesis", s.Hypothesis, classToken),
 		Quadrant:             known(s.Quadrant, quadrants...),
 		DistributedMonolith:  s.DistributedMonolith,
-		RawDistance:          SeamDistance{Basis: c.distanceBasis(s.RawDistance.Basis)},
+		RawDistance:          SeamDistance{Basis: distanceBasis(s.RawDistance.Basis)},
 	}
 }

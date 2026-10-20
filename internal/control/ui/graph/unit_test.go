@@ -571,12 +571,12 @@ func TestBalanceReadingComesFromTheStrongestSeam(t *testing.T) {
 		{"the strongest seam's reading, basis split", []report.Seam{
 			reading(1, "functional", "move_functionality", "tight", "module_boundary@system", true),
 			reading(9, "contract", "balanced", "loose", "ownership@core", false),
-		}, Link{Strength: "functional", Hypothesis: "move_functionality", Quadrant: "tight", Crossing: "module_boundary",
+		}, Link{Strength: "functional", Move: report.BalancingMoves["move_functionality"], Quadrant: "tight", Crossing: "module_boundary",
 			Container: "system", DistributedMonolith: true}},
-		{"the flag from any seam of the pair", []report.Seam{
-			reading(1, "intrusive", "introduce_contract", "tight", "deploy_unit@system", false),
+		{"the flag from any seam of the pair, a move this version does not know as written", []report.Seam{
+			reading(1, "intrusive", "introduce_contract_v2", "tight", "deploy_unit@system", false),
 			reading(9, "functional", "", "", "", true),
-		}, Link{Strength: "intrusive", Hypothesis: "introduce_contract", Quadrant: "tight", Crossing: "deploy_unit",
+		}, Link{Strength: "intrusive", Move: "introduce_contract_v2", Quadrant: "tight", Crossing: "deploy_unit",
 			Container: "system", DistributedMonolith: true}},
 		{"no reading", []report.Seam{reading(1, "model", "", "", "", false)}, Link{Strength: "model"}},
 	}

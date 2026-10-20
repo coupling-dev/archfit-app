@@ -995,7 +995,7 @@
       "critical_share_pct": 0,
       "high_or_worse_share_pct": 0,
       "confidence": "high",
-      "hypothesis": "LEAK-7f3a shares a database handle"
+      "role_expectation": "LEAK-7f3a shares a database handle"
     }
   ]
 }

@@ -73,7 +73,8 @@ export interface Finding {
   strength: string;
   distance: string;
   volatility: string;
-  hypothesis: string; // the engine's balancing move for the seam (lib/seam.ts moveWord), '' for none
+  move: string; // the engine's balancing move for the seam, worded as the PR comment words it; '' for none
+  metric: string; // a metric ratchet, which has no edge: "metric <name>: before → after (threshold)"
   owner_decision: boolean; // the engine leaves the move to the repository's owner
 }
 

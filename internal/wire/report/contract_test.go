@@ -172,9 +172,16 @@ func TestMarshalledReportHasNoDroppedKey(t *testing.T) {
 
 			keys := map[string]bool{}
 			collectKeys(parseDoc(t, marshalled), keys)
-			for _, dropped := range []string{"matched_by", "declarations", "measurement", "provenance", "denominator", "scores"} {
+			for _, dropped := range []string{"declarations", "measurement", "provenance", "denominator", "scores"} {
 				if keys[dropped] {
 					t.Errorf("marshalled report has a %q key", dropped)
+				}
+			}
+			for _, f := range first.Findings {
+				for key := range f.MatchedBy {
+					if !slices.Contains(MatchedByKeys, key) {
+						t.Errorf("finding %s kept matched_by key %q", f.ID, key)
+					}
 				}
 			}
 			if second := mustDecodeAs(t, marshalled, release); !reflect.DeepEqual(first, second) {
@@ -520,8 +527,7 @@ func TestSeamBalanceReadingsKeepOnlyEngineTokens(t *testing.T) {
 		want Seam
 	}{
 		{name: "hypothesis", key: "hypothesis", raw: "move_functionality", want: Seam{Hypothesis: "move_functionality"}},
-		{name: "hypothesis a later engine adds", key: "hypothesis", raw: "split_module"},
-		{name: "hypothesis as prose", key: "hypothesis", raw: "LEAK shares a database handle"},
+		{name: "hypothesis a later engine adds", key: "hypothesis", raw: "split_module", want: Seam{Hypothesis: "split_module"}},
 		{name: "hypothesis absent", key: "hypothesis"},
 		{name: "quadrant", key: "quadrant", raw: "tight", want: Seam{Quadrant: "tight"}},
 		{name: "quadrant outside the set", key: "quadrant", raw: "Tight"},
@@ -534,6 +540,7 @@ func TestSeamBalanceReadingsKeepOnlyEngineTokens(t *testing.T) {
 		{name: "basis crossing outside the set", key: "raw_distance", raw: map[string]any{"basis": "galaxy@system"}},
 		{name: "basis without a container", key: "raw_distance", raw: map[string]any{"basis": "module_boundary"}},
 		{name: "basis empty", key: "raw_distance", raw: map[string]any{"basis": ""}},
+		{name: "basis container not an identifier", key: "raw_distance", raw: map[string]any{"basis": "module_boundary@pkg\ncore"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

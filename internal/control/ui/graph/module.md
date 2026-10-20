@@ -108,16 +108,18 @@ type Link struct {
     // Accepted is what the accepted findings on the pair accept: AcceptedViolation when one is a gate finding, else
     // AcceptedAdvisory; "" when none names the pair. The page names it, so gate debt never reads as an advisory.
     Accepted string `json:"accepted"`
-    // The balance reading of the pair's strongest seam: the engine's hypothesis (a move, or why none is needed),
-    // quadrant, and raw_distance.basis split at "@" into the boundary it crosses and the module holding both ends, or
-    // "system". All "" when no seam names the pair or the engine gives none.
-    Hypothesis string `json:"hypothesis"`
-    Quadrant   string `json:"quadrant"`
+    // The balance reading of the pair's strongest seam: the engine's hypothesis in the PR comment's words
+    // (report.BalancingMove: a move, or why none is needed), quadrant, and raw_distance.basis split at "@" into the
+    // boundary it crosses and the module holding both ends, or "system". All "" when no seam names the pair or the
+    // engine gives none.
+    Move      string `json:"move"`
+    Quadrant  string `json:"quadrant"`
     Crossing   string `json:"crossing"`  // module_boundary, ownership, deploy_unit, declared_external
     Container  string `json:"container"` // a module name or "system"
-    // DistributedMonolith is the engine's distributed_monolith flag on any seam of the pair: strong coupling across a
-    // module boundary at high volatility. Only a deploy-unit Crossing is called a distributed monolith on the page, as
-    // in the engine's coupling gate reason.
+    // DistributedMonolith is the engine's distributed_monolith flag on any seam of the pair: a scored dependency of
+    // intrusive strength, or functional or symmetric from a role that is not cohesive, across a module boundary at high
+    // volatility. Only a deploy-unit Crossing is called a distributed monolith on the page, as in the engine's coupling
+    // gate reason.
     DistributedMonolith bool `json:"distributed_monolith"`
 }
 
@@ -490,7 +492,7 @@ type Seam struct {
     // Policy is what the engine's policy says about the seam: "violation" | "accepted" |
     // "advisory" | "allowed" | "observed", a closed set. "" = the key is absent.
     Policy string `json:"policy,omitempty"`
-    // The balance reading, display only, each from a closed set ("" outside it).
+    // The balance reading, display only: the hypothesis a token as written, the rest each from a closed set ("" outside it).
     Hypothesis          string       `json:"hypothesis,omitempty"`
     Quadrant            string       `json:"quadrant,omitempty"`
     DistributedMonolith bool         `json:"distributed_monolith,omitempty"`
@@ -630,8 +632,9 @@ Nothing is mocked.
 - **Test name**: `TestBalanceReadingComesFromTheStrongestSeam`
   **Scenario**: a flagged `functional` seam beside a stronger-by-count `contract` one; an unflagged `intrusive` seam
   beside a flagged `functional` one with no reading; one `model` seam with no reading.
-  **Expected behavior**: the functional seam's hypothesis, quadrant, crossing `module_boundary` and container
-  `system`, flagged; the intrusive seam's reading, flagged from the other seam; no reading.
+  **Expected behavior**: the functional seam's move in `report.BalancingMoves` words, quadrant, crossing
+  `module_boundary` and container `system`, flagged; the intrusive seam's reading, its move a token this version does
+  not know shown as written, flagged from the other seam; no reading.
 - **Test name**: `TestNodeShowsWhatTheReportsPolicyDeclares`
   **Scenario**: the report's policy declares `chaos` high, `util` low, `domain` subdomain core and `plain` nothing;
   a functional seam `chaos → util` with `high` from `declared`; a seam into `cache`, not in the policy; then the same

@@ -1,17 +1,8 @@
 import { strengthWord, type GLink } from './graph';
 
 // The engine's balance reading of a seam, in words. Every sentence restates the engine's own meaning
-// (archfit internal/relationship/seam.go and score/gate.go); a token it does not know shows nothing.
-
-// moveWord is the engine's balancing hypothesis: a move a human weighs, not an instruction. "balanced" needs no move.
-export const moveWord: Record<string, string> = {
-  move_functionality: 'Move the shared functionality into one module: that removes the boundary.',
-  introduce_contract: 'Introduce a contract: the coupling is intrusive, or the target declares a public surface.',
-  accept_low_volatility: 'Acceptable while the target stays stable: strong coupling into a low-volatility target.',
-  declare_volatility: 'Declare the volatility: this is flagged only because it is undeclared.',
-  expected_by_role: 'Expected for its role: a composition root, generated or test code.',
-  follow_rule: 'Fix the rule violation on this dependency.',
-};
+// (archfit internal/relationship/seam.go and score/gate.go); a token it does not know shows nothing. The suggested
+// move comes worded from the server, as the PR comment words it.
 
 // quadrantWord is the strength and distance quadrant: cohesive and loose are healthy, the other two worth explaining.
 export const quadrantWord: Record<string, string> = {
@@ -21,11 +12,12 @@ export const quadrantWord: Record<string, string> = {
   tight: 'tight: strong coupling across a boundary',
 };
 
-// crossingWord is the boundary as the engine's coupling gate names it: only a deploy unit is a distributed monolith.
+// crossingWord is the boundary as the engine's coupling gate names it. Only a flagged dependency across a deploy unit
+// is a distributed monolith, so flagWord adds that, never this.
 export function crossingWord(crossing: string): string {
   switch (crossing) {
     case 'deploy_unit':
-      return 'deploy-unit boundary (a distributed monolith)';
+      return 'deploy-unit boundary';
     case 'ownership':
       return 'owner boundary';
     case '':
@@ -46,7 +38,8 @@ export function crossesWord(l: GLink): string {
 export function flagWord(l: GLink): string {
   if (!l.distributed_monolith) return '';
   const strength = strengthWord[l.strength] ?? 'strong coupling';
-  const across = crossingWord(l.crossing) || 'module boundary';
+  let across = crossingWord(l.crossing) || 'module boundary';
+  if (l.crossing === 'deploy_unit') across += ' (a distributed monolith)';
   const volatility = l.volatility ? `${l.volatility} volatility` : 'high volatility';
   return `${strength} across the ${across} at ${volatility}${l.container ? ` (container ${l.container})` : ''}`;
 }
@@ -77,8 +70,3 @@ export function decisionWord(d: { hard_gates: string; blockers: number }): strin
 
 // ownerDecisionTitle explains an agent task the engine marks needs_owner_decision.
 export const ownerDecisionTitle = 'Archfit leaves this to the repository owner: a policy decision, not a code change.';
-
-// metricWord names a finding with no dependency: a metric ratchet by its metric, anything else as such.
-export function metricWord(ruleID: string): string {
-  return ruleID.startsWith('metric/') ? `metric ${ruleID.slice('metric/'.length)}` : 'no dependency';
-}

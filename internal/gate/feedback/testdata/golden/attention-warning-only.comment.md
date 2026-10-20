@@ -4,41 +4,38 @@
 
 **Next:** Advisories never block. Review the listed dimensions and diagnostics on the archfit/state check.
 
-### Findings
-
-1 advisory
-
 <details>
 <summary>1 advisory · never block</summary>
 
-| Rule | Dependency | Where | Strength | Distance | Volatility |
-| --- | --- | --- | --- | --- | --- |
-| Imbalanced coupling · medium | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared |
+| Rule | Dependency | Where | Strength | Distance | Volatility | Suggested move |
+| --- | --- | --- | --- | --- | --- | --- |
+| Imbalanced coupling · medium | `a` → `b` | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared | Declare the volatility of the module in the policy: undeclared volatility counts as high |
 
-Imbalanced coupling · **Why:** balanced coupling: functional integration strength × distance across modules, same owner × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
+**Why:** unbalanced coupling: elevated maintenance effort (Balanced Coupling: medium severity)
 
 </details>
 
 <details>
-<summary>Evidence, inputs and validation</summary>
+<summary>Evidence and inputs</summary>
 
 ### Decision
 
-- `attention_only` (architecture): dimensions not fully measured: change_locality, testability, operations, drift; active diagnostics: 1. Next: Advisories never block. Review the listed dimensions and diagnostics on the archfit/state check.
+- Engine verdict **needs attention**: hard gates pass, 0 active blockers, every required rule evaluated
+- Attention only (architecture): dimensions not fully measured: change_locality, testability, operations, drift; active diagnostics: 1 · code `attention_only`
 
 ### Dimensions
 
-| Dimension | Status | Coverage | Confidence | Gate |
+| Dimension | Status | Measured | Confidence | Result |
 | --- | --- | --- | --- | --- |
 | `intent` | measured | 1/1 (declared rules evaluated) | high | pass |
 | `structure` | measured | 1/1 (discovered dependencies resolved inside the declared module map) | high | pass |
 | `modularity` | measured | 1/2 (declared modules with a declared public surface) | low | pass |
 | `coupling` | measured | 1/1 (cross-boundary edges scored) | high | **warn** |
-| `change_locality` | unmeasured | 0/0 | unrated | not_applicable |
+| `change_locality` | unmeasured | 0/0 | unrated | not applicable |
 | `complexity` | measured | 2/2 (declared modules with complete dependency-chain and degree values) | high | pass |
 | `testability` | partial | 3/3 (classified source files) | medium | pass |
 | `operations` | partial | 0/2 (declared modules with a corroborated deploy unit and qualifying owner) | medium | pass |
-| `drift` | unmeasured | 0/0 | unrated | not_applicable |
+| `drift` | unmeasured | 0/0 | unrated | not applicable |
 
 ### Evidence gaps
 

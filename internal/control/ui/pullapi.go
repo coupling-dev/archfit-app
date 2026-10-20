@@ -1,10 +1,12 @@
 package ui
 
 import (
+	"cmp"
 	"encoding/json"
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/report"
@@ -82,7 +84,8 @@ type findingJSON struct {
 	Strength     string   `json:"strength"`  // of the seam on this module pair, "" without one
 	Distance     string   `json:"distance"`
 	Volatility   string   `json:"volatility"`
-	Hypothesis   string   `json:"hypothesis"` // the engine's balancing move for that seam, "" for none
+	Move         string   `json:"move"`   // the engine's balancing move for that seam, as the comment words it; "" for none
+	Metric       string   `json:"metric"` // a metric ratchet, which has no edge: "metric <name>: before → after (threshold)"
 	// OwnerDecision: the engine's agent task for the finding needs the owner's decision (a policy change), not code.
 	OwnerDecision bool `json:"owner_decision"`
 }
@@ -141,6 +144,24 @@ func (s *server) apiPull(r *http.Request, sc scope) (any, error) {
 		fillFindings(&body.findingsJSON, *rep)
 	}
 	return body, nil
+}
+
+// metricSubject names a metric ratchet finding as the PR comment does: the metric, then the engine's numbers when it
+// gives both; "" for any other finding.
+func metricSubject(f report.Finding) string {
+	if !strings.HasPrefix(f.RuleID, report.MetricRulePrefix) {
+		return ""
+	}
+	s := "metric " + cmp.Or(f.MatchedBy[report.MatchedByMetric], strings.TrimPrefix(f.RuleID, report.MetricRulePrefix))
+	before, after, threshold := f.MatchedBy[report.MatchedByBefore], f.MatchedBy[report.MatchedByAfter], f.MatchedBy[report.MatchedByThreshold]
+	if before == "" || after == "" {
+		return s
+	}
+	s += ": " + before + " → " + after
+	if threshold != "" {
+		s += " (" + threshold + ")"
+	}
+	return s
 }
 
 // repairOwnerDecision is the engine's agent-task repair kind that leaves the move to the repository's owner.
@@ -205,7 +226,7 @@ func fillFindings(body *findingsJSON, rep report.Report) {
 		out := findingJSON{
 			Rule: ruleName(f.RuleID), RuleID: f.RuleID, Meta: findingMeta(f), Violation: f.Active(), From: endpointName(f.Edge.From),
 			To: endpointName(f.Edge.To), Why: report.ReadableWhy(f.Why), Fix: f.Constraint, Alternatives: f.AllowedAlternatives,
-			Locations: make([]string, len(f.Locations)), OwnerDecision: ownerDecides[f.ID],
+			Locations: make([]string, len(f.Locations)), OwnerDecision: ownerDecides[f.ID], Metric: metricSubject(f),
 		}
 		if g.Compared {
 			out.Origin = origin
@@ -218,7 +239,7 @@ func fillFindings(body *findingsJSON, rep report.Report) {
 		}
 		if sm, ok := seams[[2]string{f.Edge.From.Module, f.Edge.To.Module}]; ok {
 			out.Strength, out.Distance, out.Volatility = sm.Strength, distanceWord(sm.Distance), sm.Volatility
-			out.Hypothesis = sm.Hypothesis
+			out.Move = report.BalancingMove(sm.Hypothesis)
 		}
 		return out
 	}

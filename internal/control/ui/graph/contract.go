@@ -58,16 +58,18 @@ type Link struct {
 	// Accepted is what the accepted findings on the pair accept: AcceptedViolation when one is a gate finding, else
 	// AcceptedAdvisory; "" when none names the pair. The page names it, so gate debt never reads as an advisory.
 	Accepted string `json:"accepted"`
-	// The balance reading of the pair's strongest seam: the engine's hypothesis (a move, or why none is needed),
-	// quadrant, and raw_distance.basis split at "@" into the boundary it crosses and the module holding both ends, or
-	// "system". All "" when no seam names the pair or the engine gives none.
-	Hypothesis string `json:"hypothesis"`
-	Quadrant   string `json:"quadrant"`
-	Crossing   string `json:"crossing"`  // module_boundary, ownership, deploy_unit, declared_external
-	Container  string `json:"container"` // a module name or "system"
-	// DistributedMonolith is the engine's distributed_monolith flag on any seam of the pair: strong coupling across a
-	// module boundary at high volatility. Only a deploy-unit Crossing is called a distributed monolith on the page, as
-	// in the engine's coupling gate reason.
+	// The balance reading of the pair's strongest seam: the engine's hypothesis in the PR comment's words
+	// (report.BalancingMove: a move, or why none is needed), quadrant, and raw_distance.basis split at "@" into the
+	// boundary it crosses and the module holding both ends, or "system". All "" when no seam names the pair or the
+	// engine gives none.
+	Move      string `json:"move"`
+	Quadrant  string `json:"quadrant"`
+	Crossing  string `json:"crossing"`  // module_boundary, ownership, deploy_unit, declared_external
+	Container string `json:"container"` // a module name or "system"
+	// DistributedMonolith is the engine's distributed_monolith flag on any seam of the pair: a scored dependency of
+	// intrusive strength, or functional or symmetric from a role that is not cohesive, across a module boundary at high
+	// volatility. Only a deploy-unit Crossing is called a distributed monolith on the page, as in the engine's coupling
+	// gate reason.
 	DistributedMonolith bool `json:"distributed_monolith"`
 }
 
@@ -181,7 +183,7 @@ func Build(rep report.Report, policyText []byte) View {
 	for p, s := range strongest {
 		l := links[p]
 		l.Strength, l.Volatility, l.VolatilitySource = s.Strength, s.Volatility, s.VolatilityProvenance
-		l.Hypothesis, l.Quadrant = s.Hypothesis, s.Quadrant
+		l.Move, l.Quadrant = report.BalancingMove(s.Hypothesis), s.Quadrant
 		l.Crossing, l.Container, _ = strings.Cut(s.RawDistance.Basis, "@")
 		l.Distance = s.Distance
 		if w, ok := report.DistanceWords[s.Distance]; ok {
