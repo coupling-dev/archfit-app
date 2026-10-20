@@ -37,7 +37,9 @@
       <path class="arrow {a.kind}" d={a.d} stroke-width={a.width} marker-end="url(#{id}-{a.kind})" />
     {/each}
     {#each drawing.arrows as a, i (i)}
-      <text class="arrow-label" x={a.lx} y={a.ly} text-anchor="middle" dominant-baseline="middle">{a.label}</text>
+      {#if a.label}
+        <text class="arrow-label" x={a.lx} y={a.ly} text-anchor="middle" dominant-baseline="middle">{a.label}</text>
+      {/if}
     {/each}
     {#each drawing.boxes as b (b.module)}
       <g class="module">

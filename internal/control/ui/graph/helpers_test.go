@@ -87,6 +87,11 @@ func link(from, to string, count int, status LinkStatus) Link {
 	return Link{From: from, To: to, Status: status, Count: count}
 }
 
+func accepted(l Link, what string) Link {
+	l.Accepted = what
+	return l
+}
+
 // corpusEngine is the engine release of the shared wire corpus's synthetic fixtures and older captures.
 const corpusEngine = "v3.0.0"
 

@@ -179,7 +179,9 @@ Supporting. Volatility: moderate, tied to engine releases (config schema pinned 
 
 - `modules` absent, `null`, or an empty map: result is `nil, nil`. `modules` present but not a mapping: error.
 - One `ModuleDef` per map key, in file order. `Name` is the key text. `Line` is the 1-based line of the key in
-  the input, counting LF line breaks. `Layer` is the entry's `layer` scalar, or `""` when absent.
+  the input, counting LF line breaks. `Layer` is the entry's `layer` scalar, or `""` when absent. `Volatility` and
+  `Subdomain` are the entry's `volatility` and `subdomain` scalars, `""` when absent or not a scalar: they are shown
+  only, so a malformed one reads as not declared instead of failing every module.
 - An entry whose value is not a mapping, or whose `layer` is not a scalar, is an error. All other keys of an entry
   are ignored. Names are at most 200 characters, at most 5 000 modules **[default]**; more is an error.
 - A duplicate module name is an error (the YAML library already rejects duplicate mapping keys).
@@ -267,9 +269,11 @@ func Schema() []byte
 ```go
 // ModuleDef is the subset of a policy module the App displays.
 type ModuleDef struct {
-    Name  string
-    Layer string // may be ""
-    Line  int    // 1-based line of the module key in the policy text
+    Name       string
+    Layer      string // may be ""
+    Volatility string // the declared `volatility:`; "" when absent
+    Subdomain  string // the declared `subdomain:`; "" when absent
+    Line       int    // 1-based line of the module key in the policy text
 }
 
 // Modules lists the modules declared under the policy's `modules:` map, in file order. It ignores every other key.
@@ -451,9 +455,11 @@ at archfit commit `2d20da8`, copied unchanged: a large real policy that `Diagnos
   `^[0-9a-f]{64}$` and never starts with `sha256:`.
 - **Test name**: `TestModulesShapes`
   **Scenario**: table: no `modules` key; `modules: null`; `modules: {}`; `modules: [a, b]`; an entry whose value is a string; `layer` as
-  a list; two modules with and without `layer`; comments and blank lines between entries; CRLF line endings; 5 001 modules.
+  a list; two modules with and without `layer`; a `volatility`, a `subdomain` and a list `volatility`; comments and blank
+  lines between entries; CRLF line endings; 5 001 modules.
   **Expected behavior**: `nil, nil` for the first three; errors for list, string value, list layer and 5 001; otherwise file order, names
-  as written, `Layer` or `""`, and `Line` equal to the 1-based line of each key.
+  as written, `Layer` or `""`, `Volatility` and `Subdomain` as declared (`""` for the list), and `Line` equal to the
+  1-based line of each key.
 - **Test name**: `TestWaiversExpiresParsing`
   **Scenario**: table of `expires` values: `2026-10-20`; `"2026-10-20"`; `2028-02-29`; `2027-02-29`; `2026-1-5`; `20261020`;
   `2026-10-20T00:00:00Z`; `next week`; empty; absent.

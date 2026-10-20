@@ -20,12 +20,12 @@ func TestBuildMapsReportToView(t *testing.T) {
 	}
 	wantNodes := []Node{}
 	for _, d := range defs {
-		wantNodes = append(wantNodes, Node{Name: d.Name, Layer: d.Layer, PolicyLine: d.Line})
+		wantNodes = append(wantNodes, Node{Name: d.Name, Layer: d.Layer, PolicyLine: d.Line, Volatility: VolatilityUndeclared})
 	}
 	if !reflect.DeepEqual(got.Nodes, wantNodes) {
 		t.Errorf("Nodes = %+v, want the policy's modules %+v", got.Nodes, wantNodes)
 	}
-	if want := []Node{{"a", "", 3, ""}, {"b", "", 6, ""}}; !reflect.DeepEqual(got.Nodes, want) {
+	if want := []Node{{Name: "a", Layer: "", PolicyLine: 3, Volatility: VolatilityUndeclared}, {Name: "b", Layer: "", PolicyLine: 6, Volatility: VolatilityUndeclared}}; !reflect.DeepEqual(got.Nodes, want) {
 		t.Errorf("Nodes = %+v, want %+v", got.Nodes, want)
 	}
 
@@ -64,7 +64,8 @@ func TestStatusFromRealReports(t *testing.T) {
 		fixture, release string
 		want             []Link
 	}{
-		{"real-blocked-forbidden-and-allowed", corpusEngine, []Link{link("a", "b", 1, StatusViolation), link("a", "c", 1, StatusObserved)}},
+		// a -> c: the engine allows it and a baselined advisory names it
+		{"real-blocked-forbidden-and-allowed", corpusEngine, []Link{link("a", "b", 1, StatusViolation), link("a", "c", 1, StatusAccepted)}},
 		{"real-baselined-comparable", corpusEngine, []Link{link("a", "b", 1, StatusAccepted)}}, // a baselined forbidden edge is never "permitted"
 		{"real-waiver-active", corpusEngine, []Link{link("a", "b", 1, StatusAccepted)}},
 		{"real-waiver-expired", corpusEngine, []Link{link("a", "b", 1, StatusViolation)}},
@@ -80,17 +81,18 @@ func TestStatusFromRealReports(t *testing.T) {
 	}
 }
 
-// TestStatusFromEngineSeamPolicy reads the v3.0.0 capture of the engine's hexagonal map scenario: every link shows
-// the engine's seams[].policy, the same statuses `archfit map` prints for that run, allowed included.
+// TestStatusFromEngineSeamPolicy reads the v3.0.0 capture of the engine's hexagonal map scenario: every link starts
+// at the engine's seams[].policy, the statuses `archfit map` prints for that run, and the accepted advisories the
+// engine's policy leaves out raise theirs, as the overview counts them (report.Group).
 func TestStatusFromEngineSeamPolicy(t *testing.T) {
 	const name = "real-seam-policy"
 	got := Build(corpusReport(t, name, corpusEngine), corpusFile(t, name+".policy.yaml"))
 	want := []Link{
 		link("api", "billing", 1, StatusAccepted),
-		link("api", "stripe", 1, StatusAllowed),
+		link("api", "stripe", 1, StatusAccepted),
 		link("billing", "stripe", 1, StatusViolation),
-		link("orders", "audit", 1, StatusObserved),
-		link("orders", "billing", 1, StatusAllowed),
+		link("orders", "audit", 1, StatusAccepted),
+		link("orders", "billing", 1, StatusAccepted),
 		link("stripe", "orders", 1, StatusAllowed),
 	}
 	if !reflect.DeepEqual(statuses(got.Links), want) {

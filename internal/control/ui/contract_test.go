@@ -348,8 +348,8 @@ func TestGraphPageBuildsFromArtifact(t *testing.T) {
 	}
 }
 
-// TestGraphPageShowsTheEngineSeamPolicy: an engine v3.0.0 artifact decodes, and
-// each link shows the engine's seams[].policy status, allowed included.
+// TestGraphPageShowsTheEngineSeamPolicy: an engine v3.0.0 artifact decodes, and each link shows the engine's
+// seams[].policy status, allowed included, raised by the accepted advisories it leaves out (graph.Build).
 func TestGraphPageShowsTheEngineSeamPolicy(t *testing.T) {
 	e := newEnv(t)
 	c := e.as("alice", permRead)
@@ -372,7 +372,7 @@ func TestGraphPageShowsTheEngineSeamPolicy(t *testing.T) {
 	for _, l := range got.View.Links {
 		statuses[l.Status] = true
 	}
-	for _, s := range []graph.LinkStatus{graph.StatusViolation, graph.StatusAccepted, graph.StatusAllowed, graph.StatusObserved} {
+	for _, s := range []graph.LinkStatus{graph.StatusViolation, graph.StatusAccepted, graph.StatusAllowed} {
 		if !statuses[s] {
 			t.Errorf("no %s link", s)
 		}

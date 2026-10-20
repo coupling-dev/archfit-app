@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { isAdded, linkKey, order, statusWord, type GLink, type GNode, type Status } from '../../lib/graph';
+  import { isAdded, linkKey, linkStatusWord, order, type GLink, type GNode, type Status } from '../../lib/graph';
   import { pickLink, ui } from '../../lib/selection.svelte';
 
   // The full picture as a dependency structure matrix: rows depend on columns. Focus mode never narrows it.
@@ -33,7 +33,7 @@
                     class="g-cell {l.status}"
                     class:added={ui.emphasis && isAdded(l, pull)}
                     class:sel={ui.sel?.kind === 'link' && ui.sel.key === linkKey(l)}
-                    aria-label="{r} to {c}, {l.count || 'named by a finding'}, {statusWord[l.status]}{isAdded(l, pull)
+                    aria-label="{r} to {c}, {l.count || 'named by a finding'}, {linkStatusWord(l)}{isAdded(l, pull)
                       ? ', added by this PR'
                       : ''}"
                     onclick={() => pickLink(linkKey(l))}>{l.count || '·'}</button

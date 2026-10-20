@@ -33,57 +33,62 @@ func TestModulesShapes(t *testing.T) {
 		{name: "entry value is a string", in: "modules:\n  a: pkg/a\n", wantErr: true},
 		{name: "entry value is null", in: "modules:\n  a:\n", wantErr: true},
 		{name: "layer is a list", in: "modules:\n  a:\n    layer: [app]\n", wantErr: true},
-		{name: "layer is null", in: "modules:\n  a:\n    layer:\n", want: []ModuleDef{{"a", "", 2}}},
+		{
+			name: "volatility and subdomain as declared",
+			in:   "modules:\n  a:\n    volatility: low\n  b:\n    subdomain: core\n  c:\n    volatility: [high]\n",
+			want: []ModuleDef{{Name: "a", Volatility: "low", Line: 2}, {Name: "b", Subdomain: "core", Line: 4}, {Name: "c", Line: 6}},
+		},
+		{name: "layer is null", in: "modules:\n  a:\n    layer:\n", want: []ModuleDef{{Name: "a", Layer: "", Line: 2}}},
 		{
 			name: "with and without layer",
 			in:   twoModules,
-			want: []ModuleDef{{"api", "app", 3}, {"db", "", 6}},
+			want: []ModuleDef{{Name: "api", Layer: "app", Line: 3}, {Name: "db", Layer: "", Line: 6}},
 		},
 		{
 			name: "comments and blank lines",
 			in:   "# policy\n\nmodules:\n\n  # first\n  api:\n    layer: app\n\n  # second\n\n  db: {}\n",
-			want: []ModuleDef{{"api", "app", 6}, {"db", "", 11}},
+			want: []ModuleDef{{Name: "api", Layer: "app", Line: 6}, {Name: "db", Layer: "", Line: 11}},
 		},
 		{
 			name: "CRLF line endings",
 			in:   strings.ReplaceAll(twoModules, "\n", "\r\n"),
-			want: []ModuleDef{{"api", "app", 3}, {"db", "", 6}},
+			want: []ModuleDef{{Name: "api", Layer: "app", Line: 3}, {Name: "db", Layer: "", Line: 6}},
 		},
 		{
 			name: "BOM",
 			in:   "\ufeff" + twoModules,
-			want: []ModuleDef{{"api", "app", 3}, {"db", "", 6}},
+			want: []ModuleDef{{Name: "api", Layer: "app", Line: 3}, {Name: "db", Layer: "", Line: 6}},
 		},
 		{
 			name: "names as written",
 			in:   "modules:\n  \"pkg/a b\": {}\n  42: {}\n  'Ünï': {layer: 3}\n",
-			want: []ModuleDef{{"pkg/a b", "", 2}, {"42", "", 3}, {"Ünï", "3", 4}},
+			want: []ModuleDef{{Name: "pkg/a b", Layer: "", Line: 2}, {Name: "42", Layer: "", Line: 3}, {Name: "Ünï", Layer: "3", Line: 4}},
 		},
 		{
 			name: "flow mapping",
 			in:   "modules: {a: {layer: x}, b: {}}\n",
-			want: []ModuleDef{{"a", "x", 1}, {"b", "", 1}},
+			want: []ModuleDef{{Name: "a", Layer: "x", Line: 1}, {Name: "b", Layer: "", Line: 1}},
 		},
 		{name: "duplicate name", in: "modules:\n  a: {}\n  a: {}\n", wantErr: true},
 		{
 			name: "alias value keeps the line of the key",
 			in:   "defaults: &d\n  layer: app\nmodules:\n  a: *d\n  b:\n    <<: *d\n    paths: [b/**]\n",
-			want: []ModuleDef{{"a", "app", 4}, {"b", "app", 5}},
+			want: []ModuleDef{{Name: "a", Layer: "app", Line: 4}, {Name: "b", Layer: "app", Line: 5}},
 		},
 		{
 			name: "modules is an alias",
 			in:   "base: &m\n  a: {}\nmodules: *m\n",
-			want: []ModuleDef{{"a", "", 2}},
+			want: []ModuleDef{{Name: "a", Layer: "", Line: 2}},
 		},
 		{
 			name: "merge key under modules, explicit keys win",
 			in:   "base: &m\n  a: {layer: old}\n  c: {}\nmodules:\n  <<: *m\n  a: {layer: new}\n",
-			want: []ModuleDef{{"a", "new", 6}, {"c", "", 3}},
+			want: []ModuleDef{{Name: "a", Layer: "new", Line: 6}, {Name: "c", Layer: "", Line: 3}},
 		},
 		{name: "merge of itself", in: "modules: &m\n  <<: *m\n", wantErr: true},
 		{name: "lone CR line breaks", in: "modules:\r  a: {}\r", wantErr: true},
 		{name: "NEL line break", in: "note: \"x\u0085y\"\nmodules:\n  a: {}\n", wantErr: true},
-		{name: "name of 200 characters", in: "modules:\n  " + strings.Repeat("é", 200) + ": {}\n", want: []ModuleDef{{strings.Repeat("é", 200), "", 2}}},
+		{name: "name of 200 characters", in: "modules:\n  " + strings.Repeat("é", 200) + ": {}\n", want: []ModuleDef{{Name: strings.Repeat("é", 200), Line: 2}}},
 		{name: "name of 201 characters", in: "modules:\n  " + strings.Repeat("é", 201) + ": {}\n", wantErr: true},
 		{name: "5001 modules", in: manyModules(5001), wantErr: true},
 	}
@@ -104,7 +109,7 @@ func TestModulesShapes(t *testing.T) {
 
 	t.Run("5000 modules", func(t *testing.T) {
 		got := mustModules(t, []byte(manyModules(5000)))
-		if len(got) != 5000 || got[4999] != (ModuleDef{"m4999", "", 5001}) {
+		if len(got) != 5000 || got[4999] != (ModuleDef{Name: "m4999", Layer: "", Line: 5001}) {
 			t.Errorf("got %d modules, last %+v", len(got), got[len(got)-1])
 		}
 	})
@@ -113,7 +118,7 @@ func TestModulesShapes(t *testing.T) {
 func TestModulesOnEnginePolicy(t *testing.T) {
 	t.Run("real capture", func(t *testing.T) {
 		got := mustModules(t, fixture(t, realCapturePolicy))
-		want := []ModuleDef{{"a", "", 3}, {"b", "", 6}}
+		want := []ModuleDef{{Name: "a", Layer: "", Line: 3}, {Name: "b", Layer: "", Line: 6}}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("got %+v, want %+v", got, want)
 		}
@@ -132,9 +137,12 @@ func TestModulesOnEnginePolicy(t *testing.T) {
 		fixtureJSON(t, fullExpectation, &expect)
 		var want []ModuleDef
 		for _, m := range expect.Fields.Modules {
-			want = append(want, ModuleDef{m.Name, m.Layer, m.Line})
+			want = append(want, ModuleDef{Name: m.Name, Layer: m.Layer, Line: m.Line})
 		}
 		got := mustModules(t, fixture(t, fullPolicy))
+		for i := range got { // the expectation names no volatility or subdomain
+			got[i].Volatility, got[i].Subdomain = "", ""
+		}
 		if len(want) == 0 || !reflect.DeepEqual(got, want) {
 			t.Errorf("got %+v, want %+v", got, want)
 		}
