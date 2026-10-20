@@ -626,13 +626,13 @@ func TestReadableWhy(t *testing.T) {
 func TestMatchedByKeepsOnlyTheAllowList(t *testing.T) {
 	doc := baseDoc(t)
 	set(t, doc, map[string]any{
-		"metric": "cycle_count", "before": "0", "after": "2", "threshold": "max_new 0",
+		"metric": "cycle_count", "before": "0", "after": "2", "threshold": "max_new 0", "locations_total": "120",
 		"from_glob": "pkg/secret/**", "cycle_modules": "a, b",
 	}, "findings", 0, "matched_by")
 	set(t, doc, "introduce_contract", "seams", 0, "hypothesis")
 	r := mustDecode(t, encode(t, doc))
 
-	want := map[string]string{"metric": "cycle_count", "before": "0", "after": "2", "threshold": "max_new 0"}
+	want := map[string]string{"metric": "cycle_count", "before": "0", "after": "2", "threshold": "max_new 0", "locations_total": "120"}
 	if got := r.Findings[0].MatchedBy; !reflect.DeepEqual(got, want) {
 		t.Errorf("matched_by = %v, want only %v", got, want)
 	}
@@ -698,6 +698,59 @@ func TestSplitCovered(t *testing.T) {
 			}
 			if !reflect.DeepEqual(ids(rest), tt.rest) || !reflect.DeepEqual(got, tt.covered) {
 				t.Errorf("rest = %v, covered = %v; want %v, %v", ids(rest), got, tt.rest, tt.covered)
+			}
+		})
+	}
+}
+
+func TestImbalancedCouplingWhyIsOneSentence(t *testing.T) {
+	engine := "balanced coupling: functional integration strength × cross_module distance × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)"
+	tests := []struct{ name, why, want string }{
+		{"the engine's sentence", engine, "functional coupling across a module boundary to a volatile target: a change on one side forces a change on the other (Balanced Coupling: critical severity)"},
+		{"another rule", "Import from a to b is forbidden", "Import from a to b is forbidden"},
+		{"a sentence of another shape", "balanced coupling: odd", "balanced coupling: odd"},
+		{"a distance token only", "the cross_module distance is wide", "the distance across modules is wide"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ReadableWhy(tt.why); got != tt.want {
+				t.Errorf("ReadableWhy = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCycleWhyDescribesTheCycle(t *testing.T) {
+	want := "Each of the 4 dependencies lies on a cycle: from its target, dependencies lead back to its source, so the 3 modules depend on each other."
+	if got := CycleWhy(4, 3); got != want {
+		t.Errorf("CycleWhy = %q, want %q", got, want)
+	}
+}
+
+func TestLocationsTotalIsTheEnginesFullCount(t *testing.T) {
+	listed := func(n int, total string) Finding {
+		f := Finding{Locations: make([]Location, n)}
+		if total != "" {
+			f.MatchedBy = map[string]string{MatchedByLocationsTotal: total}
+		}
+		return f
+	}
+	tests := []struct {
+		name string
+		f    Finding
+		want int
+	}{
+		{"capped by the engine", listed(50, "120"), 120},
+		{"not capped", listed(3, "3"), 3},
+		{"no count reported", listed(3, ""), 3},
+		{"a count below the listed ones", listed(3, "1"), 3},
+		{"a count that is not a number", listed(3, "many"), 3},
+		{"no location at all", listed(0, ""), 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := LocationsTotal(tt.f); got != tt.want {
+				t.Errorf("LocationsTotal = %d, want %d", got, tt.want)
 			}
 		})
 	}

@@ -181,7 +181,7 @@ What each item shows:
   A tripped metric ratchet reads "metric `name`: before → after (threshold)". The folded evidence starts with a
   Decision section: the engine's verdict, its hard gates and active blockers, and the reason codes with their
   details; an advisory repository still shows a blocked verdict there. The evidence gaps, the dimensions (with the
-  new and resolved distributed-monolith seams of the drift dimension), the validation commands as the Archfit
+  tight cross-module seams at high volatility the drift dimension counts as new and resolved since the baseline), the validation commands as the Archfit
   workflow ran them, and a JSON block of agent tasks between `<!-- archfit:agent-tasks -->` markers are folded too.
   A coding agent on the pull request can act on that block.
 - The evidence gaps show analyzers that did not run (absent or disabled) on one line.
@@ -325,7 +325,8 @@ The App reads a complete report or no report. It never shortens a report to make
 With `gate: required`, an upload over 5 MiB leaves the `archfit/gate` check pending. The sweep sets it to
 `action_required` with `missing_upload` after 60 minutes. A report of about 3 000 seams with one advisory each is
 larger than 5 MiB. The comment shows at most 10 locations for each listed finding and 3 for each table row, and gives
-the count of the others.
+the count of the others. The engine lists at most 50 locations of one dependency; counts use the full number it
+reports.
 
 Engine v3.0.0 adds a rule's `rationale` and `docs` to the why and the constraint of each finding of that rule. Write
 both on one line and keep them short: a plain or quoted YAML string, or `>-`. A `|` or `>` block ends with a line

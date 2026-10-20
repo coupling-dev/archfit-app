@@ -26,6 +26,6 @@
     {/if}
     {#if f.also?.length}<p class="small"><span class="muted">Also reported as</span> {f.also.join('; ')}</p>{/if}
     <Reasons why={f.why} fixes={f.fix ? [f.fix] : []} alternatives={f.alternatives ?? []} />
-    <div class="row"><span class="muted small">Where:</span> <Locations locations={f.locations} /></div>
+    <div class="row"><span class="muted small">Where:</span> <Locations locations={f.locations} total={f.locations_total} /></div>
   </div>
 </article>

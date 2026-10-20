@@ -1,8 +1,11 @@
 package report
 
 import (
+	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
+	"strings"
 )
 
 // Display rules that the PR comment, the App's pull request page and its graph share, so all three tell the same story
@@ -210,16 +213,41 @@ var DistanceWords = map[string]string{
 
 var distanceToken = regexp.MustCompile(`\b([a-z_]+) distance\b`)
 
-// ReadableWhy rewrites the engine's "<token> distance" in a finding's Why as "distance <words>", so the Why says what
-// the tables beside it say. Any other text, and a token DistanceWords does not know, stays as written.
+// balancedWhy is the engine's imbalanced-coupling Why: "balanced coupling: <formula> → <band> severity (<explanation>)".
+var balancedWhy = regexp.MustCompile(`^balanced coupling: .* → (\w+) severity \((.+)\)$`)
+
+// ReadableWhy is a finding's Why as the App shows it, on the comment and on every page. The engine's "<token> distance"
+// reads "distance <words>", so the Why says what the tables beside it say. The imbalanced-coupling Why is said in one
+// sentence, "<explanation, → as a colon> (Balanced Coupling: <band> severity)": its formula is the strength, distance
+// and volatility the tables already show. Any other text, and a token DistanceWords does not know, stays as written.
 func ReadableWhy(why string) string {
-	return distanceToken.ReplaceAllStringFunc(why, func(m string) string {
+	why = distanceToken.ReplaceAllStringFunc(why, func(m string) string {
 		token := distanceToken.FindStringSubmatch(m)[1]
 		if w, ok := DistanceWords[token]; ok {
 			return "distance " + w
 		}
 		return m
 	})
+	if m := balancedWhy.FindStringSubmatch(why); m != nil {
+		return strings.Replace(m[2], " → ", ": ", 1) + " (Balanced Coupling: " + m[1] + " severity)"
+	}
+	return why
+}
+
+// CycleWhy says why the directions of one dependency cycle are a cycle, from what its table shows. The engine writes one
+// Why per direction that only swaps two module names and names the first pair, so no one of them describes the cycle.
+func CycleWhy(directions, modules int) string {
+	return fmt.Sprintf("Each of the %d dependencies lies on a cycle: from its target, dependencies lead back to its source, so the %d modules depend on each other.", directions, modules)
+}
+
+// LocationsTotal is how many locations a finding has: the engine's full count when it reported one, else the locations
+// it listed. The engine lists at most 50; a count it reports below the listed ones is ignored.
+func LocationsTotal(f Finding) int {
+	n, err := strconv.Atoi(f.MatchedBy[MatchedByLocationsTotal])
+	if err != nil {
+		return len(f.Locations)
+	}
+	return max(n, len(f.Locations))
 }
 
 // BalancingMoves reads the engine's seam hypothesis in the words of Balanced Coupling (integration strength, distance,

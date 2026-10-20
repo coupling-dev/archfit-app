@@ -311,8 +311,11 @@ func TestPullPageGroupsCyclesAsTheCommentDoes(t *testing.T) {
 		t.Fatalf("cycles = %+v, want one between pkg_chaos and pkg_container", b.Cycles)
 	}
 	cy := b.Cycles[0]
-	if len(cy.Directions) != 2 || len(cy.Fixes) != 2 || cy.Why != "a cycle at distance across modules" {
-		t.Errorf("cycle = %+v, want two directions, each repair once and the Why in the tables' words", cy)
+	if len(cy.Directions) != 2 || len(cy.Fixes) != 2 || cy.Why != report.CycleWhy(2, 2) {
+		t.Errorf("cycle = %+v, want two directions, each repair once and the comment's cycle Why", cy)
+	}
+	if cy.Directions[0].Why != "a cycle at distance across modules" {
+		t.Errorf("direction why = %q, want the engine Why in the tables' words", cy.Directions[0].Why)
 	}
 	if len(b.Other) == 0 || b.Other[0].Why != "a cycle at distance across modules" {
 		t.Errorf("other = %+v, want the Why in the tables' words", b.Other)
@@ -448,6 +451,14 @@ func TestAttentionReasonFollowsTheEngine(t *testing.T) {
 			Decision:   report.Decision{HardGates: "unmeasured", UnevaluatedRequiredRules: []report.UnevaluatedRule{{RuleID: "r"}}},
 			Dimensions: dims(map[string]string{"coupling": "partial", "drift": "unmeasured"})},
 			"2 advisories; 1 required rule not evaluated; coupling is partially measured; drift is not measured"},
+		{"an advisory on a listed violation's dependency joins its row, so it is not counted", report.Report{Verdict: "needs_attention",
+			Findings: []report.Finding{
+				{ID: "v", Kind: "gate", Status: "regressed", Edge: report.Edge{From: report.Endpoint{Module: "a"}, To: report.Endpoint{Module: "b"}}},
+				{ID: "c", Kind: "advisory", Status: "new", Edge: report.Edge{From: report.Endpoint{Module: "a"}, To: report.Endpoint{Module: "b"}}},
+				{ID: "o", Kind: "advisory", Status: "new", Edge: report.Edge{From: report.Endpoint{Module: "c"}, To: report.Endpoint{Module: "d"}}},
+			},
+			Dimensions: dims(nil)},
+			"1 advisory"},
 		{"hard gates unmeasured without a rule", report.Report{Verdict: "needs_attention", Decision: report.Decision{HardGates: "unmeasured"},
 			Dimensions: dims(map[string]string{"intent": "unmeasured", "structure": "unmeasured", "drift": "unmeasured"})},
 			"a hard gate could not be measured; intent, structure and drift are not measured"},
@@ -458,5 +469,38 @@ func TestAttentionReasonFollowsTheEngine(t *testing.T) {
 				t.Errorf("attentionReason = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFindingMetaUsesTheCommentsWords(t *testing.T) {
+	tests := []struct{ status, want string }{
+		{"new", "high"},
+		{"fixed", "high"},
+		{"baseline", "high, accepted in the baseline"},
+		{"waived", "high, accepted by waiver"},
+		{"expired_waiver", "high, waiver expired"},
+		{"regressed", "high, regressed"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.status, func(t *testing.T) {
+			if got := findingMeta(report.Finding{Severity: "high", Status: tt.status}); got != tt.want {
+				t.Errorf("findingMeta = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPullPageCarriesTheEnginesFullLocationCount(t *testing.T) {
+	locs := make([]report.Location, 50)
+	for i := range locs {
+		locs[i] = report.Location{File: "a.go", Line: i + 1}
+	}
+	rep := report.Report{Findings: []report.Finding{{ID: "v", Kind: "gate", RuleID: "r", Status: "new", Severity: "high", Locations: locs,
+		MatchedBy: map[string]string{report.MatchedByLocationsTotal: "120"},
+		Edge:      report.Edge{From: report.Endpoint{Module: "a"}, To: report.Endpoint{Module: "b"}}}}}
+	var b findingsJSON
+	fillFindings(&b, rep)
+	if len(b.Other) != 1 || len(b.Other[0].Locations) != 50 || b.Other[0].LocationsTotal != 120 {
+		t.Errorf("other = %+v, want 50 locations listed and a total of 120", b.Other)
 	}
 }
