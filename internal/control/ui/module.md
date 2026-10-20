@@ -1120,7 +1120,7 @@ turn: the results are judged in the old order. A panic in a part is raised again
 others are done, so the handler chain's recover still answers `500` and the process keeps serving.
 
 - Pull request page and graph: after `PullSummary`, the settings on the base and the report (check, artifact, digest,
-  decode) at once; the graph reads the policy at the head and at the base beside them. A settings error other than
+  decode) at once (with a hint, all of it beside `PullSummary`: Reads made ahead); the graph reads the policy at the head and at the base beside them. A settings error other than
   none fails the answer first, then the report's own state. The base's policy text or failure counts only when the
   head's text is not the report's, and neither counts without a report.
 - Repository graph: the report and the policy text (the user's open draft, else the default branch) at once; the text
@@ -1135,6 +1135,29 @@ others are done, so the handler chain's recover still answers `500` and the proc
   listing **[decided, g3]**.
 - Tests prove the overlap without timing: the fake GitHub holds the named reads until all of them are in flight, so
   reads made in turn never meet (`TestIndependentReadsMeet`).
+
+### Reads made ahead
+
+A chain whose reads each take the last one's answer as a parameter starts them all at once with the parameters the
+previous request of the same chain found, and counts each only when the fresh read it depends on names the same
+**[decided, g4]**. A warm page waits for one round trip, not for three; a stale hint costs the reads made ahead and
+then the chain in turn, never a wrong page.
+
+- Pull request page and graph: `PullSummary` beside the settings at the hinted base, `CheckRuns` at the hinted head,
+  `ArtifactID` of the hinted run, and the graph's policy texts at the hinted head and base. Each counts only when the
+  fresh pull request names the same base and head, and its newest `archfit/state` check the same run.
+- Findings and repository graph: the settings beside `LatestRun` of the hinted workflow and `ArtifactID` of the hinted
+  run, each counted only when the fresh settings name the same workflow and its fresh latest run is the same run.
+- Every fresh read runs on every request, `ArtifactID` included: the hint never replaces a read, it only lets one
+  start early. An artifact GitHub no longer lists reads as gone with the hint and the report cache warm.
+- Hints hold parameters only (a base branch, a head SHA, a workflow path, a run ID), never an answer: at most 4096
+  **[default]**, least recently used out first, keyed by installation ID, repository full name and pull request number
+  (0 for the default branch). They sit behind the per-request authorization, as the report cache does, and one
+  repository's hints never become another's reads.
+- Not made ahead: the overview's onboarding progress (settings, then the workflow, the policy and the latest run's
+  check) lives in `onboarding` and stays three reads in turn.
+- Tests: the warm chains meet at the fake GitHub's barrier (`TestWarmReadsMeet`), a hint the fresh reads contradict
+  is read again (`TestStaleHintIsReadAgain`), hints stay with their repository (`TestHintsStayWithTheirRepository`).
 
 ### Pages
 

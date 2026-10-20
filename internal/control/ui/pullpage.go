@@ -52,63 +52,105 @@ func pullNumber(r *http.Request) (int, bool) {
 // readPull reads the pull request, the archfit/state check on its head, and the report of the run that check names.
 // The pull request page and its graph both read through it, so they always show the same report. It never returns a
 // report that does not match the check: the digest in the check's external_id must be the report's. The report is nil
-// when Unavailable says why there is none. Each of also runs side by side with those reads, once the pull request is
-// known, for a read that needs only the pull request.
-func (s *server) readPull(ctx context.Context, sc scope, number int, also ...func(api.Pull)) (pullBody, *report.Report, error) {
-	pull, err := s.gh.pulls.PullSummary(ctx, sc.repo.RepoRef, number)
+// when Unavailable says why there is none. Each of also runs side by side with those reads, for a read that needs only
+// the pull request's head and base.
+//
+// The pull request names the head and the base every other read takes. The last read of this pull request left them,
+// and the run its check named, as a hint: those reads start beside the pull request's with the hinted values, and each
+// counts only when the fresh pull request and check name the same. A warm page waits for one read, not for three.
+func (s *server) readPull(ctx context.Context, sc scope, number int, also ...func(head, base string)) (pullBody, *report.Report, error) {
+	key := hintKey{sc.repo.InstallationID, sc.repo.FullName, number}
+	h, hinted := s.hints.get(key)
+	repo := sc.repo.RepoRef
+	gateRequired := func(base string) (bool, error) { return s.gateRequired(ctx, repo, base) }
+	checkRuns := func(head string) ([]api.CheckRun, error) { return s.gh.checks.CheckRuns(ctx, repo, head, checkState) }
+	artifactID := s.artifactIDs(ctx, repo)
+	var (
+		pull     api.Pull
+		err      error
+		gate     guess[string, bool]
+		runs     guess[string, []api.CheckRun]
+		artifact guess[int64, int64]
+	)
+	reads := []func(){func() { pull, err = s.gh.pulls.PullSummary(ctx, repo, number) }}
+	if hinted {
+		reads = append(reads, gate.ahead(h.base, gateRequired), runs.ahead(h.head, checkRuns))
+		if h.run != 0 {
+			reads = append(reads, artifact.ahead(h.run, artifactID))
+		}
+		for _, fn := range also {
+			reads = append(reads, func() { fn(h.head, h.base) })
+		}
+	}
+	together(reads...)
 	if err != nil {
 		return pullBody{}, nil, err
 	}
+
 	// The base's settings and the head's report do not depend on each other: they are read side by side. A failure
 	// of either fails the page as it did when they were read in turn, the settings' first.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var (
-		required    bool
-		settingsErr error
-		body        pullBody
-		rep         *report.Report
+		required bool
+		gateErr  error
+		body     pullBody
+		rep      *report.Report
 	)
-	reads := []func(){func() {
-		// The gate reads the settings on the pull request's base, as the published checks do; a base without them is
-		// advisory.
-		raw, _, err := s.gh.files.File(ctx, sc.repo.RepoRef, pull.BaseRef, settings.Path)
-		switch {
-		case err == nil:
-			if set, err := settings.Parse(raw); err == nil {
-				required = set.Gate == settings.GateRequired
-			}
-		case !errors.Is(err, api.ErrNotFound):
-			settingsErr = err
+	reads = []func(){func() {
+		if required, gateErr = gate.at(pull.BaseRef, gateRequired); gateErr != nil {
 			cancel()
 		}
-	}, func() { body, rep, err = s.pullReport(ctx, sc, pull) }}
-	for _, fn := range also {
-		reads = append(reads, func() { fn(pull) })
+	}, func() { body, rep, err = s.pullReport(ctx, sc, pull, &runs, &artifact) }}
+	if !hinted || pull.HeadSHA != h.head || pull.BaseRef != h.base {
+		for _, fn := range also {
+			reads = append(reads, func() { fn(pull.HeadSHA, pull.BaseRef) })
+		}
 	}
 	together(reads...)
-	if settingsErr != nil {
-		return pullBody{}, nil, settingsErr
+	if gateErr != nil {
+		return pullBody{}, nil, gateErr
 	}
 	if err != nil {
 		return pullBody{}, nil, err
 	}
+	s.hints.put(key, hint{base: pull.BaseRef, head: pull.HeadSHA, run: body.RunID})
 	body.Required = required
 	return body, rep, nil
 }
 
-// pullReport reads the archfit/state check on the pull request's head and the report of the run it names.
-func (s *server) pullReport(ctx context.Context, sc scope, pull api.Pull) (pullBody, *report.Report, error) {
+// gateRequired reads the settings on a pull request's base, as the published checks do: the gate is required only when
+// they say so, and a base without them is advisory.
+func (s *server) gateRequired(ctx context.Context, repo api.RepoRef, base string) (bool, error) {
+	raw, _, err := s.gh.files.File(ctx, repo, base, settings.Path)
+	if errors.Is(err, api.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	set, err := settings.Parse(raw)
+	return err == nil && set.Gate == settings.GateRequired, nil
+}
+
+// pullReport reads the archfit/state check on the pull request's head and the report of the run it names. runs and
+// artifact are the reads readPull made ahead; each counts only for the head and the run read here.
+func (s *server) pullReport(ctx context.Context, sc scope, pull api.Pull,
+	runs *guess[string, []api.CheckRun], artifact *guess[int64, int64],
+) (pullBody, *report.Report, error) {
+	repo := sc.repo.RepoRef
 	body := pullBody{Pull: pull, CheckURL: pull.URL + "/checks"}
-	runs, err := s.gh.checks.CheckRuns(ctx, sc.repo.RepoRef, pull.HeadSHA, checkState)
+	checks, err := runs.at(pull.HeadSHA, func(head string) ([]api.CheckRun, error) {
+		return s.gh.checks.CheckRuns(ctx, repo, head, checkState)
+	})
 	if err != nil {
 		return pullBody{}, nil, err
 	}
-	if len(runs) == 0 {
+	if len(checks) == 0 {
 		body.Unavailable = noResult
 		return body, nil, nil
 	}
-	run := slices.MaxFunc(runs, func(a, b api.CheckRun) int { return cmp.Compare(a.ID, b.ID) })
+	run := slices.MaxFunc(checks, func(a, b api.CheckRun) int { return cmp.Compare(a.ID, b.ID) })
 	body.Headline, body.Conclusion = run.Title, run.Conclusion
 	// action_required withdraws a result (stale inputs, an expired waiver, a suspension, a missing approval) or says
 	// the evidence is unusable. The sweep keeps the old run in external_id when it withdraws, so the old report would
@@ -124,7 +166,7 @@ func (s *server) pullReport(ctx context.Context, sc scope, pull api.Pull) (pullB
 	}
 	body.RunID = runID
 
-	payload, err := s.reportPayload(ctx, sc.repo.RepoRef, runID)
+	payload, err := s.runReport(ctx, repo, runID, artifact)
 	if errors.Is(err, api.ErrNotFound) {
 		body.Unavailable = reportExpired
 		return body, nil, nil
@@ -144,6 +186,15 @@ func (s *server) pullReport(ctx context.Context, sc scope, pull api.Pull) (pullB
 		return body, nil, nil
 	}
 	return body, &rep, nil
+}
+
+// runReport is the report artifact of a run, its artifact listed fresh (or by the read made ahead for this run).
+func (s *server) runReport(ctx context.Context, repo api.RepoRef, runID int64, artifact *guess[int64, int64]) ([]byte, error) {
+	id, err := artifact.at(runID, s.artifactIDs(ctx, repo))
+	if err != nil {
+		return nil, err
+	}
+	return s.reportByID(ctx, repo, id)
 }
 
 // parseExternalID reads "v1:<run_id>:<attempt>:<digest>" and returns the run and the bare hex digest.

@@ -10,6 +10,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/policy"
 	"github.com/alexei-led/archfit-app/internal/wire/report"
+	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
 const (
@@ -125,15 +126,40 @@ func (s *server) latestDecoded(ctx context.Context, repo api.Repo) (*report.Repo
 
 // latestReport downloads the report artifact of the latest successful default-branch push run of the settings
 // workflow. A dispatched run or a run still in progress carries no report, so it must not hide the last one.
+//
+// Each read names the next one's parameter: the settings the workflow, its latest run the artifact. The last read
+// left both as a hint, so all three start side by side, and the hinted two count only when the fresh settings and
+// run name the same workflow and run: a warm page waits for one read, not for three.
 func (s *server) latestReport(ctx context.Context, repo api.Repo) ([]byte, error) {
-	set, err := s.settings(ctx, repo)
-	if err != nil {
-		return nil, err
-	}
+	key := hintKey{repo.InstallationID, repo.FullName, 0}
+	h, hinted := s.hints.get(key)
 	f := api.RunFilter{Branch: repo.DefaultBranch, Event: eventPush, Status: conclusionSuccess}
-	run, err := s.gh.actions.LatestRun(ctx, repo.RepoRef, set.Workflow, f)
+	latest := func(workflow string) (api.WorkflowRun, error) {
+		return s.gh.actions.LatestRun(ctx, repo.RepoRef, workflow, f)
+	}
+	artifactID := s.artifactIDs(ctx, repo.RepoRef)
+	var (
+		set      settings.Settings
+		err      error
+		run      guess[string, api.WorkflowRun]
+		artifact guess[int64, int64]
+	)
+	reads := []func(){func() { set, err = s.settings(ctx, repo) }}
+	if hinted {
+		reads = append(reads, run.ahead(h.workflow, latest), artifact.ahead(h.run, artifactID))
+	}
+	together(reads...)
 	if err != nil {
 		return nil, err
 	}
-	return s.reportPayload(ctx, repo.RepoRef, run.ID)
+	latestRun, err := run.at(set.Workflow, latest)
+	if err != nil {
+		return nil, err
+	}
+	s.hints.put(key, hint{workflow: set.Workflow, run: latestRun.ID})
+	id, err := artifact.at(latestRun.ID, artifactID)
+	if err != nil {
+		return nil, err
+	}
+	return s.reportByID(ctx, repo.RepoRef, id)
 }

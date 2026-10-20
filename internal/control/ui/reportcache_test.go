@@ -42,7 +42,7 @@ func TestReportCacheIsPerRepository(t *testing.T) {
 			gh.artifacts[5] = []byte("report of the first")
 			s := &server{gh: github{actions: gh}, reports: newReportCache(reportCacheBytes)}
 			for range 2 {
-				if _, err := s.reportPayload(context.Background(), cached, 5); err != nil {
+				if _, err := s.reportByID(context.Background(), cached, 5); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -51,7 +51,7 @@ func TestReportCacheIsPerRepository(t *testing.T) {
 			}
 
 			gh.artifacts[5] = []byte("report of the other")
-			got, err := s.reportPayload(context.Background(), other, 5)
+			got, err := s.reportByID(context.Background(), other, 5)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -94,7 +94,8 @@ func TestReportCacheHitStillAuthorizes(t *testing.T) {
 }
 
 // The artifact listing is GitHub's answer to whether the report still exists, so it runs on every request: once the
-// artifact is gone (expired, or deleted by its owner), the page says so though the cache still holds the report.
+// artifact is gone (expired, or deleted by its owner), the page says so though the cache still holds the report and
+// the first reads left their hints.
 func TestCachedReportOfAnUnlistedArtifactIsGone(t *testing.T) {
 	e := newEnv(t)
 	c := e.as("alice", permRead)
