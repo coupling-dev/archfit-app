@@ -70,7 +70,8 @@ when a release changes the key set, or when no installed workflow pins it.
 
 - The schema has these keys, among others. Kept: `comparison.classification_hash`, `comparison.origin_status`,
   `comparison.origin_reasons`, `gate_reference.drift`, `gate_reference.baseline_present`, `findings[].origin`,
-  `agent_tasks[].origin` and the optional `seams[].policy`. Dropped, and type-checked: `comparison.introduced_finding_ids`
+  `agent_tasks[].origin`, the optional `seams[].policy`, and the seam's balance reading: `seams[].hypothesis`,
+  `quadrant`, `distributed_monolith` and `raw_distance.basis`. Dropped, and type-checked: `comparison.introduced_finding_ids`
   and `comparison.resolved_finding_ids`, with the same two keys of `gate_reference`. The engine writes both lists
   only with `--base`.
 - `origin` of a finding or a task (`introduced`, `pre_existing`, `unknown`) exists only in a report made with
@@ -82,6 +83,14 @@ when a release changes the key set, or when no installed workflow pins it.
 - `seams[].policy` has the closed value set `violation`, `accepted`, `advisory`, `allowed`, `observed` (the engine's
   policy status of the seam). `Seam.Policy` keeps the value, an enum checked only when the key is present (absent
   decodes to `""`); the graph shows it, the gate never reads it.
+- The seam's balance reading is display only, and its value sets are closed here, from the engine's constants (the
+  schema gives no enum): `hypothesis` `balanced`, `accept_low_volatility`, `introduce_contract`, `move_functionality`,
+  `declare_volatility`, `expected_by_role`, `follow_rule`; `quadrant` `cohesive`, `loose`, `low_cohesion`, `tight`;
+  `raw_distance.basis` `<crossed>@<container>`, `<crossed>` one of `module_boundary`, `ownership`, `deploy_unit`,
+  `declared_external` and `<container>` an identifier (a module name or `system`). A value outside its set, free text
+  included, decodes to `""` and never fails the report **[default]**: an older engine let `hypothesis` carry prose,
+  which must not survive, and a value a later engine adds shows nothing. `distributed_monolith` is a boolean; absent
+  reads `false`. The other `raw_distance` keys stay dropped: owners and deploy units name people and units.
 - A key the App starts to keep is a kept field; keeping it is still a reviewed contract change.
 - **Frozen decision core.** The gate decides only from these fields: `schema_version`, `verdict`,
   `decision.hard_gates`, `decision.unevaluated_required_rules` (`rule_id`, `reason`), `comparison.config_hash`,
@@ -114,9 +123,8 @@ and not in this list is a decode error.
   `start_line`, `end_line`, `count` (integers). `name` is a source identifier: the closest thing to source in a
   report. Declarations are always dropped, whatever they contain.
 - Dropped seam keys: `scored_edges`, `abstained_edges`, `critical_edges`, `high_or_worse_edges`, `critical_share_pct`,
-  `high_or_worse_share_pct` (integers); `quadrant`, `label_evidence_hash`, `confidence`,
-  `role_expectation`, `hypothesis` (strings); `labels` (list of strings); `distributed_monolith` (boolean);
-  `raw_distance` (object: `level`, `basis`, `from_owner`, `to_owner`, `from_deploy_unit`, `to_deploy_unit` strings,
+  `high_or_worse_share_pct` (integers); `label_evidence_hash`, `confidence`, `role_expectation` (strings); `labels`
+  (list of strings); `raw_distance` but its `basis` (object: `level`, `from_owner`, `to_owner`, `from_deploy_unit`, `to_deploy_unit` strings,
   `same_owner`, `same_deploy_unit` booleans, `boundary_crossings`, `shared_ancestor` integers); `scores` (object: `n`,
   `min`, `median`, `max` integers, `p10`, `p90` integer or `null`, `mean` number).
 - Dropped keys may be absent even where the engine schema requires them **[default]**, so a producer may strip them before upload.
@@ -476,6 +484,19 @@ type Seam struct {
     // Policy is what the engine's policy says about the seam: "violation" | "accepted" |
     // "advisory" | "allowed" | "observed", a closed set. "" = the key is absent.
     Policy string `json:"policy,omitempty"`
+    // The balance reading, display only, each from a closed set ("" outside it): the engine's balancing move, its
+    // quadrant, its distributed-monolith flag, and what the distance crosses.
+    Hypothesis          string       `json:"hypothesis,omitempty"`
+    Quadrant            string       `json:"quadrant,omitempty"`
+    DistributedMonolith bool         `json:"distributed_monolith,omitempty"`
+    RawDistance         SeamDistance `json:"raw_distance"` // only its basis is kept
+}
+
+// SeamDistance is what the engine measured the distance on.
+type SeamDistance struct {
+    // Basis is "<crossed>@<container>": the boundary the distance crosses ("module_boundary" | "ownership" |
+    // "deploy_unit" | "declared_external") and the module that holds both ends, or "system". "" when no edge was scored.
+    Basis string `json:"basis,omitempty"`
 }
 ```
 
@@ -663,6 +684,12 @@ the tests decode each one as the release that produced it (synthetic ones as v3.
   `<b>`, and `3`.
   **Expected behavior**: `""`; `declared`; the new value as written (a token, not a closed set, so a new provenance never
   fails a report); errors naming `seams[0].volatility_provenance` for the last two.
+- **Test name**: `TestSeamBalanceReadingsKeepOnlyEngineTokens`
+  **Scenario**: on the base document with the four keys removed, one at a time: `hypothesis` `move_functionality`, a
+  value a later engine adds, prose, absent; `quadrant` `tight`, `Tight`; `distributed_monolith` true, absent;
+  `raw_distance.basis` `module_boundary@system`, `ownership@pkg_core`, `galaxy@system`, `module_boundary`, `""`.
+  **Expected behavior**: the value kept for each engine token and `true`; `""` or `false` for every other row; no row
+  fails to decode.
 - **Test name**: `TestRemovedV2KeysAreUnknown`
   **Scenario**: the base document with `comparison.task_origin_status` added, and with `new_findings` added to a
   dimension `delta`.
@@ -735,7 +762,7 @@ the tests decode each one as the release that produced it (synthetic ones as v3.
   profile presence and version, and `GateReference.Status` equal the recorded values.
 - **Test name**: `TestMarshalledReportHasNoDroppedKey`
   **Scenario**: decode each valid fixture, marshal the `Report`, inspect the JSON, decode it again.
-  **Expected behavior**: no `matched_by`, `declarations`, `measurement`, `provenance`, `denominator`, `hypothesis` or `scores` key anywhere;
+  **Expected behavior**: no `matched_by`, `declarations`, `measurement`, `provenance`, `denominator` or `scores` key anywhere;
   the second decode equals the first; counts of findings, tasks and seams equal the counts in the fixture file.
 - **Test name**: `TestEngineSchemaKeySetIsCovered`
   **Scenario**: walk the pinned v3.0.1 `internal/wire/testdata/schema/archfit.state.schema.json` and the shadow types by
@@ -775,8 +802,8 @@ the tests decode each one as the release that produced it (synthetic ones as v3.
   **Expected behavior**: every one fails to decode; no error string contains the marker.
 - **Test name**: `TestDeclarationsNeverSurvive` (release test, T04)
   **Scenario**: the leakage fixture whose task has a `declarations` entry named `LEAK-7f3a_handler`, whose finding has `matched_by` values
-  with the marker, and whose seam `hypothesis` has it too.
-  **Expected behavior**: decodes; the marker appears nowhere in the `Report`, in its marshalled JSON, or in its `%+v` formatting.
+  with the marker, and whose seam `hypothesis` has it too, as prose.
+  **Expected behavior**: decodes, the hypothesis as `""`; the marker appears nowhere in the `Report`, in its marshalled JSON, or in its `%+v` formatting.
 - **Test name**: `TestUnknownFieldAtEveryLevel`
   **Scenario**: add one unknown key to each schema object in turn, kept and dropped ones (`producers[]`, `locations[]`, `edge.from`,
   `declarations[]`, `raw_distance`, `scores`, `measurement`).

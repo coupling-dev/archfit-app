@@ -99,7 +99,7 @@ type Link struct {
     // dependency, report.PairExisting when the base had it, "" when the report cannot say or did not compare. Display only.
     Origin string `json:"origin"`
     // The coupling of the pair's strongest seam, as the engine measured it; all "" when no seam names the pair.
-    Strength   string `json:"strength"`   // engine token: contract, model, functional, intrusive
+    Strength   string `json:"strength"`   // engine token: contract, model, functional, symmetric, intrusive, unknown
     Distance   string `json:"distance"`   // in words (report.DistanceWords)
     Volatility string `json:"volatility"` // engine token, the seam's: on a functional dependency the worse end's
     // VolatilitySource is the engine's volatility_provenance of that seam: declared, inherited, cascade, undeclared.
@@ -108,6 +108,17 @@ type Link struct {
     // Accepted is what the accepted findings on the pair accept: AcceptedViolation when one is a gate finding, else
     // AcceptedAdvisory; "" when none names the pair. The page names it, so gate debt never reads as an advisory.
     Accepted string `json:"accepted"`
+    // The balance reading of the pair's strongest seam: the engine's hypothesis (a move, or why none is needed),
+    // quadrant, and raw_distance.basis split at "@" into the boundary it crosses and the module holding both ends, or
+    // "system". All "" when no seam names the pair or the engine gives none.
+    Hypothesis string `json:"hypothesis"`
+    Quadrant   string `json:"quadrant"`
+    Crossing   string `json:"crossing"`  // module_boundary, ownership, deploy_unit, declared_external
+    Container  string `json:"container"` // a module name or "system"
+    // DistributedMonolith is the engine's distributed_monolith flag on any seam of the pair: strong coupling across a
+    // module boundary at high volatility. Only a deploy-unit Crossing is called a distributed monolith on the page, as
+    // in the engine's coupling gate reason.
+    DistributedMonolith bool `json:"distributed_monolith"`
 }
 
 // Link.Accepted values.
@@ -201,11 +212,13 @@ func Build(rep Report, policy []byte) View
     more"), and a pre-existing one still makes it `existing`. On a shown cycle's pair the origin is the comment's. A pair no finding names stays `""`. Without a comparison every `Origin` is `""`, so nothing claims what a change added
     without the engine's comparison. `Origin` is never inferred from a status (`new` means "not accepted", not
     "added") and never changes `Status`: an added link with a gate finding stays a `violation`.
-14. Coupling: per pair, the seam with the strongest `Strength` (`contract` < `model` < `functional` < `intrusive`; a
-    token outside them ranks below all), then the most `Edges`, gives `Strength`, `Volatility`, `VolatilitySource`
-    (the seam's `VolatilityProvenance`), and `Distance` in
+14. Coupling: per pair, the seam with the strongest `Strength` (`unknown` < `contract` < `model` < `functional` <
+    `symmetric` < `intrusive`, the engine's roll-up order; a token outside them ranks below all), then the most
+    `Edges`, gives `Strength`, `Volatility`, `VolatilitySource` (the seam's `VolatilityProvenance`), `Hypothesis`,
+    `Quadrant`, `Crossing` and `Container` (its `RawDistance.Basis` split at the first `@`), and `Distance` in
     `report.DistanceWords` (a token outside them as written). `Imbalance` is the highest `Severity` of the pair's
-    seams (`low` < `medium` < `high` < `critical`). A pair only a finding names has none of them.
+    seams (`low` < `medium` < `high` < `critical`), and `DistributedMonolith` is true when any seam of the pair has the
+    flag. A pair only a finding names has none of them.
 15. Node volatility: only when `Stale` is false (the policy text is the report's), a declared module's node carries
     the `ModuleDef`'s `Volatility` and `Subdomain`, and `Volatility` is `undeclared` when it declares neither. A stale
     policy, or a module the policy does not declare, gives both `""`: the node claims nothing rather than guess. A
@@ -242,7 +255,7 @@ finding status of rule 4.
 - **Volatility**: moderate
 - **Balanced?**: yes — contract coupling tolerates the distance
 - **Shared knowledge**: graph reads `Seams` (`FromModule`, `ToModule`, `Edges`, `Policy`, `Strength`, `Distance`,
-  `Volatility`, `Severity`), `Findings` (`Kind`, `Status`, `Edge.From.Module`, `Edge.To.Module`, `RuleID`, `Why`),
+  `Volatility`, `VolatilityProvenance`, `Severity`, `Hypothesis`, `Quadrant`, `DistributedMonolith`, `RawDistance.Basis`), `Findings` (`Kind`, `Status`, `Edge.From.Module`, `Edge.To.Module`, `RuleID`, `Why`),
   `Comparison.ConfigHash` and `Decision.HardGates` with `Decision.UnevaluatedRequiredRules` (only whether it is
   empty), and calls `Finding.Active()`, `Group`, `PairOrigin` with `ShownPerGroup`, and `DistanceWords`, nothing else:
   the origin rule, and whether the report compared, are wire/report's. `Reference`, `Dimension`, `Coverage`, `AgentTask` and the other types in the fences below are restated
@@ -477,6 +490,16 @@ type Seam struct {
     // Policy is what the engine's policy says about the seam: "violation" | "accepted" |
     // "advisory" | "allowed" | "observed", a closed set. "" = the key is absent.
     Policy string `json:"policy,omitempty"`
+    // The balance reading, display only, each from a closed set ("" outside it).
+    Hypothesis          string       `json:"hypothesis,omitempty"`
+    Quadrant            string       `json:"quadrant,omitempty"`
+    DistributedMonolith bool         `json:"distributed_monolith,omitempty"`
+    RawDistance         SeamDistance `json:"raw_distance"` // only its basis is kept
+}
+
+// SeamDistance is what the engine measured the distance on.
+type SeamDistance struct {
+    Basis string `json:"basis,omitempty"` // "<crossed>@<container>"; "" when no edge was scored
 }
 ```
 
@@ -599,9 +622,16 @@ Nothing is mocked.
   **Expected behavior**: both statuses equal those of the same report without a comparison.
 - **Test name**: `TestCouplingComesFromTheStrongestSeam`
   **Scenario**: table: one seam; an unknown distance token; a stronger seam with fewer dependencies beside a weaker
-  one; an unknown strength beside `contract`; two equal strengths; a pair only a finding names.
+  one; an unknown strength beside `contract`; two equal strengths; `symmetric` beside `functional` with more
+  dependencies; `intrusive` beside `symmetric`; the engine's `unknown` beside `contract`; a pair only a finding names.
   **Expected behavior**: the seam's facts, distance in words; the token as written; the stronger seam's facts and the
-  worse imbalance of the two; `contract`; the seam with more dependencies; no coupling.
+  worse imbalance of the two; `contract`; the seam with more dependencies; `symmetric`; `intrusive`; `contract`; no
+  coupling.
+- **Test name**: `TestBalanceReadingComesFromTheStrongestSeam`
+  **Scenario**: a flagged `functional` seam beside a stronger-by-count `contract` one; an unflagged `intrusive` seam
+  beside a flagged `functional` one with no reading; one `model` seam with no reading.
+  **Expected behavior**: the functional seam's hypothesis, quadrant, crossing `module_boundary` and container
+  `system`, flagged; the intrusive seam's reading, flagged from the other seam; no reading.
 - **Test name**: `TestNodeShowsWhatTheReportsPolicyDeclares`
   **Scenario**: the report's policy declares `chaos` high, `util` low, `domain` subdomain core and `plain` nothing;
   a functional seam `chaos → util` with `high` from `declared`; a seam into `cache`, not in the policy; then the same

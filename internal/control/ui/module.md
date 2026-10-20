@@ -61,7 +61,8 @@ pilot; product.md leaves usability targets open.
   dependency the pull request added. Status chips that filter, a problem list (violations, then advisories, then
   accepted; the two directions of a cycle with one status are one row, and selecting it highlights and explains both),
   an ELK layered layout (declared layers as partitions, in policy order), focus on problem links above 15 modules
-  **[default]**, a matrix view, an inspector with strength, distance, volatility and balance, a folded legend, and
+  **[default]**, a matrix view, an inspector with strength, distance, volatility and balance, then the engine's
+  balance reading of the dependency (below), a folded legend, and
   filterable tables, which are the only view above 300 modules. Report strings reach the page only as Svelte text and
   attributes.
 - Bounds, each **[default]**: 100 repositories on the overview, 8 parallel lookups, 256 KB policy text, 512 KB request body,
@@ -307,7 +308,7 @@ type Link struct {
     // dependency, report.PairExisting when the base had it, "" when the report cannot say or did not compare. Display only.
     Origin string `json:"origin"`
     // The coupling of the pair's strongest seam, as the engine measured it; all "" when no seam names the pair.
-    Strength   string `json:"strength"`   // engine token: contract, model, functional, intrusive
+    Strength   string `json:"strength"`   // engine token: contract, model, functional, symmetric, intrusive, unknown
     Distance   string `json:"distance"`   // in words (report.DistanceWords)
     Volatility string `json:"volatility"` // engine token, the seam's: on a functional dependency the worse end's
     // VolatilitySource is the engine's volatility_provenance of that seam: declared, inherited, cascade, undeclared.
@@ -316,6 +317,17 @@ type Link struct {
     // Accepted is what the accepted findings on the pair accept: AcceptedViolation when one is a gate finding, else
     // AcceptedAdvisory; "" when none names the pair. The page names it, so gate debt never reads as an advisory.
     Accepted string `json:"accepted"`
+    // The balance reading of the pair's strongest seam: the engine's hypothesis (a move, or why none is needed),
+    // quadrant, and raw_distance.basis split at "@" into the boundary it crosses and the module holding both ends, or
+    // "system". All "" when no seam names the pair or the engine gives none.
+    Hypothesis string `json:"hypothesis"`
+    Quadrant   string `json:"quadrant"`
+    Crossing   string `json:"crossing"`  // module_boundary, ownership, deploy_unit, declared_external
+    Container  string `json:"container"` // a module name or "system"
+    // DistributedMonolith is the engine's distributed_monolith flag on any seam of the pair: strong coupling across a
+    // module boundary at high volatility. Only a deploy-unit Crossing is called a distributed monolith on the page, as
+    // in the engine's coupling gate reason.
+    DistributedMonolith bool `json:"distributed_monolith"`
 }
 
 // Link.Accepted values.
@@ -908,7 +920,9 @@ func Render(s Settings) []byte
   schema and reduces it to the no-source form, so fields the decoder drops (measurement, `matched_by`, task
   declarations, metric provenance, seam scores) never reach a template and ui never renders them. ui parses the artifact
   in no other way. The artifact comes without the envelope that names its release, so ui passes the last release of
-  `EngineVersions`, `v3.0.1`; both releases share one key set.
+  `EngineVersions`, `v3.0.1`; both releases share one key set. The pull request page also reads the decision
+  (`HardGates`, `ActiveBlockers`, `UnevaluatedRequiredRules`), `Comparison.OriginReasons`, each seam's `Hypothesis`
+  and each agent task's `FindingID` and `RepairKind`.
   `StateSchemaV1` is the constant `Decode` checks. For this module each nested type is opaque:
   - `Decision` is an opaque part of `Report` for this module.
   - `Comparison` is an opaque part of `Report` for this module.
@@ -1128,7 +1142,13 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   arrow per direction labelled with its location count, styled as the comment's diagram), a row per direction with
   "This PR", its locations and the seam's strength, distance (`report.DistanceWords`) and volatility, then the reason
   once and each distinct repair once; every other violation as its own card. Advisories and accepted debt each one
-  folded table with each distinct reason once. At most 50 per group with the rest counted (group counts are of
+  folded table with each distinct reason once, the seam's suggested move among them. A finding whose agent task the
+  engine marks `needs_owner_decision` carries an "owner decision" label; the path the engine suggests is not kept
+  (source paths never survive decoding). A finding that names no dependency (a metric ratchet `metric/<name>`) reads
+  "metric <name>", never an empty pair. Under the header, on this page and the pull request graph, the engine's
+  decision: "hard gates failed on N findings" (`decision.active_blockers`), "hard gates failed without a blocking
+  finding" or "hard gates could not be measured", each required rule it could not evaluate with its reason, and
+  `comparison.origin_reasons` as attribution notes; nothing when the gates passed and it notes nothing. At most 50 per group with the rest counted (group counts are of
   findings), 3 locations per finding with the rest folded. "This PR" only when `origin_status` is `comparable`: a
   cycle direction reads `report.PairOrigin` (the comment's rule, so the comment, this page and the graph agree), any
   other finding its own `origin` (`introduced` is added, `pre_existing` existed before). Badges for "no baseline"
@@ -1153,6 +1173,13 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   counts as a problem for focus mode. A cycle's two directions stay one problem row when they share a status, marked
   added when either is. Findings carry no origin of their own on the graph: a cycle finding's origin would contradict
   its link's.
+- Balance reading (both graphs, `web/src/lib/seam.ts`), each sentence the engine's own meaning
+  (archfit `internal/relationship/seam.go`, `score/gate.go`): the suggested move for every hypothesis but `balanced`,
+  marked as a hypothesis; the quadrant; the boundary crossed and the module holding both ends. A dependency the engine
+  flags (`distributed_monolith`) reads as the engine's coupling gate reason, "functional coupling across the module
+  boundary at high volatility (container system)": only a deploy-unit crossing is called a distributed monolith. A
+  line above the graph counts the flagged dependencies the same way. No mark on the canvas: in the pilot 8 of 9
+  dependencies carry the flag.
 - Graph: settings → `LatestRun(Settings.Workflow, {Branch: DefaultBranch, Event: "push", Status: "success"})` → `Artifact(run.ID, "archfit-report", report.MaxBytes)` →
   `report.Decode` (with the last release of `report.EngineVersions`, `v3.0.1`: the artifact names none) → policy text (open draft of the user, else default branch) → `graph.Build`. The artifact is the raw engine
   state JSON; only the decoded no-source `Report` is used. When the chosen policy text fails `policy.Modules` (a broken draft
@@ -1284,6 +1311,11 @@ their interfaces except where a test says otherwise. The clock is injected.
   and the overview; then any other GitHub error on the same routes.
   **Expected behavior**: the rejected token gives `303` to `/auth/login?return=<path>` (a page) or `401` JSON (`/api/`), the session cookie
   deleted, outcome `signed_out`, and the next request is a plain signed-out one. Any other error stays `502` and keeps the cookie.
+- **Test name**: `TestPullPageStatesTheEngineDecision`
+  **Scenario**: the pilot's PR report as captured; then with an unevaluated required rule, an attribution note and an
+  agent task `needs_owner_decision` on one advisory.
+  **Expected behavior**: decision `fail` with 4 blockers and empty lists, every advisory's hypothesis `follow_rule`
+  and none an owner decision; the rule with its reason, the note, and exactly one owner decision.
 - **Test name**: `TestPullPageShowsTheReportOfItsCheck`
   **Scenario**: no check on the head; a check whose external_id names a run whose artifact matches its digest; one whose digest does not match; an expired artifact; run 0; an unknown pull request.
   **Expected behavior**: "no result yet"; the check title as headline, advisory mode, the violation, the no-baseline and no-attribution line, the run; the mismatch wording and no finding; the expired wording; the no-upload wording; `404`. Also: an `action_required` run over a matching old report shows the action-required wording and no finding; an undecodable report shows "report unavailable"; of two check runs the higher ID wins; "added by this PR" appears only with `origin_status: comparable` and `origin: introduced`.
@@ -1524,16 +1556,20 @@ their interfaces except where a test says otherwise. The clock is injected.
   escaped links and API paths, the sign-in return link, the theme with and without storage, the API client's CSRF
   header, error sentences, fallbacks and the problems of a refused policy; the draft timeline, `#L<n>` links, problem
   places, and the editor's marks (from the column to the end of the line, a line past the end on the last line, none
-  for a problem of the whole text).
+  for a problem of the whole text); the balance words: every engine hypothesis but `balanced` and every quadrant
+  worded, the crossings as the engine gate names them (only `deploy_unit` a distributed monolith), the flagged
+  dependency's reason and the count line, the decision sentences for `fail` with and without blockers, `unmeasured`,
+  `pass` and an unknown value, and a metric finding's name.
 - `web/scripts/size.mjs`: the first-load, graph chunk, layout worker and editor chunk budgets above; no lazy chunk in
   the first load.
 - Playwright smoke (`web/e2e/smoke.spec.ts`): the production build behind `vite preview` with `web/csp.txt` as its
   header and `/api` mocked in the browser. Landing, repositories, overview, starting onboarding and discovery, and the
-  theme toggle; the pull request page (the cycle drawing, the folds, copying the agent tasks, a link that is neither
+  theme toggle; the pull request page (the cycle drawing, the folds, the engine's decision with an unevaluated rule,
+  an advisory's suggested move and owner decision, a metric finding named by its metric, copying the agent tasks, a link that is neither
   the App nor GitHub not rendered, a page without a report); the policy page: CodeMirror's `<style>` element with the
   nonce, the problems as a list and as marks, a `#L<n>` hash and a problem selecting their line, Check and Save sending
   the text, the base head and the CSRF header, a refused save keeping the text, a reader offered no write, managed mode
   off with its reason and the inline Allow, and a customer-mode request following its run; the graph pages, laid out by
-  the worker, and a worker that fails to load reported instead of a layout that never ends; a server error page (its sentence, no repository tabs) and the footer's licences link; every page has no
+  the worker, the inspector's balance reading of a flagged dependency and the count line, and a worker that fails to load reported instead of a layout that never ends; a server error page (its sentence, no repository tabs) and the footer's licences link; every page has no
   `securitypolicyviolation` event and no axe violation in light and in dark; the onboarding write carries the CSRF
   header and a JSON body.
