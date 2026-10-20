@@ -390,8 +390,9 @@ The proposal arrives as a commit on the draft pull request. Nothing is published
 Managed AI receives the draft policy text and the instruction. It receives no source code and no report.
 AI output never affects the gate result.
 
-When managed mode is not offered, the form says why: the repository has no settings yet, its settings say
-`data_mode: customer`, or Managed AI is not allowed for the owner. An administrator also gets a link to Data sharing.
+When managed mode is not offered, the form says why: the default branch has no valid settings file, its settings say
+`data_mode: customer`, the App could not read whether Managed AI is allowed, or Managed AI is not allowed for the owner.
+In the last case an administrator also gets a link to Data sharing.
 
 ## Data sharing
 

@@ -1,5 +1,5 @@
-// The words of the Data sharing page. A consent names the administrator as their login was when they gave it; a record
-// that holds no login says only when, and never invents a name.
+// The words of the Data sharing page. A consent names the administrator as their login was when they gave it. The
+// server sends a login with every allowed feature; without one the line says only when, and never invents a name.
 
 import type { Precondition, SharedFeature } from './api';
 

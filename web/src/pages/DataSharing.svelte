@@ -12,10 +12,19 @@
 
   const api = () => repoAPI(route.owner, route.name, 'data-sharing');
 
-  getJSON<DataSharing>(api()).then(
-    (b) => (body = b),
-    (e: ApiError) => (failure = explain(e, here)),
-  );
+  // load shows the state on the server; a page that cannot read it shows no state and no button.
+  function load(): Promise<void> {
+    return getJSON<DataSharing>(api()).then(
+      (b) => {
+        body = b;
+      },
+      (e: ApiError) => {
+        body = null;
+        failure ||= explain(e, here);
+      },
+    );
+  }
+  load();
 
   async function change(kind: string, action: 'allow' | 'revoke') {
     busy = kind;
@@ -24,7 +33,9 @@
       body = await postJSON<DataSharing>(api(), session.csrf, { kind, action });
       notice = body.notice ?? '';
     } catch (e) {
+      // A failed write may still have changed the record (it was saved but not read back): read it again.
       failure = explain(e as ApiError, here);
+      await load();
     } finally {
       busy = '';
     }

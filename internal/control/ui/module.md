@@ -110,7 +110,7 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   `{notice}`.
 - `GET /api/repos/{o}/{n}/data-sharing` [admin] — `{owner, features: [{kind, title, leaves, note?, allowed, by?, at?,
   checks: [{label, state}]}]}`. `owner` is the account whose repositories a consent covers; `by` is the login as it was
-  when the consent was recorded and is absent when the record holds none; `at` is RFC 3339 UTC. `state` is `met` |
+  when the consent was recorded (`Record` has always required one; records older than `by_id` lack only the ID); `at` is RFC 3339 UTC. `state` is `met` |
   `not_met` | `unknown`. Managed AI also checks the repository settings for `data_mode: managed`; settings that cannot
   be read leave that check `unknown`. A consent that cannot be read answers `502`, never "not allowed".
 - `POST /api/repos/{o}/{n}/data-sharing` [admin] — body `{kind, action: "allow" | "revoke"}`; a kind not in the
@@ -142,6 +142,8 @@ Server-rendered pages:
   `api.ErrNotFound` from any GitHub call a page does not handle itself: `404` with the same "Not found." wording.
 - Missing or wrong CSRF token: `403`. Body over 512 KB **[default]**: `413`. An `/api/` `POST` that is not JSON: `415`.
 - A Data sharing `POST` naming a kind not in the server's list, or an action other than `allow` or `revoke`: `400`.
+  A Data sharing change that was written but cannot be read back: `502` "The change was saved, but it could not be read
+  back. Reload the page."; the page then reads the state again.
 - `ErrStale`, or a `head_sha` that is not the draft head: `409`, the user's text kept in the editor, nothing written.
 - Invalid form, a policy text over 256 KB or not UTF-8, a text `policy.Diagnose` finds problems in, `ErrInvalidRequest`,
   `ErrInvalidProposal`: `422`, text kept. A save or assist refused by `Diagnose` also lists the problems under the editor.
@@ -1061,7 +1063,7 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   `Diagnose` finds problems in it, nothing is saved and the request goes ahead on the loaded head, so a user can ask AI
   to fix a broken draft; the answer is checked by `Diagnose` in assist. A changed text with problems is refused as for Save; then `Assist.Propose(mode, Request{Repo, Branch, HeadSHA, Instruction, By: login})`. Managed is offered only when
   settings say `managed` and `Consents.Get(ConsentManagedLLM)` finds a consent; assist enforces both anyway. When it is not
-  offered the AI box says why: no settings yet, `data_mode` is not `managed`, the consent could not be read, or managed AI is
+  offered the AI box says why: no valid settings file on the default branch, `data_mode` is not `managed`, the consent could not be read, or managed AI is
   not allowed for the owner, with a link to Data sharing for an administrator. Settings that fail to read for another reason
   give no reason. Managed success: redirect to the
   editor on the new head with a link to the PR diff. Customer success: redirect to the editor with `?since=<head_sha>`, the
@@ -1217,6 +1219,7 @@ their interfaces except where a test says otherwise. The clock is injected.
 - **Test name**: `TestDataSharingNeverShowsAnOutageAsNotAllowed`
   **Scenario**: a recorded consent, then `Consents.Get` fails.
   **Expected behavior**: `GET` and `POST allow` answer `502` and write nothing; the overview says `managed_ai: unknown`.
+  A write that succeeds but cannot be read back answers `502` with "The change was saved", never "Nothing was changed".
 - **Test name**: `TestDataSharingReadsTheRepositorySettings`
   **Scenario**: settings with `data_mode: managed`, `customer`, none, invalid.
   **Expected behavior**: the `data_mode` check is `met`, `not_met`, `unknown`, `unknown`.
@@ -1225,7 +1228,7 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Expected behavior**: `not_allowed`, then `allowed` after one consent read; the writer's answer has no `managed_ai` and
   reads no consent.
 - **Test name**: `TestEditorSaysWhyManagedModeIsOff`
-  **Scenario**: customer settings; managed settings without consent for an administrator and a writer; with consent.
+  **Scenario**: customer settings; invalid settings; managed settings without consent for an administrator and a writer; with consent.
   **Expected behavior**: the reason names `data_mode: customer`, or "not allowed for acme" with the Data sharing link for the
   administrator only; with consent the managed option and no reason.
 - **Test name**: `TestOldConsentPageMovedToDataSharing`

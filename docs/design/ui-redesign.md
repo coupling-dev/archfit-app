@@ -352,7 +352,7 @@ Proposal (no behaviour removed):
 Built in phase e (decisions A1 and B1, with the manager's review):
 
 - `/r/{o}/{n}/data-sharing` is a page of the web app, admin only. One card per feature: what leaves your environment,
-  "Allowed by @login on 20 October 2026" (the login as it was then; a record without one says only when), a checklist of
+  "Allowed by @login on 20 October 2026" (the login as it was then; a record older than the user ID still has its login), a checklist of
   preconditions, and Allow or Revoke. The scope reads "every repository of `<owner>` that the Archfit App can access"
   instead of "installation".
 - The repository overview gives an administrator an Administration row, "Data sharing · Managed AI: allowed", from one

@@ -352,6 +352,8 @@ type fakeConsents struct {
 	touched  []int64 // installation of every call
 	writes   int
 	readErr  error // of Get; Has is false then, as account's is
+	// readErrAfterWrite fails every Get once something was written: a change saved but not read back.
+	readErrAfterWrite error
 }
 
 func newFakeConsents() *fakeConsents {
@@ -384,6 +386,9 @@ func (c *fakeConsents) Get(_ context.Context, installationID int64, k account.Co
 	c.touched = append(c.touched, installationID)
 	if c.readErr != nil {
 		return account.Consent{}, false, c.readErr
+	}
+	if c.readErrAfterWrite != nil && c.writes > 0 {
+		return account.Consent{}, false, c.readErrAfterWrite
 	}
 	got, ok := c.recorded[installationID][k]
 	return got, ok, nil

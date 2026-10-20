@@ -99,7 +99,8 @@ const sharing = (allowed: boolean) => ({
       leaves: 'Archfit clones the repository into a short-lived sandbox to propose a first policy.',
       note: 'The App does not start managed discovery yet. Onboarding runs discovery in your own workflow.',
       allowed: true,
-      at: '2026-09-01T00:00:00Z', // a record with no login: the page says when, never who
+      by: 'carol',
+      at: '2026-09-01T00:00:00Z',
       checks: [
         {
           label: 'Allowed for acme',
@@ -115,12 +116,14 @@ interface Mock {
   tokenRejected?: boolean; // the session stands, but GitHub rejects the user's token on the first repository call
   overview?: object;
   sharingDown?: boolean; // the consent store cannot be read
+  savedUnread?: boolean; // the write is saved, but the App cannot read it back in the same answer
 }
 
 // open answers /api in the browser from the mock, opens the page, and returns the writes the page sent. Each page records the CSP violations
 // it sees, and every test fails on one.
 async function open(page: Page, path: string, mock: Mock = {}) {
   const writes: Request[] = [];
+  let allowed = false;
   await page.route('**/api/**', async (route) => {
     const req = route.request();
     const url = new URL(req.url());
@@ -128,6 +131,9 @@ async function open(page: Page, path: string, mock: Mock = {}) {
     if (req.method() === 'POST') {
       writes.push(req);
       if (url.pathname === '/api/repos/acme/app/data-sharing') {
+        allowed = true;
+        if (mock.savedUnread)
+          return json(502, { error: 'The change was saved, but it could not be read back. Reload the page.' });
         return json(200, { ...sharing(true), notice: 'Managed AI is allowed.' });
       }
       return json(200, { notice: 'The onboarding pull request is open.' });
@@ -146,7 +152,7 @@ async function open(page: Page, path: string, mock: Mock = {}) {
           return json(502, {
             error: 'GitHub or an Archfit service failed. Nothing was changed. Try again.',
           });
-        return json(200, sharing(false));
+        return json(200, sharing(allowed));
     }
     return json(404, { error: 'Not found.' });
   });
@@ -249,7 +255,7 @@ test('data sharing: what leaves, who allowed it, and Allow', async ({ page }) =>
   await expect(ai.getByText('Not allowed', { exact: true })).toBeVisible();
   await expect(ai.getByText('(to do)')).toBeAttached();
   const discovery = page.getByRole('region', { name: 'Managed discovery' });
-  await expect(discovery.getByText('Allowed on 1 September 2026')).toBeVisible();
+  await expect(discovery.getByText('Allowed by @carol on 1 September 2026')).toBeVisible();
   await expect(discovery.getByText('The App does not start managed discovery yet.', { exact: false })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Overview' })).not.toHaveAttribute('aria-current', 'page');
   await expectClean(page);
@@ -271,5 +277,15 @@ test('data sharing: a consent that cannot be read is an error, never "not allowe
   await expect(page.getByRole('alert')).toContainText('Nothing was changed');
   await expect(page.getByText('Not allowed')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Allow/ })).toHaveCount(0);
+  await expectClean(page);
+});
+
+test('data sharing: a change saved but not read back shows the state read again', async ({ page }) => {
+  await open(page, '/r/acme/app/data-sharing', { savedUnread: true });
+  const ai = page.getByRole('region', { name: 'Managed AI' });
+  await ai.getByRole('button', { name: 'Allow Managed AI' }).click();
+  await expect(page.getByRole('alert')).toContainText('The change was saved');
+  await expect(ai.getByText('Allowed by @alice on 20 October 2026')).toBeVisible();
+  await expect(ai.getByRole('button', { name: 'Revoke' })).toBeVisible();
   await expectClean(page);
 });

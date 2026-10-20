@@ -471,6 +471,17 @@ func TestDataSharingNeverShowsAnOutageAsNotAllowed(t *testing.T) {
 	if body.ManagedAI != checkUnknown {
 		t.Errorf("overview managed_ai = %q, want %q", body.ManagedAI, checkUnknown)
 	}
+
+	t.Run("a change saved but not read back does not say nothing changed", func(t *testing.T) {
+		e := newEnv(t)
+		e.consents.readErrAfterWrite = errors.New("store down")
+		res := e.as("alice", permAdmin).postJSON(path, dataSharingJSON{Kind: string(account.ConsentManagedLLM), Action: actionAllow})
+		wantStatus(t, res, http.StatusBadGateway)
+		wantContains(t, res.Body.String(), "The change was saved")
+		if _, ok := e.consents.recorded[installA][account.ConsentManagedLLM]; !ok {
+			t.Error("the consent was not recorded")
+		}
+	})
 }
 
 func TestDataSharingReadsTheRepositorySettings(t *testing.T) {
@@ -536,6 +547,7 @@ func TestEditorSaysWhyManagedModeIsOff(t *testing.T) {
 		absent   []string
 	}{
 		{"customer settings", permAdmin, customer, true, []string{"data_mode: customer"}, []string{option, sharing}},
+		{"invalid settings", permAdmin, "version: [", true, []string{"no valid " + settings.Path}, []string{option, sharing, "onboarding"}},
 		{"no consent, administrator", permAdmin, settingsText, false, []string{"not allowed for acme", sharing}, []string{option}},
 		{"no consent, writer", permWrite, settingsText, false, []string{"not allowed for acme"}, []string{option, sharing}},
 		{"offered", permWrite, settingsText, true, []string{option}, []string{"Managed mode is off", sharing}},

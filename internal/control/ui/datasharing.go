@@ -68,7 +68,7 @@ type featureJSON struct {
 	Leaves  string `json:"leaves"`
 	Note    string `json:"note,omitempty"`
 	Allowed bool   `json:"allowed"`
-	// By is the login as it was when the consent was recorded, "" when the record holds none. At is RFC 3339, UTC.
+	// By is the login as it was when the consent was recorded; every recorded consent holds one. At is RFC 3339, UTC.
 	By     string         `json:"by,omitempty"`
 	At     string         `json:"at,omitempty"`
 	Checks []precondition `json:"checks"`
@@ -116,7 +116,7 @@ func (s *server) dataMode(ctx context.Context, sc scope) precondition {
 	set, err := s.settings(ctx, sc.repo)
 	switch {
 	case errors.Is(err, errNoSettings):
-		p.Label += " (it has no settings until onboarding is merged)"
+		p.Label += " (the default branch has no valid settings file)"
 	case err != nil:
 	case set.DataMode == settings.DataManaged:
 		p.State = checkMet
@@ -154,11 +154,15 @@ func (s *server) apiShareData(r *http.Request, sc scope) (any, error) {
 		"installation_id", sc.repo.InstallationID, "user_id", sc.user.UserID)
 	body, err := s.dataSharing(r.Context(), sc)
 	if err != nil {
-		return nil, err
+		return nil, errSavedUnread
 	}
 	body.Notice = notice
 	return body, nil
 }
+
+// errSavedUnread answers a change that was written but could not be read back: the generic upstream sentence would
+// say nothing was changed.
+var errSavedUnread = &userError{http.StatusBadGateway, "upstream", "The change was saved, but it could not be read back. Reload the page."}
 
 func (s *server) shareData(ctx context.Context, sc scope, f sharedFeature, action string) (outcome, notice string, err error) {
 	id := sc.repo.InstallationID
@@ -194,7 +198,7 @@ func (s *server) managedMode(ctx context.Context, sc scope) (offer bool, off, da
 	set, err := s.settings(ctx, sc.repo)
 	switch {
 	case errors.Is(err, errNoSettings):
-		return false, "Managed mode is off: this repository has no settings until onboarding is merged.", ""
+		return false, "Managed mode is off: the default branch has no valid " + settings.Path + ".", ""
 	case err != nil:
 		return false, "", ""
 	case set.DataMode != settings.DataManaged:
