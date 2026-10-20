@@ -762,6 +762,11 @@ func (s *recordingStore) Put(ctx context.Context, t store.Tenant, key string, va
 	return s.Store.Put(ctx, t, key, value)
 }
 
+func (s *recordingStore) CompareAndSwap(ctx context.Context, t store.Tenant, key string, old, value []byte) (bool, error) {
+	s.note(t, key)
+	return s.Store.CompareAndSwap(ctx, t, key, old, value)
+}
+
 func (s *recordingStore) CompareAndSwapAll(ctx context.Context, t store.Tenant, swaps []store.Swap) (bool, error) {
 	for _, sw := range swaps {
 		s.note(t, sw.Key)

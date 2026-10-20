@@ -53,8 +53,13 @@ func (c *consents) Record(ctx context.Context, installationID int64, in Consent)
 	if err != nil {
 		return fmt.Errorf("account: encode consent: %w", err)
 	}
-	if err := c.s.Put(ctx, t, consentKeyPrefix+string(rec.Kind), b); err != nil {
+	// Create only: two administrators allowing at once leave exactly one record, and the first who and when stand.
+	created, err := c.s.CompareAndSwap(ctx, t, consentKeyPrefix+string(rec.Kind), nil, b)
+	if err != nil {
 		return fmt.Errorf("account: write consent: %w", err)
+	}
+	if !created {
+		return ErrConsentExists
 	}
 	return nil
 }

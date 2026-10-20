@@ -358,7 +358,11 @@ type Consent struct {
 // ErrNoConsent is returned by callers' guards when Has is false.
 var ErrNoConsent = errors.New("account: consent not recorded")
 
+// ErrConsentExists is returned by Record when a consent of that kind is already recorded; the record is unchanged.
+var ErrConsentExists = errors.New("account: consent already recorded")
+
 type Consents interface {
+    // Record creates the consent atomically; ErrConsentExists if one is recorded, which keeps who and when.
     Record(ctx context.Context, installationID int64, c Consent) error
     Revoke(ctx context.Context, installationID int64, k ConsentKind) error
     // Has is false on any error: no consent, no call.
@@ -1100,8 +1104,8 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   the pending state and the link, not as a duration. Stated limit.
 - Data sharing: `GET` reads each kind with `Consents.Get` and says what leaves the customer's environment, who allowed it and
   when, and the preconditions; managed discovery carries the note that the App does not start it yet (owner decision A1:
-  nothing is removed, and a recorded consent can still be revoked). `allow` → `Consents.Get`, then `Consents.Record(repo.InstallationID,
-  Consent{Kind, By: login, ByID: user ID, At: now})` only when none is recorded; `revoke` → `Consents.Revoke`. Each accepted
+  nothing is removed, and a recorded consent can still be revoked). `allow` → `Consents.Record(repo.InstallationID,
+  Consent{Kind, By: login, ByID: user ID, At: now})`, atomic create-only: `ErrConsentExists` is `consent_kept`; `revoke` → `Consents.Revoke`. Each accepted
   action writes one `Info` audit line `ui consent` with `outcome` (`consent_recorded` | `consent_kept` | `consent_revoked`),
   `kind` (the server's constant), `installation_id` and `user_id`; nothing of the request body. Consent is per installation
   while the permission check is per repository: a repository administrator consents for every repository of the owner the

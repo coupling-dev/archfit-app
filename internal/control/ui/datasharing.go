@@ -169,15 +169,14 @@ func (s *server) shareData(ctx context.Context, sc scope, f sharedFeature, actio
 	if action == actionRevoke {
 		return "consent_revoked", f.title + " is no longer allowed.", s.consents.Revoke(ctx, id, f.kind)
 	}
-	_, had, err := s.consents.Get(ctx, id, f.kind)
+	err = s.consents.Record(ctx, id, account.Consent{Kind: f.kind, By: sc.user.Login, ByID: sc.user.UserID, At: s.now()})
 	switch {
+	case errors.Is(err, account.ErrConsentExists):
+		return "consent_kept", f.title + " is already allowed.", nil
 	case err != nil:
 		return "", "", err
-	case had:
-		return "consent_kept", f.title + " is already allowed.", nil
 	}
-	err = s.consents.Record(ctx, id, account.Consent{Kind: f.kind, By: sc.user.Login, ByID: sc.user.UserID, At: s.now()})
-	return "consent_recorded", f.title + " is allowed.", err
+	return "consent_recorded", f.title + " is allowed.", nil
 }
 
 // managedAIWord is the overview's one store read about data sharing; a failed read is unknown, never not_allowed.

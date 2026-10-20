@@ -95,7 +95,11 @@ type Consent struct {
 // ErrNoConsent is returned by callers' guards when Has is false.
 var ErrNoConsent = errors.New("account: consent not recorded")
 
+// ErrConsentExists is returned by Record when a consent of that kind is already recorded; the record is unchanged.
+var ErrConsentExists = errors.New("account: consent already recorded")
+
 type Consents interface {
+    // Record creates the consent atomically; ErrConsentExists if one is recorded, which keeps who and when.
     Record(ctx context.Context, installationID int64, c Consent) error
     Revoke(ctx context.Context, installationID int64, k ConsentKind) error
     // Has is false on any error: no consent, no call.
@@ -177,7 +181,9 @@ The gate decides suspension itself from `SuspendAfter`, repository privacy and i
 - `Status`: read `R`, compute. Missing record → `PlanPublic`, nil error. Writes nothing.
 - `Forget`: `Store.DeleteTenant`. Idempotent.
 - Any Store read error other than `ErrNotFound` returns the error and **writes nothing**.
-- `Record` rejects an unknown `Kind`, empty `By`, `ByID <= 0`, or zero `At`. `Revoke` deletes the key; revoking a missing consent is
+- `Record` rejects an unknown `Kind`, empty `By`, `ByID <= 0`, or zero `At`. It writes with `Store.CompareAndSwap(old = nil)`:
+  of concurrent `Record`s exactly one creates the record, and every other one, like any `Record` over an existing
+  consent, returns `ErrConsentExists` and changes nothing. `Revoke` deletes the key; revoking a missing consent is
   not an error.
 - `Get`: a missing key is `(zero, false, nil)`; a Store error, a corrupt value or an invalid installation ID is an error, never
   `false, nil`. `Has` is `Get` with every error read as false.
@@ -344,7 +350,8 @@ cycle reads again. Consents use `Put`, `Get` and `Delete` on their own key: they
   `Put`, and every swap of it carries its stored bytes.
 - **Test name**: `TestConsentRoundTrip`
   **Scenario**: `Has` and `Get` before `Record`; after `Record`; after `Revoke`; `Revoke` again; the other kind.
-  **Expected behavior**: false, true, false, nil error, false; `Get` after `Record` returns the login, user ID and UTC time recorded.
+  **Expected behavior**: false, true, false, nil error, false; `Get` after `Record` returns the login, user ID and UTC time recorded;
+  a second `Record` is `ErrConsentExists` and keeps the first who and when.
 - **Test name**: `TestBudgetReserveSettle`
   **Scenario**: reserve 5 000 000 four times, a fifth time, settle one with actual 1 000 000, reserve 4 000 000; then settle table for a 5 000 000 reservation: actual 0, actual 2 000 000, actual 5 000 000 (failed call, outcome unknown), actual 6 000 000.
   **Expected behavior**: four succeed (counter exactly at the cap is allowed); fifth `ErrBudgetExhausted` and the counter is back at 20 000 000; after settle 16 000 000; the last reserve succeeds; the settle rows change the counter by −5 000 000, −3 000 000, 0 and +1 000 000: pure arithmetic, no cost is assumed for a failure.
