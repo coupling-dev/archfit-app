@@ -471,12 +471,15 @@ on the pull request links to this page ("Details in Archfit").
 
 - The headline is the title of the `archfit/state` check, with the gate mode beside it. In advisory mode the check does
   not block merging.
-- Rule violations are open; the two directions of a module cycle are one item. Advisories and accepted debt are
-  folded. **Evidence** lists the dimensions and, folded, what the engine could not measure ("To measure more").
+- Rule violations are open. Each dependency cycle is one card with the same drawing as the comment: one arrow per
+  direction with its location count, red and wide when this pull request added it, grey and thin when it existed
+  before. A table under the drawing lists each direction with its locations and, when the report has them, its
+  integration strength, distance and volatility. Advisories and accepted debt are folded tables. **Evidence** lists
+  the dimensions and, folded, what the engine could not measure ("To measure more").
 - GitHub's **Details** link on the Archfit checks opens this page.
-- A folded line says whether this run had a baseline and whether it compared against the base branch. Without that
-  comparison, "new" means not accepted in a baseline, not "added by this pull request".
-- **For coding agents** holds the exact repair tasks of the run.
+- Badges under the result say whether this run had a baseline and whether it compared against the base branch.
+  Without that comparison, "new" means not accepted in a baseline, not "added by this pull request".
+- **For coding agents** holds the exact repair tasks of the run; **Copy** puts them on the clipboard.
 - The **Graph** tab draws the same report as a graph. See [The graph of a pull request](#the-graph-of-a-pull-request).
 - The page shows a report only when it is the one the check was computed from, and never under a result that asks
   for action. Otherwise it says why: no result yet, action required, no upload, the report expired, the report does

@@ -58,7 +58,7 @@ The tests use the standard `testing` package and table-driven cases with `t.Run`
 | Styles    | One stylesheet, the tokens and components of `docs/design/prototypes/archfit.css`, light and dark                                                              |
 | Editor    | A plain text area. The server checks syntax and schema on Check and on every save, and lists problems by line. No editor library                               |
 | Graph     | A small vanilla script renders plain SVG from the JSON view model **[default]**                                                                                |
-| Tests     | `svelte-check`, Vitest, a bundle budget, and a Playwright smoke test with axe under the production CSP                                                         |
+| Tests     | `svelte-check`, ESLint, Vitest, a bundle budget, and a Playwright smoke test with axe under the production CSP                                                 |
 
 Node is needed only to build and check the web app (`make web`, `make web-check`, the CI job "Web app" and the image's
 `web` stage); Go builds and tests run without it. Versions are pinned in `web/package-lock.json`. The CSP allows no

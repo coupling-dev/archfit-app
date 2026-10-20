@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseRoute, repoPage, signInHref } from './route';
+import { parseRoute, repoPage, safeHref, signInHref } from './route';
 
 describe('parseRoute', () => {
   it.each([
@@ -12,6 +12,10 @@ describe('parseRoute', () => {
     ['/r/acme/%E0%A4%A', { kind: 'unknown' }],
     ['/r/acme/%2E%2E', { kind: 'unknown' }],
     ['/r/./app', { kind: 'unknown' }],
+    ['/r/acme/app/pull/4', { kind: 'pull', number: 4, owner: 'acme', name: 'app', fullName: 'acme/app' }],
+    ['/r/acme/app/pull/0', { kind: 'unknown' }],
+    ['/r/acme/app/pull/4x', { kind: 'unknown' }],
+    ['/r/acme/app/pull/4/graph', { kind: 'unknown' }],
     ['/elsewhere', { kind: 'unknown' }],
   ])('%s', (path, want) => {
     expect(parseRoute(path)).toEqual(want);
@@ -26,5 +30,24 @@ describe('links', () => {
 
   it('returns to the current page after sign-in', () => {
     expect(signInHref('/r/acme/app?x=1')).toBe('/auth/login?return=%2Fr%2Facme%2Fapp%3Fx%3D1');
+  });
+});
+
+describe('safeHref', () => {
+  it.each([
+    ['/r/acme/app/pull/4', '/r/acme/app/pull/4'],
+    ['https://github.com/acme/app/pull/4', 'https://github.com/acme/app/pull/4'],
+    ['javascript:alert(1)', undefined],
+    ['JavaScript:alert(1)', undefined],
+    ['data:text/html,x', undefined],
+    ['//evil.example/x', undefined],
+    ['/\\evil.example/x', undefined],
+    ['https://github.com.evil.example/x', undefined],
+    ['http://github.com/acme', undefined],
+    ['https://evil.example/https://github.com/', undefined],
+    ['', undefined],
+    [undefined, undefined],
+  ])('%s', (url, want) => {
+    expect(safeHref(url)).toBe(want);
   });
 });

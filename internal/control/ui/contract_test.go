@@ -50,6 +50,7 @@ func repoRoutes(fullName string) []route {
 		{http.MethodPost, base + "/policy/ready", permWrite, nil, nil}, // the form is filled in by the test: it needs an open draft
 		{http.MethodGet, base + "/graph", permRead, nil, nil},
 		{http.MethodGet, base + "/pull/4", permRead, nil, nil},
+		{http.MethodGet, api + "/pulls/4", permRead, nil, nil},
 		{http.MethodGet, base + "/pull/4/graph", permRead, nil, nil},
 		{http.MethodPost, base + "/assist", permWrite, url.Values{"mode": {"customer"}, "instruction": {"split module a"}, "content": {policyText}}, nil},
 		{http.MethodGet, base + "/consent", permAdmin, nil, nil},
@@ -446,55 +447,92 @@ func TestPullPageShowsTheReportOfItsCheck(t *testing.T) {
 	payload := artifact(t, "real-blocked-no-baseline")
 	sum := sha256.Sum256(payload)
 	digest := "sha256:" + hex.EncodeToString(sum[:])
-	path := "/r/" + repoName + "/pull/4"
+	path := "/api/repos/" + repoName + "/pulls/4"
 	check := func(e *env, externalID string) {
 		e.gh.checks[repoName+"@"+sha(4)+"#archfit/state"] = []api.CheckRun{{
 			ID: 9, Name: "archfit/state", HeadSHA: sha(4), Status: "completed", Conclusion: "neutral",
 			Title: "Architecture violations found · advisory · no baseline", ExternalID: externalID,
 		}}
 	}
+	findings := func(b pullJSON) int { return len(b.Cycles) + len(b.Other) + len(b.Advisories) + len(b.Accepted) }
 	tests := []struct {
-		name      string
-		setup     func(e *env)
-		status    int
-		wants     []string
-		notWanted []string
+		name   string
+		setup  func(e *env)
+		status int
+		check  func(t *testing.T, b pullJSON)
 	}{
-		{"no check on the head", func(*env) {}, http.StatusOK, []string{"feat: read options", noResult, `id="unavailable"`}, []string{`id="result"`}},
+		{"no check on the head", func(*env) {}, http.StatusOK, func(t *testing.T, b pullJSON) {
+			if b.Title != "feat: read options" || b.Unavailable != noResult || b.Result != "" || b.HeadSHA != sha(4)[:shortSHA] {
+				t.Errorf("body = %+v", b)
+			}
+		}},
 		{"the report of the check", func(e *env) {
 			check(e, "v1:88:1:"+digest)
 			e.gh.artifacts[88] = payload
-		}, http.StatusOK, []string{
-			`id="result"`, "Architecture violations found · advisory · no baseline", "gate: advisory", `id="violations"`,
-			"no_direct_b_dependency", "No baseline in this run", "PR attribution unavailable", "Run 88",
-		}, []string{`id="unavailable"`, "added by this PR"}},
+		}, http.StatusOK, func(t *testing.T, b pullJSON) {
+			if b.Unavailable != "" || b.Headline != "Architecture violations found · advisory · no baseline" || b.Result != "attention" ||
+				b.Tone != "attention" || b.Required || !b.NoBaseline || b.Compared || b.RunID != 88 {
+				t.Errorf("header = %+v", b)
+			}
+			if b.ViolationCount == 0 || len(b.Other) == 0 || b.Other[0].RuleID != "no_direct_b_dependency" || b.Other[0].Origin != "" {
+				t.Errorf("violations = %d %+v", b.ViolationCount, b.Other)
+			}
+			if b.GraphHref != "/r/"+repoName+"/pull/4/graph" || b.URL != "https://github.com/"+repoName+"/pull/4" {
+				t.Errorf("links = %q %q", b.GraphHref, b.URL)
+			}
+		}},
 		{"a report that does not match its check", func(e *env) {
 			check(e, "v1:88:1:sha256:"+strings.Repeat("0", 64))
 			e.gh.artifacts[88] = payload
-		}, http.StatusOK, []string{reportMismatch, "Architecture violations found"}, []string{"no_direct_b_dependency"}},
-		{"an expired report", func(e *env) { check(e, "v1:88:1:"+digest) }, http.StatusOK, []string{reportExpired}, []string{"no_direct_b_dependency"}},
-		{"a result without an upload", func(e *env) { check(e, "v1:0:0:") }, http.StatusOK, []string{noUpload}, nil},
-		{"an unknown pull request", func(e *env) { delete(e.gh.pulls, repoName+"#4") }, http.StatusNotFound, nil, nil},
+		}, http.StatusOK, func(t *testing.T, b pullJSON) {
+			if b.Unavailable != reportMismatch || findings(b) != 0 || b.Result != "attention" {
+				t.Errorf("body = %+v", b)
+			}
+		}},
+		{"an expired report", func(e *env) { check(e, "v1:88:1:"+digest) }, http.StatusOK, func(t *testing.T, b pullJSON) {
+			if b.Unavailable != reportExpired || findings(b) != 0 {
+				t.Errorf("body = %+v", b)
+			}
+		}},
+		{"a result without an upload", func(e *env) { check(e, "v1:0:0:") }, http.StatusOK, func(t *testing.T, b pullJSON) {
+			if b.Unavailable != noUpload {
+				t.Errorf("body = %+v", b)
+			}
+		}},
+		{"an unknown pull request", func(e *env) { delete(e.gh.pulls, repoName+"#4") }, http.StatusNotFound, nil},
 		{"a withdrawn result keeps its old run but shows no finding", func(e *env) {
 			check(e, "v1:88:1:"+digest)
 			e.gh.checks[repoName+"@"+sha(4)+"#archfit/state"][0].Conclusion = "action_required"
 			e.gh.checks[repoName+"@"+sha(4)+"#archfit/state"][0].Title = "Action required"
 			e.gh.artifacts[88] = payload
-		}, http.StatusOK, []string{actionRequired, "Action required"}, []string{"no_direct_b_dependency", "For coding agents"}},
+		}, http.StatusOK, func(t *testing.T, b pullJSON) {
+			if b.Unavailable != actionRequired || b.Headline != "Action required" || b.Result != "action required" ||
+				findings(b) != 0 || b.TaskCount != 0 {
+				t.Errorf("body = %+v", b)
+			}
+		}},
 		{"a report that does not decode", func(e *env) {
 			broken := []byte(`{"schema_version":"nope"}`)
 			s := sha256.Sum256(broken)
 			check(e, "v1:88:1:sha256:"+hex.EncodeToString(s[:]))
 			e.gh.artifacts[88] = broken
-		}, http.StatusOK, []string{reportUnavailable}, []string{"no_direct_b_dependency"}},
+		}, http.StatusOK, func(t *testing.T, b pullJSON) {
+			if b.Unavailable != reportUnavailable || findings(b) != 0 {
+				t.Errorf("body = %+v", b)
+			}
+		}},
 		{"the newest check run wins", func(e *env) {
 			check(e, "v1:88:1:"+digest)
 			e.gh.artifacts[88] = payload
 			key := repoName + "@" + sha(4) + "#archfit/state"
 			older := api.CheckRun{ID: 3, Name: "archfit/state", Status: "completed", Conclusion: "action_required", Title: "Older", ExternalID: "v1:0:0:"}
 			e.gh.checks[key] = append([]api.CheckRun{older}, e.gh.checks[key]...)
-		}, http.StatusOK, []string{"no_direct_b_dependency"}, []string{"Older"}},
-		{"added by this PR only with a comparison", func(e *env) {
+		}, http.StatusOK, func(t *testing.T, b pullJSON) {
+			if b.Headline == "Older" || len(b.Other) == 0 {
+				t.Errorf("body = %+v", b)
+			}
+		}},
+		{"added only with a comparison", func(e *env) {
 			compared := bytes.Replace(payload, []byte(`"comparison":{"status":"not_requested"`), []byte(`"comparison":{"status":"not_requested","origin_status":"comparable"`), 1)
 			// The top-level finding is the last object with this id; dimension references come first.
 			id := []byte(`{"id":"ba3803eca947bf3c1b7efa8f37854d5e"`)
@@ -503,7 +541,11 @@ func TestPullPageShowsTheReportOfItsCheck(t *testing.T) {
 			s := sha256.Sum256(compared)
 			check(e, "v1:88:1:sha256:"+hex.EncodeToString(s[:]))
 			e.gh.artifacts[88] = compared
-		}, http.StatusOK, []string{"added by this PR", "compared with the base branch"}, []string{"PR attribution unavailable"}},
+		}, http.StatusOK, func(t *testing.T, b pullJSON) {
+			if !b.Compared || len(b.Other) == 0 || b.Other[0].Origin != "added" {
+				t.Errorf("compared = %v, other = %+v", b.Compared, b.Other)
+			}
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -511,13 +553,14 @@ func TestPullPageShowsTheReportOfItsCheck(t *testing.T) {
 			tt.setup(e)
 			res := e.as("alice", permRead).get(path)
 			wantStatus(t, res, tt.status)
-			body := html.UnescapeString(res.Body.String())
-			wantContains(t, body, tt.wants...)
-			for _, s := range tt.notWanted {
-				if strings.Contains(body, s) {
-					t.Errorf("body contains %q", s)
-				}
+			if tt.check == nil {
+				return
 			}
+			var b pullJSON
+			if err := json.Unmarshal(res.Body.Bytes(), &b); err != nil {
+				t.Fatal(err)
+			}
+			tt.check(t, b)
 		})
 	}
 }
@@ -526,7 +569,10 @@ func TestPullPageNumberMustBeAPull(t *testing.T) {
 	e := newEnv(t)
 	c := e.as("alice", permRead)
 	for _, n := range []string{"0", "-4", "x", "4x", "5"} {
-		wantStatus(t, c.get("/r/"+repoName+"/pull/"+n), http.StatusNotFound)
+		if n != "5" { // a number that is no pull request is found only by the API's GitHub call
+			wantStatus(t, c.get("/r/"+repoName+"/pull/"+n), http.StatusNotFound)
+		}
+		wantStatus(t, c.get("/api/repos/"+repoName+"/pulls/"+n), http.StatusNotFound)
 		wantStatus(t, c.get("/r/"+repoName+"/pull/"+n+"/graph"), http.StatusNotFound)
 	}
 }
@@ -577,20 +623,17 @@ func TestPullGraphDrawsTheReportOfItsCheck(t *testing.T) {
 	}
 }
 
-func TestPullPageLinksItsGraph(t *testing.T) {
-	e := newEnv(t)
-	body := e.as("alice", permRead).get("/r/" + repoName + "/pull/4").Body.String()
-	wantContains(t, body, `id="pull-graph"`, `href="/r/`+repoName+`/pull/4/graph"`, `aria-current="page">Findings</a>`)
-}
-
 func TestPullPageReadsTheGateModeOfTheBase(t *testing.T) {
 	e := newEnv(t)
 	pull := e.gh.pulls[repoName+"#4"]
 	pull.BaseRef = "release"
 	e.gh.pulls[repoName+"#4"] = pull
 	e.gh.setFile(repoName, "release", settings.Path, strings.Replace(settingsText, "gate: advisory", "gate: required", 1))
-	body := e.as("alice", permRead).get("/r/" + repoName + "/pull/4").Body.String()
-	wantContains(t, body, "gate: required")
+	var body pullJSON
+	e.as("alice", permRead).getJSON("/api/repos/"+repoName+"/pulls/4", &body)
+	if !body.Required {
+		t.Error("the base requires the gate, the page says advisory")
+	}
 }
 
 func TestParseExternalID(t *testing.T) {

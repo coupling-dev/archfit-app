@@ -267,6 +267,12 @@ Target (`prototypes/index.html` Overview):
 
 ### Pull request page (phase c)
 
+Built in phase c. The page groups and words findings as the comment does: `report.Cycles`, `report.PairOrigin` and
+the distance words moved from `gate/feedback` into `wire/report`, so the comment and this page share one rule;
+the graph adopts it in phase d. The cycle drawing is our own small SVG (two modules side by side, more on a circle; opposite
+directions bow apart), styled as the comment's Mermaid diagram. The dimensions are a table with readable names, not
+yet a strip. Links from API answers render only when they point into the App or to `https://github.com/`.
+
 Today: the cycle is two text blocks ("cycle `pkg_chaos` ⇄ `pkg_container`" and "… ⇄ `pkg_util`"). Each starts with the
 rule ID and the engine tokens "gate, new, high", then runs into comma-joined locations. "and 37 more" is a `<details>`
 nested in a `<p>` (invalid markup: the parser closes the paragraph early). Advisories, accepted debt, agent tasks and

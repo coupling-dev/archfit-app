@@ -394,7 +394,7 @@ func TestNoScoreAnywhere(t *testing.T) {
 			e.publishReport(repoName, artifact(t, fixture))
 			e.acct.status = account.Status{Plan: account.PlanTrial, TrialEnds: e.now.AddDate(0, 0, 9)}
 
-			for _, path := range []string{"/api/repos", "/api/repos/" + repoName + "/overview", "/r/" + repoName + "/policy", "/r/" + repoName + "/graph", "/r/" + repoName + "/consent"} {
+			for _, path := range []string{"/api/repos", "/api/repos/" + repoName + "/overview", "/api/repos/" + repoName + "/pulls/4", "/r/" + repoName + "/policy", "/r/" + repoName + "/graph", "/r/" + repoName + "/consent"} {
 				res := c.get(path)
 				wantStatus(t, res, http.StatusOK)
 				// Policy text and the view model are the customer's own data, not something ui computes.
@@ -488,7 +488,7 @@ func TestHostileStringsAreEscaped(t *testing.T) {
 	e.gh.checks[repoName+"@"+sha(4)+"#"+checkState] = []api.CheckRun{{ID: 1, Conclusion: "neutral", Title: hostileText, ExternalID: "v1:0:0:"}}
 
 	for _, path := range []string{"/", "/api/repos", "/r/" + repoName, "/api/repos/" + repoName + "/overview", "/r/" + repoName + "/policy",
-		"/r/" + repoName + "/graph", "/r/" + repoName + "/consent", "/r/" + repoName + "/pull/4", "/r/" + repoName + "/pull/4/graph"} {
+		"/r/" + repoName + "/graph", "/r/" + repoName + "/consent", "/r/" + repoName + "/pull/4", "/api/repos/" + repoName + "/pulls/4", "/r/" + repoName + "/pull/4/graph"} {
 		res := c.get(path)
 		wantStatus(t, res, http.StatusOK)
 		body := res.Body.String()
@@ -527,6 +527,7 @@ func TestNoAPIResponseHoldsASecret(t *testing.T) {
 		c.get("/api/session"),
 		c.get("/api/repos"),
 		c.get(api + "/overview"),
+		c.get(api + "/pulls/4"),
 		c.postJSON(api+"/onboarding", onboardingJSON{Mode: "customer", Owners: "alice"}),
 		c.postJSON(api+"/discover", struct{}{}),
 		c.get("/api/nothing"),

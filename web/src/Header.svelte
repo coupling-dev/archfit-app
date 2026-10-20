@@ -3,7 +3,8 @@
   import { repoPage } from './lib/route';
   import { applyTheme, saveTheme, storedTheme, themes, type Theme } from './lib/theme';
 
-  let { session, repo = '' }: { session: Session | null; repo?: string } = $props();
+  // pull is the pull request number on a pull request page, 0 elsewhere.
+  let { session, repo = '', pull = 0 }: { session: Session | null; repo?: string; pull?: number } = $props();
 
   let theme = $state<Theme>(storedTheme());
   const themeNames: Record<Theme, string> = { auto: 'Auto', light: 'Light', dark: 'Dark' };
@@ -14,11 +15,11 @@
     saveTheme(t);
   }
 
-  // Overview is this page; the other tabs are still server-rendered pages of the App.
+  // Architecture and Policy are still server-rendered pages of the App. A pull request page is in no tab.
   const tabs = $derived(
     repo
       ? [
-          { label: 'Overview', href: repoPage(repo), current: true },
+          { label: 'Overview', href: repoPage(repo), current: !pull },
           { label: 'Architecture', href: repoPage(repo, '/graph'), current: false },
           { label: 'Policy', href: repoPage(repo, '/policy'), current: false },
         ]
@@ -39,7 +40,11 @@
       <span class="sep" aria-hidden="true">/</span>
       <span>{repo.split('/')[0]}</span>
       <span class="sep" aria-hidden="true">/</span>
-      <strong><a href={repoPage(repo)} aria-current="page">{repo.split('/')[1]}</a></strong>
+      <strong><a href={repoPage(repo)} aria-current={pull ? undefined : 'page'}>{repo.split('/')[1]}</a></strong>
+      {#if pull}
+        <span class="sep" aria-hidden="true">/</span>
+        <a href={repoPage(repo, `/pull/${pull}`)} aria-current="page">#{pull}</a>
+      {/if}
     </nav>
   {/if}
   <span class="header-spacer"></span>

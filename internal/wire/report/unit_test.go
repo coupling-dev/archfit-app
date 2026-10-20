@@ -550,3 +550,57 @@ func TestRemovedV2KeysAreUnknown(t *testing.T) {
 		})
 	}
 }
+
+func TestCycles(t *testing.T) {
+	dep := func(id, rule, from, to string) Finding {
+		return Finding{ID: id, Kind: "gate", RuleID: rule, Status: "new", Severity: "high",
+			Edge: Edge{From: Endpoint{Module: from}, To: Endpoint{Module: to}}}
+	}
+	tests := []struct {
+		name string
+		fs   []Finding
+		want []int
+	}{
+		{"two directions", []Finding{dep("1", "r", "a", "b"), dep("2", "r", "b", "a")}, []int{0, 0}},
+		{"three modules", []Finding{dep("1", "r", "a", "b"), dep("2", "r", "b", "c"), dep("3", "r", "c", "a")}, []int{0, 0, 0}},
+		{"a path is no cycle", []Finding{dep("1", "r", "a", "b"), dep("2", "r", "b", "c")}, []int{-1, -1}},
+		{"two rules never close one cycle", []Finding{dep("1", "r", "a", "b"), dep("2", "s", "b", "a")}, []int{-1, -1}},
+		{"two separate cycles", []Finding{
+			dep("1", "r", "a", "b"), dep("2", "r", "x", "y"), dep("3", "r", "b", "a"), dep("4", "r", "y", "x"), dep("5", "r", "a", "z"),
+		}, []int{0, 1, 0, 1, -1}},
+		{"no module", []Finding{dep("1", "r", "", "b"), dep("2", "r", "b", "")}, []int{-1, -1}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Cycles(tt.fs); !slices.Equal(got, tt.want) {
+				t.Errorf("Cycles = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPairOrigin(t *testing.T) {
+	f := func(id, origin, from, to string) Finding {
+		return Finding{ID: id, Origin: origin, Edge: Edge{From: Endpoint{Module: from}, To: Endpoint{Module: to}}}
+	}
+	cycle := f("c", "introduced", "a", "b")
+	onCycle := map[string]bool{"c": true}
+	tests := []struct {
+		name string
+		all  []Finding
+		want string
+	}{
+		{"another finding on the pair existed on the base", []Finding{cycle, f("x", "pre_existing", "a", "b")}, PairExisting},
+		{"an introduced finding on the pair off the cycle", []Finding{cycle, f("x", "introduced", "a", "b")}, PairAdded},
+		{"only the cycle finding itself", []Finding{cycle}, ""},
+		{"the other direction says nothing about this one", []Finding{cycle, f("x", "pre_existing", "b", "a")}, ""},
+		{"existing wins over added", []Finding{cycle, f("x", "introduced", "a", "b"), f("y", "pre_existing", "a", "b")}, PairExisting},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := PairOrigin(cycle, tt.all, onCycle); got != tt.want {
+				t.Errorf("PairOrigin = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
