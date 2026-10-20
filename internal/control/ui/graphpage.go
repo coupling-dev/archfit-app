@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/alexei-led/archfit-app/internal/control/proposal"
 	"github.com/alexei-led/archfit-app/internal/control/ui/graph"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/policy"
@@ -39,16 +40,26 @@ type graphJSON struct {
 func (s *server) apiGraph(r *http.Request, sc scope) (any, error) {
 	ctx := r.Context()
 	body := graphJSON{Branch: sc.repo.DefaultBranch}
-	rep, unavailable, err := s.latestDecoded(ctx, sc.repo)
+	// The report and the policy text do not depend on each other: they are read side by side, and the text counts
+	// only once there is a report, as when they were read in turn.
+	var (
+		rep           *report.Report
+		unavailable   string
+		err, draftErr error
+		draft         proposal.Draft
+		text          []byte
+	)
+	branch, _ := editBranch(sc.user.Login, "")
+	together(
+		func() { rep, unavailable, err = s.latestDecoded(ctx, sc.repo) },
+		func() { draft, text, draftErr = s.current(ctx, sc.repo, branch) },
+	)
 	if err != nil || unavailable != "" {
 		body.Unavailable = unavailable
 		return body, err
 	}
-
-	branch, _ := editBranch(sc.user.Login, "")
-	draft, text, err := s.current(ctx, sc.repo, branch)
-	if err != nil {
-		return nil, err
+	if draftErr != nil {
+		return nil, draftErr
 	}
 	if _, err := policy.Modules(text); err != nil && isOpen(draft) {
 		text, _, err = s.gh.files.File(ctx, sc.repo.RepoRef, sc.repo.DefaultBranch, policy.PolicyPath)
@@ -79,8 +90,9 @@ type repoFindingsJSON struct {
 // apiFindings is GET /api/repos/{o}/{n}/findings. The overview loads it on its own, so a slow artifact download never
 // holds up the rest of the page.
 func (s *server) apiFindings(r *http.Request, sc scope) (any, error) {
+	ctx := r.Context()
 	body := repoFindingsJSON{Branch: sc.repo.DefaultBranch}
-	rep, unavailable, err := s.latestDecoded(r.Context(), sc.repo)
+	rep, unavailable, err := s.latestDecoded(ctx, sc.repo)
 	if err != nil || unavailable != "" {
 		body.Unavailable = unavailable
 		return body, err

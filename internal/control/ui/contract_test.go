@@ -37,28 +37,34 @@ type route struct {
 
 func (rt route) api() bool { return strings.HasPrefix(rt.path, apiPrefix) }
 
+// signedInOnly is the minimum of a repository page: the shell, the same for every repository, needs only a session.
+const signedInOnly = ""
+
+// authorized is true for a route that authorizes its repository: every /api/repos route, no page.
+func (rt route) authorized() bool { return rt.min != signedInOnly }
+
 // repoRoutes is every repository route with its minimum permission and a body that succeeds.
 func repoRoutes(fullName string) []route {
 	base, api := "/r/"+fullName, "/api/repos/"+fullName
 	return []route{
-		{http.MethodGet, base, permRead, nil, nil},
+		{http.MethodGet, base, signedInOnly, nil, nil},
 		{http.MethodGet, api + "/overview", permRead, nil, nil},
 		{http.MethodPost, api + "/onboarding", permAdmin, nil, onboardingJSON{Mode: "customer", Owners: "alice"}},
 		{http.MethodPost, api + "/discover", permAdmin, nil, struct{}{}},
-		{http.MethodGet, base + "/policy", permRead, nil, nil},
+		{http.MethodGet, base + "/policy", signedInOnly, nil, nil},
 		{http.MethodGet, api + "/policy", permRead, nil, nil},
 		{http.MethodPost, api + "/policy", permWrite, nil, editOf("", "", policyText+"# edit\n")},
 		{http.MethodPost, api + "/policy/check", permRead, nil, checkPolicyJSON{Content: policyText + "# edit\n"}},
 		{http.MethodPost, api + "/policy/ready", permWrite, nil, readyJSON{}}, // withHead fills in the head of an open draft
-		{http.MethodGet, base + "/graph", permRead, nil, nil},
-		{http.MethodGet, base + "/pull/4", permRead, nil, nil},
+		{http.MethodGet, base + "/graph", signedInOnly, nil, nil},
+		{http.MethodGet, base + "/pull/4", signedInOnly, nil, nil},
 		{http.MethodGet, api + "/pulls/4", permRead, nil, nil},
 		{http.MethodGet, api + "/pulls/4/graph", permRead, nil, nil},
 		{http.MethodGet, api + "/graph", permRead, nil, nil},
 		{http.MethodGet, api + "/findings", permRead, nil, nil},
-		{http.MethodGet, base + "/pull/4/graph", permRead, nil, nil},
+		{http.MethodGet, base + "/pull/4/graph", signedInOnly, nil, nil},
 		{http.MethodPost, api + "/assist", permWrite, nil, assistOf("", policyText)},
-		{http.MethodGet, base + "/data-sharing", permAdmin, nil, nil},
+		{http.MethodGet, base + "/data-sharing", signedInOnly, nil, nil},
 		{http.MethodGet, api + "/data-sharing", permAdmin, nil, nil},
 		{http.MethodPost, api + "/data-sharing", permAdmin, nil, dataSharingJSON{Kind: "managed_llm", Action: actionAllow}},
 	}
@@ -572,23 +578,21 @@ func TestEditorSaysWhyManagedModeIsOff(t *testing.T) {
 	}
 }
 
+// The redirect reads only the path: the same answer for every user and every repository, so it confirms nothing.
 func TestOldConsentPageMovedToDataSharing(t *testing.T) {
-	path := "/r/" + repoName + "/consent"
-	for _, perm := range []string{"none", permRead, permWrite} {
-		e := newEnv(t)
-		res := e.as("alice", perm).get(path)
-		wantStatus(t, res, http.StatusNotFound)
-		if loc := res.Header().Get("Location"); loc != "" {
-			t.Errorf("%s: Location %q tells a non-administrator the repository exists", perm, loc)
+	for _, perm := range []string{"none", permRead, permAdmin} {
+		for _, repo := range []string{repoName, otherRepo, "acme/missing"} {
+			e := newEnv(t)
+			res := e.as("alice", perm).get("/r/" + repo + "/consent")
+			wantStatus(t, res, http.StatusPermanentRedirect)
+			if loc := res.Header().Get("Location"); loc != "/r/"+repo+"/data-sharing" {
+				t.Errorf("%s on %s: Location = %q", perm, repo, loc)
+			}
+			if n := len(e.gh.called("Permission")); n != 0 {
+				t.Errorf("%s on %s: %d permission lookups, want none", perm, repo, n)
+			}
 		}
 	}
-	e := newEnv(t)
-	res := e.as("alice", permAdmin).get(path)
-	wantStatus(t, res, http.StatusPermanentRedirect)
-	if loc := res.Header().Get("Location"); loc != "/r/"+repoName+"/data-sharing" {
-		t.Errorf("Location = %q", loc)
-	}
-	wantStatus(t, e.as("alice", permAdmin).get("/r/"+otherRepo+"/consent"), http.StatusNotFound)
 }
 
 // Each stage offers only its own action: an overview never shows a button for a step that is not the next one.
@@ -1032,23 +1036,24 @@ func TestStatusPageShowsBranchPullsAndSetup(t *testing.T) {
 			t.Errorf("steps = %+v, next = %q", body.Steps, body.Next)
 		}
 	})
-	t.Run("before the first report there is nothing to read", func(t *testing.T) {
+	// The default branch and the pull requests are read on the chance of a report, and dropped without one.
+	t.Run("before the first report there is nothing to show", func(t *testing.T) {
 		e := newEnv(t)
 		setup(e, onboarding.StageWorkflowMerged)
 		body := read(e)
-		if body.MainState != "" || body.Pulls != nil || len(e.gh.called("OpenPulls")) != 0 {
-			t.Errorf("pull requests looked up before any report")
+		if body.MainState != "" || body.MainTone != "" || body.Pulls != nil || body.PullsError {
+			t.Errorf("default branch %q, pulls %+v shown before any report", body.MainState, body.Pulls)
 		}
 		if !stepOf(body, "Workflow merged").Current {
 			t.Errorf("steps = %+v", body.Steps)
 		}
 	})
-	t.Run("a merged policy without a report reads nothing and marks no report", func(t *testing.T) {
+	t.Run("a merged policy without a report shows nothing and marks no report", func(t *testing.T) {
 		e := newEnv(t)
 		setup(e, onboarding.StagePolicyMerged)
 		body := read(e)
-		if body.MainState != "" || len(e.gh.called("OpenPulls")) != 0 {
-			t.Errorf("state or pull requests read before a report")
+		if body.MainState != "" || body.Pulls != nil {
+			t.Errorf("state or pull requests shown before a report")
 		}
 		if first := stepOf(body, "First report"); first.Done || first.Current || !stepOf(body, "Policy merged").Current {
 			t.Errorf("steps = %+v", body.Steps)

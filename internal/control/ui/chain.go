@@ -30,14 +30,12 @@ const (
 		"form-action 'self'; frame-ancestors 'none'; object-src 'none'; worker-src 'self'"
 )
 
-// scope is what the chain hands to a page: the signed-in user and, on repository routes, the authorized
-// repository. It is the only tenant identity a page may use.
+// scope is what the chain hands to an API handler: the signed-in user and, on /api/repos routes, the repository
+// authorized on this request. It is the only tenant identity a handler may use.
 type scope struct {
 	user session.User
 	repo api.Repo
 }
-
-type pageFunc func(w http.ResponseWriter, r *http.Request, sc scope)
 
 // reqLog collects the identifiers of one request for its single log line.
 type reqLog struct {
@@ -183,22 +181,4 @@ func formError(err error) error {
 		return err
 	}
 	return invalid("The form could not be read.")
-}
-
-// repo authorizes the {o}/{n} of the path at minPermission on every request and hands the Repo to the page.
-func (s *server) repo(minPermission string, next pageFunc) http.Handler {
-	return s.signedIn(func(w http.ResponseWriter, r *http.Request, u session.User) {
-		sc := scope{user: u}
-		repo, err := s.sessions.Authorize(r.Context(), u, r.PathValue("o")+"/"+r.PathValue("n"), minPermission)
-		if err != nil {
-			if !s.endIfTokenRejected(w, r, err) {
-				s.fail(w, r, err)
-			}
-			return
-		}
-		l := logOf(r)
-		l.repoID, l.installationID = repo.ID, repo.InstallationID
-		sc.repo = repo
-		next(w, r, sc)
-	})
 }
