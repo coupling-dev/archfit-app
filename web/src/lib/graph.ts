@@ -100,10 +100,11 @@ export const meaning: Record<Status, string> = {
     'No active finding names this dependency. That is not proof that a rule permits it, and it can still break a rule the report did not evaluate.',
 };
 
+// Only an active finding is a problem. Accepted debt is known and drawn muted; it never reads as a problem.
 const problemStatus: Record<Status, boolean> = {
   violation: true,
   advisory: true,
-  accepted: true,
+  accepted: false,
   allowed: false,
   observed: false,
 };
@@ -113,6 +114,7 @@ const problemStatus: Record<Status, boolean> = {
 export const strengths = ['contract', 'model', 'functional', 'intrusive'] as const;
 export const strengthWidth: Record<string, number> = { contract: 1.5, model: 2.5, functional: 3.5, intrusive: 5 };
 export const unmeasuredWidth = 1.5;
+export const acceptedWidth = 1.5;
 
 export const strengthWord: Record<string, string> = {
   contract: 'contract coupling',
@@ -138,7 +140,8 @@ export function isAdded(l: GLink, pull: boolean): boolean {
   return pull && l.origin === 'added';
 }
 
-// A problem is a violation, an advisory or an accepted dependency, and on the pull request graph anything it added.
+// A problem is a violation or an advisory, and on the pull request graph anything it added. The unit everywhere on the
+// graph pages is one dependency: an ordered pair of modules A → B, as the engine's seam. A cycle is two dependencies.
 export function isProblemStatus(s: Status): boolean {
   return problemStatus[s];
 }
@@ -147,13 +150,25 @@ export function isProblem(l: GLink, pull: boolean): boolean {
   return problemStatus[l.status] || isAdded(l, pull);
 }
 
+// isAcceptedEarlier is known debt: accepted, and not added by this pull request. An accepted dependency the pull request
+// added is new to the reviewer, so it stays a problem and is never drawn faint.
+export function isAcceptedEarlier(l: GLink, pull: boolean): boolean {
+  return l.status === 'accepted' && !isAdded(l, pull);
+}
+
 export function linkKey(l: { from: string; to: string }): string {
   return JSON.stringify([l.from, l.to]);
 }
 
+// countWord is the import count behind a dependency: how many imports of the pair the engine observed.
 export function countWord(l: GLink): string {
   if (!l.count) return 'named by a finding';
-  return `${l.count} ${l.count === 1 ? 'dependency' : 'dependencies'}`;
+  return `${l.count} ${l.count === 1 ? 'import' : 'imports'}`;
+}
+
+// dependencyWord counts dependencies, the graph's one unit.
+export function dependencyWord(n: number): string {
+  return `${n} ${n === 1 ? 'dependency' : 'dependencies'}`;
 }
 
 // balanceWord reads the engine's seam severity: an imbalance only when it reported one.
@@ -165,19 +180,19 @@ export function balanceWord(l: GLink): string {
 export interface ProblemRow {
   key: string;
   link: GLink;
-  back?: GLink; // the other direction of a cycle, same status: one row A ⇄ B
+  cycle: boolean; // the other direction is a problem too, of any status
   added: boolean;
 }
 
-// problemRows is the list above the canvas: the problem dependencies the filter shows, a cycle's two directions as one
-// row. With emphasis on, what this pull request added comes first; then by status, then by count.
+// problemRows is the list above the canvas: one row per active dependency the filter shows. With emphasis on, what
+// this pull request added comes first; then by status, then by import count.
 export function problemRows(
   links: GLink[],
   pull: boolean,
   emphasis: boolean,
   show: Record<Status, boolean>,
 ): ProblemRow[] {
-  const shown = links
+  return links
     .filter((l) => isProblem(l, pull) && show[l.status])
     .sort(
       (a, b) =>
@@ -185,25 +200,20 @@ export function problemRows(
         statuses.indexOf(a.status) - statuses.indexOf(b.status) ||
         b.count - a.count ||
         linkKey(a).localeCompare(linkKey(b)),
-    );
-  const listed = new Set<GLink>();
-  const rows: ProblemRow[] = [];
-  for (const l of shown) {
-    if (listed.has(l)) continue;
-    const back = shown.find(
-      (r) =>
-        r !== l &&
-        !listed.has(r) &&
-        r.status === l.status &&
-        (l.status !== 'accepted' || r.accepted === l.accepted) && // gate debt and an accepted advisory stay two rows
-        r.from === l.to &&
-        r.to === l.from,
-    );
-    listed.add(l);
-    if (back) listed.add(back);
-    rows.push({ key: linkKey(l), link: l, back, added: isAdded(l, pull) || (!!back && isAdded(back, pull)) });
-  }
-  return rows;
+    )
+    .map((l) => ({
+      key: linkKey(l),
+      link: l,
+      cycle: links.some((r) => r.from === l.to && r.to === l.from && r.from !== r.to && isProblem(r, pull)),
+      added: isAdded(l, pull),
+    }));
+}
+
+// acceptedRows is the dependencies known and accepted earlier, by import count: the collapsed group under the problems.
+export function acceptedRows(links: GLink[], pull: boolean, show: Record<Status, boolean>): GLink[] {
+  return links
+    .filter((l) => isAcceptedEarlier(l, pull) && show.accepted)
+    .sort((a, b) => b.count - a.count || linkKey(a).localeCompare(linkKey(b)));
 }
 
 // focus is the part of the view the canvas starts on above focusLimit modules: the problem dependencies and the modules

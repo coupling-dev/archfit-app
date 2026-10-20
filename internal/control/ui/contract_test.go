@@ -335,9 +335,9 @@ func TestGraphPageBuildsFromArtifact(t *testing.T) {
 	if got.PolicyHref != "/r/"+repoName+"/policy" || got.Branch != mainBranch || got.Pull != nil || got.Unavailable != "" || got.StaleReason != "" {
 		t.Errorf("body = %+v", got)
 	}
-	// hard_gates: fail. An observed link of this report is not proof that the policy permits it.
-	if !want.Incomplete {
-		t.Error("Incomplete = false for a report whose hard gates did not pass")
+	// hard_gates: fail with nothing unevaluated: the violations are the message, so the page does not say incomplete.
+	if want.Incomplete || got.View.Incomplete {
+		t.Error("Incomplete = true for a failed hard gate with no unevaluated required rule")
 	}
 	if strings.Contains(c.get(path).Body.String(), "MARKER-") {
 		t.Error("a field the decoder drops reached the API")
@@ -660,8 +660,8 @@ func TestPullPageShowsTheReportOfItsCheck(t *testing.T) {
 			check(e, "v1:88:1:"+digest)
 			e.gh.artifacts[88] = payload
 		}, http.StatusOK, func(t *testing.T, b pullJSON) {
-			if b.Unavailable != "" || b.Headline != "Architecture violations found · advisory · no baseline" || b.Result != "attention" ||
-				b.Tone != "attention" || b.Required || !b.NoBaseline || b.Compared || b.RunID != 88 {
+			if b.Unavailable != "" || b.Headline != "Architecture violations found · advisory · no baseline" || b.Result != "violations found" ||
+				b.Tone != "danger" || b.Required || !b.NoBaseline || b.Compared || b.RunID != 88 {
 				t.Errorf("header = %+v", b)
 			}
 			if b.ViolationCount == 0 || len(b.Other) == 0 || b.Other[0].RuleID != "no_direct_b_dependency" || b.Other[0].Origin != "" {
@@ -917,7 +917,7 @@ func TestStatusPageShowsBranchPullsAndSetup(t *testing.T) {
 		if len(body.Pulls) != 1 || body.Pulls[0] != want {
 			t.Errorf("pulls = %+v, want [%+v]", body.Pulls, want)
 		}
-		if !stepOf(body, "Advisory").Current || !stepOf(body, "Policy merged").Done || !strings.Contains(body.Next, "Rehearse the gate") {
+		if !stepOf(body, "Advisory").Current || !stepOf(body, "Policy merged").Done || !strings.Contains(body.Next, "Make the gate required") || !strings.Contains(body.NextHow, "gate: required") {
 			t.Errorf("steps = %+v, next = %q", body.Steps, body.Next)
 		}
 	})
