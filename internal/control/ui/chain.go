@@ -78,7 +78,8 @@ func chain(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		l := &reqLog{outcome: "ok"}
-		r = r.WithContext(context.WithValue(r.Context(), reqLogKey{}, l))
+		ctx, gh := api.WithCallStats(context.WithValue(r.Context(), reqLogKey{}, l))
+		r = r.WithContext(ctx)
 		sw := &statusWriter{ResponseWriter: w}
 
 		id := requestID()
@@ -111,6 +112,9 @@ func chain(next http.Handler) http.Handler {
 				"repository_id", l.repoID,
 				"installation_id", l.installationID,
 				"outcome", l.outcome,
+				// GitHub round trips of the request and their time summed: concurrent calls add up past duration_ms.
+				"gh_calls", gh.Calls(),
+				"gh_ms", gh.Duration().Milliseconds(),
 			)
 		}()
 		next.ServeHTTP(sw, r)

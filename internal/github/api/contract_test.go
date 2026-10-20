@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -250,6 +251,27 @@ func TestPullsContract(t *testing.T) {
 			t.Errorf("merged pull = %+v", done)
 		}
 		_, err = env.c.Pull(ctx, repoA, 404)
+		wantErrIs(t, "missing pull", err, ErrNotFound)
+	})
+
+	t.Run("PullSummary", func(t *testing.T) {
+		env.gh.reset()
+		got, err := env.c.PullSummary(ctx, repoA, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		full, err := env.c.Pull(ctx, repoA, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		full.MergeBaseSHA = ""
+		if got != full {
+			t.Errorf("PullSummary = %+v\nwant Pull without the merge base %+v", got, full)
+		}
+		if reqs := env.gh.requests(); len(reqs) != 3 || reqs[0].String() != "GET /repos/o/r/pulls/1" {
+			t.Errorf("requests = %v, want one GET of the pull, then Pull's two", reqs)
+		}
+		_, err = env.c.PullSummary(ctx, repoA, 404)
 		wantErrIs(t, "missing pull", err, ErrNotFound)
 	})
 
@@ -575,6 +597,22 @@ func TestActionsContract(t *testing.T) {
 	}
 	if blob := reqs[2]; blob.Host != blobHost || blob.Auth != "" {
 		t.Errorf("redirected request: host %q, Authorization %q; want no credential on another host", blob.Host, blob.Auth)
+	}
+
+	// Artifact is ArtifactID then ArtifactByID: the same three requests.
+	env.gh.reset()
+	id, err := env.c.ArtifactID(ctx, repoA, 55, "archfit-report")
+	if err != nil || id != 3 {
+		t.Fatalf("ArtifactID = %d, %v; want the newest unexpired, 3", id, err)
+	}
+	if got, err := env.c.ArtifactByID(ctx, repoA, id, 1<<20); err != nil || !bytes.Equal(got, report) {
+		t.Errorf("ArtifactByID = %q, %v", got, err)
+	}
+	if split := env.gh.requests(); !slices.EqualFunc(split, reqs, func(a, b recorded) bool { return a.String() == b.String() }) {
+		t.Errorf("split requests = %v, want %v", split, reqs)
+	}
+	if _, err := env.c.ArtifactByID(ctx, repoA, id, 0); err == nil {
+		t.Error("ArtifactByID maxBytes 0: want error")
 	}
 
 	if _, err := env.c.Artifact(ctx, repoA, 55, "archfit-report", int64(len(report))-1); err == nil {

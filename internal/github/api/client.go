@@ -282,6 +282,7 @@ func (c *Client) roundTrip(ctx context.Context, k call, payload []byte, token st
 		req.Header.Set("If-None-Match", cached.etag)
 	}
 
+	defer count(ctx, time.Now())
 	resp, err := c.hc.Do(req)
 	if err != nil {
 		// A *url.Error carries the full URL; keep only its cause.

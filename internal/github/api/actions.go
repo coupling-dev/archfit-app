@@ -128,12 +128,22 @@ func (c *Client) Artifact(ctx context.Context, r RepoRef, runID int64, name stri
 	if maxBytes <= 0 {
 		return nil, errors.New("github: artifact size cap must be positive")
 	}
+	id, err := c.ArtifactID(ctx, r, runID, name)
+	if err != nil {
+		return nil, err
+	}
+	return c.ArtifactByID(ctx, r, id, maxBytes)
+}
+
+// ArtifactID is the newest unexpired artifact of the run with that name. An artifact never changes, so its ID names
+// its content: a reader may keep what it downloaded under the ID.
+func (c *Client) ArtifactID(ctx context.Context, r RepoRef, runID int64, name string) (int64, error) {
 	if name == "" {
-		return nil, errors.New("github: empty artifact name")
+		return 0, errors.New("github: empty artifact name")
 	}
 	cr, base, err := r.target()
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	var list struct {
 		Artifacts []struct {
@@ -146,7 +156,7 @@ func (c *Client) Artifact(ctx context.Context, r RepoRef, runID int64, name stri
 	k := call{cred: cr, method: http.MethodGet, route: "/repos/{r}/actions/runs/{id}/artifacts",
 		url: apiURL(base+"/actions/runs/"+itoa(runID)+"/artifacts", url.Values{"name": {name}, "per_page": {perPage}})}
 	if err := c.send(ctx, k, &list); err != nil {
-		return nil, err
+		return 0, err
 	}
 	var newest int64
 	var newestAt time.Time
@@ -156,11 +166,22 @@ func (c *Client) Artifact(ctx context.Context, r RepoRef, runID int64, name stri
 		}
 	}
 	if newest == 0 {
-		return nil, k.errorf("%w", ErrNotFound)
+		return 0, k.errorf("%w", ErrNotFound)
 	}
+	return newest, nil
+}
 
-	k = call{cred: cr, method: http.MethodGet, route: "/repos/{r}/actions/artifacts/{id}/zip",
-		url: apiURL(base+"/actions/artifacts/"+itoa(newest)+"/zip", nil), redirect: true, maxBody: maxBytes + zipOverhead}
+// ArtifactByID downloads an artifact and returns the one file in it, at most maxBytes.
+func (c *Client) ArtifactByID(ctx context.Context, r RepoRef, id int64, maxBytes int64) ([]byte, error) {
+	if maxBytes <= 0 {
+		return nil, errors.New("github: artifact size cap must be positive")
+	}
+	cr, base, err := r.target()
+	if err != nil {
+		return nil, err
+	}
+	k := call{cred: cr, method: http.MethodGet, route: "/repos/{r}/actions/artifacts/{id}/zip",
+		url: apiURL(base+"/actions/artifacts/"+itoa(id)+"/zip", nil), redirect: true, maxBody: maxBytes + zipOverhead}
 	res, err := c.do(ctx, k)
 	if err != nil {
 		return nil, err

@@ -395,3 +395,28 @@ func TestUserSeesOnlyTheirRepositories(t *testing.T) {
 		t.Error("App credentials were used for Users calls")
 	}
 }
+
+func TestCallStatsCountEachRoundTripOfOneContext(t *testing.T) {
+	env := muxEnv(t, func(mux *http.ServeMux) {
+		mux.HandleFunc("GET /repos/o/r/pulls/{n}", func(w http.ResponseWriter, _ *http.Request) {
+			time.Sleep(5 * time.Millisecond)
+			writeJSON(w, http.StatusOK, pullFixture(1, "open", "feature", "o/r", nil))
+		})
+	})
+	ctx, stats := WithCallStats(context.Background())
+	var wg sync.WaitGroup
+	for range 3 {
+		wg.Go(func() {
+			if _, err := env.c.PullSummary(ctx, repoA, 1); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	wg.Wait()
+	if _, err := env.c.PullSummary(context.Background(), repoA, 1); err != nil {
+		t.Fatal(err)
+	}
+	if stats.Calls() != 3 || stats.Duration() < 15*time.Millisecond {
+		t.Errorf("stats = %d calls, %v; want the three calls of ctx, about 5 ms each", stats.Calls(), stats.Duration())
+	}
+}

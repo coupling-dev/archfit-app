@@ -150,6 +150,11 @@ progress has not uploaded yet; its conclusion does not matter. **[default]** Fir
 3. Policy present, not reported → `policy_merged`.
 4. Policy present, reported → `gate_advisory` or `gate_required` from `Settings.Gate`.
 
+With valid settings, the workflow file, the policy file and "reported" are read side by side and judged in this
+order: a workflow read error first; no workflow → rule 1, whatever the other two said; then a policy read error, then
+a "reported" error. The UI's overview calls `Progress` on every load, and the reads were one after another. A panic in
+one read is raised again on the caller's goroutine once the others are done.
+
 `OpenDraft` is set only when `Get` returns `DraftOpen` or `DraftInReview`; merged, closed and none give nil. Diagnostics, one sentence each: "Start onboarding" /
 "Review and merge PR #n" / "`.archfit-app.yaml` on the default branch is invalid" / "Run discovery
 (workflow_dispatch with `mode` set to `discovery`)" / "Review and merge the policy PR #n" / "Waiting for the first run on
@@ -1087,8 +1092,14 @@ Test doubles only at boundaries: in-memory GitHub roles (`Repos`, `Actions`, `Ch
   **Expected behavior**: the body counts 3 000 added and 300 removed, lists 150 of each with "and 2850 more" and
   "and 150 more", and stays under 65 536 characters.
 - **Test name**: `TestProgressErrors`
-  **Scenario**: `File` returns `ErrRateLimited`; `LatestRun` returns `ErrNotFound`; `CheckRuns` fails.
-  **Expected behavior**: error returned; "not reported" without error; error returned. No stage is guessed.
+  **Scenario**: `File` returns `ErrRateLimited`; `LatestRun` returns `ErrNotFound`; `CheckRuns` fails; with `LatestRun`
+  failing on its own error: the workflow file absent and the policy read failing; the workflow and the policy reads
+  failing, each with its own error; the policy read failing; nothing else failing.
+  **Expected behavior**: error returned; "not reported" without error; error returned; `installed` without error; the
+  workflow's error; the policy's; the report's. No stage is guessed.
+- **Test name**: `TestTogetherRaisesAPanicOnTheCallersGoroutine`
+  **Scenario**: two parts side by side, one panics.
+  **Expected behavior**: the panic reaches the caller after the other part ran.
 
 ### Behavior Tests
 
