@@ -414,9 +414,21 @@ func TestDataSharingAllowAndRevoke(t *testing.T) {
 	if want := []precondition{{ai.Checks[0].Label, checkNotMet}, {ai.Checks[1].Label, checkMet}}; !reflect.DeepEqual(ai.Checks, want) {
 		t.Errorf("checks = %+v; want the consent unmet and data_mode: managed met", ai.Checks)
 	}
-	if discovery := feature(t, before, account.ConsentSourceProcessing); discovery.Note == "" || len(discovery.Checks) != 1 {
-		t.Errorf("managed discovery = %+v; want the note that the App does not start it, and only the consent to check", discovery)
+	if discovery := feature(t, before, account.ConsentSourceProcessing); discovery.Note == "" || len(discovery.Checks) != 1 || discovery.Offered {
+		t.Errorf("managed discovery = %+v; want the note that the App does not start it, only the consent to check, not offered", discovery)
 	}
+	if !ai.Offered {
+		t.Errorf("managed AI = %+v; want offered", ai)
+	}
+
+	t.Run("a consent given earlier for a feature the page does not offer can be revoked", func(t *testing.T) {
+		_ = e.consents.Record(t.Context(), installA, account.Consent{Kind: account.ConsentSourceProcessing})
+		discovery := dataSharingJSON{Kind: string(account.ConsentSourceProcessing), Action: actionRevoke}
+		wantStatus(t, c.postJSON(path, discovery), http.StatusOK)
+		if _, ok := e.consents.recorded[installA][account.ConsentSourceProcessing]; ok {
+			t.Error("the earlier consent was not revoked")
+		}
+	})
 
 	res := c.postJSON(path, allow)
 	wantStatus(t, res, http.StatusOK)

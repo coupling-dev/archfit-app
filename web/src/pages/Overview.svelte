@@ -74,8 +74,13 @@
   }
 
   const shareWords: Record<ShareState, string> = { allowed: 'allowed', not_allowed: 'not allowed', unknown: 'cannot tell' };
-  // An open pull request needs attention when its archfit/state is anything but healthy.
-  const pullsToSee = $derived(body?.pulls?.filter((p) => p.tone !== 'success').length ?? 0);
+  // A pull request whose archfit/state has no report yet is waiting, not unhealthy: the server's words for "no check
+  // yet" and "running". Every other state but healthy needs a look.
+  const waitingStates = ['no state yet', 'in progress'];
+  const pullsWaiting = $derived(body?.pulls?.filter((p) => waitingStates.includes(p.state)).length ?? 0);
+  const pullsToSee = $derived(
+    body?.pulls?.filter((p) => p.tone !== 'success' && !waitingStates.includes(p.state)).length ?? 0,
+  );
   const actions = $derived(body !== null && body.admin && (body.can_start || body.can_discover));
   const needsYou = $derived(body !== null && (body.next !== '' || body.diagnostic !== '' || actions));
 </script>
@@ -121,7 +126,11 @@
         <div>
           <span class="n">{pullsToSee}</span>
           <span class="t">Open pull {pullsToSee === 1 ? 'request' : 'requests'} not healthy</span>
-          <span class="s">{body.pulls_more ? `among the ${body.pulls.length} listed` : `of ${body.pulls.length} open`}</span>
+          <span class="s"
+            >{body.pulls_more ? `among the ${body.pulls.length} listed` : `of ${body.pulls.length} open`}{pullsWaiting
+              ? `; ${pullsWaiting} waiting for a report`
+              : ''}</span
+          >
         </div>
       {/if}
     </div>

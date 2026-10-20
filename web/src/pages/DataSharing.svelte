@@ -91,7 +91,7 @@
           <button class="btn sm" type="button" disabled={busy !== ''} onclick={() => change(f.kind, 'revoke')}>
             Revoke
           </button>
-        {:else}
+        {:else if f.offered}
           <button class="btn sm primary" type="button" disabled={busy !== ''} onclick={() => change(f.kind, 'allow')}>
             Allow {f.title}
           </button>

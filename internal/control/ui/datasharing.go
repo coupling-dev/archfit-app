@@ -30,6 +30,9 @@ type sharedFeature struct {
 	leaves  string // what leaves the customer's environment, and when
 	note    string // shown under the feature; "" for none
 	managed bool   // the feature also needs data_mode: managed in the repository settings
+	// offered: the page offers Allow. A feature the App does not start shows only Revoke of a consent given earlier.
+	// The POST still records it: a build with a sandbox driver grants managed discovery through it (onboarding).
+	offered bool
 }
 
 // sharedFeatures is the server's list of consent kinds: a POST naming any other kind is refused.
@@ -40,6 +43,7 @@ var sharedFeatures = []sharedFeature{
 		leaves: "When someone asks for a policy proposal in managed mode, the draft policy text and the instruction are " +
 			"sent to the AI provider. No source code and no report is sent.",
 		managed: true,
+		offered: true,
 	},
 	{
 		kind:  account.ConsentSourceProcessing,
@@ -69,6 +73,7 @@ type featureJSON struct {
 	Title   string `json:"title"`
 	Leaves  string `json:"leaves"`
 	Note    string `json:"note,omitempty"`
+	Offered bool   `json:"offered"` // false: no Allow, only Revoke of a consent already given
 	Allowed bool   `json:"allowed"`
 	// By is the login as it was when the consent was recorded; every recorded consent holds one. At is RFC 3339, UTC.
 	By     string         `json:"by,omitempty"`
@@ -97,7 +102,7 @@ func (s *server) dataSharing(ctx context.Context, sc scope) (dataSharingBody, er
 		if err != nil {
 			return dataSharingBody{}, err
 		}
-		out := featureJSON{Kind: string(f.kind), Title: f.title, Leaves: f.leaves, Note: f.note, Allowed: ok}
+		out := featureJSON{Kind: string(f.kind), Title: f.title, Leaves: f.leaves, Note: f.note, Offered: f.offered, Allowed: ok}
 		allowed := precondition{Label: "Allowed for " + owner, State: checkNotMet}
 		if ok {
 			out.By, out.At, allowed.State = c.By, c.At.UTC().Format(time.RFC3339), checkMet

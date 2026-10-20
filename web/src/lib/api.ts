@@ -183,6 +183,7 @@ export interface SharedFeature {
   title: string;
   leaves: string;
   note?: string;
+  offered: boolean; // false: the App does not run it, so it can only be revoked
   allowed: boolean;
   by?: string; // the login as it was when the consent was recorded
   at?: string; // RFC 3339
