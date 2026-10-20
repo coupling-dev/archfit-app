@@ -40,6 +40,14 @@ const reporting = {
       reason: 'No new findings',
       href: '/r/acme/app/pull/4',
     },
+    {
+      number: 5,
+      title: 'chore: bump deps',
+      state: 'no state yet',
+      tone: 'neutral',
+      reason: '',
+      href: '/r/acme/app/pull/5',
+    },
   ],
   pulls_more: 2,
   pulls_error: false,
@@ -101,6 +109,7 @@ const sharing = (allowed: boolean) => ({
       title: 'Managed AI',
       leaves:
         'When someone asks for a policy proposal in managed mode, the draft policy text and the instruction are sent to the AI provider.',
+      offered: true,
       allowed,
       ...(allowed ? { by: 'alice', at: '2026-10-20T09:00:00Z' } : {}),
       checks: aiChecks(allowed),
@@ -110,6 +119,7 @@ const sharing = (allowed: boolean) => ({
       title: 'Managed discovery',
       leaves: 'Archfit clones the repository into a short-lived sandbox to propose a first policy.',
       note: 'The App does not start managed discovery yet. Onboarding runs discovery in your own workflow.',
+      offered: false,
       allowed: true,
       by: 'carol',
       at: '2026-09-01T00:00:00Z',
@@ -590,7 +600,8 @@ test('overview: state, pull requests, setup and history', async ({ page }) => {
   const counts = page.getByRole('group', { name: 'Counts on main' });
   await expect(counts).toContainText('3 Rule violations');
   await expect(counts).toContainText('1 Advisory never block');
-  await expect(counts).toContainText('0 Open pull requests not healthy');
+  // a pull request with no report yet is waiting, not unhealthy
+  await expect(counts).toContainText('0 Open pull requests not healthy among the 2 listed; 1 waiting for a report');
   await expect(page.getByRole('heading', { name: 'Findings on main' })).toBeVisible();
   await expect(page.getByText('Go through the repository.')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Open the graph' })).toHaveAttribute('href', '/r/acme/app/graph');
@@ -678,7 +689,7 @@ test('pull request: the cycle drawn as on the comment, then the other findings',
   const evidence = page.getByRole('table');
   await expect(evidence.getByRole('columnheader', { name: 'Result' })).toBeVisible();
   await expect(evidence.getByRole('columnheader', { name: 'Gate' })).toHaveCount(0);
-  await expect(evidence.getByRole('row', { name: /Testability/ })).toContainText('classified source files: 3 of 3');
+  await expect(evidence.getByRole('row', { name: /Testability/ })).toContainText('3 of 3 ("classified source files")');
   await expect(evidence.getByRole('row', { name: /Drift/ })).toContainText('nothing to measure');
   await expect(evidence.getByRole('row', { name: /Drift/ })).toContainText('not applicable');
   await expectClean(page);
@@ -909,6 +920,9 @@ test('data sharing: what leaves, who allowed it, and Allow', async ({ page }) =>
   await expect(discovery.locator('.checks li.met .mark')).toHaveText('✓');
   await expect(discovery.getByText('Allowed by @carol on 1 September 2026')).toBeVisible();
   await expect(discovery.getByText('The App does not start managed discovery yet.', { exact: false })).toBeVisible();
+  // a feature the App does not run is never offered for allowing; a consent given earlier can still be revoked
+  await expect(discovery.getByRole('button', { name: /Allow/ })).toHaveCount(0);
+  await expect(discovery.getByRole('button', { name: 'Revoke' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Overview' })).not.toHaveAttribute('aria-current', 'page');
   await expectClean(page);
 

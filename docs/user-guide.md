@@ -115,7 +115,7 @@ Managed discovery is not available in this build and is not offered by the onboa
 `ARCHFIT_SANDBOX=none` is the only sandbox driver. Customer discovery and optional managed AI assistance remain separate.
 
 When a sandbox driver exists, an administrator must allow **Managed discovery** on the Data sharing page before source
-processing.
+processing. Until then the page offers no **Allow** for it; a consent given earlier can still be revoked.
 The App then clones the repository into an ephemeral sandbox, runs discovery, and deletes the sandbox.
 The sandbox does not run repository scripts and receives only a short-lived installation token.
 Managed onboarding adds the proposed policy to the onboarding pull request.
@@ -430,6 +430,8 @@ from **Administration** on the repository overview, or at `/r/{owner}/{repo}/dat
   was opened from.
 - The page shows who allowed each feature and when, and a checklist of what the feature still needs.
 - **Revoke** turns a feature off at once. Allowing a feature that is already allowed keeps who allowed it and when.
+- A feature the App does not run yet (Managed discovery) has no **Allow**; a consent given earlier keeps its
+  **Revoke**.
 - If the App cannot read the record, the page shows an error and never "not allowed".
 - The old `/consent` address redirects here.
 
@@ -538,8 +540,8 @@ on the pull request links to this page ("Details in Archfit").
   Archfit authenticates the producer, not the content. Hover a badge for its meaning. A required gate blocks merging
   only where a GitHub ruleset requires `archfit/gate`.
   Without that comparison, "new" means not accepted in a baseline, not "added by this pull request".
-- **Evidence** has one row per dimension: what the engine measured, in its own words and counts ("classified source
-  files: 3 of 3"), its confidence, and its **Result**: pass, warn or fail.
+- **Evidence** has one row per dimension: how many the engine measured, then what it counted in its own words, quoted
+  as on the comment (`3 of 3 ("classified source files")`), its confidence, and its **Result**: pass, warn or fail.
 - **For coding agents** holds the exact repair tasks of the run; **Copy** puts them on the clipboard.
 - The **Graph** tab draws the same report as a graph. See [The graph of a pull request](#the-graph-of-a-pull-request).
 - The page shows a report only when it is the one the check was computed from, and never under a result that asks

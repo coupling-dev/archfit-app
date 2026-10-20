@@ -1327,7 +1327,9 @@ then the chain in turn, never a wrong page.
   the pending state and the link, not as a duration. Stated limit.
 - Data sharing: `GET` reads each kind with `Consents.Get` and says what leaves the customer's environment, who allowed it and
   when, and the preconditions; managed discovery carries the note that the App does not start it yet (owner decision A1:
-  nothing is removed, and a recorded consent can still be revoked). `allow` → `Consents.Record(repo.InstallationID,
+  nothing is removed, and a recorded consent can still be revoked). Each feature says whether the page offers it
+  (`offered`): Allow shows only for an offered feature, Revoke for any allowed one. The `POST` still accepts `allow`
+  for every kind: a build with a sandbox driver grants managed discovery through it. `allow` → `Consents.Record(repo.InstallationID,
   Consent{Kind, By: login, ByID: user ID, At: now})`, atomic create-only: `ErrConsentExists` is `consent_kept`; `revoke` → `Consents.Revoke`. Each accepted
   action writes one `Info` audit line `ui consent` with `outcome` (`consent_recorded` | `consent_kept` | `consent_revoked`),
   `kind` (the server's constant), `installation_id` and `user_id`; nothing of the request body. Consent is per installation

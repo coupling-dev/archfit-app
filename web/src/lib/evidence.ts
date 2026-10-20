@@ -2,13 +2,12 @@
 
 import type { Dimension } from './api';
 
-// basisText is what the engine counted, then how many it measured: "classified source files: 3 of 3". The basis comes
-// from the engine, so a ratio never reads as missing evidence when the engine says it counted something else. A
-// dimension with nothing to count says so.
+// basisText is how many the engine measured, then what it counted in its own words, quoted as on the comment:
+// '3 of 3 ("classified source files")'. The quote marks the words as the engine's, not the App's. A dimension with
+// nothing to count says so.
 export function basisText(d: Pick<Dimension, 'basis' | 'observed' | 'measurable'>): string {
-  if (!d.measurable) return d.basis || 'nothing to measure';
-  const ratio = `${d.observed} of ${d.measurable}`;
-  return d.basis ? `${d.basis}: ${ratio}` : ratio;
+  const counted = d.measurable ? `${d.observed} of ${d.measurable}` : 'nothing to measure';
+  return d.basis ? `${counted} ("${d.basis}")` : counted;
 }
 
 const resultWords: Record<string, string> = { pass: 'pass', warn: 'warn', fail: 'fail', not_applicable: 'not applicable' };
