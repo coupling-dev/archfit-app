@@ -22,11 +22,34 @@ interface PlacedEdge {
 }
 
 // One worker for the page, started on the first layout: elk-api numbers its messages, so layouts may overlap.
-let elk: InstanceType<typeof ELK> | undefined;
-const layoutOf = (g: ElkNode) =>
-  (elk ??= new ELK({
-    workerFactory: () => new Worker(new URL('./layout.worker.ts', import.meta.url), { type: 'module' }),
-  })).layout(g);
+// elk-api answers only from the worker's replies, so a worker that fails to load or throws would leave a layout
+// waiting forever: its error event rejects the layouts instead, and the next layout starts a fresh worker. A worker
+// the browser kills without an error event still hangs; nothing short of a timeout would notice that.
+let elk: { api: InstanceType<typeof ELK>; failed: Promise<never> } | undefined;
+
+function start() {
+  let worker!: Worker;
+  const api = new ELK({
+    workerFactory: () => (worker = new Worker(new URL('./layout.worker.ts', import.meta.url), { type: 'module' })),
+  });
+  const failed = new Promise<never>((_, reject) =>
+    worker.addEventListener('error', () => reject(new Error('the layout worker stopped')), { once: true }),
+  );
+  return { api, failed };
+}
+
+async function layoutOf(g: ElkNode): Promise<ElkNode> {
+  const cur = (elk ??= start());
+  try {
+    return await Promise.race([cur.api.layout(g), cur.failed]);
+  } catch (e) {
+    if (elk === cur) {
+      cur.api.terminateWorker();
+      elk = undefined;
+    }
+    throw e;
+  }
+}
 
 export async function place(nodes: GNode[], links: GLink[]): Promise<Placed> {
   const g: ElkNode = await layoutOf(elkInput(nodes, links));

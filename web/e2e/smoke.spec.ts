@@ -641,6 +641,13 @@ test('graph: no report says why', async ({ page }) => {
   await expectClean(page);
 });
 
+test('graph: a layout worker that fails to load says so instead of laying out forever', async ({ page }) => {
+  await page.route('**/assets/layout.worker-*.js', (route) => route.fulfill({ status: 404, body: 'gone' }));
+  await open(page, '/r/acme/app/graph');
+  await expect(page.getByRole('alert')).toHaveText('The layout failed: the layout worker stopped');
+  await expect(page.locator('.g-node')).toHaveCount(0);
+});
+
 test('theme: the choice applies at once and survives a reload', async ({ page }) => {
   await open(page, '/');
   await page.getByRole('button', { name: 'Dark' }).click();

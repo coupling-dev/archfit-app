@@ -642,6 +642,7 @@ func TestErrorPagesAreTheShell(t *testing.T) {
 		{"a repository the user cannot see", func(*env) {}, "/r/acme/hidden", http.StatusNotFound, "Not found."},
 		{"a pull request number that is not one", func(*env) {}, "/r/" + repoName + "/pull/0", http.StatusNotFound, "Not found."},
 		{"a path of no page", func(*env) {}, "/static/app.css", http.StatusNotFound, "Not found."},
+		{"a route's path with a method it does not take", func(*env) {}, "/auth/logout", http.StatusNotFound, "Not found."},
 		{"GitHub fails with its own text", func(e *env) { e.gh.fail["Permission"] = errors.New(internal) }, "/r/" + repoName,
 			http.StatusBadGateway, "GitHub or an Archfit service failed. Nothing was changed. Try again."},
 		{"GitHub rate limits", func(e *env) { e.gh.fail["Permission"] = fmt.Errorf("%w: %s", api.ErrRateLimited, internal) }, "/r/" + repoName,

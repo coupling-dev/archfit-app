@@ -180,7 +180,7 @@ internal/                         Archfit App (root)
     ├── onboarding/               two-PR customer flow, managed discovery behind Sandbox
     ├── assist/                   explicit AI requests; owns the LLM Provider seam
     │   └── anthropic/            Provider implementation
-    └── ui/                       server-rendered pages, editor, overview
+    └── ui/                       the embedded web app, its JSON API, sign-in
         ├── session/              OAuth login, signed cookies, permission checks
         └── graph/                read-only graph view model
 ```

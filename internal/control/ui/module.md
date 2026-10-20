@@ -55,7 +55,8 @@ pilot; product.md leaves usability targets open.
 - How check conclusions, draft states, plans and assist errors are worded for people.
 - The drawing of the graph (`web/src/pages/Graph.svelte` with Svelte Flow, one lazy chunk the first load never
   fetches; ELK places it in a worker, `web/src/lib/layout.worker.ts`, a hashed file of its own started on the first
-  layout, so a large graph never blocks the page): colour is the status, line width the integration strength (contract thinnest, intrusive thickest), a dashed
+  layout, so a large graph never blocks the page; a worker that fails to load or throws fails the layout with "The
+  layout failed: the layout worker stopped", and the next layout starts a fresh one): colour is the status, line width the integration strength (contract thinnest, intrusive thickest), a dashed
   line a strength no seam measured, the label the dependency count, a dashed module one outside the policy, a halo a
   dependency the pull request added. Status chips that filter, a problem list (violations, then advisories, then
   accepted; the two directions of a cycle with one status are one row, and selecting it highlights and explains both),
@@ -175,8 +176,10 @@ package does not know is `422`, so a body cannot name a repository, a user or an
 - On a page route every error answers the shell as an error page (`fail`): the status below, the shell's CSP with a
   fresh nonce, `Cache-Control: no-store`, and the sentence of the wording table, HTML-escaped, in place of the
   `__APP_ERROR__` of `<meta name="app-error">`; the app then shows that sentence instead of the route, with no
-  repository tabs. An error's own text never reaches a page or an API answer. A path no route takes is the same page
-  with `404` "Not found.". A panic answers `500` "internal error" as plain text under the handler chain's CSP.
+  repository tabs. An error's own text never reaches a page or an API answer. A path no route takes, or a route's path
+  with a method it does not take (`GET /auth/logout`, `POST /r/o/n`), is the same page with `404` "Not found.": one
+  catch-all `/` keeps every non-API answer the shell, and `ServeMux` refuses a `GET /` catch-all beside the method-less
+  `/api/` one, so the mux's own `405` is not kept. A panic answers `500` "internal error" as plain text under the handler chain's CSP.
 - `ErrForbidden` from `Authorize`: `404` **[default]**, so that repository names are not confirmed to outsiders.
   `api.ErrNotFound` from any GitHub call a page does not handle itself: `404` with the same "Not found." wording.
 - Missing or wrong CSRF token: `403`. Body over 512 KB **[default]**: `413`. An `/api/` `POST` that is not JSON: `415`.
@@ -1390,9 +1393,10 @@ their interfaces except where a test says otherwise. The clock is injected.
   `index.html` carries that placeholder in `<meta name="csp-nonce">` and `__APP_ERROR__` in `<meta name="app-error">`,
   so the web app's smoke test runs under the production policy.
 - **Test name**: `TestErrorPagesAreTheShell`
-  **Scenario**: a repository the user cannot see, a pull request number that is not one, a path of no page, a GitHub
-  failure and a rate limit whose errors carry internal text.
-  **Expected behavior**: `404`, `404`, `404`, `502`, `503`; each the shell with its CSP and a nonce, `no-store`, and the
+  **Scenario**: a repository the user cannot see, a pull request number that is not one, a path of no page, a route's
+  path with a method it does not take (`GET /auth/logout`), a GitHub failure and a rate limit whose errors carry
+  internal text.
+  **Expected behavior**: `404`, `404`, `404`, `404`, `502`, `503`; each the shell with its CSP and a nonce, `no-store`, and the
   wording table's sentence in the app-error meta tag; no internal text and no placeholder in the page. A page that
   succeeds has an empty app-error meta tag.
 - **Test name**: `TestShellNonceIsFreshPerResponse`
@@ -1498,6 +1502,6 @@ their interfaces except where a test says otherwise. The clock is injected.
   nonce, the problems as a list and as marks, a `#L<n>` hash and a problem selecting their line, Check and Save sending
   the text, the base head and the CSRF header, a refused save keeping the text, a reader offered no write, managed mode
   off with its reason and the inline Allow, and a customer-mode request following its run; the graph pages, laid out by
-  the worker; a server error page (its sentence, no repository tabs) and the footer's licences link; every page has no
+  the worker, and a worker that fails to load reported instead of a layout that never ends; a server error page (its sentence, no repository tabs) and the footer's licences link; every page has no
   `securitypolicyviolation` event and no axe violation in light and in dark; the onboarding write carries the CSRF
   header and a JSON body.

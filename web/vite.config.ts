@@ -18,7 +18,7 @@ export default defineConfig({
     modulePreload: { polyfill: false },
     // Inlined assets would be data: URLs; every asset stays a file served from 'self'.
     assetsInlineLimit: 0,
-    // The layout worker is about 470 KB gzip, ELK all of it; scripts/size.mjs holds its budget.
+    // The layout worker is about 424 KB gzip, ELK all of it; scripts/size.mjs holds its budget.
     chunkSizeWarningLimit: 2000,
   },
   // The graph's layout worker, an ES module like the app: its licences are collected by the same plugin.
