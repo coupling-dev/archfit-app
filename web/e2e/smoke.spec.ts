@@ -1082,11 +1082,19 @@ const everyPage = [
   '/r/acme/app/policy',
 ];
 
+// rendered waits for the page's own content: its heading, nothing still loading, and the graph laid out.
+async function rendered(page: Page, path: string) {
+  await expect(page.locator('main h1').first(), path).toBeVisible();
+  await expect(page.locator('main').getByText('Loading…'), path).toHaveCount(0);
+  if (path.endsWith('/graph')) await expect(page.locator('.svelte-flow__node').first(), path).toBeVisible();
+}
+
 test('every page: content at most 1280px and centred, the licences in the footer', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
   for (const path of everyPage) {
     await page.unrouteAll();
     await open(page, path);
+    await rendered(page, path);
     await expect(page.getByRole('link', { name: 'Third-party licences' })).toHaveAttribute('href', '/licenses.txt');
     for (const box of [await page.locator('main').boundingBox(), await page.locator('footer').boundingBox()]) {
       expect(box!.width, path).toBeLessThanOrEqual(1280);
@@ -1100,7 +1108,7 @@ test('every page: no sideways scroll at phone width', async ({ page }) => {
   for (const path of everyPage) {
     await page.unrouteAll();
     await open(page, path);
-    await expect(page.locator('footer')).toBeVisible();
+    await rendered(page, path);
     const width = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(width, path).toBeLessThanOrEqual(390);
   }
