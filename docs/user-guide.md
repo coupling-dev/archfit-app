@@ -31,7 +31,7 @@ The App reads repository permission from GitHub and caches the answer briefly.
 | ----------------- | ------------------------------------------------------------------- |
 | `read`            | Read the status, policy, and graph                                  |
 | `write`           | Save a policy draft, ask for an AI proposal, and mark a draft ready |
-| `admin`           | Start onboarding, run discovery, and record or revoke consent       |
+| `admin`           | Start onboarding, run discovery, and allow or revoke data sharing   |
 
 A policy owner is separate from GitHub permission. The settings file lists each policy owner.
 An owner can be a login such as `alice` or a team such as `acme/architects`.
@@ -114,7 +114,8 @@ The status page derives its stage from GitHub on every read.
 Managed discovery is not available in this build and is not offered by the onboarding form.
 `ARCHFIT_SANDBOX=none` is the only sandbox driver. Customer discovery and optional managed AI assistance remain separate.
 
-When a sandbox driver exists, an administrator must record **Managed discovery** consent before source processing.
+When a sandbox driver exists, an administrator must allow **Managed discovery** on the Data sharing page before source
+processing.
 The App then clones the repository into an ephemeral sandbox, runs discovery, and deletes the sandbox.
 The sandbox does not run repository scripts and receives only a short-lived installation token.
 Managed onboarding adds the proposed policy to the onboarding pull request.
@@ -388,6 +389,28 @@ The proposal arrives as a commit on the draft pull request. Nothing is published
 
 Managed AI receives the draft policy text and the instruction. It receives no source code and no report.
 AI output never affects the gate result.
+
+When managed mode is not offered, the form says why: the repository has no settings yet, its settings say
+`data_mode: customer`, or Managed AI is not allowed for the owner. An administrator also gets a link to Data sharing.
+
+## Data sharing
+
+Archfit runs in customer CI, so source code and reports stay there. Two managed features send data out of that
+environment, and each stays off until a repository administrator allows it on **Data sharing**. An administrator opens it
+from **Administration** on the repository overview, or at `/r/{owner}/{repo}/data-sharing`.
+
+| Feature           | What leaves your environment                                                    | Also needs                 |
+| ----------------- | ------------------------------------------------------------------------------- | -------------------------- |
+| Managed AI        | The draft policy text and the instruction, when someone asks for a proposal     | `data_mode: managed`       |
+| Managed discovery | The repository, cloned into a short-lived sandbox that is deleted after the job | Not started by the App yet |
+
+- A choice applies to every repository of the owner that the Archfit App can access, not only to the repository the page
+  was opened from.
+- The page shows who allowed each feature and when, and a checklist of what the feature still needs.
+- **Revoke** turns a feature off at once. Allowing a feature that is already allowed keeps who allowed it and when.
+- If the App cannot read the record, the page shows an error and never "not allowed".
+- The old `/consent` address redirects here.
+
 
 ## Capture a baseline
 
