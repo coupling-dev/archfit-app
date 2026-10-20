@@ -304,7 +304,7 @@ type Deps struct {
     Now        func() time.Time
 }
 
-// New returns the server-rendered UI mounted at "/". It serves its own static assets.
+// New returns the UI mounted at "/". It serves the web app's build from the binary.
 func New(d Deps) (http.Handler, error)
 ```
 

@@ -475,7 +475,7 @@ the e-mail is `ARCHFIT_INVOKER` and is verified, and the token is not expired.
 | `GET /`                                                                                                            | None. Serves the web app, which shows the landing page or the repository list |
 | `GET /auth/login` and `GET /auth/callback`                                                                         | None                                                                          |
 | `POST /auth/logout`                                                                                                | GitHub OAuth session and CSRF token                                           |
-| `GET /static/{path}`, `GET /assets/{path}` and `GET /schema/policy.json`                                           | None                                                                          |
+| `GET /assets/{path}`, `GET /licenses.txt` and `GET /schema/policy.json`                                            | None                                                                          |
 | `GET /api/session` and `GET /api/repos`                                                                            | GitHub OAuth session                                                          |
 | `GET /r/{o}/{n}`, `/graph`, `/policy`, `/pull/{number}` and `/pull/{number}/graph`                                 | Session with repository `read` permission                                     |
 | `GET /api/repos/{o}/{n}/overview`, `/findings`, `/graph`, `/policy`, `/pulls/{number}` and `/pulls/{number}/graph` | Session with repository `read` permission                                     |

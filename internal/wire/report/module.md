@@ -25,7 +25,7 @@ identifiers in `agent_tasks[].declarations`.
 - Preserve what the gate and feedback need, unchanged: `verdict`, `decision.hard_gates`,
   `unevaluated_required_rules`, `comparison.config_hash`, `measurement_profile`, `gate_reference`, both repair
   kinds, task validation commands, empty `locations`.
-- The display rules its consumers share (`Group`, `Cycles`, `PairOrigin`, `EngineRuleNames`, `DistanceWords`,
+- The display rules its consumers share (`Group`, `Cycles`, `PairOrigin`, `EngineRuleNames`, `DistanceWords`, `ReadableWhy`,
   `ShownPerGroup`), so the PR comment, the App's pull request page and its graph group and word findings the same way.
 - Nothing else. It does not interpret the decision, compare profiles, filter findings, or compute outcomes.
 
@@ -521,6 +521,7 @@ func PairOrigin(f Finding, all []Finding, onCycle map[string]bool) string
 
 var EngineRuleNames map[string]string // readable names of the engine's own rules
 var DistanceWords map[string]string   // the engine's distance tokens in the words of Balanced Coupling
+func ReadableWhy(why string) string   // a Why with each known "<token> distance" as "distance <words>"
 ```
 
 `StateSchemaV1` is the only state schema version accepted. `MaxBytes` is the payload cap. Reading the "5 MB" of
@@ -688,6 +689,11 @@ the tests decode each one as the release that produced it (synthetic ones as v3.
 - **Test name**: `TestDuplicateFindingIDs`
   **Scenario**: the same `id` once as `baseline` and once as `fixed`; the same `id` twice as `new`.
   **Expected behavior**: both are errors.
+- **Test name**: `TestReadableWhy`
+  **Scenario**: table: a Why with `cross_module distance`, one with an owner token, two tokens in one text, an unknown
+  token, "no distance" with no token, and empty.
+  **Expected behavior**: each known token reads "distance <words>" of `DistanceWords`; an unknown token and any other
+  text stay as written.
 - **Test name**: `TestFindingActive`
   **Scenario**: table over `Kind` and `Status`: `gate` with `new`, `expired_waiver`, `baseline`, `waived`, `fixed`, an unknown status
   and an empty status; `advisory` with `new` and with `expired_waiver`; an unknown kind and an empty kind with `new`.

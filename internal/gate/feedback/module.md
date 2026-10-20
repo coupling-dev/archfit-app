@@ -386,7 +386,9 @@ receipt marker. Block G is in the gate summary only.
    other token, `unknown` included, as written), volatility (`Seam.Volatility`); empty for a row without a
    seam. A `|` in a cell is escaped. Under a fold's table each distinct `Why`, `Constraint` and set of
    `AllowedAlternatives` is written once with its rule name, in first-seen order: the engine repeats one explanation
-   for every finding of a rule. Engine-authored text (`Why`, `Constraint`) is never reworded.
+   for every finding of a rule. Engine-authored text (`Why`, `Constraint`) is never reworded, with one exception: a
+   distance token in a `Why` reads as the table's (`report.ReadableWhy`: "distance across modules", never
+   "cross_module distance").
 
    "This PR" (display only: the App never decides on origin), only with a comparison: in a fold, the finding's own
    `Origin` as `added` (`introduced`), `existing` (`pre_existing`) or the token. For a cycle direction, the cycle's
@@ -463,7 +465,7 @@ When `Reasons[0].Category` is `subscription`, blocks G, 5 to 7, 9 and 10 are omi
 
 Annotations: only on `archfit/state`; from `Finding.Locations{File, Line}` only; live findings only (accepted debt,
 `baseline` and `waived`, and `fixed` findings get none; a status this version does not know is live); findings shown
-as blocking first, then report order; level `failure` for those, `warning` otherwise; message = rule ID and `Why`;
+as blocking first, then report order; level `failure` for those, `warning` otherwise; message = rule ID and `Why` (through `report.ReadableWhy`);
 `Line == 0` is sent as line 1. A finding with `locations: []` gets no annotation. On a pull request only locations in
 files the PR changed are annotated: `Publish` calls `Pulls.ChangedFiles` once, after the gate check and before the
 state check, and only when some annotation is possible; a `truncated` list means any file may have changed, so every

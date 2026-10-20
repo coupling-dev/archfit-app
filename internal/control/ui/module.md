@@ -15,9 +15,8 @@ could still work GitHub-first, but onboarding, schema-guided editing and consent
 ## Functional Responsibilities
 
 - Serve the web app (`web/`, Svelte 5 built by Vite, embedded from `spa/`) for the overview, the repository page,
-  the pull request page, both graph pages, Data sharing and the policy editor, and its JSON API under `/api/`. Only the
-  error page is still server-rendered (`html/template`) with its embedded stylesheet; phase f2 moves it
-  (`docs/design/ui-redesign.md`, Migration order).
+  the pull request page, both graph pages, Data sharing and the policy editor, and its JSON API under `/api/`. ui
+  renders no HTML of its own: an error page is the same shell with the error's status and sentence.
 - Authenticate every request through `session` and authorize every repository page at the needed permission.
 - Overview: the user's repositories with their latest default-branch `archfit/state` check conclusion. No score.
 - Repository status: onboarding `Progress`, actions to start onboarding or dispatch discovery, entitlement banner.
@@ -54,8 +53,9 @@ pilot; product.md leaves usability targets open.
   `<meta name="csp-nonce">` (see Security, item 2).
 - The edit branch name `archfit/edit-<login>` **[default]** and the rules that turn an edit into a `Change`.
 - How check conclusions, draft states, plans and assist errors are worded for people.
-- The drawing of the graph (`web/src/pages/Graph.svelte` with Svelte Flow and ELK, one lazy chunk the first load never
-  fetches): colour is the status, line width the integration strength (contract thinnest, intrusive thickest), a dashed
+- The drawing of the graph (`web/src/pages/Graph.svelte` with Svelte Flow, one lazy chunk the first load never
+  fetches; ELK places it in a worker, `web/src/lib/layout.worker.ts`, a hashed file of its own started on the first
+  layout, so a large graph never blocks the page): colour is the status, line width the integration strength (contract thinnest, intrusive thickest), a dashed
   line a strength no seam measured, the label the dependency count, a dashed module one outside the policy, a halo a
   dependency the pull request added. Status chips that filter, a problem list (violations, then advisories, then
   accepted; the two directions of a cycle with one status are one row, and selecting it highlights and explains both),
@@ -82,7 +82,7 @@ type Deps struct {
     Now        func() time.Time
 }
 
-// New returns the UI mounted at "/": the embedded web app, its JSON API and the server-rendered pages.
+// New returns the UI mounted at "/". It serves the web app's build from the binary.
 func New(d Deps) (http.Handler, error)
 ```
 
@@ -93,7 +93,10 @@ Minimum repository permission in brackets. `{o}/{n}` is only a lookup key for `S
 - `GET /` — the web app's shell; the app shows the overview, or a landing page with a sign-in link when
   `/api/session` answers `401`. The shell holds no tenant data.
 - `GET /auth/login`, `GET /auth/callback`, `POST /auth/logout` — handlers of `session`.
-- `GET /static/…`, `GET /schema/policy.json` — embedded assets and `policy.Schema()`; no sign-in needed, no tenant data.
+- `GET /schema/policy.json` — `policy.Schema()`; no sign-in needed, no tenant data.
+- `GET /licenses.txt` — the build's `assets/licenses-<hash>.txt` (the licence of every npm package in the bundle, the
+  layout worker's included) at a stable address for the app's footer link, `Cache-Control: no-cache`; `404` without a
+  build. No sign-in needed, no tenant data.
 - `GET /assets/…` — the web app's hashed build files, `Cache-Control: public, max-age=31536000, immutable`; no
   sign-in needed, no tenant data. A folder or a missing file is `404`; nothing else of the build is served.
 - `GET /r/{o}/{n}` [read] — the shell again, after the repository is authorized, so a repository the user cannot see is
@@ -169,6 +172,11 @@ package does not know is `422`, so a body cannot name a repository, a user or an
 - Not signed in: `303` to `/auth/login?return=<path>` for `GET`, `401` for `POST`, `401` JSON on every `/api/` path. A GitHub `401` on the user's token
   (`api.ErrUserTokenRejected`, from `Authorize` or `UserRepos`) is treated the same way after `Sessions.End`: the cookie
   is deleted, the answer is the not-signed-in one, and the log outcome is `signed_out`. It is never a `502`.
+- On a page route every error answers the shell as an error page (`fail`): the status below, the shell's CSP with a
+  fresh nonce, `Cache-Control: no-store`, and the sentence of the wording table, HTML-escaped, in place of the
+  `__APP_ERROR__` of `<meta name="app-error">`; the app then shows that sentence instead of the route, with no
+  repository tabs. An error's own text never reaches a page or an API answer. A path no route takes is the same page
+  with `404` "Not found.". A panic answers `500` "internal error" as plain text under the handler chain's CSP.
 - `ErrForbidden` from `Authorize`: `404` **[default]**, so that repository names are not confirmed to outsiders.
   `api.ErrNotFound` from any GitHub call a page does not handle itself: `404` with the same "Not found." wording.
 - Missing or wrong CSRF token: `403`. Body over 512 KB **[default]**: `413`. An `/api/` `POST` that is not JSON: `415`.
@@ -962,9 +970,9 @@ type OAuth interface {
 - `session` turns a request into a `User` and a repository name into an authorized `Repo`. It is the only source of
   tenant identity in the UI.
 - `graph` turns a `Report` and policy text into a `View`. Pure.
-- ui's own code is handlers, the JSON API (`api.go`), the web app's server side (`spa.go`), templates (`templates/`,
-  transparent folder), static assets (`static/`, transparent folder: `app.css`, all embedded
-  with `go:embed`; no vendored library) and the handler chain. The two children do not know each other.
+- ui's own code is handlers, the JSON API (`api.go`), the web app's server side (`spa.go`: the shell, its error pages,
+  the build's assets and the licence file, embedded with `go:embed`; no vendored library) and the handler chain. The two
+  children do not know each other.
 - The web app's source is `web/` at the repository root: Svelte 5 and TypeScript, built by plain Vite (not SvelteKit,
   whose bootstrap is an inline script). `npm run build` writes `spa/` (`index.html` and `assets/`), embedded with
   `//go:embed all:spa`. The build is not committed: `spa/` holds only its `.gitignore`, and then the shell answers a
@@ -985,8 +993,9 @@ type OAuth interface {
 1. Recover panics → `500`; log route pattern and request ID only.
 2. Security headers: `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self';
    connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'self';
-   frame-ancestors 'none'; object-src 'none'` (no inline style, no inline script, no eval, no worker, no other origin:
-   every style is a class in a stylesheet, and Vite's modulepreload polyfill, an inline script, is off),
+   frame-ancestors 'none'; object-src 'none'; worker-src 'self'` (no inline style, no inline script, no eval, no
+   worker but a same-origin file, no other origin: every style is a class in a stylesheet, Vite's modulepreload
+   polyfill, an inline script, is off, and the one worker is the graph's layout, a hashed build file, never `blob:`),
    `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` **[default]**. The shell replaces the CSP with the
    same string plus `'nonce-<n>'` in `style-src` alone, where `<n>` is 16 bytes from `crypto/rand` in base64, new on every
    response; it writes `<n>` over the `__CSP_NONCE__` of `<meta name="csp-nonce">` in `index.html` and answers with
@@ -1175,8 +1184,8 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   understand survive every round trip. The graph never writes.
 - AI only on an explicit `POST` by a user with `write`. Nothing is auto-published. Model text is never rendered by ui; users
   see proposals as the diff on GitHub. A failed assist request leaves the editor, Check and saving working.
-- `html/template` auto-escaping everywhere; no `template.HTML` for values that came from GitHub, a report, or a form.
-  The web app renders text only through Svelte's escaped interpolation: no `{@html}`, no `innerHTML`.
+- ui writes into the shell only its nonce and an error page's fixed sentence, HTML-escaped. The web app renders text
+  only through Svelte's escaped interpolation: no `{@html}`, no `innerHTML`.
 - No secrets in the browser: the OAuth token stays in the session cookie (HttpOnly), and API bodies are explicit
   response types. The CSRF token is the only per-session value the app holds.
 - Static assets, the web app's build and the schema carry no tenant data; everything else requires a session.
@@ -1185,7 +1194,8 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
 - Inherited: control-plane code. The gate never calls ui; a panic or outage here changes no check. Standard library only
   on the Go side. Browser code comes only from `web/`, built at build time from the npm lockfile and served by the App:
   no runtime CDN, which the CSP would block anyway. First load of a page: at most 120 KB gzip of JavaScript and 20 KB
-  of CSS, and the editor chunk at most 200 KB gzip **[default]**, checked in CI (`web/scripts/size.mjs`).
+  of CSS; the graph chunk at most 120 KB gzip, its layout worker at most 480 KB and the editor chunk at most 200 KB
+  **[default]**, checked in CI (`web/scripts/size.mjs`).
 - Declared restatement: three kinds of link are built from the literal host `https://github.com/`: the assist
   workflow's runs page, the pull-request search and the default-branch commits page. `internal/github` owns the
   knowledge of GitHub hosts and publishes no URL builder; `control/assist` (`RunURL`) and `control/onboarding`
@@ -1231,8 +1241,9 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Scenario**: table of every route × user permission `none`, `read`, `write`, `admin`, and not signed in.
   **Expected behavior**: `303` to login or `401` without a session (`401` JSON on `/api/`); `404` below the minimum;
   success at and above it (`200` for a page and for every `/api/` call);
-  `/static/`, `/schema/policy.json` and `/assets/<hashed file>` answer without a session, the last with the immutable
-  cache header; `/assets/`, a missing asset, `/index.html` and an unknown `/api/` path are `404`.
+  `/schema/policy.json`, `/assets/<hashed file>` and `/licenses.txt` answer without a session, the asset with the
+  immutable cache header and the licences with `no-cache`; `/static/app.css`, `/assets/`, a missing asset,
+  `/index.html` and an unknown `/api/` path are `404`.
 - **Test name**: `TestExpiredGitHubTokenSignsOutInsteadOfBadGateway`
   **Scenario**: a signed-in user whose GitHub token is rejected (`ErrUserTokenRejected`) on a repository page, a save
   and the overview; then any other GitHub error on the same routes.
@@ -1369,25 +1380,27 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Scenario**: repository names, module names, diagnostics and check titles containing HTML and script text.
   **Expected behavior**: escaped in HTML, in the embedded JSON and in API bodies (`<` as `\u003c`), the policy page's
   included; every page carries exactly the CSP of the handler chain, or the shell's with its nonce, with no
-  `'unsafe-inline'` and no `worker-src`.
+  `'unsafe-inline'` and `worker-src 'self'` only.
 - **Test name**: `TestNoAPIResponseHoldsASecret`
   **Scenario**: every API route, writes included, and an unknown API path, for a signed-in admin.
   **Expected behavior**: no answer holds the user's OAuth token or the session cookie.
 - **Test name**: `TestWebPreviewUsesTheProductionCSP`
   **Scenario**: read `web/csp.txt` and `web/index.html`.
   **Expected behavior**: `csp.txt` is the shell's policy with the `__CSP_NONCE__` placeholder, byte for byte, and
-  `index.html` carries that placeholder in `<meta name="csp-nonce">`, so the web app's smoke test runs under the
-  production policy.
+  `index.html` carries that placeholder in `<meta name="csp-nonce">` and `__APP_ERROR__` in `<meta name="app-error">`,
+  so the web app's smoke test runs under the production policy.
+- **Test name**: `TestErrorPagesAreTheShell`
+  **Scenario**: a repository the user cannot see, a pull request number that is not one, a path of no page, a GitHub
+  failure and a rate limit whose errors carry internal text.
+  **Expected behavior**: `404`, `404`, `404`, `502`, `503`; each the shell with its CSP and a nonce, `no-store`, and the
+  wording table's sentence in the app-error meta tag; no internal text and no placeholder in the page. A page that
+  succeeds has an empty app-error meta tag.
 - **Test name**: `TestShellNonceIsFreshPerResponse`
   **Scenario**: the shell on the overview, the repository page, the policy page twice and Data sharing; then an API
-  answer, an asset and a missing page.
+  answer, an asset and the schema.
   **Expected behavior**: every shell has a 16-byte base64 nonce in `style-src` only, the rest of the policy unchanged;
   no nonce twice; the page's meta tag holds the same nonce and no placeholder is left; `Cache-Control: no-store`.
   Every other response has the CSP without a nonce.
-- **Test name**: `TestNoAssetNeedsInlineStyleOrBlobWorker`
-  **Scenario**: read every embedded template and static file.
-  **Expected behavior**: no `<style>`, no `style=` attribute, no script that sets `.style` or a style attribute, no
-  `blob:` and no worker: the CSP blocks all of them.
 - **Test name**: `TestLogsCarryOnlyIdentifiers`
   **Scenario**: run save, a refused save, Check, assist, Data sharing (refused bodies with marker kind and action, allow twice, revoke), graph and the
   overview APIs with marker strings in content, instruction, report and the entitlement error.
@@ -1470,18 +1483,21 @@ their interfaces except where a test says otherwise. The clock is injected.
 - `svelte-check --fail-on-warnings`: types of every component and module.
 - ESLint (`web/eslint.config.js`): the recommended JavaScript, TypeScript and Svelte rules; `{@html}` is an error.
 - Vitest (`web/src/lib/*.test.ts`): routes (a `.` or `..` owner or name is no route, a pull request number is a
-  positive integer), `safeHref` (only App paths and `https://github.com/`), the cycle drawing's layout and arrow styles,
+  positive integer), `safeHref` (only App paths and `https://github.com/`), `serverError` (the app-error meta tag, the
+  placeholder read as none), the cycle drawing's layout and arrow styles,
   escaped links and API paths, the sign-in return link, the theme with and without storage, the API client's CSRF
   header, error sentences, fallbacks and the problems of a refused policy; the draft timeline, `#L<n>` links, problem
   places, and the editor's marks (from the column to the end of the line, a line past the end on the last line, none
   for a problem of the whole text).
-- `web/scripts/size.mjs`: the first-load, graph chunk and editor chunk budgets above.
+- `web/scripts/size.mjs`: the first-load, graph chunk, layout worker and editor chunk budgets above; no lazy chunk in
+  the first load.
 - Playwright smoke (`web/e2e/smoke.spec.ts`): the production build behind `vite preview` with `web/csp.txt` as its
   header and `/api` mocked in the browser. Landing, repositories, overview, starting onboarding and discovery, and the
   theme toggle; the pull request page (the cycle drawing, the folds, copying the agent tasks, a link that is neither
   the App nor GitHub not rendered, a page without a report); the policy page: CodeMirror's `<style>` element with the
   nonce, the problems as a list and as marks, a `#L<n>` hash and a problem selecting their line, Check and Save sending
   the text, the base head and the CSRF header, a refused save keeping the text, a reader offered no write, managed mode
-  off with its reason and the inline Allow, and a customer-mode request following its run; every page has no
+  off with its reason and the inline Allow, and a customer-mode request following its run; the graph pages, laid out by
+  the worker; a server error page (its sentence, no repository tabs) and the footer's licences link; every page has no
   `securitypolicyviolation` event and no axe violation in light and in dark; the onboarding write carries the CSRF
   header and a JSON body.

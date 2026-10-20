@@ -185,13 +185,15 @@ Alternatives:
 ### Bundle budget
 
 - First load of any page: at most 120 KB gzip of JavaScript and 20 KB of CSS. The editor chunk: at most 200 KB gzip,
-  loaded on the policy page only. The graph chunk (`Graph-*`, Svelte Flow and ELK): at most 540 KB gzip of JavaScript
-  and 20 KB of CSS, loaded on the graph pages only; `web/scripts/size.mjs` also fails when the first load includes
-  either chunk. CI fails above any of these.
+  loaded on the policy page only. The graph chunk (`Graph-*`, Svelte Flow): at most 120 KB gzip of JavaScript and
+  20 KB of CSS, loaded on the graph pages only; its layout worker (`layout.worker-*`, ELK): at most 480 KB, started on
+  the first layout. `web/scripts/size.mjs` also fails when the first load includes a lazy chunk. CI fails above any of
+  these.
 - Phase b ships 19 KB of JavaScript and 4 KB of CSS, gzip. Phase d: first load 31 KB and 5 KB; the graph chunk 488 KB
-  (ELK most of it) and 3 KB. Phase f: the editor chunk 126 KB.
-- Licences: the build writes `assets/licenses-<hash>.txt`, the licence text of every npm package in the bundle
-  (`web/scripts/licenses.ts`; the build fails on a package without one). MIT and EPL-2.0 (ELK) ask for the notice.
+  (ELK most of it) and 3 KB. Phase f: the editor chunk 126 KB; f2: the graph chunk 62 KB, its worker 424 KB.
+- Licences: the build writes `assets/licenses-<hash>.txt`, the licence text of every npm package in the bundle and in
+  the layout worker (`web/scripts/licenses.ts`; the build fails on a package without one). MIT and EPL-2.0 (ELK) ask
+  for the notice. Every page's footer links it as `/licenses.txt`, a stable address the server answers from the build.
 
 ### Dark mode and accessibility
 
@@ -325,7 +327,7 @@ Built in phase d. What changed against the notes and the target below, by owner 
 - ELK runs on the main thread. Measured with Node: 25 ms for pumba-pilot#11 (4 modules, 8 dependencies); on a
   synthetic dense graph 109 ms at 15 modules, 0.8 s at 30 and 7 s at 60. Focus mode draws only the problem
   dependencies above 15 modules, but a large graph without problems is drawn whole. Follow-up: a worker or a lower
-  drawing cap.
+  drawing cap. Done in phase f2: ELK runs in a worker, so the page stays usable while a large graph is placed.
 - The overview's three counters are rule violations and advisories on the default branch, from the findings API,
   and "open pull requests need attention": the result of `archfit/state` cannot tell a violation from other
   attention without the pull request's report.
@@ -443,3 +445,17 @@ Built in phase f (with the manager's notes):
 - An administrator allows managed AI in place, through the Data sharing `POST`.
 - Not done here (phase f2): deleting the remaining templates, `graph.js`, `app.css` and `/static`.
 
+Built in phase f2 (the last of the redesign):
+
+- ui renders no HTML of its own: `layout.html`, `error.html`, the template renderer, `static/app.css` and `/static`
+  are deleted. An error page is the shell with the error's status, the shell's CSP and nonce, `no-store`, and the
+  wording table's sentence, HTML-escaped, in `<meta name="app-error">`; the app shows it instead of the route, with no
+  repository tabs. An error's own text never reaches the page. A path no route takes is that page with `404`.
+- ELK runs in a worker: `web/src/lib/layout.worker.ts` loads elkjs's own worker script and `elk-api` talks to it, so
+  the page stays usable while a large graph is placed. Vite builds it as a hashed ES module file of its own; the CSP
+  adds `worker-src 'self'` and nothing else (no `blob:`). The licence plugin also reads the worker's bundle, so ELK's
+  EPL-2.0 notice stays in the licence file.
+- Every page's footer links "Third-party licences" at `/licenses.txt`, which the server answers from the build's hashed
+  licence file with `Cache-Control: no-cache`.
+- The PR comment reads the engine's "<token> distance" in a finding's Why in the words of the tables (`report.ReadableWhy`):
+  "distance across modules", never "cross_module distance". The App's pull request page and graph use the same words.
