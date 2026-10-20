@@ -1231,7 +1231,7 @@ others are done, so the handler chain's recover still answers `500` and the proc
   with the Graph tab current. When `comparison.origin_status` is not `comparable`, the folded banner "This run did not
   compare with the base branch, so the graph cannot show what this PR added." and no link carries an origin.
   Otherwise each link's origin is `report.PairOrigin` of its pair, the PR comment's rule: `added` only when no
-  pre-existing finding names the pair and a finding this pull request introduced off a cycle does. An "N added in this
+  pre-existing finding names the pair and a finding this pull request introduced off a cycle does. An "N added by this
   PR" chip, on by default: an emphasis, not a filter. On, an added link keeps its status colour and gains a halo, and
   the other links stay drawn, muted; the problem list puts added links first and marks them. An added link always
   counts as a problem for focus mode. A cycle's two directions stay one problem row when they share a status, marked

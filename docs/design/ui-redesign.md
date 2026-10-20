@@ -318,7 +318,7 @@ Built in phase d. What changed against the notes and the target below, by owner 
 - Width is integration strength, contract thinnest and intrusive thickest; colour stays the status. The dependency
   count is the edge label and an inspector line, not a width. One dash meaning: strength not measured (no seam names
   the dependency, or its token is unknown). An accepted dependency is coloured, no longer dashed.
-- "N added in this PR" counts what the comment calls added: each link's origin is `report.PairOrigin` of its pair
+- "N added by this PR" counts what the comment calls added: each link's origin is `report.PairOrigin` of its pair
   (`graph.Link.Origin`), so a new finding on a dependency the base had is not added. A finding in the inspector
   carries no origin of its own: a cycle finding's origin would contradict its link's.
 - Fit view with 6% padding and a zoom between 0.6 and 1; the canvas height follows the layout (360 to 900 px). Nodes
