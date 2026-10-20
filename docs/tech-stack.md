@@ -54,16 +54,17 @@ The tests use the standard `testing` package and table-driven cases with `t.Run`
 
 | Item      | Choice                                                                                                                                                         |
 | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Rendering | Svelte 5 and TypeScript, built by Vite into `internal/control/ui/spa` and embedded in the binary; the pages not moved yet stay server-rendered `html/template` |
+| Rendering | Svelte 5 and TypeScript, built by Vite into `internal/control/ui/spa` and embedded in the binary; only the error page is still `html/template`                 |
 | Styles    | One stylesheet, the tokens and components of `docs/design/prototypes/archfit.css`, light and dark                                                              |
-| Editor    | A plain text area. The server checks syntax and schema on Check and on every save, and lists problems by line. No editor library                               |
+| Editor    | CodeMirror 6 (MIT), a lazy chunk of the policy page. The server checks syntax and schema on load, on Check and on save                                         |
 | Graph     | Svelte Flow (`@xyflow/svelte`, MIT) with the ELK layered layout (`elkjs`, EPL-2.0), a lazy chunk on the graph pages only; ELK runs on the main thread           |
 | Licences  | The build writes the licence text of every bundled npm package to `assets/licenses-<hash>.txt` (`web/scripts/licenses.ts`)                                     |
 | Tests     | `svelte-check`, ESLint, Vitest, a bundle budget, and a Playwright smoke test with axe under the production CSP                                                 |
 
 Node is needed only to build and check the web app (`make web`, `make web-check`, the CI job "Web app" and the image's
 `web` stage); Go builds and tests run without it. Versions are pinned in `web/package-lock.json`. The CSP allows no
-inline style, no inline script, no eval, no worker and no other origin. See
+inline style, no inline script, no eval, no worker and no other origin. The one exception is the shell's per-response
+nonce in `style-src`, for CodeMirror's style element. See
 [UI redesign](design/ui-redesign.md#frontend-stack-for-phases-b-to-f-plan-2-for-the-owner) for the migration.
 
 ## Platform seams

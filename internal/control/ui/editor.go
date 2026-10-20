@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"net/url"
 	"path"
 	"strings"
 	"unicode/utf8"
@@ -44,28 +43,59 @@ func isOpen(d proposal.Draft) bool {
 	return d.State == proposal.DraftOpen || d.State == proposal.DraftInReview
 }
 
-type checkLine struct {
-	Name, State, Reason string
+type checkJSON struct {
+	Name   string `json:"name"`
+	State  string `json:"state"`
+	Tone   string `json:"tone"`
+	Reason string `json:"reason"`
 }
 
-type editorBody struct {
-	Branch       string
-	BranchQuery  string // "" for the user's own edit branch
-	HeadSHA      string
-	Content      string
-	DraftState   string
-	DraftURL     string
-	CanReady     bool
-	Checks       []checkLine
-	OfferManaged bool
-	ManagedOff   string // why managed mode is not offered; "" when it is, or when that cannot be told
-	// DataSharingURL is the Data sharing page, for an administrator when the missing consent is the reason.
-	DataSharingURL string
-	RunState       string
-	RunURL         string
-	ReloadURL      string
-	Diagnostics    []policy.Diagnostic // the problems of Content, listed under the editor
-	Unsaved        bool                // Content is the submitted form, not the text on the branch
+type diagnosticJSON struct {
+	Line    int    `json:"line,omitempty"`   // 1-based; absent when the problem has no single place
+	Column  int    `json:"column,omitempty"` // 1-based; absent when unknown
+	Message string `json:"message"`
+}
+
+func diagnosticsJSON(list []policy.Diagnostic) []diagnosticJSON {
+	out := make([]diagnosticJSON, 0, len(list))
+	for _, d := range list {
+		out = append(out, diagnosticJSON{Line: d.Line, Column: d.Column, Message: d.Message})
+	}
+	return out
+}
+
+// managedJSON is whether the editor offers managed AI and, when it does not, why in the page's words.
+type managedJSON struct {
+	Offer bool   `json:"offer"`
+	Off   string `json:"off,omitempty"` // "" when offered, or when the reason cannot be told
+	// DataSharing is the Data sharing page, for an administrator when the missing consent is the reason.
+	DataSharing string `json:"data_sharing,omitempty"`
+}
+
+// runJSON is the customer-mode run requested when the draft head was since.
+type runJSON struct {
+	State string `json:"state"` // pending, failed, completed or unknown
+	URL   string `json:"url"`
+}
+
+// policyJSON is the policy page: the text the editor shows for the branch and what the user may do with it.
+type policyJSON struct {
+	Branch string `json:"branch"`
+	// HeadSHA is the open draft's head, "" without one. Every write sends it back, so a draft that moved on GitHub
+	// since this answer refuses the write (409) instead of overwriting the move.
+	HeadSHA     string           `json:"head_sha"`
+	Content     string           `json:"content"`
+	Draft       string           `json:"draft"`       // none, draft, awaiting_review, published or closed
+	DraftState  string           `json:"draft_state"` // the draft's state in the page's words, "" for none
+	DraftURL    string           `json:"draft_url"`
+	Checks      []checkJSON      `json:"checks"`      // the Archfit checks on the draft head, while the draft is open
+	Diagnostics []diagnosticJSON `json:"diagnostics"` // the problems of Content
+	CanWrite    bool             `json:"can_write"`
+	CanReady    bool             `json:"can_ready"`
+	Managed     managedJSON      `json:"managed"`
+	Run         *runJSON         `json:"run,omitempty"`
+	Since       string           `json:"since,omitempty"` // the head the run's proposal follows
+	Notice      string           `json:"notice,omitempty"`
 }
 
 // current returns the draft of branch and the policy text the editor shows for it: the file at the draft head
@@ -89,40 +119,56 @@ func (s *server) current(ctx context.Context, repo api.Repo, branch string) (pro
 	return draft, text, nil
 }
 
-func (s *server) editor(w http.ResponseWriter, r *http.Request, sc scope) {
+// apiPolicy is the policy page of ?branch= (the user's own edit branch without one) and, with ?since=, the
+// customer-mode run requested at that head.
+func (s *server) apiPolicy(r *http.Request, sc scope) (any, error) {
 	query := r.URL.Query()
 	branch, err := editBranch(sc.user.Login, query.Get("branch"))
 	if err != nil {
-		s.fail(w, r, sc, err)
-		return
+		return nil, err
 	}
-	draft, text, err := s.current(r.Context(), sc.repo, branch)
+	return s.policyPage(r.Context(), sc, branch, query.Get("since"))
+}
+
+func (s *server) policyPage(ctx context.Context, sc scope, branch, since string) (policyJSON, error) {
+	draft, text, err := s.current(ctx, sc.repo, branch)
 	if err != nil {
-		s.fail(w, r, sc, err)
-		return
+		return policyJSON{}, err
 	}
-	body := editorBody{
+	body := policyJSON{
 		Branch:      branch,
-		BranchQuery: query.Get("branch"),
 		Content:     string(text),
+		Draft:       string(draft.State),
 		DraftState:  draftWords[draft.State],
 		DraftURL:    draft.URL,
-		CanReady:    draft.State == proposal.DraftOpen,
+		Checks:      []checkJSON{},
+		Diagnostics: []diagnosticJSON{},
+	}
+	var problems *policyProblems
+	if errors.As(checkPolicy(body.Content), &problems) {
+		body.Diagnostics = diagnosticsJSON(problems.list)
 	}
 	if isOpen(draft) {
 		body.HeadSHA = draft.HeadSHA
 		for _, name := range []string{checkState, checkGate} {
-			state, reason := s.checkWord(r.Context(), sc.repo.RepoRef, draft.HeadSHA, name)
-			body.Checks = append(body.Checks, checkLine{Name: name, State: state, Reason: reason})
+			state, reason := s.checkWord(ctx, sc.repo.RepoRef, draft.HeadSHA, name)
+			body.Checks = append(body.Checks, checkJSON{Name: name, State: state, Tone: toneOf(state), Reason: reason})
 		}
 	}
-	body.OfferManaged, body.ManagedOff, body.DataSharingURL = s.managedMode(r.Context(), sc)
-	if since := query.Get("since"); proposal.ValidHeadSHA(since) {
-		body.RunState = s.assistRun(r.Context(), sc.repo, branch, draft, since)
-		body.RunURL = "https://github.com/" + sc.repo.FullName + "/actions/workflows/" + path.Base(assist.AssistWorkflowPath)
-		body.ReloadURL = editorURL(sc, body.BranchQuery, nil)
+	// The route needs read; the buttons that write need write. The server checks write again on every write.
+	if _, err := s.sessions.Authorize(ctx, sc.user, sc.repo.FullName, permWrite); err == nil {
+		body.CanWrite = true
+		body.CanReady = draft.State == proposal.DraftOpen
+		body.Managed.Offer, body.Managed.Off, body.Managed.DataSharing = s.managedMode(ctx, sc)
 	}
-	s.render(w, r, http.StatusOK, "editor", s.newPage(r, sc, "Policy", body))
+	if proposal.ValidHeadSHA(since) {
+		body.Since = since
+		body.Run = &runJSON{
+			State: s.assistRun(ctx, sc.repo, branch, draft, since),
+			URL:   "https://github.com/" + sc.repo.FullName + "/actions/workflows/" + path.Base(assist.AssistWorkflowPath),
+		}
+	}
+	return body, nil
 }
 
 // assistRun words the customer-mode run requested when the draft head was since. WorkflowRun has no
@@ -144,80 +190,39 @@ func (s *server) assistRun(ctx context.Context, repo api.Repo, branch string, dr
 	return runPending
 }
 
-func editorURL(sc scope, branchQuery string, query url.Values) string {
-	if query == nil {
-		query = url.Values{}
-	}
-	if branchQuery != "" {
-		query.Set("branch", branchQuery)
-	}
-	u := repoPath(sc, "/policy")
-	if len(query) > 0 {
-		u += "?" + query.Encode()
-	}
-	return u
+// editJSON is the part of a write that save, ready and assist share. Branch is the branch the page shows; it is
+// checked again here, never trusted.
+type editJSON struct {
+	Branch  string `json:"branch"`
+	HeadSHA string `json:"head_sha"`
+	Content string `json:"content"`
 }
 
-// editForm is the part of the editor form that save, ready and assist share.
-type editForm struct {
-	branch      string
-	branchQuery string
-	headSHA     string
-	content     string
+// edit is an editJSON whose branch and head have been checked.
+type edit struct {
+	branch  string
+	headSHA string
+	content string
 }
 
-func readEditForm(r *http.Request, sc scope) (editForm, error) {
-	f := editForm{
-		branchQuery: r.PostForm.Get("branch"),
-		headSHA:     r.PostForm.Get("head_sha"),
-		content:     r.PostForm.Get("content"),
+func readEdit(sc scope, in editJSON) (edit, error) {
+	requested := in.Branch
+	if requested == editBranchPrefix+strings.ToLower(sc.user.Login) {
+		requested = ""
 	}
-	if f.branchQuery == editBranchPrefix+strings.ToLower(sc.user.Login) {
-		f.branchQuery = ""
+	branch, err := editBranch(sc.user.Login, requested)
+	if err != nil {
+		return edit{}, err
 	}
-	var err error
-	if f.branch, err = editBranch(sc.user.Login, f.branchQuery); err != nil {
-		return f, err
+	if in.HeadSHA != "" && !proposal.ValidHeadSHA(in.HeadSHA) {
+		return edit{}, invalid("The request is not valid. Reload the page.")
 	}
-	if f.headSHA != "" && !proposal.ValidHeadSHA(f.headSHA) {
-		return f, invalid("The form is not valid. Reload the page.")
-	}
-	return f, nil
+	return edit{branch: branch, headSHA: in.HeadSHA, content: in.Content}, nil
 }
 
-// formBody is the editor page of a submitted form. It asks GitHub nothing, so it works while GitHub does not.
-func formBody(sc scope, f editForm) editorBody {
-	return editorBody{
-		Branch:      f.branch,
-		BranchQuery: f.branchQuery,
-		HeadSHA:     f.headSHA,
-		Content:     f.content,
-		ReloadURL:   editorURL(sc, f.branchQuery, nil),
-		Unsaved:     true,
-	}
-}
+const policyProblemsSentence = "The policy has problems, listed above the editor. Nothing was saved."
 
-// failEditor answers a refused save, ready or assist: the documented status, the user's text kept in the editor,
-// and the text's problems when the policy check refused it.
-func (s *server) failEditor(w http.ResponseWriter, r *http.Request, sc scope, f editForm, err error) {
-	status, outcome, sentence := explain(err)
-	logOf(r).outcome = outcome
-	if outcome == "rate_limited" {
-		w.Header().Set("Retry-After", retryAfterSeconds)
-	}
-	body := formBody(sc, f)
-	var problems *policyProblems
-	if errors.As(err, &problems) {
-		body.Diagnostics = problems.list
-	}
-	p := s.newPage(r, sc, "Policy", body)
-	p.Error = sentence
-	s.render(w, r, status, "editor", p)
-}
-
-const policyProblemsSentence = "The policy has problems, listed below the editor. Nothing was saved."
-
-// errPolicyProblems is the refusal of a text with problems; policyProblems carries the list to the page.
+// errPolicyProblems is the refusal of a text with problems; policyProblems carries the list to the answer.
 var errPolicyProblems = invalid(policyProblemsSentence)
 
 type policyProblems struct {
@@ -241,31 +246,33 @@ func checkPolicy(content string) error {
 	return nil
 }
 
-// check runs checkPolicy on the submitted text and saves nothing. Both outcomes answer 200 with the editor.
-func (s *server) check(w http.ResponseWriter, r *http.Request, sc scope) {
-	f, err := readEditForm(r, sc)
-	if err == nil {
-		err = checkPolicy(f.content)
-	}
-	var problems *policyProblems
-	if err != nil && !errors.As(err, &problems) {
-		s.failEditor(w, r, sc, f, err)
-		return
-	}
-	body := formBody(sc, f)
-	p := s.newPage(r, sc, "Policy", body)
-	if problems != nil {
-		body.Diagnostics = problems.list
-		p.Body = body
-		p.Error = "The check found problems, listed below the editor."
-	} else {
-		p.Notice = "The check found no problems."
-	}
-	s.render(w, r, http.StatusOK, "editor", p)
+type checkPolicyJSON struct {
+	Content string `json:"content"`
 }
 
-// matchLineEndings undoes the CRLF a browser puts into every submitted textarea, unless the file on the
-// branch already uses CRLF. Without it a no-JavaScript save would rewrite every line of the policy.
+type checkedJSON struct {
+	Diagnostics []diagnosticJSON `json:"diagnostics"`
+	Notice      string           `json:"notice"`
+}
+
+// apiCheckPolicy runs checkPolicy on the text and saves nothing. A text with problems answers 200 with the list.
+func (s *server) apiCheckPolicy(r *http.Request, _ scope) (any, error) {
+	var in checkPolicyJSON
+	if err := decodeJSON(r, &in); err != nil {
+		return nil, err
+	}
+	var problems *policyProblems
+	switch err := checkPolicy(in.Content); {
+	case errors.As(err, &problems):
+		return checkedJSON{Diagnostics: diagnosticsJSON(problems.list), Notice: "The check found problems, listed above the editor."}, nil
+	case err != nil:
+		return nil, err
+	}
+	return checkedJSON{Diagnostics: []diagnosticJSON{}, Notice: "The check found no problems."}, nil
+}
+
+// matchLineEndings undoes CRLF in a text sent for a file on the branch that has none, so a client that sends
+// CRLF cannot rewrite every line of the policy.
 func matchLineEndings(content string, current []byte) string {
 	if bytes.Contains(current, []byte("\r\n")) {
 		return content
@@ -273,128 +280,167 @@ func matchLineEndings(content string, current []byte) string {
 	return strings.ReplaceAll(content, "\r\n", "\n")
 }
 
-// isOnBranch reports whether the submitted text is the policy the editor would load for the form's branch.
-func (s *server) isOnBranch(ctx context.Context, sc scope, f editForm) (bool, error) {
-	_, onBranch, err := s.current(ctx, sc.repo, f.branch)
+// isOnBranch reports whether the sent text is the policy the editor would load for the edit's branch.
+func (s *server) isOnBranch(ctx context.Context, sc scope, e edit) (bool, error) {
+	_, onBranch, err := s.current(ctx, sc.repo, e.branch)
 	if err != nil {
 		return false, err
 	}
-	return matchLineEndings(f.content, onBranch) == string(onBranch), nil
+	return matchLineEndings(e.content, onBranch) == string(onBranch), nil
 }
 
 // saveDraft applies the save rules in their documented order. changed is false for the no-op.
-func (s *server) saveDraft(ctx context.Context, sc scope, f editForm) (draft proposal.Draft, changed bool, err error) {
-	if err := checkPolicy(f.content); err != nil {
+func (s *server) saveDraft(ctx context.Context, sc scope, e edit) (draft proposal.Draft, changed bool, err error) {
+	if err := checkPolicy(e.content); err != nil {
 		return draft, false, err
 	}
-	draft, onBranch, err := s.current(ctx, sc.repo, f.branch)
+	draft, onBranch, err := s.current(ctx, sc.repo, e.branch)
 	if err != nil {
 		return draft, false, err
 	}
-	content := matchLineEndings(f.content, onBranch)
+	content := matchLineEndings(e.content, onBranch)
 	if content == string(onBranch) {
 		return draft, false, nil
 	}
-	if isOpen(draft) && draft.HeadSHA != f.headSHA {
+	if isOpen(draft) && draft.HeadSHA != e.headSHA {
 		return draft, false, proposal.ErrStale
 	}
 	draft, err = s.proposals.Propose(ctx, proposal.Change{
 		Repo:    sc.repo.RepoRef,
-		Branch:  f.branch,
+		Branch:  e.branch,
 		Base:    sc.repo.DefaultBranch,
 		Title:   "Archfit policy edit by @" + sc.user.Login,
 		Body:    editBody,
 		Message: "archfit: edit policy (@" + sc.user.Login + ")",
 		Files:   []api.FileChange{{Path: policy.PolicyPath, Content: []byte(content)}},
-	}, f.headSHA)
+	}, e.headSHA)
 	return draft, err == nil, err
 }
 
-func (s *server) save(w http.ResponseWriter, r *http.Request, sc scope) {
-	f, err := readEditForm(r, sc)
+// written answers a write that GitHub took: the page read again, with the notice. head is the draft head the write
+// left; a page read at another head means the draft moved again in between, and the page must not take that head as
+// the base of the text it keeps. A page that cannot be read back says the change was saved, never that nothing was.
+func (s *server) written(ctx context.Context, sc scope, branch, head, since, notice string) (any, error) {
+	body, err := s.policyPage(ctx, sc, branch, since)
 	if err != nil {
-		s.failEditor(w, r, sc, f, err)
-		return
+		return nil, errSavedUnread
 	}
-	_, changed, err := s.saveDraft(r.Context(), sc, f)
-	if err != nil {
-		s.failEditor(w, r, sc, f, err)
-		return
+	if body.HeadSHA != head {
+		return nil, errSavedMoved
 	}
-	notice := "saved"
-	if !changed {
-		notice = "unchanged"
-	}
-	seeOther(w, r, editorURL(sc, f.branchQuery, url.Values{"notice": {notice}}), nil)
+	body.Notice = notice
+	return body, nil
 }
 
-// ready asks for review. ui never merges: publication is the merge on GitHub.
-func (s *server) ready(w http.ResponseWriter, r *http.Request, sc scope) {
-	f, err := readEditForm(r, sc)
-	if err != nil {
-		s.failEditor(w, r, sc, f, err)
-		return
+// errSavedMoved is a 409 like a stale save, so the page offers to discard the edits and load the draft.
+var errSavedMoved = &userError{http.StatusConflict, "stale",
+	"The change was saved, but the draft changed again on GitHub since. Discard your edits and load the draft."}
+
+func (s *server) apiSavePolicy(r *http.Request, sc scope) (any, error) {
+	var in editJSON
+	if err := decodeJSON(r, &in); err != nil {
+		return nil, err
 	}
-	draft, err := s.proposals.Get(r.Context(), sc.repo.RepoRef, f.branch)
+	e, err := readEdit(sc, in)
+	if err != nil {
+		return nil, err
+	}
+	draft, changed, err := s.saveDraft(r.Context(), sc, e)
+	if err != nil {
+		return nil, err
+	}
+	if !changed {
+		body, err := s.policyPage(r.Context(), sc, e.branch, "")
+		// The head is only read back for an open draft: a merged or closed one has no head on the page.
+		if err == nil && isOpen(draft) && body.HeadSHA != draft.HeadSHA {
+			err = proposal.ErrStale
+		}
+		body.Notice = notices["unchanged"]
+		return body, err
+	}
+	return s.written(r.Context(), sc, e.branch, draft.HeadSHA, "", notices["saved"])
+}
+
+type readyJSON struct {
+	Branch  string `json:"branch"`
+	HeadSHA string `json:"head_sha"`
+}
+
+// apiReady asks for review. ui never merges: publication is the merge on GitHub.
+func (s *server) apiReady(r *http.Request, sc scope) (any, error) {
+	var in readyJSON
+	if err := decodeJSON(r, &in); err != nil {
+		return nil, err
+	}
+	e, err := readEdit(sc, editJSON{Branch: in.Branch, HeadSHA: in.HeadSHA})
+	if err != nil {
+		return nil, err
+	}
+	draft, err := s.proposals.Get(r.Context(), sc.repo.RepoRef, e.branch)
 	switch {
 	case err != nil:
 	case draft.State != proposal.DraftOpen:
 		err = conflict("There is no draft pull request to mark ready. Reload the page.")
-	case draft.HeadSHA != f.headSHA:
+	case draft.HeadSHA != e.headSHA:
 		err = proposal.ErrStale
 	default:
 		err = s.proposals.Ready(r.Context(), sc.repo.RepoRef, draft.Number)
 	}
 	if err != nil {
-		s.failEditor(w, r, sc, f, err)
-		return
+		return nil, err
 	}
-	seeOther(w, r, editorURL(sc, f.branchQuery, url.Values{"notice": {"ready"}}), nil)
+	return s.written(r.Context(), sc, e.branch, e.headSHA, "", notices["ready"])
 }
 
-// propose is the explicit AI request: save what the user sees, then ask assist for a proposal bound to that head.
-func (s *server) propose(w http.ResponseWriter, r *http.Request, sc scope) {
-	f, err := readEditForm(r, sc)
+type assistJSON struct {
+	editJSON
+	Instruction string `json:"instruction"`
+	Mode        string `json:"mode"` // managed or customer
+}
+
+// apiAssist is the explicit AI request: save what the user sees, then ask assist for a proposal bound to that head.
+// A customer-mode answer carries since: the page follows the run in the customer's CI from it.
+func (s *server) apiAssist(r *http.Request, sc scope) (any, error) {
+	var in assistJSON
+	if err := decodeJSON(r, &in); err != nil {
+		return nil, err
+	}
+	e, err := readEdit(sc, in.editJSON)
 	if err != nil {
-		s.failEditor(w, r, sc, f, err)
-		return
+		return nil, err
 	}
-	mode := assist.Mode(r.PostForm.Get("mode"))
+	mode := assist.Mode(in.Mode)
 	if mode != assist.ModeManaged && mode != assist.ModeCustomer {
-		s.failEditor(w, r, sc, f, invalid("Choose managed or customer mode."))
-		return
+		return nil, invalid("Choose managed or customer mode.")
 	}
-	draft, changed, err := s.saveDraft(r.Context(), sc, f)
+	draft, changed, err := s.saveDraft(r.Context(), sc, e)
 	var problems *policyProblems
 	if errors.As(err, &problems) {
 		// Owner decision: asking AI to fix the draft that is already on the branch must work. Nothing is
 		// committed here, and assist checks its answer with the same Diagnose.
 		var onBranch bool
-		if onBranch, err = s.isOnBranch(r.Context(), sc, f); err == nil && !onBranch {
+		if onBranch, err = s.isOnBranch(r.Context(), sc, e); err == nil && !onBranch {
 			err = problems
 		}
 	}
 	if err != nil {
-		s.failEditor(w, r, sc, f, err)
-		return
+		return nil, err
 	}
 	if changed {
-		f.headSHA = draft.HeadSHA
+		e.headSHA = draft.HeadSHA
 	}
 	res, err := s.assist.Propose(r.Context(), mode, assist.Request{
 		Repo:        sc.repo,
-		Branch:      f.branch,
-		HeadSHA:     f.headSHA,
-		Instruction: r.PostForm.Get("instruction"),
+		Branch:      e.branch,
+		HeadSHA:     e.headSHA,
+		Instruction: in.Instruction,
 		By:          sc.user.Login,
 	})
 	if err != nil {
-		s.failEditor(w, r, sc, f, err)
-		return
+		return nil, err
 	}
-	query := url.Values{"notice": {"proposed"}}
 	if res.Mode == assist.ModeCustomer {
-		query = url.Values{"since": {f.headSHA}}
+		return s.written(r.Context(), sc, e.branch, e.headSHA, e.headSHA, notices["requested"])
 	}
-	seeOther(w, r, editorURL(sc, f.branchQuery, query), nil)
+	return s.written(r.Context(), sc, e.branch, res.Draft.HeadSHA, "", notices["proposed"])
 }

@@ -251,6 +251,9 @@ type fakeProposals struct {
 	commits  int
 	gets     int
 	fail     map[string]error
+	// pushAfter, when set, is a commit made on GitHub right after each Propose: the draft moves between ui's write
+	// and its read-back.
+	pushAfter string
 }
 
 func newFakeProposals(gh *fakeGH) *fakeProposals {
@@ -294,7 +297,11 @@ func (p *fakeProposals) Propose(_ context.Context, c proposal.Change, expectHead
 	if d := p.drafts[c.Repo.FullName+"@"+c.Branch]; d != nil && expectHeadSHA != "" && d.HeadSHA != expectHeadSHA {
 		return proposal.Draft{}, proposal.ErrStale
 	}
-	return p.commit(c.Repo.FullName, c.Branch, c.Files), nil
+	d := p.commit(c.Repo.FullName, c.Branch, c.Files)
+	if p.pushAfter != "" {
+		p.commit(c.Repo.FullName, c.Branch, []api.FileChange{{Path: ".archfit.yaml", Content: []byte(p.pushAfter)}})
+	}
+	return d, nil
 }
 
 func (p *fakeProposals) Get(_ context.Context, r api.RepoRef, branch string) (proposal.Draft, error) {
@@ -351,7 +358,7 @@ type fakeConsents struct {
 	recorded map[int64]map[account.ConsentKind]account.Consent
 	touched  []int64 // installation of every call
 	writes   int
-	readErr  error // of Get; Has is false then, as account's is
+	readErr  error // the Store is down: Get and Record fail, Has is false
 	// readErrAfterWrite fails every Get once something was written: a change saved but not read back.
 	readErrAfterWrite error
 }
@@ -362,6 +369,12 @@ func newFakeConsents() *fakeConsents {
 
 func (c *fakeConsents) Record(_ context.Context, installationID int64, consent account.Consent) error {
 	c.touched = append(c.touched, installationID)
+	if c.readErr != nil {
+		return c.readErr
+	}
+	if _, ok := c.recorded[installationID][consent.Kind]; ok {
+		return account.ErrConsentExists
+	}
 	c.writes++
 	if c.recorded[installationID] == nil {
 		c.recorded[installationID] = map[account.ConsentKind]account.Consent{}

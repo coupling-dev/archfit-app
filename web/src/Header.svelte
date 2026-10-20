@@ -10,7 +10,7 @@
     repo = '',
     tab = '',
     pull = 0,
-  }: { session: Session | null; repo?: string; tab?: 'overview' | 'graph' | ''; pull?: number } = $props();
+  }: { session: Session | null; repo?: string; tab?: 'overview' | 'graph' | 'policy' | ''; pull?: number } = $props();
 
   let theme = $state<Theme>(storedTheme());
   const themeNames: Record<Theme, string> = { auto: 'Auto', light: 'Light', dark: 'Dark' };
@@ -21,13 +21,12 @@
     saveTheme(t);
   }
 
-  // Policy is still a server-rendered page of the App.
   const tabs = $derived(
     repo
       ? [
           { label: 'Overview', href: repoPage(repo), current: tab === 'overview' },
           { label: 'Architecture', href: repoPage(repo, '/graph'), current: tab === 'graph' },
-          { label: 'Policy', href: repoPage(repo, '/policy'), current: false },
+          { label: 'Policy', href: repoPage(repo, '/policy'), current: tab === 'policy' },
         ]
       : [],
   );

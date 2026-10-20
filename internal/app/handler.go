@@ -35,7 +35,7 @@ const (
 
 	// assistRoute restates one row of control/ui's route table: UIHandler is one opaque handler
 	// and only this route needs the long deadline.
-	assistRoute = "POST /r/{owner}/{name}/assist"
+	assistRoute = "POST /api/repos/{owner}/{name}/assist"
 
 	headerRequestID = "X-Request-Id"
 	bearerPrefix    = "Bearer "

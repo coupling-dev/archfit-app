@@ -2,7 +2,7 @@ BINARY := reporter
 BIN_DIR := .bin
 MODULE := github.com/alexei-led/archfit-app
 ACTIONLINT ?= actionlint
-GO_FILES := $(shell find . -type f -name '*.go' -not -path './vendor/*')
+GO_FILES := $(shell find . -type f -name '*.go' -not -path './vendor/*' -not -path './web/*')
 
 .DEFAULT_GOAL := help
 

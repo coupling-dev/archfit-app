@@ -156,6 +156,12 @@ func TestConsentRoundTrip(t *testing.T) {
 	if got, ok, err := c.Get(ctx, instA, k); !ok || err != nil || got != (Consent{Kind: k, By: "octocat", ByID: 1, At: day(1).UTC()}) {
 		t.Errorf("Get after Record = %+v, %v, %v; want octocat (1) at %v", got, ok, err, day(1))
 	}
+	if err := c.Record(ctx, instA, Consent{Kind: k, By: "hubot", ByID: 2, At: day(2)}); !errors.Is(err, ErrConsentExists) {
+		t.Errorf("second Record = %v, want ErrConsentExists", err)
+	}
+	if got, _, _ := c.Get(ctx, instA, k); got.By != "octocat" || !got.At.Equal(day(1)) {
+		t.Errorf("after a second Record = %+v; want the first who and when", got)
+	}
 	if c.Has(ctx, instA, ConsentSourceProcessing) {
 		t.Error("Has for the other kind = true")
 	}

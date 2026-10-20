@@ -5,10 +5,9 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
-	"net/url"
 )
 
-var pageNames = []string{"editor", "error"}
+var pageNames = []string{"error"}
 
 // page is what every template gets; Body is the page's own data.
 type page struct {
@@ -66,14 +65,6 @@ func (s *server) fail(w http.ResponseWriter, r *http.Request, sc scope, err erro
 	p := s.newPage(r, sc, http.StatusText(status), nil)
 	p.Error = sentence
 	s.render(w, r, status, "error", p)
-}
-
-// seeOther answers a successful POST: 303 to the page that shows the result.
-func seeOther(w http.ResponseWriter, r *http.Request, path string, query url.Values) {
-	if len(query) > 0 {
-		path += "?" + query.Encode()
-	}
-	http.Redirect(w, r, path, http.StatusSeeOther)
 }
 
 func repoPath(sc scope, suffix string) string {

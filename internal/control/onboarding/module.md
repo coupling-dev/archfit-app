@@ -476,7 +476,11 @@ type Consent struct {
 // ErrNoConsent is returned by callers' guards when Has is false.
 var ErrNoConsent = errors.New("account: consent not recorded")
 
+// ErrConsentExists is returned by Record when a consent of that kind is already recorded; the record is unchanged.
+var ErrConsentExists = errors.New("account: consent already recorded")
+
 type Consents interface {
+    // Record creates the consent atomically; ErrConsentExists if one is recorded, which keeps who and when.
     Record(ctx context.Context, installationID int64, c Consent) error
     Revoke(ctx context.Context, installationID int64, k ConsentKind) error
     // Has is false on any error: no consent, no call.

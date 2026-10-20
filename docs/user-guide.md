@@ -329,18 +329,27 @@ break, and a why over 2 000 characters is too long. Both make the report `report
 All policy changes use a pull request. The App never writes to the default branch.
 
 1. Open **Policy** for the repository.
-2. Edit the YAML text.
-3. Select **Save to the draft pull request**.
+2. Edit the YAML text. **Check** lists problems without saving.
+3. Select **Save to draft PR**.
 4. Read the Archfit check on the draft pull request.
-5. Select **Mark ready for review**.
+5. Select **Ready for review**.
 6. Get a policy owner approval on GitHub.
 7. Merge the pull request on GitHub.
 
 The editor verifies YAML and policy schema rules. The Archfit check verifies engine rules.
-The merge on GitHub publishes the policy.
+The merge on GitHub publishes the policy. The **Draft** box shows where the draft is: saved, checked, ready for
+review, owner approval, merged.
 
-If the draft changed after the page loaded, the App refuses the save.
-Select **Reload the draft**, then apply the edit again.
+- Problems are listed above the editor and marked in it. Select a problem's line to go there. A link from the graph
+  (`#L12`) opens the policy at that line.
+- The editor has YAML highlighting, line numbers, folding, undo and search (Ctrl+F or Cmd+F). Tab is not an indent:
+  it moves to the next control, as YAML takes no tabs.
+- **Save**, **Ready for review** and the AI box need `write` permission. With `read`, the page shows the policy and
+  **Check** only.
+- **Ready for review** needs the edits saved first. Leaving the page with unsaved edits asks first.
+
+If the draft changed on GitHub after the page loaded, the App refuses the save and keeps your text. Select
+**Discard my edits and load the draft**, then apply the edit again.
 
 ### Owner approval
 
@@ -377,10 +386,12 @@ This rule also applies when one pull request changes code and policy together.
 AI assistance is optional and runs only after an explicit request.
 The proposal arrives as a commit on the draft pull request. Nothing is published automatically.
 
-1. Save the current policy draft.
-2. Enter an instruction in **Ask AI for a proposal**.
-3. Select a mode.
-4. Select **Propose**.
+1. Enter an instruction in **Ask AI for a proposal**. The text in the editor is saved first.
+2. Select a mode.
+3. Select **Propose**.
+
+In `managed` mode the proposal replaces the text in the editor. In `customer` mode the page shows the run in your CI;
+select **Check again** to see whether it finished.
 
 | Mode       | Execution                            | Conditions                                                   |
 | ---------- | ------------------------------------ | ------------------------------------------------------------ |
@@ -392,7 +403,8 @@ AI output never affects the gate result.
 
 When managed mode is not offered, the form says why: the default branch has no valid settings file, its settings say
 `data_mode: customer`, the App could not read whether Managed AI is allowed, or Managed AI is not allowed for the owner.
-In the last case an administrator also gets a link to Data sharing.
+In the last case an administrator also gets **Allow managed AI**, which records the consent as Data sharing does, and
+a link to Data sharing.
 
 ## Data sharing
 

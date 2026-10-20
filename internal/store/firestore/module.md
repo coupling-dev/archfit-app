@@ -242,6 +242,11 @@ func New(c Config, tokens TokenSource, hc *http.Client) (store.Store, error)
   **Scenario**: on the fake and on the emulator: 4 independent clients of one database, 3 goroutines each, 20
   rounds; each round swaps one lease key from the value of the round before.
   **Expected behavior**: exactly one winner in each round; the final value is the last round's.
+- **Test name**: `TestConcurrentConsentsKeepTheFirst`
+  **Scenario**: on the fake and on the emulator: 8 administrators record the same `account` consent at once through 4
+  clients of one database (`account.Consents.Record`, which creates with `CompareAndSwap(old = nil)`).
+  **Expected behavior**: exactly one records it; every other gets `account.ErrConsentExists`; the stored consent is the
+  winner's login and user ID.
 - **Test name**: `TestCompareAndSwapAllGuardsCheckedKeys`
   **Scenario**: on the fake: `CompareAndSwapAll` creates `a` and only checks `c`, once as missing and once as
   unchanged; another instance writes `c` between the driver's read and its commit.

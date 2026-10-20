@@ -166,9 +166,9 @@ Alternatives:
 - The handlers keep their authorization and change only their output: each page handler becomes a JSON endpoint
   behind the same chain (session, repository authorization, CSRF on writes).
 - `GET /api/session` returns the signed-in login and the CSRF token. The session cookie stays as it is.
-- Phase f: `index.html` is served through a small Go template that writes the per-response CSP nonce into a `<meta>`
-  element; the policy page passes it to CodeMirror. Nothing else in the page is generated. Until then `index.html` is
-  served as built, and `style-src` is `'self'` alone.
+- Phase f: the shell writes a per-response CSP nonce over the `__CSP_NONCE__` placeholder of a `<meta>` element in
+  `index.html` (a byte replace, no template) and puts the same nonce into `style-src`; the policy page passes it to
+  CodeMirror. Nothing else in the page is generated. Every other response keeps `style-src 'self'` alone.
 - Forms that work without JavaScript (policy Check and Save) are dropped: the App needs a browser with JavaScript.
   Say so if that is not acceptable; then C is the choice.
 
@@ -186,10 +186,10 @@ Alternatives:
 
 - First load of any page: at most 120 KB gzip of JavaScript and 20 KB of CSS. The editor chunk: at most 200 KB gzip,
   loaded on the policy page only. The graph chunk (`Graph-*`, Svelte Flow and ELK): at most 540 KB gzip of JavaScript
-  and 20 KB of CSS, loaded on the graph pages only; `web/scripts/size.mjs` also fails when the first load includes it.
-  CI fails above any of these.
+  and 20 KB of CSS, loaded on the graph pages only; `web/scripts/size.mjs` also fails when the first load includes
+  either chunk. CI fails above any of these.
 - Phase b ships 19 KB of JavaScript and 4 KB of CSS, gzip. Phase d: first load 31 KB and 5 KB; the graph chunk 488 KB
-  (ELK most of it) and 3 KB.
+  (ELK most of it) and 3 KB. Phase f: the editor chunk 126 KB.
 - Licences: the build writes `assets/licenses-<hash>.txt`, the licence text of every npm package in the bundle
   (`web/scripts/licenses.ts`; the build fails on a package without one). MIT and EPL-2.0 (ELK) ask for the notice.
 
@@ -219,8 +219,8 @@ Alternatives:
 2. **c**: the pull request page and the findings components, with the cycle drawn as on the comment.
 3. **d**: both graphs on Svelte Flow and ELK, with the inspector and the seam fields.
 4. **e**: Data sharing (decision A). The editor says why managed mode is off; its inline Allow comes with phase f.
-5. **f**: the policy editor with CodeMirror 6. Then the templates, `editor.js` and `app.css` are deleted (`graph.js`
-   and its template went in phase d).
+5. **f**: the policy editor with CodeMirror 6 (f1, `editor.js` deleted). Then the templates and `app.css` are deleted
+   (f2; `graph.js` and its template went in phase d).
 
 Each phase is one pull request. A page moves only when its new version covers everything the old one shows.
 
@@ -419,7 +419,27 @@ Target (`prototypes/atlas.html` policy, `charter.html` amend):
   underline, and an accessible list above the editor).
 - CSP: a static theme stylesheet or `EditorView.cspNonce`, never `unsafe-inline`. Ace is the fallback only if CM6
   cannot meet the CSP.
-- The textarea stays the form field and the no-JavaScript fallback. `internal/control/ui/module.md`, which forbids an
-  editor library today, changes with the rationale.
+- ~~The textarea stays the form field and the no-JavaScript fallback.~~ Superseded by PLAN-2 (no no-JavaScript
+  fallback): the forms are gone. `internal/control/ui/module.md` states the editor library with its rationale.
 - The AI box in its own form: a 3-row instruction, mode as two radios (managed disabled with its reason), Propose.
 - A draft timeline: saved → checked → ready → owner approves → merged on GitHub.
+
+Built in phase f (with the manager's notes):
+
+- `/r/{o}/{n}/policy` is a page of the web app; its JSON API is `GET /api/repos/{o}/{n}/policy`, `POST …/policy/check`,
+  `POST …/policy`, `POST …/policy/ready` and `POST …/assist`. The form routes, `editor.html` and `editor.js` are
+  deleted. The writes keep every protection the forms had: the head SHA pinned (`409` when stale), the 256 KB policy
+  cap, the instruction cap (assist), the mode checked against the server's two, the branch checked as an edit branch
+  of this repository, and the CSRF header. The Sign out form still sends the form token.
+- The CSP nonce: 16 bytes from `crypto/rand`, base64, new on every shell response, in `style-src` only. The shell is
+  `Cache-Control: no-store`. `script-src` stays `'self'`; no `'unsafe-inline'` or `'unsafe-hashes'`. `web/csp.txt` holds
+  the placeholder, and the Go test compares it with the shell's policy byte for byte. The smoke test's
+  `securitypolicyviolation` listener runs on the editor page with CodeMirror loaded.
+- CodeMirror 6 from npm, pinned exactly, as the policy page's lazy chunk. The theme reads the app's tokens, so it
+  follows light and dark. Tab is not bound, so the keyboard can leave the editor. A file with CRLF stays CRLF.
+- The page keeps the version the text started from: a reload that finds a newer draft keeps the user's edits, and the
+  next save is refused rather than overwriting the newer draft; "Discard my edits and load the draft" is the way out.
+- The server lists the problems of the loaded text too, so a broken draft pushed on GitHub shows them at once.
+- An administrator allows managed AI in place, through the Data sharing `POST`.
+- Not done here (phase f2): deleting the remaining templates, `graph.js`, `app.css` and `/static`.
+

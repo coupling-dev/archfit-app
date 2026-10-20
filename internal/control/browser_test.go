@@ -107,3 +107,19 @@ func hiddenFields(page string) url.Values {
 	}
 	return out
 }
+
+// policyPage reads the policy page of org7/app as the web app does; query is "" or "?…".
+func policyPage(t *testing.T, b *browser, query string) (page struct {
+	Branch  string `json:"branch"`
+	HeadSHA string `json:"head_sha"`
+}) {
+	t.Helper()
+	rec := b.get("/api/repos/org7/app/policy" + query)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET the policy page = %d: %s", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	return page
+}

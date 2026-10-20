@@ -22,10 +22,12 @@ const (
 	permWrite = "write"
 	permAdmin = "admin"
 
-	// contentSecurityPolicy is the same string as web/csp.txt, which the web app's preview server and smoke test use;
-	// TestWebPreviewUsesTheProductionCSP keeps them equal.
-	contentSecurityPolicy = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; " +
-		"font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+	// contentSecurityPolicy is the policy of every response but the shell. The shell adds a style nonce (shellPolicy);
+	// web/csp.txt is shellPolicy with the placeholder nonce, and TestWebPreviewUsesTheProductionCSP keeps them equal.
+	contentSecurityPolicy = cspHead + cspTail
+	cspHead               = "default-src 'none'; script-src 'self'; style-src 'self'"
+	cspTail               = "; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; " +
+		"form-action 'self'; frame-ancestors 'none'; object-src 'none'"
 )
 
 // scope is what the chain hands to a page: the signed-in user and, on repository routes, the authorized

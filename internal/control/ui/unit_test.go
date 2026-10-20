@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"os"
 	"slices"
@@ -84,7 +83,7 @@ func TestEditBranchName(t *testing.T) {
 				t.Errorf("status = %d (%v), want 422", status, err)
 			}
 			e := newEnv(t)
-			res := e.as("alice", permWrite).get("/r/" + repoName + "/policy?branch=" + url.QueryEscape(tt.requested))
+			res := e.as("alice", permWrite).get(policyAPI + "?branch=" + url.QueryEscape(tt.requested))
 			wantStatus(t, res, http.StatusUnprocessableEntity)
 		})
 	}
@@ -101,48 +100,48 @@ func TestEditBranchName(t *testing.T) {
 
 func TestStatusMapping(t *testing.T) {
 	const text = policyText + "# my edit\n"
+	const onboardingAPI = "/api/repos/" + repoName + "/onboarding"
 	viaAssist := func(err error) func(*env) { return func(e *env) { e.assist.propose = failingAssist(err) } }
 	tests := []struct {
 		name       string
 		inject     func(*env)
 		path       string
-		form       url.Values
+		body       any
 		want       int
 		retryAfter bool
-		textKept   bool
 	}{
-		{"forbidden", func(e *env) { e.grant("alice", repoName, permRead) }, "/policy", formOf("", "", text), 404, false, false},
-		{"stale from proposal", func(e *env) { e.props.fail["Propose"] = proposal.ErrStale }, "/policy", formOf("", "", text), 409, false, true},
-		{"head_sha is not the draft head", func(e *env) { e.props.push(repoName, "archfit/edit-alice", policyText) }, "/policy", formOf("", sha(1), text), 409, false, true},
-		{"invalid form", nil, "/policy", formOf("main", "", text), 422, false, true},
-		{"unparseable YAML", nil, "/policy", formOf("", "", "# my edit\nmodules: ["), 422, false, true},
-		{"assist invalid request", viaAssist(assist.ErrInvalidRequest), "/assist", assistForm(text), 422, false, true},
-		{"assist invalid proposal", viaAssist(assist.ErrInvalidProposal), "/assist", assistForm(text), 422, false, true},
-		{"assist no draft", viaAssist(assist.ErrNoDraft), "/assist", assistForm(text), 409, false, true},
-		{"assist no consent", viaAssist(account.ErrNoConsent), "/assist", assistForm(text), 409, false, true},
-		{"assist not managed", viaAssist(assist.ErrNotManaged), "/assist", assistForm(text), 409, false, true},
-		{"assist policy too large", viaAssist(assist.ErrPolicyTooLarge), "/assist", assistForm(text), 409, false, true},
-		{"assist no workflow", viaAssist(assist.ErrNoAssistWorkflow), "/assist", assistForm(text), 409, false, true},
-		{"assist stale", viaAssist(proposal.ErrStale), "/assist", assistForm(text), 409, false, true},
-		{"assist busy", viaAssist(assist.ErrBusy), "/assist", assistForm(text), 429, false, true},
-		{"assist managed unavailable", viaAssist(assist.ErrManagedUnavailable), "/assist", assistForm(text), 503, false, true},
-		{"assist budget exhausted", viaAssist(account.ErrBudgetExhausted), "/assist", assistForm(text), 503, false, true},
-		{"assist provider", viaAssist(assist.ErrProvider), "/assist", assistForm(text), 503, false, true},
-		{"rate limited", func(e *env) { e.gh.fail["File"] = api.ErrRateLimited }, "/policy", formOf("", "", text), 503, true, true},
-		{"rate limited through assist", viaAssist(fmt.Errorf("wrapped: %w", api.ErrRateLimited)), "/assist", assistForm(text), 503, true, true},
-		{"other upstream error", func(e *env) { e.props.fail["Get"] = errors.New("boom") }, "/policy", formOf("", "", text), 502, false, true},
+		{"forbidden", func(e *env) { e.grant("alice", repoName, permRead) }, policyAPI, editOf("", "", text), 404, false},
+		{"stale from proposal", func(e *env) { e.props.fail["Propose"] = proposal.ErrStale }, policyAPI, editOf("", "", text), 409, false},
+		{"head_sha is not the draft head", func(e *env) { e.props.push(repoName, "archfit/edit-alice", policyText) }, policyAPI, editOf("", sha(1), text), 409, false},
+		{"branch outside archfit/", nil, policyAPI, editOf("main", "", text), 422, false},
+		{"unparseable YAML", nil, policyAPI, editOf("", "", "# my edit\nmodules: ["), 422, false},
+		{"assist invalid request", viaAssist(assist.ErrInvalidRequest), assistAPI, assistOf("", text), 422, false},
+		{"assist invalid proposal", viaAssist(assist.ErrInvalidProposal), assistAPI, assistOf("", text), 422, false},
+		{"assist no draft", viaAssist(assist.ErrNoDraft), assistAPI, assistOf("", text), 409, false},
+		{"assist no consent", viaAssist(account.ErrNoConsent), assistAPI, assistOf("", text), 409, false},
+		{"assist not managed", viaAssist(assist.ErrNotManaged), assistAPI, assistOf("", text), 409, false},
+		{"assist policy too large", viaAssist(assist.ErrPolicyTooLarge), assistAPI, assistOf("", text), 409, false},
+		{"assist no workflow", viaAssist(assist.ErrNoAssistWorkflow), assistAPI, assistOf("", text), 409, false},
+		{"assist stale", viaAssist(proposal.ErrStale), assistAPI, assistOf("", text), 409, false},
+		{"assist busy", viaAssist(assist.ErrBusy), assistAPI, assistOf("", text), 429, false},
+		{"assist managed unavailable", viaAssist(assist.ErrManagedUnavailable), assistAPI, assistOf("", text), 503, false},
+		{"assist budget exhausted", viaAssist(account.ErrBudgetExhausted), assistAPI, assistOf("", text), 503, false},
+		{"assist provider", viaAssist(assist.ErrProvider), assistAPI, assistOf("", text), 503, false},
+		{"rate limited", func(e *env) { e.gh.fail["File"] = api.ErrRateLimited }, policyAPI, editOf("", "", text), 503, true},
+		{"rate limited through assist", viaAssist(fmt.Errorf("wrapped: %w", api.ErrRateLimited)), assistAPI, assistOf("", text), 503, true},
+		{"other upstream error", func(e *env) { e.props.fail["Get"] = errors.New("boom") }, policyAPI, editOf("", "", text), 502, false},
 		{"no sandbox", func(e *env) {
 			e.onb.startErr = onboarding.ErrNoSandbox
 			_ = e.consents.Record(t.Context(), installA, account.Consent{Kind: account.ConsentSourceProcessing})
-		}, "/onboarding", url.Values{"mode": {"managed"}, "owners": {"alice"}}, 409, false, false},
+		}, onboardingAPI, onboardingJSON{Mode: "managed", Owners: "alice"}, 409, false},
 		{"already onboarded", func(e *env) { e.onb.startErr = fmt.Errorf("wrapped: %w", onboarding.ErrAlreadyOnboarded) },
-			"/onboarding", url.Values{"mode": {"customer"}, "owners": {"alice"}}, 409, false, false},
+			onboardingAPI, onboardingJSON{Mode: "customer", Owners: "alice"}, 409, false},
 		{"onboarding busy", func(e *env) {
 			e.onb.startErr = onboarding.ErrBusy
 			_ = e.consents.Record(t.Context(), installA, account.Consent{Kind: account.ConsentSourceProcessing})
-		}, "/onboarding", url.Values{"mode": {"managed"}, "owners": {"alice"}}, 409, false, false},
+		}, onboardingAPI, onboardingJSON{Mode: "managed", Owners: "alice"}, 409, false},
 		{"not found at GitHub", func(e *env) { e.onb.startErr = fmt.Errorf("wrapped: %w", api.ErrNotFound) },
-			"/onboarding", url.Values{"mode": {"customer"}, "owners": {"alice"}}, 404, false, false},
+			onboardingAPI, onboardingJSON{Mode: "customer", Owners: "alice"}, 404, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -151,26 +150,18 @@ func TestStatusMapping(t *testing.T) {
 			if tt.inject != nil {
 				tt.inject(e)
 			}
-			var res *httptest.ResponseRecorder
-			if tt.path == "/onboarding" { // an /api write: the form names the JSON fields
-				res = c.postJSON("/api/repos/"+repoName+tt.path, onboardingJSON{Mode: tt.form.Get("mode"), Owners: tt.form.Get("owners")})
-				wantContains(t, res.Body.String(), `{"error":"`)
-			} else {
-				res = c.post("/r/"+repoName+tt.path, tt.form)
-			}
+			res := c.postJSON(tt.path, tt.body)
 			wantStatus(t, res, tt.want)
+			wantContains(t, res.Body.String(), `{"error":"`)
 			if got := res.Header().Get("Retry-After"); (got == "60") != tt.retryAfter {
 				t.Errorf("Retry-After = %q, want set: %v", got, tt.retryAfter)
-			}
-			if tt.textKept {
-				wantContains(t, res.Body.String(), "# my edit", "<textarea")
 			}
 		})
 	}
 
 	t.Run("missing CSRF token", func(t *testing.T) {
 		e := newEnv(t)
-		res := e.as("alice", permAdmin).post("/r/"+repoName+"/policy", url.Values{"csrf": {""}, "content": {text}})
+		res := e.as("alice", permAdmin).postJSONWith(policyAPI, editOf("", "", text), "")
 		wantStatus(t, res, http.StatusForbidden)
 	})
 	t.Run("GET rate limited", func(t *testing.T) {
@@ -193,13 +184,6 @@ func TestStatusMapping(t *testing.T) {
 			t.Errorf("panic on /api answered %q %q, want the JSON error", ct, res.Body.String())
 		}
 	})
-}
-
-func assistForm(content string) url.Values {
-	f := formOf("", "", content)
-	f.Set("mode", "customer")
-	f.Set("instruction", "split module a")
-	return f
 }
 
 func failingAssist(err error) func(assist.Mode, assist.Request) (assist.Result, error) {

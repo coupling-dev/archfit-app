@@ -29,13 +29,13 @@ import (
 
 type route struct {
 	method, path, min string
-	form              url.Values
-	body              any // a JSON body: an /api write
+	form              url.Values // a form body: the only form route left is the logout
+	body              any        // a JSON body: an /api write
 }
 
 func (rt route) api() bool { return strings.HasPrefix(rt.path, apiPrefix) }
 
-// repoRoutes is every repository route with its minimum permission and a form that succeeds.
+// repoRoutes is every repository route with its minimum permission and a body that succeeds.
 func repoRoutes(fullName string) []route {
 	base, api := "/r/"+fullName, "/api/repos/"+fullName
 	return []route{
@@ -44,9 +44,10 @@ func repoRoutes(fullName string) []route {
 		{http.MethodPost, api + "/onboarding", permAdmin, nil, onboardingJSON{Mode: "customer", Owners: "alice"}},
 		{http.MethodPost, api + "/discover", permAdmin, nil, struct{}{}},
 		{http.MethodGet, base + "/policy", permRead, nil, nil},
-		{http.MethodPost, base + "/policy", permWrite, formOf("", "", policyText+"# edit\n"), nil},
-		{http.MethodPost, base + "/policy/check", permRead, formOf("", "", policyText+"# edit\n"), nil},
-		{http.MethodPost, base + "/policy/ready", permWrite, nil, nil}, // the form is filled in by the test: it needs an open draft
+		{http.MethodGet, api + "/policy", permRead, nil, nil},
+		{http.MethodPost, api + "/policy", permWrite, nil, editOf("", "", policyText+"# edit\n")},
+		{http.MethodPost, api + "/policy/check", permRead, nil, checkPolicyJSON{Content: policyText + "# edit\n"}},
+		{http.MethodPost, api + "/policy/ready", permWrite, nil, readyJSON{}}, // withHead fills in the head of an open draft
 		{http.MethodGet, base + "/graph", permRead, nil, nil},
 		{http.MethodGet, base + "/pull/4", permRead, nil, nil},
 		{http.MethodGet, api + "/pulls/4", permRead, nil, nil},
@@ -54,11 +55,27 @@ func repoRoutes(fullName string) []route {
 		{http.MethodGet, api + "/graph", permRead, nil, nil},
 		{http.MethodGet, api + "/findings", permRead, nil, nil},
 		{http.MethodGet, base + "/pull/4/graph", permRead, nil, nil},
-		{http.MethodPost, base + "/assist", permWrite, url.Values{"mode": {"customer"}, "instruction": {"split module a"}, "content": {policyText}}, nil},
+		{http.MethodPost, api + "/assist", permWrite, nil, assistOf("", policyText)},
 		{http.MethodGet, base + "/data-sharing", permAdmin, nil, nil},
 		{http.MethodGet, api + "/data-sharing", permAdmin, nil, nil},
 		{http.MethodPost, api + "/data-sharing", permAdmin, nil, dataSharingJSON{Kind: "managed_llm", Action: actionAllow}},
 	}
+}
+
+// withHead is rt with headSHA in its body, when the body is a write of the policy page.
+func (rt route) withHead(headSHA string) route {
+	switch b := rt.body.(type) {
+	case editJSON:
+		b.HeadSHA = headSHA
+		rt.body = b
+	case assistJSON:
+		b.HeadSHA = headSHA
+		rt.body = b
+	case readyJSON:
+		b.HeadSHA = headSHA
+		rt.body = b
+	}
+	return rt
 }
 
 var permissionRank = map[string]int{"none": 0, permRead: 1, permWrite: 2, permAdmin: 3}
@@ -110,8 +127,7 @@ func TestRoutesAndMinimumPermissions(t *testing.T) {
 				e := newEnv(t)
 				c := e.as("alice", perm)
 				if strings.HasSuffix(rt.path, "/ready") {
-					d := e.props.push(repoName, "archfit/edit-alice", policyText+"# draft\n")
-					rt.form = formOf("", d.HeadSHA, "")
+					rt = rt.withHead(e.props.push(repoName, "archfit/edit-alice", policyText+"# draft\n").HeadSHA)
 				}
 				got := c.send(rt)
 				switch {
@@ -119,14 +135,8 @@ func TestRoutesAndMinimumPermissions(t *testing.T) {
 					if got != http.StatusNotFound {
 						t.Errorf("%s: status = %d, want 404", perm, got)
 					}
-				case rt.method == http.MethodGet, strings.HasSuffix(rt.path, "/policy/check"), rt.api():
-					if got != http.StatusOK {
-						t.Errorf("%s: status = %d, want 200", perm, got)
-					}
-				default:
-					if got != http.StatusSeeOther {
-						t.Errorf("%s: status = %d, want 303", perm, got)
-					}
+				case got != http.StatusOK:
+					t.Errorf("%s: status = %d, want 200", perm, got)
 				}
 			}
 		})
@@ -152,7 +162,7 @@ func TestRoutesAndMinimumPermissions(t *testing.T) {
 	})
 	t.Run("public assets", func(t *testing.T) {
 		e := newEnv(t)
-		for _, path := range []string{"/static/app.css", "/static/editor.js", "/schema/policy.json", "/assets/app-1a2b.js"} {
+		for _, path := range []string{"/static/app.css", "/schema/policy.json", "/assets/app-1a2b.js"} {
 			res := e.anonymous().get(path)
 			wantStatus(t, res, http.StatusOK)
 			if res.Body.Len() == 0 {
@@ -237,12 +247,14 @@ func TestSaveProposesBoundChange(t *testing.T) {
 	c := e.as("alice", permWrite)
 	draft := e.props.push(repoName, "archfit/edit-alice", policyText+"# draft\n")
 
-	page := c.get("/r/" + repoName + "/policy").Body.String()
-	wantContains(t, page, `name="head_sha" value="`+draft.HeadSHA+`"`, "# draft")
+	page := c.policy("")
+	if page.Branch != "archfit/edit-alice" || page.HeadSHA != draft.HeadSHA || page.Content != policyText+"# draft\n" {
+		t.Fatalf("policy page = %+v", page)
+	}
 
 	content := policyText + "# draft\n# changed\n"
-	res := c.post("/r/"+repoName+"/policy", formOf("archfit/edit-alice", draft.HeadSHA, content))
-	wantStatus(t, res, http.StatusSeeOther)
+	res := c.postJSON(policyAPI, editOf(page.Branch, page.HeadSHA, content))
+	wantStatus(t, res, http.StatusOK)
 
 	if len(e.props.proposes) != 1 {
 		t.Fatalf("Propose calls = %d, want 1", len(e.props.proposes))
@@ -259,11 +271,11 @@ func TestSaveProposesBoundChange(t *testing.T) {
 	if got.expectHead != draft.HeadSHA {
 		t.Errorf("expected head = %q, want %q", got.expectHead, draft.HeadSHA)
 	}
-	loc := res.Header().Get("Location")
-	if !strings.HasPrefix(loc, "/r/"+repoName+"/policy") {
-		t.Fatalf("Location = %q", loc)
+	after := decodeAs[policyJSON](t, res)
+	if after.Draft != "draft" || after.DraftState != "draft" || after.Content != content || after.HeadSHA != e.props.drafts[repoName+"@archfit/edit-alice"].HeadSHA ||
+		after.Notice != notices["saved"] || !after.CanWrite || !after.CanReady {
+		t.Errorf("answer = %+v, want the saved draft", after)
 	}
-	wantContains(t, c.get(loc).Body.String(), `<strong class="draft-state">draft</strong>`, "# changed")
 }
 
 func TestFirstSaveOpensOneDraftPR(t *testing.T) {
@@ -271,16 +283,18 @@ func TestFirstSaveOpensOneDraftPR(t *testing.T) {
 	c := e.as("alice", permWrite)
 	content := policyText + "# first\n"
 
-	wantStatus(t, c.post("/r/"+repoName+"/policy", formOf("", "", content)), http.StatusSeeOther)
-	retry := c.post("/r/"+repoName+"/policy", formOf("", "", content))
-	wantStatus(t, retry, http.StatusSeeOther)
-	wantContains(t, c.get(retry.Header().Get("Location")).Body.String(), notices["unchanged"])
+	wantStatus(t, c.postJSON(policyAPI, editOf("", "", content)), http.StatusOK)
+	retry := c.postJSON(policyAPI, editOf("", "", content))
+	wantStatus(t, retry, http.StatusOK)
+	if got := decodeAs[policyJSON](t, retry).Notice; got != notices["unchanged"] {
+		t.Errorf("retry notice = %q, want %q", got, notices["unchanged"])
+	}
 
 	if len(e.props.drafts) != 1 || e.props.commits != 1 || len(e.props.proposes) != 1 {
 		t.Errorf("drafts = %d, commits = %d, Propose calls = %d; want 1 each", len(e.props.drafts), e.props.commits, len(e.props.proposes))
 	}
 
-	different := c.post("/r/"+repoName+"/policy", formOf("", "", content+"# other\n"))
+	different := c.postJSON(policyAPI, editOf("", "", content+"# other\n"))
 	wantStatus(t, different, http.StatusConflict)
 	if e.props.commits != 1 {
 		t.Errorf("commits = %d after the refused retry", e.props.commits)
@@ -517,23 +531,26 @@ func TestOverviewNamesDataSharingOnlyToAnAdministrator(t *testing.T) {
 }
 
 func TestEditorSaysWhyManagedModeIsOff(t *testing.T) {
-	policyPage := "/r/" + repoName + "/policy"
-	sharing := `href="/r/` + repoName + `/data-sharing"`
-	option := `<option value="managed">`
+	sharing := "/r/" + repoName + "/data-sharing"
 	customer := strings.Replace(settingsText, "data_mode: managed", "data_mode: customer", 1)
 	for _, tt := range []struct {
 		name     string
 		perm     string
 		settings string
 		consent  bool
-		want     []string
-		absent   []string
+		want     managedJSON
+		canWrite bool
 	}{
-		{"customer settings", permAdmin, customer, true, []string{"data_mode: customer"}, []string{option, sharing}},
-		{"invalid settings", permAdmin, "version: [", true, []string{"no valid " + settings.Path}, []string{option, sharing, "onboarding"}},
-		{"no consent, administrator", permAdmin, settingsText, false, []string{"not allowed for acme", sharing}, []string{option}},
-		{"no consent, writer", permWrite, settingsText, false, []string{"not allowed for acme"}, []string{option, sharing}},
-		{"offered", permWrite, settingsText, true, []string{option}, []string{"Managed mode is off", sharing}},
+		{"customer settings", permAdmin, customer, true,
+			managedJSON{Off: "Managed mode is off: this repository's settings say data_mode: customer."}, true},
+		{"invalid settings", permAdmin, "version: [", true,
+			managedJSON{Off: "Managed mode is off: the default branch has no valid " + settings.Path + "."}, true},
+		{"no consent, administrator", permAdmin, settingsText, false,
+			managedJSON{Off: "Managed mode is off: managed AI is not allowed for acme.", DataSharing: sharing}, true},
+		{"no consent, writer", permWrite, settingsText, false,
+			managedJSON{Off: "Managed mode is off: managed AI is not allowed for acme."}, true},
+		{"offered", permWrite, settingsText, true, managedJSON{Offer: true}, true},
+		{"a reader is offered nothing", permRead, settingsText, true, managedJSON{}, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			e := newEnv(t)
@@ -541,12 +558,9 @@ func TestEditorSaysWhyManagedModeIsOff(t *testing.T) {
 			if tt.consent {
 				_ = e.consents.Record(t.Context(), installA, account.Consent{Kind: account.ConsentManagedLLM, By: "alice", ByID: 1, At: e.now})
 			}
-			page := e.as("alice", tt.perm).get(policyPage).Body.String()
-			wantContains(t, page, tt.want...)
-			for _, s := range tt.absent {
-				if strings.Contains(page, s) {
-					t.Errorf("the page contains %q", s)
-				}
+			page := e.as("alice", tt.perm).policy("")
+			if page.Managed != tt.want || page.CanWrite != tt.canWrite {
+				t.Errorf("managed = %+v, can_write = %v; want %+v, %v", page.Managed, page.CanWrite, tt.want, tt.canWrite)
 			}
 		})
 	}

@@ -3,6 +3,7 @@ package control
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -130,12 +131,12 @@ func TestBudgetExhaustionStopsOnlyAssist(t *testing.T) {
 
 	b := newBrowser(t, h.c.UIHandler())
 	b.signIn("alice")
-	form := hiddenFields(b.get("/r/org7/app/policy").Body.String())
-	form.Set("content", policyDraft+"# reviewed\n")
-	if rec := b.do(http.MethodPost, "/r/org7/app/policy", form); rec.Code != http.StatusSeeOther {
-		t.Fatalf("policy save = %d, want 303: %s", rec.Code, rec.Body.String())
+	page := policyPage(t, b, "")
+	save := map[string]string{"branch": page.Branch, "head_sha": page.HeadSHA, "content": policyDraft + "# reviewed\n"}
+	if rec := b.postJSON("/api/repos/org7/app/policy", save); rec.Code != http.StatusOK {
+		t.Fatalf("policy save = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
-	branch := form.Get("branch")
+	branch := page.Branch
 	saved, ok := h.gh.file(r.FullName, branch, policyPath)
 	if !ok || !strings.Contains(saved, "# reviewed") {
 		t.Fatalf("policy save did not reach the draft branch %q", branch)
@@ -145,9 +146,9 @@ func TestBudgetExhaustionStopsOnlyAssist(t *testing.T) {
 	if len(head) != 2 {
 		t.Fatalf("%d pull requests, want the onboarding and the policy draft", len(head))
 	}
-	draft := hiddenFields(b.get("/r/org7/app/policy?branch=" + branch).Body.String())
+	draft := policyPage(t, b, "?branch="+url.QueryEscape(branch))
 	_, err := h.c.assist.Propose(ctx, assist.ModeManaged, assist.Request{
-		Repo: r, Branch: branch, HeadSHA: draft.Get("head_sha"), Instruction: "allow ui to import store", By: "alice",
+		Repo: r, Branch: branch, HeadSHA: draft.HeadSHA, Instruction: "allow ui to import store", By: "alice",
 	})
 	if !errors.Is(err, account.ErrBudgetExhausted) {
 		t.Errorf("Propose = %v, want ErrBudgetExhausted", err)

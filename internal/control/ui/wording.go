@@ -159,6 +159,7 @@ var notices = map[string]string{
 	"unchanged":  "Nothing to save: the text is already on the branch.",
 	"ready":      "The draft pull request is marked ready for review.",
 	"proposed":   "The proposal is a new commit on the draft pull request. Review the diff on GitHub.",
+	"requested":  "The assist workflow is running in your CI. Its proposal arrives as a new commit on the draft pull request.",
 	"onboarding": "The onboarding pull request is open.",
 	"discover":   "Discovery was dispatched. The policy proposal arrives as a pull request.",
 }

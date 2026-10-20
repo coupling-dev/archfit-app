@@ -150,7 +150,11 @@ func TestRoutesRequireTheirAuthentication(t *testing.T) {
 		{http.MethodGet, "/api/repos/" + demoRepo + "/overview"},
 		{http.MethodPost, "/api/repos/" + demoRepo + "/onboarding"},
 		{http.MethodPost, "/api/repos/" + demoRepo + "/discover"},
-		{http.MethodPost, "/r/" + demoRepo + "/policy"},
+		{http.MethodGet, "/api/repos/" + demoRepo + "/policy"},
+		{http.MethodPost, "/api/repos/" + demoRepo + "/policy"},
+		{http.MethodPost, "/api/repos/" + demoRepo + "/policy/check"},
+		{http.MethodPost, "/api/repos/" + demoRepo + "/policy/ready"},
+		{http.MethodPost, "/api/repos/" + demoRepo + "/assist"},
 		{http.MethodPost, "/api/repos/" + demoRepo + "/data-sharing"},
 		{http.MethodPost, "/auth/logout"},
 	}

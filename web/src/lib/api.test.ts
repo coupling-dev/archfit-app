@@ -34,6 +34,14 @@ describe('api', () => {
     expect(err).toMatchObject({ status, message });
   });
 
+  it('carries the problems of a refused policy text', async () => {
+    reply(422, '{"error":"The policy has problems.","diagnostics":[{"line":2,"column":1,"message":"Unknown key."}]}');
+    const err = await postJSON('/api/x', 'tok', {}).catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 422, diagnostics: [{ line: 2, column: 1, message: 'Unknown key.' }] });
+    reply(422, '{"error":"No.","diagnostics":"not a list"}');
+    await expect(postJSON('/api/x', 'tok', {})).rejects.toMatchObject({ diagnostics: [] });
+  });
+
   it('reports a network failure as status 0', async () => {
     vi.stubGlobal(
       'fetch',
