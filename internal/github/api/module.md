@@ -47,7 +47,8 @@ needs one. It is a wide leaf on purpose: role interfaces keep each consumer's kn
 - Input guards before any request: `InstallationID` > 0; `FullName` matches `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`;
   refs, branches and paths are escaped per path segment, and an empty, `.` or `..` segment (also as owner or
   name) is an error before any request. No caller string can change the route.
-- Redirects are never followed automatically; a `3xx` is an error. `Artifact` follows its one redirect itself.
+- Redirects are never followed automatically; a `3xx` is an error. `Artifact` and `ArtifactByID` follow their one
+  redirect themselves.
 - Response JSON is decoded leniently (unknown fields ignored); each body is read through a 10 MiB limit **[default]**.
 - Unexported `now` and `sleep` hooks exist for same-package tests **[default]**.
 
@@ -112,7 +113,8 @@ a `truncated` result: it returns the paths read so far with `truncated` true.
   submodule → error. Consequence for an oversized settings, policy or baseline file: the caller fails closed,
   the gate check stays pending and ends `action_required` through the sweep; it is never green.
 - `Pull`: `GET /repos/{r}/pulls/{n}`, then `GET /repos/{r}/compare/{base_sha}...{head_sha}` for
-  `merge_base_commit.sha` (sent with `per_page=1` to keep the commit list out of the answer). Only `Pull` fills `MergeBaseSHA`; `OpenPulls`, `PullByHead` and `EnsurePull` leave it `""` **[default]**.
+  `merge_base_commit.sha` (sent with `per_page=1` to keep the commit list out of the answer). Only `Pull` fills `MergeBaseSHA`; `PullSummary`, `OpenPulls`, `PullByHead` and `EnsurePull` leave it `""` **[default]**.
+- `PullSummary`: `Pull`'s first request only, for a reader that never uses the merge base.
 - `OpenPulls`: `GET /repos/{r}/pulls?state=open`, drafts included.
 - `PullByHead`: `GET /repos/{r}/pulls?state=all&head={owner}:{branch}&sort=created&direction=desc&per_page=1`,
   `{owner}` being the owner of `r`, so fork heads never match; first hit; none → `ErrNotFound`. A hit whose
@@ -147,6 +149,9 @@ a `truncated` result: it returns the paths read so far with `truncated` true.
   across hosts. The zip must hold exactly one regular file; its declared size and the bytes actually read
   (through a limited reader) must both be ≤ `maxBytes`, else error. The zip itself is read through a limit of
   `maxBytes` + 1 MiB **[default]**; any second entry, even a directory, is an error.
+- `ArtifactID` is `Artifact`'s listing alone and returns the artifact's ID; `ArtifactByID` is its download alone.
+  `Artifact` is exactly the two in turn: the same requests. An artifact never changes, so a reader may keep a
+  download under its ID.
 - `EnsureBranch`: `GET .../git/ref/heads/{branch}`; if missing, `POST .../git/refs` at the SHA of `fromRef`
   (a 40-hex commit SHA is used as is, anything else is a branch name **[default]**); a `422` "already exists"
   race is success: after any `422` the ref is read again, and the `422` stands if it is still missing.
@@ -381,6 +386,19 @@ func New(ts TokenSource, hc *http.Client) *Client
 // CheckApp proves that the App key works with GitHub: GET /app with a fresh App JWT, on every call. It reads no
 // installation. Bound it with ctx: on a rate limit or a 5xx the client waits and retries within its own budget.
 func (c *Client) CheckApp(ctx context.Context) error
+
+// Readers outside the role interfaces, for the UI only; the gate and its children never call them.
+func (c *Client) PullSummary(ctx context.Context, r RepoRef, number int) (Pull, error) // Pull without the merge base
+func (c *Client) ArtifactID(ctx context.Context, r RepoRef, runID int64, name string) (int64, error)
+func (c *Client) ArtifactByID(ctx context.Context, r RepoRef, id int64, maxBytes int64) ([]byte, error)
+
+// CallStats counts the round trips sent under one context and their summed time; concurrent calls add up past
+// the wall-clock time. Token minting is not counted. Safe for concurrent use.
+type CallStats struct{ /* unexported */ }
+
+func WithCallStats(ctx context.Context) (context.Context, *CallStats)
+func (s *CallStats) Calls() int64
+func (s *CallStats) Duration() time.Duration
 ```
 
 `WorkflowRun.Event` is GitHub's event name for the run (`pull_request`, `push`, `workflow_dispatch`,
@@ -400,7 +418,7 @@ of `github/auth`; `api` only receives its result, a user token string, in the `U
   `Conclusion`, `in_progress` with one, or `UpdateCheckRun` with `ID` 0 → error before any request. `api`
   never truncates.
 - `CreateComment`, `UpdateComment`: a body over 65 536 characters (GitHub's limit) → error before any request.
-- `Artifact`: `maxBytes` ≤ 0 → error.
+- `Artifact`, `ArtifactByID`: `maxBytes` ≤ 0 → error.
 - Lists return an empty slice, not `ErrNotFound`, when the parent exists and has no items.
 - `RepoRef` identity is trusted by the caller's construction; `api` does not re-derive the installation.
   A `RepoRef` that pairs a repository with the wrong installation gets GitHub's `404`, so `ErrNotFound`.
@@ -480,7 +498,8 @@ type TokenSource interface {
   `proposal`: `Changes`, `Pulls` (`PullByHead` for a branch's draft in any state).
   `onboarding`: `Repos`, `Pulls` (`PullByHead`), `Checks` (`CheckRuns` for the report-received stage), `Actions`, `Changes`.
   `assist`: `Repos`, `Actions`, `Changes`.
-  `ui`: `Users`, `Repos`, `Checks`, `Actions`, `Changes`.
+  `ui`: `Users`, `Repos`, `Checks`, `Actions`, `Changes`, the `*Client` readers `PullSummary`, `ArtifactID`,
+  `ArtifactByID`, and `WithCallStats`.
   `session`: `Users`, `Repos`.
 
 ### GitHub REST API (external)
@@ -585,10 +604,12 @@ One test per role interface; each asserts method, route, credential, request bod
 - **Test name**: `TestPullsContract`
   **Scenario**: `Pull` (same-repo, fork, merged); `OpenPulls` with a draft; `PullByHead` with an open, a merged-only,
   a fork-only and no pull for the branch; `ChangedFiles` with a rename; `Reviews` with a `PENDING` one and two by
-  one reviewer; `TeamMember` active, pending, `404`, bad team string.
+  one reviewer; `TeamMember` active, pending, `404`, bad team string; `PullSummary` of the same pull and of a
+  missing one.
   **Expected behavior**: `MergeBaseSHA` from compare, `Body` and `URL` mapped, `Merged` true with `State` `closed`;
   `HeadRepo` differs for the fork; draft listed; newest pull, the merged pull, `ErrNotFound`, `ErrNotFound`; both
-  rename names present and `truncated` false; `PENDING` dropped, order kept; true, false, false, error.
+  rename names present and `truncated` false; `PENDING` dropped, order kept; true, false, false, error;
+  `PullSummary` equals `Pull` without `MergeBaseSHA` after one request, then `ErrNotFound`.
 - **Test name**: `TestChecksContract`
   **Scenario**: create `in_progress`; update to `completed` with 50 annotations (one with `Line` 0); list by name.
   **Expected behavior**: request bodies match; line 0 sent as 1; only this App's runs listed; `ID`, `ExternalID`,
@@ -600,7 +621,8 @@ One test per role interface; each asserts method, route, credential, request bod
   **Scenario**: `Run`; `Rerun`; `Dispatch` with inputs; `LatestRun` with and without runs; `Artifact` through a
   redirect to another host.
   **Expected behavior**: fields mapped, `WorkflowPath` unchanged; `201`/`204` are success; `ErrNotFound` when no
-  run; the redirected request carries no `Authorization` header; file bytes returned.
+  run; the redirected request carries no `Authorization` header; file bytes returned. `ArtifactID` then
+  `ArtifactByID` sends exactly `Artifact`'s requests and returns its bytes; `ArtifactByID` with `maxBytes` 0 errors.
 - **Test name**: `TestLatestRunSendsOnlySetFilters`
   **Scenario**: table over `RunFilter`: empty; branch only; branch, event and status; event and status.
   **Expected behavior**: the query is `per_page=1` plus exactly the set fields under their GitHub names.
@@ -655,6 +677,10 @@ One test per role interface; each asserts method, route, credential, request bod
 - **Test name**: `TestSweepStaysCheapWithConditionalRequests`
   **Scenario**: list open pulls and check runs for 50 repositories twice with nothing changed.
   **Expected behavior**: the second pass is all `304`; results equal the first pass.
+- **Test name**: `TestCallStatsCountEachRoundTripOfOneContext`
+  **Scenario**: three concurrent `PullSummary` calls under one `WithCallStats` context, each answered after 5 ms;
+  one more call under a plain context.
+  **Expected behavior**: 3 calls and at least 15 ms summed; the plain call is not counted.
 - **Test name**: `TestUserSeesOnlyTheirRepositories` (T07 user authorization)
   **Scenario**: two users with different installations; one loses access between calls.
   **Expected behavior**: each list holds only that user's repositories; after the loss `Permission` is `none`;
