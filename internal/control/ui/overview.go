@@ -18,31 +18,22 @@ const (
 )
 
 type overviewRow struct {
-	FullName string
-	State    string // a word, never a number
-	Reason   string // the check run's title
+	FullName string `json:"full_name"`
+	State    string `json:"state"` // a word, never a number
+	Tone     string `json:"tone"`
+	Reason   string `json:"reason"` // the check run's title
 }
 
 type overviewBody struct {
-	Rows      []overviewRow
-	Truncated bool
+	Repos     []overviewRow `json:"repos"`
+	Truncated bool          `json:"truncated"`
 }
 
-func (s *server) overview(w http.ResponseWriter, r *http.Request) {
-	u, ok := s.sessions.User(r)
-	if !ok {
-		s.render(w, r, http.StatusOK, "landing", page{Title: "Archfit"})
-		return
-	}
-	sc := scope{user: u}
-	logOf(r).userID = u.UserID
-
-	repos, err := s.gh.users.UserRepos(r.Context(), u.Token)
+// apiRepos is the signed-in user's repositories, each with archfit/state on its default-branch head.
+func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
+	repos, err := s.gh.users.UserRepos(r.Context(), sc.user.Token)
 	if err != nil {
-		if !s.endIfTokenRejected(w, r, err) {
-			s.fail(w, r, sc, err)
-		}
-		return
+		return nil, err
 	}
 	sort.Slice(repos, func(i, j int) bool { return repos[i].FullName < repos[j].FullName })
 	body := overviewBody{Truncated: len(repos) > maxOverviewRepos}
@@ -50,7 +41,7 @@ func (s *server) overview(w http.ResponseWriter, r *http.Request) {
 		repos = repos[:maxOverviewRepos]
 	}
 
-	body.Rows = make([]overviewRow, len(repos))
+	body.Repos = make([]overviewRow, len(repos))
 	slots := make(chan struct{}, parallelLookups)
 	var wg sync.WaitGroup
 	for i, repo := range repos {
@@ -60,11 +51,11 @@ func (s *server) overview(w http.ResponseWriter, r *http.Request) {
 			defer wg.Done()
 			defer func() { <-slots }()
 			state, reason := s.defaultBranchState(r.Context(), repo)
-			body.Rows[i] = overviewRow{FullName: repo.FullName, State: state, Reason: reason}
+			body.Repos[i] = overviewRow{FullName: repo.FullName, State: state, Tone: toneOf(state), Reason: reason}
 		}()
 	}
 	wg.Wait()
-	s.render(w, r, http.StatusOK, "overview", s.newPage(r, sc, "Repositories", body))
+	return body, nil
 }
 
 // defaultBranchState reads archfit/state on the default-branch head. A failed lookup is "unknown" for this row only.

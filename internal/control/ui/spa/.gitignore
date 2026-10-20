@@ -1,0 +1,3 @@
+# The web app build (web/, npm run build) writes here; go:embed takes it into the binary.
+*
+!.gitignore

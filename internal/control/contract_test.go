@@ -205,8 +205,13 @@ func TestHandlersAreMounted(t *testing.T) {
 		}
 		rec = httptest.NewRecorder()
 		h.c.UIHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
-		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "/auth/login") {
-			t.Errorf("GET / = %d, want the landing page with a sign-in link", rec.Code)
+		if rec.Code != http.StatusOK {
+			t.Errorf("GET / = %d, want the web app's shell", rec.Code)
+		}
+		rec = httptest.NewRecorder()
+		h.c.UIHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/session", nil))
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("GET /api/session = %d, want 401, which the shell shows as the landing page", rec.Code)
 		}
 	})
 	t.Run("discovery answers the Receiver's rejection", func(t *testing.T) {

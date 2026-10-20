@@ -687,6 +687,24 @@ func (b *browser) signIn(login string) {
 	}
 }
 
+// postJSON sends a write of the web app: a JSON body and the session's CSRF token, read from /api/session, as a header.
+func (b *browser) postJSON(path string, body any) (*http.Response, string) {
+	b.t.Helper()
+	_, raw := b.get("/api/session")
+	var sess struct{ CSRF string }
+	if err := json.Unmarshal([]byte(raw), &sess); err != nil || sess.CSRF == "" {
+		b.t.Fatalf("no session token: %s", raw)
+	}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		b.t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodPost, baseURL+path, bytes.NewReader(payload))
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("X-CSRF-Token", sess.CSRF)
+	return b.send(r)
+}
+
 var csrfPattern = regexp.MustCompile(`name="csrf" value="([0-9a-f]+)"`)
 
 // csrf scrapes the form token from a signed-in page.

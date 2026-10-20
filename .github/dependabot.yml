@@ -1,0 +1,10 @@
+version: 2
+updates:
+  # The web app's build and test tools; nothing from npm reaches the runtime image except the built files.
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+    groups:
+      web:
+        patterns: ["*"]
