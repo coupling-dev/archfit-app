@@ -71,6 +71,7 @@ type repoFindingsJSON struct {
 	Unavailable string `json:"unavailable"`
 	Branch      string `json:"branch"`
 	NoBaseline  bool   `json:"no_baseline"`
+	Blocked     bool   `json:"blocked"` // the engine's verdict is blocked: the overview never shows "attention" over it
 	findingsJSON
 }
 
@@ -83,7 +84,7 @@ func (s *server) apiFindings(r *http.Request, sc scope) (any, error) {
 		body.Unavailable = unavailable
 		return body, err
 	}
-	body.NoBaseline = noBaseline(*rep)
+	body.NoBaseline, body.Blocked = noBaseline(*rep), isBlocked(*rep)
 	fillFindings(&body.findingsJSON, *rep)
 	return body, nil
 }

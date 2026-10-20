@@ -66,8 +66,8 @@ const (
 )
 
 // View is a read-only picture. Stale is true when the policy text no longer matches the report's config_hash.
-// Incomplete is true when the report's hard gates did not pass or a required rule was not evaluated: an observed
-// link may then still break a rule.
+// Incomplete is true when a hard gate or required rule was not evaluated or a dimension the gate applies to measured nothing: an
+// observed link may then still break a rule. A failed hard gate is not incomplete: its violations are on the links.
 type View struct {
 	Nodes      []Node        `json:"nodes"`
 	Links      []Link        `json:"links"`
@@ -103,7 +103,9 @@ const (
 	statusWaived   = "waived"
 	statusFixed    = "fixed"
 
-	hardGatesPass = "pass" // Decision.HardGates; any other value, an unknown one included, is incomplete
+	hardGatesUnmeasured = "unmeasured" // Decision.HardGates: a hard gate lacked the evidence to pass or fail
+	dimensionUnmeasured = "unmeasured"
+	gateNotApplicable   = "not_applicable" // Dimension.Gate of a dimension the gate does not apply to
 )
 
 // strengths are the engine's integration strengths, weakest first; a token outside them ranks below all.
@@ -273,7 +275,7 @@ func Build(rep report.Report, policyText []byte) View {
 		Links:      make([]Link, 0, len(links)),
 		Findings:   findings,
 		Stale:      stale,
-		Incomplete: rep.Decision.HardGates != hardGatesPass || len(rep.Decision.UnevaluatedRequiredRules) > 0,
+		Incomplete: incomplete(rep),
 	}
 	for _, n := range nodes {
 		v.Nodes = append(v.Nodes, n)
@@ -290,6 +292,20 @@ func Build(rep report.Report, policyText []byte) View {
 		return cmp.Or(cmp.Compare(a.From, b.From), cmp.Compare(a.To, b.To))
 	})
 	return v
+}
+
+// incomplete is View.Incomplete: a hard gate or required rule the engine could not evaluate, or a dimension the gate
+// applies to with no measured fact. A dimension the gate does not apply to is unmeasured by design and does not count.
+func incomplete(rep report.Report) bool {
+	if rep.Decision.HardGates == hardGatesUnmeasured || len(rep.Decision.UnevaluatedRequiredRules) > 0 {
+		return true
+	}
+	for _, d := range rep.Dimensions {
+		if d.Status == dimensionUnmeasured && d.Gate != gateNotApplicable {
+			return true
+		}
+	}
+	return false
 }
 
 // clip shortens engine text to whyRunes runes.

@@ -386,7 +386,7 @@ func TestDefaultGraphClaimsNothingNew(t *testing.T) {
 	}
 	var f repoFindingsJSON
 	e.as("alice", permRead).getJSON("/api/repos/"+repoName+"/findings", &f)
-	if f.Unavailable != "" || f.Branch != mainBranch || f.ViolationCount == 0 || len(f.Cycles) == 0 {
+	if f.Unavailable != "" || f.Branch != mainBranch || f.ViolationCount == 0 || len(f.Cycles) == 0 || !f.Blocked {
 		t.Fatalf("findings = %+v", f)
 	}
 	for _, c := range f.Cycles {

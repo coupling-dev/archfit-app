@@ -27,8 +27,9 @@ tested.
   otherwise the status the report's findings on that module pair give: `violation`, `accepted`, `advisory`, or
   `observed`. An accepted link says what it accepts: a violation (gate debt) or an advisory.
 - Set `Stale` when the policy text is not the policy the report was computed from, or does not parse.
-- Set `Incomplete` when the report's hard gates did not pass or a required rule was not evaluated, so that an
-  `observed` link is not read as clean.
+- Set `Incomplete` when a hard gate or a required rule was not evaluated, or a dimension the gate applies to measured
+  nothing, so that an `observed` link is not read as clean. A failed hard gate is not incomplete: its violations are on
+  the links.
 - Give each link the coupling of its strongest seam (strength, distance in words, volatility and where the engine
   took it from) and the worst imbalance the engine reported on the pair.
 - Give each link its `Origin` by the PR comment's rule (`report.PairOrigin`) when the engine compared with the base
@@ -56,8 +57,8 @@ Layout, colors and interaction are not here; they are the web app's.
 - How duplicate seams, seams to undeclared modules, and findings without a seam are normalized.
 - The ordering rule of the output.
 - The meaning of `Stale`: a digest comparison plus "the text parses", not a YAML comparison.
-- The meaning of `Incomplete`: `Decision.HardGates` other than `pass`, or a non-empty
-  `Decision.UnevaluatedRequiredRules`.
+- The meaning of `Incomplete`: `Decision.HardGates == "unmeasured"`, a non-empty `Decision.UnevaluatedRequiredRules`,
+  or a dimension with `status: unmeasured` whose `gate` is not `not_applicable`.
 
 ## Public Contract
 
@@ -117,8 +118,8 @@ const (
 )
 
 // View is a read-only picture. Stale is true when the policy text no longer matches the report's config_hash.
-// Incomplete is true when the report's hard gates did not pass or a required rule was not evaluated: an observed
-// link may then still break a rule.
+// Incomplete is true when a hard gate or required rule was not evaluated or a dimension the gate applies to measured
+// nothing: an observed link may then still break a rule. A failed hard gate is not incomplete.
 type View struct {
     Nodes      []Node        `json:"nodes"`
     Links      []Link        `json:"links"`
@@ -182,10 +183,11 @@ func Build(rep Report, policy []byte) View
    The caller is expected to keep showing the view of the last valid text, marked stale (the parent does).
 9. Order: `Nodes` by `Name`, `Links` by `(From, To)`, byte-wise ascending. The same input always gives the same output.
 10. `Build` never fails and never panics. A zero `Report` with an empty policy gives an empty, stale, incomplete `View`.
-11. `Incomplete = rep.Decision.HardGates != "pass" || len(rep.Decision.UnevaluatedRequiredRules) > 0`. `fail`,
-    `unmeasured`, an empty and an unknown value are all incomplete: the engine did not show that every required rule
-    was evaluated and passed, so an `observed` link may still be a forbidden edge it did not evaluate. Display only,
-    like `Stale`.
+11. `Incomplete = HardGates == "unmeasured" || len(UnevaluatedRequiredRules) > 0 || any dimension with Status ==
+    "unmeasured" and Gate != "not_applicable"`. The engine did not evaluate everything the gate needs, so an
+    `observed` link may still be a forbidden edge it did not evaluate. `fail` is not incomplete: the violations that
+    failed the gate are the message, and the links carry them. A dimension the gate does not apply to is unmeasured by
+    design and does not count. Display only, like `Stale`.
 12. `Findings`: every finding whose `Edge.From.Module`/`Edge.To.Module` pair is a link of the view, except `fixed`
     ones, as `LinkFinding{From, To, RuleID, Kind, Status, Why, More}`. Per pair the strongest status first (the
     order of rule 6, then report order), so the cap never drops the finding that set the link's status; at most 5 per
@@ -648,10 +650,13 @@ Nothing is mocked.
   **Scenario**: table: same bytes; one added space; one added comment; empty policy; empty `ConfigHash`; `ConfigHash` in
   upper case; `ConfigHash` with a `sha256:` prefix.
   **Expected behavior**: `Stale` false only for the first row.
-- **Test name**: `TestIncompleteFollowsDecision`
-  **Scenario**: table of `Decision`: `pass`; `pass` with an unevaluated required rule; `unmeasured` with one; `fail`;
-  `PASS`; the zero decision. Then the healthy and the blocked (`hard_gates: fail`) wire fixtures.
-  **Expected behavior**: `Incomplete` false only for `pass` without unevaluated rules and for the healthy fixture.
+- **Test name**: `TestIncompleteFollowsRequiredFacts`
+  **Scenario**: table of `Decision` and dimensions: `pass`; `fail` (a failed hard gate); `pass` with an unevaluated
+  required rule; `unmeasured` with one; `unmeasured` alone; a gated dimension `unmeasured`; a `partial` one; an
+  `unmeasured` dimension with gate `not_applicable`; the zero decision. Then the healthy and the blocked
+  (`hard_gates: fail`) wire fixtures.
+  **Expected behavior**: `Incomplete` true only for an unevaluated required rule, `hard_gates: unmeasured` and a
+  gated dimension that measured nothing; false for `fail`, for the not-applicable dimension and for both fixtures.
 
 ### Boundary Tests
 

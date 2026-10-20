@@ -129,10 +129,12 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   at the ref whose text is the report's policy (the head, else the base branch). The same `404` rule.
 - `GET /api/repos/{o}/{n}/graph` [read] — `{unavailable, view, stale_reason, policy_href, branch}`: the latest
   default-branch report against the policy on that branch. No link carries an origin.
-- `GET /api/repos/{o}/{n}/findings` [read] — `{unavailable, branch, no_baseline, …}`: the latest default-branch
-  report's findings in the pull request page's groups, without origins.
+- `GET /api/repos/{o}/{n}/findings` [read] — `{unavailable, branch, no_baseline, blocked, …}`: the latest default-branch
+  report's findings in the pull request page's groups, without origins. `blocked` is the engine's verdict (`blocked`
+  or `hard_gates: fail`): the overview shows "violations found" over a neutral check, never "attention".
 - `GET /api/repos/{o}/{n}/overview` [read] — default-branch state, open pull requests with their result, setup steps,
   onboarding progress, entitlement banner, history links, and whether the user may start onboarding or discovery.
+  `next` is the next setup step in one sentence and `next_how` its details, both from the onboarding stage.
   `tone` (`success` | `attention` | `danger` | `accent` | `neutral`) colours a state word; the word is always shown.
   For an administrator `managed_ai` is `allowed` | `not_allowed` | `unknown` (the consent could not be read): one Store
   read and no GitHub call more than the admin check the answer already makes.
@@ -325,8 +327,8 @@ const (
 )
 
 // View is a read-only picture. Stale is true when the policy text no longer matches the report's config_hash.
-// Incomplete is true when the report's hard gates did not pass or a required rule was not evaluated: an observed
-// link may then still break a rule.
+// Incomplete is true when a hard gate or required rule was not evaluated or a dimension the gate applies to measured
+// nothing: an observed link may then still break a rule. A failed hard gate is not incomplete.
 type View struct {
     Nodes      []Node        `json:"nodes"`
     Links      []Link        `json:"links"`
@@ -1162,8 +1164,12 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   "report unavailable"; never a partial graph. The repository graph never claims "added": ui clears
   `origin_status` before `graph.Build`. Each link is drawn and listed with its `Status` (`violation`, `accepted`,
   `advisory`, `allowed`, `observed`), which is also its CSS class. `allowed` comes only from the engine's `seams[].policy`; the page explains that
-  accepted debt is never allowed. When `View.Incomplete`, a banner says the report's hard gates did not
-  pass or not all required rules were evaluated, so an observed link can still break a rule.
+  accepted debt is never allowed. When `View.Incomplete`, a banner says a required rule was not evaluated or a dimension the gate applies to
+  measured nothing, so an observed link can still break a rule. A failed hard gate shows no banner: its violations are
+  the message. The web app counts one unit on the graph pages, a dependency (an ordered pair of modules, so a cycle is
+  two): chips, the Problems list and the inspector add up. Problems are the violations and advisories (and in a pull
+  request what it added); accepted debt sits in a collapsed "Accepted earlier" group and is drawn thin and faint. The
+  number on a line is its import count.
 - Assist: authorize `write`; if `content` differs from the file at `head_sha`, save it first (same rules as Save) and use the
   new head. Owner decision: when `content` equals the file the editor would load for the branch (after the CRLF rule) and
   `Diagnose` finds problems in it, nothing is saved and the request goes ahead on the loaded head, so a user can ask AI
