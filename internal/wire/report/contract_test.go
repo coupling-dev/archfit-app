@@ -481,6 +481,42 @@ func TestSeamPolicy(t *testing.T) {
 	}
 }
 
+func TestSeamVolatilityProvenanceIsKept(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   any
+		want    string
+		wantLoc string
+	}{
+		{name: "absent"},
+		{name: "declared", value: "declared", want: "declared"},
+		{name: "a provenance a later engine adds", value: "measured", want: "measured"},
+		{name: "not a token", value: "<b>", wantLoc: "seams[0].volatility_provenance"},
+		{name: "not a string", value: 3, wantLoc: "seams[0].volatility_provenance"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			doc := baseDoc(t)
+			if tt.value != nil {
+				set(t, doc, tt.value, "seams", 0, "volatility_provenance")
+			} else {
+				del(t, doc, "seams", 0, "volatility_provenance")
+			}
+			r, err := Decode(encode(t, doc), fixtureEngine)
+			if tt.wantLoc != "" {
+				wantError(t, err, tt.wantLoc)
+				return
+			}
+			if err != nil {
+				t.Fatalf("Decode: %v", err)
+			}
+			if got := r.Seams[0].VolatilityProvenance; got != tt.want {
+				t.Errorf("VolatilityProvenance = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestRootImporterCapture: the engine names an importer that no module owns by its package directory, "." for the
 // repository root, and ends the finding why and constraint with the rule's rationale and docs reference.
 func TestRootImporterCapture(t *testing.T) {

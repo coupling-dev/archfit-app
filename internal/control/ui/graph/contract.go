@@ -15,19 +15,26 @@ type Node struct {
 	Name       string `json:"name"`
 	Layer      string `json:"layer"`
 	PolicyLine int    `json:"policy_line"` // 1-based line of the module in the policy YAML; 0 if not found
-	// Volatility is the declared volatility the engine gave every seam into the module (Balanced Coupling: the
-	// volatility of the module depended upon); "" when the seams disagree, say undeclared, or there are none.
+	// Volatility and Subdomain are what the policy the report was computed from declares for the module. Volatility is
+	// VolatilityUndeclared when it declares neither. Both are "" when the policy text is not the report's (View.Stale)
+	// or does not name the module: the node then claims nothing. A seam's volatility is no module fact: on a
+	// functional dependency the engine takes the worse of its two ends.
 	Volatility string `json:"volatility"`
+	Subdomain  string `json:"subdomain"`
 }
 
+// VolatilityUndeclared is Node.Volatility for a module whose policy declares neither a volatility nor a subdomain.
+const VolatilityUndeclared = "undeclared"
+
 // LinkStatus is what the report says about a module pair: the engine's seam policy status when the report carries
-// one (every engine release the App reads carries it), else what the findings on the pair say. It is a display fact, never a check input.
+// one (every engine release the App reads carries it), raised to advisory or accepted by the findings on the pair;
+// else what the findings on the pair say. It is a display fact, never a check input.
 type LinkStatus string
 
 const (
 	StatusViolation LinkStatus = "violation" // an active gate finding (wire/report Finding.Active), or a gate finding of unknown status, names the pair
-	StatusAccepted  LinkStatus = "accepted"  // a gate finding accepted by the baseline or a waiver names the pair
-	StatusAdvisory  LinkStatus = "advisory"  // another finding that is not fixed names the pair
+	StatusAccepted  LinkStatus = "accepted"  // a finding accepted by the baseline or a waiver names the pair (report.Group's Accepted)
+	StatusAdvisory  LinkStatus = "advisory"  // another finding that is not fixed and not a violation names the pair
 	StatusAllowed   LinkStatus = "allowed"   // engine seam policy only: a fail-gated allowlist or layer rule permits the pair
 	StatusObserved  LinkStatus = "observed"  // engine seam policy: no active finding names the pair and no rule permits it; without one: no current finding names the pair
 )
@@ -43,9 +50,20 @@ type Link struct {
 	// The coupling of the pair's strongest seam, as the engine measured it; all "" when no seam names the pair.
 	Strength   string `json:"strength"`   // engine token: contract, model, functional, intrusive
 	Distance   string `json:"distance"`   // in words (report.DistanceWords)
-	Volatility string `json:"volatility"` // engine token
-	Imbalance  string `json:"imbalance"`  // the highest seam severity of the pair, the engine's imbalance; "" for none
+	Volatility string `json:"volatility"` // engine token, the seam's: on a functional dependency the worse end's
+	// VolatilitySource is the engine's volatility_provenance of that seam: declared, inherited, cascade, undeclared.
+	VolatilitySource string `json:"volatility_source"`
+	Imbalance        string `json:"imbalance"` // the highest seam severity of the pair, the engine's imbalance; "" for none
+	// Accepted is what the accepted findings on the pair accept: AcceptedViolation when one is a gate finding, else
+	// AcceptedAdvisory; "" when none names the pair. The page names it, so gate debt never reads as an advisory.
+	Accepted string `json:"accepted"`
 }
+
+// Link.Accepted values.
+const (
+	AcceptedViolation = "violation"
+	AcceptedAdvisory  = "advisory"
+)
 
 // View is a read-only picture. Stale is true when the policy text no longer matches the report's config_hash.
 // Incomplete is true when the report's hard gates did not pass or a required rule was not evaluated: an observed
@@ -91,17 +109,16 @@ const (
 // strengths are the engine's integration strengths, weakest first; a token outside them ranks below all.
 var strengths = []string{"contract", "model", "functional", "intrusive"}
 
-// declaredVolatility is the volatility a module shows on its node; "undeclared" says nothing about the module.
-var declaredVolatility = []string{"low", "medium", "high"}
-
 // severities are the engine's severities, lowest first.
 var severities = []string{"low", "medium", "high", "critical"}
 
 type pair struct{ from, to string }
 
 // Build is pure. Nodes come from the policy's modules, links from the report's seams and findings. A link's Status
-// is the engine's seams[].policy when a seam of the pair carries it; otherwise it comes from the findings that name
-// the pair. Graph never computes a status from the policy text.
+// starts at the engine's seams[].policy when a seam of the pair carries it. The findings that name the pair raise it:
+// on a pair the engine gave a policy, only to advisory or accepted, since the engine's "observed" means no active
+// finding and says nothing about advisories and accepted debt; the engine decides its violations. Graph never
+// computes a status from the policy text.
 func Build(rep report.Report, policyText []byte) View {
 	defs, err := policy.Modules(policyText)
 	if err != nil {
@@ -118,10 +135,9 @@ func Build(rep report.Report, policyText []byte) View {
 		}
 		return l
 	}
-	// decided holds the pairs whose status the engine gave in seams[].policy: findings never change those.
+	// decided holds the pairs whose status the engine gave in seams[].policy: no finding makes those a violation.
 	decided := map[pair]bool{}
 	strongest := map[pair]report.Seam{}
-	into := map[string][]string{} // module -> the volatility of each seam into it
 	for _, s := range rep.Seams {
 		if s.FromModule == "" || s.ToModule == "" {
 			continue
@@ -133,6 +149,10 @@ func Build(rep report.Report, policyText []byte) View {
 			if st := LinkStatus(s.Policy); rank(st) > rank(l.Status) {
 				l.Status = st
 			}
+			// The engine's "accepted" is accepted gate debt, also when its finding names the pair by endpoint path only.
+			if s.Policy == string(StatusAccepted) {
+				l.Accepted = AcceptedViolation
+			}
 			decided[p] = true
 		}
 		if prev, ok := strongest[p]; !ok || cmp.Or(
@@ -143,11 +163,10 @@ func Build(rep report.Report, policyText []byte) View {
 		if slices.Index(severities, s.Severity) > slices.Index(severities, l.Imbalance) {
 			l.Imbalance = s.Severity
 		}
-		into[s.ToModule] = append(into[s.ToModule], s.Volatility)
 	}
 	for p, s := range strongest {
 		l := links[p]
-		l.Strength, l.Volatility = s.Strength, s.Volatility
+		l.Strength, l.Volatility, l.VolatilitySource = s.Strength, s.Volatility, s.VolatilityProvenance
 		l.Distance = s.Distance
 		if w, ok := report.DistanceWords[s.Distance]; ok {
 			l.Distance = w
@@ -155,33 +174,49 @@ func Build(rep report.Report, policyText []byte) View {
 	}
 	for _, f := range rep.Findings {
 		from, to := f.Edge.From.Module, f.Edge.To.Module
-		if decided[pair{from, to}] {
+		s := findingStatus(f)
+		if s == StatusObserved || from == "" || to == "" || (s == StatusViolation && decided[pair{from, to}]) {
 			continue
 		}
-		if s := findingStatus(f); s != StatusObserved && from != "" && to != "" {
-			if l := link(from, to); rank(s) > rank(l.Status) {
-				l.Status = s
-			}
+		l := link(from, to)
+		if rank(s) > rank(l.Status) {
+			l.Status = s
+		}
+		switch {
+		case s != StatusAccepted:
+		case f.Kind == kindGate:
+			l.Accepted = AcceptedViolation
+		case l.Accepted == "":
+			l.Accepted = AcceptedAdvisory
+		}
+	}
+
+	// Accepted names what an accepted link accepts: a link a violation outranks accepts nothing.
+	for _, l := range links {
+		if l.Status != StatusAccepted {
+			l.Accepted = ""
 		}
 	}
 
 	nodes := make(map[string]Node, len(defs))
 	for _, d := range defs {
-		if _, dup := nodes[d.Name]; !dup {
-			nodes[d.Name] = Node{Name: d.Name, Layer: d.Layer, PolicyLine: d.Line}
+		if _, dup := nodes[d.Name]; dup {
+			continue
 		}
+		n := Node{Name: d.Name, Layer: d.Layer, PolicyLine: d.Line}
+		if !stale {
+			n.Volatility, n.Subdomain = d.Volatility, d.Subdomain
+			if d.Volatility == "" && d.Subdomain == "" {
+				n.Volatility = VolatilityUndeclared
+			}
+		}
+		nodes[d.Name] = n
 	}
 	for p := range links {
 		for _, name := range [2]string{p.from, p.to} {
 			if _, ok := nodes[name]; !ok {
 				nodes[name] = Node{Name: name}
 			}
-		}
-	}
-	for name, vs := range into {
-		if n, ok := nodes[name]; ok && slices.Contains(declaredVolatility, vs[0]) && !slices.ContainsFunc(vs, func(v string) bool { return v != vs[0] }) {
-			n.Volatility = vs[0]
-			nodes[name] = n
 		}
 	}
 
@@ -273,10 +308,10 @@ func findingStatus(f report.Finding) LinkStatus {
 	switch {
 	case f.Active():
 		return StatusViolation
+	case f.Status == statusBaseline || f.Status == statusWaived: // report.Group's Accepted, any kind
+		return StatusAccepted
 	case f.Status == statusFixed:
 		return StatusObserved
-	case f.Kind == kindGate && (f.Status == statusBaseline || f.Status == statusWaived):
-		return StatusAccepted
 	case f.Kind == kindGate:
 		return StatusViolation
 	default:

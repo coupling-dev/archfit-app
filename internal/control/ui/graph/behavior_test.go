@@ -33,7 +33,7 @@ func TestInvalidYAMLMarksGraphStale(t *testing.T) {
 	if !reflect.DeepEqual(got.Links, wantLinks) {
 		t.Errorf("Links = %+v, want %+v", got.Links, wantLinks)
 	}
-	if want := []Node{{"api", "", 0, ""}, {"db", "", 0, ""}, {"ui", "", 0, ""}}; !reflect.DeepEqual(got.Nodes, want) {
+	if want := []Node{{Name: "api", Layer: "", PolicyLine: 0}, {Name: "db", Layer: "", PolicyLine: 0}, {Name: "ui", Layer: "", PolicyLine: 0}}; !reflect.DeepEqual(got.Nodes, want) {
 		t.Errorf("Nodes = %+v, want the link endpoints %+v", got.Nodes, want)
 	}
 
@@ -43,7 +43,7 @@ func TestInvalidYAMLMarksGraphStale(t *testing.T) {
 	}
 
 	lastValid := Build(rep, []byte(threeModules))
-	if want := []Node{{"api", "app", 3, ""}, {"db", "infra", 6, ""}, {"ui", "app", 9, ""}}; !reflect.DeepEqual(lastValid.Nodes, want) {
+	if want := []Node{{Name: "api", Layer: "app", PolicyLine: 3, Volatility: VolatilityUndeclared}, {Name: "db", Layer: "infra", PolicyLine: 6, Volatility: VolatilityUndeclared}, {Name: "ui", Layer: "app", PolicyLine: 9, Volatility: VolatilityUndeclared}}; !reflect.DeepEqual(lastValid.Nodes, want) {
 		t.Errorf("last valid Nodes = %+v, want %+v", lastValid.Nodes, want)
 	}
 	if lastValid.Stale {

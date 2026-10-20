@@ -1,5 +1,17 @@
 <script lang="ts">
-  import { balanceWord, countWord, isAdded, linkKey, measured, order, statusWord, strengthWord, type View } from '../../lib/graph';
+  import {
+    balanceWord,
+    countWord,
+    isAdded,
+    linkKey,
+    linkStatusWord,
+    linkVolatility,
+    measured,
+    moduleVolatility,
+    order,
+    strengthWord,
+    type View,
+  } from '../../lib/graph';
   import { safeHref } from '../../lib/route';
 
   // The graph as two tables: for screen readers, and the whole view when there are too many modules to draw.
@@ -18,7 +30,7 @@
     <div class="box">
       <table class="data">
         <caption class="sr-only">Modules</caption>
-        <thead><tr><th scope="col">Module</th><th scope="col">Layer</th><th scope="col">Volatility</th></tr></thead>
+        <thead><tr><th scope="col">Module</th><th scope="col">Layer</th><th scope="col">Declared</th></tr></thead>
         <tbody>
           {#each order(view.nodes).filter((n) => match(n.name, n.layer)) as n (n.name)}
             <tr>
@@ -30,7 +42,7 @@
                 {/if}
               </td>
               <td>{n.layer}</td>
-              <td>{n.volatility}</td>
+              <td>{moduleVolatility(n)}</td>
             </tr>
           {/each}
         </tbody>
@@ -53,10 +65,10 @@
             <tr>
               <td><code>{l.from}</code></td>
               <td><code>{l.to}</code></td>
-              <td>{statusWord[l.status]}{isAdded(l, pull) ? ' · added by this PR' : ''}</td>
+              <td>{linkStatusWord(l)}{isAdded(l, pull) ? ' · added by this PR' : ''}</td>
               <td class="num">{l.count || countWord(l)}</td>
               <td>
-                {measured(l) ? strengthWord[l.strength] : 'not measured'} · {l.distance || '—'} · {l.volatility || '—'} ·
+                {measured(l) ? strengthWord[l.strength] : 'not measured'} · {l.distance || '—'} · {linkVolatility(l) || '—'} ·
                 {balanceWord(l)}
               </td>
             </tr>

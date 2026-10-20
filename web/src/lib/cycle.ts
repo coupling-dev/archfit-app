@@ -22,7 +22,7 @@ export interface Arrow {
   d: string; // SVG path
   kind: 'added' | 'existing' | 'cycle';
   width: number;
-  label: string;
+  label: string; // "" when no spot along the arrow is free
   lx: number;
   ly: number;
 }
@@ -32,6 +32,12 @@ const maxLabel = 28;
 const boxH = 32;
 const pad = 16;
 const bend = 0.22; // how far each arrow bows from the straight line, as a share of its length; opposite directions bow apart
+// A cycle of many modules keeps a drawing of readable size: past this radius neighbours may touch, and the table under
+// the drawing still lists every direction.
+const maxRadius = 480;
+const labelGlyph = 6.8; // the 12px arrow label font, an average glyph
+const labelH = 16;
+const spots = [0.5, 0.35, 0.65, 0.25, 0.75]; // where along its arrow a label may sit, the middle first
 const thinBelow = 3;
 const mediumBelow = 10;
 
@@ -44,6 +50,23 @@ function arrowStyle(d: Direction): Pick<Arrow, 'kind' | 'width'> {
   if (d.origin === 'added') return { kind: 'added', width: 4 };
   if (d.origin === 'existing') return { kind: 'existing', width: 1.5 };
   return { kind: 'cycle', width: n < thinBelow ? 2 : n < mediumBelow ? 3 : 4 };
+}
+
+// Rect is an area by its centre and size: a module's box or an arrow's label.
+interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+// labelArea is the area an arrow's label covers, centred on (x, y).
+function labelArea(text: string, x: number, y: number): Rect {
+  return { x, y, w: text.length * labelGlyph + 8, h: labelH };
+}
+
+function overlaps(a: Rect, b: Rect): boolean {
+  return Math.abs(a.x - b.x) * 2 < a.w + b.w && Math.abs(a.y - b.y) * 2 < a.h + b.h;
 }
 
 // clip moves a point from a box's centre toward (tx, ty) until it leaves the box, so an arrow starts and ends at the
@@ -64,9 +87,11 @@ export function layout(
   const n = modules.length;
   const sizes = modules.map((m) => Math.ceil(shorten(m).length * charWidth) + 2 * pad);
   const widest = Math.max(...sizes);
-  // Two modules side by side; more on a circle wide enough that neighbours do not touch.
-  const rx = n === 2 ? widest / 2 + 150 : Math.max(widest * 0.9, (n * (widest + 24)) / (2 * Math.PI));
-  const ry = n === 2 ? 0 : Math.max(70, rx * 0.6);
+  // Two modules side by side; more on a circle wide enough that neighbours do not touch and an arrow between two of
+  // them has room for its label, up to maxRadius.
+  const rx =
+    n === 2 ? widest / 2 + 150 : Math.min(maxRadius, Math.max(widest + 80, (n * (widest + 24)) / (2 * Math.PI)));
+  const ry = n === 2 ? 0 : Math.max(90, rx * 0.6);
   const width = Math.ceil(2 * rx + widest + 2 * pad);
   const height = Math.ceil(2 * ry + boxH + 2 * pad + (n === 2 ? 100 : 40));
   const cx = width / 2;
@@ -77,6 +102,7 @@ export function layout(
   });
   const at = new Map(boxes.map((b) => [b.module, b]));
   const arrows: Arrow[] = [];
+  const taken: Rect[] = [...boxes]; // what a label may not cover: the modules and the labels placed so far
   for (const d of directions) {
     const a = at.get(d.from);
     const b = at.get(d.to);
@@ -90,13 +116,24 @@ export function layout(
     const [x1, y1] = clip(a, qx, qy);
     const [x2, y2] = clip(b, qx, qy);
     const n = d.locations.length;
+    const text = `${n} ${n === 1 ? 'location' : 'locations'}`;
+    // The first spot along the curve whose label covers no module and no other label. With none free, the arrow goes
+    // unlabelled: the table under the drawing lists every direction's locations.
+    const spot = spots
+      .map((t): Rect => {
+        const u = 1 - t;
+        const x = u * u * x1 + 2 * u * t * qx + t * t * x2;
+        const y = u * u * y1 + 2 * u * t * qy + t * t * y2;
+        return labelArea(text, x, y);
+      })
+      .find((c) => !taken.some((o) => overlaps(c, o)));
+    if (spot) taken.push(spot);
     arrows.push({
       d: `M ${r(x1)} ${r(y1)} Q ${r(qx)} ${r(qy)} ${r(x2)} ${r(y2)}`,
       ...arrowStyle(d),
-      label: `${n} ${n === 1 ? 'location' : 'locations'}`,
-      // the curve's own midpoint: halfway between the chord's midpoint and the control point
-      lx: r((x1 + x2) / 4 + qx / 2),
-      ly: r((y1 + y2) / 4 + qy / 2),
+      label: spot ? text : '',
+      lx: spot ? r(spot.x) : 0,
+      ly: spot ? r(spot.y) : 0,
     });
   }
   return { width, height, boxes, arrows };

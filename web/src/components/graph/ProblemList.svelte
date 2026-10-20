@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { linkKey, statusWord, type ProblemRow } from '../../lib/graph';
+  import { linkKey, linkStatusWord, type ProblemRow } from '../../lib/graph';
   import { pickLink, ui } from '../../lib/selection.svelte';
 
   // The problems above the canvas: violations, advisories and accepted dependencies, a cycle as one row.
@@ -24,7 +24,7 @@
               {#if r.added}<span class="g-tag added">added</span>{/if}
             </span>
             <span class="muted small">
-              {statusWord[r.link.status]} · {r.link.count || '·'}{r.back ? ` · ${r.back.count || '·'}` : ''}
+              {linkStatusWord(r.link)} · {r.link.count || '·'}{r.back ? ` · ${r.back.count || '·'}` : ''}
             </span>
           </button>
         </li>

@@ -322,7 +322,7 @@ Built in phase d. What changed against the notes and the target below, by owner 
   (`graph.Link.Origin`), so a new finding on a dependency the base had is not added. A finding in the inspector
   carries no origin of its own: a cycle finding's origin would contradict its link's.
 - Fit view with 6% padding and a zoom between 0.6 and 1; the canvas height follows the layout (360 to 900 px). Nodes
-  show the layer and the volatility every seam into the module agrees on. `hideAttribution` is set: the xyflow licence
+  show the layer and the volatility every seam into the module agrees on (phase g1 replaced this: see below). `hideAttribution` is set: the xyflow licence
   is MIT, and the bundled notice keeps its text. No debug toolbar, no lock control.
 - ELK runs on the main thread. Measured with Node: 25 ms for pumba-pilot#11 (4 modules, 8 dependencies); on a
   synthetic dense graph 109 ms at 15 modules, 0.8 s at 30 and 7 s at 60. Focus mode draws only the problem
@@ -459,3 +459,22 @@ Built in phase f2 (the last of the redesign):
   licence file with `Cache-Control: no-cache`.
 - The PR comment reads the engine's "<token> distance" in a finding's Why in the words of the tables (`report.ReadableWhy`):
   "distance across modules", never "cross_module distance". The App's pull request page and graph use the same words.
+
+### After the first live check (phase g1)
+
+The owner's check of 1ed8d14 on pumba-pilot found three graph statements the report does not support, and one
+overlap.
+
+- A node showed the volatility the seams into it agreed on. A seam's volatility belongs to the dependency: on a
+  functional one the engine takes the worse of its two ends, so `pkg_util`, declared low, showed high behind
+  `pkg_chaos`. A node now shows what the policy the report was computed from declares (`volatility low`,
+  `subdomain core`, `volatility undeclared`), and nothing when the policy text is not that one. A dependency keeps the
+  engine's volatility and names a source other than the declaration: `high (cascade)`.
+- The graph showed no accepted debt while the overview counted 6. Every seam carried the engine's `observed`, which
+  means only "no active finding", and the graph let it hide every finding on the pair. Findings now raise a seam
+  status to advisory or accepted, never to violation, and accepted is report.Group's rule (baseline or waived, any
+  kind). An accepted dependency reads `accepted violation` or `accepted advisory`.
+- The cycle drawing placed both labels of a three-module cycle on one spot. The circle now leaves room for a label
+  between two modules, a label moves along its arrow until it covers no module and no other label (unlabelled when
+  none is free: the table lists every direction), and the radius stops at 480 px for the largest cycle the comment
+  draws.

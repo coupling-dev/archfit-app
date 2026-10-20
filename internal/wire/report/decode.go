@@ -311,15 +311,16 @@ func (c *checker) matchedBy(m map[string]string) map[string]string {
 // move; scores and evidence are dropped.
 func (c *checker) seam(s *shadowSeam) Seam {
 	return Seam{
-		ID:         c.str("id", s.ID, classIdentifier),
-		FromModule: c.str("from_module", s.FromModule, classIdentifier),
-		ToModule:   c.str("to_module", s.ToModule, classIdentifier),
-		Edges:      c.count("edges", s.Edges, math.MaxInt),
-		Strength:   c.str("strength", s.Strength, classToken),
-		Distance:   c.str("distance", s.Distance, classToken),
-		Volatility: c.str("volatility", s.Volatility, classToken),
-		Severity:   c.opt("severity", s.Severity, classToken),
-		Policy:     c.optEnum("policy", s.Policy, "violation", "accepted", "advisory", "allowed", "observed"),
-		Hypothesis: c.opt("hypothesis", s.Hypothesis, classToken),
+		ID:                   c.str("id", s.ID, classIdentifier),
+		FromModule:           c.str("from_module", s.FromModule, classIdentifier),
+		ToModule:             c.str("to_module", s.ToModule, classIdentifier),
+		Edges:                c.count("edges", s.Edges, math.MaxInt),
+		Strength:             c.str("strength", s.Strength, classToken),
+		Distance:             c.str("distance", s.Distance, classToken),
+		Volatility:           c.str("volatility", s.Volatility, classToken),
+		Severity:             c.opt("severity", s.Severity, classToken),
+		VolatilityProvenance: c.opt("volatility_provenance", s.VolatilityProvenance, classToken),
+		Policy:               c.optEnum("policy", s.Policy, "violation", "accepted", "advisory", "allowed", "observed"),
+		Hypothesis:           c.opt("hypothesis", s.Hypothesis, classToken),
 	}
 }

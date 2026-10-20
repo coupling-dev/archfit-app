@@ -6,9 +6,11 @@
     isAdded,
     isProblem,
     linkKey,
+    linkStatusWord,
+    linkVolatility,
     meaning,
     measured,
-    statusWord,
+    moduleVolatility,
     strengthWord,
     type GLink,
     type View,
@@ -46,8 +48,11 @@
       <dl class="g-kv">
         <dt>Layer</dt>
         <dd>{node.layer || 'none declared'}</dd>
-        <dt>Volatility</dt>
-        <dd>{node.volatility || 'not declared'}</dd>
+        <dt>Declared</dt>
+        <dd>
+          {moduleVolatility(node) ||
+            (view.stale ? 'unknown: the policy is not the one the report used' : 'nothing: not in the policy')}
+        </dd>
         <dt>Policy</dt>
         <dd>
           {#if policyLine(node.policy_line)}<a href={policyLine(node.policy_line)}>Open in the policy</a>{:else}not in the
@@ -84,7 +89,7 @@
         <li>
           <button type="button" class="g-pick {l.status}" onclick={() => pickLink(linkKey(l))}>
             <span><i aria-hidden="true"></i><code>{l[end]}</code></span>
-            <span class="muted small">{statusWord[l.status]} · {l.count || '·'}</span>
+            <span class="muted small">{linkStatusWord(l)} · {l.count || '·'}</span>
           </button>
         </li>
       {/each}
@@ -97,7 +102,7 @@
 {#snippet dependency(l: GLink, full: boolean)}
   <p class="g-pair"><code>{l.from}</code> → <code>{l.to}</code></p>
   <div class="row">
-    <span class="g-tag {l.status}">{statusWord[l.status]}</span>
+    <span class="g-tag {l.status}">{linkStatusWord(l)}</span>
     {#if isAdded(l, pull)}<span class="g-tag added">added by this PR</span>{/if}
     <span class="muted small">{countWord(l)}</span>
   </div>
@@ -108,7 +113,7 @@
     <dt>Distance</dt>
     <dd>{l.distance || 'not measured'}</dd>
     <dt>Volatility</dt>
-    <dd>{l.volatility || 'not measured'}</dd>
+    <dd>{linkVolatility(l) || 'not measured'}</dd>
     <dt>Balance</dt>
     <dd>{balanceWord(l)}</dd>
   </dl>

@@ -269,10 +269,11 @@ func TestPullGraphShowsWhatThePullRequestAdded(t *testing.T) {
 		"pkg_container -> pkg_chaos": {graph.StatusViolation, report.PairAdded},
 		"pkg_chaos -> pkg_util":      {graph.StatusViolation, report.PairExisting},
 		"pkg_util -> pkg_chaos":      {graph.StatusViolation, report.PairAdded},
-		"pkg_cmd -> pkg_chaos":       {graph.StatusObserved, report.PairExisting},
-		"pkg_cmd -> pkg_container":   {graph.StatusObserved, report.PairExisting},
-		"pkg_cmd -> pkg_util":        {graph.StatusObserved, report.PairExisting},
-		"pkg_container -> pkg_util":  {graph.StatusObserved, report.PairExisting},
+		// the engine's "observed" pairs that a baselined advisory names: accepted, as the comment counts them
+		"pkg_cmd -> pkg_chaos":      {graph.StatusAccepted, report.PairExisting},
+		"pkg_cmd -> pkg_container":  {graph.StatusAccepted, report.PairExisting},
+		"pkg_cmd -> pkg_util":       {graph.StatusAccepted, report.PairExisting},
+		"pkg_container -> pkg_util": {graph.StatusAccepted, report.PairExisting},
 	}
 	if !reflect.DeepEqual(links, want) {
 		t.Errorf("links = %+v\nwant %+v", links, want)

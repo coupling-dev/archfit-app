@@ -6,7 +6,10 @@ import {
   isAdded,
   layers,
   lineWidth,
+  linkStatusWord,
+  linkVolatility,
   measured,
+  moduleVolatility,
   order,
   problemRows,
   smooth,
@@ -17,7 +20,14 @@ import {
   type View,
 } from './graph';
 
-const node = (name: string, layer = '', policy_line = 0): GNode => ({ name, layer, policy_line, volatility: '' });
+const node = (name: string, layer = '', policy_line = 0, more: Partial<GNode> = {}): GNode => ({
+  name,
+  layer,
+  policy_line,
+  volatility: '',
+  subdomain: '',
+  ...more,
+});
 const link = (from: string, to: string, status: Status, count = 1, more: Partial<GLink> = {}): GLink => ({
   from,
   to,
@@ -27,7 +37,9 @@ const link = (from: string, to: string, status: Status, count = 1, more: Partial
   strength: '',
   distance: '',
   volatility: '',
+  volatility_source: '',
   imbalance: '',
+  accepted: '',
   ...more,
 });
 const all: Record<Status, boolean> = { violation: true, advisory: true, accepted: true, allowed: true, observed: true };
@@ -37,6 +49,34 @@ const view = (nodes: GNode[], links: GLink[]): View => ({
   findings: [],
   stale: false,
   incomplete: false,
+});
+
+describe('words', () => {
+  it('an accepted link says what it accepts', () => {
+    expect(linkStatusWord(link('a', 'b', 'accepted', 1, { accepted: 'advisory' }))).toBe('accepted advisory');
+    expect(linkStatusWord(link('a', 'b', 'accepted', 1, { accepted: 'violation' }))).toBe('accepted violation');
+    expect(linkStatusWord(link('a', 'b', 'accepted'))).toBe('accepted');
+    expect(linkStatusWord(link('a', 'b', 'advisory', 1, { accepted: 'advisory' }))).toBe('advisory');
+  });
+
+  it.each([
+    [{ volatility: 'low' }, 'volatility low'],
+    [{ volatility: 'undeclared' }, 'volatility undeclared'],
+    [{ subdomain: 'core' }, 'subdomain core'],
+    [{}, ''],
+  ])('a module declares %o', (facts, want) => {
+    expect(moduleVolatility(node('m', '', 1, facts))).toBe(want);
+  });
+
+  it.each([
+    [{ volatility: 'high', volatility_source: 'declared' }, 'high'],
+    [{ volatility: 'high', volatility_source: 'cascade' }, 'high (cascade)'],
+    [{ volatility: 'undeclared', volatility_source: 'undeclared' }, 'undeclared'],
+    [{ volatility: 'medium' }, 'medium'],
+    [{}, ''],
+  ])('a dependency of %o', (facts, want) => {
+    expect(linkVolatility(link('a', 'b', 'observed', 1, facts))).toBe(want);
+  });
 });
 
 describe('line style', () => {
@@ -81,6 +121,23 @@ describe('problemRows', () => {
     link('e', 'f', 'observed', 5, { origin: 'added' }),
     link('g', 'h', 'allowed', 7),
   ];
+
+  it('keeps accepted gate debt and an accepted advisory apart', () => {
+    const debt = [
+      link('a', 'b', 'accepted', 10, { accepted: 'advisory' }),
+      link('b', 'a', 'accepted', 1, { accepted: 'violation' }),
+      link('c', 'd', 'accepted', 2, { accepted: 'advisory' }),
+      link('d', 'c', 'accepted', 1, { accepted: 'advisory' }),
+      link('x', 'y', 'violation', 3, { accepted: 'violation' }), // a subtype on a violation never splits its cycle
+      link('y', 'x', 'violation', 1),
+    ];
+    expect(problemRows(debt, false, false, all).map((r) => [r.link.from, r.back?.from ?? ''])).toEqual([
+      ['x', 'y'],
+      ['a', ''],
+      ['c', 'd'],
+      ['b', ''],
+    ]);
+  });
 
   it('pairs the two directions of a cycle and keeps statuses apart', () => {
     const rows = problemRows(links, false, false, all);

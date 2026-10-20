@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Handle, Position } from '@xyflow/svelte';
-  import type { GNode, Status } from '../../lib/graph';
+  import { moduleVolatility, type GNode, type Status } from '../../lib/graph';
   import { pickNode, ui } from '../../lib/selection.svelte';
 
   // One module: its name, its layer and declared volatility, a border in its worst problem's colour, dashed when the
@@ -35,10 +35,10 @@
   onkeydown={onkey}
 >
   <span class="g-node-name">{short}</span>
-  {#if n.layer || n.volatility}
+  {#if n.layer || moduleVolatility(n)}
     <span class="g-node-facts">
       {#if n.layer}<span>{n.layer}</span>{/if}
-      {#if n.volatility}<span>volatility {n.volatility}</span>{/if}
+      {#if moduleVolatility(n)}<span>{moduleVolatility(n)}</span>{/if}
     </span>
   {/if}
 </div>

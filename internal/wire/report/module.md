@@ -114,7 +114,7 @@ and not in this list is a decode error.
   `start_line`, `end_line`, `count` (integers). `name` is a source identifier: the closest thing to source in a
   report. Declarations are always dropped, whatever they contain.
 - Dropped seam keys: `scored_edges`, `abstained_edges`, `critical_edges`, `high_or_worse_edges`, `critical_share_pct`,
-  `high_or_worse_share_pct` (integers); `volatility_provenance`, `quadrant`, `label_evidence_hash`, `confidence`,
+  `high_or_worse_share_pct` (integers); `quadrant`, `label_evidence_hash`, `confidence`,
   `role_expectation`, `hypothesis` (strings); `labels` (list of strings); `distributed_monolith` (boolean);
   `raw_distance` (object: `level`, `basis`, `from_owner`, `to_owner`, `from_deploy_unit`, `to_deploy_unit` strings,
   `same_owner`, `same_deploy_unit` booleans, `boundary_crossings`, `shared_ancestor` integers); `scores` (object: `n`,
@@ -468,7 +468,11 @@ type Seam struct {
     Strength   string `json:"strength"`
     Distance   string `json:"distance"`
     Volatility string `json:"volatility"`
-    Severity   string `json:"severity,omitempty"`
+    // VolatilityProvenance is where the engine took Volatility from: "declared" | "inherited" | "cascade" |
+    // "undeclared"; "" from an engine that does not say. "declared" covers a functional edge that takes its source's
+    // volatility when that is worse than the target's.
+    VolatilityProvenance string `json:"volatility_provenance,omitempty"`
+    Severity             string `json:"severity,omitempty"`
     // Policy is what the engine's policy says about the seam: "violation" | "accepted" |
     // "advisory" | "allowed" | "observed", a closed set. "" = the key is absent.
     Policy string `json:"policy,omitempty"`
@@ -654,6 +658,11 @@ the tests decode each one as the release that produced it (synthetic ones as v3.
   value, `""`, `permitted`, `Allowed` and `true`.
   **Expected behavior**: the schema enum is the five values; absent decodes to `""`; each value is kept; the other rows
   are errors naming `seams[0].policy`, and no error echoes the value.
+- **Test name**: `TestSeamVolatilityProvenanceIsKept`
+  **Scenario**: on the base document, `seams[0].volatility_provenance` absent, `declared`, a value a later engine adds,
+  `<b>`, and `3`.
+  **Expected behavior**: `""`; `declared`; the new value as written (a token, not a closed set, so a new provenance never
+  fails a report); errors naming `seams[0].volatility_provenance` for the last two.
 - **Test name**: `TestRemovedV2KeysAreUnknown`
   **Scenario**: the base document with `comparison.task_origin_status` added, and with `new_findings` added to a
   dimension `delta`.
