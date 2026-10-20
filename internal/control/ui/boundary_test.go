@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -394,7 +395,7 @@ func TestNoScoreAnywhere(t *testing.T) {
 			e.publishReport(repoName, artifact(t, fixture))
 			e.acct.status = account.Status{Plan: account.PlanTrial, TrialEnds: e.now.AddDate(0, 0, 9)}
 
-			for _, path := range []string{"/api/repos", "/api/repos/" + repoName + "/overview", "/r/" + repoName + "/policy", "/r/" + repoName + "/graph", "/r/" + repoName + "/consent"} {
+			for _, path := range []string{"/api/repos", "/api/repos/" + repoName + "/overview", "/r/" + repoName + "/policy", "/r/" + repoName + "/graph", "/r/" + repoName + "/data-sharing", "/api/repos/" + repoName + "/data-sharing"} {
 				res := c.get(path)
 				wantStatus(t, res, http.StatusOK)
 				// Policy text and the view model are the customer's own data, not something ui computes.
@@ -488,7 +489,7 @@ func TestHostileStringsAreEscaped(t *testing.T) {
 	e.gh.checks[repoName+"@"+sha(4)+"#"+checkState] = []api.CheckRun{{ID: 1, Conclusion: "neutral", Title: hostileText, ExternalID: "v1:0:0:"}}
 
 	for _, path := range []string{"/", "/api/repos", "/r/" + repoName, "/api/repos/" + repoName + "/overview", "/r/" + repoName + "/policy",
-		"/r/" + repoName + "/graph", "/r/" + repoName + "/consent", "/r/" + repoName + "/pull/4", "/r/" + repoName + "/pull/4/graph"} {
+		"/r/" + repoName + "/graph", "/r/" + repoName + "/data-sharing", "/r/" + repoName + "/pull/4", "/r/" + repoName + "/pull/4/graph"} {
 		res := c.get(path)
 		wantStatus(t, res, http.StatusOK)
 		body := res.Body.String()
@@ -562,7 +563,12 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 	e.assist.propose = failingAssist(fmt.Errorf("MARKER-assist: %w", assist.ErrProvider))
 	form.Set("head_sha", e.props.drafts[repoName+"@archfit/edit-alice"].HeadSHA)
 	wantStatus(t, c.post(base+"/assist", form), http.StatusServiceUnavailable)
-	wantStatus(t, c.post(base+"/consent", url.Values{"kind": {"managed_llm"}, "action": {"record"}}), http.StatusSeeOther)
+	sharing := "/api/repos/" + repoName + "/data-sharing"
+	wantStatus(t, c.postJSON(sharing, dataSharingJSON{Kind: "MARKER-kind", Action: actionAllow}), http.StatusBadRequest)
+	wantStatus(t, c.postJSON(sharing, dataSharingJSON{Kind: "managed_llm", Action: "MARKER-action"}), http.StatusBadRequest)
+	wantStatus(t, c.postJSON(sharing, dataSharingJSON{Kind: "managed_llm", Action: actionAllow}), http.StatusOK)
+	wantStatus(t, c.postJSON(sharing, dataSharingJSON{Kind: "managed_llm", Action: actionAllow}), http.StatusOK)
+	wantStatus(t, c.postJSON(sharing, dataSharingJSON{Kind: "managed_llm", Action: actionRevoke}), http.StatusOK)
 	wantStatus(t, c.get(base+"/graph"), http.StatusOK)
 	wantStatus(t, c.get(base), http.StatusOK)
 	wantStatus(t, c.get("/api/repos"), http.StatusOK)
@@ -571,6 +577,23 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 	out := logs.String()
 	if !strings.Contains(out, `"route":"POST /r/{o}/{n}/policy"`) || !strings.Contains(out, `"installation_id":1`) {
 		t.Fatalf("no request log line: %.300s", out)
+	}
+	var audit []string
+	for line := range strings.Lines(out) {
+		if strings.Contains(line, `"msg":"ui consent"`) {
+			audit = append(audit, line)
+		}
+	}
+	alice := strconv.FormatInt(e.user("alice").UserID, 10)
+	if len(audit) != 3 {
+		t.Fatalf("consent audit lines = %d, want one per allow or revoke that was accepted:\n%s", len(audit), strings.Join(audit, ""))
+	}
+	for i, outcome := range []string{"consent_recorded", "consent_kept", "consent_revoked"} {
+		for _, want := range []string{`"level":"INFO"`, `"outcome":"` + outcome + `"`, `"kind":"managed_llm"`, `"installation_id":1`, `"user_id":` + alice} {
+			if !strings.Contains(audit[i], want) {
+				t.Errorf("audit line %d lacks %s: %s", i, want, audit[i])
+			}
+		}
 	}
 	secrets := []string{"MARKER-", c.token, c.csrf()}
 	for _, value := range c.cookies {

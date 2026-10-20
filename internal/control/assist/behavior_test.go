@@ -191,7 +191,7 @@ func TestManagedModeWithoutConsentMakesNoCall(t *testing.T) {
 	a := fx.assist()
 	ctx := context.Background()
 
-	if err := fx.consents.Record(ctx, testRepo.InstallationID, account.Consent{Kind: account.ConsentManagedLLM, By: "admin", At: testNow}); err != nil {
+	if err := fx.consents.Record(ctx, testRepo.InstallationID, account.Consent{Kind: account.ConsentManagedLLM, By: "admin", ByID: 1, At: testNow}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := a.Propose(ctx, ModeManaged, validRequest()); err != nil {

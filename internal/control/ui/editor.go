@@ -10,12 +10,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/alexei-led/archfit-app/internal/control/account"
 	"github.com/alexei-led/archfit-app/internal/control/assist"
 	"github.com/alexei-led/archfit-app/internal/control/proposal"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/policy"
-	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
 const (
@@ -60,11 +58,14 @@ type editorBody struct {
 	CanReady     bool
 	Checks       []checkLine
 	OfferManaged bool
-	RunState     string
-	RunURL       string
-	ReloadURL    string
-	Diagnostics  []policy.Diagnostic // the problems of Content, listed under the editor
-	Unsaved      bool                // Content is the submitted form, not the text on the branch
+	ManagedOff   string // why managed mode is not offered; "" when it is, or when that cannot be told
+	// DataSharingURL is the Data sharing page, for an administrator when the missing consent is the reason.
+	DataSharingURL string
+	RunState       string
+	RunURL         string
+	ReloadURL      string
+	Diagnostics    []policy.Diagnostic // the problems of Content, listed under the editor
+	Unsaved        bool                // Content is the submitted form, not the text on the branch
 }
 
 // current returns the draft of branch and the policy text the editor shows for it: the file at the draft head
@@ -115,9 +116,7 @@ func (s *server) editor(w http.ResponseWriter, r *http.Request, sc scope) {
 			body.Checks = append(body.Checks, checkLine{Name: name, State: state, Reason: reason})
 		}
 	}
-	if set, err := s.settings(r.Context(), sc.repo); err == nil && set.DataMode == settings.DataManaged {
-		body.OfferManaged = s.consents.Has(r.Context(), sc.repo.InstallationID, account.ConsentManagedLLM)
-	}
+	body.OfferManaged, body.ManagedOff, body.DataSharingURL = s.managedMode(r.Context(), sc)
 	if since := query.Get("since"); proposal.ValidHeadSHA(since) {
 		body.RunState = s.assistRun(r.Context(), sc.repo, branch, draft, since)
 		body.RunURL = "https://github.com/" + sc.repo.FullName + "/actions/workflows/" + path.Base(assist.AssistWorkflowPath)

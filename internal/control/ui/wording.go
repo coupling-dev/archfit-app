@@ -161,5 +161,4 @@ var notices = map[string]string{
 	"proposed":   "The proposal is a new commit on the draft pull request. Review the diff on GitHub.",
 	"onboarding": "The onboarding pull request is open.",
 	"discover":   "Discovery was dispatched. The policy proposal arrives as a pull request.",
-	"consent":    "Consent updated.",
 }

@@ -133,12 +133,16 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.HandleFunc("GET /assets/", assets(web))
 	mux.HandleFunc("GET /{$}", index)
 	mux.Handle("GET /r/{o}/{n}", s.repo(permRead, func(w http.ResponseWriter, r *http.Request, _ scope) { index(w, r) }))
+	mux.Handle("GET /r/{o}/{n}/data-sharing", s.repo(permAdmin, func(w http.ResponseWriter, r *http.Request, _ scope) { index(w, r) }))
+	mux.Handle("GET /r/{o}/{n}/consent", s.repo(permAdmin, consentMoved))
 
 	mux.Handle("GET /api/session", s.apiSignedIn(apiSession))
 	mux.Handle("GET /api/repos", s.apiSignedIn(s.apiRepos))
 	mux.Handle("GET /api/repos/{o}/{n}/overview", s.apiRepo(permRead, s.apiStatus))
 	mux.Handle("POST /api/repos/{o}/{n}/onboarding", s.apiRepo(permAdmin, s.apiStartOnboarding))
 	mux.Handle("POST /api/repos/{o}/{n}/discover", s.apiRepo(permAdmin, s.apiDiscover))
+	mux.Handle("GET /api/repos/{o}/{n}/data-sharing", s.apiRepo(permAdmin, s.apiDataSharing))
+	mux.Handle("POST /api/repos/{o}/{n}/data-sharing", s.apiRepo(permAdmin, s.apiShareData))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		s.failJSON(w, r, api.ErrNotFound)
 	})
@@ -152,7 +156,5 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("GET /r/{o}/{n}/pull/{number}", s.repo(permRead, s.pullPage))
 	mux.Handle("GET /r/{o}/{n}/pull/{number}/graph", s.repo(permRead, s.pullGraphPage))
 	mux.Handle("POST /r/{o}/{n}/assist", s.repo(permWrite, s.propose))
-	mux.Handle("GET /r/{o}/{n}/consent", s.repo(permAdmin, s.consentPage))
-	mux.Handle("POST /r/{o}/{n}/consent", s.repo(permAdmin, s.consent))
 	return chain(mux)
 }

@@ -337,10 +337,7 @@ func enableManagedAssist(t *testing.T, s *system) *browser {
 	})
 	b := newBrowser(t, s.do)
 	b.signIn("alice")
-	form := url.Values{"csrf": {b.csrf("/r/" + demoRepo + "/consent")}, "kind": {"managed_llm"}, "action": {"record"}}
-	if resp, page := b.post("/r/"+demoRepo+"/consent", form); resp.StatusCode != http.StatusSeeOther {
-		t.Fatalf("recording consent: %d\n%s", resp.StatusCode, page)
-	}
+	recordConsent(t, b, demoRepo, "managed_llm", "")
 	return b
 }
 

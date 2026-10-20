@@ -8,7 +8,7 @@ import (
 	"net/url"
 )
 
-var pageNames = []string{"editor", "graph", "pull", "consent", "error"}
+var pageNames = []string{"editor", "graph", "pull", "error"}
 
 // page is what every template gets; Body is the page's own data.
 type page struct {

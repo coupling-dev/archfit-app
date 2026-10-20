@@ -231,7 +231,7 @@ func TestSeamsDefaultToNotAvailable(t *testing.T) {
 	h.gh.install(7, ghr(70, "org7/app", true))
 	r := repo(7, "org7/app", true)
 	for _, k := range []account.ConsentKind{account.ConsentSourceProcessing, account.ConsentManagedLLM} {
-		if err := h.c.consents.Record(ctx, 7, account.Consent{Kind: k, By: "alice", At: h.clock.Now()}); err != nil {
+		if err := h.c.consents.Record(ctx, 7, account.Consent{Kind: k, By: "alice", ByID: 1, At: h.clock.Now()}); err != nil {
 			t.Fatalf("Record: %v", err)
 		}
 	}
