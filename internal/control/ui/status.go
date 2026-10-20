@@ -65,12 +65,10 @@ func (s *server) apiStatus(r *http.Request, sc scope) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, adminErr := s.sessions.Authorize(r.Context(), sc.user, sc.repo.FullName, permAdmin)
 	body := statusBody{
 		DefaultBranch: sc.repo.DefaultBranch,
 		Stage:         stageWords[progress.Stage],
 		Diagnostic:    progress.Diagnostic,
-		Admin:         adminErr == nil,
 		CanStart:      progress.Stage == onboarding.StageInstalled && progress.OpenDraft == nil,
 		CanDiscover:   reached(progress.Stage, onboarding.StageWorkflowMerged),
 		PullsURL:      "https://github.com/" + sc.repo.FullName + "/pulls?q=" + url.QueryEscape("is:pr head:archfit/"),
@@ -79,21 +77,34 @@ func (s *server) apiStatus(r *http.Request, sc scope) (any, error) {
 	if d := progress.OpenDraft; d != nil {
 		body.DraftURL, body.DraftState = d.URL, draftWords[d.State]
 	}
-	if body.Admin {
-		body.ManagedAI = s.managedAIWord(r.Context(), sc)
-	}
 	body.Steps, body.Next = setupSteps(progress.Stage)
+
+	// The parts below never fail the page, each says so in its own field, and each writes only its own fields: they
+	// run side by side.
+	ctx := r.Context()
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		_, adminErr := s.sessions.Authorize(ctx, sc.user, sc.repo.FullName, permAdmin)
+		if body.Admin = adminErr == nil; body.Admin {
+			body.ManagedAI = s.managedAIWord(ctx, sc)
+		}
+	})
 	if hasReport(progress.Stage) {
-		body.MainState, body.MainReason = s.defaultBranchState(r.Context(), sc.repo)
-		body.MainTone = toneOf(body.MainState)
-		body.Pulls, body.PullsMore, body.PullsError = s.openPulls(r.Context(), sc)
+		wg.Go(func() {
+			body.MainState, body.MainReason = s.defaultBranchState(ctx, sc.repo)
+			body.MainTone = toneOf(body.MainState)
+		})
+		wg.Go(func() { body.Pulls, body.PullsMore, body.PullsError = s.openPulls(ctx, sc) })
 	}
-	st, err := s.account.Status(r.Context(), sc.repo.InstallationID, s.now())
-	if err != nil {
-		slog.Warn("ui entitlement status unavailable", "installation_id", sc.repo.InstallationID)
-	} else {
+	wg.Go(func() {
+		st, err := s.account.Status(ctx, sc.repo.InstallationID, s.now())
+		if err != nil {
+			slog.Warn("ui entitlement status unavailable", "installation_id", sc.repo.InstallationID)
+			return
+		}
 		body.Banner = banner(st)
-	}
+	})
+	wg.Wait()
 	return body, nil
 }
 

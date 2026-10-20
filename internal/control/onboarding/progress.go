@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/proposal"
@@ -34,23 +35,31 @@ func (s *service) derive(ctx context.Context, r api.Repo) (state, error) {
 		return state{}, fmt.Errorf("onboarding: read settings: %w", err)
 	}
 	set, parseErr := settings.Parse(raw)
-	workflowFound := false
-	if found && parseErr == nil {
-		if _, workflowFound, err = s.file(ctx, r, set.Workflow); err != nil {
-			return state{}, fmt.Errorf("onboarding: read workflow: %w", err)
-		}
-	}
-	if !workflowFound {
+	if !found || parseErr != nil {
 		return s.installed(ctx, r, found && parseErr != nil)
 	}
 
-	_, policyFound, err := s.file(ctx, r, policy.PolicyPath)
-	if err != nil {
-		return state{}, fmt.Errorf("onboarding: read policy: %w", err)
-	}
-	reported, err := s.reported(ctx, r, set.Workflow)
-	if err != nil {
-		return state{}, err
+	// The three reads run side by side and are judged in order: the policy and the report count only once the
+	// workflow is there, so their errors never fail a repository that has none.
+	var (
+		wg                           sync.WaitGroup
+		workflowFound, policyFound   bool
+		reported                     bool
+		workflowErr, policyErr, rErr error
+	)
+	wg.Go(func() { _, workflowFound, workflowErr = s.file(ctx, r, set.Workflow) })
+	wg.Go(func() { _, policyFound, policyErr = s.file(ctx, r, policy.PolicyPath) })
+	wg.Go(func() { reported, rErr = s.reported(ctx, r, set.Workflow) })
+	wg.Wait()
+	switch {
+	case workflowErr != nil:
+		return state{}, fmt.Errorf("onboarding: read workflow: %w", workflowErr)
+	case !workflowFound:
+		return s.installed(ctx, r, false)
+	case policyErr != nil:
+		return state{}, fmt.Errorf("onboarding: read policy: %w", policyErr)
+	case rErr != nil:
+		return state{}, rErr
 	}
 	if policyFound {
 		switch {

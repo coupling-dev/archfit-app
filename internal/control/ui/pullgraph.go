@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/alexei-led/archfit-app/internal/control/ui/graph"
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -70,8 +71,17 @@ func escapeRef(ref string) string {
 // then the base, the first whose digest is the report's config_hash. With neither, the head's text (or the base's,
 // when the head has none) and graph.Build marks the view stale. Display only: the gate never reads this text.
 func (s *server) reportPolicy(ctx context.Context, sc scope, pull api.Pull, rep report.Report) (text []byte, ref string, err error) {
-	for _, r := range []string{pull.HeadSHA, pull.BaseRef} {
-		t, _, err := s.gh.files.File(ctx, sc.repo.RepoRef, r, policy.PolicyPath)
+	// Both texts are read side by side and then judged in order, so the base's text or failure counts only when the
+	// head's text is not the report's, as when they were read in turn.
+	refs := []string{pull.HeadSHA, pull.BaseRef}
+	texts, errs := make([][]byte, len(refs)), make([]error, len(refs))
+	var wg sync.WaitGroup
+	for i, r := range refs {
+		wg.Go(func() { texts[i], _, errs[i] = s.gh.files.File(ctx, sc.repo.RepoRef, r, policy.PolicyPath) })
+	}
+	wg.Wait()
+	for i, r := range refs {
+		t, err := texts[i], errs[i]
 		if errors.Is(err, api.ErrNotFound) {
 			continue
 		}

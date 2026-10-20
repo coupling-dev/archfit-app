@@ -341,9 +341,9 @@ func TestGraphPageBuildsFromArtifact(t *testing.T) {
 	if strings.Contains(c.get(path).Body.String(), "MARKER-") {
 		t.Error("a field the decoder drops reached the API")
 	}
-	for _, call := range e.gh.called("Artifact") {
-		if call.detail != fmt.Sprintf("77 archfit-report %d", report.MaxBytes) {
-			t.Errorf("Artifact(%s)", call.detail)
+	for _, call := range e.gh.called("ArtifactByID") {
+		if call.detail != fmt.Sprintf("77 %d", report.MaxBytes) {
+			t.Errorf("ArtifactByID(%s)", call.detail)
 		}
 	}
 }
@@ -791,9 +791,9 @@ func TestPullGraphDrawsTheReportOfItsCheck(t *testing.T) {
 	if got.View.Stale || got.StaleReason != "" {
 		t.Error("the head's policy is the report's, yet the view is stale")
 	}
-	for _, call := range e.gh.called("Artifact") {
+	for _, call := range e.gh.called("ArtifactID") {
 		if !strings.HasPrefix(call.detail, "88 ") {
-			t.Errorf("Artifact(%s): the graph read another run than the check's", call.detail)
+			t.Errorf("ArtifactID(%s): the graph read another run than the check's", call.detail)
 		}
 	}
 	if calls := e.gh.called("LatestRun"); len(calls) != 0 {
@@ -829,6 +829,34 @@ func TestPullPageReadsTheGateModeOfTheBase(t *testing.T) {
 	e.as("alice", permRead).getJSON("/api/repos/"+repoName+"/pulls/4", &body)
 	if !body.Required {
 		t.Error("the base requires the gate, the page says advisory")
+	}
+}
+
+// The pull request page and its graph read their parts side by side, yet each part fails the answer exactly as when
+// they were read in turn.
+func TestPullPartsFailAsWhenReadInTurn(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		fail string
+		want int
+	}{
+		{"settings of the base", "/pulls/4", "File release:" + settings.Path, http.StatusServiceUnavailable},
+		{"the report", "/pulls/4", "ArtifactByID", http.StatusServiceUnavailable},
+		{"the policy of the head", "/pulls/4/graph", "File " + sha(4) + ":" + policy.PolicyPath, http.StatusServiceUnavailable},
+		{"the policy of the base, once the head's is the report's", "/pulls/4/graph", "File release:" + policy.PolicyPath, http.StatusOK},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t)
+			pull := e.gh.pulls[repoName+"#4"]
+			pull.BaseRef = "release"
+			e.gh.pulls[repoName+"#4"] = pull
+			e.checkPull(prArtifact(t, prPolicy))
+			e.gh.setFile(repoName, sha(4), policy.PolicyPath, prPolicy)
+			e.gh.fail[tt.fail] = api.ErrRateLimited
+			wantStatus(t, e.as("alice", permRead).get("/api/repos/"+repoName+tt.path), tt.want)
+		})
 	}
 }
 
@@ -926,6 +954,22 @@ func TestStatusPageShowsBranchPullsAndSetup(t *testing.T) {
 		body := read(e)
 		if !body.PullsError || body.MainState != "attention" {
 			t.Errorf("pulls error = %v, main state = %q", body.PullsError, body.MainState)
+		}
+	})
+	t.Run("every optional part failing at once leaves the page", func(t *testing.T) {
+		e := newEnv(t)
+		setup(e, onboarding.StageAdvisory)
+		e.gh.fail["CheckRuns"] = errors.New("boom")
+		e.gh.fail["OpenPulls"] = errors.New("boom")
+		e.acct.err = errors.New("store down")
+		e.consents.readErr = errors.New("store down")
+		var body statusBody
+		e.as("alice", permAdmin).getJSON(path, &body)
+		if !body.Admin || body.ManagedAI != checkUnknown || body.MainState != stateUnknown || !body.PullsError || body.Banner != "" {
+			t.Errorf("admin %v, managed AI %q, main %q, pulls error %v, banner %q", body.Admin, body.ManagedAI, body.MainState, body.PullsError, body.Banner)
+		}
+		if !stepOf(body, "Advisory").Current {
+			t.Errorf("steps = %+v", body.Steps)
 		}
 	})
 	t.Run("at most maxStatusPulls are looked up", func(t *testing.T) {

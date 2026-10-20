@@ -41,7 +41,7 @@ type fakeGH struct {
 	runs      map[string][]api.WorkflowRun // full name + "@" + workflow + "@" + branch, newest first
 	artifacts map[int64][]byte
 	pulls     map[string]api.Pull // full name + "#" + number
-	fail      map[string]error    // method, or method + " " + full name
+	fail      map[string]error    // method, method + " " + full name, or method + " " + the call's detail
 	calls     []ghCall
 }
 
@@ -56,6 +56,9 @@ func newFakeGH() *fakeGH {
 func (g *fakeGH) record(method string, r api.RepoRef, detail string) error {
 	g.calls = append(g.calls, ghCall{method, r.InstallationID, r.FullName, detail})
 	if err := g.fail[method+" "+r.FullName]; err != nil {
+		return err
+	}
+	if err := g.fail[method+" "+detail]; detail != "" && err != nil {
 		return err
 	}
 	return g.fail[method]
@@ -164,10 +167,10 @@ func (g *fakeGH) CheckRuns(_ context.Context, r api.RepoRef, headSHA, name strin
 	return g.checks[r.FullName+"@"+headSHA+"#"+name], nil
 }
 
-func (g *fakeGH) Pull(_ context.Context, r api.RepoRef, number int) (api.Pull, error) {
+func (g *fakeGH) PullSummary(_ context.Context, r api.RepoRef, number int) (api.Pull, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if err := g.record("Pull", r, strconv.Itoa(number)); err != nil {
+	if err := g.record("PullSummary", r, strconv.Itoa(number)); err != nil {
 		return api.Pull{}, err
 	}
 	p, ok := g.pulls[r.FullName+"#"+strconv.Itoa(number)]
@@ -223,13 +226,26 @@ func (g *fakeGH) addRun(fullName, workflowPath, branch string, run api.WorkflowR
 	g.runs[key] = append([]api.WorkflowRun{run}, g.runs[key]...)
 }
 
-func (g *fakeGH) Artifact(_ context.Context, r api.RepoRef, runID int64, name string, maxBytes int64) ([]byte, error) {
+// ArtifactID names a run's artifact by the run's ID: the fake keeps one artifact per run.
+func (g *fakeGH) ArtifactID(_ context.Context, r api.RepoRef, runID int64, name string) (int64, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if err := g.record("Artifact", r, fmt.Sprintf("%d %s %d", runID, name, maxBytes)); err != nil {
+	if err := g.record("ArtifactID", r, fmt.Sprintf("%d %s", runID, name)); err != nil {
+		return 0, err
+	}
+	if _, ok := g.artifacts[runID]; !ok {
+		return 0, api.ErrNotFound
+	}
+	return runID, nil
+}
+
+func (g *fakeGH) ArtifactByID(_ context.Context, r api.RepoRef, id int64, maxBytes int64) ([]byte, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if err := g.record("ArtifactByID", r, fmt.Sprintf("%d %d", id, maxBytes)); err != nil {
 		return nil, err
 	}
-	a, ok := g.artifacts[runID]
+	a, ok := g.artifacts[id]
 	if !ok {
 		return nil, api.ErrNotFound
 	}

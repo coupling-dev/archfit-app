@@ -501,6 +501,40 @@ func TestProgressErrors(t *testing.T) {
 		})
 	}
 
+	// The workflow, the policy and the report are read side by side but judged in that order.
+	errPolicy := errors.New("policy unreadable")
+	inOrder := []struct {
+		name      string
+		workflow  error
+		wantErr   error
+		wantStage Stage
+	}{
+		{"without a workflow the other failures do not count", api.ErrNotFound, nil, StageInstalled},
+		{"the workflow's failure comes first", api.ErrRateLimited, api.ErrRateLimited, ""},
+	}
+	for _, tc := range inOrder {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.onboard(f.repo, settings.GateAdvisory)
+			f.report(f.repo)
+			f.hub.failWhen(func(op, detail string) error {
+				switch {
+				case op == "LatestRun":
+					return api.ErrRateLimited
+				case op != "File" || detail == settings.Path:
+					return nil
+				case detail == policy.PolicyPath:
+					return errPolicy
+				}
+				return tc.workflow
+			})
+			p, err := f.svc.Progress(context.Background(), f.repo)
+			if !errors.Is(err, tc.wantErr) || p.Stage != tc.wantStage {
+				t.Errorf("got %q, %v; want %q, %v", p.Stage, err, tc.wantStage, tc.wantErr)
+			}
+		})
+	}
+
 	t.Run("PullByHead fails", func(t *testing.T) {
 		f := newFixture(t)
 		proposeOn(t, f, onboardingBranch)
