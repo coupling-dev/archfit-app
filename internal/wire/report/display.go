@@ -1,6 +1,9 @@
 package report
 
-import "slices"
+import (
+	"regexp"
+	"slices"
+)
 
 // Display rules that the PR comment, the App's pull request page and its graph share, so all three tell the same story
 // about cycles and about what a pull request added. None of them is a gate decision.
@@ -172,4 +175,18 @@ var DistanceWords = map[string]string{
 	"cross_module_different_owner": "across modules, different owners",
 	"cross_deploy_unit":            "across services",
 	"declared_external":            "external",
+}
+
+var distanceToken = regexp.MustCompile(`\b([a-z_]+) distance\b`)
+
+// ReadableWhy rewrites the engine's "<token> distance" in a finding's Why as "distance <words>", so the Why says what
+// the tables beside it say. Any other text, and a token DistanceWords does not know, stays as written.
+func ReadableWhy(why string) string {
+	return distanceToken.ReplaceAllStringFunc(why, func(m string) string {
+		token := distanceToken.FindStringSubmatch(m)[1]
+		if w, ok := DistanceWords[token]; ok {
+			return "distance " + w
+		}
+		return m
+	})
 }

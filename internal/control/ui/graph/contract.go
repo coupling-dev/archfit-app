@@ -224,7 +224,7 @@ func Build(rep report.Report, policyText []byte) View {
 	for p, fs := range byPair {
 		slices.SortStableFunc(fs, func(a, b report.Finding) int { return rank(findingStatus(b)) - rank(findingStatus(a)) })
 		for i, f := range fs[:min(len(fs), findingsPerLink)] {
-			lf := LinkFinding{From: p.from, To: p.to, RuleID: f.RuleID, Kind: f.Kind, Status: f.Status, Why: clip(f.Why)}
+			lf := LinkFinding{From: p.from, To: p.to, RuleID: f.RuleID, Kind: f.Kind, Status: f.Status, Why: clip(report.ReadableWhy(f.Why))}
 			if i == findingsPerLink-1 {
 				lf.More = len(fs) - findingsPerLink
 			}

@@ -127,7 +127,7 @@ func outcome(c verdict.Conclusion, reasons ...verdict.Reason) verdict.Outcome {
 
 var (
 	reasonHealthy  = verdict.Reason{Code: verdict.ReasonHealthy, Category: verdict.CategoryArchitecture, Detail: "report " + reportDigest, Next: "Nothing to do."}
-	reasonBlocking = verdict.Reason{Code: verdict.ReasonBlockingFindings, Category: verdict.CategoryArchitecture, Detail: "1 blocking finding", Next: "Fix the blocking findings, then push."}
+	reasonBlocking = verdict.Reason{Code: verdict.ReasonBlockingFindings, Category: verdict.CategoryArchitecture, Detail: "1 blocking finding", Next: "Remove the rule violations, then run the validation command."} // the catalog's Next
 	reasonCoverage = verdict.Reason{Code: verdict.ReasonMissingCoverage, Category: verdict.CategoryEvidence, Detail: "layers/no_upward_imports", Next: "Install the required tool in the workflow, then re-run it."}
 	reasonInvalid  = verdict.Reason{Code: verdict.ReasonReportInvalid, Category: verdict.CategoryEvidence, Detail: "report " + reportDigest, Next: "Re-run the Archfit workflow with the pinned action."}
 	reasonIdentity = verdict.Reason{Code: verdict.ReasonUnknownIdentity, Category: verdict.CategoryEvidence, Detail: "image sha256:0000", Next: "Use the pinned archfit-action version."}

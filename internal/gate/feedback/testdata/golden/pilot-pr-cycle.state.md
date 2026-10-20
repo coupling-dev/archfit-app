@@ -1,6 +1,6 @@
 This check does not block merging: the gate is advisory for this repository.
 
-- **Next:** Fix the blocking findings, then push.
+- **Next:** Remove the rule violations, then run the validation command.
 - Reason: `blocking_findings` (architecture)
 - Detail: 1 blocking finding
 
@@ -31,7 +31,7 @@ This check does not block merging: the gate is advisory for this repository.
 | Imbalanced coupling · critical | `pkg_container` (`pkg/container/appfilter.go`) → `pkg_chaos` (`pkg/chaos/cliflags`) | added | `pkg/container/appfilter.go:4` | functional | across modules | high |
 | Imbalanced coupling · critical | `pkg_util` (`pkg/util/flagports.go`) → `pkg_chaos` (`pkg/chaos/cliflags`) | added | `pkg/util/flagports.go:4` | functional | across modules | high |
 
-Imbalanced coupling · **Why:** balanced coupling: functional integration strength × cross_module distance × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)
+Imbalanced coupling · **Why:** balanced coupling: functional integration strength × distance across modules × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)
 
 </details>
 
@@ -47,7 +47,7 @@ Imbalanced coupling · **Why:** balanced coupling: functional integration streng
 | Imbalanced coupling · critical, baseline | `pkg_runtime` (`pkg/runtime/containerd/addresses.go`) → `pkg_container` (`pkg/container`) | existing | `pkg/runtime/containerd/addresses.go:15`, `pkg/runtime/containerd/client.go:12`, `pkg/runtime/containerd/iptables.go:7` and 12 more | functional | across modules | high |
 | Imbalanced coupling · critical, baseline | `pkg_runtime` (`pkg/runtime/containerd/netem.go`) → `pkg_tc` (`pkg/tc`) | existing | `pkg/runtime/containerd/netem.go:7`, `pkg/runtime/docker/netem.go:7` | functional | across modules | high |
 
-Imbalanced coupling · **Why:** balanced coupling: functional integration strength × cross_module distance × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)
+Imbalanced coupling · **Why:** balanced coupling: functional integration strength × distance across modules × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)
 
 </details>
 

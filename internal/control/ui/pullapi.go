@@ -178,7 +178,7 @@ func fillFindings(body *findingsJSON, rep report.Report) {
 	row := func(f report.Finding, origin string) findingJSON {
 		out := findingJSON{
 			Rule: ruleName(f.RuleID), RuleID: f.RuleID, Meta: findingMeta(f), Violation: f.Active(), From: endpointName(f.Edge.From),
-			To: endpointName(f.Edge.To), Why: f.Why, Fix: f.Constraint, Alternatives: f.AllowedAlternatives,
+			To: endpointName(f.Edge.To), Why: report.ReadableWhy(f.Why), Fix: f.Constraint, Alternatives: f.AllowedAlternatives,
 			Locations: make([]string, len(f.Locations)),
 		}
 		if g.Compared {
@@ -216,7 +216,7 @@ func fillFindings(body *findingsJSON, rep report.Report) {
 		members[c] = append(members[c], vs[i])
 	}
 	for _, m := range members {
-		cy := cycleJSON{Rule: ruleName(m[0].RuleID), RuleID: m[0].RuleID, Meta: findingMeta(m[0]), Violation: m[0].Active(), Why: m[0].Why}
+		cy := cycleJSON{Rule: ruleName(m[0].RuleID), RuleID: m[0].RuleID, Meta: findingMeta(m[0]), Violation: m[0].Active(), Why: report.ReadableWhy(m[0].Why)}
 		for _, f := range m {
 			for _, mod := range []string{f.Edge.From.Module, f.Edge.To.Module} {
 				if !slices.Contains(cy.Modules, mod) {

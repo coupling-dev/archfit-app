@@ -1,4 +1,4 @@
-- **Next:** Fix the blocking findings, then push.
+- **Next:** Remove the rule violations, then run the validation command.
 - Reason: `blocking_findings` (architecture)
 - Detail: 1 blocking finding
 
