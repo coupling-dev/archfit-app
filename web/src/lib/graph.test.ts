@@ -13,6 +13,7 @@ import {
   order,
   problemRows,
   acceptedRows,
+  isAcceptedEarlier,
   smooth,
   worst,
   type GLink,
@@ -158,12 +159,29 @@ describe('acceptedRows', () => {
   ];
 
   it('is the accepted dependencies only, the biggest first', () => {
-    expect(acceptedRows(links, all).map((l) => l.from)).toEqual(['b', 'a']);
+    expect(acceptedRows(links, false, all).map((l) => l.from)).toEqual(['b', 'a']);
   });
 
   it('follows the accepted filter', () => {
-    expect(acceptedRows(links, { ...all, accepted: false })).toEqual([]);
+    expect(acceptedRows(links, false, { ...all, accepted: false })).toEqual([]);
   });
+
+  it('leaves out what the pull request added: that is a problem, listed once', () => {
+    const added = link('e', 'f', 'accepted', 1, { accepted: 'violation', origin: 'added' });
+    const pr = [...links, added];
+    expect(acceptedRows(pr, true, all)).not.toContain(added);
+    expect(problemRows(pr, true, false, all).map((r) => r.link)).toContain(added);
+    expect(acceptedRows(pr, false, all)).toContain(added); // the repository graph claims nothing added
+  });
+});
+
+describe('isAcceptedEarlier', () => {
+  it.each([
+    ['accepted, existing', link('a', 'b', 'accepted', 1, { origin: 'existing' }), true, true],
+    ['accepted, added in this PR', link('a', 'b', 'accepted', 1, { origin: 'added' }), true, false],
+    ['accepted, added, on the repository graph', link('a', 'b', 'accepted', 1, { origin: 'added' }), false, true],
+    ['a violation', link('a', 'b', 'violation', 1), true, false],
+  ])('%s', (_, l, pull, want) => expect(isAcceptedEarlier(l, pull)).toBe(want));
 });
 
 describe('focus', () => {

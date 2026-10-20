@@ -525,7 +525,9 @@ on the pull request links to this page ("Details in Archfit").
   the dimensions and, folded, what the engine could not measure ("To measure more").
 - GitHub's **Details** link on the Archfit checks opens this page.
 - Badges under the result say whether the gate is required or advisory, whether this run had a baseline, whether it
-  compared against the base branch, and which run it is (a link to the checks). Hover a badge for its meaning.
+  compared against the base branch, and which run it is (a link to the checks), with its report `customer-attested`:
+  Archfit authenticates the producer, not the content. Hover a badge for its meaning. A required gate blocks merging
+  only where a GitHub ruleset requires `archfit/gate`.
   Without that comparison, "new" means not accepted in a baseline, not "added by this pull request".
 - **Evidence** has one row per dimension: what the engine measured, in its own words and counts ("classified source
   files: 3 of 3"), its confidence, and its **Result**: pass, warn or fail.
@@ -546,9 +548,10 @@ the policy and the dependencies between them in the latest default-branch report
   policy. **Legend** above the graph says the same.
 - The unit on the graph is a **dependency**: one module that depends on another (A → B). A cycle between two modules
   is two dependencies. Status chips count the dependencies per status and filter them. The **Problems** list above the
-  graph holds the violations, then the advisories, one row each (a cycle's rows say "cycle"); its number is the sum of
-  those two chips. Accepted debt is no problem: it sits in **Accepted earlier**, folded under the list, and is drawn
-  thin and faint. A repository with no violation or advisory shows no problem.
+  graph holds the violations, then the advisories, one row each (a cycle's rows say "cycle"); on the repository graph
+  its number is the sum of those two chips. On a pull request graph it also holds every other dependency the pull
+  request added, accepted or not. Accepted debt is no problem: it sits in **Accepted earlier**, folded under the list,
+  and is drawn thin and faint. A repository with no violation or advisory shows no problem.
 - Select a problem, a line, a matrix cell or a module (click, or Tab and Enter) to see it in the panel on the right.
   A dependency shows its status, its integration strength, distance, volatility and balance, up to 5 current findings
   that name it, the strongest first, and a link to its module in the policy. Its volatility is the engine's for that

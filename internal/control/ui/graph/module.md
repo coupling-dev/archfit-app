@@ -182,7 +182,7 @@ func Build(rep Report, policy []byte) View
 8. `policy.Modules` error (invalid YAML): nodes come only from rule 6, and `Stale` is true whatever the digests say.
    The caller is expected to keep showing the view of the last valid text, marked stale (the parent does).
 9. Order: `Nodes` by `Name`, `Links` by `(From, To)`, byte-wise ascending. The same input always gives the same output.
-10. `Build` never fails and never panics. A zero `Report` with an empty policy gives an empty, stale, incomplete `View`.
+10. `Build` never fails and never panics. A zero `Report` with an empty policy gives an empty, stale `View` that is not incomplete (rule 11).
 11. `Incomplete = HardGates == "unmeasured" || len(UnevaluatedRequiredRules) > 0 || any dimension with Status ==
     "unmeasured" and Gate != "not_applicable"`. The engine did not evaluate everything the gate needs, so an
     `observed` link may still be a forbidden edge it did not evaluate. `fail` is not incomplete: the violations that

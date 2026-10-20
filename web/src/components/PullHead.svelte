@@ -35,7 +35,7 @@
     </div>
     <div class="box-foot row">
       {#if head.required}
-        <span class="label danger" title="archfit/gate is a required check: a failing result blocks the merge.">Required gate</span>
+        <span class="label danger" title="The settings require archfit/gate. A failing result blocks merging only where a GitHub ruleset requires that check.">Required gate</span>
       {:else}
         <span class="label" title="The settings on the base branch do not require archfit/gate.">Advisory: does not block merging</span>
       {/if}
@@ -49,7 +49,8 @@
           <span class="label" title="This run did not compare with the base branch, so nothing can be called added by this pull request.">Not compared with base branch</span>
         {/if}
         <span class="muted" title="The report comes from your CI run. Archfit authenticates who produced it; it does not check the content.">
-          {#if safeHref(head.checks_url)}<a href={safeHref(head.checks_url)} rel="noreferrer">Run {head.run_id}</a>{:else}Run {head.run_id}{/if}
+          {#if safeHref(head.checks_url)}<a class="inline" href={safeHref(head.checks_url)} rel="noreferrer">Run {head.run_id}</a>{:else}Run {head.run_id}{/if}
+          · customer-attested
         </span>
       {/if}
     </div>

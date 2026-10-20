@@ -60,7 +60,7 @@
   const part = $derived(view ? (focused ? focus(view, pull) : { nodes: view.nodes, links: view.links }) : null);
   const drawnLinks = $derived(part ? part.links.filter((l) => show[l.status]) : []);
   const rows = $derived(view ? problemRows(view.links, pull, ui.emphasis, show) : []);
-  const accepted = $derived(view ? acceptedRows(view.links, show) : []);
+  const accepted = $derived(view ? acceptedRows(view.links, pull, show) : []);
   const counts = $derived(
     statuses.map((s) => [s, view ? view.links.filter((l) => l.status === s).length : 0] as const).filter(([, n]) => n),
   );

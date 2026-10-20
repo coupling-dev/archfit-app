@@ -3,6 +3,7 @@
     balanceWord,
     countWord,
     findingsOf,
+    isAcceptedEarlier,
     isAdded,
     isProblem,
     linkKey,
@@ -76,7 +77,7 @@
         <dt>Problems</dt>
         <dd>{view.links.filter((l) => isProblem(l, pull)).length}</dd>
         <dt>Accepted earlier</dt>
-        <dd>{view.links.filter((l) => l.status === 'accepted').length}</dd>
+        <dd>{view.links.filter((l) => isAcceptedEarlier(l, pull)).length}</dd>
         {#if pull}<dt>Added in this PR</dt>
           <dd>{view.links.filter((l) => isAdded(l, pull)).length}</dd>{/if}
       </dl>

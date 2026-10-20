@@ -150,6 +150,12 @@ export function isProblem(l: GLink, pull: boolean): boolean {
   return problemStatus[l.status] || isAdded(l, pull);
 }
 
+// isAcceptedEarlier is known debt: accepted, and not added by this pull request. An accepted dependency the pull request
+// added is new to the reviewer, so it stays a problem and is never drawn faint.
+export function isAcceptedEarlier(l: GLink, pull: boolean): boolean {
+  return l.status === 'accepted' && !isAdded(l, pull);
+}
+
 export function linkKey(l: { from: string; to: string }): string {
   return JSON.stringify([l.from, l.to]);
 }
@@ -174,7 +180,7 @@ export function balanceWord(l: GLink): string {
 export interface ProblemRow {
   key: string;
   link: GLink;
-  cycle: boolean; // the other direction is a problem of the same status too
+  cycle: boolean; // the other direction is a problem too, of any status
   added: boolean;
 }
 
@@ -204,9 +210,9 @@ export function problemRows(
 }
 
 // acceptedRows is the dependencies known and accepted earlier, by import count: the collapsed group under the problems.
-export function acceptedRows(links: GLink[], show: Record<Status, boolean>): GLink[] {
+export function acceptedRows(links: GLink[], pull: boolean, show: Record<Status, boolean>): GLink[] {
   return links
-    .filter((l) => l.status === 'accepted' && show.accepted)
+    .filter((l) => isAcceptedEarlier(l, pull) && show.accepted)
     .sort((a, b) => b.count - a.count || linkKey(a).localeCompare(linkKey(b)));
 }
 

@@ -372,6 +372,36 @@ func TestPullGraphStates(t *testing.T) {
 	}
 }
 
+// TestFindingsBlockedOnlyForTheHead: the overview shows the engine's blocked verdict over the head's check only when the
+// report is the head's. A newer head whose run has not reported yet keeps its own check word.
+func TestFindingsBlockedOnlyForTheHead(t *testing.T) {
+	tests := []struct {
+		name    string
+		advance bool // a commit lands on the default branch after the report's run
+		want    bool
+	}{
+		{"the report of the head", false, true},
+		{"the report of an older commit", true, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t)
+			e.gh.setFile(repoName, mainBranch, ".archfit.yaml", prPolicy)
+			e.publishReport(repoName, prArtifact(t, prPolicy))
+			if tt.advance {
+				e.gh.mu.Lock()
+				e.gh.heads[repoName+"@"+mainBranch] = sha(99)
+				e.gh.mu.Unlock()
+			}
+			var f repoFindingsJSON
+			e.as("alice", permRead).getJSON("/api/repos/"+repoName+"/findings", &f)
+			if f.Unavailable != "" || f.ViolationCount == 0 || f.Blocked != tt.want {
+				t.Errorf("blocked = %v, want %v (findings %+v)", f.Blocked, tt.want, f)
+			}
+		})
+	}
+}
+
 // TestDefaultGraphClaimsNothingNew: "added by this PR" belongs to the pull request pages, even when a default-branch
 // report carries a comparable origin. The overview's findings, from the same report, claim nothing either.
 func TestDefaultGraphClaimsNothingNew(t *testing.T) {

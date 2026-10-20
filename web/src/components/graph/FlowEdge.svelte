@@ -25,8 +25,10 @@
   const at = $derived(data.label ?? { x: data.pts[Math.floor(data.pts.length / 2)][0], y: data.pts[Math.floor(data.pts.length / 2)][1] });
   const text = $derived(String(l.count || '·'));
   const w = $derived(12 + text.length * 7);
-  // Accepted debt is drawn thin and faint, so a repository with no active problem does not look alarming.
-  const width = $derived(l.status === 'accepted' ? Math.min(lineWidth(l), acceptedWidth) : lineWidth(l));
+  // Accepted debt is drawn thin and faint, so a repository with no active problem does not look alarming. What this pull
+  // request added is new, accepted or not: the faint style is only for debt accepted earlier.
+  const faint = $derived(l.status === 'accepted' && !data.added);
+  const width = $derived(faint ? Math.min(lineWidth(l), acceptedWidth) : lineWidth(l));
   const name = $derived(
     `${l.from} to ${l.to}, ${countWord(l)}, ${linkStatusWord(l)}, ${measured(l) ? strengthWord[l.strength] : 'strength not measured'}${data.added ? ', added by this PR' : ''}`,
   );
@@ -41,6 +43,7 @@
 <g
   class="g-edge {l.status}"
   class:unmeasured={!measured(l)}
+  class:faint
   class:muted={data.muted}
   class:dim={data.dim}
   class:sel={data.sel}

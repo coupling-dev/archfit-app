@@ -58,10 +58,11 @@ pilot; product.md leaves usability targets open.
   layout, so a large graph never blocks the page; a worker that fails to load or throws fails the layout with "The
   layout failed: the layout worker stopped", and the next layout starts a fresh one): colour is the status, line width the integration strength (contract thinnest, intrusive thickest), a dashed
   line a strength no seam measured, the label the dependency count, a dashed module one outside the policy, a halo a
-  dependency the pull request added. Status chips that filter, a problem list (violations, then advisories, then
-  accepted; the two directions of a cycle with one status are one row, and selecting it highlights and explains both),
+  dependency the pull request added. Status chips that filter, a problem list (one row per dependency: the violations, then the advisories, and on a pull
+  request graph the other dependencies it added; a direction whose reverse is a problem too says "cycle"), a folded
+  "Accepted earlier" group (accepted debt this pull request did not add, drawn thin and faint),
   an ELK layered layout (declared layers as partitions, in policy order), focus on problem links above 15 modules
-  **[default]**, a matrix view, an inspector with strength, distance, volatility and balance, a folded legend, and
+  **[default]**, a matrix view, an inspector with strength, distance, volatility and balance, a legend open by default, and
   filterable tables, which are the only view above 300 modules. Report strings reach the page only as Svelte text and
   attributes.
 - Bounds, each **[default]**: 100 repositories on the overview, 8 parallel lookups, 256 KB policy text, 512 KB request body,
@@ -131,7 +132,9 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   default-branch report against the policy on that branch. No link carries an origin.
 - `GET /api/repos/{o}/{n}/findings` [read] — `{unavailable, branch, no_baseline, blocked, …}`: the latest default-branch
   report's findings in the pull request page's groups, without origins. `blocked` is the engine's verdict (`blocked`
-  or `hard_gates: fail`): the overview shows "violations found" over a neutral check, never "attention".
+  or `hard_gates: fail`), set only when the report's run analyzed the default branch's current head: the overview's
+  default-branch state then shows "violations found" over a neutral check, never "attention". The rows of open pull
+  requests and of the repository list still show their check's word, since ui reads no report for them.
 - `GET /api/repos/{o}/{n}/overview` [read] — default-branch state, open pull requests with their result, setup steps,
   onboarding progress, entitlement banner, history links, and whether the user may start onboarding or discovery.
   `next` is the next setup step in one sentence and `next_how` its details, both from the onboarding stage.
@@ -1178,8 +1181,10 @@ others are done, so the handler chain's recover still answers `500` and the proc
   folded table with each distinct reason once. At most 50 per group with the rest counted (group counts are of
   findings), 3 locations per finding with the rest folded. "This PR" only when `origin_status` is `comparable`: a
   cycle direction reads `report.PairOrigin` (the comment's rule, so the comment, this page and the graph agree), any
-  other finding its own `origin` (`introduced` is added, `pre_existing` existed before). Badges for "no baseline"
-  (`gate_reference.baseline_present`), "compared with base" or "PR attribution unavailable", and "customer-attested";
+  other finding its own `origin` (`introduced` is added, `pre_existing` existed before). Badges for the gate
+  ("Required gate" or "Advisory: does not block merging"), "No baseline" (`gate_reference.baseline_present`),
+  "Compared with base branch" or "Not compared with base branch", and the run as a link with "customer-attested",
+  each explained in a tooltip;
   the exact `agent_tasks` array with a copy button; the nine dimensions with readable names (the engine key as a
   tooltip) and every unknown fact in one folded "To measure more" group. Engine strings are JSON data that the web
   app renders as text. Two tabs above the result, **Findings** (this page) and **Graph** (the pull request graph).

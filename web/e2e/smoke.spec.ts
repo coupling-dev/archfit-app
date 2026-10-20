@@ -537,6 +537,7 @@ test('pull request: the cycle drawn as on the comment, then the other findings',
   await expect(page.getByRole('link', { name: '#4' })).toHaveAttribute('aria-current', 'page');
   await expect(page.locator('#result')).toHaveText('violations found');
   await expect(page.getByText('Advisory: does not block merging')).toBeVisible();
+  await expect(page.locator('.result .box-foot')).toContainText('customer-attested');
   const cycle = page.getByRole('article').filter({ hasText: 'Dependency cycle between pkg_chaos and pkg_container' });
   await expect(cycle.locator('svg path.arrow')).toHaveCount(2);
   await expect(cycle.locator('svg path.arrow.added')).toHaveCount(1);
