@@ -683,6 +683,15 @@ test('pull request: the cycle drawn as on the comment, then the other findings',
   await expect(evidence.getByRole('row', { name: /Drift/ })).toContainText('not applicable');
   await expectClean(page);
 
+  // a fold first in its box draws no rule above it; a dimension that warns stands out
+  await expect(page.locator('#tasks').locator('xpath=ancestor::section').locator('details.disclosure')).toHaveCSS(
+    'border-top-width',
+    '0px',
+  );
+  await expect(evidence.getByRole('row', { name: /Change locality/ }).getByRole('cell').last()).toHaveCSS(
+    'font-weight',
+    '600',
+  );
   await page.getByRole('button', { name: 'Copy 1 task' }).click();
   await expect(page.getByRole('status')).toHaveText('Copied 1 task.');
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(pull.tasks);
@@ -817,6 +826,9 @@ test('graph: the incomplete banner shows only when the report says it is', async
   await expect(page.locator('.g-node')).toHaveCount(4);
   await expect(page.locator('#incomplete')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '2 with a violation' })).toBeVisible(); // a failed gate is the violations
+  // no banner, no empty block: an empty one would add a second gap to the page's flow
+  const empty = await page.locator('main > *').evaluateAll((els) => els.filter((e) => e.getBoundingClientRect().height === 0).length);
+  expect(empty).toBe(0);
 });
 
 test('graph: a repository with only accepted debt has no problems and draws it faint', async ({ page }) => {

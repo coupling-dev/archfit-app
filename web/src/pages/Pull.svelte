@@ -100,7 +100,7 @@
                   <td data-label="Status">{d.status}</td>
                   <td data-label="Measured">{basisText(d)}</td>
                   <td data-label="Confidence">{d.confidence}</td>
-                  <td data-label="Result">{resultWord(d.gate)}</td>
+                  <td data-label="Result" class="result-{d.gate}">{resultWord(d.gate)}</td>
                 </tr>
               {/each}
             </tbody>
