@@ -190,3 +190,18 @@ func ReadableWhy(why string) string {
 		return m
 	})
 }
+
+// BalancingMoves reads the engine's seam hypothesis in the words of Balanced Coupling (integration strength, distance,
+// volatility). A hypothesis it does not know has no entry; callers show the token as written.
+var BalancingMoves = map[string]string{
+	"introduce_contract":    "Introduce a contract: lower the integration strength, so the target can change without breaking this module",
+	"move_functionality":    "Move the functionality: lower the distance, so the coupled code lives in one module",
+	"accept_low_volatility": "Accept it: the target rarely changes, so the strength costs little",
+	"declare_volatility":    "Declare the volatility of the module in the policy: undeclared volatility is scored as high",
+	"expected_by_role":      "Expected for the role of the module: no change needed",
+	"follow_rule":           "A rule violation covers this pair: follow its Fix",
+	"balanced":              "Balanced: no change needed",
+}
+
+// MetricRulePrefix starts the rule ID of a metric ratchet finding, which has no module edge.
+const MetricRulePrefix = "metric/"

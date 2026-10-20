@@ -172,9 +172,16 @@ func TestMarshalledReportHasNoDroppedKey(t *testing.T) {
 
 			keys := map[string]bool{}
 			collectKeys(parseDoc(t, marshalled), keys)
-			for _, dropped := range []string{"matched_by", "declarations", "measurement", "provenance", "denominator", "hypothesis", "scores"} {
+			for _, dropped := range []string{"declarations", "measurement", "provenance", "denominator", "scores"} {
 				if keys[dropped] {
 					t.Errorf("marshalled report has a %q key", dropped)
+				}
+			}
+			for _, f := range first.Findings {
+				for key := range f.MatchedBy {
+					if !slices.Contains(MatchedByKeys, key) {
+						t.Errorf("finding %s kept matched_by key %q", f.ID, key)
+					}
 				}
 			}
 			if second := mustDecodeAs(t, marshalled, release); !reflect.DeepEqual(first, second) {

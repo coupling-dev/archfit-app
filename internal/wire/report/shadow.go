@@ -86,7 +86,7 @@ type shadowFinding struct {
 	Severity            *string           `json:"severity"`
 	Confidence          *string           `json:"confidence"`
 	Edge                *shadowEdge       `json:"edge"`
-	MatchedBy           map[string]string `json:"matched_by"` // dropped
+	MatchedBy           map[string]string `json:"matched_by"` // only MatchedByKeys are kept
 	Locations           []shadowLocation  `json:"locations"`
 	Why                 *string           `json:"why"`
 	Constraint          *string           `json:"constraint"`
@@ -218,6 +218,7 @@ type shadowSeam struct {
 	Volatility *string `json:"volatility"`
 	Severity   string  `json:"severity"`
 	Policy     *string `json:"policy"`
+	Hypothesis string  `json:"hypothesis"`
 
 	// Dropped.
 	ScoredEdges          int               `json:"scored_edges"`
@@ -231,7 +232,6 @@ type shadowSeam struct {
 	LabelEvidenceHash    string            `json:"label_evidence_hash"`
 	Confidence           string            `json:"confidence"`
 	RoleExpectation      string            `json:"role_expectation"`
-	Hypothesis           string            `json:"hypothesis"`
 	Labels               []string          `json:"labels"`
 	DistributedMonolith  bool              `json:"distributed_monolith"`
 	RawDistance          shadowRawDistance `json:"raw_distance"`
