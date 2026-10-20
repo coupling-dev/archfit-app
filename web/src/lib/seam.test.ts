@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { GLink } from './graph';
-import { crossesWord, crossingWord, flaggedSummary, flagWord, moveWord, quadrantWord } from './seam';
+import {
+  crossesWord,
+  crossingWord,
+  decisionWord,
+  flaggedSummary,
+  flagWord,
+  metricWord,
+  moveWord,
+  quadrantWord,
+} from './seam';
 
 const link = (more: Partial<GLink> = {}): GLink => ({
   from: 'a',
@@ -71,5 +80,21 @@ describe('seam words', () => {
     expect(flaggedSummary([flagged('module_boundary'), flagged('deploy_unit'), flagged('ownership')])).toBe(
       '3 dependencies couple strongly across a module boundary at high volatility; 1 of them across a deploy unit, a distributed monolith.',
     );
+  });
+
+  it.each([
+    ['fail', 4, 'hard gates failed on 4 findings.'],
+    ['fail', 1, 'hard gates failed on 1 finding.'],
+    ['fail', 0, 'hard gates failed without a blocking finding; the archfit/state check says why.'],
+    ['unmeasured', 0, 'hard gates could not be measured; the archfit/state check lists what is missing.'],
+    ['pass', 0, ''],
+    ['later', 2, ''],
+  ])('states hard gates %s with %d blockers', (hard_gates, blockers, want) => {
+    expect(decisionWord({ hard_gates, blockers })).toBe(want);
+  });
+
+  it('names a finding without a dependency by its metric', () => {
+    expect(metricWord('metric/fan_out')).toBe('metric fan_out');
+    expect(metricWord('map/uncovered_path')).toBe('no dependency');
   });
 });

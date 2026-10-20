@@ -61,3 +61,24 @@ export function flaggedSummary(links: GLink[]): string {
   if (deploy) s += `; ${deploy} of them across a deploy unit, a distributed monolith`;
   return s + '.';
 }
+
+// decisionWord is the engine's hard gates in one sentence; '' when they passed or the value is one it does not know.
+export function decisionWord(d: { hard_gates: string; blockers: number }): string {
+  switch (d.hard_gates) {
+    case 'fail':
+      return d.blockers
+        ? `hard gates failed on ${d.blockers} ${d.blockers === 1 ? 'finding' : 'findings'}.`
+        : 'hard gates failed without a blocking finding; the archfit/state check says why.';
+    case 'unmeasured':
+      return 'hard gates could not be measured; the archfit/state check lists what is missing.';
+  }
+  return '';
+}
+
+// ownerDecisionTitle explains an agent task the engine marks needs_owner_decision.
+export const ownerDecisionTitle = 'Archfit leaves this to the repository owner: a policy decision, not a code change.';
+
+// metricWord names a finding with no dependency: a metric ratchet by its metric, anything else as such.
+export function metricWord(ruleID: string): string {
+  return ruleID.startsWith('metric/') ? `metric ${ruleID.slice('metric/'.length)}` : 'no dependency';
+}

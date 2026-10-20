@@ -126,6 +126,8 @@ const direction = (from: string, to: string, origin: string, n: number) => ({
   strength: 'model',
   distance: 'across modules',
   volatility: 'high',
+  hypothesis: '',
+  owner_decision: false,
 });
 
 const pull = {
@@ -146,6 +148,12 @@ const pull = {
   run_id: 88,
   no_baseline: true,
   compared: true,
+  decision: {
+    hard_gates: 'fail',
+    blockers: 3,
+    unevaluated: [{ rule_id: 'layers', reason: 'selector matches no module' }],
+    origin_reasons: [],
+  },
   violation_count: 3,
   cycles: [
     {
@@ -172,8 +180,18 @@ const pull = {
       fix: 'Go through the repository.',
     },
   ],
-  advisory_count: 1,
-  advisories: [{ ...direction('ui', 'store', '', 1), rule: 'layering', rule_id: 'layering', why: 'UI skips a layer.' }],
+  advisory_count: 2,
+  advisories: [
+    {
+      ...direction('ui', 'store', '', 1),
+      rule: 'layering',
+      rule_id: 'layering',
+      why: 'UI skips a layer.',
+      hypothesis: 'move_functionality',
+      owner_decision: true,
+    },
+    { ...direction('', '', '', 0), rule: 'metric/fan_out', rule_id: 'metric/fan_out', meta: 'medium' },
+  ],
   accepted_count: 1,
   accepted: [{ ...direction('x', 'y', '', 1), meta: 'low, baseline' }],
   omitted: 0,
@@ -194,7 +212,14 @@ const pull = {
   task_count: 1,
 };
 
-const findings = { ...pull, unavailable: '', branch: 'main', compared: false };
+const findings = {
+  ...pull,
+  unavailable: '',
+  branch: 'main',
+  compared: false,
+  advisory_count: 1,
+  advisories: pull.advisories.slice(0, 1),
+};
 
 const gnode = (name: string, layer: string, policy_line: number, volatility = '', subdomain = '') => ({
   name,
@@ -540,8 +565,17 @@ test('pull request: the cycle drawn as on the comment, then the other findings',
   await expect(cycle.getByText('Fix:')).toBeVisible();
   await expect(page.getByText('Go through the repository.')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Graph' })).toHaveAttribute('href', '/r/acme/app/pull/4/graph');
+  await expect(page.locator('#decision')).toContainText('Engine decision: hard gates failed on 3 findings.');
+  await expect(page.locator('#decision')).toContainText('layers: selector matches no module');
   await page.getByText('Advisories · never block').click();
   await expect(page.getByText('UI skips a layer.')).toBeVisible();
+  const advisories = page.locator('#advisories');
+  await expect(advisories).toContainText(
+    'layering · Suggested move: Move the shared functionality into one module: that removes the boundary.',
+  );
+  await expect(advisories.getByText('owner decision')).toBeVisible();
+  await expect(advisories).toContainText('metric fan_out');
+  await expect(advisories).not.toContainText('(no module)');
   await page.getByText('To measure more').click();
   await expectClean(page);
 

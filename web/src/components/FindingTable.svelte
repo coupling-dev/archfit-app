@@ -1,6 +1,7 @@
 <script lang="ts">
   // A group that never blocks (advisories, accepted debt): one fold, a table, then each distinct reason once.
   import type { Finding } from '../lib/api';
+  import { metricWord, moveWord, ownerDecisionTitle } from '../lib/seam';
   import Locations from './Locations.svelte';
   import Origin from './Origin.svelte';
 
@@ -19,6 +20,7 @@
       for (const [label, text] of [
         ['Why', f.why],
         ['Fix', f.fix],
+        ['Suggested move', moveWord[f.hypothesis] ?? ''],
       ]) {
         const key = `${f.rule_id}\u0000${label}\u0000${text}`;
         if (text && !seen[key]) {
@@ -46,8 +48,15 @@
       <tbody>
         {#each rows as f, i (i)}
           <tr>
-            <td><span title={f.rule_id}>{f.rule}</span> <span class="muted small">· {f.meta}</span></td>
-            <td class="nowrap"><code>{f.from}</code> → <code>{f.to}</code></td>
+            <td>
+              <span title={f.rule_id}>{f.rule}</span> <span class="muted small">· {f.meta}</span>
+              {#if f.owner_decision}<span class="label" title={ownerDecisionTitle}>owner decision</span>{/if}
+            </td>
+            <td class="nowrap">
+              {#if f.from || f.to}<code>{f.from}</code> → <code>{f.to}</code>{:else}<span class="muted small"
+                  >{metricWord(f.rule_id)}</span
+                >{/if}
+            </td>
             {#if compared}<td><Origin origin={f.origin} /></td>{/if}
             <td><Locations locations={f.locations} /></td>
           </tr>
