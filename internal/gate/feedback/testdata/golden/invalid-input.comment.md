@@ -5,11 +5,11 @@
 **Next:** Re-run the Archfit workflow with the pinned action.
 
 <details>
-<summary>Evidence, inputs and validation</summary>
+<summary>Evidence and inputs</summary>
 
 ### Decision
 
-- `report_invalid` (evidence): report 4444444444444444444444444444444444444444444444444444444444444444. Next: Re-run the Archfit workflow with the pinned action.
+- Report invalid (evidence): report 4444444444444444444444444444444444444444444444444444444444444444 · code `report_invalid`
 
 ### Evidence gaps
 

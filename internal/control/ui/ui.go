@@ -30,7 +30,7 @@ type Deps struct {
 	Now        func() time.Time
 }
 
-// The parts of the github/api role interfaces ui calls.
+// The parts of github/api ui calls: role-interface methods and the *Client readers kept for the UI.
 type (
 	fileReader interface {
 		File(ctx context.Context, r api.RepoRef, ref, path string) (content []byte, blobSHA string, err error)
@@ -42,10 +42,11 @@ type (
 	workflows interface {
 		Dispatch(ctx context.Context, r api.RepoRef, workflowPath, ref string, inputs map[string]string) error
 		LatestRun(ctx context.Context, r api.RepoRef, workflowPath string, f api.RunFilter) (api.WorkflowRun, error)
-		Artifact(ctx context.Context, r api.RepoRef, runID int64, name string, maxBytes int64) ([]byte, error)
+		ArtifactID(ctx context.Context, r api.RepoRef, runID int64, name string) (int64, error)
+		ArtifactByID(ctx context.Context, r api.RepoRef, id int64, maxBytes int64) ([]byte, error)
 	}
 	pullReader interface {
-		Pull(ctx context.Context, r api.RepoRef, number int) (api.Pull, error)
+		PullSummary(ctx context.Context, r api.RepoRef, number int) (api.Pull, error)
 		OpenPulls(ctx context.Context, r api.RepoRef) ([]api.Pull, error)
 	}
 	repoLister interface {
@@ -71,6 +72,7 @@ type server struct {
 	proposals  proposal.Proposals
 	now        func() time.Time
 	shell      shellPage
+	reports    *reportCache
 }
 
 // New returns the UI mounted at "/". It serves the web app's build from the binary.
@@ -94,6 +96,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 		proposals:  d.Proposals,
 		now:        d.Now,
 		shell:      newShell(web),
+		reports:    newReportCache(reportCacheBytes),
 	}
 
 	mux := http.NewServeMux()

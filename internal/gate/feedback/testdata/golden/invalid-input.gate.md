@@ -3,7 +3,7 @@
 - Detail: report 4444444444444444444444444444444444444444444444444444444444444444
 
 <details>
-<summary>Evidence, inputs and validation</summary>
+<summary>Evidence and inputs</summary>
 
 ### Inputs and identity
 

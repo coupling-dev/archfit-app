@@ -616,10 +616,12 @@ func ValidHeadSHA(sha string) bool
 - **Volatility**: high (this side), low (github/api)
 - **Balanced?**: yes — contract coupling
 - **Shared knowledge**: `Deps.GitHub` is used as `Repos` (`File`, `BranchHead`; and whole, with `Users`, as the
-  argument of `session.New`), `Checks` (`CheckRuns`, read only), `Actions` (`LatestRun`,
-  `Artifact`, `Dispatch`) and `Users` (`UserRepos`). ui builds `FileChange` values. `ErrNotFound` is the sentinel for a
+  argument of `session.New`), `Checks` (`CheckRuns`, read only), `Pulls` (`OpenPulls`), `Actions` (`LatestRun`,
+  `Dispatch`), `Users` (`UserRepos`), and the `*Client` readers outside the role interfaces `PullSummary`, `ArtifactID`
+  and `ArtifactByID`, which ui declares as its own small interfaces. ui builds `FileChange` values. `ErrNotFound` is the sentinel for a
   missing file, run or artifact; `ErrRateLimited` is the sentinel after bounded backoff. `TokenSource` is an opaque part
-  of `New`'s signature for this module. `Pull` is the github/api pull-request record; ui never sees one. The check names
+  of `New`'s signature for this module. `Pull` is the github/api pull-request record; ui reads it without the merge
+base. `WithCallStats` counts the GitHub round trips of one request for its log line. The check names
   `archfit/state` and `archfit/gate` and the artifact name `archfit-report` are GitHub objects of the root contract.
 
 <!-- contract: RepoRef, Repo, ErrNotFound, ErrRateLimited, ErrUserTokenRejected — restated from internal/github/api/module.md -->
@@ -776,6 +778,19 @@ type Users interface {
 type Client struct{ /* unexported */ }
 
 func New(ts TokenSource, hc *http.Client) *Client
+
+// Readers outside the role interfaces, for the UI only; the gate and its children never call them.
+func (c *Client) PullSummary(ctx context.Context, r RepoRef, number int) (Pull, error) // Pull without the merge base
+func (c *Client) ArtifactID(ctx context.Context, r RepoRef, runID int64, name string) (int64, error)
+func (c *Client) ArtifactByID(ctx context.Context, r RepoRef, id int64, maxBytes int64) ([]byte, error)
+
+// CallStats counts the round trips sent under one context and their summed time; concurrent calls add up past
+// the wall-clock time. Token minting is not counted. Safe for concurrent use.
+type CallStats struct{ /* unexported */ }
+
+func WithCallStats(ctx context.Context) (context.Context, *CallStats)
+func (s *CallStats) Calls() int64
+func (s *CallStats) Duration() time.Duration
 ```
 
 ### internal/wire/policy
@@ -1045,7 +1060,36 @@ type OAuth interface {
 6. Repository routes: `Sessions.Authorize(user, "{o}/{n}", min)` on every request, pages and `/api/repos/{o}/{n}/…`
    alike. The returned `Repo` is handed to the handler as an argument and is the only repository identity it may use.
 
-Every response carries an `X-Request-Id` header with the request ID of its log line **[default]**.
+Every response carries an `X-Request-Id` header with the request ID of its log line **[default]**. That line, `ui request`
+at `INFO`, one per request, also carries `gh_calls` and `gh_ms`: the GitHub round trips the request made (session's
+included, token minting not) and their time summed, so calls that ran side by side add up past `duration_ms`. Numbers
+only: never a URL, a route of GitHub's or a token.
+
+### Report cache
+
+- The report artifacts this instance downloaded, kept by bytes: at most 32 MiB **[default]**, least recently used out
+  first, of a 512 MiB instance (`infra/runtime/services.tf`). An artifact alone over the bound is never kept. An
+  artifact never changes, so an entry never goes stale and nothing expires it.
+- Key: installation ID, repository full name and artifact ID. One repository never reads another's artifact, whatever
+  IDs GitHub hands out.
+- It sits behind the per-request authorization: a handler reads it only with the `Repo` its route authorized. Every
+  request still lists the run's artifacts (`ArtifactID`) as the installation, so a removed repository or an expired
+  artifact is GitHub's answer, never the cache's; only the download (`ArtifactByID`) is saved.
+- Payloads are shared and never modified. The pull request page checks the SHA-256 of the bytes against its check
+  on every request, hit or miss.
+
+### Reads side by side
+
+Independent GitHub reads of one request run concurrently, and each part fails the answer exactly as when they ran in
+turn: the results are judged in the old order. A panic in a part is raised again on the request's goroutine once the
+others are done, so the handler chain's recover still answers `500` and the process keeps serving.
+
+- Pull request page and graph: after `PullSummary`, the settings on the base and the report (check, artifact, digest,
+  decode) at once. A settings error other than none fails the answer first, then the report's own state. The graph
+  reads the policy at the head and at the base at once: the base's text or failure counts only when the head's text is
+  not the report's.
+- Status: after `Onboarding.Progress`, the `admin` check (then the managed-AI consent), the default-branch state, the
+  open pull requests and `Account.Status` at once. None of them fails the page.
 
 ### Pages
 
@@ -1112,13 +1156,14 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   A refused save, ready or assist writes nothing.
 - Ready: `Proposals.Get`; head must equal `head_sha`, state must be `DraftOpen`; then `Proposals.Ready(number)`. ui never merges:
   publication is the merge on GitHub under the customer's ruleset and owner approval, the same path as a GitHub-first edit.
-- Pull request page: `Pulls.Pull(number)` → the settings file on the pull request's base (gate mode only, shown
-  always; none or unparseable reads as advisory) → `CheckRuns(head, "archfit/state")`, the run with the highest ID. Its
+- Pull request page: `PullSummary(number)` → the settings file on the pull request's base (gate mode only, shown
+  always; none or unparseable reads as advisory) and, side by side, `CheckRuns(head, "archfit/state")`, the run with the highest ID. Its
   `Title` is the headline: feedback already states the effect on merge there, so the page never derives one of its own.
   A run that concludes `action_required` shows no finding: the sweep keeps the old run in a withdrawn result's
   `external_id`, so its old report would still match. Its `external_id` is
   `v1:<run_id>:<attempt>:sha256:<hex>`; run 0 or an unreadable id is "no upload". Then
-  `Artifact(run_id, "archfit-report", report.MaxBytes)`, and the page shows it only when the SHA-256 of the bytes equals
+  `ArtifactID(run_id, "archfit-report")` and the download from the report cache or `ArtifactByID(id,
+  report.MaxBytes)`, and the page shows it only when the SHA-256 of the bytes equals
   the digest in the id: a report is never shown beside a check it did not produce. States, each with fixed wording and a
   link to the checks on GitHub: no check yet, action required, no upload, report expired (`ErrNotFound`, GitHub retention), report does
   not match its check, report unavailable (decode error). With a report, in the groups and words of the PR comment:
@@ -1153,7 +1198,7 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
   counts as a problem for focus mode. A cycle's two directions stay one problem row when they share a status, marked
   added when either is. Findings carry no origin of their own on the graph: a cycle finding's origin would contradict
   its link's.
-- Graph: settings → `LatestRun(Settings.Workflow, {Branch: DefaultBranch, Event: "push", Status: "success"})` → `Artifact(run.ID, "archfit-report", report.MaxBytes)` →
+- Graph: settings → `LatestRun(Settings.Workflow, {Branch: DefaultBranch, Event: "push", Status: "success"})` → `ArtifactID(run.ID, "archfit-report")` → the report cache or `ArtifactByID(id, report.MaxBytes)` →
   `report.Decode` (with the last release of `report.EngineVersions`, `v3.0.1`: the artifact names none) → policy text (open draft of the user, else default branch) → `graph.Build`. The artifact is the raw engine
   state JSON; only the decoded no-source `Report` is used. When the chosen policy text fails `policy.Modules` (a broken draft
   pushed on GitHub), ui builds from the default-branch policy instead, the last valid text, and forces the stale banner with
@@ -1224,7 +1269,8 @@ Every response carries an `X-Request-Id` header with the request ID of its log l
 - No secrets in the browser: the OAuth token stays in the session cookie (HttpOnly), and API bodies are explicit
   response types. The CSRF token is the only per-session value the app holds.
 - Static assets, the web app's build and the schema carry no tenant data; everything else requires a session.
-- Logs: request ID, route pattern, status, duration, user ID, repository ID, installation ID, outcome. No form content, no
+- Logs: request ID, route pattern, status, duration, user ID, repository ID, installation ID, outcome, GitHub call
+  count and time. No form content, no
   policy text, no instruction, no report content, no cookie or token.
 - Inherited: control-plane code. The gate never calls ui; a panic or outage here changes no check. Standard library only
   on the Go side. Browser code comes only from `web/`, built at build time from the npm lockfile and served by the App:
@@ -1288,8 +1334,20 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Scenario**: no check on the head; a check whose external_id names a run whose artifact matches its digest; one whose digest does not match; an expired artifact; run 0; an unknown pull request.
   **Expected behavior**: "no result yet"; the check title as headline, advisory mode, the violation, the no-baseline and no-attribution line, the run; the mismatch wording and no finding; the expired wording; the no-upload wording; `404`. Also: an `action_required` run over a matching old report shows the action-required wording and no finding; an undecodable report shows "report unavailable"; of two check runs the higher ID wins; "added by this PR" appears only with `origin_status: comparable` and `origin: introduced`.
 - **Test name**: `TestStatusPageShowsBranchPullsAndSetup`
-  **Scenario**: stage `gate_advisory` with a default-branch check and one open pull request; stage `workflow_merged`; `OpenPulls` failing; 23 more open pull requests.
-  **Expected behavior**: through `/api/repos/{o}/{n}/overview`: the default branch, its title and tone, the pull request linked to its page with its check title, the current and done steps, the rehearse advice; no pull request or state lookup before a report, also at `policy_merged`, where "First report" is not done; the ruleset advice at `gate_required`; the fixed wording and a `200`; "4 more" and 21 `CheckRuns` calls.
+  **Scenario**: stage `gate_advisory` with a default-branch check and one open pull request; stage `workflow_merged`; `OpenPulls` failing; for an administrator, `CheckRuns`, `OpenPulls`, the entitlement and the consent all failing at once; 23 more open pull requests.
+  **Expected behavior**: through `/api/repos/{o}/{n}/overview`: the default branch, its title and tone, the pull request linked to its page with its check title, the current and done steps, the rehearse advice; no pull request or state lookup before a report, also at `policy_merged`, where "First report" is not done; the ruleset advice at `gate_required`; the fixed wording and a `200`; a `200` with admin true, managed AI `unknown`, the state `unknown`, the pulls error, no banner and the steps; "4 more" and 21 `CheckRuns` calls.
+- **Test name**: `TestPullPartsFailAsWhenReadInTurn`
+  **Scenario**: a pull request on base `release`, rate limited in turn on: the settings at the base; the report download; both, the download failing with a plain error; the policy at the head (graph); the policy at the base while the head's is the report's (graph).
+  **Expected behavior**: `503`; `503`; `503` (the settings' error, not the report's `502`); `503`; `200`.
+- **Test name**: `TestTogetherRaisesAPanicOnTheCallersGoroutine`
+  **Scenario**: two parts side by side, one panics.
+  **Expected behavior**: the panic reaches the caller after the other part ran.
+- **Test name**: `TestReportCacheBoundsItsBytes`, `TestReportCacheIsPerRepository`
+  **Scenario**: a 10-byte cache: two 4-byte payloads, the first read again, a third, then one of 12 bytes; the same artifact ID read twice for one repository, then for another repository of the same installation, and for the same name under another installation.
+  **Expected behavior**: the first and third kept, the second evicted, the 12-byte one never kept, 8 bytes held; one download for the first repository, a second download for the other, which gets its own bytes, in both cases.
+- **Test name**: `TestPullPageAndGraphDownloadTheReportOnce`, `TestReportCacheHitStillAuthorizes`
+  **Scenario**: the pull request page then its graph; a user without access after the report is cached.
+  **Expected behavior**: two artifact listings, one download; `404` and no listing for the refused request.
 - **Test name**: `TestPullPageNumberMustBeAPull`, `TestPullPageReadsTheGateModeOfTheBase`
   **Scenario**: numbers `0`, `-4`, `x`, `4x`, and `5`, no pull request, on the page, the API and the graph; a pull request whose base branch requires the gate while the default branch is advisory.
   **Expected behavior**: `404` each (`5` on the page only from the API); `required` true.
@@ -1442,6 +1500,9 @@ their interfaces except where a test says otherwise. The clock is injected.
   overview APIs with marker strings in content, instruction, report and the entitlement error.
   **Expected behavior**: no marker, token or cookie value in any log line; exactly three `ui consent` audit lines at `INFO`
   (`consent_recorded`, `consent_kept`, `consent_revoked`), each with kind, installation ID and user ID.
+- **Test name**: `TestRequestLineCountsGitHubCalls`
+  **Scenario**: one overview request.
+  **Expected behavior**: one `ui request` line for its route with numeric `gh_calls` and `gh_ms`; no URL in the logs.
 
 ### Behavior Tests
 

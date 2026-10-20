@@ -44,7 +44,7 @@ func TestDeclarationsNeverSurvive(t *testing.T) {
 	for _, steps := range [][]any{
 		{"agent_tasks", 0, "declarations", 0, "name"},
 		{"findings", 0, "matched_by", "from_glob"},
-		{"seams", 0, "hypothesis"},
+		{"seams", 0, "role_expectation"},
 	} {
 		if s, _ := at(t, doc, steps...).(string); !strings.Contains(s, leakMarker) {
 			t.Fatalf("fixture has no marker at %v", steps)

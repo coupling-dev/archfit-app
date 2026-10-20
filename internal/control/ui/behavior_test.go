@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -237,8 +238,11 @@ func TestGraphReadsTheLatestSuccessfulPushRun(t *testing.T) {
 	if b.Unavailable != "" || b.View == nil {
 		t.Errorf("no graph from the report of run 77 behind newer dispatch, failed and running runs: %+v", b)
 	}
-	if calls := e.gh.called("Artifact"); len(calls) != 1 || calls[0].detail != fmt.Sprintf("77 archfit-report %d", report.MaxBytes) {
-		t.Errorf("Artifact calls = %+v, want run 77 only", calls)
+	if calls := e.gh.called("ArtifactID"); len(calls) != 1 || calls[0].detail != "77 archfit-report" {
+		t.Errorf("ArtifactID calls = %+v, want run 77 only", calls)
+	}
+	if calls := e.gh.called("ArtifactByID"); len(calls) != 1 || calls[0].detail != fmt.Sprintf("77 %d", report.MaxBytes) {
+		t.Errorf("ArtifactByID calls = %+v, want run 77's artifact under the report cap", calls)
 	}
 }
 
@@ -854,4 +858,32 @@ func TestExpiredGitHubTokenSignsOutInsteadOfBadGateway(t *testing.T) {
 			}
 		}
 	})
+}
+
+// The request line carries the GitHub call count and time (api.WithCallStats counts them; api's tests check the
+// counting): one line per request, numbers only, never a URL.
+func TestRequestLineCountsGitHubCalls(t *testing.T) {
+	logs := captureLogs(t)
+	e := newEnv(t)
+	c := e.as("alice", permRead)
+	wantStatus(t, c.get("/api/repos/"+repoName+"/overview"), http.StatusOK)
+
+	var lines []map[string]any
+	for line := range strings.Lines(logs.String()) {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(line), &m); err == nil && m["msg"] == "ui request" && m["route"] == "GET /api/repos/{o}/{n}/overview" {
+			lines = append(lines, m)
+		}
+	}
+	if len(lines) != 1 {
+		t.Fatalf("ui request lines = %v, want one", lines)
+	}
+	for _, key := range []string{"gh_calls", "gh_ms"} {
+		if _, ok := lines[0][key].(float64); !ok {
+			t.Errorf("%s = %v, want a number", key, lines[0][key])
+		}
+	}
+	if strings.Contains(logs.String(), "https://") {
+		t.Errorf("the request line names a URL: %s", logs.String())
+	}
 }

@@ -1,6 +1,5 @@
-- **Next:** Remove the rule violations, then run the validation command.
+- **Next:** Fix the rule violations, then run archfit check again.
 - Reason: `blocking_findings` (architecture)
-- Detail: 1 blocking finding
 
 Also reported:
 - `missing_required_coverage` (evidence): layers/no_upward_imports. Next: Install the required tool in the workflow, then re-run it.
@@ -10,7 +9,7 @@ Also reported:
 - `no_direct_b_dependency`: `a` → `b` at `pkg/a/a.go:3`, finding `ba3803ec`. Goal: Remove the forbidden dependency from pkg/a/a.go on pkg/b; move shared behavior to a location permitted by the existing dependency rules.
 
 <details>
-<summary>Evidence, inputs and validation</summary>
+<summary>Evidence and inputs</summary>
 
 ### Inputs and identity
 

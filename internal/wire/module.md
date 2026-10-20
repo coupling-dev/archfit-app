@@ -164,7 +164,7 @@ Required report fixtures (plan T02): `healthy`, `attention-pass` (verdict `needs
 gates), `blocked`, `missing-evidence` (`hard_gates: unmeasured`), `unknown-identity`, `profile-comparable` (symmetric
 partial with a recognized `partial_basis`), `profile-incompatible` (`gate_reference.status: non_comparable`),
 `invalid-input`, `blocker-and-unevaluated`, `non-applicable-rule`, `locations-empty`, `matched-by-populated`
-(decodes; `matched_by` is dropped and never in any output), `repair-kinds`, `waiver-expiry-order`, and
+(decodes; `matched_by` keeps only `metric`, `before`, `after` and `threshold`, and no other key is in any output), `repair-kinds`, `waiver-expiry-order`, and
 `real-blocked-no-baseline`. The last one is captured unmodified from the real engine v3.0.0 on a two-module Go
 repository: verdict `blocked`, `hard_gates: fail`, no baseline file, so `gate_reference` is `non_comparable` with
 reason `no baseline file was loaded`; its policy file ships beside it and its facts have empty trusted baseline and
@@ -234,7 +234,7 @@ blocked, `hard_gates: fail`, `non_comparable` gate reference, `failure` with `["
 
 The `leakage/` set has two groups. Rejecting fixtures (`decode: "error"`): snippet field, log blob, raw model output
 key, multi-line text, oversized text. One surviving fixture (`decode: "ok"`): a marker identifier inside
-`agent_tasks[].declarations`, `matched_by` and a seam `hypothesis`; it must decode, and the marker must be gone.
+`agent_tasks[].declarations`, `matched_by` and a seam `role_expectation`; it must decode, and the marker must be gone.
 
 ## Integrations
 
@@ -367,7 +367,7 @@ Parent tests live in package `wire_test` and exercise the children together and 
   **Scenario**: feed every `leakage/` fixture and every invalid fixture to its decoder and collect the error strings.
   **Expected behavior**: no error string contains `LEAK-7f3a`.
 - **Test name**: `TestSourceIdentifiersNeverSurviveDecoding` (release test, T04)
-  **Scenario**: decode the surviving leakage fixture (marker in `declarations`, `matched_by`, seam `hypothesis`) and marshal the result.
+  **Scenario**: decode the surviving leakage fixture (marker in `declarations`, `matched_by`, seam `role_expectation`) and marshal the result.
   **Expected behavior**: decodes; `LEAK-7f3a` is absent from the `Report`, from its JSON and from its formatted dump.
 
 ### Behavior Tests
