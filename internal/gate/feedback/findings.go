@@ -2,7 +2,6 @@ package feedback
 
 import (
 	"fmt"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -371,7 +370,7 @@ func writeCycle(b *strings.Builder, fs []report.Finding, g groups, seams map[[2]
 	}
 	// The engine writes one Why per direction that only swaps the module names, and names the first pair. The cycle
 	// is described from what the directions show: each one leads back to its own source.
-	fmt.Fprintf(b, "\n\n**Why:** Each of the %d dependencies lies on a cycle: from its target, dependencies lead back to its source, so the %d modules depend on each other.", n, len(modules))
+	b.WriteString("\n\n**Why:** " + report.CycleWhy(n, len(modules)))
 	reasons := slices.Clone(fs)
 	for i := range reasons {
 		reasons[i].Why = ""
@@ -468,7 +467,7 @@ func cycleDiagram(modules []string, fs []report.Finding, pr []string) string {
 	}
 	var styles []string
 	for i, f := range fs {
-		n := len(f.Locations)
+		n := report.LocationsTotal(f)
 		lines = append(lines, fmt.Sprintf("  %s -->|\"%d %s\"| %s", id[f.Edge.From.Module], n, plural(n, "location", "locations"), id[f.Edge.To.Module]))
 		color, width := cycleEdgeColor, 4
 		switch {
@@ -576,7 +575,7 @@ func dependencyTable(fs []report.Finding, pr []string, seams map[[2]string]repor
 			return v
 		}})
 	}
-	cols = append(cols, column{head: "Where", cells: cellsOf(func(_ int, f report.Finding) string { return capped(f.Locations, tableLocationCap) })})
+	cols = append(cols, column{head: "Where", cells: cellsOf(func(_ int, f report.Finding) string { return capped(f, tableLocationCap) })})
 	if coupling {
 		cols = append(cols,
 			column{"Strength", seamCells(func(s report.Seam) string { return text(s.Strength) }), func(v string) string { return v + " coupling" }},
@@ -681,20 +680,6 @@ func distinctRules(fs []report.Finding) int {
 	return len(seen)
 }
 
-// balancedWhy says the engine's imbalanced-coupling Why in one sentence: the formula it prints ("functional
-// integration strength × distance … × high volatility") is the three columns of the table beside it. Any other text
-// stays as written.
-var balancedWhy = regexp.MustCompile(`^balanced coupling: .* → (\w+) severity \((.+)\)$`)
-
-func readableWhy(why string) string {
-	why = report.ReadableWhy(why)
-	m := balancedWhy.FindStringSubmatch(why)
-	if m == nil {
-		return why
-	}
-	return strings.Replace(m[2], " → ", ": ", 1) + " (Balanced Coupling: " + m[1] + " severity)"
-}
-
 // writeReasons writes each distinct Why, Fix (the engine's constraint) and set of allowed alternatives once, in first-seen order: the
 // engine repeats one explanation for every finding of a rule, and repeating it hides the rest.
 func writeReasons(b *strings.Builder, fs []report.Finding, withRule bool) {
@@ -714,7 +699,7 @@ func writeReasons(b *strings.Builder, fs []report.Finding, withRule bool) {
 	}
 	for _, f := range fs {
 		if f.Why != "" {
-			add(f.RuleID, "Why", text(readableWhy(f.Why)))
+			add(f.RuleID, "Why", text(report.ReadableWhy(f.Why)))
 		}
 		if f.Constraint != "" {
 			add(f.RuleID, "Fix", text(f.Constraint))
@@ -753,9 +738,9 @@ func writeFinding(b *strings.Builder, f report.Finding) {
 	}
 	fmt.Fprintf(b, "%s (%s): %s", ruleName(f.RuleID), m, subject(f))
 	if len(f.Locations) > 0 || !isMetric(f) { // a metric ratchet has no place in the code
-		b.WriteString("\n  - Locations: " + capped(f.Locations, locationCap))
+		b.WriteString("\n  - Locations: " + capped(f, locationCap))
 	}
-	fmt.Fprintf(b, "\n  - Why: %s", text(readableWhy(f.Why)))
+	fmt.Fprintf(b, "\n  - Why: %s", text(report.ReadableWhy(f.Why)))
 	if f.Constraint != "" {
 		fmt.Fprintf(b, "\n  - Fix: %s", text(f.Constraint))
 	}
@@ -764,21 +749,21 @@ func writeFinding(b *strings.Builder, f report.Finding) {
 	}
 }
 
-// capped is up to limit locations as file:line, then "and N more"; "none reported" when empty.
-func capped(locs []report.Location, limit int) string {
+// capped is up to limit locations as file:line, then "and N more" up to the engine's full count (report.LocationsTotal:
+// the engine lists at most 50); "none reported" when empty.
+func capped(f report.Finding, limit int) string {
+	locs := f.Locations
 	if len(locs) == 0 {
 		return "none reported"
 	}
-	var b strings.Builder
-	for i, loc := range locs {
-		if i == limit {
-			fmt.Fprintf(&b, " and %d more", len(locs)-limit)
-			break
-		}
-		if i > 0 {
-			b.WriteString(", ")
-		}
-		b.WriteString(location(loc))
+	shown := locs[:min(len(locs), limit)]
+	parts := make([]string, len(shown))
+	for i, loc := range shown {
+		parts[i] = location(loc)
 	}
-	return b.String()
+	out := strings.Join(parts, ", ")
+	if more := report.LocationsTotal(f) - len(shown); more > 0 {
+		out += fmt.Sprintf(" and %d more", more)
+	}
+	return out
 }

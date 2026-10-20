@@ -7,6 +7,12 @@ export interface Direction {
   to: string;
   origin: string; // 'added' | 'existing' | ''
   locations: string[];
+  locations_total?: number; // the engine's full count; locations holds at most 50 of them
+}
+
+// locationCount is a direction's full location count, as the comment's diagram labels it.
+export function locationCount(d: Direction): number {
+  return Math.max(d.locations_total ?? 0, d.locations.length);
 }
 
 export interface Box {
@@ -49,7 +55,7 @@ export function shorten(module: string): string {
 }
 
 function arrowStyle(d: Direction): Pick<Arrow, 'kind' | 'width'> {
-  const n = d.locations.length;
+  const n = locationCount(d);
   if (d.origin === 'added') return { kind: 'added', width: 4 };
   if (d.origin === 'existing') return { kind: 'existing', width: 1.5 };
   return { kind: 'cycle', width: n < thinBelow ? 2 : n < mediumBelow ? 3 : 4 };
@@ -142,7 +148,7 @@ function arrowsOf(boxes: Box[], directions: Direction[], bow: number): Arrow[] {
     const qy = (a.y + b.y) / 2 + ny * len * bow;
     const [x1, y1] = clip(a, qx, qy);
     const [x2, y2] = clip(b, qx, qy);
-    const count = d.locations.length;
+    const count = locationCount(d);
     const text = `${count} ${count === 1 ? 'location' : 'locations'}`;
     // The first spot along the curve whose label covers no module and no other label. With none free, the arrow goes
     // unlabelled: the table under the drawing lists every direction's locations.

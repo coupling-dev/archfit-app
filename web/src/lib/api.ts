@@ -71,6 +71,7 @@ export interface Finding {
   fix: string;
   alternatives: string[] | null;
   locations: string[];
+  locations_total: number; // the engine's full count; locations holds at most 50 of them
   strength: string;
   distance: string;
   volatility: string;

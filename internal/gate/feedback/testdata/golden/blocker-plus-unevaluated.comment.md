@@ -24,14 +24,14 @@
 
 | Dimension | Status | Measured | Confidence | Result |
 | --- | --- | --- | --- | --- |
-| `intent` | measured | 1/1 (declared rules evaluated) | high | pass |
-| `structure` | measured | 1/1 (discovered dependencies resolved inside the declared module map) | high | **fail** |
-| `modularity` | measured | 1/2 (declared modules with a declared public surface) | low | pass |
-| `coupling` | measured | 1/1 (cross-boundary edges scored) | high | **warn** |
+| `intent` | measured | 1/1 ("declared rules evaluated") | high | pass |
+| `structure` | measured | 1/1 ("discovered dependencies resolved inside the declared module map") | high | **fail** |
+| `modularity` | measured | 1/2 ("declared modules with a declared public surface") | low | pass |
+| `coupling` | measured | 1/1 ("cross-boundary edges scored") | high | **warn** |
 | `change_locality` | unmeasured | 0/0 | unrated | not applicable |
-| `complexity` | measured | 2/2 (declared modules with complete dependency-chain and degree values) | high | pass |
-| `testability` | partial | 3/3 (classified source files) | medium | pass |
-| `operations` | partial | 0/2 (declared modules with a corroborated deploy unit and qualifying owner) | medium | pass |
+| `complexity` | measured | 2/2 ("declared modules with complete dependency-chain and degree values") | high | pass |
+| `testability` | partial | 3/3 ("classified source files") | medium | pass |
+| `operations` | partial | 0/2 ("declared modules with a corroborated deploy unit and qualifying owner") | medium | pass |
 | `drift` | unmeasured | 0/0 | unrated | not applicable |
 
 ### Evidence gaps

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { layout, shorten, type Direction } from './cycle';
+import { layout, locationCount, shorten, type Direction } from './cycle';
 
 const dir = (from: string, to: string, origin = '', n = 1): Direction => ({
   from,
@@ -123,5 +123,18 @@ describe('cycle layout', () => {
     expect(shorten(long)).toHaveLength(28);
     expect(shorten(long).endsWith('services/billing')).toBe(true);
     expect(shorten('short')).toBe('short');
+  });
+});
+
+describe('location count', () => {
+  it('labels an arrow with the engine total when it lists only the first 50', () => {
+    const capped = { ...dir('a', 'b', 'added', 50), locations_total: 120 };
+    const { arrows } = layout(['a', 'b'], [capped, dir('b', 'a', 'existing', 2)]);
+    expect(arrows.map((a) => a.label)).toEqual(['120 locations', '2 locations']);
+  });
+
+  it('never counts fewer than the locations listed', () => {
+    expect(locationCount({ ...dir('a', 'b', '', 3), locations_total: 1 })).toBe(3);
+    expect(locationCount(dir('a', 'b', '', 3))).toBe(3);
   });
 });

@@ -1357,7 +1357,7 @@ func TestDriftCountsAreShownOnlyWhenTheEngineCompared(t *testing.T) {
 		dim  report.Dimension
 		want string
 	}{
-		{"comparable", drift("comparable", counts...), "8 new, 0 resolved distributed-monolith seams"},
+		{"comparable", drift("comparable", counts...), "8 tight cross-module seams at high volatility new since the baseline, 0 resolved"},
 		{"not comparable", drift("non_comparable", counts...), ""},
 		{"counts missing", drift("comparable", report.Metric{Name: "new_seams", Value: 1}), ""},
 		{"no delta", report.Dimension{Metrics: counts}, ""},
@@ -1455,23 +1455,6 @@ func TestLegendSaysWhatRedMeansWhenSomeDirectionsAreUnplaced(t *testing.T) {
 	}
 }
 
-func TestImbalancedCouplingWhyIsOneSentence(t *testing.T) {
-	engine := "balanced coupling: functional integration strength × cross_module distance × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)"
-	tests := []struct{ name, why, want string }{
-		{"the engine's sentence", engine, "functional coupling across a module boundary to a volatile target: a change on one side forces a change on the other (Balanced Coupling: critical severity)"},
-		{"another rule", "Import from a to b is forbidden", "Import from a to b is forbidden"},
-		{"a sentence of another shape", "balanced coupling: odd", "balanced coupling: odd"},
-		{"a distance token only", "the cross_module distance is wide", "the distance across modules is wide"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := readableWhy(tt.why); got != tt.want {
-				t.Errorf("readableWhy = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestDriftSaysSoWhenTheBaselineHoldsNoSeam(t *testing.T) {
 	drift := func(added, resolved, compared float64) report.Dimension {
 		return report.Dimension{Coverage: report.DimensionCoverage{Observed: int(compared), Total: int(compared)}, Delta: &report.Delta{Status: "comparable"},
@@ -1482,10 +1465,10 @@ func TestDriftSaysSoWhenTheBaselineHoldsNoSeam(t *testing.T) {
 		dim  report.Dimension
 		want string
 	}{
-		{"every current seam new, none resolved", drift(8, 0, 8), "the baseline holds no distributed-monolith seam: all 8 current seams count as new"},
-		{"some new", drift(2, 0, 8), "2 new, 0 resolved distributed-monolith seams"},
-		{"all new but one resolved", drift(3, 1, 4), "3 new, 1 resolved distributed-monolith seams"},
-		{"nothing changed", drift(0, 0, 5), "0 new, 0 resolved distributed-monolith seams"},
+		{"every current seam new, none resolved", drift(8, 0, 8), "8 tight cross-module seams at high volatility, new since the baseline: it holds none"},
+		{"some new", drift(2, 0, 8), "2 tight cross-module seams at high volatility new since the baseline, 0 resolved"},
+		{"all new but one resolved", drift(3, 1, 4), "3 tight cross-module seams at high volatility new since the baseline, 1 resolved"},
+		{"nothing changed", drift(0, 0, 5), "0 tight cross-module seams at high volatility new since the baseline, 0 resolved"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1517,4 +1500,27 @@ func TestAssembleKeepsTheTailWhenTheFindingsAreCut(t *testing.T) {
 	if cut, next := strings.Index(got, "Output truncated."), strings.Index(got, "**Next:**"); next < cut {
 		t.Errorf("the tail is before the cut:\n%s", got)
 	}
+}
+
+func TestLocationCountsUseTheEnginesFullCount(t *testing.T) {
+	locs := make([]report.Location, 50)
+	for i := range locs {
+		locs[i] = report.Location{File: "a.go", Line: i + 1}
+	}
+	total := map[string]string{report.MatchedByLocationsTotal: "120"}
+	cyc := func(from, to string, l []report.Location, m map[string]string) report.Finding {
+		return report.Finding{ID: from + to, Kind: "gate", RuleID: "no-module-cycles", Status: "new", Severity: "high", Locations: l, MatchedBy: m,
+			Edge: report.Edge{From: report.Endpoint{Module: from}, To: report.Endpoint{Module: to}}}
+	}
+	plain := report.Finding{ID: "p", Kind: "gate", RuleID: "r", Status: "new", Severity: "high", Locations: locs, MatchedBy: total,
+		Edge: report.Edge{From: report.Endpoint{Module: "x"}, To: report.Endpoint{Module: "y"}}}
+	r := &report.Report{Findings: []report.Finding{cyc("a", "b", locs, total), cyc("b", "a", locs[:1], nil), plain}}
+
+	block := findingsBlock(r, true)
+	mustContain(t, block,
+		`m0 -->|"120 locations"| m1`,                // the diagram label
+		"`a.go:3` and 117 more |",                   // the cycle table: 3 shown of 120
+		"  - Locations: ", "`a.go:10` and 110 more", // the list item: 10 shown of 120
+	)
+	mustNotContain(t, block, "50 locations", "and 47 more", "and 40 more")
 }

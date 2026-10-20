@@ -86,11 +86,13 @@ type findingJSON struct {
 	Fix          string   `json:"fix"`
 	Alternatives []string `json:"alternatives"`
 	Locations    []string `json:"locations"` // "file:line", or "file" for a whole file
-	Strength     string   `json:"strength"`  // of the seam on this module pair, "" without one
-	Distance     string   `json:"distance"`
-	Volatility   string   `json:"volatility"`
-	Move         string   `json:"move"`   // the engine's balancing move for that seam, as the comment words it; "" for none
-	Metric       string   `json:"metric"` // a metric ratchet, which has no edge: "metric <name>: before → after (threshold)"
+	// LocationsTotal is the engine's full location count (report.LocationsTotal); Locations holds at most 50 of them.
+	LocationsTotal int    `json:"locations_total"`
+	Strength       string `json:"strength"` // of the seam on this module pair, "" without one
+	Distance       string `json:"distance"`
+	Volatility     string `json:"volatility"`
+	Move           string `json:"move"`   // the engine's balancing move for that seam, as the comment words it; "" for none
+	Metric         string `json:"metric"` // a metric ratchet, which has no edge: "metric <name>: before → after (threshold)"
 	// OwnerDecision: the engine's agent task for the finding needs the owner's decision (a policy change), not code.
 	OwnerDecision bool `json:"owner_decision"`
 	// Also: on a violation, the advisories the report has on the same dependency, as the comment words them ("rule ·
@@ -151,8 +153,11 @@ func attentionReason(rep report.Report) string {
 		return ""
 	}
 	var reasons []string
-	if n := len(report.Group(rep, 0).Advisories); n > 0 {
-		reasons = append(reasons, plural(n, "advisory", "advisories"))
+	g := report.Group(rep, 0)
+	// The advisories the page lists: one on a violation's dependency joins that row (report.SplitCovered), as on the
+	// comment, so the reason counts the same advisories as the Findings tab.
+	if rest, _ := report.SplitCovered(g.Violations, g.Advisories); len(rest) > 0 {
+		reasons = append(reasons, plural(len(rest), "advisory", "advisories"))
 	}
 	if n := len(rep.Decision.UnevaluatedRequiredRules); n > 0 {
 		reasons = append(reasons, plural(n, "required rule", "required rules")+" not evaluated")
@@ -308,7 +313,8 @@ func fillFindings(body *findingsJSON, rep report.Report) {
 		out := findingJSON{
 			Rule: report.RuleName(f.RuleID), RuleID: f.RuleID, Meta: report.FindingMeta(f), Violation: f.Active(), From: endpointName(f.Edge.From),
 			To: endpointName(f.Edge.To), Why: report.ReadableWhy(f.Why), Fix: f.Constraint, Alternatives: f.AllowedAlternatives,
-			Locations: make([]string, len(f.Locations)), OwnerDecision: ownerDecides[f.ID], Metric: metricSubject(f),
+			Locations: make([]string, len(f.Locations)), LocationsTotal: report.LocationsTotal(f), OwnerDecision: ownerDecides[f.ID],
+			Metric: metricSubject(f),
 		}
 		if g.Compared {
 			out.Origin = origin
@@ -346,7 +352,7 @@ func fillFindings(body *findingsJSON, rep report.Report) {
 		members[c] = append(members[c], vs[i])
 	}
 	for _, m := range members {
-		cy := cycleJSON{Rule: report.RuleName(m[0].RuleID), RuleID: m[0].RuleID, Meta: report.FindingMeta(m[0]), Violation: m[0].Active(), Why: report.ReadableWhy(m[0].Why)}
+		cy := cycleJSON{Rule: report.RuleName(m[0].RuleID), RuleID: m[0].RuleID, Meta: report.FindingMeta(m[0]), Violation: m[0].Active()}
 		for _, f := range m {
 			for _, mod := range []string{f.Edge.From.Module, f.Edge.To.Module} {
 				if !slices.Contains(cy.Modules, mod) {
@@ -363,6 +369,7 @@ func fillFindings(body *findingsJSON, rep report.Report) {
 			}
 			cy.Directions = append(cy.Directions, also(row(f, report.PairOrigin(f, g.All, g.OnCycle)), f))
 		}
+		cy.Why = report.CycleWhy(len(cy.Directions), len(cy.Modules))
 		body.Cycles = append(body.Cycles, cy)
 	}
 	for _, f := range shown(advisories) {
