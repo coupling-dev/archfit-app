@@ -378,6 +378,9 @@ func TestSaveRejectsForeignDocuments(t *testing.T) {
 
 var customerData = regexp.MustCompile(`(?s)"content":"(?:[^"\\]|\\.)*"|<script type="application/json".*?</script>`)
 
+// randomNonce is the shell's per-response CSP nonce (base64: "6/0" can occur in it), random data and no wording.
+var randomNonce = regexp.MustCompile(`[A-Za-z0-9+/]{22}==`)
+
 var scorePattern = regexp.MustCompile(`(?i)\bscor(e|es|ing)\b|\bgrades?\b|\brank(ed|ing)?\b|\btotals?\b|\d\s*%|\d+\s*/\s*\d+|\b\d+ (of|out of) \d+\b`)
 
 func TestNoScoreAnywhere(t *testing.T) {
@@ -403,7 +406,7 @@ func TestNoScoreAnywhere(t *testing.T) {
 				res := c.get(path)
 				wantStatus(t, res, http.StatusOK)
 				// Policy text and the view model are the customer's own data, not something ui computes.
-				body := customerData.ReplaceAllString(res.Body.String(), "")
+				body := randomNonce.ReplaceAllString(customerData.ReplaceAllString(res.Body.String(), ""), "")
 				if m := scorePattern.FindString(body); m != "" {
 					t.Errorf("%s contains %q", path, m)
 				}
