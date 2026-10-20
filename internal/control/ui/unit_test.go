@@ -399,3 +399,25 @@ func TestTogetherRaisesAPanicOnTheCallersGoroutine(t *testing.T) {
 	together(func() { ran.Store(true) }, func() { panic("boom") })
 	t.Error("together returned after a panic")
 }
+
+func TestMetricSubjectReadsAsTheComment(t *testing.T) {
+	tests := []struct {
+		name      string
+		rule      string
+		matchedBy map[string]string
+		want      string
+	}{
+		{"every number", "metric/cycles", map[string]string{report.MatchedByMetric: "dependency_cycles", report.MatchedByBefore: "0",
+			report.MatchedByAfter: "1", report.MatchedByThreshold: "must not increase"}, "metric dependency_cycles: 0 → 1 (must not increase)"},
+		{"no threshold", "metric/cycles", map[string]string{report.MatchedByBefore: "0", report.MatchedByAfter: "1"}, "metric cycles: 0 → 1"},
+		{"no after", "metric/cycles", map[string]string{report.MatchedByBefore: "0"}, "metric cycles"},
+		{"not a metric", "module_dependencies", map[string]string{report.MatchedByMetric: "x"}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := metricSubject(report.Finding{RuleID: tt.rule, MatchedBy: tt.matchedBy}); got != tt.want {
+				t.Errorf("metricSubject = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

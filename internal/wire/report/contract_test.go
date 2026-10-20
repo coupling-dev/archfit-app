@@ -517,6 +517,53 @@ func TestSeamVolatilityProvenanceIsKept(t *testing.T) {
 	}
 }
 
+// The balance readings are shown only: a value outside the engine's set, free text included, reads as absent and never
+// fails the report.
+func TestSeamBalanceReadingsKeepOnlyEngineTokens(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+		raw  any // nil: absent
+		want Seam
+	}{
+		{name: "hypothesis", key: "hypothesis", raw: "move_functionality", want: Seam{Hypothesis: "move_functionality"}},
+		{name: "hypothesis a later engine adds", key: "hypothesis", raw: "split_module", want: Seam{Hypothesis: "split_module"}},
+		{name: "hypothesis absent", key: "hypothesis"},
+		{name: "quadrant", key: "quadrant", raw: "tight", want: Seam{Quadrant: "tight"}},
+		{name: "quadrant outside the set", key: "quadrant", raw: "Tight"},
+		{name: "distributed monolith", key: "distributed_monolith", raw: true, want: Seam{DistributedMonolith: true}},
+		{name: "distributed monolith absent", key: "distributed_monolith"},
+		{name: "basis", key: "raw_distance", raw: map[string]any{"basis": "module_boundary@system"},
+			want: Seam{RawDistance: SeamDistance{Basis: "module_boundary@system"}}},
+		{name: "basis in a module", key: "raw_distance", raw: map[string]any{"basis": "ownership@pkg_core"},
+			want: Seam{RawDistance: SeamDistance{Basis: "ownership@pkg_core"}}},
+		{name: "basis crossing outside the set", key: "raw_distance", raw: map[string]any{"basis": "galaxy@system"}},
+		{name: "basis without a container", key: "raw_distance", raw: map[string]any{"basis": "module_boundary"}},
+		{name: "basis empty", key: "raw_distance", raw: map[string]any{"basis": ""}},
+		{name: "basis container not an identifier", key: "raw_distance", raw: map[string]any{"basis": "module_boundary@pkg\ncore"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			doc := baseDoc(t)
+			for _, key := range []string{"hypothesis", "quadrant", "distributed_monolith", "raw_distance"} {
+				del(t, doc, "seams", 0, key)
+			}
+			if tt.raw != nil {
+				set(t, doc, tt.raw, "seams", 0, tt.key)
+			}
+			r, err := Decode(encode(t, doc), fixtureEngine)
+			if err != nil {
+				t.Fatalf("Decode: %v", err)
+			}
+			s := r.Seams[0]
+			got := Seam{Hypothesis: s.Hypothesis, Quadrant: s.Quadrant, DistributedMonolith: s.DistributedMonolith, RawDistance: s.RawDistance}
+			if got != tt.want {
+				t.Errorf("readings = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestRootImporterCapture: the engine names an importer that no module owns by its package directory, "." for the
 // repository root, and ends the finding why and constraint with the rule's rationale and docs reference.
 func TestRootImporterCapture(t *testing.T) {

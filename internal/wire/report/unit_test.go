@@ -652,3 +652,15 @@ func TestKeptMatchedByAndHypothesisAreChecked(t *testing.T) {
 		{"hypothesis absent", deleter("seams", 0, "hypothesis"), ""},
 	})
 }
+
+func TestBalancingMoveWordsAKnownHypothesisOnly(t *testing.T) {
+	for h, want := range map[string]string{
+		"introduce_contract": BalancingMoves["introduce_contract"],
+		"split_module":       "split_module",
+		"":                   "",
+	} {
+		if got := BalancingMove(h); got != want {
+			t.Errorf("BalancingMove(%q) = %q, want %q", h, got, want)
+		}
+	}
+}

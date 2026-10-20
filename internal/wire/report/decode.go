@@ -307,8 +307,29 @@ func (c *checker) matchedBy(m map[string]string) map[string]string {
 	return kept
 }
 
-// seam keeps the identity, the edge count, the three coupling dimensions, the engine's policy status and balancing
-// move; scores and evidence are dropped.
+// Display-only seam readings closed here, from the engine's constants (archfit internal/relationship/seam.go and
+// coupling/coupling.go): anything else reads as absent and never fails the report.
+var (
+	quadrants = []string{"cohesive", "loose", "low_cohesion", "tight"}
+	crossings = []string{"module_boundary", "ownership", "deploy_unit", "declared_external"}
+)
+
+// distanceBasis keeps "<crossed>@<container>" when the crossing is one the engine names and the container is an
+// identifier, else "": a basis is shown only, so it never fails the report.
+func distanceBasis(basis string) string {
+	crossed, container, ok := strings.Cut(basis, "@")
+	if !ok || known(crossed, crossings...) == "" {
+		return ""
+	}
+	if _, rule := stringRule(container, classIdentifier); rule != "" {
+		return ""
+	}
+	return basis
+}
+
+// seam keeps the identity, the edge count, the three coupling dimensions, the engine's policy status, its balancing
+// move and its balance reading (quadrant, distributed monolith, what the distance crosses); scores, owners and evidence
+// are dropped.
 func (c *checker) seam(s *shadowSeam) Seam {
 	return Seam{
 		ID:                   c.str("id", s.ID, classIdentifier),
@@ -322,5 +343,8 @@ func (c *checker) seam(s *shadowSeam) Seam {
 		VolatilityProvenance: c.opt("volatility_provenance", s.VolatilityProvenance, classToken),
 		Policy:               c.optEnum("policy", s.Policy, "violation", "accepted", "advisory", "allowed", "observed"),
 		Hypothesis:           c.opt("hypothesis", s.Hypothesis, classToken),
+		Quadrant:             known(s.Quadrant, quadrants...),
+		DistributedMonolith:  s.DistributedMonolith,
+		RawDistance:          SeamDistance{Basis: distanceBasis(s.RawDistance.Basis)},
 	}
 }

@@ -25,7 +25,7 @@ identifiers in `agent_tasks[].declarations`.
 - Preserve what the gate and feedback need, unchanged: `verdict`, `decision.hard_gates`,
   `unevaluated_required_rules`, `comparison.config_hash`, `measurement_profile`, `gate_reference`, both repair
   kinds, task validation commands, empty `locations`.
-- The display rules its consumers share (`Group`, `Cycles`, `PairOrigin`, `EngineRuleNames`, `DistanceWords`, `BalancingMoves`, `MetricRulePrefix`,
+- The display rules its consumers share (`Group`, `Cycles`, `PairOrigin`, `EngineRuleNames`, `DistanceWords`, `BalancingMoves`, `BalancingMove`, `MetricRulePrefix`,
   `ReadableWhy`, `ShownPerGroup`), so the PR comment, the App's pull request page and its graph group and word findings the same way.
 - Nothing else. It does not interpret the decision, compare profiles, filter findings, or compute outcomes.
 
@@ -70,7 +70,8 @@ when a release changes the key set, or when no installed workflow pins it.
 
 - The schema has these keys, among others. Kept: `comparison.classification_hash`, `comparison.origin_status`,
   `comparison.origin_reasons`, `gate_reference.drift`, `gate_reference.baseline_present`, `findings[].origin`,
-  `agent_tasks[].origin` and the optional `seams[].policy`. Dropped, and type-checked: `comparison.introduced_finding_ids`
+  `agent_tasks[].origin`, the optional `seams[].policy`, and the seam's balance reading: `seams[].hypothesis`,
+  `quadrant`, `distributed_monolith` and `raw_distance.basis`. Dropped, and type-checked: `comparison.introduced_finding_ids`
   and `comparison.resolved_finding_ids`, with the same two keys of `gate_reference`. The engine writes both lists
   only with `--base`.
 - `origin` of a finding or a task (`introduced`, `pre_existing`, `unknown`) exists only in a report made with
@@ -82,6 +83,13 @@ when a release changes the key set, or when no installed workflow pins it.
 - `seams[].policy` has the closed value set `violation`, `accepted`, `advisory`, `allowed`, `observed` (the engine's
   policy status of the seam). `Seam.Policy` keeps the value, an enum checked only when the key is present (absent
   decodes to `""`); the graph shows it, the gate never reads it.
+- The seam's balance reading is display only. `hypothesis` is a token kept as written (see "Kept from a seam" below).
+  The other value sets are closed here, from the engine's constants (the schema gives no enum): `quadrant` `cohesive`,
+  `loose`, `low_cohesion`, `tight`; `raw_distance.basis` `<crossed>@<container>`, `<crossed>` one of `module_boundary`,
+  `ownership`, `deploy_unit`, `declared_external` and `<container>` an identifier (a module name or `system`). A value
+  outside its set decodes to `""` and never fails the report **[default]**: a value a later engine adds shows nothing.
+  `distributed_monolith` is a boolean; absent reads `false`. The other `raw_distance` keys stay dropped: owners and
+  deploy units name people and units.
 - A key the App starts to keep is a kept field; keeping it is still a reviewed contract change.
 - **Frozen decision core.** The gate decides only from these fields: `schema_version`, `verdict`,
   `decision.hard_gates`, `decision.unevaluated_required_rules` (`rule_id`, `reason`), `comparison.config_hash`,
@@ -114,9 +122,8 @@ and not in this list is a decode error.
   `start_line`, `end_line`, `count` (integers). `name` is a source identifier: the closest thing to source in a
   report. Declarations are always dropped, whatever they contain.
 - Dropped seam keys: `scored_edges`, `abstained_edges`, `critical_edges`, `high_or_worse_edges`, `critical_share_pct`,
-  `high_or_worse_share_pct` (integers); `quadrant`, `label_evidence_hash`, `confidence`,
-  `role_expectation` (strings); `labels` (list of strings); `distributed_monolith` (boolean);
-  `raw_distance` (object: `level`, `basis`, `from_owner`, `to_owner`, `from_deploy_unit`, `to_deploy_unit` strings,
+  `high_or_worse_share_pct` (integers); `label_evidence_hash`, `confidence`, `role_expectation` (strings); `labels`
+  (list of strings); `raw_distance` but its `basis` (object: `level`, `from_owner`, `to_owner`, `from_deploy_unit`, `to_deploy_unit` strings,
   `same_owner`, `same_deploy_unit` booleans, `boundary_crossings`, `shared_ancestor` integers); `scores` (object: `n`,
   `min`, `median`, `max` integers, `p10`, `p90` integer or `null`, `mean` number).
 - Kept from `matched_by`, as text (`Finding.MatchedBy`, `MatchedByKeys`): `metric`, `before`, `after`, `threshold`. A metric
@@ -499,6 +506,19 @@ type Seam struct {
     // "introduce_contract" | "move_functionality" | "declare_volatility" | "expected_by_role" | "follow_rule".
     // "" = the engine gave no move.
     Hypothesis string `json:"hypothesis,omitempty"`
+    // The rest of the balance reading, display only, each from a closed set ("" outside it): the quadrant, the
+    // distributed-monolith flag, and what the distance crosses.
+    Quadrant            string       `json:"quadrant,omitempty"`
+    DistributedMonolith bool         `json:"distributed_monolith,omitempty"`
+    RawDistance         SeamDistance `json:"raw_distance"` // only its basis is kept
+}
+
+// SeamDistance is what the engine measured the distance on.
+type SeamDistance struct {
+    // Basis is "<crossed>@<container>": the boundary the distance crosses ("module_boundary" | "ownership" |
+    // "deploy_unit" | "declared_external") and the module that holds both ends, or "system". "" when no edge was
+    // scored, the crossing is outside that set, or the container is not an identifier.
+    Basis string `json:"basis,omitempty"`
 }
 ```
 
@@ -549,6 +569,7 @@ func PairOrigin(f Finding, all []Finding, onCycle map[string]bool) string
 var EngineRuleNames map[string]string // readable names of the engine's own rules
 var DistanceWords map[string]string   // the engine's distance tokens in the words of Balanced Coupling
 var BalancingMoves map[string]string  // the engine's seam hypotheses in the words of Balanced Coupling
+func BalancingMove(h string) string   // BalancingMoves[h], else h as written; "" for none
 const MetricRulePrefix = "metric/"    // starts the rule ID of a metric ratchet finding, which has no module edge
 func ReadableWhy(why string) string   // a Why with each known "<token> distance" as "distance <words>"
 ```
@@ -689,6 +710,13 @@ the tests decode each one as the release that produced it (synthetic ones as v3.
   `<b>`, and `3`.
   **Expected behavior**: `""`; `declared`; the new value as written (a token, not a closed set, so a new provenance never
   fails a report); errors naming `seams[0].volatility_provenance` for the last two.
+- **Test name**: `TestSeamBalanceReadingsKeepOnlyEngineTokens`
+  **Scenario**: on the base document with the four keys removed, one at a time: `hypothesis` `move_functionality`, a
+  value a later engine adds, absent; `quadrant` `tight`, `Tight`; `distributed_monolith` true, absent;
+  `raw_distance.basis` `module_boundary@system`, `ownership@pkg_core`, `galaxy@system`, `module_boundary`, `""`, and a
+  container with a line break.
+  **Expected behavior**: each `hypothesis` token kept as written, the engine's `quadrant` and `basis` tokens kept, and
+  `true`; `""` or `false` for every other row; no row fails to decode.
 - **Test name**: `TestRemovedV2KeysAreUnknown`
   **Scenario**: the base document with `comparison.task_origin_status` added, and with `new_findings` added to a
   dimension `delta`.
@@ -741,6 +769,9 @@ the tests decode each one as the release that produced it (synthetic ones as v3.
   **Scenario**: `archfit check -c .archfit.yaml --base main --lang go --require-tools`; a command with `--refresh`; with `--refresh=true`;
   with `--refreshed`; 513 characters; a command with LF; 33 commands.
   **Expected behavior**: the first and `--refreshed` decode verbatim; the rest are errors.
+- **Test name**: `TestBalancingMoveWordsAKnownHypothesisOnly`
+  **Scenario**: `introduce_contract`, a token this version does not know, `""`.
+  **Expected behavior**: the `BalancingMoves` words; the token as written; `""`.
 
 ### Integration Contract Tests
 

@@ -74,6 +74,9 @@ export interface Finding {
   strength: string;
   distance: string;
   volatility: string;
+  move: string; // the engine's balancing move for the seam, worded as the PR comment words it; '' for none
+  metric: string; // a metric ratchet, which has no edge: "metric <name>: before → after (threshold)"
+  owner_decision: boolean; // the engine leaves the move to the repository's owner
 }
 
 export interface Cycle {
@@ -118,6 +121,15 @@ export interface PullHead {
   run_id: number;
   no_baseline: boolean;
   compared: boolean;
+  decision?: Decision; // absent without a report
+}
+
+// Decision is the engine's decision on the report, as it states it.
+export interface Decision {
+  hard_gates: string; // pass, fail or unmeasured
+  blockers: number; // decision.active_blockers
+  unevaluated: { rule_id: string; reason: string }[];
+  origin_reasons: string[];
 }
 
 // Findings is a report's findings in the PR comment's groups, its evidence and its agent tasks.

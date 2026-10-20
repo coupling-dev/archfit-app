@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -864,6 +865,65 @@ func TestPullPageReadsTheGateModeOfTheBase(t *testing.T) {
 	if !body.Required {
 		t.Error("the base requires the gate, the page says advisory")
 	}
+}
+
+// The page states the engine's decision as the report gives it, the balancing move of each advisory's seam, and the
+// findings whose agent task leaves the move to the owner.
+func TestPullPageStatesTheEngineDecision(t *testing.T) {
+	var doc map[string]any
+	if err := json.Unmarshal(prArtifact(t, prPolicy), &doc); err != nil {
+		t.Fatal(err)
+	}
+	read := func(t *testing.T, doc map[string]any) pullJSON {
+		t.Helper()
+		payload, err := json.Marshal(doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e := newEnv(t)
+		e.checkPull(payload)
+		var body pullJSON
+		e.as("alice", permRead).getJSON("/api/repos/"+repoName+"/pulls/4", &body)
+		return body
+	}
+
+	t.Run("as the pilot's report gives it", func(t *testing.T) {
+		b := read(t, doc)
+		want := decisionJSON{HardGates: "fail", Blockers: 4, Unevaluated: []report.UnevaluatedRule{}, OriginReasons: []string{}}
+		if b.Decision == nil || !reflect.DeepEqual(*b.Decision, want) {
+			t.Errorf("decision = %+v, want %+v", b.Decision, want)
+		}
+		if len(b.Advisories) == 0 {
+			t.Fatal("no advisory to read")
+		}
+		for _, f := range b.Advisories {
+			if f.Move != report.BalancingMoves["follow_rule"] || f.OwnerDecision {
+				t.Errorf("advisory %s -> %s: move %q, owner decision %v", f.From, f.To, f.Move, f.OwnerDecision)
+			}
+		}
+	})
+
+	t.Run("unevaluated rules, attribution notes and an owner decision", func(t *testing.T) {
+		doc["decision"].(map[string]any)["unevaluated_required_rules"] = []any{map[string]any{"rule_id": "layers", "reason": "selector matches no module"}}
+		doc["comparison"].(map[string]any)["origin_reasons"] = []any{"base report lacks finding identities"}
+		advisory := doc["findings"].([]any)[4].(map[string]any)
+		doc["agent_tasks"] = []any{map[string]any{"finding_id": advisory["id"], "rule_id": advisory["rule_id"],
+			"repair_kind": "needs_owner_decision", "goal": "Decide", "constraints": []any{}, "files": []any{}, "validation": []any{}}}
+		b := read(t, doc)
+		if d := b.Decision; d == nil || len(d.Unevaluated) != 1 || d.Unevaluated[0] != (report.UnevaluatedRule{RuleID: "layers", Reason: "selector matches no module"}) ||
+			!slices.Equal(d.OriginReasons, []string{"base report lacks finding identities"}) {
+			t.Errorf("decision = %+v", b.Decision)
+		}
+		owners := 0
+		for _, f := range b.Advisories {
+			if f.OwnerDecision {
+				owners++
+			}
+		}
+		if owners != 1 {
+			t.Errorf("owner decisions = %d, want the one finding its task names", owners)
+		}
+	})
 }
 
 // The pull request page and its graph read their parts side by side, yet each part fails the answer exactly as when

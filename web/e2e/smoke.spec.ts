@@ -138,6 +138,9 @@ const direction = (from: string, to: string, origin: string, n: number) => ({
   strength: 'model',
   distance: 'across modules',
   volatility: 'high',
+  move: '',
+  metric: '',
+  owner_decision: false,
 });
 
 const pull = {
@@ -158,6 +161,12 @@ const pull = {
   run_id: 88,
   no_baseline: true,
   compared: true,
+  decision: {
+    hard_gates: 'fail',
+    blockers: 3,
+    unevaluated: [{ rule_id: 'layers', reason: 'selector matches no module' }],
+    origin_reasons: [],
+  },
   violation_count: 3,
   cycles: [
     {
@@ -184,8 +193,24 @@ const pull = {
       fix: 'Go through the repository.',
     },
   ],
-  advisory_count: 1,
-  advisories: [{ ...direction('ui', 'store', '', 1), rule: 'layering', rule_id: 'layering', why: 'UI skips a layer.' }],
+  advisory_count: 2,
+  advisories: [
+    {
+      ...direction('ui', 'store', '', 1),
+      rule: 'layering',
+      rule_id: 'layering',
+      why: 'UI skips a layer.',
+      move: 'Move the functionality: lower the distance, so the coupled code lives in one module',
+      owner_decision: true,
+    },
+    {
+      ...direction('', '', '', 0),
+      rule: 'metric/fan_out',
+      rule_id: 'metric/fan_out',
+      meta: 'medium',
+      metric: 'metric fan_out: 3 → 5 (at most 4)',
+    },
+  ],
   accepted_count: 1,
   accepted: [{ ...direction('x', 'y', '', 1), meta: 'low, baseline' }],
   omitted: 0,
@@ -217,7 +242,14 @@ const pull = {
   task_count: 1,
 };
 
-const findings = { ...pull, unavailable: '', branch: 'main', compared: false };
+const findings = {
+  ...pull,
+  unavailable: '',
+  branch: 'main',
+  compared: false,
+  advisory_count: 1,
+  advisories: pull.advisories.slice(0, 1),
+};
 
 const gnode = (name: string, layer: string, policy_line: number, volatility = '', subdomain = '') => ({
   name,
@@ -238,6 +270,11 @@ const glink = (from: string, to: string, status: string, count: number, more: ob
   volatility_source: 'undeclared',
   imbalance: '',
   accepted: '',
+  move: '',
+  quadrant: '',
+  crossing: '',
+  container: '',
+  distributed_monolith: false,
   ...more,
 });
 
@@ -249,7 +286,16 @@ const view = {
     gnode('legacy', '', 0),
   ],
   links: [
-    glink('api', 'db', 'violation', 12, { strength: 'intrusive', imbalance: 'medium' }),
+    glink('api', 'db', 'violation', 12, {
+      strength: 'intrusive',
+      imbalance: 'medium',
+      volatility: 'high',
+      move: 'A rule violation covers this pair: follow its Fix',
+      quadrant: 'tight',
+      crossing: 'module_boundary',
+      container: 'system',
+      distributed_monolith: true,
+    }),
     glink('db', 'api', 'violation', 2, { strength: 'contract' }),
     glink('ui', 'api', 'allowed', 4, { strength: 'model' }),
     glink('ui', 'db', 'accepted', 3, { volatility: 'high', volatility_source: 'cascade', accepted: 'advisory' }),
@@ -566,8 +612,17 @@ test('pull request: the cycle drawn as on the comment, then the other findings',
   await expect(cycle.getByText('Fix:')).toBeVisible();
   await expect(page.getByText('Go through the repository.')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Graph' })).toHaveAttribute('href', '/r/acme/app/pull/4/graph');
+  await expect(page.locator('#decision')).toContainText('Engine decision: hard gates failed on 3 findings.');
+  await expect(page.locator('#decision')).toContainText('layers: selector matches no module');
   await page.getByText('Advisories · never block').click();
   await expect(page.getByText('UI skips a layer.')).toBeVisible();
+  const advisories = page.locator('#advisories');
+  await expect(advisories).toContainText(
+    'layering · Suggested move: Move the functionality: lower the distance, so the coupled code lives in one module.',
+  );
+  await expect(advisories.getByText('owner decision')).toBeVisible();
+  await expect(advisories).toContainText('metric fan_out: 3 → 5 (at most 4)');
+  await expect(advisories).not.toContainText('(no module)');
   await page.getByText('To measure more').click();
   const evidence = page.getByRole('table');
   await expect(evidence.getByRole('columnheader', { name: 'Result' })).toBeVisible();
@@ -659,6 +714,15 @@ test('graph: the canvas, the inspector and the matrix', async ({ page }) => {
   await expect(inspector.getByRole('heading', { name: 'Dependency' })).toBeVisible();
   await expect(inspector).toContainText('intrusive coupling');
   await expect(inspector).toContainText('imbalanced · medium');
+  await expect(inspector).toContainText(
+    'Flagged: intrusive coupling across the module boundary at high volatility (container system).',
+  );
+  await expect(inspector).toContainText('A rule violation covers this pair: follow its Fix.');
+  await expect(inspector).toContainText('tight: strong coupling across a boundary');
+  await expect(inspector).toContainText('the module boundary, within system');
+  await expect(page.locator('#flagged')).toHaveText(
+    '1 dependency couples strongly across a module boundary at high volatility.',
+  );
   await expect(inspector).toContainText('api and db depend on each other.');
   await expect(inspector).toContainText('Other direction · a cycle');
   await expect(inspector.getByRole('link', { name: /Open api in the policy/ })).toHaveAttribute(

@@ -1,10 +1,12 @@
 package ui
 
 import (
+	"cmp"
 	"encoding/json"
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/report"
@@ -29,14 +31,24 @@ type pullHead struct {
 	URL       string `json:"url"`
 	ChecksURL string `json:"checks_url"`
 
-	Result      string `json:"result"` // the archfit/state word, "" before a result
-	Tone        string `json:"tone"`
-	Headline    string `json:"headline"`
-	Required    bool   `json:"required"`
-	Unavailable string `json:"unavailable"` // why there is no report to show; "" when there is
-	RunID       int64  `json:"run_id"`
-	NoBaseline  bool   `json:"no_baseline"` // "new" means not accepted, not "added by this pull request"
-	Compared    bool   `json:"compared"`    // the engine compared against the base branch, so origins mean something
+	Result      string        `json:"result"` // the archfit/state word, "" before a result
+	Tone        string        `json:"tone"`
+	Headline    string        `json:"headline"`
+	Required    bool          `json:"required"`
+	Unavailable string        `json:"unavailable"` // why there is no report to show; "" when there is
+	RunID       int64         `json:"run_id"`
+	NoBaseline  bool          `json:"no_baseline"`        // "new" means not accepted, not "added by this pull request"
+	Compared    bool          `json:"compared"`           // the engine compared against the base branch, so origins mean something
+	Decision    *decisionJSON `json:"decision,omitempty"` // nil without a report
+}
+
+// decisionJSON is the engine's decision on the report, as it states it: its hard gates, how many findings block, the
+// required rules it could not evaluate and what it discloses about attribution. The page words it.
+type decisionJSON struct {
+	HardGates     string                   `json:"hard_gates"` // pass, fail or unmeasured
+	Blockers      int                      `json:"blockers"`   // decision.active_blockers
+	Unevaluated   []report.UnevaluatedRule `json:"unevaluated"`
+	OriginReasons []string                 `json:"origin_reasons"`
 }
 
 // findingsJSON is a report's findings in the comment's groups, its evidence and its agent tasks.
@@ -72,6 +84,10 @@ type findingJSON struct {
 	Strength     string   `json:"strength"`  // of the seam on this module pair, "" without one
 	Distance     string   `json:"distance"`
 	Volatility   string   `json:"volatility"`
+	Move         string   `json:"move"`   // the engine's balancing move for that seam, as the comment words it; "" for none
+	Metric       string   `json:"metric"` // a metric ratchet, which has no edge: "metric <name>: before → after (threshold)"
+	// OwnerDecision: the engine's agent task for the finding needs the owner's decision (a policy change), not code.
+	OwnerDecision bool `json:"owner_decision"`
 }
 
 // cycleJSON is one dependency cycle among the shown violations: its modules and a row per direction, with the reason
@@ -130,6 +146,27 @@ func (s *server) apiPull(r *http.Request, sc scope) (any, error) {
 	return body, nil
 }
 
+// metricSubject names a metric ratchet finding as the PR comment does: the metric, then the engine's numbers when it
+// gives both; "" for any other finding.
+func metricSubject(f report.Finding) string {
+	if !strings.HasPrefix(f.RuleID, report.MetricRulePrefix) {
+		return ""
+	}
+	s := "metric " + cmp.Or(f.MatchedBy[report.MatchedByMetric], strings.TrimPrefix(f.RuleID, report.MetricRulePrefix))
+	before, after, threshold := f.MatchedBy[report.MatchedByBefore], f.MatchedBy[report.MatchedByAfter], f.MatchedBy[report.MatchedByThreshold]
+	if before == "" || after == "" {
+		return s
+	}
+	s += ": " + before + " → " + after
+	if threshold != "" {
+		s += " (" + threshold + ")"
+	}
+	return s
+}
+
+// repairOwnerDecision is the engine's agent-task repair kind that leaves the move to the repository's owner.
+const repairOwnerDecision = "needs_owner_decision"
+
 // headOf is the header of a pull request and the report its check names; rep is nil when there is none.
 func headOf(sc scope, pull pullBody, rep *report.Report) pullHead {
 	p := pull.Pull
@@ -145,6 +182,10 @@ func headOf(sc scope, pull pullBody, rep *report.Report) pullHead {
 	if rep != nil {
 		h.NoBaseline = noBaseline(*rep)
 		h.Compared = rep.Comparison.OriginStatus == originComparable
+		d := rep.Decision
+		h.Decision = &decisionJSON{HardGates: d.HardGates, Blockers: d.ActiveBlockers,
+			Unevaluated:   append([]report.UnevaluatedRule{}, d.UnevaluatedRequiredRules...),
+			OriginReasons: append([]string{}, rep.Comparison.OriginReasons...)}
 	}
 	return h
 }
@@ -171,6 +212,12 @@ func fillFindings(body *findingsJSON, rep report.Report) {
 	g := report.Group(rep, findingsPerList)
 	violations, advisories, accepted := g.Violations, g.Advisories, g.Accepted
 	body.ViolationCount, body.AdvisoryCount, body.AcceptedCount = len(violations), len(advisories), len(accepted)
+	ownerDecides := map[string]bool{}
+	for _, t := range rep.AgentTasks {
+		if t.RepairKind == repairOwnerDecision {
+			ownerDecides[t.FindingID] = true
+		}
+	}
 	seams := map[[2]string]report.Seam{}
 	for _, sm := range rep.Seams {
 		seams[[2]string{sm.FromModule, sm.ToModule}] = sm
@@ -179,7 +226,7 @@ func fillFindings(body *findingsJSON, rep report.Report) {
 		out := findingJSON{
 			Rule: ruleName(f.RuleID), RuleID: f.RuleID, Meta: findingMeta(f), Violation: f.Active(), From: endpointName(f.Edge.From),
 			To: endpointName(f.Edge.To), Why: report.ReadableWhy(f.Why), Fix: f.Constraint, Alternatives: f.AllowedAlternatives,
-			Locations: make([]string, len(f.Locations)),
+			Locations: make([]string, len(f.Locations)), OwnerDecision: ownerDecides[f.ID], Metric: metricSubject(f),
 		}
 		if g.Compared {
 			out.Origin = origin
@@ -192,6 +239,7 @@ func fillFindings(body *findingsJSON, rep report.Report) {
 		}
 		if sm, ok := seams[[2]string{f.Edge.From.Module, f.Edge.To.Module}]; ok {
 			out.Strength, out.Distance, out.Volatility = sm.Strength, distanceWord(sm.Distance), sm.Volatility
+			out.Move = report.BalancingMove(sm.Hypothesis)
 		}
 		return out
 	}
