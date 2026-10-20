@@ -58,6 +58,88 @@ export interface Overview {
   checks_url: string;
 }
 
+export interface Finding {
+  rule: string;
+  rule_id: string;
+  meta: string;
+  violation: boolean;
+  from: string;
+  to: string;
+  origin: '' | 'added' | 'existing';
+  why: string;
+  fix: string;
+  alternatives: string[] | null;
+  locations: string[];
+  strength: string;
+  distance: string;
+  volatility: string;
+}
+
+export interface Cycle {
+  modules: string[];
+  rule: string;
+  rule_id: string;
+  meta: string;
+  violation: boolean;
+  why: string;
+  fixes: string[] | null;
+  alternatives: string[] | null;
+  directions: Finding[];
+}
+
+export interface Dimension {
+  key: string;
+  name: string;
+  status: string;
+  observed: number;
+  measurable: number;
+  basis: string;
+  confidence: string;
+  gate: string;
+}
+
+// PullHead is the header the pull request page and its graph share.
+export interface PullHead {
+  number: number;
+  title: string;
+  author: string;
+  state: string;
+  head_ref: string;
+  base_ref: string;
+  head_sha: string;
+  url: string;
+  checks_url: string;
+  result: string;
+  tone: Tone;
+  headline: string;
+  required: boolean;
+  unavailable: string;
+  run_id: number;
+  no_baseline: boolean;
+  compared: boolean;
+}
+
+// Findings is a report's findings in the PR comment's groups, its evidence and its agent tasks.
+export interface Findings {
+  violation_count: number;
+  cycles: Cycle[] | null;
+  other: Finding[] | null;
+  advisory_count: number;
+  advisories: Finding[] | null;
+  accepted_count: number;
+  accepted: Finding[] | null;
+  omitted: number;
+  dimensions: Dimension[] | null;
+  unknowns: { dimension: string; fact: string; reason: string }[] | null;
+  tasks: string;
+  task_count: number;
+}
+
+export type Pull = PullHead & Findings;
+
+// RepoFindings is the latest report of the default branch, for the overview.
+export type RepoFindings = Findings & { unavailable: string; branch: string; no_baseline: boolean };
+
 export interface Notice {
   notice?: string;
   location?: string;

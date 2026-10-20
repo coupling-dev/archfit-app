@@ -373,7 +373,7 @@ receipt marker. Block G is in the gate summary only.
    <token>"), `Edge.From.Module` → `Edge.To.Module` (with `Path` when set),
    locations as `file:line` (at most 10, then "and N more"), `Why`, then the policy-permitted repair: `Constraint`
    and `AllowedAlternatives`. feedback adds no repair of its own and invents no access route. At most 50 violations
-   are shown, then "and N more" **[default]**; a cycle partner past the cap stays in "and N more". Display only: the
+   are shown, then "and N more" (`report.ShownPerGroup`, which the App's pull request page shares) **[default]**; a cycle partner past the cap stays in "and N more". Display only: the
    count is of findings, and each finding keeps its ID. Grouping never changes the verdict.
 
    Tables (cycle directions and the three folds): one row per finding, at most 50 per fold, then "and N more". Fold
@@ -394,7 +394,7 @@ receipt marker. Block G is in the gate summary only.
    reads the other findings of the report on the same module pair: `existing` when one is `pre_existing` (the base
    had the dependency), else `added` when one that lies on no dependency cycle is `introduced` (the same new cycle under
    another rule is introduced in every direction too, so it is no evidence; only the first 50 violations are searched
-   for cycles, as for display), else empty. "added", not "new": without a baseline
+   for cycles, as for display), else empty (`report.PairOrigin`, shared with the App's pull request page). "added", not "new": without a baseline
    every finding has status `new`. Limit: an introduced finding on a pair is not proof that the base lacked every
    import between the two modules; a pre-existing finding on the pair wins.
 

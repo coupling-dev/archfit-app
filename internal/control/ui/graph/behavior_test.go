@@ -33,7 +33,7 @@ func TestInvalidYAMLMarksGraphStale(t *testing.T) {
 	if !reflect.DeepEqual(got.Links, wantLinks) {
 		t.Errorf("Links = %+v, want %+v", got.Links, wantLinks)
 	}
-	if want := []Node{{"api", "", 0}, {"db", "", 0}, {"ui", "", 0}}; !reflect.DeepEqual(got.Nodes, want) {
+	if want := []Node{{"api", "", 0, ""}, {"db", "", 0, ""}, {"ui", "", 0, ""}}; !reflect.DeepEqual(got.Nodes, want) {
 		t.Errorf("Nodes = %+v, want the link endpoints %+v", got.Nodes, want)
 	}
 
@@ -43,7 +43,7 @@ func TestInvalidYAMLMarksGraphStale(t *testing.T) {
 	}
 
 	lastValid := Build(rep, []byte(threeModules))
-	if want := []Node{{"api", "app", 3}, {"db", "infra", 6}, {"ui", "app", 9}}; !reflect.DeepEqual(lastValid.Nodes, want) {
+	if want := []Node{{"api", "app", 3, ""}, {"db", "infra", 6, ""}, {"ui", "app", 9, ""}}; !reflect.DeepEqual(lastValid.Nodes, want) {
 		t.Errorf("last valid Nodes = %+v, want %+v", lastValid.Nodes, want)
 	}
 	if lastValid.Stale {
@@ -92,7 +92,7 @@ func TestViolationIsToldApartFromObserved(t *testing.T) {
 	got := Build(rep, []byte(fixturePolicy))
 
 	want := []Link{link("a", "b", 2, StatusViolation), link("b", "a", 1, StatusObserved)}
-	if !reflect.DeepEqual(got.Links, want) {
+	if !reflect.DeepEqual(statuses(got.Links), want) {
 		t.Errorf("Links = %+v, want %+v", got.Links, want)
 	}
 }
@@ -111,7 +111,7 @@ func TestBaselinedViolationIsNeverPermitted(t *testing.T) {
 			rep.Seams[i].Policy = ""
 		}
 		got := Build(rep, []byte(fixturePolicy))
-		if want := []Link{link("a", "b", 1, StatusAccepted)}; !reflect.DeepEqual(got.Links, want) {
+		if want := []Link{link("a", "b", 1, StatusAccepted)}; !reflect.DeepEqual(statuses(got.Links), want) {
 			t.Errorf("%s: Links = %+v, want %+v", status, got.Links, want)
 		}
 	}

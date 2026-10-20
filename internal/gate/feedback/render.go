@@ -34,7 +34,7 @@ const (
 // Display caps. Each capped list ends with "and N more".
 const (
 	reasonCap   = 50
-	groupCap    = 50
+	groupCap    = report.ShownPerGroup
 	locationCap = 10
 	gapCap      = 50
 	metricCap   = 10
@@ -54,8 +54,6 @@ const (
 	statusFixed    = "fixed"
 	statusNew      = "new"
 	statusExpired  = "expired_waiver"
-
-	kindAdvisory = "advisory"
 
 	verdictHealthy = "healthy"
 	verdictBlocked = "blocked"

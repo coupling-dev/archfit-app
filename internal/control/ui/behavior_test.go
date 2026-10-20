@@ -2,7 +2,6 @@ package ui
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
@@ -11,6 +10,7 @@ import (
 	"net/url"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -139,50 +139,49 @@ func TestInvalidYAMLIsRefusedAndGraphGoesStale(t *testing.T) {
 
 	view := func() (graph.View, string) {
 		t.Helper()
-		res := c.get(base + "/graph")
-		wantStatus(t, res, http.StatusOK)
-		var v graph.View
-		if err := json.Unmarshal([]byte(embeddedJSON(t, res.Body.String())), &v); err != nil {
-			t.Fatal(err)
+		var b graphJSON
+		c.getJSON("/api/repos/"+repoName+"/graph", &b)
+		if b.View == nil {
+			t.Fatalf("no view: %+v", b)
 		}
-		return v, res.Body.String()
+		return *b.View, b.StaleReason
 	}
 
-	if got, body := view(); got.Incomplete || strings.Contains(body, `id="incomplete"`) {
+	if got, _ := view(); got.Incomplete {
 		t.Error("a healthy report whose hard gates passed is shown as incomplete")
 	}
 
 	edited := policyText + "  c:\n    layer: edge\n"
 	wantStatus(t, c.post(base+"/policy", formOf("", "", edited)), http.StatusSeeOther)
-	got, body := view()
-	if want := graph.Build(rep, []byte(edited)); !got.Stale || !reflect.DeepEqual(got, want) || len(got.Nodes) != 3 {
-		t.Errorf("view = %+v, want the stale view of the draft %+v", got, want)
+	got, reason := view()
+	if want := graph.Build(rep, []byte(edited)); !got.Stale || !reflect.DeepEqual(got, want) || len(got.Nodes) != 3 || reason != "" {
+		t.Errorf("view = %+v (%q), want the stale view of the draft %+v", got, reason, want)
 	}
-	wantContains(t, body, `id="stale"`)
 
 	e.props.push(repoName, editBranchAlice, "modules:\n\tbroken")
-	got, body = view()
+	got, reason = view()
 	want := graph.Build(rep, []byte(policyText))
 	want.Stale = true
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("view = %+v, want the default-branch view %+v", got, want)
+	if !reflect.DeepEqual(got, want) || reason != draftBroken {
+		t.Errorf("view = %+v (%q), want the default-branch view %+v", got, reason, want)
 	}
-	wantContains(t, body, `id="stale"`, "The draft does not parse")
 }
 
 func TestGraphWithoutAReport(t *testing.T) {
 	e := newEnv(t)
 	c := e.as("alice", permRead)
-	res := c.get("/r/" + repoName + "/graph")
-	wantStatus(t, res, http.StatusOK)
-	wantContains(t, res.Body.String(), "No report available")
+	path := "/api/repos/" + repoName + "/graph"
+	var b graphJSON
+	c.getJSON(path, &b)
+	if b.Unavailable != noReport || b.View != nil {
+		t.Errorf("body = %+v, want %q and no view", b, noReport)
+	}
 
 	e.publishReport(repoName, []byte(`{"schema_version":"archfit.architecture-state.v1","surprise":1}`))
-	res = c.get("/r/" + repoName + "/graph")
-	wantStatus(t, res, http.StatusOK)
-	wantContains(t, res.Body.String(), "Report unavailable")
-	if strings.Contains(res.Body.String(), "graph-data") {
-		t.Error("a partial graph was rendered")
+	b = graphJSON{}
+	c.getJSON(path, &b)
+	if b.Unavailable != reportUnavailable || b.View != nil {
+		t.Errorf("body = %+v, want %q and no partial graph", b, reportUnavailable)
 	}
 }
 
@@ -198,11 +197,10 @@ func TestGraphReadsTheLatestSuccessfulPushRun(t *testing.T) {
 		e.gh.addRun(repoName, workflow, mainBranch, run)
 	}
 
-	res := c.get("/r/" + repoName + "/graph")
-	wantStatus(t, res, http.StatusOK)
-	body := res.Body.String()
-	if strings.Contains(body, "No report available") || !strings.Contains(body, "graph-data") {
-		t.Errorf("no graph from the report of run 77 behind newer dispatch, failed and running runs: %.300s", body)
+	var b graphJSON
+	c.getJSON("/api/repos/"+repoName+"/graph", &b)
+	if b.Unavailable != "" || b.View == nil {
+		t.Errorf("no graph from the report of run 77 behind newer dispatch, failed and running runs: %+v", b)
 	}
 	if calls := e.gh.called("Artifact"); len(calls) != 1 || calls[0].detail != fmt.Sprintf("77 archfit-report %d", report.MaxBytes) {
 		t.Errorf("Artifact calls = %+v, want run 77 only", calls)
@@ -210,116 +208,161 @@ func TestGraphReadsTheLatestSuccessfulPushRun(t *testing.T) {
 }
 
 // TestPullGraphShowsWhatThePullRequestAdded reads the graph of a pumba-pilot#11-shaped report as the owner does: the
-// two cycles are new in this PR and stay violations, the accepted coupling advisories are pre-existing, and the
-// links the pull request did not touch are drawn without a "new" claim.
+// two cycles stay violations, and a dependency is new only where the comment says this pull request added it: one
+// direction of each cycle. The other directions and the untouched dependencies carry a pre-existing finding.
 func TestPullGraphShowsWhatThePullRequestAdded(t *testing.T) {
 	e := newEnv(t)
 	e.checkPull(prArtifact(t, prPolicy))
 	e.gh.setFile(repoName, sha(4), ".archfit.yaml", prPolicy)
-	body := e.as("alice", permRead).get("/r/" + repoName + "/pull/4/graph").Body.String()
-	var v graph.View
-	if err := json.Unmarshal([]byte(embeddedJSON(t, body)), &v); err != nil {
-		t.Fatalf("embedded JSON: %v", err)
+	var b graphJSON
+	e.as("alice", permRead).getJSON("/api/repos/"+repoName+"/pulls/4/graph", &b)
+	if b.View == nil {
+		t.Fatalf("no view: %+v", b)
 	}
+	v := *b.View
 
 	type got struct {
 		status graph.LinkStatus
-		new    bool
+		origin string
 	}
 	links := map[string]got{}
 	for _, l := range v.Links {
-		links[l.From+" -> "+l.To] = got{l.Status, l.Introduced}
+		links[l.From+" -> "+l.To] = got{l.Status, l.Origin}
 	}
 	want := map[string]got{
-		"pkg_chaos -> pkg_container": {graph.StatusViolation, true},
-		"pkg_container -> pkg_chaos": {graph.StatusViolation, true},
-		"pkg_chaos -> pkg_util":      {graph.StatusViolation, true},
-		"pkg_util -> pkg_chaos":      {graph.StatusViolation, true},
-		"pkg_cmd -> pkg_chaos":       {graph.StatusObserved, false},
-		"pkg_cmd -> pkg_container":   {graph.StatusObserved, false},
-		"pkg_cmd -> pkg_util":        {graph.StatusObserved, false},
-		"pkg_container -> pkg_util":  {graph.StatusObserved, false},
+		"pkg_chaos -> pkg_container": {graph.StatusViolation, report.PairExisting},
+		"pkg_container -> pkg_chaos": {graph.StatusViolation, report.PairAdded},
+		"pkg_chaos -> pkg_util":      {graph.StatusViolation, report.PairExisting},
+		"pkg_util -> pkg_chaos":      {graph.StatusViolation, report.PairAdded},
+		"pkg_cmd -> pkg_chaos":       {graph.StatusObserved, report.PairExisting},
+		"pkg_cmd -> pkg_container":   {graph.StatusObserved, report.PairExisting},
+		"pkg_cmd -> pkg_util":        {graph.StatusObserved, report.PairExisting},
+		"pkg_container -> pkg_util":  {graph.StatusObserved, report.PairExisting},
 	}
 	if !reflect.DeepEqual(links, want) {
 		t.Errorf("links = %+v\nwant %+v", links, want)
+	}
+	if b.Added != 2 {
+		t.Errorf("added = %d, want the two cycle directions the comment calls added", b.Added)
 	}
 
 	origins := map[string][]string{}
 	for _, f := range v.Findings {
 		k := f.From + " -> " + f.To
-		origins[k] = append(origins[k], f.RuleID+" "+f.Status+" "+f.Origin)
+		origins[k] = append(origins[k], f.RuleID+" "+f.Status)
 	}
 	for k, w := range map[string][]string{
-		"pkg_chaos -> pkg_container": {"no-module-cycles new introduced", "bc/imbalanced_coupling baseline pre_existing"},
-		"pkg_container -> pkg_chaos": {"no-module-cycles new introduced", "bc/imbalanced_coupling new introduced"},
-		"pkg_cmd -> pkg_chaos":       {"bc/imbalanced_coupling baseline pre_existing"},
+		"pkg_chaos -> pkg_container": {"no-module-cycles new", "bc/imbalanced_coupling baseline"},
+		"pkg_container -> pkg_chaos": {"no-module-cycles new", "bc/imbalanced_coupling new"},
+		"pkg_cmd -> pkg_chaos":       {"bc/imbalanced_coupling baseline"},
 	} {
 		if !reflect.DeepEqual(origins[k], w) {
 			t.Errorf("findings of %s = %q, want %q", k, origins[k], w)
 		}
 	}
-	wantContains(t, body, "4 links have a finding the base branch does not have")
 }
 
 func TestPullGraphStates(t *testing.T) {
 	payload := func(t *testing.T) []byte { return prArtifact(t, prPolicy) }
+	blob := "https://github.com/" + repoName + "/blob/main/.archfit.yaml"
 	tests := []struct {
-		name      string
-		setup     func(t *testing.T, e *env)
-		wants     []string
-		notWanted []string
+		name  string
+		setup func(t *testing.T, e *env)
+		check func(t *testing.T, b graphJSON)
 	}{
-		{"no check on the head", func(*testing.T, *env) {}, []string{noResult, `href="/r/` + repoName + `/pull/4"`}, []string{"graph-data"}},
+		{"no check on the head", func(*testing.T, *env) {}, func(t *testing.T, b graphJSON) {
+			if b.Unavailable != noResult || b.View != nil || b.Pull == nil || b.Pull.Number != 4 {
+				t.Errorf("body = %+v", b)
+			}
+		}},
 		{"a withdrawn result shows no graph", func(t *testing.T, e *env) {
 			e.checkPull(payload(t))
 			e.gh.checks[repoName+"@"+sha(4)+"#"+checkState][0].Conclusion = conclusionActionRequired
-		}, []string{actionRequired}, []string{"graph-data"}},
+		}, func(t *testing.T, b graphJSON) {
+			if b.Unavailable != actionRequired || b.View != nil {
+				t.Errorf("body = %+v", b)
+			}
+		}},
 		{"an expired report", func(t *testing.T, e *env) {
 			e.checkPull(payload(t))
 			delete(e.gh.artifacts, 88)
-		}, []string{reportExpired}, []string{"graph-data"}},
+		}, func(t *testing.T, b graphJSON) {
+			if b.Unavailable != reportExpired || b.View != nil {
+				t.Errorf("body = %+v", b)
+			}
+		}},
 		{"a run that did not compare claims nothing new", func(t *testing.T, e *env) {
 			e.checkPull(bytes.Replace(payload(t), []byte(`"origin_status":"comparable"`), []byte(`"origin_status":"unknown"`), 1))
 			e.gh.setFile(repoName, sha(4), ".archfit.yaml", prPolicy)
-		}, []string{`id="not-compared"`, "This run did not compare with the base branch, so the graph cannot show what this PR added.", "graph-data"},
-			[]string{`"Introduced":true`, `"Origin":"introduced"`, `id="new-count"`}},
+		}, func(t *testing.T, b graphJSON) {
+			if b.View == nil || b.Pull.Compared || b.Added != 0 {
+				t.Fatalf("body = %+v", b)
+			}
+			for _, l := range b.View.Links {
+				if l.Origin != "" {
+					t.Errorf("%s -> %s origin %q without a comparison", l.From, l.To, l.Origin)
+				}
+			}
+		}},
 		{"a policy unchanged by the pull request comes from the base", func(t *testing.T, e *env) {
 			e.checkPull(payload(t))
 			e.gh.setFile(repoName, sha(4), ".archfit.yaml", prPolicy+"# edited\n")
 			e.gh.setFile(repoName, mainBranch, ".archfit.yaml", prPolicy)
-		}, []string{`data-policy-url="https://github.com/` + repoName + `/blob/main/.archfit.yaml"`, `"Introduced":true`}, []string{`id="stale"`}},
+		}, func(t *testing.T, b graphJSON) {
+			if b.PolicyHref != blob || b.View == nil || b.View.Stale || b.Added == 0 {
+				t.Errorf("body = %+v", b)
+			}
+		}},
 		{"no policy of the report anywhere is stale", func(t *testing.T, e *env) {
 			e.checkPull(payload(t))
-		}, []string{`id="stale"`, noPolicy, `data-policy-url="https://github.com/` + repoName + `/blob/main/.archfit.yaml"`}, nil},
+		}, func(t *testing.T, b graphJSON) {
+			if b.PolicyHref != blob || b.View == nil || !b.View.Stale || b.StaleReason != noPolicy {
+				t.Errorf("body = %+v", b)
+			}
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			e := newEnv(t)
 			tt.setup(t, e)
-			res := e.as("alice", permRead).get("/r/" + repoName + "/pull/4/graph")
-			wantStatus(t, res, http.StatusOK)
-			body := html.UnescapeString(res.Body.String())
-			wantContains(t, body, tt.wants...)
-			for _, s := range tt.notWanted {
-				if strings.Contains(body, s) {
-					t.Errorf("body contains %q", s)
-				}
-			}
+			var b graphJSON
+			e.as("alice", permRead).getJSON("/api/repos/"+repoName+"/pulls/4/graph", &b)
+			tt.check(t, b)
 		})
 	}
 }
 
-// TestDefaultGraphClaimsNothingNew: "new in this PR" belongs to the pull request graph, even when a default-branch
-// report carries a comparable origin.
+// TestDefaultGraphClaimsNothingNew: "added by this PR" belongs to the pull request pages, even when a default-branch
+// report carries a comparable origin. The overview's findings, from the same report, claim nothing either.
 func TestDefaultGraphClaimsNothingNew(t *testing.T) {
 	e := newEnv(t)
 	e.gh.setFile(repoName, mainBranch, ".archfit.yaml", prPolicy)
 	e.publishReport(repoName, prArtifact(t, prPolicy))
-	body := e.as("alice", permRead).get("/r/" + repoName + "/graph").Body.String()
-	wantContains(t, body, "graph-data", "pkg_chaos")
-	for _, s := range []string{"new in this PR", `data-scope="pull"`, `id="not-compared"`, `id="new-count"`} {
-		if strings.Contains(body, s) {
-			t.Errorf("default-branch graph contains %q", s)
+	var b graphJSON
+	e.as("alice", permRead).getJSON("/api/repos/"+repoName+"/graph", &b)
+	if b.View == nil || b.Pull != nil || b.Added != 0 {
+		t.Fatalf("body = %+v", b)
+	}
+	for _, l := range b.View.Links {
+		if l.Origin != "" {
+			t.Errorf("%s -> %s origin %q on the default branch", l.From, l.To, l.Origin)
+		}
+	}
+	var f repoFindingsJSON
+	e.as("alice", permRead).getJSON("/api/repos/"+repoName+"/findings", &f)
+	if f.Unavailable != "" || f.Branch != mainBranch || f.ViolationCount == 0 || len(f.Cycles) == 0 {
+		t.Fatalf("findings = %+v", f)
+	}
+	for _, c := range f.Cycles {
+		for _, d := range c.Directions {
+			if d.Origin != "" {
+				t.Errorf("cycle direction %s -> %s origin %q on the default branch", d.From, d.To, d.Origin)
+			}
+		}
+	}
+	for _, x := range slices.Concat(f.Other, f.Advisories, f.Accepted) {
+		if x.Origin != "" {
+			t.Errorf("finding %s origin %q on the default branch", x.RuleID, x.Origin)
 		}
 	}
 }

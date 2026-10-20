@@ -395,7 +395,7 @@ func TestNoScoreAnywhere(t *testing.T) {
 			e.publishReport(repoName, artifact(t, fixture))
 			e.acct.status = account.Status{Plan: account.PlanTrial, TrialEnds: e.now.AddDate(0, 0, 9)}
 
-			for _, path := range []string{"/api/repos", "/api/repos/" + repoName + "/overview", "/r/" + repoName + "/policy", "/r/" + repoName + "/graph", "/r/" + repoName + "/data-sharing", "/api/repos/" + repoName + "/data-sharing"} {
+			for _, path := range []string{"/api/repos", "/api/repos/" + repoName + "/overview", "/api/repos/" + repoName + "/pulls/4", "/api/repos/" + repoName + "/graph", "/api/repos/" + repoName + "/findings", "/r/" + repoName + "/policy", "/r/" + repoName + "/graph", "/r/" + repoName + "/data-sharing", "/api/repos/" + repoName + "/data-sharing"} {
 				res := c.get(path)
 				wantStatus(t, res, http.StatusOK)
 				// Policy text and the view model are the customer's own data, not something ui computes.
@@ -455,7 +455,7 @@ func TestNoAssetNeedsInlineStyleOrBlobWorker(t *testing.T) {
 // Report text is untrusted: the scripts build the page from it through textContent and setAttribute only.
 func TestScriptsNeverParseMarkup(t *testing.T) {
 	markup := regexp.MustCompile(`innerHTML|outerHTML|insertAdjacentHTML|document\.write|createContextualFragment|\beval\(|new Function`)
-	for _, name := range []string{"static/graph.js", "static/editor.js"} {
+	for _, name := range []string{"static/editor.js"} {
 		raw, err := fs.ReadFile(staticFS, name)
 		if err != nil {
 			t.Fatal(err)
@@ -489,7 +489,8 @@ func TestHostileStringsAreEscaped(t *testing.T) {
 	e.gh.checks[repoName+"@"+sha(4)+"#"+checkState] = []api.CheckRun{{ID: 1, Conclusion: "neutral", Title: hostileText, ExternalID: "v1:0:0:"}}
 
 	for _, path := range []string{"/", "/api/repos", "/r/" + repoName, "/api/repos/" + repoName + "/overview", "/r/" + repoName + "/policy",
-		"/r/" + repoName + "/graph", "/r/" + repoName + "/data-sharing", "/r/" + repoName + "/pull/4", "/r/" + repoName + "/pull/4/graph"} {
+		"/r/" + repoName + "/graph", "/r/" + repoName + "/data-sharing", "/r/" + repoName + "/pull/4", "/api/repos/" + repoName + "/pulls/4", "/r/" + repoName + "/pull/4/graph",
+		"/api/repos/" + repoName + "/graph", "/api/repos/" + repoName + "/pulls/4/graph"} {
 		res := c.get(path)
 		wantStatus(t, res, http.StatusOK)
 		body := res.Body.String()
@@ -505,12 +506,6 @@ func TestHostileStringsAreEscaped(t *testing.T) {
 			t.Errorf("%s: CSP = %q", path, csp)
 		}
 	}
-	graphPage := c.get("/r/" + repoName + "/graph").Body.String()
-	data := embeddedJSON(t, graphPage)
-	if !strings.Contains(data, `\u`+`003cimg src=x`) || strings.Contains(data, "<") {
-		t.Errorf("embedded JSON is not escaped (raw < at %d): %.200s", strings.Index(data, "<"), data)
-	}
-	wantContains(t, graphPage, "&lt;img src=x")
 	for _, path := range []string{"/nowhere", "/static/app.css", "/schema/policy.json"} {
 		if e.anonymous().get(path).Header().Get("Content-Security-Policy") == "" {
 			t.Errorf("%s has no CSP header", path)
@@ -528,6 +523,10 @@ func TestNoAPIResponseHoldsASecret(t *testing.T) {
 		c.get("/api/session"),
 		c.get("/api/repos"),
 		c.get(api + "/overview"),
+		c.get(api + "/pulls/4"),
+		c.get(api + "/pulls/4/graph"),
+		c.get(api + "/graph"),
+		c.get(api + "/findings"),
 		c.postJSON(api+"/onboarding", onboardingJSON{Mode: "customer", Owners: "alice"}),
 		c.postJSON(api+"/discover", struct{}{}),
 		c.get("/api/nothing"),

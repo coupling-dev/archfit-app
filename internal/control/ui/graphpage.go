@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strconv"
 
 	"github.com/alexei-led/archfit-app/internal/control/ui/graph"
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -24,77 +23,90 @@ const (
 	draftBroken       = "The draft does not parse. The graph shows the policy on the default branch."
 )
 
-type graphNode struct {
-	graph.Node
-	Href string // "" when the module's line is unknown
+// graphJSON is a graph page: the view graph.Build made, or why there is none. The web app renders every string in it
+// as text, and links only through its safe-href rule.
+type graphJSON struct {
+	Unavailable string      `json:"unavailable"` // why there is no graph; "" when View is set
+	View        *graph.View `json:"view"`
+	StaleReason string      `json:"stale_reason"`
+	PolicyHref  string      `json:"policy_href"` // the policy text the nodes come from; a module's line is policy_href + "#L<line>"
+	Branch      string      `json:"branch"`      // the default branch, whose latest report the repository graph shows
+	Pull        *pullHead   `json:"pull"`        // the pull request whose report this is; nil on the repository graph
+	Added       int         `json:"added"`       // dependencies this pull request added (graph.Link.Origin)
 }
 
-type graphBody struct {
-	Unavailable string // why there is no graph; "" when View is set
-	View        graph.View
-	Nodes       []graphNode
-	StaleReason string
-	PolicyURL   string     // the policy text the nodes come from; a module's line is PolicyURL + "#L<line>"
-	Pull        *pullScope // the pull request whose report this is; nil on the default-branch graph
-}
-
-// setView sets the view and links each declared module to its line in the policy text.
-func (b *graphBody) setView(v graph.View, policyURL string) {
-	b.View, b.PolicyURL = v, policyURL
-	for _, n := range v.Nodes {
-		node := graphNode{Node: n}
-		if n.PolicyLine != 0 {
-			node.Href = policyURL + "#L" + strconv.Itoa(n.PolicyLine)
-		}
-		b.Nodes = append(b.Nodes, node)
-	}
-}
-
-func (s *server) graphPage(w http.ResponseWriter, r *http.Request, sc scope) {
-	body, err := s.buildGraph(r.Context(), sc)
-	if err != nil {
-		s.fail(w, r, sc, err)
-		return
-	}
-	s.render(w, r, http.StatusOK, "graph", s.newPage(r, sc, "Graph", body))
-}
-
-// buildGraph never returns a partial graph: either a whole view or the reason there is none.
-func (s *server) buildGraph(ctx context.Context, sc scope) (graphBody, error) {
-	payload, err := s.latestReport(ctx, sc.repo)
-	if errors.Is(err, api.ErrNotFound) || errors.Is(err, errNoSettings) {
-		return graphBody{Unavailable: noReport}, nil
-	}
-	if err != nil {
-		return graphBody{}, err
-	}
-	// The artifact carries no envelope that names its engine release. The graph only displays it, and the
-	// newest release's key set holds every older one, so the newest is the one to read it with.
-	releases := report.EngineVersions()
-	rep, err := report.Decode(payload, releases[len(releases)-1])
-	if err != nil {
-		return graphBody{Unavailable: reportUnavailable}, nil
+// apiGraph is the repository graph: GET /api/repos/{o}/{n}/graph, from the latest report of the default branch.
+func (s *server) apiGraph(r *http.Request, sc scope) (any, error) {
+	ctx := r.Context()
+	body := graphJSON{Branch: sc.repo.DefaultBranch}
+	rep, unavailable, err := s.latestDecoded(ctx, sc.repo)
+	if err != nil || unavailable != "" {
+		body.Unavailable = unavailable
+		return body, err
 	}
 
 	branch, _ := editBranch(sc.user.Login, "")
 	draft, text, err := s.current(ctx, sc.repo, branch)
 	if err != nil {
-		return graphBody{}, err
+		return nil, err
 	}
-	var body graphBody
 	if _, err := policy.Modules(text); err != nil && isOpen(draft) {
 		text, _, err = s.gh.files.File(ctx, sc.repo.RepoRef, sc.repo.DefaultBranch, policy.PolicyPath)
 		if err != nil && !errors.Is(err, api.ErrNotFound) {
-			return graphBody{}, err
+			return nil, err
 		}
 		body.StaleReason = draftBroken
 	}
-	view := graph.Build(rep, text)
+	view := graph.Build(*rep, text)
 	if body.StaleReason != "" {
 		view.Stale = true
 	}
-	body.setView(view, repoPath(sc, "/policy"))
+	body.View, body.PolicyHref = &view, repoPath(sc, "/policy")
 	return body, nil
+}
+
+// repoFindingsJSON is the overview's "Findings on <default branch>": the latest report of the default branch in the
+// comment's groups, or why there is none. Like the repository graph, it shows no origin (latestDecoded).
+type repoFindingsJSON struct {
+	Unavailable string `json:"unavailable"`
+	Branch      string `json:"branch"`
+	NoBaseline  bool   `json:"no_baseline"`
+	findingsJSON
+}
+
+// apiFindings is GET /api/repos/{o}/{n}/findings. The overview loads it on its own, so a slow artifact download never
+// holds up the rest of the page.
+func (s *server) apiFindings(r *http.Request, sc scope) (any, error) {
+	body := repoFindingsJSON{Branch: sc.repo.DefaultBranch}
+	rep, unavailable, err := s.latestDecoded(r.Context(), sc.repo)
+	if err != nil || unavailable != "" {
+		body.Unavailable = unavailable
+		return body, err
+	}
+	body.NoBaseline = noBaseline(*rep)
+	fillFindings(&body.findingsJSON, *rep)
+	return body, nil
+}
+
+// latestDecoded is the latest default-branch report, or the reason there is none. "Added by this PR" belongs to a pull
+// request, so the report's origins are dropped even when a default-branch report says it compared.
+func (s *server) latestDecoded(ctx context.Context, repo api.Repo) (*report.Report, string, error) {
+	payload, err := s.latestReport(ctx, repo)
+	if errors.Is(err, api.ErrNotFound) || errors.Is(err, errNoSettings) {
+		return nil, noReport, nil
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	// The artifact carries no envelope that names its engine release. The App only displays it, and the newest
+	// release's key set holds every older one, so the newest is the one to read it with.
+	releases := report.EngineVersions()
+	rep, err := report.Decode(payload, releases[len(releases)-1])
+	if err != nil {
+		return nil, reportUnavailable, nil
+	}
+	rep.Comparison.OriginStatus = ""
+	return &rep, "", nil
 }
 
 // latestReport downloads the report artifact of the latest successful default-branch push run of the settings

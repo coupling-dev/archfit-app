@@ -132,13 +132,28 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	index := shell(web)
 	mux.HandleFunc("GET /assets/", assets(web))
 	mux.HandleFunc("GET /{$}", index)
-	mux.Handle("GET /r/{o}/{n}", s.repo(permRead, func(w http.ResponseWriter, r *http.Request, _ scope) { index(w, r) }))
-	mux.Handle("GET /r/{o}/{n}/data-sharing", s.repo(permAdmin, func(w http.ResponseWriter, r *http.Request, _ scope) { index(w, r) }))
+	page := func(w http.ResponseWriter, r *http.Request, _ scope) { index(w, r) }
+	pullPage := func(w http.ResponseWriter, r *http.Request, sc scope) {
+		if _, ok := pullNumber(r); !ok {
+			s.fail(w, r, sc, api.ErrNotFound)
+			return
+		}
+		index(w, r)
+	}
+	mux.Handle("GET /r/{o}/{n}", s.repo(permRead, page))
+	mux.Handle("GET /r/{o}/{n}/graph", s.repo(permRead, page))
+	mux.Handle("GET /r/{o}/{n}/pull/{number}", s.repo(permRead, pullPage))
+	mux.Handle("GET /r/{o}/{n}/pull/{number}/graph", s.repo(permRead, pullPage))
+	mux.Handle("GET /r/{o}/{n}/data-sharing", s.repo(permAdmin, page))
 	mux.Handle("GET /r/{o}/{n}/consent", s.repo(permAdmin, consentMoved))
 
 	mux.Handle("GET /api/session", s.apiSignedIn(apiSession))
 	mux.Handle("GET /api/repos", s.apiSignedIn(s.apiRepos))
 	mux.Handle("GET /api/repos/{o}/{n}/overview", s.apiRepo(permRead, s.apiStatus))
+	mux.Handle("GET /api/repos/{o}/{n}/findings", s.apiRepo(permRead, s.apiFindings))
+	mux.Handle("GET /api/repos/{o}/{n}/graph", s.apiRepo(permRead, s.apiGraph))
+	mux.Handle("GET /api/repos/{o}/{n}/pulls/{number}", s.apiRepo(permRead, s.apiPull))
+	mux.Handle("GET /api/repos/{o}/{n}/pulls/{number}/graph", s.apiRepo(permRead, s.apiPullGraph))
 	mux.Handle("POST /api/repos/{o}/{n}/onboarding", s.apiRepo(permAdmin, s.apiStartOnboarding))
 	mux.Handle("POST /api/repos/{o}/{n}/discover", s.apiRepo(permAdmin, s.apiDiscover))
 	mux.Handle("GET /api/repos/{o}/{n}/data-sharing", s.apiRepo(permAdmin, s.apiDataSharing))
@@ -152,9 +167,6 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("POST /r/{o}/{n}/policy", s.repo(permWrite, s.save))
 	mux.Handle("POST /r/{o}/{n}/policy/check", s.repo(permRead, s.check))
 	mux.Handle("POST /r/{o}/{n}/policy/ready", s.repo(permWrite, s.ready))
-	mux.Handle("GET /r/{o}/{n}/graph", s.repo(permRead, s.graphPage))
-	mux.Handle("GET /r/{o}/{n}/pull/{number}", s.repo(permRead, s.pullPage))
-	mux.Handle("GET /r/{o}/{n}/pull/{number}/graph", s.repo(permRead, s.pullGraphPage))
 	mux.Handle("POST /r/{o}/{n}/assist", s.repo(permWrite, s.propose))
 	return chain(mux)
 }
