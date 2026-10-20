@@ -1,0 +1,75 @@
+import { describe, expect, it } from 'vitest';
+import type { GLink } from './graph';
+import { crossesWord, crossingWord, flaggedSummary, flagWord, moveWord, quadrantWord } from './seam';
+
+const link = (more: Partial<GLink> = {}): GLink => ({
+  from: 'a',
+  to: 'b',
+  status: 'observed',
+  count: 1,
+  origin: '',
+  strength: 'functional',
+  distance: 'across modules',
+  volatility: 'high',
+  volatility_source: 'declared',
+  imbalance: '',
+  accepted: '',
+  hypothesis: '',
+  quadrant: '',
+  crossing: '',
+  container: '',
+  distributed_monolith: false,
+  ...more,
+});
+
+describe('seam words', () => {
+  it('words every engine hypothesis but balanced, and nothing it does not know', () => {
+    expect(Object.keys(moveWord).sort()).toEqual([
+      'accept_low_volatility',
+      'declare_volatility',
+      'expected_by_role',
+      'follow_rule',
+      'introduce_contract',
+      'move_functionality',
+    ]);
+    expect(moveWord['balanced']).toBeUndefined();
+    expect(Object.keys(quadrantWord).sort()).toEqual(['cohesive', 'loose', 'low_cohesion', 'tight']);
+  });
+
+  it.each([
+    ['deploy_unit', 'deploy-unit boundary (a distributed monolith)'],
+    ['ownership', 'owner boundary'],
+    ['module_boundary', 'module boundary'],
+    ['declared_external', 'module boundary'],
+    ['', ''],
+  ])('names the %s crossing as the engine gate does', (crossing, want) => {
+    expect(crossingWord(crossing)).toBe(want);
+  });
+
+  it('says where the distance was measured', () => {
+    expect(crossesWord(link({ crossing: 'ownership', container: 'pkg_core' }))).toBe(
+      'the owner boundary, within pkg_core',
+    );
+    expect(crossesWord(link({ crossing: 'module_boundary' }))).toBe('the module boundary');
+    expect(crossesWord(link())).toBe('');
+  });
+
+  it('gives the engine gate reason only for a flagged dependency', () => {
+    const flagged = link({ distributed_monolith: true, crossing: 'module_boundary', container: 'system' });
+    expect(flagWord(flagged)).toBe(
+      'functional coupling across the module boundary at high volatility (container system)',
+    );
+    expect(flagWord(link({ crossing: 'module_boundary' }))).toBe('');
+  });
+
+  it('counts flagged dependencies and calls only the deploy-unit share a distributed monolith', () => {
+    const flagged = (crossing: string) => link({ distributed_monolith: true, crossing });
+    expect(flaggedSummary([link()])).toBe('');
+    expect(flaggedSummary([flagged('module_boundary'), link()])).toBe(
+      '1 dependency couples strongly across a module boundary at high volatility.',
+    );
+    expect(flaggedSummary([flagged('module_boundary'), flagged('deploy_unit'), flagged('ownership')])).toBe(
+      '3 dependencies couple strongly across a module boundary at high volatility; 1 of them across a deploy unit, a distributed monolith.',
+    );
+  });
+});

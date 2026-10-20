@@ -240,4 +240,21 @@ type Seam struct {
 	// Policy is what the engine's policy says about the seam: "violation" | "accepted" |
 	// "advisory" | "allowed" | "observed", a closed set. "" = the engine gave the seam no policy.
 	Policy string `json:"policy,omitempty"`
+	// Hypothesis is the engine's balancing move for the seam, a token: "move_functionality" | "introduce_contract" |
+	// "accept_low_volatility" | "declare_volatility" | "expected_by_role" | "follow_rule" | "balanced"; "" when the
+	// engine names none. A hypothesis, not an instruction.
+	Hypothesis string `json:"hypothesis,omitempty"`
+	// Quadrant is the engine's balance quadrant, a token: "cohesive" | "loose" | "low_cohesion" | "tight"; "" when absent.
+	Quadrant string `json:"quadrant,omitempty"`
+	// DistributedMonolith is the engine's flag: an active edge in the critical band across owners or deploy units.
+	// Absent reads false.
+	DistributedMonolith bool         `json:"distributed_monolith,omitempty"`
+	RawDistance         SeamDistance `json:"raw_distance"` // only its basis is kept
+}
+
+// SeamDistance is what the engine measured the distance on.
+type SeamDistance struct {
+	// Basis is "<crossed>@<container>": the boundary the distance crosses ("module_boundary" | "ownership" |
+	// "deploy_unit" | "declared_external") and the module that holds both ends, or "system". "" when no edge was scored.
+	Basis string `json:"basis,omitempty"`
 }

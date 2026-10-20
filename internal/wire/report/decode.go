@@ -290,8 +290,28 @@ func (c *checker) task(s *shadowTask) AgentTask {
 	}
 }
 
-// seam keeps the identity, the edge count, the three coupling dimensions and the engine's policy status; scores and
-// evidence are dropped.
+// The engine's balance readings of a seam (archfit internal/relationship/seam.go). Closed here: anything else reads as
+// absent.
+var (
+	hypotheses = []string{"balanced", "accept_low_volatility", "introduce_contract", "move_functionality",
+		"declare_volatility", "expected_by_role", "follow_rule"}
+	quadrants = []string{"cohesive", "loose", "low_cohesion", "tight"}
+	crossings = []string{"module_boundary", "ownership", "deploy_unit", "declared_external"}
+)
+
+// distanceBasis keeps "<crossed>@<container>" when the crossing is one the engine names and the container is an
+// identifier, else "".
+func (c *checker) distanceBasis(basis string) string {
+	crossed, container, ok := strings.Cut(basis, "@")
+	if !ok || known(crossed, crossings...) == "" {
+		return ""
+	}
+	return crossed + "@" + c.opt("raw_distance.basis", container, classIdentifier)
+}
+
+// seam keeps the identity, the edge count, the three coupling dimensions, the engine's policy status and its balance
+// reading (hypothesis, quadrant, distributed monolith, what the distance crosses); scores, owners and evidence are
+// dropped.
 func (c *checker) seam(s *shadowSeam) Seam {
 	return Seam{
 		ID:                   c.str("id", s.ID, classIdentifier),
@@ -304,5 +324,9 @@ func (c *checker) seam(s *shadowSeam) Seam {
 		Severity:             c.opt("severity", s.Severity, classToken),
 		VolatilityProvenance: c.opt("volatility_provenance", s.VolatilityProvenance, classToken),
 		Policy:               c.optEnum("policy", s.Policy, "violation", "accepted", "advisory", "allowed", "observed"),
+		Hypothesis:           known(s.Hypothesis, hypotheses...),
+		Quadrant:             known(s.Quadrant, quadrants...),
+		DistributedMonolith:  s.DistributedMonolith,
+		RawDistance:          SeamDistance{Basis: c.distanceBasis(s.RawDistance.Basis)},
 	}
 }

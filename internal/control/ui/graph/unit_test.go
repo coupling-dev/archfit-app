@@ -408,6 +408,18 @@ func TestCouplingComesFromTheStrongestSeam(t *testing.T) {
 			coupling("api", "db", 1, "model", "same_module", "", ""),
 			coupling("api", "db", 4, "model", "cross_module", "", ""),
 		}, Link{Strength: "model", Distance: "across modules"}},
+		{"symmetric ranks between functional and intrusive, as in the engine", []report.Seam{
+			coupling("api", "db", 9, "functional", "", "", ""),
+			coupling("api", "db", 1, "symmetric", "", "", ""),
+		}, Link{Strength: "symmetric"}},
+		{"intrusive beats symmetric", []report.Seam{
+			coupling("api", "db", 1, "intrusive", "", "", ""),
+			coupling("api", "db", 9, "symmetric", "", "", ""),
+		}, Link{Strength: "intrusive"}},
+		{"the engine's unknown ranks below contract", []report.Seam{
+			coupling("api", "db", 9, "unknown", "", "", ""),
+			coupling("api", "db", 1, "contract", "", "", ""),
+		}, Link{Strength: "contract"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -541,5 +553,40 @@ func TestGraphAcceptsWhatTheOverviewCounts(t *testing.T) {
 		if l.From == "api" && l.To == "db" && (l.Status != StatusViolation || l.Accepted != "") {
 			t.Errorf("api -> db = %q accepting %q, want the violation over its accepted advisory, accepting nothing", l.Status, l.Accepted)
 		}
+	}
+}
+
+func TestBalanceReadingComesFromTheStrongestSeam(t *testing.T) {
+	reading := func(edges int, strength, hypothesis, quadrant, basis string, dm bool) report.Seam {
+		s := seam("api", "db", edges)
+		s.Strength, s.Hypothesis, s.Quadrant, s.DistributedMonolith = strength, hypothesis, quadrant, dm
+		s.RawDistance.Basis = basis
+		return s
+	}
+	tests := []struct {
+		name  string
+		seams []report.Seam
+		want  Link
+	}{
+		{"the strongest seam's reading, basis split", []report.Seam{
+			reading(1, "functional", "move_functionality", "tight", "module_boundary@system", true),
+			reading(9, "contract", "balanced", "loose", "ownership@core", false),
+		}, Link{Strength: "functional", Hypothesis: "move_functionality", Quadrant: "tight", Crossing: "module_boundary",
+			Container: "system", DistributedMonolith: true}},
+		{"the flag from any seam of the pair", []report.Seam{
+			reading(1, "intrusive", "introduce_contract", "tight", "deploy_unit@system", false),
+			reading(9, "functional", "", "", "", true),
+		}, Link{Strength: "intrusive", Hypothesis: "introduce_contract", Quadrant: "tight", Crossing: "deploy_unit",
+			Container: "system", DistributedMonolith: true}},
+		{"no reading", []report.Seam{reading(1, "model", "", "", "", false)}, Link{Strength: "model"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Build(reportFor(threeModules, tt.seams, nil), []byte(threeModules)).Links[0]
+			got.From, got.To, got.Status, got.Count = "", "", "", 0
+			if got != tt.want {
+				t.Errorf("link = %+v, want %+v", got, tt.want)
+			}
+		})
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"maps"
 	"slices"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/alexei-led/archfit-app/internal/wire/policy"
@@ -48,7 +49,7 @@ type Link struct {
 	// dependency, report.PairExisting when the base had it, "" when the report cannot say or did not compare. Display only.
 	Origin string `json:"origin"`
 	// The coupling of the pair's strongest seam, as the engine measured it; all "" when no seam names the pair.
-	Strength   string `json:"strength"`   // engine token: contract, model, functional, intrusive
+	Strength   string `json:"strength"`   // engine token: contract, model, functional, symmetric, intrusive, unknown
 	Distance   string `json:"distance"`   // in words (report.DistanceWords)
 	Volatility string `json:"volatility"` // engine token, the seam's: on a functional dependency the worse end's
 	// VolatilitySource is the engine's volatility_provenance of that seam: declared, inherited, cascade, undeclared.
@@ -57,6 +58,17 @@ type Link struct {
 	// Accepted is what the accepted findings on the pair accept: AcceptedViolation when one is a gate finding, else
 	// AcceptedAdvisory; "" when none names the pair. The page names it, so gate debt never reads as an advisory.
 	Accepted string `json:"accepted"`
+	// The balance reading of the pair's strongest seam: the engine's hypothesis (a move, or why none is needed),
+	// quadrant, and raw_distance.basis split at "@" into the boundary it crosses and the module holding both ends, or
+	// "system". All "" when no seam names the pair or the engine gives none.
+	Hypothesis string `json:"hypothesis"`
+	Quadrant   string `json:"quadrant"`
+	Crossing   string `json:"crossing"`  // module_boundary, ownership, deploy_unit, declared_external
+	Container  string `json:"container"` // a module name or "system"
+	// DistributedMonolith is the engine's distributed_monolith flag on any seam of the pair: strong coupling across a
+	// module boundary at high volatility. Only a deploy-unit Crossing is called a distributed monolith on the page, as
+	// in the engine's coupling gate reason.
+	DistributedMonolith bool `json:"distributed_monolith"`
 }
 
 // Link.Accepted values.
@@ -106,8 +118,9 @@ const (
 	hardGatesPass = "pass" // Decision.HardGates; any other value, an unknown one included, is incomplete
 )
 
-// strengths are the engine's integration strengths, weakest first; a token outside them ranks below all.
-var strengths = []string{"contract", "model", "functional", "intrusive"}
+// strengths are the engine's integration strengths, weakest first, in its own roll-up order (archfit
+// internal/relationship/analysis/seams.go strengthRanks); a token outside them ranks below all.
+var strengths = []string{"unknown", "contract", "model", "functional", "symmetric", "intrusive"}
 
 // severities are the engine's severities, lowest first.
 var severities = []string{"low", "medium", "high", "critical"}
@@ -163,10 +176,13 @@ func Build(rep report.Report, policyText []byte) View {
 		if slices.Index(severities, s.Severity) > slices.Index(severities, l.Imbalance) {
 			l.Imbalance = s.Severity
 		}
+		l.DistributedMonolith = l.DistributedMonolith || s.DistributedMonolith
 	}
 	for p, s := range strongest {
 		l := links[p]
 		l.Strength, l.Volatility, l.VolatilitySource = s.Strength, s.Volatility, s.VolatilityProvenance
+		l.Hypothesis, l.Quadrant = s.Hypothesis, s.Quadrant
+		l.Crossing, l.Container, _ = strings.Cut(s.RawDistance.Basis, "@")
 		l.Distance = s.Distance
 		if w, ok := report.DistanceWords[s.Distance]; ok {
 			l.Distance = w

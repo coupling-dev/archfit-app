@@ -215,6 +215,11 @@ const glink = (from: string, to: string, status: string, count: number, more: ob
   volatility_source: 'undeclared',
   imbalance: '',
   accepted: '',
+  hypothesis: '',
+  quadrant: '',
+  crossing: '',
+  container: '',
+  distributed_monolith: false,
   ...more,
 });
 
@@ -226,7 +231,16 @@ const view = {
     gnode('legacy', '', 0),
   ],
   links: [
-    glink('api', 'db', 'violation', 12, { strength: 'intrusive', imbalance: 'medium' }),
+    glink('api', 'db', 'violation', 12, {
+      strength: 'intrusive',
+      imbalance: 'medium',
+      volatility: 'high',
+      hypothesis: 'follow_rule',
+      quadrant: 'tight',
+      crossing: 'module_boundary',
+      container: 'system',
+      distributed_monolith: true,
+    }),
     glink('db', 'api', 'violation', 2, { strength: 'contract' }),
     glink('ui', 'api', 'allowed', 4, { strength: 'model' }),
     glink('ui', 'db', 'accepted', 3, { volatility: 'high', volatility_source: 'cascade', accepted: 'advisory' }),
@@ -595,6 +609,15 @@ test('graph: the canvas, the inspector and the matrix', async ({ page }) => {
   await expect(inspector.getByRole('heading', { name: 'Dependency' })).toBeVisible();
   await expect(inspector).toContainText('intrusive coupling');
   await expect(inspector).toContainText('imbalanced · medium');
+  await expect(inspector).toContainText(
+    'Flagged: intrusive coupling across the module boundary at high volatility (container system).',
+  );
+  await expect(inspector).toContainText('Fix the rule violation on this dependency.');
+  await expect(inspector).toContainText('tight: strong coupling across a boundary');
+  await expect(inspector).toContainText('the module boundary, within system');
+  await expect(page.locator('#flagged')).toHaveText(
+    '1 dependency couples strongly across a module boundary at high volatility.',
+  );
   await expect(inspector).toContainText('api and db depend on each other.');
   await expect(inspector).toContainText('Other direction · a cycle');
   await expect(inspector.getByRole('link', { name: /Open api in the policy/ })).toHaveAttribute(

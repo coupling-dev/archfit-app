@@ -125,6 +125,15 @@ func (c *checker) optEnum(key string, s *string, allowed ...string) string {
 	return c.enum(key, s, allowed...)
 }
 
+// known keeps a display-only string when it is one of allowed and reads anything else as absent, without failing the
+// report: free text never survives, and a value a later engine adds shows nothing.
+func known(s string, allowed ...string) string {
+	if slices.Contains(allowed, s) {
+		return s
+	}
+	return ""
+}
+
 // count checks a required integer in 0..limit.
 func (c *checker) count(key string, n *int, limit int) int {
 	if n == nil {

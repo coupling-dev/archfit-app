@@ -16,6 +16,7 @@
     type View,
   } from '../../lib/graph';
   import { safeHref } from '../../lib/route';
+  import InspectorSeam from './InspectorSeam.svelte';
   import { pickLink, ui } from '../../lib/selection.svelte';
 
   // The selected dependency or module, in words: status, then coupling, then the findings behind it.
@@ -117,6 +118,7 @@
     <dt>Balance</dt>
     <dd>{balanceWord(l)}</dd>
   </dl>
+  <InspectorSeam link={l} />
   {#each findingsOf(view, l) as f, i (i)}
     <div class="g-finding">
       <p>
