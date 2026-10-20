@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { layout, shorten, type Direction } from './cycle';
+import { labelArea, layout, overlaps, shorten, type Direction } from './cycle';
 
 const dir = (from: string, to: string, origin = '', n = 1): Direction => ({
   from,
@@ -48,6 +48,51 @@ describe('cycle layout', () => {
       expect(b.y - b.h / 2).toBeGreaterThanOrEqual(0);
       expect(b.y + b.h / 2).toBeLessThanOrEqual(height);
     }
+  });
+
+  // Every placed label clear of every module and of every other label.
+  const clear = (modules: string[], directions: Direction[]) => {
+    const { boxes, arrows } = layout(modules, directions);
+    const labels = arrows.filter((a) => a.label).map((a) => labelArea(a.label, a.lx, a.ly));
+    labels.forEach((l, i) => {
+      for (const b of boxes) expect(overlaps(l, b), `label ${i} covers ${b.module}`).toBe(false);
+      labels.slice(i + 1).forEach((o, j) => expect(overlaps(l, o), `labels ${i} and ${i + j + 1}`).toBe(false));
+    });
+    return arrows;
+  };
+
+  it('labels both directions of a pair apart', () => {
+    const arrows = clear(
+      ['pkg_chaos', 'pkg_util'],
+      [dir('pkg_chaos', 'pkg_util', '', 2), dir('pkg_util', 'pkg_chaos', '', 1)],
+    );
+    expect(arrows.map((a) => a.label)).toEqual(['2 locations', '1 location']);
+  });
+
+  it('labels a three-module cycle without overlap (pumba-pilot#11)', () => {
+    const arrows = clear(
+      ['pkg_chaos', 'pkg_container', 'pkg_util'],
+      [
+        dir('pkg_chaos', 'pkg_container', '', 40),
+        dir('pkg_chaos', 'pkg_util', '', 2),
+        dir('pkg_container', 'pkg_chaos', '', 1),
+        dir('pkg_util', 'pkg_chaos', '', 1),
+      ],
+    );
+    expect(arrows.map((a) => a.label)).toEqual(['40 locations', '2 locations', '1 location', '1 location']);
+  });
+
+  it('caps the size of the largest cycle the comment draws', () => {
+    const modules = Array.from({ length: 50 }, (_, i) => `internal/services/module_${i}`);
+    const ring = modules.flatMap((m, i) => [
+      dir(m, modules[(i + 1) % 50], '', 3),
+      dir(modules[(i + 1) % 50], m, '', 1),
+    ]);
+    const arrows = clear(modules, ring);
+    const { width, height } = layout(modules, ring);
+    expect(width).toBeLessThan(1300);
+    expect(height).toBeLessThan(900);
+    expect(arrows).toHaveLength(100);
   });
 
   it('skips a direction whose module is not drawn', () => {

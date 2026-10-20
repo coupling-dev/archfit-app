@@ -10,7 +10,8 @@ export interface GNode {
   name: string;
   layer: string;
   policy_line: number;
-  volatility: string;
+  volatility: string; // what the report's policy declares; 'undeclared'; '' when the page cannot say
+  subdomain: string;
 }
 
 export interface GLink {
@@ -21,8 +22,10 @@ export interface GLink {
   origin: '' | 'added' | 'existing';
   strength: string;
   distance: string;
-  volatility: string;
+  volatility: string; // the seam's: on a functional dependency, the worse end's
+  volatility_source: string; // the engine's provenance: declared, inherited, cascade, undeclared
   imbalance: string;
+  accepted: '' | 'violation' | 'advisory'; // what an accepted link accepts
 }
 
 export interface GFinding {
@@ -64,6 +67,24 @@ export const statusWord: Record<Status, string> = {
   observed: 'observed',
 };
 
+// linkStatusWord names a link's status. Accepted says what it accepts, so gate debt never reads as an advisory.
+export function linkStatusWord(l: GLink): string {
+  return l.status === 'accepted' && l.accepted ? `accepted ${l.accepted}` : statusWord[l.status];
+}
+
+// moduleVolatility is what the policy the report was computed from declares for a module; '' when the page cannot
+// say: the policy is not the report's, or does not name the module.
+export function moduleVolatility(n: GNode): string {
+  if (n.volatility) return `volatility ${n.volatility}`;
+  return n.subdomain ? `subdomain ${n.subdomain}` : '';
+}
+
+// linkVolatility is a dependency's volatility, with where the engine took it from when that is not a declaration.
+export function linkVolatility(l: GLink): string {
+  const from = l.volatility_source;
+  return from && from !== 'declared' && from !== l.volatility ? `${l.volatility} (${from})` : l.volatility;
+}
+
 // statusCount words a count of dependencies of one status, for the chips.
 export function statusCount(s: Status, n: number): string {
   if (n === 1) return statusWord[s];
@@ -73,7 +94,7 @@ export function statusCount(s: Status, n: number): string {
 export const meaning: Record<Status, string> = {
   violation: 'An active gate finding, or a gate finding of a status this version does not know, names this dependency.',
   advisory: 'A finding that never blocks names this dependency.',
-  accepted: 'A gate finding names this dependency, accepted by the baseline or a waiver. Accepted is never allowed.',
+  accepted: 'A finding names this dependency, accepted by the baseline or a waiver. Accepted is never allowed.',
   allowed: 'A blocking allowlist or layer rule of the policy permits this dependency.',
   observed:
     'No active finding names this dependency. That is not proof that a rule permits it, and it can still break a rule the report did not evaluate.',

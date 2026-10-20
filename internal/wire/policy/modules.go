@@ -16,9 +16,11 @@ const (
 
 // ModuleDef is the subset of a policy module the App displays.
 type ModuleDef struct {
-	Name  string
-	Layer string // may be ""
-	Line  int    // 1-based line of the module key in the policy text
+	Name       string
+	Layer      string // may be ""
+	Volatility string // the declared `volatility:`; "" when absent
+	Subdomain  string // the declared `subdomain:`; "" when absent
+	Line       int    // 1-based line of the module key in the policy text
 }
 
 // Modules lists the modules declared under the policy's `modules:` map, in file order. It ignores every other key.
@@ -88,7 +90,9 @@ func (c *collector) collect(mapping *yaml.Node, merged bool) error {
 			return fmt.Errorf("policy: modules[%d] (line %d) is not a mapping", index, key.Line)
 		}
 		var entry struct {
-			Layer yaml.Node `yaml:"layer"`
+			Layer      yaml.Node `yaml:"layer"`
+			Volatility yaml.Node `yaml:"volatility"`
+			Subdomain  yaml.Node `yaml:"subdomain"`
 		}
 		if err := value.Decode(&entry); err != nil {
 			return fmt.Errorf("policy: modules[%d] (line %d) is not readable", index, key.Line)
@@ -97,8 +101,11 @@ func (c *collector) collect(mapping *yaml.Node, merged bool) error {
 		if !ok {
 			return fmt.Errorf("policy: modules[%d].layer (line %d) is not a scalar", index, key.Line)
 		}
+		// Shown only: a value that is not a scalar reads as not declared rather than failing every module.
+		volatility, _ := scalarText(&entry.Volatility)
+		subdomain, _ := scalarText(&entry.Subdomain)
 		c.seen[key.Value] = true
-		c.out = append(c.out, ModuleDef{Name: key.Value, Layer: layer, Line: key.Line})
+		c.out = append(c.out, ModuleDef{Name: key.Value, Layer: layer, Volatility: volatility, Subdomain: subdomain, Line: key.Line})
 	}
 
 	for _, merge := range merges {

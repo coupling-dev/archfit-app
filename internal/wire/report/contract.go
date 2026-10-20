@@ -232,7 +232,11 @@ type Seam struct {
 	Strength   string `json:"strength"`
 	Distance   string `json:"distance"`
 	Volatility string `json:"volatility"`
-	Severity   string `json:"severity,omitempty"`
+	// VolatilityProvenance is where the engine took Volatility from: "declared" | "inherited" | "cascade" |
+	// "undeclared"; "" from an engine that does not say. "declared" covers a functional edge that takes its source's
+	// volatility when that is worse than the target's.
+	VolatilityProvenance string `json:"volatility_provenance,omitempty"`
+	Severity             string `json:"severity,omitempty"`
 	// Policy is what the engine's policy says about the seam: "violation" | "accepted" |
 	// "advisory" | "allowed" | "observed", a closed set. "" = the engine gave the seam no policy.
 	Policy string `json:"policy,omitempty"`

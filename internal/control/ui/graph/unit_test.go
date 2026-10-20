@@ -18,17 +18,17 @@ func TestNodesFromPolicyModules(t *testing.T) {
 		{
 			name:   "three modules in two layers",
 			policy: threeModules,
-			want:   []Node{{"api", "app", 3, ""}, {"db", "infra", 6, ""}, {"ui", "app", 9, ""}},
+			want:   []Node{{Name: "api", Layer: "app", PolicyLine: 3, Volatility: VolatilityUndeclared}, {Name: "db", Layer: "infra", PolicyLine: 6, Volatility: VolatilityUndeclared}, {Name: "ui", Layer: "app", PolicyLine: 9, Volatility: VolatilityUndeclared}},
 		},
 		{
 			name:   "module without a layer",
 			policy: "modules:\n  core:\n    paths: [core/**]\n",
-			want:   []Node{{"core", "", 2, ""}},
+			want:   []Node{{Name: "core", Layer: "", PolicyLine: 2, Volatility: VolatilityUndeclared}},
 		},
 		{
 			name:   "quoted names",
 			policy: "modules:\n  \"my-mod\":\n    layer: app\n  'other mod':\n    layer: infra\n",
-			want:   []Node{{"my-mod", "app", 2, ""}, {"other mod", "infra", 4, ""}},
+			want:   []Node{{Name: "my-mod", Layer: "app", PolicyLine: 2, Volatility: VolatilityUndeclared}, {Name: "other mod", Layer: "infra", PolicyLine: 4, Volatility: VolatilityUndeclared}},
 		},
 		{
 			name: "comments and anchors around the map",
@@ -44,12 +44,12 @@ func TestNodesFromPolicyModules(t *testing.T) {
 				"  b:\n" +
 				"    paths: *paths # reuse\n" +
 				"# end\n",
-			want: []Node{{"a", "core", 6, ""}, {"b", "", 10, ""}},
+			want: []Node{{Name: "a", Layer: "core", PolicyLine: 6, Volatility: VolatilityUndeclared}, {Name: "b", Layer: "", PolicyLine: 10, Volatility: VolatilityUndeclared}},
 		},
 		{
 			name:   "modules is not the first key",
 			policy: "version: 2\nrules: []\nmodules:\n  z:\n    layer: edge\n",
-			want:   []Node{{"z", "edge", 4, ""}},
+			want:   []Node{{Name: "z", Layer: "edge", PolicyLine: 4, Volatility: VolatilityUndeclared}},
 		},
 		{name: "no modules key", policy: "version: 2\nrules: []\n", want: []Node{}},
 		{name: "empty modules map", policy: "version: 2\nmodules: {}\n", want: []Node{}},
@@ -68,7 +68,7 @@ func TestNodesFromPolicyModules(t *testing.T) {
 }
 
 func TestLinkNormalization(t *testing.T) {
-	declared := []Node{{"api", "app", 3, ""}, {"db", "infra", 6, ""}, {"ui", "app", 9, ""}}
+	declared := []Node{{Name: "api", Layer: "app", PolicyLine: 3, Volatility: VolatilityUndeclared}, {Name: "db", Layer: "infra", PolicyLine: 6, Volatility: VolatilityUndeclared}, {Name: "ui", Layer: "app", PolicyLine: 9, Volatility: VolatilityUndeclared}}
 	tests := []struct {
 		name      string
 		seams     []report.Seam
@@ -97,7 +97,7 @@ func TestLinkNormalization(t *testing.T) {
 			name:      "seam to an undeclared module",
 			seams:     []report.Seam{seam("api", "cache", 1)},
 			wantLinks: []Link{link("api", "cache", 1, StatusObserved)},
-			wantNodes: []Node{{"api", "app", 3, ""}, {"cache", "", 0, ""}, {"db", "infra", 6, ""}, {"ui", "app", 9, ""}},
+			wantNodes: []Node{{Name: "api", Layer: "app", PolicyLine: 3, Volatility: VolatilityUndeclared}, {Name: "cache", Layer: "", PolicyLine: 0}, {Name: "db", Layer: "infra", PolicyLine: 6, Volatility: VolatilityUndeclared}, {Name: "ui", Layer: "app", PolicyLine: 9, Volatility: VolatilityUndeclared}},
 		},
 		{
 			name:      "seam with an empty endpoint is dropped",
@@ -131,7 +131,7 @@ func TestStatusFollowsFindings(t *testing.T) {
 		{"gate waived", []report.Finding{finding("gate", "waived", "api", "db")}, StatusAccepted},
 		{"gate fixed", []report.Finding{finding("gate", "fixed", "api", "db")}, StatusObserved},
 		{"advisory new", []report.Finding{finding("advisory", "new", "api", "db")}, StatusAdvisory},
-		{"advisory baseline", []report.Finding{finding("advisory", "baseline", "api", "db")}, StatusAdvisory},
+		{"advisory baseline", []report.Finding{finding("advisory", "baseline", "api", "db")}, StatusAccepted}, // report.Group's Accepted
 		{"advisory fixed", []report.Finding{finding("advisory", "fixed", "api", "db")}, StatusObserved},
 		{"unknown kind", []report.Finding{finding("guard", "new", "api", "db")}, StatusAdvisory},
 		// Fail safe, as feedback treats an unknown status as live: a gate finding is never drawn as less than it may be.
@@ -179,7 +179,7 @@ func TestFindingWithoutSeamStillDraws(t *testing.T) {
 		finding("gate", "fixed", "db", "ui"),
 	})
 	got := Build(rep, []byte(threeModules))
-	want := []Link{link("api", "ui", 0, StatusAccepted), link("db", "api", 0, StatusAdvisory), link("ui", "db", 0, StatusViolation)}
+	want := []Link{accepted(link("api", "ui", 0, StatusAccepted), AcceptedViolation), link("db", "api", 0, StatusAdvisory), link("ui", "db", 0, StatusViolation)}
 	if !reflect.DeepEqual(got.Links, want) {
 		t.Errorf("Links = %+v, want %+v", got.Links, want)
 	}
@@ -202,11 +202,14 @@ func TestStatusFollowsEngineSeamPolicy(t *testing.T) {
 		{"advisory", []report.Seam{withPolicy("api", "db", 1, "advisory")}, nil, []Link{link("api", "db", 1, StatusAdvisory)}},
 		{"allowed", []report.Seam{withPolicy("api", "db", 1, "allowed")}, nil, []Link{link("api", "db", 1, StatusAllowed)}},
 		{"observed", []report.Seam{withPolicy("api", "db", 1, "observed")}, nil, []Link{link("api", "db", 1, StatusObserved)}},
-		// The engine decided the pair: graph does not overrule it with its own reading of the findings.
+		// The engine decides the pair's violations: graph does not overrule it with its own reading of the findings.
 		{"engine allowed, a finding names the pair", []report.Seam{withPolicy("api", "db", 1, "allowed")},
 			[]report.Finding{finding("gate", "new", "api", "db")}, []Link{link("api", "db", 1, StatusAllowed)}},
+		// "observed" says no active finding: accepted debt and advisories still show.
 		{"engine observed, a baselined advisory names the pair", []report.Seam{withPolicy("api", "db", 1, "observed")},
-			[]report.Finding{finding("advisory", "baseline", "api", "db")}, []Link{link("api", "db", 1, StatusObserved)}},
+			[]report.Finding{finding("advisory", "baseline", "api", "db")}, []Link{accepted(link("api", "db", 1, StatusAccepted), AcceptedAdvisory)}},
+		{"engine observed, a new advisory names the pair", []report.Seam{withPolicy("api", "db", 1, "observed")},
+			[]report.Finding{finding("advisory", "new", "api", "db")}, []Link{link("api", "db", 1, StatusAdvisory)}},
 		{"duplicate seams: the strongest status wins", []report.Seam{
 			withPolicy("api", "db", 2, "allowed"), withPolicy("api", "db", 3, "violation"), withPolicy("api", "db", 1, "observed"),
 		}, nil, []Link{link("api", "db", 6, StatusViolation)}},
@@ -214,7 +217,7 @@ func TestStatusFollowsEngineSeamPolicy(t *testing.T) {
 			withPolicy("api", "db", 1, "observed"), withPolicy("api", "db", 1, "allowed"),
 		}, nil, []Link{link("api", "db", 2, StatusAllowed)}},
 		{"a seam without the key keeps the finding status", []report.Seam{seam("api", "db", 1)},
-			[]report.Finding{finding("gate", "baseline", "api", "db")}, []Link{link("api", "db", 1, StatusAccepted)}},
+			[]report.Finding{finding("gate", "baseline", "api", "db")}, []Link{accepted(link("api", "db", 1, StatusAccepted), AcceptedViolation)}},
 		{"a pair only a finding names keeps the finding status", []report.Seam{withPolicy("api", "db", 1, "allowed")},
 			[]report.Finding{finding("gate", "new", "ui", "db")},
 			[]Link{link("api", "db", 1, StatusAllowed), link("ui", "db", 0, StatusViolation)}},
@@ -263,11 +266,6 @@ func TestFindingsExplainDrawnLinks(t *testing.T) {
 			v := Build(reportFor(threeModules, tt.seams, tt.findings), []byte(threeModules))
 			if !reflect.DeepEqual(v.Findings, tt.want) {
 				t.Errorf("Findings = %+v, want %+v", v.Findings, tt.want)
-			}
-			for _, l := range v.Links {
-				if len(tt.seams) == 1 && tt.seams[0].Policy != "" && l.Status != LinkStatus(tt.seams[0].Policy) {
-					t.Errorf("link %s -> %s Status = %q: findings changed the engine's status %q", l.From, l.To, l.Status, tt.seams[0].Policy)
-				}
 			}
 		})
 	}
@@ -427,24 +425,109 @@ func TestCouplingComesFromTheStrongestSeam(t *testing.T) {
 	})
 }
 
-func TestNodeShowsTheVolatilityItsSeamsAgreeOn(t *testing.T) {
-	into := func(from, to, volatility string) report.Seam {
+func TestNodeShowsWhatTheReportsPolicyDeclares(t *testing.T) {
+	const declared = `version: 2
+modules:
+  chaos:
+    volatility: high
+  util:
+    volatility: low
+  domain:
+    subdomain: core
+  plain:
+    paths: [plain/**]
+`
+	// A functional dependency takes the worse end's volatility: the seam into util is high, util stays low.
+	functional := seam("chaos", "util", 2)
+	functional.Strength, functional.Volatility, functional.VolatilityProvenance = "functional", "high", "declared"
+	rep := reportFor(declared, []report.Seam{functional, seam("plain", "cache", 1)}, nil)
+	type facts struct{ volatility, subdomain string }
+	nodes := func(v View) map[string]facts {
+		got := map[string]facts{}
+		for _, n := range v.Nodes {
+			got[n.Name] = facts{n.Volatility, n.Subdomain}
+		}
+		return got
+	}
+
+	want := map[string]facts{
+		"chaos": {"high", ""}, "util": {"low", ""}, "domain": {"", "core"}, "plain": {VolatilityUndeclared, ""},
+		"cache": {}, // not in the policy: the node claims nothing
+	}
+	if got := nodes(Build(rep, []byte(declared))); !reflect.DeepEqual(got, want) {
+		t.Errorf("nodes = %v, want %v", got, want)
+	}
+
+	edited := strings.Replace(declared, "volatility: low", "volatility: medium", 1)
+	v := Build(rep, []byte(edited))
+	for name, f := range nodes(v) {
+		if f != (facts{}) {
+			t.Errorf("%s = %+v from a policy that is not the report's, want nothing", name, f)
+		}
+	}
+	if !v.Stale {
+		t.Error("an edited policy is not marked stale")
+	}
+
+	for _, l := range Build(rep, []byte(declared)).Links {
+		if l.From == "chaos" && (l.Volatility != "high" || l.VolatilitySource != "declared") {
+			t.Errorf("chaos -> util = %q from %q, want the seam's high from declared", l.Volatility, l.VolatilitySource)
+		}
+	}
+}
+
+func TestAcceptedNamesWhatItAccepts(t *testing.T) {
+	observed := seam("api", "db", 1)
+	observed.Policy = "observed"
+	tests := []struct {
+		name     string
+		findings []report.Finding
+		want     string
+	}{
+		{"an accepted advisory", []report.Finding{finding("advisory", "baseline", "api", "db")}, AcceptedAdvisory},
+		{"a waived advisory", []report.Finding{finding("advisory", "waived", "api", "db")}, AcceptedAdvisory},
+		{"an accepted violation", []report.Finding{finding("gate", "baseline", "api", "db")}, AcceptedViolation},
+		{"gate debt outweighs an advisory, in either order", []report.Finding{
+			finding("gate", "waived", "api", "db"), finding("advisory", "baseline", "api", "db"),
+		}, AcceptedViolation},
+		{"nothing accepted", []report.Finding{finding("advisory", "new", "api", "db")}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v := Build(reportFor(threeModules, []report.Seam{observed}, tt.findings), []byte(threeModules))
+			if len(v.Links) != 1 || v.Links[0].Accepted != tt.want {
+				t.Errorf("Links = %+v, want one accepting %q", v.Links, tt.want)
+			}
+		})
+	}
+}
+
+// The overview counts report.Group's Accepted; the graph shows each of those findings' pairs as accepted, also where
+// the engine's seam policy is "observed" (no active finding) or "allowed".
+func TestGraphAcceptsWhatTheOverviewCounts(t *testing.T) {
+	withPolicy := func(from, to, policy string) report.Seam {
 		s := seam(from, to, 1)
-		s.Volatility = volatility
+		s.Policy = policy
 		return s
 	}
-	seams := []report.Seam{
-		into("api", "db", "high"), into("ui", "db", "high"), // agree
-		into("db", "api", "high"), into("ui", "api", "low"), // disagree
-		into("api", "ui", "undeclared"), // says nothing
-		into("ui", "cache", "medium"),   // not in the policy, still a node
+	findings := []report.Finding{
+		finding("advisory", "baseline", "api", "db"), finding("advisory", "waived", "ui", "db"),
+		finding("gate", "baseline", "ui", "api"), finding("advisory", "new", "db", "ui"),
 	}
-	got := map[string]string{}
-	for _, n := range Build(reportFor(threeModules, seams, nil), []byte(threeModules)).Nodes {
-		got[n.Name] = n.Volatility
+	rep := reportFor(threeModules, []report.Seam{
+		withPolicy("api", "db", "observed"), withPolicy("ui", "db", "allowed"), withPolicy("ui", "api", "observed"),
+	}, findings)
+	accepted := map[pair]bool{}
+	for _, f := range report.Group(rep, report.ShownPerGroup).Accepted {
+		accepted[pair{f.Edge.From.Module, f.Edge.To.Module}] = true
 	}
-	want := map[string]string{"api": "", "cache": "medium", "db": "high", "ui": ""}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("volatility = %v, want %v", got, want)
+	shown := map[pair]bool{}
+	for _, l := range Build(rep, []byte(threeModules)).Links {
+		if l.Status == StatusAccepted {
+			shown[pair{l.From, l.To}] = true
+		}
+	}
+	if len(accepted) != 3 || !reflect.DeepEqual(shown, accepted) {
+		t.Errorf("accepted links %v, want report.Group's %v", shown, accepted)
 	}
 }

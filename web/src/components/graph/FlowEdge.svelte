@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { countWord, lineWidth, measured, smooth, statusWord, strengthWord, type GLink } from '../../lib/graph';
+  import { countWord, lineWidth, linkStatusWord, measured, smooth, strengthWord, type GLink } from '../../lib/graph';
   import { pickLink } from '../../lib/selection.svelte';
   import type { Edge, EdgeProps } from '@xyflow/svelte';
 
@@ -27,7 +27,7 @@
   const w = $derived(12 + text.length * 7);
   const width = $derived(lineWidth(l));
   const name = $derived(
-    `${l.from} to ${l.to}, ${countWord(l)}, ${statusWord[l.status]}, ${measured(l) ? strengthWord[l.strength] : 'strength not measured'}${data.added ? ', added by this PR' : ''}`,
+    `${l.from} to ${l.to}, ${countWord(l)}, ${linkStatusWord(l)}, ${measured(l) ? strengthWord[l.strength] : 'strength not measured'}${data.added ? ', added by this PR' : ''}`,
   );
 
   function onkey(e: KeyboardEvent) {

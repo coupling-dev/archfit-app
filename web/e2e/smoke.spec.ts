@@ -196,11 +196,12 @@ const pull = {
 
 const findings = { ...pull, unavailable: '', branch: 'main', compared: false };
 
-const gnode = (name: string, layer: string, policy_line: number, volatility = '') => ({
+const gnode = (name: string, layer: string, policy_line: number, volatility = '', subdomain = '') => ({
   name,
   layer,
   policy_line,
   volatility,
+  subdomain,
 });
 const glink = (from: string, to: string, status: string, count: number, more: object = {}) => ({
   from,
@@ -211,17 +212,24 @@ const glink = (from: string, to: string, status: string, count: number, more: ob
   strength: 'functional',
   distance: 'across modules',
   volatility: 'undeclared',
+  volatility_source: 'undeclared',
   imbalance: '',
+  accepted: '',
   ...more,
 });
 
 const view = {
-  nodes: [gnode('api', 'app', 3), gnode('db', 'infra', 9, 'high'), gnode('ui', 'app', 6), gnode('legacy', '', 0)],
+  nodes: [
+    gnode('api', 'app', 3, 'undeclared'),
+    gnode('db', 'infra', 9, 'high'),
+    gnode('ui', 'app', 6, '', 'core'),
+    gnode('legacy', '', 0),
+  ],
   links: [
     glink('api', 'db', 'violation', 12, { strength: 'intrusive', imbalance: 'medium' }),
     glink('db', 'api', 'violation', 2, { strength: 'contract' }),
     glink('ui', 'api', 'allowed', 4, { strength: 'model' }),
-    glink('ui', 'db', 'accepted', 3),
+    glink('ui', 'db', 'accepted', 3, { volatility: 'high', volatility_source: 'cascade', accepted: 'advisory' }),
     glink('legacy', 'db', 'observed', 0, { strength: '', distance: '', volatility: '' }),
   ],
   findings: [
@@ -565,13 +573,22 @@ test('graph: the canvas, the inspector and the matrix', async ({ page }) => {
   ).toHaveAttribute('stroke-width', '5');
   await expect(page.locator('.g-edge.unmeasured')).toHaveCount(1);
   await expect(page.locator('.g-node.undeclared')).toHaveText('legacy');
-  await expect(page.getByText('volatility high')).toBeVisible();
+  // what the report's policy declares, never a seam's volatility
+  await expect(page.locator('.g-node', { hasText: 'db' })).toContainText('volatility high');
+  await expect(page.locator('.g-node', { hasText: 'api' })).toContainText('volatility undeclared');
+  await expect(page.locator('.g-node', { hasText: 'ui' })).toContainText('subdomain core');
   await expect(page.locator('#incomplete')).toBeVisible();
   await expect(page.getByRole('button', { name: /added in this PR/ })).toHaveCount(0);
   const problems = page.getByRole('region', { name: /Problems/ });
   await expect(problems.getByRole('button')).toHaveCount(2); // the cycle as one row, then accepted
   await expect(problems.getByRole('button').first()).toContainText('⇄');
+  await expect(problems.getByRole('button').last()).toContainText('accepted advisory');
   await expectClean(page);
+
+  await problems.getByRole('button').last().click();
+  const accepted = page.getByRole('complementary');
+  await expect(accepted.locator('.g-tag')).toHaveText('accepted advisory');
+  await expect(accepted).toContainText('high (cascade)');
 
   await problems.getByRole('button').first().click();
   const inspector = page.getByRole('complementary');
