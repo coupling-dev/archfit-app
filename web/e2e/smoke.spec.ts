@@ -1206,6 +1206,27 @@ test('pull request: on a phone the cycle stacks, and its labels stay readable', 
     }),
   );
   expect(new Set(boxes).size).toBe(1);
+
+  // the findings tables read as one block per dependency: nothing off-screen, no row taller than its cells
+  await page.getByText('Known issues accepted earlier').click();
+  for (const wrap of await page.locator('.table-wrap:visible').all()) {
+    const fit = await wrap.evaluate((w) => w.scrollWidth <= w.clientWidth);
+    expect(fit).toBe(true);
+  }
+  // a cell as tall as its row but not its content is the empty block: each cell's box against what it renders, with
+  // room for its padding and its label's line
+  const slack = await page.locator('table.cards tbody td:visible').evaluateAll((cells) =>
+    cells.map((td) => {
+      const content = document.createRange();
+      content.selectNodeContents(td);
+      const rects = [...content.getClientRects()].filter((r) => r.width > 0 && r.height > 0);
+      const used = Math.max(...rects.map((r) => r.bottom)) - Math.min(...rects.map((r) => r.top));
+      return Math.round(td.getBoundingClientRect().height - used);
+    }),
+  );
+  expect(slack.length).toBeGreaterThan(0);
+  for (const s of slack) expect(s).toBeLessThanOrEqual(32);
+  await expect(page.locator('table.cards td.sdv').first()).toBeVisible();
 });
 
 test('policy: a long policy scrolls inside the editor, and a line link scrolls to it', async ({ page }) => {

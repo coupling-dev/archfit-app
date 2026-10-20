@@ -40,7 +40,7 @@
 <details class="box fold" {id}>
   <summary class="box-head"><h2>{title}</h2><span class="counter">{count}</span></summary>
   <div class="table-wrap">
-    <table class="data">
+    <table class="data cards">
       <thead>
         <tr>
           <th scope="col">Rule</th>
@@ -66,12 +66,12 @@
                   >{f.metric || 'no dependency'}</span
                 >{/if}
             </td>
-            {#if compared}<td><Origin origin={f.origin} /></td>{/if}
-            <td><Locations locations={f.locations} total={f.locations_total} /></td>
+            {#if compared}<td data-label="This PR"><Origin origin={f.origin} /></td>{/if}
+            <td data-label="Where"><Locations locations={f.locations} total={f.locations_total} /></td>
             {#if coupling}
-              <td>{f.strength}</td>
-              <td>{f.distance}</td>
-              <td>{f.volatility}</td>
+              <td class="sdv" data-label="Strength">{f.strength}</td>
+              <td class="sdv" data-label="Distance">{f.distance}</td>
+              <td class="sdv" data-label="Volatility">{f.volatility}</td>
             {/if}
           </tr>
         {/each}
