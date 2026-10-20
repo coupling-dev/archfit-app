@@ -4,7 +4,7 @@
   import PullHead from '../components/PullHead.svelte';
   import { basisText, resultWord } from '../lib/evidence';
   import Skeleton from '../components/Skeleton.svelte';
-  import { explain, repoAPI, type ApiError, type Pull } from '../lib/api';
+  import { explainLoad, repoAPI, type ApiError, type Pull } from '../lib/api';
   import { firstJSON } from '../lib/early';
   import { safeHref, type Repo } from '../lib/route';
 
@@ -17,7 +17,7 @@
   function load() {
     firstJSON<Pull>(repoAPI(route.owner, route.name, `pulls/${route.number}`)).then(
       (b) => (body = b),
-      (e: ApiError) => (failure = explain(e, here)),
+      (e: ApiError) => (failure = explainLoad(e, here)),
     );
   }
   load();

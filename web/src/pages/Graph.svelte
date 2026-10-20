@@ -9,7 +9,7 @@
   import PullHead from '../components/PullHead.svelte';
   import SeamSummary from '../components/graph/SeamSummary.svelte';
   import Skeleton from '../components/Skeleton.svelte';
-  import { explain, repoAPI, type ApiError } from '../lib/api';
+  import { explainLoad, repoAPI, type ApiError } from '../lib/api';
   import { firstJSON } from '../lib/early';
   import {
     acceptedRows,
@@ -49,7 +49,7 @@
     const path = route.number ? `pulls/${route.number}/graph` : 'graph';
     firstJSON<Graph>(repoAPI(route.owner, route.name, path)).then(
       (b) => (body = b),
-      (e: ApiError) => (failure = explain(e, here)),
+      (e: ApiError) => (failure = explainLoad(e, here)),
     );
   }
   load();

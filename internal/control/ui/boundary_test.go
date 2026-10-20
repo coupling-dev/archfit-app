@@ -101,7 +101,8 @@ func TestTenantIdentityOnlyFromSession(t *testing.T) {
 
 	e.gh.mu.Lock()
 	for _, call := range e.gh.calls {
-		if call.installationID == installB || call.fullName == otherRepo {
+		// The user's own permission lookup, with the user's token, is how B's repository is refused: no App call.
+		if call.method != "Permission" && (call.installationID == installB || call.fullName == otherRepo) {
 			t.Errorf("GitHub call for installation B: %+v", call)
 		}
 	}

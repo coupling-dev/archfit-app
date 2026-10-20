@@ -5,6 +5,7 @@
   import {
     ApiError,
     explain,
+    explainLoad,
     getJSON,
     postJSON,
     repoAPI,
@@ -81,7 +82,8 @@
       if (!page || discard || !dirty) accept(p, true);
       else page = { ...p, diagnostics: problems };
     } catch (e) {
-      failure = explain(e as ApiError, here);
+      // Only the read that fills the page may replace it: a later one keeps the editor and what it holds.
+      failure = (page ? explain : explainLoad)(e as ApiError, here);
     }
   }
   load();

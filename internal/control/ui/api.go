@@ -45,8 +45,9 @@ func (s *server) apiSignedIn(next apiFunc) http.Handler {
 	})
 }
 
-// apiRepo is repo for /api: the {o}/{n} of the path is authorized at minPermission on every request, and the Repo is
-// the only repository identity the endpoint gets. A body or query never names the repository.
+// apiRepo is the repository authorization of the App: the {o}/{n} of the path is authorized at minPermission on every
+// request, and the Repo is the only repository identity the endpoint gets. A body or query never names the repository.
+// The repository pages are the shell alone and authorize nothing, so this is the only step that does.
 func (s *server) apiRepo(minPermission string, next apiFunc) http.Handler {
 	return s.apiSignedIn(func(r *http.Request, sc scope) (any, error) {
 		repo, err := s.sessions.Authorize(r.Context(), sc.user, r.PathValue("o")+"/"+r.PathValue("n"), minPermission)

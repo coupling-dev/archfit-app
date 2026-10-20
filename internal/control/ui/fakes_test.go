@@ -148,7 +148,7 @@ func (g *fakeGH) deleteFile(fullName, ref, path string) {
 func (g *fakeGH) Permission(_ context.Context, userToken, fullName string) (string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if err := g.fail["Permission"]; err != nil {
+	if err := g.record("Permission", api.RepoRef{FullName: fullName}, ""); err != nil {
 		return "", err
 	}
 	if p, ok := g.perms[userToken+" "+fullName]; ok {

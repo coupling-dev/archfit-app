@@ -3,6 +3,7 @@
   import {
     ApiError,
     explain,
+    explainLoad,
     postJSON,
     repoAPI,
     type Notice,
@@ -36,7 +37,10 @@
   let findingsFailed = $state(false);
 
   function load() {
-    firstJSON<Overview>(repoAPI(route.owner, route.name, 'overview')).then((b) => (body = b), failed);
+    firstJSON<Overview>(repoAPI(route.owner, route.name, 'overview')).then(
+      (b) => (body = b),
+      (e: ApiError) => (failure = explainLoad(e, here)),
+    );
     firstJSON<RepoFindings>(repoAPI(route.owner, route.name, 'findings')).then(
       (f) => (findings = f),
       () => (findingsFailed = true),

@@ -413,6 +413,7 @@ interface Mock {
   pullGraph?: object;
   policy?: object; // fields of the policy page that differ from policy()
   refuseSave?: boolean; // the save is refused with the problems of the text
+  saveNotFound?: boolean; // the save answers 404, as when write access went away
   holdAssist?: Promise<void>; // the AI request answers once this settles
   serverError?: { status: number; sentence: string }; // the server answers the page as its error page
   holdSession?: Promise<void>; // /api/session answers once this settles
@@ -434,6 +435,7 @@ async function open(page: Page, path: string, mock: Mock = {}) {
         case '/api/repos/acme/app/policy/check':
           return json(200, { diagnostics: [], notice: 'The check found no problems.' });
         case '/api/repos/acme/app/policy':
+          if (mock.saveNotFound) return json(404, { error: 'Not found.' });
           if (mock.refuseSave)
             return json(422, {
               error: 'The policy has problems, listed above the editor. Nothing was saved.',
@@ -963,6 +965,19 @@ test('policy: a refused save lists the problems and keeps the text', async ({ pa
   await expect(page.getByRole('alert')).toContainText('Nothing was saved.');
   await expect(page.getByRole('region', { name: '1 problem' })).toContainText('Missing required key `version`.');
   await expect(editor).toContainText('modlues: {}');
+  await expectClean(page);
+});
+
+test("policy: a save's 404 is a sentence on the page, and the editor keeps its text", async ({ page }) => {
+  await open(page, '/r/acme/app/policy', { saveNotFound: true });
+  const editor = page.getByRole('textbox', { name: 'Policy text, .archfit.yaml' });
+  await editor.click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' # kept');
+  await page.getByRole('button', { name: 'Save to draft PR' }).click();
+  await expect(page.getByRole('alert')).toContainText('Not found.');
+  await expect(page.getByRole('heading', { name: 'This page cannot be shown' })).toHaveCount(0);
+  await expect(editor).toContainText('# kept');
   await expectClean(page);
 });
 

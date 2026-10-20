@@ -1,6 +1,6 @@
 <script lang="ts">
   import Skeleton from '../components/Skeleton.svelte';
-  import { ApiError, explain, postJSON, repoAPI, type DataSharing, type Session } from '../lib/api';
+  import { ApiError, explain, explainLoad, postJSON, repoAPI, type DataSharing, type Session } from '../lib/api';
   import { firstJSON } from '../lib/early';
   import { repoPage, type Repo } from '../lib/route';
   import { allowedLine, checkWords } from '../lib/sharing';
@@ -22,7 +22,7 @@
       },
       (e: ApiError) => {
         body = null;
-        failure ||= explain(e, here);
+        failure ||= explainLoad(e, here);
       },
     );
   }

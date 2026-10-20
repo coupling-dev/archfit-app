@@ -477,14 +477,14 @@ the e-mail is `ARCHFIT_INVOKER` and is verified, and the token is not expired.
 | `POST /auth/logout`                                                                                                | GitHub OAuth session and CSRF token                                           |
 | `GET /assets/{path}`, `GET /licenses.txt` and `GET /schema/policy.json`                                            | None                                                                          |
 | `GET /api/session` and `GET /api/repos`                                                                            | GitHub OAuth session                                                          |
-| `GET /r/{o}/{n}`, `/graph`, `/policy`, `/pull/{number}` and `/pull/{number}/graph`                                 | Session with repository `read` permission                                     |
+| `GET /r/{o}/{n}`, `/graph`, `/policy`, `/pull/{number}`, `/pull/{number}/graph` and `/data-sharing`                | GitHub OAuth session. The same shell for every repository; no repository data |
 | `GET /api/repos/{o}/{n}/overview`, `/findings`, `/graph`, `/policy`, `/pulls/{number}` and `/pulls/{number}/graph` | Session with repository `read` permission                                     |
 | `POST /api/repos/{o}/{n}/policy/check`                                                                             | Session with repository `read` permission, JSON body, CSRF token header       |
 | `POST /api/repos/{o}/{n}/policy`, `/policy/ready` and `/assist`                                                    | Session with repository `write` permission, JSON body, CSRF token header      |
 | `POST /api/repos/{o}/{n}/onboarding` and `/discover`                                                               | Session with repository `admin` permission, JSON body, CSRF token header      |
-| `GET /r/{o}/{n}/data-sharing` and `GET /api/repos/{o}/{n}/data-sharing`                                            | Session with repository `admin` permission                                    |
+| `GET /api/repos/{o}/{n}/data-sharing`                                                                              | Session with repository `admin` permission                                    |
 | `POST /api/repos/{o}/{n}/data-sharing`                                                                             | Session with repository `admin` permission, JSON body, CSRF token header      |
-| `GET /r/{o}/{n}/consent`                                                                                           | Session with repository `admin` permission; `308` to `/data-sharing`          |
+| `GET /r/{o}/{n}/consent`                                                                                           | GitHub OAuth session; `308` to `/data-sharing`, from the path alone           |
 
 ## Platform seams
 

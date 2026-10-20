@@ -1106,3 +1106,30 @@ func TestStatusPageShowsBranchPullsAndSetup(t *testing.T) {
 		}
 	})
 }
+
+// The graphs read their policy text beside the report, but its failure counts only once there is a report: without
+// one the answer says why, as when the text was read after it.
+func TestPolicyReadFailsNothingWithoutAReport(t *testing.T) {
+	limited := api.ErrRateLimited
+	tests := []struct {
+		name string
+		path string
+		fail map[string]error
+		want string
+	}{
+		{"repository graph", "/graph", map[string]error{"File " + mainBranch + ":" + policy.PolicyPath: limited}, noReport},
+		{"pull request graph", "/pulls/4/graph", map[string]error{
+			"File " + sha(4) + ":" + policy.PolicyPath: limited, "File " + mainBranch + ":" + policy.PolicyPath: limited}, noResult},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t)
+			maps.Copy(e.gh.fail, tt.fail)
+			var body graphJSON
+			e.as("alice", permRead).getJSON("/api/repos/"+repoName+tt.path, &body)
+			if body.Unavailable != tt.want || body.View != nil {
+				t.Errorf("unavailable = %q, view %v; want %q", body.Unavailable, body.View != nil, tt.want)
+			}
+		})
+	}
+}

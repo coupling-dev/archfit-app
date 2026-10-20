@@ -289,15 +289,19 @@ async function answer<T>(res: Response): Promise<T> {
 }
 
 // explain is the sentence a page shows for a failed call. A 401 (the session ended, or GitHub rejected the user's token
-// and the server ended it) goes to sign-in instead, returning here. A 404 (a repository that does not exist or the
-// user cannot see, a pull request that is not one) replaces the whole page, as the server's error page did.
+// and the server ended it) goes to sign-in instead, returning here.
 export function explain(e: ApiError, here: string, go: (url: string) => void = (url) => location.assign(url)): string {
-  if (e.status === 404) {
-    refused.set(e.message);
-    return '';
-  }
   if (e.status !== 401) return e.message;
   go(signInHref(here));
+  return '';
+}
+
+// explainLoad is explain for the read that fills a page. Its 404 (a repository that does not exist or the user cannot
+// see, a pull request that is not one) replaces the whole page, as the server's error page did. Never for a write: a
+// write's 404 stays a sentence on the page, so a form or the editor keeps what the user typed.
+export function explainLoad(e: ApiError, here: string, go?: (url: string) => void): string {
+  if (e.status !== 404) return explain(e, here, go);
+  refused.set(e.message);
   return '';
 }
 

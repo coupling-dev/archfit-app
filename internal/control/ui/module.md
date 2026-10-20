@@ -50,8 +50,9 @@ pilot; product.md leaves usability targets open.
 - How a page loads (`web/src/lib/early.ts`): its first reads (`firstPaths`, those with no input but the path) and its
   lazy chunk start beside `/api/session`, not after it; each is authorized on its own, the page takes the answer once
   when it mounts, and a read no page takes is dropped quietly. Until an answer comes, the frame and a grey skeleton of
-  each section (`components/Skeleton.svelte`, CSS only, still under reduced motion). A `404` from an API replaces the
-  page with the error page's "This page cannot be shown" and no repository tabs (`lib/gate.ts`).
+  each section (`components/Skeleton.svelte`, CSS only, still under reduced motion). A `404` from the read that fills a
+  page replaces the page with the error page's "This page cannot be shown" and no repository tabs (`explainLoad`,
+  `lib/gate.ts`); a write's `404` stays a sentence on the page, so a form or the editor keeps what the user typed.
 - The CSRF scheme: `hex(HMAC-SHA256(key = User.Token, "archfit-csrf"))` **[default]**, stateless and per session. The
   web app reads it from `/api/session` and sends it as the `X-CSRF-Token` header; the one form left, Sign out, sends
   it as the `csrf` field.
@@ -1122,8 +1123,9 @@ others are done, so the handler chain's recover still answers `500` and the proc
   counts only once there is a report.
 - Status: `Onboarding.Progress`, the `admin` check (then the managed-AI consent), the default-branch state, the open
   pull requests and `Account.Status` at once. The default-branch state and the pull requests count only once the
-  progress says a report came in: before one they are read on the chance and dropped, a few calls spent so the page
-  waits for its slowest read, not their sum. Only the progress fails the page.
+  progress says a report came in: before one they are read on the chance and dropped, up to 23 calls (the branch head
+  and its check, the open pull requests and the check of each of up to 20) spent so the page waits for its slowest
+  read, not their sum. Only the progress fails the page.
 - The artifact listing (`ArtifactID`) runs on every request: it is GitHub's answer to whether the report still
   exists (it expires, or its owner deletes it), so the report cache only ever replaces the download, never the
   listing **[decided, g3]**.
@@ -1414,6 +1416,10 @@ their interfaces except where a test says otherwise. The clock is injected.
 - **Test name**: `TestStatusPageShowsBranchPullsAndSetup`
   **Scenario**: stage `gate_advisory` with a default-branch check and one open pull request; stage `workflow_merged`; `OpenPulls` failing; for an administrator, `CheckRuns`, `OpenPulls`, the entitlement and the consent all failing at once; 23 more open pull requests.
   **Expected behavior**: through `/api/repos/{o}/{n}/overview`: the default branch, its title and tone, the pull request linked to its page with its check title, the current and done steps, the rehearse advice; no pull request or state shown before a report, also at `policy_merged`, where "First report" is not done; the ruleset advice at `gate_required`; the fixed wording and a `200`; a `200` with admin true, managed AI `unknown`, the state `unknown`, the pulls error, no banner and the steps; "4 more" and 21 `CheckRuns` calls.
+- **Test name**: `TestPolicyReadFailsNothingWithoutAReport`
+  **Scenario**: the repository graph with no report and its policy read rate limited; the pull request graph with no check run
+  and both policy reads rate limited.
+  **Expected behavior**: `200` saying there is no report, and no result on the head, each without a view.
 - **Test name**: `TestPullPartsFailAsWhenReadInTurn`
   **Scenario**: a pull request on base `release`, rate limited in turn on: the settings at the base; the report download; both, the download failing with a plain error; the policy at the head (graph); the policy at the base while the head's is the report's (graph).
   **Expected behavior**: `503`; `503`; `503` (the settings' error, not the report's `502`); `503`; `200`.
@@ -1678,7 +1684,7 @@ their interfaces except where a test says otherwise. The clock is injected.
   positive integer), `safeHref` (only App paths and `https://github.com/`), `serverError` (the app-error meta tag, the
   placeholder read as none), the cycle drawing's layout and arrow styles,
   escaped links and API paths, the sign-in return link, the early reads of each route taken once then read again and a failed one
-  handed to its page, a `404` replacing the page, the theme with and without storage, the API client's CSRF
+  handed to its page, a page read's `404` replacing the page and a write's never, the theme with and without storage, the API client's CSRF
   header, error sentences, fallbacks and the problems of a refused policy; the draft timeline, `#L<n>` links, problem
   places, and the editor's marks (from the column to the end of the line, a line past the end on the last line, none
   for a problem of the whole text); the balance words: every quadrant worded, the crossings as the engine gate
@@ -1697,6 +1703,6 @@ their interfaces except where a test says otherwise. The clock is injected.
   off with its reason and the inline Allow, and a customer-mode request following its run; the graph pages, laid out by
   the worker, the inspector's balance reading of a flagged dependency and the count line, and a worker that fails to load reported instead of a layout that never ends; a server error page (its sentence, no repository tabs) and the footer's licences link; a repository the user cannot see and one
   that does not exist shown the same, as the API's "Not found." with no repository tabs; a page asking its data beside
-  `/api/session`, its skeleton up until both answer; every page has no
+  `/api/session`, its skeleton up until both answer; a save's `404` shown on the policy page with the editor's text kept; every page has no
   `securitypolicyviolation` event and no axe violation in light and in dark; the onboarding write carries the CSRF
   header and a JSON body.
