@@ -13,6 +13,12 @@ import (
 // pullJSON is the pull request page: the header, then the report of the run the head's archfit/state check names, in
 // the groups and words of the PR comment. Engine strings are data; the web app renders them as text only.
 type pullJSON struct {
+	pullHead
+	findingsJSON
+}
+
+// pullHead is the header the pull request page and its graph share: which pull request, and what its check says.
+type pullHead struct {
 	Number    int    `json:"number"`
 	Title     string `json:"title"`
 	Author    string `json:"author"`
@@ -22,17 +28,19 @@ type pullJSON struct {
 	HeadSHA   string `json:"head_sha"` // short
 	URL       string `json:"url"`
 	ChecksURL string `json:"checks_url"`
-	GraphHref string `json:"graph_href"`
 
 	Result      string `json:"result"` // the archfit/state word, "" before a result
 	Tone        string `json:"tone"`
 	Headline    string `json:"headline"`
 	Required    bool   `json:"required"`
-	Unavailable string `json:"unavailable"` // why there are no findings to show; "" when there are
+	Unavailable string `json:"unavailable"` // why there is no report to show; "" when there is
 	RunID       int64  `json:"run_id"`
 	NoBaseline  bool   `json:"no_baseline"` // "new" means not accepted, not "added by this pull request"
 	Compared    bool   `json:"compared"`    // the engine compared against the base branch, so origins mean something
+}
 
+// findingsJSON is a report's findings in the comment's groups, its evidence and its agent tasks.
+type findingsJSON struct {
 	ViolationCount int           `json:"violation_count"` // findings, a cycle's directions each counted
 	Cycles         []cycleJSON   `json:"cycles"`
 	Other          []findingJSON `json:"other"` // the shown violations on no cycle
@@ -84,7 +92,9 @@ type dimensionJSON struct {
 	Key        string `json:"key"`
 	Name       string `json:"name"`
 	Status     string `json:"status"`
-	Coverage   string `json:"coverage"`
+	Observed   int    `json:"observed"`   // coverage: how many of the measurable units the engine measured
+	Measurable int    `json:"measurable"` // the engine's coverage total
+	Basis      string `json:"basis"`
 	Confidence string `json:"confidence"`
 	Gate       string `json:"gate"`
 }
@@ -113,21 +123,35 @@ func (s *server) apiPull(r *http.Request, sc scope) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := pull.Pull
-	body := pullJSON{
-		Number: p.Number, Title: p.Title, Author: p.Author, State: pullState(p), HeadRef: p.HeadRef, BaseRef: p.BaseRef,
-		HeadSHA: p.HeadSHA[:min(len(p.HeadSHA), shortSHA)], URL: p.URL, ChecksURL: pull.CheckURL,
-		GraphHref: repoPath(sc, "/pull/"+strconv.Itoa(p.Number)+"/graph"),
-		Headline:  pull.Headline, Required: pull.Required, Unavailable: pull.Unavailable, RunID: pull.RunID,
-	}
-	if pull.Headline != "" || pull.Conclusion != "" {
-		body.Result = conclusionWord(pull.Conclusion)
-		body.Tone = toneOf(body.Result)
-	}
+	body := pullJSON{pullHead: headOf(sc, pull, rep)}
 	if rep != nil {
-		fillFindings(&body, *rep)
+		fillFindings(&body.findingsJSON, *rep)
 	}
 	return body, nil
+}
+
+// headOf is the header of a pull request and the report its check names; rep is nil when there is none.
+func headOf(sc scope, pull pullBody, rep *report.Report) pullHead {
+	p := pull.Pull
+	h := pullHead{
+		Number: p.Number, Title: p.Title, Author: p.Author, State: pullState(p), HeadRef: p.HeadRef, BaseRef: p.BaseRef,
+		HeadSHA: p.HeadSHA[:min(len(p.HeadSHA), shortSHA)], URL: p.URL, ChecksURL: pull.CheckURL,
+		Headline: pull.Headline, Required: pull.Required, Unavailable: pull.Unavailable, RunID: pull.RunID,
+	}
+	if pull.Headline != "" || pull.Conclusion != "" {
+		h.Result = conclusionWord(pull.Conclusion)
+		h.Tone = toneOf(h.Result)
+	}
+	if rep != nil {
+		h.NoBaseline = noBaseline(*rep)
+		h.Compared = rep.Comparison.OriginStatus == originComparable
+	}
+	return h
+}
+
+// noBaseline: without a baseline every finding counts as new, older debt included.
+func noBaseline(rep report.Report) bool {
+	return rep.GateReference == nil || !rep.GateReference.BaselinePresent
 }
 
 func pullState(p api.Pull) string {
@@ -142,11 +166,9 @@ func pullState(p api.Pull) string {
 	return "open"
 }
 
-func fillFindings(body *pullJSON, rep report.Report) {
-	body.NoBaseline = rep.GateReference == nil || !rep.GateReference.BaselinePresent
+func fillFindings(body *findingsJSON, rep report.Report) {
 	// The comment's groups, order and cycle search (report.Group): the page shows the same 50 violations it does.
 	g := report.Group(rep, findingsPerList)
-	body.Compared = g.Compared
 	violations, advisories, accepted := g.Violations, g.Advisories, g.Accepted
 	body.ViolationCount, body.AdvisoryCount, body.AcceptedCount = len(violations), len(advisories), len(accepted)
 	seams := map[[2]string]report.Seam{}
@@ -159,7 +181,7 @@ func fillFindings(body *pullJSON, rep report.Report) {
 			To: endpointName(f.Edge.To), Why: f.Why, Fix: f.Constraint, Alternatives: f.AllowedAlternatives,
 			Locations: make([]string, len(f.Locations)),
 		}
-		if body.Compared {
+		if g.Compared {
 			out.Origin = origin
 		}
 		for i, l := range f.Locations {
@@ -225,12 +247,9 @@ func fillFindings(body *pullJSON, rep report.Report) {
 		if !ok {
 			continue
 		}
-		cov := strconv.Itoa(dim.Coverage.Observed) + " / " + strconv.Itoa(dim.Coverage.Total)
-		if dim.Coverage.Basis != "" {
-			cov += " " + dim.Coverage.Basis
-		}
 		body.Dimensions = append(body.Dimensions, dimensionJSON{
-			Key: d.key, Name: d.name, Status: dim.Status, Coverage: cov, Confidence: dim.Confidence, Gate: dim.Gate,
+			Key: d.key, Name: d.name, Status: dim.Status, Observed: dim.Coverage.Observed, Measurable: dim.Coverage.Total,
+			Basis: dim.Coverage.Basis, Confidence: dim.Confidence, Gate: dim.Gate,
 		})
 		for _, u := range dim.Unknown {
 			body.Unknowns = append(body.Unknowns, unknownRow{Dimension: d.name, Fact: u.Fact, Reason: u.Reason})

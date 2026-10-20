@@ -1,5 +1,5 @@
 // The pages of the web app. The server serves the same shell for each and has already authorized the repository of
-// a repository page; every other page of the App is still a server-rendered link.
+// a repository page; the policy and consent pages are still server-rendered links.
 
 export interface Repo {
   owner: string;
@@ -8,9 +8,12 @@ export interface Repo {
 }
 
 export type Route =
-  { kind: 'home' } | ({ kind: 'repo' } & Repo) | ({ kind: 'pull'; number: number } & Repo) | { kind: 'unknown' };
+  | { kind: 'home' }
+  | ({ kind: 'repo' | 'graph' } & Repo)
+  | ({ kind: 'pull' | 'pull-graph'; number: number } & Repo)
+  | { kind: 'unknown' };
 
-const repoPath = /^\/r\/([^/]+)\/([^/]+)(?:\/pull\/([1-9][0-9]{0,9}))?\/?$/;
+const repoPath = /^\/r\/([^/]+)\/([^/]+)(?:\/pull\/([1-9][0-9]{0,9}))?(\/graph)?\/?$/;
 
 export function parseRoute(pathname: string): Route {
   if (pathname === '/') return { kind: 'home' };
@@ -26,7 +29,9 @@ export function parseRoute(pathname: string): Route {
   } catch {
     return { kind: 'unknown' };
   }
-  return m[3] ? { kind: 'pull', number: Number(m[3]), ...repo } : { kind: 'repo', ...repo };
+  const graph = m[4] !== undefined;
+  if (m[3]) return { kind: graph ? 'pull-graph' : 'pull', number: Number(m[3]), ...repo };
+  return { kind: graph ? 'graph' : 'repo', ...repo };
 }
 
 // repoPage is the App path of a repository page, for links; the server authorizes it again on every request.

@@ -109,3 +109,12 @@ func corpusReport(t *testing.T, name, release string) report.Report {
 	}
 	return rep
 }
+
+// statuses keeps what a status test compares: the pair, its status and its count.
+func statuses(ls []Link) []Link {
+	out := make([]Link, len(ls))
+	for i, l := range ls {
+		out[i] = link(l.From, l.To, l.Count, l.Status)
+	}
+	return out
+}

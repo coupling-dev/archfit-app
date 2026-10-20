@@ -1,9 +1,8 @@
 <script lang="ts">
-  import CycleCard from '../components/CycleCard.svelte';
-  import FindingCard from '../components/FindingCard.svelte';
-  import FindingTable from '../components/FindingTable.svelte';
+  import FindingGroups from '../components/FindingGroups.svelte';
+  import PullHead from '../components/PullHead.svelte';
   import { explain, getJSON, repoAPI, type ApiError, type Pull } from '../lib/api';
-  import { repoPage, safeHref, type Repo } from '../lib/route';
+  import { safeHref, type Repo } from '../lib/route';
 
   let { route, here }: { route: Repo & { number: number }; here: string } = $props();
 
@@ -29,10 +28,6 @@
     }
   }
 
-  const stateTone: Record<string, string> = { open: 'success', draft: 'neutral', merged: 'done', closed: 'danger' };
-  const findings = $derived(
-    body ? (body.cycles?.length ?? 0) + (body.other?.length ?? 0) + (body.advisories?.length ?? 0) + (body.accepted?.length ?? 0) : 0,
-  );
 </script>
 
 {#if failure}
@@ -40,46 +35,7 @@
 {:else if !body}
   <p class="muted" aria-live="polite">Loading…</p>
 {:else}
-  <div class="page-head">
-    <div class="stack-sm">
-      <h1>{body.title || 'Pull request'} <span class="muted">#{body.number}</span></h1>
-      <div class="row">
-        <span class="state {stateTone[body.state] ?? 'neutral'}">{body.state}</span>
-        {#if body.author}<span class="muted">{body.author} wants to merge</span>{/if}
-        <code>{body.head_ref}</code><span class="muted">into</span><code>{body.base_ref}</code>
-        <span class="muted small mono" title="Head commit">{body.head_sha}</span>
-        {#if safeHref(body.url)}<a href={safeHref(body.url)} rel="noreferrer">View on GitHub</a>{/if}
-      </div>
-    </div>
-  </div>
-
-  <nav class="unav sub" aria-label="Pull request">
-    <a href={repoPage(route.fullName, `/pull/${route.number}`)} aria-current="page">Findings</a>
-    {#if safeHref(body.graph_href)}<a href={safeHref(body.graph_href)}>Graph</a>{/if}
-  </nav>
-
-  {#if body.result}
-    <section class="box result" aria-labelledby="result">
-      <div class="box-body row">
-        <span class="state {body.tone}" id="result">{body.result}</span>
-        <strong>{body.headline}</strong>
-      </div>
-      <div class="box-foot row">
-        {#if body.required}
-          <span class="label danger">gate: required</span>
-        {:else}
-          <span class="label">gate: advisory · does not block merging</span>
-        {/if}
-        {#if !body.unavailable}
-          {#if body.no_baseline}<span class="label attention">no baseline</span>{/if}
-          {#if body.compared}<span class="label accent">compared with base</span>{:else}<span class="label"
-              >PR attribution unavailable</span
-            >{/if}
-          <span>customer-attested · run {body.run_id}</span>
-        {/if}
-      </div>
-    </section>
-  {/if}
+  <PullHead head={body} fullName={route.fullName} current="findings" />
 
   {#if body.unavailable}
     <p class="flash warn">
@@ -96,43 +52,7 @@
       </p>
     {/if}
 
-    <section class="stack" aria-labelledby="violations">
-      <h2 id="violations">Rule violations <span class="counter">{body.violation_count}</span></h2>
-      {#if body.violation_count === 0}
-        <div class="box blankslate"><p>No rule violations in this run.</p></div>
-      {/if}
-      {#each body.cycles ?? [] as c, i (i)}
-        <CycleCard {c} compared={body.compared} />
-      {/each}
-      {#each body.other ?? [] as f, i (i)}
-        <FindingCard {f} />
-      {/each}
-    </section>
-
-    {#if body.advisories?.length}
-      <FindingTable
-        id="advisories"
-        title="Advisories · never block"
-        count={body.advisory_count}
-        rows={body.advisories}
-        compared={body.compared}
-      />
-    {/if}
-    {#if body.accepted?.length}
-      <FindingTable
-        id="accepted"
-        title="Accepted · baseline or waiver"
-        count={body.accepted_count}
-        rows={body.accepted}
-        compared={body.compared}
-      />
-    {/if}
-    {#if body.omitted}
-      <p class="muted small">{body.omitted} more findings are not listed: each group shows at most 50.</p>
-    {/if}
-    {#if findings === 0 && body.violation_count === 0}
-      <p class="muted small">The report lists no finding to show.</p>
-    {/if}
+    <FindingGroups f={body} compared={body.compared} />
 
     {#if body.tasks}
       <section class="box" aria-labelledby="tasks">
@@ -172,7 +92,7 @@
                 <tr>
                   <td><span title={d.key}>{d.name}</span></td>
                   <td>{d.status}</td>
-                  <td>{d.coverage}</td>
+                  <td>{d.observed} / {d.measurable}{d.basis ? ` ${d.basis}` : ''}</td>
                   <td>{d.confidence}</td>
                   <td>{d.gate}</td>
                 </tr>

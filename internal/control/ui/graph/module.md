@@ -17,7 +17,8 @@ tested.
 
 ## Functional Responsibilities
 
-- Build one `Node` per module declared in the policy, with its layer and its line in the YAML.
+- Build one `Node` per module declared in the policy, with its layer, its line in the YAML, and the volatility every
+  seam into it agrees on.
 - Build one `Link` per observed module-to-module seam of the report, and per module pair a current finding names, in
   a stable order.
 - Give each link its `Status`: the engine's `seams[].policy` of the pair when a seam carries it (`violation`,
@@ -26,8 +27,10 @@ tested.
 - Set `Stale` when the policy text is not the policy the report was computed from, or does not parse.
 - Set `Incomplete` when the report's hard gates did not pass or a required rule was not evaluated, so that an
   `observed` link is not read as clean.
-- Mark a link `Introduced` when the engine compared with the base branch and a finding behind it is new in the change,
-  without touching its `Status`.
+- Give each link the coupling of its strongest seam (strength, distance in words, volatility) and the worst
+  imbalance the engine reported on the pair.
+- Give each link its `Origin` by the PR comment's rule (`report.PairOrigin`) when the engine compared with the base
+  branch, without touching its `Status`.
 
 Graph never edits YAML and never proposes a change. Visual edits are deferred (decisions.md §6).
 
@@ -35,7 +38,7 @@ Graph never edits YAML and never proposes a change. Visual edits are deferred (d
 
 Core-adjacent product surface, but small and pure. Volatility: moderate. It changes when the engine
 report's seam or finding fields change (a versioned wire release) or when the view needs a new fact.
-Layout, colors and interaction are not here; they are the parent's templates and scripts.
+Layout, colors and interaction are not here; they are the web app's.
 
 ## Encapsulated Knowledge
 
@@ -57,9 +60,12 @@ Layout, colors and interaction are not here; they are the parent's templates and
 
 ```go
 type Node struct {
-    Name       string
-    Layer      string
-    PolicyLine int // 1-based line of the module in the policy YAML; 0 if not found
+    Name       string `json:"name"`
+    Layer      string `json:"layer"`
+    PolicyLine int    `json:"policy_line"` // 1-based line of the module in the policy YAML; 0 if not found
+    // Volatility is the declared volatility the engine gave every seam into the module (Balanced Coupling: the
+    // volatility of the module depended upon); "" when the seams disagree, say undeclared, or there are none.
+    Volatility string `json:"volatility"`
 }
 
 // LinkStatus is what the report says about a module pair: the engine's seam policy status when the report carries
@@ -75,33 +81,42 @@ const (
 )
 
 type Link struct {
-    From, To   string
-    Status     LinkStatus
-    Count      int  // observed dependencies of the pair's seams; 0 when only a finding names the pair
-    Introduced bool // a finding that names the pair is one the engine says this change introduced; display only
+    From   string     `json:"from"`
+    To     string     `json:"to"`
+    Status LinkStatus `json:"status"`
+    Count  int        `json:"count"` // observed dependencies of the pair's seams; 0 when only a finding names the pair
+    // Origin is report.PairOrigin of the pair, the PR comment's rule: report.PairAdded when this change added the
+    // dependency, report.PairExisting when the base had it, "" when the report cannot say or did not compare. Display only.
+    Origin string `json:"origin"`
+    // The coupling of the pair's strongest seam, as the engine measured it; all "" when no seam names the pair.
+    Strength   string `json:"strength"`   // engine token: contract, model, functional, intrusive
+    Distance   string `json:"distance"`   // in words (report.DistanceWords)
+    Volatility string `json:"volatility"` // engine token
+    Imbalance  string `json:"imbalance"`  // the highest seam severity of the pair, the engine's imbalance; "" for none
 }
 
 // View is a read-only picture. Stale is true when the policy text no longer matches the report's config_hash.
 // Incomplete is true when the report's hard gates did not pass or a required rule was not evaluated: an observed
 // link may then still break a rule.
 type View struct {
-    Nodes      []Node
-    Links      []Link
-    Findings   []LinkFinding // what names each link, for the page's detail panel; display only
-    Stale      bool
-    Incomplete bool
+    Nodes      []Node        `json:"nodes"`
+    Links      []Link        `json:"links"`
+    Findings   []LinkFinding `json:"findings"` // what names each link, for the page's inspector; display only
+    Stale      bool          `json:"stale"`
+    Incomplete bool          `json:"incomplete"`
 }
 
 // LinkFinding is one finding that names a drawn link's module pair, as the engine reported it. It explains a link and
-// never decides its Status. Why is engine text: the page must treat it as untrusted.
+// never decides its Status. It carries no origin: what a pull request added is the link's Origin, the comment's rule,
+// and a cycle finding's own origin would contradict it. Why is engine text: the page must treat it as untrusted.
 type LinkFinding struct {
-    From, To string
-    RuleID   string
-    Kind     string
-    Status   string
-    Origin   string // "introduced" | "pre_existing" | "unknown"; "" unless the report compared with the base branch
-    Why      string
-    More     int // on the last listed finding of a pair: how many more name the pair and are not listed
+    From   string `json:"from"`
+    To     string `json:"to"`
+    RuleID string `json:"rule_id"`
+    Kind   string `json:"kind"`
+    Status string `json:"status"`
+    Why    string `json:"why"`
+    More   int    `json:"more"` // on the last listed finding of a pair: how many more name the pair and are not listed
 }
 
 // Build is pure. Nodes come from the policy's modules, links from the report's seams and findings. A link's Status
@@ -151,12 +166,21 @@ func Build(rep Report, policy []byte) View
     pair **[default]**, the last one carrying `More`, the count not listed; `Why` clipped to 400 runes with "…"
     **[default]**; sorted by `(From, To)`, stable. It never changes a `Status`:
     an advisory on a pair whose engine seam status is `allowed` is listed and the link stays `allowed`. Never nil.
-13. Origin, a projection for a pull request report: only when `rep.Comparison.OriginStatus == "comparable"`, a link
-    is `Introduced` when at least one finding of rule 12 on its pair (any status but `fixed`, the cap ignored) has
-    `Origin == "introduced"`, and each `LinkFinding.Origin` is the finding's `Origin`. Any other `OriginStatus`, an
-    empty one included: no link is `Introduced` and every `Origin` is `""`, so nothing claims what a change added
-    without the engine's comparison. `Introduced` is never inferred from a status (`new` means "not accepted", not
-    "added") and never changes `Status`: an introduced gate finding on a pair stays a `violation`.
+13. Origin, a projection for a pull request report: `g := report.Group(rep, report.ShownPerGroup)`; only when
+    `g.Compared` (the engine compared with the base branch), each link's `Origin` is
+    `report.PairOrigin` of its pair over `g.All` and `g.OnCycle`, the rule the PR comment uses: `existing` when a
+    pre-existing finding names the pair, else `added` when an introduced finding off a cycle does, else `""`. `Group`
+    searches only the first `ShownPerGroup` violations for cycles, so a violation past them, on a pair no shown
+    cycle finding names, counts as on a cycle: it never makes a pair `added` (the comment folds it into "and N
+    more"), and a pre-existing one still makes it `existing`. On a shown cycle's pair the origin is the comment's. A pair no finding names stays `""`. Without a comparison every `Origin` is `""`, so nothing claims what a change added
+    without the engine's comparison. `Origin` is never inferred from a status (`new` means "not accepted", not
+    "added") and never changes `Status`: an added link with a gate finding stays a `violation`.
+14. Coupling: per pair, the seam with the strongest `Strength` (`contract` < `model` < `functional` < `intrusive`; a
+    token outside them ranks below all), then the most `Edges`, gives `Strength`, `Volatility`, and `Distance` in
+    `report.DistanceWords` (a token outside them as written). `Imbalance` is the highest `Severity` of the pair's
+    seams (`low` < `medium` < `high` < `critical`). A pair only a finding names has none of them.
+15. Node volatility: when every seam into a module carries the same `Volatility` and it is `low`, `medium` or
+    `high`, the node shows it, an undeclared module included; otherwise `""`.
 
 Stated limits **[default]**: only the engine says "allowed". A relationship the policy permits but the engine did
 not observe is not in a report, and graph does not interpret policy rules. When a seam carries `Policy`, `observed` is
@@ -176,8 +200,8 @@ finding status of rule 4.
 - **Volatility**: high (the UI), moderate on this side
 - **Balanced?**: yes — parent and child, distance 1
 - **Shared knowledge**: the contract above. The parent downloads and decodes the report, loads the policy text, falls
-  back to the last valid policy text when the current one does not parse, serializes the `View` for its script, and
-  shows the stale banner.
+  back to the last valid policy text when the current one does not parse, clears `OriginStatus` for a default-branch
+  report, serializes the `View` as JSON for the web app, and says why it is stale.
 
 ### internal/wire/report
 
@@ -187,9 +211,11 @@ finding status of rule 4.
 - **LCA / Rank / Distance**: root / 3 / 3
 - **Volatility**: moderate
 - **Balanced?**: yes — contract coupling tolerates the distance
-- **Shared knowledge**: graph reads `Seams` (`FromModule`, `ToModule`, `Edges`, `Policy`), `Findings` (`Kind`, `Status`,
-  `Edge.From.Module`, `Edge.To.Module`, `Origin`), `Comparison.ConfigHash`, `Comparison.OriginStatus` and `Decision.HardGates` with
-  `Decision.UnevaluatedRequiredRules` (only whether it is empty), and calls `Finding.Active()`, nothing else. `Reference`, `Dimension`, `Coverage`, `AgentTask` and the other types in the fences below are restated
+- **Shared knowledge**: graph reads `Seams` (`FromModule`, `ToModule`, `Edges`, `Policy`, `Strength`, `Distance`,
+  `Volatility`, `Severity`), `Findings` (`Kind`, `Status`, `Edge.From.Module`, `Edge.To.Module`, `RuleID`, `Why`),
+  `Comparison.ConfigHash` and `Decision.HardGates` with `Decision.UnevaluatedRequiredRules` (only whether it is
+  empty), and calls `Finding.Active()`, `Group`, `PairOrigin` with `ShownPerGroup`, and `DistanceWords`, nothing else:
+  the origin rule, and whether the report compared, are wire/report's. `Reference`, `Dimension`, `Coverage`, `AgentTask` and the other types in the fences below are restated
   only because they share a fence with a type graph reads; graph never touches them. `StateSchemaV1` is the constant
   wire/report checks at decode time; `MaxBytes` is the constant that caps a payload; graph uses neither.
 
@@ -467,7 +493,7 @@ func Modules(policy []byte) ([]ModuleDef, error)
 
 - The status rule: a new `seams[].policy` value comes with a new state schema version in wire/report, then a new
   `LinkStatus` and its rank here.
-- More per-node or per-link facts from the report (finding counts per module, seam strength or severity).
+- More per-node or per-link facts from the report (finding counts per module).
 - The merge rule for duplicate seams.
 - Bounded visual edits later: a new function that returns a proposed text patch. `Build` stays read-only.
 
@@ -479,7 +505,8 @@ func Modules(policy []byte) ([]ModuleDef, error)
 - File paths of findings and endpoints (`Endpoint.Path`, `Location.File`) are never copied into the `View`. The
   picture carries module names, layers, lines of the policy file, counts, and in `Findings` the rule ID, kind, status
   and `Why` of each finding on a drawn pair. `Why` is engine text and can name a path; it is shown as text only.
-- No score, no aggregate health number. Seam `Strength`, `Distance`, `Volatility` and `Severity` are not shown in v1.
+- No score, no aggregate health number. Seam `Strength`, `Distance`, `Volatility` and `Severity` are shown as the
+  engine's words, never combined into a number.
 - Cost is linear in modules + seams + findings. The report decoder caps findings and seams; the parent caps the policy
   text. Graph's own caps are on `Findings`: 5 per pair and 400 runes of `Why`.
 - Inherited: control-plane code, never on the gate path. `Stale` and `Status` are display facts and never an input to a check.
@@ -524,6 +551,25 @@ Nothing is mocked.
   **Expected behavior**: the seam's value each time; the finding does not change an engine status; `violation` with
   `Count` 6 and `allowed` with `Count` 2 for the duplicates; `accepted` without `Policy`; `api → db` allowed and
   `ui → db` violation with `Count` 0; no link for the empty endpoint.
+- **Test name**: `TestLinkOriginIsTheCommentsRule`
+  **Scenario**: table: an introduced finding on a pair, compared; the same not compared; a pre-existing finding; a new
+  finding on a dependency the base had; a new cycle over new dependencies; the old direction of a new cycle; a new
+  cycle after `ShownPerGroup` other violations; a shown cycle with a new finding of another rule on one direction
+  past the cap.
+  **Expected behavior**: `added`; `""`; `existing`; `existing`; `""` for both directions; `existing` for the old one;
+  `""` for both directions past the cap; `added` for that direction, as the comment says.
+- **Test name**: `TestOriginNeverChangesTheStatus`
+  **Scenario**: an added link with an active gate finding, and without.
+  **Expected behavior**: both statuses equal those of the same report without a comparison.
+- **Test name**: `TestCouplingComesFromTheStrongestSeam`
+  **Scenario**: table: one seam; an unknown distance token; a stronger seam with fewer dependencies beside a weaker
+  one; an unknown strength beside `contract`; two equal strengths; a pair only a finding names.
+  **Expected behavior**: the seam's facts, distance in words; the token as written; the stronger seam's facts and the
+  worse imbalance of the two; `contract`; the seam with more dependencies; no coupling.
+- **Test name**: `TestNodeShowsTheVolatilityItsSeamsAgreeOn`
+  **Scenario**: seams into `db` that agree; into `api` that disagree; into `ui` only `undeclared`; into `cache`, a
+  module the policy does not declare.
+  **Expected behavior**: `db` high; `api` and `ui` `""`; `cache` medium.
 - **Test name**: `TestFindingWithoutSeamStillDraws`
   **Scenario**: gate/new on `ui → db`, gate/baseline on `api → ui`, advisory/new on `db → api` and gate/fixed on `db → ui`,
   with no seams.

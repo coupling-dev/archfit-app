@@ -25,8 +25,8 @@ identifiers in `agent_tasks[].declarations`.
 - Preserve what the gate and feedback need, unchanged: `verdict`, `decision.hard_gates`,
   `unevaluated_required_rules`, `comparison.config_hash`, `measurement_profile`, `gate_reference`, both repair
   kinds, task validation commands, empty `locations`.
-- The display rules its consumers share (`Group`, `Cycles`, `PairOrigin`, `EngineRuleNames`, `DistanceWords`), so the
-  PR comment and the App's pull request page group and word findings the same way.
+- The display rules its consumers share (`Group`, `Cycles`, `PairOrigin`, `EngineRuleNames`, `DistanceWords`,
+  `ShownPerGroup`), so the PR comment, the App's pull request page and its graph group and word findings the same way.
 - Nothing else. It does not interpret the decision, compare profiles, filter findings, or compute outcomes.
 
 ## Subdomain Classification
@@ -498,8 +498,11 @@ func (f Finding) Active() bool
 // and module pairs that are reversed, non-empty and distinct. Display only: each finding keeps its ID and gate effect.
 func (f Finding) Reverses(g Finding) bool
 
-// Display rules the PR comment (gate/feedback) and the pull request page (control/ui) share, so both tell the same
-// story. None of them is a gate decision.
+// Display rules the PR comment (gate/feedback), the pull request page and the graph (control/ui) share, so all tell
+// the same story. None of them is a gate decision.
+
+// ShownPerGroup is how many findings of one group the comment and the pull request page list; the rest are counted.
+const ShownPerGroup = 50
 
 // Group sorts a report's findings into the comment's groups: violations (active first, then unknown statuses),
 // advisories, accepted, fixed; Origin cleared without a comparison; OnCycle for the first shown violations.

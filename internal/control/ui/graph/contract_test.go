@@ -25,7 +25,7 @@ func TestBuildMapsReportToView(t *testing.T) {
 	if !reflect.DeepEqual(got.Nodes, wantNodes) {
 		t.Errorf("Nodes = %+v, want the policy's modules %+v", got.Nodes, wantNodes)
 	}
-	if want := []Node{{"a", "", 3}, {"b", "", 6}}; !reflect.DeepEqual(got.Nodes, want) {
+	if want := []Node{{"a", "", 3, ""}, {"b", "", 6, ""}}; !reflect.DeepEqual(got.Nodes, want) {
 		t.Errorf("Nodes = %+v, want %+v", got.Nodes, want)
 	}
 
@@ -73,7 +73,7 @@ func TestStatusFromRealReports(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.fixture, func(t *testing.T) {
 			got := Build(corpusReport(t, tt.fixture, tt.release), []byte(fixturePolicy))
-			if !reflect.DeepEqual(got.Links, tt.want) {
+			if !reflect.DeepEqual(statuses(got.Links), tt.want) {
 				t.Errorf("Links = %+v, want %+v", got.Links, tt.want)
 			}
 		})
@@ -93,8 +93,11 @@ func TestStatusFromEngineSeamPolicy(t *testing.T) {
 		link("orders", "billing", 1, StatusAllowed),
 		link("stripe", "orders", 1, StatusAllowed),
 	}
-	if !reflect.DeepEqual(got.Links, want) {
+	if !reflect.DeepEqual(statuses(got.Links), want) {
 		t.Errorf("Links = %+v, want %+v", got.Links, want)
+	}
+	if l := got.Links[2]; l.Strength != "functional" || l.Distance != "across modules" || l.Volatility != "undeclared" || l.Imbalance != "critical" {
+		t.Errorf("billing -> stripe coupling = %+v, want the seam's functional, across modules, undeclared, critical", l)
 	}
 	if got.Stale {
 		t.Error("Stale = true, want false: the policy is the one the capture was computed from")

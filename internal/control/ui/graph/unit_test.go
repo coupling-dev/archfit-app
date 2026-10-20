@@ -18,17 +18,17 @@ func TestNodesFromPolicyModules(t *testing.T) {
 		{
 			name:   "three modules in two layers",
 			policy: threeModules,
-			want:   []Node{{"api", "app", 3}, {"db", "infra", 6}, {"ui", "app", 9}},
+			want:   []Node{{"api", "app", 3, ""}, {"db", "infra", 6, ""}, {"ui", "app", 9, ""}},
 		},
 		{
 			name:   "module without a layer",
 			policy: "modules:\n  core:\n    paths: [core/**]\n",
-			want:   []Node{{"core", "", 2}},
+			want:   []Node{{"core", "", 2, ""}},
 		},
 		{
 			name:   "quoted names",
 			policy: "modules:\n  \"my-mod\":\n    layer: app\n  'other mod':\n    layer: infra\n",
-			want:   []Node{{"my-mod", "app", 2}, {"other mod", "infra", 4}},
+			want:   []Node{{"my-mod", "app", 2, ""}, {"other mod", "infra", 4, ""}},
 		},
 		{
 			name: "comments and anchors around the map",
@@ -44,12 +44,12 @@ func TestNodesFromPolicyModules(t *testing.T) {
 				"  b:\n" +
 				"    paths: *paths # reuse\n" +
 				"# end\n",
-			want: []Node{{"a", "core", 6}, {"b", "", 10}},
+			want: []Node{{"a", "core", 6, ""}, {"b", "", 10, ""}},
 		},
 		{
 			name:   "modules is not the first key",
 			policy: "version: 2\nrules: []\nmodules:\n  z:\n    layer: edge\n",
-			want:   []Node{{"z", "edge", 4}},
+			want:   []Node{{"z", "edge", 4, ""}},
 		},
 		{name: "no modules key", policy: "version: 2\nrules: []\n", want: []Node{}},
 		{name: "empty modules map", policy: "version: 2\nmodules: {}\n", want: []Node{}},
@@ -68,7 +68,7 @@ func TestNodesFromPolicyModules(t *testing.T) {
 }
 
 func TestLinkNormalization(t *testing.T) {
-	declared := []Node{{"api", "app", 3}, {"db", "infra", 6}, {"ui", "app", 9}}
+	declared := []Node{{"api", "app", 3, ""}, {"db", "infra", 6, ""}, {"ui", "app", 9, ""}}
 	tests := []struct {
 		name      string
 		seams     []report.Seam
@@ -97,7 +97,7 @@ func TestLinkNormalization(t *testing.T) {
 			name:      "seam to an undeclared module",
 			seams:     []report.Seam{seam("api", "cache", 1)},
 			wantLinks: []Link{link("api", "cache", 1, StatusObserved)},
-			wantNodes: []Node{{"api", "app", 3}, {"cache", "", 0}, {"db", "infra", 6}, {"ui", "app", 9}},
+			wantNodes: []Node{{"api", "app", 3, ""}, {"cache", "", 0, ""}, {"db", "infra", 6, ""}, {"ui", "app", 9, ""}},
 		},
 		{
 			name:      "seam with an empty endpoint is dropped",
@@ -294,51 +294,77 @@ func TestFindingsExplainDrawnLinks(t *testing.T) {
 	})
 }
 
-func TestIntroducedLinksNeedAComparison(t *testing.T) {
-	introduced := func(f report.Finding) report.Finding { f.Origin = "introduced"; return f }
-	preExisting := func(f report.Finding) report.Finding { f.Origin = "pre_existing"; return f }
-	fixed := func(f report.Finding) report.Finding { f.Status = "fixed"; return f }
+func TestLinkOriginIsTheCommentsRule(t *testing.T) {
+	origin := func(o, id string, f report.Finding) report.Finding { f.Origin, f.ID = o, id; return f }
+	cycle := func(o1, o2 string) []report.Finding {
+		return []report.Finding{
+			origin(o1, "c1", finding("gate", "new", "api", "db")),
+			origin(o2, "c2", finding("gate", "new", "db", "api")),
+		}
+	}
+	// report.ShownPerGroup violations the comment shows, then a new cycle it folds into "and N more"
+	var past []report.Finding
+	for i := range report.ShownPerGroup {
+		past = append(past, origin("pre_existing", "p"+strconv.Itoa(i), finding("gate", "new", "ui", "db")))
+	}
+	past = append(past, cycle("introduced", "introduced")...)
+	// a shown cycle, then past the cap a new finding of another rule on one of its directions: the comment adds it
+	shown := cycle("introduced", "introduced")
+	for i := range report.ShownPerGroup {
+		shown = append(shown, origin("pre_existing", "p"+strconv.Itoa(i), finding("gate", "new", "ui", "db")))
+	}
+	other := origin("introduced", "f9", finding("gate", "new", "api", "db"))
+	other.RuleID = "other-rule"
+	shown = append(shown, other)
 	tests := []struct {
-		name       string
-		origin     string
-		findings   []report.Finding
-		introduced bool
-		origins    []string
+		name     string
+		compared string
+		findings []report.Finding
+		want     map[string]string // "from>to" -> Link.Origin
 	}{
-		{"an introduced finding on a comparable run", "comparable",
-			[]report.Finding{introduced(finding("gate", "new", "api", "db"))}, true, []string{"introduced"}},
+		{"an introduced finding on a comparable run adds the dependency", "comparable",
+			[]report.Finding{origin("introduced", "f1", finding("gate", "new", "api", "db"))},
+			map[string]string{"api>db": "added"}},
 		{"the same finding without a comparison claims nothing", "unknown",
-			[]report.Finding{introduced(finding("gate", "new", "api", "db"))}, false, []string{""}},
+			[]report.Finding{origin("introduced", "f1", finding("gate", "new", "api", "db"))},
+			map[string]string{"api>db": ""}},
 		{"a run that did not compare has no origin at all", "",
-			[]report.Finding{introduced(finding("gate", "new", "api", "db"))}, false, []string{""}},
-		{"a pre-existing finding is not new", "comparable",
-			[]report.Finding{preExisting(finding("gate", "new", "api", "db"))}, false, []string{"pre_existing"}},
-		{"a fixed finding is not new", "comparable",
-			[]report.Finding{fixed(introduced(finding("gate", "new", "api", "db")))}, false, nil},
-		{"one introduced finding among others makes the link new", "comparable",
-			[]report.Finding{preExisting(finding("advisory", "new", "api", "db")), introduced(finding("gate", "new", "api", "db"))},
-			true, []string{"introduced", "pre_existing"}}, // the strongest status first
+			[]report.Finding{origin("introduced", "f1", finding("gate", "new", "api", "db"))},
+			map[string]string{"api>db": ""}},
+		{"a pre-existing finding means the base had the dependency", "comparable",
+			[]report.Finding{origin("pre_existing", "f1", finding("gate", "new", "api", "db"))},
+			map[string]string{"api>db": "existing"}},
+		{"a new finding on an old dependency does not make it new", "comparable",
+			[]report.Finding{
+				origin("pre_existing", "f1", finding("advisory", "new", "api", "db")),
+				origin("introduced", "f2", finding("gate", "new", "api", "db")),
+			},
+			map[string]string{"api>db": "existing"}},
+		{"a new cycle cannot tell which direction is new", "comparable", cycle("introduced", "introduced"),
+			map[string]string{"api>db": "", "db>api": ""}},
+		{"a direction of a new cycle the base had stays existing", "comparable",
+			append(cycle("introduced", "introduced"), origin("pre_existing", "f3", finding("advisory", "new", "db", "api"))),
+			map[string]string{"api>db": "", "db>api": "existing"}},
+		{"a cycle past the shown violations cannot tell either", "comparable", past,
+			map[string]string{"api>db": "", "db>api": "", "ui>db": "existing"}},
+		{"on a shown cycle's pair a finding past the cap counts as the comment counts it", "comparable", shown,
+			map[string]string{"api>db": "added", "db>api": "", "ui>db": "existing"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rep := reportFor(threeModules, []report.Seam{seam("api", "db", 2)}, tt.findings)
-			rep.Comparison.OriginStatus = tt.origin
+			rep := reportFor(threeModules, []report.Seam{seam("api", "db", 2), seam("db", "api", 1)}, tt.findings)
+			rep.Comparison.OriginStatus = tt.compared
 			v := Build(rep, []byte(threeModules))
-			if len(v.Links) != 1 || v.Links[0].Introduced != tt.introduced {
-				t.Fatalf("Links = %+v, want Introduced %v", v.Links, tt.introduced)
-			}
-			var origins []string
-			for _, f := range v.Findings {
-				origins = append(origins, f.Origin)
-			}
-			if !reflect.DeepEqual(origins, tt.origins) {
-				t.Errorf("finding origins = %q, want %q", origins, tt.origins)
+			for _, l := range v.Links {
+				if want := tt.want[l.From+">"+l.To]; l.Origin != want {
+					t.Errorf("%s -> %s Origin = %q, want %q", l.From, l.To, l.Origin, want)
+				}
 			}
 		})
 	}
 }
 
-func TestIntroducedNeverChangesTheStatus(t *testing.T) {
+func TestOriginNeverChangesTheStatus(t *testing.T) {
 	gate := finding("gate", "new", "api", "db")
 	gate.Origin = "introduced"
 	allowed := seam("api", "db", 2)
@@ -346,7 +372,76 @@ func TestIntroducedNeverChangesTheStatus(t *testing.T) {
 	rep := reportFor(threeModules, []report.Seam{allowed}, []report.Finding{gate})
 	rep.Comparison.OriginStatus = "comparable"
 	v := Build(rep, []byte(threeModules))
-	if got := v.Links[0]; got.Status != StatusAllowed || !got.Introduced {
-		t.Errorf("link = %+v, want the engine's allowed status and Introduced", got)
+	if got := v.Links[0]; got.Status != StatusAllowed || got.Origin != report.PairAdded {
+		t.Errorf("link = %+v, want the engine's allowed status and added", got)
+	}
+}
+
+func TestCouplingComesFromTheStrongestSeam(t *testing.T) {
+	coupling := func(from, to string, edges int, strength, distance, volatility, severity string) report.Seam {
+		s := seam(from, to, edges)
+		s.Strength, s.Distance, s.Volatility, s.Severity = strength, distance, volatility, severity
+		return s
+	}
+	tests := []struct {
+		name  string
+		seams []report.Seam
+		want  Link
+	}{
+		{"one seam, distance in words", []report.Seam{coupling("api", "db", 3, "model", "cross_module", "high", "")},
+			Link{Strength: "model", Distance: "across modules", Volatility: "high"}},
+		{"an unknown distance token is shown as written", []report.Seam{coupling("api", "db", 3, "model", "far_away", "", "")},
+			Link{Strength: "model", Distance: "far_away"}},
+		{"the stronger seam wins, the worst imbalance is kept", []report.Seam{
+			coupling("api", "db", 10, "contract", "cross_module", "low", "medium"),
+			coupling("api", "db", 2, "functional", "same_module", "high", "low"),
+		}, Link{Strength: "functional", Distance: "same module", Volatility: "high", Imbalance: "medium"}},
+		{"a known strength beats an unknown one", []report.Seam{
+			coupling("api", "db", 9, "telepathic", "", "", ""),
+			coupling("api", "db", 1, "contract", "", "", ""),
+		}, Link{Strength: "contract"}},
+		{"between equal strengths the seam with more dependencies", []report.Seam{
+			coupling("api", "db", 1, "model", "same_module", "", ""),
+			coupling("api", "db", 4, "model", "cross_module", "", ""),
+		}, Link{Strength: "model", Distance: "across modules"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v := Build(reportFor(threeModules, tt.seams, nil), []byte(threeModules))
+			got := v.Links[0]
+			got.From, got.To, got.Status, got.Count = "", "", "", 0
+			if got != tt.want {
+				t.Errorf("coupling = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+
+	t.Run("a pair only a finding names has no coupling", func(t *testing.T) {
+		v := Build(reportFor(threeModules, nil, []report.Finding{finding("gate", "new", "api", "db")}), []byte(threeModules))
+		if l := v.Links[0]; l.Strength != "" || l.Distance != "" || l.Volatility != "" || l.Imbalance != "" {
+			t.Errorf("link = %+v, want no coupling", l)
+		}
+	})
+}
+
+func TestNodeShowsTheVolatilityItsSeamsAgreeOn(t *testing.T) {
+	into := func(from, to, volatility string) report.Seam {
+		s := seam(from, to, 1)
+		s.Volatility = volatility
+		return s
+	}
+	seams := []report.Seam{
+		into("api", "db", "high"), into("ui", "db", "high"), // agree
+		into("db", "api", "high"), into("ui", "api", "low"), // disagree
+		into("api", "ui", "undeclared"), // says nothing
+		into("ui", "cache", "medium"),   // not in the policy, still a node
+	}
+	got := map[string]string{}
+	for _, n := range Build(reportFor(threeModules, seams, nil), []byte(threeModules)).Nodes {
+		got[n.Name] = n.Volatility
+	}
+	want := map[string]string{"api": "", "cache": "medium", "db": "high", "ui": ""}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("volatility = %v, want %v", got, want)
 	}
 }

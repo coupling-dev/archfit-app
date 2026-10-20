@@ -2,9 +2,12 @@ package report
 
 import "slices"
 
-// Display rules that the PR comment and the App's pull request page share, so both tell the same story about cycles
-// and about what a pull request added; the pull request graph adopts them when it moves to the web app (phase d).
-// None of them is a gate decision.
+// Display rules that the PR comment, the App's pull request page and its graph share, so all three tell the same story
+// about cycles and about what a pull request added. None of them is a gate decision.
+
+// ShownPerGroup is how many findings of a group the comment and the App list; the rest are counted. Group searches the
+// first ShownPerGroup violations for cycles, so every reader that wants the same cycles passes this.
+const ShownPerGroup = 50
 
 // Groups is a report's findings in the groups the comment and the App show. Display only: the gate decides from the
 // decision, never from these groups.
