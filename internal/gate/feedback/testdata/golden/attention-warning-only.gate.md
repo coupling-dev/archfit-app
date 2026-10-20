@@ -3,7 +3,7 @@
 - Detail: dimensions not fully measured: change_locality, testability, operations, drift; active diagnostics: 1
 
 <details>
-<summary>Evidence, inputs and validation</summary>
+<summary>Evidence and inputs</summary>
 
 ### Inputs and identity
 

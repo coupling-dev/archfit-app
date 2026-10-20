@@ -2,56 +2,53 @@
 <!-- archfit:head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb run 7.1 -->
 ## Archfit: Architecture gate failing
 
-**Next:** Remove the rule violations, then run the validation command.
-
-### Findings
-
-1 advisory · 1 accepted
+**Next:** Fix the rule violations, then run archfit check again.
 
 <details>
 <summary>1 advisory · never block</summary>
 
-| Rule | Dependency | Where | Strength | Distance | Volatility |
-| --- | --- | --- | --- | --- | --- |
-| Imbalanced coupling · medium | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared |
+| Rule | Dependency | Where | Strength | Distance | Volatility | Suggested move |
+| --- | --- | --- | --- | --- | --- | --- |
+| Imbalanced coupling · medium | `a` → `b` | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared | Declare the volatility of the module in the policy: undeclared volatility counts as high |
 
-Imbalanced coupling · **Why:** balanced coupling: functional integration strength × distance across modules, same owner × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
-
-</details>
-
-<details>
-<summary>1 accepted · baseline or waiver · display only</summary>
-
-| Rule | Dependency | Where | Strength | Distance | Volatility |
-| --- | --- | --- | --- | --- | --- |
-| `no_direct_b_dependency` · medium, baseline | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared |
-
-`no_direct_b_dependency` · **Why:** Import from pkg/a/** to pkg/b is explicitly forbidden
-
-`no_direct_b_dependency` · **Constraint:** Remove the dependency or move the code
+**Why:** unbalanced coupling: elevated maintenance effort (Balanced Coupling: medium severity)
 
 </details>
 
 <details>
-<summary>Evidence, inputs and validation</summary>
+<summary>1 known issue accepted earlier</summary>
+
+| Rule | Dependency | Where | Strength | Distance | Volatility |
+| --- | --- | --- | --- | --- | --- |
+| `no_direct_b_dependency` · medium, accepted in the baseline | `a` → `b` | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared |
+
+**Why:** Import from pkg/a/** to pkg/b is explicitly forbidden
+
+**Fix:** Remove the dependency or move the code
+
+</details>
+
+<details>
+<summary>Evidence and inputs</summary>
 
 ### Decision
 
-- `blocking_findings` (architecture): 1 blocking finding. Next: Remove the rule violations, then run the validation command.
+- Engine verdict **blocked**: hard gates fail, 1 active blocker, every required rule evaluated
+- Blocking findings (architecture) · code `blocking_findings`
 
 ### Dimensions
 
-| Dimension | Status | Coverage | Confidence | Gate |
+| Dimension | Status | Measured | Confidence | Result |
 | --- | --- | --- | --- | --- |
 | `intent` | measured | 1/1 (declared rules evaluated) | high | pass |
 | `structure` | measured | 1/1 (discovered dependencies resolved inside the declared module map) | high | **fail** |
 | `modularity` | measured | 1/2 (declared modules with a declared public surface) | low | pass |
 | `coupling` | measured | 1/1 (cross-boundary edges scored) | high | **warn** |
-| `change_locality` | unmeasured | 0/0 | unrated | not_applicable |
+| `change_locality` | unmeasured | 0/0 | unrated | not applicable |
 | `complexity` | measured | 2/2 (declared modules with complete dependency-chain and degree values) | high | pass |
 | `testability` | partial | 3/3 (classified source files) | medium | pass |
 | `operations` | partial | 0/2 (declared modules with a corroborated deploy unit and qualifying owner) | medium | pass |
-| `drift` | unmeasured | 0/0 | unrated | not_applicable |
+| `drift` | unmeasured | 0/0 | unrated | not applicable |
 
 ### Evidence gaps
 
@@ -81,7 +78,7 @@ Imbalanced coupling · **Why:** balanced coupling: functional integration streng
 
 Measurement is customer-attested: the producer is authenticated, the report content is not independently checked.
 
-### Validation commands
+### Validation commands (as run in the Archfit workflow)
 
 ```sh
 archfit check -c .archfit.yaml

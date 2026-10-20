@@ -127,7 +127,7 @@ func outcome(c verdict.Conclusion, reasons ...verdict.Reason) verdict.Outcome {
 
 var (
 	reasonHealthy  = verdict.Reason{Code: verdict.ReasonHealthy, Category: verdict.CategoryArchitecture, Detail: "report " + reportDigest, Next: "Nothing to do."}
-	reasonBlocking = verdict.Reason{Code: verdict.ReasonBlockingFindings, Category: verdict.CategoryArchitecture, Detail: "1 blocking finding", Next: "Remove the rule violations, then run the validation command."} // the catalog's Next
+	reasonBlocking = verdict.Reason{Code: verdict.ReasonBlockingFindings, Category: verdict.CategoryArchitecture, Next: "Fix the rule violations, then run archfit check again."} // the catalog's Next
 	reasonCoverage = verdict.Reason{Code: verdict.ReasonMissingCoverage, Category: verdict.CategoryEvidence, Detail: "layers/no_upward_imports", Next: "Install the required tool in the workflow, then re-run it."}
 	reasonInvalid  = verdict.Reason{Code: verdict.ReasonReportInvalid, Category: verdict.CategoryEvidence, Detail: "report " + reportDigest, Next: "Re-run the Archfit workflow with the pinned action."}
 	reasonIdentity = verdict.Reason{Code: verdict.ReasonUnknownIdentity, Category: verdict.CategoryEvidence, Detail: "image sha256:0000", Next: "Use the pinned archfit-action version."}
@@ -146,7 +146,8 @@ type fixtureCase struct {
 	outcome  verdict.Outcome
 	identity manifest.Identity
 	waiver   time.Time
-	advisory bool // gate mode advisory instead of required
+	advisory bool   // gate mode advisory instead of required
+	base     string // the pull request's base branch; "main" when empty
 }
 
 func fixtureCases() []fixtureCase {
@@ -165,9 +166,13 @@ func fixtureCases() []fixtureCase {
 		{name: "matched-by-populated", outcome: outcome(verdict.Failure, reasonBlocking), identity: id},
 		{name: "both-repair-kinds", outcome: outcome(verdict.Failure, reasonBlocking), identity: id},
 		{name: "waiver-expiry-and-order", outcome: outcome(verdict.Failure, reasonBlocking, reasonWaiver), identity: id, waiver: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)},
+		// A tripped metric ratchet is one finding without a module edge, in required mode.
+		{name: "metric-ratchet", outcome: outcome(verdict.Failure, reasonBlocking), identity: id},
+		// Two advisories whose seams carry different balancing moves, in advisory mode with nothing blocking.
+		{name: "advisory-balancing-move", outcome: outcome(verdict.Success, reasonAttention), identity: id, advisory: true},
 		// The pilot's PR #11 report (engine v3.0.1): one dependency cycle among three modules, coupling advisories and
 		// accepted debt, in advisory mode with a baseline.
-		{name: "pilot-pr-cycle", outcome: outcome(verdict.Failure, reasonBlocking), identity: id, advisory: true},
+		{name: "pilot-pr-cycle", outcome: outcome(verdict.Failure, reasonBlocking), identity: id, advisory: true, base: "master"},
 	}
 }
 
@@ -213,8 +218,12 @@ func fixturePublication(t *testing.T, c fixtureCase, head string) Publication {
 	tr.EarliestWaiverExpiry = c.waiver
 	rc := receiptFor(c.outcome, 7, 1)
 	rc.EarliestWaiverExpiry = c.waiver
+	target := prTarget(head)
+	if c.base != "" {
+		target.BaseRef = c.base
+	}
 	return Publication{
-		Target:   prTarget(head),
+		Target:   target,
 		Identity: c.identity,
 		Outcome:  c.outcome,
 		Receipt:  rc,

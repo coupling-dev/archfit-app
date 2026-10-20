@@ -3,7 +3,7 @@
 - Detail: image sha256:0000
 
 <details>
-<summary>Evidence, inputs and validation</summary>
+<summary>Evidence and inputs</summary>
 
 ### Inputs and identity
 

@@ -293,8 +293,8 @@ func TestUsefulWithoutLLM(t *testing.T) {
 	}{
 		{"healthy", []string{"## Archfit: Architecture gate passed", reasonHealthy.Next, "No findings reported", "dependency-cruiser", "absent"}},
 		{"both-repair-kinds", []string{
-			"## Archfit: Architecture gate failing", reasonBlocking.Next,
-			"no_direct_b_dependency", "`a` (`pkg/a/a.go`) → `b` (`pkg/b`)", "`pkg/a/a.go:3`",
+			"## Archfit: Architecture gate failing", "no_direct_b_dependency",
+			"Fix the violations above, then check with `archfit check", "`a` → `b`", "`pkg/a/a.go:3`",
 			"Import from pkg/a/** to pkg/b is explicitly forbidden", "Remove the dependency or move the code",
 			"archfit check -c .archfit.yaml\n", "archfit check -c .archfit.yaml --base main --lang go --require-tools\n",
 		}},
@@ -342,7 +342,7 @@ func TestBlockerKeepsMissingRuleReasons(t *testing.T) {
 		mustContain(t, verdictBlock, "blocking_findings", "missing_required_coverage", "layers/no_upward_imports", reasonCoverage.Next)
 	}
 	verdictBlock, _, _ := strings.Cut(comment, "\n### ")
-	mustContain(t, verdictBlock, reasonBlocking.Next, reasonCoverage.Next)
+	mustContain(t, verdictBlock, "Fix the violations above, then check with `archfit check", reasonCoverage.Next)
 	mustContain(t, section(comment, headDecision), "blocking_findings", "missing_required_coverage", "layers/no_upward_imports")
 	for _, body := range []string{comment, state} {
 		mustContain(t, section(body, headGaps), "layers/no_upward_imports", "required tool dependency-cruiser was absent")
@@ -366,16 +366,15 @@ func TestAcceptedDebtIsDisplayOnly(t *testing.T) {
 	if gate.Conclusion != "failure" {
 		t.Errorf("gate conclusion = %q, want failure", gate.Conclusion)
 	}
-	mustContain(t, section(gate.Summary, headBlocking), "No active gate finding is listed")
+	mustContain(t, section(gate.Summary, headBlocking), "lists no active gate finding")
 	comment := h.comments.all()[0].Body
 	verdictBlock, _, _ := strings.Cut(comment, "\n### ")
-	mustContain(t, verdictBlock, "Architecture gate failing", reasonBlocking.Next)
+	mustContain(t, verdictBlock, "Architecture gate failing", reasonBlocking.Next) // no violation is listed, so no command follows it
 	mustContain(t, section(comment, headDecision), "blocking_findings")
 
-	findings := section(comment, headFindings)
-	_, debt, ok := strings.Cut(findings, "<summary>1 accepted · baseline or waiver · display only</summary>")
+	_, debt, ok := strings.Cut(comment, "<summary>1 known issue accepted earlier</summary>")
 	if !ok {
-		t.Fatalf("no accepted debt group in %q", findings)
+		t.Fatalf("no accepted debt group in %q", comment)
 	}
 	mustContain(t, debt, "no_direct_b_dependency")
 	lower := strings.ToLower(comment)
@@ -435,7 +434,7 @@ func TestSuspensionFeedback(t *testing.T) {
 			if got := strings.Contains(comment, notice); got != tt.want {
 				t.Errorf("notice shown = %v, want %v", got, tt.want)
 			}
-			mustContain(t, comment, headFindings)
+			mustContain(t, comment, "**Next:**")
 		})
 	}
 }
