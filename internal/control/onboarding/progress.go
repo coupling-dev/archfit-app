@@ -30,7 +30,34 @@ func (s *service) Progress(ctx context.Context, r api.Repo) (Progress, error) {
 }
 
 func (s *service) derive(ctx context.Context, r api.Repo) (state, error) {
-	raw, found, err := s.file(ctx, r, settings.Path)
+	// The settings name the workflow, its latest run the commit whose check says "reported". The last derive left
+	// both as a hint: every read starts beside the settings', and the hinted ones count only when the fresh settings
+	// and run name the same. Warm, the progress waits for one read, not for three.
+	key := hintKey{r.InstallationID, r.FullName}
+	h, hinted := s.hints.get(key)
+	fileFound := func(path string) (bool, error) {
+		_, found, err := s.file(ctx, r, path)
+		return found, err
+	}
+	var (
+		raw                      []byte
+		found                    bool
+		err                      error
+		workflowFile, policyFile guess[string, bool]
+		latest                   guess[string, api.WorkflowRun]
+		checked                  guess[string, bool]
+	)
+	reads := []func(){func() { raw, found, err = s.file(ctx, r, settings.Path) }}
+	if hinted {
+		reads = append(reads,
+			workflowFile.ahead(h.workflow, fileFound),
+			policyFile.ahead(policy.PolicyPath, fileFound),
+			latest.ahead(h.workflow, s.latestRun(ctx, r)))
+		if h.head != "" {
+			reads = append(reads, checked.ahead(h.head, s.stateChecked(ctx, r)))
+		}
+	}
+	together(reads...)
 	if err != nil {
 		return state{}, fmt.Errorf("onboarding: read settings: %w", err)
 	}
@@ -44,13 +71,17 @@ func (s *service) derive(ctx context.Context, r api.Repo) (state, error) {
 	var (
 		workflowFound, policyFound   bool
 		reported                     bool
+		head                         string
 		workflowErr, policyErr, rErr error
 	)
 	together(
-		func() { _, workflowFound, workflowErr = s.file(ctx, r, set.Workflow) },
-		func() { _, policyFound, policyErr = s.file(ctx, r, policy.PolicyPath) },
-		func() { reported, rErr = s.reported(ctx, r, set.Workflow) },
+		func() { workflowFound, workflowErr = workflowFile.at(set.Workflow, fileFound) },
+		func() { policyFound, policyErr = policyFile.at(policy.PolicyPath, fileFound) },
+		func() { reported, head, rErr = s.reported(ctx, r, set.Workflow, &latest, &checked) },
 	)
+	if rErr == nil {
+		s.hints.put(key, hint{workflow: set.Workflow, head: head})
+	}
 	switch {
 	case workflowErr != nil:
 		return state{}, fmt.Errorf("onboarding: read workflow: %w", workflowErr)
@@ -93,24 +124,43 @@ func (s *service) installed(ctx context.Context, r api.Repo, settingsInvalid boo
 	return st, nil
 }
 
-// reported is true when the App accepted an upload of the latest completed default-branch push run.
-func (s *service) reported(ctx context.Context, r api.Repo, workflow string) (bool, error) {
-	// Push only: archfit/state is published for a report upload, and on the default branch only a push run uploads
-	// one. A dispatched discovery, baseline or re-anchor run never does, so it would hide an accepted report.
-	// Completed: a run in progress has not uploaded yet. Its conclusion does not matter; the check is the evidence.
-	f := api.RunFilter{Branch: r.DefaultBranch, Event: eventPush, Status: runCompleted}
-	run, err := s.gh.actions.LatestRun(ctx, r.RepoRef, workflow, f)
+// reported is true when the App accepted an upload of the latest completed default-branch push run; head is that
+// run's head SHA, "" without a run. latest and checked are the reads derive made ahead; each counts only for the
+// workflow and the head read here.
+func (s *service) reported(ctx context.Context, r api.Repo, workflow string,
+	latest *guess[string, api.WorkflowRun], checked *guess[string, bool],
+) (ok bool, head string, err error) {
+	run, err := latest.at(workflow, s.latestRun(ctx, r))
 	switch {
 	case errors.Is(err, api.ErrNotFound):
-		return false, nil
+		return false, "", nil
 	case err != nil:
-		return false, fmt.Errorf("onboarding: latest run: %w", err)
+		return false, "", fmt.Errorf("onboarding: latest run: %w", err)
 	}
-	checks, err := s.gh.checks.CheckRuns(ctx, r.RepoRef, run.HeadSHA, stateCheckName)
+	ok, err = checked.at(run.HeadSHA, s.stateChecked(ctx, r))
 	if err != nil {
-		return false, fmt.Errorf("onboarding: state check: %w", err)
+		return false, "", fmt.Errorf("onboarding: state check: %w", err)
 	}
-	return len(checks) > 0, nil
+	return ok, run.HeadSHA, nil
+}
+
+// latestRun reads a workflow's latest completed default-branch push run. Push only: archfit/state is published for a
+// report upload, and on the default branch only a push run uploads one. A dispatched discovery, baseline or re-anchor
+// run never does, so it would hide an accepted report. Completed: a run in progress has not uploaded yet. Its
+// conclusion does not matter; the check is the evidence.
+func (s *service) latestRun(ctx context.Context, r api.Repo) func(workflow string) (api.WorkflowRun, error) {
+	f := api.RunFilter{Branch: r.DefaultBranch, Event: eventPush, Status: runCompleted}
+	return func(workflow string) (api.WorkflowRun, error) {
+		return s.gh.actions.LatestRun(ctx, r.RepoRef, workflow, f)
+	}
+}
+
+// stateChecked reads whether a commit carries the archfit/state check.
+func (s *service) stateChecked(ctx context.Context, r api.Repo) func(head string) (bool, error) {
+	return func(head string) (bool, error) {
+		checks, err := s.gh.checks.CheckRuns(ctx, r.RepoRef, head, stateCheckName)
+		return len(checks) > 0, err
+	}
 }
 
 func (s *service) openDraft(ctx context.Context, r api.Repo, branch string) (*proposal.Draft, error) {

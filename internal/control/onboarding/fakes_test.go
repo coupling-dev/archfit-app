@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -41,7 +43,86 @@ type hub struct {
 	runs   map[string][]api.WorkflowRun // "owner/name@branch" → runs, newest first
 	checks map[string][]api.CheckRun    // by repository
 	calls  map[string]int
+	reads  []string // repository, op and detail of each File, LatestRun and CheckRuns
 	failFn func(op, detail string) error
+	meet   *meeting // set before the call: the reads that must be in flight together
+}
+
+// meeting holds the first call of each key it names until every key has arrived, so reads made in turn never meet.
+// A key is an op, or an op and the call's detail. A read that never comes leaves the others to go on after a timeout,
+// and the meeting reports the miss. control/ui's fake GitHub keeps the same barrier.
+type meeting struct {
+	mu      sync.Mutex
+	arrived map[string]bool
+	all     chan struct{}
+	missed  bool
+}
+
+func newMeeting(keys ...string) *meeting {
+	m := &meeting{arrived: map[string]bool{}, all: make(chan struct{})}
+	for _, k := range keys {
+		m.arrived[k] = false
+	}
+	return m
+}
+
+func (m *meeting) arrive(op, detail string) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	key := ""
+	for _, k := range []string{op + " " + detail, op} {
+		if arrived, named := m.arrived[k]; named && !arrived {
+			key = k
+			break
+		}
+	}
+	if key == "" {
+		m.mu.Unlock()
+		return
+	}
+	m.arrived[key] = true
+	if !slices.Contains(slices.Collect(maps.Values(m.arrived)), false) {
+		close(m.all)
+	}
+	m.mu.Unlock()
+	select {
+	case <-m.all:
+	case <-time.After(2 * time.Second):
+		m.mu.Lock()
+		m.missed = true
+		m.mu.Unlock()
+	}
+}
+
+// met is true when every key arrived while the others were still in flight.
+func (m *meeting) met() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return !m.missed && !slices.Contains(slices.Collect(maps.Values(m.arrived)), false)
+}
+
+// read records a repository read for readsOf, then enters as any call does.
+func (h *hub) read(ctx context.Context, r api.RepoRef, op, detail string) error {
+	h.meet.arrive(op, detail)
+	h.mu.Lock()
+	h.reads = append(h.reads, r.FullName+" "+op+" "+detail)
+	h.mu.Unlock()
+	return h.enter(ctx, op, detail)
+}
+
+// readsOf lists one repository's reads as "op detail".
+func (h *hub) readsOf(fullName string) []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var out []string
+	for _, r := range h.reads {
+		if rest, ok := strings.CutPrefix(r, fullName+" "); ok {
+			out = append(out, rest)
+		}
+	}
+	return out
 }
 
 func newHub() *hub {
@@ -317,7 +398,7 @@ func (h *hub) ResolveRepo(ctx context.Context, _ string) (api.Repo, error) {
 }
 
 func (h *hub) File(ctx context.Context, r api.RepoRef, ref, path string) ([]byte, string, error) {
-	if err := h.enter(ctx, "File", path); err != nil {
+	if err := h.read(ctx, r, "File", path); err != nil {
 		return nil, "", err
 	}
 	h.mu.Lock()
@@ -356,12 +437,15 @@ func (h *hub) Dispatch(ctx context.Context, _ api.RepoRef, _, _ string, _ map[st
 
 // LatestRun filters as GitHub does: status matches a run's status or its conclusion.
 func (h *hub) LatestRun(ctx context.Context, r api.RepoRef, workflowPath string, f api.RunFilter) (api.WorkflowRun, error) {
-	if err := h.enter(ctx, "LatestRun", workflowPath+"@"+f.Branch); err != nil {
+	if err := h.read(ctx, r, "LatestRun", workflowPath+"@"+f.Branch); err != nil {
 		return api.WorkflowRun{}, err
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for _, run := range h.runs[refKey(r.FullName, f.Branch)] {
+		if run.WorkflowPath != "" && run.WorkflowPath != workflowPath {
+			continue
+		}
 		if (f.Event == "" || run.Event == f.Event) && (f.Status == "" || run.Status == f.Status || run.Conclusion == f.Status) {
 			return run, nil
 		}
@@ -374,7 +458,7 @@ func (h *hub) Artifact(ctx context.Context, _ api.RepoRef, _ int64, _ string, _ 
 }
 
 func (h *hub) CheckRuns(ctx context.Context, r api.RepoRef, headSHA, name string) ([]api.CheckRun, error) {
-	if err := h.enter(ctx, "CheckRuns", name); err != nil {
+	if err := h.read(ctx, r, "CheckRuns", headSHA+"#"+name); err != nil {
 		return nil, err
 	}
 	h.mu.Lock()

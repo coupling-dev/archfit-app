@@ -50,6 +50,7 @@ type service struct {
 	jobTimeout time.Duration
 	slots      chan struct{} // one token per running managed job
 	jobs       sync.WaitGroup
+	hints      *hints
 }
 
 func newService(d Deps, gh roles) *service {
@@ -68,6 +69,7 @@ func newService(d Deps, gh roles) *service {
 		now:        now,
 		jobTimeout: sandboxTimeout,
 		slots:      make(chan struct{}, maxManagedJobs),
+		hints:      newHints(),
 	}
 }
 

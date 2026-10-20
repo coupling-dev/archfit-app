@@ -155,6 +155,14 @@ order: a workflow read error first; no workflow → rule 1, whatever the other t
 a "reported" error. The UI's overview calls `Progress` on every load, and the reads were one after another. A panic in
 one read is raised again on the caller's goroutine once the others are done.
 
+Reads made ahead **[decided, g5]**: each derive leaves the settings' workflow path and the head SHA of that workflow's
+latest completed push run as a hint. The next derive of the repository starts the workflow file, the policy file,
+`LatestRun` of the hinted workflow and `CheckRuns` at the hinted head beside the settings read, and counts each only
+when the fresh settings name the same workflow and the fresh latest run the same head; otherwise it reads again with
+the fresh value. Every read still runs on every derive, and failures are judged in the same order. Hints hold the two
+parameters only, at most 4096 **[default]**, least recently used out first, keyed by installation ID and repository
+full name. A warm derive waits for one round trip instead of three; a stale hint costs the reads made ahead.
+
 `OpenDraft` is set only when `Get` returns `DraftOpen` or `DraftInReview`; merged, closed and none give nil. Diagnostics, one sentence each: "Start onboarding" /
 "Review and merge PR #n" / "`.archfit-app.yaml` on the default branch is invalid" / "Run discovery
 (workflow_dispatch with `mode` set to `discovery`)" / "Review and merge the policy PR #n" / "Waiting for the first run on
