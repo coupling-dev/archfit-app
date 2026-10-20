@@ -96,7 +96,7 @@ export function layout(
   modules: string[],
   directions: Direction[],
   column = false,
-): { width: number; height: number; boxes: Box[]; arrows: Arrow[] } {
+): { width: number; height: number; top: number; boxes: Box[]; arrows: Arrow[] } {
   const n = modules.length;
   const sizes = modules.map((m) => Math.ceil(shorten(m).length * charWidth) + 2 * pad);
   const widest = Math.max(...sizes);
@@ -113,7 +113,7 @@ export function layout(
       w: sizes[i],
       h: boxH,
     }));
-    return { width, height, boxes, arrows: arrowsOf(boxes, directions, columnBend) };
+    return { width, height, top: 0, boxes, arrows: arrowsOf(boxes, directions, columnBend) };
   }
   // Two modules side by side; more on a circle wide enough that neighbours do not touch and an arrow between two of
   // them has room for its label, up to maxRadius.
@@ -128,7 +128,22 @@ export function layout(
     const a = n === 2 ? Math.PI * (1 - i) : -Math.PI / 2 + (2 * Math.PI * i) / n;
     return { module, label: shorten(module), x: cx + rx * Math.cos(a), y: cy + ry * Math.sin(a), w: sizes[i], h: boxH };
   });
-  return { width, height, boxes, arrows: arrowsOf(boxes, directions, bend) };
+  const arrows = arrowsOf(boxes, directions, bend);
+  // A circle of three modules or more is not symmetric top to bottom: the drawing is cropped to what it holds (boxes,
+  // each curve's control point, which bounds it, and labels), so no empty band is left under it. top is the viewBox's.
+  const ys = [
+    ...boxes.flatMap((b) => [b.y - b.h / 2, b.y + b.h / 2]),
+    ...arrows.flatMap((a) => curveYs(a.d)),
+    ...arrows.filter((a) => a.label).flatMap((a) => [a.ly - labelH / 2, a.ly + labelH / 2]),
+  ];
+  const top = Math.floor(Math.min(...ys) - pad);
+  return { width, height: Math.ceil(Math.max(...ys) + pad) - top, top, boxes, arrows };
+}
+
+// curveYs reads the y of the start, control and end points of "M x1 y1 Q qx qy x2 y2".
+function curveYs(d: string): number[] {
+  const t = d.split(' ');
+  return [Number(t[2]), Number(t[5]), Number(t[7])];
 }
 
 // arrowsOf draws one bowed arrow per direction and labels each where its label covers no module and no other label.

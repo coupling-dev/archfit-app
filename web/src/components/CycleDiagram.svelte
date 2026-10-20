@@ -23,7 +23,7 @@
 
 <div class="cycle-drawing" bind:clientWidth={boxWidth}>
   <svg
-    viewBox="0 0 {drawing.width} {drawing.height}"
+    viewBox="0 {drawing.top} {drawing.width} {drawing.height}"
     width={drawing.width}
     class:natural={narrow && modules.length > 2}
     role="img"

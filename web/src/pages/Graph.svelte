@@ -103,35 +103,38 @@
       {/if}
     </p>
   {:else}
-    <div class="stack-sm">
-      {#if view.stale}
-        <div class="flash warn" id="stale">
-          <details>
-            <summary>The policy text differs from the policy of this report: module names and lines may not match.</summary>
-            <p class="small">{body.stale_reason || 'The graph shows the current policy text with the report it was not computed from.'}</p>
-          </details>
-        </div>
-      {/if}
-      {#if view.incomplete}
-        <div class="flash warn" id="incomplete">
-          <details>
-            <summary>The report is incomplete: a required rule was not evaluated or a hard gate could not be measured, so an observed dependency can still break a rule.</summary>
-            <p class="small">
-              A required rule was not evaluated, or a dimension the gate applies to measured nothing. Read the
-              archfit/state check for the evidence gaps.
-            </p>
-          </details>
-        </div>
-      {/if}
-      {#if body.pull && !body.pull.compared}
-        <div class="flash warn" id="not-compared">
-          <details>
-            <summary>This run did not compare with the base branch, so the graph cannot show what this PR added.</summary>
-            <p class="small">Every dependency is drawn without an "added" claim. The PR comment says the same.</p>
-          </details>
-        </div>
-      {/if}
-    </div>
+    <!-- Only with a banner: an empty block would add a second gap to the page's flow. -->
+    {#if view.stale || view.incomplete || (body.pull && !body.pull.compared)}
+      <div class="stack-sm">
+        {#if view.stale}
+          <div class="flash warn" id="stale">
+            <details>
+              <summary>The policy text differs from the policy of this report: module names and lines may not match.</summary>
+              <p class="small">{body.stale_reason || 'The graph shows the current policy text with the report it was not computed from.'}</p>
+            </details>
+          </div>
+        {/if}
+        {#if view.incomplete}
+          <div class="flash warn" id="incomplete">
+            <details>
+              <summary>The report is incomplete: a required rule was not evaluated or a hard gate could not be measured, so an observed dependency can still break a rule.</summary>
+              <p class="small">
+                A required rule was not evaluated, or a dimension the gate applies to measured nothing. Read the
+                archfit/state check for the evidence gaps.
+              </p>
+            </details>
+          </div>
+        {/if}
+        {#if body.pull && !body.pull.compared}
+          <div class="flash warn" id="not-compared">
+            <details>
+              <summary>This run did not compare with the base branch, so the graph cannot show what this PR added.</summary>
+              <p class="small">Every dependency is drawn without an "added" claim. The PR comment says the same.</p>
+            </details>
+          </div>
+        {/if}
+      </div>
+    {/if}
     <SeamSummary links={view.links} />
 
     <div class="g-bar">
