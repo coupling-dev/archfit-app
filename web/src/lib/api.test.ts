@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { get } from 'svelte/store';
 import { ApiError, explain, getJSON, postJSON, repoAPI } from './api';
+import { refused } from './gate';
 
 function reply(status: number, body: string) {
   const fetch = vi.fn(async () => new Response(body, { status, headers: { 'Content-Type': 'application/json' } }));
@@ -59,6 +61,14 @@ describe('api', () => {
     go.mockClear();
     expect(explain(new ApiError(503, 'GitHub is rate limiting.'), '/', go)).toBe('GitHub is rate limiting.');
     expect(go).not.toHaveBeenCalled();
+  });
+
+  it('replaces the page with a 404, the same for a repository that does not exist and one the user cannot see', () => {
+    const go = vi.fn();
+    expect(explain(new ApiError(404, 'Not found.'), '/r/acme/secret', go)).toBe('');
+    expect(get(refused)).toBe('Not found.');
+    expect(go).not.toHaveBeenCalled();
+    refused.set('');
   });
 
   it('escapes the repository in API paths', () => {

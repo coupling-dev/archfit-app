@@ -3,7 +3,6 @@
   import {
     ApiError,
     explain,
-    getJSON,
     postJSON,
     repoAPI,
     type Notice,
@@ -12,6 +11,8 @@
     type Session,
     type ShareState,
   } from '../lib/api';
+  import Skeleton from '../components/Skeleton.svelte';
+  import { firstJSON } from '../lib/early';
   import { repoPage, safeHref } from '../lib/route';
 
   let {
@@ -35,8 +36,8 @@
   let findingsFailed = $state(false);
 
   function load() {
-    getJSON<Overview>(repoAPI(route.owner, route.name, 'overview')).then((b) => (body = b), failed);
-    getJSON<RepoFindings>(repoAPI(route.owner, route.name, 'findings')).then(
+    firstJSON<Overview>(repoAPI(route.owner, route.name, 'overview')).then((b) => (body = b), failed);
+    firstJSON<RepoFindings>(repoAPI(route.owner, route.name, 'findings')).then(
       (f) => (findings = f),
       () => (findingsFailed = true),
     );
@@ -96,7 +97,7 @@
 {#if failure}<p class="flash error" role="alert">{failure}</p>{/if}
 
 {#if !body}
-  {#if !failure}<p class="muted" aria-live="polite">Loading…</p>{/if}
+  {#if !failure}<Skeleton rows={4} />{/if}
 {:else}
   {#if body.banner}<p class="flash warn">{body.banner}</p>{/if}
 
@@ -215,7 +216,7 @@
       {#if findingsFailed}
         <p class="muted">The latest report could not be read. Try again in a minute.</p>
       {:else if !findings}
-        <p class="muted" aria-live="polite">Loading the latest report…</p>
+        <Skeleton rows={3} />
       {:else if findings.unavailable}
         <p class="muted">{findings.unavailable}</p>
       {:else}

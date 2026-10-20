@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from '../components/Skeleton.svelte';
   import type { EditorView } from '@codemirror/view';
   import { onDestroy } from 'svelte';
   import {
@@ -368,7 +369,7 @@
     </section>
   {/if}
 {:else if !failure}
-  <p class="muted" aria-live="polite">Loading…</p>
+  <Skeleton rows={6} />
 {/if}
 
 <p><a href={repoPage(route.fullName)}>Back to {route.fullName}</a></p>

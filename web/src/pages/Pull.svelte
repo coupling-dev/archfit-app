@@ -3,7 +3,9 @@
   import DecisionLine from '../components/DecisionLine.svelte';
   import PullHead from '../components/PullHead.svelte';
   import { basisText, resultWord } from '../lib/evidence';
-  import { explain, getJSON, repoAPI, type ApiError, type Pull } from '../lib/api';
+  import Skeleton from '../components/Skeleton.svelte';
+  import { explain, repoAPI, type ApiError, type Pull } from '../lib/api';
+  import { firstJSON } from '../lib/early';
   import { safeHref, type Repo } from '../lib/route';
 
   let { route, here }: { route: Repo & { number: number }; here: string } = $props();
@@ -13,7 +15,7 @@
   let copied = $state('');
 
   function load() {
-    getJSON<Pull>(repoAPI(route.owner, route.name, `pulls/${route.number}`)).then(
+    firstJSON<Pull>(repoAPI(route.owner, route.name, `pulls/${route.number}`)).then(
       (b) => (body = b),
       (e: ApiError) => (failure = explain(e, here)),
     );
@@ -35,7 +37,8 @@
 {#if failure}
   <p class="flash error" role="alert">{failure}</p>
 {:else if !body}
-  <p class="muted" aria-live="polite">Loading…</p>
+  <Skeleton rows={2} box={false} />
+  <Skeleton rows={5} />
 {:else}
   <PullHead head={body} fullName={route.fullName} current="findings" />
   <DecisionLine decision={body.decision} />

@@ -227,6 +227,7 @@ export interface Checked {
   notice: string;
 }
 
+import { refused } from './gate';
 import { signInHref } from './route';
 
 // ApiError is a failed call: the sentence to show and, for a refused policy text, its problems.
@@ -288,8 +289,13 @@ async function answer<T>(res: Response): Promise<T> {
 }
 
 // explain is the sentence a page shows for a failed call. A 401 (the session ended, or GitHub rejected the user's token
-// and the server ended it) goes to sign-in instead, returning here.
+// and the server ended it) goes to sign-in instead, returning here. A 404 (a repository that does not exist or the
+// user cannot see, a pull request that is not one) replaces the whole page, as the server's error page did.
 export function explain(e: ApiError, here: string, go: (url: string) => void = (url) => location.assign(url)): string {
+  if (e.status === 404) {
+    refused.set(e.message);
+    return '';
+  }
   if (e.status !== 401) return e.message;
   go(signInHref(here));
   return '';
