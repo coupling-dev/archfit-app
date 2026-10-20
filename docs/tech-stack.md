@@ -54,17 +54,17 @@ The tests use the standard `testing` package and table-driven cases with `t.Run`
 
 | Item      | Choice                                                                                                                                                         |
 | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Rendering | Svelte 5 and TypeScript, built by Vite into `internal/control/ui/spa` and embedded in the binary; only the error page is still `html/template`                 |
+| Rendering | Svelte 5 and TypeScript, built by Vite into `internal/control/ui/spa` and embedded in the binary; an error page is the same shell                              |
 | Styles    | One stylesheet, the tokens and components of `docs/design/prototypes/archfit.css`, light and dark                                                              |
 | Editor    | CodeMirror 6 (MIT), a lazy chunk of the policy page. The server checks syntax and schema on load, on Check and on save                                         |
-| Graph     | Svelte Flow (`@xyflow/svelte`, MIT) with the ELK layered layout (`elkjs`, EPL-2.0), a lazy chunk on the graph pages only; ELK runs on the main thread           |
-| Licences  | The build writes the licence text of every bundled npm package to `assets/licenses-<hash>.txt` (`web/scripts/licenses.ts`)                                     |
+| Graph     | Svelte Flow (`@xyflow/svelte`, MIT) with the ELK layered layout (`elkjs`, EPL-2.0), lazy on the graph pages; ELK runs in a worker                               |
+| Licences  | The build writes the licence of every bundled npm package to `assets/licenses-<hash>.txt`, linked as `/licenses.txt`                                           |
 | Tests     | `svelte-check`, ESLint, Vitest, a bundle budget, and a Playwright smoke test with axe under the production CSP                                                 |
 
 Node is needed only to build and check the web app (`make web`, `make web-check`, the CI job "Web app" and the image's
 `web` stage); Go builds and tests run without it. Versions are pinned in `web/package-lock.json`. The CSP allows no
-inline style, no inline script, no eval, no worker and no other origin. The one exception is the shell's per-response
-nonce in `style-src`, for CodeMirror's style element. See
+inline style, no inline script, no eval, no worker but a same-origin file (`worker-src 'self'`, the graph's layout) and
+no other origin. The one exception is the shell's per-response nonce in `style-src`, for CodeMirror's style element. See
 [UI redesign](design/ui-redesign.md#frontend-stack-for-phases-b-to-f-plan-2-for-the-owner) for the migration.
 
 ## Platform seams
@@ -92,4 +92,4 @@ The [hosting research](archive/research/20260918-hosting.md) is dated research, 
 - Pass constructor dependencies explicitly. Do not use package state or `init` side effects.
 - Keep wire types, domain types, and storage types separate.
 - Read secrets from `*_FILE` variables. Never log secret values.
-- Keep generated and vendored files in `testdata/`, `static/`, or `templates/`.
+- Keep generated and vendored files in `testdata/`; the web app's build goes to `internal/control/ui/spa/`, not committed.

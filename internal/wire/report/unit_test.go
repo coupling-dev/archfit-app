@@ -604,3 +604,20 @@ func TestPairOrigin(t *testing.T) {
 		})
 	}
 }
+
+func TestReadableWhy(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"functional integration strength × cross_module distance × high volatility",
+			"functional integration strength × distance across modules × high volatility"},
+		{"model strength × cross_module_different_owner distance", "model strength × distance across modules, different owners"},
+		{"same_module distance and cross_deploy_unit distance", "distance same module and distance across services"},
+		{"made_up distance stays", "made_up distance stays"},
+		{"no distance token here", "no distance token here"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		if got := ReadableWhy(tt.in); got != tt.want {
+			t.Errorf("ReadableWhy(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}

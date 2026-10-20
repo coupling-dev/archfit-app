@@ -1,7 +1,7 @@
 <script lang="ts">
   import Header from './Header.svelte';
   import { ApiError, getJSON, type Session } from './lib/api';
-  import { parseRoute } from './lib/route';
+  import { parseRoute, serverError } from './lib/route';
   import DataSharing from './pages/DataSharing.svelte';
   import Landing from './pages/Landing.svelte';
   import Overview from './pages/Overview.svelte';
@@ -10,6 +10,8 @@
 
   const route = parseRoute(location.pathname);
   const here = location.pathname + location.search;
+  // The server's error page is this shell with the error's sentence; it then shows instead of the route.
+  const pageError = serverError(document.querySelector('meta[name="app-error"]')?.getAttribute('content'));
 
   // loading, then the signed-in session, signed out (401), or a failure to show.
   let session = $state<Session | null>(null);
@@ -25,17 +27,21 @@
   );
 
   const title = $derived(
-    route.kind === 'pull' || route.kind === 'pull-graph'
-      ? `${route.fullName} #${route.number}${route.kind === 'pull-graph' ? ' graph' : ''}`
-      : route.kind === 'repo' || route.kind === 'graph'
-        ? `${route.fullName}${route.kind === 'graph' ? ' architecture' : ''}`
-        : route.kind === 'data-sharing' || route.kind === 'policy'
-          ? `${route.fullName} ${route.kind === 'policy' ? 'policy' : 'data sharing'}`
-          : signedOut
-            ? 'Sign in'
-            : 'Repositories',
+    pageError
+      ? 'Error'
+      : route.kind === 'pull' || route.kind === 'pull-graph'
+        ? `${route.fullName} #${route.number}${route.kind === 'pull-graph' ? ' graph' : ''}`
+        : route.kind === 'repo' || route.kind === 'graph'
+          ? `${route.fullName}${route.kind === 'graph' ? ' architecture' : ''}`
+          : route.kind === 'data-sharing' || route.kind === 'policy'
+            ? `${route.fullName} ${route.kind === 'policy' ? 'policy' : 'data sharing'}`
+            : signedOut
+              ? 'Sign in'
+              : 'Repositories',
   );
-  const repo = $derived(route.kind !== 'home' && route.kind !== 'unknown' && session ? route.fullName : '');
+  const repo = $derived(
+    !pageError && route.kind !== 'home' && route.kind !== 'unknown' && session ? route.fullName : '',
+  );
   // The graph pages carry the drawing libraries and the policy page the editor: each a chunk of its own, loaded on
   // those pages only.
   const graphPage = () => import('./pages/Graph.svelte');
@@ -52,7 +58,12 @@
   pull={route.kind === 'pull' || route.kind === 'pull-graph' ? route.number : 0}
 />
 <main class="page" id="main">
-  {#if failure}
+  {#if pageError}
+    <div class="blankslate">
+      <h1>This page cannot be shown</h1>
+      <p>{pageError} <a href="/">See your repositories.</a></p>
+    </div>
+  {:else if failure}
     <p class="flash error" role="alert">{failure}</p>
   {:else if signedOut}
     <Landing {here} />
@@ -89,3 +100,6 @@
     </div>
   {/if}
 </main>
+<footer class="app-footer">
+  <a href="/licenses.txt">Third-party licences</a>
+</footer>

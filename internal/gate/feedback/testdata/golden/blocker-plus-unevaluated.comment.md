@@ -3,7 +3,7 @@
 ## Archfit: Architecture gate failing
 
 **Next:**
-- Fix the blocking findings, then push.
+- Remove the rule violations, then run the validation command.
 - Install the required tool in the workflow, then re-run it.
 
 ### Findings
@@ -22,7 +22,7 @@
 | --- | --- | --- | --- | --- | --- |
 | Imbalanced coupling · medium | `a` (`pkg/a/a.go`) → `b` (`pkg/b`) | `pkg/a/a.go:3` | functional | across modules, same owner | undeclared |
 
-Imbalanced coupling · **Why:** balanced coupling: functional integration strength × cross_module_same_owner distance × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
+Imbalanced coupling · **Why:** balanced coupling: functional integration strength × distance across modules, same owner × undeclared volatility → medium severity (unbalanced coupling → elevated maintenance effort)
 
 </details>
 
@@ -31,7 +31,7 @@ Imbalanced coupling · **Why:** balanced coupling: functional integration streng
 
 ### Decision
 
-- `blocking_findings` (architecture): 1 blocking finding. Next: Fix the blocking findings, then push.
+- `blocking_findings` (architecture): 1 blocking finding. Next: Remove the rule violations, then run the validation command.
 - `missing_required_coverage` (evidence): layers/no_upward_imports. Next: Install the required tool in the workflow, then re-run it.
 
 ### Dimensions

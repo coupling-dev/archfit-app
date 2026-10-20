@@ -27,7 +27,7 @@ const (
 	contentSecurityPolicy = cspHead + cspTail
 	cspHead               = "default-src 'none'; script-src 'self'; style-src 'self'"
 	cspTail               = "; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; " +
-		"form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+		"form-action 'self'; frame-ancestors 'none'; object-src 'none'; worker-src 'self'"
 )
 
 // scope is what the chain hands to a page: the signed-in user and, on repository routes, the authorized
@@ -134,11 +134,11 @@ func (s *server) signedIn(next func(http.ResponseWriter, *http.Request, session.
 		logOf(r).userID = u.UserID
 		if r.Method == http.MethodPost {
 			if err := r.ParseForm(); err != nil {
-				s.fail(w, r, scope{user: u}, formError(err))
+				s.fail(w, r, formError(err))
 				return
 			}
 			if !validCSRF(u, r.PostForm.Get("csrf")) {
-				s.fail(w, r, scope{user: u}, errCSRF)
+				s.fail(w, r, errCSRF)
 				return
 			}
 		}
@@ -188,7 +188,7 @@ func (s *server) repo(minPermission string, next pageFunc) http.Handler {
 		repo, err := s.sessions.Authorize(r.Context(), u, r.PathValue("o")+"/"+r.PathValue("n"), minPermission)
 		if err != nil {
 			if !s.endIfTokenRejected(w, r, err) {
-				s.fail(w, r, sc, err)
+				s.fail(w, r, err)
 			}
 			return
 		}

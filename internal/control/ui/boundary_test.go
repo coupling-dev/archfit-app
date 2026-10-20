@@ -3,8 +3,9 @@ package ui
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io/fs"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -417,13 +418,14 @@ func TestNoScoreAnywhere(t *testing.T) {
 	}
 }
 
-// wantCSP allows no inline style or script, no eval, no worker and no other origin: nothing on any page needs them.
+// wantCSP allows no inline style or script, no eval, no worker but a same-origin one (the graph's layout) and no other
+// origin: nothing on any page needs more.
 // wantShellCSP is the web app's shell: the same policy, plus the one nonce its editor's <style> element carries.
 const (
 	wantCSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; " +
-		"font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+		"font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; worker-src 'self'"
 	wantShellCSP = "default-src 'none'; script-src 'self'; style-src 'self' 'nonce-__CSP_NONCE__'; connect-src 'self'; " +
-		"img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+		"img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; worker-src 'self'"
 )
 
 var shellNonce = regexp.MustCompile(`'nonce-([A-Za-z0-9+/]{22}==)'`)
@@ -448,6 +450,7 @@ func TestWebPreviewUsesTheProductionCSP(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantContains(t, string(index), `<meta name="csp-nonce" content="`+noncePlaceholder+`">`)
+	wantContains(t, string(index), `<meta name="app-error" content="`+errorPlaceholder+`">`)
 }
 
 // Every shell gets its own nonce, in its CSP and in the meta tag the editor reads, and is never stored: a nonce an
@@ -475,32 +478,9 @@ func TestShellNonceIsFreshPerResponse(t *testing.T) {
 			t.Errorf("%s: Cache-Control = %q, want no-store", path, got)
 		}
 	}
-	for _, path := range []string{policyAPI, "/assets/app-1a2b.js", "/nowhere"} {
+	for _, path := range []string{policyAPI, "/assets/app-1a2b.js", "/schema/policy.json"} {
 		if got := c.get(path).Header().Get("Content-Security-Policy"); got != wantCSP {
 			t.Errorf("%s: CSP = %q, want the policy without a nonce", path, got)
-		}
-	}
-}
-
-// The CSP holds only while no template or script uses an inline style or a blob worker.
-func TestNoAssetNeedsInlineStyleOrBlobWorker(t *testing.T) {
-	inline := regexp.MustCompile(`(?i)<style|\sstyle\s*=|\.style\b|setAttribute\(\s*["']style|blob:|new\s+(Shared)?Worker`)
-	for _, root := range []fs.FS{templatesFS, staticFS} {
-		err := fs.WalkDir(root, ".", func(path string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return err
-			}
-			raw, err := fs.ReadFile(root, path)
-			if err != nil {
-				return err
-			}
-			if m := inline.Find(raw); m != nil {
-				t.Errorf("%s uses %q, which the CSP blocks", path, m)
-			}
-			return nil
-		})
-		if err != nil {
-			t.Fatal(err)
 		}
 	}
 }
@@ -545,7 +525,7 @@ func TestHostileStringsAreEscaped(t *testing.T) {
 			t.Errorf("%s: CSP = %q", path, csp)
 		}
 	}
-	for _, path := range []string{"/nowhere", "/static/app.css", "/schema/policy.json"} {
+	for _, path := range []string{"/nowhere", "/licenses.txt", "/schema/policy.json"} {
 		if e.anonymous().get(path).Header().Get("Content-Security-Policy") == "" {
 			t.Errorf("%s has no CSP header", path)
 		}
@@ -646,4 +626,49 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 			t.Errorf("logs contain %.20q", secret)
 		}
 	}
+}
+
+// An error page is the shell with the documented status: the shell's CSP with a fresh nonce, and the app shows the
+// sentence of explain from the app-error meta tag. An error's own text never reaches the page.
+func TestErrorPagesAreTheShell(t *testing.T) {
+	const internal = "dial tcp 10.0.0.7:443: secret-host refused"
+	tests := []struct {
+		name     string
+		setup    func(e *env)
+		path     string
+		status   int
+		sentence string
+	}{
+		{"a repository the user cannot see", func(*env) {}, "/r/acme/hidden", http.StatusNotFound, "Not found."},
+		{"a pull request number that is not one", func(*env) {}, "/r/" + repoName + "/pull/0", http.StatusNotFound, "Not found."},
+		{"a path of no page", func(*env) {}, "/static/app.css", http.StatusNotFound, "Not found."},
+		{"a route's path with a method it does not take", func(*env) {}, "/auth/logout", http.StatusNotFound, "Not found."},
+		{"GitHub fails with its own text", func(e *env) { e.gh.fail["Permission"] = errors.New(internal) }, "/r/" + repoName,
+			http.StatusBadGateway, "GitHub or an Archfit service failed. Nothing was changed. Try again."},
+		{"GitHub rate limits", func(e *env) { e.gh.fail["Permission"] = fmt.Errorf("%w: %s", api.ErrRateLimited, internal) }, "/r/" + repoName,
+			http.StatusServiceUnavailable, "GitHub is rate limiting Archfit. Try again in a minute."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t)
+			c := e.as("alice", permRead)
+			tt.setup(e)
+			res := c.get(tt.path)
+			wantStatus(t, res, tt.status)
+			if cspOf(res) != wantShellCSP || !shellNonce.MatchString(res.Header().Get("Content-Security-Policy")) {
+				t.Errorf("CSP = %q, want the shell's with a nonce", res.Header().Get("Content-Security-Policy"))
+			}
+			body := res.Body.String()
+			wantContains(t, body, `<meta name="app-error" content="`+html.EscapeString(tt.sentence)+`">`)
+			if strings.Contains(body, "secret-host") || strings.Contains(body, errorPlaceholder) {
+				t.Errorf("the page leaks the error's text or keeps the placeholder: %s", body)
+			}
+			if got := res.Header().Get("Cache-Control"); got != "no-store" {
+				t.Errorf("Cache-Control = %q, want no-store", got)
+			}
+		})
+	}
+
+	ok := newEnv(t).as("alice", permRead).get("/r/" + repoName)
+	wantContains(t, ok.Body.String(), `<meta name="app-error" content="">`)
 }

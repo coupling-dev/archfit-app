@@ -85,7 +85,8 @@ because it builds the OAuth redirect URL as `BaseURL + "/auth/callback"`.
   (constant-time compare) and the cookie must not be expired. Then `OAuth.Exchange`. Success: set the session cookie,
   delete the state cookie, `303` to the return path. Bad or missing state or code: `400`, no session cookie.
   Exchange error: `502`, no session cookie.
-- `POST /auth/logout` → `LogoutHandler`. Deletes the session cookie, `303` to `/`. Any other method: `405`.
+- `POST /auth/logout` → `LogoutHandler`. Deletes the session cookie, `303` to `/`. Any other method: `405` from `LogoutHandler`;
+  mounted in ui, only `POST` reaches it and any other method gets ui's "Not found." page.
   The GitHub token is not revoked at GitHub **[default]**.
 
 ### Rules of the two methods

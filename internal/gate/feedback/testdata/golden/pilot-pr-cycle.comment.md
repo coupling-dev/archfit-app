@@ -7,7 +7,7 @@
 
 This pull request closes a dependency cycle among `pkg_chaos`, `pkg_container`, `pkg_util`: it adds `pkg_container` → `pkg_chaos` (`pkg/container/appfilter.go:4`) and `pkg_util` → `pkg_chaos` (`pkg/util/flagports.go:4`); `pkg_chaos` → `pkg_container` (40 locations) and `pkg_chaos` → `pkg_util` (2 locations) existed before.
 
-**Next:** Fix the blocking findings, then push.
+**Next:** Remove the rule violations, then run the validation command.
 
 ### Findings
 
@@ -51,7 +51,7 @@ flowchart LR
 | Imbalanced coupling · critical | `pkg_container` (`pkg/container/appfilter.go`) → `pkg_chaos` (`pkg/chaos/cliflags`) | added | `pkg/container/appfilter.go:4` | functional | across modules | high |
 | Imbalanced coupling · critical | `pkg_util` (`pkg/util/flagports.go`) → `pkg_chaos` (`pkg/chaos/cliflags`) | added | `pkg/util/flagports.go:4` | functional | across modules | high |
 
-Imbalanced coupling · **Why:** balanced coupling: functional integration strength × cross_module distance × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)
+Imbalanced coupling · **Why:** balanced coupling: functional integration strength × distance across modules × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)
 
 </details>
 
@@ -67,7 +67,7 @@ Imbalanced coupling · **Why:** balanced coupling: functional integration streng
 | Imbalanced coupling · critical, baseline | `pkg_runtime` (`pkg/runtime/containerd/addresses.go`) → `pkg_container` (`pkg/container`) | existing | `pkg/runtime/containerd/addresses.go:15`, `pkg/runtime/containerd/client.go:12`, `pkg/runtime/containerd/iptables.go:7` and 12 more | functional | across modules | high |
 | Imbalanced coupling · critical, baseline | `pkg_runtime` (`pkg/runtime/containerd/netem.go`) → `pkg_tc` (`pkg/tc`) | existing | `pkg/runtime/containerd/netem.go:7`, `pkg/runtime/docker/netem.go:7` | functional | across modules | high |
 
-Imbalanced coupling · **Why:** balanced coupling: functional integration strength × cross_module distance × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)
+Imbalanced coupling · **Why:** balanced coupling: functional integration strength × distance across modules × high volatility → critical severity (functional coupling across a module boundary to a volatile target → a change on one side forces a change on the other)
 
 </details>
 
@@ -76,7 +76,7 @@ Imbalanced coupling · **Why:** balanced coupling: functional integration streng
 
 ### Decision
 
-- `blocking_findings` (architecture): 1 blocking finding. Next: Fix the blocking findings, then push.
+- `blocking_findings` (architecture): 1 blocking finding. Next: Remove the rule violations, then run the validation command.
 
 ### Dimensions
 

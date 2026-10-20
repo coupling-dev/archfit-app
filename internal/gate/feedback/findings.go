@@ -481,7 +481,7 @@ func writeReasons(b *strings.Builder, fs []report.Finding, withRule bool) {
 	}
 	for _, f := range fs {
 		if f.Why != "" {
-			add(f.RuleID, "Why", text(f.Why))
+			add(f.RuleID, "Why", text(report.ReadableWhy(f.Why)))
 		}
 		if f.Constraint != "" {
 			add(f.RuleID, "Constraint", text(f.Constraint))
@@ -520,7 +520,7 @@ func writeFinding(b *strings.Builder, f report.Finding) {
 	}
 	fmt.Fprintf(b, "%s (%s): %s → %s", ruleName(f.RuleID), m, endpoint(f.Edge.From), endpoint(f.Edge.To))
 	b.WriteString("\n  - Locations: " + capped(f.Locations, locationCap))
-	fmt.Fprintf(b, "\n  - Why: %s", text(f.Why))
+	fmt.Fprintf(b, "\n  - Why: %s", text(report.ReadableWhy(f.Why)))
 	if f.Constraint != "" {
 		fmt.Fprintf(b, "\n  - Constraint: %s", text(f.Constraint))
 	}

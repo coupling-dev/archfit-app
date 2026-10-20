@@ -647,7 +647,7 @@ func annotations(p Publication, changed func(path string) bool) []api.Annotation
 				if len(out) == annotationCap {
 					return out
 				}
-				out = append(out, api.Annotation{Path: loc.File, Line: max(loc.Line, 1), Level: level, Message: sanitize(f.RuleID) + ": " + sanitize(f.Why)})
+				out = append(out, api.Annotation{Path: loc.File, Line: max(loc.Line, 1), Level: level, Message: sanitize(f.RuleID) + ": " + sanitize(report.ReadableWhy(f.Why))})
 			}
 		}
 	}

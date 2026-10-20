@@ -262,7 +262,7 @@ func TestWording(t *testing.T) {
 
 func TestPullPageGroupsCyclesAsTheCommentDoes(t *testing.T) {
 	dir := func(from, to, file, origin string) report.Finding {
-		return report.Finding{ID: from + to, Kind: "gate", RuleID: "no-module-cycles", Status: "new", Severity: "high", Why: "a cycle",
+		return report.Finding{ID: from + to, Kind: "gate", RuleID: "no-module-cycles", Status: "new", Severity: "high", Why: "a cycle at cross_module distance",
 			Constraint: "Break " + from + " → " + to, Origin: origin,
 			Edge:      report.Edge{From: report.Endpoint{Module: from}, To: report.Endpoint{Module: to}},
 			Locations: []report.Location{{File: file, Line: 3}, {File: file}}}
@@ -292,8 +292,11 @@ func TestPullPageGroupsCyclesAsTheCommentDoes(t *testing.T) {
 		t.Fatalf("cycles = %+v, want one between pkg_chaos and pkg_container", b.Cycles)
 	}
 	cy := b.Cycles[0]
-	if len(cy.Directions) != 2 || len(cy.Fixes) != 2 || cy.Why != "a cycle" {
-		t.Errorf("cycle = %+v, want two directions and each repair once", cy)
+	if len(cy.Directions) != 2 || len(cy.Fixes) != 2 || cy.Why != "a cycle at distance across modules" {
+		t.Errorf("cycle = %+v, want two directions, each repair once and the Why in the tables' words", cy)
+	}
+	if len(b.Other) == 0 || b.Other[0].Why != "a cycle at distance across modules" {
+		t.Errorf("other = %+v, want the Why in the tables' words", b.Other)
 	}
 	d0, d1 := cy.Directions[0], cy.Directions[1]
 	if d0.Origin != "" || d1.Origin != report.PairExisting {
