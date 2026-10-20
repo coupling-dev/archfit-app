@@ -72,17 +72,23 @@ func (s *server) answer(w http.ResponseWriter, r *http.Request, sc scope, next a
 }
 
 type errorJSON struct {
-	Error string `json:"error"`
+	Error       string           `json:"error"`
+	Diagnostics []diagnosticJSON `json:"diagnostics,omitempty"` // the problems of a refused policy text
 }
 
-// failJSON is fail for /api: the documented status and sentence, as JSON.
+// failJSON is fail for /api: the documented status and sentence, as JSON, and the problems of a refused policy.
 func (s *server) failJSON(w http.ResponseWriter, r *http.Request, err error) {
 	status, outcome, sentence := explain(err)
 	logOf(r).outcome = outcome
 	if outcome == "rate_limited" {
 		w.Header().Set("Retry-After", retryAfterSeconds)
 	}
-	writeJSON(w, r, status, errorJSON{Error: sentence})
+	body := errorJSON{Error: sentence}
+	var problems *policyProblems
+	if errors.As(err, &problems) {
+		body.Diagnostics = diagnosticsJSON(problems.list)
+	}
+	writeJSON(w, r, status, body)
 }
 
 func writeJSON(w http.ResponseWriter, r *http.Request, status int, body any) {

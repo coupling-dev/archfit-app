@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
+	"github.com/alexei-led/archfit-app/internal/control/assist"
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -46,7 +47,7 @@ var cookieKey = bytes.Repeat([]byte{7}, 32)
 
 // testWeb stands in for the web app build: a shell and one hashed asset.
 var testWeb = fstest.MapFS{
-	"index.html":         {Data: []byte(`<!doctype html><title>Archfit</title><div id="app"></div><script type="module" src="/assets/app-1a2b.js"></script>`)},
+	"index.html":         {Data: []byte(`<!doctype html><meta name="csp-nonce" content="__CSP_NONCE__"><title>Archfit</title><div id="app"></div><script type="module" src="/assets/app-1a2b.js"></script>`)},
 	"assets/app-1a2b.js": {Data: []byte(`console.log("archfit")`)},
 }
 
@@ -224,8 +225,38 @@ func (c *client) getJSON(path string, out any) {
 	}
 }
 
-func formOf(branch, headSHA, content string) url.Values {
-	return url.Values{"branch": {branch}, "head_sha": {headSHA}, "content": {content}}
+// policyAPI and assistAPI are the API paths of the test repository's policy page and its AI request.
+const (
+	policyAPI = "/api/repos/" + repoName + "/policy"
+	assistAPI = "/api/repos/" + repoName + "/assist"
+)
+
+// editOf is the body of a save as the web app sends it.
+func editOf(branch, headSHA, content string) editJSON {
+	return editJSON{Branch: branch, HeadSHA: headSHA, Content: content}
+}
+
+// assistOf is a customer-mode request of the AI for content.
+func assistOf(headSHA, content string) assistJSON {
+	return assistJSON{editJSON: editOf("", headSHA, content), Instruction: "split module a", Mode: string(assist.ModeCustomer)}
+}
+
+// policy reads the policy page of the test repository; query is "" or "?…".
+func (c *client) policy(query string) policyJSON {
+	c.e.t.Helper()
+	var p policyJSON
+	c.getJSON(policyAPI+query, &p)
+	return p
+}
+
+// decodeAs reads a JSON answer, whatever its status.
+func decodeAs[T any](t *testing.T, res *httptest.ResponseRecorder) T {
+	t.Helper()
+	var out T
+	if err := json.Unmarshal(res.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode %.200s: %v", res.Body.String(), err)
+	}
+	return out
 }
 
 // artifact is an engine state fixture ("healthy" or "real-blocked-no-baseline") whose config_hash matches policyText.

@@ -306,6 +306,7 @@ svg text { fill: currentColor; }
 .flash.success { border-color: var(--success-border); background: var(--success-subtle); }
 .flash.done { border-color: var(--done-border); background: var(--done-subtle); }
 .flash .flash-icon { flex: none; margin-top: 2px; }
+.flash a { text-decoration: underline; } /* a link inside a sentence is not told apart by colour alone */
 
 /* ---------- tables ---------- */
 .table-wrap { overflow-x: auto; }
@@ -575,3 +576,13 @@ details.disclosure.locations-all { border-top: 0; }
   border-radius: var(--radius); padding: 3px 8px; margin-left: 6px;
 }
 .flash details > summary { cursor: pointer; }
+/* ---------- policy editor ---------- */
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.problems h3 { margin: 0 0 4px; color: var(--danger); }
+.problems ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.editor { border-top: 1px solid var(--border-muted); }
+.editor .cm-editor { max-height: 70vh; }
+.editor .cm-editor.cm-focused { outline: 2px solid var(--accent); outline-offset: -2px; }
+.plain { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+fieldset { border: 0; margin: 0; padding: 0; }
+legend { font-weight: 600; padding: 0; margin-bottom: 4px; }

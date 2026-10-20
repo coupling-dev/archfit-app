@@ -666,13 +666,6 @@ func (b *browser) get(path string) (*http.Response, string) {
 	return b.send(httptest.NewRequest(http.MethodGet, baseURL+path, nil))
 }
 
-func (b *browser) post(path string, form url.Values) (*http.Response, string) {
-	b.t.Helper()
-	r := httptest.NewRequest(http.MethodPost, baseURL+path, strings.NewReader(form.Encode()))
-	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	return b.send(r)
-}
-
 // signIn walks the OAuth login: the world's exchange accepts the login as the code.
 func (b *browser) signIn(login string) {
 	b.t.Helper()
@@ -703,19 +696,6 @@ func (b *browser) postJSON(path string, body any) (*http.Response, string) {
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("X-CSRF-Token", sess.CSRF)
 	return b.send(r)
-}
-
-var csrfPattern = regexp.MustCompile(`name="csrf" value="([0-9a-f]+)"`)
-
-// csrf scrapes the form token from a signed-in page.
-func (b *browser) csrf(path string) string {
-	b.t.Helper()
-	_, page := b.get(path)
-	m := csrfPattern.FindStringSubmatch(page)
-	if m == nil {
-		b.t.Fatalf("no csrf field on %s", path)
-	}
-	return m[1]
 }
 
 // ---- platform fakes ----

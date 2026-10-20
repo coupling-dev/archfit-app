@@ -29,15 +29,17 @@
       ? `${route.fullName} #${route.number}${route.kind === 'pull-graph' ? ' graph' : ''}`
       : route.kind === 'repo' || route.kind === 'graph'
         ? `${route.fullName}${route.kind === 'graph' ? ' architecture' : ''}`
-        : route.kind === 'data-sharing'
-          ? `${route.fullName} data sharing`
+        : route.kind === 'data-sharing' || route.kind === 'policy'
+          ? `${route.fullName} ${route.kind === 'policy' ? 'policy' : 'data sharing'}`
           : signedOut
             ? 'Sign in'
             : 'Repositories',
   );
   const repo = $derived(route.kind !== 'home' && route.kind !== 'unknown' && session ? route.fullName : '');
-  // The graph pages carry the drawing libraries: a chunk of their own, loaded on those pages only.
+  // The graph pages carry the drawing libraries and the policy page the editor: each a chunk of its own, loaded on
+  // those pages only.
   const graphPage = () => import('./pages/Graph.svelte');
+  const policyPage = () => import('./pages/Policy.svelte');
   $effect(() => {
     document.title = `${title} · Archfit`;
   });
@@ -46,7 +48,7 @@
 <Header
   {session}
   {repo}
-  tab={route.kind === 'repo' ? 'overview' : route.kind === 'graph' ? 'graph' : ''}
+  tab={route.kind === 'repo' ? 'overview' : route.kind === 'graph' || route.kind === 'policy' ? route.kind : ''}
   pull={route.kind === 'pull' || route.kind === 'pull-graph' ? route.number : 0}
 />
 <main class="page" id="main">
@@ -71,6 +73,14 @@
       <m.default {route} {here} />
     {:catch}
       <p class="flash error" role="alert">The graph could not be loaded. Reload the page.</p>
+    {/await}
+  {:else if route.kind === 'policy'}
+    {#await policyPage()}
+      <p class="muted" aria-live="polite">Loading…</p>
+    {:then m}
+      <m.default {route} {session} {here} />
+    {:catch}
+      <p class="flash error" role="alert">The editor could not be loaded. Reload the page.</p>
     {/await}
   {:else}
     <div class="blankslate">

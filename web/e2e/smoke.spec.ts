@@ -289,6 +289,31 @@ const pullGraph = {
   },
 };
 
+const head = 'a'.repeat(40);
+const policy = (managedAllowed: boolean, over: object = {}) => ({
+  branch: 'archfit/edit-alice',
+  head_sha: head,
+  content: 'version: 2\nmodlues: {}\nrules: []\n',
+  draft: 'draft',
+  draft_state: 'draft',
+  draft_url: 'https://github.com/acme/app/pull/9',
+  checks: [
+    { name: 'archfit/state', state: 'healthy', tone: 'success', reason: 'No new findings' },
+    { name: 'archfit/gate', state: 'in progress', tone: 'accent', reason: '' },
+  ],
+  diagnostics: [{ line: 2, column: 1, message: 'Unknown key `modlues`. Did you mean `modules`?' }],
+  can_write: true,
+  can_ready: true,
+  managed: managedAllowed
+    ? { offer: true }
+    : {
+        offer: false,
+        off: 'Managed mode is off: managed AI is not allowed for acme.',
+        data_sharing: '/r/acme/app/data-sharing',
+      },
+  ...over,
+});
+
 interface Mock {
   signedIn?: boolean;
   tokenRejected?: boolean; // the session stands, but GitHub rejects the user's token on the first repository call
@@ -298,6 +323,8 @@ interface Mock {
   pull?: object;
   graph?: object;
   pullGraph?: object;
+  policy?: object; // fields of the policy page that differ from policy()
+  refuseSave?: boolean; // the save is refused with the problems of the text
 }
 
 // open answers /api in the browser from the mock, opens the page, and returns the writes the page sent. Each page records the CSP violations
@@ -311,6 +338,33 @@ async function open(page: Page, path: string, mock: Mock = {}) {
     const json = (status: number, body: object) => route.fulfill({ status, json: body });
     if (req.method() === 'POST') {
       writes.push(req);
+      const sent = req.postDataJSON();
+      switch (url.pathname) {
+        case '/api/repos/acme/app/policy/check':
+          return json(200, { diagnostics: [], notice: 'The check found no problems.' });
+        case '/api/repos/acme/app/policy':
+          if (mock.refuseSave)
+            return json(422, {
+              error: 'The policy has problems, listed above the editor. Nothing was saved.',
+              diagnostics: [{ line: 1, column: 1, message: 'Missing required key `version`.' }],
+            });
+          return json(200, {
+            ...policy(allowed, mock.policy),
+            content: sent.content,
+            head_sha: 'b'.repeat(40),
+            diagnostics: [],
+            notice: 'Saved as a commit on the draft pull request.',
+          });
+        case '/api/repos/acme/app/assist':
+          return json(200, {
+            ...policy(allowed, mock.policy),
+            content: sent.content,
+            diagnostics: [],
+            since: head,
+            run: { state: 'pending', url: 'https://github.com/acme/app/actions/workflows/archfit-assist.yaml' },
+            notice: 'The assist workflow is running in your CI.',
+          });
+      }
       if (url.pathname === '/api/repos/acme/app/data-sharing') {
         allowed = true;
         if (mock.savedUnread)
@@ -342,6 +396,8 @@ async function open(page: Page, path: string, mock: Mock = {}) {
         return json(200, mock.graph ?? repoGraph);
       case '/api/repos/acme/app/pulls/4/graph':
         return json(200, mock.pullGraph ?? pullGraph);
+      case '/api/repos/acme/app/policy':
+        return json(200, policy(allowed, mock.policy));
     }
     return json(404, { error: 'Not found.' });
   });
@@ -621,5 +677,115 @@ test('data sharing: a change saved but not read back shows the state read again'
   await expect(page.getByRole('alert')).toContainText('The change was saved');
   await expect(ai.getByText('Allowed by @alice on 20 October 2026')).toBeVisible();
   await expect(ai.getByRole('button', { name: 'Revoke' })).toBeVisible();
+  await expectClean(page);
+});
+
+test('policy: the editor under the CSP, with the problems as a list and as marks', async ({ page }) => {
+  await open(page, '/r/acme/app/policy#L3');
+  await expect(page.getByRole('heading', { name: 'Policy', level: 1 })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Policy' })).toHaveAttribute('aria-current', 'page');
+  const editor = page.getByRole('textbox', { name: 'Policy text, .archfit.yaml' });
+  await expect(editor).toContainText('modlues: {}');
+  // CodeMirror's styles are a <style> element that only the shell's nonce lets through.
+  await expect(page.locator('style[nonce="__CSP_NONCE__"]')).not.toHaveCount(0);
+  await expect(page.locator('.cm-activeLine')).toHaveText('rules: []');
+  const problems = page.getByRole('region', { name: '1 problem' });
+  await expect(problems).toContainText('Unknown key `modlues`. Did you mean `modules`?');
+  await expect(page.locator('.cm-lintRange-error')).toHaveText('modlues: {}');
+  await problems.getByRole('button', { name: 'Line 2, column 1' }).click();
+  await expect(page.locator('.cm-activeLine')).toHaveText('modlues: {}');
+  await expect(page.getByRole('link', { name: 'Draft pull request' })).toHaveAttribute(
+    'href',
+    'https://github.com/acme/app/pull/9',
+  );
+  await expect(page.getByText('Checked by Archfit (current step)')).toBeAttached();
+  await expectClean(page);
+});
+
+test('policy: Check and Save send the text, the head and the CSRF header', async ({ page }) => {
+  const writes = await open(page, '/r/acme/app/policy');
+  const editor = page.getByRole('textbox', { name: 'Policy text, .archfit.yaml' });
+  await expect(editor).toContainText('rules: []');
+  await editor.click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.type('# edited');
+  await expect(page.getByText('unsaved edits')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Ready for review' })).toBeDisabled();
+  const text = 'version: 2\nmodlues: {}\nrules: []\n# edited';
+
+  await page.getByRole('button', { name: 'Check' }).click();
+  await expect(page.getByRole('status')).toHaveText('The check found no problems.');
+  await expect(page.getByRole('region', { name: /problem/ })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Save to draft PR' }).click();
+  await expect(page.getByRole('status')).toHaveText('Saved as a commit on the draft pull request.');
+  await expect(page.getByText('unsaved edits')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Ready for review' })).toBeEnabled();
+
+  expect(writes.map((w) => new URL(w.url()).pathname)).toEqual([
+    '/api/repos/acme/app/policy/check',
+    '/api/repos/acme/app/policy',
+  ]);
+  for (const w of writes) expect(w.headers()['x-csrf-token']).toBe(session.csrf);
+  expect(writes[0].postDataJSON()).toEqual({ content: text });
+  expect(writes[1].postDataJSON()).toEqual({ branch: 'archfit/edit-alice', head_sha: head, content: text });
+  await expectClean(page);
+});
+
+test('policy: a refused save lists the problems and keeps the text', async ({ page }) => {
+  await open(page, '/r/acme/app/policy', { refuseSave: true });
+  const editor = page.getByRole('textbox', { name: 'Policy text, .archfit.yaml' });
+  await expect(editor).toContainText('rules: []');
+  await page.getByRole('button', { name: 'Save to draft PR' }).click();
+  await expect(page.getByRole('alert')).toContainText('Nothing was saved.');
+  await expect(page.getByRole('region', { name: '1 problem' })).toContainText('Missing required key `version`.');
+  await expect(editor).toContainText('modlues: {}');
+  await expectClean(page);
+});
+
+test('policy: a reader can check but is offered no write', async ({ page }) => {
+  await open(page, '/r/acme/app/policy', { policy: { can_write: false, can_ready: false, managed: { offer: false } } });
+  await expect(page.getByText('Saving needs write access to acme/app.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Check' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Save|Ready|Propose/ })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Ask AI for a proposal' })).toHaveCount(0);
+  await expectClean(page);
+});
+
+test('policy: managed mode is off with its reason, and an administrator allows it in place', async ({ page }) => {
+  const writes = await open(page, '/r/acme/app/policy');
+  const managed = page.getByRole('radio', { name: /Managed/ });
+  await expect(managed).toBeDisabled();
+  await expect(page.getByText('Managed mode is off: managed AI is not allowed for acme.')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Data sharing' })).toHaveAttribute('href', '/r/acme/app/data-sharing');
+  await expectClean(page);
+
+  await page.getByRole('button', { name: 'Allow managed AI' }).click();
+  await expect(page.getByRole('status')).toHaveText('Managed AI is allowed.');
+  await expect(managed).toBeEnabled();
+  expect(writes.map((w) => w.postDataJSON())).toEqual([{ kind: 'managed_llm', action: 'allow' }]);
+});
+
+test('policy: a customer-mode request follows the run in your CI', async ({ page }) => {
+  const writes = await open(page, '/r/acme/app/policy');
+  await expect(page.getByRole('textbox', { name: 'Policy text, .archfit.yaml' })).toContainText('rules: []');
+  await page.getByRole('textbox', { name: 'Instruction', exact: true }).fill('split module a');
+  await expect(page.getByRole('radio', { name: /Customer/ })).toBeChecked();
+  await page.getByRole('button', { name: 'Propose' }).click();
+  await expect(page.getByText('AI proposal in your CI: queued or running')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'workflow runs' })).toHaveAttribute(
+    'href',
+    'https://github.com/acme/app/actions/workflows/archfit-assist.yaml',
+  );
+  await expect(page).toHaveURL(`/r/acme/app/policy?since=${head}`);
+  expect(writes.map((w) => w.postDataJSON())).toEqual([
+    {
+      branch: 'archfit/edit-alice',
+      head_sha: head,
+      content: 'version: 2\nmodlues: {}\nrules: []\n',
+      instruction: 'split module a',
+      mode: 'customer',
+    },
+  ]);
   await expectClean(page);
 });

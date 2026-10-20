@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"html"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +11,7 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -90,11 +90,8 @@ func TestTenantIdentityOnlyFromSession(t *testing.T) {
 	e.noWrites(t)
 
 	for _, rt := range repoRoutes(repoName) {
-		if rt.method == http.MethodPost && rt.form.Has("content") || strings.HasSuffix(rt.path, "/ready") {
-			rt.form = url.Values{"content": rt.form["content"], "mode": rt.form["mode"], "instruction": rt.form["instruction"]}
-			rt.form.Set("head_sha", e.props.drafts[repoName+"@archfit/edit-alice"].HeadSHA)
-		}
-		if got := send(c, rt); got != http.StatusOK && got != http.StatusSeeOther {
+		rt = rt.withHead(e.props.drafts[repoName+"@archfit/edit-alice"].HeadSHA)
+		if got := send(c, rt); got != http.StatusOK {
 			t.Errorf("%s %s = %d, want success", rt.method, rt.path, got)
 		}
 	}
@@ -248,36 +245,38 @@ func TestOversizedAndInvalidInput(t *testing.T) {
 	owners[31] = "not a login!"
 	tests := []struct {
 		name, path string
-		form       url.Values
-		body       any // an /api write instead of a form
+		body       any
 		want       int
 	}{
-		{"600 KB body", "/policy", formOf("", "", "#"+strings.Repeat("a", 600<<10)), nil, http.StatusRequestEntityTooLarge},
-		{"600 KB JSON body", "/onboarding", nil, onboardingJSON{Mode: "customer", Owners: strings.Repeat("a", 600<<10)}, http.StatusRequestEntityTooLarge},
-		{"300 KB policy", "/policy", formOf("", "", "#"+strings.Repeat("a", 300<<10)), nil, http.StatusUnprocessableEntity},
-		{"300 KB policy through assist", "/assist", assistForm("#" + strings.Repeat("a", 300<<10)), nil, http.StatusUnprocessableEntity},
-		{"invalid UTF-8", "/policy", formOf("", "", "modules: {}\n# \xff\xfe\n"), nil, http.StatusUnprocessableEntity},
-		{"tab indent", "/policy", formOf("", "", "modules:\n\ta: {}\n"), nil, http.StatusUnprocessableEntity},
-		{"malformed owner", "/onboarding", nil, onboardingJSON{Mode: "customer", Owners: strings.Join(owners, "\n")}, http.StatusUnprocessableEntity},
-		{"no owner", "/onboarding", nil, onboardingJSON{Mode: "customer", Owners: " \n"}, http.StatusUnprocessableEntity},
-		{"unknown mode", "/onboarding", nil, onboardingJSON{Mode: "magic", Owners: "alice"}, http.StatusUnprocessableEntity},
-		{"a field the endpoint does not take", "/onboarding", nil,
+		{"600 KB body", "/policy", editOf("", "", "#"+strings.Repeat("a", 600<<10)), http.StatusRequestEntityTooLarge},
+		{"600 KB JSON body", "/onboarding", onboardingJSON{Mode: "customer", Owners: strings.Repeat("a", 600<<10)}, http.StatusRequestEntityTooLarge},
+		{"300 KB policy", "/policy", editOf("", "", "#"+strings.Repeat("a", 300<<10)), http.StatusUnprocessableEntity},
+		{"300 KB policy through assist", "/assist", assistOf("", "#"+strings.Repeat("a", 300<<10)), http.StatusUnprocessableEntity},
+		{"300 KB policy to check", "/policy/check", checkPolicyJSON{Content: "#" + strings.Repeat("a", 300<<10)}, http.StatusUnprocessableEntity},
+		{"invalid UTF-8", "/policy", editOf("", "", "modules: {}\n# \xff\xfe\n"), http.StatusUnprocessableEntity},
+		{"tab indent", "/policy", editOf("", "", "modules:\n\ta: {}\n"), http.StatusUnprocessableEntity},
+		{"malformed owner", "/onboarding", onboardingJSON{Mode: "customer", Owners: strings.Join(owners, "\n")}, http.StatusUnprocessableEntity},
+		{"no owner", "/onboarding", onboardingJSON{Mode: "customer", Owners: " \n"}, http.StatusUnprocessableEntity},
+		{"unknown mode", "/onboarding", onboardingJSON{Mode: "magic", Owners: "alice"}, http.StatusUnprocessableEntity},
+		{"a field the endpoint does not take", "/onboarding",
 			map[string]string{"mode": "customer", "owners": "alice", "repo": otherRepo}, http.StatusUnprocessableEntity},
-		{"not JSON", "/onboarding", nil, json.RawMessage(`"mode=customer"`), http.StatusUnprocessableEntity},
-		{"a field discovery does not take", "/discover", nil, map[string]string{"repo": otherRepo}, http.StatusUnprocessableEntity},
-		{"malformed head_sha", "/policy", formOf("", "HEAD~1", policyText+"# x\n"), nil, http.StatusUnprocessableEntity},
-		{"7-character head_sha", "/policy", formOf("", "abc1234", policyText+"# x\n"), nil, http.StatusUnprocessableEntity},
-		{"unknown assist mode", "/assist", url.Values{"mode": {"magic"}, "content": {policyText}}, nil, http.StatusUnprocessableEntity},
+		{"not JSON", "/onboarding", json.RawMessage(`"mode=customer"`), http.StatusUnprocessableEntity},
+		{"a field discovery does not take", "/discover", map[string]string{"repo": otherRepo}, http.StatusUnprocessableEntity},
+		{"a field save does not take", "/policy",
+			map[string]string{"content": policyText + "# x\n", "repo": otherRepo}, http.StatusUnprocessableEntity},
+		{"malformed head_sha", "/policy", editOf("", "HEAD~1", policyText+"# x\n"), http.StatusUnprocessableEntity},
+		{"7-character head_sha", "/policy", editOf("", "abc1234", policyText+"# x\n"), http.StatusUnprocessableEntity},
+		{"malformed head_sha to ready", "/policy/ready", readyJSON{HeadSHA: "HEAD~1"}, http.StatusUnprocessableEntity},
+		{"a branch outside archfit/", "/policy", editOf("main", "", policyText+"# x\n"), http.StatusUnprocessableEntity},
+		{"a branch that climbs out of archfit/", "/assist",
+			assistJSON{editJSON: editOf("archfit/../main", "", policyText), Instruction: "x", Mode: "customer"}, http.StatusUnprocessableEntity},
+		{"unknown assist mode", "/assist", assistJSON{editJSON: editOf("", "", policyText), Mode: "magic"}, http.StatusUnprocessableEntity},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			e := newEnv(t)
 			c := e.as("alice", permAdmin)
-			if tt.body != nil {
-				wantStatus(t, c.postJSON("/api/repos/"+repoName+tt.path, tt.body), tt.want)
-			} else {
-				wantStatus(t, c.post("/r/"+repoName+tt.path, tt.form), tt.want)
-			}
+			wantStatus(t, c.postJSON("/api/repos/"+repoName+tt.path, tt.body), tt.want)
 			e.noWrites(t)
 		})
 	}
@@ -334,45 +333,49 @@ func TestSaveRejectsForeignDocuments(t *testing.T) {
 	tests := []struct {
 		name, content string
 		want          int
-		problem       string
+		problem       diagnosticJSON
 	}{
 		{"prose with a colon", "Reminder: ask Bob about the layers", http.StatusUnprocessableEntity,
-			`<a href="#L1">Line 1</a>, column 1: Unknown key ` + "`Reminder`."},
+			diagnosticJSON{Line: 1, Column: 1, Message: "Unknown key `Reminder`."}},
 		{"JSON with foreign keys", `{"schema_version": 3, "findings": []}`, http.StatusUnprocessableEntity,
-			`<a href="#L1">Line 1</a>, column 2: Unknown key ` + "`schema_version`."},
+			diagnosticJSON{Line: 1, Column: 2, Message: "Unknown key `schema_version`."}},
 		{"mapping without version", "modules:\n  a:\n    layer: core\n", http.StatusUnprocessableEntity,
-			`<a href="#L1">Line 1</a>, column 1: Missing required key ` + "`version`."},
+			diagnosticJSON{Line: 1, Column: 1, Message: "Missing required key `version`."}},
 		{"one unknown top-level key", policyText + "reminder: true\n", http.StatusUnprocessableEntity,
-			`<a href="#L9">Line 9</a>, column 1: Unknown key ` + "`reminder`."},
-		{"valid policy", policyText + "# edit\n", http.StatusSeeOther, ""},
+			diagnosticJSON{Line: 9, Column: 1, Message: "Unknown key `reminder`."}},
+		{"valid policy", policyText + "# edit\n", http.StatusOK, diagnosticJSON{}},
 	}
 	for _, tt := range tests {
 		for _, route := range []struct {
 			path string
-			form url.Values
-		}{{"/policy", formOf("", "", tt.content)}, {"/assist", assistForm(tt.content)}} {
+			body any
+		}{{policyAPI, editOf("", "", tt.content)}, {assistAPI, assistOf("", tt.content)}} {
 			t.Run(tt.name+" "+route.path, func(t *testing.T) {
 				e := newEnv(t)
-				res := e.as("alice", permAdmin).post("/r/"+repoName+route.path, route.form)
+				res := e.as("alice", permAdmin).postJSON(route.path, route.body)
 				wantStatus(t, res, tt.want)
-				if tt.want == http.StatusSeeOther {
+				if tt.want == http.StatusOK {
 					if n := len(e.props.proposes); n != 1 {
 						t.Errorf("Propose calls = %d, want 1", n)
 					}
 					return
 				}
 				e.noWrites(t)
-				body := res.Body.String()
-				wantContains(t, body, policyProblemsSentence, tt.problem, html.EscapeString(tt.content))
+				refusal := decodeAs[errorJSON](t, res)
+				if refusal.Error != policyProblemsSentence || !slices.Contains(refusal.Diagnostics, tt.problem) {
+					t.Errorf("refusal = %+v, want %q with %+v", refusal, policyProblemsSentence, tt.problem)
+				}
 				for _, leak := range []string{"engine config key", "is absent", "document is empty"} {
-					if strings.Contains(body, leak) {
-						t.Errorf("page echoes Validate's error text %q", leak)
+					if strings.Contains(res.Body.String(), leak) {
+						t.Errorf("answer echoes Validate's error text %q", leak)
 					}
 				}
 			})
 		}
 	}
 }
+
+var customerData = regexp.MustCompile(`(?s)"content":"(?:[^"\\]|\\.)*"|<script type="application/json".*?</script>`)
 
 var scorePattern = regexp.MustCompile(`(?i)\bscor(e|es|ing)\b|\bgrades?\b|\brank(ed|ing)?\b|\btotals?\b|\d\s*%|\d+\s*/\s*\d+|\b\d+ (of|out of) \d+\b`)
 
@@ -395,11 +398,11 @@ func TestNoScoreAnywhere(t *testing.T) {
 			e.publishReport(repoName, artifact(t, fixture))
 			e.acct.status = account.Status{Plan: account.PlanTrial, TrialEnds: e.now.AddDate(0, 0, 9)}
 
-			for _, path := range []string{"/api/repos", "/api/repos/" + repoName + "/overview", "/api/repos/" + repoName + "/pulls/4", "/api/repos/" + repoName + "/graph", "/api/repos/" + repoName + "/findings", "/r/" + repoName + "/policy", "/r/" + repoName + "/graph", "/r/" + repoName + "/data-sharing", "/api/repos/" + repoName + "/data-sharing"} {
+			for _, path := range []string{"/api/repos", "/api/repos/" + repoName + "/overview", "/api/repos/" + repoName + "/pulls/4", "/api/repos/" + repoName + "/graph", "/api/repos/" + repoName + "/findings", policyAPI, "/r/" + repoName + "/graph", "/r/" + repoName + "/data-sharing", "/api/repos/" + repoName + "/data-sharing"} {
 				res := c.get(path)
 				wantStatus(t, res, http.StatusOK)
 				// Policy text and the view model are the customer's own data, not something ui computes.
-				body := regexp.MustCompile(`(?s)<textarea.*?</textarea>|<script type="application/json".*?</script>`).ReplaceAllString(res.Body.String(), "")
+				body := customerData.ReplaceAllString(res.Body.String(), "")
 				if m := scorePattern.FindString(body); m != "" {
 					t.Errorf("%s contains %q", path, m)
 				}
@@ -415,17 +418,67 @@ func TestNoScoreAnywhere(t *testing.T) {
 }
 
 // wantCSP allows no inline style or script, no eval, no worker and no other origin: nothing on any page needs them.
-const wantCSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; " +
-	"font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+// wantShellCSP is the web app's shell: the same policy, plus the one nonce its editor's <style> element carries.
+const (
+	wantCSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; " +
+		"font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+	wantShellCSP = "default-src 'none'; script-src 'self'; style-src 'self' 'nonce-__CSP_NONCE__'; connect-src 'self'; " +
+		"img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+)
 
-// The web app's preview server and smoke test run under web/csp.txt, so they prove nothing unless it is this policy.
+var shellNonce = regexp.MustCompile(`'nonce-([A-Za-z0-9+/]{22}==)'`)
+
+// cspOf is the CSP of a response with the shell's nonce, if any, back to its placeholder.
+func cspOf(res *httptest.ResponseRecorder) string {
+	return shellNonce.ReplaceAllString(res.Header().Get("Content-Security-Policy"), "'nonce-"+noncePlaceholder+"'")
+}
+
+// The web app's preview server and smoke test run under web/csp.txt, so they prove nothing unless it is the shell's
+// policy with the placeholder nonce that web/index.html carries.
 func TestWebPreviewUsesTheProductionCSP(t *testing.T) {
 	raw, err := os.ReadFile("../../../web/csp.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.TrimSpace(string(raw)); got != wantCSP {
-		t.Errorf("web/csp.txt = %q, want the server's %q", got, wantCSP)
+	if got := strings.TrimSpace(string(raw)); got != wantShellCSP || got != shellPolicy(noncePlaceholder) {
+		t.Errorf("web/csp.txt = %q, want the server's %q", got, shellPolicy(noncePlaceholder))
+	}
+	index, err := os.ReadFile("../../../web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantContains(t, string(index), `<meta name="csp-nonce" content="`+noncePlaceholder+`">`)
+}
+
+// Every shell gets its own nonce, in its CSP and in the meta tag the editor reads, and is never stored: a nonce an
+// attacker has seen once must not stay valid.
+func TestShellNonceIsFreshPerResponse(t *testing.T) {
+	e := newEnv(t)
+	c := e.as("alice", permAdmin)
+	seen := map[string]bool{}
+	for _, path := range []string{"/", "/r/" + repoName, "/r/" + repoName + "/policy", "/r/" + repoName + "/policy", "/r/" + repoName + "/data-sharing"} {
+		res := c.get(path)
+		wantStatus(t, res, http.StatusOK)
+		m := shellNonce.FindStringSubmatch(res.Header().Get("Content-Security-Policy"))
+		if m == nil || cspOf(res) != wantShellCSP {
+			t.Fatalf("%s: CSP = %q, want %q with a 16-byte nonce", path, res.Header().Get("Content-Security-Policy"), wantShellCSP)
+		}
+		if seen[m[1]] {
+			t.Errorf("%s: nonce %q used twice", path, m[1])
+		}
+		seen[m[1]] = true
+		wantContains(t, res.Body.String(), `<meta name="csp-nonce" content="`+m[1]+`">`)
+		if strings.Contains(res.Body.String(), noncePlaceholder) {
+			t.Errorf("%s: the placeholder is left in the page", path)
+		}
+		if got := res.Header().Get("Cache-Control"); got != "no-store" {
+			t.Errorf("%s: Cache-Control = %q, want no-store", path, got)
+		}
+	}
+	for _, path := range []string{policyAPI, "/assets/app-1a2b.js", "/nowhere"} {
+		if got := c.get(path).Header().Get("Content-Security-Policy"); got != wantCSP {
+			t.Errorf("%s: CSP = %q, want the policy without a nonce", path, got)
+		}
 	}
 }
 
@@ -448,20 +501,6 @@ func TestNoAssetNeedsInlineStyleOrBlobWorker(t *testing.T) {
 		})
 		if err != nil {
 			t.Fatal(err)
-		}
-	}
-}
-
-// Report text is untrusted: the scripts build the page from it through textContent and setAttribute only.
-func TestScriptsNeverParseMarkup(t *testing.T) {
-	markup := regexp.MustCompile(`innerHTML|outerHTML|insertAdjacentHTML|document\.write|createContextualFragment|\beval\(|new Function`)
-	for _, name := range []string{"static/editor.js"} {
-		raw, err := fs.ReadFile(staticFS, name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if m := markup.Find(raw); m != nil {
-			t.Errorf("%s uses %q", name, m)
 		}
 	}
 }
@@ -489,7 +528,7 @@ func TestHostileStringsAreEscaped(t *testing.T) {
 	e.gh.checks[repoName+"@"+sha(4)+"#"+checkState] = []api.CheckRun{{ID: 1, Conclusion: "neutral", Title: hostileText, ExternalID: "v1:0:0:"}}
 
 	for _, path := range []string{"/", "/api/repos", "/r/" + repoName, "/api/repos/" + repoName + "/overview", "/r/" + repoName + "/policy",
-		"/r/" + repoName + "/graph", "/r/" + repoName + "/data-sharing", "/r/" + repoName + "/pull/4", "/api/repos/" + repoName + "/pulls/4", "/r/" + repoName + "/pull/4/graph",
+		policyAPI, "/r/" + repoName + "/graph", "/r/" + repoName + "/data-sharing", "/r/" + repoName + "/pull/4", "/api/repos/" + repoName + "/pulls/4", "/r/" + repoName + "/pull/4/graph",
 		"/api/repos/" + repoName + "/graph", "/api/repos/" + repoName + "/pulls/4/graph"} {
 		res := c.get(path)
 		wantStatus(t, res, http.StatusOK)
@@ -502,7 +541,7 @@ func TestHostileStringsAreEscaped(t *testing.T) {
 		if strings.HasPrefix(path, apiPrefix) && (strings.Contains(body, "<") || !strings.Contains(body, `\u003c`)) {
 			t.Errorf("%s: JSON does not escape markup: %.200s", path, body)
 		}
-		if csp := res.Header().Get("Content-Security-Policy"); csp != wantCSP {
+		if csp := cspOf(res); csp != wantCSP && csp != wantShellCSP {
 			t.Errorf("%s: CSP = %q", path, csp)
 		}
 	}
@@ -529,6 +568,10 @@ func TestNoAPIResponseHoldsASecret(t *testing.T) {
 		c.get(api + "/findings"),
 		c.postJSON(api+"/onboarding", onboardingJSON{Mode: "customer", Owners: "alice"}),
 		c.postJSON(api+"/discover", struct{}{}),
+		c.get(api + "/policy"),
+		c.postJSON(api+"/policy/check", checkPolicyJSON{Content: policyText}),
+		c.postJSON(api+"/policy", editOf("", "", policyText+"# edit\n")),
+		c.postJSON(api+"/assist", assistOf("", policyText+"# edit\n")),
 		c.get("/api/nothing"),
 	}
 	secrets := []string{c.token}
@@ -553,15 +596,15 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 	e.acct.err = fmt.Errorf("MARKER-error")
 	base := "/r/" + repoName
 
-	wantStatus(t, c.post(base+"/policy", formOf("", "", policyText+"# MARKER-content\n")), http.StatusSeeOther)
-	wantStatus(t, c.post(base+"/policy", formOf("", "", "MARKER-broken: [")), http.StatusUnprocessableEntity)
-	form := assistForm(policyText + "# MARKER-content two\n")
-	form.Set("instruction", "MARKER-instruction")
-	form.Set("head_sha", e.props.drafts[repoName+"@archfit/edit-alice"].HeadSHA)
-	wantStatus(t, c.post(base+"/assist", form), http.StatusSeeOther)
+	wantStatus(t, c.postJSON(policyAPI, editOf("", "", policyText+"# MARKER-content\n")), http.StatusOK)
+	wantStatus(t, c.postJSON(policyAPI, editOf("", "", "MARKER-broken: [")), http.StatusUnprocessableEntity)
+	wantStatus(t, c.postJSON(policyAPI+"/check", checkPolicyJSON{Content: "MARKER-broken: ["}), http.StatusOK)
+	req := assistOf(e.props.drafts[repoName+"@archfit/edit-alice"].HeadSHA, policyText+"# MARKER-content two\n")
+	req.Instruction = "MARKER-instruction"
+	wantStatus(t, c.postJSON(assistAPI, req), http.StatusOK)
 	e.assist.propose = failingAssist(fmt.Errorf("MARKER-assist: %w", assist.ErrProvider))
-	form.Set("head_sha", e.props.drafts[repoName+"@archfit/edit-alice"].HeadSHA)
-	wantStatus(t, c.post(base+"/assist", form), http.StatusServiceUnavailable)
+	req.HeadSHA = e.props.drafts[repoName+"@archfit/edit-alice"].HeadSHA
+	wantStatus(t, c.postJSON(assistAPI, req), http.StatusServiceUnavailable)
 	sharing := "/api/repos/" + repoName + "/data-sharing"
 	wantStatus(t, c.postJSON(sharing, dataSharingJSON{Kind: "MARKER-kind", Action: actionAllow}), http.StatusBadRequest)
 	wantStatus(t, c.postJSON(sharing, dataSharingJSON{Kind: "managed_llm", Action: "MARKER-action"}), http.StatusBadRequest)
@@ -574,7 +617,7 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 	wantStatus(t, c.get("/api/repos/"+repoName+"/overview"), http.StatusOK) // reads account.Status, which fails with the marker
 
 	out := logs.String()
-	if !strings.Contains(out, `"route":"POST /r/{o}/{n}/policy"`) || !strings.Contains(out, `"installation_id":1`) {
+	if !strings.Contains(out, `"route":"POST /api/repos/{o}/{n}/policy"`) || !strings.Contains(out, `"installation_id":1`) {
 		t.Fatalf("no request log line: %.300s", out)
 	}
 	var audit []string

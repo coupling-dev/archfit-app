@@ -170,12 +170,52 @@ export interface DataSharing {
   notice?: string;
 }
 
+// A problem of a policy text. line and column are 1-based; a problem with no single place has neither.
+export interface Diagnostic {
+  line?: number;
+  column?: number;
+  message: string;
+}
+
+export interface Check {
+  name: string;
+  state: string;
+  tone: Tone;
+  reason: string;
+}
+
+export type DraftState = 'none' | 'draft' | 'awaiting_review' | 'published' | 'closed';
+
+export interface PolicyPage {
+  branch: string;
+  head_sha: string; // the open draft's head, '' without one; every write sends it back
+  content: string;
+  draft: DraftState;
+  draft_state: string; // the draft's state in words, '' for none
+  draft_url: string;
+  checks: Check[];
+  diagnostics: Diagnostic[];
+  can_write: boolean;
+  can_ready: boolean;
+  managed: { offer: boolean; off?: string; data_sharing?: string };
+  run?: { state: 'pending' | 'failed' | 'completed' | 'unknown'; url: string };
+  since?: string;
+  notice?: string;
+}
+
+export interface Checked {
+  diagnostics: Diagnostic[];
+  notice: string;
+}
+
 import { signInHref } from './route';
 
+// ApiError is a failed call: the sentence to show and, for a refused policy text, its problems.
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly diagnostics: Diagnostic[] = [],
   ) {
     super(message);
   }
@@ -218,8 +258,12 @@ async function answer<T>(res: Response): Promise<T> {
     throw new ApiError(res.status, unreadable);
   }
   if (!res.ok) {
-    const message = (body as { error?: unknown })?.error;
-    throw new ApiError(res.status, typeof message === 'string' && message ? message : unreadable);
+    const { error: message, diagnostics } = (body ?? {}) as { error?: unknown; diagnostics?: unknown };
+    throw new ApiError(
+      res.status,
+      typeof message === 'string' && message ? message : unreadable,
+      Array.isArray(diagnostics) ? (diagnostics as Diagnostic[]) : [],
+    );
   }
   return body as T;
 }

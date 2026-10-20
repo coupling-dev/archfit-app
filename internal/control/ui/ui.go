@@ -145,6 +145,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("GET /r/{o}/{n}/pull/{number}", s.repo(permRead, pullPage))
 	mux.Handle("GET /r/{o}/{n}/pull/{number}/graph", s.repo(permRead, pullPage))
 	mux.Handle("GET /r/{o}/{n}/data-sharing", s.repo(permAdmin, page))
+	mux.Handle("GET /r/{o}/{n}/policy", s.repo(permRead, page))
 	mux.Handle("GET /r/{o}/{n}/consent", s.repo(permAdmin, consentMoved))
 
 	mux.Handle("GET /api/session", s.apiSignedIn(apiSession))
@@ -158,15 +159,14 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("POST /api/repos/{o}/{n}/discover", s.apiRepo(permAdmin, s.apiDiscover))
 	mux.Handle("GET /api/repos/{o}/{n}/data-sharing", s.apiRepo(permAdmin, s.apiDataSharing))
 	mux.Handle("POST /api/repos/{o}/{n}/data-sharing", s.apiRepo(permAdmin, s.apiShareData))
+	mux.Handle("GET /api/repos/{o}/{n}/policy", s.apiRepo(permRead, s.apiPolicy))
+	mux.Handle("POST /api/repos/{o}/{n}/policy", s.apiRepo(permWrite, s.apiSavePolicy))
+	mux.Handle("POST /api/repos/{o}/{n}/policy/check", s.apiRepo(permRead, s.apiCheckPolicy))
+	mux.Handle("POST /api/repos/{o}/{n}/policy/ready", s.apiRepo(permWrite, s.apiReady))
+	mux.Handle("POST /api/repos/{o}/{n}/assist", s.apiRepo(permWrite, s.apiAssist))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		s.failJSON(w, r, api.ErrNotFound)
 	})
 
-	// Pages still rendered on the server; each moves to the web app in a later phase.
-	mux.Handle("GET /r/{o}/{n}/policy", s.repo(permRead, s.editor))
-	mux.Handle("POST /r/{o}/{n}/policy", s.repo(permWrite, s.save))
-	mux.Handle("POST /r/{o}/{n}/policy/check", s.repo(permRead, s.check))
-	mux.Handle("POST /r/{o}/{n}/policy/ready", s.repo(permWrite, s.ready))
-	mux.Handle("POST /r/{o}/{n}/assist", s.repo(permWrite, s.propose))
 	return chain(mux)
 }

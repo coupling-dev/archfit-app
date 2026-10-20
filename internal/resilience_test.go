@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -344,9 +343,9 @@ func enableManagedAssist(t *testing.T, s *system) *browser {
 // requestAssist saves an edited policy and asks the managed assistant to improve it.
 func requestAssist(t *testing.T, b *browser, policy []byte) *http.Response {
 	t.Helper()
-	resp, _ := b.post("/r/"+demoRepo+"/assist", url.Values{
-		"csrf": {b.csrf("/r/" + demoRepo + "/policy")}, "branch": {"archfit/edit-alice"}, "head_sha": {""},
-		"content": {string(policy) + "# edited by alice\n"}, "mode": {"managed"}, "instruction": {"tighten the rules"},
+	resp, _ := b.postJSON("/api/repos/"+demoRepo+"/assist", map[string]string{
+		"branch": "archfit/edit-alice", "head_sha": "",
+		"content": string(policy) + "# edited by alice\n", "mode": "managed", "instruction": "tighten the rules",
 	})
 	return resp
 }

@@ -415,8 +415,8 @@ func TestUninstallLeavesNoKeys(t *testing.T) {
 	}
 	b := enableManagedAssist(t, s) // records managed_llm consent
 	recordConsent(t, b, demoRepo, "source_processing", "")
-	if resp := requestAssist(t, b, f.policy); resp.StatusCode != http.StatusSeeOther || provider.count() != 1 {
-		t.Fatalf("assist: status %d after %d provider calls; want 303 after 1", resp.StatusCode, provider.count())
+	if resp := requestAssist(t, b, f.policy); resp.StatusCode != http.StatusOK || provider.count() != 1 {
+		t.Fatalf("assist: status %d after %d provider calls; want 200 after 1", resp.StatusCode, provider.count())
 	}
 
 	keys := st.written(store.Tenant(demoInstallation))
