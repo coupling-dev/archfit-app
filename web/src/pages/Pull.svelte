@@ -52,13 +52,13 @@
     {#if body.no_baseline || !body.compared}
       <p class="muted small">
         {#if body.no_baseline}Without a baseline every finding counts as new, including older debt.{/if}
-        {#if body.compared}"Added by this PR" means the engine did not find it on the base branch.{:else}"New" means not
-          accepted in a baseline, not "added by this pull request": this run did not compare against the base branch.{/if}
+        {#if body.compared}"added by this PR" means the engine did not find it on the base branch.{:else}This run did
+          not compare against the base branch, so the page does not say what this pull request added.{/if}
         The producer is authenticated; the report content is not independently checked.
       </p>
     {/if}
 
-    <FindingGroups f={body} compared={body.compared} />
+    <FindingGroups f={body} compared={body.compared} gatesFail={body.decision?.hard_gates === 'fail'} />
 
     {#if body.tasks}
       <section class="box" aria-labelledby="tasks">
@@ -83,7 +83,7 @@
       <section class="box" aria-labelledby="evidence">
         <div class="box-head"><h2 id="evidence">Evidence</h2></div>
         <div class="table-wrap">
-          <table class="data">
+          <table class="data cards">
             <thead>
               <tr>
                 <th scope="col">Dimension</th>
@@ -96,11 +96,11 @@
             <tbody>
               {#each body.dimensions as d (d.key)}
                 <tr>
-                  <td><span title={d.key}>{d.name}</span></td>
-                  <td>{d.status}</td>
-                  <td>{basisText(d)}</td>
-                  <td>{d.confidence}</td>
-                  <td>{resultWord(d.gate)}</td>
+                  <td><strong title={d.key}>{d.name}</strong></td>
+                  <td data-label="Status">{d.status}</td>
+                  <td data-label="Measured">{basisText(d)}</td>
+                  <td data-label="Confidence">{d.confidence}</td>
+                  <td data-label="Result">{resultWord(d.gate)}</td>
                 </tr>
               {/each}
             </tbody>

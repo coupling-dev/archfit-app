@@ -25,7 +25,7 @@
   <div class="box-body stack">
     <CycleDiagram modules={c.modules} directions={c.directions} />
     <div class="table-wrap">
-      <table class="data">
+      <table class="data cards">
         <thead>
           <tr>
             <th scope="col">Dependency</th>
@@ -43,14 +43,14 @@
           {#each c.directions as d, i (i)}
             <tr>
               <td class="nowrap"><code>{d.from}</code> → <code>{d.to}</code></td>
-              {#if compared}<td><Origin origin={d.origin} /></td>{/if}
-              <td><Locations locations={d.locations} total={d.locations_total} /></td>
+              {#if compared}<td data-label="This PR"><Origin origin={d.origin} /></td>{/if}
+              <td data-label="Where"><Locations locations={d.locations} total={d.locations_total} /></td>
               {#if coupling}
-                <td>{d.strength}</td>
-                <td>{d.distance}</td>
-                <td>{d.volatility}</td>
+                <td class="sdv" data-label="Strength">{d.strength}</td>
+                <td class="sdv" data-label="Distance">{d.distance}</td>
+                <td class="sdv" data-label="Volatility">{d.volatility}</td>
               {/if}
-              {#if also}<td>{d.also?.join('; ') ?? ''}</td>{/if}
+              {#if also}<td data-label="Also reported as" class:empty={!d.also?.length}>{d.also?.join('; ') ?? ''}</td>{/if}
             </tr>
           {/each}
         </tbody>

@@ -45,6 +45,8 @@ type pullHead struct {
 // decisionJSON is the engine's decision on the report, as it states it: its hard gates, how many findings block, the
 // required rules it could not evaluate and what it discloses about attribution. The page words it.
 type decisionJSON struct {
+	Verdict       string                   `json:"verdict"`    // the engine's verdict in words: "blocked", "needs attention"
+	Detail        string                   `json:"detail"`     // the rest of the comment's line: hard gates, blockers, rules
 	HardGates     string                   `json:"hard_gates"` // pass, fail or unmeasured
 	Blockers      int                      `json:"blockers"`   // decision.active_blockers
 	Unevaluated   []report.UnevaluatedRule `json:"unevaluated"`
@@ -53,14 +55,17 @@ type decisionJSON struct {
 
 // findingsJSON is a report's findings in the comment's groups, its evidence and its agent tasks.
 type findingsJSON struct {
-	ViolationCount int           `json:"violation_count"` // findings, a cycle's directions each counted
-	Cycles         []cycleJSON   `json:"cycles"`
-	Other          []findingJSON `json:"other"` // the shown violations on no cycle
-	AdvisoryCount  int           `json:"advisory_count"`
-	Advisories     []findingJSON `json:"advisories"`
-	AcceptedCount  int           `json:"accepted_count"`
-	Accepted       []findingJSON `json:"accepted"`
-	Omitted        int           `json:"omitted"` // findings past findingsPerList, all groups together
+	ViolationCount      int           `json:"violation_count"` // findings, a cycle's directions each counted
+	Cycles              []cycleJSON   `json:"cycles"`
+	Other               []findingJSON `json:"other"` // the shown violations on no cycle
+	AdvisoryCount       int           `json:"advisory_count"`
+	AdvisoriesElsewhere bool          `json:"advisories_elsewhere"` // some advisory joined a violation's row: the rest are on other dependencies
+	Advisories          []findingJSON `json:"advisories"`
+	AcceptedCount       int           `json:"accepted_count"`
+	Accepted            []findingJSON `json:"accepted"`
+	FixedCount          int           `json:"fixed_count"`
+	Fixed               []findingJSON `json:"fixed"`   // known issues the report no longer finds, as the comment's last group
+	Omitted             int           `json:"omitted"` // findings past findingsPerList, all groups together
 
 	Dimensions []dimensionJSON `json:"dimensions"`
 	Unknowns   []unknownRow    `json:"unknowns"`
@@ -252,7 +257,8 @@ func headOf(sc scope, pull pullBody, rep *report.Report) pullHead {
 		h.NoBaseline = noBaseline(*rep)
 		h.Compared = rep.Comparison.OriginStatus == originComparable
 		d := rep.Decision
-		h.Decision = &decisionJSON{HardGates: d.HardGates, Blockers: d.ActiveBlockers,
+		verdict, detail := report.EngineVerdict(*rep)
+		h.Decision = &decisionJSON{Verdict: verdict, Detail: detail, HardGates: d.HardGates, Blockers: d.ActiveBlockers,
 			Unevaluated:   append([]report.UnevaluatedRule{}, d.UnevaluatedRequiredRules...),
 			OriginReasons: append([]string{}, rep.Comparison.OriginReasons...)}
 	}
@@ -283,9 +289,11 @@ func fillFindings(body *findingsJSON, rep report.Report) {
 	advisories, covered := report.SplitCovered(g.Violations, g.Advisories)
 	violations, accepted := g.Violations, g.Accepted
 	body.ViolationCount, body.AdvisoryCount, body.AcceptedCount = len(violations), len(advisories), len(accepted)
+	body.FixedCount = len(g.Fixed)
+	body.AdvisoriesElsewhere = len(covered) > 0
 	also := func(r findingJSON, f report.Finding) findingJSON {
 		for _, a := range covered[[2]string{f.Edge.From.Module, f.Edge.To.Module}] {
-			if note := ruleName(a.RuleID) + " · " + findingMeta(a); !slices.Contains(r.Also, note) {
+			if note := report.RuleName(a.RuleID) + " · " + report.FindingMeta(a); !slices.Contains(r.Also, note) {
 				r.Also = append(r.Also, note)
 			}
 		}
@@ -303,7 +311,7 @@ func fillFindings(body *findingsJSON, rep report.Report) {
 	}
 	row := func(f report.Finding, origin string) findingJSON {
 		out := findingJSON{
-			Rule: ruleName(f.RuleID), RuleID: f.RuleID, Meta: findingMeta(f), Violation: f.Active(), From: endpointName(f.Edge.From),
+			Rule: report.RuleName(f.RuleID), RuleID: f.RuleID, Meta: report.FindingMeta(f), Violation: f.Active(), From: endpointName(f.Edge.From),
 			To: endpointName(f.Edge.To), Why: report.ReadableWhy(f.Why), Fix: f.Constraint, Alternatives: f.AllowedAlternatives,
 			Locations: make([]string, len(f.Locations)), LocationsTotal: report.LocationsTotal(f), OwnerDecision: ownerDecides[f.ID],
 			Metric: metricSubject(f),
@@ -344,7 +352,7 @@ func fillFindings(body *findingsJSON, rep report.Report) {
 		members[c] = append(members[c], vs[i])
 	}
 	for _, m := range members {
-		cy := cycleJSON{Rule: ruleName(m[0].RuleID), RuleID: m[0].RuleID, Meta: findingMeta(m[0]), Violation: m[0].Active()}
+		cy := cycleJSON{Rule: report.RuleName(m[0].RuleID), RuleID: m[0].RuleID, Meta: report.FindingMeta(m[0]), Violation: m[0].Active()}
 		for _, f := range m {
 			for _, mod := range []string{f.Edge.From.Module, f.Edge.To.Module} {
 				if !slices.Contains(cy.Modules, mod) {
@@ -369,6 +377,9 @@ func fillFindings(body *findingsJSON, rep report.Report) {
 	}
 	for _, f := range shown(accepted) {
 		body.Accepted = append(body.Accepted, row(f, originWord(f.Origin)))
+	}
+	for _, f := range shown(g.Fixed) {
+		body.Fixed = append(body.Fixed, row(f, ""))
 	}
 
 	for _, d := range dimensionOrder {
@@ -399,28 +410,6 @@ func originWord(o string) string {
 		return report.PairExisting
 	}
 	return ""
-}
-
-// findingMeta is the severity, then the status as a word when the group does not already say it, as on the comment.
-func findingMeta(f report.Finding) string {
-	switch f.Status {
-	case "expired_waiver":
-		return f.Severity + ", waiver expired"
-	case "waived":
-		return f.Severity + ", accepted by waiver"
-	case "baseline":
-		return f.Severity + ", accepted in the baseline"
-	case "new", "fixed":
-		return f.Severity
-	}
-	return f.Severity + ", " + f.Status
-}
-
-func ruleName(id string) string {
-	if n, ok := report.EngineRuleNames[id]; ok {
-		return n
-	}
-	return id
 }
 
 func distanceWord(token string) string {

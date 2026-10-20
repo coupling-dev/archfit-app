@@ -316,6 +316,20 @@ table.data th { text-align: left; font-weight: 600; color: var(--fg-muted); font
 table.data td { padding: 8px 12px; border-bottom: 1px solid var(--border-muted); vertical-align: top; }
 table.data tr:last-child td { border-bottom: 0; }
 table.data td.num, table.data th.num { text-align: right; font-variant-numeric: tabular-nums; }
+/* Narrow: a findings table shows each row as a block, every cell labelled, and the strength, distance and volatility on
+   one line, so no column is off-screen and no row is as tall as its narrowest column makes it. */
+@media (max-width: 640px) {
+  table.data.cards thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+  table.data.cards, table.data.cards tbody, table.data.cards tr { display: block; }
+  table.data.cards tr { padding: 8px 0; border-bottom: 1px solid var(--border-muted); }
+  table.data.cards tr:last-child { border-bottom: 0; }
+  table.data.cards td { display: block; padding: 2px 12px; border: 0; white-space: normal; }
+  table.data.cards td[data-label]::before { content: attr(data-label) ": "; color: var(--fg-muted); font-size: 12px; }
+  table.data.cards td.sdv { display: inline-block; padding-right: 0; }
+  table.data.cards td.sdv + td.sdv { padding-left: 4px; }
+  table.data.cards td.sdv + td.sdv::before { content: "· " attr(data-label) ": "; }
+  table.data.cards td:empty, table.data.cards td.empty { display: none; }
+}
 
 /* ---------- details / disclosure ---------- */
 details.disclosure { border-top: 1px solid var(--border-muted); }
@@ -437,6 +451,9 @@ textarea {
 .locations { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .locations-all > summary { padding: 4px 0; font-weight: 500; font-size: 12px; color: var(--fg-muted); }
 details.fold > summary { list-style: none; cursor: pointer; justify-content: flex-start; }
+/* The marker, the title and its count stay on one line; a long title wraps within itself. */
+details.fold > summary { flex-wrap: nowrap; }
+details.fold > summary > h2 { min-width: 0; }
 details.fold > summary::-webkit-details-marker { display: none; }
 details.fold > summary::before {
   content: ""; width: 0; height: 0; border-left: 5px solid var(--fg-muted);
@@ -450,12 +467,18 @@ details.fold:not([open]) > summary { border-bottom: 0; }
 /* ---------- cycle drawing: the comment's picture; colours from the tokens, so both themes read ---------- */
 .cycle-drawing { overflow-x: auto; }
 .cycle-drawing svg { display: block; max-width: 100%; height: auto; margin: 0 auto; font: 13px var(--font); }
+.cycle-drawing svg.natural { max-width: none; }
 .cycle-drawing .module rect { fill: var(--bg-subtle); stroke: var(--border); }
 .cycle-drawing .module text { fill: var(--fg); font-family: var(--mono); font-size: 12px; }
 .cycle-drawing .arrow { fill: none; stroke: var(--danger); }
 .cycle-drawing .arrow.existing { stroke: var(--fg-muted); }
 .cycle-drawing .arrowhead path { fill: var(--danger); }
 .cycle-drawing .arrowhead.existing path { fill: var(--fg-muted); }
+.cycle-legend { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px; font-size: 12px; color: var(--fg-muted); }
+.cycle-legend li { display: flex; align-items: center; gap: 6px; }
+.cycle-legend .swatch { display: inline-block; width: 20px; height: 2px; background: var(--danger); }
+.cycle-legend .swatch.added { height: 4px; }
+.cycle-legend .swatch.existing { background: var(--fg-muted); }
 .cycle-drawing .arrow-label {
   fill: var(--fg); font-size: 12px; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round;
 }

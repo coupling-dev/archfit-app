@@ -367,6 +367,24 @@ func TestPullPageHidesOriginsWithoutAComparisonAndShowsActiveFirst(t *testing.T)
 	}
 }
 
+func TestPullPageListsTheKnownIssuesFixedAsTheCommentDoes(t *testing.T) {
+	f := func(id, status, from, to string) report.Finding {
+		return report.Finding{ID: id, Kind: "gate", RuleID: "r", Status: status, Severity: "high",
+			Edge: report.Edge{From: report.Endpoint{Module: from}, To: report.Endpoint{Module: to}}}
+	}
+	rep := report.Report{Findings: []report.Finding{
+		f("a", "new", "x", "y"), f("b", "baseline", "p", "q"), f("c", "fixed", "old", "gone"),
+	}}
+	var b findingsJSON
+	fillFindings(&b, rep)
+	if b.FixedCount != 1 || len(b.Fixed) != 1 || b.Fixed[0].From != "old" || b.Fixed[0].Meta != "high" {
+		t.Errorf("fixed = %d %+v, want old → gone", b.FixedCount, b.Fixed)
+	}
+	if b.ViolationCount != 1 || b.AcceptedCount != 1 {
+		t.Errorf("violations %d, accepted %d; a fixed finding must count in neither", b.ViolationCount, b.AcceptedCount)
+	}
+}
+
 func TestPullPageCapsEachGroup(t *testing.T) {
 	var rep report.Report
 	for i := range findingsPerList + 7 {
@@ -500,24 +518,6 @@ func TestAttentionReasonFollowsTheEngine(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := attentionReason(tt.rep); got != tt.want {
 				t.Errorf("attentionReason = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestFindingMetaUsesTheCommentsWords(t *testing.T) {
-	tests := []struct{ status, want string }{
-		{"new", "high"},
-		{"fixed", "high"},
-		{"baseline", "high, accepted in the baseline"},
-		{"waived", "high, accepted by waiver"},
-		{"expired_waiver", "high, waiver expired"},
-		{"regressed", "high, regressed"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.status, func(t *testing.T) {
-			if got := findingMeta(report.Finding{Severity: "high", Status: tt.status}); got != tt.want {
-				t.Errorf("findingMeta = %q, want %q", got, tt.want)
 			}
 		})
 	}

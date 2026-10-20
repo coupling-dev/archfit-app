@@ -115,7 +115,7 @@
       {#if view.incomplete}
         <div class="flash warn" id="incomplete">
           <details>
-            <summary>The report is incomplete: an observed dependency can still break a rule.</summary>
+            <summary>The report is incomplete: a required rule was not evaluated or a hard gate could not be measured, so an observed dependency can still break a rule.</summary>
             <p class="small">
               A required rule was not evaluated, or a dimension the gate applies to measured nothing. Read the
               archfit/state check for the evidence gaps.
@@ -143,7 +143,7 @@
             class="g-chip added"
             aria-pressed={ui.emphasis}
             title="Dependencies this pull request added, as the PR comment says. The halo marks them."
-            onclick={() => (ui.emphasis = !ui.emphasis)}><i aria-hidden="true"></i><b>{added}</b> added in this PR</button
+            onclick={() => (ui.emphasis = !ui.emphasis)}><i aria-hidden="true"></i><b>{added}</b> added by this PR</button
           >
         {/if}
         {#each counts as [s, n] (s)}
@@ -158,7 +158,7 @@
                 show[s] = true;
                 scope = 'all';
               } else show[s] = !show[s];
-            }}><i aria-hidden="true"></i><b>{n}</b> {statusCount(s, n)}</button
+            }}><i aria-hidden="true"></i><b>{n}</b> {statusCount(s)}</button
           >
         {/each}
       </div>

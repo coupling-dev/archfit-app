@@ -104,6 +104,8 @@ describe('line style', () => {
     expect(balanceWord(link('a', 'b', 'advisory', 1, { strength: 'functional', imbalance: 'medium' }))).toBe(
       'imbalanced · medium',
     );
+    expect(balanceWord(link('a', 'b', 'advisory', 1, { strength: 'functional', imbalance: 'low' }))).toBe('balanced');
+    expect(balanceWord(link('a', 'b', 'observed', 1, { strength: 'model', imbalance: 'none' }))).toBe('balanced');
     expect(balanceWord(link('a', 'b', 'observed', 1, { strength: 'model' }))).toBe('no imbalance reported');
     expect(balanceWord(link('a', 'b', 'violation', 0))).toBe('not measured');
   });
@@ -183,7 +185,7 @@ describe('acceptedRows', () => {
 describe('isAcceptedEarlier', () => {
   it.each([
     ['accepted, existing', link('a', 'b', 'accepted', 1, { origin: 'existing' }), true, true],
-    ['accepted, added in this PR', link('a', 'b', 'accepted', 1, { origin: 'added' }), true, false],
+    ['accepted, added by this PR', link('a', 'b', 'accepted', 1, { origin: 'added' }), true, false],
     ['accepted, added, on the repository graph', link('a', 'b', 'accepted', 1, { origin: 'added' }), false, true],
     ['a violation', link('a', 'b', 'violation', 1), true, false],
   ])('%s', (_, l, pull, want) => expect(isAcceptedEarlier(l, pull)).toBe(want));

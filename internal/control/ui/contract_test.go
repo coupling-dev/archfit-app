@@ -893,12 +893,16 @@ func TestPullPageStatesTheEngineDecision(t *testing.T) {
 
 	t.Run("as the pilot's report gives it", func(t *testing.T) {
 		b := read(t, doc)
-		want := decisionJSON{HardGates: "fail", Blockers: 4, Unevaluated: []report.UnevaluatedRule{}, OriginReasons: []string{}}
+		want := decisionJSON{Verdict: "blocked", Detail: "hard gates fail, 4 active blockers, every required rule evaluated",
+			HardGates: "fail", Blockers: 4, Unevaluated: []report.UnevaluatedRule{}, OriginReasons: []string{}}
 		if b.Decision == nil || !reflect.DeepEqual(*b.Decision, want) {
 			t.Errorf("decision = %+v, want %+v", b.Decision, want)
 		}
 		// Both new advisories lie on the cycle's dependencies: they join those rows, as on the comment, and are not
 		// counted again among the advisories.
+		if !b.AdvisoriesElsewhere {
+			t.Error("advisories_elsewhere is false, want true: advisories joined the cycle's rows")
+		}
 		if len(b.Advisories) != 0 || b.AdvisoryCount != 0 {
 			t.Errorf("advisories = %d listed, %d counted; want both on the violations' rows", len(b.Advisories), b.AdvisoryCount)
 		}
