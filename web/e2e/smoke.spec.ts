@@ -1206,6 +1206,23 @@ test('pull request: on a phone the cycle stacks, and its labels stay readable', 
     }),
   );
   expect(new Set(boxes).size).toBe(1);
+
+  // the findings tables read as one block per dependency: nothing off-screen, no row taller than its cells
+  await page.getByText('Known issues accepted earlier').click();
+  for (const wrap of await page.locator('.table-wrap:visible').all()) {
+    const fit = await wrap.evaluate((w) => w.scrollWidth <= w.clientWidth);
+    expect(fit).toBe(true);
+  }
+  const slack = await page.locator('table.cards tbody tr:visible').evaluateAll((rows) =>
+    rows.map((tr) => {
+      const cells = [...tr.children].map((c) => c.getBoundingClientRect()).filter((r) => r.height > 0);
+      const bottom = Math.max(...cells.map((r) => r.bottom));
+      return Math.round(tr.getBoundingClientRect().bottom - bottom);
+    }),
+  );
+  expect(slack.length).toBeGreaterThan(0);
+  for (const s of slack) expect(s).toBeLessThanOrEqual(16);
+  await expect(page.locator('table.cards td.sdv').first()).toBeVisible();
 });
 
 test('policy: a long policy scrolls inside the editor, and a line link scrolls to it', async ({ page }) => {

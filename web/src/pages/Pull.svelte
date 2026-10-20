@@ -83,7 +83,7 @@
       <section class="box" aria-labelledby="evidence">
         <div class="box-head"><h2 id="evidence">Evidence</h2></div>
         <div class="table-wrap">
-          <table class="data">
+          <table class="data cards">
             <thead>
               <tr>
                 <th scope="col">Dimension</th>
@@ -96,11 +96,11 @@
             <tbody>
               {#each body.dimensions as d (d.key)}
                 <tr>
-                  <td><span title={d.key}>{d.name}</span></td>
-                  <td>{d.status}</td>
-                  <td>{basisText(d)}</td>
-                  <td>{d.confidence}</td>
-                  <td>{resultWord(d.gate)}</td>
+                  <td><strong title={d.key}>{d.name}</strong></td>
+                  <td data-label="Status">{d.status}</td>
+                  <td data-label="Measured">{basisText(d)}</td>
+                  <td data-label="Confidence">{d.confidence}</td>
+                  <td data-label="Result">{resultWord(d.gate)}</td>
                 </tr>
               {/each}
             </tbody>
