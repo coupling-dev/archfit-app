@@ -69,19 +69,19 @@ GitHub shows this list when you install the App. Each permission is here for one
 
 ### Repository permissions
 
-| Permission    | Access       | What the App does with it                                                                                                   | Without it                                                                                       |
-| ------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Checks        | Read & write | Posts `archfit/state` and `archfit/gate` on every pull request and default-branch push.                                     | No result on the pull request, and no gate.                                                      |
-| Pull requests | Read & write | Opens its own pull requests (onboarding, policy, baseline). Keeps one comment per pull request. Reads reviews for owner approval. | No setup pull requests, no comment, and no way to see an owner's approval.                       |
-| Contents      | Read & write | Reads the policy and settings from the protected branch. Writes only branches named `archfit/…`, for its own pull requests. | The App cannot read the approved policy or propose a change.                                     |
+| Permission    | Access       | What the App does with it                                                                                                           | Without it                                                                                                            |
+| ------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Checks        | Read & write | Posts `archfit/state` and `archfit/gate` on every pull request and default-branch push.                                             | No result on the pull request, and no gate.                                                                           |
+| Pull requests | Read & write | Opens its own pull requests (onboarding, policy, baseline). Keeps one comment per pull request. Reads reviews for owner approval.   | No setup pull requests, no comment, and no way to see an owner's approval.                                            |
+| Contents      | Read & write | Reads the policy and settings from the protected branch. Writes only branches named `archfit/…`, for its own pull requests.         | The App cannot read the approved policy or propose a change.                                                          |
 | Actions       | Read & write | Reads the Archfit run and its report artifact. Re-runs the Archfit run when its inputs change. Starts discovery and AI assist runs. | After an owner approves, the gate stays red until someone re-runs the job by hand. No discovery button, no AI assist. |
-| Metadata      | Read         | GitHub adds it to every App: repository name, default branch.                                                               | Not optional.                                                                                    |
+| Metadata      | Read         | GitHub adds it to every App: repository name, default branch.                                                                       | Not optional.                                                                                                         |
 
 ### Organization permissions
 
-| Permission | Access | What the App does with it                                                | Without it                                    |
-| ---------- | ------ | ------------------------------------------------------------------------ | --------------------------------------------- |
-| Members    | Read   | Checks that an approver is in an owner team, such as `acme/architects`.  | Owners could only be single logins.           |
+| Permission | Access | What the App does with it                                               | Without it                          |
+| ---------- | ------ | ----------------------------------------------------------------------- | ----------------------------------- |
+| Members    | Read   | Checks that an approver is in an owner team, such as `acme/architects`. | Owners could only be single logins. |
 
 ### What the App never asks for
 
@@ -370,7 +370,7 @@ The first reason controls the conclusion. The App keeps later reasons in the com
 | ------------------- | -------------------------------------------------------------------------------------------------------- |
 | `healthy`           | Nothing                                                                                                  |
 | `attention_only`    | Nothing blocks. Advisories never block. Review the listed dimensions and diagnostics on the state check. |
-| `blocking_findings` | Fix the rule violations, then run archfit check again.                                                    |
+| `blocking_findings` | Fix the rule violations, then run archfit check again.                                                   |
 
 `attention_only` is a `success`. The engine verdict is `needs_attention`, and no evidence, governance, or subscription
 reason applies. The detail lists the dimensions that are not fully measured and the count of active diagnostics.
@@ -391,23 +391,23 @@ that matches nothing. Other rules that the engine could not evaluate keep `missi
 
 #### Evidence
 
-| Reason                        | Recovery                                                                                       |
-| ----------------------------- | ---------------------------------------------------------------------------------------------- |
-| `missing_upload`              | Read the workflow run and run the workflow again.                                              |
-| `stale_inputs`                | The policy or baseline changed on the base branch. Run the workflow again if no rerun appears. |
-| `policy_mismatch`             | Run the workflow with the policy from the base branch. Run it again if the base changed.       |
-| `baseline_mismatch`           | Run the workflow with the baseline from the base branch.                                       |
-| `labels_mismatch`             | Run the workflow with the labels file from the base branch.                                    |
-| `baseline_not_comparable`     | Capture a new baseline and open a baseline pull request that an architecture owner approves. The recovery line names the command. |
-| `missing_required_coverage`   | Supply the missing evidence for the listed rules. Approval cannot clear this reason.           |
-| `workflow_not_approved`       | Upload from the workflow named in `.archfit-app.yaml`.                                         |
-| `unknown_engine_identity`     | Move the workflow to the Action commit and engine image the App approves now. See [Move an installed workflow to a new engine](#move-an-installed-workflow-to-a-new-engine). |
+| Reason                        | Recovery                                                                                                                                                                                                            |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `missing_upload`              | Read the workflow run and run the workflow again.                                                                                                                                                                   |
+| `stale_inputs`                | The policy or baseline changed on the base branch. Run the workflow again if no rerun appears.                                                                                                                      |
+| `policy_mismatch`             | Run the workflow with the policy from the base branch. Run it again if the base changed.                                                                                                                            |
+| `baseline_mismatch`           | Run the workflow with the baseline from the base branch.                                                                                                                                                            |
+| `labels_mismatch`             | Run the workflow with the labels file from the base branch.                                                                                                                                                         |
+| `baseline_not_comparable`     | Capture a new baseline and open a baseline pull request that an architecture owner approves. The recovery line names the command.                                                                                   |
+| `missing_required_coverage`   | Supply the missing evidence for the listed rules. Approval cannot clear this reason.                                                                                                                                |
+| `workflow_not_approved`       | Upload from the workflow named in `.archfit-app.yaml`.                                                                                                                                                              |
+| `unknown_engine_identity`     | Move the workflow to the Action commit and engine image the App approves now. See [Move an installed workflow to a new engine](#move-an-installed-workflow-to-a-new-engine).                                        |
 | `measurement_profile_missing` | Move the workflow to the Action commit and engine image the App approves now. See [Move an installed workflow to a new engine](#move-an-installed-workflow-to-a-new-engine). The report has no measurement profile. |
-| `engine_error`                | Read the workflow log. Use the pinned engine image. Run the workflow again.                    |
-| `envelope_mismatch`           | Run the workflow again. The upload did not match the GitHub run.                               |
-| `report_invalid`              | Upload the unmodified engine report. Use the pinned Action version.                            |
-| `unsupported_event`           | Run Archfit on `pull_request` or on `push` to the default branch.                              |
-| `fork_unsupported`            | Push the branch to this repository or use the documented ruleset bypass.                       |
+| `engine_error`                | Read the workflow log. Use the pinned engine image. Run the workflow again.                                                                                                                                         |
+| `envelope_mismatch`           | Run the workflow again. The upload did not match the GitHub run.                                                                                                                                                    |
+| `report_invalid`              | Upload the unmodified engine report. Use the pinned Action version.                                                                                                                                                 |
+| `unsupported_event`           | Run Archfit on `pull_request` or on `push` to the default branch.                                                                                                                                                   |
+| `fork_unsupported`            | Push the branch to this repository or use the documented ruleset bypass.                                                                                                                                            |
 
 #### Subscription
 
@@ -466,17 +466,17 @@ image, and the Go toolchain in the image changed between v3.0.0 and v3.0.1. Afte
 
 The App reads a complete report or no report. It never shortens a report to make it fit.
 
-| Limit                         | Maximum                                       | Above the maximum                                  |
-| ----------------------------- | --------------------------------------------- | -------------------------------------------------- |
-| Upload body                   | 5 MiB                                         | `413 payload_too_large`; the App publishes nothing |
-| Findings, agent tasks         | 10 000 each                                   | `report_invalid`                                   |
-| Seams                         | 50 000                                        | `report_invalid`                                   |
-| Locations in one finding      | 10 000                                        | `report_invalid`                                   |
-| Files in one agent task       | 10 002                                        | `report_invalid`                                   |
-| Why and constraint of a finding | 2 000 characters on one line                | `report_invalid`                                   |
-| Constraints in one agent task | 35, each at most 4 096 characters on one line | `report_invalid`                                   |
-| Goal of one agent task        | 4 096 characters on one line                  | `report_invalid`                                   |
-| Tool version of one producer  | 128 printable characters on one line          | `report_invalid`                                   |
+| Limit                           | Maximum                                       | Above the maximum                                  |
+| ------------------------------- | --------------------------------------------- | -------------------------------------------------- |
+| Upload body                     | 5 MiB                                         | `413 payload_too_large`; the App publishes nothing |
+| Findings, agent tasks           | 10 000 each                                   | `report_invalid`                                   |
+| Seams                           | 50 000                                        | `report_invalid`                                   |
+| Locations in one finding        | 10 000                                        | `report_invalid`                                   |
+| Files in one agent task         | 10 002                                        | `report_invalid`                                   |
+| Why and constraint of a finding | 2 000 characters on one line                  | `report_invalid`                                   |
+| Constraints in one agent task   | 35, each at most 4 096 characters on one line | `report_invalid`                                   |
+| Goal of one agent task          | 4 096 characters on one line                  | `report_invalid`                                   |
+| Tool version of one producer    | 128 printable characters on one line          | `report_invalid`                                   |
 
 With `gate: required`, an upload over 5 MiB leaves the `archfit/gate` check pending. The sweep sets it to
 `action_required` with `missing_upload` after 60 minutes. A report of about 3 000 seams with one advisory each is
@@ -591,7 +591,6 @@ from **Administration** on the repository overview, or at `/r/{owner}/{repo}/dat
 - If the App cannot read the record, the page shows an error and never "not allowed".
 - The old `/consent` address redirects here.
 
-
 ## Capture a baseline
 
 The baseline `.archfit-baseline.json` lists the findings the repository accepts as existing debt. It is a protected
@@ -610,16 +609,16 @@ The App accepts the upload only from the workflow named in `.archfit-app.yaml`, 
 default branch, from an engine image in the locked manifest, and for a capture made with the policy and labels file on
 the default branch. A capture equal to the current baseline opens nothing.
 
-| Refusal                   | Recovery                                                                      |
-| ------------------------- | ----------------------------------------------------------------------------- |
-| `stale_head`              | The default branch moved during the capture. Run the workflow again.          |
-| `not_default_branch`      | Run the workflow on the default branch.                                       |
-| `workflow_not_approved`   | Run the workflow named in `.archfit-app.yaml`.                                |
+| Refusal                   | Recovery                                                                                                                                                                     |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `stale_head`              | The default branch moved during the capture. Run the workflow again.                                                                                                         |
+| `not_default_branch`      | Run the workflow on the default branch.                                                                                                                                      |
+| `workflow_not_approved`   | Run the workflow named in `.archfit-app.yaml`.                                                                                                                               |
 | `unknown_engine_identity` | Move the workflow to the Action commit and engine image the App approves now. See [Move an installed workflow to a new engine](#move-an-installed-workflow-to-a-new-engine). |
-| `policy_mismatch`         | Run the workflow again. The capture did not use the policy on the branch tip. |
-| `labels_mismatch`         | Run the workflow again. The capture did not use the labels on the branch tip. |
-| `baseline_invalid`        | Use the unmodified file from `archfit baseline` of the pinned engine.         |
-| `baseline_too_large`      | The file is larger than 1 MiB. Reduce the accepted debt or split the policy.  |
+| `policy_mismatch`         | Run the workflow again. The capture did not use the policy on the branch tip.                                                                                                |
+| `labels_mismatch`         | Run the workflow again. The capture did not use the labels on the branch tip.                                                                                                |
+| `baseline_invalid`        | Use the unmodified file from `archfit baseline` of the pinned engine.                                                                                                        |
+| `baseline_too_large`      | The file is larger than 1 MiB. Reduce the accepted debt or split the policy.                                                                                                 |
 
 The generated workflow sets `endpoint`, so the Action uploads the file. It also keeps the file as the
 `archfit-baseline` workflow artifact. A `409` answer (`stale_head` or `stale_attempt`) fails the job: dispatch the
@@ -639,11 +638,11 @@ baseline already accepts, and accepts nothing new.
    metric values that reset. Approving resets those metric values.
 5. Select **Ready for review**, approve the exact head commit, and merge.
 
-| Refusal                      | Recovery                                                                                                 |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `reanchor_baseline_missing`  | The default branch has no readable baseline. Capture a baseline with `mode: baseline` instead.           |
-| `reanchor_digest_mismatch`   | The protected baseline changed during the run. Run the re-anchor again.                                  |
-| `reanchor_not_subset`        | The capture accepts debt or a seam that the protected baseline does not accept. Fix the findings, or capture a full baseline and approve the added debt. |
+| Refusal                     | Recovery                                                                                                                                                 |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `reanchor_baseline_missing` | The default branch has no readable baseline. Capture a baseline with `mode: baseline` instead.                                                           |
+| `reanchor_digest_mismatch`  | The protected baseline changed during the run. Run the re-anchor again.                                                                                  |
+| `reanchor_not_subset`       | The capture accepts debt or a seam that the protected baseline does not accept. Fix the findings, or capture a full baseline and approve the added debt. |
 
 ## Enable the gate
 
@@ -737,13 +736,13 @@ the policy and the dependencies between them in the latest default-branch report
   it. The findings for the module pair add what the seam status leaves out: an advisory, or debt the baseline or a
   waiver accepts. If a seam has no policy, the status comes from those findings alone.
 
-  | Status      | Meaning                                                                   |
-  | ----------- | ------------------------------------------------------------------------- |
-  | `violation` | An active gate finding, or a gate finding of an unknown status, names the dependency. Red |
+  | Status      | Meaning                                                                                                              |
+  | ----------- | -------------------------------------------------------------------------------------------------------------------- |
+  | `violation` | An active gate finding, or a gate finding of an unknown status, names the dependency. Red                            |
   | `accepted`  | A finding names the dependency, and the baseline or a waiver accepts it: `accepted violation` or `accepted advisory` |
-  | `advisory`  | A finding that does not block names the dependency                                        |
-  | `allowed`   | A blocking allowlist or layer rule permits the dependency                                 |
-  | `observed`  | No current finding names the dependency, and no blocking rule permits it                  |
+  | `advisory`  | A finding that does not block names the dependency                                                                   |
+  | `allowed`   | A blocking allowlist or layer rule permits the dependency                                                            |
+  | `observed`  | No current finding names the dependency, and no blocking rule permits it                                             |
 
 - Only the engine can mark a dependency `allowed`. A forbidden dependency in the baseline shows as `accepted
   violation`, never as `allowed`. A dependency the overview counts as accepted shows as accepted, unless a violation

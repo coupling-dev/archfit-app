@@ -17,7 +17,7 @@
       <div>
         <strong>Your installation on {account} is waiting for approval.</strong>
         <p>
-          Archfit is an experiment, and we approve installations by hand. Until then nothing runs and nothing is posted
+          Archfit is in private beta, and we approve installations by hand. Until then nothing runs and nothing is posted
           on your pull requests. Nothing to do now: this page changes once it is approved.
         </p>
         <p><a href="{guideURL}#who-the-app-serves" rel="noreferrer">How approval works</a></p>
