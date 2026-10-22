@@ -19,8 +19,10 @@ import (
 	"github.com/alexei-led/archfit-app/internal/control/assist"
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
+	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/auth"
+	"github.com/alexei-led/archfit-app/internal/store"
 	"github.com/alexei-led/archfit-app/internal/wire/policy"
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
@@ -34,6 +36,10 @@ const (
 
 	installA = int64(1)
 	installB = int64(2)
+
+	// operatorLogin signs in with operatorID, the one operator of the env.
+	operatorLogin = "ops"
+	operatorID    = int64(9001)
 
 	policyText = "version: 2\nmodules:\n  a:\n    layer: core\n    paths: [\"pkg/a/**\"]\n  b:\n    layer: edge\n    paths: [\"pkg/b/**\"]\n"
 
@@ -67,6 +73,8 @@ type env struct {
 	onb      *fakeOnboarding
 	assist   *fakeAssist
 	oauth    *fakeOAuth
+	store    store.Store
+	admit    *gate.Admissions // acme is approved by configuration; any other account by a Store record
 	now      time.Time
 	handler  http.Handler
 }
@@ -74,8 +82,11 @@ type env struct {
 func newEnv(t *testing.T) *env {
 	t.Helper()
 	gh := newFakeGH()
+	mem := store.NewMemory()
+	realAccount, _, _ := account.New(mem)
 	e := &env{
-		t: t, gh: gh, props: newFakeProposals(gh), acct: &fakeAccount{status: account.Status{Plan: account.PlanPublic}},
+		t: t, gh: gh, props: newFakeProposals(gh), store: mem, admit: gate.NewAdmissions(mem, []string{"acme", "rival"}),
+		acct:     &fakeAccount{Account: realAccount, status: account.Status{Plan: account.PlanPublic}},
 		consents: newFakeConsents(), onb: &fakeOnboarding{progress: onboarding.Progress{Stage: onboarding.StagePolicyMerged}},
 		assist: &fakeAssist{}, oauth: &fakeOAuth{tokens: map[string]auth.UserToken{}},
 		now: time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC),
@@ -86,8 +97,9 @@ func newEnv(t *testing.T) *env {
 		t.Fatalf("session.New: %v", err)
 	}
 	e.handler = newHandler(Deps{
-		Account: e.acct, Consents: e.consents, Onboarding: e.onb, Assist: e.assist, Proposals: e.props, Now: clock,
-	}, github{files: gh, checks: gh, actions: gh, pulls: gh, users: gh}, sessions, testWeb)
+		Account: e.acct, Consents: e.consents, Onboarding: e.onb, Assist: e.assist, Proposals: e.props,
+		Admissions: e.admit, Operators: []int64{operatorID}, Now: clock,
+	}, github{files: gh, checks: gh, actions: gh, pulls: gh, users: gh, installs: gh}, sessions, testWeb)
 
 	e.addRepo(repoName, installA, 10)
 	e.addRepo(otherRepo, installB, 20)
@@ -125,7 +137,11 @@ func (e *env) grant(login, fullName, permission string) {
 func (e *env) user(login string) auth.UserToken {
 	code := "code-" + login
 	if _, ok := e.oauth.tokens[code]; !ok {
-		e.oauth.tokens[code] = auth.UserToken{AccessToken: "tok-" + login, Login: login, UserID: int64(100 + len(e.oauth.tokens))}
+		id := int64(100 + len(e.oauth.tokens))
+		if login == operatorLogin {
+			id = operatorID
+		}
+		e.oauth.tokens[code] = auth.UserToken{AccessToken: "tok-" + login, Login: login, UserID: id}
 	}
 	return e.oauth.tokens[code]
 }

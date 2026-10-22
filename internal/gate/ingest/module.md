@@ -22,6 +22,7 @@ speak for any pull request.
 - Verify the payload digest; decode a report payload with the no-source decoder.
 - Answer with a `Rejection` (HTTP status only) while no tenant is authenticated or when the upload is
   stale; after that, record every defect as a `Problem` so the gate can publish it.
+- Refuse an upload of an installation no operator approved, before the run is read.
 - Serve every upload kind (`report`, `discovery`, `baseline`) with exactly the same provenance checks.
 
 ## Subdomain Classification
@@ -33,6 +34,8 @@ high; event support, binding rules and rejection codes will move with the Action
 
 - The order of checks and which failure is a `Rejection` versus a `Problem`.
 - The rejection code table and HTTP statuses.
+- That an unadmitted installation is refused right after the tenant is known, so it costs no further GitHub call and
+  no report decoding.
 - How a pull request is resolved from a workflow run, including ambiguity handling.
 - Which GitHub events are eligible per upload kind.
 - The envelope header name and how the body is read.
@@ -97,7 +100,13 @@ type Receiver interface {
 ```
 
 ```go
-func New(repos Repos, pulls Pulls, actions Actions, v Verifier, audience string) Receiver
+// Admitter answers whether the App serves an installation; owner is its account login. gate/inputs.Admissions
+// implements it.
+type Admitter interface {
+    Admitted(ctx context.Context, installationID int64, owner string) (bool, error)
+}
+
+func New(repos Repos, pulls Pulls, actions Actions, v Verifier, audience string, admit Admitter) Receiver
 ```
 
 ### Receive, step by step
@@ -116,6 +125,7 @@ Steps run in this order. The first failing `Rejection` step ends the call with `
 | 7   | `Claims.Repository == Envelope.Repository`                                                   | 403 `repository_mismatch`                                  |
 | 8   | `Repos.ResolveRepo(Claims.Repository)`; `api.ErrNotFound` means the App is not installed     | 403 `not_installed`                                        |
 | 9   | `Repo.ID == Claims.RepositoryID` (a renamed or re-created repository is not the same tenant) | 403 `repository_mismatch`                                  |
+| 9a  | `Admitter.Admitted(Repo.InstallationID, owner of Repo.FullName)`; false is a refusal, an error means the approval cannot be read | 403 `installation_not_approved`; 503 `admission_unavailable` |
 | 10  | `Actions.Run(repo, Claims.RunID)`; `api.ErrNotFound`                                         | 403 `run_not_found`                                        |
 | 11  | `run.Event == Claims.EventName`; for `push`, `run.HeadSHA == Claims.SHA`                     | 403 `run_mismatch`                                         |
 | 12  | `run.Attempt == Claims.RunAttempt` (the API returns the latest attempt)                      | 409 `stale_attempt`                                        |
@@ -129,7 +139,7 @@ Any step: `api.ErrRateLimited` → 429 `rate_limited`. Any other GitHub API erro
 `Rejection`); the caller answers 503 and publishes nothing. A `Verifier` error matching `oidc.ErrUnavailable`
 (`errors.Is`) is the 503 `oidc_unavailable` rejection, so the Action retries; every other `Verifier` error is 401.
 
-The tenant is authenticated after step 12. Steps 13 to 17 never reject, except the two cases where nothing
+Step 9a is numbered so that the later step numbers stay put. The tenant is authenticated after step 12. Steps 13 to 17 never reject, except the two cases where nothing
 could be published truthfully: the head moved (step 14) and the bytes are not what the producer stated (step 16).
 
 ### Event eligibility (step 13)
@@ -428,8 +438,10 @@ var (
 <!-- contract: Repos, Installation — restated from internal/github/api/module.md -->
 ```go
 type Installation struct {
-    ID      int64
-    Account string // organization or user login
+    ID          int64
+    Account     string    // organization or user login
+    AccountType string    // "Organization" or "User"
+    CreatedAt   time.Time // when the App was installed
 }
 
 // Repos reads installations, repositories and file contents.
@@ -519,7 +531,8 @@ type Actions interface {
 
 ### Consumers (inbound)
 
-- **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Constructs the receiver, serves
+- **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Constructs the receiver, passes it the
+  `Admissions` as the `Admitter`, serves
   `POST /v1/reports` with it, maps `Rejection` to HTTP, re-publishes `Receiver`, `Rejection`, `Upload`,
   `Binding` and `Problem` so `control/onboarding` reuses the same checks for `POST /v1/discoveries`.
 - **internal/gate/verdict**: model, gate / 1 / 1, high, balanced. Reads `Problem` values.
@@ -531,6 +544,7 @@ type Actions interface {
 - Different PR-association rules when GitHub changes `pull_requests` on runs.
 - An approved self-hosted runner group check using `RunnerEnvironment`.
 - New rejection codes.
+- A different approval model for installations (the `Admitter` is the only seam).
 
 ## Constraints and Invariants
 
@@ -540,6 +554,9 @@ type Actions interface {
   envelope, a header, a query parameter, or the URL.
 - Before the tenant is authenticated nothing is published and nothing about other tenants is revealed;
   the answer is a status and a code.
+- An installation that is not admitted gets only the 403 `installation_not_approved` rejection: no run read, no
+  report decoded, nothing published. An approval that cannot be read is the 503 `admission_unavailable` rejection, which the
+  Action retries; it is never a 403, so a Store outage does not turn an approved account's upload into a refusal.
 - A `Rejection` never becomes a `Problem` and the reverse; `digest_mismatch` and `stale_head` are rejections by design.
 - Provenance is necessary, not sufficient: a returned `Upload` is authenticated and bound, not true. No
   code, log or text here says "verified report".
@@ -557,7 +574,7 @@ type Actions interface {
   change together; until then a drift shows as `ProblemUnsupportedEvent` on every upload, which fails closed.
   Remove a literal when its owner exports a constant.
 - Imports: standard library, `wire/envelope`, `wire/report`, `wire/manifest`, `github/oidc`, `github/api`.
-  Never `control`, `app`, `store`, LLM or UI packages.
+  Never `control`, `app`, `store`, LLM or UI packages. The `Admitter` is an interface of its own; `ingest` does not import `gate/inputs`.
 
 ## Test Specification
 
@@ -567,8 +584,11 @@ requests built with `httptest.NewRequest`. No network.
 ### Unit Tests
 
 - **Test name**: `TestRejectionTable`
-  **Scenario**: one row per rejecting step: `GET`; body of `MaxBytes + 1`; no envelope header; envelope with an unknown field; envelope kind `discovery` on the report route; no bearer; verifier error (bad signature, wrong audience, expired); verifier returns `oidc.ErrUnavailable` (503 `oidc_unavailable`); claim repository differs from envelope; App not installed; repository ID differs; run not found; claim event differs from run; push claim SHA differs; claim attempt 1 while the run is at attempt 2; PR head moved; payload digest differs; GitHub rate limit at each API call.
+  **Scenario**: one row per rejecting step: `GET`; body of `MaxBytes + 1`; no envelope header; envelope with an unknown field; envelope kind `discovery` on the report route; no bearer; verifier error (bad signature, wrong audience, expired); verifier returns `oidc.ErrUnavailable` (503 `oidc_unavailable`); claim repository differs from envelope; App not installed; repository ID differs; installation not admitted; approval unreadable (503 `admission_unavailable`); run not found; claim event differs from run; push claim SHA differs; claim attempt 1 while the run is at attempt 2; PR head moved; payload digest differs; GitHub rate limit at each API call.
   **Expected behavior**: the status and code of the step table; zero `Upload`; `errors.As` finds `*Rejection`; later fakes were not called.
+- **Test name**: `TestAdmissionIsAskedForTheResolvedInstallationAndOwner`
+  **Scenario**: a valid pull request upload with a recording `Admitter`.
+  **Expected behavior**: `Admitted` is asked once, with the installation ID and the owner of the repository that `ResolveRepo` returned, not the envelope's.
 - **Test name**: `TestCheckOrder`
   **Scenario**: requests that violate two steps at once (oversized and unauthenticated; bad envelope and bad token; stale head and digest mismatch).
   **Expected behavior**: the earlier step's rejection wins.

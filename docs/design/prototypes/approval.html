@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Archfit · install approval</title>
+<link rel="stylesheet" href="archfit.css">
+<style>
+  .page { max-width: 1012px; }
+  .note { border: 1px dashed var(--attention-border); background: var(--attention-subtle); border-radius: var(--radius); padding: 12px 16px; font-size: 13px; display: flex; flex-direction: column; gap: 6px; }
+  .note strong { font-size: 14px; }
+  .note ul { margin: 0; padding-left: 18px; }
+  .rec { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; color: var(--success); border: 1px solid var(--success-border); background: var(--success-subtle); border-radius: 999px; padding: 1px 8px; }
+  .frame { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-md); }
+  .frame-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--bg-inset); border-bottom: 1px solid var(--border); font-size: 12px; color: var(--fg-muted); }
+  .frame-bar i { width: 10px; height: 10px; border-radius: 50%; background: var(--border); display: inline-block; }
+  .frame-body { padding: 32px 24px; background: var(--bg); display: flex; flex-direction: column; gap: 32px; }
+  @media (max-width: 640px) { .frame-body { padding: 20px 16px; } }
+
+  /* pitch parts */
+  .hero-p { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .hero-p h1 { font-size: 32px; line-height: 1.2; max-width: 22ch; }
+  .hero-p p { color: var(--fg-muted); font-size: 16px; max-width: 60ch; }
+  @media (max-width: 640px) { .hero-p h1 { font-size: 24px; } }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--attention); background: var(--attention-subtle); border: 1px solid var(--attention-border); border-radius: 999px; padding: 4px 12px; }
+  .pill .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--attention); animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .3; } }
+  @media (prefers-reduced-motion: reduce) { .pill .pulse { animation: none; } }
+
+  .flow { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: stretch; gap: 8px; }
+  .flow .stepc { border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; background: var(--bg-subtle); display: flex; flex-direction: column; gap: 6px; }
+  .flow .stepc .ic { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-subtle); color: var(--accent); font-weight: 700; }
+  .flow .stepc.mid .ic { background: var(--done-subtle); color: var(--done); }
+  .flow .stepc.end .ic { background: var(--success-subtle); color: var(--success); }
+  .flow .stepc span { color: var(--fg-muted); font-size: 13px; }
+  .flow .arrow { align-self: center; color: var(--fg-muted); font-size: 20px; }
+  @media (max-width: 760px) { .flow { grid-template-columns: 1fr; } .flow .arrow { transform: rotate(90deg); justify-self: center; } }
+  .privacy { text-align: center; font-size: 13px; color: var(--fg-muted); }
+  .privacy strong { color: var(--success); }
+
+  .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .cards > div { border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: flex; flex-direction: column; gap: 4px; }
+  .cards > div span { color: var(--fg-muted); font-size: 13px; }
+  .cards .k { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); }
+  @media (max-width: 640px) { .cards { grid-template-columns: 1fr; } }
+
+  .statusbox { border: 1px solid var(--attention-border); background: var(--attention-subtle); border-radius: var(--radius); padding: 16px; display: flex; gap: 12px; align-items: flex-start; }
+  .statusbox .big-ic { font-size: 24px; line-height: 1; }
+  .statusbox p { margin: 4px 0 0; color: var(--fg-muted); font-size: 13px; }
+
+  .xs { font-size: 12px; color: var(--fg-muted); }
+  .sev-x { color: var(--danger); font-weight: 700; } .sev-ok { color: var(--success); font-weight: 700; } .sev-dot { color: var(--attention); font-weight: 700; }
+
+  /* option 2 */
+  .center-card { max-width: 520px; margin: 0 auto; text-align: center; display: flex; flex-direction: column; gap: 16px; align-items: center; }
+  .hour { width: 64px; height: 64px; border-radius: 50%; background: var(--attention-subtle); display: grid; place-items: center; font-size: 30px; }
+  .vtrack { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0; text-align: left; width: 100%; }
+  .vtrack li { display: grid; grid-template-columns: 24px 1fr; gap: 12px; padding: 8px 0; position: relative; }
+  .vtrack li::before { content: ""; position: absolute; left: 11px; top: 30px; bottom: -6px; width: 2px; background: var(--border); }
+  .vtrack li:last-child::before { display: none; }
+  .vtrack .d { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--border); background: var(--bg); display: grid; place-items: center; font-size: 12px; z-index: 1; }
+  .vtrack .done .d { background: var(--success); border-color: var(--success); color: #fff; }
+  .vtrack .now .d { border-color: var(--attention); box-shadow: 0 0 0 3px var(--attention-subtle); }
+  .vtrack .now { font-weight: 600; }
+  .vtrack span.s { display: block; font-weight: 400; color: var(--fg-muted); font-size: 13px; }
+  .strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; text-align: center; font-size: 13px; color: var(--fg-muted); }
+  .strip b { display: block; color: var(--fg); font-size: 14px; }
+  @media (max-width: 640px) { .strip { grid-template-columns: 1fr; } }
+
+  /* option 3 */
+  .split { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 24px; align-items: start; }
+  @media (max-width: 860px) { .split { grid-template-columns: 1fr; } }
+  .mini-graph svg { width: 100%; height: auto; display: block; }
+
+  /* admin */
+  .acct { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+  .av { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; color: #fff; background: var(--accent); }
+  .av.org { border-radius: 8px; background: var(--done); }
+  .av.grey { background: var(--fg-muted); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .chip { font: 12px var(--mono); border: 1px solid var(--border); border-radius: 999px; padding: 0 8px; background: var(--bg-subtle); }
+  .chip.priv { border-color: var(--attention-border); color: var(--attention); }
+  @media (max-width: 640px) { .acct { grid-template-columns: 36px minmax(0, 1fr); } .acct > :last-child { grid-column: 2; } }
+  .inbox { display: grid; grid-template-columns: 300px minmax(0, 1fr); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .inbox .list { border-right: 1px solid var(--border); background: var(--bg-subtle); }
+  .inbox .list .item { padding: 12px 16px; border-bottom: 1px solid var(--border-muted); cursor: default; }
+  .inbox .list .item.sel { background: var(--accent-subtle); box-shadow: inset 2px 0 0 var(--accent); }
+  .inbox .detail { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+  @media (max-width: 760px) { .inbox { grid-template-columns: 1fr; } .inbox .list { border-right: 0; border-bottom: 1px solid var(--border); } }
+  .facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .facts > div { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px; }
+  .facts b { display: block; font-size: 18px; }
+  .facts span { font-size: 12px; color: var(--fg-muted); }
+  @media (max-width: 640px) { .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  table.t { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.t th, table.t td { text-align: left; padding: 8px 12px; border-top: 1px solid var(--border-muted); vertical-align: middle; }
+  table.t th { background: var(--bg-subtle); font-weight: 600; border-top: 0; white-space: nowrap; }
+  .table-wrap { overflow-x: auto; }
+  textarea.n { width: 100%; font: 13px var(--font); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; background: var(--bg); color: var(--fg); }
+  .cmp td, .cmp th { vertical-align: top; }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <a class="brand" href="index.html" title="Archfit">
+    <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="4.5" rx="1.5" fill="var(--fg)"/><rect x="3" y="9.75" width="18" height="4.5" rx="1.5" fill="var(--fg)" opacity=".65"/><rect x="3" y="16.5" width="18" height="4.5" rx="1.5" fill="var(--accent)"/></svg>
+    Archfit
+  </a>
+  <nav class="crumbs" aria-label="Prototype"><span>prototype</span><span class="sep">/</span><strong>install approval</strong></nav>
+  <span class="header-spacer"></span>
+  <div class="theme-toggle" role="group" aria-label="Theme">
+    <button type="button" data-theme-set="light">Light</button><button type="button" data-theme-set="auto">Auto</button><button type="button" data-theme-set="dark">Dark</button>
+  </div>
+</header>
+
+<nav class="unav" role="tablist" aria-label="Options">
+  <button type="button" role="tab" id="tab-pick" aria-controls="pick" aria-selected="true">Recommendation</button>
+  <button type="button" role="tab" id="tab-w1" aria-controls="w1" aria-selected="false">Waiting 1 · Product page</button>
+  <button type="button" role="tab" id="tab-w2" aria-controls="w2" aria-selected="false">Waiting 2 · Status card</button>
+  <button type="button" role="tab" id="tab-w3" aria-controls="w3" aria-selected="false">Waiting 3 · Live sample</button>
+  <button type="button" role="tab" id="tab-a1" aria-controls="a1" aria-selected="false">Admin 1 · Queue</button>
+  <button type="button" role="tab" id="tab-a2" aria-controls="a2" aria-selected="false">Admin 2 · Inbox</button>
+  <button type="button" role="tab" id="tab-a3" aria-controls="a3" aria-selected="false">Admin 3 · Table</button>
+</nav>
+
+<main class="page">
+
+<!-- ================= RECOMMENDATION ================= -->
+<section role="tabpanel" id="pick" aria-labelledby="tab-pick" class="stack" style="gap:24px">
+  <div class="page-head"><div>
+    <h1>Install approval: pick one of each</h1>
+    <p class="lede">Recommended: <strong>Waiting 1</strong> and <strong>Admin 1</strong>. Every option is in light and dark (toggle top right) and works at phone width.</p>
+  </div></div>
+
+  <section class="box">
+    <div class="box-head"><h3>Waiting page</h3><span class="xs">who sees it: a person whose account is not approved yet, and the signed-out landing page</span></div>
+    <div class="table-wrap"><table class="t cmp">
+      <tr><th>Option</th><th>What it is</th><th>Good at</th><th>Weak at</th></tr>
+      <tr><td><a href="#w1" data-goto="w1">1 · Product page</a> <span class="rec">Recommended</span></td><td>Status pill on top, then a one-page pitch: headline, 3-step flow, 4 value cards, a sample check.</td><td>Says what Archfit does in 5 seconds. Same page works as the landing page, so one thing to build and keep up to date.</td><td>Longest of the three. A returning visitor scrolls past the pitch they already read.</td></tr>
+      <tr><td><a href="#w2" data-goto="w2">2 · Status card</a></td><td>A calm centered card: "Waiting for approval", a 4-step timeline, then a thin 3-item strip about Archfit.</td><td>Clearest about state and next steps. Little to maintain.</td><td>Weak promotion: the value is one line per item. Not usable as a landing page.</td></tr>
+      <tr><td><a href="#w3" data-goto="w3">3 · Live sample</a></td><td>Status on the left; on the right, a realistic pull request with the Archfit check, comment and a small graph.</td><td>Strongest "aha": shows the real output.</td><td>Most to build and keep true as the comment format changes. A sample can be mistaken for the visitor's own data.</td></tr>
+    </table></div>
+    <div class="box-foot"><strong>Why 1:</strong> the page has two jobs, "where am I" and "why should I care", and only option 1 does both with one component. It borrows the best part of option 3 (a small sample check), clearly marked as a sample.</div>
+  </section>
+
+  <section class="box">
+    <div class="box-head"><h3>Admin page</h3><span class="xs">who sees it: operators only (alexei-led, vladikk); everyone else gets 404</span></div>
+    <div class="table-wrap"><table class="t cmp">
+      <tr><th>Option</th><th>What it is</th><th>Good at</th><th>Weak at</th></tr>
+      <tr><td><a href="#a1" data-goto="a1">1 · Queue</a> <span class="rec">Recommended</span></td><td>Two lists: <em>Waiting</em> with Approve, <em>Approved</em> with who/when and Revoke. Each row shows the account, its repositories and quick facts.</td><td>One click per decision. Shows enough to judge a stranger (type, repos, private or not, account age). Fits the expected volume: a few installs a week.</td><td>No notes or history view. Fine until approvals are frequent.</td></tr>
+      <tr><td><a href="#a2" data-goto="a2">2 · Inbox</a></td><td>List on the left, details on the right: account facts, repositories with language and stars, a note field.</td><td>Best for careful review of unknown accounts. Notes explain each decision to the other operator.</td><td>Twice the UI, more GitHub reads per request. Heavier than needed for two operators.</td></tr>
+      <tr><td><a href="#a3" data-goto="a3">3 · Table</a></td><td>One table of all installations, filter by status, bulk approve.</td><td>Scales to hundreds. Easy to scan everything.</td><td>Bulk approve invites approving without looking: wrong for cost control. Overkill now.</td></tr>
+    </table></div>
+    <div class="box-foot"><strong>Why 1:</strong> the goal is protecting your GCP bill with the least effort. A queue makes each approval a conscious, one-click decision and shows the facts that matter for cost (private repositories mean trial and more uploads). Upgrade trigger: more than ~10 requests a week → add option 2's detail panel.</div>
+  </section>
+</section>
+
+<!-- ================= WAITING 1 ================= -->
+<section role="tabpanel" id="w1" aria-labelledby="tab-w1" class="stack" style="gap:24px" hidden>
+  <div class="note"><strong>Waiting 1 · Product page <span class="rec">Recommended</span></strong>
+    <ul><li>Status first, in one line, so nobody misses it. Then the pitch, top to bottom: headline → how it works → what you get → a sample.</li>
+    <li>The same component is the signed-out landing page: the status pill becomes <em>Sign in with GitHub</em>.</li></ul></div>
+  <div class="frame">
+    <div class="frame-bar"><i></i><i></i><i></i> app.coupling.dev/r/octo-labs/payments</div>
+    <div class="frame-body">
+      <div class="hero-p">
+        <span class="pill"><span class="pulse"></span>Waiting for approval · octo-labs</span>
+        <h1>Architecture checks on every pull request</h1>
+        <p>Archfit keeps your modules apart the way you designed them. It flags a pull request that crosses a boundary or tightens the wrong coupling, before it merges.</p>
+      </div>
+
+      <div class="statusbox">
+        <span class="big-ic" aria-hidden="true">⏳</span>
+        <div><strong>Your installation on octo-labs is waiting for approval.</strong>
+          <p>Archfit is an experiment, and we approve installations by hand. Until then nothing runs and nothing is posted on your pull requests. Nothing to do now: this page changes once it is approved.</p></div>
+      </div>
+
+      <div class="stack-sm">
+        <h2 style="font-size:18px">How it works</h2>
+        <div class="flow">
+          <div class="stepc"><div class="ic">1</div><strong>Your CI runs the engine</strong><span>A workflow you add once. It reads your code where it already is.</span></div>
+          <div class="arrow" aria-hidden="true">→</div>
+          <div class="stepc mid"><div class="ic">2</div><strong>A report, no source code</strong><span>Modules, dependencies and findings. Signed by GitHub, so nobody can fake it.</span></div>
+          <div class="arrow" aria-hidden="true">→</div>
+          <div class="stepc end"><div class="ic">✓</div><strong>A check on the pull request</strong><span>One check and one comment that says what changed and how to fix it.</span></div>
+        </div>
+        <p class="privacy"><strong>Your code never leaves your CI.</strong></p>
+      </div>
+
+      <div class="stack-sm">
+        <h2 style="font-size:18px">What you get</h2>
+        <div class="cards">
+          <div><span class="k">Drift</span><strong>Catch boundary breaks in review</strong><span>A pull request that makes <code>api</code> reach into <code>billing</code> internals is flagged before merge.</span></div>
+          <div><span class="k">Policy as code</span><strong>Rules live in your repository</strong><span><code>.archfit.yaml</code> is reviewed like any other change.</span></div>
+          <div><span class="k">Owners</span><strong>Only owners loosen the rules</strong><span>A change to the policy needs an architecture owner's approval on that exact commit.</span></div>
+          <div><span class="k">Baseline</span><strong>Old debt does not block</strong><span>Existing problems are recorded once. Only new ones count.</span></div>
+        </div>
+      </div>
+
+      <div class="stack-sm">
+        <h2 style="font-size:18px">What it looks like <span class="proto-tag">sample</span></h2>
+        <div class="checks">
+          <div class="check-row"><span class="sev-x">✕</span><span class="name">archfit/state</span><span class="desc">1 rule violation: <code>api → billing</code> crosses a layer boundary</span><a href="#" onclick="return false">Details</a></div>
+          <div class="check-row"><span class="sev-dot">●</span><span class="name">archfit/gate</span><span class="desc">Advisory: does not block merging</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= WAITING 2 ================= -->
+<section role="tabpanel" id="w2" aria-labelledby="tab-w2" class="stack" style="gap:24px" hidden>
+  <div class="note"><strong>Waiting 2 · Status card</strong>
+    <ul><li>Calm and short. The state and the path ahead fill the page; Archfit's value is a thin strip under it.</li>
+    <li>Not reusable as the landing page.</li></ul></div>
+  <div class="frame">
+    <div class="frame-bar"><i></i><i></i><i></i> app.coupling.dev/r/octo-labs/payments</div>
+    <div class="frame-body">
+      <div class="center-card">
+        <div class="hour" aria-hidden="true">⏳</div>
+        <h1 style="font-size:24px">Waiting for approval</h1>
+        <p class="muted">Archfit is installed on <strong>octo-labs</strong>. We approve installations by hand while Archfit is an experiment. Nothing runs until then.</p>
+        <ol class="vtrack">
+          <li class="done"><span class="d">✓</span><span>App installed<span class="s">22 October, on 3 repositories</span></span></li>
+          <li class="now"><span class="d"></span><span>Approval<span class="s">An Archfit operator reviews the installation</span></span></li>
+          <li><span class="d"></span><span>Onboard a repository<span class="s">Add owners, then one workflow file</span></span></li>
+          <li><span class="d"></span><span>First check on a pull request<span class="s">Advisory until you make it required</span></span></li>
+        </ol>
+      </div>
+      <div class="strip">
+        <div><b>Boundary checks</b>on every pull request</div>
+        <div><b>Policy as code</b>reviewed like any change</div>
+        <div><b>No source leaves CI</b>only a signed report</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= WAITING 3 ================= -->
+<section role="tabpanel" id="w3" aria-labelledby="tab-w3" class="stack" style="gap:24px" hidden>
+  <div class="note"><strong>Waiting 3 · Live sample</strong>
+    <ul><li>Shows the real output instead of describing it. Status sits on the left, the sample pull request on the right.</li>
+    <li>The sample must follow every change to the comment format, or it lies.</li></ul></div>
+  <div class="frame">
+    <div class="frame-bar"><i></i><i></i><i></i> app.coupling.dev/r/octo-labs/payments</div>
+    <div class="frame-body">
+      <div class="split">
+        <div class="stack">
+          <span class="pill" style="align-self:flex-start"><span class="pulse"></span>Waiting for approval</span>
+          <h1 style="font-size:26px;line-height:1.25">This is what your pull requests get</h1>
+          <p class="muted">Archfit checks each pull request against the architecture you wrote down, and says what crossed a boundary and how to fix it.</p>
+          <p class="muted">Your installation on <strong>octo-labs</strong> is waiting for an operator. Nothing runs until then.</p>
+          <ul class="muted" style="margin:0;padding-left:18px;font-size:13px"><li>Runs in your CI; code never leaves it</li><li>Policy is a file you review</li><li>Old debt goes in a baseline</li></ul>
+        </div>
+        <div class="stack-sm">
+          <div class="comment">
+            <div class="comment-head"><strong>archfit-review</strong> bot commented · <span class="proto-tag">sample</span></div>
+            <div class="comment-body">
+              <h3>1 rule violation</h3>
+              <p><code>api</code> → <code>billing</code> crosses the layer boundary <code>api ↛ domain internals</code>.</p>
+              <p class="xs">Fix: depend on <code>billing.contract</code> instead of <code>billing.ledger</code>.</p>
+              <div class="mini-graph" aria-label="api depends on billing, the edge is a violation">
+                <svg viewBox="0 0 360 110" role="img">
+                  <rect x="10" y="35" width="90" height="40" rx="6" fill="var(--bg-subtle)" stroke="var(--border)"/><text x="55" y="60" text-anchor="middle" font-size="13" fill="var(--fg)">api</text>
+                  <rect x="260" y="10" width="90" height="36" rx="6" fill="var(--bg-subtle)" stroke="var(--border)"/><text x="305" y="33" text-anchor="middle" font-size="12" fill="var(--fg)">billing</text>
+                  <rect x="260" y="64" width="90" height="36" rx="6" fill="var(--bg-subtle)" stroke="var(--border)"/><text x="305" y="87" text-anchor="middle" font-size="12" fill="var(--fg)">orders</text>
+                  <line x1="100" y1="50" x2="258" y2="28" stroke="var(--danger)" stroke-width="2.5"/>
+                  <line x1="100" y1="62" x2="258" y2="82" stroke="var(--success)" stroke-width="1.5"/>
+                </svg>
+              </div>
+            </div>
+          </div>
+          <div class="checks">
+            <div class="check-row"><span class="sev-x">✕</span><span class="name">archfit/state</span><span class="desc">1 rule violation</span></div>
+            <div class="check-row"><span class="sev-ok">✓</span><span class="name">archfit/gate</span><span class="desc">Advisory</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= ADMIN 1 ================= -->
+<section role="tabpanel" id="a1" aria-labelledby="tab-a1" class="stack" style="gap:24px" hidden>
+  <div class="note"><strong>Admin 1 · Queue <span class="rec">Recommended</span></strong>
+    <ul><li>Waiting on top with one green button each. Below, who is approved, by whom and when.</li>
+    <li>Auto-approved accounts come from the config: they show "auto" and have no Revoke (change them by pull request).</li>
+    <li>Revoke asks once inline ("Revoke octo-labs? Checks stop on the next event.") instead of a browser dialog.</li></ul></div>
+  <div class="frame">
+    <div class="frame-bar"><i></i><i></i><i></i> app.coupling.dev/admin</div>
+    <div class="frame-body" style="gap:24px">
+      <div class="page-head"><div><h1 style="font-size:22px">Installations</h1><p class="lede">Approve an account to let Archfit run on its repositories. Until then nothing runs and nothing is posted.</p></div></div>
+      <section class="box">
+        <div class="box-head"><h3>Waiting <span class="counter">2</span></h3></div>
+        <div class="box-row acct">
+          <span class="av org">O</span>
+          <div><strong><a href="#" onclick="return false">octo-labs</a></strong> <span class="label">Organization</span> <span class="xs">· installed 2 hours ago · account 6 years old</span>
+            <div class="chips"><span class="chip">payments</span><span class="chip">ledger</span><span class="chip priv">admin-portal · private</span></div>
+            <div class="xs" style="margin-top:4px">1 private repository: a 30-day trial starts on approval.</div></div>
+          <div class="btn-group"><button class="btn sm primary" type="button">Approve</button></div>
+        </div>
+        <div class="box-row acct">
+          <span class="av">J</span>
+          <div><strong><a href="#" onclick="return false">jdoe</a></strong> <span class="label">User</span> <span class="xs">· installed yesterday · account 3 weeks old</span>
+            <div class="chips"><span class="chip">todo-app</span></div></div>
+          <div class="btn-group"><button class="btn sm primary" type="button">Approve</button></div>
+        </div>
+      </section>
+      <section class="box">
+        <div class="box-head"><h3>Approved <span class="counter">4</span></h3></div>
+        <div class="box-row acct"><span class="av org">A</span><div><strong>acme-corp</strong> <span class="label">Organization</span><div class="xs">Approved by vladikk on 18 October · 5 repositories</div></div><button class="btn sm danger" type="button">Revoke</button></div>
+        <div class="box-row acct"><span class="av grey">a</span><div><strong>alexei-led</strong> <span class="label">User</span> <span class="label success">auto</span><div class="xs">From the App config · 1 repository</div></div><span></span></div>
+        <div class="box-row acct"><span class="av grey">v</span><div><strong>vladikk</strong> <span class="label">User</span> <span class="label success">auto</span><div class="xs">From the App config · not installed</div></div><span></span></div>
+        <div class="box-row acct"><span class="av org">c</span><div><strong>coupling-dev</strong> <span class="label">Organization</span> <span class="label success">auto</span><div class="xs">From the App config · 3 repositories</div></div><span></span></div>
+        <div class="box-foot">Revoke stops checks from the next event on. Checks already on GitHub stay.</div>
+      </section>
+      <p class="xs">The header shows <span class="label attention">Admin · 2 waiting</span> to operators on every page.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= ADMIN 2 ================= -->
+<section role="tabpanel" id="a2" aria-labelledby="tab-a2" class="stack" style="gap:24px" hidden>
+  <div class="note"><strong>Admin 2 · Inbox</strong>
+    <ul><li>Pick a request on the left, judge it on the right: account facts, repositories with language and stars, and a note that the other operator sees.</li>
+    <li>More reads from GitHub per request and twice the UI.</li></ul></div>
+  <div class="frame">
+    <div class="frame-bar"><i></i><i></i><i></i> app.coupling.dev/admin</div>
+    <div class="frame-body" style="gap:16px">
+      <div class="inbox">
+        <div class="list">
+          <div class="item sel"><strong>octo-labs</strong><div class="xs">Organization · 2 hours ago</div></div>
+          <div class="item"><strong>jdoe</strong><div class="xs">User · yesterday</div></div>
+          <div class="item"><span class="xs">Approved (4) ›</span></div>
+        </div>
+        <div class="detail">
+          <div class="row-between"><div class="acct" style="grid-template-columns:36px auto"><span class="av org">O</span><div><strong style="font-size:16px">octo-labs</strong><div class="xs">Organization · github.com/octo-labs</div></div></div>
+            <span class="label attention">Waiting</span></div>
+          <div class="facts">
+            <div><b>6 yr</b><span>account age</span></div>
+            <div><b>42</b><span>members</span></div>
+            <div><b>3</b><span>repositories chosen</span></div>
+            <div><b>1</b><span>private (trial)</span></div>
+          </div>
+          <div class="table-wrap"><table class="t">
+            <tr><th>Repository</th><th>Language</th><th>Stars</th><th>Visibility</th></tr>
+            <tr><td>payments</td><td>Go</td><td>310</td><td>public</td></tr>
+            <tr><td>ledger</td><td>Go</td><td>88</td><td>public</td></tr>
+            <tr><td>admin-portal</td><td>TypeScript</td><td>—</td><td><span class="label attention">private</span></td></tr>
+          </table></div>
+          <label class="xs">Note for the other operator<textarea class="n" rows="2">Met them at GopherCon; pilot for 2 months.</textarea></label>
+          <div class="row"><button class="btn primary" type="button">Approve</button><button class="btn" type="button">Not now</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= ADMIN 3 ================= -->
+<section role="tabpanel" id="a3" aria-labelledby="tab-a3" class="stack" style="gap:24px" hidden>
+  <div class="note"><strong>Admin 3 · Table</strong>
+    <ul><li>Everything in one sortable table with a status filter and bulk actions.</li>
+    <li>Bulk approve makes it easy to approve without looking, which works against cost control.</li></ul></div>
+  <div class="frame">
+    <div class="frame-bar"><i></i><i></i><i></i> app.coupling.dev/admin</div>
+    <div class="frame-body" style="gap:16px">
+      <div class="row-between">
+        <div class="seg" role="group" aria-label="Status"><button type="button" aria-pressed="true">Waiting 2</button><button type="button">Approved 1</button><button type="button">Auto 3</button><button type="button">All 6</button></div>
+        <button class="btn sm primary" type="button">Approve selected (0)</button>
+      </div>
+      <div class="table-wrap box"><table class="t">
+        <tr><th></th><th>Account</th><th>Type</th><th>Repositories</th><th>Private</th><th>Installed</th><th>Status</th><th></th></tr>
+        <tr><td><input type="checkbox" aria-label="Select octo-labs"></td><td><strong>octo-labs</strong></td><td>Org</td><td>3</td><td>1</td><td>2 h ago</td><td><span class="label attention">waiting</span></td><td><button class="btn sm" type="button">Approve</button></td></tr>
+        <tr><td><input type="checkbox" aria-label="Select jdoe"></td><td><strong>jdoe</strong></td><td>User</td><td>1</td><td>0</td><td>1 d ago</td><td><span class="label attention">waiting</span></td><td><button class="btn sm" type="button">Approve</button></td></tr>
+      </table></div>
+    </div>
+  </div>
+</section>
+
+</main>
+<script src="archfit.js"></script>
+</body>
+</html>

@@ -9,6 +9,7 @@ export interface Repo {
 
 export type Route =
   | { kind: 'home' }
+  | { kind: 'admin' }
   | ({ kind: 'repo' | 'graph' | 'data-sharing' | 'policy' } & Repo)
   | ({ kind: 'pull' | 'pull-graph'; number: number } & Repo)
   | { kind: 'unknown' };
@@ -17,6 +18,7 @@ const repoPath = /^\/r\/([^/]+)\/([^/]+)(?:(?:\/pull\/([1-9][0-9]{0,9}))?(\/grap
 
 export function parseRoute(pathname: string): Route {
   if (pathname === '/') return { kind: 'home' };
+  if (pathname === '/admin') return { kind: 'admin' };
   const m = repoPath.exec(pathname);
   if (!m) return { kind: 'unknown' };
   let repo: Repo;

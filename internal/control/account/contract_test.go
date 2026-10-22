@@ -270,3 +270,46 @@ func TestForgetDeletesTenantOnly(t *testing.T) {
 		t.Errorf("counter = %d, want 3000000", got)
 	}
 }
+
+func TestAdmitUnadmitRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	s := store.NewMemory()
+	a, _, _, logs := newTest(s)
+	admissions := gate.NewAdmissions(s, nil)
+	adm := gate.Admission{Account: "octo-labs", By: "alexei-led", ByID: 1898375, At: day(0)}
+
+	mustNil(t, a.Admit(ctx, instA, adm))
+	got, found, err := admissions.Record(ctx, instA)
+	if err != nil || !found || got != adm {
+		t.Fatalf("Record = %+v, %t, %v; want %+v", got, found, err, adm)
+	}
+	if !admitted(t, admissions, instA, "octo-labs") || admitted(t, admissions, instB, "other") {
+		t.Error("only the admitted installation is served")
+	}
+
+	mustNil(t, a.Unadmit(ctx, instA, 1788671))
+	mustNil(t, a.Unadmit(ctx, instA, 1788671)) // a missing approval is no error
+	if admitted(t, admissions, instA, "octo-labs") {
+		t.Error("the installation is still served after Unadmit")
+	}
+	for _, want := range []string{`"msg":"account admit"`, `"operator_id":1898375`, `"msg":"account unadmit"`, `"operator_id":1788671`} {
+		if !strings.Contains(logs.String(), want) {
+			t.Errorf("audit log lacks %s:\n%s", want, logs)
+		}
+	}
+
+	mustNil(t, a.Admit(ctx, instA, adm))
+	mustNil(t, a.Forget(ctx, instA))
+	if admitted(t, admissions, instA, "octo-labs") {
+		t.Error("an uninstalled installation keeps its approval")
+	}
+}
+
+func admitted(t *testing.T, a *gate.Admissions, installationID int64, owner string) bool {
+	t.Helper()
+	ok, err := a.Admitted(t.Context(), installationID, owner)
+	if err != nil {
+		t.Fatalf("Admitted: %v", err)
+	}
+	return ok
+}

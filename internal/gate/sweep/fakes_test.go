@@ -214,7 +214,18 @@ type world struct {
 	actions  *fakeActions
 	resolver *fakeResolver
 	pub      *fakePublisher
+	admit    fakeAdmitter
 	sweeper  Sweeper
+}
+
+// fakeAdmitter admits every installation except the refused ones; a down one cannot be read.
+type fakeAdmitter struct{ refused, down map[int64]bool }
+
+func (a fakeAdmitter) Admitted(_ context.Context, installationID int64, _ string) (bool, error) {
+	if a.down[installationID] {
+		return false, errors.New("fake: store down")
+	}
+	return !a.refused[installationID], nil
 }
 
 func newWorld(t *testing.T) *world {
@@ -227,7 +238,8 @@ func newWorld(t *testing.T) *world {
 		resolver: &fakeResolver{trusted: map[string]inputs.Trusted{}, errs: map[string]error{}},
 		pub:      &fakePublisher{states: map[string]feedback.CheckState{}, errs: map[string]error{}},
 	}
-	w.sweeper = New(w.repos, w.pulls, w.actions, w.resolver, w.pub, Config{})
+	w.admit = fakeAdmitter{refused: map[int64]bool{}, down: map[int64]bool{}}
+	w.sweeper = New(w.repos, w.pulls, w.actions, w.resolver, w.pub, w.admit, Config{})
 	t.Cleanup(w.assertNeverSuccess)
 	return w
 }

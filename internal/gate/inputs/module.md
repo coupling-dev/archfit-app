@@ -23,6 +23,8 @@ PR that violates it.
 - Report the earliest upcoming waiver expiry.
 - Read the cached `Entitlement` from the Store and derive `Suspended`.
 - Own the `Entitlement` record shape and its Store key, so the gate never imports billing code.
+- Answer whether the App serves an installation (`Admissions.Admitted`): the account is on the configured list, or an
+  operator's `Admission` record exists. Own the `Admission` record shape and its Store key.
 
 ## Subdomain Classification
 
@@ -40,6 +42,8 @@ rules and the protected path set will change with pilots.
 - How a Store failure, a missing record, or a malformed record maps to "not suspended".
 - The suspension formula and the rule that public repositories are never suspended.
 - Which waiver expiry counts as "earliest".
+- How the configured account list and the operator's record combine into "admitted", and that a Store failure or a
+  record that cannot be read is an error, never "not admitted": the caller does nothing and retries.
 
 ## Public Contract
 
@@ -55,6 +59,41 @@ type Entitlement struct {
     Notice       string    `json:"notice"`        // e.g. "Trial ends 2026-10-20"
     Reason       string    `json:"reason"`        // shown when suspended, with the recovery action
 }
+```
+
+```go
+// AdmissionKey is the Store key, under the installation tenant, of the JSON-encoded Admission. control/account writes
+// it when an operator approves the installation, and deletes it on revoke and on uninstall.
+const AdmissionKey = "admission"
+
+// Admission records who let the App serve an installation: an operator's approval. Its presence is the approval.
+// "Admission" keeps it apart from Approval, a policy owner's approval of a pull request.
+type Admission struct {
+    Account string    `json:"account"` // the installation's account login when approved
+    By      string    `json:"by"`      // the operator's login when approved
+    ByID    int64     `json:"by_id"`   // the operator's GitHub user ID
+    At      time.Time `json:"at"`
+}
+
+// NewAdmissions admits the accounts named in auto by configuration, and every other one by its Store record.
+// Logins are trimmed and compared case-insensitively; an empty login admits nobody.
+func NewAdmissions(s Store, auto []string) *Admissions
+
+// Auto reports whether the configuration approves the account.
+func (a *Admissions) Auto(account string) bool
+
+// Admitted reports whether the App serves the installation. owner is its account login, the owner of every
+// repository it holds. A configured account needs no Store read. An error means the record could not be read: the
+// caller does nothing for the installation and retries, so an approved account loses no event to a Store outage.
+func (a *Admissions) Admitted(ctx context.Context, installationID int64, owner string) (bool, error)
+
+// Record reads the operator's admission: (record, true, nil) when approved, (zero, false, nil) when not, and an error
+// when the Store fails or the record does not decode. A record without the operator's ID (`by_id <= 0`, for example
+// `{}` or `null`) is unreadable, never an approval.
+func (a *Admissions) Record(ctx context.Context, installationID int64) (Admission, bool, error)
+
+// Owner is the account login of a repository's "owner/name".
+func Owner(fullName string) string
 ```
 
 ```go
@@ -255,7 +294,10 @@ size cap (1 MiB), a 5xx, a timeout. "Absent" is only `api.ErrNotFound`. `Resolve
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high (inputs side); store is low
 - **Balanced?**: yes
-- **Shared knowledge**: tenant = installation ID; key `EntitlementKey`; value is the JSON of `Entitlement`.
+- **Shared knowledge**: tenant = installation ID; key `AdmissionKey`; value is the JSON of `Admission`; `Admissions`
+  only calls `Get`. `ErrNotFound` is "not admitted" without an error; any other Store error, a value that does not
+  decode and a record with `by_id <= 0` are an error from `Admitted` and `Record`.
+  Key `EntitlementKey`; value is the JSON of `Entitlement`.
   `ErrNotFound` is the sentinel of `store` for a missing key; for the entitlement inputs treats it like every other
   Store error, for a pusher record it means "no pusher".
   Key `pusher/<lowercase repo full name>/<head sha>`; the value is the pushers' logins, one per line. inputs calls
@@ -439,8 +481,10 @@ var (
 <!-- contract: Repos, Installation — restated from internal/github/api/module.md -->
 ```go
 type Installation struct {
-    ID      int64
-    Account string // organization or user login
+    ID          int64
+    Account     string    // organization or user login
+    AccountType string    // "Organization" or "User"
+    CreatedAt   time.Time // when the App was installed
 }
 
 // Repos reads installations, repositories and file contents.
@@ -503,16 +547,20 @@ type Pulls interface {
   with `MayBeProtected`, re-publishes `Entitlement` and `EntitlementKey` to `control/account`.
 - **internal/gate/verdict**: model, gate / 1 / 1, high, balanced. Reads `Trusted`; calls `Accepts` for the digest checks.
 - **internal/gate/feedback**: model, gate / 1 / 1, high, balanced. Reads `Target` and `Trusted`.
+- **internal/gate/ingest** and **internal/gate/sweep** (through the gate façade): contract, gate / 1 / 1, high,
+  balanced. Ask `Admitted` for the resolved installation and owner, and treat an error as "retry".
 - **internal/gate/sweep**: contract, gate / 1 / 1, high, balanced. Calls `Resolver.Resolve`; calls `Accepts` for the
   stale test and `First` for the receipt of a publication without a report.
 - **internal/control/account** (through the gate façade): contract, root / 2 / 2, moderate, balanced.
-  Writes the JSON of `Entitlement` under `EntitlementKey`.
+  Writes the JSON of `Entitlement` under `EntitlementKey`; writes and deletes the JSON of `Admission` under
+  `AdmissionKey`.
 
 ## Change Vectors
 
 - A new protected path, or a different approval rule (two owners, required team).
 - A different baseline path or an additional trusted file (labels).
 - A changed suspension formula or entitlement field.
+- Another way to approve an installation (a different configured list, a self-service flow).
 - Caching of protected-ref reads inside one process, if rate limits demand it.
 
 ## Constraints and Invariants
@@ -528,9 +576,14 @@ type Pulls interface {
   which exports no constant for it). If the two drift, `MayBeProtected` stops being a superset and a workflow push
   is noticed by the hourly sweep instead of at once. Remove the literal when `wire/settings` exports the directory.
 - The App never writes the baseline or the policy; inputs is read-only on GitHub, and on the Store it writes only the
-  pusher record.
+  pusher record (the admission record is only read).
 - A Store outage, missing record, or malformed record never means non-payment: `Suspended` is false.
 - Public repositories are never suspended.
+- Admission fails closed by doing nothing and retrying: a Store error, an undecodable record or one without the
+  operator's ID is an error from `Admitted`, never "admitted" and never a plain refusal. This is the opposite of the
+  entitlement rule, because serving an unapproved account is the risk, and a refusal would drop an approved account's
+  event during an outage. Callers do nothing for the installation and make the work retryable.
+- Admission is per installation, keyed by the account login of the repository owner; the record is read-only here.
 - Fail closed on GitHub errors: return the error; never return partial `Trusted` that could pass.
 - The tenant is `t.Repo.InstallationID`, which callers build from verified OIDC claims or a verified
   webhook; never from a client-supplied ID.
@@ -574,6 +627,16 @@ failing `Store` stub. `NewMemory` is the in-process Store constructor of `intern
 - **Test name**: `TestEarliestWaiverExpiry`
   **Scenario**: no waivers; one future; one expired and one future; all expired; malformed `expires`.
   **Expected behavior**: zero; that date; the future date; zero; zero with one logged outcome.
+
+- **Test name**: `TestAdmitted`
+  **Scenario**: table: configured account (also with spaces and in another case); an operator's record; no record; Store error; record that does not decode; a record without the operator's ID (`{}`); `null`; an empty configured login.
+  **Expected behavior**: admitted for the configured accounts without a Store read and for the record; not admitted, no error, for a missing record and an empty configured login; an error (and not admitted) for a Store failure, a record that does not decode, `{}` and `null`.
+- **Test name**: `TestAdmissionRecordTellsMissingFromUnreadable`
+  **Scenario**: `Record` with `ErrNotFound`, then with a failing Store.
+  **Expected behavior**: (zero, false, nil) for the missing record; not found and an error for the failure.
+- **Test name**: `TestOwner`
+  **Scenario**: `acme/shop`, `acme`, `""`.
+  **Expected behavior**: `acme`, `acme`, `""`.
 
 ### Integration Contract Tests
 

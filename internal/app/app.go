@@ -80,29 +80,33 @@ func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, googl
 		return err
 	}
 
+	admissions := gate.NewAdmissions(st, c.ApprovedAccounts)
 	g := gate.New(gate.Deps{
-		GitHub:   gh,
-		OIDC:     verifier,
-		Store:    st,
-		Audience: c.BaseURL,
-		Sweep:    gate.Config{MissingUploadAfter: missingUploadAfter, WaiverWarnBefore: waiverWarnBefore},
-		Now:      time.Now,
+		GitHub:     gh,
+		OIDC:       verifier,
+		Store:      st,
+		Admissions: admissions,
+		Audience:   c.BaseURL,
+		Sweep:      gate.Config{MissingUploadAfter: missingUploadAfter, WaiverWarnBefore: waiverWarnBefore},
+		Now:        time.Now,
 	})
 	var ctl *control.Control
 	if c.Role == roleWorker {
-		ctl, err = control.NewWorker(control.WorkerDeps{GitHub: gh, Store: st, Now: time.Now})
+		ctl, err = control.NewWorker(control.WorkerDeps{GitHub: gh, Store: st, Admissions: admissions, Now: time.Now})
 	} else {
 		ctl, err = control.New(control.Deps{
-			GitHub:    gh,
-			Tokens:    tokens,
-			OAuth:     oauth,
-			Store:     st,
-			Receiver:  gate.NewReceiver(gh, verifier, c.BaseURL),
-			Sandbox:   sandbox,
-			Provider:  provider,
-			CookieKey: sec.cookieKey,
-			BaseURL:   c.BaseURL,
-			Now:       time.Now,
+			GitHub:     gh,
+			Tokens:     tokens,
+			OAuth:      oauth,
+			Store:      st,
+			Receiver:   gate.NewReceiver(gh, verifier, c.BaseURL, admissions),
+			Admissions: admissions,
+			Operators:  c.Operators,
+			Sandbox:    sandbox,
+			Provider:   provider,
+			CookieKey:  sec.cookieKey,
+			BaseURL:    c.BaseURL,
+			Now:        time.Now,
 		})
 	}
 	if err != nil {

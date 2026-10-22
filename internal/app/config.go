@@ -34,6 +34,9 @@ const (
 	envTasksQueue        = "ARCHFIT_TASKS_QUEUE"
 	envWorkerURL         = "ARCHFIT_WORKER_URL"
 	envInvoker           = "ARCHFIT_INVOKER"
+	// envApprovedAccounts and envOperators override the built-in lists below. Both are comma-separated.
+	envApprovedAccounts = "ARCHFIT_APPROVED_ACCOUNTS"
+	envOperators        = "ARCHFIT_OPERATORS"
 	// envTraceProject is the name Google client libraries read. It completes the trace field of a log line.
 	envTraceProject = "GOOGLE_CLOUD_PROJECT"
 	// envRevision is set by Cloud Run on every revision.
@@ -60,30 +63,40 @@ const (
 
 var roles = map[string]bool{roleAll: true, rolePublic: true, roleWorker: true}
 
+// The App is public on GitHub, so anyone can install it; it serves only approved accounts. These are approved by
+// configuration: a change is a pull request and a release. Every other account waits for an operator.
+var defaultApprovedAccounts = []string{"alexei-led", "vladikk", "coupling-dev"}
+
+// defaultOperators approve installations on /admin: GitHub user IDs, not logins, because a renamed login can be
+// registered by someone else. 1898375 is alexei-led, 1788671 is vladikk.
+var defaultOperators = []int64{1898375, 1788671}
+
 type Config struct {
-	Addr                string // ARCHFIT_ADDR, default ":8080"
-	BaseURL             string // ARCHFIT_BASE_URL; also the OIDC audience
-	AppID               int64  // ARCHFIT_GITHUB_APP_ID
-	PrivateKeyFile      string // ARCHFIT_GITHUB_PRIVATE_KEY_FILE
-	WebhookSecretFile   string // ARCHFIT_GITHUB_WEBHOOK_SECRET_FILE
-	WebhookPreviousFile string // ARCHFIT_GITHUB_WEBHOOK_SECRET_PREVIOUS_FILE; optional, set only during a rotation
-	OAuthClientID       string // ARCHFIT_GITHUB_OAUTH_CLIENT_ID; not used by the worker role
-	OAuthSecretFile     string // ARCHFIT_GITHUB_OAUTH_SECRET_FILE; never read by the worker role
-	CookieKeyFile       string // ARCHFIT_COOKIE_KEY_FILE; never read by the worker role
-	OperatorTokenFile   string // ARCHFIT_OPERATOR_TOKEN_FILE; authenticates the operator routes; never read by the public role
-	AnthropicKeyFile    string // ARCHFIT_ANTHROPIC_KEY_FILE; empty disables managed LLM; never read by the worker role
-	StoreDriver         string // ARCHFIT_STORE, "memory" (default) or "firestore"
-	FirestoreProject    string // ARCHFIT_FIRESTORE_PROJECT; required by "firestore"
-	FirestoreDatabase   string // ARCHFIT_FIRESTORE_DATABASE; empty selects "(default)"
-	FirestoreEmulator   string // FIRESTORE_EMULATOR_HOST; host:port, plain HTTP and no credentials
-	SandboxDriver       string // ARCHFIT_SANDBOX, "none" until docs/tech-stack.md picks one
-	Role                string // ARCHFIT_ROLE: "all" (default), "public" or "worker"
-	QueueDriver         string // ARCHFIT_QUEUE: "inline" (local all-role default); public requires "cloudtasks"
-	TasksQueue          string // ARCHFIT_TASKS_QUEUE: "projects/<p>/locations/<l>/queues/<q>"; cloudtasks only
-	WorkerURL           string // ARCHFIT_WORKER_URL: the worker service URL; the dispatch OIDC audience
-	Invoker             string // ARCHFIT_INVOKER: the service account e-mail of the queue and Scheduler dispatches
-	TraceProject        string // GOOGLE_CLOUD_PROJECT; optional; names the trace of a log line; empty logs no trace
-	Revision            string // K_REVISION; set by Cloud Run; logged on every line
+	Addr                string   // ARCHFIT_ADDR, default ":8080"
+	BaseURL             string   // ARCHFIT_BASE_URL; also the OIDC audience
+	AppID               int64    // ARCHFIT_GITHUB_APP_ID
+	PrivateKeyFile      string   // ARCHFIT_GITHUB_PRIVATE_KEY_FILE
+	WebhookSecretFile   string   // ARCHFIT_GITHUB_WEBHOOK_SECRET_FILE
+	WebhookPreviousFile string   // ARCHFIT_GITHUB_WEBHOOK_SECRET_PREVIOUS_FILE; optional, set only during a rotation
+	OAuthClientID       string   // ARCHFIT_GITHUB_OAUTH_CLIENT_ID; not used by the worker role
+	OAuthSecretFile     string   // ARCHFIT_GITHUB_OAUTH_SECRET_FILE; never read by the worker role
+	CookieKeyFile       string   // ARCHFIT_COOKIE_KEY_FILE; never read by the worker role
+	OperatorTokenFile   string   // ARCHFIT_OPERATOR_TOKEN_FILE; authenticates the operator routes; never read by the public role
+	AnthropicKeyFile    string   // ARCHFIT_ANTHROPIC_KEY_FILE; empty disables managed LLM; never read by the worker role
+	StoreDriver         string   // ARCHFIT_STORE, "memory" (default) or "firestore"
+	FirestoreProject    string   // ARCHFIT_FIRESTORE_PROJECT; required by "firestore"
+	FirestoreDatabase   string   // ARCHFIT_FIRESTORE_DATABASE; empty selects "(default)"
+	FirestoreEmulator   string   // FIRESTORE_EMULATOR_HOST; host:port, plain HTTP and no credentials
+	SandboxDriver       string   // ARCHFIT_SANDBOX, "none" until docs/tech-stack.md picks one
+	Role                string   // ARCHFIT_ROLE: "all" (default), "public" or "worker"
+	QueueDriver         string   // ARCHFIT_QUEUE: "inline" (local all-role default); public requires "cloudtasks"
+	TasksQueue          string   // ARCHFIT_TASKS_QUEUE: "projects/<p>/locations/<l>/queues/<q>"; cloudtasks only
+	WorkerURL           string   // ARCHFIT_WORKER_URL: the worker service URL; the dispatch OIDC audience
+	Invoker             string   // ARCHFIT_INVOKER: the service account e-mail of the queue and Scheduler dispatches
+	TraceProject        string   // GOOGLE_CLOUD_PROJECT; optional; names the trace of a log line; empty logs no trace
+	Revision            string   // K_REVISION; set by Cloud Run; logged on every line
+	ApprovedAccounts    []string // ARCHFIT_APPROVED_ACCOUNTS: logins served without an operator's approval
+	Operators           []int64  // ARCHFIT_OPERATORS: GitHub user IDs that may approve installations
 }
 
 // Load reads Config from the environment. Secrets are file references only.
@@ -114,6 +127,14 @@ func Load(getenv func(string) string) (Config, error) {
 		Invoker:             getenv(envInvoker),
 		TraceProject:        getenv(envTraceProject),
 		Revision:            getenv(envRevision),
+		ApprovedAccounts:    defaultApprovedAccounts,
+		Operators:           defaultOperators,
+	}
+	if v := getenv(envApprovedAccounts); v != "" {
+		c.ApprovedAccounts = strings.Split(v, ",")
+	}
+	if v := getenv(envOperators); v != "" {
+		c.Operators = parseIDs(v) // an invalid list is nil, which validate reports
 	}
 	if err := c.validate(); err != nil {
 		return Config{}, err
@@ -154,6 +175,7 @@ func (c Config) validate() error {
 		// The worker URL is an OIDC audience, compared byte for byte like the base URL.
 		{envWorkerURL, !needsWorker || strings.HasPrefix(c.WorkerURL, "https://") && !strings.HasSuffix(c.WorkerURL, "/")},
 		{envInvoker, !needsWorker || strings.Contains(c.Invoker, "@")},
+		{envOperators, len(c.Operators) > 0},
 	}
 	for _, ch := range checks {
 		if !ch.ok {
@@ -161,6 +183,19 @@ func (c Config) validate() error {
 		}
 	}
 	return nil
+}
+
+// parseIDs reads comma-separated positive integers; any other element makes the whole list nil.
+func parseIDs(v string) []int64 {
+	var ids []int64
+	for f := range strings.SplitSeq(v, ",") {
+		id, err := strconv.ParseInt(strings.TrimSpace(f), 10, 64)
+		if err != nil || id <= 0 {
+			return nil
+		}
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 // secrets are the contents of the secret files. They never enter Config, a log line or an error.

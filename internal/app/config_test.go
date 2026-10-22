@@ -1,6 +1,7 @@
 package app
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -47,6 +48,8 @@ func TestLoadDefaultsAndRequired(t *testing.T) {
 		SandboxDriver:     "none",
 		Role:              "all",
 		QueueDriver:       "inline",
+		ApprovedAccounts:  []string{"alexei-led", "vladikk", "coupling-dev"},
+		Operators:         []int64{1898375, 1788671},
 	}
 	everything := requiredOnly
 	everything.Addr = "127.0.0.1:9000"
@@ -147,6 +150,12 @@ func TestLoadDefaultsAndRequired(t *testing.T) {
 		{name: "invoker that is not an e-mail", env: with(cloudEnv(), envInvoker, "MARKER-invoker"), wantErr: envInvoker},
 		{name: "worker URL with trailing slash", env: with(cloudEnv(), envWorkerURL, "https://MARKER.example/"), wantErr: envWorkerURL},
 		{name: "worker URL over plain http", env: with(cloudEnv(), envWorkerURL, "http://MARKER.example"), wantErr: envWorkerURL},
+		{name: "approved accounts override", env: with(requiredEnv(), envApprovedAccounts, "acme,octo-labs"),
+			want: func() Config { c := requiredOnly; c.ApprovedAccounts = []string{"acme", "octo-labs"}; return c }()},
+		{name: "operators override", env: with(requiredEnv(), envOperators, "7, 8"),
+			want: func() Config { c := requiredOnly; c.Operators = []int64{7, 8}; return c }()},
+		{name: "operator that is not a user ID", env: with(requiredEnv(), envOperators, "7,MARKER-alexei-led"), wantErr: envOperators},
+		{name: "operator ID zero", env: with(requiredEnv(), envOperators, "0"), wantErr: envOperators},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -155,7 +164,7 @@ func TestLoadDefaultsAndRequired(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Load: %v", err)
 				}
-				if got != tt.want {
+				if !reflect.DeepEqual(got, tt.want) {
 					t.Errorf("Load = %+v, want %+v", got, tt.want)
 				}
 				return

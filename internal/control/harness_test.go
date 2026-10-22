@@ -48,7 +48,8 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 	}
 	d := Deps{
 		GitHub: h.gh.client(), Tokens: fakeTokens{}, OAuth: fakeOAuth{}, Store: h.store, Receiver: h.receiver,
-		Sandbox: h.sandbox, Provider: h.provider, CookieKey: testCookieKey, BaseURL: testBaseURL, Now: h.clock.Now,
+		Admissions: gate.NewAdmissions(h.store, testAccounts),
+		Sandbox:    h.sandbox, Provider: h.provider, CookieKey: testCookieKey, BaseURL: testBaseURL, Now: h.clock.Now,
 	}
 	for _, o := range opts {
 		o(&d)
@@ -305,3 +306,6 @@ func (g *fakeGitHub) client() *api.Client {
 	}
 	return api.New(fakeTokens{}, &http.Client{Transport: rewriteTransport{target: target}})
 }
+
+// testAccounts are the owners of the test repositories, approved by configuration.
+var testAccounts = []string{"org", "org7", "org8", "owner", "secret-org", "acme"}

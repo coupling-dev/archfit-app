@@ -53,6 +53,11 @@
     </nav>
   {/if}
   <span class="header-spacer"></span>
+  {#if session?.operator}
+    <a class="admin-link" href="/admin">
+      Admin{#if session.waiting && session.waiting > 0}<span class="label attention">{session.waiting} waiting</span>{/if}
+    </a>
+  {/if}
   <div class="theme-toggle" role="group" aria-label="Theme">
     {#each themes as t (t)}
       <button type="button" aria-pressed={theme === t} onclick={() => pick(t)}>{themeNames[t]}</button>

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -172,8 +173,40 @@ func (g *fakeGH) UserRepos(_ context.Context, userToken string) ([]api.Repo, err
 	return out, nil
 }
 
-func (g *fakeGH) ListInstallations(context.Context) ([]api.Installation, error) { return nil, nil }
-func (g *fakeGH) ListRepos(context.Context, int64) ([]api.Repo, error)          { return nil, nil }
+// ListInstallations answers one installation per installation ID of the repositories, its account the owner.
+func (g *fakeGH) ListInstallations(context.Context) ([]api.Installation, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if err := g.record("ListInstallations", api.RepoRef{}, ""); err != nil {
+		return nil, err
+	}
+	seen := map[int64]bool{}
+	out := []api.Installation{}
+	for _, r := range g.repos {
+		if !seen[r.InstallationID] {
+			seen[r.InstallationID] = true
+			out = append(out, api.Installation{ID: r.InstallationID, Account: ownerOf(r.FullName), AccountType: "Organization",
+				CreatedAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC).Add(time.Duration(r.InstallationID) * time.Hour)})
+		}
+	}
+	slices.SortFunc(out, func(a, b api.Installation) int { return cmp.Compare(a.ID, b.ID) })
+	return out, nil
+}
+
+func (g *fakeGH) ListRepos(_ context.Context, installationID int64) ([]api.Repo, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if err := g.record("ListRepos", api.RepoRef{InstallationID: installationID}, ""); err != nil {
+		return nil, err
+	}
+	var out []api.Repo
+	for _, r := range g.repos {
+		if r.InstallationID == installationID {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
 
 func (g *fakeGH) ResolveRepo(_ context.Context, fullName string) (api.Repo, error) {
 	g.mu.Lock()
@@ -423,7 +456,7 @@ func (p *fakeProposals) writes() int {
 }
 
 type fakeAccount struct {
-	account.Account // ui calls Status only; any other method panics on the nil embedded interface
+	account.Account // the real account over the env's Store: ui calls Status here, and Admit and Unadmit there
 	status          account.Status
 	err             error
 	installations   []int64

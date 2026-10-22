@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import { ApiError, explain, explainLoad, getJSON, postJSON, repoAPI } from './api';
-import { refused } from './gate';
+import { refused, waiting } from './gate';
 
 function reply(status: number, body: string) {
   const fetch = vi.fn(async () => new Response(body, { status, headers: { 'Content-Type': 'application/json' } }));
@@ -75,6 +75,18 @@ describe('api', () => {
     expect(explainLoad(new ApiError(401, 'Sign in to continue.'), '/r/acme/app', go)).toBe('');
     expect(go).toHaveBeenCalledWith('/auth/login?return=%2Fr%2Facme%2Fapp');
     expect(get(refused)).toBe('');
+  });
+
+  it('shows the Waiting page for its own read of an account waiting for approval', async () => {
+    reply(403, '{"error":"This account is waiting for approval.","waiting":"octo"}');
+    const e = (await getJSON('/api/repos/octo/app/overview').catch((err: unknown) => err)) as ApiError;
+    expect(e).toMatchObject({ status: 403, waiting: 'octo' });
+    expect(explainLoad(e, '/r/octo/app')).toBe('');
+    expect(get(waiting)).toBe('octo');
+    expect(get(refused)).toBe('');
+    waiting.set('');
+    expect(explainLoad(new ApiError(403, 'Forbidden.'), '/r/acme/app')).toBe('Forbidden.');
+    expect(get(waiting)).toBe('');
   });
 
   it('escapes the repository in API paths', () => {

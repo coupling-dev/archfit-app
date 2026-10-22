@@ -27,6 +27,7 @@ const (
 	reactionRerun        = "rerun"
 	reactionRepoSweep    = "repo_sweep"
 	reactionNotOnboarded = "not_onboarded"
+	reactionNotAdmitted  = "not_admitted" // no operator approved the installation: nothing is read or written
 	// reactionApprovalWithdrawn is owner_approval_missing published over a receipt that asked for no action.
 	reactionApprovalWithdrawn = "approval_withdrawn"
 )
@@ -44,6 +45,16 @@ func (g *Gate) HandleEvent(ctx context.Context, e webhook.Event) error {
 }
 
 func (g *Gate) react(ctx context.Context, e webhook.Event) (string, error) {
+	if e.Repo != "" {
+		// An unreadable admission is an error, so the delivery is retried rather than dropped.
+		admitted, err := g.admissions.Admitted(ctx, e.InstallationID, inputs.Owner(e.Repo))
+		if err != nil {
+			return reactionNotAdmitted, fmt.Errorf("gate: read admission: %w", err)
+		}
+		if !admitted {
+			return reactionNotAdmitted, nil
+		}
+	}
 	switch e.Kind {
 	case webhook.PullOpened, webhook.PullSynchronized:
 		return g.newHead(ctx, eventTarget(e))

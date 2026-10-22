@@ -6,10 +6,13 @@ export type Tone = 'success' | 'attention' | 'danger' | 'accent' | 'neutral';
 export interface Session {
   login: string;
   csrf: string;
+  operator?: boolean; // the user approves installations on /admin
+  waiting?: number; // operators only: installations waiting for approval; -1 when it could not be read
 }
 
 export interface RepoRow {
   full_name: string;
+  waiting?: boolean; // no operator approved its account yet
   state: string;
   tone: Tone;
   reason: string;
@@ -238,20 +241,41 @@ export interface PolicyPage {
   notice?: string;
 }
 
+// Installation is one account that installed the App, as the operators' page lists it.
+export interface Installation {
+  id: number;
+  account: string;
+  type: string; // "Organization" or "User"
+  installed_at: string;
+  repos: { name: string; private: boolean }[];
+  repos_error: boolean;
+  auto: boolean; // approved by the App's configuration: no revoke
+  approved_by?: string;
+  approved_at?: string;
+}
+
+export interface AdminBody {
+  waiting: Installation[];
+  approved: Installation[];
+  unreadable: number;
+}
+
 export interface Checked {
   diagnostics: Diagnostic[];
   notice: string;
 }
 
-import { refused } from './gate';
+import { refused, waiting } from './gate';
 import { signInHref } from './route';
 
-// ApiError is a failed call: the sentence to show and, for a refused policy text, its problems.
+// ApiError is a failed call: the sentence to show, for a refused policy text its problems, and for a repository of an
+// account no operator approved that account.
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
     readonly diagnostics: Diagnostic[] = [],
+    readonly waiting = '',
   ) {
     super(message);
   }
@@ -294,11 +318,16 @@ async function answer<T>(res: Response): Promise<T> {
     throw new ApiError(res.status, unreadable);
   }
   if (!res.ok) {
-    const { error: message, diagnostics } = (body ?? {}) as { error?: unknown; diagnostics?: unknown };
+    const {
+      error: message,
+      diagnostics,
+      waiting: account,
+    } = (body ?? {}) as { error?: unknown; diagnostics?: unknown; waiting?: unknown };
     throw new ApiError(
       res.status,
       typeof message === 'string' && message ? message : unreadable,
       Array.isArray(diagnostics) ? (diagnostics as Diagnostic[]) : [],
+      typeof account === 'string' ? account : '',
     );
   }
   return body as T;
@@ -313,9 +342,14 @@ export function explain(e: ApiError, here: string, go: (url: string) => void = (
 }
 
 // explainLoad is explain for the read that fills a page. Its 404 (a repository that does not exist or the user cannot
-// see, a pull request that is not one) replaces the whole page, as the server's error page did. Never for a write: a
-// write's 404 stays a sentence on the page, so a form or the editor keeps what the user typed.
+// see, a pull request that is not one) replaces the whole page, as the server's error page did, and so does the 403 of
+// an account waiting for approval, with the Waiting page. Never for a write: a write's 404 stays a sentence on the
+// page, so a form or the editor keeps what the user typed.
 export function explainLoad(e: ApiError, here: string, go?: (url: string) => void): string {
+  if (e.waiting) {
+    waiting.set(e.waiting);
+    return '';
+  }
   if (e.status !== 404) return explain(e, here, go);
   refused.set(e.message);
   return '';

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
+	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/webhook"
 	"github.com/alexei-led/archfit-app/internal/store"
@@ -17,7 +18,8 @@ func TestNewValidatesWiring(t *testing.T) {
 	valid := func() Deps {
 		return Deps{
 			GitHub: gh.client(), Tokens: fakeTokens{}, OAuth: fakeOAuth{}, Store: store.NewMemory(),
-			Receiver: &fakeReceiver{}, Sandbox: &fakeSandbox{}, Provider: &fakeProvider{},
+			Receiver: &fakeReceiver{}, Admissions: gate.NewAdmissions(store.NewMemory(), testAccounts),
+			Sandbox: &fakeSandbox{}, Provider: &fakeProvider{},
 			CookieKey: testCookieKey, BaseURL: testBaseURL, Now: newClock().Now,
 		}
 	}
@@ -30,6 +32,7 @@ func TestNewValidatesWiring(t *testing.T) {
 		{"nil OAuth", func(d *Deps) { d.OAuth = nil }, true},
 		{"nil Store", func(d *Deps) { d.Store = nil }, true},
 		{"nil Receiver", func(d *Deps) { d.Receiver = nil }, true},
+		{"nil Admissions", func(d *Deps) { d.Admissions = nil }, true},
 		{"16-byte CookieKey", func(d *Deps) { d.CookieKey = testCookieKey[:16] }, true},
 		{"empty BaseURL", func(d *Deps) { d.BaseURL = "" }, true},
 		{"Sandbox without Tokens", func(d *Deps) { d.Tokens = nil }, true},
@@ -73,6 +76,7 @@ func TestNewWorkerNeedsNoUISecrets(t *testing.T) {
 	}{
 		{"nil GitHub", WorkerDeps{Store: store.NewMemory()}},
 		{"nil Store", WorkerDeps{GitHub: gh.client()}},
+		{"nil Admissions", WorkerDeps{GitHub: gh.client(), Store: store.NewMemory()}},
 	} {
 		if c, err := NewWorker(tt.deps); err == nil || c != nil {
 			t.Errorf("%s: NewWorker = %v, %v; want nil Control and an error", tt.name, c, err)
@@ -80,7 +84,7 @@ func TestNewWorkerNeedsNoUISecrets(t *testing.T) {
 	}
 
 	st := store.NewMemory()
-	c, err := NewWorker(WorkerDeps{GitHub: gh.client(), Store: st, Now: clock.Now})
+	c, err := NewWorker(WorkerDeps{GitHub: gh.client(), Store: st, Admissions: gate.NewAdmissions(st, []string{"org7"}), Now: clock.Now})
 	if err != nil {
 		t.Fatalf("NewWorker: %v", err)
 	}
@@ -118,7 +122,7 @@ func TestHandleEventRouting(t *testing.T) {
 			acct := &fakeAccount{}
 			repos := &fakeRepos{repos: map[int64][]api.Repo{7: {repo(7, "org7/app", true)}}}
 			clk := newClock()
-			c := newControl(acct, repos, &fakeTenants{}, okHandler, okHandler, clk.Now)
+			c := newControl(acct, repos, &fakeTenants{}, admitAll{}, okHandler, okHandler, clk.Now)
 
 			if err := c.HandleEvent(context.Background(), webhook.Event{Kind: kind, InstallationID: 7, DeliveryID: "d1"}); err != nil {
 				t.Fatalf("HandleEvent: %v", err)
@@ -145,7 +149,7 @@ func TestHandleEventRouting(t *testing.T) {
 		for _, id := range []int64{0, -1} {
 			t.Run(string(kind)+" without installation", func(t *testing.T) {
 				acct, repos := &fakeAccount{}, &fakeRepos{}
-				c := newControl(acct, repos, &fakeTenants{}, okHandler, okHandler, newClock().Now)
+				c := newControl(acct, repos, &fakeTenants{}, admitAll{}, okHandler, okHandler, newClock().Now)
 				if err := c.HandleEvent(context.Background(), webhook.Event{Kind: kind, InstallationID: id}); err == nil {
 					t.Error("HandleEvent = nil, want an error")
 				}
@@ -158,7 +162,7 @@ func TestHandleEventRouting(t *testing.T) {
 	t.Run("errors return to app", func(t *testing.T) {
 		repos := &fakeRepos{reposErr: map[int64]error{7: errBoom}}
 		acct := &fakeAccount{}
-		c := newControl(acct, repos, &fakeTenants{}, okHandler, okHandler, newClock().Now)
+		c := newControl(acct, repos, &fakeTenants{}, admitAll{}, okHandler, okHandler, newClock().Now)
 		if err := c.HandleEvent(context.Background(), webhook.Event{Kind: webhook.InstallationAdded, InstallationID: 7}); err == nil {
 			t.Error("HandleEvent = nil, want the ListRepos error")
 		}
@@ -166,6 +170,40 @@ func TestHandleEventRouting(t *testing.T) {
 			t.Errorf("account calls = %v, want none", acct.calls)
 		}
 	})
+}
+
+func TestAccountWaitingForApprovalGetsNoEntitlement(t *testing.T) {
+	ctx := context.Background()
+	for _, tt := range []struct {
+		name    string
+		admit   admitter
+		wantErr bool
+	}{
+		{"not approved", admitNone{}, false},
+		{"approval unreadable", admitNone{down: true}, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			acct := &fakeAccount{}
+			repos := &fakeRepos{
+				installations: []api.Installation{{ID: 7, Account: "org7"}},
+				repos:         map[int64][]api.Repo{7: {repo(7, "org7/app", true)}},
+			}
+			c := newControl(acct, repos, &fakeTenants{}, tt.admit, okHandler, okHandler, newClock().Now)
+			err := c.HandleEvent(ctx, webhook.Event{Kind: webhook.InstallationAdded, InstallationID: 7})
+			if (err != nil) != tt.wantErr {
+				t.Errorf("HandleEvent = %v; want error %t", err, tt.wantErr)
+			}
+			if err := c.Sweep(ctx); err != nil {
+				t.Fatalf("Sweep: %v", err)
+			}
+			if len(acct.calls) != 0 {
+				t.Errorf("account calls = %v; want none, so the trial starts at approval", acct.calls)
+			}
+			if want := []string{"repos:7", "installations"}; !reflect.DeepEqual(repos.calls, want) {
+				t.Errorf("GitHub calls = %v; want %v", repos.calls, want)
+			}
+		})
+	}
 }
 
 func TestHasPrivateComesFromGitHub(t *testing.T) {
@@ -183,7 +221,7 @@ func TestHasPrivateComesFromGitHub(t *testing.T) {
 			st := store.NewMemory()
 			acct, _, _ := account.New(st)
 			repos := &fakeRepos{repos: map[int64][]api.Repo{7: {repo(7, "org7/app", tt.githubPrivate), repo(7, "org7/docs", false)}}}
-			c := newControl(acct, repos, st, okHandler, okHandler, newClock().Now)
+			c := newControl(acct, repos, st, admitAll{}, okHandler, okHandler, newClock().Now)
 
 			e := webhook.Event{Kind: webhook.InstallationAdded, InstallationID: 7, RepoPrivate: tt.eventPrivate}
 			if err := c.HandleEvent(context.Background(), e); err != nil {

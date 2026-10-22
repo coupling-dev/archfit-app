@@ -20,6 +20,7 @@ type sweeper struct {
 	actions   api.Actions
 	resolver  inputs.Resolver
 	publisher feedback.Publisher
+	admit     Admitter
 	cfg       Config
 }
 
@@ -81,7 +82,8 @@ func (p *pass) finish(err error) (Summary, error) {
 	}
 	slog.Info("sweep: pass finished",
 		"repos", p.sum.Repos, "pulls", p.sum.Pulls, "pended", p.sum.Pended, "timed_out", p.sum.TimedOut,
-		"rerun", p.sum.Rerun, "warned", p.sum.Warned, "suspended", p.sum.Suspended, "errors", p.sum.Errors,
+		"rerun", p.sum.Rerun, "warned", p.sum.Warned, "suspended", p.sum.Suspended, "not_admitted", p.sum.NotAdmitted,
+		"errors", p.sum.Errors,
 		"rate_limited", p.sum.RateLimited, "cancelled", err != nil && !p.sum.RateLimited)
 	return p.sum, err
 }
@@ -89,6 +91,14 @@ func (p *pass) finish(err error) (Summary, error) {
 func (p *pass) installation(ctx context.Context, inst api.Installation) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	admitted, err := p.admit.Admitted(ctx, inst.ID, inst.Account)
+	if err != nil {
+		return p.skip(ctx, err, "installation", "installation_id", inst.ID)
+	}
+	if !admitted {
+		p.sum.NotAdmitted++
+		return nil
 	}
 	repos, err := p.repos.ListRepos(ctx, inst.ID)
 	if err != nil {

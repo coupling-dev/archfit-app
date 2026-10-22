@@ -12,6 +12,22 @@ Read [Architecture](architecture.md) for the service boundary, routes, and packa
 The Archfit engine runs in customer CI. It sends a report with no source code to the App.
 The App verifies the report against the approved policy and publishes feedback on the pull request.
 
+## Who the App serves
+
+Anyone can install the App, but it runs only for accounts that an operator approved. Archfit is an experiment on a
+budget, so installations are approved by hand.
+
+- **Approved accounts** get everything in this guide.
+- **An account waiting for approval** gets nothing: no check, no comment, no pull request. An upload from its
+  workflow answers `403 installation_not_approved`. Every repository page shows the **Waiting** page: what Archfit
+  does, and "Your installation on `<account>` is waiting for approval". There is nothing to do. The page changes once
+  the account is approved.
+- **A revoked account** is the same as one never approved, from its next event on. Checks already on GitHub stay.
+
+The approval is per account (the user or organization that installed the App), never per repository. A repository
+you add to an approved installation is served at once. The trial of an account with private repositories starts at
+its approval, not at its install.
+
 ## GitHub App permissions
 
 GitHub shows this list when you install the App. Each permission is here for one job.
@@ -692,6 +708,32 @@ When the GitHub App is uninstalled, the App deletes all stored data for the inst
 
 The `/internal/*` routes need `Authorization: Bearer <token>`.
 See [Architecture configuration](architecture.md#configuration) for environment variables.
+
+### Approve an installation
+
+Operators are the GitHub users whose user IDs are in `ARCHFIT_OPERATORS` (default `1898375` alexei-led and `1788671`
+vladikk). IDs, not logins: a login can be renamed and registered again by someone else. An operator sees **Admin** in
+the header, with the count of installations waiting. Everyone else gets "Not found" at `/admin`.
+
+`/admin` lists two groups:
+
+- **Waiting**: each account with its type, install date and repositories (private ones marked). **Approve** lets
+  Archfit run for it from its next event: the next pull request or push, or a re-run of the Archfit workflow.
+- **Approved**: who approved and when, and **Revoke**, which asks once before it stops Archfit for the account.
+  Accounts marked **auto** come from `ARCHFIT_APPROVED_ACCOUNTS` (default `alexei-led`, `vladikk`, `coupling-dev`).
+  They have no Revoke: change the list by pull request and release.
+
+An approval is a Firestore record of the installation (`admission`: account, operator login and ID, time). Uninstalling
+the App deletes it with the rest of the installation's data, so a reinstall waits again. So does suspending the App on
+GitHub: the hourly sweep no longer sees a suspended installation and deletes its data. When the record cannot be read,
+nothing runs for the account and the work is retried: a webhook is redelivered, an upload answers
+`503 admission_unavailable`, which the Action retries. Configured accounts need no read and keep working.
+
+The header's count reads every waiting installation's record in turn. Upgrade trigger: if `/admin` or the header gets
+slow with many waiting installations, read them in parallel or uninstall the stale ones.
+
+Limit: configured accounts are matched by login. If one renamed and someone registered the old login, that account
+would be served. It grants nothing else: operator rights are by user ID.
 
 ### Run the sweep
 

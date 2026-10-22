@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -76,6 +77,10 @@ func rejectionRows() []rejectionRow {
 			status: 403, code: "not_installed", calls: []string{"verify", "resolve"}},
 		{name: "repository ID differs", mutate: func(s *scenario) { s.repo.ID = repoID + 1 },
 			status: 403, code: "repository_mismatch", calls: []string{"verify", "resolve"}},
+		{name: "installation not approved", mutate: func(s *scenario) { s.notAdmitted = true },
+			status: 403, code: "installation_not_approved", calls: []string{"verify", "resolve"}},
+		{name: "approval unreadable", mutate: func(s *scenario) { s.admitDown = true },
+			status: 503, code: "admission_unavailable", calls: []string{"verify", "resolve"}},
 		{name: "run not found", mutate: func(s *scenario) { s.runErr = fmt.Errorf("fake: %w", api.ErrNotFound) },
 			status: 403, code: "run_not_found", calls: []string{"verify", "resolve", "run"}},
 		{name: "claim event differs from run", mutate: func(s *scenario) { s.claims.EventName = "push" },
@@ -345,5 +350,16 @@ func TestEligibleEventTable(t *testing.T) {
 				t.Errorf("eligible = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestAdmissionIsAskedForTheResolvedInstallationAndOwner(t *testing.T) {
+	s := prScenario(t)
+	if _, err := s.receive(t); err != nil {
+		t.Fatal(err)
+	}
+	owner, _, _ := strings.Cut(repoName, "/")
+	if want := []string{fmt.Sprintf("%d %s", installationID, owner)}; !slices.Equal(s.admitAsked, want) {
+		t.Errorf("Admitted asked %v; want %v", s.admitAsked, want)
 	}
 }

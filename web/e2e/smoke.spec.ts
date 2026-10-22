@@ -15,6 +15,7 @@ const repos = {
       reason: 'Architecture violations found',
     },
     { full_name: 'acme/new', state: 'no state yet', tone: 'neutral', reason: '' },
+    { full_name: 'octo/tool', waiting: true, state: 'waiting for approval', tone: 'attention', reason: '' },
   ],
   truncated: false,
 };
@@ -446,8 +447,50 @@ const policy = (managedAllowed: boolean, over: object = {}) => ({
   ...over,
 });
 
+// installations is the operators' page: one account waiting, one approved by hand, one by the App's configuration.
+const installations = {
+  waiting: [
+    {
+      id: 7,
+      account: 'octo',
+      type: 'Organization',
+      installed_at: '2026-10-21T09:00:00Z',
+      repos: [
+        { name: 'tool', private: false },
+        { name: 'ledger', private: true },
+      ],
+      repos_error: false,
+      auto: false,
+    },
+  ],
+  approved: [
+    {
+      id: 3,
+      account: 'acme',
+      type: 'Organization',
+      installed_at: '2026-09-01T09:00:00Z',
+      repos: [{ name: 'app', private: true }],
+      repos_error: false,
+      auto: false,
+      approved_by: 'vladikk',
+      approved_at: '2026-10-18T10:00:00Z',
+    },
+    {
+      id: 1,
+      account: 'alexei-led',
+      type: 'User',
+      installed_at: '2026-08-01T09:00:00Z',
+      repos: [{ name: 'ccgram', private: false }],
+      repos_error: false,
+      auto: true,
+    },
+  ],
+  unreadable: 0,
+};
+
 interface Mock {
   signedIn?: boolean;
+  operator?: boolean; // the signed-in user approves installations
   tokenRejected?: boolean; // the session stands, but GitHub rejects the user's token on the first repository call
   overview?: object;
   sharingDown?: boolean; // the consent store cannot be read
@@ -504,6 +547,11 @@ async function open(page: Page, path: string, mock: Mock = {}) {
             notice: 'The assist workflow is running in your CI.',
           });
       }
+      const admin = /^\/api\/admin\/installations\/(\d+)\/(approve|revoke)$/.exec(url.pathname);
+      if (admin) {
+        if (!mock.operator) return json(404, { error: 'Not found.' });
+        return json(200, { notice: `${admin[2] === 'approve' ? 'Approved' : 'Revoked'} installation ${admin[1]}.` });
+      }
       if (url.pathname === '/api/repos/acme/app/data-sharing') {
         allowed = true;
         if (mock.savedUnread)
@@ -514,10 +562,15 @@ async function open(page: Page, path: string, mock: Mock = {}) {
     }
     if (mock.signedIn === false) return json(401, { error: 'Sign in to continue.' });
     if (mock.tokenRejected && url.pathname !== '/api/session') return json(401, { error: 'Sign in to continue.' });
+    if (url.pathname.startsWith('/api/repos/octo/'))
+      return json(403, { error: 'This account is waiting for approval.', waiting: 'octo' });
     switch (url.pathname) {
       case '/api/session':
         await mock.holdSession;
-        return json(200, session);
+        return json(200, mock.operator ? { ...session, operator: true, waiting: 1 } : session);
+      case '/api/admin/installations':
+        if (!mock.operator) return json(404, { error: 'Not found.' });
+        return json(200, installations);
       case '/api/repos':
         return json(200, repos);
       case '/api/repos/acme/app/overview':
@@ -573,8 +626,11 @@ async function expectClean(page: Page) {
   }
 }
 
-test('signed out: the landing page signs in and comes back', async ({ page }) => {
+test('signed out: the landing page says what Archfit does, signs in and comes back', async ({ page }) => {
   await open(page, '/', { signedIn: false });
+  await expect(page.getByRole('heading', { name: 'Architecture checks on every pull request' })).toBeVisible();
+  await expect(page.getByText('Your code never leaves your CI.')).toBeVisible();
+  await expect(page.getByText('Waiting for approval')).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Sign in with GitHub' })).toHaveAttribute(
     'href',
     '/auth/login?return=%2F',
@@ -1195,6 +1251,55 @@ test("a repository the user cannot see reads as one that does not exist: the API
   await expectClean(page);
 });
 
+test('waiting: a repository of an account no operator approved shows the pitch and its status, no tabs', async ({
+  page,
+}) => {
+  await open(page, '/r/octo/tool');
+  await expect(page.getByRole('heading', { name: 'Architecture checks on every pull request' })).toBeVisible();
+  await expect(page.getByRole('status').getByText('Your installation on octo is waiting for approval.')).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Repository' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Sign in with GitHub' })).toHaveCount(0);
+  await expect(page).toHaveTitle('Waiting for approval · Archfit');
+  await expectClean(page);
+});
+
+test('repositories: an account waiting for approval says so in its row', async ({ page }) => {
+  await open(page, '/');
+  await expect(page.getByRole('row', { name: /octo\/tool/ }).getByText('waiting for approval')).toHaveClass(
+    /status attention/,
+  );
+  await expect(page.getByRole('link', { name: 'Admin' })).toHaveCount(0);
+});
+
+test('admin: an operator approves a waiting account and revokes one after asking once', async ({ page }) => {
+  const writes = await open(page, '/admin', { operator: true });
+  await expect(page.getByRole('link', { name: 'Admin 1 waiting' })).toHaveAttribute('href', '/admin');
+  await expect(page).toHaveTitle('Installations · Archfit');
+  await expect(page.getByRole('heading', { name: 'Waiting 1' })).toBeVisible();
+  await expect(page.getByText('ledger · private')).toBeVisible();
+  await expect(page.getByText('Approved by vladikk on 18 October 2026')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Revoke alexei-led' })).toHaveCount(0);
+  await expectClean(page);
+
+  await page.getByRole('button', { name: 'Approve octo' }).click();
+  await expect(page.getByText('Approved installation 7.')).toBeVisible();
+  await page.getByRole('button', { name: 'Revoke acme' }).click();
+  await expect(page.getByText('Revoke acme? Checks stop on its next event.')).toBeVisible();
+  await page.getByRole('button', { name: 'Revoke', exact: true }).click();
+  await expect(page.getByText('Revoked installation 3.')).toBeVisible();
+  expect(writes.map((w) => new URL(w.url()).pathname)).toEqual([
+    '/api/admin/installations/7/approve',
+    '/api/admin/installations/3/revoke',
+  ]);
+  for (const w of writes) expect(w.headers()['x-csrf-token']).toBe(session.csrf);
+});
+
+test("admin: anyone else gets the API's Not found", async ({ page }) => {
+  await open(page, '/admin');
+  await expect(page.getByRole('heading', { name: 'This page cannot be shown' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Admin' })).toHaveCount(0);
+});
+
 test('a page reads its data beside the session and shows its frame at once', async ({ page }) => {
   let release = () => {};
   const holdSession = new Promise<void>((resolve) => (release = resolve));
@@ -1226,6 +1331,8 @@ const everyPage = [
   '/r/acme/app/pull/4/graph',
   '/r/acme/app/data-sharing',
   '/r/acme/app/policy',
+  '/r/octo/tool',
+  '/admin',
 ];
 
 // rendered waits for the page's own content: its heading, nothing still loading, and the graph laid out.
@@ -1239,7 +1346,7 @@ test('every page: content at most 1280px and centred, the licences in the footer
   await page.setViewportSize({ width: 1600, height: 900 });
   for (const path of everyPage) {
     await page.unrouteAll();
-    await open(page, path);
+    await open(page, path, { operator: path === '/admin' });
     await rendered(page, path);
     await expect(page.getByRole('link', { name: 'Third-party licences' })).toHaveAttribute('href', '/licenses.txt');
     for (const box of [await page.locator('main').boundingBox(), await page.locator('footer').boundingBox()]) {
@@ -1253,7 +1360,7 @@ test('every page: no sideways scroll at phone width', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   for (const path of everyPage) {
     await page.unrouteAll();
-    await open(page, path);
+    await open(page, path, { operator: path === '/admin' });
     await rendered(page, path);
     const width = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(width, path).toBeLessThanOrEqual(390);

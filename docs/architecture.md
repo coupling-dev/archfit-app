@@ -251,7 +251,7 @@ The Action must implement this contract in `mode: baseline` when `endpoint` is s
 | 403           | `{"error": "<code>"}`                   | Not eligible or not bound to the protected inputs (below). Final         |
 | 409           | `{"error": "<code>"}`                   | `stale_head` or `stale_attempt`. Superseded: dispatch the capture again  |
 | 413           | `{"error": "<code>"}`                   | `baseline_too_large` above 1 MiB, `payload_too_large` above 5 MiB. Final |
-| 429, 503, 500 | `{"error": "<code>"}`                   | `rate_limited`, `oidc_unavailable` or `internal`. Retry                  |
+| 429, 503, 500 | `{"error": "<code>"}`                   | `rate_limited`, `oidc_unavailable`, `admission_unavailable` or `internal`. Retry |
 
 The `400` codes are `method_not_allowed`, `envelope_missing`, `envelope_invalid`, `kind_mismatch`, `digest_mismatch`,
 `unsupported_event`, `envelope_mismatch`, `fork` and `baseline_invalid`. The `403` codes are `repository_mismatch`,
@@ -485,6 +485,12 @@ the e-mail is `ARCHFIT_INVOKER` and is verified, and the token is not expired.
 | `GET /api/repos/{o}/{n}/data-sharing`                                                                              | Session with repository `admin` permission                                    |
 | `POST /api/repos/{o}/{n}/data-sharing`                                                                             | Session with repository `admin` permission, JSON body, CSRF token header      |
 | `GET /r/{o}/{n}/consent`                                                                                           | GitHub OAuth session; `308` to `/data-sharing`, from the path alone           |
+| `GET /admin` and `GET /api/admin/installations`                                                                    | Session of an operator (`ARCHFIT_OPERATORS`); `404` for anyone else           |
+| `POST /api/admin/installations/{id}/approve` and `/revoke`                                                         | Session of an operator, JSON body, CSRF token header; `404` for anyone else   |
+
+Every `/api/repos/{o}/{n}/…` route answers `403` with `"waiting": "<account>"` when no operator approved the
+repository's account, after the permission check. The gate drops that account's webhooks and uploads
+(`403 installation_not_approved`), and the sweep skips it. See [Who the App serves](user-guide.md#who-the-app-serves).
 
 ## Platform seams
 
@@ -542,6 +548,8 @@ See [`.env.example`](../.env.example).
 | `ARCHFIT_TASKS_QUEUE`                         | `projects/<p>/locations/<l>/queues/<q>`, for `cloudtasks`                                               |
 | `ARCHFIT_WORKER_URL`                          | Worker service URL, the invoker token audience. No trailing `/`. For `cloudtasks` and the `worker` role |
 | `ARCHFIT_INVOKER`                             | Service account e-mail of queue and Scheduler dispatches. For `cloudtasks` and the `worker` role        |
+| `ARCHFIT_APPROVED_ACCOUNTS`                   | Accounts served without an operator's approval, comma-separated logins. Default `alexei-led,vladikk,coupling-dev` |
+| `ARCHFIT_OPERATORS`                           | GitHub user IDs that approve installations on `/admin`, comma-separated. Default `1898375,1788671`      |
 | `GOOGLE_CLOUD_PROJECT`                        | Optional. Google Cloud project ID of the log trace field. Empty: log lines name no trace                |
 | `K_REVISION`                                  | Set by Cloud Run. Written as `revision` on every log line                                               |
 

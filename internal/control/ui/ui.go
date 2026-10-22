@@ -12,6 +12,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/control/proposal"
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
+	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/auth"
 	"github.com/alexei-led/archfit-app/internal/wire/policy"
@@ -27,6 +28,8 @@ type Deps struct {
 	Onboarding onboarding.Onboarding
 	Assist     assist.Assist
 	Proposals  proposal.Proposals
+	Admissions *gate.Admissions // which installations the App serves; the others see the Waiting page
+	Operators  []int64          // GitHub user IDs that approve installations on /admin
 	Now        func() time.Time
 }
 
@@ -52,14 +55,19 @@ type (
 	repoLister interface {
 		UserRepos(ctx context.Context, userToken string) ([]api.Repo, error)
 	}
+	installLister interface {
+		ListInstallations(ctx context.Context) ([]api.Installation, error)
+		ListRepos(ctx context.Context, installationID int64) ([]api.Repo, error)
+	}
 )
 
 type github struct {
-	files   fileReader
-	checks  checkReader
-	actions workflows
-	pulls   pullReader
-	users   repoLister
+	files    fileReader
+	checks   checkReader
+	actions  workflows
+	pulls    pullReader
+	users    repoLister
+	installs installLister
 }
 
 type server struct {
@@ -70,6 +78,8 @@ type server struct {
 	onboarding onboarding.Onboarding
 	assist     assist.Assist
 	proposals  proposal.Proposals
+	admissions *gate.Admissions
+	operators  []int64
 	now        func() time.Time
 	shell      shellPage
 	reports    *reportCache
@@ -82,7 +92,8 @@ func New(d Deps) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newHandler(d, github{files: d.GitHub, checks: d.GitHub, actions: d.GitHub, pulls: d.GitHub, users: d.GitHub}, sessions, builtWeb()), nil
+	gh := github{files: d.GitHub, checks: d.GitHub, actions: d.GitHub, pulls: d.GitHub, users: d.GitHub, installs: d.GitHub}
+	return newHandler(d, gh, sessions, builtWeb()), nil
 }
 
 // newHandler mounts every route. web is the build of the web app; tests hand in a small one.
@@ -95,6 +106,8 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 		onboarding: d.Onboarding,
 		assist:     d.Assist,
 		proposals:  d.Proposals,
+		admissions: d.Admissions,
+		operators:  d.Operators,
 		now:        d.Now,
 		shell:      newShell(web),
 		reports:    newReportCache(reportCacheBytes),
@@ -134,8 +147,18 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("GET /r/{o}/{n}/data-sharing", page)
 	mux.Handle("GET /r/{o}/{n}/policy", page)
 	mux.Handle("GET /r/{o}/{n}/consent", s.signedIn(consentMoved))
+	mux.Handle("GET /admin", s.signedIn(func(w http.ResponseWriter, r *http.Request, u session.User) {
+		if !s.isOperator(u) {
+			s.fail(w, r, api.ErrNotFound)
+			return
+		}
+		index(w, r)
+	}))
 
-	mux.Handle("GET /api/session", s.apiSignedIn(apiSession))
+	mux.Handle("GET /api/session", s.apiSignedIn(s.apiSession))
+	mux.Handle("GET /api/admin/installations", s.apiOperator(s.apiAdmin))
+	mux.Handle("POST /api/admin/installations/{id}/approve", s.apiOperator(s.apiApprove))
+	mux.Handle("POST /api/admin/installations/{id}/revoke", s.apiOperator(s.apiRevoke))
 	mux.Handle("GET /api/repos", s.apiSignedIn(s.apiRepos))
 	mux.Handle("GET /api/repos/{o}/{n}/overview", s.apiRepo(permRead, s.apiStatus))
 	mux.Handle("GET /api/repos/{o}/{n}/findings", s.apiRepo(permRead, s.apiFindings))

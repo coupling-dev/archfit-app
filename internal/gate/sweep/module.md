@@ -13,6 +13,7 @@ and a changed base policy, an expired waiver or a restored subscription would ne
 
 ## Functional Responsibilities
 
+- Skip installations no operator approved, and count them.
 - Walk installations → repositories → open pull requests (drafts included) whose base has a settings file.
 - In required mode: ensure fork PRs show `fork_unsupported` and suspended repositories show
   `subscription_suspended`. In advisory mode only the waiver warning runs.
@@ -54,6 +55,7 @@ type Summary struct {
     Repos, Pulls                         int
     Pended, TimedOut, Rerun, Warned      int
     Suspended                            int
+    NotAdmitted                          int  // installations skipped: no operator approved them
     Errors                               int  // repositories or pulls skipped after an error; details are in the log
     RateLimited                          bool // the pass stopped early on a GitHub rate limit
 }
@@ -68,7 +70,13 @@ type Sweeper interface {
 ```
 
 ```go
-func New(repos Repos, pulls Pulls, actions Actions, r Resolver, p Publisher, c Config) Sweeper
+// Admitter answers whether the App serves an installation; owner is its account login. gate/inputs.Admissions
+// implements it.
+type Admitter interface {
+    Admitted(ctx context.Context, installationID int64, owner string) (bool, error)
+}
+
+func New(repos Repos, pulls Pulls, actions Actions, r Resolver, p Publisher, admit Admitter, c Config) Sweeper
 ```
 
 Zero `Config` durations are replaced by 60 minutes and 7 days **[default]**.
@@ -111,13 +119,16 @@ func Withdrawal(t Target, current CheckState, tr Trusted) *Publication
 1. `Repos.ListInstallations`. An error here is returned; nothing was done.
 2. Installations are visited in ID order, starting at index `(now.Unix() / 3600) mod len` **[default]**, so a
    pass that stops early does not starve the same tail every hour. No cursor is stored.
-3. Per installation `Repos.ListRepos`; per repository `Pulls.OpenPulls`. `Summary.Repos` counts repositories visited.
+3. Per installation: `Admitter.Admitted(Installation.ID, Installation.Account)`; false → `Summary.NotAdmitted++`, skip the
+   installation (no `ListRepos`, nothing read or written); an error → skip it the same way and count it in
+   `Summary.Errors` (not `NotAdmitted`), like any other skipped unit. Then `Repos.ListRepos`; per repository `Pulls.OpenPulls`. `Summary.Repos` counts repositories visited.
 4. Per pull: `Target{Repo, PullRequest: Number, HeadSHA, BaseRef, Fork: pull.HeadRepo != Repo.FullName}`, then
    `Resolver.Resolve(target, now)`. `!SettingsFound` → skip (not onboarded); the miss is remembered per
    `(repository, BaseRef)` for the rest of the pass. Otherwise `Summary.Pulls++` and the rules below run.
 5. Sequential, one pull at a time **[default]**.
 
-`RunRepo(ctx, r, now)` is steps 3 to 5 for the one repository `r`: same rules, same guards, same error
+`RunRepo(ctx, r, now)` is steps 3 to 5 for the one repository `r`, without the admission check (its caller, the
+gate's `HandleEvent`, asked `Admitted` for the event already): same rules, same guards, same error
 handling, `Summary.Repos == 1`. The caller supplies `r` from a verified webhook; only `r.RepoRef` and
 `r.Private` are needed. It exists so that a default-branch push that changes a protected path reaches the
 repository's open PRs at once; the hourly `Run` stays the recovery path when that event is lost.
@@ -622,8 +633,10 @@ var (
 <!-- contract: Repos, Installation — restated from internal/github/api/module.md -->
 ```go
 type Installation struct {
-    ID      int64
-    Account string // organization or user login
+    ID          int64
+    Account     string    // organization or user login
+    AccountType string    // "Organization" or "User"
+    CreatedAt   time.Time // when the App was installed
 }
 
 // Repos reads installations, repositories and file contents.
@@ -713,7 +726,7 @@ type Actions interface {
 
 ### Consumers (inbound)
 
-- **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Constructs the sweeper with `Deps.Sweep`,
+- **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Constructs the sweeper with `Deps.Sweep` and the `Admissions` as the `Admitter`,
   calls `Run(ctx, Deps.Now())` from `Gate.Sweep` and `RunRepo` from `HandleEvent` on a protected default-branch push,
   calls `Rerun` for `ReviewChanged` and `Without` for the fork refusal of a new head, re-publishes `Sweeper`, `Summary` and `Config` to `app`.
 
@@ -742,6 +755,9 @@ type Actions interface {
   `RateLimited` and a nil error so the scheduler does not treat it as a failure. `RunRepo` returns the error, so the
   webhook queue retries the push that started it.
 - A failure for one installation, repository or pull never aborts the pass.
+- An installation that is not admitted is skipped whole: no `ListRepos`, no `Resolve`, no write. An approval that
+  cannot be read is an error, not a refusal: the installation is skipped and counted in `Errors`, and a later pass
+  tries again.
 - Reconciliation window (stated, not zero): a missed event or an expiry is repaired within one sweep interval
   (hourly **[default]**) plus the customer's CI time. During that window the old check result stands.
 - A Store outage inside `Resolve` means "not suspended"; the sweep never suspends on missing data. A pull whose pusher
@@ -815,6 +831,12 @@ calls and serves `State` from what was published; injectable errors. Time is the
 - **Test name**: `TestNotOnboardedIsSkipped`
   **Scenario**: repositories without a settings file on the base; two pulls on the same base.
   **Expected behavior**: no publisher call; `Resolve` called once for that base; `Summary.Pulls` does not count them.
+- **Test name**: `TestUnadmittedInstallationIsNotSwept`
+  **Scenario**: three installations, each with one stale pull request; the admission fake refuses the second.
+  **Expected behavior**: `ListRepos` is called for installations 1 and 3 only; `Summary.NotAdmitted == 1` and `Summary.Repos == 2`.
+- **Test name**: `TestUnreadableAdmissionSkipsTheInstallationAsAnError`
+  **Scenario**: three installations; the admission fake cannot read the second.
+  **Expected behavior**: `ListRepos` is called for installations 1 and 3 only; `Summary.Errors == 1`, `Summary.NotAdmitted == 0` and `Summary.Repos == 2`.
 - **Test name**: `TestRunRepoIsTheSamePassForOneRepository`
   **Scenario**: two repositories with stale receipts; `RunRepo` for the first; then `Run`.
   **Expected behavior**: `RunRepo` repairs only the first repository, never calls `ListInstallations` or `ListRepos`, returns `Repos == 1`; the following `Run` repairs the second and makes no write for the first.

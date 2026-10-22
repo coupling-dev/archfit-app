@@ -257,3 +257,46 @@ func TestTamperingNeverYieldsSuccess(t *testing.T) {
 		t.Fatalf("the owner-approved policy change answered %+v; want success", got)
 	}
 }
+
+func TestUnapprovedAccountIsInertUntilAnOperatorApproves(t *testing.T) {
+	f := loadFixture(t, "real-healthy")
+	w := newWorld(t)
+	w.seedDemo(f, "required", true)
+	w.allow("alice", demoRepo, "admin")
+	s := newSystem(t, w, options{approved: []string{"acme"}})
+	alice := newBrowser(t, s.do)
+	alice.signIn("alice")
+	olivia := newBrowser(t, s.do)
+	olivia.signIn("olivia")
+
+	opened := pullPayload("opened", demoInstallation, demoRepo, demoRepo, true, demoPull, demoHead)
+	if gateErr, ctlErr := s.deliver("pull_request", opened); gateErr != nil || ctlErr != nil {
+		t.Fatalf("deliver: gate %v, control %v", gateErr, ctlErr)
+	}
+	if got := s.upload(demoUpload(f)); got.Status != http.StatusForbidden || got.Error != "installation_not_approved" {
+		t.Fatalf("upload before approval answered %+v; want 403 installation_not_approved", got)
+	}
+	if sum := s.sweep(); sum.NotAdmitted != 1 {
+		t.Errorf("sweep before approval: %+v; want the installation skipped", sum)
+	}
+	if w.check(demoRepo, demoHead, checkGate) != nil || len(w.commentsOf(demoRepo, demoPull)) != 0 {
+		t.Fatal("an unapproved account got a check or a comment")
+	}
+	resp, page := alice.get("/api/repos/" + demoRepo + "/overview")
+	if resp.StatusCode != http.StatusForbidden || !strings.Contains(page, `"waiting":"alexei-led"`) {
+		t.Fatalf("overview before approval: %d %s; want 403 waiting for alexei-led", resp.StatusCode, page)
+	}
+	if resp, _ := alice.postJSON(fmt.Sprintf("/api/admin/installations/%d/approve", demoInstallation), struct{}{}); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("a non-operator's approve: %d; want 404", resp.StatusCode)
+	}
+
+	if resp, page := olivia.postJSON(fmt.Sprintf("/api/admin/installations/%d/approve", demoInstallation), struct{}{}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("operator approve: %d %s", resp.StatusCode, page)
+	}
+	if got := s.upload(demoUpload(f)); got.Status/100 != 2 || got.Conclusion != "success" {
+		t.Fatalf("upload after approval answered %+v; want 2xx success", got)
+	}
+	if resp, page := alice.get("/api/repos/" + demoRepo + "/overview"); resp.StatusCode != http.StatusOK {
+		t.Fatalf("overview after approval: %d %s", resp.StatusCode, page)
+	}
+}

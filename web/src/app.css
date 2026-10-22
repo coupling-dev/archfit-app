@@ -656,3 +656,48 @@ legend { font-weight: 600; padding: 0; margin-bottom: 4px; }
 .howto { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
 .howto li { padding-left: 4px; }
 .howto li .btn { margin-right: 8px; }
+
+/* ---------- the pitch: landing and Waiting pages ---------- */
+.pitch { display: flex; flex-direction: column; gap: 32px; }
+.pitch h2 { font-size: 18px; }
+.pitch-hero { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; padding-top: 16px; }
+.pitch-hero h1 { font-size: 32px; line-height: 1.2; max-width: 22ch; }
+.pitch-hero p { color: var(--fg-muted); font-size: 16px; max-width: 60ch; margin: 0; }
+@media (max-width: 640px) { .pitch-hero h1 { font-size: 24px; } }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--attention); background: var(--attention-subtle); border: 1px solid var(--attention-border); border-radius: 999px; padding: 4px 12px; overflow-wrap: anywhere; }
+.pill .pulse { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--attention); animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .3; } }
+.pitch-flow { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+.pitch-flow li { position: relative; border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; background: var(--bg-subtle); display: flex; flex-direction: column; gap: 6px; }
+.pitch-flow li + li::before { content: "→"; position: absolute; left: -19px; top: 50%; transform: translateY(-50%); color: var(--fg-muted); font-size: 16px; }
+.pitch-flow .ic { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-subtle); color: var(--accent); font-weight: 700; }
+.pitch-flow .mid .ic { background: var(--done-subtle); color: var(--done); }
+.pitch-flow .end .ic { background: var(--success-subtle); color: var(--success); }
+.pitch-flow li > span:last-child, .pitch-cards span:not(.k) { color: var(--fg-muted); font-size: 13px; }
+@media (max-width: 760px) {
+  .pitch-flow { grid-template-columns: 1fr; }
+  .pitch-flow li + li::before { content: "↓"; left: 50%; top: -21px; transform: translateX(-50%); }
+}
+.pitch-privacy { text-align: center; font-size: 13px; margin: 0; }
+.pitch-privacy strong { color: var(--success); }
+.pitch-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.pitch-cards > div { border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: flex; flex-direction: column; gap: 4px; }
+.pitch-cards .k { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); }
+@media (max-width: 640px) { .pitch-cards { grid-template-columns: 1fr; } }
+.pitch-check { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 13px; }
+.sev { font-weight: 700; }
+.sev.danger { color: var(--danger); }
+.sev.attention { color: var(--attention); }
+.statusbox { border: 1px solid var(--attention-border); background: var(--attention-subtle); border-radius: var(--radius); padding: 16px; display: flex; gap: 12px; align-items: flex-start; }
+.statusbox .big-ic { font-size: 24px; line-height: 1; }
+.statusbox p { margin: 4px 0 0; color: var(--fg-muted); font-size: 13px; }
+
+/* ---------- operators: the header link and the installations page ---------- */
+.admin-link { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
+.acct { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.acct .av { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; color: #fff; background: var(--accent-emphasis); }
+.acct .av.org { border-radius: 8px; background: var(--done-emphasis); }
+.chips { list-style: none; margin: 4px 0 0; padding: 0; display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { font: 12px var(--mono); border: 1px solid var(--border); border-radius: 999px; padding: 0 8px; background: var(--bg-subtle); overflow-wrap: anywhere; }
+.chip.priv { border-color: var(--attention-border); color: var(--attention); }
+@media (max-width: 640px) { .acct { grid-template-columns: 36px minmax(0, 1fr); } .acct > :last-child { grid-column: 2; } }

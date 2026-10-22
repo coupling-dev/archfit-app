@@ -329,7 +329,7 @@ func TestNewReceiverIsTheSameReceiver(t *testing.T) {
 			s = w.spec(p, []byte("version: 1\n"))
 			s.env.Kind = envelope.KindDiscovery
 			row.damage(w, p, &s)
-			_, err := newReceiver(w.gh, w.oidc, testAudience).Receive(context.Background(), w.request(s), envelope.KindDiscovery)
+			_, err := newReceiver(w.gh, w.oidc, testAudience, w.admit).Receive(context.Background(), w.request(s), envelope.KindDiscovery)
 
 			var rejection *Rejection
 			if !errors.As(err, &rejection) {
@@ -354,7 +354,7 @@ func TestNewReceiverIsTheSameReceiver(t *testing.T) {
 		s.env.Kind, s.env.Event, s.env.PullRequest, s.env.BaseSHA, s.env.MergeBaseSHA = envelope.KindDiscovery, "workflow_dispatch", 0, "", ""
 		s.claims.EventName, s.claims.Ref = "workflow_dispatch", "refs/heads/"+testBranch
 
-		u, err := newReceiver(w.gh, w.oidc, testAudience).Receive(context.Background(), w.request(s), envelope.KindDiscovery)
+		u, err := newReceiver(w.gh, w.oidc, testAudience, w.admit).Receive(context.Background(), w.request(s), envelope.KindDiscovery)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -376,7 +376,7 @@ func TestNewReceiverIsTheSameReceiver(t *testing.T) {
 		s.env.Kind = envelope.KindDiscovery
 		s.token, s.claims = "forged", oidc.Claims{}
 		req := w.request(s)
-		_, err := NewReceiver(api.New(nil, nil), w.oidc, testAudience).Receive(context.Background(), req, envelope.KindDiscovery)
+		_, err := NewReceiver(api.New(nil, nil), w.oidc, testAudience, NewAdmissions(w.mem, nil)).Receive(context.Background(), req, envelope.KindDiscovery)
 		var rejection *Rejection
 		if !errors.As(err, &rejection) || rejection.Status != 401 {
 			t.Errorf("err = %v, want a 401 rejection", err)

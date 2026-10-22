@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -72,6 +73,9 @@ func (b *syncBuffer) String() string {
 // scenario is one upload with the GitHub state the fakes answer with.
 type scenario struct {
 	kind        envelope.Kind
+	notAdmitted bool     // no operator approved the installation
+	admitDown   bool     // the approval cannot be read
+	admitAsked  []string // "<installation ID> <owner>" per Admitted call
 	method      string
 	target      string
 	body        []byte
@@ -254,8 +258,18 @@ func (s *scenario) request(t *testing.T) *http.Request {
 func (s *scenario) receive(t *testing.T) (Upload, error) {
 	t.Helper()
 	s.calls, s.resolved, s.refs = nil, nil, nil
-	r := New(fakeRepos{s: s}, fakePulls{s: s}, fakeActions{s: s}, fakeVerifier{s: s}, testAudience)
+	r := New(fakeRepos{s: s}, fakePulls{s: s}, fakeActions{s: s}, fakeVerifier{s: s}, testAudience, fakeAdmitter{s: s})
 	return r.Receive(context.Background(), s.request(t), s.kind)
+}
+
+type fakeAdmitter struct{ s *scenario }
+
+func (a fakeAdmitter) Admitted(_ context.Context, installationID int64, owner string) (bool, error) {
+	a.s.admitAsked = append(a.s.admitAsked, fmt.Sprintf("%d %s", installationID, owner))
+	if a.s.admitDown {
+		return false, errors.New("fake: store down")
+	}
+	return !a.s.notAdmitted, nil
 }
 
 // healthyBinding is what GitHub says about prScenario.

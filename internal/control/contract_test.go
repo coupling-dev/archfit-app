@@ -150,7 +150,7 @@ func TestSweepStopsWhenInstallationsUnavailable(t *testing.T) {
 	st := &flakyStore{Store: store.NewMemory()}
 	acct, _, _ := account.New(st)
 	repos := &fakeRepos{installErr: api.ErrRateLimited}
-	c := newControl(acct, repos, st, okHandler, okHandler, newClock().Now)
+	c := newControl(acct, repos, st, admitAll{}, okHandler, okHandler, newClock().Now)
 
 	err := c.Sweep(ctx)
 

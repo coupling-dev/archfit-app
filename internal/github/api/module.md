@@ -106,6 +106,8 @@ a `truncated` result: it returns the paths read so far with `truncated` true.
 ### Endpoints
 
 - `ListInstallations`: `GET /app/installations`; suspended installations are skipped **[default]**.
+  Each `Installation` carries the account login, its type (`Organization` or `User`, from `account.type`) and the
+  install time (`created_at`).
 - `ListRepos`: `GET /installation/repositories`.
 - `ResolveRepo`: `GET /repos/{r}/installation` (JWT) then `GET /repos/{r}` with that installation's token.
 - `File`: `GET /repos/{r}/contents/{path}?ref=`; `type` must be `file`; base64 body; over 1 MiB → error
@@ -209,8 +211,10 @@ func Permanent(err error) bool
 
 ```go
 type Installation struct {
-    ID      int64
-    Account string // organization or user login
+    ID          int64
+    Account     string    // organization or user login
+    AccountType string    // "Organization" or "User"
+    CreatedAt   time.Time // when the App was installed
 }
 
 // Repos reads installations, repositories and file contents.

@@ -57,6 +57,9 @@ func (s *server) apiRepo(minPermission string, next apiFunc) http.Handler {
 		l := logOf(r)
 		l.repoID, l.installationID = repo.ID, repo.InstallationID
 		sc.repo = repo
+		if err := s.admit(r.Context(), repo); err != nil {
+			return nil, err
+		}
 		return next(r, sc)
 	})
 }
@@ -75,6 +78,7 @@ func (s *server) answer(w http.ResponseWriter, r *http.Request, sc scope, next a
 type errorJSON struct {
 	Error       string           `json:"error"`
 	Diagnostics []diagnosticJSON `json:"diagnostics,omitempty"` // the problems of a refused policy text
+	Waiting     string           `json:"waiting,omitempty"`     // the account waiting for approval: the Waiting page
 }
 
 // failJSON is fail for /api: the documented status and sentence, as JSON, and the problems of a refused policy.
@@ -85,6 +89,7 @@ func (s *server) failJSON(w http.ResponseWriter, r *http.Request, err error) {
 		w.Header().Set("Retry-After", retryAfterSeconds)
 	}
 	body := errorJSON{Error: sentence}
+	body.Waiting, _ = errorsAsWaiting(err)
 	var problems *policyProblems
 	if errors.As(err, &problems) {
 		body.Diagnostics = diagnosticsJSON(problems.list)
@@ -120,13 +125,19 @@ func decodeJSON(r *http.Request, dst any) error {
 }
 
 type sessionJSON struct {
-	Login string `json:"login"`
-	CSRF  string `json:"csrf"`
+	Login    string `json:"login"`
+	CSRF     string `json:"csrf"`
+	Operator bool   `json:"operator,omitempty"` // may approve installations on /admin
+	Waiting  int    `json:"waiting,omitempty"`  // operators only: installations waiting; -1 when it could not be read
 }
 
 // apiSession is the signed-in login and the CSRF token the app sends with every write.
-func apiSession(_ *http.Request, sc scope) (any, error) {
-	return sessionJSON{Login: sc.user.Login, CSRF: csrfToken(sc.user)}, nil
+func (s *server) apiSession(r *http.Request, sc scope) (any, error) {
+	body := sessionJSON{Login: sc.user.Login, CSRF: csrfToken(sc.user)}
+	if s.isOperator(sc.user) {
+		body.Operator, body.Waiting = true, s.waitingCount(r.Context())
+	}
+	return body, nil
 }
 
 // noticeJSON answers a write: the sentence to show and, when the next step is another page, its path.
