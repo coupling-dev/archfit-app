@@ -19,7 +19,12 @@ could still work GitHub-first, but onboarding, schema-guided editing and consent
   renders no HTML of its own: an error page is the same shell with the error's status and sentence.
 - Authenticate every request through `session` and authorize every repository API call at the needed permission. A
   repository page is the shell, the same for every repository, and needs only a session.
-- Overview: the user's repositories with their latest default-branch `archfit/state` check conclusion. No score.
+- Overview: the user's repositories with their latest default-branch `archfit/state` check conclusion. No score. A
+  repository of an account no operator approved is listed as "waiting for approval", with no lookup.
+- Waiting: answer every repository API of an unapproved account `403` with the account's login, so the web app shows the
+  Waiting page instead of an empty repository.
+- Admin: for an operator only, list the App's installations, waiting first, and approve or revoke one through
+  `Account.Admit` and `Account.Unadmit`.
 - Repository status: onboarding `Progress`, actions to start onboarding or dispatch discovery, entitlement banner.
 - Policy editor: load the policy into a CodeMirror 6 editor (YAML, line numbers, folding, history, search), check it
   on the server (when loaded, on Check, and before every save) and list its problems by line, above the editor and as
@@ -46,7 +51,11 @@ pilot; product.md leaves usability targets open.
 ## Encapsulated Knowledge
 
 - Routes, the JSON API, the web app, templates, static assets, page wording, the HTTP status mapping of every error.
-- The handler chain: recover → security headers → body limit → session → CSRF → authorize (API) → handler.
+- The handler chain: recover → security headers → body limit → session → CSRF → authorize (API) → admission (repository API) → handler.
+- Who is an operator: a signed-in user whose GitHub user ID is in `Deps.Operators`, never by login. Any other
+  signed-in user gets the same `404` as for an unknown path. A signed-out request gets what every route gives it: sign-in
+  (`303` for a page, `401` for the API), and a write without the JSON type or the CSRF token is refused (`415`, `403`)
+  before the operator check. Nothing here is secret: the routes are in the public docs; the check protects the data.
 - How a page loads (`web/src/lib/early.ts`): its first reads (`firstPaths`, those with no input but the path) and its
   lazy chunk start beside `/api/session`, not after it; each is authorized on its own, the page takes the answer once
   when it mounts, and a read no page takes is dropped quietly. Until an answer comes, the frame and a grey skeleton of
@@ -89,6 +98,8 @@ type Deps struct {
     Onboarding Onboarding
     Assist     Assist
     Proposals  Proposals
+    Admissions *Admissions // which installations the App serves; the others see the Waiting page
+    Operators  []int64     // GitHub user IDs that approve installations on /admin
     Now        func() time.Time
 }
 
@@ -121,6 +132,7 @@ as one that does not exist, and the app shows that answer as the error page, wit
 - `GET /r/{o}/{n}/data-sharing` [session] — the shell, for the Data sharing page; its API needs admin.
 - `GET /r/{o}/{n}/policy` [session] — the shell, for the policy editor; the app reads `?branch=` and `?since=` from its
   own URL and a `#L<n>` hash selects that line.
+- `GET /admin` [session, operator] — the shell, for the admin page; `404` for any signed-in user who is not an operator.
 - `GET /r/{o}/{n}/consent` [session] — `308` to `/r/{o}/{n}/data-sharing`, from the path alone: the same answer for
   every repository, so it confirms nothing.
 
@@ -130,8 +142,24 @@ package, never a stored record. Errors are `{"error": "<sentence>"}` with the st
 needs `Content-Type: application/json` (else `415`) and the `X-CSRF-Token` header (else `403`); a body field this
 package does not know is `422`, so a body cannot name a repository, a user or an installation.
 
-- `GET /api/session` — `{login, csrf}` of the signed-in user.
-- `GET /api/repos` — `{repos: [{full_name, state, tone, reason}], truncated}`: the overview, first 100 by name.
+- `GET /api/session` — `{login, csrf}` of the signed-in user. For an operator also `operator: true` and `waiting`,
+  the number of installations no one approved yet (`-1` when the list could not be read); both are left out for
+  everyone else.
+- `GET /api/repos` — `{repos: [{full_name, waiting?, state, tone, reason}], truncated}`: the overview, first 100 by
+  name. A repository whose installation is not admitted has `waiting: true`, state "waiting for approval", tone
+  `attention`, and no lookup.
+- `GET /api/admin/installations` [operator] — `{waiting, approved, unreadable}`; each row is `{id, account, type,
+  installed_at, repos: [{name, private}], repos_error, auto, approved_by?, approved_at?}`. `waiting` is newest first,
+  `approved` by account name. `auto` marks an account approved by the App's configuration. An installation whose
+  approval cannot be read is listed as waiting and counted in `unreadable`, never shown as approved. `repos_error`
+  means its repositories could not be read; the row stays.
+- `POST /api/admin/installations/{id}/approve` [operator] — body `{}`; `Account.Admit` with the account login from
+  GitHub, the operator's login and user ID and the server clock; answers `{notice}`.
+- `POST /api/admin/installations/{id}/revoke` [operator] — body `{}`; `Account.Unadmit`; answers `{notice}`.
+  For both, `{id}` must be one of the App's own installations (`ListInstallations`), else `404`; an account approved by
+  configuration is `409` "This account is approved by the App's configuration. Change it by pull request."
+- Every `/api/repos/{o}/{n}/…` route of a repository whose installation is not admitted answers `403` `{error,
+  waiting}` with `waiting` the account login, after the user is authorized for it.
 - `GET /api/repos/{o}/{n}/pulls/{number}` [read] — the pull request page: header, result, and the report's findings
   in the groups and words of the PR comment (below, Pages). `404` for a number that is not a positive integer or not a
   pull request of the repository.
@@ -200,6 +228,12 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   with a method it does not take (`GET /auth/logout`, `POST /r/o/n`), is the same page with `404` "Not found.": one
   catch-all `/` keeps every non-API answer the shell, and `ServeMux` refuses a `GET /` catch-all beside the method-less
   `/api/` one, so the mux's own `405` is not kept. A panic answers `500` "internal error" as plain text under the handler chain's CSP.
+- Repository API of an installation that is not admitted (after `Authorize` succeeded): `403` "This account is waiting
+  for approval." with `waiting` set in the JSON, log outcome `not_admitted`. The check reads the admission on every
+  request. An approval that cannot be read is not "waiting": it is a generic error (`502` "try again"), so an approved
+  account never sees the Waiting page during a Store outage.
+- `/admin` and `/api/admin/…` for a user who is not an operator, and an installation ID that is not the App's: `404`
+  "Not found."
 - `ErrForbidden` from `Authorize`: `404` **[default]**, so that repository names are not confirmed to outsiders.
   `api.ErrNotFound` from any GitHub call a page does not handle itself: `404` with the same "Not found." wording.
 - Missing or wrong CSRF token: `403`. Body over 512 KB **[default]**: `413`. An `/api/` `POST` that is not JSON: `415`.
@@ -399,7 +433,8 @@ func Build(rep Report, policy []byte) View
 - **LCA / Rank / Distance**: control / 1 / 1
 - **Volatility**: high
 - **Balanced?**: yes
-- **Shared knowledge**: `Account.Status` for the banner (ui calls no other `Account` method); `Consents.Record`, `Revoke`, `Has`, `Get`.
+- **Shared knowledge**: `Account.Status` for the banner, and `Account.Admit` and `Account.Unadmit` for the operator's
+  approval (ui calls no other `Account` method); the operator check is ui's, `account` trusts it; `Consents.Record`, `Revoke`, `Has`, `Get`.
   `ErrBudgetExhausted` is the sentinel of account's budget that reaches ui only through `assist`.
 
 <!-- contract: Account, Status, Plan — restated from internal/control/account/module.md -->
@@ -430,8 +465,14 @@ type Account interface {
     Grant(ctx context.Context, installationID int64, until time.Time, now time.Time) error
     // Refresh recomputes the Entitlement record of one installation (called by the sweep).
     Refresh(ctx context.Context, installationID int64, now time.Time) error
-    // Forget deletes every key of the installation (uninstall).
+    // Forget deletes every key of the installation (uninstall), its admission included.
     Forget(ctx context.Context, installationID int64) error
+    // Admit records an operator's approval of the installation: the gate serves it from the next event on.
+    // Operator-only; audited in the log by installation ID and operator.
+    Admit(ctx context.Context, installationID int64, a gate.Admission) error
+    // Unadmit deletes the approval: the gate serves nothing for the installation from the next event on.
+    // Unadmitting an installation without an approval is not an error.
+    Unadmit(ctx context.Context, installationID int64, byID int64) error
 }
 ```
 
@@ -688,8 +729,10 @@ var (
 <!-- contract: Repos, Installation — restated from internal/github/api/module.md -->
 ```go
 type Installation struct {
-    ID      int64
-    Account string // organization or user login
+    ID          int64
+    Account     string    // organization or user login
+    AccountType string    // "Organization" or "User"
+    CreatedAt   time.Time // when the App was installed
 }
 
 // Repos reads installations, repositories and file contents.
@@ -1023,7 +1066,8 @@ func EngineVersions() []string
 - **LCA / Rank / Distance**: control / 1 / 1
 - **Volatility**: high
 - **Balanced?**: yes — parent and child
-- **Shared knowledge**: `Deps` and `New` above. `control` passes its `OAuth`, `CookieKey` and `BaseURL` through and returns a
+- **Shared knowledge**: `Deps` and `New` above. `control` passes its `OAuth`, `CookieKey`, `BaseURL`, `Admissions` and
+  `Operators` through and returns a
   `ui.New` error from its own constructor.
 
 ### internal/github/auth
@@ -1098,6 +1142,11 @@ type OAuth interface {
    `application/json` check) with the token derived from `User.Token`.
 6. `/api/repos/{o}/{n}/…`: `Sessions.Authorize(user, "{o}/{n}", min)` on every request. The returned `Repo` is handed
    to the handler as an argument and is the only repository identity it may use. A repository page stops at step 4.
+7. `/api/repos/{o}/{n}/…`, after step 6: `Admissions.Admitted(repo.InstallationID, owner of repo.FullName)`; false stops
+   the request with the waiting `403`, an error stops it with the generic `502`. Authorization comes first, so a user who cannot see the repository still gets
+   the `404`, and only a user who can see it learns that its account waits.
+8. `/api/admin/…`: the user's ID must be in `Operators`, else `404`; the handler then looks the path's installation up among
+   `ListInstallations`. Steps 4 and 5 apply as for any `POST`.
 
 Every response carries an `X-Request-Id` header with the request ID of its log line **[default]**. That line, `ui request`
 at `INFO`, one per request, also carries `gh_calls` and `gh_ms`: the GitHub round trips the request made (session's
@@ -1167,7 +1216,8 @@ then the chain in turn, never a wrong page.
 ### Pages
 
 - Overview: `Users.UserRepos(user.Token)`; the list is already scoped by GitHub to what the user can access, so no
-  per-repository `Authorize` is needed. At most 100 repositories **[default]**, sorted by name, 8 lookups in parallel **[default]**. Per repository:
+  per-repository `Authorize` is needed. Each installation is asked `Admitted` once per request; a repository of one
+  that is not admitted gets the row "waiting for approval" and no `BranchHead` or `CheckRuns` call. At most 100 repositories **[default]**, sorted by name, 8 lookups in parallel **[default]**. Per repository:
   `Repos.BranchHead(repo.RepoRef, repo.DefaultBranch)` → `Checks.CheckRuns(head, "archfit/state")`.
   A default-branch upload publishes `archfit/state` only; `archfit/gate` lives on pull requests and is shown on the editor
   page for the draft head. No check run on the head: "no state yet". A failed lookup: "unknown" for that
@@ -1347,6 +1397,7 @@ then the chain in turn, never a wrong page.
 - New pages that read existing contracts (check details, waiver list).
 - The CSRF scheme or security headers.
 - Bounded visual edits in the graph: a new handler proposing a text patch through the same save path.
+- Another way to approve an account: the operator list and the configured accounts are inputs of `app`; ui only asks.
 - Splitting handlers into more child modules when a second contributor works here.
 
 ## Constraints and Invariants
@@ -1354,6 +1405,14 @@ then the chain in turn, never a wrong page.
 - Tenant identity only from the authorized session: the installation ID and repository used by any page come from the `Repo`
   that `Sessions.Authorize` returned (or from `Users.UserRepos` on the overview). IDs in URLs, queries, forms, JSON bodies
   or headers are never read. The `{o}/{n}` path segment is a lookup key and proves nothing.
+- Operators are recognized by GitHub user ID only. A login can be renamed and re-taken; an ID cannot. Operator routes
+  answer a non-operator exactly like an unknown path.
+- ui never takes an installation ID or an account login for an approval from the request: the ID in the path must be
+  one of the App's own installations, and the account login comes from GitHub. A configured account cannot be approved
+  or revoked here.
+- An approval that cannot be read is never shown as approved: the admin list shows the installation as waiting and
+  counts it in `unreadable`. The overview list shows such a repository as waiting too (it reads no state for it either
+  way), but a repository API answers the generic error, never the Waiting page, and the operator's waiting count is `-1`.
 - Every repository handler authorizes on every request, `GET` included. A revoked user loses access within session's 60 second cache **[default]**.
 - No repository score, no aggregate, no ranking, anywhere.
 - Draft, awaiting review and published are pull-request states read from GitHub. ui stores no draft, no version, no lock.
@@ -1575,8 +1634,24 @@ their interfaces except where a test says otherwise. The clock is injected.
   **Expected behavior**: through the JSON API: `StartCustomer` gets the parsed owners and the answer is the onboarding
   notice; managed without consent answers the Data sharing page as `location` and never calls `StartManaged`; discovery dispatch is refused before the stage and sends input `mode=discovery` on the settings workflow after it.
 
+- **Test name**: `TestRepositoryOfWaitingAccountAnswersWaiting`
+  **Scenario**: a user with `admin` on a repository of an installation no one approved; its overview, findings, policy and Data sharing APIs, another repository of an approved account, and `/api/repos`.
+  **Expected behavior**: `403` with `waiting` set to the account for the four APIs; `200` for the approved repository; in the list only the unapproved repository has `waiting: true` and the state "waiting for approval".
+- **Test name**: `TestOperatorApprovesThenRevokes`
+  **Scenario**: an operator opens `/admin`, reads the session and the installation list, approves the waiting installation, then revokes it an hour later; the account's user reads its overview after each step.
+  **Expected behavior**: `200` for the operator; session `operator` with 1 waiting; the list shows the waiting installation with its repository and the configured accounts as approved by configuration; after approve it is approved by the operator at the server clock and the user's overview is `200`; after revoke the overview is `403` and the installation is waiting again.
+- **Test name**: `TestOperatorIsTheUserIDNotTheLogin`
+  **Scenario**: another GitHub user, with a different user ID, signs in with the operator's login; `/admin`, approve and `/api/session`.
+  **Expected behavior**: `404` for `/admin` and for approve; the session has no `operator`.
+- **Test name**: `TestOperatorCannotChangeConfiguredOrUnknownInstallations`
+  **Scenario**: an operator approves and revokes a configured account's installation, an unknown ID, `x` and `-3`; then approves with no CSRF token.
+  **Expected behavior**: `409` for the configured account, `404` for the others, `403` without the token; the installation is not admitted afterwards.
+
 ### Boundary Tests
 
+- **Test name**: `TestAdminIsNotFoundForNonOperators`
+  **Scenario**: a signed-in user who is not an operator calls `/admin`, the list API, approve and revoke, and reads `/api/session`.
+  **Expected behavior**: `404` for the four routes; the session body has no `operator` or `waiting`; the installation was not admitted.
 - **Test name**: `TestRepositoryPagesAreOneShell`
   **Scenario**: every repository page (overview, graph, pull request, its graph, policy, Data sharing) for the user's
   repository, another tenant's and one that does not exist; then the overview API of the other tenant's and the missing one.

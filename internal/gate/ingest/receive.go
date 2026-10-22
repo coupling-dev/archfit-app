@@ -33,6 +33,8 @@ const (
 	codeOIDCUnavailable    = "oidc_unavailable"
 	codeRepositoryMismatch = "repository_mismatch"
 	codeNotInstalled       = "not_installed"
+	codeNotAdmitted        = "installation_not_approved"
+	codeAdmissionDown      = "admission_unavailable"
 	codeRunNotFound        = "run_not_found"
 	codeRunMismatch        = "run_mismatch"
 	codeStaleAttempt       = "stale_attempt"
@@ -47,6 +49,7 @@ type receiver struct {
 	actions  api.Actions
 	verifier oidc.Verifier
 	audience string
+	admit    Admitter
 }
 
 func reject(status int, code string) error {
@@ -187,6 +190,15 @@ func (r *receiver) tenant(ctx context.Context, env envelope.Envelope, claims oid
 	}
 	if repo.ID != claims.RepositoryID {
 		return fail(reject(http.StatusForbidden, codeRepositoryMismatch))
+	}
+	// An installation no operator approved costs nothing past this point: no run read, no report decoded.
+	// An approval that cannot be read is a 503 the Action retries, never a refusal.
+	owner, _, _ := strings.Cut(repo.FullName, "/")
+	switch admitted, err := r.admit.Admitted(ctx, repo.InstallationID, owner); {
+	case err != nil:
+		return fail(reject(http.StatusServiceUnavailable, codeAdmissionDown))
+	case !admitted:
+		return fail(reject(http.StatusForbidden, codeNotAdmitted))
 	}
 	run, err := r.actions.Run(ctx, repo.RepoRef, claims.RunID)
 	if err != nil {

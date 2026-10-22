@@ -70,6 +70,11 @@ type Receiver interface {
 	Receive(ctx context.Context, req *http.Request, kind envelope.Kind) (Upload, error)
 }
 
-func New(repos api.Repos, pulls api.Pulls, actions api.Actions, v oidc.Verifier, audience string) Receiver {
-	return &receiver{repos: repos, pulls: pulls, actions: actions, verifier: v, audience: audience}
+// Admitter answers whether the App serves an installation; owner is its account login. inputs.Admissions implements it.
+type Admitter interface {
+	Admitted(ctx context.Context, installationID int64, owner string) (bool, error)
+}
+
+func New(repos api.Repos, pulls api.Pulls, actions api.Actions, v oidc.Verifier, audience string, admit Admitter) Receiver {
+	return &receiver{repos: repos, pulls: pulls, actions: actions, verifier: v, audience: audience, admit: admit}
 }

@@ -25,16 +25,19 @@ const cookieKeyLen = 32
 
 // Deps are wired by internal/app. Sandbox and Provider may be nil: managed features then report "not available".
 type Deps struct {
-	GitHub    *api.Client
-	Tokens    auth.TokenSource
-	OAuth     auth.OAuth
-	Store     store.Store
-	Receiver  gate.Receiver
-	Sandbox   Sandbox
-	Provider  Provider
-	CookieKey []byte
-	BaseURL   string
-	Now       func() time.Time
+	GitHub   *api.Client
+	Tokens   auth.TokenSource
+	OAuth    auth.OAuth
+	Store    store.Store
+	Receiver gate.Receiver
+	// Admissions says which installations the App serves; Operators (GitHub user IDs) approve the others on /admin.
+	Admissions *gate.Admissions
+	Operators  []int64
+	Sandbox    Sandbox
+	Provider   Provider
+	CookieKey  []byte
+	BaseURL    string
+	Now        func() time.Time
 }
 
 // tenantLister is the only Store method the façade calls itself.
@@ -46,6 +49,7 @@ type Control struct {
 	account   account.Account
 	repos     api.Repos
 	tenants   tenantLister
+	admit     admitter
 	ui        http.Handler
 	discovery http.Handler
 	baseline  http.Handler
@@ -78,12 +82,13 @@ func New(d Deps) (*Control, error) {
 	})
 	page, err := ui.New(ui.Deps{
 		OAuth: d.OAuth, CookieKey: d.CookieKey, BaseURL: d.BaseURL, GitHub: d.GitHub,
-		Account: acct, Consents: consents, Onboarding: onb, Assist: asst, Proposals: proposals, Now: d.Now,
+		Account: acct, Consents: consents, Onboarding: onb, Assist: asst, Proposals: proposals,
+		Admissions: d.Admissions, Operators: d.Operators, Now: d.Now,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("control: ui: %w", err)
 	}
-	c := newControl(acct, d.GitHub, d.Store, page, onb.DiscoveryHandler(), d.Now)
+	c := newControl(acct, d.GitHub, d.Store, d.Admissions, page, onb.DiscoveryHandler(), d.Now)
 	c.baseline = onb.BaselineHandler()
 	c.reanchor = onb.ReanchorHandler()
 	c.consents, c.budget, c.onboarding, c.assist = consents, budget, onb, asst
@@ -93,9 +98,10 @@ func New(d Deps) (*Control, error) {
 // WorkerDeps are the dependencies of the worker façade: it handles events, the sweep and grants, and serves no UI.
 // So it takes no OAuth, no cookie key, no Receiver, no Sandbox and no Provider.
 type WorkerDeps struct {
-	GitHub *api.Client
-	Store  store.Store
-	Now    func() time.Time
+	GitHub     *api.Client
+	Store      store.Store
+	Admissions *gate.Admissions // the sweep and installation events do nothing for an account no operator approved
+	Now        func() time.Time
 }
 
 // NewWorker builds the façade of the worker role. Only HandleEvent, Sweep and Grant work on it; the handler
@@ -106,12 +112,14 @@ func NewWorker(d WorkerDeps) (*Control, error) {
 		return nil, errors.New("control: nil GitHub client")
 	case d.Store == nil:
 		return nil, errors.New("control: nil Store")
+	case d.Admissions == nil:
+		return nil, errors.New("control: nil Admissions")
 	}
 	if d.Now == nil {
 		d.Now = time.Now
 	}
 	acct, _, _ := account.New(d.Store)
-	return &Control{account: acct, repos: d.GitHub, tenants: d.Store, now: d.Now}, nil
+	return &Control{account: acct, repos: d.GitHub, tenants: d.Store, admit: d.Admissions, now: d.Now}, nil
 }
 
 func (d Deps) validate() error {
@@ -124,6 +132,8 @@ func (d Deps) validate() error {
 		return errors.New("control: nil Store")
 	case d.Receiver == nil:
 		return errors.New("control: nil Receiver")
+	case d.Admissions == nil:
+		return errors.New("control: nil Admissions")
 	case len(d.CookieKey) != cookieKeyLen:
 		return fmt.Errorf("control: CookieKey must be %d bytes", cookieKeyLen)
 	case d.BaseURL == "":
@@ -135,8 +145,13 @@ func (d Deps) validate() error {
 }
 
 // newControl assembles the façade from already-built parts; tests pass fakes.
-func newControl(a account.Account, repos api.Repos, tenants tenantLister, page, discovery http.Handler, now func() time.Time) *Control {
-	return &Control{account: a, repos: repos, tenants: tenants, ui: recovered(page), discovery: discovery, now: now}
+func newControl(a account.Account, repos api.Repos, tenants tenantLister, admit admitter, page, discovery http.Handler, now func() time.Time) *Control {
+	return &Control{account: a, repos: repos, tenants: tenants, admit: admit, ui: recovered(page), discovery: discovery, now: now}
+}
+
+// admitter answers whether an installation's account is approved: gate.Admissions.
+type admitter interface {
+	Admitted(ctx context.Context, installationID int64, owner string) (bool, error)
 }
 
 func (c *Control) UIHandler() http.Handler { // "/"

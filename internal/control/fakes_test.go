@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alexei-led/archfit-app/internal/gate"
+
 	"github.com/alexei-led/archfit-app/internal/control/account"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/store"
@@ -74,7 +76,29 @@ func (f *fakeAccount) Forget(_ context.Context, id int64) error {
 	return f.forgetErr[id]
 }
 
+func (f *fakeAccount) Admit(context.Context, int64, gate.Admission) error {
+	panic("control never admits: ui does")
+}
+
+func (f *fakeAccount) Unadmit(context.Context, int64, int64) error {
+	panic("control never unadmits: ui does")
+}
+
 // fakeRepos is the api.Repos role; only the two list methods are used by the façade.
+// admitAll approves every installation; admitNone approves none, or cannot read any approval when down.
+type admitAll struct{}
+
+func (admitAll) Admitted(context.Context, int64, string) (bool, error) { return true, nil }
+
+type admitNone struct{ down bool }
+
+func (a admitNone) Admitted(context.Context, int64, string) (bool, error) {
+	if a.down {
+		return false, errBoom
+	}
+	return false, nil
+}
+
 type fakeRepos struct {
 	api.Repos
 	installations []api.Installation

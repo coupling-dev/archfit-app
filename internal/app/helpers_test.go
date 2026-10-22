@@ -339,6 +339,7 @@ func validConfig(t *testing.T) Config {
 		SandboxDriver:     sandboxNone,
 		Role:              roleAll,
 		QueueDriver:       queueInline,
+		Operators:         defaultOperators,
 	}
 }
 

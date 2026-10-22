@@ -21,7 +21,9 @@ spend would have no cap.
 - Apply and clear operator grants; log each grant by installation ID.
 - Record, revoke and answer consent per installation and kind, with who recorded it and when. No consent, no call.
 - Reserve and settle the managed-LLM budget atomically against a hard monthly cap.
-- Delete every key of an installation on uninstall.
+- Write and delete the gate's `Admission` record when an operator approves or revokes an installation; log each change
+  by installation ID and operator ID.
+- Delete every key of an installation on uninstall, its admission included.
 
 ## Subdomain Classification
 
@@ -41,7 +43,10 @@ provider may replace manual grants. The `Entitlement` record shape is stable: it
 - The update cycle of the record and the entitlement: read both keys, compute, write both with one
   `Store.CompareAndSwapAll` from the bytes read; on `false`, start again, at most 5 attempts **[default]**.
 
-Nobody else reads the `account`, `consent/*` or `llm-budget/*` keys. The gate reads only `EntitlementKey`.
+- The admission key `admission`, the gate's `Admission` record. `account` writes and deletes it and never decides
+  anything from it; the gate and `control/ui` read it through `gate.Admissions`.
+
+Nobody else reads the `account`, `consent/*` or `llm-budget/*` keys. The gate reads only `EntitlementKey` and `AdmissionKey`.
 
 ## Public Contract
 
@@ -72,8 +77,14 @@ type Account interface {
     Grant(ctx context.Context, installationID int64, until time.Time, now time.Time) error
     // Refresh recomputes the Entitlement record of one installation (called by the sweep).
     Refresh(ctx context.Context, installationID int64, now time.Time) error
-    // Forget deletes every key of the installation (uninstall).
+    // Forget deletes every key of the installation (uninstall), its admission included.
     Forget(ctx context.Context, installationID int64) error
+    // Admit records an operator's approval of the installation: the gate serves it from the next event on.
+    // Operator-only; audited in the log by installation ID and operator.
+    Admit(ctx context.Context, installationID int64, a gate.Admission) error
+    // Unadmit deletes the approval: the gate serves nothing for the installation from the next event on.
+    // Unadmitting an installation without an approval is not an error.
+    Unadmit(ctx context.Context, installationID int64, byID int64) error
 }
 ```
 
@@ -179,7 +190,13 @@ The gate decides suspension itself from `SuspendAfter`, repository privacy and i
 - Backfill: `Observe` on an installation with no record is the normal first call, whether it comes from the installation webhook or,
   when that was missed, from `control.Sweep`. The trial then starts at that call's `now`. Until a record exists the gate reads "not suspended".
 - `Status`: read `R`, compute. Missing record → `PlanPublic`, nil error. Writes nothing.
-- `Forget`: `Store.DeleteTenant`. Idempotent.
+- `Forget`: `Store.DeleteTenant`. Idempotent. It removes the `admission` key with the rest, so a reinstall under a new
+  installation ID needs a new approval (a configured account needs none).
+- `Admit`: `Store.Put` of the JSON of the given `gate.Admission` under `gate.AdmissionKey`. Overwriting is fine. Log
+  `account admit` with `installation_id`, `operator_id` (`Admission.ByID`) and the outcome. A Store error is returned.
+- `Unadmit`: `Store.Delete` of `gate.AdmissionKey`. A missing key is not an error. Log `account unadmit` with
+  `installation_id`, `operator_id` (the `byID` argument) and the outcome. A Store error is returned.
+  The caller (`control/ui`) is the one that checks the operator; `account` trusts the arguments.
 - Any Store read error other than `ErrNotFound` returns the error and **writes nothing**.
 - `Record` rejects an unknown `Kind`, empty `By`, `ByID <= 0`, or zero `At`. It writes with `Store.CompareAndSwap(old = nil)`:
   of concurrent `Record`s exactly one creates the record, and every other one, like any `Record` over an existing
@@ -224,6 +241,25 @@ type Entitlement struct {
 
 Informative restatement of a rule owned by `internal/gate` (normative there; on drift the gate wins): suspended = repository private AND `SuspendAfter` non-zero AND `now >= SuspendAfter`.
 Public repositories are never suspended. Feedback shows `Notice` from `WarnFrom` on.
+
+The same direction and strength hold for the operator's approval: `account` writes and deletes the gate's `Admission`
+record under `Tenant(installationID)`. `Put` and `Delete` of `AdmissionKey` are the only Store calls it makes for it.
+
+<!-- contract: Admission, AdmissionKey — restated from internal/gate/module.md -->
+```go
+// AdmissionKey is the Store key, under the installation tenant, of the JSON-encoded Admission. control/account writes
+// it when an operator approves the installation, and deletes it on revoke and on uninstall.
+const AdmissionKey = "admission"
+
+// Admission records who let the App serve an installation: an operator's approval. Its presence is the approval.
+// "Admission" keeps it apart from Approval, a policy owner's approval of a pull request.
+type Admission struct {
+    Account string    `json:"account"` // the installation's account login when approved
+    By      string    `json:"by"`      // the operator's login when approved
+    ByID    int64     `json:"by_id"`   // the operator's GitHub user ID
+    At      time.Time `json:"at"`
+}
+```
 
 ### internal/store
 
@@ -288,10 +324,10 @@ cycle reads again. Consents use `CompareAndSwap` (create only, `old = nil`), `Ge
 
 | Counterpart                    | Uses                                    | LCA / Rank / Distance | Volatility |
 | ------------------------------ | --------------------------------------- | --------------------- | ---------- |
-| `internal/control/`            | `New`, `Account` (events, sweep, grant) | control / 1 / 1       | High       |
+| `internal/control/`            | `New`, `Account` (events, sweep, grant, forget) | control / 1 / 1       | High       |
 | `internal/control/onboarding/` | `Consents.Has`                          | control / 1 / 1       | High       |
 | `internal/control/assist/`     | `Consents.Has`, `Budget`                | control / 1 / 1       | High       |
-| `internal/control/ui/`         | `Account.Status`, `Consents`            | control / 1 / 1       | High       |
+| `internal/control/ui/`         | `Account.Status`, `Account.Admit`, `Account.Unadmit`, `Consents` | control / 1 / 1       | High       |
 
 ## Change Vectors
 
@@ -299,9 +335,12 @@ cycle reads again. Consents use `CompareAndSwap` (create only, `old = nil`), `Ge
 - A billing provider: a new writer of `grant_until` (or a `paid_until` field) inside this module; `Entitlement` stays.
 - Per-installation LLM allowance: a second counter key under the installation tenant.
 - Consent kinds: a new constant and nothing else.
+- Approval with more than presence (an expiry, a note): a field of `gate.Admission`, owned by `gate/inputs`.
 
 ## Constraints and Invariants
 
+- An admission change is operator-only and always logged: the audit line carries the installation ID and the operator's
+  user ID, never a token. Revoking takes effect on the gate's next event, upload or sweep pass.
 - Nothing here is ever called by the gate path. A failure here never changes a gate result. The gate reads only the cached `Entitlement` record this module writes.
 - A Store outage never writes or implies suspension: on any read error nothing is written, so the last good record (or none = "not suspended") stands. A KV or billing outage does not establish non-payment (T21).
 - Writes are idempotent: same record and same day produce the same bytes.
@@ -359,6 +398,10 @@ cycle reads again. Consents use `CompareAndSwap` (create only, `old = nil`), `Ge
   **Scenario**: tenants A and B with records and consents, budget activity; `Forget(A)` twice.
   **Expected behavior**: A has no keys; B and the `SystemTenant` counter are unchanged; second call returns nil (T07 cleanup, T08 tenant scoping).
 
+- **Test name**: `TestAdmitUnadmitRoundTrip`
+  **Scenario**: `Admit` installation A; read it back with `gate.NewAdmissions(...).Record` and `Admitted`; `Unadmit` it twice.
+  **Expected behavior**: the record equals the one given; only A is served; after `Unadmit` (second call included, no error) A is not served; the log has `account admit` and `account unadmit` lines with the operator IDs.
+
 ### Boundary Tests
 
 - **Test name**: `TestStoreFailureNeverSuspends`
@@ -383,7 +426,7 @@ cycle reads again. Consents use `CompareAndSwap` (create only, `old = nil`), `Ge
   **Expected behavior**: exactly 20 succeed; final counter 20 000 000.
 - **Test name**: `TestOnlyDocumentedKeys`
   **Scenario**: run every operation against a recording Store.
-  **Expected behavior**: keys touched are `account`, `entitlement`, `consent/source_processing`, `consent/managed_llm` under the installation, and `llm-budget/<YYYY-MM>` under `SystemTenant`. Nothing else.
+  **Expected behavior**: keys touched are `account`, `entitlement`, `admission`, `consent/source_processing`, `consent/managed_llm` under the installation, and `llm-budget/<YYYY-MM>` under `SystemTenant`. Nothing else.
 
 ### Behavior Tests
 

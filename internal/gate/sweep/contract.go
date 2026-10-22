@@ -25,6 +25,7 @@ type Summary struct {
 	Repos, Pulls                    int
 	Pended, TimedOut, Rerun, Warned int
 	Suspended                       int
+	NotAdmitted                     int  // installations skipped: no operator approved them
 	Errors                          int  // repositories or pulls skipped after an error; details are in the log
 	RateLimited                     bool // the pass stopped early on a GitHub rate limit
 }
@@ -39,12 +40,17 @@ type Sweeper interface {
 	RunRepo(ctx context.Context, r api.Repo, now time.Time) (Summary, error)
 }
 
-func New(repos api.Repos, pulls api.Pulls, actions api.Actions, r inputs.Resolver, p feedback.Publisher, c Config) Sweeper {
+// Admitter answers whether the App serves an installation; owner is its account login. inputs.Admissions implements it.
+type Admitter interface {
+	Admitted(ctx context.Context, installationID int64, owner string) (bool, error)
+}
+
+func New(repos api.Repos, pulls api.Pulls, actions api.Actions, r inputs.Resolver, p feedback.Publisher, admit Admitter, c Config) Sweeper {
 	if c.MissingUploadAfter == 0 {
 		c.MissingUploadAfter = defaultMissingUploadAfter
 	}
 	if c.WaiverWarnBefore == 0 {
 		c.WaiverWarnBefore = defaultWaiverWarnBefore
 	}
-	return &sweeper{repos: repos, pulls: pulls, actions: actions, resolver: r, publisher: p, cfg: c}
+	return &sweeper{repos: repos, pulls: pulls, actions: actions, resolver: r, publisher: p, admit: admit, cfg: c}
 }

@@ -617,3 +617,35 @@ func TestAdvisoryStaleStillWarns(t *testing.T) {
 		t.Errorf("warnings = %d, want one per pass: rules 0b and 0c never skip rule 6a", len(w.pub.warnings))
 	}
 }
+
+func TestUnadmittedInstallationIsNotSwept(t *testing.T) {
+	w := threeRepos(t) // installations 1, 2 and 3, each with one stale pull request
+	w.admit.refused[2] = true
+	w.pub.now = t0
+	sum, err := w.sweeper.Run(context.Background(), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(w.repos.listRepos, []int64{1, 3}) {
+		t.Errorf("ListRepos calls = %v; want installations 1 and 3 only", w.repos.listRepos)
+	}
+	if sum.NotAdmitted != 1 || sum.Repos != 2 {
+		t.Errorf("summary = %+v; want 1 not admitted and 2 repositories", sum)
+	}
+}
+
+func TestUnreadableAdmissionSkipsTheInstallationAsAnError(t *testing.T) {
+	w := threeRepos(t)
+	w.admit.down[2] = true
+	w.pub.now = t0
+	sum, err := w.sweeper.Run(context.Background(), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(w.repos.listRepos, []int64{1, 3}) {
+		t.Errorf("ListRepos calls = %v; want installations 1 and 3 only", w.repos.listRepos)
+	}
+	if sum.Errors != 1 || sum.NotAdmitted != 0 || sum.Repos != 2 {
+		t.Errorf("summary = %+v; want 1 error and 2 repositories", sum)
+	}
+}

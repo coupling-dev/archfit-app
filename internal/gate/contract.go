@@ -3,6 +3,7 @@
 package gate
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -16,25 +17,32 @@ import (
 )
 
 // Deps are the only things the gate path may touch: GitHub, OIDC, the Store and a clock. On the Store the gate
-// path reads the entitlement and writes only gate/feedback's publication leases.
+// path reads the entitlement and the admission, and writes only gate/feedback's publication leases.
 type Deps struct {
-	GitHub   *api.Client
-	OIDC     oidc.Verifier
-	Store    store.Store
-	Audience string // the App URL; OIDC audience
-	Sweep    Config
-	Now      func() time.Time
+	GitHub     *api.Client
+	OIDC       oidc.Verifier
+	Store      store.Store
+	Admissions *Admissions // which installations the App serves; nothing runs for any other
+	Audience   string      // the App URL; OIDC audience
+	Sweep      Config
+	Now        func() time.Time
 }
 
 // Gate composes the five children. It holds no state of its own: GitHub holds the dedup keys.
 type Gate struct {
-	receiver  ingest.Receiver
-	resolver  inputs.Resolver
-	publisher feedback.Publisher
-	sweeper   sweep.Sweeper
-	actions   api.Actions
-	pulls     api.Pulls
-	now       func() time.Time
+	receiver   ingest.Receiver
+	resolver   inputs.Resolver
+	publisher  feedback.Publisher
+	sweeper    sweep.Sweeper
+	actions    api.Actions
+	pulls      api.Pulls
+	admissions admitter
+	now        func() time.Time
+}
+
+// admitter is the one method of Admissions every gate path asks before it does anything for an installation.
+type admitter interface {
+	Admitted(ctx context.Context, installationID int64, owner string) (bool, error)
 }
 
 // github is every role of github/api the gate path uses. *api.Client implements it; the façade
@@ -48,22 +56,22 @@ type github interface {
 }
 
 func New(d Deps) *Gate {
-	return compose(d.GitHub, d.OIDC, d.Store, d.Audience, d.Sweep, d.Now)
+	return compose(d.GitHub, d.OIDC, d.Store, d.Admissions, d.Audience, d.Sweep, d.Now)
 }
 
 // compose wires the children once. A nil clock means time.Now.
-func compose(gh github, v oidc.Verifier, s store.Store, audience string, c Config, now func() time.Time) *Gate {
+func compose(gh github, v oidc.Verifier, s store.Store, adm admitter, audience string, c Config, now func() time.Time) *Gate {
 	if now == nil {
 		now = time.Now
 	}
 	resolver := inputs.New(gh, gh, s)
 	publisher := feedback.New(gh, gh, gh, s, audience, now) // the audience is the App's base URL
-	return newGate(newReceiver(gh, v, audience), resolver, publisher,
-		sweep.New(gh, gh, gh, resolver, publisher, c), gh, gh, now)
+	return newGate(newReceiver(gh, v, audience, adm), resolver, publisher,
+		sweep.New(gh, gh, gh, resolver, publisher, adm, c), gh, gh, adm, now)
 }
 
-func newGate(rc ingest.Receiver, rs inputs.Resolver, p feedback.Publisher, sw sweep.Sweeper, a api.Actions, pl api.Pulls, now func() time.Time) *Gate {
-	return &Gate{receiver: rc, resolver: rs, publisher: p, sweeper: sw, actions: a, pulls: pl, now: now}
+func newGate(rc ingest.Receiver, rs inputs.Resolver, p feedback.Publisher, sw sweep.Sweeper, a api.Actions, pl api.Pulls, adm admitter, now func() time.Time) *Gate {
+	return &Gate{receiver: rc, resolver: rs, publisher: p, sweeper: sw, actions: a, pulls: pl, admissions: adm, now: now}
 }
 
 // UploadHandler serves POST /v1/reports.
@@ -73,15 +81,26 @@ func (g *Gate) UploadHandler() http.Handler {
 
 // NewReceiver exposes the upload authentication and binding step so that the discovery
 // upload endpoint reuses exactly the same provenance checks as the report endpoint.
-func NewReceiver(gh *api.Client, v oidc.Verifier, audience string) Receiver {
-	return newReceiver(gh, v, audience)
+func NewReceiver(gh *api.Client, v oidc.Verifier, audience string, adm *Admissions) Receiver {
+	return newReceiver(gh, v, audience, adm)
 }
 
-func newReceiver(gh github, v oidc.Verifier, audience string) Receiver {
-	return ingest.New(gh, gh, gh, v, audience)
+func newReceiver(gh github, v oidc.Verifier, audience string, adm admitter) Receiver {
+	return ingest.New(gh, gh, gh, v, audience, adm)
 }
 
 // Re-published child contracts. The owning child's module.md is normative.
+
+// Admissions, Admission and AdmissionKey are owned by gate/inputs.
+type (
+	Admissions = inputs.Admissions
+	Admission  = inputs.Admission
+)
+
+const AdmissionKey = inputs.AdmissionKey
+
+// NewAdmissions is owned by gate/inputs.
+func NewAdmissions(s store.Store, auto []string) *Admissions { return inputs.NewAdmissions(s, auto) }
 
 // EntitlementKey is owned by gate/inputs.
 const EntitlementKey = inputs.EntitlementKey

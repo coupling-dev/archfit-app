@@ -28,7 +28,7 @@ func TestSweepRefreshesEveryInstallation(t *testing.T) {
 		h.gh.install(id, ghr(id*10, "secret-org/secret-repo", true))
 	}
 	// Installation 2 is known already; its cached record is lost and GitHub cannot list its repositories.
-	if err := h.c.HandleEvent(ctx, webhook.Event{Kind: webhook.InstallationAdded, InstallationID: 2}); err != nil {
+	if err := h.c.HandleEvent(ctx, webhook.Event{Kind: webhook.InstallationAdded, InstallationID: 2, Account: h.account(2)}); err != nil {
 		t.Fatalf("HandleEvent: %v", err)
 	}
 	if err := h.store.Delete(ctx, 2, gate.EntitlementKey); err != nil {
@@ -116,7 +116,7 @@ func TestSweepForgetsOrphanTenants(t *testing.T) {
 	h := newHarness(t)
 	for _, id := range []int64{1, 2, 3} {
 		h.gh.install(id, ghr(id*10, "org/app", true))
-		if err := h.c.HandleEvent(ctx, webhook.Event{Kind: webhook.InstallationAdded, InstallationID: id}); err != nil {
+		if err := h.c.HandleEvent(ctx, webhook.Event{Kind: webhook.InstallationAdded, InstallationID: id, Account: h.account(id)}); err != nil {
 			t.Fatalf("HandleEvent: %v", err)
 		}
 	}
@@ -150,7 +150,7 @@ func TestSweepStopsWhenInstallationsUnavailable(t *testing.T) {
 	st := &flakyStore{Store: store.NewMemory()}
 	acct, _, _ := account.New(st)
 	repos := &fakeRepos{installErr: api.ErrRateLimited}
-	c := newControl(acct, repos, st, okHandler, okHandler, newClock().Now)
+	c := newControl(acct, repos, st, admitAll{}, okHandler, okHandler, newClock().Now)
 
 	err := c.Sweep(ctx)
 
@@ -166,7 +166,7 @@ func TestGrantRewritesEntitlement(t *testing.T) {
 	logs := captureLogs(t)
 	h := newHarness(t)
 	h.gh.install(7, ghr(70, "org7/app", true))
-	if err := h.c.HandleEvent(ctx, webhook.Event{Kind: webhook.InstallationAdded, InstallationID: 7}); err != nil {
+	if err := h.c.HandleEvent(ctx, webhook.Event{Kind: webhook.InstallationAdded, InstallationID: 7, Account: h.account(7)}); err != nil {
 		t.Fatalf("HandleEvent: %v", err)
 	}
 	h.clock.Add(40 * day)

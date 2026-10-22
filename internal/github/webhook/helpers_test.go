@@ -49,13 +49,13 @@ var fixtureCases = []fixtureCase{
 		Branch: "trunk", Pusher: "octocat",
 		ChangedPaths: []string{".archfit.yaml", "go.mod", "internal/api/handler.go", "legacy/old.go"},
 	}},
-	{"installation_created.json", "installation", Event{Kind: InstallationAdded, InstallationID: 6001}},
-	{"installation_deleted.json", "installation", Event{Kind: InstallationRemoved, InstallationID: 6001}},
+	{"installation_created.json", "installation", Event{Kind: InstallationAdded, InstallationID: 6001, Account: "acme"}},
+	{"installation_deleted.json", "installation", Event{Kind: InstallationRemoved, InstallationID: 6001, Account: "acme"}},
 	{"installation_repositories_added.json", "installation_repositories", Event{
-		Kind: InstallationAdded, InstallationID: 6002,
+		Kind: InstallationAdded, InstallationID: 6002, Account: "acme",
 	}},
 	{"installation_repositories_removed.json", "installation_repositories", Event{
-		Kind: ReposRemoved, InstallationID: 6002,
+		Kind: ReposRemoved, InstallationID: 6002, Account: "acme",
 	}},
 }
 

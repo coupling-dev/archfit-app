@@ -901,3 +901,43 @@ func TestSweepThroughFacade(t *testing.T) {
 		t.Errorf("green PRs after the expiry = %v", green)
 	}
 }
+
+// An installation no operator approved gets nothing: no check on a new head, and its upload is refused.
+func TestUnadmittedInstallationGetsNothing(t *testing.T) {
+	w := newWorld(t)
+	w.admit.refused[shopInstallation] = true
+	p := w.openPull(w.shop, 1)
+	w.handle(w.event(webhook.PullOpened, p))
+	if _, found := w.check(p, p.head, gateCheckName); found {
+		t.Error("a pending check was published for an unapproved installation")
+	}
+	if a := w.upload(p, fixtureHealthy); a.status != 403 || a.Error != "installation_not_approved" {
+		t.Errorf("upload answered %d %s; want 403 installation_not_approved", a.status, a.raw)
+	}
+	if _, found := w.check(p, p.head, stateCheckName); found {
+		t.Error("a state check was published for an unapproved installation")
+	}
+
+	delete(w.admit.refused, shopInstallation)
+	w.handle(w.event(webhook.PullSynchronized, p))
+	w.wantAnswer(w.upload(p, fixtureHealthy), 200, "success", "healthy")
+}
+
+func TestUnreadableApprovalIsRetriedNotDropped(t *testing.T) {
+	w := newWorld(t)
+	p := w.openPull(w.shop, 1)
+	w.admit.down = true
+	if err := w.gate.HandleEvent(context.Background(), w.event(webhook.PullOpened, p)); err == nil {
+		t.Fatal("HandleEvent = nil; want an error, so the delivery is retried")
+	}
+	if _, found := w.check(p, p.head, gateCheckName); found {
+		t.Error("a check was published while the approval could not be read")
+	}
+	if a := w.upload(p, fixtureHealthy); a.status != 503 || a.Error != "admission_unavailable" {
+		t.Errorf("upload answered %d %s; want 503 admission_unavailable", a.status, a.raw)
+	}
+
+	w.admit.down = false
+	w.handle(w.event(webhook.PullOpened, p))
+	w.wantAnswer(w.upload(p, fixtureHealthy), 200, "success", "healthy")
+}

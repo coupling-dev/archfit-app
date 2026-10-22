@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 const maxFileBytes = 1 << 20
@@ -29,8 +30,10 @@ func (c *Client) ListInstallations(ctx context.Context) ([]Installation, error) 
 		ID      int64 `json:"id"`
 		Account struct {
 			Login string `json:"login"`
+			Type  string `json:"type"`
 		} `json:"account"`
-		SuspendedAt *string `json:"suspended_at"`
+		CreatedAt   time.Time `json:"created_at"`
+		SuspendedAt *string   `json:"suspended_at"`
 	}
 	k := call{cred: appCred, method: http.MethodGet, route: route, url: pagedURL(route, nil)}
 	all, err := listAll[installationJSON](ctx, c, k, "")
@@ -40,7 +43,7 @@ func (c *Client) ListInstallations(ctx context.Context) ([]Installation, error) 
 	out := []Installation{}
 	for _, in := range all {
 		if in.SuspendedAt == nil {
-			out = append(out, Installation{ID: in.ID, Account: in.Account.Login})
+			out = append(out, Installation{ID: in.ID, Account: in.Account.Login, AccountType: in.Account.Type, CreatedAt: in.CreatedAt})
 		}
 	}
 	return out, nil

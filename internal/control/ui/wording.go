@@ -21,6 +21,7 @@ const (
 	stateNone       = "no state yet"
 	stateUnknown    = "unknown"
 	stateViolations = "violations found"
+	stateWaiting    = "waiting for approval"
 )
 
 // userError is a refusal ui decides itself: its status, its log outcome and the sentence shown.
@@ -78,6 +79,9 @@ func explain(err error) (status int, outcome, sentence string) {
 	var ue *userError
 	if errors.As(err, &ue) {
 		return ue.status, ue.outcome, ue.msg
+	}
+	if _, waiting := errorsAsWaiting(err); waiting {
+		return http.StatusForbidden, "not_admitted", waitingSentence
 	}
 	var tooLarge *http.MaxBytesError
 	if errors.As(err, &tooLarge) {

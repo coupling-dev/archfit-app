@@ -23,6 +23,16 @@ func (c *Control) HandleEvent(ctx context.Context, e webhook.Event) error {
 	defer cancel()
 	switch e.Kind {
 	case webhook.InstallationAdded, webhook.ReposRemoved:
+		// An account waiting for approval costs no GitHub call and gets no entitlement record, so its trial starts when
+		// it is approved: the first sweep after the approval observes it. An event without an account is judged by
+		// the installation's record alone: only a configured login admits without one.
+		admitted, err := c.admit.Admitted(ctx, e.InstallationID, e.Account)
+		if err != nil {
+			return fmt.Errorf("control: read admission of installation %d: %w", e.InstallationID, err)
+		}
+		if !admitted {
+			return nil
+		}
 		// hasPrivate is read from GitHub: installation events carry no repository.
 		repos, err := c.repos.ListRepos(ctx, e.InstallationID)
 		if err != nil {
@@ -46,11 +56,19 @@ func (c *Control) Sweep(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("control: list installations: %w", err)
 	}
-	var observed, refreshed, failed int
+	var observed, refreshed, waiting, failed int
 	live := make(map[int64]bool, len(installations))
 	for _, in := range installations {
 		live[in.ID] = true
-		wasObserved, err := c.refresh(ctx, in.ID)
+		admitted, err := c.admit.Admitted(ctx, in.ID, in.Account)
+		if err == nil && !admitted {
+			waiting++
+			continue
+		}
+		wasObserved := false
+		if err == nil {
+			wasObserved, err = c.refresh(ctx, in.ID)
+		}
 		switch {
 		case err != nil:
 			failed++
@@ -63,7 +81,7 @@ func (c *Control) Sweep(ctx context.Context) error {
 	}
 	forgotten, forgetFailed := c.forgetOrphans(ctx, live)
 	slog.Info("control: sweep done", "installations", len(installations), "observed", observed,
-		"refreshed", refreshed, "forgotten", forgotten, "failed", failed+forgetFailed)
+		"refreshed", refreshed, "waiting", waiting, "forgotten", forgotten, "failed", failed+forgetFailed)
 	return nil
 }
 

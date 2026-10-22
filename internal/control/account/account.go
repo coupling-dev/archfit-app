@@ -69,6 +69,45 @@ func (a *accounts) Refresh(ctx context.Context, installationID int64, now time.T
 	return a.update(ctx, installationID, now, func(*record) {})
 }
 
+func (a *accounts) Admit(ctx context.Context, installationID int64, adm gate.Admission) error {
+	t, err := tenantOf(installationID)
+	if err != nil {
+		return err
+	}
+	raw, err := json.Marshal(adm)
+	if err == nil {
+		err = a.s.Put(ctx, t, gate.AdmissionKey, raw)
+	}
+	a.logAdmission(ctx, "account admit", installationID, adm.ByID, err)
+	if err != nil {
+		return fmt.Errorf("account: admit installation: %w", err)
+	}
+	return nil
+}
+
+func (a *accounts) Unadmit(ctx context.Context, installationID int64, byID int64) error {
+	t, err := tenantOf(installationID)
+	if err != nil {
+		return err
+	}
+	err = a.s.Delete(ctx, t, gate.AdmissionKey)
+	a.logAdmission(ctx, "account unadmit", installationID, byID, err)
+	if err != nil {
+		return fmt.Errorf("account: unadmit installation: %w", err)
+	}
+	return nil
+}
+
+// logAdmission is the audit line of an admission change: who changed which installation, and whether it stuck.
+func (a *accounts) logAdmission(ctx context.Context, msg string, installationID, byID int64, err error) {
+	if err != nil {
+		a.log.ErrorContext(ctx, msg, "installation_id", installationID, "operator_id", byID, "outcome", "error",
+			"error", err.Error())
+		return
+	}
+	a.log.InfoContext(ctx, msg, "installation_id", installationID, "operator_id", byID, "outcome", "ok")
+}
+
 func (a *accounts) Forget(ctx context.Context, installationID int64) error {
 	t, err := tenantOf(installationID)
 	if err != nil {

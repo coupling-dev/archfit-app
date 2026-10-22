@@ -3,13 +3,15 @@
   import Skeleton from './components/Skeleton.svelte';
   import { ApiError, getJSON, type Session } from './lib/api';
   import { prefetch } from './lib/early';
-  import { refused } from './lib/gate';
+  import { refused, waiting } from './lib/gate';
   import { parseRoute, serverError } from './lib/route';
+  import Admin from './pages/Admin.svelte';
   import DataSharing from './pages/DataSharing.svelte';
   import Landing from './pages/Landing.svelte';
   import Overview from './pages/Overview.svelte';
   import Pull from './pages/Pull.svelte';
   import Repos from './pages/Repos.svelte';
+  import Waiting from './pages/Waiting.svelte';
 
   const route = parseRoute(location.pathname);
   const here = location.pathname + location.search;
@@ -42,7 +44,11 @@
   const title = $derived(
     pageError
       ? 'Error'
-      : route.kind === 'pull' || route.kind === 'pull-graph'
+      : $waiting
+        ? 'Waiting for approval'
+        : route.kind === 'admin'
+          ? 'Installations'
+          : route.kind === 'pull' || route.kind === 'pull-graph'
         ? `${route.fullName} #${route.number}${route.kind === 'pull-graph' ? ' graph' : ''}`
         : route.kind === 'repo' || route.kind === 'graph'
           ? `${route.fullName}${route.kind === 'graph' ? ' architecture' : ''}`
@@ -53,7 +59,9 @@
               : 'Repositories',
   );
   const repo = $derived(
-    !pageError && route.kind !== 'home' && route.kind !== 'unknown' && session ? route.fullName : '',
+    !pageError && !$waiting && route.kind !== 'home' && route.kind !== 'admin' && route.kind !== 'unknown' && session
+      ? route.fullName
+      : '',
   );
   $effect(() => {
     document.title = `${title} · Archfit`;
@@ -72,6 +80,8 @@
       <h1>This page cannot be shown</h1>
       <p>{pageError} <a href="/">See your repositories.</a></p>
     </div>
+  {:else if $waiting}
+    <Waiting account={$waiting} />
   {:else if failure}
     <p class="flash error" role="alert">{failure}</p>
   {:else if signedOut}
@@ -80,6 +90,8 @@
     <Skeleton rows={4} />
   {:else if route.kind === 'home'}
     <Repos {here} />
+  {:else if route.kind === 'admin'}
+    <Admin {session} {here} />
   {:else if route.kind === 'repo'}
     <Overview {route} {session} {here} />
   {:else if route.kind === 'data-sharing'}

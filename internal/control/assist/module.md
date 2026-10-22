@@ -337,8 +337,10 @@ var (
 <!-- contract: Repos, Installation — restated from internal/github/api/module.md -->
 ```go
 type Installation struct {
-    ID      int64
-    Account string // organization or user login
+    ID          int64
+    Account     string    // organization or user login
+    AccountType string    // "Organization" or "User"
+    CreatedAt   time.Time // when the App was installed
 }
 
 // Repos reads installations, repositories and file contents.

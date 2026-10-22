@@ -20,9 +20,20 @@ import (
 
 const policyDraft = "version: 2\n"
 
+// account is the login GitHub reports for the installation: the owner of its first repository.
+func (h *harness) account(id int64) string {
+	var owner string
+	h.gh.set(func(g *fakeGitHub) {
+		if repos := g.repos[id]; len(repos) > 0 {
+			owner, _, _ = strings.Cut(repos[0].FullName, "/")
+		}
+	})
+	return owner
+}
+
 func (h *harness) event(kind webhook.EventKind, id int64) {
 	h.t.Helper()
-	if err := h.c.HandleEvent(ctx, webhook.Event{Kind: kind, InstallationID: id, DeliveryID: "delivery"}); err != nil {
+	if err := h.c.HandleEvent(ctx, webhook.Event{Kind: kind, InstallationID: id, Account: h.account(id), DeliveryID: "delivery"}); err != nil {
 		h.t.Fatalf("HandleEvent(%s, %d): %v", kind, id, err)
 	}
 }
@@ -108,7 +119,7 @@ func TestOrphanCleanupFailsSafe(t *testing.T) {
 				tt.fail(st)
 			}
 			writes := st.writes
-			c := newControl(acct, tt.repos, st, okHandler, okHandler, newClock().Now)
+			c := newControl(acct, tt.repos, st, admitAll{}, okHandler, okHandler, newClock().Now)
 
 			err := c.Sweep(ctx)
 
@@ -288,7 +299,7 @@ func TestUIPanicIsContained(t *testing.T) {
 	t.Run("the façade recovers what the UI does not", func(t *testing.T) {
 		mux := http.NewServeMux()
 		mux.HandleFunc("GET /r/{o}/{n}", func(http.ResponseWriter, *http.Request) { panic("page exploded") })
-		c := newControl(&fakeAccount{}, &fakeRepos{}, &fakeTenants{}, mux, okHandler, newClock().Now)
+		c := newControl(&fakeAccount{}, &fakeRepos{}, &fakeTenants{}, admitAll{}, mux, okHandler, newClock().Now)
 		rec := httptest.NewRecorder()
 
 		c.UIHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/r/hidden-org/hidden-repo", nil))
@@ -307,7 +318,7 @@ func TestUIPanicIsContained(t *testing.T) {
 		}
 	})
 	t.Run("an aborted response is not swallowed", func(t *testing.T) {
-		c := newControl(&fakeAccount{}, &fakeRepos{}, &fakeTenants{},
+		c := newControl(&fakeAccount{}, &fakeRepos{}, &fakeTenants{}, admitAll{},
 			http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic(http.ErrAbortHandler) }), okHandler, newClock().Now)
 		defer func() {
 			if v := recover(); v != http.ErrAbortHandler { //nolint:errorlint // the sentinel is panicked by identity

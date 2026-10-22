@@ -42,15 +42,16 @@ feedback are tuned with every pilot. The façade contract is kept small and stab
 
 ```go
 // Deps are the only things the gate path may touch: GitHub, OIDC, the Store and a clock. On the Store the gate
-// path reads the entitlement, and reads and writes the pusher records of gate/inputs; its only other write is
-// gate/feedback's publication leases.
+// path reads the entitlement and the admission, and reads and writes the pusher records of gate/inputs; its only
+// other write is gate/feedback's publication leases.
 type Deps struct {
-    GitHub   *Client
-    OIDC     Verifier
-    Store    Store
-    Audience string // the App URL; OIDC audience
-    Sweep    Config
-    Now      func() time.Time
+    GitHub     *Client
+    OIDC       Verifier
+    Store      Store
+    Admissions *Admissions // which installations the App serves; nothing runs for any other
+    Audience   string      // the App URL; OIDC audience
+    Sweep      Config
+    Now        func() time.Time
 }
 
 type Gate struct{ /* unexported */ }
@@ -63,7 +64,9 @@ func (g *Gate) UploadHandler() http.Handler
 // HandleEvent reacts to a verified webhook event: pending check on a new head, fork refusal,
 // owner_approval_missing on a review change that withdraws the approval a receipt relied on, re-run on a
 // review change when the last receipt was owner_approval_missing, and a one-repository sweep when a
-// default-branch push changes a protected path.
+// default-branch push changes a protected path. An event for a repository whose owner is not admitted gets
+// the reaction "not_admitted" and nothing else: no read, no write. An approval that cannot be read is returned as an
+// error, so the delivery is retried.
 func (g *Gate) HandleEvent(ctx context.Context, e Event) error
 
 // Sweep runs one reconciliation pass.
@@ -73,15 +76,42 @@ func (g *Gate) Sweep(ctx context.Context) (Summary, error)
 ```go
 // NewReceiver exposes the upload authentication and binding step so that the discovery
 // upload endpoint reuses exactly the same provenance checks as the report endpoint.
-func NewReceiver(gh *Client, v Verifier, audience string) Receiver
+func NewReceiver(gh *Client, v Verifier, audience string, adm *Admissions) Receiver
 ```
 
 ### Re-published child contracts
 
-Modules outside `gate` cite this file for the four blocks below. They are type aliases of the child
+Modules outside `gate` cite this file for the blocks below. They are type aliases of the child
 types in Go. `Repo` is the repository type of `github/api`, `Identity` is the claimed identity type of
 `wire/manifest`, `Report` is the transport type of `wire/report`, and `Kind` is the payload kind of
 `wire/envelope`; all four are restated under Integrations.
+
+<!-- contract: Admission, AdmissionKey, Admissions, NewAdmissions — restated from internal/gate/inputs/module.md -->
+```go
+// AdmissionKey is the Store key, under the installation tenant, of the JSON-encoded Admission. control/account writes
+// it when an operator approves the installation, and deletes it on revoke and on uninstall.
+const AdmissionKey = "admission"
+
+// Admission records who let the App serve an installation: an operator's approval. Its presence is the approval.
+// "Admission" keeps it apart from Approval, a policy owner's approval of a pull request.
+type Admission struct {
+    Account string    `json:"account"` // the installation's account login when approved
+    By      string    `json:"by"`      // the operator's login when approved
+    ByID    int64     `json:"by_id"`   // the operator's GitHub user ID
+    At      time.Time `json:"at"`
+}
+
+// NewAdmissions admits the accounts named in auto by configuration, and every other one by its Store record.
+// Logins are trimmed and compared case-insensitively; an empty login admits nobody.
+func NewAdmissions(s Store, auto []string) *Admissions
+
+// Admitted reports whether the App serves the installation. owner is its account login, the owner of every
+// repository it holds. A configured account needs no Store read. An error means the record could not be read: the
+// caller does nothing for the installation and retries, so an approved account loses no event to a Store outage.
+func (a *Admissions) Admitted(ctx context.Context, installationID int64, owner string) (bool, error)
+```
+
+`Admissions` also has `Auto(account)` and `Record(ctx, installationID)`, which `control` uses.
 
 <!-- contract: Entitlement, EntitlementKey — restated from internal/gate/inputs/module.md -->
 ```go
@@ -188,6 +218,8 @@ type Sweeper interface {
 | Outcome published (any conclusion, including `action_required`) | 200                        | `{"conclusion": "...", "reason": "..."}` |
 | Publication skipped (newer run reported, or PR head moved)      | 200                        | same, with this upload's outcome         |
 | `*Rejection` from `Receive`                                     | `Rejection.Status`         | `{"error": "<Rejection.Code>"}`          |
+| Installation not admitted (a `*Rejection` of `Receive`)         | 403                        | `{"error": "installation_not_approved"}` |
+| Approval unreadable (a `*Rejection` of `Receive`)               | 503                        | `{"error": "admission_unavailable"}`     |
 | `api.ErrRateLimited` while resolving inputs or publishing       | 503 with `Retry-After: 60` | `{"error": "rate_limited"}`              |
 | Any other error after authentication                            | 503 **[default]**          | `{"error": "unavailable"}`               |
 
@@ -224,8 +256,12 @@ The handler works under a 50 second deadline **[default]**, inside the 60 second
 
 <!-- contract: New — restated from internal/gate/ingest/module.md -->
 ```go
-func New(repos Repos, pulls Pulls, actions Actions, v Verifier, audience string) Receiver
+func New(repos Repos, pulls Pulls, actions Actions, v Verifier, audience string, admit Admitter) Receiver
 ```
+
+After it resolves the repository and checks the repository ID, `Receive` asks `Admitter.Admitted` for the installation
+and the owner of that repository. Not admitted is the 403 `installation_not_approved` rejection, before the run is read.
+An approval that cannot be read is the 503 `admission_unavailable` rejection, which the Action retries.
 
 ### gate/inputs (child)
 
@@ -237,7 +273,8 @@ func New(repos Repos, pulls Pulls, actions Actions, v Verifier, audience string)
 - **Balanced?**: yes
 - **Shared knowledge**: `Resolve` reads only the protected ref (plus an owner-approved head digest), returns an
   error on GitHub failures and on a failed read of a pusher record (fail closed), never on a failed read of the
-  entitlement. `SettingsFound == false` means "not onboarded".
+  entitlement. `SettingsFound == false` means "not onboarded". `Admissions` is built by `app` and passed in
+  `Deps.Admissions`; the façade, `ingest` and `sweep` ask it `Admitted`, `Resolve` does not.
   `PolicyDigests[0]` and `BaselineDigests[0]` are the first accepted digests: the base digest when the file exists on
   the protected ref, otherwise the owner-approved head digest; the lists are empty when neither exists. The inputs constructor is `New(repos Repos, pulls Pulls, s Store) Resolver`.
   `inputs` owns the digest predicate and the protected path set. The façade compares no digest and names no
@@ -805,6 +842,7 @@ type Event struct {
     DeliveryID     string
     InstallationID int64
     Repo           string // "owner/name", "" for installation events
+    Account        string // installation kinds only: the account login from the payload; "" when it has none
     RepoPrivate    bool
     PullRequest    int
     HeadSHA        string
@@ -932,13 +970,14 @@ type Verifier interface {
 ### store
 
 - **Counterpart**: internal/store
-- **Direction**: gate depends on store (passes `Deps.Store` to `gate/inputs`, which reads the entitlement and
-  reads and writes the pusher records, and to `gate/feedback`, which holds the publication leases)
+- **Direction**: gate depends on store (passes `Deps.Store` to `gate/inputs`, which reads the entitlement and the
+  admission and reads and writes the pusher records, and to `gate/feedback`, which holds the publication leases)
 - **Strength**: contract
 - **LCA / Rank / Distance**: root / 1 / 1
 - **Volatility**: high (gate side); store is low
 - **Balanced?**: yes
-- **Shared knowledge**: the gate path calls `Get(Tenant(installationID), EntitlementKey)` inside `gate/inputs`, `Get`
+- **Shared knowledge**: the gate path calls `Get(Tenant(installationID), EntitlementKey)` and
+  `Get(Tenant(installationID), AdmissionKey)` inside `gate/inputs`, `Get`
   and `CompareAndSwap` on `pusher/<repo>/<head_sha>` under the same tenant inside `gate/inputs`, and `Get` and
   `CompareAndSwap` on `feedback/lease/<head_sha>` under the same tenant inside `gate/feedback`. It calls no
   other Store operation. `ErrNotFound` is the store sentinel for a missing key; for the entitlement it means "not
@@ -993,9 +1032,10 @@ type Swap struct {
 
 - **internal/app**: contract (constructor, handlers), root / 1 / 1, low, balanced. Calls `New`, mounts
   `UploadHandler`, calls `HandleEvent` before `control.HandleEvent`, calls `Sweep` from `/internal/sweep`,
-  passes `NewReceiver(...)` to `control`.
+  passes `NewReceiver(...)` to `control`, builds the `Admissions` for `Deps.Admissions` and `NewReceiver`.
 - **internal/control/account**: contract, root / 2 / 2, moderate, balanced. Writes the JSON of `Entitlement`
-  under `EntitlementKey`. The gate owns the record so that it never imports billing code.
+  under `EntitlementKey`, and writes and deletes the JSON of `Admission` under `AdmissionKey`. The gate owns the
+  records so that it never imports billing or operator code.
 - **internal/control/onboarding**: contract, root / 2 / 2, high, balanced. Uses `Receiver`, `Rejection`, `Upload`,
   `Binding`, `Problem` for `POST /v1/discoveries`. A discovery upload never reaches `verdict` or `feedback`.
 
@@ -1003,10 +1043,10 @@ type Swap struct {
 
 ### Composition
 
-`New(d)` builds, once: `ingest.New(d.GitHub, d.GitHub, d.GitHub, d.OIDC, d.Audience)`,
+`New(d)` builds, once: `ingest.New(d.GitHub, d.GitHub, d.GitHub, d.OIDC, d.Audience, d.Admissions)`,
 `inputs.New(d.GitHub, d.GitHub, d.Store)`, `feedback.New(d.GitHub, d.GitHub, d.GitHub, d.Store, d.Audience, d.Now)` (the audience is the App's base URL, so
 the comment links to the App's pull request page), and
-`sweep.New(d.GitHub, d.GitHub, d.GitHub, resolver, publisher, d.Sweep)`. `verdict` has no constructor.
+`sweep.New(d.GitHub, d.GitHub, d.GitHub, resolver, publisher, d.Admissions, d.Sweep)`. `verdict` has no constructor.
 `NewReceiver` is `ingest.New` with the same argument pattern. A nil `Deps.Now` means `time.Now` **[default]**.
 `New` delegates to the unexported `compose`, which takes the five `github/api` roles as one interface, and
 `compose` to `newGate`, which takes the children as interfaces; both exist so that tests can replace GitHub or a child.
@@ -1014,7 +1054,7 @@ the comment links to the App's pull request page), and
 | Child      | Contributes                                                                                              | Depends on siblings                                           |
 | ---------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
 | `ingest`   | authenticated, bound `Upload` or a `Rejection`                                                           | none                                                          |
-| `inputs`   | `Trusted` for a `Target`; owns the `Entitlement` record, the digest predicate and the protected path set | none                                                          |
+| `inputs`   | `Trusted` for a `Target`; owns the `Entitlement` and `Admission` records, the digest predicate and the protected path set | none                                                        |
 | `verdict`  | `Outcome` from `Facts`; `Without`, `Suspended`                                                           | `ingest` (`Problem`), `inputs` (`Trusted`) — model            |
 | `feedback` | checks, comment, receipt; `State`, `Pending`, `Warn`                                                     | `verdict` (`Outcome`), `inputs` (`Target`, `Trusted`) — model |
 | `sweep`    | reconciliation of open PRs; owns `Rerun` and `Without`                                                   | `inputs`, `feedback`, `verdict` — contract                    |
@@ -1082,6 +1122,7 @@ Special targets, all through the same flow:
 
 | `Event.Kind`                     | Reaction                                                                                                                                                                                                                                                         |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| any kind with a repository       | Checked before the rows below: `Admissions.Admitted(e.InstallationID, Owner(e.Repo))` false → reaction `not_admitted`, nothing read or written, `nil` returned. An error → reaction `not_admitted` logged, nothing read or written, the error returned, so the webhook queue retries the delivery. Installation kinds carry no repository and skip this check. |
 | `PullOpened`, `PullSynchronized` | `Resolve`. `!SettingsFound` → nothing. Fork → `Publish(sweep.Without(ReasonForkUnsupported, target, trusted, Receipt{}))`: a zero-run receipt carrying the base digests. Else `Settings.Gate == GateRequired` → `publisher.Pending(target)`. Advisory → nothing. |
 | `ReviewChanged`                  | `Reconcile(target, …)`: inside the lease, a withdrawn approval → `sweep.Withdrawal` (below); reason `owner_approval_missing` and `!verdict.Unapproved(trusted)` **[default: no re-run while an approval is missing]** → `sweep.Rerun`.                           |
 | `BranchPush`                     | `resolver.RecordPusher(target, Pusher)` first, so the record exists before anything decides; a failed write is returned and the queue retries. Then the newest pull request of this repository whose head is `Branch` (`Pulls.PullByHead`): when it is open and its head is `HeadSHA`, run the `ReviewChanged` reaction on it, so a report that arrived before this push is re-evaluated. A push whose `PusherType` is present and not `"user"` (a deploy key) records nothing and logs `gate pusher not recorded` with the delivery id, never the key; the re-evaluation and the sweep still run. No such pull request, a closed one or another head → nothing more. A pull request from a fork is never found. |
@@ -1170,7 +1211,12 @@ event left undone.
   fabricated-report gap (a trusted workflow running a PR script that forges a clean report) is not closed and not claimed closed.
 - Unknown identity never compares equal: a manifest miss, a missing profile or a profile version mismatch is never approved.
 - The tenant comes from verified OIDC claims (`ResolveRepo`) or the verified webhook; never from the envelope or a client-supplied ID.
-- The gate path reads the `Entitlement` and the pusher records, and writes only the pusher records of `gate/inputs`
+- Nothing runs for an installation no operator approved. The façade (`HandleEvent`), `ingest` (upload) and `sweep`
+  (pass) each ask `Admitted` before they read or write for it. An approval that cannot be read (a Store error, or a
+  record that does not decode) does nothing and is retried: `HandleEvent` returns the error, the upload answers 503
+  `admission_unavailable`, the sweep counts the installation in `Summary.Errors`. It is never a refusal and never
+  "admitted", unlike the entitlement. The gate only reads the admission; `control/account` writes it.
+- The gate path reads the `Entitlement`, the `Admission` and the pusher records, and writes only the pusher records of `gate/inputs`
   and `gate/feedback`'s publication leases. A pusher record is `pusher/<repo>/<head_sha>` = the logins that pushed the
   head, written only from a signed `push` delivery, and only ever added to. It is kept until the installation is deleted; one small key per
   pushed head is the accepted growth **[default]**, to be pruned by the sweep if tenants grow large.
@@ -1300,6 +1346,12 @@ are driven only as far as they go without GitHub. Child internals are tested in 
 - **Test name**: `TestStoreWritesOnlyPublicationLeasesAndPusherRecords`
   **Scenario**: a Store wrapper that panics on `Put`, `Delete`, `Add`, `DeleteTenant`, `Tenants` and on a `CompareAndSwap` outside `feedback/lease/` and `pusher/`; a private repository with an entitlement; drive every façade entry point over it: `HandleEvent` (`PullOpened`, `ReviewChanged`, `DefaultBranchPush`, `BranchPush`), an upload, `Sweep`.
   **Expected behavior**: no panic; the Store was read at least once; every read outside the leases and the pusher records is `Get` of `EntitlementKey` under the installation's tenant, never `SystemTenant`; every lease operation and every pusher record is under the installation's tenant; a pusher record was written; the pull's lease is gone afterwards.
+- **Test name**: `TestUnadmittedInstallationGetsNothing`
+  **Scenario**: the installation is refused by the admission fake; a `PullOpened` event, then an upload; then the refusal is lifted and a `PullSynchronized` event and an upload follow.
+  **Expected behavior**: no pending check and no state check while refused; the upload answers 403 `installation_not_approved`; after the lift the upload answers 200 `success`/`healthy`.
+- **Test name**: `TestUnreadableApprovalIsRetriedNotDropped`
+  **Scenario**: the admission fake cannot read the approval; a `PullOpened` event and an upload; then the fake recovers and a `PullOpened` event and an upload follow.
+  **Expected behavior**: `HandleEvent` returns an error and no check exists; the upload answers 503 `admission_unavailable`; after recovery the event is handled and the upload answers 200 `success`/`healthy`.
 - **Test name**: `TestOwnerPushAuthorizesTheHeadItPushed`
   **Scenario**: an owner's `BranchPush` for the head of a pull request that edits the policy, (1) before the `PullOpened` event and the report, (2) after the report left `owner_approval_missing`, (3) from a member of an owner team.
   **Expected behavior**: (1) the report is `success`; (2) one re-run of the report's run, the check stays `action_required` until the new upload, which is `success`; (3) as (2). The receipt carries the approved head policy digest.

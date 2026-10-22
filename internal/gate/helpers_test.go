@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -58,6 +59,7 @@ type world struct {
 	now   time.Time
 	gate  *Gate
 	shop  api.Repo
+	admit *fakeAdmitter
 
 	nextRun int64
 	nextSHA int
@@ -74,7 +76,8 @@ func newWorld(t *testing.T) *world {
 		nextRun: 5000,
 	}
 	w.store = &guardStore{inner: w.mem}
-	w.gate = compose(w.gh, w.oidc, w.store, testAudience,
+	w.admit = &fakeAdmitter{refused: map[int64]bool{}}
+	w.gate = compose(w.gh, w.oidc, w.store, w.admit, testAudience,
 		Config{MissingUploadAfter: 60 * time.Minute, WaiverWarnBefore: 7 * 24 * time.Hour}, w.clock)
 	w.shop = w.addRepo(shopName, shopInstallation, shopRepoID, false)
 	return w
@@ -453,4 +456,17 @@ func captureLogs(t *testing.T) *bytes.Buffer {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	t.Cleanup(func() { slog.SetDefault(old) })
 	return &buf
+}
+
+// fakeAdmitter admits every installation except the refused ones; while down, no approval can be read.
+type fakeAdmitter struct {
+	refused map[int64]bool
+	down    bool
+}
+
+func (a *fakeAdmitter) Admitted(_ context.Context, installationID int64, _ string) (bool, error) {
+	if a.down {
+		return false, errors.New("fake: store down")
+	}
+	return !a.refused[installationID], nil
 }

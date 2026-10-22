@@ -18,7 +18,9 @@ the gate would still verify reports, but nobody could onboard, edit a policy, st
 - Serve the UI handler (`/`) and the discovery upload handler (`POST /v1/discoveries`).
 - React to installation webhooks: start or keep the trial (`Observe`), delete the tenant on uninstall (`Forget`).
 - Refresh every installation's `Entitlement` record on the periodic sweep, and forget Store tenants whose installation no longer exists.
+- Leave an installation whose account no operator approved alone: it gets no entitlement record, so its trial starts at the approval.
 - Apply the operator's manual beta grant.
+- Pass the admission seam (`Admissions`) and the operator IDs to `ui`, which lets an operator approve an installation.
 - Re-publish the two platform seams, `Sandbox` and `Provider`, so `app` and platform packages cite one place.
 
 ## Subdomain Classification
@@ -46,19 +48,23 @@ type Deps struct {
     OAuth     OAuth
     Store     Store
     Receiver  Receiver
-    Sandbox   Sandbox
-    Provider  Provider
-    CookieKey []byte
-    BaseURL   string
-    Now       func() time.Time
+    // Admissions says which installations the App serves; Operators (GitHub user IDs) approve the others on /admin.
+    Admissions *Admissions
+    Operators  []int64
+    Sandbox    Sandbox
+    Provider   Provider
+    CookieKey  []byte
+    BaseURL    string
+    Now        func() time.Time
 }
 
 // WorkerDeps are the dependencies of the worker façade: it handles events, the sweep and grants, and serves no UI.
 // So it takes no OAuth, no cookie key, no Receiver, no Sandbox and no Provider.
 type WorkerDeps struct {
-    GitHub *Client
-    Store  Store
-    Now    func() time.Time
+    GitHub     *Client
+    Store      Store
+    Admissions *Admissions // the sweep and installation events do nothing for an account no operator approved
+    Now        func() time.Time
 }
 
 type Control struct{ /* unexported */ }
@@ -135,23 +141,26 @@ type Completion struct {
 
 ### Operation rules
 
-- `New` returns an error, and no `Control`, on a wiring bug: nil `GitHub`, `OAuth`, `Store` or `Receiver`, `CookieKey` not
+- `New` returns an error, and no `Control`, on a wiring bug: nil `GitHub`, `OAuth`, `Store`, `Receiver` or `Admissions`, `CookieKey` not
   32 bytes, empty `BaseURL`, a non-nil `Sandbox` with nil `Tokens`, or an error from `ui.New`. Nil `Now` means `time.Now`.
   Nil `Sandbox` and nil `Provider` are valid. It never panics. **[default]**
-- `NewWorker` returns an error, and no `Control`, on a nil `GitHub` or `Store`. It builds only `account`: no `ui`,
+- `NewWorker` returns an error, and no `Control`, on a nil `GitHub`, `Store` or `Admissions`. It builds only `account`: no `ui`,
   `onboarding`, `assist` or `proposal`. So the worker process holds no OAuth secret, cookie key or Anthropic key.
   `HandleEvent`, `Sweep` and `Grant` behave as on a `Control` from `New`; `UIHandler`, `DiscoveryHandler` and
   `BaselineHandler` return nil.
 - `UIHandler` returns the `ui` handler wrapped in a panic recovery that answers `500` and logs the route pattern only.
 - `DiscoveryHandler` returns `Onboarding.DiscoveryHandler()` unchanged; `BaselineHandler` returns `Onboarding.BaselineHandler()` unchanged.
 - `HandleEvent` has its own 10 s timeout **[default]**. `e.InstallationID <= 0` is an error. By `e.Kind`:
-  - `InstallationAdded`, `ReposRemoved` → `Repos.ListRepos(e.InstallationID)` → `hasPrivate` = any `Private` → `Account.Observe(id, hasPrivate, Now())`.
+  - `InstallationAdded`, `ReposRemoved` → `Admissions.Admitted(id, e.Account)` first: not admitted → nothing is read or written, `nil` (no GitHub call, no entitlement record, so the trial starts at approval); a read error is returned, so the delivery is retried. Then `Repos.ListRepos(e.InstallationID)` → `hasPrivate` = any `Private` → `Account.Observe(id, hasPrivate, Now())`. An empty `Account` is admitted only by the installation's record.
   - `InstallationRemoved` → `Account.Forget(e.InstallationID)`. No GitHub call.
   - anything else → nil, no call.
 - Installation events carry `Repo == ""`, so `e.RepoPrivate` is never used. A `HandleEvent` error is returned to `app`,
   which logs it; the sweep repairs a missed `Observe`.
 - `Sweep`: `Repos.ListInstallations`; error → return it. Per installation: `ListRepos` ok → `Observe` (which rewrites the
   record); `ListRepos` failed → `Refresh` only (needs no GitHub). Per-installation errors are logged by ID and skipped.
+  Before either, `Admissions.Admitted(id, Installation.Account)`: not admitted → skipped and counted as `waiting` in the
+  log line; an admission read error counts as failed. So an account waiting for approval gets no `account` or
+  `Entitlement` record, and its trial starts at the first sweep after the approval.
   Backfill rule: the sweep is the recovery path for a missed installation webhook. `Observe` runs for every installation
   `ListInstallations` returns, whether or not a record exists; on a missing record it creates the `account` record, starts the
   trial at sweep time (`first_private_at = Now()` when a private repository exists) and writes the `Entitlement` record. Until
@@ -205,8 +214,14 @@ type Account interface {
     Grant(ctx context.Context, installationID int64, until time.Time, now time.Time) error
     // Refresh recomputes the Entitlement record of one installation (called by the sweep).
     Refresh(ctx context.Context, installationID int64, now time.Time) error
-    // Forget deletes every key of the installation (uninstall).
+    // Forget deletes every key of the installation (uninstall), its admission included.
     Forget(ctx context.Context, installationID int64) error
+    // Admit records an operator's approval of the installation: the gate serves it from the next event on.
+    // Operator-only; audited in the log by installation ID and operator.
+    Admit(ctx context.Context, installationID int64, a gate.Admission) error
+    // Unadmit deletes the approval: the gate serves nothing for the installation from the next event on.
+    // Unadmitting an installation without an approval is not an error.
+    Unadmit(ctx context.Context, installationID int64, byID int64) error
 }
 ```
 
@@ -301,6 +316,8 @@ type Deps struct {
     Onboarding Onboarding
     Assist     Assist
     Proposals  Proposals
+    Admissions *Admissions // which installations the App serves; the others see the Waiting page
+    Operators  []int64     // GitHub user IDs that approve installations on /admin
     Now        func() time.Time
 }
 
@@ -324,7 +341,10 @@ constants and `AssistWorkflowPath` are unused by the façade; they are part of t
 - **Volatility**: moderate
 - **Balanced?**: yes
 - **Shared knowledge**: `Receiver` is the upload authentication interface built by `gate.NewReceiver` in `app`; the façade
-  passes it to `onboarding` untouched. `account` alone knows the `Entitlement` record.
+  passes it to `onboarding` untouched. `account` alone knows the `Entitlement` record, and alone writes the gate's
+  `Admission` record. `Deps.Admissions` is built by `app` (the same value the gate and the receiver use); the façade
+  hands it, with `Deps.Operators`, to `ui` and never calls it. `control` never admits or revokes: `ui` does, for an
+  operator. `InstallationRemoved` and the orphan cleanup call `Forget`, which deletes the admission with the tenant.
 
 ### internal/store
 
@@ -414,6 +434,7 @@ type Event struct {
     DeliveryID     string
     InstallationID int64
     Repo           string // "owner/name", "" for installation events
+    Account        string // installation kinds only: the account login from the payload; "" when it has none
     RepoPrivate    bool
     PullRequest    int
     HeadSHA        string
@@ -458,8 +479,10 @@ var (
 <!-- contract: Repos, Installation — restated from internal/github/api/module.md -->
 ```go
 type Installation struct {
-    ID      int64
-    Account string // organization or user login
+    ID          int64
+    Account     string    // organization or user login
+    AccountType string    // "Organization" or "User"
+    CreatedAt   time.Time // when the App was installed
 }
 
 // Repos reads installations, repositories and file contents.
@@ -516,7 +539,7 @@ func New(ts TokenSource, hc *http.Client) *Client
 2. `proposal.New(d.GitHub, d.GitHub)` → `Proposals`.
 3. `onboarding.New(Deps{GitHub, Tokens, Receiver, Proposals, Consents, Sandbox, BaseURL, Now})` → `Onboarding`.
 4. `assist.New(Deps{GitHub, Provider, Consents, Budget, Proposals, Now})` → `Assist`.
-5. `ui.New(Deps{OAuth, CookieKey, BaseURL, GitHub, Account, Consents, Onboarding, Assist, Proposals, Now})` → the UI handler, or an error that `New` returns.
+5. `ui.New(Deps{OAuth, CookieKey, BaseURL, GitHub, Account, Consents, Onboarding, Assist, Proposals, Admissions, Operators, Now})` → the UI handler, or an error that `New` returns.
 
 | Child        | Contributes                                                        | Depends on siblings                          |
 | ------------ | ------------------------------------------------------------------ | -------------------------------------------- |
@@ -580,12 +603,12 @@ fake `Sandbox` and `Provider`, and a fixed clock.
 ### Unit Tests
 
 - **Test name**: `TestNewValidatesWiring`
-  **Scenario**: table: nil `GitHub`; nil `OAuth`; nil `Store`; nil `Receiver`; 16-byte `CookieKey`; empty `BaseURL`; `Sandbox` set with nil `Tokens`; nil `Now`; nil `Sandbox`, `Provider` and `Tokens`.
-  **Expected behavior**: error and nil `Control` for the first seven, no panic; the last two construct a working `Control`.
+  **Scenario**: table: nil `GitHub`; nil `OAuth`; nil `Store`; nil `Receiver`; nil `Admissions`; 16-byte `CookieKey`; empty `BaseURL`; `Sandbox` set with nil `Tokens`; nil `Now`; nil `Sandbox`, `Provider` and `Tokens`.
+  **Expected behavior**: error and nil `Control` for the first eight, no panic; the last two construct a working `Control`.
 - **Test name**: `TestNewWorkerNeedsNoUISecrets`
-  **Scenario**: `NewWorker` with nil `GitHub`, with nil `Store`, then with only `GitHub`, `Store` and `Now`;
+  **Scenario**: `NewWorker` with nil `GitHub`, with nil `Store`, with nil `Admissions`, then with `GitHub`, `Store`, `Admissions` and `Now`;
   `InstallationAdded`, `Grant` and `Sweep` on the result.
-  **Expected behavior**: errors and nil `Control` for the first two; the third handles all three calls, the tenant is
+  **Expected behavior**: errors and nil `Control` for the first three; the third handles all three calls, the tenant is
   stored, and the three handler methods return nil.
 - **Test name**: `TestHandleEventRouting`
   **Scenario**: table over every `EventKind`, plus `InstallationID` 0.
@@ -596,6 +619,9 @@ fake `Sandbox` and `Provider`, and a fixed clock.
 
 ### Integration Contract Tests
 
+- **Test name**: `TestAccountWaitingForApprovalGetsNoEntitlement`
+  **Scenario**: an installation with a private repository whose account is not approved, then one whose approval cannot be read; an `InstallationAdded` event and a `Sweep` for each.
+  **Expected behavior**: no `Account` call at all, so no record and no trial; the event answers `nil` for the first and an error for the second; `Sweep` returns nil in both.
 - **Test name**: `TestSweepRefreshesEveryInstallation`
   **Scenario**: three installations; `ListRepos` fails for the second; the Store write of the third (`CompareAndSwapAll`, the account write path) fails.
   **Expected behavior**: first observed; second refreshed without GitHub; third logged and skipped; `Sweep` returns nil; counts logged by ID only.

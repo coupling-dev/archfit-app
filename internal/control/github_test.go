@@ -166,7 +166,12 @@ func (g *fakeGitHub) serve(w http.ResponseWriter, r *http.Request) {
 	case line == "GET /app/installations":
 		out := []map[string]any{}
 		for _, in := range g.installs {
-			out = append(out, map[string]any{"id": in, "account": map[string]any{"login": fmt.Sprintf("org%d", in)}})
+			// The account is the owner of the installation's repositories, as on GitHub; "org<id>" without one.
+			account := fmt.Sprintf("org%d", in)
+			if repos := g.repos[in]; len(repos) > 0 {
+				account, _, _ = strings.Cut(repos[0].FullName, "/")
+			}
+			out = append(out, map[string]any{"id": in, "account": map[string]any{"login": account}})
 		}
 		writeJSON(w, http.StatusOK, out)
 	case line == "GET /app":

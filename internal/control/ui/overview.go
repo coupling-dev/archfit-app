@@ -19,7 +19,8 @@ const (
 
 type overviewRow struct {
 	FullName string `json:"full_name"`
-	State    string `json:"state"` // a word, never a number
+	Waiting  bool   `json:"waiting,omitempty"` // no operator approved its installation: no state is read
+	State    string `json:"state"`             // a word, never a number
 	Tone     string `json:"tone"`
 	Reason   string `json:"reason"` // the check run's title
 }
@@ -42,9 +43,14 @@ func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
 	}
 
 	body.Repos = make([]overviewRow, len(repos))
+	admitted := s.admittedSet(r.Context(), repos)
 	slots := make(chan struct{}, parallelLookups)
 	var wg sync.WaitGroup
 	for i, repo := range repos {
+		if !admitted[repo.InstallationID] {
+			body.Repos[i] = overviewRow{FullName: repo.FullName, Waiting: true, State: stateWaiting, Tone: "attention"}
+			continue
+		}
 		wg.Add(1)
 		slots <- struct{}{}
 		go func() {

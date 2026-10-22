@@ -653,7 +653,15 @@ func (w *world) routes() {
 			if in.suspended {
 				suspended = "2026-09-01T00:00:00Z"
 			}
-			out = append(out, map[string]any{"id": in.id, "account": map[string]any{"login": fmt.Sprintf("org%d", in.id)}, "suspended_at": suspended})
+			// The account is the owner of the installation's repositories, as on GitHub; "org<id>" without one.
+			account := fmt.Sprintf("org%d", in.id)
+			for name, rp := range w.repos {
+				if rp.installation == in.id {
+					account, _, _ = strings.Cut(name, "/")
+				}
+			}
+			out = append(out, map[string]any{"id": in.id, "account": map[string]any{"login": account, "type": "User"},
+				"created_at": "2026-10-20T09:00:00Z", "suspended_at": suspended})
 		}
 		writeJSON(rw, http.StatusOK, out)
 	})

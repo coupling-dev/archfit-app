@@ -16,6 +16,9 @@ single place where it is enforced at runtime.
 ## Functional Responsibilities
 
 - `Load`: read `Config` from the environment; fail with a message naming the variable; never read a secret value from the environment itself, only a file path.
+- Admission: build one `gate.Admissions` from the configured accounts and the Store, and hand the same value to the
+  gate, the upload receiver and `control`, with the operator IDs. The App is public on GitHub, so nothing runs for an
+  account that is neither configured nor approved by an operator.
 - `Run`: build the dependency graph, start one `http.Server`, shut down gracefully on context cancellation.
 - Roles (`ARCHFIT_ROLE`): `all` **[default]**, `public` or `worker`. The role selects the route table (normative,
   below) and the secrets the process reads. One `http.ServeMux`.
@@ -126,6 +129,8 @@ Supporting. Wiring has no business rules and changes only when a module or platf
 ## Encapsulated Knowledge
 
 - Environment variable names, secret-file conventions, defaults, timeouts, body caps.
+- The built-in approved accounts (`alexei-led`, `vladikk`, `coupling-dev`) and operator user IDs (`1898375`, `1788671`),
+  and that `ARCHFIT_APPROVED_ACCOUNTS` and `ARCHFIT_OPERATORS` replace them whole.
 - Which concrete implementation backs each seam, and the order of construction.
 - The route table of each role and which module owns each route.
 - The task layout (names, headers, the half) and the order of the halves (gate first). Intake's answer does not
@@ -163,6 +168,8 @@ type Config struct {
     Invoker          string // ARCHFIT_INVOKER: the service account e-mail of the queue and Scheduler dispatches
     TraceProject     string // GOOGLE_CLOUD_PROJECT; optional; names the trace of a log line; empty logs no trace
     Revision         string // K_REVISION; set by Cloud Run; logged on every line
+    ApprovedAccounts []string // ARCHFIT_APPROVED_ACCOUNTS: comma-separated logins served without an operator's approval; default alexei-led, vladikk, coupling-dev
+    Operators        []int64  // ARCHFIT_OPERATORS: comma-separated GitHub user IDs that may approve installations; default 1898375, 1788671
 }
 
 // Load reads Config from the environment. Secrets are file references only.
@@ -234,7 +241,7 @@ the client and clears `Timeout` on its copy, so the 150 second deadline of `cont
 - `POST /internal/sweep` answers `200` with the gate `Summary` when `gate.Sweep` succeeds, also when `control.Sweep`
   failed or panicked (that failure is only logged). When `gate.Sweep` fails it answers `500` with the partial `Summary`.
   The `Summary` is encoded by `encoding/json` with the Go field names (`Repos`, `Pulls`, `Pended`, `TimedOut`, `Rerun`,
-  `Warned`, `Suspended`, `Errors`, `RateLimited`); there are no JSON tags. A pass that a GitHub rate limit stopped
+  `Warned`, `Suspended`, `NotAdmitted`, `Errors`, `RateLimited`); there are no JSON tags. A pass that a GitHub rate limit stopped
   still answers `200`, because a retry before the limit resets cannot help and the next hourly pass continues the
   work; its request line has the outcome `sweep_rate_limited` instead of `swept`, so a log-based counter sees it.
 
@@ -254,7 +261,9 @@ All integrations are constructor or handler calls: contract strength. `app` hold
 - **LCA / Rank / Distance**: internal (root) / 1 / 1
 - **Volatility**: high on the gate side; the façade is kept small on purpose
 - **Balanced?**: yes
-- **Shared knowledge**: the façade, the sweep summary that `/internal/sweep` returns, and `NewReceiver`, which `app` passes to `control`.
+- **Shared knowledge**: the façade, the sweep summary that `/internal/sweep` returns, and `NewReceiver`, which `app` passes to `control`. `app` builds one `Admissions` with `NewAdmissions(Store,
+  ApprovedAccounts)` and passes that same value to `Deps.Admissions`, `NewReceiver` and `control.Deps.Admissions`, so the
+  three agree on who is served. The worker role builds it too, for the gate.
   In these blocks `Config` means `gate.Config` (the sweep thresholds), not this module's `Config`. `app` sets
   `MissingUploadAfter` to 60 minutes and `WaiverWarnBefore` to 7 days. `Upload` is an opaque result of
   `Receiver` for this module; `app` never calls `Receive`.
@@ -262,14 +271,16 @@ All integrations are constructor or handler calls: contract strength. `app` hold
 <!-- contract: Gate, Deps, New — restated from internal/gate/module.md -->
 ```go
 // Deps are the only things the gate path may touch: GitHub, OIDC, the Store and a clock. On the Store the gate
-// path reads the entitlement and writes only gate/feedback's publication leases.
+// path reads the entitlement and the admission, and reads and writes the pusher records of gate/inputs; its only
+// other write is gate/feedback's publication leases.
 type Deps struct {
-    GitHub   *Client
-    OIDC     Verifier
-    Store    Store
-    Audience string // the App URL; OIDC audience
-    Sweep    Config
-    Now      func() time.Time
+    GitHub     *Client
+    OIDC       Verifier
+    Store      Store
+    Admissions *Admissions // which installations the App serves; nothing runs for any other
+    Audience   string      // the App URL; OIDC audience
+    Sweep      Config
+    Now        func() time.Time
 }
 
 type Gate struct{ /* unexported */ }
@@ -282,7 +293,9 @@ func (g *Gate) UploadHandler() http.Handler
 // HandleEvent reacts to a verified webhook event: pending check on a new head, fork refusal,
 // owner_approval_missing on a review change that withdraws the approval a receipt relied on, re-run on a
 // review change when the last receipt was owner_approval_missing, and a one-repository sweep when a
-// default-branch push changes a protected path.
+// default-branch push changes a protected path. An event for a repository whose owner is not admitted gets
+// the reaction "not_admitted" and nothing else: no read, no write. An approval that cannot be read is returned as an
+// error, so the delivery is retried.
 func (g *Gate) HandleEvent(ctx context.Context, e Event) error
 
 // Sweep runs one reconciliation pass.
@@ -301,6 +314,7 @@ type Summary struct {
     Repos, Pulls                         int
     Pended, TimedOut, Rerun, Warned      int
     Suspended                            int
+    NotAdmitted                          int  // installations skipped: no operator approved them
     Errors                               int  // repositories or pulls skipped after an error; details are in the log
     RateLimited                          bool // the pass stopped early on a GitHub rate limit
 }
@@ -317,7 +331,7 @@ type Sweeper interface {
 ```go
 // NewReceiver exposes the upload authentication and binding step so that the discovery
 // upload endpoint reuses exactly the same provenance checks as the report endpoint.
-func NewReceiver(gh *Client, v Verifier, audience string) Receiver
+func NewReceiver(gh *Client, v Verifier, audience string, adm *Admissions) Receiver
 ```
 
 <!-- contract: Receiver, Rejection — restated from internal/gate/module.md -->
@@ -347,6 +361,8 @@ type Receiver interface {
 - **Volatility**: high inside control; the façade is stable
 - **Balanced?**: yes
 - **Shared knowledge**: the façade and the two platform seams `app` fills. In this block `Deps` means `control.Deps`.
+  `app` also passes `Admissions` (the value the gate uses) and `Operators` (`Config.Operators`); `New` refuses a nil
+  `Admissions`. `NewWorker` takes `Admissions` too (required), for installation events and the sweep, and no `Operators`.
 
 <!-- contract: Control, Deps, New, WorkerDeps, NewWorker — restated from internal/control/module.md -->
 ```go
@@ -357,19 +373,23 @@ type Deps struct {
     OAuth     OAuth
     Store     Store
     Receiver  Receiver
-    Sandbox   Sandbox
-    Provider  Provider
-    CookieKey []byte
-    BaseURL   string
-    Now       func() time.Time
+    // Admissions says which installations the App serves; Operators (GitHub user IDs) approve the others on /admin.
+    Admissions *Admissions
+    Operators  []int64
+    Sandbox    Sandbox
+    Provider   Provider
+    CookieKey  []byte
+    BaseURL    string
+    Now        func() time.Time
 }
 
 // WorkerDeps are the dependencies of the worker façade: it handles events, the sweep and grants, and serves no UI.
 // So it takes no OAuth, no cookie key, no Receiver, no Sandbox and no Provider.
 type WorkerDeps struct {
-    GitHub *Client
-    Store  Store
-    Now    func() time.Time
+    GitHub     *Client
+    Store      Store
+    Admissions *Admissions // the sweep and installation events do nothing for an account no operator approved
+    Now        func() time.Time
 }
 
 type Control struct{ /* unexported */ }
@@ -745,6 +765,7 @@ type Event struct {
     DeliveryID     string
     InstallationID int64
     Repo           string // "owner/name", "" for installation events
+    Account        string // installation kinds only: the account login from the payload; "" when it has none
     RepoPrivate    bool
     PullRequest    int
     HeadSHA        string
@@ -813,6 +834,8 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
 - A new `Store`, `Sandbox`, `Queue`, or `Provider` driver: one constructor call and one driver name.
 - A new route or operator endpoint.
 - New configuration variables, timeouts, or log fields.
+- Another source for the approved accounts or operators (a Store list, a secret): only `Load` changes. The lists are
+  in `Config`, so a change today is a pull request and a release.
 - Moving the sweep trigger from an external scheduler to an in-process ticker.
 
 ## Constraints and Invariants
@@ -825,8 +848,11 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   the uploads or intake, and never reads the OAuth secret, the cookie key or the Anthropic key.
 - A task is GitHub's own delivery. The worker verifies the signature again, so the queue is not trusted. The half
   header is not signed; it only chooses between two handlers of the same verified delivery.
-- A failing or missing optional dependency (LLM key, sandbox driver) never prevents startup of the gate routes. A missing GitHub App credential, webhook secret, or base URL is a startup error, and so is a missing operator token outside the public role, a missing OAuth client ID, OAuth secret or cookie key outside the worker role, a configured previous webhook secret file that is empty or unreadable, and a missing worker URL or invoker in the worker role or with the cloudtasks driver.
+- A failing or missing optional dependency (LLM key, sandbox driver) never prevents startup of the gate routes. A missing GitHub App credential, webhook secret, or base URL is a startup error, and so is a missing operator token outside the public role, a missing OAuth client ID, OAuth secret or cookie key outside the worker role, a configured previous webhook secret file that is empty or unreadable, and a missing worker URL or invoker in the worker role or with the cloudtasks driver. An empty `ARCHFIT_OPERATORS`
+  uses the default; a list with an element that is not a positive integer is a startup error naming the variable.
 - Secrets arrive as file paths; their contents are never logged, never placed in `Config` string form, never echoed in errors.
+- The approved accounts are logins and compare case-insensitively; the operators are user IDs, never logins, because a
+  released login can be taken by someone else. The lists are configuration, not secrets.
 - Tenant identity is never taken from a request here. `/internal/grants` is operator-authenticated and is the single place an installation ID arrives in a body; it is logged with the operator action.
 - Webhook body cap 25 MB **[default]**; bodies are never logged. Unknown events answer `202` and do nothing.
 - The server write timeout is greater than every route deadline. Raising a route deadline means raising the write timeout with it.
@@ -854,10 +880,11 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   `cloudtasks` in the `all` role; `cloudtasks` without the queue name, the worker URL or the invoker; an invoker that
   is not an e-mail; a worker URL with a trailing slash or over plain `http`.
   `ARCHFIT_STORE=firestore` without a project, with a project and a named database, and with `FIRESTORE_EMULATOR_HOST`.
-  **Expected behavior**: defaults `:8080`, `memory`, `none`, `all`, `inline`; an error naming the first missing or
+  `ARCHFIT_APPROVED_ACCOUNTS=acme,octo-labs`; `ARCHFIT_OPERATORS=7, 8`, `7,<a login>` and `0`.
+  **Expected behavior**: defaults `:8080`, `memory`, `none`, `all`, `inline`, the three approved accounts and the two operators; an error naming the first missing or
   invalid variable; the public role loads without the operator token, the worker role does not; the worker role loads
   without the OAuth client ID, the OAuth secret and the cookie key; the previous webhook secret file is loaded when set;
-  the worker ignores the queue driver; no secret content in any error.
+  the worker ignores the queue driver; each list variable replaces its default whole; an operator list with a non-ID or `0` is an error naming `ARCHFIT_OPERATORS`; no secret content in any error.
 - **Test name**: `TestLoadNeverReadsSecretValuesFromEnv`
   **Scenario**: set `ARCHFIT_GITHUB_PRIVATE_KEY` style variables holding inline PEM.
   **Expected behavior**: ignored; only `*_FILE` variables are honored.
@@ -1005,6 +1032,9 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
 
 ### Behavior Tests
 
+- **Test name**: `TestUnapprovedAccountIsInertUntilAnOperatorApproves`
+  **Scenario**: the real gate, control and ui over one memory Store, with only `acme` approved by configuration; an `opened` pull request delivery, an upload, a sweep, the owner's overview API and a non-operator's approve for the installation; then an operator approves it and the upload and the overview are tried again.
+  **Expected behavior**: before approval the upload answers 403 `installation_not_approved`, the sweep reports `NotAdmitted == 1`, no check and no comment exist, the overview is 403 with `waiting` set to the account, and the non-operator's approve is 404; after the operator's approve the upload is accepted with `success` and the overview is 200.
 - **Test name**: `TestGateServesWhileControlFails`
   **Scenario**: control façade fake panics in `UIHandler`, returns errors from `HandleEvent` and `Sweep`.
   **Expected behavior**: `/v1/reports` and the gate half of webhook and sweep complete normally; the UI answers `500`; the process stays up.

@@ -394,7 +394,14 @@ type options struct {
 	store    store.Store
 	sandbox  control.Sandbox
 	provider control.Provider
+	approved []string // accounts approved by configuration; nil approves every account the tests seed
 }
+
+// seededAccounts are the owners of the repositories the tests seed, approved unless a test says otherwise.
+var seededAccounts = []string{"acme", "alexei-led", "mallory"}
+
+// operatorID is the GitHub user ID of the system's one operator: olivia.
+const operatorID = 1003
 
 // system is the real gate and the real control plane wired as internal/app wires them, over the
 // world instead of GitHub, with a clock and platform seams the test owns.
@@ -423,13 +430,17 @@ func newSystem(t *testing.T, w *world, o options) *system {
 	gh := api.New(tokens, hc)
 	verifier := oidc.New(hc)
 	s := &system{t: t, w: w, store: o.store, clock: &clock{now: testNow}, mux: http.NewServeMux()}
+	if o.approved == nil {
+		o.approved = seededAccounts
+	}
+	admissions := gate.NewAdmissions(o.store, o.approved)
 	s.gate = gate.New(gate.Deps{
-		GitHub: gh, OIDC: verifier, Store: o.store, Audience: baseURL,
+		GitHub: gh, OIDC: verifier, Store: o.store, Admissions: admissions, Audience: baseURL,
 		Sweep: gate.Config{MissingUploadAfter: time.Hour, WaiverWarnBefore: 7 * 24 * time.Hour}, Now: s.clock.Now,
 	})
 	s.ctl, err = control.New(control.Deps{
-		GitHub: gh, Tokens: tokens, OAuth: oauth, Store: o.store, Receiver: gate.NewReceiver(gh, verifier, baseURL),
-		Sandbox: o.sandbox, Provider: o.provider, CookieKey: []byte(cookieKey), BaseURL: baseURL, Now: s.clock.Now,
+		GitHub: gh, Tokens: tokens, OAuth: oauth, Store: o.store, Receiver: gate.NewReceiver(gh, verifier, baseURL, admissions),
+		Admissions: admissions, Operators: []int64{operatorID}, Sandbox: o.sandbox, Provider: o.provider, CookieKey: []byte(cookieKey), BaseURL: baseURL, Now: s.clock.Now,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -494,8 +505,10 @@ func pullPayload(action string, installationID int64, fullName, headRepo string,
 	}
 }
 
+// installationPayload is an installation event; the account is the owner of the seeded repository of that installation.
 func installationPayload(action string, id int64) map[string]any {
-	return map[string]any{"action": action, "installation": map[string]any{"id": id}}
+	owner, _, _ := strings.Cut(map[int64]string{demoInstallation: demoRepo, shopInstallation: shopRepo}[id], "/")
+	return map[string]any{"action": action, "installation": map[string]any{"id": id, "account": map[string]any{"login": owner}}}
 }
 
 func sign(secret string, payload []byte) string {
@@ -564,6 +577,7 @@ func startApp(t *testing.T, w *world) *runningApp {
 		CookieKeyFile:     file("cookie", []byte(cookieKey)),
 		OperatorTokenFile: file("operator", []byte(operatorToken)),
 		StoreDriver:       "memory", SandboxDriver: "none", Role: "all", QueueDriver: "inline",
+		ApprovedAccounts: seededAccounts, Operators: []int64{operatorID},
 	}
 	logs := &lockedBuffer{}
 	addr := make(chan string, 1)

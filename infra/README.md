@@ -95,6 +95,10 @@ the public service calls the LLM. Each runs 0 to 2 instances with 1 vCPU and 512
 Both queues call the worker with an OIDC token for `archfit-invoker`. The Scheduler calls `/internal/sweep` at minute 0
 of each hour (UTC) with the same identity.
 
+Neither service sets `ARCHFIT_APPROVED_ACCOUNTS` or `ARCHFIT_OPERATORS`, so the code defaults apply (`alexei-led`,
+`vladikk`, `coupling-dev`; operators by GitHub user ID `1898375` and `1788671`). A change is a pull request to
+`internal/app/config.go` and a release.
+
 ### Alerts
 
 All alerts email the owner through the `Owner email` channel.
@@ -263,9 +267,15 @@ Register the App with these settings. Keep the webhook inactive, and install it 
   access. The App never writes `.github/workflows/`; the owner adds the workflow during onboarding.
 - Organization permissions: Members read
 - Events: Pull request, Pull request review, Push
-- Installable only on `coupling-dev`
+- Installable on any account (public). GitHub has no install approval, so the App approves accounts itself: it does
+  nothing for an account that is neither in `ARCHFIT_APPROVED_ACCOUNTS` nor approved by an operator on `/admin`. See
+  [Who the App serves](../docs/user-guide.md#who-the-app-serves).
 
 Why each permission is needed: [GitHub App permissions](../docs/user-guide.md#github-app-permissions).
+
+The App was registered as installable only on `coupling-dev`. To make it public, release a version with install
+approval first, then open the App's settings on GitHub, **Advanced**, **Make public**. A public App cannot be made
+private again while another account has it installed.
 
 The registered App asked for Workflows read and write before. To drop it, open the App's settings on GitHub,
 **Permissions & events**, set **Workflows** to **No access**, and save.
