@@ -93,6 +93,24 @@ const workflowMerged = {
   can_discover: true,
 };
 
+const workflowYAML = 'name: archfit\non:\n  pull_request:\n';
+
+const workflowNeeded = {
+  ...installed,
+  diagnostic: 'Add `.github/workflows/archfit.yaml` to PR #1',
+  next: '',
+  draft_url: 'https://github.com/acme/app/pull/1',
+  draft_state: 'draft',
+  can_start: false,
+  workflow: {
+    path: '.github/workflows/archfit.yaml',
+    branch: 'archfit/onboarding',
+    content: workflowYAML,
+    add_url:
+      'https://github.com/acme/app/new/archfit/onboarding?filename=.github%2Fworkflows%2Farchfit.yaml&value=name%3A+archfit',
+  },
+};
+
 const aiChecks = (allowed: boolean) => [
   {
     label: 'Allowed for acme',
@@ -492,7 +510,7 @@ async function open(page: Page, path: string, mock: Mock = {}) {
           return json(502, { error: 'The change was saved, but it could not be read back. Reload the page.' });
         return json(200, { ...sharing(true), notice: 'Managed AI is allowed.' });
       }
-      return json(200, { notice: 'The onboarding pull request is open.' });
+      return json(200, { notice: 'The onboarding pull request is open. Next: add the workflow file to it.' });
     }
     if (mock.signedIn === false) return json(401, { error: 'Sign in to continue.' });
     if (mock.tokenRejected && url.pathname !== '/api/session') return json(401, { error: 'Sign in to continue.' });
@@ -631,7 +649,7 @@ test('overview: an admin opens the onboarding pull request', async ({ page }) =>
   await page.getByLabel('Policy owners').fill('alice\nacme/platform');
   await expectClean(page);
   await page.getByRole('button', { name: 'Open the onboarding pull request' }).click();
-  await expect(page.getByRole('status')).toHaveText('The onboarding pull request is open.');
+  await expect(page.getByRole('status')).toHaveText('The onboarding pull request is open. Next: add the workflow file to it.');
 
   expect(writes).toHaveLength(1);
   const [w] = writes;
@@ -639,6 +657,30 @@ test('overview: an admin opens the onboarding pull request', async ({ page }) =>
   expect(w.headers()['x-csrf-token']).toBe(session.csrf);
   expect(w.headers()['content-type']).toBe('application/json');
   expect(w.postDataJSON()).toEqual({ mode: 'customer', owners: 'alice\nacme/platform' });
+});
+
+test('overview: the owner adds the workflow file the App does not write', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const writes = await open(page, '/r/acme/app', { overview: workflowNeeded });
+  const needs = page.getByRole('region', { name: 'Needs you' });
+  await expect(needs).toContainText('Add the Archfit workflow.');
+  await expect(needs).not.toContainText('to PR #1'); // the card says the step; the raw diagnostic stays out
+  await expect(needs.getByRole('link', { name: 'Add the file on GitHub' })).toHaveAttribute(
+    'href',
+    workflowNeeded.workflow.add_url,
+  );
+  await expect(needs).toContainText('Commit directly to the archfit/onboarding branch');
+  await expect(needs.getByLabel('Policy owners')).toHaveCount(0); // onboarding is started: no second form
+  await expectClean(page);
+
+  await needs.getByRole('button', { name: 'Copy the file' }).click();
+  await expect(needs.getByRole('status')).toContainText('Copied.');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(workflowYAML);
+
+  const reread = page.waitForRequest('**/api/repos/acme/app/overview');
+  await needs.getByRole('button', { name: 'Check again' }).click();
+  await reread;
+  expect(writes).toEqual([]);
 });
 
 test('pull request: the cycle drawn as on the comment, then the other findings', async ({ page, context }) => {

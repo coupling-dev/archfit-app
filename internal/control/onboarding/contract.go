@@ -59,11 +59,20 @@ type Progress struct {
 	Stage      Stage
 	Diagnostic string // what to do next
 	OpenDraft  *proposal.Draft
+	Workflow   *WorkflowFile // the file the owner adds by hand; nil when it is in place or not due yet
+}
+
+// WorkflowFile is the Archfit workflow and where it goes. The App never writes .github/workflows: GitHub allows that
+// only with the App's "workflows" permission, which would let the App change any CI. The owner adds this file once.
+type WorkflowFile struct {
+	Branch  string // the onboarding branch while its PR is open, else the default branch
+	Path    string
+	Content []byte
 }
 
 type Onboarding interface {
 	Progress(ctx context.Context, r api.Repo) (Progress, error)
-	// StartCustomer opens PR 1: the workflow, the settings file with owners, and CODEOWNERS entries.
+	// StartCustomer opens PR 1: the settings file with owners and CODEOWNERS entries. The owner adds the workflow.
 	StartCustomer(ctx context.Context, r api.Repo, owners []string) (proposal.Draft, error)
 	// StartManaged requires ConsentSourceProcessing, opens the onboarding PR and runs the sandbox job.
 	StartManaged(ctx context.Context, r api.Repo, owners []string) (proposal.Draft, error)

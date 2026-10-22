@@ -73,6 +73,23 @@
     write('onboarding', { mode: 'customer', owners });
   }
 
+  let copied = $state('');
+
+  async function copyWorkflow() {
+    if (!body?.workflow) return;
+    try {
+      await navigator.clipboard.writeText(body.workflow.content);
+      copied = 'Copied. Paste it as a new file on GitHub.';
+    } catch {
+      copied = 'The browser did not allow copying. Open "Show the file" and select the text instead.';
+    }
+  }
+
+  function checkAgain() {
+    copied = notice = '';
+    load();
+  }
+
   const shareWords: Record<ShareState, string> = { allowed: 'allowed', not_allowed: 'not allowed', unknown: 'cannot tell' };
   // A pull request whose archfit/state has no report yet is waiting, not unhealthy: the server's words for "no check
   // yet" and "running". Every other state but healthy needs a look.
@@ -149,8 +166,53 @@
             </details>
           {/if}
         {/if}
-        <!-- One sentence: the next step when there is one, else onboarding's own word for the stage. -->
-        {#if body.diagnostic && !body.next}<p>{body.diagnostic}</p>{/if}
+        <!-- One sentence: the next step when there is one, else onboarding's own word for the stage. The workflow card
+             says its step itself. -->
+        {#if body.diagnostic && !body.next && !body.workflow}<p>{body.diagnostic}</p>{/if}
+        {#if body.workflow}
+          {@const wf = body.workflow}
+          <div class="stack-sm" id="add-workflow">
+            <p><strong>Add the Archfit workflow.</strong> One file, added once, by you.</p>
+            <ol class="howto">
+              <li>
+                <a class="btn primary" href={safeHref(wf.add_url)} target="_blank" rel="noreferrer">
+                  Add the file on GitHub
+                </a>
+                <span class="muted small">GitHub opens with <code>{wf.path}</code> filled in.</span>
+              </li>
+              {#if wf.branch !== body.default_branch}
+                <li>
+                  Press <em>Commit changes</em> and keep <em>Commit directly to the <code>{wf.branch}</code> branch</em>.
+                  The file joins the onboarding pull request.
+                </li>
+              {:else}
+                <li>
+                  Press <em>Commit changes</em>. If <code>{wf.branch}</code> is protected, choose <em>Create a new branch</em>
+                  and merge that pull request.
+                </li>
+              {/if}
+              <li>Come back here and check again.</li>
+            </ol>
+            <div class="row">
+              <button class="btn" type="button" onclick={checkAgain}>Check again</button>
+              <button class="btn" type="button" onclick={copyWorkflow}>Copy the file</button>
+            </div>
+            {#if copied}<p class="small" role="status">{copied}</p>{/if}
+            <details class="disclosure">
+              <summary>Show the file</summary>
+              <div class="details-body"><pre>{wf.content}</pre></div>
+            </details>
+            <details class="disclosure">
+              <summary>Why Archfit does not add it itself</summary>
+              <p class="details-body">
+                Writing to <code>.github/workflows/</code> needs a GitHub permission that would let Archfit change every
+                workflow in your repository, including the ones that hold your secrets. Archfit does not ask for it. The
+                file runs the Archfit Action with <code>contents: read</code> and <code>id-token: write</code> only: no
+                secrets, no repository scripts.
+              </p>
+            </details>
+          </div>
+        {/if}
         {#if body.draft_url}
           <p>
             Open pull request ({body.draft_state}):
@@ -163,7 +225,10 @@
               Policy owners, one GitHub login or org/team-slug per line
               <textarea name="owners" rows="4" required bind:value={owners}></textarea>
             </label>
-            <p class="muted small">Customer mode: source code never leaves your CI.</p>
+            <p class="muted small">
+              Archfit opens a pull request with its settings. You then add one workflow file to it: this page shows how.
+              Customer mode: source code never leaves your CI.
+            </p>
             <div><button class="btn primary" type="submit" disabled={busy}>Open the onboarding pull request</button></div>
           </form>
         {/if}

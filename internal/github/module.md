@@ -129,8 +129,8 @@ deeper module.
 - **Volatility**: Low
 - **Balanced?**: Yes: contract strength tolerates the distance
 - **Shared knowledge**: held by the children. App registration the branch assumes: permissions `checks: write`,
-  `pull_requests: write`, `contents: write`, `actions: write`, `workflows: write`, `metadata: read`,
-  `members: read`; events `pull_request`, `pull_request_review`, `push`, `installation`,
+  `pull_requests: write`, `contents: write`, `actions: write`, `metadata: read`, `members: read`, and no `workflows`
+  (no child writes `.github/workflows/`); events `pull_request`, `pull_request_review`, `push`, `installation`,
   `installation_repositories`; user authorization (OAuth) enabled.
 
 ## Internal Design

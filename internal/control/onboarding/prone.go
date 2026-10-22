@@ -7,14 +7,13 @@ import (
 
 	"github.com/alexei-led/archfit-app/internal/control/proposal"
 	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/wire/manifest"
 	"github.com/alexei-led/archfit-app/internal/wire/policy"
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
 const (
 	onboardingTitle   = "Add Archfit advisory feedback"
-	onboardingMessage = "Add Archfit workflow, settings and CODEOWNERS entries"
+	onboardingMessage = "Add Archfit settings and CODEOWNERS entries"
 )
 
 func (s *service) StartCustomer(ctx context.Context, r api.Repo, owners []string) (proposal.Draft, error) {
@@ -26,7 +25,7 @@ func (s *service) StartCustomer(ctx context.Context, r api.Repo, owners []string
 	if err != nil {
 		return proposal.Draft{}, err
 	}
-	if st.stage != StageInstalled {
+	if st.stage != StageInstalled || st.settingsMerged {
 		return proposal.Draft{}, ErrAlreadyOnboarded
 	}
 	return s.proposeOnboarding(ctx, r, set)
@@ -44,18 +43,13 @@ func newSettings(owners []string, mode settings.DataMode) (settings.Settings, er
 	return set, nil
 }
 
-// proposeOnboarding opens or updates PR 1: workflow, settings and CODEOWNERS entries.
+// proposeOnboarding opens or updates PR 1: settings and CODEOWNERS entries. The owner adds the workflow to its branch.
 func (s *service) proposeOnboarding(ctx context.Context, r api.Repo, set settings.Settings) (proposal.Draft, error) {
-	workflow, err := renderWorkflow(manifest.Current(), r.DefaultBranch, s.baseURL)
-	if err != nil {
-		return proposal.Draft{}, fmt.Errorf("onboarding: render workflow: %w", err)
-	}
 	ownersPath, ownersFile, err := s.codeowners(ctx, r, set.Owners)
 	if err != nil {
 		return proposal.Draft{}, err
 	}
 	files := []api.FileChange{
-		{Path: workflowPath, Content: workflow},
 		{Path: settings.Path, Content: settings.Render(set)},
 		{Path: ownersPath, Content: ownersFile},
 	}
@@ -68,15 +62,19 @@ func (s *service) proposeOnboarding(ctx context.Context, r api.Repo, set setting
 }
 
 func onboardingBody(mode settings.DataMode) string {
-	next := "Review and merge this pull request, then run discovery: start the `archfit` workflow with `workflow_dispatch` and `mode` set to `discovery`. " +
+	next := "Merge this pull request, then run discovery from the Archfit page. " +
 		"Discovery opens a second pull request with a proposed `" + policy.PolicyPath + "`."
 	if mode == settings.DataManaged {
 		next = "Review the proposed `" + policy.PolicyPath + "` that managed discovery adds to this pull request, then merge it."
 	}
 	var b strings.Builder
 	b.WriteString("This pull request sets up Archfit advisory feedback. Nothing is enforced: the gate stays `advisory` until an owner enables it by pull request.\n\n")
+	b.WriteString("### Add the workflow first\n\n")
+	fmt.Fprintf(&b, "The App opened this pull request without `%s`: it never writes `.github/workflows/`, "+
+		"because that GitHub permission would let it change any CI. Add the file to this branch from the repository's page in Archfit: "+
+		"one click opens GitHub with the file filled in.\n\n", workflowPath)
 	b.WriteString("### Files\n\n")
-	fmt.Fprintf(&b, "- `%s`: runs the Archfit Action, pinned to a commit, with the pinned engine image. It needs `contents: read` and `id-token: write`, no secrets, and runs no repository script. ", workflowPath)
+	fmt.Fprintf(&b, "- `%s` (you add it): runs the Archfit Action, pinned to a commit, with the pinned engine image. It needs `contents: read` and `id-token: write`, no secrets, and runs no repository script. ", workflowPath)
 	fmt.Fprintf(&b, "The Action reads `%s`, `%s` and `%s` per file: on a pull request from the pull request head when the pull request changes that file, otherwise from the tip of the base branch. "+
 		"The App accepts a head copy only when an architecture owner approved that exact head commit. "+
 		"The Action reports `baseline_digest` and `labels_digest` (SHA-256, empty when the file is absent) from exactly the files the engine read.\n",

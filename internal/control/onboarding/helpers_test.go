@@ -80,6 +80,16 @@ func renderSettings(gateMode settings.GateMode, workflow string) []byte {
 	return settings.Render(settings.Settings{Version: 1, Owners: owners, Gate: gateMode, Workflow: workflow, DataMode: settings.DataCustomer})
 }
 
+// addWorkflow does what the owner does: commits the workflow Progress hands out, where Progress says it goes.
+func (f *fixture) addWorkflow(t *testing.T, r api.Repo) {
+	t.Helper()
+	p := mustProgress(t, f.svc, r)
+	if p.Workflow == nil {
+		t.Fatalf("Progress asks for no workflow at stage %q (%q)", p.Stage, p.Diagnostic)
+	}
+	f.hub.put(r, p.Workflow.Branch, p.Workflow.Path, p.Workflow.Content)
+}
+
 // onboard puts the settings and the workflow on the default branch.
 func (f *fixture) onboard(r api.Repo, gateMode settings.GateMode) {
 	f.hub.put(r, r.DefaultBranch, settings.Path, renderSettings(gateMode, workflowPath))

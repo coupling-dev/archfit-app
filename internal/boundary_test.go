@@ -63,10 +63,31 @@ func TestBothOnboardingModesComplete(t *testing.T) {
 		if len(pulls) != 1 || pulls[0].HeadRef != "archfit/onboarding" || !pulls[0].Draft {
 			t.Fatalf("after PR 1 and a retry: %+v; want one draft from archfit/onboarding", pulls)
 		}
-		for _, path := range []string{workflowPath, ".archfit-app.yaml", ".github/CODEOWNERS"} {
+		for _, path := range []string{".archfit-app.yaml", ".github/CODEOWNERS"} {
 			if _, ok := w.file(shopRepo, "archfit/onboarding", path); !ok {
 				t.Errorf("PR 1 lacks %s", path)
 			}
+		}
+		if _, ok := w.file(shopRepo, "archfit/onboarding", workflowPath); ok {
+			t.Error("the App wrote the workflow; it has no workflows permission")
+		}
+
+		// The owner adds the workflow the overview hands out, to the branch it names.
+		resp, page := b.get("/api/repos/" + shopRepo + "/overview")
+		var overview struct {
+			Workflow *struct{ Path, Branch, Content string } `json:"workflow"`
+		}
+		if resp.StatusCode != http.StatusOK || json.Unmarshal([]byte(page), &overview) != nil || overview.Workflow == nil {
+			t.Fatalf("overview after PR 1: %d %s; want the workflow to add", resp.StatusCode, page)
+		}
+		if wf := overview.Workflow; wf.Path != workflowPath || wf.Branch != "archfit/onboarding" {
+			t.Fatalf("workflow goes to %s on %s; want %s on archfit/onboarding", wf.Path, wf.Branch, workflowPath)
+		}
+		w.edit(shopRepo, func(rp *repo) {
+			rp.push("archfit/onboarding", "owner-adds-workflow", map[string]string{workflowPath: overview.Workflow.Content})
+		})
+		if resp, page := onboard(t, b, "customer"); resp.StatusCode != http.StatusOK { // a retry keeps the owner's file
+			t.Fatalf("retry after the owner's commit: %d\n%s", resp.StatusCode, page)
 		}
 		w.edit(shopRepo, func(rp *repo) { rp.merge(t, "archfit/onboarding") })
 

@@ -58,6 +58,32 @@ type statusBody struct {
 	CanDiscover bool   `json:"can_discover"`
 	PullsURL    string `json:"pulls_url"`
 	ChecksURL   string `json:"checks_url"`
+
+	Workflow *workflowJSON `json:"workflow,omitempty"` // the file the owner adds by hand; absent when none is due
+}
+
+// workflowJSON is the Archfit workflow the owner adds: the App has no permission to write .github/workflows.
+type workflowJSON struct {
+	Path    string `json:"path"`
+	Branch  string `json:"branch"`
+	Content string `json:"content"`
+	AddURL  string `json:"add_url"` // GitHub's new-file page on Branch, with the path and the content filled in
+}
+
+// newWorkflowJSON fills GitHub's new-file page through its filename and value query parameters. GitHub does not
+// document them; the page shows the content to copy as well, so a change on GitHub's side costs one paste.
+func newWorkflowJSON(repo string, wf *onboarding.WorkflowFile) *workflowJSON {
+	segments := strings.Split(wf.Branch, "/")
+	for i, s := range segments {
+		segments[i] = url.PathEscape(s)
+	}
+	q := url.Values{"filename": {wf.Path}, "value": {string(wf.Content)}}
+	return &workflowJSON{
+		Path:    wf.Path,
+		Branch:  wf.Branch,
+		Content: string(wf.Content),
+		AddURL:  "https://github.com/" + repo + "/new/" + strings.Join(segments, "/") + "?" + q.Encode(),
+	}
 }
 
 // apiStatus is the repository overview: the default branch, open pull requests and the onboarding path.
@@ -105,7 +131,7 @@ func (s *server) apiStatus(r *http.Request, sc scope) (any, error) {
 		DefaultBranch: sc.repo.DefaultBranch,
 		Stage:         stageWords[progress.Stage],
 		Diagnostic:    progress.Diagnostic,
-		CanStart:      progress.Stage == onboarding.StageInstalled && progress.OpenDraft == nil,
+		CanStart:      progress.Stage == onboarding.StageInstalled && progress.OpenDraft == nil && progress.Workflow == nil,
 		CanDiscover:   discoveryStep(progress),
 		PullsURL:      "https://github.com/" + sc.repo.FullName + "/pulls?q=" + url.QueryEscape("is:pr head:archfit/"),
 		ChecksURL:     "https://github.com/" + sc.repo.FullName + "/commits/" + sc.repo.DefaultBranch,
@@ -115,6 +141,9 @@ func (s *server) apiStatus(r *http.Request, sc scope) (any, error) {
 	}
 	if d := progress.OpenDraft; d != nil {
 		body.DraftURL, body.DraftState = d.URL, draftWords[d.State]
+	}
+	if progress.Workflow != nil {
+		body.Workflow = newWorkflowJSON(sc.repo.FullName, progress.Workflow)
 	}
 	var next nextStep
 	body.Steps, next = setupSteps(progress.Stage)

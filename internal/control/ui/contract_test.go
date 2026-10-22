@@ -617,6 +617,9 @@ func TestOverviewOffersOnlyTheStepsAction(t *testing.T) {
 	}{
 		{"installed", onboarding.Progress{Stage: onboarding.StageInstalled}, true, false},
 		{"installed, onboarding pull request open", onboarding.Progress{Stage: onboarding.StageInstalled, OpenDraft: draft}, false, false},
+		{"installed, settings merged without the workflow", onboarding.Progress{Stage: onboarding.StageInstalled, Workflow: &onboarding.WorkflowFile{
+			Branch: "main", Path: ".github/workflows/archfit.yaml", Content: []byte("name: archfit\n"),
+		}}, false, false},
 		{"workflow merged", onboarding.Progress{Stage: onboarding.StageWorkflowMerged}, false, true},
 		{"workflow merged, policy pull request open", onboarding.Progress{Stage: onboarding.StageWorkflowMerged, OpenDraft: draft}, false, false},
 		{"report received, no policy", onboarding.Progress{Stage: onboarding.StageReportReceived}, false, true},
@@ -637,6 +640,40 @@ func TestOverviewOffersOnlyTheStepsAction(t *testing.T) {
 				t.Errorf("next = %q, want the discovery step", b.Next)
 			}
 		})
+	}
+}
+
+// The overview hands out the workflow with a GitHub link that opens the new-file page on its branch, filled in.
+func TestOverviewHandsOutTheWorkflow(t *testing.T) {
+	content := "name: archfit\non:\n  push:\n    branches: [\"main\"]\njobs: {} # 100% & more\n"
+	e := newEnv(t)
+	e.onb.progress = onboarding.Progress{Stage: onboarding.StageInstalled, Workflow: &onboarding.WorkflowFile{
+		Branch: "archfit/onboarding", Path: ".github/workflows/archfit.yaml", Content: []byte(content),
+	}}
+	var b statusBody
+	e.as("alice", permAdmin).getJSON("/api/repos/"+repoName+"/overview", &b)
+	if b.Workflow == nil {
+		t.Fatal("workflow absent")
+	}
+	if b.Workflow.Content != content || b.Workflow.Branch != "archfit/onboarding" || b.Workflow.Path != ".github/workflows/archfit.yaml" {
+		t.Errorf("workflow = %+v", b.Workflow)
+	}
+	u, err := url.Parse(b.Workflow.AddURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.Host != "github.com" || u.Path != "/"+repoName+"/new/archfit/onboarding" {
+		t.Errorf("add_url host and path = %s %s", u.Host, u.Path)
+	}
+	if q := u.Query(); q.Get("filename") != ".github/workflows/archfit.yaml" || q.Get("value") != content {
+		t.Errorf("add_url query = %v; want the path and the content byte for byte", q)
+	}
+
+	e.onb.progress = onboarding.Progress{Stage: onboarding.StageWorkflowMerged}
+	var after statusBody
+	e.as("alice", permAdmin).getJSON("/api/repos/"+repoName+"/overview", &after)
+	if after.Workflow != nil {
+		t.Errorf("workflow = %+v once it is on the default branch", after.Workflow)
 	}
 }
 

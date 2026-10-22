@@ -28,9 +28,16 @@ func TestCustomerFlowEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := mustProgress(t, f.svc, r)
-	wantStage(t, p, StageInstalled, "Review and merge PR #1")
+	wantStage(t, p, StageInstalled, "Add `.github/workflows/archfit.yaml` to PR #1")
 	if p.OpenDraft == nil || *p.OpenDraft != draft {
 		t.Errorf("OpenDraft = %+v, want %+v", p.OpenDraft, draft)
+	}
+
+	f.addWorkflow(t, r)
+	p = mustProgress(t, f.svc, r)
+	wantStage(t, p, StageInstalled, "Review and merge PR #1")
+	if p.Workflow != nil {
+		t.Errorf("Workflow = %+v once the owner added it", p.Workflow)
 	}
 
 	f.hub.merge(r, onboardingBranch)
@@ -137,6 +144,7 @@ func TestRestrictedOrganizationFallback(t *testing.T) {
 	if _, err := f.svc.StartCustomer(context.Background(), f.repo, owners); err != nil {
 		t.Fatal(err)
 	}
+	f.addWorkflow(t, f.repo)
 	f.hub.merge(f.repo, onboardingBranch)
 
 	// workflow_dispatch is not available: the CLI runs in the existing CI on a default-branch push.
