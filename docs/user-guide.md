@@ -11,10 +11,42 @@ Read [Architecture](architecture.md) for the service boundary, routes, and packa
 The Archfit engine runs in customer CI. It sends a report with no source code to the App.
 The App verifies the report against the approved policy and publishes feedback on the pull request.
 
+```mermaid
+flowchart LR
+    PR["Pull request"] --> CI["Your CI runs<br/>the Archfit engine"]
+    CI -->|"report, no source code"| APP["Archfit App"]
+    APP --> VERIFY{"Report verified against<br/>the approved policy?"}
+    VERIFY -->|yes| FEEDBACK["Check and comment<br/>on the pull request"]
+    VERIFY -->|no| REFUSED["Check fails:<br/>the report is not trusted"]
+
+    classDef core fill:#2f855a,stroke:#22543d,color:#ffffff
+    classDef control fill:#e8eef7,stroke:#4a6fa5,color:#1a202c
+    classDef bad fill:#fed7d7,stroke:#c53030,color:#1a202c
+
+    class FEEDBACK core
+    class APP,VERIFY control
+    class REFUSED bad
+```
+
 ## Who the App serves
 
-Anyone can install the App, but it runs only for accounts that an operator approved. Archfit is an experiment on a
-budget, so installations are approved by hand.
+Archfit is in private beta. Anyone can install the App, but it runs only for accounts that an operator has approved.
+While the beta lasts, an operator approves each account by hand.
+
+```mermaid
+flowchart TD
+    INSTALL["Account installs<br/>the App"] --> OK{"Approved?<br/>(config or operator)"}
+    OK -->|yes| SERVED["Checks, comments and<br/>repository pages run"]
+    OK -->|no| WAIT["Waiting page.<br/>Nothing runs, nothing is posted"]
+    WAIT -->|"operator approves on /admin"| SERVED
+    SERVED -->|"operator revokes"| WAIT
+
+    classDef core fill:#2f855a,stroke:#22543d,color:#ffffff
+    classDef nottrusted fill:#fff4d6,stroke:#b7791f,color:#1a202c
+
+    class SERVED core
+    class WAIT nottrusted
+```
 
 - **Approved accounts** get everything in this guide.
 - **An account waiting for approval** gets nothing: no check, no comment, no pull request. An upload from its
@@ -22,6 +54,10 @@ budget, so installations are approved by hand.
   does, and "Your installation on `<account>` is waiting for approval". There is nothing to do. The page changes once
   the account is approved.
 - **A revoked account** is the same as one never approved, from its next event on. Checks already on GitHub stay.
+
+![The Waiting page a stranger sees, with sample data](images/waiting-page.png)
+
+*Numbers mark what to read: the status, the reason, and where the approval rules are explained.*
 
 The approval is per account (the user or organization that installed the App), never per repository. A repository
 you add to an approved installation is served at once. The trial of an account with private repositories starts at
@@ -127,6 +163,10 @@ Arrows show the order of the customer onboarding flow. A labeled arrow shows wha
 4. Select the repository on the **Repositories** page.
 5. Enter one policy owner on each line under **Needs you**. The page starts customer mode: source code never leaves
    your CI.
+
+![The Needs you box before onboarding, with sample data](images/onboarding-page.png)
+
+*Numbers mark the owners box, the button that opens the onboarding pull request, and the setup steps.*
 6. Select **Open the onboarding pull request**.
 7. Under **Add the Archfit workflow**, select **Add the file on GitHub**. GitHub opens a new file with the path and
    the content filled in, on the `archfit/onboarding` branch.
@@ -818,6 +858,9 @@ make build
 
 A binary built without it serves a page that says to run `make web`. `make all` also runs the web app's checks when
 Node is installed; the browser smoke test needs Playwright's Chromium once: `cd web && npx playwright install chromium`.
+
+The screenshots in this guide come from the smoke test's sample data. After a change to the Waiting page or the
+onboarding box, regenerate them with `cd web && npm run docs:shots`, check the images, and commit them with the change.
 
 ### Health
 
