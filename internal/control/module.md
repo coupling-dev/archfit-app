@@ -151,7 +151,7 @@ type Completion struct {
 - `UIHandler` returns the `ui` handler wrapped in a panic recovery that answers `500` and logs the route pattern only.
 - `DiscoveryHandler` returns `Onboarding.DiscoveryHandler()` unchanged; `BaselineHandler` returns `Onboarding.BaselineHandler()` unchanged.
 - `HandleEvent` has its own 10 s timeout **[default]**. `e.InstallationID <= 0` is an error. By `e.Kind`:
-  - `InstallationAdded`, `ReposRemoved` → `Repos.ListRepos(e.InstallationID)` → `hasPrivate` = any `Private` → the owner of the first repository must be admitted (`Admissions.Admitted`; an installation with no repository skips this check) → `Account.Observe(id, hasPrivate, Now())`. Not admitted → nothing is written, `nil`. An admission read error is returned, so the delivery is retried.
+  - `InstallationAdded`, `ReposRemoved` → `Admissions.Admitted(id, e.Account)` first: not admitted → nothing is read or written, `nil` (no GitHub call, no entitlement record, so the trial starts at approval); a read error is returned, so the delivery is retried. Then `Repos.ListRepos(e.InstallationID)` → `hasPrivate` = any `Private` → `Account.Observe(id, hasPrivate, Now())`. An empty `Account` is admitted only by the installation's record.
   - `InstallationRemoved` → `Account.Forget(e.InstallationID)`. No GitHub call.
   - anything else → nil, no call.
 - Installation events carry `Repo == ""`, so `e.RepoPrivate` is never used. A `HandleEvent` error is returned to `app`,
@@ -434,6 +434,7 @@ type Event struct {
     DeliveryID     string
     InstallationID int64
     Repo           string // "owner/name", "" for installation events
+    Account        string // installation kinds only: the account login from the payload; "" when it has none
     RepoPrivate    bool
     PullRequest    int
     HeadSHA        string

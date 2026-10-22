@@ -142,3 +142,36 @@ func TestOperatorIsTheUserIDNotTheLogin(t *testing.T) {
 		t.Errorf("session = %+v; want no operator", got)
 	}
 }
+
+func TestUnreadableApprovalIsNeitherWaitingNorApproved(t *testing.T) {
+	e := strangerEnv(t)
+	e.grant("alice", strangerRepo, "admin")
+	alice := e.as("alice", "admin")
+	ops := e.signIn(operatorLogin)
+	e.readsDown.Store(true)
+
+	// A repository of an account that needs the record: "try again", never the Waiting page.
+	res := alice.get("/api/repos/" + strangerRepo + "/overview")
+	if res.Code < 500 || decodeAs[errorJSON](t, res).Waiting != "" {
+		t.Errorf("overview = %d %s; want a server error without waiting", res.Code, res.Body.String())
+	}
+	// A configured account needs no read.
+	wantStatus(t, alice.get("/api/repos/"+repoName+"/overview"), http.StatusOK)
+
+	// The list reads no state for it either way; the header count is "unknown", and the admin page lists it as waiting.
+	var list overviewBody
+	alice.getJSON("/api/repos", &list)
+	for _, r := range list.Repos {
+		if want := r.FullName == strangerRepo; r.Waiting != want {
+			t.Errorf("%s: waiting = %v; want %v", r.FullName, r.Waiting, want)
+		}
+	}
+	if got := decodeAs[sessionJSON](t, ops.get("/api/session")); got.Waiting != -1 {
+		t.Errorf("session waiting = %d; want -1, not a wrong count", got.Waiting)
+	}
+	var admin adminBody
+	ops.getJSON("/api/admin/installations", &admin)
+	if admin.Unreadable != 1 || len(admin.Waiting) != 1 || admin.Waiting[0].Account != "stranger" {
+		t.Errorf("admin = %+v; want the stranger waiting and 1 unreadable", admin)
+	}
+}

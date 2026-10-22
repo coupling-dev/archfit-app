@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
@@ -19,6 +20,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/control/proposal"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/auth"
+	"github.com/alexei-led/archfit-app/internal/store"
 )
 
 func sha(n int) string { return fmt.Sprintf("%040x", n) }
@@ -598,4 +600,17 @@ func (o *fakeOAuth) Exchange(_ context.Context, code string) (auth.UserToken, er
 		return auth.UserToken{}, errors.New("bad code")
 	}
 	return t, nil
+}
+
+// downable fails every read while down is set; the approvals are read through it.
+type downable struct {
+	store.Store
+	down atomic.Bool
+}
+
+func (d *downable) Get(ctx context.Context, t store.Tenant, key string) ([]byte, error) {
+	if d.down.Load() {
+		return nil, errors.New("fake: store down")
+	}
+	return d.Store.Get(ctx, t, key)
 }

@@ -256,7 +256,7 @@ The Action must implement this contract in `mode: baseline` when `endpoint` is s
 The `400` codes are `method_not_allowed`, `envelope_missing`, `envelope_invalid`, `kind_mismatch`, `digest_mismatch`,
 `unsupported_event`, `envelope_mismatch`, `fork` and `baseline_invalid`. The `403` codes are `repository_mismatch`,
 `not_installed`, `run_not_found`, `run_mismatch`, `not_default_branch`, `settings_missing`, `workflow_not_approved`,
-`unknown_engine_identity`, `policy_missing`, `policy_mismatch` and `labels_mismatch`.
+`unknown_engine_identity`, `policy_missing`, `policy_mismatch`, `labels_mismatch` and `installation_not_approved`.
 
 ## Gate outcomes
 
@@ -485,8 +485,8 @@ the e-mail is `ARCHFIT_INVOKER` and is verified, and the token is not expired.
 | `GET /api/repos/{o}/{n}/data-sharing`                                                                              | Session with repository `admin` permission                                    |
 | `POST /api/repos/{o}/{n}/data-sharing`                                                                             | Session with repository `admin` permission, JSON body, CSRF token header      |
 | `GET /r/{o}/{n}/consent`                                                                                           | GitHub OAuth session; `308` to `/data-sharing`, from the path alone           |
-| `GET /admin` and `GET /api/admin/installations`                                                                    | Session of an operator (`ARCHFIT_OPERATORS`); `404` for anyone else           |
-| `POST /api/admin/installations/{id}/approve` and `/revoke`                                                         | Session of an operator, JSON body, CSRF token header; `404` for anyone else   |
+| `GET /admin` and `GET /api/admin/installations`                                                                    | Session of an operator (`ARCHFIT_OPERATORS`); `404` for any other signed-in user |
+| `POST /api/admin/installations/{id}/approve` and `/revoke`                                                         | Session of an operator, JSON body, CSRF token header; `404` for any other signed-in user |
 
 Every `/api/repos/{o}/{n}/…` route answers `403` with `"waiting": "<account>"` when no operator approved the
 repository's account, after the permission check. The gate drops that account's webhooks and uploads

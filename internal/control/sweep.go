@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -24,21 +23,20 @@ func (c *Control) HandleEvent(ctx context.Context, e webhook.Event) error {
 	defer cancel()
 	switch e.Kind {
 	case webhook.InstallationAdded, webhook.ReposRemoved:
+		// An account waiting for approval costs no GitHub call and gets no entitlement record, so its trial starts when
+		// it is approved: the first sweep after the approval observes it. An event without an account is judged by
+		// the installation's record alone: only a configured login admits without one.
+		admitted, err := c.admit.Admitted(ctx, e.InstallationID, e.Account)
+		if err != nil {
+			return fmt.Errorf("control: read admission of installation %d: %w", e.InstallationID, err)
+		}
+		if !admitted {
+			return nil
+		}
 		// hasPrivate is read from GitHub: installation events carry no repository.
 		repos, err := c.repos.ListRepos(ctx, e.InstallationID)
 		if err != nil {
 			return fmt.Errorf("control: list repositories of installation %d: %w", e.InstallationID, err)
-		}
-		// An account waiting for approval gets no entitlement record, so its trial starts when it is approved: the
-		// first sweep after the approval observes it. Its owner is the owner of any of its repositories.
-		if len(repos) > 0 {
-			admitted, err := c.admit.Admitted(ctx, e.InstallationID, ownerOf(repos[0].FullName))
-			if err != nil {
-				return fmt.Errorf("control: read admission of installation %d: %w", e.InstallationID, err)
-			}
-			if !admitted {
-				return nil
-			}
 		}
 		if err := c.account.Observe(ctx, e.InstallationID, hasPrivate(repos), c.now()); err != nil {
 			return fmt.Errorf("control: observe installation %d: %w", e.InstallationID, err)
@@ -126,11 +124,6 @@ func (c *Control) forgetOrphans(ctx context.Context, live map[int64]bool) (forgo
 // Grant is the operator-only manual beta grant.
 func (c *Control) Grant(ctx context.Context, installationID int64, until time.Time) error {
 	return c.account.Grant(ctx, installationID, until, c.now())
-}
-
-func ownerOf(fullName string) string {
-	owner, _, _ := strings.Cut(fullName, "/")
-	return owner
 }
 
 func hasPrivate(repos []api.Repo) bool {

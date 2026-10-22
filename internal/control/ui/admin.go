@@ -217,13 +217,28 @@ func (s *server) waitingCount(ctx context.Context) int {
 	if err != nil {
 		return -1
 	}
+	// One read per installation, in parallel: this runs on every operator page load.
+	waiting := make([]bool, len(installs))
+	failed := make([]bool, len(installs))
+	slots := make(chan struct{}, parallelLookups)
+	var wg sync.WaitGroup
+	for i, in := range installs {
+		wg.Add(1)
+		slots <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-slots }()
+			admitted, err := s.admissions.Admitted(ctx, in.ID, in.Account)
+			waiting[i], failed[i] = !admitted && err == nil, err != nil
+		}()
+	}
+	wg.Wait()
 	n := 0
-	for _, in := range installs {
-		admitted, err := s.admissions.Admitted(ctx, in.ID, in.Account)
-		if err != nil {
+	for i := range installs {
+		if failed[i] {
 			return -1
 		}
-		if !admitted {
+		if waiting[i] {
 			n++
 		}
 	}

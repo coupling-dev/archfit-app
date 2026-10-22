@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -75,8 +76,10 @@ type env struct {
 	oauth    *fakeOAuth
 	store    store.Store
 	admit    *gate.Admissions // acme is approved by configuration; any other account by a Store record
-	now      time.Time
-	handler  http.Handler
+	// readsDown makes every approval read fail, as a Firestore outage does.
+	readsDown *atomic.Bool
+	now       time.Time
+	handler   http.Handler
 }
 
 func newEnv(t *testing.T) *env {
@@ -84,8 +87,10 @@ func newEnv(t *testing.T) *env {
 	gh := newFakeGH()
 	mem := store.NewMemory()
 	realAccount, _, _ := account.New(mem)
+	reads := &downable{Store: mem}
 	e := &env{
-		t: t, gh: gh, props: newFakeProposals(gh), store: mem, admit: gate.NewAdmissions(mem, []string{"acme", "rival"}),
+		t: t, gh: gh, props: newFakeProposals(gh), store: mem, readsDown: &reads.down,
+		admit:    gate.NewAdmissions(reads, []string{"acme", "rival"}),
 		acct:     &fakeAccount{Account: realAccount, status: account.Status{Plan: account.PlanPublic}},
 		consents: newFakeConsents(), onb: &fakeOnboarding{progress: onboarding.Progress{Stage: onboarding.StagePolicyMerged}},
 		assist: &fakeAssist{}, oauth: &fakeOAuth{tokens: map[string]auth.UserToken{}},

@@ -20,9 +20,20 @@ import (
 
 const policyDraft = "version: 2\n"
 
+// account is the login GitHub reports for the installation: the owner of its first repository.
+func (h *harness) account(id int64) string {
+	var owner string
+	h.gh.set(func(g *fakeGitHub) {
+		if repos := g.repos[id]; len(repos) > 0 {
+			owner, _, _ = strings.Cut(repos[0].FullName, "/")
+		}
+	})
+	return owner
+}
+
 func (h *harness) event(kind webhook.EventKind, id int64) {
 	h.t.Helper()
-	if err := h.c.HandleEvent(ctx, webhook.Event{Kind: kind, InstallationID: id, DeliveryID: "delivery"}); err != nil {
+	if err := h.c.HandleEvent(ctx, webhook.Event{Kind: kind, InstallationID: id, Account: h.account(id), DeliveryID: "delivery"}); err != nil {
 		h.t.Fatalf("HandleEvent(%s, %d): %v", kind, id, err)
 	}
 }

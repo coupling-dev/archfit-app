@@ -61,7 +61,10 @@ var actionKinds = map[string]map[string]EventKind{
 type payload struct {
 	Action       string `json:"action"`
 	Installation struct {
-		ID int64 `json:"id"`
+		ID      int64 `json:"id"`
+		Account struct {
+			Login string `json:"login"`
+		} `json:"account"`
 	} `json:"installation"`
 	Repository struct {
 		FullName      string `json:"full_name"`
@@ -130,6 +133,7 @@ func Parse(eventType, deliveryID string, body []byte) (Event, error) {
 	ev.Kind = kind
 	ev.InstallationID = p.Installation.ID
 	if kind == InstallationAdded || kind == InstallationRemoved || kind == ReposRemoved {
+		ev.Account = p.Installation.Account.Login
 		return ev, nil
 	}
 

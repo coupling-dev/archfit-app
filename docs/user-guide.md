@@ -713,7 +713,7 @@ See [Architecture configuration](architecture.md#configuration) for environment 
 
 Operators are the GitHub users whose user IDs are in `ARCHFIT_OPERATORS` (default `1898375` alexei-led and `1788671`
 vladikk). IDs, not logins: a login can be renamed and registered again by someone else. An operator sees **Admin** in
-the header, with the count of installations waiting. Everyone else gets "Not found" at `/admin`.
+the header, with the count of installations waiting. Any other signed-in user gets "Not found" at `/admin`. A signed-out visitor is sent to sign in, as on every page.
 
 `/admin` lists two groups:
 

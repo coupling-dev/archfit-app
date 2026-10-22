@@ -505,8 +505,10 @@ func pullPayload(action string, installationID int64, fullName, headRepo string,
 	}
 }
 
+// installationPayload is an installation event; the account is the owner of the seeded repository of that installation.
 func installationPayload(action string, id int64) map[string]any {
-	return map[string]any{"action": action, "installation": map[string]any{"id": id}}
+	owner, _, _ := strings.Cut(map[int64]string{demoInstallation: demoRepo, shopInstallation: shopRepo}[id], "/")
+	return map[string]any{"action": action, "installation": map[string]any{"id": id, "account": map[string]any{"login": owner}}}
 }
 
 func sign(secret string, payload []byte) string {

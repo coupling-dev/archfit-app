@@ -765,6 +765,7 @@ type Event struct {
     DeliveryID     string
     InstallationID int64
     Repo           string // "owner/name", "" for installation events
+    Account        string // installation kinds only: the account login from the payload; "" when it has none
     RepoPrivate    bool
     PullRequest    int
     HeadSHA        string

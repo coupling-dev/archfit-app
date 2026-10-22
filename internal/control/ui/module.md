@@ -52,8 +52,10 @@ pilot; product.md leaves usability targets open.
 
 - Routes, the JSON API, the web app, templates, static assets, page wording, the HTTP status mapping of every error.
 - The handler chain: recover → security headers → body limit → session → CSRF → authorize (API) → admission (repository API) → handler.
-- Who is an operator: a signed-in user whose GitHub user ID is in `Deps.Operators`, never by login. Anyone else gets
-  the same `404` as for an unknown path, so the admin routes are not confirmed to outsiders.
+- Who is an operator: a signed-in user whose GitHub user ID is in `Deps.Operators`, never by login. Any other
+  signed-in user gets the same `404` as for an unknown path. A signed-out request gets what every route gives it: sign-in
+  (`303` for a page, `401` for the API), and a write without the JSON type or the CSRF token is refused (`415`, `403`)
+  before the operator check. Nothing here is secret: the routes are in the public docs; the check protects the data.
 - How a page loads (`web/src/lib/early.ts`): its first reads (`firstPaths`, those with no input but the path) and its
   lazy chunk start beside `/api/session`, not after it; each is authorized on its own, the page takes the answer once
   when it mounts, and a read no page takes is dropped quietly. Until an answer comes, the frame and a grey skeleton of
@@ -130,7 +132,7 @@ as one that does not exist, and the app shows that answer as the error page, wit
 - `GET /r/{o}/{n}/data-sharing` [session] — the shell, for the Data sharing page; its API needs admin.
 - `GET /r/{o}/{n}/policy` [session] — the shell, for the policy editor; the app reads `?branch=` and `?since=` from its
   own URL and a `#L<n>` hash selects that line.
-- `GET /admin` [session, operator] — the shell, for the admin page; `404` for anyone who is not an operator.
+- `GET /admin` [session, operator] — the shell, for the admin page; `404` for any signed-in user who is not an operator.
 - `GET /r/{o}/{n}/consent` [session] — `308` to `/r/{o}/{n}/data-sharing`, from the path alone: the same answer for
   every repository, so it confirms nothing.
 

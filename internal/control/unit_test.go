@@ -186,12 +186,15 @@ func TestAccountWaitingForApprovalGetsNoEntitlement(t *testing.T) {
 			acct := &fakeAccount{}
 			repos := &fakeRepos{
 				installations: []api.Installation{{ID: 7, Account: "org7"}},
-				repos:         map[int64][]api.Repo{7: {repo(7, "org7/app", true)}},
+				repos:         map[int64][]api.Repo{7: {repo(7, "org7/app", true)}, 8: nil},
 			}
 			c := newControl(acct, repos, &fakeTenants{}, tt.admit, okHandler, okHandler, newClock().Now)
-			err := c.HandleEvent(ctx, webhook.Event{Kind: webhook.InstallationAdded, InstallationID: 7})
-			if (err != nil) != tt.wantErr {
-				t.Errorf("HandleEvent = %v; want error %t", err, tt.wantErr)
+			// An installation with no repository yet is no exception: the account decides, never the repositories.
+			for _, id := range []int64{7, 8} {
+				err := c.HandleEvent(ctx, webhook.Event{Kind: webhook.InstallationAdded, InstallationID: id, Account: "org7"})
+				if (err != nil) != tt.wantErr {
+					t.Errorf("HandleEvent(%d) = %v; want error %t", id, err, tt.wantErr)
+				}
 			}
 			if err := c.Sweep(ctx); err != nil {
 				t.Fatalf("Sweep: %v", err)
@@ -199,7 +202,7 @@ func TestAccountWaitingForApprovalGetsNoEntitlement(t *testing.T) {
 			if len(acct.calls) != 0 {
 				t.Errorf("account calls = %v; want none, so the trial starts at approval", acct.calls)
 			}
-			if want := []string{"repos:7", "installations"}; !reflect.DeepEqual(repos.calls, want) {
+			if want := []string{"installations"}; !reflect.DeepEqual(repos.calls, want) {
 				t.Errorf("GitHub calls = %v; want %v", repos.calls, want)
 			}
 		})
