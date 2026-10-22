@@ -4,7 +4,7 @@
   import { ApiError, getJSON, type Session } from './lib/api';
   import { prefetch } from './lib/early';
   import { refused, waiting } from './lib/gate';
-  import { parseRoute, serverError } from './lib/route';
+  import { guideURL, parseRoute, serverError } from './lib/route';
   import Admin from './pages/Admin.svelte';
   import DataSharing from './pages/DataSharing.svelte';
   import Landing from './pages/Landing.svelte';
@@ -122,5 +122,6 @@
   {/if}
 </main>
 <footer class="app-footer">
+  <a href={guideURL}>Documentation</a>
   <a href="/licenses.txt">Third-party licences</a>
 </footer>

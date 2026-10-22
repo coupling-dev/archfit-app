@@ -9,6 +9,7 @@
     "test": "vitest run",
     "size": "node scripts/size.mjs",
     "smoke": "playwright test",
+    "docs:shots": "ARCHFIT_DOCS_SHOTS=1 playwright test -g \"the screenshots the user guide shows\"",
     "ci": "npm run check && npm run lint && npm test && npm run build && npm run size && npm run smoke",
     "lint": "eslint ."
   },

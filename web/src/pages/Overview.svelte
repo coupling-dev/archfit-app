@@ -14,7 +14,7 @@
   } from '../lib/api';
   import Skeleton from '../components/Skeleton.svelte';
   import { firstJSON } from '../lib/early';
-  import { repoPage, safeHref } from '../lib/route';
+  import { guideURL, repoPage, safeHref } from '../lib/route';
 
   let {
     route,
@@ -229,7 +229,10 @@
               Archfit opens a pull request with its settings. You then add one workflow file to it: this page shows how.
               Customer mode: source code never leaves your CI.
             </p>
-            <div><button class="btn primary" type="submit" disabled={busy}>Open the onboarding pull request</button></div>
+            <div>
+              <button class="btn primary" type="submit" disabled={busy}>Open the onboarding pull request</button>
+              <a class="small" href="{guideURL}#customer-mode" rel="noreferrer">How onboarding works</a>
+            </div>
           </form>
         {/if}
         {#if body.admin && body.can_discover}

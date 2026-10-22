@@ -188,7 +188,7 @@ These capabilities must exist before the first deployment. Details belong to the
 - A queue seam with an inline driver (default) and a Cloud Tasks driver, and a worker route for queued webhooks.
 - Transient and permanent error classes in webhook handling, and idempotent handlers under concurrent duplicates.
 - `module.md` and import-matrix updates for the new seams.
-- The [release blockers](../../architecture.md#release-blockers) closed.
+- The first deployment is released (Deploy workflow, `mode=release`).
 
 ## Cost
 

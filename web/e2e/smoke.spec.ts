@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page, type Request } from '@playwright/test';
+import { expect, test, type Locator, type Page, type Request } from '@playwright/test';
 
 const csp = readFileSync(new URL('../csp.txt', import.meta.url), 'utf8').trim();
 const session = { login: 'alice', csrf: 'csrf-token-1' };
@@ -1259,6 +1259,7 @@ test('waiting: a repository of an account no operator approved shows the pitch a
   await expect(page.getByRole('status').getByText('Your installation on octo is waiting for approval.')).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Repository' })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Sign in with GitHub' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'How approval works' })).toHaveAttribute('href', /#who-the-app-serves$/);
   await expect(page).toHaveTitle('Waiting for approval · Archfit');
   await expectClean(page);
 });
@@ -1349,6 +1350,7 @@ test('every page: content at most 1280px and centred, the licences in the footer
     await open(page, path, { operator: path === '/admin' });
     await rendered(page, path);
     await expect(page.getByRole('link', { name: 'Third-party licences' })).toHaveAttribute('href', '/licenses.txt');
+    await expect(page.getByRole('link', { name: 'Documentation' })).toHaveAttribute('href', /docs\/user-guide\.md$/);
     for (const box of [await page.locator('main').boundingBox(), await page.locator('footer').boundingBox()]) {
       expect(box!.width, path).toBeLessThanOrEqual(1280);
       expect(Math.abs(box!.x - (1600 - box!.x - box!.width)), path).toBeLessThanOrEqual(1);
@@ -1414,4 +1416,58 @@ test('policy: a long policy scrolls inside the editor, and a line link scrolls t
   expect((await editor.boundingBox())!.height).toBeLessThanOrEqual(800 * 0.6 + 1);
   const scroller = await page.locator('.editor .cm-scroller').evaluate((e) => [e.scrollHeight, e.clientHeight]);
   expect(scroller[0]).toBeGreaterThan(scroller[1]);
+});
+
+// The screenshots the user guide shows. Regenerate them with `npm run docs:shots` after a change to the pages they show;
+// they run only then, so the smoke suite stays fast.
+const shotsDir = new URL('../../docs/images/', import.meta.url);
+
+// callouts numbers each element and labels it in the margin beside the content, drawn over the page for the screenshot.
+async function callouts(page: Page, marks: { at: Locator; text: string }[]) {
+  const main = await page.locator('main').boundingBox();
+  const items = await Promise.all(
+    marks.map(async (m, i) => ({ n: i + 1, text: m.text, box: (await m.at.boundingBox())! })),
+  );
+  await page.evaluate(
+    ({ items, labelX }) => {
+      const layer = document.createElement('div');
+      layer.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:9999;font:13px system-ui,sans-serif';
+      for (const it of items) {
+        const y = it.box.y + window.scrollY;
+        const dot = document.createElement('div');
+        dot.textContent = String(it.n);
+        dot.style.cssText = `position:absolute;left:${it.box.x - 34}px;top:${y - 12}px;width:24px;height:24px;border-radius:50%;background:#0969da;color:#fff;font-weight:700;display:grid;place-items:center;box-shadow:0 0 0 3px #fff`;
+        const box = document.createElement('div');
+        box.textContent = `${it.n}  ${it.text}`;
+        box.style.cssText = `position:absolute;left:${labelX}px;top:${y - 8}px;width:200px;padding:6px 10px;border-radius:6px;background:#fff;color:#1f2328;border:1px solid #0969da;box-shadow:0 2px 8px rgba(0,0,0,.15)`;
+        layer.append(dot, box);
+      }
+      document.body.append(layer);
+    },
+    { items: items.map((it) => ({ n: it.n, text: it.text, box: it.box })), labelX: main!.x + main!.width + 16 },
+  );
+}
+
+test('docs: the screenshots the user guide shows', async ({ page }) => {
+  test.skip(!process.env.ARCHFIT_DOCS_SHOTS, 'set ARCHFIT_DOCS_SHOTS=1 to regenerate the guide screenshots');
+  await page.setViewportSize({ width: 1800, height: 900 });
+
+  await open(page, '/r/octo/tool');
+  await expect(page.getByRole('status').getByText('waiting for approval')).toBeVisible();
+  await callouts(page, [
+    { at: page.locator('.pill'), text: 'Shown at once: this account waits for an operator.' },
+    { at: page.getByRole('status'), text: 'Nothing runs and nothing is posted until it is approved.' },
+    { at: page.getByRole('link', { name: 'How approval works' }), text: 'The approval rules, in this guide.' },
+  ]);
+  await page.screenshot({ path: new URL('waiting-page.png', shotsDir).pathname, fullPage: true });
+
+  await page.unrouteAll();
+  await open(page, '/r/acme/app', { overview: installed });
+  await expect(page.getByRole('heading', { name: 'Needs you' })).toBeVisible();
+  await callouts(page, [
+    { at: page.getByLabel(/Policy owners/), text: 'One GitHub login per line. Owners approve changes to the policy.' },
+    { at: page.getByRole('button', { name: 'Open the onboarding pull request' }), text: 'Opens a pull request with the settings.' },
+    { at: page.locator('ol.track'), text: 'Setup: each step is marked done or current.' },
+  ]);
+  await page.screenshot({ path: new URL('onboarding-page.png', shotsDir).pathname, fullPage: true, clip: { x: 0, y: 0, width: 1800, height: 820 } });
 });
