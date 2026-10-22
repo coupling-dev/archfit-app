@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page, type Request } from '@playwright/test';
+import { expect, test, type Locator, type Page, type Request } from '@playwright/test';
 
 const csp = readFileSync(new URL('../csp.txt', import.meta.url), 'utf8').trim();
 const session = { login: 'alice', csrf: 'csrf-token-1' };
