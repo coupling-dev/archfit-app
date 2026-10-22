@@ -1259,6 +1259,7 @@ test('waiting: a repository of an account no operator approved shows the pitch a
   await expect(page.getByRole('status').getByText('Your installation on octo is waiting for approval.')).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Repository' })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Sign in with GitHub' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'How approval works' })).toHaveAttribute('href', /#who-the-app-serves$/);
   await expect(page).toHaveTitle('Waiting for approval · Archfit');
   await expectClean(page);
 });
@@ -1349,6 +1350,7 @@ test('every page: content at most 1280px and centred, the licences in the footer
     await open(page, path, { operator: path === '/admin' });
     await rendered(page, path);
     await expect(page.getByRole('link', { name: 'Third-party licences' })).toHaveAttribute('href', '/licenses.txt');
+    await expect(page.getByRole('link', { name: 'Documentation' })).toHaveAttribute('href', /docs\/user-guide\.md$/);
     for (const box of [await page.locator('main').boundingBox(), await page.locator('footer').boundingBox()]) {
       expect(box!.width, path).toBeLessThanOrEqual(1280);
       expect(Math.abs(box!.x - (1600 - box!.x - box!.width)), path).toBeLessThanOrEqual(1);

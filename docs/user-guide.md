@@ -3,9 +3,8 @@
 This guide explains the App flows for repository admins, policy owners, developers, and operators.
 Read [Architecture](architecture.md) for the service boundary, routes, and package structure.
 
-> **Status.** The App is not deployed and no GitHub App is registered.
-> This guide describes behavior in this repository.
-> Managed discovery is not available because no sandbox driver exists.
+> **Status.** Archfit is in private beta. An operator approves each account before the App runs for it: see
+> [Who the App serves](#who-the-app-serves). Managed discovery is not available yet.
 
 ## What the App does
 
@@ -147,6 +146,56 @@ branch** on GitHub and merge that pull request.
 
 A sign-in lasts 8 hours, the lifetime of the GitHub token behind it. When the token has expired or you revoked it on
 GitHub, the next page asks you to sign in again and brings you back to the same page.
+
+PR 1 adds these files:
+
+- `.archfit-app.yaml` with the policy owners
+- `CODEOWNERS` entries for the protected paths
+- `.github/workflows/archfit.yaml`, added by you from the repository page
+
+The workflow uses no repository secret. It uses the job GitHub OIDC token.
+It runs on `pull_request`, `push` to the default branch, and `workflow_dispatch`. The Action refuses other events.
+Pull request and push runs report the architecture state. A manual dispatch selects `mode`: `discovery` proposes a
+policy, and `baseline` captures accepted debt. A dispatch with `mode: report` is refused. See
+[Capture a baseline](#capture-a-baseline).
+The `mode` input selects the run: `discovery`, `baseline` or `reanchor`. The status page button dispatches `mode: discovery`.
+On a pull request, the Action reads `.archfit.yaml`, `.archfit-baseline.json`, and `.archfit-labels.yaml` per file:
+from the pull request head when the pull request changes that file, otherwise from the tip of the base branch. The
+App accepts a changed file only when an architecture owner approved the exact head commit.
+Discovery can also run in an existing customer workflow that uploads from a default-branch push.
+
+The status page derives its stage from GitHub on every read.
+
+| Stage             | UI label              | Next action                              |
+| ----------------- | --------------------- | ---------------------------------------- |
+| `installed`       | App installed         | Start onboarding, then add the workflow  |
+| `workflow_merged` | Workflow merged       | Run discovery                            |
+| `report_received` | First report received | Review and merge the policy pull request |
+| `policy_merged`   | Policy merged         | Wait for the first default-branch run    |
+| `gate_advisory`   | Gate is advisory      | Enable the gate by pull request          |
+| `gate_required`   | Gate is required      | None                                     |
+
+### Give it to a coding agent
+
+A coding agent in Claude Code or Codex can do the repository part. The owner still does the App steps, signs in and
+merges. Give the agent this text, and the owner's repository checkout:
+
+```text
+Help me onboard this repository to Archfit in customer mode. Do the repository steps only.
+
+1. Ask me for the Archfit page of this repository, https://app.coupling.dev/r/<owner>/<repo>. I open it, sign in,
+   and select "Open the onboarding pull request" under "Needs you". I give you the pull request URL.
+2. Read that pull request with `gh pr view` and `gh pr diff`. It should add `.archfit-app.yaml` and
+   `.github/CODEOWNERS` on the branch `archfit/onboarding`. Report what it adds and stop if it adds anything else.
+3. The workflow file `.github/workflows/archfit.yaml` must come from that Archfit page, under "Show the file". Ask me
+   to paste it. Add it to the `archfit/onboarding` branch only after I confirm.
+4. Never merge a pull request, never install or change the GitHub App, and never ask for or store a token, a
+   password or a session cookie. Ask me for each of those steps.
+5. Tell me the next step after each change: review and merge the onboarding pull request, then run discovery
+   on the Archfit page.
+```
+
+The agent uses the owner's own `gh` login. It cannot sign in to Archfit or install the App for you.
 
 PR 1 adds these files:
 

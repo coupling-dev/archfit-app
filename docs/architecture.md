@@ -507,7 +507,7 @@ A new driver changes the composition in `app`. The gate contracts do not change.
 
 ## Deployment
 
-The App is not deployed. The target is Google Cloud. The [cloud design](design/cloud/architecture.md) owns the deployment design.
+The App runs on Google Cloud Run in project `coupling-dev-510710`, as two services: a public one and an internal worker. The [cloud design](design/cloud/architecture.md) owns the deployment design.
 The OpenTofu code and the first-deployment runbook are in [`infra/`](../infra/README.md).
 This page lists only what any host must provide.
 A host must provide these runtime capabilities:
@@ -553,6 +553,3 @@ See [`.env.example`](../.env.example).
 | `GOOGLE_CLOUD_PROJECT`                        | Optional. Google Cloud project ID of the log trace field. Empty: log lines name no trace                |
 | `K_REVISION`                                  | Set by Cloud Run. Written as `revision` on every log line                                               |
 
-### Release blockers
-
-- No GitHub App is registered.

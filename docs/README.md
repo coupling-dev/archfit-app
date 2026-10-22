@@ -1,7 +1,7 @@
 # Documentation
 
 This index helps each reader choose a short path through the repository.
-The [README](../README.md) owns release status and release blockers.
+The [README](../README.md) is the front page. This index does not track release status: the Deploy workflow runs do.
 
 ## Choose a path
 

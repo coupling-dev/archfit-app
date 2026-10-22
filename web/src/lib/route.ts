@@ -37,6 +37,9 @@ export function parseRoute(pathname: string): Route {
   return { kind: graph ? 'graph' : 'repo', ...repo };
 }
 
+// guideURL is the user guide on GitHub: the App's pages link to it so a customer can read how it works.
+export const guideURL = 'https://github.com/coupling-dev/archfit-app/blob/main/docs/user-guide.md';
+
 // repoPage is the App path of a repository page, for links; the server authorizes its reads on every request.
 export function repoPage(fullName: string, suffix = ''): string {
   const [owner, name] = fullName.split('/');

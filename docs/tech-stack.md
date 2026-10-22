@@ -77,7 +77,7 @@ The design isolates platform-dependent code behind three interfaces.
 | `Store`    | `memory` (default), or `firestore`: Firestore over REST    | None. `CompareAndSwapAll` covers the multi-key transaction of the [cloud design](design/cloud/architecture.md#state) |
 | `Sandbox`  | `none`. Managed discovery reports that it is not available | Add an ephemeral container-job driver under `internal/control/onboarding/<driver>/`                                  |
 | `Provider` | `internal/control/assist/anthropic` over `net/http`        | Add another provider as a sibling package                                                                            |
-| Host       | Not deployed                                               | Chosen, not built: two Cloud Run services. See [cloud design](design/cloud/architecture.md)                          |
+| Host       | Cloud Run, two services in `europe-west1`                  | Deployed. See [cloud design](design/cloud/architecture.md)                          |
 | Scheduler  | Any external scheduler calls `POST /internal/sweep`        | Chosen, not built: Cloud Scheduler and Cloud Tasks. See [cloud design](design/cloud/architecture.md#flows)           |
 
 The cloud design adds a `Queue` seam. The sandbox choice is still open.
