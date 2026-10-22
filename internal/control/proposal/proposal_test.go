@@ -27,11 +27,11 @@ func validChange() Change {
 		Branch:  testBranch,
 		Base:    fakeBase,
 		Title:   "Add archfit",
-		Body:    "Adds the policy and the workflow.",
+		Body:    "Adds the policy and the settings.",
 		Message: "chore: add archfit",
 		Files: []api.FileChange{
 			{Path: ".archfit/policy.yaml", Content: []byte("version: 1\n")},
-			{Path: ".github/workflows/archfit.yml", Content: []byte("name: archfit\n")},
+			{Path: ".archfit-app.yaml", Content: []byte("version: 1\n")},
 		},
 	}
 }
@@ -106,6 +106,9 @@ func TestValidateChange(t *testing.T) {
 		{"path escapes", func(c *Change) { c.Files[0].Path = "a/../../b" }, true},
 		{"empty path", func(c *Change) { c.Files[0].Path = "" }, true},
 		{"duplicate path", func(c *Change) { c.Files[1].Path = c.Files[0].Path }, true},
+		{"workflow file", func(c *Change) { c.Files[1].Path = ".github/workflows/archfit.yaml" }, true},
+		{"workflow subdirectory", func(c *Change) { c.Files[1].Path = ".github/workflows/x/y.yaml" }, true},
+		{"other .github file", func(c *Change) { c.Files[1].Path = ".github/CODEOWNERS" }, false},
 		{"installation 0", func(c *Change) { c.Repo.InstallationID = 0 }, true},
 		{"full name without slash", func(c *Change) { c.Repo.FullName = "acme" }, true},
 		{"full name with empty owner", func(c *Change) { c.Repo.FullName = "/shop" }, true},

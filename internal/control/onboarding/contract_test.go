@@ -31,7 +31,7 @@ func TestStartCustomerOpensPROne(t *testing.T) {
 	if n := f.hub.prCount(f.repo, ""); n != 1 {
 		t.Errorf("%d pull requests, want 1", n)
 	}
-	want := []string{".archfit-app.yaml", ".github/CODEOWNERS", ".github/workflows/archfit.yaml"}
+	want := []string{".archfit-app.yaml", ".github/CODEOWNERS"} // never a workflow: the App has no workflows permission
 	if got := f.hub.paths(f.repo, onboardingBranch); !reflect.DeepEqual(got, want) {
 		t.Errorf("files = %v, want %v", got, want)
 	}
@@ -50,10 +50,11 @@ func TestStartCustomerOpensPROne(t *testing.T) {
 		t.Errorf("settings = %+v, want %+v", s, wantSettings)
 	}
 
-	workflow, _ := f.hub.file(f.repo, onboardingBranch, workflowPath)
+	// The owner adds the workflow to the onboarding branch; Progress hands out the file and where it goes.
+	wf := mustProgress(t, f.svc, f.repo).Workflow
 	wantWorkflow, _ := renderWorkflow(manifest.Current(), f.repo.DefaultBranch, testBaseURL)
-	if !bytes.Equal(workflow, wantWorkflow) {
-		t.Errorf("workflow is not the template rendered with manifest.Current():\n%s", workflow)
+	if wf == nil || wf.Branch != onboardingBranch || wf.Path != workflowPath || !bytes.Equal(wf.Content, wantWorkflow) {
+		t.Errorf("Workflow = %+v; want the template rendered with manifest.Current() for %s on %s", wf, workflowPath, onboardingBranch)
 	}
 
 	if got, _ := (fakeProposals{f.hub}).Get(context.Background(), f.repo.RepoRef, onboardingBranch); got != draft {
@@ -67,7 +68,7 @@ func TestStartCustomerOpensPROne(t *testing.T) {
 	for _, want := range []string{
 		"/.archfit.yaml", "/.archfit-baseline.json", "/.archfit-labels.yaml", "/.archfit-app.yaml", "/" + workflowPath,
 		"exact head SHA", "ruleset", "bypass", "never reported as success", "automatic deletion of head branches",
-		"discover", "baseline_digest", "labels_digest",
+		"discover", "baseline_digest", "labels_digest", "never writes `.github/workflows/`",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("PR body does not mention %q", want)

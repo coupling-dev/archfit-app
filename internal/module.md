@@ -99,8 +99,10 @@ Check runs `archfit/gate` and `archfit/state`; one PR comment carrying the hidde
 marker `<!-- archfit:comment -->`; branches under `archfit/`; workflow artifact `archfit-report`
 holding the no-source report **[default]**, read only by the graph view.
 
-GitHub App permissions: `checks: write`, `pull_requests: write`, `contents: write`, `workflows: write`
-(onboarding commits a workflow file), `actions: write` (re-run and dispatch), `members: read` (team owners), `metadata: read`.
+GitHub App permissions: `checks: write`, `pull_requests: write`, `contents: write`, `actions: write` (re-run and
+dispatch), `members: read` (team owners), `metadata: read`. No `workflows` permission **[decided]**: it would let the App
+change any CI of the repository, so the owner adds the Archfit workflow by hand once. The reasons per permission, for
+customers: [user guide](../docs/user-guide.md#github-app-permissions).
 
 ### Process entry
 
@@ -240,8 +242,8 @@ Installation events → trial start, uninstall cleanup.
 check, missing upload after 60 minutes, receipt digests that no longer match the protected ref (re-run),
 waiver expiry (warn 7 days before, re-run after), suspension and restoration. The two sweeps fail independently.
 
-**Customer onboarding**: UI → `onboarding.StartCustomer` → `proposal` opens PR 1 (workflow, settings with owners,
-CODEOWNERS entries). After merge, the UI dispatches discovery; the workflow uploads a draft policy to
+**Customer onboarding**: UI → `onboarding.StartCustomer` → `proposal` opens PR 1 (settings with owners, CODEOWNERS
+entries). The UI hands out the workflow, and the owner commits it to PR 1's branch from a filled-in GitHub page. After merge, the UI dispatches discovery; the workflow uploads a draft policy to
 `POST /v1/discoveries`; `onboarding` opens PR 2. Stages are derived from GitHub on every read.
 
 **Baseline capture**: an owner dispatches the workflow with `mode: baseline` on the default branch; the Action runs

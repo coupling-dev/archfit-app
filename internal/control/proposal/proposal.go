@@ -15,6 +15,7 @@ import (
 const (
 	branchPrefix = "archfit/"
 	pullOpen     = "open"
+	workflowsDir = ".github/workflows/"
 )
 
 var (
@@ -129,6 +130,10 @@ func validate(c Change) error {
 		// fs.ValidPath: relative, slash-separated, no empty, "." or ".." element.
 		if f.Path == "." || !fs.ValidPath(f.Path) {
 			return fmt.Errorf("proposal: invalid change: file %d: path must be relative and must not contain a .. element", i)
+		}
+		// The App has no "workflows" permission, so GitHub would refuse the push; saying so here names the cause.
+		if strings.HasPrefix(f.Path, workflowsDir) {
+			return fmt.Errorf("proposal: invalid change: file %d: the App does not write %s", i, workflowsDir)
 		}
 		if seen[f.Path] {
 			return fmt.Errorf("proposal: invalid change: file %d: duplicate path", i)

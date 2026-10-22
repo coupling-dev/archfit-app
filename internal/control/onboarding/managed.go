@@ -33,7 +33,7 @@ func (s *service) StartManaged(ctx context.Context, r api.Repo, owners []string)
 	if err != nil {
 		return proposal.Draft{}, err
 	}
-	if st.stage != StageInstalled {
+	if st.stage != StageInstalled || st.settingsMerged {
 		return proposal.Draft{}, ErrAlreadyOnboarded
 	}
 	now := s.now()

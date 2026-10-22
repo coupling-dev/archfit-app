@@ -259,10 +259,16 @@ Register the App with these settings. Keep the webhook inactive, and install it 
 - Homepage URL: `https://app.coupling.dev`
 - Callback URL: `https://app.coupling.dev/auth/callback`
 - Webhook URL: `https://app.coupling.dev/webhooks/github`, inactive
-- Repository permissions: Actions, Checks, Contents, Pull requests and Workflows read and write; Metadata read
+- Repository permissions: Actions, Checks, Contents and Pull requests read and write; Metadata read. Workflows: no
+  access. The App never writes `.github/workflows/`; the owner adds the workflow during onboarding.
 - Organization permissions: Members read
 - Events: Pull request, Pull request review, Push
 - Installable only on `coupling-dev`
+
+Why each permission is needed: [GitHub App permissions](../docs/user-guide.md#github-app-permissions).
+
+The registered App asked for Workflows read and write before. To drop it, open the App's settings on GitHub,
+**Permissions & events**, set **Workflows** to **No access**, and save.
 
 The App is registered as `archfit-review` ("Archfit Review", App ID `5348120`) on `coupling-dev`. Its bot is
 `archfit-review[bot]`. The App reads its slug from GitHub at startup, so a rename needs a new revision.

@@ -57,6 +57,15 @@ export interface Overview {
   can_discover: boolean;
   pulls_url: string;
   checks_url: string;
+  workflow?: WorkflowFile; // the file the owner adds by hand; absent when none is due
+}
+
+// WorkflowFile is the Archfit workflow the owner adds: the App has no permission to write .github/workflows.
+export interface WorkflowFile {
+  path: string;
+  branch: string;
+  content: string;
+  add_url: string; // GitHub's new-file page on branch, filled in
 }
 
 export interface Finding {

@@ -245,7 +245,7 @@ type Progress struct {
 
 type Onboarding interface {
     Progress(ctx context.Context, r Repo) (Progress, error)
-    // StartCustomer opens PR 1: the workflow, the settings file with owners, and CODEOWNERS entries.
+    // StartCustomer opens PR 1: the settings file with owners and CODEOWNERS entries. The owner adds the workflow.
     StartCustomer(ctx context.Context, r Repo, owners []string) (Draft, error)
     // StartManaged requires ConsentSourceProcessing, opens the onboarding PR and runs the sandbox job.
     StartManaged(ctx context.Context, r Repo, owners []string) (Draft, error)

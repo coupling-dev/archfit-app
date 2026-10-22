@@ -9,6 +9,7 @@ import (
 
 	"github.com/alexei-led/archfit-app/internal/control/proposal"
 	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/alexei-led/archfit-app/internal/wire/manifest"
 	"github.com/alexei-led/archfit-app/internal/wire/policy"
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
@@ -18,15 +19,28 @@ type state struct {
 	stage           Stage
 	draft           *proposal.Draft // open PR of the branch that belongs to the stage
 	settingsInvalid bool
+	settingsMerged  bool     // installed only: the default branch has valid settings, but not their workflow
 	pull            api.Pull // the open onboarding PR; zero unless stage is installed and draft is set
+	workflow        missingWorkflow
 }
+
+// missingWorkflow is where the owner still has to add the workflow; the zero value means nowhere.
+type missingWorkflow struct{ branch, path string }
 
 func (s *service) Progress(ctx context.Context, r api.Repo) (Progress, error) {
 	st, err := s.derive(ctx, r)
 	if err != nil {
 		return Progress{}, err
 	}
-	return Progress{Stage: st.stage, Diagnostic: st.diagnostic(s.now), OpenDraft: st.draft}, nil
+	p := Progress{Stage: st.stage, Diagnostic: st.diagnostic(s.now), OpenDraft: st.draft}
+	if st.workflow.branch != "" {
+		content, err := renderWorkflow(manifest.Current(), r.DefaultBranch, s.baseURL)
+		if err != nil {
+			return Progress{}, fmt.Errorf("onboarding: render workflow: %w", err)
+		}
+		p.Workflow = &WorkflowFile{Branch: st.workflow.branch, Path: st.workflow.path, Content: content}
+	}
+	return p, nil
 }
 
 func (s *service) derive(ctx context.Context, r api.Repo) (state, error) {
@@ -64,7 +78,7 @@ func (s *service) derive(ctx context.Context, r api.Repo) (state, error) {
 	set, parseErr := settings.Parse(raw)
 	if !found || parseErr != nil {
 		s.hints.drop(key)
-		return s.installed(ctx, r, found && parseErr != nil)
+		return s.installed(ctx, r, found && parseErr != nil, "")
 	}
 
 	// The three reads run side by side and are judged in order: the policy and the report count only once the
@@ -87,7 +101,7 @@ func (s *service) derive(ctx context.Context, r api.Repo) (state, error) {
 	case workflowErr != nil:
 		return state{}, fmt.Errorf("onboarding: read workflow: %w", workflowErr)
 	case !workflowFound:
-		return s.installed(ctx, r, false)
+		return s.installed(ctx, r, false, set.Workflow)
 	case policyErr != nil:
 		return state{}, fmt.Errorf("onboarding: read policy: %w", policyErr)
 	case rErr != nil:
@@ -111,16 +125,38 @@ func (s *service) derive(ctx context.Context, r api.Repo) (state, error) {
 	return st, err
 }
 
-func (s *service) installed(ctx context.Context, r api.Repo, settingsInvalid bool) (state, error) {
-	st := state{stage: StageInstalled, settingsInvalid: settingsInvalid}
+// installed is the state before the workflow is on the default branch. mergedWorkflow is the workflow that merged
+// settings name, "" without them.
+func (s *service) installed(ctx context.Context, r api.Repo, settingsInvalid bool, mergedWorkflow string) (state, error) {
+	st := state{stage: StageInstalled, settingsInvalid: settingsInvalid, settingsMerged: mergedWorkflow != ""}
 	var err error
-	if st.draft, err = s.openDraft(ctx, r, onboardingBranch); err != nil || st.draft == nil {
+	if st.draft, err = s.openDraft(ctx, r, onboardingBranch); err != nil {
 		return st, err
 	}
-	// The PR body carries the managed job state, so every instance reads the same one.
-	st.pull, err = s.gh.pulls.PullByHead(ctx, r.RepoRef, onboardingBranch)
-	if err != nil && !errors.Is(err, api.ErrNotFound) {
-		return state{}, fmt.Errorf("onboarding: read onboarding pull request: %w", err)
+	if st.draft == nil {
+		if st.settingsMerged { // the onboarding PR merged without the workflow: it goes to the default branch now
+			st.workflow = missingWorkflow{branch: r.DefaultBranch, path: mergedWorkflow}
+		}
+		return st, nil
+	}
+	// The PR body carries the managed job state, so every instance reads the same one. The owner adds the workflow to
+	// the onboarding branch, so the PR merges everything at once.
+	var (
+		pullErr, fileErr error
+		workflowFound    bool
+	)
+	together(
+		func() { st.pull, pullErr = s.gh.pulls.PullByHead(ctx, r.RepoRef, onboardingBranch) },
+		func() { _, workflowFound, fileErr = s.fileAt(ctx, r, onboardingBranch, workflowPath) },
+	)
+	switch {
+	case pullErr != nil && !errors.Is(pullErr, api.ErrNotFound):
+		return state{}, fmt.Errorf("onboarding: read onboarding pull request: %w", pullErr)
+	case fileErr != nil:
+		return state{}, fmt.Errorf("onboarding: read workflow on %s: %w", onboardingBranch, fileErr)
+	}
+	if !workflowFound {
+		st.workflow = missingWorkflow{branch: onboardingBranch, path: workflowPath}
 	}
 	return st, nil
 }
@@ -181,11 +217,16 @@ func (st state) diagnostic(now func() time.Time) string {
 		switch {
 		case st.draft == nil && st.settingsInvalid:
 			return "`" + settings.Path + "` on the default branch is invalid"
+		case st.draft == nil && st.workflow.branch != "":
+			return "Add `" + st.workflow.path + "` to the default branch"
 		case st.draft == nil:
 			return "Start onboarding"
 		}
 		if d := managedDiagnostic(st.pull, now()); d != "" {
 			return d
+		}
+		if st.workflow.branch != "" {
+			return fmt.Sprintf("Add `%s` to PR #%d", st.workflow.path, st.draft.Number)
 		}
 		return fmt.Sprintf("Review and merge PR #%d", st.draft.Number)
 	case StageWorkflowMerged, StageReportReceived:

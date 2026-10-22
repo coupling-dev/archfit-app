@@ -7,8 +7,8 @@
 ## Purpose
 
 `onboarding` takes a repository from "App installed" to "advisory feedback running" in both execution
-modes, using only pull requests a human merges. Customer mode is always two PRs: PR 1 adds the workflow,
-the App settings file and CODEOWNERS entries; PR 2 carries the policy that discovery in the customer's
+modes, using only pull requests a human merges. Customer mode is always two PRs: PR 1 adds the App settings
+file and CODEOWNERS entries, and the owner adds the workflow to it; PR 2 carries the policy that discovery in the customer's
 CI proposed. Managed mode runs one ephemeral sandbox job after recorded consent and puts the policy on
 the onboarding PR. Without this module a customer would hand-write the workflow, settings, CODEOWNERS and policy files and nobody could tell
 which step is missing. The same upload path then carries the baseline: a capture by the approved workflow on the
@@ -17,7 +17,10 @@ default branch becomes a baseline pull request that an architecture owner approv
 ## Functional Responsibilities
 
 - Derive the onboarding stage and the next action from GitHub on every call. Store nothing.
-- Generate PR 1: pinned workflow from the locked manifest, settings with the first owner list, CODEOWNERS entries.
+- Generate PR 1: settings with the first owner list, CODEOWNERS entries.
+- Hand out the pinned workflow from the locked manifest, and where it goes, until it is there. The App never writes
+  `.github/workflows/`: GitHub allows that only with the App's `workflows` permission, which would let it change any CI
+  of the repository. The owner commits the file once, from a GitHub page the UI opens filled in. **[decided]**
 - Serve `POST /v1/discoveries`: reuse the gate's `Receiver`, check the producer, check the draft is no-source policy text, open PR 2.
 - Serve `POST /v1/baselines`: reuse the gate's `Receiver`, check the producer at the default-branch head, check the capture
   against the approved identity and the protected policy and labels, then open or update the baseline PR on `archfit/baseline`
@@ -91,11 +94,19 @@ type Progress struct {
     Stage      Stage
     Diagnostic string // what to do next
     OpenDraft  *Draft
+    Workflow   *WorkflowFile // the file the owner adds by hand; nil when it is in place or not due yet
+}
+
+// WorkflowFile is the Archfit workflow and where it goes. The App never writes .github/workflows.
+type WorkflowFile struct {
+    Branch  string // the onboarding branch while its PR is open, else the default branch
+    Path    string
+    Content []byte
 }
 
 type Onboarding interface {
     Progress(ctx context.Context, r Repo) (Progress, error)
-    // StartCustomer opens PR 1: the workflow, the settings file with owners, and CODEOWNERS entries.
+    // StartCustomer opens PR 1: the settings file with owners and CODEOWNERS entries. The owner adds the workflow.
     StartCustomer(ctx context.Context, r Repo, owners []string) (Draft, error)
     // StartManaged requires ConsentSourceProcessing, opens the onboarding PR and runs the sandbox job.
     StartManaged(ctx context.Context, r Repo, owners []string) (Draft, error)
@@ -164,7 +175,18 @@ parameters only, at most 4096 **[default]**, least recently used out first, keye
 full name. A warm derive waits for one round trip instead of three; a stale hint costs the reads made ahead once, and
 settings that are gone or invalid drop the hint.
 
-`OpenDraft` is set only when `Get` returns `DraftOpen` or `DraftInReview`; merged, closed and none give nil. Diagnostics, one sentence each: "Start onboarding" /
+`OpenDraft` is set only when `Get` returns `DraftOpen` or `DraftInReview`; merged, closed and none give nil.
+
+`Workflow` at stage `installed` only, rendered from the template with `manifest.Current()`:
+
+- Onboarding PR open and `.github/workflows/archfit.yaml` absent on `archfit/onboarding` → that branch and path. The
+  branch read runs beside `PullByHead`.
+- No open onboarding PR, valid settings on the default branch, their `workflow` absent there (PR 1 merged without it) →
+  the default branch and the settings' workflow path. `StartCustomer` and `StartManaged` then return
+  `ErrAlreadyOnboarded`: a second PR 1 would carry nothing new.
+- Otherwise nil.
+
+Diagnostics, one sentence each: "Start onboarding" / "Add `<path>` to PR #n" / "Add `<path>` to the default branch" /
 "Review and merge PR #n" / "`.archfit-app.yaml` on the default branch is invalid" / "Run discovery
 (workflow_dispatch with `mode` set to `discovery`)" / "Review and merge the policy PR #n" / "Waiting for the first run on
 the default branch" / "Advisory feedback is active; an owner enables the gate by PR" / "Required gate is active".
@@ -177,9 +199,10 @@ parse counts as stalled.
 ### PR 1 content (StartCustomer and StartManaged)
 
 - `owners` must be non-empty and pass `settings.Parse(settings.Render(s))`; otherwise error, no GitHub write.
-- If `Progress` is past `installed` → `ErrAlreadyOnboarded`; nothing is written.
+- If `Progress` is past `installed`, or the settings are merged without their workflow → `ErrAlreadyOnboarded`; nothing is written.
 - `.archfit-app.yaml` = `settings.Render(Settings{Version: 1, Owners: owners, Gate: GateAdvisory, Workflow: <workflow path>, DataMode: DataCustomer | DataManaged})`.
-- Workflow file from the template with `manifest.Current()`: Action pinned to `ActionRef` (commit SHA), `EngineVersion`,
+- No workflow file: `Progress.Workflow` hands it out and the owner commits it to `archfit/onboarding`. An App commit to
+  the branch after the owner's keeps the file: `Commit` builds on the branch head's tree. The template, rendered with `manifest.Current()`: Action pinned to `ActionRef` (commit SHA), `EngineVersion`,
   `ImageDigest`; triggers exactly `pull_request`, `push` to `r.DefaultBranch` and `workflow_dispatch` (the Action refuses
   every other event, `workflow_run`, `pull_request_target` and `merge_group` included); the one dispatch input `mode`
   (choice `report` | `discovery` | `baseline` | `reanchor`, default `report`), passed to the Action as
@@ -198,7 +221,7 @@ parse counts as stalled.
   `/.archfit-app.yaml`, `/<workflow path>` — with the owners as `@login` / `@org/team`.
   Existing bytes are kept unchanged; a line already present is not added again.
 - `Proposals.Propose(Change{Branch: "archfit/onboarding", Base: r.DefaultBranch, …}, "")`.
-- PR body: what each file does; the five protected paths and that a change to any of them needs an architecture owner's approval
+- PR body: first, that the owner adds the workflow from the repository's page in Archfit and why the App does not; what each file does; the five protected paths and that a change to any of them needs an architecture owner's approval
   on the exact head SHA; that Archfit belongs in its own ruleset with a documented bypass, and that a bypass is
   never reported as success; "enable automatic deletion of head branches"; next step (run discovery).
 
@@ -1035,7 +1058,10 @@ Test doubles only at boundaries: in-memory GitHub roles (`Repos`, `Actions`, `Ch
 
 - **Test name**: `TestStartCustomerOpensPROne`
   **Scenario**: fresh repository, owners `alice`, `acme/architects`.
-  **Expected behavior**: one `Propose` on `archfit/onboarding` against the default branch with exactly three files; settings parse back with `gate: advisory`, `data_mode: customer`; returned `Draft` is the proposal's.
+  **Expected behavior**: one `Propose` on `archfit/onboarding` against the default branch with exactly two files, settings and CODEOWNERS, never the workflow; settings parse back with `gate: advisory`, `data_mode: customer`; returned `Draft` is the proposal's; `Progress.Workflow` is the rendered template for `archfit/onboarding`; the body says the App never writes `.github/workflows/`.
+- **Test name**: `TestProgressAsksForTheWorkflowWhereItBelongs`
+  **Scenario**: before onboarding; PR 1 open without the workflow; with it; PR 1 merged without it; onboarded. Then, merged without it: both start methods, and the owner adding it.
+  **Expected behavior**: `Workflow` nil, on `archfit/onboarding`, nil, on the default branch, nil; merged without it both start methods return `ErrAlreadyOnboarded` with no `Propose`, and once the owner adds it the stage is `workflow_merged`.
 - **Test name**: `TestDiscoveryUploadOpensPRTwo`
   **Scenario**: `Receiver` returns an upload: event `workflow_dispatch`, default branch, approved workflow path, valid draft.
   **Expected behavior**: `200` with the PR number; one `Propose` on `archfit/policy` with one file at `PolicyPath` whose bytes equal `Upload.Payload`; empty `BaselineDigest` and `LabelsDigest` are accepted and ignored; no check or comment call.
@@ -1113,8 +1139,8 @@ Test doubles only at boundaries: in-memory GitHub roles (`Repos`, `Actions`, `Ch
 ### Behavior Tests
 
 - **Test name**: `TestCustomerFlowEndToEnd`
-  **Scenario**: start → merge PR 1 in the fake → `Progress` → discovery upload → merge PR 2 → state check appears → settings switched to required.
-  **Expected behavior**: stages `installed` (with draft), `workflow_merged`, `workflow_merged` with the policy draft, `policy_merged`, `gate_advisory`, `gate_required`; exactly two PRs (T18; one-draft-PR flow not used).
+  **Scenario**: start → the owner adds the workflow `Progress` hands out → merge PR 1 in the fake → `Progress` → discovery upload → merge PR 2 → state check appears → settings switched to required.
+  **Expected behavior**: stages `installed` (with draft, "Add … to PR #1", then "Review and merge PR #1"), `workflow_merged`, `workflow_merged` with the policy draft, `policy_merged`, `gate_advisory`, `gate_required`; exactly two PRs (T18; one-draft-PR flow not used).
 - **Test name**: `TestRetriesNeverDuplicatePRs`
   **Scenario**: `StartCustomer` five times; the same discovery upload three times; `StartManaged` retried after a failure.
   **Expected behavior**: one PR per branch; the newest content on the branch (T18).

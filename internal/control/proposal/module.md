@@ -136,7 +136,8 @@ After a merge or close, the next `Propose` on the same branch opens a new PR (`E
 
 `ValidBranch(Branch)` holds (so no space, control or non-ASCII character either), and `Branch` differs from `Base`.
 `Base`, `Title`, `Message` non-empty. `Files` non-empty; every `Path` is a relative slash path
-without `..` or a leading `/`; no duplicate paths. `Repo.InstallationID > 0` and `FullName` is `owner/name`.
+without `..` or a leading `/`; no duplicate paths; no path under `.github/workflows/`: the App has no `workflows`
+permission, so GitHub would refuse the push, and the error names the cause first. `Repo.InstallationID > 0` and `FullName` is `owner/name`.
 
 ### SetBody and Ready
 
@@ -288,7 +289,7 @@ Fakes implement `Changes` and `Pulls` in memory (branches, commits, pulls) and r
   **Scenario**: table over `Pull{State, Draft, Merged}`: open+draft, open+ready, closed+merged, closed, and no pull.
   **Expected behavior**: `DraftOpen`, `DraftInReview`, `DraftMerged`, `DraftClosed`, `DraftNone`.
 - **Test name**: `TestValidateChange`
-  **Scenario**: table: branch `main`, `feature/x`, `archfit/../x`, `archfit/./x`, branch equal to base, empty base, empty title, empty message, no files, path `/etc/x`, path `a/../../b`, duplicate path, `InstallationID` 0, `FullName` without slash; one valid change.
+  **Scenario**: table: branch `main`, `feature/x`, `archfit/../x`, `archfit/./x`, branch equal to base, empty base, empty title, empty message, no files, path `/etc/x`, path `a/../../b`, duplicate path, a path under `.github/workflows/` (`.github/CODEOWNERS` stays valid), `InstallationID` 0, `FullName` without slash; one valid change.
   **Expected behavior**: every invalid row errors with zero GitHub calls; the valid row passes.
 - **Test name**: `TestValidBranchAndHeadSHA`
   **Scenario**: table for `ValidBranch`: `archfit/onboarding`, `archfit/edit-alice`, `archfit/a/b.c_d`; `main`, `archfit/`,

@@ -1,6 +1,7 @@
 package internal_test
 
 import (
+	"bytes"
 	"crypto/sha1" //nolint:gosec // fake git object IDs
 	"encoding/base64"
 	"encoding/hex"
@@ -246,6 +247,18 @@ func (w *world) edit(fullName string, f func(rp *repo)) {
 		w.t.Fatalf("test world: no repository %s", fullName)
 	}
 	f(rp)
+}
+
+// workflowsDiffer reports whether two snapshots differ in any file under .github/workflows/.
+func workflowsDiffer(a, b map[string][]byte) bool {
+	for _, pair := range [][2]map[string][]byte{{a, b}, {b, a}} {
+		for path, c := range pair[0] {
+			if strings.HasPrefix(path, ".github/workflows/") && !bytes.Equal(c, pair[1][path]) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // push points branch at commit id holding the branch's previous files overlaid with files.
@@ -783,7 +796,13 @@ func (w *world) routes() {
 	})
 	mux.HandleFunc("PATCH "+R+"/git/refs/heads/{branch...}", func(rw http.ResponseWriter, r *http.Request) {
 		if rp := w.repoOf(rw, r); rp != nil {
-			rp.branches[r.PathValue("branch")] = str(body(r), "sha")
+			branch, next := r.PathValue("branch"), str(body(r), "sha")
+			// The App is registered without the "workflows" permission, so GitHub refuses any workflow change it pushes.
+			if workflowsDiffer(rp.commits[rp.branches[branch]], rp.commits[next]) {
+				http.Error(rw, `{"message":"refusing to allow a GitHub App to create or update workflow without workflows permission"}`, http.StatusForbidden)
+				return
+			}
+			rp.branches[branch] = next
 			writeJSON(rw, http.StatusOK, map[string]any{})
 		}
 	})

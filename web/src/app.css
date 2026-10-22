@@ -651,3 +651,8 @@ legend { font-weight: 600; padding: 0; margin-bottom: 4px; }
 .skeleton-line:nth-child(3n + 2) { width: 90%; }
 .skeleton-line:nth-child(3n) { width: 75%; }
 @keyframes skeleton-pulse { 50% { opacity: 0.45; } }
+
+/* ---------- numbered how-to steps (onboarding) ---------- */
+.howto { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+.howto li { padding-left: 4px; }
+.howto li .btn { margin-right: 8px; }

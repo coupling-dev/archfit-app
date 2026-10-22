@@ -12,6 +12,43 @@ Read [Architecture](architecture.md) for the service boundary, routes, and packa
 The Archfit engine runs in customer CI. It sends a report with no source code to the App.
 The App verifies the report against the approved policy and publishes feedback on the pull request.
 
+## GitHub App permissions
+
+GitHub shows this list when you install the App. Each permission is here for one job.
+
+### Repository permissions
+
+| Permission    | Access       | What the App does with it                                                                                                   | Without it                                                                                       |
+| ------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Checks        | Read & write | Posts `archfit/state` and `archfit/gate` on every pull request and default-branch push.                                     | No result on the pull request, and no gate.                                                      |
+| Pull requests | Read & write | Opens its own pull requests (onboarding, policy, baseline). Keeps one comment per pull request. Reads reviews for owner approval. | No setup pull requests, no comment, and no way to see an owner's approval.                       |
+| Contents      | Read & write | Reads the policy and settings from the protected branch. Writes only branches named `archfit/…`, for its own pull requests. | The App cannot read the approved policy or propose a change.                                     |
+| Actions       | Read & write | Reads the Archfit run and its report artifact. Re-runs the Archfit run when its inputs change. Starts discovery and AI assist runs. | After an owner approves, the gate stays red until someone re-runs the job by hand. No discovery button, no AI assist. |
+| Metadata      | Read         | GitHub adds it to every App: repository name, default branch.                                                               | Not optional.                                                                                    |
+
+### Organization permissions
+
+| Permission | Access | What the App does with it                                                | Without it                                    |
+| ---------- | ------ | ------------------------------------------------------------------------ | --------------------------------------------- |
+| Members    | Read   | Checks that an approver is in an owner team, such as `acme/architects`.  | Owners could only be single logins.           |
+
+### What the App never asks for
+
+- **Workflows.** This permission lets an App change any file in `.github/workflows/`, so it could change your CI and
+  reach its secrets. The App does not ask for it. You add the Archfit workflow file yourself, once, during onboarding.
+- **Administration, Secrets, Environments, Deployments.** The App does not change repository settings, read secrets,
+  or deploy.
+
+### Limits you should know
+
+- **Contents write covers the whole repository.** GitHub cannot limit it to `archfit/…` branches. The App writes only
+  those branches and never merges. Protect the default branch with a ruleset so that a pull request and a review are
+  needed for every change, including one from the App.
+- **Actions write lets the App start any workflow that has `workflow_dispatch`.** The App starts only the Archfit
+  workflow and the AI assist workflow. A workflow that deploys should need an approval in a GitHub environment.
+- **Tokens are short-lived.** Each App token lasts at most one hour and is limited to the repositories you chose at
+  install.
+
 ## Terms
 
 | Term          | Meaning                                                                |
@@ -42,13 +79,16 @@ Use customer mode when source code must stay in customer CI. Use managed mode on
 
 ### Customer mode
 
-Customer onboarding uses one pull request for setup and one pull request for the policy.
+Customer onboarding uses one pull request for setup and one pull request for the policy. You add one file to the
+setup pull request yourself: the workflow. The App cannot write it (see
+[GitHub App permissions](#github-app-permissions)).
 
 ```mermaid
 flowchart LR
     INSTALL["Install the GitHub App"] --> START["Open the App and<br/>start onboarding"]
-    START --> PR1["PR 1<br/>workflow, settings, CODEOWNERS"]
-    PR1 -->|"merge"| DISCOVER["Run discovery<br/>in customer CI"]
+    START --> PR1["PR 1<br/>settings, CODEOWNERS"]
+    PR1 -->|"you add the workflow"| PR1W["PR 1<br/>+ workflow"]
+    PR1W -->|"merge"| DISCOVER["Run discovery<br/>in customer CI"]
     DISCOVER --> PR2["PR 2<br/>proposed policy"]
     PR2 -->|"merge"| ADVISORY["Advisory feedback<br/>is active"]
     ADVISORY -->|"owner-approved PR"| REQUIRED["Required gate<br/>is active"]
@@ -60,11 +100,11 @@ flowchart LR
 
     class ADVISORY,REQUIRED core
     class START,DISCOVER control
-    class PR1,PR2 nottrusted
+    class PR1,PR1W,PR2 nottrusted
     class INSTALL neutral
 ```
 
-Arrows show the order of the customer onboarding flow. A labeled arrow shows the required merge or approval.
+Arrows show the order of the customer onboarding flow. A labeled arrow shows what you do before the next step.
 
 1. Install the Archfit GitHub App on the repository.
 2. Open the App URL.
@@ -73,19 +113,30 @@ Arrows show the order of the customer onboarding flow. A labeled arrow shows the
 5. Enter one policy owner on each line under **Needs you**. The page starts customer mode: source code never leaves
    your CI.
 6. Select **Open the onboarding pull request**.
-7. Review and merge the pull request on GitHub.
-8. Select **Run discovery in your workflow** on the repository page.
-9. Wait for the policy pull request.
-10. Review and merge the policy pull request.
+7. Under **Add the Archfit workflow**, select **Add the file on GitHub**. GitHub opens a new file with the path and
+   the content filled in, on the `archfit/onboarding` branch.
+8. On GitHub, select **Commit changes** and keep **Commit directly to the `archfit/onboarding` branch**.
+9. Come back and select **Check again**. The step changes to "Review and merge".
+10. Review and merge the onboarding pull request on GitHub.
+11. Select **Run discovery in your workflow** on the repository page.
+12. Wait for the policy pull request.
+13. Review and merge the policy pull request.
+
+If GitHub does not fill in the file, select **Copy the file** and paste it into a new file named
+`.github/workflows/archfit.yaml` on the `archfit/onboarding` branch. **Show the file** shows the content.
+
+If you merge the onboarding pull request without the workflow, the page asks you to add the file to the default
+branch instead. The same button opens GitHub on that branch. If the branch is protected, choose **Create a new
+branch** on GitHub and merge that pull request.
 
 A sign-in lasts 8 hours, the lifetime of the GitHub token behind it. When the token has expired or you revoked it on
 GitHub, the next page asks you to sign in again and brings you back to the same page.
 
 PR 1 adds these files:
 
-- `.github/workflows/archfit.yaml`
 - `.archfit-app.yaml` with the policy owners
 - `CODEOWNERS` entries for the protected paths
+- `.github/workflows/archfit.yaml`, added by you from the repository page
 
 The workflow uses no repository secret. It uses the job GitHub OIDC token.
 It runs on `pull_request`, `push` to the default branch, and `workflow_dispatch`. The Action refuses other events.
@@ -102,7 +153,7 @@ The status page derives its stage from GitHub on every read.
 
 | Stage             | UI label              | Next action                              |
 | ----------------- | --------------------- | ---------------------------------------- |
-| `installed`       | App installed         | Start onboarding                         |
+| `installed`       | App installed         | Start onboarding, then add the workflow  |
 | `workflow_merged` | Workflow merged       | Run discovery                            |
 | `report_received` | First report received | Review and merge the policy pull request |
 | `policy_merged`   | Policy merged         | Wait for the first default-branch run    |
@@ -283,7 +334,7 @@ v3.0.1 and `archfit-action` commit `7efc29b5a2785fb0537a2617cddf3873b7d27e10` (v
 
 #### Move an installed workflow to a new engine
 
-The App writes `.github/workflows/archfit.yaml` once, in the onboarding pull request, and never updates it. After an
+You add `.github/workflows/archfit.yaml` once, during onboarding. The App never writes or updates it. After an
 App release that approves a new engine, a repository on the old pin gets `action_required` with
 `unknown_engine_identity` on every report, and a baseline or re-anchor upload is refused with the same code. Open a
 pull request that changes three values of the Archfit step, and nothing else:

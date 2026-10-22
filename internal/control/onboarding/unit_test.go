@@ -3,6 +3,7 @@ package onboarding
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -26,6 +27,7 @@ func TestStageDerivation(t *testing.T) {
 	}
 	advisory := renderSettings(settings.GateAdvisory, workflowPath)
 	required := renderSettings(settings.GateRequired, workflowPath)
+	addToPR := "Add `" + workflowPath + "` to PR #1" // the drafts here carry no workflow
 	tests := []struct {
 		name       string
 		setup      setup
@@ -34,10 +36,10 @@ func TestStageDerivation(t *testing.T) {
 		noDraft    string // diagnostic without an open PR on draftOn
 		draftOn    string // branch whose open PR must show as OpenDraft
 	}{
-		{"nothing", setup{}, StageInstalled, "Review and merge PR #1", "Start onboarding", onboardingBranch},
-		{"settings only", setup{settings: advisory}, StageInstalled, "Review and merge PR #1", "Start onboarding", onboardingBranch},
+		{"nothing", setup{}, StageInstalled, addToPR, "Start onboarding", onboardingBranch},
+		{"settings only", setup{settings: advisory}, StageInstalled, addToPR, "Add `" + workflowPath + "` to the default branch", onboardingBranch},
 		{"invalid settings", setup{settings: []byte("version: 7\nbogus: true\n"), workflow: true}, StageInstalled,
-			"Review and merge PR #1", "`.archfit-app.yaml` on the default branch is invalid", onboardingBranch},
+			addToPR, "`.archfit-app.yaml` on the default branch is invalid", onboardingBranch},
 		{"settings and workflow", setup{settings: advisory, workflow: true}, StageWorkflowMerged,
 			"Review and merge the policy PR #1", "Run discovery (workflow_dispatch with `mode` set to `discovery`)", policyBranch},
 		{"run without check", setup{settings: advisory, workflow: true, run: true}, StageWorkflowMerged,
@@ -477,4 +479,61 @@ func TestTogetherRaisesAPanicOnTheCallersGoroutine(t *testing.T) {
 	}()
 	together(func() { ran.Store(true) }, func() { panic("boom") })
 	t.Error("together returned after a panic")
+}
+
+func TestProgressAsksForTheWorkflowWhereItBelongs(t *testing.T) {
+	ctx := context.Background()
+	rendered, err := renderWorkflow(manifest.Current(), "main", testBaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name   string
+		setup  func(t *testing.T, f *fixture)
+		branch string // "" when Progress asks for no workflow
+	}{
+		{"before onboarding", func(*testing.T, *fixture) {}, ""},
+		{"onboarding PR without it", func(t *testing.T, f *fixture) { mustStart(t, f) }, onboardingBranch},
+		{"onboarding PR with it", func(t *testing.T, f *fixture) { mustStart(t, f); f.addWorkflow(t, f.repo) }, ""},
+		{"PR merged without it", func(t *testing.T, f *fixture) { mustStart(t, f); f.hub.merge(f.repo, onboardingBranch) }, "main"},
+		{"onboarded", func(_ *testing.T, f *fixture) { f.onboard(f.repo, settings.GateAdvisory) }, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			tc.setup(t, f)
+			wf := mustProgress(t, f.svc, f.repo).Workflow
+			switch {
+			case tc.branch == "" && wf != nil:
+				t.Errorf("Workflow = %+v; want none", wf)
+			case tc.branch != "" && (wf == nil || wf.Branch != tc.branch || wf.Path != workflowPath || !bytes.Equal(wf.Content, rendered)):
+				t.Errorf("Workflow = %+v; want the rendered %s on %s", wf, workflowPath, tc.branch)
+			}
+		})
+	}
+
+	t.Run("merged without it, onboarding does not start again", func(t *testing.T) {
+		f := newFixture(t)
+		mustStart(t, f)
+		f.hub.merge(f.repo, onboardingBranch)
+		before := f.hub.count("Propose")
+		if _, err := f.svc.StartCustomer(ctx, f.repo, owners); !errors.Is(err, ErrAlreadyOnboarded) {
+			t.Errorf("StartCustomer = %v; want ErrAlreadyOnboarded", err)
+		}
+		if _, err := f.svc.StartManaged(ctx, f.repo, owners); !errors.Is(err, ErrAlreadyOnboarded) {
+			t.Errorf("StartManaged = %v; want ErrAlreadyOnboarded", err)
+		}
+		if n := f.hub.count("Propose") - before; n != 0 {
+			t.Errorf("%d Propose calls; want none", n)
+		}
+		f.addWorkflow(t, f.repo)
+		wantStage(t, mustProgress(t, f.svc, f.repo), StageWorkflowMerged, "Run discovery")
+	})
+}
+
+func mustStart(t *testing.T, f *fixture) {
+	t.Helper()
+	if _, err := f.svc.StartCustomer(context.Background(), f.repo, owners); err != nil {
+		t.Fatal(err)
+	}
 }

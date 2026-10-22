@@ -148,6 +148,10 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   shows it under the default-branch state only when that state reads "attention".
 - `GET /api/repos/{o}/{n}/overview` [read] — default-branch state, open pull requests with their result, setup steps,
   onboarding progress, entitlement banner, history links, and whether the user may start onboarding or discovery.
+  While the owner still has to add the workflow, `workflow` is `{path, branch, content, add_url}`: `add_url` is GitHub's
+  new-file page on `branch` with `filename` and `value` filled in. GitHub does not document those two parameters
+  (checked by hand on 2026-10-22 with a branch name holding a `/`); the page also offers the content to copy and to
+  read, so a change on GitHub's side costs one paste. `can_start` is false while `workflow` is set.
   `next` is the next setup step in one sentence and `next_how` its details, both from the onboarding stage.
   `tone` (`success` | `attention` | `danger` | `accent` | `neutral`) colours a state word; the word is always shown.
   For an administrator `managed_ai` is `allowed` | `not_allowed` | `unknown` (the consent could not be read): one Store
@@ -501,7 +505,7 @@ type Progress struct {
 
 type Onboarding interface {
     Progress(ctx context.Context, r Repo) (Progress, error)
-    // StartCustomer opens PR 1: the workflow, the settings file with owners, and CODEOWNERS entries.
+    // StartCustomer opens PR 1: the settings file with owners and CODEOWNERS entries. The owner adds the workflow.
     StartCustomer(ctx context.Context, r Repo, owners []string) (Draft, error)
     // StartManaged requires ConsentSourceProcessing, opens the onboarding PR and runs the sandbox job.
     StartManaged(ctx context.Context, r Repo, owners []string) (Draft, error)
