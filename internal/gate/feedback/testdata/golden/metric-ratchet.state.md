@@ -27,8 +27,8 @@
 | `coupling` | measured | 1/1 ("cross-boundary edges scored") | high | **warn** |
 | `change_locality` | unmeasured | 0/0 | unrated | not applicable |
 | `complexity` | measured | 2/2 ("declared modules with complete dependency-chain and degree values") | high | pass |
-| `testability` | partial | 3/3 ("classified source files") | medium | pass |
-| `operations` | partial | 0/2 ("declared modules with a corroborated deploy unit and qualifying owner") | medium | pass |
+| `testability` | partial | 3/3 ("classified source files") | medium | pass (incomplete evidence) |
+| `operations` | partial | 0/2 ("declared modules with a corroborated deploy unit and qualifying owner") | medium | pass (incomplete evidence) |
 | `drift` | unmeasured | 0/0 | unrated | not applicable |
 
 ### Evidence gaps

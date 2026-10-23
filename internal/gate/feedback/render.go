@@ -460,8 +460,13 @@ func dimensionsBlock(r *report.Report) string {
 			b.WriteString("\n" + row)
 			continue
 		}
+		result := strings.ReplaceAll(text(d.Gate), "_", " ")
+		if d.Gate == "pass" && d.Status != "measured" {
+			// No observed violation is not proof that the dimension was fully checked.
+			result += " (incomplete evidence)"
+		}
 		row := []string{"`" + key + "`", text(d.Status), fmt.Sprintf("%d/%d%s", d.Coverage.Observed, d.Coverage.Total, quoted(d.Coverage.Basis)),
-			text(d.Confidence), resultCell(strings.ReplaceAll(text(d.Gate), "_", " "))}
+			text(d.Confidence), resultCell(result)}
 		if changes {
 			change := seamChange(d)
 			if d.Delta != nil && len(d.Delta.Metrics) > 0 {

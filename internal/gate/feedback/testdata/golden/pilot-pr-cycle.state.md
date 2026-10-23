@@ -61,8 +61,8 @@ On every row: Imbalanced coupling · critical, accepted in the baseline · pre-e
 | `coupling` | measured | 79/79 ("cross-boundary edges scored") | high | **warn** |  |
 | `change_locality` | measured | 6/6 ("declared modules touched in the scanned history window") | high | pass |  |
 | `complexity` | measured | 6/6 ("declared modules with complete dependency-chain and degree values") | high | pass |  |
-| `testability` | partial | 158/173 ("classified source files") | medium | pass |  |
-| `operations` | partial | 1/6 ("declared modules with a corroborated deploy unit and qualifying owner") | medium | pass |  |
+| `testability` | partial | 158/173 ("classified source files") | medium | pass (incomplete evidence) |  |
+| `operations` | partial | 1/6 ("declared modules with a corroborated deploy unit and qualifying owner") | medium | pass (incomplete evidence) |  |
 | `drift` | measured | 8/8 ("distributed-monolith seams compared against the stored reference") | high | pass | 8 tight cross-module seams at high volatility, new since the baseline: it holds none |
 
 ### Evidence gaps
