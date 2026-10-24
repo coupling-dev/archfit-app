@@ -1,6 +1,6 @@
 # Coordinated toolchain release: execution record
 
-Checkpoint: 2026-10-24, 17:42 UTC. Engine candidate PR open. No new release or deployment.
+Checkpoint: CI-bootstrap follow-up `451a52a4`, 2026-10-24. Engine candidate PR open. No new release or deployment.
 
 ## Authority and isolation
 
@@ -17,7 +17,7 @@ Do not restart, reset, or update them as part of this release.
 
 | Repository | Branch | Commit | State |
 | --- | --- | --- | --- |
-| Engine | `upgrade/analysis-integration` | `f804c1ecbd5a48b98ec5dfcaa8be8f5ca78f2c92` | Draft [PR86](https://github.com/alexei-led/archfit/pull/86) |
+| Engine | `upgrade/analysis-integration` | `451a52a4f56357c5e061261980dd7e21f97f7531` | Draft [PR86](https://github.com/alexei-led/archfit/pull/86) |
 | Action | `upgrade/engine-3-2` | `fbd9a9550bef72a3ff84840ffc4ce459d47ee501` | Local guard commit, independently reviewed |
 | App | `upgrade/engine-3-2` | `ae7b978832b1e9b88054e117b1d970acb5e0d487` | Local deployment-validation and rollback guard |
 
@@ -29,6 +29,11 @@ Bundled Rust 1.99.1 tools retain compatible SCIP namespaces. The newer standalon
 The last boundary follow-up is committed as `e2da1efdd022545ce37c1a6e08128757023248ff`.
 It resolves raw symlink/parent paths before normalization. Shared-helper and both Python-boundary regressions reproduce the original defect.
 Independent bounded re-review closed that finding. Earlier Python, syntax, Node, Rust, and SCIP reviews are also complete.
+
+CI-bootstrap correction `451a52a4` selects the manifest Python explicitly before constructing the analyzer environment.
+The runner's system Python is used only to read the manifest. The selected Python bin directory is available to later offline tests.
+The patch also corrects govulncheck's ignored Go-version input and disables its duplicate nested cache restore.
+Independent review found no defects in this three-file change. Production, Docker, and verdict code are unchanged.
 
 Action commit `fbd9a955` changes only the no-endpoint report gate and its tests/docs.
 Required evidence gaps, failed gates, and malformed decision evidence fail locally. Genuine optional attention still succeeds.
@@ -42,6 +47,8 @@ Independent review found no defects in the bounded change.
 - Normal pre-push secret scan, full lint, full tests, build, and architecture hook passed. No hook was bypassed.
 - Documentation checks passed: 29 Markdown files and two Mermaid diagrams. Release notes passed the content checker.
 - The Node production lock audit reported zero known vulnerabilities at this checkpoint.
+- CI-bootstrap regressions failed before the fix and passed afterward, including install/find failures before privileged provisioning.
+  All 11 provisioning/harness unit tests passed. ShellCheck, shfmt, Ruff, actionlint, and zizmor passed for the changed scope.
 - Action guard regressions passed 97 assertions. Full legacy Action conformance passed 479 assertions.
   Worker results include shellcheck, shfmt, fixture byte hashes, secret scan, and a clean signed commit.
 - App deployment guard passed 34 Bats tests plus actionlint, shellcheck, shfmt, and zizmor.
@@ -51,13 +58,18 @@ It reported zero repairs and zero evidence gaps. One required rule, `metric_ratc
 The stored profile uses older producer semantics. The normal architecture hook accepts exit 2, but that is not a healthy architecture claim.
 No protected policy, baseline, waiver, or labels changed.
 
-Native arm64 checkpoint `411c3eae2114a2fc932d6280760ecd7c97ccecce` passed all 133 image assertions.
-Its local image was `sha256:eca83aa31c8303011f5b42311b5a054f6fadde72d33120b2e401ddef4389ad81`.
-This predates the final containment corrections and is not final release acceptance.
+Candidate `f804c1ec` passed 133/133 assertions on both native amd64 and arm64 in
+[CI run40117052514](https://github.com/alexei-led/archfit/actions/runs/40117052514).
+Downloaded assertion artifacts contained no failed or waived assertions. Image inspection confirmed both native platforms and user `65532:65532`.
+These CI images use version `ci-image-contract`, not a released identity or approved platform digest.
 
-Final candidate [CI run40117052514](https://github.com/alexei-led/archfit/actions/runs/40117052514) is running.
-Locked-tool, lint, and workflow checks passed. Source tests and native amd64/arm64 images remain pending.
-PR documentation checks passed separately. The existing connected App check is `action_required`, not acceptance.
+That run failed source tests. The bootstrap selected runner Python 3.12.3 despite setup-uv's 3.14.9 selector.
+Python/grimp and Rust SCIP reader failures reported the same interpreter rejection. The correction is described above.
+The new exact-head [CI run40118616937](https://github.com/alexei-led/archfit/actions/runs/40118616937) is running.
+Source tests, native images, and generated binaries must pass again before merge or release.
+
+The existing connected App check is `action_required`, not acceptance. Its v3.0.1 image runs Go 1.26.9 against a Go 1.27 repository.
+A baseline approval cannot clear that missing required evidence.
 
 Offline CCGram candidate evidence used unmodified commit `006a88885d0876f132f40cb3525c20d2986a37ac`.
 Grimp 3.17/Python 3.14.9 parsed 229/229 package files with zero unresolved imports.
