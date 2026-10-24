@@ -34,9 +34,48 @@ on:
 permissions:
   contents: read
 jobs:
-  release:
-    name: Release
+  # Only building/releasing a new image needs the complete application suite.
+  # Incident rollback still validates the deployment scripts, not a broken main build.
+  # ./ binds the caller SHA; actionlint 1.7.12 does not support $/ yet.
+  validate: # zizmor: ignore[self-repository]
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'push' && vars.RELEASE_ON_PUSH == 'true') ||
+       (github.event_name == 'workflow_dispatch' && (inputs.mode == 'build' || inputs.mode == 'release')))
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yaml
+
+  deploy-check:
+    name: Deployment safety
     if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.RELEASE_ON_PUSH == 'true')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify the checked-out deployment scripts
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: Ensure Bats is available
+        run: |
+          if ! command -v bats >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install --yes --no-install-recommends bats
+          fi
+      - run: bash scripts/deploy/test.sh
+
+  release:
+    needs: [validate, deploy-check]
+    name: Release
+    if: >-
+      always() && !cancelled() && github.ref == 'refs/heads/main' &&
+      needs.deploy-check.result == 'success' &&
+      (github.event_name == 'workflow_dispatch' || vars.RELEASE_ON_PUSH == 'true') &&
+      (needs.validate.result == 'success' ||
+       (github.event_name == 'workflow_dispatch' && (inputs.mode == 'image' || inputs.mode == 'traffic')))
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     # Releases and rollbacks never overlap: a new run waits until the running one ends. GitHub keeps only the newest
@@ -54,6 +93,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Verify the checked-out release revision
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
       # Outputs workload_identity_provider and deploy_service_account of infra/data. They are not secret.
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:

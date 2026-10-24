@@ -165,6 +165,13 @@ flowchart TD
     C -->|yes| D["Released"]
 ```
 
+- Before a new image build or release, run the complete CI workflow on the caller's exact source commit.
+  Release validation rejects placeholder engine/image approvals. Validation has read-only repository permissions;
+  only the release job receives cloud credentials.
+- Image and traffic rollback modes do not wait for the application suite. They still run the shared deployment
+  shell checks and Bats tests from the exact source commit. The rollback check does not need the Go module proxy;
+  it installs Bats from apt only when the runner does not already provide it.
+- Both deployment checkouts verify `HEAD` against `GITHUB_SHA` before any cloud authentication or image operation.
 - Build one image for each commit on `main`. Deploy by digest. Keep the last few images for rollbacks.
 - Deploy the worker first, because a new worker route must exist before anything sends to it.
 - Deploy the public service as a tagged canary without traffic. The canary must pass the readiness check
