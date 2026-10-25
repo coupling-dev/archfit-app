@@ -11,7 +11,7 @@ const MaxBytes = 5 << 20
 
 // engineVersions share one verified state-schema key set, oldest first. Historical
 // reports remain readable; only the manifest decides which producer tuple is approved.
-var engineVersions = []string{"v3.0.0", "v3.0.1", "v3.2.0"}
+var engineVersions = []string{"v3.0.0", "v3.0.1", "v3.2.0", "v3.2.2"}
 
 // EngineVersions returns the engine releases whose state document Decode reads.
 func EngineVersions() []string {

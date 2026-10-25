@@ -22,7 +22,7 @@ drift between them would turn honest reports into `policy_mismatch`.
   `comparison.config_hash`. For baseline and labels it is the value the producer states in the upload envelope.
 - `Waivers`: read the `waivers:` list of a policy file into `Waiver` values with parsed expiry instants.
 - `Modules`: list the names, layers and line numbers of the policy's `modules:` map, in file order.
-- `Schema`: the engine v3.2.0 config JSON Schema (`archfit.schema.json`), embedded unchanged.
+- `Schema`: the engine v3.2.2 config JSON Schema (`archfit.schema.json`), embedded unchanged.
 - `Validate`: a structural check that a text is plausibly an engine policy: one YAML mapping whose top-level keys
   all belong to the schema's closed key set and include the required `version`. It keeps foreign text (a report,
   a labels file) out of discovery pull requests; `Diagnose`, which contains it, does the same for saved drafts and
@@ -41,7 +41,7 @@ drift between them would turn honest reports into `policy_mismatch`.
 ## Subdomain Classification
 
 Published language owned by the `archfit` repository; this module is the App's pinned, read-only view of it.
-Supporting. Volatility: moderate, tied to engine releases (config schema pinned v3.2.0).
+Supporting. Volatility: moderate, tied to engine releases (config schema pinned v3.2.2).
 
 ## Encapsulated Knowledge
 
@@ -60,14 +60,14 @@ Supporting. Volatility: moderate, tied to engine releases (config schema pinned 
   `public`, `internal`, `layer` and other keys, among them the allowlists `depends_on` and `visible_to`. Only the
   name, `layer` and the key's line are read.
 - The embedded schema file and its provenance: `archfit.schema.json` copied unchanged from the engine repository
-  at revision `faa4eb4e513859567fd6c380230c91ea22fdaab6` (tag `v3.2.0`). The AI provider/options schema changed. A sibling file `SCHEMA_SOURCE` records the
+  at revision `90c0ca240143329d404eb4eb116b096f607f7dc5` (tag `v3.2.2`). The schema is byte-identical to v3.2.0. A sibling file `SCHEMA_SOURCE` records the
   source revision, the source path and the SHA-256 of the copy **[default]**.
 - One pinned schema **[default]**. Its users are `Diagnose`, `Validate`, the assist
   prompt, and `GET /schema/policy.json` (one route for every repository, for editors outside the App). None of them knows which engine release a
   repository runs: that pin is in the repository's workflow file, which the App does not parse. So the schema is
   the one of the release new workflows pin, `manifest.Current().EngineVersion`, and the parent `wire` test
   `TestPolicySchemaFollowsTheCurrentEngine` fails as soon as `current` moves until this file and `SCHEMA_SOURCE`
-  are re-pinned. The pin is v3.2.0. The schema has an `enum` of the twelve rule types in `rules[].type`, so a
+  are re-pinned. The pin is v3.2.2. The schema has an `enum` of the twelve rule types in `rules[].type`, so a
   misspelled type is an enum miss with a "Did you mean" suggestion instead of passing as free text. It has the rule
   keys `guard`, `from_module`, `to_module`, `rationale`, `docs` (text) and `alternatives` (a list of text), and the
   module keys `depends_on` and `visible_to` (lists of module names or selectors). Whether an allowlist entry or a
@@ -109,7 +109,7 @@ Supporting. Volatility: moderate, tied to engine releases (config schema pinned 
 - The YAML library: the same single third-party dependency as `wire/settings`
   (`go.yaml.in/yaml/v3` **[default]** until `docs/tech-stack.md` names one). `Modules` uses its node API for line numbers.
 - The labels file is opaque here. Only its path and digest are known.
-- The baseline keys the App reads, pinned to engine v3.2.0 (`internal/baseline` at the pinned revision):
+- The baseline keys the App reads, pinned to engine v3.2.2 (`internal/baseline` at the pinned revision):
   `schema_version` (`archfit.baseline.v3`), `accepted[].fingerprint` (the finding ID,
   `hex(sha256(…)[:16])`, so 32 lowercase hex), `accepted[].rule_id`, `state.config_hash` (equal to `Digest` of the
   policy the capture ran under, checked on the corpus captures) and `state.measurement_profile.version`. v3.0.1
@@ -261,7 +261,7 @@ func Waivers(policy []byte) ([]Waiver, error)
 ```
 
 ```go
-// Schema returns the engine v3.2.0 config JSON Schema, embedded unchanged: Diagnose's schema, the assist
+// Schema returns the engine v3.2.2 config JSON Schema, embedded unchanged: Diagnose's schema, the assist
 // prompt's context, and the file served for editors outside the App.
 func Schema() []byte
 ```
@@ -372,7 +372,7 @@ root coupling table.
 | `internal/control/assist`        | assist depends on policy        | Contract | root / 2 / 2              | High       | Yes       |
 | `internal/control/ui`            | ui depends on policy            | Contract | root / 2 / 2              | High       | Yes       |
 | `internal/control/ui/graph`      | graph depends on policy         | Contract | root / 3 / 3              | Moderate   | Yes       |
-| `archfit` engine config (v3.2.0) | policy follows the engine files | Contract | outside the tree; highest | Moderate   | Yes       |
+| `archfit` engine config (v3.2.2) | policy follows the engine files | Contract | outside the tree; highest | Moderate   | Yes       |
 
 The `control/ui/graph` row exists because the graph's stale flag compares `Digest` of the policy text with the
 report's `config_hash`, and its nodes come from `Modules`, so that both rules live in one place.
@@ -538,7 +538,7 @@ at archfit commit `2d20da8`, copied unchanged: a large real policy that `Diagnos
   **Expected behavior**: `a` at line 3 and `b` at line 6 for the capture; for the full fixture every module of the recorded expectation, in order.
 - **Test name**: `TestSchemaIsThePinnedEngineFile`
   **Scenario**: hash `Schema()` and parse it.
-  **Expected behavior**: the SHA-256 equals the one in `SCHEMA_SOURCE`; the revision there is `faa4eb4e…` (tag v3.2.0); valid JSON with `waivers`
+  **Expected behavior**: the SHA-256 equals the one in `SCHEMA_SOURCE`; the revision there is `90c0ca24…` (tag v3.2.2); valid JSON with `waivers`
   and `modules` properties and a `WaiverDef` that requires `rule`, `reason`, `approved_by`, `expires`; two calls return equal but independent slices.
 - **Test name**: `TestPathConstants`
   **Scenario**: read the constants.

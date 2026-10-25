@@ -151,67 +151,61 @@ jobs:
           persist-credentials: false
       - run: docker build -t archfit-app:ci .
 
-  # The App owns the envelope schema; archfit-action vendors a copy (decisions.md §3). action-conformance checks the
-  # copy at the Action commit that generated workflows pin. If the manifest ever pins a placeholder commit there is
-  # nothing to check: action-pin says so in a warning and the step summary, and action-conformance shows as skipped.
+  # Qualify every distinct manifest Action commit against the App-owned envelope schema. Keep these jobs static:
+  # both names are required checks, including during a transition with more than one supported engine release.
   action-pin:
     name: Pinned Action commit
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
-      placeholder: ${{ steps.pin.outputs.placeholder }}
-      ref: ${{ steps.pin.outputs.ref }}
+      refs: ${{ steps.pin.outputs.refs }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - id: pin
-        name: Read the pinned Action commit
+        name: Read the pinned Action commits
         run: |
-          refs=$(jq -r '[.entries[].action_ref] | unique | .[]' internal/wire/manifest/manifest.json)
-          if [[ $(grep -c . <<<"$refs") -ne 1 ]]; then
-            echo "::error::manifest rows pin different action_ref values; the conformance check needs one Action commit"
-            exit 1
-          fi
-          ref=$refs
-          # A placeholder is one repeated character, the rule of TestManifestHasNoPlaceholdersInRelease.
-          if [[ -z $(tr -d "${ref:0:1}" <<<"$ref") ]]; then
-            echo "::warning title=Action conformance not verified::action_ref $ref is a placeholder; the vendored envelope schema of archfit-action was not compared"
-            {
-              echo "### Action envelope schema: not verified"
-              echo ""
-              echo "The manifest pins the placeholder action_ref \`$ref\`. No archfit-action commit was checked out and"
-              echo "\`schema/envelope.v1.schema.json\` was not compared with \`internal/wire/envelope/envelope.v1.schema.json\`."
-            } >>"$GITHUB_STEP_SUMMARY"
-            echo "placeholder=true" >>"$GITHUB_OUTPUT"
-          else
-            echo "placeholder=false" >>"$GITHUB_OUTPUT"
-          fi
-          echo "ref=$ref" >>"$GITHUB_OUTPUT"
+          set -euo pipefail
+          refs=$(jq -ce '[.entries[].action_ref] | if length > 0 and all(.[]; type == "string" and length == 40 and test("^[0-9a-f]{40}$")) then unique else error("manifest needs nonempty 40-hex Action refs") end' internal/wire/manifest/manifest.json)
+          while IFS= read -r ref; do
+            if [[ -z ${ref//${ref:0:1}/} ]]; then
+              echo "::error::manifest Action ref is a placeholder: $ref"
+              exit 1
+            fi
+          done < <(jq -r '.[]' <<<"$refs")
+          echo "refs=$refs" >>"$GITHUB_OUTPUT"
 
   action-conformance:
     name: Action envelope schema
     needs: action-pin
-    if: needs.action-pin.outputs.placeholder == 'false'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: alexei-led/archfit-action
-          ref: ${{ needs.action-pin.outputs.ref }}
-          path: archfit-action
-          persist-credentials: false
-      - name: Compare the vendored envelope schema
+      - name: Compare every vendored envelope schema
         env:
-          REF: ${{ needs.action-pin.outputs.ref }}
+          ACTION_REFS: ${{ needs.action-pin.outputs.refs }}
         run: |
-          if ! cmp -s internal/wire/envelope/envelope.v1.schema.json archfit-action/schema/envelope.v1.schema.json; then
-            echo "::error::archfit-action@$REF vendors a different envelope schema; re-vendor schema/envelope.v1.schema.json there, then pin the new commit"
-            diff -u internal/wire/envelope/envelope.v1.schema.json archfit-action/schema/envelope.v1.schema.json || true
-            exit 1
-          fi
-          echo "### Action envelope schema: identical at archfit-action@\`$REF\`" >>"$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          refs=$(jq -er 'if type == "array" and length > 0 and all(.[]; type == "string" and length == 40 and test("^[0-9a-f]{40}$")) then .[] else error("invalid Action refs") end' <<<"$ACTION_REFS")
+          # The hosted runner removes its temporary directory after the job.
+          checkout=$(mktemp -d "$RUNNER_TEMP/action-conformance.XXXXXX")
+          git -C "$checkout" init --quiet
+          while IFS= read -r ref; do
+            if [[ -z ${ref//${ref:0:1}/} ]]; then
+              echo "::error::placeholder Action ref: $ref"
+              exit 1
+            fi
+            git -C "$checkout" fetch --quiet --depth=1 https://github.com/alexei-led/archfit-action.git "$ref"
+            test "$(git -C "$checkout" rev-parse FETCH_HEAD)" = "$ref"
+            git -C "$checkout" show FETCH_HEAD:schema/envelope.v1.schema.json >"$checkout/envelope.json"
+            if ! cmp -s internal/wire/envelope/envelope.v1.schema.json "$checkout/envelope.json"; then
+              echo "::error::archfit-action@$ref vendors a different envelope schema; re-vendor it and pin the new commit"
+              diff -u internal/wire/envelope/envelope.v1.schema.json "$checkout/envelope.json" || true
+              exit 1
+            fi
+            echo "### Action envelope schema: identical at archfit-action@\`$ref\`" >>"$GITHUB_STEP_SUMMARY"
+          done <<<"$refs"

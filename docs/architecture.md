@@ -286,17 +286,17 @@ for recovery actions.
 
 Approval and readability are separate contracts:
 
-- `wire/manifest` approves only engine v3.2.0, with two published Linux platform digests and one current amd64 row.
-- `wire/report` reads v3.2.0 and historical v3.0.0/v3.0.1 using their identical state-schema key set.
+- `wire/manifest` approves exact v3.2.2 and transition v3.2.0 Linux platform tuples, with one current v3.2.2 amd64 row.
+- `wire/report` reads v3.2.2, v3.2.0 and historical v3.0.0/v3.0.1 using their identical state-schema key set.
   Unknown keys and unknown releases fail decoding. Historical readability grants no producer approval.
-- `wire/policy` embeds the v3.2.0 config schema. Its AI provider/options differ from the old schema.
+- `wire/policy` embeds the v3.2.2 config schema, byte-identical to v3.2.0.
 - The gate uses the structured decision, trusted input bindings, measurement identity, and gate reference.
   Origin remains display-only. A missing producer or required rule cannot become a healthy zero.
 
-New workflows pin Action v2.2.0 by `cadf35c0d4885a49a3a1482b876f2a456d20de06` and its matching engine platform digest.
-The Action requires v3.2.0, requests fresh measurements, and passes only fixed HOME and checkout-scoped Git settings.
+New workflows pin Action commit `e0a1ef9473d68b426e9c56b2da5986bcee2fc769` and its matching engine platform digest.
+This Action commit accepts v3.2.2 only and requires explicit engine-version and platform-digest inputs, requests fresh measurements, and passes only fixed HOME and checkout-scoped Git settings.
 It forwards no credentials. The container is not network-isolated, and reports remain customer-attested.
-The `action-conformance` CI job verifies that the pinned Action carries the App's unchanged envelope schema.
+The `action-conformance` CI job verifies every distinct manifest Action commit against the App's unchanged envelope schema.
 
 Tests require an actual release capture, a readable state schema, a matching policy-schema pin, exact platform tuples,
 and rejection of old approvals. Baseline v3 remains readable, including historical fields removed by v3.0.1.

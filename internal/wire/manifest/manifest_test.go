@@ -145,7 +145,7 @@ func TestManifestValidationRules(t *testing.T) {
 // TestApprovedEngineVersions lists the shipped releases; change it with manifest.json.
 func TestApprovedEngineVersions(t *testing.T) {
 	got := EngineVersions()
-	if want := []string{"v3.2.0"}; !slices.Equal(got, want) {
+	if want := []string{"v3.2.2", "v3.2.0"}; !slices.Equal(got, want) {
 		t.Errorf("EngineVersions() = %q, want %q", got, want)
 	}
 	got[0] = "changed"
@@ -496,7 +496,7 @@ func TestWrongImageIsNotApproved(t *testing.T) {
 	}
 }
 
-// TestOlderEngineIsNotApproved: only the v3.2.0 tuple is approved, including for still-readable older reports.
+// TestOlderEngineIsNotApproved: retired tuples stay unapproved during the v3.2 patch transition, including for still-readable older reports.
 func TestOlderEngineIsNotApproved(t *testing.T) {
 	for _, id := range []Identity{
 		{EngineVersion: "v3.0.1", ImageDigest: "sha256:9aac269fa350e643054cbe5ced58426b4ed46000f30d60f49564aa605ece2408", Platform: "linux/amd64"},
@@ -524,8 +524,10 @@ func TestGeneratedWorkflowInputsArePinned(t *testing.T) {
 }
 
 func TestReleasedApprovalTuples(t *testing.T) {
-	const action = "cadf35c0d4885a49a3a1482b876f2a456d20de06"
+	const action = "e0a1ef9473d68b426e9c56b2da5986bcee2fc769"
 	want := []Identity{
+		{EngineVersion: "v3.2.2", ImageDigest: "sha256:bd351ac70610555237974fac5ff914967a1100fb8ef754853151300d5d19ca35", Platform: "linux/amd64"},
+		{EngineVersion: "v3.2.2", ImageDigest: "sha256:e97a200a7c26907e4d30982b06e61ac7cc27bffd1d46002ad53bbf6b6594c479", Platform: "linux/arm64"},
 		{EngineVersion: "v3.2.0", ImageDigest: "sha256:5f2d4a5fff1ace10d7b08937429179631ae0c1d0e1f9e6f37c72b30954cf00db", Platform: "linux/amd64"},
 		{EngineVersion: "v3.2.0", ImageDigest: "sha256:725c3a074358df8ea41881296eda06b07daed7934d7a6d40bb1ecfc3c8a8128d", Platform: "linux/arm64"},
 	}
@@ -540,7 +542,11 @@ func TestReleasedApprovalTuples(t *testing.T) {
 	}
 	for _, id := range want {
 		e, ok := Lookup(id)
-		if !ok || e.ActionRef != action || e.ProfileVersion != "archfit.measurement.v2" {
+		wantAction := action
+		if id.EngineVersion == "v3.2.0" {
+			wantAction = "cadf35c0d4885a49a3a1482b876f2a456d20de06"
+		}
+		if !ok || e.ActionRef != wantAction || e.ProfileVersion != "archfit.measurement.v2" {
 			t.Errorf("released identity %s: entry=%+v, approved=%v", id.Platform, e, ok)
 		}
 	}
@@ -550,5 +556,20 @@ func TestReleasedApprovalTuples(t *testing.T) {
 	index := Identity{EngineVersion: "v3.2.0", ImageDigest: "sha256:36e8d4e2d7e3eb15246888b386cb82e7b495607f1fb536a593d2ee733391f886", Platform: "linux/amd64"}
 	if _, ok := Lookup(index); ok {
 		t.Error("the OCI index digest must not be approved as a platform image")
+	}
+}
+
+func TestPatchTransitionRejectsMixedAndUnknownTuples(t *testing.T) {
+	current := Current().Identity
+	for _, id := range []Identity{
+		{EngineVersion: "v3.2.2", ImageDigest: "sha256:47575b70d4602859011fecfc9c01c4d6a653f38c033cc880350f301a1ba5f07b", Platform: "linux/amd64"},
+		{EngineVersion: "v3.2.2", ImageDigest: current.ImageDigest, Platform: "linux/arm64"},
+		{EngineVersion: "v3.2.0", ImageDigest: current.ImageDigest, Platform: current.Platform},
+		{EngineVersion: "v3.2.1", ImageDigest: current.ImageDigest, Platform: current.Platform},
+		{EngineVersion: "v3.2.3", ImageDigest: current.ImageDigest, Platform: current.Platform},
+	} {
+		if _, ok := Lookup(id); ok {
+			t.Errorf("unapproved tuple hit: %+v", id)
+		}
 	}
 }

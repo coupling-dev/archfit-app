@@ -30,9 +30,9 @@ core modules, which is why everything here is contract-strength and strictly ver
 
 - The rule for what belongs here: transport types, schemas, strict decoding, digests. No domain decisions, no I/O.
 - The fixture corpus: its layout, the named cases, and the producer artifact each one was captured from.
-- Current engine schemas are pinned to v3.2.0 at `faa4eb4e513859567fd6c380230c91ea22fdaab6`.
+- Current engine schemas are pinned to v3.2.2 at `90c0ca240143329d404eb4eb116b096f607f7dc5`, byte-identical to v3.2.0.
   The state schema is byte-identical to historical v3.0.0/v3.0.1; the config schema's AI fields changed.
-  Action v2.2.0 is pinned at `cadf35c0d4885a49a3a1482b876f2a456d20de06`. The App still owns the unchanged envelope schema.
+  New workflows pin Action commit `e0a1ef9473d68b426e9c56b2da5986bcee2fc769`; transition v3.2.0 rows retain Action v2.2.0 at `cadf35c0d4885a49a3a1482b876f2a456d20de06`. The App still owns the unchanged envelope schema.
 - Each child's internals (decoder technique, caps, file formats) stay in that child.
 
 ## Public Contract
@@ -55,13 +55,13 @@ child is normative in the child's own `module.md`; it is not restated here.
 
 - Every contract carries a version identifier: envelope `archfit.report-envelope.v1`; report
   `archfit.architecture-state.v1`; settings file `version: 1`; manifest data `version: 1`; policy follows the
-  engine release of the manifest's `current` row, v3.2.0 today; the engine baseline file `archfit.baseline.v3`.
+  engine release of the manifest's `current` row, v3.2.2 today; the engine baseline file `archfit.baseline.v3`.
 - Unknown fields are rejected by every decoder here. Three deliberate nuances: the policy readers ignore
-  engine-owned keys they do not read; the report decoder knows every key of the engine v3.0.0/v3.0.1/v3.2.0 state schema and
+  engine-owned keys they do not read; the report decoder knows every key of the engine v3.0.0/v3.0.1/v3.2.0/v3.2.2 state schema and
   drops the known keys that are not allowlisted, while a key that schema does not define is still an error;
   the baseline reader (`policy.ReadBaseline`) ignores baseline keys it does not read, as the engine's own decoder does.
 - The envelope `kind` enum gained `baseline` inside v1: a new accepted value is additive, so the version stays.
-- The manifest approves v3.2.0 only, with one Action SHA and two exact platform digests.
+- The manifest approves v3.2.2 and transition v3.2.0, with one Action SHA and two exact platform digests per release. Only v3.2.2 amd64 is current.
   The decoder also reads historical v3.0.0/v3.0.1 through their identical state schema. Readability is not approval.
   Engine/Action releases provide actual identities and captures before the App replaces its approval rows.
   After App deployment, owners update installed workflows by pull request. No automatic pin, baseline, or debt change occurs.
@@ -150,8 +150,8 @@ tampering fixture overrides `baseline_digest` with a value outside `trusted_base
 `facts` fails the corpus test.
 
 Fixtures captured from the engine cite their engine release and that release's pinned revision (v3.0.0:
-`bbd658f0…`; v3.0.1: `0649e504…`; v3.2.0: `faa4eb4e…`); fixtures from a mutable branch are not allowed. A capture is a document of its own
-release; every synthetic fixture uses the current v3.2.0 key set. The tests, and every consumer test that reads the whole
+`bbd658f0…`; v3.0.1: `0649e504…`; v3.2.0: `faa4eb4e…`; v3.2.2: `90c0ca24…`); fixtures from a mutable branch are not allowed. A capture is a document of its own
+release; every synthetic fixture uses the current v3.2.2 key set. The tests, and every consumer test that reads the whole
 corpus, decode each fixture as its release; the known releases share one key set.
 Required report fixtures (plan T02): `healthy`, `attention-pass` (verdict `needs_attention` with passing hard
 gates), `blocked`, `missing-evidence` (`hard_gates: unmeasured`), `unknown-identity`, `profile-comparable` (symmetric
@@ -192,7 +192,13 @@ tag v3.0.1 plus a module `c` and a fail-gated rule against it; the head adds the
 same accepted findings and policy, a baseline without `state.dimensions` and `state.hard_gate_finding_ids`, and the
 same check report up to the Go toolchain version.
 
-Four v3.2.0 captures are current: `real-v320-blocked-no-baseline`, `real-v320-baselined-comparable`,
+The current `real-v322-blocked-no-baseline` report/envelope pair was emitted by the released native arm64 image
+through the qualified Action commit. The unmodified baseline/reanchor outputs and their provenance are in
+[`testdata/release-v322/SOURCE.md`](testdata/release-v322/SOURCE.md). Tests bind all five capture hashes, preserve N/A
+encapsulation omission and measured cycle zero, and structurally read both baseline outputs. No authenticated upload
+or execution of the engine's reanchor algorithm is claimed by these App tests.
+
+Four v3.2.0 captures remain transition evidence: `real-v320-blocked-no-baseline`, `real-v320-baselined-comparable`,
 `real-v320-pr-origin`, and `real-v320-missing-compiler`. Reports and captured baseline/envelope bytes are unmodified.
 The first three use the released native arm64 image through released Action stages on controlled scratch repositories.
 Their event identity is synthetic test input, not authenticated remote proof. The missing-compiler report comes from
@@ -245,13 +251,13 @@ External counterparts, reached only through these contracts:
 
 | Counterpart                       | Direction                                       | Strength                    | LCA / Rank / Distance     | Volatility | Balanced? |
 | --------------------------------- | ----------------------------------------------- | --------------------------- | ------------------------- | ---------- | --------- |
-| `archfit` engine (v3.2.0)         | report, policy, manifest follow engine releases | Contract (versioned schema) | outside the tree; highest | Moderate   | Yes       |
+| `archfit` engine (v3.2.2)         | report, policy, manifest follow engine releases | Contract (versioned schema) | outside the tree; highest | Moderate   | Yes       |
 | `archfit-action` (external repo)  | the Action conforms to envelope and report      | Contract (JSON Schema)      | outside the tree; highest | Moderate   | Yes       |
 | customer repositories (the files) | customers write settings and policy files       | Contract (versioned file)   | outside the tree; highest | Moderate   | Yes       |
 
 Shared knowledge: with the engine, the complete state schema key set, its enums and decision semantics, the config
 schema, waiver keys, the `modules` map shape, the three input file names, the bare-hex hashing rule and released
-identities, pinned at revision `faa4eb4e513859567fd6c380230c91ea22fdaab6` (v3.2.0) and verified against real reports; with the Action, the envelope schema, both digest rules and the no-source transport; with customers, the settings field rules. Separate repositories and release cycles are the highest
+identities, with current schemas pinned at revision `90c0ca240143329d404eb4eb116b096f607f7dc5` (v3.2.2) and verified against real reports; with the Action, the envelope schema, both digest rules and the no-source transport; with customers, the settings field rules. Separate repositories and release cycles are the highest
 distance the system has. Contract coupling with explicit versions, strict decoding and a shared fixture corpus is
 what keeps it balanced.
 
@@ -320,7 +326,7 @@ Parent tests live in package `wire_test` and exercise the children together and 
   **Expected behavior**: each contains `LEAK-7f3a`; all have `decode: "error"` except the one surviving declarations fixture, which has `decode: "ok"`.
 - **Test name**: `TestPinnedEngineSchemaIsRecorded`
   **Scenario**: read `testdata/schema/`.
-  **Expected behavior**: `archfit.state.schema.json` is present with a source note citing tag `v3.2.0`, revision `faa4eb4e513859567fd6c380230c91ea22fdaab6` and its SHA-256; the hash matches.
+  **Expected behavior**: `archfit.state.schema.json` is present with a source note citing tag `v3.2.2`, revision `90c0ca240143329d404eb4eb116b096f607f7dc5` and its SHA-256; the hash matches.
 
 ### Integration Contract Tests
 

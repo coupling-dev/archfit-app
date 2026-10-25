@@ -423,13 +423,13 @@ no approval is needed any more.
 
 ### Engine versions
 
-The locked manifest approves engine v3.2.0 on Linux amd64 and arm64, with Action v2.2.0 at commit
-`cadf35c0d4885a49a3a1482b876f2a456d20de06`. Exactly one amd64 row is the default for new workflows.
+The locked manifest approves engine v3.2.2 and the transition release v3.2.0 on Linux amd64 and arm64. New v3.2.2 workflows pin Action commit
+`e0a1ef9473d68b426e9c56b2da5986bcee2fc769`; transition v3.2.0 rows retain Action v2.2.0 at `cadf35c0d4885a49a3a1482b876f2a456d20de06`. Exactly one v3.2.2 amd64 row is the default for new workflows and recovery pins.
 
-- Only these new tuples are approved. Old workflow pins give `action_required` with `unknown_engine_identity`.
-- Historical v3.0.0/v3.0.1 reports remain readable because their state schema matches v3.2.0.
+- Existing approved v3.2.0 platform tuples remain approved during rollout. Retired or unknown pins give `action_required` with `unknown_engine_identity`.
+- Historical v3.0.0/v3.0.1 reports remain readable because their state schema matches v3.2.0/v3.2.2.
   Reading an old report does not approve its identity. Unknown report releases give `report_invalid`.
-- The policy editor uses the v3.2.0 config schema. The engine's check remains the authority for policy semantics.
+- The policy editor uses the byte-identical v3.2.2 config schema. The engine's check remains the authority for policy semantics.
 - Pull-request origin comes from `--base <merge base>`. It is display evidence, never an exemption from a blocker.
 
 #### Move an installed workflow to a new engine
@@ -437,15 +437,15 @@ The locked manifest approves engine v3.2.0 on Linux amd64 and arm64, with Action
 After the App release approves the new tuple, open an owner-reviewed pull request changing only these pins:
 
 ```yaml
-      - uses: alexei-led/archfit-action@cadf35c0d4885a49a3a1482b876f2a456d20de06
+      - uses: alexei-led/archfit-action@e0a1ef9473d68b426e9c56b2da5986bcee2fc769
         with:
           # endpoint, audience and mode stay as they are
-          engine-version: "v3.2.0"
-          image-digest: "sha256:5f2d4a5fff1ace10d7b08937429179631ae0c1d0e1f9e6f37c72b30954cf00db"
+          engine-version: "v3.2.2"
+          image-digest: "sha256:bd351ac70610555237974fac5ff914967a1100fb8ef754853151300d5d19ca35"
 ```
 
 This example is for an amd64 Linux runner. Use the manifest's arm64 digest on an arm64 runner.
-The Action supports v3.2.0 only. Keep the repository's settings, policy owners, and gate mode unchanged.
+This Action commit accepts v3.2.2 only. Pass that engine version and its exact platform digest explicitly. Keep the repository's settings, policy owners, and gate mode unchanged.
 The App does not update installed workflow files automatically.
 
 Run a fresh scan after moving the pins. Missing compiler or required-rule evidence cannot be repaired by a baseline approval.
