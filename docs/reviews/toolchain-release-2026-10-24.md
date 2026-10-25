@@ -1,6 +1,6 @@
 # Coordinated toolchain release: execution record
 
-Checkpoint: engine v3.2.0 publication started, 2026-10-25. PR86 merged. No App deployment.
+Checkpoint: engine v3.2.0 published and verified, 2026-10-25. Action adoption is under review. No App deployment.
 
 ## Authority and isolation
 
@@ -18,7 +18,7 @@ Do not restart, reset, or update them as part of this release.
 | Repository | Branch | Commit | State |
 | --- | --- | --- | --- |
 | Engine | `upgrade/analysis-integration` | `451a52a4f56357c5e061261980dd7e21f97f7531` | Draft [PR86](https://github.com/alexei-led/archfit/pull/86) |
-| Action | `upgrade/engine-3-2` | `fbd9a9550bef72a3ff84840ffc4ce459d47ee501` | Local guard commit, independently reviewed |
+| Action | `upgrade/engine-3-2` | `9e94db278a12578aa268aa8894d5920286ec587c` | Local adoption commit, review pending |
 | App | `upgrade/engine-3-2` | `ae7b978832b1e9b88054e117b1d970acb5e0d487` | Local deployment-validation and rollback guard |
 
 Engine changes provide owned dependency-cruiser/Node execution, isolated Python readers, JavaScript syntax facts, Cargo-backed SCIP attribution, and a locked complete image.
@@ -98,8 +98,25 @@ PR86 merged as `faa4eb4e513859567fd6c380230c91ea22fdaab6`.
 Its Git tree `201033b3d079e78175a22a14cce9d0f7587c4ae6` exactly matches the tested `451a52a4` candidate.
 The signed annotated v3.2.0 tag points to that merge commit. Its tag object is `0c673aa3e19e83f0dee7881d2df1faba1ff6680b`.
 The tag annotation comes from the committed release-notes section. Signature verification passed.
-[Release run40172977752](https://github.com/alexei-led/archfit/actions/runs/40172977752) is running.
-The tag is published. Final release assets and platform digests are not yet verified or approved.
+[Release run40172977752](https://github.com/alexei-led/archfit/actions/runs/40172977752) passed, including Homebrew update.
+[Engine v3.2.0](https://github.com/alexei-led/archfit/releases/tag/v3.2.0) is published, not draft or prerelease.
+All four downloaded binaries passed the published checksums. The native Darwin binary reports v3.2.0 and source `faa4eb4`.
+Both immutable release platform images passed 133/133 assertions. The registry index and platform descriptors independently match `image-identity.json`.
+
+| OCI identity | Digest |
+| --- | --- |
+| Index, not a platform pin | `sha256:36e8d4e2d7e3eb15246888b386cb82e7b495607f1fb536a593d2ee733391f886` |
+| linux/amd64 | `sha256:5f2d4a5fff1ace10d7b08937429179631ae0c1d0e1f9e6f37c72b30954cf00db` |
+| linux/arm64 | `sha256:725c3a074358df8ea41881296eda06b07daed7934d7a6d40bb1ecfc3c8a8128d` |
+
+Action adoption commit `9e94db2` adds those actual identities, fresh measurements, genuine release captures, and native two-platform CI.
+Local conformance passed 486 assertions plus 97 report-guard assertions. Real published-arm64 Action smoke passed 31 assertions.
+A local bind-mount ownership failure was reproduced: Git rejected root-owned `/src` mountpoints for runner UID 502.
+Fixed container-only `safe.directory=/src` settings restore history and fresh baseline comparability. No host/global or wildcard trust is added.
+Independent review and both GitHub native Action-mode jobs remain required before Action publication.
+Latest actionlint v1.7.12 predates GitHub's July 2026 `$/` syntax and reports it as unsupported.
+Official GitHub docs and zizmor v1.31.1 support the syntax. The actual GitHub composite-wiring job must validate it.
+No linter severity was lowered and no audit was suppressed for this limitation.
 
 Fix the measurement environment first, then inspect fresh results and review the baseline migration.
 A baseline approval cannot repair missing compiler evidence. Changed measurements do not by themselves prove new code regressions.
