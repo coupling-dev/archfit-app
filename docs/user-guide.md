@@ -423,44 +423,39 @@ no approval is needed any more.
 
 ### Engine versions
 
-The App approves engine images in a locked manifest. It approves one engine release: v3.0.1. New workflows pin
-v3.0.1 and `archfit-action` commit `7efc29b5a2785fb0537a2617cddf3873b7d27e10` (v2.1.0).
+The locked manifest approves engine v3.2.0 on Linux amd64 and arm64, with Action v2.2.0 at commit
+`cadf35c0d4885a49a3a1482b876f2a456d20de06`. Exactly one amd64 row is the default for new workflows.
 
-- The manifest approves engine v3.0.1 only. A report from any other engine gives `action_required`.
-  Use the engine image that the onboarding workflow pins.
-- A report from an image that the manifest does not list gives `unknown_engine_identity`. This includes engine
-  v3.0.0, which the App approved before v3.0.1. A report that the App cannot read gives `report_invalid`. Both end
-  `action_required`.
-- The policy editor validates with the config schema of engine v3.0.1. The Archfit check on the draft
-  pull request shows that error.
-- On a pull request the Action compares the head with the merge base (`--base`), so each finding shows whether the
-  pull request introduced it. Origin is for display only: the conclusion does not change. A pull request run takes
-  about two engine passes.
+- Only these new tuples are approved. Old workflow pins give `action_required` with `unknown_engine_identity`.
+- Historical v3.0.0/v3.0.1 reports remain readable because their state schema matches v3.2.0.
+  Reading an old report does not approve its identity. Unknown report releases give `report_invalid`.
+- The policy editor uses the v3.2.0 config schema. The engine's check remains the authority for policy semantics.
+- Pull-request origin comes from `--base <merge base>`. It is display evidence, never an exemption from a blocker.
 
 #### Move an installed workflow to a new engine
 
-You add `.github/workflows/archfit.yaml` once, during onboarding. The App never writes or updates it. After an
-App release that approves a new engine, a repository on the old pin gets `action_required` with
-`unknown_engine_identity` on every report, and a baseline or re-anchor upload is refused with the same code. Open a
-pull request that changes three values of the Archfit step, and nothing else:
+After the App release approves the new tuple, open an owner-reviewed pull request changing only these pins:
 
 ```yaml
-      - uses: alexei-led/archfit-action@7efc29b5a2785fb0537a2617cddf3873b7d27e10
+      - uses: alexei-led/archfit-action@cadf35c0d4885a49a3a1482b876f2a456d20de06
         with:
           # endpoint, audience and mode stay as they are
-          engine-version: "v3.0.1"
-          image-digest: "sha256:9aac269fa350e643054cbe5ced58426b4ed46000f30d60f49564aa605ece2408"
+          engine-version: "v3.2.0"
+          image-digest: "sha256:5f2d4a5fff1ace10d7b08937429179631ae0c1d0e1f9e6f37c72b30954cf00db"
 ```
 
-The Action and the engine move together: Action `7efc29b` refuses engine v3.0.0, and the v3.0.0 Action
-(`dbc3c1e`) refuses v3.0.1. The workflow file is a protected path, so an architecture owner approves the pull
-request. Its own run uses the new pin and passes the identity check.
+This example is for an amd64 Linux runner. Use the manifest's arm64 digest on an arm64 runner.
+The Action supports v3.2.0 only. Keep the repository's settings, policy owners, and gate mode unchanged.
+The App does not update installed workflow files automatically.
 
-The stored baseline still loads: the App ignores `state.dimensions` and `state.hard_gate_finding_ids`, which engine
-v3.0.1 no longer writes. It does not compare. The measurement profile records the tool versions inside the engine
-image, and the Go toolchain in the image changed between v3.0.0 and v3.0.1. After the move, every report ends
-`baseline_not_comparable` until the baseline is re-anchored. Merge the pin change first, then
-[re-anchor](#re-anchor-after-an-engine-or-profile-change) on the default branch and merge the baseline pull request.
+Run a fresh scan after moving the pins. Missing compiler or required-rule evidence cannot be repaired by a baseline approval.
+If the engine reports `baseline_not_comparable`, review the reference migration separately and
+[re-anchor](#re-anchor-after-an-engine-or-profile-change) on the default branch. Preserve accepted debt and inspect every dropped or unaccepted finding.
+Do not replace the baseline with an unchecked capture.
+
+The baseline format remains `archfit.baseline.v3`. Historical `state.dimensions` and `state.hard_gate_finding_ids`
+are ignored, as since v3.0.1. Tool versions and producer semantics are part of comparability.
+An unchanged `archfit.measurement.v2` format identifier alone does not make old and new measurements comparable.
 
 ### Report limits
 

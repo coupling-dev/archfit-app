@@ -389,7 +389,7 @@ func TestWrongSchemaVersion(t *testing.T) {
 
 func TestEngineVersions(t *testing.T) {
 	got := EngineVersions()
-	if want := []string{"v3.0.0", "v3.0.1"}; !slices.Equal(got, want) {
+	if want := []string{"v3.0.0", "v3.0.1", "v3.2.0"}; !slices.Equal(got, want) {
 		t.Errorf("EngineVersions() = %q, want %q", got, want)
 	}
 	got[0] = "changed"
@@ -584,5 +584,25 @@ func TestRootImporterCapture(t *testing.T) {
 	}
 	if !slices.Contains(task.Constraints, "rationale: billing is reached only through the shop checkout") {
 		t.Errorf("task constraints = %q, want the rationale entry", task.Constraints)
+	}
+}
+
+func TestReleasedPullRequestCaptureCarriesOrigin(t *testing.T) {
+	r := mustDecodeAs(t, loadFixture(t, "report/real-v320-pr-origin.json"), "v3.2.0")
+	if r.Comparison.OriginStatus != "comparable" || r.Decision.HardGates != "fail" || len(r.Findings) == 0 {
+		t.Fatalf("comparison=%+v, decision=%+v, findings=%d", r.Comparison, r.Decision, len(r.Findings))
+	}
+	for _, f := range r.Findings {
+		if f.Origin != "introduced" {
+			t.Errorf("finding %s origin=%q, want introduced", f.RuleID, f.Origin)
+		}
+	}
+	if len(r.AgentTasks) == 0 {
+		t.Fatal("no introduced repair task")
+	}
+	for _, task := range r.AgentTasks {
+		if task.Origin != "introduced" {
+			t.Errorf("task %s origin=%q, want introduced", task.RuleID, task.Origin)
+		}
 	}
 }

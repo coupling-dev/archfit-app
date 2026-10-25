@@ -284,33 +284,27 @@ for recovery actions.
 
 ## Engine releases
 
-An engine upgrade needs no flag day. Three `wire` packages share the rule:
+Approval and readability are separate contracts:
 
-- `wire/manifest` approves engine images by rows. The App approves one release, v3.0.1.
-- `wire/report` reads a report with the key set of v3.0.0 and v3.0.1, which emit the same state schema. A key that
-  the schema does not define is a decode error.
-- The gate decides from the verdict, the hard gates, the unevaluated required rules, the config hash, the
-  measurement-profile version, and the gate reference.
-- `wire/policy` keeps one engine config schema, the v3.0.1 schema (byte-identical to v3.0.0).
+- `wire/manifest` approves only engine v3.2.0, with two published Linux platform digests and one current amd64 row.
+- `wire/report` reads v3.2.0 and historical v3.0.0/v3.0.1 using their identical state-schema key set.
+  Unknown keys and unknown releases fail decoding. Historical readability grants no producer approval.
+- `wire/policy` embeds the v3.2.0 config schema. Its AI provider/options differ from the old schema.
+- The gate uses the structured decision, trusted input bindings, measurement identity, and gate reference.
+  Origin remains display-only. A missing producer or required rule cannot become a healthy zero.
 
-The manifest approves the published images of v3.0.1 and nothing else. The decoder still reads v3.0.0 reports, so a
-workflow pinned to v3.0.0 gets `unknown_engine_identity` (move the pin), not `report_invalid`. New workflows pin
-v3.0.1 (`current`), and the policy editor uses the v3.0.1 config schema. The App reads v3 baselines: a v3.0.0 file
-still carries `state.dimensions` and `state.hard_gate_finding_ids`, v3.0.1 no longer writes them, and the reader
-ignores both. Earlier releases and their baselines are not read.
-Tests in `internal/wire` stop a manifest row for a release that the decoder cannot read, that has no real capture
-in the fixture corpus, or whose config schema is not pinned when new workflows move to it.
+New workflows pin Action v2.2.0 by `cadf35c0d4885a49a3a1482b876f2a456d20de06` and its matching engine platform digest.
+The Action requires v3.2.0, requests fresh measurements, and passes only fixed HOME and checkout-scoped Git settings.
+It forwards no credentials. The container is not network-isolated, and reports remain customer-attested.
+The `action-conformance` CI job verifies that the pinned Action carries the App's unchanged envelope schema.
 
-Generated workflows pin `archfit-action` v2.1.0 by commit `7efc29b5a2785fb0537a2617cddf3873b7d27e10`, the manifest
-`action_ref`. That commit runs engine v3.0.1 only, and on a pull request it runs the check with `--base <merge base>`,
-so the report carries each finding's origin; the gate does not read origin. The `action-conformance` CI job checks
-out that commit and fails when its vendored `schema/envelope.v1.schema.json` differs from
-`internal/wire/envelope/envelope.v1.schema.json`.
+Tests require an actual release capture, a readable state schema, a matching policy-schema pin, exact platform tuples,
+and rejection of old approvals. Baseline v3 remains readable, including historical fields removed by v3.0.1.
+A readable baseline is not necessarily comparable under new tool versions or producer semantics.
 
-The App renders the workflow only for onboarding. It does not update an installed workflow, and nothing reports an
-outdated pin except the gate: after an App release that moves `current`, a repository still on the old pin gets
-`action_required` with `unknown_engine_identity` until an owner merges a pull request that changes the three pinned
-values (see the [user guide](user-guide.md#engine-versions)).
+The App does not update installed workflows. After approval cutover, old pins produce `action_required` until an owner
+merges the three-pin update from the [user guide](user-guide.md#engine-versions).
+Review baseline migration only after the new producer supplies complete required evidence.
 
 ## Webhooks and the sweep
 

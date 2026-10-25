@@ -30,10 +30,9 @@ core modules, which is why everything here is contract-strength and strictly ver
 
 - The rule for what belongs here: transport types, schemas, strict decoding, digests. No domain decisions, no I/O.
 - The fixture corpus: its layout, the named cases, and the producer artifact each one was captured from.
-- The pinned external revisions the contracts were taken from: engine `archfit` v3.0.1 at
-  `0649e504a6761f565086b342d315110feeb27d77` (state schema, config schema; both files are byte-identical to v3.0.0 at
-  `bbd658f008bcc4bc83e063cf305d20dc4508da2e`); `archfit-action` at `4759dd985bff385af5c2dee2c918a0eced59f4f3`
-  (plan inventory of 20 September 2026).
+- Current engine schemas are pinned to v3.2.0 at `faa4eb4e513859567fd6c380230c91ea22fdaab6`.
+  The state schema is byte-identical to historical v3.0.0/v3.0.1; the config schema's AI fields changed.
+  Action v2.2.0 is pinned at `cadf35c0d4885a49a3a1482b876f2a456d20de06`. The App still owns the unchanged envelope schema.
 - Each child's internals (decoder technique, caps, file formats) stay in that child.
 
 ## Public Contract
@@ -56,22 +55,16 @@ child is normative in the child's own `module.md`; it is not restated here.
 
 - Every contract carries a version identifier: envelope `archfit.report-envelope.v1`; report
   `archfit.architecture-state.v1`; settings file `version: 1`; manifest data `version: 1`; policy follows the
-  engine release of the manifest's `current` row, v3.0.1 today; the engine baseline file `archfit.baseline.v3`.
+  engine release of the manifest's `current` row, v3.2.0 today; the engine baseline file `archfit.baseline.v3`.
 - Unknown fields are rejected by every decoder here. Three deliberate nuances: the policy readers ignore
-  engine-owned keys they do not read; the report decoder knows every key of the engine v3.0.0/v3.0.1 state schema and
+  engine-owned keys they do not read; the report decoder knows every key of the engine v3.0.0/v3.0.1/v3.2.0 state schema and
   drops the known keys that are not allowlisted, while a key that schema does not define is still an error;
   the baseline reader (`policy.ReadBaseline`) ignores baseline keys it does not read, as the engine's own decoder does.
 - The envelope `kind` enum gained `baseline` inside v1: a new accepted value is additive, so the version stays.
-- The manifest approves one engine release, v3.0.1. The report decoder reads the v3.0.0 and v3.0.1 documents, one
-  key set, and nothing else; any other release fails decoding, so the upload ends `action_required`
-  (`report_invalid`). Reading is not approval: a v3.0.0 upload decodes and ends `unknown_engine_identity`, the reason
-  that tells a repository still pinned to it to move its pin. The gate decides
-  only from the frozen decision core (see `report`). Release order: the engine tags a release; one App change updates
-  `report` with any key the release adds, adds a real capture of it to the corpus, replaces the manifest rows and
-  re-pins the policy schema; after the App release, workflows move their pin. The parent tests below hold the three
-  together. The App never moves an installed workflow's pin: onboarding renders the workflow from `Current` only for
-  a repository that is not onboarded yet, and nothing later compares the installed file with it. An owner changes
-  the three pinned values (`uses:` commit, `engine-version`, `image-digest`) by pull request, after the App release.
+- The manifest approves v3.2.0 only, with one Action SHA and two exact platform digests.
+  The decoder also reads historical v3.0.0/v3.0.1 through their identical state schema. Readability is not approval.
+  Engine/Action releases provide actual identities and captures before the App replaces its approval rows.
+  After App deployment, owners update installed workflows by pull request. No automatic pin, baseline, or debt change occurs.
 - Two digest formats exist and are never compared with each other: engine-style bare lowercase hex (`policy.Digest`,
   the report's `config_hash`, the envelope's `baseline_digest` and `labels_digest`) and the prefixed `sha256:<hex>`
   form of envelope-native values (`payload_digest`, `image_digest`) **[default]**.
@@ -157,9 +150,9 @@ tampering fixture overrides `baseline_digest` with a value outside `trusted_base
 `facts` fails the corpus test.
 
 Fixtures captured from the engine cite their engine release and that release's pinned revision (v3.0.0:
-`bbd658f0…`; v3.0.1: `0649e504…`); fixtures from a mutable branch are not allowed. A capture is a document of its own
-release; every synthetic fixture is a v3.0.0 document. The tests, and every consumer test that reads the whole
-corpus, decode each fixture as its release; the two releases share one key set.
+`bbd658f0…`; v3.0.1: `0649e504…`; v3.2.0: `faa4eb4e…`); fixtures from a mutable branch are not allowed. A capture is a document of its own
+release; every synthetic fixture uses the current v3.2.0 key set. The tests, and every consumer test that reads the whole
+corpus, decode each fixture as its release; the known releases share one key set.
 Required report fixtures (plan T02): `healthy`, `attention-pass` (verdict `needs_attention` with passing hard
 gates), `blocked`, `missing-evidence` (`hard_gates: unmeasured`), `unknown-identity`, `profile-comparable` (symmetric
 partial with a recognized `partial_basis`), `profile-incompatible` (`gate_reference.status: non_comparable`),
@@ -168,8 +161,7 @@ partial with a recognized `partial_basis`), `profile-incompatible` (`gate_refere
 `real-blocked-no-baseline`. The last one is captured unmodified from the real engine v3.0.0 on a two-module Go
 repository: verdict `blocked`, `hard_gates: fail`, no baseline file, so `gate_reference` is `non_comparable` with
 reason `no baseline file was loaded`; its policy file ships beside it and its facts have empty trusted baseline and
-labels lists. Its `gate` expectation is `failure` with `["blocking_findings"]`: with no trusted baseline the gate
-ignores the engine's `non_comparable`.
+labels lists. Its old tuple is now unapproved. The new `real-v320-blocked-no-baseline` capture exercises the current blocking decision.
 
 All required fixtures except the last are hand-edited from that capture, so they inherit its `non_comparable`
 `gate_reference`. `blocked` and `profile-incompatible` exercise comparability through `facts`
@@ -187,9 +179,8 @@ the engine fixture with a cargo crate, a Python and a TypeScript package added a
 its producer rows carry the real tool versions of cargo, cargo-modules, grimp, dependency-cruiser, scip, jscpd and
 ast-grep. Three byte copies of captures ship a synthetic envelope: `unlisted-image` (image digest outside the
 manifest), `retired-engine` (the former v3.0.0 `linux/amd64` row: the report decodes, the identity is not approved,
-`action_required` with `["unknown_engine_identity", "blocking_findings"]`) and `baseline-tampered`. Every
-synthetic envelope except `unlisted-image` and `retired-engine` states engine v3.0.1, the `current` row; the reports
-beside them are v3.0.0 documents, except `real-pr-origin` (see `manifest`).
+`action_required` with `["unknown_engine_identity", "blocking_findings"]`) and `baseline-tampered`. Historical envelopes keep their original identities and now expect unapproved tuples. New `real-v320-*` pairs
+carry the actual released v3.2.0 identity. The synthetic tampering case uses the current tuple to keep testing the digest mismatch.
 
 Two engine v3.0.1 captures, unmodified, with the released binary `archfit-v3.0.1-darwin-arm64` checked against the
 release's `SHA256SUMS`, on a development host: `real-pr-origin` is the run the Action makes on a pull request,
@@ -200,6 +191,13 @@ tag v3.0.1 plus a module `c` and a fail-gated rule against it; the head adds the
 `real-blocked-no-baseline` one. `real-recaptured-baseline` is the `real-baselined-comparable` recipe on v3.0.1: the
 same accepted findings and policy, a baseline without `state.dimensions` and `state.hard_gate_finding_ids`, and the
 same check report up to the Go toolchain version.
+
+Four v3.2.0 captures are current: `real-v320-blocked-no-baseline`, `real-v320-baselined-comparable`,
+`real-v320-pr-origin`, and `real-v320-missing-compiler`. Reports and captured baseline/envelope bytes are unmodified.
+The first three use the released native arm64 image through released Action stages on controlled scratch repositories.
+Their event identity is synthetic test input, not authenticated remote proof. The missing-compiler report comes from
+publisher run40172977752's real negative contract. Its required evidence remains unavailable despite an approved image.
+Historical report bytes and producer revisions are retained. Only their retired upload identities lose approval.
 
 Two hand-edited fixtures cover what real engine output reached the old App limits with: `producer-versions` (the
 remaining tool-version formats: grimp failing with `uv`, the macOS system git, two coverage parsers) and
@@ -247,13 +245,13 @@ External counterparts, reached only through these contracts:
 
 | Counterpart                       | Direction                                       | Strength                    | LCA / Rank / Distance     | Volatility | Balanced? |
 | --------------------------------- | ----------------------------------------------- | --------------------------- | ------------------------- | ---------- | --------- |
-| `archfit` engine (v3.0.1)         | report, policy, manifest follow engine releases | Contract (versioned schema) | outside the tree; highest | Moderate   | Yes       |
+| `archfit` engine (v3.2.0)         | report, policy, manifest follow engine releases | Contract (versioned schema) | outside the tree; highest | Moderate   | Yes       |
 | `archfit-action` (external repo)  | the Action conforms to envelope and report      | Contract (JSON Schema)      | outside the tree; highest | Moderate   | Yes       |
 | customer repositories (the files) | customers write settings and policy files       | Contract (versioned file)   | outside the tree; highest | Moderate   | Yes       |
 
 Shared knowledge: with the engine, the complete state schema key set, its enums and decision semantics, the config
 schema, waiver keys, the `modules` map shape, the three input file names, the bare-hex hashing rule and released
-identities, pinned at revision `0649e504a6761f565086b342d315110feeb27d77` (v3.0.1) and verified against real reports; with the Action, the envelope schema, both digest rules and the no-source transport; with customers, the settings field rules. Separate repositories and release cycles are the highest
+identities, pinned at revision `faa4eb4e513859567fd6c380230c91ea22fdaab6` (v3.2.0) and verified against real reports; with the Action, the envelope schema, both digest rules and the no-source transport; with customers, the settings field rules. Separate repositories and release cycles are the highest
 distance the system has. Contract coupling with explicit versions, strict decoding and a shared fixture corpus is
 what keeps it balanced.
 
@@ -316,13 +314,13 @@ Parent tests live in package `wire_test` and exercise the children together and 
   **Expected behavior**: every required named fixture exists; every fixture has an `.expect.json` with `producer` and `decode`, no unknown keys, and no unknown `facts` key; every report fixture has `gate` with a non-empty `reasons` list; no orphan expectation files.
 - **Test name**: `TestFixturesRecordPinnedProducers`
   **Scenario**: read every `producer` entry.
-  **Expected behavior**: engine-captured fixtures cite a pinned release at its pinned revision (`v3.0.0` at `bbd658f008bcc4bc83e063cf305d20dc4508da2e`, `v3.0.1` at `0649e504a6761f565086b342d315110feeb27d77`); synthetic ones give a reason; none cites a branch name.
+  **Expected behavior**: engine-captured fixtures cite a pinned release at its pinned revision (`v3.0.0` at `bbd658f008bcc4bc83e063cf305d20dc4508da2e`, `v3.0.1` at `0649e504a6761f565086b342d315110feeb27d77`, `v3.2.0` at `faa4eb4e513859567fd6c380230c91ea22fdaab6`); synthetic ones give a reason; none cites a branch name.
 - **Test name**: `TestLeakageFixturesCarryTheMarker`
   **Scenario**: read every file in `testdata/leakage/`.
   **Expected behavior**: each contains `LEAK-7f3a`; all have `decode: "error"` except the one surviving declarations fixture, which has `decode: "ok"`.
 - **Test name**: `TestPinnedEngineSchemaIsRecorded`
   **Scenario**: read `testdata/schema/`.
-  **Expected behavior**: `archfit.state.schema.json` is present with a source note citing tag `v3.0.1`, revision `0649e504a6761f565086b342d315110feeb27d77` and its SHA-256; the hash matches.
+  **Expected behavior**: `archfit.state.schema.json` is present with a source note citing tag `v3.2.0`, revision `faa4eb4e513859567fd6c380230c91ea22fdaab6` and its SHA-256; the hash matches.
 
 ### Integration Contract Tests
 

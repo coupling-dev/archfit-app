@@ -15,9 +15,12 @@
     "gate_reference_status": "comparable"
   },
   "gate": {
-    "conclusion": "success",
+    "conclusion": "action_required",
     "reasons": [
-      "healthy"
+      "unknown_engine_identity"
     ]
+  },
+  "facts": {
+    "identity_approved": false
   }
 }

@@ -605,7 +605,7 @@ func Withdrawal(t Target, current CheckState, tr Trusted) *Publication
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high (gate side); the manifest is moderate
 - **Balanced?**: yes
-- **Shared knowledge**: the manifest is locked in the binary (engine v3.0.1, `linux/amd64` and `linux/arm64`). `Lookup`
+- **Shared knowledge**: the manifest is locked in the binary (engine v3.2.0, `linux/amd64` and `linux/arm64`). `Lookup`
   is an exact match on all three fields; any empty field is a miss, so unknown never equals unknown. `Current` is not
   used here.
 
@@ -652,14 +652,14 @@ func Current() Entry
 
 <!-- contract: Report, StateSchemaV1, MaxBytes — restated from internal/wire/report/module.md -->
 ```go
-// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v3.0.0 and v3.0.1: one file).
+// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v3.0.0, v3.0.1 and v3.2.0: one file).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
 // Report is the no-source transport form of an engine state report. The decoder knows every key of the engine
-// state schema of v3.0.0 and v3.0.1: keys listed here are kept (length-capped), the other known keys are validated and dropped
+// state schema of v3.0.0, v3.0.1 and v3.2.0: keys listed here are kept (length-capped), the other known keys are validated and dropped
 // (measurement, findings[].matched_by except MatchedByKeys, agent_tasks[].declarations, metric provenance, seam scores), and any key
 // the schema does not define is a decode error.
 type Report struct {
@@ -1068,7 +1068,7 @@ the comment links to the App's pull request page), and
 3. `trusted, err := resolver.Resolve(ctx, target, now)`. Error → 503; the pending check stays.
 4. `IdentityApproved` = `manifest.Lookup(u.Identity)` hits **and** `entry.ProfileVersion != ""` **and**
    `u.Report.Comparison.MeasurementProfile != nil` **and** its `Version == entry.ProfileVersion`. A manifest row
-   without a profile version approves nothing, so two empty versions never compare equal (for engine v3.0.1 the manifest holds `archfit.measurement.v2`). False when `u.Report == nil`.
+   without a profile version approves nothing, so two empty versions never compare equal (for engine v3.2.0 the manifest holds `archfit.measurement.v2`). False when `u.Report == nil`.
 5. `WorkflowApproved` = `trusted.SettingsFound` **and** `u.Binding.WorkflowPath != ""` **and** it equals
    `trusted.Settings.Workflow`. A workflow file changed by the PR is a protected path; `inputs` then demands owner approval.
 6. `outcome = verdict.Decide(Facts{Problems: u.Problems, BaselineDigest: u.BaselineDigest, LabelsDigest: u.LabelsDigest,

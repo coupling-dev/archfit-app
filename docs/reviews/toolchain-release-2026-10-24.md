@@ -1,6 +1,6 @@
 # Coordinated toolchain release: execution record
 
-Checkpoint: engine v3.2.0 published and verified, 2026-10-25. Action adoption is under review. No App deployment.
+Checkpoint: engine v3.2.0 and Action v2.2.0 published and verified, 2026-10-25. App cutover is local. No App deployment.
 
 ## Authority and isolation
 
@@ -18,7 +18,7 @@ Do not restart, reset, or update them as part of this release.
 | Repository | Branch | Commit | State |
 | --- | --- | --- | --- |
 | Engine | `upgrade/analysis-integration` | `451a52a4f56357c5e061261980dd7e21f97f7531` | Draft [PR86](https://github.com/alexei-led/archfit/pull/86) |
-| Action | `upgrade/engine-3-2` | `9e94db278a12578aa268aa8894d5920286ec587c` | Local adoption commit, review pending |
+| Action | `upgrade/engine-3-2` | `cadf35c0d4885a49a3a1482b876f2a456d20de06` | Published v2.2.0, reviewed and CI verified |
 | App | `upgrade/engine-3-2` | `ae7b978832b1e9b88054e117b1d970acb5e0d487` | Local deployment-validation and rollback guard |
 
 Engine changes provide owned dependency-cruiser/Node execution, isolated Python readers, JavaScript syntax facts, Cargo-backed SCIP attribution, and a locked complete image.
@@ -84,7 +84,8 @@ This is source evidence, not release attestation. Do not invent a schema or shad
 Keep config v2, state/envelope v1, and `archfit.measurement.v2` unless actual released bytes require otherwise.
 A stable profile identifier does not make changed tool/producer measurements comparable.
 
-After release verification, update the strict reader to v3.2.0 only, genuine captures, and schema provenance.
+The reader adds v3.2.0 through the unchanged key set. Existing v3.0.0/v3.0.1 readability stays for stored reports.
+Only the new v3.2.0 tuples are approved. Historical readability is not dual approval or a version fallback.
 Replace both manifest platform rows with verified release digests and one released Action SHA.
 Exactly one amd64 row is Current. Do not retain old approvals or add dual-version fallback.
 Generated onboarding workflows must use that exact tuple. Keep the App image analyzer-free.
@@ -113,7 +114,10 @@ Action adoption commit `9e94db2` adds those actual identities, fresh measurement
 Local conformance passed 486 assertions plus 97 report-guard assertions. Real published-arm64 Action smoke passed 31 assertions.
 A local bind-mount ownership failure was reproduced: Git rejected root-owned `/src` mountpoints for runner UID 502.
 Fixed container-only `safe.directory=/src` settings restore history and fresh baseline comparability. No host/global or wildcard trust is added.
-Independent review and both GitHub native Action-mode jobs remain required before Action publication.
+Independent review found no blockers. Action CI run40175778074 passed all five jobs.
+Actual amd64 and arm64 Action smoke each passed 31 assertions; conformance passed 486 plus the 97 guard assertions.
+The exact-head GitHub composite job accepted `$/`. PR4 merged as `cadf35c0d4885a49a3a1482b876f2a456d20de06`,
+with a Git tree identical to the reviewed candidate. Signed v2.2.0 was published and its title/body/tag verified.
 Latest actionlint v1.7.12 predates GitHub's July 2026 `$/` syntax and reports it as unsupported.
 Official GitHub docs and zizmor v1.31.1 support the syntax. The actual GitHub composite-wiring job must validate it.
 No linter severity was lowered and no audit was suppressed for this limitation.
@@ -150,3 +154,23 @@ Recreate environments from locks instead of relocating virtualenvs with absolute
 
 Containers are secret-free, not network-isolated. Target build scripts and indexers can execute code and exfiltrate mounted source.
 Reports remain customer-attested. Passing workflows or envelopes do not prove that target code never executed.
+
+## Local App cutover validation
+
+The App approval manifest now contains only the two verified v3.2.0 platform tuples and released Action SHA.
+Regression tests reject both old v3.0.1 digests and the OCI index as a platform pin. Exactly one amd64 row is Current.
+The state schema remains byte-identical. The config schema is copied from the release at SHA-256
+`37a4b6d65a9ba8dcdf3e9eb4d2ce5338e8685e249b555faf201a54b8c4dad32e`; its AI provider/options changed.
+Envelope schema bytes remain unchanged. Genuine new report, baseline, envelope, origin and missing-compiler cases
+exercise current admission and required-evidence handling. Historical capture bytes were not relabeled.
+Their retired upload tuples now expect unapproved identity; synthetic tampering still tests current input binding.
+
+Local `ARCHFIT_RELEASE=1 make all` passed lint, frontend type/unit/build checks, Go race tests and build.
+Frontend units: 172 passed. Browser smoke: 41 passed, one existing documentation-screenshot case skipped.
+The web lock audit reports one pre-existing high advisory group in Vite8.3.0-8.3.2 developer-server tooling.
+The runtime image contains only the Go binary and embedded static files, not Vite or Node. No force-upgrade was applied.
+This is not a clean dependency-audit claim. App CI, independent review, build-only artifact verification and
+owner confirmation of the exact image/destination remain before deployment.
+
+Repository variables were read successfully: RELEASE_ON_PUSH is absent, so merging does not authorize a rollout.
+No cloud state, production traffic, connected workflow, protected policy or customer baseline has changed.
