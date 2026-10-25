@@ -16,7 +16,7 @@ const (
 
 	// fixtureEngine is the engine release a synthetic fixture is a document of. A capture is a document of the
 	// release its producer names (fixtureRelease).
-	fixtureEngine = "v3.2.0"
+	fixtureEngine = "v3.2.2"
 )
 
 // fixtureRoot is the shared corpus; its layout and expectation format are defined in internal/wire/module.md.

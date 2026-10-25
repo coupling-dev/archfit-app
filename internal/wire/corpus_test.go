@@ -16,12 +16,13 @@ const (
 	corpusRoot     = "testdata"
 	v300Revision   = "bbd658f008bcc4bc83e063cf305d20dc4508da2e"
 	v301Revision   = "0649e504a6761f565086b342d315110feeb27d77"
+	v322Revision   = "90c0ca240143329d404eb4eb116b096f607f7dc5"
 	v320Revision   = "faa4eb4e513859567fd6c380230c91ea22fdaab6"
 	leakMarker     = "LEAK-7f3a"
 	syntheticLabel = "synthetic: "
 
 	// fixtureEngine is the engine release every synthetic report and leakage fixture is a document of.
-	fixtureEngine = "v3.2.0"
+	fixtureEngine = "v3.2.2"
 
 	folderEnvelope = "envelope"
 	folderReport   = "report"
@@ -48,7 +49,7 @@ var (
 		"healthy", "attention-pass", "blocked", "missing-evidence", "unknown-identity", "profile-comparable",
 		"profile-incompatible", "invalid-input", "blocker-and-unevaluated", "non-applicable-rule", "locations-empty",
 		"matched-by-populated", "repair-kinds", "waiver-expiry-order", "real-blocked-no-baseline",
-		"real-v320-blocked-no-baseline", "real-v320-baselined-comparable", "real-v320-pr-origin", "real-v320-missing-compiler",
+		"real-v322-blocked-no-baseline", "real-v320-blocked-no-baseline", "real-v320-baselined-comparable", "real-v320-pr-origin", "real-v320-missing-compiler",
 	}
 
 	factKeys = map[string]bool{
@@ -58,7 +59,7 @@ var (
 	}
 
 	// pinnedRevisions maps every engine release the corpus holds captures of to that release's source revision.
-	pinnedRevisions = map[string]string{"v3.0.0": v300Revision, "v3.0.1": v301Revision, "v3.2.0": v320Revision}
+	pinnedRevisions = map[string]string{"v3.0.0": v300Revision, "v3.0.1": v301Revision, "v3.2.0": v320Revision, "v3.2.2": v322Revision}
 
 	revisionPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	reasonPattern   = regexp.MustCompile(`^[a-z]+(_[a-z]+)*$`)
