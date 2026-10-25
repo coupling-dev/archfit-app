@@ -198,6 +198,49 @@ Each revision that the release creates has the name `<service>-r<run>-<attempt>`
 The release record (`release.json`, a workflow artifact, and the job summary) holds the commit of the run, the image
 digest, the two new revisions, and the revisions that had traffic before.
 
+### PR UI provenance and build metadata
+
+The signed-in `GET /api/session` response includes a `build` object. Anonymous requests still receive `401`;
+`/ready` remains health-only. Only these public metadata fields enter the UI; no credential or environment map is
+returned. About is available to signed-in users, not limited to installation operators.
+
+| Field                                        | Source and limit                                                                                                                                                                                  |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source_revision`                            | `APP_SOURCE_REVISION` build arg injected into the binary; fallback to Go's embedded `vcs.revision`, never a checkout at request time. Full lowercase 40-hex SHA only.                             |
+| `built_at`                                   | `APP_BUILT_AT`, the UTC image-build timestamp injected into the binary. No fallback to source commit time or deployment time.                                                                     |
+| `version`                                    | Compiled release version or Go main-module version, when recorded. Untagged builds show their source SHA instead; no tag is guessed.                                                              |
+| `runtime_revision`                           | Validated `K_REVISION` from the serving runtime; not a GitHub analysis run.                                                                                                                       |
+| `modified`                                   | Go embedded `vcs.modified`, when present.                                                                                                                                                         |
+| Image digest / deployment time / environment | Not recorded in this UI contract. Obtain the digest from release `build.json`, and deployment evidence from `release.json` and the exact runtime inventory. An image cannot embed its own digest. |
+
+`scripts/deploy/build.sh` supplies source SHA and build time on a fresh build. The final image carries the matching
+OCI revision/created labels. Reusing an existing commit image preserves that image's metadata; a reuse does not
+manufacture a new build timestamp. Direct Docker builds without these args show missing metadata explicitly.
+
+PR analysis metadata has a different source: the selected App-authored `archfit/state` check. Its bounded recovery
+prelude and Inputs and identity section supply diagnostics and the producer claim. The check's `external_id`
+supplies run/attempt/report digest; its `head_sha` supplies the analysed revision. The report schema is read only
+from a digest-matched admitted artifact. The historical check format records neither Action SHA nor analysis time
+nor base revision. Do not substitute the deployed App's approved manifest values. Report provenance is not content
+verification.
+
+Before releasing a UI change:
+
+1. Run `make all`, `make deploy-check`, and the PR diagnostics browser regressions on the exact source commit.
+2. Capture both blocked tabs, an admitted partial report and a historical report across App build changes. The
+   project Playwright harness uses sample API data under production CSP; label this evidence as local fixtures,
+   not live GitHub authentication. Use no production cookies.
+3. Record exact reviewed source SHA, image digest, compiled build time, intended project/region/services, previous
+   image and traffic revisions, and screenshot/test evidence. If no image was built, release readiness is blocked.
+4. Obtain human approval of that exact artifact and production destination before merging or running a production
+   build/push/deployment. Passing CI is not deployment authorization.
+5. After an approved canary deploy, check signed-in About against the release record, verify the PR analysis
+   producer did not change across the App upgrade, and check both available and action-required views. Keep
+   `/ready` as a health check, not version evidence. Record limits when live authenticated validation is unavailable.
+
+The existing [rollback procedure](#roll-back) remains unchanged. This UI change requires no migration, policy edit,
+baseline reset or re-anchor.
+
 ## Roll back
 
 - **Traffic rollback.** Move traffic back to the previous revisions. If the worker does harm, pause the webhook queue

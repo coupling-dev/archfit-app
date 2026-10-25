@@ -40,7 +40,8 @@ type pullBody struct {
 	Headline   string // the archfit/state title: feedback already states the effect on merge there
 	Conclusion string // of archfit/state: neutral, success, action_required, …
 	Required   bool   // the protected settings require archfit/gate
-	RunID      int64
+	RunID      int64  // report run admitted for artifact lookup and warm-path hints
+	Check      *checkContextJSON
 }
 
 // pullNumber reads the {number} path value: a positive integer, or not a pull request.
@@ -57,14 +58,14 @@ func pullNumber(r *http.Request) (int, bool) {
 //
 // The pull request names the head and the base every other read takes. The last read of this pull request left them,
 // and the run its check named, as a hint: those reads start beside the pull request's with the hinted values, and each
-// counts only when the fresh pull request and check name the same. A warm page waits for one read, not for three.
+// counts only when the fresh pull request and check name the same. Artifact reads wait for the fresh check so a
+// withdrawn result cannot use a previously admitted run as prefetch authorization.
 func (s *server) readPull(ctx context.Context, sc scope, number int, also ...func(head, base string)) (pullBody, *report.Report, error) {
 	key := hintKey{sc.repo.InstallationID, sc.repo.FullName, number}
 	h, hinted := s.hints.get(key)
 	repo := sc.repo.RepoRef
 	gateRequired := func(base string) (bool, error) { return s.gateRequired(ctx, repo, base) }
 	checkRuns := func(head string) ([]api.CheckRun, error) { return s.gh.checks.CheckRuns(ctx, repo, head, checkState) }
-	artifactID := s.artifactIDs(ctx, repo)
 	var (
 		pull     api.Pull
 		err      error
@@ -75,9 +76,8 @@ func (s *server) readPull(ctx context.Context, sc scope, number int, also ...fun
 	reads := []func(){func() { pull, err = s.gh.pulls.PullSummary(ctx, repo, number) }}
 	if hinted {
 		reads = append(reads, gate.ahead(h.base, gateRequired), runs.ahead(h.head, checkRuns))
-		if h.run != 0 {
-			reads = append(reads, artifact.ahead(h.run, artifactID))
-		}
+		// An accepted hint can have been withdrawn since the last request. Artifact reads
+		// must wait for the fresh check, even when the report bytes are cached.
 		for _, fn := range also {
 			reads = append(reads, func() { fn(h.head, h.base) })
 		}
@@ -155,6 +155,7 @@ func (s *server) pullReport(ctx context.Context, sc scope, pull api.Pull,
 	}
 	run := slices.MaxFunc(checks, func(a, b api.CheckRun) int { return cmp.Compare(a.ID, b.ID) })
 	body.Headline, body.Conclusion = run.Title, run.Conclusion
+	body.Check = actionContext(run)
 	// action_required withdraws a result (stale inputs, an expired waiver, a suspension, a missing approval) or says
 	// the evidence is unusable. The sweep keeps the old run in external_id when it withdraws, so the old report would
 	// still match the digest: findings are never shown under a result that asks for action.
@@ -188,6 +189,7 @@ func (s *server) pullReport(ctx context.Context, sc scope, pull api.Pull,
 		body.Unavailable = reportUnavailable
 		return body, nil, nil
 	}
+	body.Check.Schema = rep.SchemaVersion
 	return body, &rep, nil
 }
 

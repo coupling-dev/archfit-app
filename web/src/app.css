@@ -391,6 +391,12 @@ dl.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
   width: min(1232px, calc(100% - 48px)); margin: 8px auto 0; padding: 16px 0 32px;
   border-top: 1px solid var(--border-muted); font-size: 12px; color: var(--fg-muted);
 }
+.analysis { overflow-wrap: anywhere; }
+.analysis-details { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(0, 3fr); gap: 8px 16px; }
+.analysis-details dt { font-weight: 600; }
+.analysis-details dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.app-about { margin-top: 12px; }
+.app-about summary { cursor: pointer; }
 .app-footer a { color: inherit; }
 .app-footer a:hover { color: var(--accent); }
 @media (max-width: 640px) { .app-footer { width: calc(100% - 32px); } }

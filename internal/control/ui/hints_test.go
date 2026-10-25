@@ -25,8 +25,8 @@ func (e *env) nameRun(head string, run int64, payload []byte) {
 	e.gh.artifacts[run] = payload
 }
 
-// Once a page was read, its next read starts every GitHub read at once: the hinted ones beside the one that names
-// their parameter. A chain read in turn never meets.
+// Warm reads overlap only where safe. PR artifact reads wait for the fresh check;
+// a previously accepted result may have been withdrawn since the hint was saved.
 func TestWarmReadsMeet(t *testing.T) {
 	settingsAtMain := "File " + mainBranch + ":" + settings.Path
 	pull := func(e *env) { e.checkPull(prArtifact(t, prPolicy)) }
@@ -37,9 +37,9 @@ func TestWarmReadsMeet(t *testing.T) {
 		setup func(e *env)
 		keys  []string
 	}{
-		{"pull request page", "/pulls/4", pull, []string{"PullSummary", "CheckRuns", "ArtifactID", settingsAtMain}},
+		{"pull request page", "/pulls/4", pull, []string{"PullSummary", "CheckRuns", settingsAtMain}},
 		{"pull request graph", "/pulls/4/graph", pull,
-			[]string{"PullSummary", "CheckRuns", "ArtifactID", settingsAtMain, "File " + sha(4) + ":" + policy.PolicyPath}},
+			[]string{"PullSummary", "CheckRuns", settingsAtMain, "File " + sha(4) + ":" + policy.PolicyPath}},
 		{"findings", "/findings", published, []string{settingsAtMain, "LatestRun", "ArtifactID"}},
 		{"repository graph", "/graph", published, []string{settingsAtMain, "LatestRun", "ArtifactID"}},
 	}

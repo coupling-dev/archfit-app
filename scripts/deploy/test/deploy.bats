@@ -275,6 +275,7 @@ assert_canary_untagged() {
 	[ "$output" = "$FAKE_DIGEST" ]
 	local tagged=europe-west1-docker.pkg.dev/coupling-dev-510710/archfit-app/archfit-app:$GITHUB_SHA
 	[ -n "$(calls "docker build --platform=linux/amd64 .*--tag=$tagged \\.")" ]
+	[ -n "$(calls "docker build .*--build-arg=APP_SOURCE_REVISION=$GITHUB_SHA --build-arg=APP_BUILT_AT=[0-9T:Z-]* ")" ]
 	[ "$(calls "docker push $tagged$")" = "docker push $tagged" ]
 }
 
