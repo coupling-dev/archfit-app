@@ -1013,6 +1013,19 @@ test('PR diagnostics: missing historical metadata and unsafe links stay explicit
   await expectClean(page);
 });
 
+test('PR diagnostics: run links preserve owners and repositories named pull', async ({ page }) => {
+  for (const repository of ['acme/app', 'acme/pull', 'pull/app', 'pull/pull']) {
+    await page.unrouteAll();
+    await open(page, '/r/acme/app/pull/4', {
+      pull: { ...pull, url: 'https://github.com/' + repository + '/pull/4' },
+    });
+    await expect(page.getByRole('link', { name: 'Run 88 · attempt 1' })).toHaveAttribute(
+      'href',
+      'https://github.com/' + repository + '/actions/runs/88/attempts/1',
+    );
+  }
+});
+
 test('PR diagnostics: an explicit no-upload producer is not missing history', async ({ page }) => {
   await open(page, '/r/acme/app/pull/4', {
     pull: {

@@ -10,7 +10,6 @@ import (
 // Release builds inject only public build metadata. Never read the working tree,
 // an arbitrary environment map, or cloud metadata from a browser request.
 var (
-	appVersion     string
 	sourceRevision string
 	builtAt        string
 )
@@ -30,14 +29,14 @@ var (
 
 func runningBuild() buildInfoJSON {
 	info, _ := debug.ReadBuildInfo()
-	return buildInfo(info, appVersion, sourceRevision, builtAt, os.Getenv("K_REVISION"))
+	return buildInfo(info, sourceRevision, builtAt, os.Getenv("K_REVISION"))
 }
 
-func buildInfo(info *debug.BuildInfo, version, revision, timestamp, runtimeRevision string) buildInfoJSON {
+func buildInfo(info *debug.BuildInfo, revision, timestamp, runtimeRevision string) buildInfoJSON {
 	out := buildInfoJSON{}
 	if info != nil {
-		if version == "" && info.Main.Version != "(devel)" {
-			version = info.Main.Version
+		if versionPattern.MatchString(info.Main.Version) {
+			out.Version = info.Main.Version
 		}
 		for _, s := range info.Settings {
 			switch s.Key {
@@ -49,9 +48,6 @@ func buildInfo(info *debug.BuildInfo, version, revision, timestamp, runtimeRevis
 				out.Modified = s.Value == "true"
 			}
 		}
-	}
-	if versionPattern.MatchString(version) {
-		out.Version = version
 	}
 	if revisionPattern.MatchString(revision) {
 		out.SourceRevision = revision

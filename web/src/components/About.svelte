@@ -9,7 +9,7 @@
   <div class="box-body stack-sm">
     <p>Serving App build, not the Engine or Action that produced a PR analysis.</p>
     <dl class="analysis-details">
-      <dt>Release version</dt><dd>{build?.version || missing}</dd>
+      <dt>Go module version</dt><dd>{build?.version || missing}</dd>
       <dt>Source revision</dt><dd><code>{build?.source_revision || missing}</code>{#if build?.modified} (modified source){/if}</dd>
       <dt>Built (UTC)</dt><dd>{build?.built_at || missing}</dd>
       <dt>Runtime revision</dt><dd>{build?.runtime_revision || missing}</dd>

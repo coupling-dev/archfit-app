@@ -8,20 +8,37 @@ import (
 )
 
 func TestBuildInfoUsesOnlyBuildAndAllowlistedRuntimeMetadata(t *testing.T) {
-	info := &debug.BuildInfo{Settings: []debug.BuildSetting{
+	info := &debug.BuildInfo{Main: debug.Module{Version: "v1.2.3"}, Settings: []debug.BuildSetting{
 		{Key: "vcs.revision", Value: sha(7)}, {Key: "vcs.time", Value: "2020-01-01T00:00:00Z"},
 		{Key: "vcs.modified", Value: "true"}, {Key: "secret", Value: "not-for-browser"},
 	}}
-	got := buildInfo(info, "v1.2.3", "", "2026-10-25T12:00:00+02:00", "archfit-public-123")
+	got := buildInfo(info, "", "2026-10-25T12:00:00+02:00", "archfit-public-123")
 	if got.SourceRevision != sha(7) || got.Version != "v1.2.3" || got.BuiltAt != "2026-10-25T10:00:00Z" || !got.Modified || got.RuntimeRevision != "archfit-public-123" {
 		t.Fatalf("build = %+v", got)
 	}
-	got = buildInfo(info, "<script>", "not-a-sha", "", "https://credentials@example.com")
+	info.Main.Version = "<script>"
+	got = buildInfo(info, "not-a-sha", "", "https://credentials@example.com")
 	if got.Version != "" || got.SourceRevision != "" || got.BuiltAt != "" || got.RuntimeRevision != "" {
 		t.Fatalf("invalid metadata must be absent, not guessed: %+v", got)
 	}
-	if got := buildInfo(nil, "", "", "", ""); got != (buildInfoJSON{}) {
+	if got := buildInfo(nil, "", "", ""); got != (buildInfoJSON{}) {
 		t.Fatalf("missing build metadata = %+v", got)
+	}
+}
+
+func TestBuildInfoModuleVersionBoundaries(t *testing.T) {
+	for _, version := range []string{"v1.2.3", "v0.0.0-20261025103112-e3cde88c42b4", "v1.2.3+dirty", "", "(devel)", "<script>", strings.Repeat("x", 129)} {
+		t.Run(version, func(t *testing.T) {
+			info := &debug.BuildInfo{Main: debug.Module{Version: version}}
+			got := buildInfo(info, "", "", "")
+			want := version
+			if version == "" || version == "(devel)" || version == "<script>" || len(version) > 128 {
+				want = ""
+			}
+			if got.Version != want {
+				t.Fatalf("module version %q displayed as %q, want %q", version, got.Version, want)
+			}
+		})
 	}
 }
 

@@ -208,7 +208,7 @@ returned. About is available to signed-in users, not limited to installation ope
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `source_revision`                            | `APP_SOURCE_REVISION` build arg injected into the binary; fallback to Go's embedded `vcs.revision`, never a checkout at request time. Full lowercase 40-hex SHA only.                             |
 | `built_at`                                   | `APP_BUILT_AT`, the UTC image-build timestamp injected into the binary. No fallback to source commit time or deployment time.                                                                     |
-| `version`                                    | Compiled release version or Go main-module version, when recorded. Untagged builds show their source SHA instead; no tag is guessed.                                                              |
+| `version`                                    | Go main-module version embedded in the serving binary, when recorded. The UI does not infer a release tag or provide a separate version-injection path. Missing module version falls back to the source SHA in the footer.                                                              |
 | `runtime_revision`                           | Validated `K_REVISION` from the serving runtime; not a GitHub analysis run.                                                                                                                       |
 | `modified`                                   | Go embedded `vcs.modified`, when present.                                                                                                                                                         |
 | Image digest / deployment time / environment | Not recorded in this UI contract. Obtain the digest from release `build.json`, and deployment evidence from `release.json` and the exact runtime inventory. An image cannot embed its own digest. |
@@ -228,8 +228,9 @@ Before releasing a UI change:
 
 1. Run `make all`, `make deploy-check`, and the PR diagnostics browser regressions on the exact source commit.
 2. Capture both blocked tabs, an admitted partial report and a historical report across App build changes. The
-   project Playwright harness uses sample API data under production CSP; label this evidence as local fixtures,
-   not live GitHub authentication. Use no production cookies.
+   project Playwright harness uses sample API data under production CSP. For an integrated capture, the actual Go
+   UI/session/API can run against the existing OAuth/GitHub test fixtures. Record which API boundary was used;
+   neither kind is live GitHub authentication. Use no production cookies.
 3. Record exact reviewed source SHA, image digest, compiled build time, intended project/region/services, previous
    image and traffic revisions, and screenshot/test evidence. If no image was built, release readiness is blocked.
 4. Obtain human approval of that exact artifact and production destination before merging or running a production

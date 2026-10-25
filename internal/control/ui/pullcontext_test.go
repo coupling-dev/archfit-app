@@ -7,9 +7,11 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/alexei-led/archfit-app/internal/wire/manifest"
 )
 
 func TestActionRequiredKeepsReviewContextWithoutReadingArtifact(t *testing.T) {
+	approved := manifest.Current()
 	const summary = "- **Next:** Update the workflow producer and re-run.\n- Reason: `unknown_engine_identity` (evidence)\n\nAlso reported:\n- `missing_required_coverage` (evidence): no-handlers-to-tmux. Next: Supply the missing evidence.\n\n### Findings\n\nThis is not action context.\n\n### Inputs and identity\n- Producer identity, claimed: engine v3.0.1, image sha256:old, linux/amd64\n"
 	for _, graph := range []bool{false, true} {
 		t.Run(map[bool]string{false: "findings", true: "graph"}[graph], func(t *testing.T) {
@@ -46,6 +48,8 @@ func TestActionRequiredKeepsReviewContextWithoutReadingArtifact(t *testing.T) {
 						Producer string   `json:"producer"`
 						Approved struct {
 							EngineVersion string `json:"engine_version"`
+							ImageDigest   string `json:"image_digest"`
+							Platform      string `json:"platform"`
 							ActionRef     string `json:"action_ref"`
 						} `json:"approved"`
 					} `json:"check"`
@@ -56,7 +60,8 @@ func TestActionRequiredKeepsReviewContextWithoutReadingArtifact(t *testing.T) {
 				c := body.Check
 				if c.RunID != 88 || c.Next != "Update the workflow producer and re-run." || !strings.Contains(c.Reason, "unknown_engine_identity") ||
 					len(c.Also) != 1 || !strings.Contains(c.Also[0], "missing_required_coverage") || !strings.Contains(c.Producer, "v3.0.1") ||
-					c.Approved.EngineVersion != "v3.2.0" || c.Approved.ActionRef != "cadf35c0d4885a49a3a1482b876f2a456d20de06" {
+					c.Approved.EngineVersion != approved.EngineVersion || c.Approved.ImageDigest != approved.ImageDigest ||
+					c.Approved.Platform != approved.Platform || c.Approved.ActionRef != approved.ActionRef {
 					t.Errorf("missing actionable check context: %+v", c)
 				}
 			}

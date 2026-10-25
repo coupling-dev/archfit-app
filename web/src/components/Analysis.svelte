@@ -6,7 +6,7 @@
   // Build the run link from the authorized repository's GitHub URL, never Summary Markdown.
   const runURL = $derived(
     head.url.startsWith('https://github.com/') && check?.run_id
-      ? safeHref(head.url.split('/pull/')[0] + '/actions/runs/' + check.run_id +
+      ? safeHref(head.url.replace(/\/pull\/\d+$/, '') + '/actions/runs/' + check.run_id +
         (check.run_attempt ? '/attempts/' + check.run_attempt : ''))
       : '',
   );

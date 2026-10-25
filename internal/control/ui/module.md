@@ -143,7 +143,7 @@ needs `Content-Type: application/json` (else `415`) and the `X-CSRF-Token` heade
 package does not know is `422`, so a body cannot name a repository, a user or an installation.
 
 - `GET /api/session` — `{login, csrf, build}` of the signed-in user. `build` is an explicit allowlisted DTO of compiled
-  release/source/build-time metadata and the runtime's validated `K_REVISION`; absent metadata remains empty. About
+  source/build-time metadata, the embedded Go main-module version and the runtime's validated `K_REVISION`; absent metadata remains empty. About
   displays it only after sign-in. No checkout, credentials, environment inventory or cloud metadata is read. For an operator also `operator: true` and `waiting`,
   the number of installations no one approved yet (`-1` when the list could not be read); both are left out for
   everyone else.

@@ -718,8 +718,18 @@ tab marks partial evidence, and the Graph tab marks incomplete graph evidence. M
 Provenance authenticates the producer, not the correctness of its report.
 
 The signed-in footer's **About this App** identifies the serving App build, not the analysis producer. It shows the
-recorded release/source revision, build time and runtime revision. Missing fields stay explicit. See the operator's
+recorded Go module version/source revision, build time and runtime revision. Missing fields stay explicit. See the operator's
 [metadata sources and release validation](design/cloud/operations.md#pr-ui-provenance-and-build-metadata).
+
+![Blocked Findings with the check reason, next action and recorded producer](images/pr-diagnostics-blocked.png)
+
+*Local Chromium capture: the real Go UI/session/API and embedded SPA, with seeded OAuth/GitHub fixtures.
+The literal HTML-like text is an escaping test. This is not live production data or a content-verification claim.*
+
+![An admitted partial PR graph with its evidence gap visible](images/pr-diagnostics-partial-graph.png)
+
+*The graph is available, but the engine's missing required rule remains visible. This report is admitted for display,
+not declared complete or safe to merge. Test-binary build fields that were not recorded stay explicit in About.*
 
 ## See the graph
 
@@ -876,8 +886,10 @@ make build
 A binary built without it serves a page that says to run `make web`. `make all` also runs the web app's checks when
 Node is installed; the browser smoke test needs Playwright's Chromium once: `cd web && npx playwright install chromium`.
 
-The screenshots in this guide come from the smoke test's sample data. After a change to the Waiting page or the
-onboarding box, regenerate them with `cd web && npm run docs:shots`, check the images, and commit them with the change.
+The Waiting and onboarding screenshots come from the smoke test's sample data. After a change to either page,
+regenerate them with `cd web && npm run docs:shots`, check the images, and commit them with the change. PR diagnostics
+captures use the real Go UI/session/API with seeded OAuth/GitHub fixtures in isolated Chromium. Keep captures tied
+to the tested source and label their fixture boundary; never copy production cookies to regenerate them.
 
 ### Health
 
