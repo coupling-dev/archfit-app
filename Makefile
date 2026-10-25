@@ -34,9 +34,8 @@ fmt-check: ## verify Go formatting
 
 .PHONY: deploy-check
 deploy-check: ## lint the workflows and test the release scripts (needs shellcheck, actionlint, bats, jq)
-	shellcheck scripts/deploy/*.sh scripts/deploy/test/bin/* scripts/deploy/test/*.bats
 	$(ACTIONLINT)
-	bats scripts/deploy/test
+	bash scripts/deploy/test.sh
 
 .PHONY: run
 run: ## run the reporter locally

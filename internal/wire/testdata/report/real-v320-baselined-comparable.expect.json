@@ -1,0 +1,23 @@
+{
+  "producer": {
+    "repository": "github.com/alexei-led/archfit",
+    "revision": "faa4eb4e513859567fd6c380230c91ea22fdaab6",
+    "engine_version": "v3.2.0",
+    "command": "Released native linux/arm64 image ghcr.io/alexei-led/archfit@sha256:725c3a074358df8ea41881296eda06b07daed7934d7a6d40bb1ecfc3c8a8128d; archfit-action v2.2.0 at cadf35c0d4885a49a3a1482b876f2a456d20de06 tests/helpers.sh write_module on a scratch committed Go repo; prepare/run/report stages; check --json --refresh --progress=none -c /bundle/.archfit.yaml --root /src; after baseline --refresh and committing that captured file in the disposable fixture; unmodified report and Action envelope bytes. GitHub event/run metadata is synthetic test input, not a live authenticated upload."
+  },
+  "decode": "ok",
+  "fields": {
+    "verdict": "needs_attention",
+    "hard_gates": "pass",
+    "unevaluated_rule_ids": [],
+    "has_profile": true,
+    "profile_version": "archfit.measurement.v2",
+    "gate_reference_status": "comparable"
+  },
+  "gate": {
+    "conclusion": "success",
+    "reasons": [
+      "attention_only"
+    ]
+  }
+}

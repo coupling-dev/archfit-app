@@ -113,7 +113,7 @@ func TestBlockerKeepsUnevaluatedRules(t *testing.T) {
 }
 
 func TestOriginNeverExempts(t *testing.T) {
-	f, _ := fixtureCase(t, "real-blocked-no-baseline")
+	f, _ := fixtureCase(t, "real-v320-blocked-no-baseline")
 	r := f.Report
 	if len(r.AgentTasks) != 1 || len(r.Findings) == 0 {
 		t.Fatalf("fixture has %d tasks and %d findings", len(r.AgentTasks), len(r.Findings))

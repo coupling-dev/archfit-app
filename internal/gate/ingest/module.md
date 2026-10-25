@@ -277,7 +277,7 @@ func Schema() []byte
 - **Volatility**: high (ingest side); the schema is moderate
 - **Balanced?**: yes
 - **Shared knowledge**: `MaxBytes` is the upload cap for both kinds. `report.Decode` is the no-source boundary;
-  ingest never inspects report content. It passes the envelope's `EngineVersion`, so the claimed release must be `v3.0.0` or `v3.0.1` (one key set); any
+  ingest never inspects report content. It passes the envelope's `EngineVersion`, so the claimed release must be `v3.0.0`, `v3.0.1` or `v3.2.0` (one key set); any
   other release is `ProblemReportInvalid`.
   The claim is checked against the manifest later, in `gate`. `Decision` is an opaque part of `Report` for this module.
   `Comparison` is an opaque part of `Report` for this module. `Finding` is an opaque part of `Report` for this module.
@@ -287,14 +287,14 @@ func Schema() []byte
 
 <!-- contract: Report, StateSchemaV1, MaxBytes — restated from internal/wire/report/module.md -->
 ```go
-// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v3.0.0 and v3.0.1: one file).
+// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v3.0.0, v3.0.1 and v3.2.0: one file).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
 // Report is the no-source transport form of an engine state report. The decoder knows every key of the engine
-// state schema of v3.0.0 and v3.0.1: keys listed here are kept (length-capped), the other known keys are validated and dropped
+// state schema of v3.0.0, v3.0.1 and v3.2.0: keys listed here are kept (length-capped), the other known keys are validated and dropped
 // (measurement, findings[].matched_by except MatchedByKeys, agent_tasks[].declarations, metric provenance, seam scores), and any key
 // the schema does not define is a decode error.
 type Report struct {

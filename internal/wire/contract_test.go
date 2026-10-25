@@ -24,7 +24,7 @@ import (
 
 const (
 	wirePackage     = "github.com/alexei-led/archfit-app/internal/wire"
-	realCapture     = "real-blocked-no-baseline"
+	realCapture     = "real-v320-blocked-no-baseline"
 	verdictBlocked  = "blocked"
 	statusNonCompar = "non_comparable"
 )

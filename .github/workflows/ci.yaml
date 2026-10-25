@@ -3,6 +3,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
@@ -11,6 +12,9 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      ARCHFIT_RELEASE: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -27,6 +31,7 @@ jobs:
   web:
     name: Web app
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: web
@@ -48,6 +53,7 @@ jobs:
   firestore-emulator:
     name: Store on the Firestore emulator
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env:
       EMULATOR_IMAGE: gcr.io/google.com/cloudsdktool/google-cloud-cli:587.0.0-emulators@sha256:8d8573471c489a409f03891d2c24d177fa531276184f7002b9a2d853d1b3ed54
       FIRESTORE_EMULATOR_HOST: 127.0.0.1:8086
@@ -76,6 +82,7 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -92,6 +99,7 @@ jobs:
   infra:
     name: Terraform
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -122,6 +130,7 @@ jobs:
   deploy-scripts:
     name: Deploy scripts
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -135,6 +144,7 @@ jobs:
   image:
     name: Image builds
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -147,6 +157,7 @@ jobs:
   action-pin:
     name: Pinned Action commit
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     outputs:
       placeholder: ${{ steps.pin.outputs.placeholder }}
       ref: ${{ steps.pin.outputs.ref }}
@@ -183,6 +194,7 @@ jobs:
     needs: action-pin
     if: needs.action-pin.outputs.placeholder == 'false'
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

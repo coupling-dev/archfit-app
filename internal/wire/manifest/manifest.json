@@ -2,19 +2,19 @@
   "version": 1,
   "entries": [
     {
-      "engine_version": "v3.0.1",
-      "image_digest": "sha256:9aac269fa350e643054cbe5ced58426b4ed46000f30d60f49564aa605ece2408",
+      "engine_version": "v3.2.0",
+      "image_digest": "sha256:5f2d4a5fff1ace10d7b08937429179631ae0c1d0e1f9e6f37c72b30954cf00db",
       "platform": "linux/amd64",
       "profile_version": "archfit.measurement.v2",
-      "action_ref": "7efc29b5a2785fb0537a2617cddf3873b7d27e10",
+      "action_ref": "cadf35c0d4885a49a3a1482b876f2a456d20de06",
       "current": true
     },
     {
-      "engine_version": "v3.0.1",
-      "image_digest": "sha256:19ccd3cb81ea6107ee723e939b0f01d4e8da045204e0a5daa4c004c2baa4faec",
+      "engine_version": "v3.2.0",
+      "image_digest": "sha256:725c3a074358df8ea41881296eda06b07daed7934d7a6d40bb1ecfc3c8a8128d",
       "platform": "linux/arm64",
       "profile_version": "archfit.measurement.v2",
-      "action_ref": "7efc29b5a2785fb0537a2617cddf3873b7d27e10"
+      "action_ref": "cadf35c0d4885a49a3a1482b876f2a456d20de06"
     }
   ]
 }

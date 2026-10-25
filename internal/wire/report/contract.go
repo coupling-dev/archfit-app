@@ -3,17 +3,15 @@ package report
 
 import "slices"
 
-// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v3.0.0 and v3.0.1: one file).
+// StateSchemaV1 is the shared state contract of the known engine releases.
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
-// engineVersions are the engine releases Decode reads, oldest first. v3.0.0 and v3.0.1 emit the same state schema,
-// so they share one key set. Reading is not approval: the manifest approves v3.0.1 only. v3.0.0 stays readable so a
-// workflow still pinned to it ends unknown_engine_identity, which names the fix, and not report_invalid. Earlier
-// releases are not read.
-var engineVersions = []string{"v3.0.0", "v3.0.1"}
+// engineVersions share one verified state-schema key set, oldest first. Historical
+// reports remain readable; only the manifest decides which producer tuple is approved.
+var engineVersions = []string{"v3.0.0", "v3.0.1", "v3.2.0"}
 
 // EngineVersions returns the engine releases whose state document Decode reads.
 func EngineVersions() []string {
@@ -21,7 +19,7 @@ func EngineVersions() []string {
 }
 
 // Report is the no-source transport form of an engine state report. The decoder knows every key of the state schema
-// of v3.0.0 and v3.0.1: keys listed here are kept (length-capped), the other known keys are validated and dropped (measurement,
+// shared by the known releases: keys listed here are kept (length-capped), the other known keys are validated and dropped (measurement,
 // findings[].matched_by except MatchedByKeys, agent_tasks[].declarations, metric provenance, seam scores), and any key
 // the schema does not define is a decode error.
 type Report struct {

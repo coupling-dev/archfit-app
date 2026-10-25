@@ -1,0 +1,25 @@
+{
+  "producer": {
+    "repository": "github.com/alexei-led/archfit",
+    "revision": "faa4eb4e513859567fd6c380230c91ea22fdaab6",
+    "engine_version": "v3.2.0",
+    "command": "Published native linux/arm64 v3.2.0 image at sha256:725c3a074358df8ea41881296eda06b07daed7934d7a6d40bb1ecfc3c8a8128d; publisher run40172977752 release-image-contract-ubuntu-24.04-arm contracts/compiler-negative/check.json, with empty read-only mount over the owned TypeScript compiler. Check --json --quiet --refresh; unmodified actual output; image identity is not proof of complete evidence."
+  },
+  "decode": "ok",
+  "fields": {
+    "verdict": "needs_attention",
+    "hard_gates": "unmeasured",
+    "unevaluated_rule_ids": [
+      "core_no_adapter"
+    ],
+    "has_profile": true,
+    "profile_version": "archfit.measurement.v2",
+    "gate_reference_status": "non_comparable"
+  },
+  "gate": {
+    "conclusion": "action_required",
+    "reasons": [
+      "missing_required_coverage"
+    ]
+  }
+}

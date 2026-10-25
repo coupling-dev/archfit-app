@@ -143,7 +143,7 @@ func Run(ctx context.Context, c Config, log *slog.Logger) error
 ## Integrations
 
 The root integrates with nothing above it. Its external counterparts are other repositories, reached only
-through the contracts above: `archfit` (config and state schemas pinned to v3.0.1, byte-identical to v3.0.0), `archfit-action` (conforms to the envelope schema owned here), and GitHub. Distance to them is the highest
+through the contracts above: `archfit` (schemas pinned to v3.2.0: state unchanged from v3.0.0/v3.0.1, config updated), `archfit-action` (conforms to the envelope schema owned here), and GitHub. Distance to them is the highest
 the system has (separate repositories and lifecycles), so the strength is contract by construction: versioned JSON
 Schema, strict decoding, a locked manifest. All internal integrations are listed in the coupling table below.
 

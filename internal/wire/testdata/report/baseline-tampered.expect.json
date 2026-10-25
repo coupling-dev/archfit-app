@@ -1,5 +1,5 @@
 {
-  "producer": "synthetic: byte copy of real-baselined-comparable with its policy and baseline; the case is its envelope, which states a baseline digest other than the digest of the baseline file",
+  "producer": "synthetic: byte copy of real-baselined-comparable with its policy and baseline; the case is its envelope, which states a baseline digest other than the digest of the baseline file; synthetic transport identity updated to the approved v3.2.0 tuple, report bytes unchanged",
   "decode": "ok",
   "fields": {
     "verdict": "needs_attention",
