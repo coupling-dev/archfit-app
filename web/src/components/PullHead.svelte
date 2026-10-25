@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { PullHead } from '../lib/api';
+  import Analysis from './Analysis.svelte';
   import { repoPage, safeHref } from '../lib/route';
 
   // The header the pull request page and its graph share: which pull request, its result and the two views.
@@ -56,3 +57,5 @@
     </div>
   </section>
 {/if}
+
+<Analysis {head} />

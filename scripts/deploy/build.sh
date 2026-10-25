@@ -17,7 +17,9 @@ if digest=$(image_digest "$image" 2>/dev/null) && [[ -n $digest ]]; then
 else
 	# Progress goes to stderr: stdout carries only the digest.
 	gcloud auth configure-docker "${IMAGE_REPO%%/*}" --quiet >&2
-	docker build --platform=linux/amd64 --label="org.opencontainers.image.revision=$commit" --tag="$image" . >&2
+	built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+	docker build --platform=linux/amd64 --build-arg="APP_SOURCE_REVISION=$commit" --build-arg="APP_BUILT_AT=$built_at" \
+		--label="org.opencontainers.image.revision=$commit" --tag="$image" . >&2
 	docker push "$image" >&2
 	digest=$(image_digest "$image")
 fi

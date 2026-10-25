@@ -26,7 +26,7 @@
     type Graph,
     type Status,
   } from '../lib/graph';
-  import { safeHref, type Repo } from '../lib/route';
+  import { type Repo } from '../lib/route';
   import { ui } from '../lib/selection.svelte';
 
   // The repository graph (the latest default-branch report) or a pull request's graph (the report its check names).
@@ -96,12 +96,14 @@
   {/if}
 
   {#if body.unavailable || !view}
-    <p class="flash warn">
-      {body.unavailable}
-      {#if body.pull && safeHref(body.pull.checks_url)}
-        <a href={safeHref(body.pull.checks_url)} rel="noreferrer">Checks on GitHub</a>
-      {/if}
-    </p>
+    <section class="box" aria-labelledby="graph-unavailable">
+      <div class="box-head"><h2 id="graph-unavailable">Graph unavailable</h2></div>
+      <div class="box-body stack-sm">
+        <p>{body.unavailable || 'This report has no drawable graph.'}</p>
+        <p>No admitted dependency graph is available. An empty view would not prove there are no dependencies or rule violations.</p>
+        <p>{body.pull ? 'Resolve the reason in PR analysis above, then re-run the workflow.' : 'Run the architecture workflow to produce a report with dependency evidence.'}</p>
+      </div>
+    </section>
   {:else}
     <!-- Only with a banner: an empty block would add a second gap to the page's flow. -->
     {#if view.stale || view.incomplete || (body.pull && !body.pull.compared)}

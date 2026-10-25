@@ -3,7 +3,31 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Locator, type Page, type Request } from '@playwright/test';
 
 const csp = readFileSync(new URL('../csp.txt', import.meta.url), 'utf8').trim();
-const session = { login: 'alice', csrf: 'csrf-token-1' };
+const appBuild = {
+  version: 'v0.12.0',
+  source_revision: 'b'.repeat(40),
+  built_at: '2026-10-25T10:00:00Z',
+  runtime_revision: 'archfit-public-123',
+  modified: false,
+};
+const session = { login: 'alice', csrf: 'csrf-token-1', build: appBuild };
+
+const analysisCheck = {
+  run_id: 88,
+  run_attempt: 1,
+  head_sha: 'a'.repeat(40),
+  check_started_at: '2026-10-20T10:00:00Z',
+  report_digest: 'sha256:' + 'c'.repeat(64),
+  reason: 'blocking_findings (architecture)',
+  next: 'Fix the rule violations, then re-run.',
+  detail: '',
+  also: [],
+  producer: 'engine v3.0.1, image sha256:' + 'd'.repeat(64) + ', linux/amd64',
+  policy_digest: 'e'.repeat(64),
+  baseline_digest: 'no baseline',
+  labels_digest: 'no labels file',
+  profile: 'version v1, settings hash ' + 'f'.repeat(64),
+};
 
 const repos = {
   repos: [
@@ -189,6 +213,7 @@ const pull = {
   required: false,
   unavailable: '',
   run_id: 88,
+  check: analysisCheck,
   no_baseline: true,
   compared: true,
   decision: {
@@ -495,6 +520,7 @@ interface Mock {
   overview?: object;
   sharingDown?: boolean; // the consent store cannot be read
   savedUnread?: boolean; // the write is saved, but the App cannot read it back in the same answer
+  appBuild?: object;
   pull?: object;
   graph?: object;
   pullGraph?: object;
@@ -567,7 +593,11 @@ async function open(page: Page, path: string, mock: Mock = {}) {
     switch (url.pathname) {
       case '/api/session':
         await mock.holdSession;
-        return json(200, mock.operator ? { ...session, operator: true, waiting: 1 } : session);
+        return json(200, {
+          ...session,
+          build: mock.appBuild ?? appBuild,
+          ...(mock.operator ? { operator: true, waiting: 1 } : {}),
+        });
       case '/api/admin/installations':
         if (!mock.operator) return json(404, { error: 'Not found.' });
         return json(200, installations);
@@ -705,7 +735,9 @@ test('overview: an admin opens the onboarding pull request', async ({ page }) =>
   await page.getByLabel('Policy owners').fill('alice\nacme/platform');
   await expectClean(page);
   await page.getByRole('button', { name: 'Open the onboarding pull request' }).click();
-  await expect(page.getByRole('status')).toHaveText('The onboarding pull request is open. Next: add the workflow file to it.');
+  await expect(page.getByRole('status')).toHaveText(
+    'The onboarding pull request is open. Next: add the workflow file to it.',
+  );
 
   expect(writes).toHaveLength(1);
   const [w] = writes;
@@ -797,10 +829,12 @@ test('pull request: the cycle drawn as on the comment, then the other findings',
     'border-top-width',
     '0px',
   );
-  await expect(evidence.getByRole('row', { name: /Change locality/ }).getByRole('cell').last()).toHaveCSS(
-    'font-weight',
-    '600',
-  );
+  await expect(
+    evidence
+      .getByRole('row', { name: /Change locality/ })
+      .getByRole('cell')
+      .last(),
+  ).toHaveCSS('font-weight', '600');
   await page.getByRole('button', { name: 'Copy 1 task' }).click();
   await expect(page.getByRole('status')).toHaveText('Copied 1 task.');
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(pull.tasks);
@@ -828,6 +862,196 @@ test('pull request: no report says why and links the checks', async ({ page }) =
   });
   await expect(page.getByText('GitHub no longer keeps the report')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Checks on GitHub' })).toHaveAttribute('href', pull.checks_url);
+  await expectClean(page);
+});
+
+for (const graph of [false, true]) {
+  for (const reason of ['unknown_engine_identity', 'missing_required_coverage', 'stale_inputs']) {
+    test(`PR diagnostics: ${reason} stays actionable on ${graph ? 'Graph' : 'Findings'} without admitted data`, async ({
+      page,
+    }, info) => {
+      const next =
+        reason === 'unknown_engine_identity'
+          ? 'Update the workflow producer and re-run.'
+          : reason === 'stale_inputs'
+            ? 'Restore authorization and re-run.'
+            : 'Install the missing tool and re-run.';
+      const check = {
+        ...analysisCheck,
+        reason: reason + ' (evidence)',
+        next,
+        detail: '<img src=x onerror=alert(1)> & missing evidence',
+        also: ['missing_required_coverage: six rules not measured. Next: Supply the evidence.'],
+        approved:
+          reason === 'unknown_engine_identity'
+            ? {
+                engine_version: 'v3.2.0',
+                image_digest: 'sha256:' + '9'.repeat(64),
+                platform: 'linux/amd64',
+                action_ref: 'cadf35c0d4885a49a3a1482b876f2a456d20de06',
+              }
+            : undefined,
+      };
+      const blocked = {
+        ...pull,
+        check,
+        run_id: 0,
+        result: 'action required',
+        tone: 'attention',
+        headline: 'Action required',
+        unavailable: 'This result asks for action before its findings mean anything.',
+        decision: undefined,
+        cycles: null,
+        other: null,
+        tasks: '',
+        violation_count: 0,
+      };
+      await open(page, '/r/acme/app/pull/4' + (graph ? '/graph' : ''), {
+        pull: blocked,
+        pullGraph: { ...pullGraph, pull: blocked, view: null, unavailable: blocked.unavailable },
+      });
+      const analysis = page.getByRole('region', { name: 'PR analysis', exact: true });
+      await expect(analysis.getByText(reason + ' (evidence)', { exact: false })).toBeVisible();
+      await expect(analysis.getByText(next, { exact: false })).toBeVisible();
+      await expect(analysis.getByText(check.detail, { exact: true })).toBeVisible();
+      await expect(analysis.getByText('Analysis time (UTC): Not recorded', { exact: true })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Run 88 · attempt 1' })).toHaveAttribute(
+        'href',
+        'https://github.com/acme/app/actions/runs/88/attempts/1',
+      );
+      await expect(
+        page.getByRole('heading', { name: graph ? 'Graph unavailable' : 'Findings unavailable', exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole('heading', { name: graph ? 'Findings unavailable' : 'Graph unavailable', exact: true }),
+      ).toHaveCount(0);
+      await expect(page.locator('.svelte-flow__node')).toHaveCount(0);
+      await expect(page.getByRole('heading', { name: /^Rule violations/ })).toHaveCount(0);
+      await expect(page.getByRole('heading', { name: 'For coding agents' })).toHaveCount(0);
+      await expect(analysis.locator('img, script')).toHaveCount(0);
+      if (check.approved) {
+        await expect(
+          analysis.getByText('Current approved workflow pins — not the producer of this analysis'),
+        ).toBeVisible();
+        await expect(analysis.getByText('Engine v3.2.0 · linux/amd64', { exact: true })).toBeVisible();
+      }
+      await expectClean(page);
+      if (reason === 'unknown_engine_identity') {
+        await page.screenshot({
+          path: info.outputPath(graph ? 'blocked-graph.png' : 'blocked-findings.png'),
+          fullPage: true,
+        });
+      }
+    });
+  }
+}
+
+test('PR diagnostics: historical producer stays fixed across App upgrades; partial evidence remains qualified', async ({
+  page,
+}, info) => {
+  for (const version of ['v0.12.0', 'v0.13.0']) {
+    for (const graph of [false, true]) {
+      await page.unrouteAll();
+      const partial = {
+        ...pull,
+        check: { ...analysisCheck, also: ['missing_required_coverage: layers. Next: Supply the missing evidence.'] },
+        decision: {
+          ...pull.decision,
+          hard_gates: 'unmeasured',
+          detail: 'hard gates unmeasured, 3 active blockers, 1 required rule not evaluated',
+        },
+      };
+      await open(page, '/r/acme/app/pull/4' + (graph ? '/graph' : ''), {
+        appBuild: { ...appBuild, version },
+        pull: partial,
+        pullGraph: { ...pullGraph, pull: partial, view: { ...pullGraph.view, incomplete: true } },
+      });
+      await expect(page.getByText(analysisCheck.producer, { exact: false })).toBeVisible();
+      await expect(page.getByText('Action version / SHA: Not recorded', { exact: true })).toBeVisible();
+      await expect(page.getByText('Analysis time (UTC): Not recorded', { exact: true })).toBeVisible();
+      await page.getByText('About this App · ' + version, { exact: true }).click();
+      await expect(page.locator('.app-about').getByText(appBuild.source_revision, { exact: true })).toBeVisible();
+      await expect(page.locator('.app-about').getByText(appBuild.built_at, { exact: true })).toBeVisible();
+      await expect(
+        page
+          .locator('.app-about')
+          .getByText('Serving App build, not the Engine or Action that produced a PR analysis.'),
+      ).toBeVisible();
+      if (graph) {
+        await expect(page.locator('#incomplete')).toBeVisible();
+        await expect(page.locator('.svelte-flow__node').first()).toBeVisible();
+      } else {
+        await expect(
+          page.getByText('Partial evidence: findings cover only what was measured.', { exact: false }),
+        ).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Evidence', exact: true })).toBeVisible();
+      }
+      await expectClean(page);
+      if (version === 'v0.13.0')
+        await page.screenshot({
+          path: info.outputPath(graph ? 'partial-graph-about.png' : 'partial-findings-about.png'),
+          fullPage: true,
+        });
+    }
+  }
+});
+
+test('PR diagnostics: missing historical metadata and unsafe links stay explicit and escaped', async ({ page }) => {
+  await open(page, '/r/acme/app/pull/4', {
+    pull: {
+      ...pull,
+      check: { ...analysisCheck, producer: '', head_sha: '', run_id: 0, next: '[unsafe](javascript:alert(1))' },
+      url: 'https://github.com.evil.example/acme/app/pull/4',
+      checks_url: 'javascript:alert(1)',
+    },
+    appBuild: {},
+  });
+  await expect(page.getByText('Analysis producer (claimed): Not recorded', { exact: true })).toBeVisible();
+  await expect(page.getByText('[unsafe](javascript:alert(1))', { exact: false })).toBeVisible();
+  await expect(page.getByText('About this App · build not recorded', { exact: true })).toBeVisible();
+  await expect(page.locator('a[href^="javascript:"], a[href*="evil.example"]')).toHaveCount(0);
+  await expectClean(page);
+});
+
+test('PR diagnostics: run links preserve owners and repositories named pull', async ({ page }) => {
+  for (const repository of ['acme/app', 'acme/pull', 'pull/app', 'pull/pull']) {
+    await page.unrouteAll();
+    await open(page, '/r/acme/app/pull/4', {
+      pull: { ...pull, url: 'https://github.com/' + repository + '/pull/4' },
+    });
+    await expect(page.getByRole('link', { name: 'Run 88 · attempt 1' })).toHaveAttribute(
+      'href',
+      'https://github.com/' + repository + '/actions/runs/88/attempts/1',
+    );
+  }
+});
+
+test('PR diagnostics: an explicit no-upload producer is not missing history', async ({ page }) => {
+  await open(page, '/r/acme/app/pull/4', {
+    pull: {
+      ...pull,
+      check: { ...analysisCheck, producer: 'no upload', run_id: 0, run_attempt: 0 },
+      unavailable: 'This result came without a report, so there is nothing to show here.',
+      run_id: 0,
+    },
+  });
+  await expect(page.getByText('Analysis producer (claimed): no upload', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Findings unavailable', exact: true })).toBeVisible();
+  await expectClean(page);
+});
+
+test('PR diagnostics: keyboard disclosures and long metadata fit a phone viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, '/r/acme/app/pull/4');
+  const details = page.getByText('Analysis details', { exact: true });
+  await details.press('Enter');
+  await expect(details).toBeFocused();
+  await expect(page.getByText(analysisCheck.report_digest, { exact: true })).toBeVisible();
+  const about = page.getByText('About this App · ' + appBuild.version, { exact: true });
+  await about.press('Enter');
+  await expect(about).toBeFocused();
+  await expect(page.locator('.app-about').getByText(appBuild.source_revision, { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await expectClean(page);
 });
 
@@ -936,7 +1160,9 @@ test('graph: the incomplete banner shows only when the report says it is', async
   await expect(page.locator('#incomplete')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '2 with a violation' })).toBeVisible(); // a failed gate is the violations
   // no banner, no empty block: an empty one would add a second gap to the page's flow
-  const empty = await page.locator('main > *').evaluateAll((els) => els.filter((e) => e.getBoundingClientRect().height === 0).length);
+  const empty = await page
+    .locator('main > *')
+    .evaluateAll((els) => els.filter((e) => e.getBoundingClientRect().height === 0).length);
   expect(empty).toBe(0);
 });
 
@@ -1466,8 +1692,15 @@ test('docs: the screenshots the user guide shows', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Needs you' })).toBeVisible();
   await callouts(page, [
     { at: page.getByLabel(/Policy owners/), text: 'One GitHub login per line. Owners approve changes to the policy.' },
-    { at: page.getByRole('button', { name: 'Open the onboarding pull request' }), text: 'Opens a pull request with the settings.' },
+    {
+      at: page.getByRole('button', { name: 'Open the onboarding pull request' }),
+      text: 'Opens a pull request with the settings.',
+    },
     { at: page.locator('ol.track'), text: 'Setup: each step is marked done or current.' },
   ]);
-  await page.screenshot({ path: new URL('onboarding-page.png', shotsDir).pathname, fullPage: true, clip: { x: 0, y: 0, width: 1800, height: 820 } });
+  await page.screenshot({
+    path: new URL('onboarding-page.png', shotsDir).pathname,
+    fullPage: true,
+    clip: { x: 0, y: 0, width: 1800, height: 820 },
+  });
 });

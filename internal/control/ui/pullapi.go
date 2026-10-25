@@ -31,15 +31,16 @@ type pullHead struct {
 	URL       string `json:"url"`
 	ChecksURL string `json:"checks_url"`
 
-	Result      string        `json:"result"` // the archfit/state word, "" before a result
-	Tone        string        `json:"tone"`
-	Headline    string        `json:"headline"`
-	Required    bool          `json:"required"`
-	Unavailable string        `json:"unavailable"` // why there is no report to show; "" when there is
-	RunID       int64         `json:"run_id"`
-	NoBaseline  bool          `json:"no_baseline"`        // "new" means not accepted, not "added by this pull request"
-	Compared    bool          `json:"compared"`           // the engine compared against the base branch, so origins mean something
-	Decision    *decisionJSON `json:"decision,omitempty"` // nil without a report
+	Result      string            `json:"result"` // the archfit/state word, "" before a result
+	Tone        string            `json:"tone"`
+	Headline    string            `json:"headline"`
+	Required    bool              `json:"required"`
+	Unavailable string            `json:"unavailable"` // why there is no report to show; "" when there is
+	RunID       int64             `json:"run_id"`
+	NoBaseline  bool              `json:"no_baseline"`        // "new" means not accepted, not "added by this pull request"
+	Compared    bool              `json:"compared"`           // the engine compared against the base branch, so origins mean something
+	Decision    *decisionJSON     `json:"decision,omitempty"` // nil without a report
+	Check       *checkContextJSON `json:"check,omitempty"`    // recovery context, never report admission
 }
 
 // decisionJSON is the engine's decision on the report, as it states it: its hard gates, how many findings block, the
@@ -247,7 +248,7 @@ func headOf(sc scope, pull pullBody, rep *report.Report) pullHead {
 	h := pullHead{
 		Number: p.Number, Title: p.Title, Author: p.Author, State: pullState(p), HeadRef: p.HeadRef, BaseRef: p.BaseRef,
 		HeadSHA: p.HeadSHA[:min(len(p.HeadSHA), shortSHA)], URL: p.URL, ChecksURL: pull.CheckURL,
-		Headline: pull.Headline, Required: pull.Required, Unavailable: pull.Unavailable, RunID: pull.RunID,
+		Headline: pull.Headline, Required: pull.Required, Unavailable: pull.Unavailable, RunID: pull.RunID, Check: pull.Check,
 	}
 	if pull.Headline != "" || pull.Conclusion != "" {
 		h.Result = stateWord(pull.Conclusion, pull.Headline)

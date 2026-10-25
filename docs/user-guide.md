@@ -673,7 +673,7 @@ Open `/r/<owner>/<repo>/pull/<number>` for the Archfit result of the pull reques
 on the pull request links to this page ("Details in Archfit").
 
 - The headline is the title of the `archfit/state` check, with the gate mode beside it. In advisory mode the check does
-  not block merging. Under it, always, the engine's verdict in the comment's words, for example "Engine verdict
+  not block merging. When a report is available, the engine's verdict appears in the comment's words, for example "Engine verdict
   blocked: hard gates fail, 3 active blockers, every required rule evaluated".
 - Rule violations are open. Each dependency cycle is one card with the same drawing as the comment: one arrow per
   direction with its location count, red and wide when this pull request added it, grey and thin when it existed
@@ -689,7 +689,9 @@ on the pull request links to this page ("Details in Archfit").
   compared against the base branch, and which run it is (a link to the checks), with its report `customer-attested`:
   Archfit authenticates the producer, not the content. Hover a badge for its meaning. A required gate blocks merging
   only where a GitHub ruleset requires `archfit/gate`.
-  Without that comparison, "new" means not accepted in a baseline, not "added by this pull request".
+  **New** means not accepted in a baseline, even when the run compared with the base. It does not mean "added by this
+  pull request": only an explicit origin badge makes that claim. Without a baseline, older debt also counts as new.
+  An advisory never blocks, even with critical severity. Severity is the rule's priority, not a runtime incident.
 - **Evidence** has one row per dimension: how many the engine measured, then what it counted in its own words, quoted
   as on the comment (`3 of 3 ("classified source files")`), its confidence, and its **Result**: pass, warn or fail.
 - **For coding agents** holds the exact repair tasks of the run; **Copy** puts them on the clipboard.
@@ -697,6 +699,37 @@ on the pull request links to this page ("Details in Archfit").
 - The page shows a report only when it is the one the check was computed from, and never under a result that asks
   for action. Otherwise it says why: no result yet, action required, no upload, the report expired, the report does
   not match the check, or the report could not be read.
+
+### PR analysis and unavailable reports
+
+Both tabs keep **PR analysis** visible: the App check's reason, detail, next action, additional reasons, recorded
+producer claim, analysed head revision and workflow run/attempt link. **Analysis details** shows the check's recorded
+input digests, measurement profile, report digest and, only with a readable admitted artifact, its schema.
+
+The UI does not reconstruct missing history. Action version/SHA, analysis time and base revision are **Not recorded**
+in the existing check format. Check-start time is labelled separately; it is not analysis time. A new App deployment
+does not turn its current Engine/Action pins into the producer of an older report. For producer/workflow rejections,
+the current approved pins appear as recovery guidance, separately from the recorded producer claim.
+
+An action-required or withdrawn result shows diagnostics but no report findings, tasks or graph. Findings explains
+that no findings are admitted; Graph explains that an empty view would not prove an absence of dependencies or
+violations. Neither is a clean result. A report admitted for display can still be blocked or partial: the Findings
+tab marks partial evidence, and the Graph tab marks incomplete graph evidence. Missing evidence is never a pass.
+Provenance authenticates the producer, not the correctness of its report.
+
+The signed-in footer's **About this App** identifies the serving App build, not the analysis producer. It shows the
+recorded Go module version/source revision, build time and runtime revision. Missing fields stay explicit. See the operator's
+[metadata sources and release validation](design/cloud/operations.md#pr-ui-provenance-and-build-metadata).
+
+![Blocked Findings with the check reason, next action and recorded producer](images/pr-diagnostics-blocked.png)
+
+*Local Chromium capture: the real Go UI/session/API and embedded SPA, with seeded OAuth/GitHub fixtures.
+The literal HTML-like text is an escaping test. This is not live production data or a content-verification claim.*
+
+![An admitted partial PR graph with its evidence gap visible](images/pr-diagnostics-partial-graph.png)
+
+*The graph is available, but the engine's missing required rule remains visible. This report is admitted for display,
+not declared complete or safe to merge. Test-binary build fields that were not recorded stay explicit in About.*
 
 ## See the graph
 
@@ -853,8 +886,10 @@ make build
 A binary built without it serves a page that says to run `make web`. `make all` also runs the web app's checks when
 Node is installed; the browser smoke test needs Playwright's Chromium once: `cd web && npx playwright install chromium`.
 
-The screenshots in this guide come from the smoke test's sample data. After a change to the Waiting page or the
-onboarding box, regenerate them with `cd web && npm run docs:shots`, check the images, and commit them with the change.
+The Waiting and onboarding screenshots come from the smoke test's sample data. After a change to either page,
+regenerate them with `cd web && npm run docs:shots`, check the images, and commit them with the change. PR diagnostics
+captures use the real Go UI/session/API with seeded OAuth/GitHub fixtures in isolated Chromium. Keep captures tied
+to the tested source and label their fixture boundary; never copy production cookies to regenerate them.
 
 ### Health
 

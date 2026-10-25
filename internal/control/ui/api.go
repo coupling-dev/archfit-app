@@ -125,15 +125,16 @@ func decodeJSON(r *http.Request, dst any) error {
 }
 
 type sessionJSON struct {
-	Login    string `json:"login"`
-	CSRF     string `json:"csrf"`
-	Operator bool   `json:"operator,omitempty"` // may approve installations on /admin
-	Waiting  int    `json:"waiting,omitempty"`  // operators only: installations waiting; -1 when it could not be read
+	Build    buildInfoJSON `json:"build"` // authenticated, public metadata of the serving binary only
+	Login    string        `json:"login"`
+	CSRF     string        `json:"csrf"`
+	Operator bool          `json:"operator,omitempty"` // may approve installations on /admin
+	Waiting  int           `json:"waiting,omitempty"`  // operators only: installations waiting; -1 when it could not be read
 }
 
 // apiSession is the signed-in login and the CSRF token the app sends with every write.
 func (s *server) apiSession(r *http.Request, sc scope) (any, error) {
-	body := sessionJSON{Login: sc.user.Login, CSRF: csrfToken(sc.user)}
+	body := sessionJSON{Login: sc.user.Login, CSRF: csrfToken(sc.user), Build: runningBuild()}
 	if s.isOperator(sc.user) {
 		body.Operator, body.Waiting = true, s.waitingCount(r.Context())
 	}

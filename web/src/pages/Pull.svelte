@@ -6,7 +6,7 @@
   import Skeleton from '../components/Skeleton.svelte';
   import { explainLoad, repoAPI, type ApiError, type Pull } from '../lib/api';
   import { firstJSON } from '../lib/early';
-  import { safeHref, type Repo } from '../lib/route';
+  import { type Repo } from '../lib/route';
 
   let { route, here }: { route: Repo & { number: number }; here: string } = $props();
 
@@ -44,11 +44,18 @@
   <DecisionLine decision={body.decision} />
 
   {#if body.unavailable}
-    <p class="flash warn">
-      {body.unavailable}
-      {#if safeHref(body.checks_url)}<a href={safeHref(body.checks_url)} rel="noreferrer">Checks on GitHub</a>{/if}
-    </p>
+    <section class="box" aria-labelledby="findings-unavailable">
+      <div class="box-head"><h2 id="findings-unavailable">Findings unavailable</h2></div>
+      <div class="box-body stack-sm">
+        <p>{body.unavailable}</p>
+        <p>No findings, counts or agent tasks from this report are admitted for display. This is not a clean result.</p>
+        <p>Resolve the reason in PR analysis above, then re-run the workflow to obtain usable evidence.</p>
+      </div>
+    </section>
   {:else}
+    {#if body.decision?.hard_gates === 'unmeasured' || body.decision?.unevaluated.length || body.dimensions?.some((d) => d.status !== 'measured')}
+      <p class="flash warn">Partial evidence: findings cover only what was measured. Missing evidence is not a pass; read the required-rule gaps and Evidence below.</p>
+    {/if}
     {#if body.no_baseline || !body.compared}
       <p class="muted small">
         {#if body.no_baseline}Without a baseline every finding counts as new, including older debt.{/if}

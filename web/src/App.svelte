@@ -1,5 +1,6 @@
 <script lang="ts">
   import Header from './Header.svelte';
+  import About from './components/About.svelte';
   import Skeleton from './components/Skeleton.svelte';
   import { ApiError, getJSON, type Session } from './lib/api';
   import { prefetch } from './lib/early';
@@ -124,4 +125,5 @@
 <footer class="app-footer">
   <a href={guideURL}>Documentation</a>
   <a href="/licenses.txt">Third-party licences</a>
+  {#if session}<About build={session.build} />{/if}
 </footer>

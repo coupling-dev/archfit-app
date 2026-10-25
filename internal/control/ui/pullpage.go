@@ -40,7 +40,8 @@ type pullBody struct {
 	Headline   string // the archfit/state title: feedback already states the effect on merge there
 	Conclusion string // of archfit/state: neutral, success, action_required, …
 	Required   bool   // the protected settings require archfit/gate
-	RunID      int64
+	RunID      int64  // report run selected for artifact lookup, not diagnostic context
+	Check      *checkContextJSON
 }
 
 // pullNumber reads the {number} path value: a positive integer, or not a pull request.
@@ -55,29 +56,27 @@ func pullNumber(r *http.Request) (int, bool) {
 // when Unavailable says why there is none. Each of also runs side by side with those reads, for a read that needs only
 // the pull request's head and base.
 //
-// The pull request names the head and the base every other read takes. The last read of this pull request left them,
-// and the run its check named, as a hint: those reads start beside the pull request's with the hinted values, and each
-// counts only when the fresh pull request and check name the same. A warm page waits for one read, not for three.
+// The last read left the pull request's head and base as hints. Settings, checks and policy texts can start beside
+// the pull request read with those hints, and count only when the fresh pull request names the same head and base.
+// Artifact reads always wait for the fresh check so a
+// withdrawn result cannot use a previously admitted run as prefetch authorization.
 func (s *server) readPull(ctx context.Context, sc scope, number int, also ...func(head, base string)) (pullBody, *report.Report, error) {
 	key := hintKey{sc.repo.InstallationID, sc.repo.FullName, number}
 	h, hinted := s.hints.get(key)
 	repo := sc.repo.RepoRef
 	gateRequired := func(base string) (bool, error) { return s.gateRequired(ctx, repo, base) }
 	checkRuns := func(head string) ([]api.CheckRun, error) { return s.gh.checks.CheckRuns(ctx, repo, head, checkState) }
-	artifactID := s.artifactIDs(ctx, repo)
 	var (
-		pull     api.Pull
-		err      error
-		gate     guess[string, bool]
-		runs     guess[string, []api.CheckRun]
-		artifact guess[int64, int64]
+		pull api.Pull
+		err  error
+		gate guess[string, bool]
+		runs guess[string, []api.CheckRun]
 	)
 	reads := []func(){func() { pull, err = s.gh.pulls.PullSummary(ctx, repo, number) }}
 	if hinted {
 		reads = append(reads, gate.ahead(h.base, gateRequired), runs.ahead(h.head, checkRuns))
-		if h.run != 0 {
-			reads = append(reads, artifact.ahead(h.run, artifactID))
-		}
+		// An accepted hint can have been withdrawn since the last request. Artifact reads
+		// must wait for the fresh check, even when the report bytes are cached.
 		for _, fn := range also {
 			reads = append(reads, func() { fn(h.head, h.base) })
 		}
@@ -104,7 +103,7 @@ func (s *server) readPull(ctx context.Context, sc scope, number int, also ...fun
 		if required, gateErr = gate.at(pull.BaseRef, gateRequired); gateErr != nil {
 			cancel()
 		}
-	}, func() { body, rep, err = s.pullReport(ctx, sc, pull, &runs, &artifact) }}
+	}, func() { body, rep, err = s.pullReport(ctx, sc, pull, &runs) }}
 	if !hinted || pull.HeadSHA != h.head || pull.BaseRef != h.base {
 		for _, fn := range also {
 			reads = append(reads, func() { fn(pull.HeadSHA, pull.BaseRef) })
@@ -117,7 +116,7 @@ func (s *server) readPull(ctx context.Context, sc scope, number int, also ...fun
 	if err != nil {
 		return pullBody{}, nil, err
 	}
-	s.hints.put(key, hint{base: pull.BaseRef, head: pull.HeadSHA, run: body.RunID})
+	s.hints.put(key, hint{base: pull.BaseRef, head: pull.HeadSHA})
 	body.Required = required
 	return body, rep, nil
 }
@@ -136,11 +135,9 @@ func (s *server) gateRequired(ctx context.Context, repo api.RepoRef, base string
 	return err == nil && set.Gate == settings.GateRequired, nil
 }
 
-// pullReport reads the archfit/state check on the pull request's head and the report of the run it names. runs and
-// artifact are the reads readPull made ahead; each counts only for the head and the run read here.
-func (s *server) pullReport(ctx context.Context, sc scope, pull api.Pull,
-	runs *guess[string, []api.CheckRun], artifact *guess[int64, int64],
-) (pullBody, *report.Report, error) {
+// pullReport reads the head's archfit/state check and the report it names. Only the check read is hinted;
+// the artifact listing starts after a fresh check permits it.
+func (s *server) pullReport(ctx context.Context, sc scope, pull api.Pull, runs *guess[string, []api.CheckRun]) (pullBody, *report.Report, error) {
 	repo := sc.repo.RepoRef
 	body := pullBody{Pull: pull, CheckURL: pull.URL + "/checks"}
 	checks, err := runs.at(pull.HeadSHA, func(head string) ([]api.CheckRun, error) {
@@ -155,6 +152,7 @@ func (s *server) pullReport(ctx context.Context, sc scope, pull api.Pull,
 	}
 	run := slices.MaxFunc(checks, func(a, b api.CheckRun) int { return cmp.Compare(a.ID, b.ID) })
 	body.Headline, body.Conclusion = run.Title, run.Conclusion
+	body.Check = actionContext(run)
 	// action_required withdraws a result (stale inputs, an expired waiver, a suspension, a missing approval) or says
 	// the evidence is unusable. The sweep keeps the old run in external_id when it withdraws, so the old report would
 	// still match the digest: findings are never shown under a result that asks for action.
@@ -169,7 +167,7 @@ func (s *server) pullReport(ctx context.Context, sc scope, pull api.Pull,
 	}
 	body.RunID = runID
 
-	payload, err := s.runReport(ctx, repo, runID, artifact)
+	payload, err := s.runReport(ctx, repo, runID)
 	if errors.Is(err, api.ErrNotFound) {
 		body.Unavailable = reportExpired
 		return body, nil, nil
@@ -188,12 +186,13 @@ func (s *server) pullReport(ctx context.Context, sc scope, pull api.Pull,
 		body.Unavailable = reportUnavailable
 		return body, nil, nil
 	}
+	body.Check.Schema = rep.SchemaVersion
 	return body, &rep, nil
 }
 
-// runReport is the report artifact of a run, its artifact listed fresh (or by the read made ahead for this run).
-func (s *server) runReport(ctx context.Context, repo api.RepoRef, runID int64, artifact *guess[int64, int64]) ([]byte, error) {
-	id, err := artifact.at(runID, s.artifactIDs(ctx, repo))
+// runReport lists the artifact fresh; the report cache can replace only the download.
+func (s *server) runReport(ctx context.Context, repo api.RepoRef, runID int64) ([]byte, error) {
+	id, err := s.artifactIDs(ctx, repo)(runID)
 	if err != nil {
 		return nil, err
 	}

@@ -8,6 +8,7 @@ export interface Session {
   csrf: string;
   operator?: boolean; // the user approves installations on /admin
   waiting?: number; // operators only: installations waiting for approval; -1 when it could not be read
+  build?: AppBuild;
 }
 
 export interface RepoRow {
@@ -116,6 +117,34 @@ export interface Dimension {
   gate: string;
 }
 
+export interface AppBuild {
+  version: string;
+  source_revision: string;
+  built_at: string;
+  runtime_revision: string;
+  modified: boolean;
+}
+
+// Display only. A diagnostic run identity is never report admission.
+export interface CheckContext {
+  run_id: number;
+  run_attempt: number;
+  head_sha: string;
+  check_started_at: string;
+  report_digest: string;
+  reason: string;
+  next: string;
+  detail: string;
+  also: string[];
+  producer: string;
+  policy_digest: string;
+  baseline_digest: string;
+  labels_digest: string;
+  profile: string;
+  schema?: string;
+  approved?: { engine_version: string; image_digest: string; platform: string; action_ref: string };
+}
+
 // PullHead is the header the pull request page and its graph share.
 export interface PullHead {
   number: number;
@@ -136,6 +165,7 @@ export interface PullHead {
   no_baseline: boolean;
   compared: boolean;
   decision?: Decision; // absent without a report
+  check?: CheckContext; // App check diagnostics, independent of report availability
 }
 
 // Decision is the engine's decision on the report, as it states it.

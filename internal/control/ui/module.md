@@ -142,7 +142,9 @@ package, never a stored record. Errors are `{"error": "<sentence>"}` with the st
 needs `Content-Type: application/json` (else `415`) and the `X-CSRF-Token` header (else `403`); a body field this
 package does not know is `422`, so a body cannot name a repository, a user or an installation.
 
-- `GET /api/session` — `{login, csrf}` of the signed-in user. For an operator also `operator: true` and `waiting`,
+- `GET /api/session` — `{login, csrf, build}` of the signed-in user. `build` is an explicit allowlisted DTO of compiled
+  source/build-time metadata, the embedded Go main-module version and the runtime's validated `K_REVISION`; absent metadata remains empty. About
+  displays it only after sign-in. No checkout, credentials, environment inventory or cloud metadata is read. For an operator also `operator: true` and `waiting`,
   the number of installations no one approved yet (`-1` when the list could not be read); both are left out for
   everyone else.
 - `GET /api/repos` — `{repos: [{full_name, waiting?, state, tone, reason}], truncated}`: the overview, first 100 by
@@ -1173,7 +1175,8 @@ turn: the results are judged in the old order. A panic in a part is raised again
 others are done, so the handler chain's recover still answers `500` and the process keeps serving.
 
 - Pull request page and graph: after `PullSummary`, the settings on the base and the report (check, artifact, digest,
-  decode) at once (with a hint, all of it beside `PullSummary`: Reads made ahead); the graph reads the policy at the head and at the base beside them. A settings error other than
+  decode) at once (with a hint, settings and check reads begin beside `PullSummary`, but artifact reads wait for
+  the fresh check: Reads made ahead); the graph reads the policy at the head and at the base beside them. A settings error other than
   none fails the answer first, then the report's own state. The base's policy text or failure counts only when the
   head's text is not the report's, and neither counts without a report.
 - Repository graph: the report and the policy text (the user's open draft, else the default branch) at once; the text
@@ -1189,16 +1192,31 @@ others are done, so the handler chain's recover still answers `500` and the proc
 - Tests prove the overlap without timing: the fake GitHub holds the named reads until all of them are in flight, so
   reads made in turn never meet (`TestIndependentReadsMeet`).
 
+### PR diagnostics and serving build
+
+Both PR API views share optional `check` context on `pullHead`. This is display-only context from the App-authored
+check, independent of report admission. The 65535-byte-bounded parser reads only the recovery prelude and Inputs and
+identity section, not findings or folds. Text is HTML-unescaped then rendered as escaped Svelte text, never raw
+Markdown or HTML. Current approved manifest pins are recovery guidance for producer/workflow rejection only.
+
+Context run identity, attempt, full head revision and report/input digests remain available under action-required.
+Missing historical Action SHA, analysis time and base revision are explicit in the UI, never inferred from today's
+manifest or App build. Check-start time is labelled separately. Report schema comes only from an admitted artifact.
+`pullBody.RunID` remains the admitted report identity; context RunID cannot populate artifact hints. An
+action-required result still returns nil report. Findings and Graph have distinct unavailable capability states;
+admitted partial evidence is marked, not described as passing.
+
 ### Reads made ahead
 
 A chain whose reads each take the last one's answer as a parameter starts them all at once with the parameters the
 previous request of the same chain found, and counts each only when the fresh read it depends on names the same
-**[decided, g4]**. A warm page waits for one round trip, not for three; a stale hint costs the reads made ahead and
-then the chain in turn, never a wrong page.
+**[decided, g4]**. Independent hinted reads overlap; a stale hint costs the reads made ahead and then the chain in
+turn, never a wrong page. PR artifact reads deliberately wait for the fresh check: a saved accepted run may have
+been withdrawn since the previous request.
 
 - Pull request page and graph: `PullSummary` beside the settings at the hinted base, `CheckRuns` at the hinted head,
-  `ArtifactID` of the hinted run, and the graph's policy texts at the hinted head and base. Each counts only when the
-  fresh pull request names the same base and head, and its newest `archfit/state` check the same run.
+  and the graph's policy texts at the hinted head and base. Each counts only when the fresh pull request names the
+  same base and head. Only a fresh non-action-required check can start the PR artifact read, never a diagnostic run ID.
 - Findings and repository graph: the settings beside `LatestRun` of the hinted workflow and `ArtifactID` of the hinted
   run, each counted only when the fresh settings name the same workflow and its fresh latest run is the same run.
 - Every fresh read runs on every request, `ArtifactID` included: the hint never replaces a read, it only lets one
