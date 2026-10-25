@@ -1,6 +1,6 @@
 # Coordinated toolchain release: execution record
 
-Checkpoint: CI-bootstrap follow-up `451a52a4`, 2026-10-24. Engine candidate PR open. No new release or deployment.
+Checkpoint: engine v3.2.0 publication started, 2026-10-25. PR86 merged. No App deployment.
 
 ## Authority and isolation
 
@@ -65,8 +65,9 @@ These CI images use version `ci-image-contract`, not a released identity or appr
 
 That run failed source tests. The bootstrap selected runner Python 3.12.3 despite setup-uv's 3.14.9 selector.
 Python/grimp and Rust SCIP reader failures reported the same interpreter rejection. The correction is described above.
-The new exact-head [CI run40118616937](https://github.com/alexei-led/archfit/actions/runs/40118616937) is running.
-Source tests, native images, and generated binaries must pass again before merge or release.
+The exact-head [CI run40118616937](https://github.com/alexei-led/archfit/actions/runs/40118616937) passed.
+Source tests, lint, documentation, and all four platform binary builds passed. Both native images passed 133/133 assertions.
+Provisioning logs confirm Python 3.14.9. The ignored govulncheck input warning is gone.
 
 The existing connected App check is `action_required`, not acceptance. Its v3.0.1 image runs Go 1.26.9 against a Go 1.27 repository.
 A baseline approval cannot clear that missing required evidence.
@@ -87,6 +88,21 @@ After release verification, update the strict reader to v3.2.0 only, genuine cap
 Replace both manifest platform rows with verified release digests and one released Action SHA.
 Exactly one amd64 row is Current. Do not retain old approvals or add dual-version fallback.
 Generated onboarding workflows must use that exact tuple. Keep the App image analyzer-free.
+
+## Owner decision and publisher checkpoint
+
+The owner explicitly approved engine publication while preserving the baseline and old App holds.
+This does not approve a healthy architecture claim, new debt, baseline reset, or App deployment.
+
+PR86 merged as `faa4eb4e513859567fd6c380230c91ea22fdaab6`.
+Its Git tree `201033b3d079e78175a22a14cce9d0f7587c4ae6` exactly matches the tested `451a52a4` candidate.
+The signed annotated v3.2.0 tag points to that merge commit. Its tag object is `0c673aa3e19e83f0dee7881d2df1faba1ff6680b`.
+The tag annotation comes from the committed release-notes section. Signature verification passed.
+[Release run40172977752](https://github.com/alexei-led/archfit/actions/runs/40172977752) is running.
+The tag is published. Final release assets and platform digests are not yet verified or approved.
+
+Fix the measurement environment first, then inspect fresh results and review the baseline migration.
+A baseline approval cannot repair missing compiler evidence. Changed measurements do not by themselves prove new code regressions.
 
 ## Remaining release sequence
 
