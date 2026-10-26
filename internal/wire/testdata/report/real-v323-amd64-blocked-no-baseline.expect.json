@@ -1,0 +1,26 @@
+{
+  "producer": {
+    "repository": "github.com/alexei-led/archfit",
+    "revision": "c7490636480a8faedddf3bff1d0a678a7ab7987c",
+    "engine_version": "v3.2.3",
+    "command": "Released native linux/amd64 image ghcr.io/alexei-led/archfit@sha256:87323e8d80d519531338ff7a36ce750d337ecf6560e48493bdeb10b864e7b772; actual Action PR6 head f047795cd4c83073ea73a8801614f25ce7d7437c CI run40329796416; tests/helpers.sh write_module and tests/engine-smoke.sh drive prepare/checkout/run/report on a scratch committed Go repository, no endpoint; check --json --refresh --progress=none -c /bundle/.archfit.yaml --root /src before actual baseline capture. Raw report/envelope bytes are unmodified; GitHub event/run metadata is synthetic, not authenticated-upload proof. Approved immutable Action merge dd835da5025fd6e54707521434a41767c3ec4ddb has the same reviewed/native-tested source tree."
+  },
+  "decode": "ok",
+  "fields": {
+    "verdict": "blocked",
+    "hard_gates": "fail",
+    "unevaluated_rule_ids": [],
+    "has_profile": true,
+    "profile_version": "archfit.measurement.v2",
+    "gate_reference_status": "non_comparable"
+  },
+  "gate": {
+    "conclusion": "failure",
+    "reasons": [
+      "blocking_findings"
+    ]
+  },
+  "facts": {
+    "identity_approved": true
+  }
+}

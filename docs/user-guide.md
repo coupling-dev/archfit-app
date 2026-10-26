@@ -427,13 +427,15 @@ no approval is needed any more.
 
 ### Engine versions
 
-The locked manifest approves engine v3.2.2 and the transition release v3.2.0 on Linux amd64 and arm64. New v3.2.2 workflows pin Action commit
-`e0a1ef9473d68b426e9c56b2da5986bcee2fc769`; transition v3.2.0 rows retain Action v2.2.0 at `cadf35c0d4885a49a3a1482b876f2a456d20de06`. Exactly one v3.2.2 amd64 row is the default for new workflows and recovery pins.
+The locked manifest approves engine v3.2.3 on Linux amd64 and arm64, retaining the exact previously approved
+v3.2.2/v3.2.0 tuples during rollout. New v3.2.3 workflows pin released Action v2.2.1 at merged commit
+`dd835da5025fd6e54707521434a41767c3ec4ddb`. Retained v3.2.2 rows keep `e0a1ef9473d68b426e9c56b2da5986bcee2fc769`;
+v3.2.0 rows keep `cadf35c0d4885a49a3a1482b876f2a456d20de06`. Only the v3.2.3 amd64 row is Current for new workflows/recovery pins.
 
-- Existing approved v3.2.0 platform tuples remain approved during rollout. Retired or unknown pins give `action_required` with `unknown_engine_identity`.
-- Historical v3.0.0/v3.0.1 reports remain readable because their state schema matches v3.2.0/v3.2.2.
+- Existing approved v3.2.2/v3.2.0 platform tuples remain approved during rollout. Retired or unknown pins give `action_required` with `unknown_engine_identity`.
+- Historical v3.0.0/v3.0.1 reports remain readable because their state schema matches v3.2.0/v3.2.2/v3.2.3.
   Reading an old report does not approve its identity. Unknown report releases give `report_invalid`.
-- The policy editor uses the byte-identical v3.2.2 config schema. The engine's check remains the authority for policy semantics.
+- The policy editor uses the byte-identical v3.2.3 config schema. The engine's check remains the authority for policy semantics.
 - Pull-request origin comes from `--base <merge base>`. It is display evidence, never an exemption from a blocker.
 
 #### Move an installed workflow to a new engine
@@ -441,15 +443,15 @@ The locked manifest approves engine v3.2.2 and the transition release v3.2.0 on 
 After the App release approves the new tuple, open an owner-reviewed pull request changing only these pins:
 
 ```yaml
-- uses: alexei-led/archfit-action@e0a1ef9473d68b426e9c56b2da5986bcee2fc769
+- uses: alexei-led/archfit-action@dd835da5025fd6e54707521434a41767c3ec4ddb
   with:
     # endpoint, audience and mode stay as they are
-    engine-version: "v3.2.2"
-    image-digest: "sha256:bd351ac70610555237974fac5ff914967a1100fb8ef754853151300d5d19ca35"
+    engine-version: "v3.2.3"
+    image-digest: "sha256:87323e8d80d519531338ff7a36ce750d337ecf6560e48493bdeb10b864e7b772"
 ```
 
 This example is for an amd64 Linux runner. Use the manifest's arm64 digest on an arm64 runner.
-This Action commit accepts v3.2.2 only. Pass that engine version and its exact platform digest explicitly. Keep the repository's settings, policy owners, and gate mode unchanged.
+This Action commit accepts v3.2.3 only. Pass that engine version and its exact platform digest explicitly. Keep the repository's settings, policy owners, and gate mode unchanged.
 The App does not update installed workflow files automatically.
 
 Run a fresh scan after moving the pins. Missing compiler or required-rule evidence cannot be repaired by a baseline approval.
