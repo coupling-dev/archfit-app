@@ -271,9 +271,9 @@ func TestPullGraphShowsWhatThePullRequestAdded(t *testing.T) {
 		links[l.From+" -> "+l.To] = got{l.Status, l.Origin}
 	}
 	want := map[string]got{
-		"pkg_chaos -> pkg_container": {graph.StatusViolation, report.PairExisting},
+		"pkg_chaos -> pkg_container": {graph.StatusViolation, report.PairAdded},
 		"pkg_container -> pkg_chaos": {graph.StatusViolation, report.PairAdded},
-		"pkg_chaos -> pkg_util":      {graph.StatusViolation, report.PairExisting},
+		"pkg_chaos -> pkg_util":      {graph.StatusViolation, report.PairAdded},
 		"pkg_util -> pkg_chaos":      {graph.StatusViolation, report.PairAdded},
 		// the engine's "observed" pairs that a baselined advisory names: accepted, as the comment counts them
 		"pkg_cmd -> pkg_chaos":      {graph.StatusAccepted, report.PairExisting},
@@ -284,8 +284,8 @@ func TestPullGraphShowsWhatThePullRequestAdded(t *testing.T) {
 	if !reflect.DeepEqual(links, want) {
 		t.Errorf("links = %+v\nwant %+v", links, want)
 	}
-	if b.Added != 2 {
-		t.Errorf("added = %d, want the two cycle directions the comment calls added", b.Added)
+	if b.Added != 4 {
+		t.Errorf("introduced-finding pairs = %d, want four including mixed pairs", b.Added)
 	}
 
 	origins := map[string][]string{}

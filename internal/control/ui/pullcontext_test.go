@@ -59,7 +59,7 @@ func TestActionRequiredKeepsReviewContextWithoutReadingArtifact(t *testing.T) {
 				}
 				c := body.Check
 				if c.RunID != 88 || c.Next != "Update the workflow producer and re-run." || !strings.Contains(c.Reason, "unknown_engine_identity") ||
-					len(c.Also) != 1 || !strings.Contains(c.Also[0], "missing_required_coverage") || !strings.Contains(c.Producer, "v3.0.1") ||
+					len(c.Also) != 1 || !strings.Contains(c.Also[0], "withheld") || strings.Contains(strings.Join(c.Also, "\n"), "Supply the missing evidence") || !strings.Contains(c.Producer, "v3.0.1") ||
 					c.Approved.EngineVersion != approved.EngineVersion || c.Approved.ImageDigest != approved.ImageDigest ||
 					c.Approved.Platform != approved.Platform || c.Approved.ActionRef != approved.ActionRef {
 					t.Errorf("missing actionable check context: %+v", c)

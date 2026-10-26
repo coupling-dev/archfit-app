@@ -244,7 +244,8 @@ func TestGoldenFeedback(t *testing.T) {
 	dimensionOrder := []string{"intent", "structure", "modularity", "coupling", "change_locality", "complexity", "testability", "operations", "drift"}
 	for _, c := range fixtureCases() {
 		t.Run(c.name, func(t *testing.T) {
-			p := fixturePublication(t, c, headB)
+			// Expected display excludes decoded claims whose structured reasons reject their source authority.
+			p := presentation(fixturePublication(t, c, headB))
 			waiver := ""
 			if !c.waiver.IsZero() {
 				waiver = c.waiver.Format(time.DateOnly)
@@ -260,15 +261,15 @@ func TestGoldenFeedback(t *testing.T) {
 			if lines[0] != commentMarker || !strings.HasPrefix(lines[1], headOpen) || !strings.HasPrefix(lines[2], "## Archfit: ") {
 				t.Errorf("comment does not open with markers and verdict: %q", lines[:3])
 			}
-			first := c.outcome.Reasons[0]
+			first := p.Outcome.Reasons[0]
 			verdictEnd := strings.Index(comment, "\n### ")
-			if first.Code == verdict.ReasonBlockingFindings && p.Report != nil && len(group(p.Report).violations) > 0 {
-				mustContain(t, comment[:verdictEnd], "Fix the violations above, then check with `archfit check")
+			if first.Code == verdict.ReasonBlockingFindings {
+				mustContain(t, comment[:verdictEnd], "PR author/coding agent:", "supplied validation commands")
 			} else {
 				mustContain(t, comment[:verdictEnd], first.Next)
 			}
 			mustNotContain(t, comment[:verdictEnd], "`"+string(first.Code)+"`")
-			mustContain(t, section(comment, headDecision), string(first.Code), string(first.Category), first.Detail)
+			mustContain(t, section(state, headDecision), string(first.Code), string(first.Category), first.Detail)
 			mustContain(t, state[:strings.Index(state+"\n### ", "\n### ")], string(first.Code), first.Detail, first.Next)
 			for _, body := range []string{comment, state} {
 				if section(body, headGaps) == "" {
@@ -281,7 +282,8 @@ func TestGoldenFeedback(t *testing.T) {
 				return
 			}
 
-			dims := section(comment, headDimensions)
+			mustNotContain(t, comment, headDimensions, "```mermaid")
+			dims := section(state, headDimensions)
 			at := -1
 			for _, key := range dimensionOrder {
 				i := strings.Index(dims, "| `"+key+"` |")
@@ -291,24 +293,42 @@ func TestGoldenFeedback(t *testing.T) {
 				at = i
 			}
 
-			tasks := decodeTasks(t, comment)
-			if len(tasks) != len(p.Report.AgentTasks) {
-				t.Fatalf("task block holds %d tasks, want %d", len(tasks), len(p.Report.AgentTasks))
-			}
-			commands := section(comment, headCommands)
-			for i, task := range tasks {
-				src := p.Report.AgentTasks[i]
-				if len(task) != 8 || task["repair_kind"] != src.RepairKind || task["origin"] != src.Origin {
-					t.Errorf("task %d = %v, want eight keys with repair_kind %q", i, task, src.RepairKind)
+			for _, body := range []string{comment, state} {
+				tasks := decodeTasks(t, body)
+				if len(tasks) != len(p.Report.AgentTasks) {
+					t.Fatalf("task block holds %d tasks, want %d", len(tasks), len(p.Report.AgentTasks))
 				}
-				for _, cmd := range src.Validation {
-					if strings.Count(commands, "\n"+cmd+"\n") != 1 {
-						t.Errorf("validation command %q is not printed exactly once", cmd)
+				commands := section(body, headCommands)
+				for i, task := range tasks {
+					src := p.Report.AgentTasks[i]
+					if len(task) != 8 || task["repair_kind"] != src.RepairKind || task["origin"] != src.Origin {
+						t.Errorf("task %d = %v, want eight keys with repair_kind %q", i, task, src.RepairKind)
+					}
+					if task["goal"] != src.Goal || task["finding_id"] != src.FindingID || task["rule_id"] != src.RuleID {
+						t.Errorf("task identity or goal changed: %v", task)
+					}
+					for key, expected := range map[string][]string{"constraints": src.Constraints, "files": src.Files, "validation": src.Validation} {
+						values, ok := task[key].([]any)
+						if !ok || len(values) != len(expected) {
+							t.Fatalf("task %s = %v, want %v", key, task[key], expected)
+						}
+						for j, value := range expected {
+							if values[j] != value {
+								t.Errorf("task %s[%d] changed", key, j)
+							}
+						}
+					}
+					if body == state {
+						for _, cmd := range src.Validation {
+							if strings.Count(commands, "\n"+cmd+"\n") != 1 {
+								t.Errorf("validation command %q is not printed exactly once", cmd)
+							}
+						}
 					}
 				}
-			}
-			if len(tasks) == 0 && commands != "" {
-				t.Errorf("validation block without tasks")
+				if len(tasks) == 0 && commands != "" {
+					t.Errorf("validation block without tasks")
+				}
 			}
 		})
 	}

@@ -24,7 +24,7 @@
             <span class="g-row-pair">
               <code>{r.link.from}</code> → <code>{r.link.to}</code>
               {#if r.cycle}<span class="g-tag">cycle</span>{/if}
-              {#if r.added}<span class="g-tag added">added</span>{/if}
+              {#if r.added}<span class="g-tag added">introduced finding</span>{/if}
             </span>
             <span class="muted small">{linkStatusWord(r.link)} · {countWord(r.link)}</span>
           </button>

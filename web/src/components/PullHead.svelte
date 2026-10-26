@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PullHead } from '../lib/api';
   import Analysis from './Analysis.svelte';
+  import { trustSentence } from '../lib/feedback';
   import { repoPage, safeHref } from '../lib/route';
 
   // The header the pull request page and its graph share: which pull request, its result and the two views.
@@ -45,11 +46,11 @@
           <span class="label attention" title="Without a baseline every finding counts as new, including older debt.">No baseline</span>
         {/if}
         {#if head.compared}
-          <span class="label accent" title="The engine compared this head with the base branch, so each finding says whether this pull request added it.">Compared with base branch</span>
+          <span class="label accent" title="The engine compared finding identities with the Git base. This does not date each module pair or source site.">Compared with base branch</span>
         {:else}
-          <span class="label" title="This run did not compare with the base branch, so nothing can be called added by this pull request.">Not compared with base branch</span>
+          <span class="label" title="No comparable Git-base finding-origin evidence is available for this run.">Not compared with base branch</span>
         {/if}
-        <span class="muted" title="The report comes from your CI run. Archfit authenticates who produced it; it does not check the content.">
+        <span class="muted" title={trustSentence}>
           {#if safeHref(head.checks_url)}<a class="inline" href={safeHref(head.checks_url)} rel="noreferrer">Run {head.run_id}</a>{:else}Run {head.run_id}{/if}
           · customer-attested
         </span>

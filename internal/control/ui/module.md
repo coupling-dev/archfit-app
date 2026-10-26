@@ -32,8 +32,8 @@ could still work GitHub-first, but onboarding, schema-guided editing and consent
   draft state and its way to the merge (saved → checked → ready → owner approves → merged), mark ready for review.
 - Graph: fetch the latest report artifact, decode it, build the view through `graph`, answer it as JSON, mark it stale.
   The web app draws it.
-- Pull request graph: the same view for the report the pull request page shows, with each link's origin by the PR
-  comment's rule, so the links this pull request added are the ones the comment calls added.
+- Pull request graph: the same admitted report as the pull request page. Link origin aggregates current finding
+  evidence; it does not establish newly added pairs or source sites.
 - Repository findings: the latest default-branch report's findings in the groups and words of the PR comment, for the
   overview's counters and list.
 - Pull request page: the result of one pull request's head, from the `archfit/state` check and the report of the
@@ -359,8 +359,8 @@ type Link struct {
     To     string     `json:"to"`
     Status LinkStatus `json:"status"`
     Count  int        `json:"count"` // observed dependencies of the pair's seams; 0 when only a finding names the pair
-    // Origin is report.PairOrigin of the pair, the PR comment's rule: report.PairAdded when this change added the
-    // dependency, report.PairExisting when the base had it, "" when the report cannot say or did not compare. Display only.
+    // Origin aggregates finding evidence: "added" contains introduced findings, "existing" contains pre-existing
+    // findings, "" has no comparable evidence. It never dates the pair or every source site. Display only.
     Origin string `json:"origin"`
     // The coupling of the pair's strongest seam, as the engine measured it; all "" when no seam names the pair.
     Strength   string `json:"strength"`   // engine token: contract, model, functional, symmetric, intrusive, unknown
@@ -405,8 +405,8 @@ type View struct {
 }
 
 // LinkFinding is one finding that names a drawn link's module pair, as the engine reported it. It explains a link and
-// never decides its Status. It carries no origin: what a pull request added is the link's Origin, the comment's rule,
-// and a cycle finding's own origin would contradict it. Why is engine text: the page must treat it as untrusted.
+// never decides its Status. Link.Origin aggregates finding evidence on the pair, not pair/site novelty.
+// Why is engine text: the page must treat it as untrusted.
 type LinkFinding struct {
     From   string `json:"from"`
     To     string `json:"to"`
@@ -1311,14 +1311,15 @@ been withdrawn since the previous request.
   rule violations open (`report.Group`: active gate findings first, then any status this version does not know, which
   is shown but not labelled a violation), each dependency cycle among
   them (`report.Cycles`, the comment's grouping) as one card with a drawing of the cycle (one box per module, one
-  arrow per direction labelled with its location count, styled as the comment's diagram), a row per direction with
+  arrow per direction labelled with its supplied location count and finding-identity origin), a row per direction with
   "This PR", its locations and the seam's strength, distance (`report.DistanceWords`) and volatility, then the reason
   once and each distinct repair once; every other violation as its own card. An advisory on a violation's dependency joins that violation's row as
   "Also reported as" (`report.SplitCovered`, the comment's rule) and is not counted among the advisories; the advisory
   group then reads "Advisories on other dependencies · never block" (`advisories_elsewhere`: any advisory covered,
   over all violations), as the comment does. Advisories, "Known issues
-  accepted earlier" and "Known issues fixed" (`fixed`, `fixed_count`: the comment's last group) each one folded table
-  with the seam's strength, distance and volatility and each distinct reason once; the seam's suggested move only for
+  accepted earlier" each have a folded table with seam facts and distinct reasons. `fixed` lifecycle entries instead
+  state that an accepted identity is no longer observed and resolution is not established, without invented old
+  endpoints or severity. The seam's unselected hypothesis is shown only for
   the advisories, never for accepted or fixed debt, in the PR comment's words
   (`report.BalancingMove`; a token this version does not know as written). A finding whose agent task the engine marks
   `needs_owner_decision` carries an "owner decision" label; the path the engine suggests is not shown: wire/report
@@ -1330,12 +1331,12 @@ been withdrawn since the previous request.
   not evaluate with its reason, and `comparison.origin_reasons` as attribution notes. With the hard gates failing and no
   violation listed, the page never says "No rule violations": it points to the verdict. At most 50 per group with the rest counted (group counts are of
   findings), 3 locations per finding with the rest folded. "This PR" only when `origin_status` is `comparable`: a
-  cycle direction reads `report.PairOrigin` (the comment's rule, so the comment, this page and the graph agree), any
-  other finding its own `origin` (`introduced` is added, `pre_existing` existed before). Badges for the gate
+  cycle direction and every other finding read their own finding-identity `origin`, not a pair/site origin.
+  The existing transport tokens `added`/`existing` are worded as introduced/pre-existing finding. Badges for the gate
   ("Required gate" or "Advisory: does not block merging"), "No baseline" (`gate_reference.baseline_present`),
   "Compared with base branch" or "Not compared with base branch", and the run as a link with "customer-attested",
   each explained in a tooltip;
-  the exact `agent_tasks` array with a copy button; the nine dimensions with readable names (the engine key as a
+  the exact nonempty `agent_tasks` array with a copy button, or an explicit no-source-repair-task explanation; the nine dimensions with readable names (the engine key as a
   tooltip) and every unknown fact in one folded "To measure more" group. Engine strings are JSON data that the web
   app renders as text. Two tabs above the result, **Findings** (this page) and **Graph** (the pull request graph).
   Links in API answers are shown only when they point into the App or to `https://github.com/` (`safeHref`).
@@ -1346,15 +1347,12 @@ been withdrawn since the previous request.
   request changes it); with neither, the head's text (else the base's) and the stale banner "Neither the head nor the
   base branch holds the policy this report was computed from." Module lines link to that file on GitHub at that ref.
   Display only: the head's text is untrusted and decides nothing. Header: the pull request page's header and result,
-  with the Graph tab current. When `comparison.origin_status` is not `comparable`, the folded banner "This run did not
-  compare with the base branch, so the graph cannot show what this PR added." and no link carries an origin.
-  Otherwise each link's origin is `report.PairOrigin` of its pair, the PR comment's rule: `added` only when no
-  pre-existing finding names the pair and a finding this pull request introduced off a cycle does. An "N added by this
-  PR" chip, on by default: an emphasis, not a filter. On, an added link keeps its status colour and gains a halo, and
-  the other links stay drawn, muted; the problem list puts added links first and marks them. An added link always
-  counts as a problem for focus mode. A cycle's two directions stay one problem row when they share a status, marked
-  added when either is. Findings carry no origin of their own on the graph: a cycle finding's origin would contradict
-  its link's.
+  with the Graph tab current. Without comparable Git-base finding-origin evidence, every link origin stays empty.
+  Otherwise `report.PairOrigin(pair, g.All)` aggregates non-fixed findings. Retained `added` means contains
+  introduced findings, including cycles and mixed pairs; `existing` means contains pre-existing findings. Neither
+  dates the pair or each source site. The “N with introduced findings” chip emphasizes those pairs without changing
+  status/permission. They remain problem rows even when another finding on the pair is accepted. A focused link
+  from a finding selects only a pair already present in the admitted graph; query parameters supply no graph facts.
 - Balance reading (both graphs, `web/src/lib/seam.ts`), each sentence the engine's own meaning
   (archfit `internal/relationship/seam.go`, `score/gate.go`): the suggested move in the PR comment's words
   (`report.BalancingMove`, sent worded as `Link.Move`), marked as a hypothesis; the quadrant; the boundary crossed and the module holding both ends. A dependency the engine
@@ -1408,6 +1406,12 @@ been withdrawn since the previous request.
   while the permission check is per repository: a repository administrator consents for every repository of the owner the
   App can access, and the page says so **[default]**. Managed AI additionally needs `data_mode: managed` in the
   owner-approved settings of each repository.
+
+Historical check recovery uses only the public gate facade's verdict-owned code/category classifier. It scans
+primary and all secondary prelude reasons before presenting guidance; rejected/unknown source claims and actions
+are withheld, independent authority/input diagnostics and recorded identity/links remain. Supported incomplete
+reference/coverage/selector recovery is preserved. The original CheckRun, outcome and artifact admission are not
+changed; no private gate child or duplicate TypeScript policy is imported.
 
 ## Change Vectors
 
@@ -1534,7 +1538,7 @@ their interfaces except where a test says otherwise. The clock is injected.
   engine's order; "a hard gate could not be measured; intent, structure and drift are not measured".
 - **Test name**: `TestPullPageShowsTheReportOfItsCheck`
   **Scenario**: no check on the head; a check whose external_id names a run whose artifact matches its digest; one whose digest does not match; an expired artifact; run 0; an unknown pull request.
-  **Expected behavior**: "no result yet"; the check title as headline, advisory mode, the violation, the no-baseline and no-attribution line, the run; the mismatch wording and no finding; the expired wording; the no-upload wording; `404`. Also: an `action_required` run over a matching old report shows the action-required wording and no finding; an undecodable report shows "report unavailable"; of two check runs the higher ID wins; "added by this PR" appears only with `origin_status: comparable` and `origin: introduced`.
+  **Expected behavior**: "no result yet"; the check title as headline, advisory mode, the violation, the no-baseline and no-attribution line, the run; the mismatch wording and no finding; the expired wording; the no-upload wording; `404`. Also: an `action_required` run over a matching old report shows the action-required wording and no finding; an undecodable report shows "report unavailable"; of two check runs the higher ID wins; introduced-finding evidence appears only with `origin_status: comparable` and `origin: introduced`, never as a claim that each source site was added.
 - **Test name**: `TestStatusPageShowsBranchPullsAndSetup`
   **Scenario**: stage `gate_advisory` with a default-branch check and one open pull request; stage `workflow_merged`; `OpenPulls` failing; for an administrator, `CheckRuns`, `OpenPulls`, the entitlement and the consent all failing at once; 23 more open pull requests.
   **Expected behavior**: through `/api/repos/{o}/{n}/overview`: the default branch, its title and tone, the pull request linked to its page with its check title, the current and done steps, the rehearse advice; no pull request or state shown before a report, also at `policy_merged`, where "First report" is not done; the ruleset advice at `gate_required`; the fixed wording and a `200`; a `200` with admin true, managed AI `unknown`, the state `unknown`, the pulls error, no banner and the steps; "4 more" and 21 `CheckRuns` calls.

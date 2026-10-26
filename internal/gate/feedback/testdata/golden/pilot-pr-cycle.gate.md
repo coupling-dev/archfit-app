@@ -21,7 +21,7 @@ This check does not block merging: the gate is advisory for this repository.
 - Measurement profile: version `archfit.measurement.v2`, settings hash `eb46ade8e8c37ee1f509da1f83bddfac13e4d162602d9065ccc964e165810ef6`
 - Producer identity, claimed: engine v3.0.0, image sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08, linux/amd64
 
-Measurement is customer-attested: the producer is authenticated, the report content is not independently checked.
+Reports are customer-attested. Upload authentication does not independently verify report content.
 
 </details>
 

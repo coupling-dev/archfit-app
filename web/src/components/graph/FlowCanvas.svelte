@@ -18,7 +18,7 @@
   let nodes = $state.raw<Node[]>([]);
   let edges = $state.raw<Edge[]>([]);
   let version = $state(0);
-  // With emphasis on, the dependencies this pull request did not add are muted, when it added any.
+  // Emphasis keeps pairs with introduced finding evidence prominent; it makes no source-site novelty claim.
   const pullHasAdded = $derived(links.some((l) => isAdded(l, pull)));
 
   $effect(() => {

@@ -13,6 +13,11 @@
 <details>
 <summary>Evidence and inputs</summary>
 
+### Decision
+
+- Engine verdict **blocked**: hard gates fail, 1 active blocker, every required rule evaluated
+- Blocking findings (architecture) · code `blocking_findings`
+
 ### Dimensions
 
 | Dimension | Status | Measured | Confidence | Result |
@@ -28,6 +33,8 @@
 | `drift` | unmeasured | 0/0 | unrated | not applicable |
 
 ### Evidence gaps
+
+Declared rule checks: 1/1 evaluated. Implicit accepted-reference metric checks: inventory not reported. Accepted reference: non comparable.
 
 - Analyzers that did not run (absent or disabled): `dependency-cruiser`, `grimp`, `cargo`, `jscpd`, `scip`, `ast-grep/syntax`, `ast-grep`, `cargo-modules`
 - Dimension `change_locality`, unknown fact: eligible commit sample — the history scan returned no eligible commit (ok), so co-change cannot be distinguished from a stable tree
@@ -54,7 +61,30 @@
 - Measurement profile: version `archfit.measurement.v2`, settings hash `64fb93addd39e92be19fa18ba380fa211a144697946f810bda7c483bc146f73b`
 - Producer identity, claimed: engine v3.0.0, image sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08, linux/amd64
 
-Measurement is customer-attested: the producer is authenticated, the report content is not independently checked.
+Reports are customer-attested. Upload authentication does not independently verify report content.
+
+### Validation commands (as run in the Archfit workflow)
+
+```sh
+archfit check -c .archfit.yaml
+archfit check -c .archfit.yaml --base main --lang go --require-tools
+```
+
+</details>
+
+<details>
+<summary>For coding agents</summary>
+
+### Agent tasks
+
+<!-- archfit:agent-tasks -->
+```json
+[
+{"finding_id":"ba3803eca947bf3c1b7efa8f37854d5e","rule_id":"no_direct_b_dependency","repair_kind":"code_change","goal":"Remove the forbidden dependency from pkg/a/a.go on pkg/b; move shared behavior to a location permitted by the existing dependency rules.","constraints":["Remove the dependency or move the code","public surface of module \"b\": [pkg/b/b.go]"],"files":["pkg/a/a.go","pkg/b"],"validation":["archfit check -c .archfit.yaml"],"origin":"introduced"},
+{"finding_id":"coupling-gate","rule_id":"bc/coupling_gate","repair_kind":"needs_owner_decision","goal":"Decide whether the coupling between modules a and b is intended; declare volatility or restructure.","constraints":["Do not baseline the seam without an owner decision"],"files":["pkg/a/**","pkg/b"],"validation":["archfit check -c .archfit.yaml --base main --lang go --require-tools"],"origin":"pre_existing"}
+]
+```
+<!-- /archfit:agent-tasks -->
 
 </details>
 

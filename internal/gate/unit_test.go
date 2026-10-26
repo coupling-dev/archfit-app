@@ -42,6 +42,22 @@ func goList(t *testing.T, dir string, args ...string) []string {
 	return strings.Fields(string(out))
 }
 
+func TestDisplayReasonFacadeRepublishesOnlyPrimitiveMetadata(t *testing.T) {
+	for _, tt := range []struct {
+		code, category string
+		derived, known bool
+	}{
+		{"healthy", "architecture", true, true}, {"missing_required_coverage", "evidence", true, true}, {"policy_defect", "governance", true, true},
+		{"unknown_engine_identity", "evidence", false, true}, {"owner_approval_missing", "governance", false, true},
+		{"healthy", "evidence", false, false}, {"future_reason", "evidence", false, false},
+	} {
+		derived, known := ClassifyDisplayReason(tt.code, tt.category)
+		if derived != tt.derived || known != tt.known {
+			t.Errorf("facade %s/%s = %v,%v", tt.code, tt.category, derived, known)
+		}
+	}
+}
+
 func TestGateImportsNothingForbidden(t *testing.T) {
 	allowed := []string{
 		modulePath + "/internal/wire/", modulePath + "/internal/github/",

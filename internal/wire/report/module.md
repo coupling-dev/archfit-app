@@ -552,7 +552,7 @@ func (f Finding) Reverses(g Finding) bool
 // Display rules the PR comment (gate/feedback), the pull request page and the graph (control/ui) share, so all tell
 // the same story. None of them is a gate decision.
 
-// ShownPerGroup is how many findings of one group the comment and the pull request page list; the rest are counted.
+// ShownPerGroup is how many findings of one group the detailed check and pull request page list; the rest are counted.
 const ShownPerGroup = 50
 
 // Group sorts a report's findings into the comment's groups: violations (active first, then unknown statuses),
@@ -565,10 +565,17 @@ func Cycles(fs []Finding) []int
 
 const PairAdded, PairExisting = "added", "existing"
 
-// PairOrigin is what the report shows about one direction of a cycle on the pull request base: PairExisting when a
-// finding on the same module pair is pre_existing, else PairAdded when one on the pair that lies on no cycle is
-// introduced, else "".
-func PairOrigin(f Finding, all []Finding, onCycle map[string]bool) string
+// PairOrigin aggregates non-fixed finding evidence after Group clears incomparable origins: PairAdded means
+// contains an introduced finding (including cycles/mixed pairs), else PairExisting means contains pre-existing
+// findings. Neither token dates a pair or every source site.
+func PairOrigin(f Finding, all []Finding) string
+
+// Display-only feedback helpers; these add no wire fields and make no eligibility/gate decision.
+func PRImpact(r Report) string
+func EvidenceSummary(r Report) string
+func NoRequiredChange(r Report) bool
+func ReferenceCoversMetricGap(r Report, u UnevaluatedRule) bool
+func ReferenceCoversAllGaps(r Report) bool
 
 // SplitCovered splits advisories by the violations' module pairs. An advisory on the same ordered, non-empty module
 // pair as a violation is that dependency under another rule: it joins the violation's row ("also reported as") and is

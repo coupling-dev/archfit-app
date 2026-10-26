@@ -28,6 +28,8 @@
   } from '../lib/graph';
   import { type Repo } from '../lib/route';
   import { ui } from '../lib/selection.svelte';
+  import { selectedPair } from '../lib/feedback';
+  import { linkKey } from '../lib/graph';
 
   // The repository graph (the latest default-branch report) or a pull request's graph (the report its check names).
   // This page and the drawing libraries are one lazy chunk; the rest of the App never loads them.
@@ -48,7 +50,12 @@
   function load() {
     const path = route.number ? `pulls/${route.number}/graph` : 'graph';
     firstJSON<Graph>(repoAPI(route.owner, route.name, path)).then(
-      (b) => (body = b),
+      (b) => {
+        body = b;
+        const selected = selectedPair(b.view?.links ?? [], location.search);
+        ui.sel = selected ? { kind: 'link', key: linkKey(selected) } : null;
+        if (selected) scope = 'all';
+      },
       (e: ApiError) => (failure = explainLoad(e, here)),
     );
   }
@@ -130,13 +137,14 @@
         {#if body.pull && !body.pull.compared}
           <div class="flash warn" id="not-compared">
             <details>
-              <summary>This run did not compare with the base branch, so the graph cannot show what this PR added.</summary>
-              <p class="small">Every dependency is drawn without an "added" claim. The PR comment says the same.</p>
+              <summary>This run did not compare with the base branch, so finding origin against the Git base is unknown.</summary>
+              <p class="small">No module-pair or source-site novelty is established. The PR comment says the same.</p>
             </details>
           </div>
         {/if}
       </div>
     {/if}
+    <p class="muted small">Finding origin is not source-site origin. Highlighted pairs contain evidence of introduced findings; other findings on the same pair may predate this PR. No historical edges or removed sites are inferred.</p>
     <SeamSummary links={view.links} />
 
     <div class="g-bar">
@@ -147,8 +155,8 @@
             type="button"
             class="g-chip added"
             aria-pressed={ui.emphasis}
-            title="Dependencies this pull request added, as the PR comment says. The halo marks them."
-            onclick={() => (ui.emphasis = !ui.emphasis)}><i aria-hidden="true"></i><b>{added}</b> added by this PR</button
+            title="Pairs containing evidence of an introduced finding. This does not mean each source site was added."
+            onclick={() => (ui.emphasis = !ui.emphasis)}><i aria-hidden="true"></i><b>{added}</b> with introduced findings</button
           >
         {/if}
         {#each counts as [s, n] (s)}

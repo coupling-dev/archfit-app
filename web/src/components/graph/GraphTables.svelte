@@ -65,7 +65,7 @@
             <tr>
               <td><code>{l.from}</code></td>
               <td><code>{l.to}</code></td>
-              <td>{linkStatusWord(l)}{isAdded(l, pull) ? ' · added by this PR' : ''}</td>
+              <td>{linkStatusWord(l)}{isAdded(l, pull) ? ' · contains introduced findings' : ''}</td>
               <td class="num">{l.count || countWord(l)}</td>
               <td>
                 {measured(l) ? strengthWord[l.strength] : 'not measured'} · {l.distance || '—'} · {linkVolatility(l) || '—'} ·

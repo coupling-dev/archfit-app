@@ -55,6 +55,20 @@ const (
 	ReasonSuspended             ReasonCode = "subscription_suspended"
 )
 
+// ClassifyDisplayReason classifies recorded reason metadata for presentation only, never a gate decision.
+// A missing/unknown code or mismatched category is unclassified and must not supply current repair guidance.
+func ClassifyDisplayReason(code ReasonCode, category Category) (reportDerived, known bool) {
+	entry, ok := lookup(code)
+	if !ok || entry.category != category {
+		return false, false
+	}
+	switch code {
+	case ReasonHealthy, ReasonAttentionOnly, ReasonBlockingFindings, ReasonBaselineNotComparable, ReasonMissingCoverage, ReasonPolicyDefect:
+		return true, true
+	}
+	return false, true
+}
+
 type Reason struct {
 	Code     ReasonCode
 	Category Category

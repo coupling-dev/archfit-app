@@ -3,7 +3,6 @@ package graph
 
 import (
 	"cmp"
-	"maps"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -45,8 +44,8 @@ type Link struct {
 	To     string     `json:"to"`
 	Status LinkStatus `json:"status"`
 	Count  int        `json:"count"` // observed dependencies of the pair's seams; 0 when only a finding names the pair
-	// Origin is report.PairOrigin of the pair, the PR comment's rule: report.PairAdded when this change added the
-	// dependency, report.PairExisting when the base had it, "" when the report cannot say or did not compare. Display only.
+	// Origin aggregates finding evidence: "added" contains introduced findings, "existing" contains pre-existing
+	// findings, "" has no comparable evidence. It never dates the pair or every source site. Display only.
 	Origin string `json:"origin"`
 	// The coupling of the pair's strongest seam, as the engine measured it; all "" when no seam names the pair.
 	Strength   string `json:"strength"`   // engine token: contract, model, functional, symmetric, intrusive, unknown
@@ -91,8 +90,8 @@ type View struct {
 }
 
 // LinkFinding is one finding that names a drawn link's module pair, as the engine reported it. It explains a link and
-// never decides its Status. It carries no origin: what a pull request added is the link's Origin, the comment's rule,
-// and a cycle finding's own origin would contradict it. Why is engine text: the page must treat it as untrusted.
+// never decides its Status. Link.Origin aggregates finding evidence on the pair, not pair/site novelty.
+// Why is engine text: the page must treat it as untrusted.
 type LinkFinding struct {
 	From   string `json:"from"`
 	To     string `json:"to"`
@@ -242,28 +241,12 @@ func Build(rep report.Report, policyText []byte) View {
 		}
 	}
 
-	// A link's origin is the comment's rule over the comment's groups, so both say the same about what a pull request
-	// added; Group clears every origin when the report did not compare with the base branch. Group searches only the
-	// shown violations for cycles, so a violation past the cap, off the pairs of the shown cycles, counts as one that
-	// cannot tell, like a cycle finding: it never makes a pair added, and a pre-existing one still makes it existing.
-	// On a shown cycle's pair the comment asks PairOrigin with Group's own OnCycle, so the graph does too.
+	// Aggregate finding evidence only; neither a cycle origin nor an introduced finding dates every source site.
 	g := report.Group(rep, report.ShownPerGroup)
 	if g.Compared {
-		cyclePairs := map[pair]bool{}
-		for _, f := range g.Violations {
-			if g.OnCycle[f.ID] {
-				cyclePairs[pair{f.Edge.From.Module, f.Edge.To.Module}] = true
-			}
-		}
-		unknown := maps.Clone(g.OnCycle)
-		for _, f := range g.Violations[min(len(g.Violations), report.ShownPerGroup):] {
-			if !cyclePairs[pair{f.Edge.From.Module, f.Edge.To.Module}] {
-				unknown[f.ID] = true
-			}
-		}
 		for p, l := range links {
 			on := report.Finding{Edge: report.Edge{From: report.Endpoint{Module: p.from}, To: report.Endpoint{Module: p.to}}}
-			l.Origin = report.PairOrigin(on, g.All, unknown)
+			l.Origin = report.PairOrigin(on, g.All)
 		}
 	}
 

@@ -80,7 +80,7 @@ func (s *publisher) Publish(ctx context.Context, p Publication) (err error) {
 	if required(p) { // the same predicate the headline reads, so a title never names a gate that was not written
 		run.Name, run.Conclusion = gateCheck, string(p.Outcome.Conclusion)
 		run.Title, run.Summary = gateTitle(p), renderGate(p)
-		if gate, err = s.writeCheck(ctx, p.Target.Repo.RepoRef, run, p.Receipt); err != nil {
+		if gate, _, err = s.writeCheck(ctx, p.Target.Repo.RepoRef, run, p.Receipt); err != nil {
 			return err
 		}
 	}
@@ -93,7 +93,7 @@ func (s *publisher) Publish(ctx context.Context, p Publication) (err error) {
 	if listErr == nil {
 		run.Annotations = annotations(p, changed)
 	}
-	if state, err = s.writeCheck(ctx, p.Target.Repo.RepoRef, run, p.Receipt); err != nil {
+	if state, p.stateCheckID, err = s.writeCheck(ctx, p.Target.Repo.RepoRef, run, p.Receipt); err != nil {
 		return err
 	}
 	if isPull {
@@ -141,19 +141,23 @@ func (s *publisher) latestRun(ctx context.Context, r api.RepoRef, headSHA, name 
 }
 
 // writeCheck updates the latest run in place when that shows exactly this publication, else creates a run.
-func (s *publisher) writeCheck(ctx context.Context, r api.RepoRef, run api.CheckRun, receipt Receipt) (string, error) {
+func (s *publisher) writeCheck(ctx context.Context, r api.RepoRef, run api.CheckRun, receipt Receipt) (string, int64, error) {
 	existing, found, err := s.latestRun(ctx, r, run.HeadSHA, run.Name)
 	if err != nil {
-		return actionNone, err
+		return actionNone, 0, err
 	}
 	switch {
 	case found && supersedes(existing, receipt):
-		return actionSkippedNewer, nil
+		return actionSkippedNewer, 0, nil
 	case found && reusable(existing, run):
 		run.ID, run.Annotations = existing.ID, nil
-		return actionUpdated, s.checks.UpdateCheckRun(ctx, r, run)
+		if err := s.checks.UpdateCheckRun(ctx, r, run); err != nil {
+			return actionUpdated, 0, err
+		}
+		return actionUpdated, existing.ID, nil
 	}
-	return actionCreated, s.createRun(ctx, r, run, receipt)
+	id, err := s.createRun(ctx, r, run, receipt)
+	return actionCreated, id, err
 }
 
 // reusable reports whether an update in place leaves the run showing exactly run. GitHub appends the annotations of
@@ -173,28 +177,28 @@ func reusable(existing, run api.CheckRun) bool {
 // same run: GitHub takes 50 per request and appends each batch. Before each further batch it reads the latest run
 // again and stops when another run took its place or a newer publication superseded it, so an older publication
 // never overwrites a newer summary.
-func (s *publisher) createRun(ctx context.Context, r api.RepoRef, run api.CheckRun, receipt Receipt) error {
+func (s *publisher) createRun(ctx context.Context, r api.RepoRef, run api.CheckRun, receipt Receipt) (int64, error) {
 	var rest []api.Annotation
 	run.Annotations, rest = batch(run.Annotations)
 	created, err := s.checks.CreateCheckRun(ctx, r, run)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	run.ID = created.ID
 	for len(rest) > 0 {
 		latest, found, err := s.latestRun(ctx, r, run.HeadSHA, run.Name)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		if !found || latest.ID != run.ID || supersedes(latest, receipt) {
-			return nil
+			return 0, nil
 		}
 		run.Annotations, rest = batch(rest)
 		if err := s.checks.UpdateCheckRun(ctx, r, run); err != nil {
-			return err
+			return 0, err
 		}
 	}
-	return nil
+	return run.ID, nil
 }
 
 // batch splits off the annotations of one request.

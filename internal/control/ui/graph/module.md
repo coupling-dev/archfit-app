@@ -96,8 +96,8 @@ type Link struct {
     To     string     `json:"to"`
     Status LinkStatus `json:"status"`
     Count  int        `json:"count"` // observed dependencies of the pair's seams; 0 when only a finding names the pair
-    // Origin is report.PairOrigin of the pair, the PR comment's rule: report.PairAdded when this change added the
-    // dependency, report.PairExisting when the base had it, "" when the report cannot say or did not compare. Display only.
+    // Origin aggregates finding evidence: "added" contains introduced findings, "existing" contains pre-existing
+    // findings, "" has no comparable evidence. It never dates the pair or every source site. Display only.
     Origin string `json:"origin"`
     // The coupling of the pair's strongest seam, as the engine measured it; all "" when no seam names the pair.
     Strength   string `json:"strength"`   // engine token: contract, model, functional, symmetric, intrusive, unknown
@@ -142,8 +142,8 @@ type View struct {
 }
 
 // LinkFinding is one finding that names a drawn link's module pair, as the engine reported it. It explains a link and
-// never decides its Status. It carries no origin: what a pull request added is the link's Origin, the comment's rule,
-// and a cycle finding's own origin would contradict it. Why is engine text: the page must treat it as untrusted.
+// never decides its Status. Link.Origin aggregates finding evidence on the pair, not pair/site novelty.
+// Why is engine text: the page must treat it as untrusted.
 type LinkFinding struct {
     From   string `json:"from"`
     To     string `json:"to"`
@@ -209,15 +209,12 @@ func Build(rep Report, policy []byte) View
     pair **[default]**, the last one carrying `More`, the count not listed; `Why` clipped to 400 runes with "…"
     **[default]**; sorted by `(From, To)`, stable. It never changes a `Status`:
     an advisory on a pair whose engine seam status is `allowed` is listed and the link stays `allowed`. Never nil.
-13. Origin, a projection for a pull request report: `g := report.Group(rep, report.ShownPerGroup)`; only when
-    `g.Compared` (the engine compared with the base branch), each link's `Origin` is
-    `report.PairOrigin` of its pair over `g.All` and `g.OnCycle`, the rule the PR comment uses: `existing` when a
-    pre-existing finding names the pair, else `added` when an introduced finding off a cycle does, else `""`. `Group`
-    searches only the first `ShownPerGroup` violations for cycles, so a violation past them, on a pair no shown
-    cycle finding names, counts as on a cycle: it never makes a pair `added` (the comment folds it into "and N
-    more"), and a pre-existing one still makes it `existing`. On a shown cycle's pair the origin is the comment's. A pair no finding names stays `""`. Without a comparison every `Origin` is `""`, so nothing claims what a change added
-    without the engine's comparison. `Origin` is never inferred from a status (`new` means "not accepted", not
-    "added") and never changes `Status`: an added link with a gate finding stays a `violation`.
+13. Origin is display-only: `Group` first clears finding origins without a comparable Git-base comparison.
+    `report.PairOrigin(pair, g.All)` then aggregates non-fixed finding evidence. The retained token `added` means
+    contains introduced findings, including cycle-only and mixed pairs; otherwise `existing` means contains
+    pre-existing findings. Neither dates the relationship or every site. No finding evidence means `""`.
+    Fixed entries are ignored; origin never changes Status, permission or completeness. Display caps do not erase
+    valid introduced finding evidence beyond the shown list.
 14. Coupling: per pair, the seam with the strongest `Strength` (`unknown` < `contract` < `model` < `functional` <
     `symmetric` < `intrusive`, the engine's roll-up order; a token outside them ranks below all), then the most
     `Edges`, gives `Strength`, `Volatility`, `VolatilitySource` (the seam's `VolatilityProvenance`), `Hypothesis`,
@@ -636,8 +633,9 @@ Nothing is mocked.
   finding on a dependency the base had; a new cycle over new dependencies; the old direction of a new cycle; a new
   cycle after `ShownPerGroup` other violations; a shown cycle with a new finding of another rule on one direction
   past the cap.
-  **Expected behavior**: `added`; `""`; `existing`; `existing`; `""` for both directions; `existing` for the old one;
-  `""` for both directions past the cap; `added` for that direction, as the comment says.
+  **Expected behavior**: introduced evidence uses retained `added`, including mixed/cycle-only/past-cap findings;
+  unknown comparison uses `""`; pre-existing-only uses `existing`. No token claims that each pair/site was added;
+  status and permission remain unchanged.
 - **Test name**: `TestOriginNeverChangesTheStatus`
   **Scenario**: an added link with an active gate finding, and without.
   **Expected behavior**: both statuses equal those of the same report without a comparison.

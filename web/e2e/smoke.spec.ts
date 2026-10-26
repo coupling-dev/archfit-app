@@ -791,18 +791,23 @@ test('pull request: the cycle drawn as on the comment, then the other findings',
     'Imbalanced coupling · critical',
   );
   await expect(page.getByText('Go through the repository.')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Graph' })).toHaveAttribute('href', '/r/acme/app/pull/4/graph');
+  await expect(page.getByRole('link', { name: 'Graph', exact: true })).toHaveAttribute(
+    'href',
+    '/r/acme/app/pull/4/graph',
+  );
   await expect(page.locator('#decision')).toContainText(
     'Engine verdict blocked: hard gates fail, 3 active blockers, 1 required rule not evaluated',
   );
   await expect(cycle.getByText('Allowed alternatives:')).toBeVisible();
-  await expect(cycle.locator('.cycle-legend')).toHaveText(/added by this PR\s*existed before/);
+  await expect(cycle.locator('.cycle-legend')).toHaveText(
+    /introduced finding; source-site origin unknown\s*pre-existing finding; source-site origin unknown/,
+  );
   await expect(page.locator('#decision')).toContainText('layers: selector matches no module');
   await page.getByText('Advisories on other dependencies · never block').click();
   await expect(page.getByText('UI skips a layer.')).toBeVisible();
   const advisories = page.locator('#advisories');
   await expect(advisories).toContainText(
-    'layering · Suggested move: Move the functionality: lower the distance, so the coupled code lives in one module.',
+    "layering · Unselected hypothesis: Move the functionality: lower the distance, so the coupled code lives in one module. This is not a selected repair; review the finding's evidence and constraints first.",
   );
   await expect(advisories.getByText('owner decision')).toBeVisible();
   await expect(advisories).toContainText('metric fan_out: 3 → 5 (at most 4)');
@@ -813,8 +818,10 @@ test('pull request: the cycle drawn as on the comment, then the other findings',
   await expect(accepted.getByRole('columnheader', { name: 'Volatility' })).toBeVisible();
   await expect(accepted).toContainText('model');
   await expect(accepted).not.toContainText('Suggested move');
-  await page.getByText('Known issues fixed').click();
-  await expect(page.locator('#fixed')).toContainText('old → gone');
+  await expect(page.locator('#fixed')).toContainText(
+    'Previously accepted finding no longer observed; resolution not established.',
+  );
+  await expect(page.locator('#fixed')).not.toContainText('old → gone');
   await page.getByText('To measure more').click();
   const evidence = page.getByRole('table');
   await expect(evidence.getByRole('columnheader', { name: 'Result' })).toBeVisible();
@@ -840,13 +847,139 @@ test('pull request: the cycle drawn as on the comment, then the other findings',
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(pull.tasks);
 });
 
+test('feedback: positive accepted debt and no-task lifecycle are honest', async ({ page }, info) => {
+  await open(page, '/r/acme/app/pull/4', {
+    pull: {
+      ...pull,
+      required: true,
+      result: 'healthy',
+      tone: 'success',
+      no_baseline: false,
+      check: { ...analysisCheck, reason: 'healthy (architecture)', next: '', detail: '' },
+      headline: 'Architecture gate passed',
+      compared: false,
+      violation_count: 0,
+      cycles: [],
+      other: [],
+      advisories: [],
+      advisory_count: 0,
+      tasks: '',
+      task_count: 0,
+      decision: {
+        ...pull.decision,
+        verdict: 'healthy',
+        hard_gates: 'pass',
+        blockers: 0,
+        unevaluated: [],
+        detail:
+          'hard gates pass. PR impact: unknown — no comparable Git-base finding-origin evidence. Declared rule checks: 41/41 evaluated. Implicit accepted-reference metric checks: inventory not reported. Accepted reference: comparable.',
+      },
+    },
+  });
+  await expect(
+    page.getByText('No required architecture change requested in the evaluated scope. Accepted debt remains.', {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.getByText('No automated source-repair task supplied.', { exact: false })).toBeVisible();
+  await expect(page.locator('#result')).toHaveClass(/success/);
+  await expect(page.locator('#result')).not.toHaveClass(/danger/);
+  const analysis = page.getByRole('region', { name: 'PR analysis', exact: true });
+  await expect(analysis).toContainText('Reason: healthy (architecture)');
+  await expect(analysis).not.toContainText('blocking_findings');
+  await expect(analysis).not.toContainText('Fix the rule violations');
+  await expect(page.locator('.result .box-foot')).not.toContainText('No baseline');
+  await expect(page.getByRole('button', { name: /Copy.*task/ })).toHaveCount(0);
+  await expect(page.locator('#fixed')).toContainText('resolution not established');
+  await expect(page.locator('#fixed')).not.toContainText('old → gone');
+  await expect(page.locator('#decision')).toContainText(
+    'Declared rule checks: 41/41 evaluated. Implicit accepted-reference metric checks: inventory not reported.',
+  );
+  await expectClean(page);
+  await page.screenshot({ path: info.outputPath('positive-debt-desktop.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectClean(page);
+  await page.screenshot({ path: info.outputPath('positive-debt-mobile.png'), fullPage: true });
+});
+
+test('feedback: a finding opens only its admitted pair in the existing graph', async ({ page }, info) => {
+  await open(page, '/r/acme/app/pull/4');
+  const link = page.getByRole('link', { name: 'Inspect api → db in the authenticated graph', exact: true });
+  await link.focus();
+  await expect(link).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/graph\?from=api&to=db$/);
+  const inspector = page.getByRole('complementary');
+  await expect(inspector.getByRole('heading', { name: 'Dependency', exact: true })).toBeVisible();
+  await expect(inspector).toContainText('api → db');
+  await expect(page.getByText('Finding origin is not source-site origin.', { exact: false })).toBeVisible();
+  await expectClean(page);
+  await page.screenshot({ path: info.outputPath('focused-pair-desktop.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await expect(inspector.getByRole('heading', { name: 'Dependency', exact: true })).toBeVisible();
+  await expect(inspector).toContainText('api → db');
+  await expect(page.getByRole('region', { name: /^Problems/ })).toContainText('api → db');
+  const canvas = page.locator('.g-canvas');
+  const apiNode = page.getByRole('button', { name: /^Module api(?:,|$)/ });
+  const dbNode = page.getByRole('button', { name: /^Module db(?:,|$)/ });
+  const nodes = [apiNode, dbNode];
+  const visibleFraction = 0.8;
+  for (const node of nodes) await expect(node).toBeVisible();
+  await canvas.scrollIntoViewIfNeeded();
+  const nodesInsideCanvas = async () => {
+    const frame = await canvas.boundingBox();
+    if (!frame) return false;
+    for (const node of nodes) {
+      const box = await node.boundingBox();
+      if (!box || !box.width || !box.height) return false;
+      const width = Math.max(0, Math.min(box.x + box.width, frame.x + frame.width) - Math.max(box.x, frame.x));
+      const height = Math.max(0, Math.min(box.y + box.height, frame.y + frame.height) - Math.max(box.y, frame.y));
+      if (width * height < visibleFraction * box.width * box.height) return false;
+    }
+    return true;
+  };
+  const initiallyInsideCanvas = await nodesInsideCanvas();
+  if (!initiallyInsideCanvas) {
+    await page.getByRole('button', { name: /fit view/i }).click();
+    info.annotations.push({
+      type: 'phone-fit-view',
+      description:
+        'Used the existing Fit View control after initial phone navigation; no desktop-resize auto-fit claim.',
+    });
+  }
+  await expect.poll(nodesInsideCanvas).toBe(true);
+  for (const node of nodes) await expect(node).toBeInViewport({ ratio: visibleFraction });
+  await expectClean(page);
+  await info.attach('initial-phone-canvas.json', {
+    body: JSON.stringify(
+      {
+        viewport: page.viewportSize(),
+        phoneBeforeReload: true,
+        initiallyInsideCanvas,
+        usedFitView: !initiallyInsideCanvas,
+        canvas: await canvas.boundingBox(),
+        api: await apiNode.boundingBox(),
+        db: await dbNode.boundingBox(),
+      },
+      null,
+      2,
+    ),
+    contentType: 'application/json',
+  });
+  await page.screenshot({ path: info.outputPath('focused-pair-initial-phone.png'), fullPage: true });
+});
+
 test('pull request: a link that is neither the App nor github.com is not rendered', async ({ page }) => {
   await open(page, '/r/acme/app/pull/4', {
     pull: { ...pull, url: 'javascript:alert(1)', checks_url: '//evil.example/c' },
   });
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
   await expect(page.getByRole('link', { name: 'View on GitHub' })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'Graph' })).toHaveAttribute('href', '/r/acme/app/pull/4/graph');
+  await expect(page.getByRole('link', { name: 'Graph', exact: true })).toHaveAttribute(
+    'href',
+    '/r/acme/app/pull/4/graph',
+  );
   await expect(page.locator('a[href^="javascript:"], a[href^="//"]')).toHaveCount(0);
 });
 
@@ -881,7 +1014,15 @@ for (const graph of [false, true]) {
         reason: reason + ' (evidence)',
         next,
         detail: '<img src=x onerror=alert(1)> & missing evidence',
-        also: ['missing_required_coverage: six rules not measured. Next: Supply the evidence.'],
+        // The API has projected historical prelude authority; the raw-summary cases run through both Go routes.
+        also:
+          reason === 'missing_required_coverage'
+            ? ['missing_required_coverage (evidence): six rules not measured. Next: Supply the evidence.']
+            : [
+                'owner_approval_missing (governance): protected input. Next: Ask an architecture owner to authorize this commit.',
+                'Historical report-derived claims and repair actions are withheld because source authority was not established.',
+              ],
+        profile: reason === 'missing_required_coverage' ? analysisCheck.profile : 'not available for display',
         approved:
           reason === 'unknown_engine_identity'
             ? {
@@ -911,9 +1052,18 @@ for (const graph of [false, true]) {
         pullGraph: { ...pullGraph, pull: blocked, view: null, unavailable: blocked.unavailable },
       });
       const analysis = page.getByRole('region', { name: 'PR analysis', exact: true });
-      await expect(analysis.getByText(reason + ' (evidence)', { exact: false })).toBeVisible();
+      await expect(analysis.getByText('Reason: ' + reason + ' (evidence)', { exact: true })).toBeVisible();
       await expect(analysis.getByText(next, { exact: false })).toBeVisible();
       await expect(analysis.getByText(check.detail, { exact: true })).toBeVisible();
+      if (reason === 'missing_required_coverage') {
+        await expect(analysis).toContainText('Supply the evidence.');
+      } else {
+        await expect(analysis).not.toContainText('Supply the evidence.');
+        await expect(analysis).toContainText('Ask an architecture owner to authorize this commit.');
+        await expect(analysis).toContainText('Historical report-derived claims and repair actions are withheld');
+      }
+      await expect(analysis.getByText('Analysis time (UTC): Not recorded', { exact: true })).not.toBeVisible();
+      await analysis.getByText('Analysis details', { exact: true }).click();
       await expect(analysis.getByText('Analysis time (UTC): Not recorded', { exact: true })).toBeVisible();
       await expect(page.getByRole('link', { name: 'Run 88 · attempt 1' })).toHaveAttribute(
         'href',
@@ -936,6 +1086,7 @@ for (const graph of [false, true]) {
         await expect(analysis.getByText('Engine v3.2.0 · linux/amd64', { exact: true })).toBeVisible();
       }
       await expectClean(page);
+      await analysis.getByText('Analysis details', { exact: true }).click();
       if (reason === 'unknown_engine_identity') {
         await page.screenshot({
           path: info.outputPath(graph ? 'blocked-graph.png' : 'blocked-findings.png'),
@@ -966,6 +1117,8 @@ test('PR diagnostics: historical producer stays fixed across App upgrades; parti
         pull: partial,
         pullGraph: { ...pullGraph, pull: partial, view: { ...pullGraph.view, incomplete: true } },
       });
+      await expect(page.getByText(analysisCheck.producer, { exact: false })).not.toBeVisible();
+      await page.getByText('Analysis details', { exact: true }).click();
       await expect(page.getByText(analysisCheck.producer, { exact: false })).toBeVisible();
       await expect(page.getByText('Action version / SHA: Not recorded', { exact: true })).toBeVisible();
       await expect(page.getByText('Analysis time (UTC): Not recorded', { exact: true })).toBeVisible();
@@ -1006,6 +1159,7 @@ test('PR diagnostics: missing historical metadata and unsafe links stay explicit
     },
     appBuild: {},
   });
+  await page.getByText('Analysis details', { exact: true }).click();
   await expect(page.getByText('Analysis producer (claimed): Not recorded', { exact: true })).toBeVisible();
   await expect(page.getByText('[unsafe](javascript:alert(1))', { exact: false })).toBeVisible();
   await expect(page.getByText('About this App · build not recorded', { exact: true })).toBeVisible();
@@ -1035,6 +1189,7 @@ test('PR diagnostics: an explicit no-upload producer is not missing history', as
       run_id: 0,
     },
   });
+  await page.getByText('Analysis details', { exact: true }).click();
   await expect(page.getByText('Analysis producer (claimed): no upload', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Findings unavailable', exact: true })).toBeVisible();
   await expectClean(page);
@@ -1183,13 +1338,18 @@ test('pull request graph: the header, and a halo only on what the PR added', asy
   await open(page, '/r/acme/app/pull/4/graph');
   await expect(page.getByRole('heading', { name: 'feat: read options #4', level: 1 })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Graph' })).toHaveAttribute('aria-current', 'page');
-  await expect(page.getByRole('button', { name: '1 added by this PR' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: '1 with introduced findings' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
   await expect(page.locator('.g-edge .halo')).toHaveCount(1);
-  await expect(page.getByRole('button', { name: /^api to db, .*, added by this PR$/ })).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: /^api to db, .*, contains introduced findings; source-site origin unknown$/ }),
+  ).toBeVisible();
   await expect(page.getByRole('button', { name: /^db to api, .*violation, contract coupling$/ })).toBeVisible();
   await expectClean(page);
 
-  await page.getByRole('button', { name: '1 added by this PR' }).click();
+  await page.getByRole('button', { name: '1 with introduced findings' }).click();
   await expect(page.locator('.g-edge .halo')).toHaveCount(0);
   await page.locator('.g-node', { hasText: 'db' }).click();
   await expect(page.getByRole('complementary').getByRole('link', { name: 'Open in the policy' })).toHaveAttribute(

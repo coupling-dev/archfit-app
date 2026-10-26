@@ -213,8 +213,8 @@ func TestSanitizeEngineStrings(t *testing.T) {
 		markers int
 	}{
 		"gate":    {gate.Summary, 1},
-		"state":   {state.Summary, 1},
-		"comment": {comment, 4}, // comment, head, agent-tasks open and close
+		"state":   {state.Summary, 3}, // receipt and the preserved task delimiters
+		"comment": {comment, 4},       // comment, head, agent-tasks open and close
 	} {
 		if got := strings.Count(tc.body, "<!--"); got != tc.markers {
 			t.Errorf("%s: %d marker openings, want %d", name, got, tc.markers)
@@ -230,10 +230,10 @@ func TestSanitizeEngineStrings(t *testing.T) {
 	for _, a := range state.Annotations {
 		mustNotContain(t, a.Message, "<!--", "-->")
 	}
-	if got := strings.Count(comment, "```"); got != 4 {
-		t.Errorf("comment has %d code fences, want 4 (commands and tasks)", got)
+	if got := strings.Count(comment, "```"); got != 2 {
+		t.Errorf("comment has %d code fences, want 2 (exact tasks only)", got)
 	}
-	mustContain(t, section(comment, headCommands), "archfit check\n", "2 commands omitted")
+	mustContain(t, section(state.Summary, headCommands), "archfit check\n", "2 commands omitted")
 	tasks := decodeTasks(t, comment)
 	if len(tasks) != 1 || tasks[0]["goal"] != evil {
 		t.Errorf("agent task goal was not preserved as decoded: %v", tasks)
@@ -313,17 +313,16 @@ func TestTruncation(t *testing.T) {
 		if !utf8.ValidString(body) {
 			t.Errorf("%s is not valid UTF-8", name)
 		}
-		mustContain(t, body, "blocking_findings", "missing_required_coverage", fixedTrustSentence, policyDigest)
+		mustContain(t, body, fixedTrustSentence)
 	}
 	mustContain(t, state, reasonBlocking.Next)
 	mustContain(t, gate, reasonBlocking.Next)
 	// The next step and the link are never cut with the violations above them.
-	mustContain(t, comment, "**Next:**", "Fix the violations above, then check with `archfit check")
+	mustContain(t, comment, "**Next:**", "PR author/coding agent:")
 	mustContain(t, comment, "## Archfit: Architecture gate failing")
-	for _, body := range []string{comment, state} {
-		mustContain(t, body, "Output truncated.")
-		mustContain(t, section(body, headGaps), "timed out", "non_comparable")
-	}
+	mustContain(t, comment, "more active findings/advisories", "more tasks did not fit")
+	mustContain(t, state, "Output truncated.")
+	mustContain(t, section(state, headGaps), "timed out", "non_comparable")
 	for name, body := range map[string]string{"state": state, "gate": gate} {
 		if got, ok := parseReceipt(body); !ok || got != p.Receipt {
 			t.Errorf("%s: receipt marker damaged: %+v ok=%v", name, got, ok)
@@ -331,11 +330,12 @@ func TestTruncation(t *testing.T) {
 	}
 	mustContain(t, comment, waiverSection("2026-10-01"))
 
-	// Tasks give way before findings are cut.
-	if tasks := decodeTasks(t, comment); len(tasks) != 0 {
-		t.Errorf("task block holds %d tasks while findings are cut, want 0", len(tasks))
+	// Whole nonempty tasks reserve space before discretionary finding detail.
+	kept := len(decodeTasks(t, comment))
+	if kept == 0 || kept >= len(p.Report.AgentTasks) {
+		t.Fatalf("task block holds %d tasks, want some but not all", kept)
 	}
-	mustContain(t, comment, "2000 more tasks did not fit")
+	mustContain(t, comment, fmt.Sprintf("%d more tasks did not fit", len(p.Report.AgentTasks)-kept), "unmodified report artifact")
 
 	p.Report.Findings = p.Report.Findings[:3]
 	comment = renderComment(p, t0, "", "")
@@ -378,7 +378,7 @@ func gapReport(withGaps bool) *report.Report {
 
 func TestEvidenceGapSources(t *testing.T) {
 	base := blockedPublication(t, headB, 7, 1)
-	gaps := func(p Publication) string { return section(renderComment(p, t0, "", ""), headGaps) }
+	gaps := func(p Publication) string { return section(renderState(p), headGaps) }
 
 	p := base
 	p.Report = gapReport(true)
@@ -457,7 +457,7 @@ func TestEvidenceGapsDropNoise(t *testing.T) {
 	}
 	p := blockedPublication(t, headB, 7, 1)
 	p.Report = r
-	for name, body := range map[string]string{"comment": renderComment(p, t0, "", ""), "state": renderState(p)} {
+	for name, body := range map[string]string{"state": renderState(p)} {
 		gaps := section(body, headGaps)
 		mustContain(t, gaps,
 			"- Tool `scip`: timed out (deadline of 60s passed)\n",
@@ -552,7 +552,8 @@ func TestGateSummaryNamesBlockers(t *testing.T) {
 		}
 		behind := p
 		behind.Outcome = outcome(verdict.ActionRequired, reasonIdentity, reasonBlocking)
-		mustContain(t, section(renderGate(behind), headBlocking), "`no_direct_b_dependency`")
+		mustNotContain(t, renderGate(behind), headBlocking, "`no_direct_b_dependency`")
+		mustContain(t, renderGate(behind), string(verdict.ReasonUnknownIdentity), reasonIdentity.Next)
 	})
 }
 
@@ -592,7 +593,7 @@ func TestDigestSourceLabels(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			p := blockedPublication(t, headB, 7, 1)
 			tc.change(&p)
-			for _, body := range []string{renderComment(p, t0, "", ""), renderGate(p), renderState(p)} {
+			for _, body := range []string{renderGate(p), renderState(p)} {
 				baseline, labels := line(body, "- Baseline digest"), line(body, "- Labels digest")
 				if !strings.HasSuffix(baseline, tc.baseline) || !strings.HasSuffix(labels, tc.labels) {
 					t.Errorf("lines:\n%s\n%s\nwant the endings %q and %q", baseline, labels, tc.baseline, tc.labels)
@@ -619,9 +620,8 @@ func producerLine(t *testing.T, body string) string {
 func TestIdentityLine(t *testing.T) {
 	p := blockedPublication(t, headB, 7, 1)
 	for name, render := range map[string]func(Publication) string{
-		"comment": func(p Publication) string { return renderComment(p, t0, "", "") },
-		"gate":    func(p Publication) string { return renderGate(p) },
-		"state":   func(p Publication) string { return renderState(p) },
+		"gate":  func(p Publication) string { return renderGate(p) },
+		"state": func(p Publication) string { return renderState(p) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			p.Identity = fullIdentity()
@@ -687,15 +687,15 @@ func TestAnnotationSelection(t *testing.T) {
 
 	t.Run("live findings on files the pull request changed", func(t *testing.T) {
 		h, got := publish(t, prTarget(headB), changed, false, findings)
-		if want := map[string]int{"whole.go": 1, "many.go": 40, "adv.go": 30}; !maps.Equal(perPath(got), want) {
+		if want := map[string]int{"many.go": 40, "adv.go": 30}; !maps.Equal(perPath(got), want) {
 			t.Fatalf("annotations per file = %v, want %v", perPath(got), want)
 		}
-		if got[0] != (api.Annotation{Path: "whole.go", Line: 1, Level: "failure", Message: "whole: whole file"}) {
+		if got[0] != (api.Annotation{Path: "many.go", Line: 1, Level: "failure", Message: "many: many why"}) {
 			t.Errorf("first annotation = %+v", got[0])
 		}
 		for i, a := range got {
 			want := "warning"
-			if i < 41 {
+			if i < 40 {
 				want = "failure"
 			}
 			if a.Level != want {
@@ -705,26 +705,26 @@ func TestAnnotationSelection(t *testing.T) {
 				t.Errorf("annotation %d invented or lost a location: %+v", i, a)
 			}
 		}
-		if got[41].Path != "adv.go" || got[41].Line != 1 || got[70].Line != 30 {
-			t.Errorf("non-blocking annotations are not in report order: %+v, %+v", got[41], got[70])
+		if got[40].Path != "adv.go" || got[40].Line != 1 || got[69].Line != 30 {
+			t.Errorf("non-blocking annotations are not in report order: %+v, %+v", got[40], got[69])
 		}
 		// The gate check, then the state check with 50, then one more request for the rest.
-		if want := []int{0, 50, 21}; !slices.Equal(h.checks.annotationRequests, want) || h.pulls.listed != 1 {
+		if want := []int{0, 50, 20}; !slices.Equal(h.checks.annotationRequests, want) || h.pulls.listed != 1 {
 			t.Errorf("annotations per request = %v, file lists = %d; want %v and 1", h.checks.annotationRequests, h.pulls.listed, want)
 		}
 	})
 	t.Run("a truncated file list counts every file as changed", func(t *testing.T) {
 		_, got := publish(t, prTarget(headB), nil, true, findings)
-		if perPath(got)["untouched.go"] != 5 || len(got) != 76 {
+		if perPath(got)["untouched.go"] != 5 || len(got) != 75 {
 			t.Errorf("annotations per file = %v", perPath(got))
 		}
 	})
 	t.Run("a push annotates every file and lists none", func(t *testing.T) {
 		h, got := publish(t, pushTarget(headB), nil, false, findings)
-		if perPath(got)["untouched.go"] != 5 || len(got) != 76 || h.pulls.listed != 0 {
+		if perPath(got)["untouched.go"] != 5 || len(got) != 75 || h.pulls.listed != 0 {
 			t.Errorf("annotations per file = %v, file lists = %d", perPath(got), h.pulls.listed)
 		}
-		if want := []int{50, 26}; !slices.Equal(h.checks.annotationRequests, want) {
+		if want := []int{50, 25}; !slices.Equal(h.checks.annotationRequests, want) {
 			t.Errorf("annotations per request = %v, want %v", h.checks.annotationRequests, want)
 		}
 	})
@@ -740,7 +740,7 @@ func TestAnnotationSelection(t *testing.T) {
 		}
 	})
 	t.Run("no candidate, no file list", func(t *testing.T) {
-		h, got := publish(t, prTarget(headB), changed, false, []report.Finding{findings[1], findings[2], findings[5], findings[6]})
+		h, got := publish(t, prTarget(headB), changed, false, []report.Finding{findings[1], findings[2], findings[3], findings[5], findings[6]})
 		if len(got) != 0 || h.pulls.listed != 0 {
 			t.Errorf("got %d annotations and %d file lists, want none", len(got), h.pulls.listed)
 		}
@@ -789,9 +789,10 @@ func TestAdvisoryCommentNeverSaysBlocking(t *testing.T) {
 	p := blockedPublication(t, headB, 7, 1)
 	p.Trusted.Settings.Gate = settings.GateAdvisory
 	comment := renderComment(p, t0, "", "")
-	mustContain(t, comment, "## Archfit: Architecture violations found · advisory", "The gate is advisory for this repository", "**violation**")
+	mustContain(t, comment, "## Archfit: Architecture violations found · advisory", "**active finding**")
+	mustContain(t, renderState(p), "The gate is advisory for this repository")
 	mustNotContain(t, comment, "Blocked by", "**blocking**", "[!NOTE]")
-	if v, f := strings.Index(comment, "**violation**"), strings.Index(comment, "<details>"); v < 0 || f < v {
+	if v, f := strings.Index(comment, "**active finding**"), strings.Index(comment, "<details>"); v < 0 || f < v {
 		t.Errorf("violations are not open before the folds: %q", comment)
 	}
 }
@@ -979,11 +980,11 @@ func TestOriginNeedsAComparablePullRequestBase(t *testing.T) {
 		t.Run("origin_status="+tt.status, func(t *testing.T) {
 			r := &report.Report{Findings: []report.Finding{introduced}, Comparison: report.Comparison{OriginStatus: tt.status}}
 			block := findingsBlock(r, true)
-			if got := strings.Contains(block, "added by this pull request"); got != tt.shown {
+			if got := strings.Contains(block, "introduced finding; source-site origin unknown"); got != tt.shown {
 				t.Errorf("origin shown = %v, want %v:\n%s", got, tt.shown, block)
 			}
 			if tt.shown {
-				mustContain(t, block, "(high, added by this pull request)")
+				mustContain(t, block, "(high, introduced finding; source-site origin unknown)")
 			}
 		})
 	}
@@ -1030,54 +1031,32 @@ func TestEmptyNextStepIsNotWritten(t *testing.T) {
 	}
 }
 
-func TestCycleDirectionsShowWhatThePullRequestAdded(t *testing.T) {
+func TestCycleDirectionsShowFindingOriginNotPairNovelty(t *testing.T) {
 	edge := func(id, kind, rule, origin, from, to string) report.Finding {
-		status := "new"
-		if kind == "advisory" && origin == "pre_existing" {
-			status = "baseline"
-		}
-		return report.Finding{ID: id, Kind: kind, RuleID: rule, Status: status, Severity: "high", Origin: origin,
+		return report.Finding{ID: id, Kind: kind, RuleID: rule, Status: "new", Severity: "high", Origin: origin,
 			Edge:      report.Edge{From: report.Endpoint{Module: from}, To: report.Endpoint{Module: to}},
 			Locations: []report.Location{{File: from + ".go", Line: 1}}}
 	}
-	cycle := []report.Finding{
-		edge("c1", "gate", "no-cycles", "introduced", "a", "b"),
-		edge("c2", "gate", "no-cycles", "introduced", "b", "a"),
-	}
-	tests := []struct {
-		name     string
-		status   string
-		evidence []report.Finding
-		rows     []string
-		styles   []string
+	cycle := []report.Finding{edge("c1", "gate", "no-cycles", "introduced", "a", "b"), edge("c2", "gate", "no-cycles", "introduced", "b", "a")}
+	for _, tt := range []struct {
+		name, status string
+		other        []report.Finding
 	}{
-		{"one direction existed, the other was added", "comparable",
-			[]report.Finding{edge("e1", "advisory", "bc/imbalanced_coupling", "pre_existing", "a", "b"), edge("e2", "advisory", "bc/imbalanced_coupling", "introduced", "b", "a")},
-			[]string{"| `a` → `b` | existing |", "| `b` → `a` | added |"},
-			[]string{"linkStyle 0 stroke:#8c959f,stroke-width:1px", "linkStyle 1 stroke:#cf222e,stroke-width:4px"}},
-		{"a pre-existing finding wins over an introduced one on the same pair", "comparable",
-			[]report.Finding{edge("e1", "advisory", "r", "pre_existing", "a", "b"), edge("e2", "advisory", "r", "introduced", "a", "b")},
-			[]string{"| `a` → `b` | existing |", "| `b` → `a` |  |"},
-			[]string{"linkStyle 0 stroke:#8c959f,stroke-width:1px", "linkStyle 1 stroke:#cf222e,stroke-width:2px"}},
-		{"the same cycle under another rule tells nothing", "comparable",
-			[]report.Finding{edge("o1", "gate", "other-cycles", "introduced", "a", "b"), edge("o2", "gate", "other-cycles", "introduced", "b", "a")},
-			[]string{"| Dependency | Where |", "| `a` → `b` | `a.go:1` |"},
-			[]string{"linkStyle 0 stroke:#cf222e,stroke-width:2px", "linkStyle 1 stroke:#cf222e,stroke-width:2px"}},
-		{"the cycle's own origin tells nothing", "comparable", nil,
-			[]string{"| Dependency | Where |", "| `a` → `b` | `a.go:1` |"},
-			[]string{"linkStyle 0 stroke:#cf222e,stroke-width:2px", "linkStyle 1 stroke:#cf222e,stroke-width:2px"}},
-		{"no comparison with the base", "unknown",
-			[]report.Finding{edge("e1", "advisory", "r", "pre_existing", "a", "b")},
-			[]string{"| Dependency | Where |", "| `a` → `b` | `a.go:1` |"},
-			[]string{"linkStyle 0 stroke:#cf222e,stroke-width:2px"}},
-	}
-	for _, tt := range tests {
+		{"mixed evidence cannot override each cycle finding", "comparable", []report.Finding{edge("e1", "advisory", "r", "pre_existing", "a", "b"), edge("e2", "advisory", "r", "introduced", "a", "b")}},
+		{"cycle-only evidence remains finding evidence", "comparable", nil},
+		{"another cycle does not date the source sites", "comparable", []report.Finding{edge("o1", "gate", "other", "introduced", "a", "b"), edge("o2", "gate", "other", "introduced", "b", "a")}},
+		{"unknown comparison clears every finding origin", "unknown", nil},
+	} {
 		t.Run(tt.name, func(t *testing.T) {
-			r := &report.Report{Findings: append(slices.Clone(cycle), tt.evidence...), Comparison: report.Comparison{OriginStatus: tt.status}}
-			block := findingsBlock(r, true)
-			cycleItem, _, _ := strings.Cut(block, "<details>")
-			mustContain(t, cycleItem, tt.rows...)
-			mustContain(t, cycleItem, tt.styles...)
+			r := &report.Report{Findings: append(slices.Clone(cycle), tt.other...), Comparison: report.Comparison{OriginStatus: tt.status}}
+			body := findingsBlock(r, false)
+			mustContain(t, body, "Dependency cycle")
+			mustNotContain(t, body, "added by this pull request", "| added |", "| existing |")
+			if tt.status == "comparable" {
+				mustContain(t, body, "introduced finding")
+			} else {
+				mustNotContain(t, body, "introduced finding", "Finding origin")
+			}
 		})
 	}
 }
@@ -1104,18 +1083,18 @@ func TestLeadSentenceSaysWhatThePullRequestDid(t *testing.T) {
 		{"the pull request closes a cycle", "comparable", []report.Finding{
 			f("c1", "gate", "introduced", "a", "b", 40), f("c2", "gate", "introduced", "b", "a", 1),
 			f("e1", "advisory", "pre_existing", "a", "b", 5), f("e2", "advisory", "introduced", "b", "a", 1),
-		}, "This pull request adds 1 dependency that closes a dependency cycle between `a` and `b`."},
+		}, "PR impact: 3 introduced findings, 1 pre-existing, 0 unknown. Finding origin does not establish that each module pair or listed source site was added."},
 		{"a cycle whose directions the report cannot place", "comparable", []report.Finding{
 			f("c1", "gate", "introduced", "a", "b", 2), f("c2", "gate", "introduced", "b", "a", 1),
-		}, "This pull request introduces a dependency cycle between `a` and `b`."},
+		}, "PR impact: 2 introduced findings, 0 pre-existing, 0 unknown. Finding origin does not establish that each module pair or listed source site was added."},
 		{"introduced violations outside a cycle", "comparable", []report.Finding{
 			f("v1", "gate", "introduced", "a", "b", 1), f("v2", "gate", "pre_existing", "c", "d", 1),
 			f("v3", "gate", "introduced", "e", "f", 1), f("v4", "gate", "introduced", "g", "h", 1), f("v5", "gate", "introduced", "i", "j", 1),
-		}, "This pull request introduces 4 rule violations: `a` → `b`, `e` → `f`, `g` → `h` and 1 more."},
+		}, "PR impact: 4 introduced findings, 1 pre-existing, 0 unknown. Finding origin does not establish that each module pair or listed source site was added."},
 		{"every violation existed before", "comparable", []report.Finding{f("v1", "gate", "pre_existing", "a", "b", 1)},
-			"The rule violations below existed before this pull request."},
-		{"no comparison with the base", "unknown", []report.Finding{f("v1", "gate", "introduced", "a", "b", 1)}, ""},
-		{"no violation", "comparable", []report.Finding{f("e1", "advisory", "introduced", "a", "b", 1)}, ""},
+			"PR impact: 0 introduced findings, 1 pre-existing, 0 unknown. Finding origin does not establish that each module pair or listed source site was added."},
+		{"no comparison with the base", "unknown", []report.Finding{f("v1", "gate", "introduced", "a", "b", 1)}, "PR impact: unknown — no comparable Git-base finding-origin evidence."},
+		{"no violation", "comparable", []report.Finding{f("e1", "advisory", "introduced", "a", "b", 1)}, "PR impact: 1 introduced finding, 0 pre-existing, 0 unknown. Finding origin does not establish that each module pair or listed source site was added."},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1133,15 +1112,13 @@ func TestCommentHeadHasNoReasonCodes(t *testing.T) {
 		Report: &report.Report{}}
 	comment := renderComment(p, t0, "", "")
 	head, _, _ := strings.Cut(comment, "<details>")
-	mustContain(t, head, "**Next:**\n- "+reasonBlocking.Next+"\n- "+reasonCoverage.Next)
+	mustContain(t, head, "**Next:**", "PR author/coding agent:", "CI maintainer: "+reasonCoverage.Next)
 	mustNotContain(t, head, string(reasonBlocking.Code), string(reasonCoverage.Code), reasonCoverage.Detail, "Reason:")
-	mustContain(t, section(comment, headDecision),
+	mustContain(t, section(renderState(p), headDecision),
 		"- Blocking findings (architecture) · code `"+string(reasonBlocking.Code)+"`",
 		"- Missing required coverage (evidence): "+reasonCoverage.Detail+" · code `"+string(reasonCoverage.Code)+"`")
-	mustNotContain(t, section(comment, headDecision), "Next:")
-	if _, fold, _ := strings.Cut(comment, foldEvidence+"\n\n"); !strings.HasPrefix(fold, headDecision) {
-		t.Errorf("the Decision block does not open the evidence fold:\n%s", fold)
-	}
+	mustNotContain(t, comment, headDecision, headInputs, policyDigest, reportDigest)
+	mustNotContain(t, section(renderState(p), headDecision), "Next:")
 	mustContain(t, renderState(p), "- Reason: `"+string(reasonBlocking.Code)+"`")
 }
 
@@ -1202,32 +1179,14 @@ func TestManyViolationsRenderQuickly(t *testing.T) {
 	}
 }
 
-func TestNextStepIsACommandThePersonCanRun(t *testing.T) {
-	violations := &report.Report{Findings: []report.Finding{{ID: "v", Kind: "gate", RuleID: "r", Status: "new", Severity: "high"}}}
-	tests := []struct {
-		name    string
-		base    string
-		report  *report.Report
-		want    string
-		notWant string
-	}{
-		{"branch", "main", violations, "**Next:** Fix the violations above, then check with `archfit check --base origin/main`.", ""},
-		{"branch with a slash", "release/1.2", violations, "`archfit check --base origin/release/1.2`", ""},
-		{"branch that is a shell command", "main;rm -rf ~", violations, "`archfit check`.", "--base"},
-		{"branch that is an option", "-x", violations, "`archfit check`.", "--base"},
-		{"branch with dots up", "a..b", violations, "`archfit check`.", "--base"},
-		{"no violation listed", "main", &report.Report{}, reasonBlocking.Next, "archfit check --base"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			p := Publication{Target: prTarget(headB), Outcome: outcome(verdict.Failure, reasonBlocking), Report: tt.report}
-			p.Target.BaseRef = tt.base
+func TestNextStepNeverInventsValidationFlags(t *testing.T) {
+	for _, base := range []string{"main", "release/1.2", "main;rm -rf ~", "-x", "a..b"} {
+		t.Run(base, func(t *testing.T) {
+			p := Publication{Target: prTarget(headB), Outcome: outcome(verdict.Failure, reasonBlocking), Report: &report.Report{}}
+			p.Target.BaseRef = base
 			got := nextBlock(p)
-			mustContain(t, got, tt.want)
-			if tt.notWant != "" {
-				mustNotContain(t, got, tt.notWant)
-			}
-			mustNotContain(t, got, "validation command", "/bundle")
+			mustContain(t, got, "PR author/coding agent:", "supplied validation commands")
+			mustNotContain(t, got, "--base", "/bundle", base)
 		})
 	}
 }
@@ -1380,7 +1339,7 @@ func TestLeadSentenceForAnAddedDependencyThatFormsACycle(t *testing.T) {
 	got := leadSentence(&report.Report{Comparison: report.Comparison{OriginStatus: "comparable"}, Findings: []report.Finding{
 		f("c1", "gate", "introduced", "a", "b"), f("c2", "gate", "introduced", "b", "a"), f("e1", "advisory", "introduced", "a", "b"),
 	}})
-	if want := "This pull request adds 1 dependency that forms a dependency cycle between `a` and `b`."; got != want {
+	if want := "PR impact: 3 introduced findings, 0 pre-existing, 0 unknown. Finding origin does not establish that each module pair or listed source site was added."; got != want {
 		t.Errorf("lead = %q, want %q", got, want)
 	}
 	mustNotContain(t, got, ".go", "/")
@@ -1406,10 +1365,8 @@ func TestNextStepAndLinkSurviveACutOfTheViolations(t *testing.T) {
 	if len(comment) > maxBody {
 		t.Fatalf("comment is %d bytes, over %d", len(comment), maxBody)
 	}
-	mustContain(t, comment, "Output truncated.", "**Next:** Fix the violations above, then check with `archfit check --base origin/main`.", "[Details in Archfit]("+link+")")
-	if cut, next := strings.Index(comment, "Output truncated."), strings.Index(comment, "**Next:**"); cut < 0 || next < cut {
-		t.Errorf("the next step is not after the cut violations: cut at %d, next at %d", cut, next)
-	}
+	mustContain(t, comment, "47 more active findings/advisories", "**Next:** PR author/coding agent:", "[Details in Archfit]("+link+")")
+	mustNotContain(t, comment, "rule_03", "Output truncated.", "--base origin/main")
 	mustContain(t, comment, "<summary>Evidence and inputs</summary>", "<summary>For coding agents</summary>") // nothing after the tail is lost either
 }
 
@@ -1442,8 +1399,8 @@ func TestLegendSaysWhatRedMeansWhenSomeDirectionsAreUnplaced(t *testing.T) {
 		pr   []string
 		want string
 	}{
-		{"all placed", []string{prAdded, prExisting}, "_Red: added by this pull request · grey: already there · label: locations in code that use the dependency_"},
-		{"some unplaced", []string{prAdded, ""}, "_Red: added by this pull request, or not known to have existed before · grey: already there · label: locations in code that use the dependency_"},
+		{"all placed", []string{prAdded, prExisting}, "_Red: introduced finding · grey: pre-existing finding · label: reported locations; source-site origin is unknown_"},
+		{"some unplaced", []string{prAdded, ""}, "_Red: introduced finding, or finding origin unknown · grey: pre-existing finding · label: reported locations; source-site origin is unknown_"},
 		{"none placed", []string{"", ""}, "_Label and width: locations in code that use the dependency_"},
 	}
 	for _, tt := range tests {

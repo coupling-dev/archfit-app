@@ -34,7 +34,7 @@ type graphJSON struct {
 	PolicyHref  string      `json:"policy_href"` // the policy text the nodes come from; a module's line is policy_href + "#L<line>"
 	Branch      string      `json:"branch"`      // the default branch, whose latest report the repository graph shows
 	Pull        *pullHead   `json:"pull"`        // the pull request whose report this is; nil on the repository graph
-	Added       int         `json:"added"`       // dependencies this pull request added (graph.Link.Origin)
+	Added       int         `json:"added"`       // links containing introduced finding evidence (graph.Link.Origin), not newly added pairs/sites
 }
 
 // apiGraph is the repository graph: GET /api/repos/{o}/{n}/graph, from the latest report of the default branch.

@@ -58,6 +58,10 @@ type Gate struct{ /* unexported */ }
 
 func New(d Deps) *Gate
 
+// ClassifyDisplayReason republishes pure verdict-owned metadata classification for outside consumers.
+// It does not decide a gate outcome or change report admission.
+func ClassifyDisplayReason(code, category string) (reportDerived, known bool)
+
 // UploadHandler serves POST /v1/reports.
 func (g *Gate) UploadHandler() http.Handler
 

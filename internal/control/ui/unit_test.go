@@ -322,8 +322,8 @@ func TestPullPageGroupsCyclesAsTheCommentDoes(t *testing.T) {
 		t.Errorf("other = %+v, want the Why in the tables' words", b.Other)
 	}
 	d0, d1 := cy.Directions[0], cy.Directions[1]
-	if d0.Origin != "" || d1.Origin != report.PairExisting {
-		t.Errorf("origins = %q, %q; want the comment's rule: unknown, then existing", d0.Origin, d1.Origin)
+	if d0.Origin != report.PairAdded || d1.Origin != report.PairAdded {
+		t.Errorf("origins = %q, %q; want both introduced finding identities, independent of other findings on each pair", d0.Origin, d1.Origin)
 	}
 	if !slices.Equal(d0.Locations, []string{"chaos.go:3", "chaos.go"}) || d0.Strength != "model" || d0.Distance != "across modules" || d1.Strength != "" {
 		t.Errorf("direction = %+v", d0)

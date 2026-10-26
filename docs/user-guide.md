@@ -57,7 +57,7 @@ flowchart TD
 
 ![The Waiting page a stranger sees, with sample data](images/waiting-page.png)
 
-*Numbers mark what to read: the status, the reason, and where the approval rules are explained.*
+_Numbers mark what to read: the status, the reason, and where the approval rules are explained._
 
 The approval is per account (the user or organization that installed the App), never per repository. A repository
 you add to an approved installation is served at once. The trial of an account with private repositories starts at
@@ -166,7 +166,8 @@ Arrows show the order of the customer onboarding flow. A labeled arrow shows wha
 
 ![The Needs you box before onboarding, with sample data](images/onboarding-page.png)
 
-*Numbers mark the owners box, the button that opens the onboarding pull request, and the setup steps.*
+_Numbers mark the owners box, the button that opens the onboarding pull request, and the setup steps._
+
 6. Select **Open the onboarding pull request**.
 7. Under **Add the Archfit workflow**, select **Add the file on GitHub**. GitHub opens a new file with the path and
    the content filled in, on the `archfit/onboarding` branch.
@@ -317,30 +318,33 @@ What each item shows:
   finding: the rule, the module pair, the first location, the first eight characters of the finding ID, and the
   repair goal. It shows at most 20 and counts the rest.
 - The `archfit/state` check annotates live findings on the files that the pull request changed. Accepted debt and
-  fixed findings get no annotation. Blocking findings come first. The check shows at most 150 annotations. A new
+  fixed findings get no annotation. File-only locations stay in text; annotations require a nonempty file and an exact
+  reported positive line. Blocking findings come first. The check shows at most 150 annotations. A new
   report or run attempt gets a new `archfit/state` check run with its own annotations, so annotations from an
   earlier report do not stay; GitHub shows the newest run. If the App cannot read the list of changed files, the
   check has no annotations for that upload.
-- The comment starts with the verdict as a heading. With a base comparison, one plain sentence follows: what this pull
-  request changed (for example "adds 2 dependencies that close a dependency cycle among `a`, `b` and `c`"). A
-  dependency cycle is then one picture: a diagram of the modules with the location count of each direction, and one
-  line that says what the colours mean. With a base comparison, a direction this pull request added is red and
-  `added` in the table, and one that existed before is grey and `existing`; the App knows this from other findings on
-  the same pair of modules, and leaves a direction unmarked when the report does not say. The table lists each
-  direction with where it occurs. A column that is the same on every row (integration strength, distance,
-  volatility) is written once under the table. **Why** says why the directions form a cycle, and **Fix** is the
-  engine's own repair. **Next** is a command you can run in your checkout, for example
-  `archfit check --base origin/<base branch>`. An advisory on a dependency that a violation already lists is shown on that
-  row ("Also reported as"), not as a second item. The other advisories (each with a suggested move in the words of
-  Balanced Coupling: introduce a contract, move the functionality, accept, declare the volatility), known issues that
-  were accepted earlier, and fixed issues are each folded into a table; an explanation that repeats across findings is shown once.
-  A tripped metric ratchet reads "metric `name`: before → after (threshold)". The folded evidence starts with a
-  Decision section: the engine's verdict, its hard gates and active blockers, and the reason codes with their
-  details; an advisory repository still shows a blocked verdict there. The evidence gaps, the dimensions (with the
-  tight cross-module seams at high volatility the drift dimension counts as new and resolved since the baseline), the validation commands as the Archfit
-  workflow ran them, and a JSON block of agent tasks between `<!-- archfit:agent-tasks -->` markers are folded too.
-  A coding agent on the pull request can act on that block.
-- The evidence gaps show analyzers that did not run (absent or disabled) on one line.
+- The comment leads with the configured Archfit merge effect, assessment and PR impact, or explicitly unknown
+  impact. Other GitHub protections still apply. Introduced means a new finding identity against a comparable Git
+  base; it does not prove a new module pair or that every listed source site was added.
+- At most three active findings/advisories get compact text/arrow summaries with a known location and the engine's
+  constraint. Accepted-debt detail, dimensions, full reasons and producer/input digests stay in the exact
+  `archfit/state` check. There is no comment diagram or separate Archfit email body; GitHub may notify this same text.
+- **Next** names the PR author/coding agent, architecture owner or CI maintainer as appropriate. Archfit does not
+  invent validation flags or choose which cycle direction to remove. The exact emitted task JSON remains between
+  `<!-- archfit:agent-tasks -->` markers; task values and validation flags are preserved. Whole omitted tasks are
+  counted, with the unmodified report artifact for that run as fallback if retained.
+- Visible links identify HEAD, workflow run/attempt and the actual state-check object. A check can be updated.
+  **Details in Archfit** shows the current PR result/recovery diagnostics, not a historical snapshot.
+- The declared-rule inventory is separate from implicit accepted-reference metric checks. All declared rules can
+  be evaluated while metric checks lack a comparable reference. Reference recovery has one owner action when the
+  structured report proves that it also explains the metric gap; independent missing-tool/rule actions remain.
+- A passing, evaluated required scope can say **No required architecture change requested** even with accepted debt.
+  This does not mean perfect architecture or zero findings. A fixed lifecycle entry means a previously accepted
+  identity is no longer observed; resolution and historical endpoints are not established by that entry.
+- Empty tasks are explained as **No automated source-repair task supplied**, not displayed as a health signal.
+  Rejected producer/workflow/input authority withholds report claims, tasks and annotations. Safe recovery,
+  claimed identity and the original check conclusion/receipt remain; the App's report-admission rules do not change.
+- Evidence details on the state check list analyzers that did not run and required rules that were not evaluated.
 
 The gate has three conclusions:
 
@@ -437,11 +441,11 @@ The locked manifest approves engine v3.2.2 and the transition release v3.2.0 on 
 After the App release approves the new tuple, open an owner-reviewed pull request changing only these pins:
 
 ```yaml
-      - uses: alexei-led/archfit-action@e0a1ef9473d68b426e9c56b2da5986bcee2fc769
-        with:
-          # endpoint, audience and mode stay as they are
-          engine-version: "v3.2.2"
-          image-digest: "sha256:bd351ac70610555237974fac5ff914967a1100fb8ef754853151300d5d19ca35"
+- uses: alexei-led/archfit-action@e0a1ef9473d68b426e9c56b2da5986bcee2fc769
+  with:
+    # endpoint, audience and mode stay as they are
+    engine-version: "v3.2.2"
+    image-digest: "sha256:bd351ac70610555237974fac5ff914967a1100fb8ef754853151300d5d19ca35"
 ```
 
 This example is for an amd64 Linux runner. Use the manifest's arm64 digest on an arm64 runner.
@@ -475,8 +479,8 @@ The App reads a complete report or no report. It never shortens a report to make
 
 With `gate: required`, an upload over 5 MiB leaves the `archfit/gate` check pending. The sweep sets it to
 `action_required` with `missing_upload` after 60 minutes. A report of about 3 000 seams with one advisory each is
-larger than 5 MiB. The comment shows at most 10 locations for each listed finding and 3 for each table row, and gives
-the count of the others. The engine lists at most 50 locations of one dependency; counts use the full number it
+larger than 5 MiB. The compact comment gives the first supplied location for up to three findings. The detailed
+check shows at most 10 locations per finding and 3 per table row, with omitted counts. The engine lists at most 50 locations of one dependency; counts use the full number it
 reports.
 
 Engine v3.0.0 adds a rule's `rationale` and `docs` to the why and the constraint of each finding of that rule. Write
@@ -675,22 +679,21 @@ on the pull request links to this page ("Details in Archfit").
 - The headline is the title of the `archfit/state` check, with the gate mode beside it. In advisory mode the check does
   not block merging. When a report is available, the engine's verdict appears in the comment's words, for example "Engine verdict
   blocked: hard gates fail, 3 active blockers, every required rule evaluated".
-- Rule violations are open. Each dependency cycle is one card with the same drawing as the comment: one arrow per
-  direction with its location count, red and wide when this pull request added it, grey and thin when it existed
-  before; a legend under the drawing names the arrows it uses. On a phone a cycle of two modules stacks top to
-  bottom, and a longer one keeps its size and scrolls sideways, so the labels stay readable. On a phone the tables show each dependency, and each dimension, as one labelled block. A table under the drawing lists each direction with its locations and, when the report has them, its
-  integration strength, distance and volatility. An advisory on the same dependency as a violation is shown in that
-  violation's row ("Also reported as"), as on the comment, and is not counted again; the rest are "Advisories on
-  other dependencies". The advisories, the known issues accepted earlier and the known issues fixed are folded tables,
-  with each dependency's strength, distance and volatility. Only an advisory carries a suggested move. **Evidence** lists
-  the dimensions and, folded, what the engine could not measure ("To measure more").
+- Rule violations are open. Each dependency cycle has an existing App drawing and a text table. Arrow styles
+  describe finding identity origin, not which source sites were added. On a phone a two-module cycle stacks;
+  longer cycles scroll within their card. Locations and supplied constraints remain available as text.
+  **Inspect … in the authenticated graph** opens the selected reported pair in the existing graph. No new public
+  graph or remote image is created.
+- Advisories and accepted debt remain separate. A seam's suggested move is an **unselected hypothesis**, not a
+  prescribed extraction or repair. Fixed lifecycle entries have an explicit resolution/evidence limit rather
+  than fabricated old endpoints. With no emitted tasks, the page explains their absence and offers no Copy button.
 - GitHub's **Details** link on the Archfit checks opens this page.
 - Badges under the result say whether the gate is required or advisory, whether this run had a baseline, whether it
   compared against the base branch, and which run it is (a link to the checks), with its report `customer-attested`:
-  Archfit authenticates the producer, not the content. Hover a badge for its meaning. A required gate blocks merging
+  Reports are customer-attested. Upload authentication does not independently verify report content. Hover a badge for its meaning. A required gate blocks merging
   only where a GitHub ruleset requires `archfit/gate`.
   **New** means not accepted in a baseline, even when the run compared with the base. It does not mean "added by this
-  pull request": only an explicit origin badge makes that claim. Without a baseline, older debt also counts as new.
+  pull request": an origin badge describes a finding identity, not each dependency or source site. Without a baseline, older debt also counts as new.
   An advisory never blocks, even with critical severity. Severity is the rule's priority, not a runtime incident.
 - **Evidence** has one row per dimension: how many the engine measured, then what it counted in its own words, quoted
   as on the comment (`3 of 3 ("classified source files")`), its confidence, and its **Result**: pass, warn or fail.
@@ -702,14 +705,21 @@ on the pull request links to this page ("Details in Archfit").
 
 ### PR analysis and unavailable reports
 
-Both tabs keep **PR analysis** visible: the App check's reason, detail, next action, additional reasons, recorded
-producer claim, analysed head revision and workflow run/attempt link. **Analysis details** shows the check's recorded
-input digests, measurement profile, report digest and, only with a readable admitted artifact, its schema.
+Both tabs keep the primary **PR analysis** visible: reason, detail, next action, additional reasons, check HEAD and
+workflow run/attempt/check links. Native **Analysis details** holds the recorded producer claim, technical identity,
+input digests, measurement profile, report digest and, only with a readable admitted artifact, its schema. Metadata
+starts collapsed so it does not displace the assessment and recovery; keyboard users can open the same disclosure.
 
 The UI does not reconstruct missing history. Action version/SHA, analysis time and base revision are **Not recorded**
 in the existing check format. Check-start time is labelled separately; it is not analysis time. A new App deployment
 does not turn its current Engine/Action pins into the producer of an older report. For producer/workflow rejections,
 the current approved pins appear as recovery guidance, separately from the recorded producer claim.
+
+Historical check summaries are also projected for source authority. Primary and additional reason codes/categories
+are checked together: independent producer/workflow/input/owner diagnostics remain, but rejected report claims and
+repair actions are withheld. Unknown or malformed recovery is not promoted into current guidance. Supported
+reference/coverage/selector recovery remains available for an approved but incomplete source. The original stored
+check, its historical outcome, recorded identity and links are not rewritten.
 
 An action-required or withdrawn result shows diagnostics but no report findings, tasks or graph. Findings explains
 that no findings are admitted; Graph explains that an empty view would not prove an absence of dependencies or
@@ -723,13 +733,13 @@ recorded Go module version/source revision, build time and runtime revision. Mis
 
 ![Blocked Findings with the check reason, next action and recorded producer](images/pr-diagnostics-blocked.png)
 
-*Local Chromium capture: the real Go UI/session/API and embedded SPA, with seeded OAuth/GitHub fixtures.
-The literal HTML-like text is an escaping test. This is not live production data or a content-verification claim.*
+_Local Chromium capture: the real Go UI/session/API and embedded SPA, with seeded OAuth/GitHub fixtures.
+The literal HTML-like text is an escaping test. This is not live production data or a content-verification claim._
 
 ![An admitted partial PR graph with its evidence gap visible](images/pr-diagnostics-partial-graph.png)
 
-*The graph is available, but the engine's missing required rule remains visible. This report is admitted for display,
-not declared complete or safe to merge. Test-binary build fields that were not recorded stay explicit in About.*
+_The graph is available, but the engine's missing required rule remains visible. This report is admitted for display,
+not declared complete or safe to merge. Test-binary build fields that were not recorded stay explicit in About._
 
 ## See the graph
 
@@ -773,7 +783,7 @@ the policy and the dependencies between them in the latest default-branch report
   | `observed`  | No current finding names the dependency, and no blocking rule permits it                                             |
 
 - Only the engine can mark a dependency `allowed`. A forbidden dependency in the baseline shows as `accepted
-  violation`, never as `allowed`. A dependency the overview counts as accepted shows as accepted, unless a violation
+violation`, never as `allowed`. A dependency the overview counts as accepted shows as accepted, unless a violation
   on the same pair outranks it.
 - A warning says when the policy differs from the one the report was computed from (module names and lines may not
   match), and when the report is incomplete: the engine did not evaluate a required rule, or a dimension the gate
@@ -790,15 +800,13 @@ states when there is no report.
 
 - The header is the pull request page's: the pull request, its head commit, the `archfit/state` result, and a link
   to GitHub.
-- A dependency is **added by this PR** when the comment says so: a finding this pull request introduced names it, off
-  a dependency cycle, and no finding names it from before. A new finding on a dependency the base already had does not
-  make it added. Cycle findings cannot say which direction is new, so a cycle that only its own findings name is drawn
-  without a halo. The dependency keeps its status: a new forbidden dependency is still a red `violation`, with a halo.
-- The **N added by this PR** chip is on by default. It highlights the added dependencies and mutes the rest, which
-  stay visible so the change reads against the existing architecture, and puts added ones first in the problem list.
-  Turn it off to draw every dependency alike; added ones stay listed and marked "added".
-- When the run did not compare with the base branch, a warning says so and no dependency is marked added. "Added"
-  never comes from a finding's status.
+- A highlighted pair **contains introduced findings** against a comparable Git base. A cycle-only finding also
+  counts; a mixed pair can contain both introduced and pre-existing findings. This does not establish a new
+  dependency, a newly added module pair or the origin of each source site. Fixed lifecycle entries do not set origin.
+- The **N with introduced findings** chip emphasizes those pairs and puts them first without changing their status.
+  Accepted debt remains accepted, not allowed or resolved. Turn emphasis off to draw all pairs without the halo.
+- Without comparable Git-base finding-origin evidence, every origin stays unknown. Neither baseline status nor
+  an observed edge without a current finding establishes PR origin.
 - Module names and lines come from the policy at the head when the pull request changed it, else from the base branch.
 
 ## Plans and trial

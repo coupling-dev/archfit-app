@@ -942,7 +942,7 @@ func TestPullPageStatesTheEngineDecision(t *testing.T) {
 
 	t.Run("as the pilot's report gives it", func(t *testing.T) {
 		b := read(t, doc)
-		want := decisionJSON{Verdict: "blocked", Detail: "hard gates fail, 4 active blockers, every required rule evaluated",
+		want := decisionJSON{Verdict: "blocked", Detail: "hard gates fail, 4 active blockers, every required rule evaluated. PR impact: 6 introduced findings, 6 pre-existing, 0 unknown. Finding origin does not establish that each module pair or listed source site was added. Declared rule checks: 2/2 evaluated. Implicit accepted-reference metric checks: inventory not reported. Accepted reference: comparable.",
 			HardGates: "fail", Blockers: 4, Unevaluated: []report.UnevaluatedRule{}, OriginReasons: []string{}}
 		if b.Decision == nil || !reflect.DeepEqual(*b.Decision, want) {
 			t.Errorf("decision = %+v, want %+v", b.Decision, want)

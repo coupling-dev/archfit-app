@@ -24,7 +24,7 @@
       for (const [label, text] of [
         ['Why', f.why],
         ['Fix', f.fix],
-        ['Suggested move', moves && f.move ? `${f.move}.` : ''],
+        ['Unselected hypothesis', moves && f.move ? `${f.move}. This is not a selected repair; review the finding's evidence and constraints first.` : ''],
       ]) {
         const key = `${f.rule_id}\u0000${label}\u0000${text}`;
         if (text && !seen[key]) {

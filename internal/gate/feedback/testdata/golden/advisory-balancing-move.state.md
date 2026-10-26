@@ -25,6 +25,12 @@ On every row: Imbalanced coupling · high · functional coupling · across modul
 <details>
 <summary>Evidence and inputs</summary>
 
+### Decision
+
+- Engine verdict **needs attention**: hard gates pass, 0 active blockers, every required rule evaluated
+- The gate is advisory for this repository: the engine's verdict does not block merging.
+- Attention only (architecture): dimensions not fully measured: change_locality, testability, operations, drift; active diagnostics: 1 · code `attention_only`
+
 ### Dimensions
 
 | Dimension | Status | Measured | Confidence | Result |
@@ -40,6 +46,8 @@ On every row: Imbalanced coupling · high · functional coupling · across modul
 | `drift` | unmeasured | 0/0 | unrated | not applicable |
 
 ### Evidence gaps
+
+Declared rule checks: 1/1 evaluated. Implicit accepted-reference metric checks: inventory not reported. Accepted reference: comparable.
 
 - Analyzers that did not run (absent or disabled): `dependency-cruiser`, `grimp`, `cargo`, `jscpd`, `scip`, `ast-grep/syntax`, `ast-grep`, `cargo-modules`
 - Dimension `change_locality`, unknown fact: eligible commit sample — the history scan returned no eligible commit (ok), so co-change cannot be distinguished from a stable tree
@@ -65,7 +73,22 @@ On every row: Imbalanced coupling · high · functional coupling · across modul
 - Measurement profile: version `archfit.measurement.v2`, settings hash `64fb93addd39e92be19fa18ba380fa211a144697946f810bda7c483bc146f73b`
 - Producer identity, claimed: engine v3.0.0, image sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08, linux/amd64
 
-Measurement is customer-attested: the producer is authenticated, the report content is not independently checked.
+Reports are customer-attested. Upload authentication does not independently verify report content.
+
+</details>
+
+<details>
+<summary>For coding agents</summary>
+
+### Agent tasks
+
+No automated source-repair task supplied.
+
+<!-- archfit:agent-tasks -->
+```json
+[]
+```
+<!-- /archfit:agent-tasks -->
 
 </details>
 

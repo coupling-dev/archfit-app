@@ -31,12 +31,13 @@ type Receipt struct {
 
 // Publication is one complete piece of feedback for one head SHA.
 type Publication struct {
-	Target   inputs.Target
-	Identity manifest.Identity // claimed engine and image identity; zero when there was no upload
-	Outcome  verdict.Outcome
-	Receipt  Receipt
-	Report   *report.Report // nil when there is no usable report
-	Trusted  inputs.Trusted
+	Target       inputs.Target
+	Identity     manifest.Identity // claimed engine and image identity; zero when there was no upload
+	Outcome      verdict.Outcome
+	Receipt      Receipt
+	Report       *report.Report // decoded claims; presentation separately checks source authority from all reason codes
+	Trusted      inputs.Trusted
+	stateCheckID int64 // display-only ID returned by this publication's successful check write; never an admission input
 	// Resolve, when set, reads the trusted inputs again inside the head's publication lease, before anything is
 	// written. When the result differs from Trusted in any field (a digest, the owner approval, the settings) or no
 	// longer accepts a Receipt digest, the decision was computed from inputs that are no longer current: Publish

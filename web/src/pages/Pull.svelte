@@ -6,7 +6,8 @@
   import Skeleton from '../components/Skeleton.svelte';
   import { explainLoad, repoAPI, type ApiError, type Pull } from '../lib/api';
   import { firstJSON } from '../lib/early';
-  import { type Repo } from '../lib/route';
+  import { repoPage, type Repo } from '../lib/route';
+  import { trustSentence } from '../lib/feedback';
 
   let { route, here }: { route: Repo & { number: number }; here: string } = $props();
 
@@ -42,6 +43,9 @@
 {:else}
   <PullHead head={body} fullName={route.fullName} current="findings" />
   <DecisionLine decision={body.decision} />
+  {#if !body.unavailable && body.required && body.result !== 'action required' && body.decision?.hard_gates === 'pass' && body.decision.blockers === 0 && !body.decision.unevaluated.length && body.violation_count === 0}
+    <p class="flash success">No required architecture change requested in the evaluated scope.{body.accepted_count ? ' Accepted debt remains.' : ''}</p>
+  {/if}
 
   {#if body.unavailable}
     <section class="box" aria-labelledby="findings-unavailable">
@@ -59,13 +63,13 @@
     {#if body.no_baseline || !body.compared}
       <p class="muted small">
         {#if body.no_baseline}Without a baseline every finding counts as new, including older debt.{/if}
-        {#if body.compared}"added by this PR" means the engine did not find it on the base branch.{:else}This run did
+        {#if body.compared}An introduced finding is a new finding identity against the Git base; it does not establish a new module pair or that each listed source site was added.{:else}This run did
           not compare against the base branch, so the page does not say what this pull request added.{/if}
-        The producer is authenticated; the report content is not independently checked.
+        {trustSentence}
       </p>
     {/if}
 
-    <FindingGroups f={body} compared={body.compared} gatesFail={body.decision?.hard_gates === 'fail'} />
+    <FindingGroups f={body} compared={body.compared} gatesFail={body.decision?.hard_gates === 'fail'} graphPage={repoPage(route.fullName, `/pull/${route.number}/graph`)} />
 
     {#if body.tasks}
       <section class="box" aria-labelledby="tasks">
@@ -84,6 +88,8 @@
           </details>
         </div>
       </section>
+    {:else}
+      <p class="muted small">No automated source-repair task supplied. Review any recovery or owner action above; no task is invented from an empty array.</p>
     {/if}
 
     {#if body.dimensions?.length}

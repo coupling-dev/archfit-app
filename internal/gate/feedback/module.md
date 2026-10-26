@@ -288,270 +288,64 @@ is read and `decide` is not called.
 
 ### Layout
 
-Comment, in order. Check summaries use the same blocks: gate = 1, 2, G, 8, receipt marker; state = 1, 2, 5, 6, 7, 8,
-receipt marker. Block G is in the gate summary only.
+Presentation is not report admission or a gate decision. `presentation` returns a copy and reads every structured
+reason through the verdict-owned code/category classifier shared with historical UI context. Only `healthy`, `attention_only`, `blocking_findings`, `baseline_not_comparable`,
+`missing_required_coverage` and `policy_defect` permit report-derived display. A missing report, absent reasons,
+any rejection/withdrawal code or an unknown future reason withholds findings, counts, origin, engine verdict,
+dimensions, commands, tasks and annotations. Dependent assessment/recovery reasons are also omitted; independent
+App-authority recovery diagnostics remain. The original report, reason backing slice, conclusion and receipt do not
+change. Incomplete but source-admissible reports may retain qualified current facts; this does not admit them into
+the App under `action_required`.
 
-1. Markers, then the headline, which states the effect on merge from the gate mode and the conclusion, never from
-   `Report.Verdict` alone (in advisory mode a blocked verdict publishes a neutral check, so "blocked" would be false):
+The check prelude remains the parser contract: `- **Next:**`, `- Reason:`, `- Detail:`, then optional
+`Also reported:`. Reasons and claimed producer/receipt metadata remain on the check. Repository-controlled finding
+text and folds are not recovery metadata. An unevaluated `metric_ratchets` recovery is shared with baseline recovery
+only when the exact producer reason, positive metric count, present non-comparable reference and full drift list
+match. The required-gap detail remains, but its duplicate Next is omitted. Other required-rule/tool failures survive.
 
-   | `Report.Verdict`  | advisory pull request (`SettingsFound`, gate not `required`) | required pull request                              |
-   | ----------------- | ------------------------------------------------------------ | -------------------------------------------------- |
-   | `blocked`         | "Architecture violations found · advisory"                   | "Architecture gate failing" (conclusion `failure`) |
-   | `needs_attention` | "Architecture needs attention · advisory"                    | "Architecture gate passed · attention needed"      |
-   | `healthy`         | "Architecture healthy · advisory"                            | "Architecture gate passed"                         |
+The compact PR comment is text-first; GitHub can notify the same bytes by email:
+- Configured merge effect from Outcome and gate mode, never a promise that GitHub will merge.
+- Assessment, then comparable Git-base finding-identity impact or an explicit unknown. Introduced identity does not
+  prove a new module pair or that each source site was added.
+- At most three active findings/advisories: rule, reported relationship or metric, first supplied location and
+  engine constraint. Line zero is file-only. Accepted debt details and dimension tables stay in the exact check.
+  No Mermaid/image/graph is emitted in the comment.
+- Role-aware reported recovery; no invented validation flags or selected cycle direction. Owner-decision tasks
+  identify the architecture owner's role.
+- Exact HEAD, workflow run/attempt and actual state-check object link when its successful write returned an ID.
+  The App link is explicitly the current PR result/recovery diagnostics, not a historical snapshot. A check object can be
+  updated; its ID does not promise immutable content. Failed/superseded writes and annotation-batch races supply no ID.
+- Compact evidence inventory, the trust sentence, mandatory notices/waiver notice and exact delimited tasks.
+  The same comment is the email content; there is no separate email transport/body.
 
-   A `failure` conclusion outside required mode (verdict `blocked` or `hard_gates: fail`, whatever the verdict says)
-   always reads "Architecture violations found". A push carries no mode suffix ("Architecture violations found"). " · no baseline" is appended when
-   `Trusted.BaselineDigests` is empty. `action_required`, a suspended outcome, or no report keep the fixed lines
-   "Action required", "Architecture gate failing" or "Passed" **[default]**. On an advisory pull request without
-   `action_required` a check summary opens with the plain line "This check does not block merging: the gate is advisory
-   for this repository."; the comment has no note box, because the headline already says "advisory". In a check
-   summary, `Reasons[0]` follows: `Next` first and bold (only when not empty), then code and category, then `Detail`
-   (only when not empty).
+A positive “No required architecture change requested in the evaluated scope” needs a passing required Outcome,
+no active/unknown-status violation, all required rules evaluated and a reference consistent with protected inputs.
+Accepted debt can remain. A fixed lifecycle entry says “Previously accepted finding no longer observed; resolution
+not established”; no historical severity, endpoints, source sites or green removed edge is invented.
+Zero tasks retain the exact `[]` array and explain “No automated source-repair task supplied.” Rejected-source tasks
+are withheld, not represented as a successful empty repair array.
 
-   The comment, read by people, is in this order: the headline as a `## Archfit:` heading; the lead sentence (below);
-   the first dependency cycle's picture (item 5); the violations; "**Next:**"; the link and the folds. It writes no
-   reason code, category or detail in its visible part: those are the block "### Decision" at the top of the evidence
-   fold. "**Next:**" holds the distinct `Next` of every reason (one inline, several as a list, at most 51 then "and N
-   more"). It follows the violations when the comment lists any, and follows the headline otherwise. For
-   `blocking_findings` with a violation listed, the catalog's `Next` is replaced by a step a person can run in a
-   checkout: "Fix the violations above, then check with `archfit check --base origin/<base>`." The command is the
-   engine's own CLI with its default config path `.archfit.yaml`, which is where the App's policy lives
-   (`archfit check --help`); the Action's `-c /bundle/... --root /src` form stays in the folded commands, because
-   those paths exist only inside the workflow container. `<base>` is `Target.BaseRef` when it matches
-   `^[A-Za-z0-9][A-Za-z0-9._/-]*$` and has no `..`: a branch name that could carry a shell metacharacter or an option is
-   left out, and the command is `archfit check`. A violation-free outcome keeps the catalog `Next`, whose
-   `blocking_findings` text names no command that is not on screen.
+The detailed `archfit/state` check retains report groups, engine decision, required-rule/tool gaps, nine dimensions,
+protected receipt digests, claimed producer/profile, exact validation command union and delimited task JSON for
+source-admissible reports. Declared rule counts come from intent coverage with the declared-rule basis. Implicit
+accepted-reference metric checks are a separate inventory; no measured count is inferred when the report lacks one.
+`archfit/gate` retains the recovery prelude and at most 20 active blockers only when the display Outcome includes
+`blocking_findings`. Gate/check conclusions and receipt markers are unchanged.
 
-   Lead sentence (comment only, not when suspended): one sentence, no path, of what the pull request did, from origins
-   only; it picks no repair. Only when `Comparison.OriginStatus` is `comparable` and some violation is shown. When
-   the first dependency cycle (item 5) has `Origin` `introduced` in every finding: "This pull request adds N
-   dependencies that close a dependency cycle among `A`, `B` and `C`." N counts the directions the "This PR" rule (item
-   5) places as `added`; "close" when some direction `existing` before, "form" when none is; "between `A` and `B`" for
-   two modules; more than three modules read "`A`, `B`, `C` and N more". When no direction is placed: "This pull request
-   introduces a dependency cycle among `A`, `B` and `C`." Otherwise, with introduced violations: "This pull request
-   introduces N rule violations: …" (at most 3 subjects, then "and N more"; a subject is a module pair or, for a metric
-   ratchet, the metric). When every violation is `pre_existing`: "The rule violations below existed before this pull
-   request." Otherwise no sentence. The headline is also the title of both check runs (`archfit/state` without a
-   report: "Architecture state: no usable report"), so only the comment writes it as a heading: GitHub prints the
-   check title right above a check summary, and a heading there would repeat it.
-2. Further reasons, one line each (for example unevaluated rules beside a blocker), in a check summary; in the
-   comment their `Next` joins the list of item 1 and their reasons the Decision block.
+Tasks keep exactly eight keys: `finding_id`, `rule_id`, `repair_kind`, `goal`, `constraints`, `files`,
+`validation`, `origin`. Values and command flags are preserved. JSON HTML/backtick escaping prevents forged
+markers/fences; a validation replay block omits unsafe marker/fence commands with a count rather than editing them.
 
-   G. Blocking findings (gate summary only, and only when `Outcome.Reasons` holds `blocking_findings`: an outcome
-   that blocks on evidence, governance or subscription alone names no finding as blocking), so the required check
-   names what blocks: every finding for which
-   `Finding.Active()` is true, in report order, one line each: rule ID, `Edge.From.Module` → `Edge.To.Module`
-   (an end no module owns by its path, "(no module)" when it has neither; a metric ratchet, whose rule ID starts with `metric/`, names "metric <name>: before → after
-   (threshold)" instead, from `MatchedBy`), the first location as `file:line` (the file alone for line 0; "no location reported"
-   when `locations: []`), the first 8 characters of the finding ID (the prefix the engine prints), and the `Goal` of
-   the first agent task with that `FindingID` ("none reported" without one). At most 20, then "and N more blocking
-   findings" **[default]**. When `blocking_findings` holds but no finding is active, the block is the line "The outcome
-   names blocking findings, but the report lists no active gate finding. Read the archfit/state check." instead (a
-   metric ratchet is a finding since the engine reports it as `metric/<name>`; the old sentence that blamed a hard gate
-   without a finding was stale). Without `blocking_findings`,
-   without a report, or when suspended, it is omitted. Display only: the conclusion still comes from `Outcome`.
-3. `Trusted.Entitlement.Notice`, when `WarnFrom` is set, `now()` is at or past it, and the notice is not empty: it
-   follows the lead sentence. In the comment only, when `New` got an App URL: the line
-   "[Details in Archfit](<appURL>/r/<owner>/<name>/pull/<n>)", owner and name path-escaped, after "**Next:**" and before
-   the folds. A push has no pull request page and no link. The same URL is the `DetailsURL` of every check run
-   feedback writes on a pull request (state, gate, pending gate), so GitHub's "Details" opens the App's page; without
-   it GitHub keeps its default.
-4. Waiver notice section (owned by `Warn`), placed before the first fold, after the visible part.
-5. Findings (`findings.go`). A finding is labeled "violation" (never "blocking": in advisory mode nothing blocks) when `Finding.Active()` of `wire/report` is true
-   (that package owns the status vocabulary; feedback has no formula of its own) **[default, display only: the
-   verdict never reads findings]**. Groups: rule violations (`Finding.Active()` first, then any status this version
-   does not know), then three folds, each a `<details>` whose summary carries the count in plain words: "N advisories ·
-   never block" (`advisory` findings that are `new` or `expired_waiver`, on a dependency no violation lists; an advisory of
-   an unknown status stays open with the violations). An advisory on the module pair of a listed violation is the same
-   dependency under another rule, so it is not a second section: it joins the violation's row as "Also reported as
-   <rule> · <meta>", and the fold counts only the other advisories and says so ("N advisories · on other dependencies ·
-   never block"; the same words in the tally), "N known issues accepted earlier" (`baseline`, `waived`), "N known issues fixed" (`fixed`). Units are
-   the same everywhere: a **dependency cycle** is counted once with the **dependencies** in it, every other violation is a
-   **rule violation**, and nothing is counted twice. The check summary opens the block with one tally line, for example
-   "**1 dependency cycle** (4 dependencies) · **2 other rule violations** · 2 advisories · 6 known issues accepted
-   earlier"; the comment has neither the "### Findings" heading nor the tally, because its head already says it and the
-   picture follows at once. There is no "introduced by this pull request" count: it counted findings (violations and
-   advisories) next to "N dependencies added" and read as a contradiction; the "This PR" column carries it per
-   dependency. It never says "no violations": a hard gate can fail without a finding. A cut never leaves a fold or a
-   code fence open: `cutLines` closes both before "Output truncated.".
+Bodies stay within 65,535 bytes. Head/tail, decision, gaps, inputs and receipt reserve space first. Whole task data
+reserves about half of the remaining budget before discretionary dimensions/commands/findings; at least the first
+whole task is kept if it fits the available space. Every omission is counted and points to the run's unmodified
+report artifact if retained, or an approved rerun if expired. No task or delimiter is split. Other cuts end at a
+line boundary, close fences/folds and say “Output truncated.” The comment reserves waiver-notice space.
 
-   Violations: a finding lies on a dependency cycle when, among the first 50 violations, its `Edge.To.Module` reaches
-   its `Edge.From.Module` through findings of the same rule, kind, status and severity (the fields
-   `Finding.Reverses` pairs on). Cycle edges of one such class that share a module are one item (one strongly
-   connected component). Cycles come first, in the order of their first finding. In the comment the first cycle has no
-   heading: it starts with a Mermaid flowchart (one rounded node per module in a neutral style, a transparent fill with
-   a grey border, so the viewer's theme sets the text colour; one edge per finding labeled with its location count:
-   `added` red `#cf222e` 4 px, `existing` grey `#8c959f` 1 px, unmarked red 2/3/4 px wide below 3 / below 10 / from
-   10 locations), then one legend line ("Red: added by this pull request · grey: already there · label: locations in
-   code that use the dependency"; "Red: added by this pull request, or not known to have existed before · …" when some
-   direction is not placed, because a direction the report cannot place is drawn red too; without any origin "Label and
-   width: …"), then the caption "N dependencies of
-   this cycle break `<rule>` (<severity> severity)." (a cycle of non-active findings says "are reported under"), then the
-   table, then "**Why:**" and "**Fix:**". Further cycles, and every cycle in a check summary, have a heading "#### Dependency
-   cycle between `A` and `B`" (or "among `A`, `B` and `C`"; "Another dependency cycle …" after the first in the comment).
-   "**Why:**" describes the cycle from what the table shows (`report.CycleWhy`, which the App's pull request page shares), not the engine's per-direction text, which only swaps two
-   module names and names the first pair: "Each of the N dependencies lies on a cycle: from its target, dependencies lead
-   back to its source, so the M modules depend on each other." Limit: the engine reports at most 200 pairs of one
-   cycle (`matched_by.cycle_pairs_total` says how many it found; the App drops that key), so N is the number shown.
-   "**Fix:**" is each distinct engine `Constraint` (one label everywhere: the PR page says "Fix" too), followed by each
-   distinct set of `AllowedAlternatives`. Mermaid node IDs are generated (`m0`, `m1`, …); a label keeps
-   `[A-Za-z0-9_./:@+-]` and writes every other rune as a Mermaid entity code (`#<decimal>;`), so no report string can end
-   a label or the code fence. Every other violation follows as a list item, under a heading "#### Other rule violations"
-   when a cycle came before (so the list does not read as part of the cycle): label, rule name, meta and origin
-   ("added by this pull request", "existed before this pull request", "origin <token>"), `Edge.From.Module` →
-   `Edge.To.Module`, locations as `file:line` (at most 10, then "and N more", N counted to the engine's full count
-   `report.LocationsTotal`: the engine lists at most 50 and puts the total in `matched_by.locations_total`), `Why`, then the
-   policy-permitted repair: "Fix:" (`Constraint`) and `AllowedAlternatives`. A **metric ratchet** finding (rule ID starts
-   with `report.MetricRulePrefix`, `metric/`) has no module edge and no location: its subject is "metric `<name>`:
-   <before> → <after> (<threshold>)" from `Finding.MatchedBy`, never "(no module) → (no module)"; without those keys it is
-   "metric `<name>`" from the rule ID. feedback adds no repair of its own and invents no access route. At most 50
-   violations are shown, then "and N more" (`report.ShownPerGroup`, which the App's pull request page shares) **[default]**;
-   a cycle partner past the cap stays in "and N more". Display only: the count is of findings, and each finding keeps its
-   ID. Grouping never changes the verdict.
-
-   Tables (cycle directions and the three folds): one row per finding, at most 50 per fold, then "and N more". Fold
-   rows open with "rule name · meta". Columns: the dependency (`module → module` in every table and list, paths only in "Where"), "This PR" when any row
-   has a value, where (at most 3 locations, then "and N more" to `report.LocationsTotal`), and, when the report has a `Seam` with the same
-   `FromModule` and `ToModule` for any row, the Balanced Coupling dimensions of that seam: integration strength
-   (`Seam.Strength`), distance (`Seam.Distance` in the book's words: `same_module` "same module", `cross_module`
-   "across modules", `cross_module_same_owner` (engine v2) "across modules, same owner", `cross_module_different_owner`
-   "across modules, different owners", `cross_deploy_unit` "across services", `declared_external` "external", any
-   other token, `unknown` included, as written), volatility (`Seam.Volatility`); empty for a row without a seam. **A
-   column that holds the same non-empty value on every row of a table with two rows or more is not a column**: the value
-   moves into the line under the table, "On every row: functional coupling · across modules · high volatility." (the rule
-   column, "This PR", "Also reported as", strength as "<token> coupling", distance, volatility as "<token> volatility"). The dependency and
-   where columns never fold. A `|` in a cell is escaped. Under a fold's table each distinct `Why`, `Fix` and set of
-   `AllowedAlternatives` is written once with its rule name, in first-seen order: the engine repeats one explanation for
-   every finding of a rule. Engine-authored text (`Why`, `Constraint`) is never reworded, with two exceptions: a distance
-   token in a `Why` reads as the table's ("distance across modules", never "cross_module distance"), and the
-   imbalanced-coupling `Why` ("balanced coupling: <formula> → <band> severity (<explanation>)") is said in one sentence,
-   "<explanation with → as a colon> (Balanced Coupling: <band> severity)", because the formula is the three columns
-   beside it. Both are `report.ReadableWhy`, which every App page shares; a `Why` of any other shape stays as written. A fold's reasons carry the rule name only when the
-   fold holds more than one rule: one rule is already named in the line under the table.
-
-   **Suggested move** (advisory fold only): when a row's `Seam` has a `Hypothesis`, the table has a "Suggested move"
-   column (or, when the move is the same on every row, one line "**Suggested move:** …" under the table). The words are
-   `report.BalancingMoves`, Khononov's balance rule in the engine's seven hypotheses: `introduce_contract` ("lower the
-   integration strength"), `move_functionality` ("lower the distance"), `accept_low_volatility`, `declare_volatility`,
-   `expected_by_role`, `follow_rule`, `balanced`; a token this version does not know is shown as written. The seam is
-   the one with the finding's module pair; no seam, no move. The engine sets the hypothesis from the seam's driving
-   edge; feedback never computes one.
-
-   "This PR" (display only: the App never decides on origin), only with a comparison: in a fold, the finding's own
-   `Origin` as `added` (`introduced`), `existing` (`pre_existing`) or the token. For a cycle direction, the cycle's
-   own findings cannot tell (a new cycle is introduced in every direction, also those the base had), so the column
-   reads the other findings of the report on the same module pair: `existing` when one is `pre_existing` (the base
-   had the dependency), else `added` when one that lies on no dependency cycle is `introduced` (the same new cycle under
-   another rule is introduced in every direction too, so it is no evidence; only the first 50 violations are searched
-   for cycles, as for display), else empty (`report.PairOrigin`, shared with the App's pull request page). "added", not "new": without a baseline
-   every finding has status `new`. Limit: an introduced finding on a pair is not proof that the base lacked every
-   import between the two modules; a pre-existing finding on the pair wins.
-
-   Rule name: the engine's own rules by name (`bc/imbalanced_coupling` "Imbalanced coupling", `bc/coupling_gate`
-   "Coupling gate"); any other rule ID, which its policy owner chose, as a code span. The ID stays in the agent
-   tasks. Meta: `Severity` as the engine's word, then the status only when the group does not imply it (`baseline` as "accepted in the baseline"; `waived` as "accepted by waiver"; `expired_waiver` as "waiver expired"; an unknown token as written; nothing for `new` and
-   `fixed`).
-6. Dimensions: a table of the nine engine keys of `Report.Dimensions` in the engine's fixed order (`intent`, `structure`,
-   `modularity`, `coupling`, `change_locality`, `complexity`, `testability`, `operations`, `drift`). Columns:
-   completeness = `Status` (`measured`, `partial`, `unmeasured`), "Measured" = `Coverage` as `observed/total ("basis")`, the
-   basis in quotes because it is the engine's text
-   (not "Coverage": the engine's basis names its own denominator, for example "classified source files", and "coverage"
-   next to testability reads as test coverage), `Confidence`, "Result" = `Gate` of the dimension (bold when `fail` or
-   `warn`; not "Gate", which is the repository's check), and, only when some dimension has something to show, a change
-   column: a `Delta` with metrics (status and metric changes), or for `drift` a comparable `Delta` with the dimension's
-   metrics `new_seams` and `resolved_seams` ("N tight cross-module seams at high volatility new since the baseline, M
-   resolved": the App's words for the engine's seams, because "distributed monolith" is only right across a deploy unit; the engine puts the counts in
-   the dimension's metrics, not in the delta). A status alone ("comparable") changes nothing. Measurement trust is not an
-   engine field; block 8 states it once. A missing key is a row "not reported"; keys outside the nine cannot pass the decoder.
-7. Evidence gaps, always present: `Decision.UnevaluatedRequiredRules` with their reasons (a dead selector shows its
-   engine reason, `selector matches nothing: <side> <glob>`, here); `Coverage.Tools` entries whose `Status` is not
-   `ok`, except that the rows that did not run, `disabled` ones and `absent` ones without a `Reason`, are folded into
-   the one line "Analyzers that did not run (absent or disabled): …" naming each tool in report order; every
-   `Dimension.Unknown` fact with its reason; the measurement profile's `Unknowns`; and producers whose `Status` is not
-   `ok`, except a producer whose tool and status repeat a coverage row. The fold drops noise, not facts: an `absent`
-   row with a reason is a full line, and what a missing analyzer leaves unmeasured stays visible as dimension
-   unknowns and unevaluated rules. The App cannot tell from a row alone whether the language is present (an absent
-   tool over a present language and a language that is not there look the same), so the line claims neither.
-   When the protected ref has no baseline (`Trusted.BaselineDigests` empty):
-   the line "No baseline: every finding counts as new, including older debt. New does not mean added by this pull request." When a baseline exists and the gate reference is not
-   comparable, by `verdict.ReferenceConflicts` (the rule of `gate/verdict` step 7a: a nil `GateReference` with a
-   trusted baseline, a trusted baseline with a reference whose `Status` is not `comparable`, or a reference whose
-   `BaselinePresent` differs from the trusted baseline): one line per entry of its `Reasons`, "no reason given" when
-   it has none, and for a nil reference the line "Baseline comparison: the report has no gate reference". A
-   reference that says `comparable` but conflicts names the pairing instead. The note therefore appears exactly when
-   verdict reports `baseline_not_comparable`. "None reported" when empty; "No usable report"
-   when `Report == nil`.
-8. Inputs and identity: `Receipt.PolicyDigest`, `Receipt.BaselineDigest` (or "no baseline"), `Receipt.LabelsDigest`
-   (or "no labels file"), all bare hex; the baseline and labels digests carry their source (table below); measurement profile
-   version and settings hash (or "missing"), the claimed producer identity from `Publication.Identity` as
-   "engine <version>, image <digest>, <platform>" (or "no upload" when it is zero; labeled "claimed", because
-   only the manifest check in `gate` judges it), `ApprovedBy` when approval was granted, and the fixed sentence
-   "Measurement is customer-attested: the producer is authenticated, the report content is not independently checked."
-9. Validation commands: the union of `AgentTasks[].Validation`, de-duplicated in first-seen order, each printed
-   verbatim as one shell line in a code block. They are engine-authored shell strings; feedback neither builds nor edits
-   them. The decoder guarantees none contains `--refresh`. No task → the block is omitted.
-10. Agent task block: a JSON array with exactly the keys `finding_id`, `rule_id`, `repair_kind`, `goal`,
-    `constraints`, `files`, `validation`, `origin`, as decoded (`repair_kind` preserved), whole tasks only; tasks that
-    do not fit are counted in a line below the block.
-
-Source label of the baseline and labels digests in block 8. The receipt does not carry the source; it follows from
-fields the publication already has, by the receipt rule of `gate` (the claim when `inputs.Accepts` takes it, else the
-first trusted digest) and of `gate/sweep` (always the first trusted digest):
-
-| Publication                                                                  | Label                               |
-| ---------------------------------------------------------------------------- | ----------------------------------- |
-| `Identity` is zero (no upload: a sweep publication or a fork refusal)        | "from the protected ref; no upload" |
-| an upload, and `Outcome.Reasons` holds the mismatch code of that digest      | "from the protected ref"            |
-| an upload without that code (the envelope's claim was accepted and is shown) | "stated by the producer"            |
-
-The mismatch codes are `baseline_mismatch` and `labels_mismatch`. "stated by the producer" is never printed for a
-digest the App wrote itself. An upload always has an identity: the envelope decoder requires every identity field.
-
-The Decision block opens the evidence fold in the comment. Its first line is the engine's own decision, so a blocked
-verdict is never hidden behind "advisory": "Engine verdict **blocked**: hard gates fail, 4 active blockers, every
-required rule evaluated" (`Report.Verdict`, `Decision.HardGates` as "hard gates pass | fail | not measured",
-`Decision.ActiveBlockers`, and the count of `Decision.UnevaluatedRequiredRules`); on an advisory pull request the next
-line says "The gate is advisory for this repository: the engine's verdict does not block merging." One line per reason
-follows, in words with its category and detail and its code last ("Blocking findings (architecture) · code
-`blocking_findings`"); the next step is not repeated there, it is in the visible part. The drift row of the dimensions
-table says "N tight cross-module seams at high volatility, new since the baseline: it holds none" when every current seam is
-new and none resolved (the stored reference then holds no seam), instead of "N new" beside a passing result.
-
-Folds: blocks 6 to 9 (in the comment led by the Decision block) are wrapped in one `<details>` with the
-summary "Evidence and inputs", and block 10
-in one with "For coding agents"; blocks 1 to 5 and G stay open. Block 9's heading says the commands are "as run in the
-Archfit workflow": they carry container paths and are for replay. Agents read the raw Markdown, so the task markers
-parse inside the fold. The waiver notice is placed before the first fold or `###` heading, never inside a fold. The
-size budget reserves the fold lines first.
-
-When `Reasons[0].Category` is `subscription`, blocks G, 5 to 7, 9 and 10 are omitted **[default]**: paid output is suspended, the reason and recovery stay.
-
-Annotations: only on `archfit/state`; from `Finding.Locations{File, Line}` only; live findings only (accepted debt,
-`baseline` and `waived`, and `fixed` findings get none; a status this version does not know is live); findings shown
-as blocking first, then report order; level `failure` for those, `warning` otherwise; message = rule ID and `Why` (through `report.ReadableWhy`);
-`Line == 0` is sent as line 1. A finding with `locations: []` gets no annotation. On a pull request only locations in
-files the PR changed are annotated: `Publish` calls `Pulls.ChangedFiles` once, after the gate check and before the
-state check, and only when some annotation is possible; a `truncated` list means any file may have changed, so every
-location counts; on its error the state check gets no annotation (see Publish algorithm). A push annotates every
-location. At most 150 annotations in total **[default]**, sent 50 per request (GitHub's limit): the create of the
-state run carries the first 50, and further updates of the same run carry the rest, each with the same title and
-summary. GitHub appends the annotations of each request, so annotations are only ever sent to a run this
-publication created.
-
-Size: summaries and the comment stay at or under 65 535 bytes. The receipt marker, blocks 1, 2, 7, 8, the comment's Decision block and the comment's tail (the "**Next:**" step and the
-link, which follow the violations; layout field `tail`) are budgeted first and never cut. The folds of block 5
-(layout field `folds`) are cut after the violations. Of the rest, the budget is handed out in this order: block 6, block 9, block 5, block 10. Block G takes the place of block 5 in the gate summary and is cut the same way. Block 6 is cut at a line end, like block 5, when the never-cut blocks leave it too little room; block 9 takes
-at most its own budget (below) before block 5 gets anything, so a long finding list cannot push the validation
-commands out. Then block 5 is cut at a line end and ends with "Output truncated.", and block 10 shrinks by whole
-tasks into what is left, so tasks give way first and findings second. Cuts never split a UTF-8 sequence or a marker,
-and never leave a `<details>` fold or a code fence open.
-Block 9 has its own budget of 4 096 bytes and 20 commands, whole commands only, then "N more commands are not
-shown." **[default]**; a command that contains `<!--`, `-->` or a code fence is counted, not printed. The comment
-budget keeps room for the waiver notice section, so `Warn` never needs a size check. Display caps, each ending with
-"and N more" **[default]**: 50 further reasons, 50 evidence gaps per source, 10 locations per list item, 3 per table
-row, 10 metric changes per dimension. Last resort, only when the never-cut blocks alone exceed the limit: block 7 is
-cut at a line end.
+Annotations remain state-only, capped at 150 in batches of 50. Only source-admissible live findings with supplied
+positive line numbers and nonempty files qualify; accepted/fixed findings do not. File-only/nonpositive-line
+locations remain in textual detail but get no annotation. PR changed-file filtering, rate-limit behavior, leases
+and newer-head/run protection are unchanged.
 
 ## Integrations
 
@@ -1323,8 +1117,8 @@ Golden files hold rendered bodies for the wire fixtures.
   **Scenario**: messages, summaries, rule IDs, module names and paths containing `<!-- archfit:receipt {...} -->`, `-->`, backticks, HTML and a forged comment marker.
   **Expected behavior**: no marker sequence survives outside App-authored markers; `State` on the result returns the real receipt.
 - **Test name**: `TestTruncation`
-  **Scenario**: 10 000 findings with maximum-length messages and 2 000 agent tasks; multi-byte module names at the cut point.
-  **Expected behavior**: summary and comment ≤ 65 535 bytes; receipt marker, verdict, evidence gaps and inputs block intact; valid UTF-8; valid JSON in the task block; "Output truncated." present.
+  **Scenario**: 10,000 findings, 2,000 tasks and UTF-8 locations.
+  **Expected behavior**: bodies stay within 65,535 bytes; receipt/recovery survive; whole nonempty tasks reserve space before discretionary detail; every omitted task is counted; detailed state cuts say Output truncated.
 - **Test name**: `TestEvidenceGapSources`
   **Scenario**: a report with one unevaluated rule, a `Coverage.Tools` entry with status `timed out`, a `Dimension.Unknown` fact, a profile `Unknowns` entry, a `partial` producer; the same with none of them; no baseline on the protected ref; a trusted baseline with a `non_comparable` reference, a `not_requested` reference, a nil reference and a `comparable` one; the same four without a trusted baseline.
   **Expected behavior**: each item appears in the evidence-gap section with its reason; "None reported"; the line "No baseline: every finding counts as new, including older debt. New does not mean added by this pull request."; the reference reasons, "no reason given" for `not_requested` without reasons, and the no-gate-reference line for nil. With a trusted baseline a comparison line is present exactly when `verdict.Decide` reports `baseline_not_comparable` for the same report; without one it is never present.
@@ -1332,8 +1126,8 @@ Golden files hold rendered bodies for the wire fixtures.
   **Scenario**: coverage rows `ok`, `absent` without a reason (twice), `disabled` with a reason, `timed out` with a reason, `absent` with a reason; producer rows that repeat four of them, one without a coverage row (`git-history: absent`) and one whose status differs from its coverage row; rendered as comment and state summary.
   **Expected behavior**: full lines for the `timed out` row, the `absent` row with a reason, the producer without a coverage row and the producer whose status differs; one line "Analyzers that did not run (absent or disabled): …" naming the reasonless `absent` and the `disabled` tools in report order; no line for a repeated producer, no disabled reason text, no "None reported".
 - **Test name**: `TestGateSummaryNamesBlockers`
-  **Scenario**: a report with an advisory, an accepted gate finding and three active gate findings (one located with two locations and two agent tasks, one whole-file with no source module and no task, one without a location); 25 active findings; a blocking outcome without an active finding; a healthy outcome, a suspended outcome and a nil report; the active findings under an `action_required` outcome without `blocking_findings`, and under one with `blocking_findings` as a later reason.
-  **Expected behavior**: block G in the gate summary only, in report order, with rule, module pair, first location, 8-character ID prefix and the first task's goal, a module-less end by its path, "no location reported" and "Goal: none reported" where they apply; never the advisory or the accepted finding; the receipt marker stays last; 20 lines then "and 5 more blocking findings"; the "lists no active gate finding" line; no block for healthy, suspended, nil report, or an outcome without `blocking_findings`; the block when `blocking_findings` is a later reason.
+  **Scenario**: source-admissible blockers, accepted debt, whole-file/missing locations, caps and a blocker trailing an unknown-identity rejection.
+  **Expected behavior**: up to 20 source-admissible active blockers are named. The rejected-source case instead retains safe identity recovery and withholds the purported blocker; receipt/conclusion remain unchanged.
 - **Test name**: `TestHeadlineStatesTheEffectOnMerge`
   **Scenario**: table of gate mode (advisory, required), target (pull request, push), conclusion, report verdict and trusted baseline (present, absent), plus `action_required` on an advisory pull request.
   **Expected behavior**: the headline of the Layout table for each row; a `failure` conclusion beside a `healthy` or `needs_attention` verdict reads "Architecture violations found"; " · no baseline" exactly when no baseline is trusted; "Action required" wins.
@@ -1360,21 +1154,15 @@ Golden files hold rendered bodies for the wire fixtures.
   **Scenario**: two advisories with one `Why`; a seam for the first module pair only.
   **Expected behavior**: strength, distance and volatility of the seam on the first row, empty cells on the second;
   the `Why` once.
-- **Test name**: `TestCycleDirectionsShowWhatThePullRequestAdded`
-  **Scenario**: a new two-way cycle with, on the same pairs, a pre-existing and an introduced advisory; a pre-existing
-  and an introduced finding on one pair; the same cycle under another rule; no other finding; no comparison with the base.
-  **Expected behavior**: "This PR" `existing` (grey, 1 px) and `added` (red, 4 px); `existing` and an empty cell; no
-  column and red edges by count, twice; no column.
+- **Test name**: `TestCycleDirectionsShowFindingOriginNotPairNovelty`
+  **Scenario**: introduced cycle identities with mixed other evidence, another cycle, and unknown comparison.
+  **Expected behavior**: TestCycleDirectionsShowFindingOriginNotPairNovelty preserves each finding's own origin; no pair/site-added claim; unknown comparison clears every origin.
 - **Test name**: `TestLeadSentenceSaysWhatThePullRequestDid`
-  **Scenario**: a cycle closed by the pull request; a cycle whose directions cannot be placed; four introduced
-  violations beside a pre-existing one; only pre-existing violations; no comparison; only an advisory.
-  **Expected behavior**: "closes … it adds `b` → `a` (`b.go:1`); `a` → `b` (40 locations) existed before."; "introduces a
-  dependency cycle"; "introduces 4 rule violations: … and 1 more."; "existed before this pull request"; no sentence twice.
+  **Scenario**: cycles, mixed/introduced/pre-existing findings and unknown Git-base comparison.
+  **Expected behavior**: shared finding-identity counts or explicit unknown; no inferred new dependency/pair/site or chosen repair direction.
 - **Test name**: `TestCommentHeadHasNoReasonCodes`
-  **Scenario**: a blocker beside missing coverage.
-  **Expected behavior**: the comment head lists both next steps and no code, category or detail; the Decision block
-  lists both reasons in words with category and detail and the code last, with no next step, and opens the evidence fold; the state summary keeps
-  its reason line.
+  **Scenario**: a blocker beside independent missing coverage.
+  **Expected behavior**: compact comment carries both role-aware actions without raw reason codes/digests; detailed state preserves reasons/categories/details and the parsed prelude.
 - **Test name**: `TestDimensionsStateTrustOnceAndOnlyRealChanges`
   **Scenario**: a delta that is only "comparable", then one with a metric change; the whole comment.
   **Expected behavior**: no Change column, then one with "edges 1 → 2 (+1)"; "customer-attested" once in the comment.
@@ -1393,9 +1181,9 @@ Golden files hold rendered bodies for the wire fixtures.
 - **Test name**: `TestAdvisoryCommentNeverSaysBlocking`
   **Scenario**: a blocked publication on an advisory pull request, rendered as comment.
   **Expected behavior**: the advisory headline and, in the Decision block, "The gate is advisory for this repository"; no note box; "violation" labels; no "Blocked by" and no "blocking" label; violations before the first fold.
-- **Test name**: `TestNextStepIsACommandThePersonCanRun`
-  **Scenario**: a blocking outcome with a listed violation and base `main`, `release/1.2`, `main;rm -rf ~`, `-x`, `a..b`; one with no listed violation.
-  **Expected behavior**: "Fix the violations above, then check with `archfit check --base origin/<base>`." for the first two; `archfit check` without `--base` for the unsafe names; the catalog's `Next` without a command when no violation is listed; never "validation command" or a container path.
+- **Test name**: `TestNextStepNeverInventsValidationFlags`
+  **Scenario**: blocking outcome and safe/unsafe base branch names.
+  **Expected behavior**: TestNextStepNeverInventsValidationFlags uses only supplied task validation; no origin branch command, fabricated flags or container path is constructed.
 - **Test name**: `TestMetricRatchetReadsAsNumbersNotAsModules`
   **Scenario**: a `metric/cycle_count` finding with all four `matched_by` keys, without a threshold, and without `matched_by`, rendered as comment, check summary and gate blocker line.
   **Expected behavior**: "metric `cycle_count`: 0 → 2 (max_new 0)", without the parenthesis, and "metric `cycle_count`"; never "(no module)"; no Locations line.
@@ -1412,11 +1200,11 @@ Golden files hold rendered bodies for the wire fixtures.
   **Scenario**: the drift dimension with `new_seams` and `resolved_seams` under a comparable delta, a non-comparable one, one count missing, no delta.
   **Expected behavior**: "8 tight cross-module seams at high volatility new since the baseline, 0 resolved" only for the first.
 - **Test name**: `TestLeadSentenceForAnAddedDependencyThatFormsACycle`
-  **Scenario**: a cycle whose one direction is placed as added and none as existing.
-  **Expected behavior**: "This pull request adds 1 dependency that forms a dependency cycle between `A` and `B`."; no path.
+  **Scenario**: introduced cycle findings plus an introduced advisory on one pair.
+  **Expected behavior**: three introduced finding identities, not a claim that one dependency or source site was newly added.
 - **Test name**: `TestNextStepAndLinkSurviveACutOfTheViolations`
-  **Scenario**: 50 plain violations with 10 locations and 1 900-character `Why` and `Constraint` each, and an App link.
-  **Expected behavior**: the comment is within the limit, ends the violations with "Output truncated.", and still has the "**Next:**" command after it, the link, and both folds.
+  **Scenario**: 50 long violations and an App link.
+  **Expected behavior**: compact comment lists three and counts 47 more; role-aware Next, current-App link, task/trust content and size limits survive without fabricated validation flags.
 - **Test name**: `TestAssembleKeepsTheTailWhenTheFindingsAreCut`
   **Scenario**: a layout with huge findings, a tail longer than the slack a cut leaves, and a receipt.
   **Expected behavior**: the tail and the receipt stay whole, after the cut note.
@@ -1443,7 +1231,7 @@ Golden files hold rendered bodies for the wire fixtures.
   **Expected behavior**: "claimed: engine v3.0.0, image sha256:…, linux/amd64"; "no upload"; sanitized text; never the word "approved" or "verified".
 - **Test name**: `TestAnnotationSelection`
   **Scenario**: findings with no, one and many locations, `Line == 0`, live `advisory` and `gate` findings, `baseline`, `waived` and `fixed` findings, and a finding in a file the PR did not change; published on a pull request whose file list names four files, with a truncated list, on a push, with 200 live locations, and with no live located finding. The fake rejects more than 50 annotations in one request, as the client does.
-  **Expected behavior**: on the PR only the changed files: whole-file first as `failure` on line 1, then the blocking findings, then the advisory in report order as `warning`; no annotation for `locations: []`, accepted debt, fixed findings or the unchanged file; requests of 50 then 21 on the state check (none on the gate check); one file-list call. The truncated list and the push annotate every file, and the push lists none. 200 locations give 150 annotations, blocking first, in requests of 50. Without a possible annotation the file list is not read.
+  **Expected behavior**: on the PR only reported positive lines of changed files: blockers first as `failure`, then advisories in report order as `warning`; no annotation for file-only/nonpositive lines, empty files, `locations: []`, accepted debt, fixed findings or unchanged files; requests of 50 then 20 on the state check (none on the gate check); one file-list call. The truncated list and the push annotate every file, and the push lists none. 200 locations give 150 annotations, blocking first, in requests of 50. Without a possible annotation the file list is not read.
 
 ### Integration Contract Tests
 
