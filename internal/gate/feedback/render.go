@@ -3,7 +3,6 @@ package feedback
 import (
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -27,7 +26,7 @@ const (
 	headCommands   = "### Validation commands (as run in the Archfit workflow)"
 	headTasks      = "### Agent tasks"
 
-	fixedTrustSentence = "Measurement is customer-attested: the producer is authenticated, the report content is not independently checked."
+	fixedTrustSentence = "Reports are customer-attested. Upload authentication does not independently verify report content."
 	noActiveBlocker    = "- The outcome names blocking findings, but the report lists no active gate finding. Read the archfit/state check."
 	advisoryNote       = "This check does not block merging: the gate is advisory for this repository."
 )
@@ -88,6 +87,7 @@ func gateTitle(p Publication) string { return headline(p) }
 // headline states the effect on merge. It reads the gate mode and the conclusion, never the verdict alone: in
 // advisory mode a blocked verdict publishes a neutral check, so "blocked" would be false.
 func headline(p Publication) string {
+	p = presentation(p)
 	c := p.Outcome.Conclusion
 	if c == verdict.ActionRequired || suspended(p.Outcome) || p.Report == nil {
 		return verdictLine(c)
@@ -127,6 +127,7 @@ func advisory(p Publication) bool {
 }
 
 func stateTitle(p Publication) string {
+	p = presentation(p)
 	switch {
 	case suspended(p.Outcome):
 		return verdictLine(p.Outcome.Conclusion)
@@ -143,6 +144,7 @@ func suspended(o verdict.Outcome) bool {
 }
 
 func renderGate(p Publication) string {
+	p = presentation(p)
 	l := layout{head: headBlock(p, false), findings: blockersBlock(p), inputs: inputsBlock(p), receipt: receiptMarker(p.Receipt)}
 	return l.assemble(maxBody)
 }
@@ -218,9 +220,14 @@ func shortID(id string) string {
 }
 
 func renderState(p Publication) string {
-	l := layout{head: headBlock(p, false), inputs: inputsBlock(p), receipt: receiptMarker(p.Receipt)}
+	p = presentation(p)
+	l := layout{head: headBlock(p, false), decision: decisionBlock(p), inputs: inputsBlock(p), receipt: receiptMarker(p.Receipt)}
 	if !suspended(p.Outcome) {
 		l.findings, l.dims, l.gaps = findingsBlock(p.Report, false), dimensionsBlock(p.Report), gapsBlock(p)
+		if p.Report != nil {
+			l.commands = commands(p.Report.AgentTasks)
+			l.tasks, l.hasTasks = encodeTasks(p.Report.AgentTasks), true
+		}
 	}
 	return l.assemble(maxBody)
 }
@@ -228,7 +235,8 @@ func renderState(p Publication) string {
 // renderComment renders the whole comment. waiver is the date of the notice section to carry, or "".
 // link is the App's page of this pull request, or "" for none.
 func renderComment(p Publication, now time.Time, waiver, link string) string {
-	l := layout{head: headBlock(p, true), decision: decisionBlock(p), inputs: inputsBlock(p)}
+	p = presentation(p)
+	l := layout{head: headBlock(p, true), inputs: fixedTrustSentence}
 	notice := noticeLine(p.Trusted.Entitlement, now)
 	// The next step sits after the violations it answers, in a block that is never cut; with none to answer it
 	// follows the head. The notice comes before the link either way.
@@ -239,13 +247,20 @@ func renderComment(p Publication, now time.Time, waiver, link string) string {
 		l.head = join(l.head, nextBlock(p), notice, linkLine(link))
 	}
 	if !suspended(p.Outcome) {
-		l.findings, l.folds = findingParts(p.Report, true)
-		l.dims, l.gaps = dimensionsBlock(p.Report), gapsBlock(p)
+		l.findings = compactFindings(p)
+		l.gaps = headGaps + "\n\n- No usable report"
 		if p.Report != nil {
-			l.commands = commands(p.Report.AgentTasks)
+			l.gaps = compactEvidence(p)
+		}
+		if p.Report != nil {
 			l.tasks, l.hasTasks = encodeTasks(p.Report.AgentTasks), true
 		}
 	}
+	identity := commentIdentity(p)
+	if link != "" {
+		identity += " The App link shows the current PR result/recovery diagnostics, not a historical snapshot."
+	}
+	l.tail = join(l.tail, identity)
 	// Room for the notice section is always kept, so Warn can add it later without a size check.
 	reserve := len(waiverSection(time.DateOnly)) + 2
 	body := l.assemble(maxBody - reserve)
@@ -275,7 +290,7 @@ func headBlock(p Publication, markers bool) string {
 	if advisory(p) && p.Outcome.Conclusion != verdict.ActionRequired && !suspended(p.Outcome) {
 		parts = append(parts, advisoryNote)
 	}
-	reasons := p.Outcome.Reasons
+	reasons := displayReasons(p)
 	var b strings.Builder
 	b.WriteString(strings.Join(parts, "\n\n"))
 	if len(reasons) == 0 {
@@ -301,7 +316,10 @@ func headBlock(p Publication, markers bool) string {
 			fmt.Fprintf(&b, "\n- and %d more", len(reasons)-1-reasonCap)
 			break
 		}
-		fmt.Fprintf(&b, "\n- %s (%s): %s. Next: %s", code(string(r.Code)), text(string(r.Category)), text(r.Detail), text(r.Next))
+		fmt.Fprintf(&b, "\n- %s (%s): %s", code(string(r.Code)), text(string(r.Category)), text(r.Detail))
+		if r.Next != "" {
+			fmt.Fprintf(&b, ". Next: %s", text(r.Next))
+		}
 	}
 	return b.String()
 }
@@ -310,36 +328,42 @@ func headBlock(p Publication, markers bool) string {
 // request did. Reason codes, categories and details stay in the evidence fold (decisionBlock): they are for tools and
 // support, and a detail such as "1 blocking finding" counts gate findings, not the violations the comment lists.
 func commentHead(p Publication, headline string) string {
-	if suspended(p.Outcome) {
-		return headline
+	cause := ""
+	if p.Outcome.Conclusion != verdict.Success && len(p.Outcome.Reasons) > 0 {
+		cause = "Cause: " + sentenceCase(strings.ReplaceAll(string(p.Outcome.Reasons[0].Code), "_", " ")) + "."
+		if advisory(p) && p.Outcome.Reasons[0].Code == verdict.ReasonBlockingFindings {
+			cause = "Cause: Architecture rule violations."
+		}
 	}
-	return join(headline, leadSentence(p.Report))
+	if suspended(p.Outcome) {
+		return join(headline, cause)
+	}
+	impact := "PR impact: unknown — no usable report."
+	if p.Report != nil {
+		impact = leadSentence(p.Report)
+	}
+	return join(headline, commentAssessment(p), impact, cause)
 }
-
-// safeRef is a branch name that is safe to put in a command a person copies: no shell metacharacter, no option.
-var safeRef = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
 
 // nextBelowFindings reports whether the comment lists violations, so that the next step follows them.
 func nextBelowFindings(p Publication) bool {
 	return !suspended(p.Outcome) && p.Report != nil && len(group(p.Report).violations) > 0
 }
 
-// nextBlock is the next step of the outcome, each distinct one once. For blocking findings it is a command the
-// person can run in a checkout, not the name of one that only the Archfit workflow knows.
+// nextBlock presents reported recovery actions without inventing validation flags or a source-repair direction.
 func nextBlock(p Publication) string {
+	p = presentation(p)
 	var next []string
-	below := nextBelowFindings(p)
 	for _, r := range p.Outcome.Reasons {
-		if r.Next == "" {
+		if r.Next == "" || referenceCoversRecovery(p, r.Code) {
 			continue
 		}
-		s := text(r.Next)
-		if below && r.Code == verdict.ReasonBlockingFindings {
-			cmd := "archfit check"
-			if safeRef.MatchString(p.Target.BaseRef) && !strings.Contains(p.Target.BaseRef, "..") {
-				cmd += " --base origin/" + p.Target.BaseRef
+		s := recoveryRole(r.Code) + text(r.Next)
+		if r.Code == verdict.ReasonBlockingFindings {
+			s = "PR author/coding agent: review the reported constraints. Use only the supplied validation commands below; no repair direction is selected here."
+			if p.Report != nil && slices.ContainsFunc(p.Report.AgentTasks, func(task report.AgentTask) bool { return task.RepairKind == "needs_owner_decision" }) {
+				s += " Architecture owner: resolve the supplied owner-decision task before selecting a policy change."
 			}
-			s = "Fix the violations above, then check with " + code(cmd) + "."
 		}
 		if !slices.Contains(next, s) {
 			next = append(next, s)
@@ -609,7 +633,7 @@ func gapsBlock(p Publication) string {
 	if len(lines) == 0 {
 		lines = []string{"- None reported"}
 	}
-	return headGaps + "\n\n" + strings.Join(lines, "\n")
+	return headGaps + "\n\n" + text(report.EvidenceSummary(*r)) + "\n\n" + strings.Join(lines, "\n")
 }
 
 // inputsBlock is block 8. Digests are bare hex; the identity is a claim and is labeled so.
@@ -625,7 +649,7 @@ func inputsBlock(p Publication) string {
 	} else {
 		lines = append(lines, "- Labels digest: no labels file")
 	}
-	profile := "missing"
+	profile := "not available for display"
 	if p.Report != nil && p.Report.Comparison.MeasurementProfile != nil {
 		mp := p.Report.Comparison.MeasurementProfile
 		profile = "version " + code(mp.Version) + ", settings hash " + code(mp.SettingsHash)
@@ -722,6 +746,7 @@ func encodeTasks(tasks []report.AgentTask) []string {
 // true for. Live findings only: accepted debt and fixed findings are not annotated. Blocking findings come first,
 // then report order; at most annotationCap.
 func annotations(p Publication, changed func(path string) bool) []api.Annotation {
+	p = presentation(p)
 	if p.Report == nil || suspended(p.Outcome) {
 		return nil
 	}
@@ -736,13 +761,13 @@ func annotations(p Publication, changed func(path string) bool) []api.Annotation
 				level = "failure"
 			}
 			for _, loc := range f.Locations {
-				if !changed(loc.File) {
+				if loc.File == "" || loc.Line <= 0 || !changed(loc.File) {
 					continue
 				}
 				if len(out) == annotationCap {
 					return out
 				}
-				out = append(out, api.Annotation{Path: loc.File, Line: max(loc.Line, 1), Level: level, Message: sanitize(f.RuleID) + ": " + sanitize(report.ReadableWhy(f.Why))})
+				out = append(out, api.Annotation{Path: loc.File, Line: loc.Line, Level: level, Message: sanitize(f.RuleID) + ": " + sanitize(report.ReadableWhy(f.Why))})
 			}
 		}
 	}

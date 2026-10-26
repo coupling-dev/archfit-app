@@ -9,6 +9,32 @@ import (
 	"github.com/alexei-led/archfit-app/internal/wire/report"
 )
 
+func TestDisplayReasonClassificationDoesNotDecideAnOutcome(t *testing.T) {
+	reportCodes := map[ReasonCode]bool{ReasonHealthy: true, ReasonAttentionOnly: true, ReasonBlockingFindings: true, ReasonBaselineNotComparable: true, ReasonMissingCoverage: true, ReasonPolicyDefect: true}
+	for _, code := range allCodes {
+		entry, exists := lookup(code)
+		if !exists {
+			t.Fatalf("missing catalog code %s", code)
+		}
+		reportDerived, known := ClassifyDisplayReason(code, entry.category)
+		if !known || reportDerived != reportCodes[code] {
+			t.Errorf("classification %s = %v,%v", code, reportDerived, known)
+		}
+		if derived, ok := ClassifyDisplayReason(code, Category("malformed")); derived || ok {
+			t.Errorf("mismatched category accepted for %s", code)
+		}
+		after, ok := lookup(code)
+		if !ok || after != entry {
+			t.Fatalf("display classifier changed catalog entry %s", code)
+		}
+	}
+	for _, code := range []ReasonCode{"", "future_reason", "healthy ???"} {
+		if derived, known := ClassifyDisplayReason(code, CategoryArchitecture); derived || known {
+			t.Errorf("unclassified code accepted: %s", code)
+		}
+	}
+}
+
 func TestUnknownIdentityNeverComparesEqual(t *testing.T) {
 	profileLess := &report.Reference{Status: refNonComparable, BaseRef: "baseline", Reasons: []string{"baseline carries no measurement profile"}}
 	snapshot := &report.Reference{Status: refNonComparable, BaseRef: "baseline", Reasons: []string{"baseline is a stale numerical snapshot"}}

@@ -19,7 +19,7 @@ export interface GLink {
   to: string;
   status: Status;
   count: number;
-  origin: '' | 'added' | 'existing';
+  origin: '' | 'added' | 'existing'; // contains introduced/pre-existing finding evidence; never pair/site novelty
   strength: string;
   distance: string;
   volatility: string; // the seam's: on a functional dependency, the worse end's
@@ -149,13 +149,13 @@ export function lineWidth(l: GLink): number {
   return strengthWidth[l.strength] ?? unmeasuredWidth;
 }
 
-// isAdded is the pull request graph's "new": the comment's rule, so the comment, the pull request page and the graph
-// say the same. The repository graph never claims one.
+// isAdded reads the retained wire token for pairs containing introduced findings. It does not date the pair/sites.
+// The repository graph never makes a PR-origin claim.
 export function isAdded(l: GLink, pull: boolean): boolean {
   return pull && l.origin === 'added';
 }
 
-// A problem is a violation or an advisory, and on the pull request graph anything it added. The unit everywhere on the
+// A problem is a violation or advisory, or a pair containing introduced finding evidence. The unit everywhere on the
 // graph pages is one dependency: an ordered pair of modules A → B, as the engine's seam. A cycle is two dependencies.
 export function isProblemStatus(s: Status): boolean {
   return problemStatus[s];
@@ -165,8 +165,8 @@ export function isProblem(l: GLink, pull: boolean): boolean {
   return problemStatus[l.status] || isAdded(l, pull);
 }
 
-// isAcceptedEarlier is known debt: accepted, and not added by this pull request. An accepted dependency the pull request
-// added is new to the reviewer, so it stays a problem and is never drawn faint.
+// isAcceptedEarlier is accepted debt without introduced finding evidence. Acceptance and finding origin are separate:
+// a pair containing an introduced finding stays emphasized even when another finding on it is accepted.
 export function isAcceptedEarlier(l: GLink, pull: boolean): boolean {
   return l.status === 'accepted' && !isAdded(l, pull);
 }

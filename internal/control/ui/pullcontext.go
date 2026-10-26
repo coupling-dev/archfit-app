@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/manifest"
 )
@@ -108,10 +109,83 @@ func actionContext(run api.CheckRun) *checkContextJSON {
 			out.Also = append(out.Also, plain(strings.TrimPrefix(line, "- ")))
 		}
 	}
-	if strings.HasPrefix(out.Reason, "unknown_engine_identity ") || strings.HasPrefix(out.Reason, "workflow_not_approved ") {
+	if qualifyHistoricalRecovery(out) {
 		current := manifest.Current()
 		out.Approved = &producerPinsJSON{EngineVersion: current.EngineVersion, ImageDigest: current.ImageDigest,
 			Platform: current.Platform, ActionRef: current.ActionRef}
 	}
 	return out
+}
+
+// recordedRecovery is a display projection of an App-authored prelude, not an admitted report fact.
+type recordedRecovery struct {
+	reason, detail, next, raw, code string
+	reportDerived, known            bool
+}
+
+func classifyRecordedRecovery(reason, detail, next string) recordedRecovery {
+	out := recordedRecovery{reason: reason, detail: detail, next: next}
+	code, rest, opened := strings.Cut(reason, " (")
+	category, tail, closed := strings.Cut(rest, ")")
+	if opened && closed && tail == "" {
+		out.code = code
+		out.reportDerived, out.known = gate.ClassifyDisplayReason(code, category)
+	}
+	return out
+}
+
+// qualifyHistoricalRecovery keeps source-independent diagnostics but never promotes rejected report repair claims.
+// It mutates only the newly allocated projection; the stored CheckRun and its historical outcome remain unchanged.
+func qualifyHistoricalRecovery(out *checkContextJSON) (needsPins bool) {
+	records := []recordedRecovery{classifyRecordedRecovery(out.Reason, out.Detail, out.Next)}
+	for _, raw := range out.Also {
+		reason, detail, _ := strings.Cut(raw, ": ")
+		next := ""
+		if i := strings.LastIndex(detail, ". Next: "); i >= 0 {
+			detail, next = detail[:i], detail[i+len(". Next: "):]
+		}
+		record := classifyRecordedRecovery(reason, detail, next)
+		record.raw = raw
+		records = append(records, record)
+	}
+	sourceAdmissible := true
+	for _, record := range records {
+		if !record.known || !record.reportDerived {
+			sourceAdmissible = false
+		}
+		if record.known && (record.code == "unknown_engine_identity" || record.code == "workflow_not_approved") {
+			needsPins = true
+		}
+	}
+	if sourceAdmissible {
+		return needsPins
+	}
+	var diagnostics []recordedRecovery
+	withheld := false
+	for _, record := range records {
+		if record.known && !record.reportDerived {
+			diagnostics = append(diagnostics, record)
+		} else if record.reason != "" || record.next != "" || record.detail != "" {
+			withheld = true
+		}
+	}
+	out.Also = []string{}
+	if len(diagnostics) > 0 {
+		first := diagnostics[0]
+		out.Reason, out.Detail, out.Next = first.reason, first.detail, first.next
+		for _, record := range diagnostics[1:] {
+			out.Also = append(out.Also, record.raw)
+		}
+	} else if withheld {
+		out.Reason = "Historical recovery context is unclassified"
+		out.Detail = ""
+		out.Next = "Read the exact check and re-run an approved workflow to obtain usable evidence."
+	}
+	if withheld {
+		out.Also = append(out.Also, "Historical report-derived claims and repair actions are withheld because source authority was not established.")
+	}
+	if out.Profile != "" {
+		out.Profile = "not available for display"
+	}
+	return needsPins
 }

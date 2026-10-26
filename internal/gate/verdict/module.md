@@ -92,6 +92,10 @@ const (
     ReasonSuspended           ReasonCode = "subscription_suspended"
 )
 
+// ClassifyDisplayReason checks the owned reason/category vocabulary for presentation, not gate policy.
+// reportDerived identifies the six assessment/recovery families; unknown or mismatched metadata is unclassified.
+func ClassifyDisplayReason(code ReasonCode, category Category) (reportDerived, known bool)
+
 type Reason struct {
     Code     ReasonCode
     Category Category

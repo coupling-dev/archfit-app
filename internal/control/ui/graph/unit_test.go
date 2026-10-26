@@ -334,7 +334,7 @@ func TestLinkOriginIsTheCommentsRule(t *testing.T) {
 		findings []report.Finding
 		want     map[string]string // "from>to" -> Link.Origin
 	}{
-		{"an introduced finding on a comparable run adds the dependency", "comparable",
+		{"introduced evidence on a comparable run highlights the pair without dating its sites", "comparable",
 			[]report.Finding{origin("introduced", "f1", finding("gate", "new", "api", "db"))},
 			map[string]string{"api>db": "added"}},
 		{"the same finding without a comparison claims nothing", "unknown",
@@ -343,24 +343,24 @@ func TestLinkOriginIsTheCommentsRule(t *testing.T) {
 		{"a run that did not compare has no origin at all", "",
 			[]report.Finding{origin("introduced", "f1", finding("gate", "new", "api", "db"))},
 			map[string]string{"api>db": ""}},
-		{"a pre-existing finding means the base had the dependency", "comparable",
+		{"pre-existing finding evidence is retained without claiming all sites predate the PR", "comparable",
 			[]report.Finding{origin("pre_existing", "f1", finding("gate", "new", "api", "db"))},
 			map[string]string{"api>db": "existing"}},
-		{"a new finding on an old dependency does not make it new", "comparable",
+		{"mixed pairs retain introduced finding evidence", "comparable",
 			[]report.Finding{
 				origin("pre_existing", "f1", finding("advisory", "new", "api", "db")),
 				origin("introduced", "f2", finding("gate", "new", "api", "db")),
 			},
-			map[string]string{"api>db": "existing"}},
-		{"a new cycle cannot tell which direction is new", "comparable", cycle("introduced", "introduced"),
-			map[string]string{"api>db": "", "db>api": ""}},
-		{"a direction of a new cycle the base had stays existing", "comparable",
+			map[string]string{"api>db": "added"}},
+		{"cycle-only introduced findings are not lost", "comparable", cycle("introduced", "introduced"),
+			map[string]string{"api>db": "added", "db>api": "added"}},
+		{"a cycle pair can contain both introduced and pre-existing findings", "comparable",
 			append(cycle("introduced", "introduced"), origin("pre_existing", "f3", finding("advisory", "new", "db", "api"))),
-			map[string]string{"api>db": "", "db>api": "existing"}},
-		{"a cycle past the shown violations cannot tell either", "comparable", past,
-			map[string]string{"api>db": "", "db>api": "", "ui>db": "existing"}},
+			map[string]string{"api>db": "added", "db>api": "added"}},
+		{"finding evidence past the shown cap is not dropped", "comparable", past,
+			map[string]string{"api>db": "added", "db>api": "added", "ui>db": "existing"}},
 		{"on a shown cycle's pair a finding past the cap counts as the comment counts it", "comparable", shown,
-			map[string]string{"api>db": "added", "db>api": "", "ui>db": "existing"}},
+			map[string]string{"api>db": "added", "db>api": "added", "ui>db": "existing"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

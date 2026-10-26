@@ -14,8 +14,8 @@
   const kinds = ['added', 'existing', 'cycle'] as const;
   // The legend names only the kinds of arrow drawn.
   const meaning: Record<(typeof kinds)[number], string> = {
-    added: 'added by this PR',
-    existing: 'existed before',
+    added: 'introduced finding; source-site origin unknown',
+    existing: 'pre-existing finding; source-site origin unknown',
     cycle: 'in the cycle; wider = more locations',
   };
   const shown = $derived(kinds.filter((k) => drawing.arrows.some((a) => a.kind === k)));

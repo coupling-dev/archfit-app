@@ -11,14 +11,14 @@ This check does not block merging: the gate is advisory for this repository.
 
 4 dependencies of this cycle break `no-module-cycles` (high severity).
 
-| Dependency | This PR | Where | Also reported as |
-| --- | --- | --- | --- |
-| `pkg_chaos` → `pkg_container` | existing | `pkg/chaos/cmd/builder.go:14`, `pkg/chaos/command.go:10`, `pkg/chaos/iptables/cmd/loss.go:11` and 37 more |  |
-| `pkg_chaos` → `pkg_util` | existing | `pkg/chaos/iptables/parse.go:12`, `pkg/chaos/netem/parse.go:11` |  |
-| `pkg_container` → `pkg_chaos` | added | `pkg/container/appfilter.go:4` | Imbalanced coupling · critical |
-| `pkg_util` → `pkg_chaos` | added | `pkg/util/flagports.go:4` | Imbalanced coupling · critical |
+| Dependency | Where | Also reported as |
+| --- | --- | --- |
+| `pkg_chaos` → `pkg_container` | `pkg/chaos/cmd/builder.go:14`, `pkg/chaos/command.go:10`, `pkg/chaos/iptables/cmd/loss.go:11` and 37 more |  |
+| `pkg_chaos` → `pkg_util` | `pkg/chaos/iptables/parse.go:12`, `pkg/chaos/netem/parse.go:11` |  |
+| `pkg_container` → `pkg_chaos` | `pkg/container/appfilter.go:4` | Imbalanced coupling · critical |
+| `pkg_util` → `pkg_chaos` | `pkg/util/flagports.go:4` | Imbalanced coupling · critical |
 
-On every row: functional coupling · across modules · high volatility.
+On every row: introduced finding · functional coupling · across modules · high volatility.
 
 **Why:** Each of the 4 dependencies lies on a cycle: from its target, dependencies lead back to its source, so the 3 modules depend on each other.
 
@@ -36,7 +36,7 @@ On every row: functional coupling · across modules · high volatility.
 | `pkg_runtime` → `pkg_container` | `pkg/runtime/containerd/addresses.go:15`, `pkg/runtime/containerd/client.go:12`, `pkg/runtime/containerd/iptables.go:7` and 12 more |
 | `pkg_runtime` → `pkg_tc` | `pkg/runtime/containerd/netem.go:7`, `pkg/runtime/docker/netem.go:7` |
 
-On every row: Imbalanced coupling · critical, accepted in the baseline · existed before this pull request · functional coupling · across modules · high volatility.
+On every row: Imbalanced coupling · critical, accepted in the baseline · pre-existing finding · functional coupling · across modules · high volatility.
 
 **Why:** functional coupling across a module boundary to a volatile target: a change on one side forces a change on the other (Balanced Coupling: critical severity)
 
@@ -44,6 +44,12 @@ On every row: Imbalanced coupling · critical, accepted in the baseline · exist
 
 <details>
 <summary>Evidence and inputs</summary>
+
+### Decision
+
+- Engine verdict **blocked**: hard gates fail, 4 active blockers, every required rule evaluated
+- The gate is advisory for this repository: the engine's verdict does not block merging.
+- Blocking findings (architecture) · code `blocking_findings`
 
 ### Dimensions
 
@@ -60,6 +66,8 @@ On every row: Imbalanced coupling · critical, accepted in the baseline · exist
 | `drift` | measured | 8/8 ("distributed-monolith seams compared against the stored reference") | high | pass | 8 tight cross-module seams at high volatility, new since the baseline: it holds none |
 
 ### Evidence gaps
+
+Declared rule checks: 1/1 evaluated. Implicit accepted-reference metric checks: inventory not reported. Accepted reference: comparable.
 
 - Analyzers that did not run (absent or disabled): `dependency-cruiser`, `grimp`, `cargo`, `jscpd`, `scip`, `ast-grep/syntax`, `ast-grep`, `cargo-modules`
 - Dimension `structure`, unknown fact: external dependency structure — 461 dependencies leave the declared module map (461 on libraries, 0 to or from first-party code no module owns), so their direction and layer are outside this claim
@@ -83,7 +91,31 @@ On every row: Imbalanced coupling · critical, accepted in the baseline · exist
 - Measurement profile: version `archfit.measurement.v2`, settings hash `eb46ade8e8c37ee1f509da1f83bddfac13e4d162602d9065ccc964e165810ef6`
 - Producer identity, claimed: engine v3.0.0, image sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08, linux/amd64
 
-Measurement is customer-attested: the producer is authenticated, the report content is not independently checked.
+Reports are customer-attested. Upload authentication does not independently verify report content.
+
+### Validation commands (as run in the Archfit workflow)
+
+```sh
+archfit check -c /bundle/.archfit.yaml --root /src --base 3f53e38675a8ab6c453634fb51ebe58b9e5cde19
+```
+
+</details>
+
+<details>
+<summary>For coding agents</summary>
+
+### Agent tasks
+
+<!-- archfit:agent-tasks -->
+```json
+[
+{"finding_id":"0d5aae18e2b632a4796190153b0c89b3","rule_id":"no-module-cycles","repair_kind":"code_change","goal":"Break the dependency cycle among declared modules pkg_chaos, pkg_container, pkg_util by removing one direction of it: drop the pkg_chaos -\u003e pkg_container dependency, or the dependency path from pkg_container back to pkg_chaos. Routing it through another module keeps the cycle.","constraints":["Remove one direction of the module cycle; routing the dependency through another module keeps the cycle"],"files":["pkg/chaos/cmd/builder.go","pkg/chaos/command.go","pkg/chaos/iptables/cmd/loss.go","pkg/chaos/iptables/iptables.go","pkg/chaos/iptables/loss.go","pkg/chaos/iptables/parse.go","pkg/chaos/lifecycle/cmd/exec.go","pkg/chaos/lifecycle/cmd/kill.go","pkg/chaos/lifecycle/cmd/pause.go","pkg/chaos/lifecycle/cmd/remove.go","pkg/chaos/lifecycle/cmd/restart.go","pkg/chaos/lifecycle/cmd/stop.go","pkg/chaos/lifecycle/exec.go","pkg/chaos/lifecycle/kill.go","pkg/chaos/lifecycle/pause.go","pkg/chaos/lifecycle/remove.go","pkg/chaos/lifecycle/restart.go","pkg/chaos/lifecycle/stop.go","pkg/chaos/netem/cmd/combine.go","pkg/chaos/netem/cmd/corrupt.go","pkg/chaos/netem/cmd/delay.go","pkg/chaos/netem/cmd/duplicate.go","pkg/chaos/netem/cmd/loss.go","pkg/chaos/netem/cmd/loss_ge.go","pkg/chaos/netem/cmd/loss_state.go","pkg/chaos/netem/cmd/rate.go","pkg/chaos/netem/combine.go","pkg/chaos/netem/corrupt.go","pkg/chaos/netem/delay.go","pkg/chaos/netem/duplicate.go","pkg/chaos/netem/loss.go","pkg/chaos/netem/loss_ge.go","pkg/chaos/netem/loss_state.go","pkg/chaos/netem/netem.go","pkg/chaos/netem/parse.go","pkg/chaos/netem/rate.go","pkg/chaos/netem/target.go","pkg/chaos/runner.go","pkg/chaos/stress/cmd/stress.go","pkg/chaos/stress/stress.go"],"validation":["archfit check -c /bundle/.archfit.yaml --root /src --base 3f53e38675a8ab6c453634fb51ebe58b9e5cde19"],"origin":"introduced"},
+{"finding_id":"17a7a9622f148c7b21e252903ad0d0f5","rule_id":"no-module-cycles","repair_kind":"code_change","goal":"Break the dependency cycle among declared modules pkg_chaos, pkg_container, pkg_util by removing one direction of it: drop the pkg_chaos -\u003e pkg_util dependency, or the dependency path from pkg_util back to pkg_chaos. Routing it through another module keeps the cycle.","constraints":["Remove one direction of the module cycle; routing the dependency through another module keeps the cycle"],"files":["pkg/chaos/iptables/parse.go","pkg/chaos/netem/parse.go"],"validation":["archfit check -c /bundle/.archfit.yaml --root /src --base 3f53e38675a8ab6c453634fb51ebe58b9e5cde19"],"origin":"introduced"},
+{"finding_id":"dd9d76ed1e290e7a210957c96c978a8a","rule_id":"no-module-cycles","repair_kind":"code_change","goal":"Break the dependency cycle among declared modules pkg_chaos, pkg_container, pkg_util by removing one direction of it: drop the pkg_util -\u003e pkg_chaos dependency, or the dependency path from pkg_chaos back to pkg_util. Routing it through another module keeps the cycle.","constraints":["Remove one direction of the module cycle; routing the dependency through another module keeps the cycle"],"files":["pkg/util/flagports.go"],"validation":["archfit check -c /bundle/.archfit.yaml --root /src --base 3f53e38675a8ab6c453634fb51ebe58b9e5cde19"],"origin":"introduced"},
+{"finding_id":"e128caa5c2e58c5eba7cc3bc84157923","rule_id":"no-module-cycles","repair_kind":"code_change","goal":"Break the dependency cycle among declared modules pkg_chaos, pkg_container, pkg_util by removing one direction of it: drop the pkg_container -\u003e pkg_chaos dependency, or the dependency path from pkg_chaos back to pkg_container. Routing it through another module keeps the cycle.","constraints":["Remove one direction of the module cycle; routing the dependency through another module keeps the cycle"],"files":["pkg/container/appfilter.go"],"validation":["archfit check -c /bundle/.archfit.yaml --root /src --base 3f53e38675a8ab6c453634fb51ebe58b9e5cde19"],"origin":"introduced"}
+]
+```
+<!-- /archfit:agent-tasks -->
 
 </details>
 

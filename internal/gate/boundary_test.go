@@ -258,19 +258,29 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 	// Webhook, upload with markers in messages and paths, review, protected push, sweep.
 	w.handle(w.event(webhook.PullOpened, p))
 	s := w.spec(p, w.report(w.shop, fixtureBlocked, func(doc map[string]any) {
+		doc["comparison"].(map[string]any)["config_hash"] = w.digestOf(w.shop, p.head, policy.PolicyPath)
 		finding := doc["findings"].([]any)[0].(map[string]any)
 		finding["why"] = markerWhy
 		finding["locations"].([]any)[0].(map[string]any)["file"] = markerPath
 		doc["agent_tasks"].([]any)[0].(map[string]any)["goal"] = markerGoal
 	}))
-	if a := w.send(s); a.status != 200 {
-		t.Fatalf("answer = %d %s", a.status, a.raw)
-	}
-	if !strings.Contains(w.feedbackText(p), markerWhy) {
-		t.Fatal("the markers never reached feedback: the test proves nothing")
+	tokens := []string{s.token}
+	w.wantAnswer(w.send(s), 200, "action_required", "owner_approval_missing")
+	for _, marker := range []string{markerWhy, markerPath, markerGoal} {
+		if strings.Contains(w.feedbackText(p), marker) {
+			t.Fatalf("unapproved report leaked %q into recovery-only feedback", marker)
+		}
 	}
 	w.review(p, ownerLogin, "APPROVED", p.head)
 	w.handle(w.event(webhook.ReviewChanged, p))
+	s = w.spec(p, s.body)
+	tokens = append(tokens, s.token)
+	if a := w.send(s); a.status != 200 {
+		t.Fatalf("approved upload = %d %s", a.status, a.raw)
+	}
+	if !strings.Contains(w.feedbackText(p), markerWhy) {
+		t.Fatal("approved malicious-content report never reached feedback: log privacy control proves nothing")
+	}
 	w.handle(w.pushEvent(w.shop, policy.PolicyPath, markerPath))
 	w.now = w.now.Add(2 * time.Hour)
 	if _, err := w.gate.Sweep(context.Background()); err != nil {
@@ -283,7 +293,7 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 	}
 
 	text := logs.String()
-	for _, banned := range []string{markerWhy, markerPath, "MARKER", markerGoal, s.token, shopName, testWorkflow, policy.PolicyPath, "pkg/a"} {
+	for _, banned := range append([]string{markerWhy, markerPath, "MARKER", markerGoal, s.token, shopName, testWorkflow, policy.PolicyPath, "pkg/a"}, tokens...) {
 		if strings.Contains(text, banned) {
 			t.Errorf("a log line carries %q", banned)
 		}

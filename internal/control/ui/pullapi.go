@@ -82,7 +82,7 @@ type findingJSON struct {
 	Violation    bool     `json:"violation"` // an active gate finding; a status this version does not know is not
 	From         string   `json:"from"`      // the module, else the path
 	To           string   `json:"to"`
-	Origin       string   `json:"origin"` // report.PairAdded, report.PairExisting or ""
+	Origin       string   `json:"origin"` // finding identity: introduced/pre-existing encoded as PairAdded/PairExisting; no pair/site novelty
 	Why          string   `json:"why"`
 	Fix          string   `json:"fix"`
 	Alternatives []string `json:"alternatives"`
@@ -259,6 +259,7 @@ func headOf(sc scope, pull pullBody, rep *report.Report) pullHead {
 		h.Compared = rep.Comparison.OriginStatus == originComparable
 		d := rep.Decision
 		verdict, detail := report.EngineVerdict(*rep)
+		detail += ". " + report.PRImpact(*rep) + " " + report.EvidenceSummary(*rep)
 		h.Decision = &decisionJSON{Verdict: verdict, Detail: detail, HardGates: d.HardGates, Blockers: d.ActiveBlockers,
 			Unevaluated:   append([]report.UnevaluatedRule{}, d.UnevaluatedRequiredRules...),
 			OriginReasons: append([]string{}, rep.Comparison.OriginReasons...)}
@@ -368,7 +369,7 @@ func fillFindings(body *findingsJSON, rep report.Report) {
 					cy.Alternatives = append(cy.Alternatives, a)
 				}
 			}
-			cy.Directions = append(cy.Directions, also(row(f, report.PairOrigin(f, g.All, g.OnCycle)), f))
+			cy.Directions = append(cy.Directions, also(row(f, originWord(f.Origin)), f))
 		}
 		cy.Why = report.CycleWhy(len(cy.Directions), len(cy.Modules))
 		body.Cycles = append(body.Cycles, cy)

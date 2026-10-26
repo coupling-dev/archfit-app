@@ -34,7 +34,7 @@
                     class:added={ui.emphasis && isAdded(l, pull)}
                     class:sel={ui.sel?.kind === 'link' && ui.sel.key === linkKey(l)}
                     aria-label="{r} to {c}, {countWord(l)}, {linkStatusWord(l)}{isAdded(l, pull)
-                      ? ', added by this PR'
+                      ? ', contains introduced findings; source-site origin unknown'
                       : ''}"
                     onclick={() => pickLink(linkKey(l))}>{l.count || '·'}</button
                   >

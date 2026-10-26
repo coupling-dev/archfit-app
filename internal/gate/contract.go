@@ -11,6 +11,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/gate/ingest"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
 	"github.com/alexei-led/archfit-app/internal/gate/sweep"
+	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/oidc"
 	"github.com/alexei-led/archfit-app/internal/store"
@@ -87,6 +88,12 @@ func NewReceiver(gh *api.Client, v oidc.Verifier, audience string, adm *Admissio
 
 func newReceiver(gh github, v oidc.Verifier, audience string, adm admitter) Receiver {
 	return ingest.New(gh, gh, gh, v, audience, adm)
+}
+
+// ClassifyDisplayReason republishes verdict's pure display-metadata classification through the gate facade.
+// It does not decide an outcome, change admission, or validate report contents.
+func ClassifyDisplayReason(code, category string) (reportDerived, known bool) {
+	return verdict.ClassifyDisplayReason(verdict.ReasonCode(code), verdict.Category(category))
 }
 
 // Re-published child contracts. The owning child's module.md is normative.

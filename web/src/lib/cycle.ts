@@ -1,6 +1,5 @@
-// The drawing of one dependency cycle: the same picture as the PR comment's Mermaid diagram. One box per module, one
-// arrow per direction labelled with its location count. A direction the pull request added is red and wide, one that
-// existed before grey and thin, and one the report cannot place red and heavier for more locations.
+// An existing App-only cycle drawing: one box per module, one arrow per direction with its reported location count.
+// Styles show finding-identity origin, never proof that a pair or each source site was added.
 
 export interface Direction {
   from: string;
@@ -10,7 +9,7 @@ export interface Direction {
   locations_total?: number; // the engine's full count; locations holds at most 50 of them
 }
 
-// locationCount is a direction's full location count, as the comment's diagram labels it.
+// locationCount is the full supplied location count for a direction in the existing App drawing.
 export function locationCount(d: Direction): number {
   return Math.max(d.locations_total ?? 0, d.locations.length);
 }

@@ -16,7 +16,7 @@
   }
 
   // One dependency: colour is its status, width its integration strength, dashed when no seam measured one; the label
-  // is its dependency count. A dependency this pull request added carries a halo.
+  // is its dependency count. A pair containing introduced finding evidence carries a halo.
   let { data: props }: EdgeProps<Edge<Dependency>> = $props();
   const data = $derived(props!);
 
@@ -26,11 +26,11 @@
   const text = $derived(String(l.count || '·'));
   const w = $derived(12 + text.length * 7);
   // Accepted debt is drawn thin and faint, so a repository with no active problem does not look alarming. What this pull
-  // request added is new, accepted or not: the faint style is only for debt accepted earlier.
+  // request contains introduced finding evidence for stays emphasized, accepted or not.
   const faint = $derived(l.status === 'accepted' && !data.added);
   const width = $derived(faint ? Math.min(lineWidth(l), acceptedWidth) : lineWidth(l));
   const name = $derived(
-    `${l.from} to ${l.to}, ${countWord(l)}, ${linkStatusWord(l)}, ${measured(l) ? strengthWord[l.strength] : 'strength not measured'}${data.added ? ', added by this PR' : ''}`,
+    `${l.from} to ${l.to}, ${countWord(l)}, ${linkStatusWord(l)}, ${measured(l) ? strengthWord[l.strength] : 'strength not measured'}${data.added ? ', contains introduced findings; source-site origin unknown' : ''}`,
   );
 
   function onkey(e: KeyboardEvent) {

@@ -2,116 +2,29 @@
 <!-- archfit:head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb run 7.1 -->
 ## Archfit: Architecture violations found · advisory
 
-This pull request adds 2 dependencies that close a dependency cycle among `pkg_chaos`, `pkg_container` and `pkg_util`.
+Assessment: 4 active findings, 0 advisories, 6 accepted findings.
 
-```mermaid
-flowchart LR
-  m0("pkg_chaos")
-  m1("pkg_container")
-  m2("pkg_util")
-  m0 -->|"40 locations"| m1
-  m0 -->|"2 locations"| m2
-  m1 -->|"1 location"| m0
-  m2 -->|"1 location"| m0
-  linkStyle 0 stroke:#8c959f,stroke-width:1px
-  linkStyle 1 stroke:#8c959f,stroke-width:1px
-  linkStyle 2 stroke:#cf222e,stroke-width:4px
-  linkStyle 3 stroke:#cf222e,stroke-width:4px
-  classDef module fill:transparent,stroke:#8c959f,stroke-width:1px
-  class m0,m1,m2 module
-```
+PR impact: 6 introduced findings, 6 pre-existing, 0 unknown. Finding origin does not establish that each module pair or listed source site was added.
 
-_Red: added by this pull request · grey: already there · label: locations in code that use the dependency_
+Cause: Architecture rule violations.
 
-4 dependencies of this cycle break `no-module-cycles` (high severity).
+- **active finding** `no-module-cycles`: `pkg_chaos` → `pkg_container` at `pkg/chaos/cmd/builder.go:14`. Constraint: Remove one direction of the module cycle; routing the dependency through another module keeps the cycle
+- **active finding** `no-module-cycles`: `pkg_chaos` → `pkg_util` at `pkg/chaos/iptables/parse.go:12`. Constraint: Remove one direction of the module cycle; routing the dependency through another module keeps the cycle
+- **active finding** `no-module-cycles`: `pkg_container` → `pkg_chaos` at `pkg/container/appfilter.go:4`. Constraint: Remove one direction of the module cycle; routing the dependency through another module keeps the cycle
+- 1 more active findings/advisories: read the exact archfit/state check.
 
-| Dependency | This PR | Where | Also reported as |
-| --- | --- | --- | --- |
-| `pkg_chaos` → `pkg_container` | existing | `pkg/chaos/cmd/builder.go:14`, `pkg/chaos/command.go:10`, `pkg/chaos/iptables/cmd/loss.go:11` and 37 more |  |
-| `pkg_chaos` → `pkg_util` | existing | `pkg/chaos/iptables/parse.go:12`, `pkg/chaos/netem/parse.go:11` |  |
-| `pkg_container` → `pkg_chaos` | added | `pkg/container/appfilter.go:4` | Imbalanced coupling · critical |
-| `pkg_util` → `pkg_chaos` | added | `pkg/util/flagports.go:4` | Imbalanced coupling · critical |
+**Next:** PR author/coding agent: review the reported constraints. Use only the supplied validation commands below; no repair direction is selected here.
 
-On every row: functional coupling · across modules · high volatility.
-
-**Why:** Each of the 4 dependencies lies on a cycle: from its target, dependencies lead back to its source, so the 3 modules depend on each other.
-
-**Fix:** Remove one direction of the module cycle; routing the dependency through another module keeps the cycle
-
-**Next:** Fix the violations above, then check with `archfit check --base origin/master`.
-
-<details>
-<summary>6 known issues accepted earlier</summary>
-
-| Dependency | Where |
-| --- | --- |
-| `cmd` → `pkg_chaos` | `cmd/commands.go:7`, `cmd/commands.go:8`, `cmd/commands.go:9` and 3 more |
-| `cmd` → `pkg_runtime` | `cmd/runtime.go:12`, `cmd/runtime.go:13`, `cmd/runtime.go:14` |
-| `pkg_chaos` → `pkg_container` | `pkg/chaos/iptables/iptables.go:8`, `pkg/chaos/netem/netem.go:9`, `pkg/chaos/netem/target.go:10` and 2 more |
-| `pkg_chaos` → `pkg_util` | `pkg/chaos/iptables/parse.go:12`, `pkg/chaos/netem/parse.go:11` |
-| `pkg_runtime` → `pkg_container` | `pkg/runtime/containerd/addresses.go:15`, `pkg/runtime/containerd/client.go:12`, `pkg/runtime/containerd/iptables.go:7` and 12 more |
-| `pkg_runtime` → `pkg_tc` | `pkg/runtime/containerd/netem.go:7`, `pkg/runtime/docker/netem.go:7` |
-
-On every row: Imbalanced coupling · critical, accepted in the baseline · existed before this pull request · functional coupling · across modules · high volatility.
-
-**Why:** functional coupling across a module boundary to a volatile target: a change on one side forces a change on the other (Balanced Coupling: critical severity)
-
-</details>
+HEAD `bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb` · [Run 7 · attempt 1](https://github.com/acme/shop/actions/runs/7/attempts/1). Detailed findings/evidence: `archfit/state` for this HEAD and run.
 
 <details>
 <summary>Evidence and inputs</summary>
 
-### Decision
-
-- Engine verdict **blocked**: hard gates fail, 4 active blockers, every required rule evaluated
-- The gate is advisory for this repository: the engine's verdict does not block merging.
-- Blocking findings (architecture) · code `blocking_findings`
-
-### Dimensions
-
-| Dimension | Status | Measured | Confidence | Result | Change |
-| --- | --- | --- | --- | --- | --- |
-| `intent` | measured | 1/1 ("declared rules evaluated") | high | pass |  |
-| `structure` | measured | 167/628 ("discovered dependencies resolved inside the declared module map") | high | **fail** |  |
-| `modularity` | measured | 0/6 ("declared modules with a declared public surface") | low | pass |  |
-| `coupling` | measured | 79/79 ("cross-boundary edges scored") | high | **warn** |  |
-| `change_locality` | measured | 6/6 ("declared modules touched in the scanned history window") | high | pass |  |
-| `complexity` | measured | 6/6 ("declared modules with complete dependency-chain and degree values") | high | pass |  |
-| `testability` | partial | 158/173 ("classified source files") | medium | pass |  |
-| `operations` | partial | 1/6 ("declared modules with a corroborated deploy unit and qualifying owner") | medium | pass |  |
-| `drift` | measured | 8/8 ("distributed-monolith seams compared against the stored reference") | high | pass | 8 tight cross-module seams at high volatility, new since the baseline: it holds none |
-
 ### Evidence gaps
 
-- Analyzers that did not run (absent or disabled): `dependency-cruiser`, `grimp`, `cargo`, `jscpd`, `scip`, `ast-grep/syntax`, `ast-grep`, `cargo-modules`
-- Dimension `structure`, unknown fact: external dependency structure — 461 dependencies leave the declared module map (461 on libraries, 0 to or from first-party code no module owns), so their direction and layer are outside this claim
-- Dimension `modularity`, unknown fact: inferred public surface — no declared module states a public surface, so inferring one is outside this claim
-- Dimension `change_locality`, unknown fact: essential vs accidental volatility — commit frequency corroborates a declared volatility; it cannot establish one
-- Dimension `complexity`, unknown fact: function length distribution — ast-grep supplied no complete function or method extent for part or all of the out-of-claim size distribution
-- Dimension `complexity`, unknown fact: cognitive complexity — no cognitive-complexity analyzer is claimed; module-graph shape is the architecture-level measure
-- Dimension `testability`, unknown fact: supplied coverage units — coverage is disabled, so no supplied coverage units were observed
-- Dimension `testability`, unknown fact: coverage path resolution — coverage is disabled, so no supplied coverage paths were available to resolve
-- Dimension `testability`, unknown fact: coverage module attribution — coverage is disabled, so no supplied coverage was available to attribute to declared modules
-- Dimension `testability`, unknown fact: coverage freshness — coverage is disabled, so no supplied coverage freshness could be established
-- Dimension `operations`, unknown fact: corroborated deploy unit — one or more declared modules have no independently corroborating deploy manifest
-- Dimension `operations`, unknown fact: observed runtime topology — committed manifests corroborate declared deploy units; they do not observe what is actually running
-- Dimension `operations`, unknown fact: supply-chain inventory — SBOM and vulnerability facts are a separate report family and have no collector in v1
+Declared rule checks: 1/1 evaluated. Implicit accepted-reference metric checks: inventory not reported. Accepted reference: comparable.
 
-### Inputs and identity
-
-- Policy digest: `1111111111111111111111111111111111111111111111111111111111111111`
-- Baseline digest: `2222222222222222222222222222222222222222222222222222222222222222` (stated by the producer)
-- Labels digest: `3333333333333333333333333333333333333333333333333333333333333333` (stated by the producer)
-- Measurement profile: version `archfit.measurement.v2`, settings hash `eb46ade8e8c37ee1f509da1f83bddfac13e4d162602d9065ccc964e165810ef6`
-- Producer identity, claimed: engine v3.0.0, image sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08, linux/amd64
-
-Measurement is customer-attested: the producer is authenticated, the report content is not independently checked.
-
-### Validation commands (as run in the Archfit workflow)
-
-```sh
-archfit check -c /bundle/.archfit.yaml --root /src --base 3f53e38675a8ab6c453634fb51ebe58b9e5cde19
-```
+Reports are customer-attested. Upload authentication does not independently verify report content.
 
 </details>
 

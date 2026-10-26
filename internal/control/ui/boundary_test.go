@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"go/parser"
+	"go/token"
 	"html"
 	"net/http"
 	"net/http/httptest"
@@ -25,6 +27,30 @@ import (
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
+
+func TestHistoricalRecoveryClassificationUsesOnlyGateFacade(t *testing.T) {
+	const facade = "github.com/alexei-led/archfit-app/internal/gate"
+	file, err := parser.ParseFile(token.NewFileSet(), "pullcontext.go", nil, parser.ImportsOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, spec := range file.Imports {
+		imp, err := strconv.Unquote(spec.Path.Value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.HasPrefix(imp, facade+"/") {
+			t.Fatalf("historical projection imports private gate child %s", imp)
+		}
+		if imp == facade {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("historical classification did not use the permitted gate facade")
+	}
+}
 
 // noWrites fails the test if any sibling module or GitHub write was reached.
 func (e *env) noWrites(t *testing.T) {

@@ -1,11 +1,36 @@
 package ui
 
 import (
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
 )
+
+func TestPublishedRecoveryPreludeRemainsParseable(t *testing.T) {
+	for _, tt := range []struct {
+		name, reason string
+		also         int
+	}{
+		{"reference-only-recovery", "baseline_not_comparable (evidence)", 1},
+		{"unknown-identity", "unknown_engine_identity (evidence)", 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := os.ReadFile("../../gate/feedback/testdata/golden/" + tt.name + ".state.md")
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := actionContext(api.CheckRun{Summary: string(raw), HeadSHA: sha(4), ExternalID: "v1:7:1:sha256:" + strings.Repeat("a", 64)})
+			if got.Reason != tt.reason || got.Next == "" || got.Producer == "" || len(got.Also) != tt.also {
+				t.Fatalf("published prelude lost: %+v", got)
+			}
+			if tt.name == "reference-only-recovery" && strings.Contains(got.Also[0], "Next:") {
+				t.Fatalf("duplicate recovery became an App action: %v", got.Also)
+			}
+		})
+	}
+}
 
 func TestCheckContextSummaryBoundaries(t *testing.T) {
 	const reason = "- Reason: `healthy` (architecture)\n"

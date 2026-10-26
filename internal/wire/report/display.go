@@ -11,7 +11,7 @@ import (
 // Display rules that the PR comment, the App's pull request page and its graph share, so all three tell the same story
 // about cycles and about what a pull request added. None of them is a gate decision.
 
-// ShownPerGroup is how many findings of a group the comment and the App list; the rest are counted. Group searches the
+// ShownPerGroup is how many findings of a group the detailed check and App list; the rest are counted. Group searches the
 // first ShownPerGroup violations for cycles, so every reader that wants the same cycles passes this.
 const ShownPerGroup = 50
 
@@ -99,7 +99,7 @@ func SplitCovered(violations, advisories []Finding) (rest []Finding, covered map
 
 func modulePair(f Finding) [2]string { return [2]string{f.Edge.From.Module, f.Edge.To.Module} }
 
-// Pair origins: what the report shows about one direction of a dependency on the pull request base.
+// Pair origin tokens describe finding evidence on a pair, never pair or source-site novelty.
 const (
 	PairAdded    = "added"
 	PairExisting = "existing"
@@ -176,20 +176,18 @@ func Cycles(fs []Finding) []int {
 	return out
 }
 
-// PairOrigin is what the report shows about one direction of a cycle on the pull request base. PairExisting: a
-// finding on the same module pair is pre_existing, so the base had that dependency. PairAdded: none is, and a finding
-// on the pair that lies on no cycle is introduced. "" otherwise: cycle findings cannot tell, because a cycle that is
-// new is introduced in every direction, also in those that existed before, and so is the same cycle under another
-// rule. all is every finding of the report; onCycle holds the IDs of the findings on a dependency cycle.
-func PairOrigin(f Finding, all []Finding, onCycle map[string]bool) string {
+// PairOrigin aggregates non-fixed finding origins after Group has cleared incomparable origins. PairAdded means
+// contains an introduced finding, even on a cycle or mixed pair; PairExisting means contains a pre-existing finding.
+// Neither value dates the relationship or every source site. No finding evidence means no origin claim.
+func PairOrigin(f Finding, all []Finding) string {
 	same := func(o Finding) bool {
-		return o.Edge.From.Module == f.Edge.From.Module && o.Edge.To.Module == f.Edge.To.Module
+		return o.Status != "fixed" && o.Edge.From.Module == f.Edge.From.Module && o.Edge.To.Module == f.Edge.To.Module
+	}
+	if slices.ContainsFunc(all, func(o Finding) bool { return same(o) && o.Origin == "introduced" }) {
+		return PairAdded
 	}
 	if slices.ContainsFunc(all, func(o Finding) bool { return same(o) && o.Origin == "pre_existing" }) {
 		return PairExisting
-	}
-	if slices.ContainsFunc(all, func(o Finding) bool { return same(o) && o.Origin == "introduced" && !onCycle[o.ID] }) {
-		return PairAdded
 	}
 	return ""
 }

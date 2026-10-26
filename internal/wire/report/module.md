@@ -8,7 +8,7 @@
 
 An engine state report is produced in the customer's CI and uploaded to Archfit. The product promise is that no
 source code reaches Archfit. This module is where that promise is enforced on the payload. It mirrors the engine
-state contract `archfit.architecture-state.v1` (engines v3.0.0, v3.0.1, v3.2.0 and v3.2.2, one `archfit.state.schema.json`) and turns it into a
+state contract `archfit.architecture-state.v1` (engines v3.0.0, v3.0.1, v3.2.0, v3.2.2 and v3.2.3, one `archfit.state.schema.json`) and turns it into a
 no-source transport: it knows every key of that schema, keeps an allowlisted subset under length caps, drops the
 rest, and refuses anything the schema does not define. Without it,
 "schema-valid engine JSON" would be mistaken for "no-source payload" (plan T04): a real report carries source
@@ -18,9 +18,9 @@ identifiers in `agent_tasks[].declarations`.
 
 - Define the transport types for verdict, gate decision, comparison identity, gate reference, dimensions,
   coverage, findings, repair tasks and seams.
-- `Decode`: strict JSON decoding against the v3.0.0/v3.0.1/v3.2.0/v3.2.2 key set, size cap, enum checks, per-field caps, path rules,
+- `Decode`: strict JSON decoding against the v3.0.0/v3.0.1/v3.2.0/v3.2.2/v3.2.3 key set, size cap, enum checks, per-field caps, path rules,
   single-line rule, duplicate-ID rule; known but non-allowlisted keys are type-checked and dropped.
-- `EngineVersions`: the engine releases `Decode` reads (`v3.0.0`, `v3.0.1`, `v3.2.0`, `v3.2.2`), so that a consumer can tie an approved
+- `EngineVersions`: the engine releases `Decode` reads (`v3.0.0`, `v3.0.1`, `v3.2.0`, `v3.2.2`, `v3.2.3`), so that a consumer can tie an approved
   identity to the key set.
 - Preserve what the gate and feedback need, unchanged: `verdict`, `decision.hard_gates`,
   `unevaluated_required_rules`, `comparison.config_hash`, `measurement_profile`, `gate_reference`, both repair
@@ -36,8 +36,8 @@ Volatility: moderate. It changes with a versioned engine release; the caps are *
 
 ## Encapsulated Knowledge
 
-- The complete key set of the state schema, pinned at engine v3.2.2 (revision
-  `90c0ca240143329d404eb4eb116b096f607f7dc5`, `internal/wire/testdata/schema/`; the v3.0.0 file at
+- The complete key set of the state schema, pinned at engine v3.2.3 (revision
+  `c7490636480a8faedddf3bff1d0a678a7ab7987c`, `internal/wire/testdata/schema/`; the v3.0.0 file at
   `bbd658f008bcc4bc83e063cf305d20dc4508da2e` is byte-identical), and the split into kept and
   dropped keys below. Field names and enum values in the Public Contract are taken from that schema, not guessed.
 - The engine releases `Decode` reads (see "Engine release and key set" below).
@@ -60,9 +60,9 @@ Volatility: moderate. It changes with a versioned engine release; the caps are *
 
 ### Engine release and key set
 
-`Decode` reads v3.0.0, v3.0.1, v3.2.0 and v3.2.2 through one byte-identical state-schema key set.
+`Decode` reads v3.0.0, v3.0.1, v3.2.0, v3.2.2 and v3.2.3 through one byte-identical state-schema key set.
 Other releases, empty versions and unknown keys fail closed. Historical readability preserves stored reports.
-Only the manifest's exact v3.2.2 and transition v3.2.0 platform tuples are approved. Old readable uploads end `unknown_engine_identity`, not success.
+Only the manifest's exact v3.2.3 and retained v3.2.2/v3.2.0 platform tuples are approved. Old readable uploads end `unknown_engine_identity`, not success.
 No version fallback or second approval path is added.
 
 - The schema has these keys, among others. Kept: `comparison.classification_hash`, `comparison.origin_status`,
@@ -96,7 +96,7 @@ No version fallback or second approval path is added.
 
 ### Order of checks
 
-Engine release is `v3.0.0`, `v3.0.1`, `v3.2.0` or `v3.2.2` → size over `MaxBytes` → valid UTF-8 → token pre-pass → typed
+Engine release is `v3.0.0`, `v3.0.1`, `v3.2.0`, `v3.2.2` or `v3.2.3` → size over `MaxBytes` → valid UTF-8 → token pre-pass → typed
 decode with unknown fields disallowed → required keys → `schema_version` → enums → collection caps → string rules →
 path rules → duplicate finding IDs. The first failure is returned. No partial `Report` is ever returned.
 
@@ -271,14 +271,14 @@ sets are **[default]**. Classes:
 ## Public Contract
 
 ```go
-// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v3.0.0, v3.0.1, v3.2.0 and v3.2.2: one file).
+// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v3.0.0, v3.0.1, v3.2.0, v3.2.2 and v3.2.3: one file).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
 // Report is the no-source transport form of an engine state report. The decoder knows every key of the engine
-// state schema of v3.0.0, v3.0.1, v3.2.0 and v3.2.2: keys listed here are kept (length-capped), the other known keys are validated and dropped
+// state schema of v3.0.0, v3.0.1, v3.2.0, v3.2.2 and v3.2.3: keys listed here are kept (length-capped), the other known keys are validated and dropped
 // (measurement, findings[].matched_by except MatchedByKeys, agent_tasks[].declarations, metric provenance, seam
 // scores), and any key the schema does not define is a decode error.
 type Report struct {
@@ -552,7 +552,7 @@ func (f Finding) Reverses(g Finding) bool
 // Display rules the PR comment (gate/feedback), the pull request page and the graph (control/ui) share, so all tell
 // the same story. None of them is a gate decision.
 
-// ShownPerGroup is how many findings of one group the comment and the pull request page list; the rest are counted.
+// ShownPerGroup is how many findings of one group the detailed check and pull request page list; the rest are counted.
 const ShownPerGroup = 50
 
 // Group sorts a report's findings into the comment's groups: violations (active first, then unknown statuses),
@@ -565,10 +565,17 @@ func Cycles(fs []Finding) []int
 
 const PairAdded, PairExisting = "added", "existing"
 
-// PairOrigin is what the report shows about one direction of a cycle on the pull request base: PairExisting when a
-// finding on the same module pair is pre_existing, else PairAdded when one on the pair that lies on no cycle is
-// introduced, else "".
-func PairOrigin(f Finding, all []Finding, onCycle map[string]bool) string
+// PairOrigin aggregates non-fixed finding evidence after Group clears incomparable origins: PairAdded means
+// contains an introduced finding (including cycles/mixed pairs), else PairExisting means contains pre-existing
+// findings. Neither token dates a pair or every source site.
+func PairOrigin(f Finding, all []Finding) string
+
+// Display-only feedback helpers; these add no wire fields and make no eligibility/gate decision.
+func PRImpact(r Report) string
+func EvidenceSummary(r Report) string
+func NoRequiredChange(r Report) bool
+func ReferenceCoversMetricGap(r Report, u UnevaluatedRule) bool
+func ReferenceCoversAllGaps(r Report) bool
 
 // SplitCovered splits advisories by the violations' module pairs. An advisory on the same ordered, non-empty module
 // pair as a violation is that dependency under another rule: it joins the violation's row ("also reported as") and is
@@ -610,9 +617,9 @@ Semantics not visible in the signatures:
 
 - `Decode` returns a zero `Report` with every error. Errors are plain `error` values; the caller maps any of them
   to one problem (`report_invalid`). The message names location and rule only.
-- `engineVersion` is compared exactly with `v3.0.0`, `v3.0.1`, `v3.2.0` and `v3.2.2`: no trimming, no `v` added, no ranges. Any other value, the
+- `engineVersion` is compared exactly with `v3.0.0`, `v3.0.1`, `v3.2.0`, `v3.2.2` and `v3.2.3`: no trimming, no `v` added, no ranges. Any other value, the
   empty string included, is an error naming `engine_version`, before the payload is read.
-- `EngineVersions` returns `v3.0.0`, `v3.0.1`, `v3.2.0`, `v3.2.2`, oldest first, as a fresh slice on every call. A caller without a
+- `EngineVersions` returns `v3.0.0`, `v3.0.1`, `v3.2.0`, `v3.2.2`, `v3.2.3`, oldest first, as a fresh slice on every call. A caller without a
   bound release that only displays a report (the graph page) passes the last one; the gate passes the envelope's.
 - A decoded `Report` owns its memory; it does not alias `payload`.
 - `Decode` never drops, reorders, or rewrites findings, tasks, seams, or validation commands. The only dropped
@@ -640,7 +647,7 @@ table; the `internal/gate` row is computed (LCA root, deeper module two levels d
 | `internal/gate`                  | through gate/ingest, no import   | Contract                      | root / 2 / 2              | High       | Yes       |
 | `internal/control/ui`            | ui depends on report             | Contract                      | root / 2 / 2              | High       | Yes       |
 | `internal/control/ui/graph`      | graph depends on report          | Contract                      | root / 3 / 3              | Moderate   | Yes       |
-| `archfit` engine state (v3.2.2)  | report mirrors the engine schema | Contract (versioned schema)   | outside the tree; highest | Moderate   | Yes       |
+| `archfit` engine state (v3.2.3)  | report mirrors the engine schema | Contract (versioned schema)   | outside the tree; highest | Moderate   | Yes       |
 | `archfit-action` (external repo) | the Action uploads engine state  | Contract                      | outside the tree; highest | Moderate   | Yes       |
 
 Shared knowledge, per counterpart:
@@ -664,12 +671,12 @@ Shared knowledge, per counterpart:
   `Report` field of `ingest.Upload`: a `nil` profile or a version different from the manifest entry means the identity
   is not approved. A change to those fields still reaches it.
 - `internal/control/ui` holds `Decode`, `EngineVersions` and `MaxBytes` to read the `archfit-report` workflow
-  artifact for the graph page. The artifact names no release, so it decodes as the last release, `v3.2.2`.
+  artifact for the graph page. The artifact names no release, so it decodes as the last release, `v3.2.3`.
 - `internal/control/ui/graph` holds `Report`, `Seam` (`Seam.Policy` included, the status it shows when present),
   `Comparison.ConfigHash` and `Finding.Active`, which decides the links it marks as active gate findings in a
   report without `seams[].policy`.
 - `archfit` engine state: this module holds the whole state schema key set, its enums and required lists, pinned
-  at v3.2.2, revision `90c0ca240143329d404eb4eb116b096f607f7dc5`. It holds no engine Go types (trust-and-reporting.md §7).
+  at v3.2.3, revision `c7490636480a8faedddf3bff1d0a678a7ab7987c`. It holds no engine Go types (trust-and-reporting.md §7).
 - `archfit-action` uploads the engine's state file bytes as they are, or with dropped keys stripped. Contract
   coupling through a version constant, strict decoding and shared fixtures tolerates the distance of three repositories.
 
@@ -697,7 +704,7 @@ No counterpart contract is used by this module, so nothing is restated here.
 - Enforcement is never filtered by `Origin` or finding `Status`; this module keeps every finding it accepts.
 - Empty `locations` stay empty. No consumer may invent a location.
 - `Decode` is total and bounded: no input panics; work is bounded by `MaxBytes`, the depth cap and the collection caps.
-- Strict: a document gets the v3.0.0/v3.0.1/v3.2.0/v3.2.2 key set and nothing else. Any other release is refused, never read with this
+- Strict: a document gets the v3.0.0/v3.0.1/v3.2.0/v3.2.2/v3.2.3 key set and nothing else. Any other release is refused, never read with this
   key set.
 - Errors never contain payload values or the engine release. Callers log IDs, digests, outcomes and timings only.
 - No I/O, no clock, no logging, no mutable globals: the release list is read-only. Standard library only. No other
@@ -709,7 +716,7 @@ No counterpart contract is used by this module, so nothing is restated here.
 Fixtures live in `internal/wire/testdata/report/` and `internal/wire/testdata/leakage/`, read by relative path.
 Each fixture has an `.expect.json` sibling recording its producer artifact and expected outcome (see the parent document);
 this module asserts its `decode` and `fields` keys. The pinned engine schema is `internal/wire/testdata/schema/archfit.state.schema.json`.
-This module has no private fixture and no `testdata` folder of its own. Captures cover v3.0.0, v3.0.1, v3.2.0 and v3.2.2;
+This module has no private fixture and no `testdata` folder of its own. Captures cover v3.0.0, v3.0.1, v3.2.0, v3.2.2 and v3.2.3;
 the tests decode each one as the release that produced it (synthetic ones as v3.2.2).
 
 ### Unit Tests
@@ -846,7 +853,7 @@ the tests decode each one as the release that produced it (synthetic ones as v3.
   **Expected behavior**: no `declarations`, `measurement`, `provenance`, `denominator` or `scores` key anywhere, and no `matched_by` key
   outside `MatchedByKeys`; the second decode equals the first; counts of findings, tasks and seams equal the counts in the fixture file.
 - **Test name**: `TestEngineSchemaKeySetIsCovered`
-  **Scenario**: walk the pinned v3.2.2 `internal/wire/testdata/schema/archfit.state.schema.json` and the shadow types by
+  **Scenario**: walk the pinned v3.2.3 `internal/wire/testdata/schema/archfit.state.schema.json` and the shadow types by
   reflection; decode the real capture, the all-keys fixture and `real-seam-policy`.
   **Expected behavior**: every schema property is a shadow field, and the reverse; kept plus dropped equals the schema key set. A
   missing schema file fails the test; it never skips.
@@ -857,7 +864,7 @@ the tests decode each one as the release that produced it (synthetic ones as v3.
   `.`; the why ends with ` — <rationale> (see <docs>)`, the constraint with ` (see <docs>)`; the task has the `rationale: ` entry.
 - **Test name**: `TestEngineVersions`
   **Scenario**: call `EngineVersions`, change the returned slice, call it again.
-  **Expected behavior**: `v3.0.0`, `v3.0.1`, `v3.2.0`, `v3.2.2` both times: the caller gets a copy.
+  **Expected behavior**: `v3.0.0`, `v3.0.1`, `v3.2.0`, `v3.2.2`, `v3.2.3` both times: the caller gets a copy.
 - **Test name**: `TestUnknownEngineVersionIsRefused`
   **Scenario**: the real capture with the release `""`, `v2.5.0`, `v2.6.0`, `3.0.0`, `v3.0.0 ` (trailing space), `V3.0.0`,
   `v3.0.2`, `v3.1.0` and a `v3.0.1` carrying `LEAK-7f3a`.

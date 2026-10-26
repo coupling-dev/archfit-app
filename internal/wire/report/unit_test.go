@@ -585,21 +585,20 @@ func TestPairOrigin(t *testing.T) {
 		return Finding{ID: id, Origin: origin, Edge: Edge{From: Endpoint{Module: from}, To: Endpoint{Module: to}}}
 	}
 	cycle := f("c", "introduced", "a", "b")
-	onCycle := map[string]bool{"c": true}
 	tests := []struct {
 		name string
 		all  []Finding
 		want string
 	}{
-		{"another finding on the pair existed on the base", []Finding{cycle, f("x", "pre_existing", "a", "b")}, PairExisting},
+		{"mixed finding evidence preserves introduced identity", []Finding{cycle, f("x", "pre_existing", "a", "b")}, PairAdded},
 		{"an introduced finding on the pair off the cycle", []Finding{cycle, f("x", "introduced", "a", "b")}, PairAdded},
-		{"only the cycle finding itself", []Finding{cycle}, ""},
-		{"the other direction says nothing about this one", []Finding{cycle, f("x", "pre_existing", "b", "a")}, ""},
-		{"existing wins over added", []Finding{cycle, f("x", "introduced", "a", "b"), f("y", "pre_existing", "a", "b")}, PairExisting},
+		{"only the cycle finding itself", []Finding{cycle}, PairAdded},
+		{"the other direction does not erase this introduced finding", []Finding{cycle, f("x", "pre_existing", "b", "a")}, PairAdded},
+		{"introduced evidence wins without dating the pair", []Finding{cycle, f("x", "introduced", "a", "b"), f("y", "pre_existing", "a", "b")}, PairAdded},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := PairOrigin(cycle, tt.all, onCycle); got != tt.want {
+			if got := PairOrigin(cycle, tt.all); got != tt.want {
 				t.Errorf("PairOrigin = %q, want %q", got, tt.want)
 			}
 		})

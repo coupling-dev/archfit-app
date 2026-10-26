@@ -3,10 +3,11 @@
   import CycleCard from './CycleCard.svelte';
   import FindingCard from './FindingCard.svelte';
   import FindingTable from './FindingTable.svelte';
+  import { pairHref } from '../lib/feedback';
 
   // A report's findings in the PR comment's groups: the pull request page and the overview show them alike.
   // gatesFail is the engine's hard gates failing: then no violation listed never reads as nothing wrong.
-  let { f, compared, gatesFail = false }: { f: Findings; compared: boolean; gatesFail?: boolean } = $props();
+  let { f, compared, gatesFail = false, graphPage = '' }: { f: Findings; compared: boolean; gatesFail?: boolean; graphPage?: string } = $props();
 
   const listed = $derived(
     (f.cycles?.length ?? 0) +
@@ -29,9 +30,15 @@
   {/if}
   {#each f.cycles ?? [] as c, i (i)}
     <CycleCard {c} {compared} />
+    {#if graphPage && c.directions[0]?.from && c.directions[0]?.to}
+      <a class="inline small" href={pairHref(graphPage, c.directions[0].from, c.directions[0].to)}>Inspect this cycle in the authenticated graph</a>
+    {/if}
   {/each}
   {#each f.other ?? [] as finding, i (i)}
     <FindingCard f={finding} />
+    {#if graphPage && finding.from && finding.to}
+      <a class="inline small" href={pairHref(graphPage, finding.from, finding.to)}>Inspect {finding.from} → {finding.to} in the authenticated graph</a>
+    {/if}
   {/each}
 </section>
 
@@ -48,7 +55,14 @@
   />
 {/if}
 {#if f.fixed?.length}
-  <FindingTable id="fixed" title="Known issues fixed" count={f.fixed_count} rows={f.fixed} compared={false} />
+  <section class="box" id="fixed" aria-labelledby="fixed-title">
+    <div class="box-head"><h2 id="fixed-title">Previously accepted findings no longer observed <span class="counter">{f.fixed_count}</span></h2></div>
+    <div class="box-body stack-sm">
+      <p>Previously accepted finding no longer observed; resolution not established.</p>
+      <p class="muted small">Historical severity, endpoints and source sites are not established by this lifecycle entry. No removed edge or source-repair task is inferred.</p>
+      <ul>{#each f.fixed as item, i (i)}<li>Rule <code>{item.rule_id}</code></li>{/each}</ul>
+    </div>
+  </section>
 {/if}
 {#if f.omitted}
   <p class="muted small">{f.omitted} more findings are not listed: each group shows at most 50.</p>

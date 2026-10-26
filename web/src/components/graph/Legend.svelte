@@ -29,7 +29,7 @@
       <dd>not in the policy</dd>
       {#if pull}
         <dt>Halo</dt>
-        <dd>the dependency was added by this pull request, as the PR comment says</dd>
+        <dd>the pair contains evidence of an introduced finding, not proof that each dependency or source site was added</dd>
       {/if}
     </dl>
     <p class="muted">Position does not establish permission: only the policy permits a dependency.</p>

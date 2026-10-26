@@ -3,6 +3,8 @@ package feedback
 import (
 	"fmt"
 	"strings"
+
+	"github.com/alexei-led/archfit-app/internal/wire/report"
 )
 
 // maxBody is the GitHub limit for a check summary; the comment uses the same budget.
@@ -75,9 +77,8 @@ func cost(block string) int {
 }
 
 // assemble joins the blocks under limit bytes. Head, tail, decision, gaps, inputs and the receipt marker are budgeted
-// first: the next step and the link to the App stay when the violations above them are cut. Of the rest, agent tasks
-// give way first (whole tasks), then the folds and the findings are cut at a line end; dimensions and commands are
-// cut only when even that is not enough.
+// first. Whole agent tasks reserve space before discretionary dimensions, commands and finding detail. Omitted tasks
+// are counted with an exact-run report fallback; JSON, delimiters, the next step and identity are never split.
 func (l layout) assemble(limit int) string {
 	rest := limit + 2 - cost(l.head) - cost(l.tail) - cost(l.decision) - cost(l.inputs) - cost(l.receipt) - cost(foldEvidence) - cost(foldTasks) - 2*cost(foldClose)
 	l.gaps = cutLines(l.gaps, rest-2) // last resort: only a pathological gap list does not fit
@@ -88,6 +89,16 @@ func (l layout) assemble(limit int) string {
 		noTasks = tasksBlock(nil, len(l.tasks))
 		rest -= cost(noTasks)
 	}
+	// Keep useful finding detail as well as nonempty whole tasks. Oversized tasks are named as omitted, never cut.
+	n := fitTasks(l.tasks, max(0, rest/2))
+	if n == 0 && fitTasks(l.tasks, max(0, rest)) > 0 {
+		n = 1
+	}
+	tasks := noTasks
+	if n > 0 {
+		tasks = tasksBlock(l.tasks[:n], len(l.tasks)-n)
+		rest -= cost(tasks) - cost(noTasks)
+	}
 	l.dims = cutLines(l.dims, rest-2)
 	rest -= cost(l.dims)
 	commands := l.commands.render(min(rest-2, commandsBudget))
@@ -95,12 +106,6 @@ func (l layout) assemble(limit int) string {
 	l.findings = cutLines(l.findings, rest-2)
 	rest -= cost(l.findings)
 	l.folds = cutLines(l.folds, rest-2)
-	rest -= cost(l.folds)
-
-	tasks := noTasks
-	if n := fitTasks(l.tasks, rest); n > 0 {
-		tasks = tasksBlock(l.tasks[:n], len(l.tasks)-n)
-	}
 
 	body := join(l.head, l.findings, l.tail, l.folds, fold(foldEvidence, join(l.decision, l.dims, l.gaps, l.inputs, commands)), fold(foldTasks, tasks))
 	if l.receipt == "" {
@@ -142,9 +147,13 @@ func tasksBlock(tasks []string, omitted int) string {
 	if len(tasks) > 0 {
 		array = "[\n" + strings.Join(tasks, ",\n") + "\n]"
 	}
-	block := headTasks + "\n\n" + tasksOpen + "\n```json\n" + array + "\n```\n" + tasksClose
+	notice := ""
+	if len(tasks) == 0 && omitted == 0 {
+		notice = report.NoTaskNotice + "\n\n"
+	}
+	block := headTasks + "\n\n" + notice + tasksOpen + "\n```json\n" + array + "\n```\n" + tasksClose
 	if omitted > 0 {
-		block += fmt.Sprintf("\n%d more tasks did not fit.", omitted)
+		block += fmt.Sprintf("\n%d more tasks did not fit. Use the unmodified report artifact for this run if retained; if expired, re-run the approved workflow for complete task data.", omitted)
 	}
 	return block
 }

@@ -79,7 +79,7 @@
         <dd>{view.links.filter((l) => isProblem(l, pull)).length}</dd>
         <dt>Accepted earlier</dt>
         <dd>{view.links.filter((l) => isAcceptedEarlier(l, pull)).length}</dd>
-        {#if pull}<dt>Added by this PR</dt>
+        {#if pull}<dt>With introduced findings</dt>
           <dd>{view.links.filter((l) => isAdded(l, pull)).length}</dd>{/if}
       </dl>
     </div>
@@ -107,7 +107,7 @@
   <p class="g-pair"><code>{l.from}</code> → <code>{l.to}</code></p>
   <div class="row">
     <span class="g-tag {l.status}">{linkStatusWord(l)}</span>
-    {#if isAdded(l, pull)}<span class="g-tag added">added by this PR</span>{/if}
+    {#if isAdded(l, pull)}<span class="g-tag added">contains introduced findings</span>{/if}
     <span class="muted small">{countWord(l)}</span>
   </div>
   {#if full}<p class="small">{meaning[l.status]}</p>{/if}

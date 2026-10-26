@@ -1,12 +1,6 @@
-- **Next:** Fix the rule violations, then run archfit check again.
-- Reason: `blocking_findings` (architecture)
-
-Also reported:
-- `waiver_expired` (governance): no_direct_b_dependency. Next: Renew the waiver or fix the finding.
-
-### Blocking findings
-
-- `no_direct_b_dependency`: `a` → `b` at `pkg/a/extra.go:7`, finding `c4b1a2e3`. Goal: Remove the forbidden dependency from pkg/a/a.go on pkg/b; move shared behavior to a location permitted by the existing dependency rules.
+- **Next:** Renew the waiver or fix the finding.
+- Reason: `waiver_expired` (governance)
+- Detail: no_direct_b_dependency
 
 <details>
 <summary>Evidence and inputs</summary>
@@ -16,10 +10,10 @@ Also reported:
 - Policy digest: `1111111111111111111111111111111111111111111111111111111111111111`
 - Baseline digest: `2222222222222222222222222222222222222222222222222222222222222222` (stated by the producer)
 - Labels digest: `3333333333333333333333333333333333333333333333333333333333333333` (stated by the producer)
-- Measurement profile: version `archfit.measurement.v2`, settings hash `64fb93addd39e92be19fa18ba380fa211a144697946f810bda7c483bc146f73b`
+- Measurement profile: not available for display
 - Producer identity, claimed: engine v3.0.0, image sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08, linux/amd64
 
-Measurement is customer-attested: the producer is authenticated, the report content is not independently checked.
+Reports are customer-attested. Upload authentication does not independently verify report content.
 
 </details>
 

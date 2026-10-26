@@ -147,7 +147,7 @@ func TestPinnedEngineSchemaIsRecorded(t *testing.T) {
 		}
 		source[key] = value
 	}
-	want := map[string]string{"tag": "v3.2.2", "revision": v322Revision, "sha256": schemaSHA256, "path": schemaFile}
+	want := map[string]string{"tag": "v3.2.3", "revision": v323Revision, "sha256": schemaSHA256, "path": schemaFile}
 	for key, value := range want {
 		if source[key] != value {
 			t.Errorf("source note %s = %q, want %q", key, source[key], value)

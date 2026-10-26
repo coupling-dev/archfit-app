@@ -30,13 +30,9 @@ const (
 	prExisting = report.PairExisting
 )
 
-// groups is the report's findings sorted into the groups block 5 shows. all holds every finding, with its origin
-// cleared when the report was not compared with the pull request base: origin is presentation only, and means nothing
-// without that comparison.
+// groups holds detailed-check display groups. report.Group clears origins without comparable Git-base evidence.
 type groups struct {
-	compared                                 bool
-	all, violations, advisories, debt, fixed []report.Finding
-	onCycle                                  map[string]bool // IDs of the shown violations on a dependency cycle, of any rule
+	violations, advisories, debt, fixed []report.Finding
 	// covered maps the module pair of a violation to what the report also says about that pair as an advisory: the
 	// advisory is the same dependency under another rule, so it joins the violation's row instead of a section of its own.
 	covered map[[2]string][]string
@@ -46,8 +42,7 @@ func pairOf(f report.Finding) [2]string { return [2]string{f.Edge.From.Module, f
 
 func group(r *report.Report) groups {
 	rg := report.Group(*r, groupCap)
-	g := groups{compared: rg.Compared, all: rg.All, violations: rg.Violations, debt: rg.Accepted, fixed: rg.Fixed,
-		onCycle: rg.OnCycle, covered: map[[2]string][]string{}}
+	g := groups{violations: rg.Violations, debt: rg.Accepted, fixed: rg.Fixed, covered: map[[2]string][]string{}}
 	var covered map[[2]string][]report.Finding
 	g.advisories, covered = report.SplitCovered(rg.Violations, rg.Advisories)
 	for p, fs := range covered {
@@ -60,10 +55,8 @@ func group(r *report.Report) groups {
 	return g
 }
 
-// findingsBlock is block 5, whole. It labels Finding.Active findings as violations, a display heuristic only: the
-// conclusion always comes from the Outcome. diagrams adds a Mermaid graph per dependency cycle; only the comment asks
-// for it, because a check summary is not known to render Mermaid. The comment also drops the heading and the tally
-// line: its head already says the verdict and the one thing the pull request did, and the picture follows at once.
+// findingsBlock renders detailed groups; the conclusion always comes from Outcome. Publication uses diagrams=false.
+// The compact comment uses compactFindings instead and never emits Mermaid.
 func findingsBlock(r *report.Report, diagrams bool) string {
 	open, folds := findingParts(r, diagrams)
 	return join(open, folds)
@@ -96,7 +89,12 @@ func findingParts(r *report.Report, diagrams bool) (open, folds string) {
 	otherAdvisories := len(g.covered) > 0
 	foldTable(&f, g.advisories, seams, "advisory", "advisories", advisoryEffect(otherAdvisories), true)
 	foldTable(&f, g.debt, seams, "known issue accepted earlier", "known issues accepted earlier", "", false)
-	foldTable(&f, g.fixed, seams, "known issue fixed", "known issues fixed", "", false)
+	if len(g.fixed) > 0 {
+		f.WriteString("\n\n" + report.FixedNotice)
+		for _, finding := range g.fixed[:min(len(g.fixed), groupCap)] {
+			fmt.Fprintf(&f, "\n- Finding %s, rule %s. Historical severity, endpoints and resolution are not established.", code(shortID(finding.ID)), code(finding.RuleID))
+		}
+	}
 	return strings.TrimLeft(b.String(), "\n"), strings.TrimLeft(f.String(), "\n")
 }
 
@@ -109,59 +107,12 @@ func advisoryEffect(others bool) string {
 	return "never block"
 }
 
-// leadSentence says in one sentence what the pull request did to the rule violations, from origins and locations
-// only. It is about the first dependency cycle when that one is introduced, else about the introduced violations; ""
-// without a comparison with the pull request base or without a violation to speak of. It names no path and picks no
-// repair: which direction to remove stays the engine's Fix.
+// leadSentence uses the shared finding-identity summary, never inferred dependency/site novelty.
 func leadSentence(r *report.Report) string {
 	if r == nil {
 		return ""
 	}
-	g := group(r)
-	if !g.compared || len(g.violations) == 0 {
-		return ""
-	}
-	shown := g.violations[:min(len(g.violations), groupCap)]
-	var cycle []report.Finding
-	for i, c := range report.Cycles(shown) {
-		if c == 0 {
-			cycle = append(cycle, shown[i])
-		}
-	}
-	if len(cycle) > 0 && !slices.ContainsFunc(cycle, func(f report.Finding) bool { return f.Origin != originIntroduced }) {
-		added, existing := 0, 0
-		for _, f := range cycle {
-			switch report.PairOrigin(f, g.all, g.onCycle) {
-			case prAdded:
-				added++
-			case prExisting:
-				existing++
-			}
-		}
-		among := among(cycleModules(cycle))
-		switch {
-		case added > 0 && existing > 0:
-			return fmt.Sprintf("This pull request adds %d %s that %s a dependency cycle %s.", added, plural(added, "dependency", "dependencies"), plural(added, "closes", "close"), among)
-		case added > 0:
-			return fmt.Sprintf("This pull request adds %d %s that %s a dependency cycle %s.", added, plural(added, "dependency", "dependencies"), plural(added, "forms", "form"), among)
-		default:
-			return "This pull request introduces a dependency cycle " + among + "."
-		}
-	}
-	var introduced []string
-	for _, f := range g.violations {
-		if f.Origin == originIntroduced {
-			introduced = append(introduced, subject(f))
-		}
-	}
-	if len(introduced) == 0 {
-		if !slices.ContainsFunc(g.violations, func(f report.Finding) bool { return f.Origin != originPreExisting }) {
-			return "The rule violations below existed before this pull request."
-		}
-		return ""
-	}
-	n := len(introduced)
-	return fmt.Sprintf("This pull request introduces %d rule %s: %s.", n, plural(n, "violation", "violations"), series(introduced))
+	return report.PRImpact(*r)
 }
 
 // seriesCap is how many items a sentence names before "and N more".
@@ -341,7 +292,7 @@ func writeCycle(b *strings.Builder, fs []report.Finding, g groups, seams map[[2]
 	modules := cycleModules(fs)
 	pr := make([]string, len(fs))
 	for i, f := range fs {
-		pr[i] = report.PairOrigin(f, g.all, g.onCycle)
+		pr[i] = prWord(f.Origin)
 	}
 	if !diagrams || !lead {
 		kind := "Dependency cycle"
@@ -385,11 +336,11 @@ func diagramLegend(pr []string) string {
 	if !known {
 		return "_Label and width: locations in code that use the dependency_"
 	}
-	red := "added by this pull request"
+	red := "introduced finding"
 	if slices.Contains(pr, "") {
-		red += ", or not known to have existed before"
+		red += ", or finding origin unknown"
 	}
-	return "_Red: " + red + " · grey: already there · label: locations in code that use the dependency_"
+	return "_Red: " + red + " · grey: pre-existing finding · label: reported locations; source-site origin is unknown_"
 }
 
 // severityMeta is meta with the severity named as one: "high severity, waiver expired".
@@ -565,15 +516,18 @@ func dependencyTable(fs []report.Finding, pr []string, seams map[[2]string]repor
 	}
 	cols = append(cols, column{head: "Dependency", cells: cellsOf(func(_ int, f report.Finding) string { return subject(f) })})
 	if slices.ContainsFunc(pr, func(s string) bool { return s != "" }) {
-		cols = append(cols, column{"This PR", slices.Clone(pr), func(v string) string {
-			switch v {
+		origins := make([]string, len(pr))
+		for i, value := range pr {
+			switch value {
 			case prAdded:
-				return "added by this pull request"
+				origins[i] = "introduced finding"
 			case prExisting:
-				return "existed before this pull request"
+				origins[i] = "pre-existing finding"
+			default:
+				origins[i] = value
 			}
-			return v
-		}})
+		}
+		cols = append(cols, column{"Finding origin", origins, identity})
 	}
 	cols = append(cols, column{head: "Where", cells: cellsOf(func(_ int, f report.Finding) string { return capped(f, tableLocationCap) })})
 	if coupling {
@@ -730,9 +684,9 @@ func writeFinding(b *strings.Builder, f report.Finding) {
 	switch prWord(f.Origin) {
 	case "":
 	case prAdded:
-		m += ", added by this pull request"
+		m += ", introduced finding; source-site origin unknown"
 	case prExisting:
-		m += ", existed before this pull request"
+		m += ", pre-existing finding; source-site origin unknown"
 	default:
 		m += ", origin " + text(f.Origin)
 	}

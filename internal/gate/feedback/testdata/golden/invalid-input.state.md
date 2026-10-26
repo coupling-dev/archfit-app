@@ -5,6 +5,10 @@
 <details>
 <summary>Evidence and inputs</summary>
 
+### Decision
+
+- Report invalid (evidence): report 4444444444444444444444444444444444444444444444444444444444444444 · code `report_invalid`
+
 ### Evidence gaps
 
 - No usable report
@@ -14,10 +18,10 @@
 - Policy digest: `1111111111111111111111111111111111111111111111111111111111111111`
 - Baseline digest: `2222222222222222222222222222222222222222222222222222222222222222` (stated by the producer)
 - Labels digest: `3333333333333333333333333333333333333333333333333333333333333333` (stated by the producer)
-- Measurement profile: missing
+- Measurement profile: not available for display
 - Producer identity, claimed: engine v3.0.0, image sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08, linux/amd64
 
-Measurement is customer-attested: the producer is authenticated, the report content is not independently checked.
+Reports are customer-attested. Upload authentication does not independently verify report content.
 
 </details>
 
