@@ -114,10 +114,23 @@ func TestIdentityFailureTellsOneStoryOnPageAndComment(t *testing.T) {
 		t.Errorf("page admitted findings under an identity failure: %+v", page)
 	}
 
+	// The comment golden is rendered from the feedback package's own report, so its needles come from that report.
+	raw, err := os.ReadFile("../../gate/feedback/testdata/report/unknown-identity.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rendered struct {
+		Findings []struct {
+			RuleID string `json:"rule_id"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal(raw, &rendered); err != nil || len(rendered.Findings) == 0 {
+		t.Fatalf("the comment fixture has no findings to withhold: %v", err)
+	}
 	comment := golden("comment")
-	for _, finding := range []string{"no-module-cycles", "pkg_chaos", "pkg_util", "Imbalanced coupling"} {
-		if strings.Contains(comment, finding) {
-			t.Errorf("comment lists %q for a head the page withholds", finding)
+	for _, f := range rendered.Findings {
+		if strings.Contains(comment, f.RuleID) {
+			t.Errorf("comment lists %q for a head the page withholds", f.RuleID)
 		}
 	}
 	if !strings.Contains(comment, "No usable report") || !strings.Contains(comment, "Cause: Unknown engine identity.") {
