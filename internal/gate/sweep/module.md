@@ -294,7 +294,7 @@ Its one repository is the whole pass, so a stop leaves the work undone, and the 
 - **Volatility**: high
 - **Balanced?**: yes
 - **Shared knowledge**: `Resolve` is fork-safe and reads only the protected ref; it returns an error on GitHub
-  failures and on a failed read of a pusher record, never on a failed read of the entitlement. `Trusted.EarliestWaiverExpiry` is the earliest expiry not before `now`.
+  failures and on a failed read of an approval record, never on a failed read of the entitlement. `Trusted.EarliestWaiverExpiry` is the earliest expiry not before `now`.
   `Entitlement` is an opaque part of `Trusted` for this module; `Without` hands it to `verdict.Suspended` unread.
   The stale test calls `Accepts`; `Without` calls `First`. `ProtectedPaths` and `MayBeProtected` are not used here.
 
@@ -313,7 +313,7 @@ type Approval string
 
 const (
     ApprovalNotRequired Approval = "not_required" // no protected path changed
-    ApprovalGranted     Approval = "granted"      // a base-version owner approved this exact head SHA
+    ApprovalGranted     Approval = "granted"      // a base-version owner, no agent, approved this exact head SHA
     ApprovalMissing     Approval = "missing"
 )
 
@@ -339,11 +339,24 @@ type Resolver interface {
     // Resolve reads the protected ref and reviews. It never reads policy, settings, baseline,
     // owners, or CODEOWNERS from the head tree, except to hash an owner-approved candidate.
     Resolve(ctx context.Context, t Target, now time.Time) (Trusted, error)
-    // RecordPusher adds the login that pushed t's head, from a signed push delivery, to the set Resolve reads back.
-    // "" records nothing. Opening a pull request records nothing.
+    // RecordPusher adds the login that pushed t's head, from a signed push delivery, to the record of who pushed it.
+    // The record is attribution only: no push approves anything. "" records nothing. Opening a pull request records
+    // nothing.
     RecordPusher(ctx context.Context, t Target, login string) error
+    // Candidate returns the protected paths the pull request t changes, by the rule of Resolve, and the digest of each
+    // at t.HeadSHA: what an owner approves in the App.
+    Candidate(ctx context.Context, t Target) (Candidate, error)
+    // CanApprove reports whether login may approve t's head in the App now: nil, or ErrNothingToApprove, ErrForkPull,
+    // ErrAgentIdentity or ErrNotOwner, in that order. Owners and agents come from the settings of the protected ref.
+    CanApprove(ctx context.Context, t Target, login string) error
+    // Approve records login's approval of t's head, bound to its SHA, when CanApprove allows it and seen equals the
+    // Candidate digests (else ErrDigestsChanged). A record for that head already, by any owner, is success and stays
+    // as it is.
+    Approve(ctx context.Context, t Target, login string, seen map[string]string, now time.Time) error
 }
 ```
+
+The sweep calls only `Resolve`; `RecordPusher`, `Candidate`, `CanApprove` and `Approve` belong to the façade.
 
 <!-- contract: Accepts, First — restated from internal/gate/inputs/module.md -->
 ```go
@@ -586,11 +599,12 @@ const (
 
 // Settings is the App-owned file. The engine policy schema is untouched by it.
 type Settings struct {
-    Version  int      `yaml:"version"`   // must be 1
-    Owners   []string `yaml:"owners"`    // GitHub logins, or "org/team-slug"; at least one
-    Gate     GateMode `yaml:"gate"`      // default advisory
-    Workflow string   `yaml:"workflow"`  // e.g. ".github/workflows/archfit.yaml"
-    DataMode DataMode `yaml:"data_mode"` // default customer
+    Version  int      `yaml:"version"`          // must be 1
+    Owners   []string `yaml:"owners"`           // GitHub logins, or "org/team-slug"; at least one
+    Agents   []string `yaml:"agents,omitempty"` // logins or App slugs of coding agents, which never approve; nil when none
+    Gate     GateMode `yaml:"gate"`             // default advisory
+    Workflow string   `yaml:"workflow"`         // e.g. ".github/workflows/archfit.yaml"
+    DataMode DataMode `yaml:"data_mode"`        // default customer
 }
 ```
 
@@ -760,7 +774,7 @@ type Actions interface {
   tries again.
 - Reconciliation window (stated, not zero): a missed event or an expiry is repaired within one sweep interval
   (hourly **[default]**) plus the customer's CI time. During that window the old check result stands.
-- A Store outage inside `Resolve` means "not suspended"; the sweep never suspends on missing data. A pull whose pusher
+- A Store outage inside `Resolve` means "not suspended"; the sweep never suspends on missing data. A pull whose approval
   record cannot be read counts as an error and keeps its check, like the lease failure below. The same outage
   fails every `Publish`, `Pending`, `Warn` and `Reconcile`, which need `gate/feedback`'s publication lease: each such
   pull counts as an error and its check stays as it was until a pass after the Store is back. The sweep never writes

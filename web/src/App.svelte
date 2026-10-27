@@ -98,7 +98,7 @@
   {:else if route.kind === 'data-sharing'}
     <DataSharing {route} {session} {here} />
   {:else if route.kind === 'pull'}
-    <Pull {route} {here} />
+    <Pull {route} {session} {here} />
   {:else if (route.kind === 'graph' || route.kind === 'pull-graph') && graphPage}
     {#await graphPage}
       <Skeleton rows={6} />

@@ -70,6 +70,9 @@ func (e *env) noWrites(t *testing.T) {
 	if len(e.gh.called("Dispatch")) != 0 {
 		t.Error("a workflow was dispatched")
 	}
+	if len(e.approvals.approved)+len(e.approvals.reevaluated) != 0 {
+		t.Error("an owner approval was recorded or the pull request re-decided")
+	}
 }
 
 func TestTenantIdentityOnlyFromSession(t *testing.T) {

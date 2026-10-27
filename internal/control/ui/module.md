@@ -37,7 +37,8 @@ could still work GitHub-first, but onboarding, schema-guided editing and consent
 - Repository findings: the latest default-branch report's findings in the groups and words of the PR comment, for the
   overview's counters and list.
 - Pull request page: the result of one pull request's head, from the `archfit/state` check and the report of the
-  run that check names.
+  run that check names; when the pull request changes a protected file, its owner approval (who may approve, what is
+  approved) and, for an architecture owner, an Approve button for the exact head.
 - Assist: turn the request into an `assist.Request`, show the outcome or the pending customer run.
 - Data sharing: per managed feature, what leaves the customer's environment, who allowed it and when, and the
   preconditions it still needs; allow and revoke `source_processing` and `managed_llm` consent (repository administrators
@@ -99,6 +100,7 @@ type Deps struct {
     Assist     Assist
     Proposals  Proposals
     Admissions *Admissions // which installations the App serves; the others see the Waiting page
+    Approvals  Approvals   // owner approvals of pull request heads: read, and recorded by the Approve button
     Operators  []int64     // GitHub user IDs that approve installations on /admin
     Now        func() time.Time
 }
@@ -164,7 +166,21 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   waiting}` with `waiting` the account login, after the user is authorized for it.
 - `GET /api/repos/{o}/{n}/pulls/{number}` [read] — the pull request page: header, result, and the report's findings
   in the groups and words of the PR comment (below, Pages). `404` for a number that is not a positive integer or not a
-  pull request of the repository.
+  pull request of the repository. When the pull request changes a protected file, also `approval: {head_sha, paths,
+  digests, short_digests, state, by?, can_approve, reason?, author_is_agent}`: `head_sha` is the full head, `digests`
+  each path's digest at it (`""` for a deleted file, `null` for a fork, whose head is not read) and `short_digests`
+  the same cut to 7 characters for display; `state` is `granted` or `missing`; `can_approve` is true only while
+  missing and only for the signed-in user who is an architecture owner by the base settings (teams included) and no
+  agent identity, on a head in this repository; `reason` is the refusal in the words of the status mapping;
+  `author_is_agent` says the pull request was opened by an agent identity of the base settings. Absent otherwise.
+- `POST /api/repos/{o}/{n}/pulls/{number}/approve` [write] — body `{head_sha, digests}`, the `approval` the page
+  read. A `head_sha` that is not the pull request's current head (`PullSummary`), the short one included: `409`,
+  nothing approved. Then `Approvals.Approve(target, user login, digests)` and, on success, `Approvals.Reevaluate`, as
+  a review on GitHub does; answers `{approval, notice}` with the approval read again. A failed re-evaluation after the
+  approval was recorded: `502` "The approval was recorded, but the workflow could not be re-run now. …"; the sweep
+  re-runs it within the hour. An approval that cannot be read back afterwards: `502` "The change was saved, but it
+  could not be read back. Reload the page." The target's repository is the authorized one, the head and base come from GitHub, and
+  a head in another repository (or a deleted one) is a fork.
 - `GET /api/repos/{o}/{n}/pulls/{number}/graph` [read] — `{unavailable, view, stale_reason, policy_href, branch, pull,
   added}`: the pull request page's header and the `graph.View` of the report its check names, each link's `origin` by
   the PR comment's rule; `added` counts the links whose origin is `added`. `policy_href` is the policy file on GitHub
@@ -251,6 +267,11 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   `ErrInvalidRequest`, `ErrInvalidProposal`: `422`, nothing written, the text kept in the page. A save or assist refused
   by `Diagnose` also carries the problems, which the page lists above the editor.
 - Assist preconditions (`ErrNoDraft`, `ErrNoConsent`, `ErrNotManaged`, `ErrPolicyTooLarge`, `ErrNoAssistWorkflow`): `409` with a clear state.
+- Owner approval refusals of the gate, each with fixed wording: `ErrNotOwner` `403` "Only an architecture owner named
+  in .archfit-app.yaml on the base branch can approve."; `ErrAgentIdentity` `403` "An agent identity cannot approve.
+  Sign in as a person who is an architecture owner."; `ErrDigestsChanged` `409` "The protected files changed since this
+  page was loaded. Nothing was approved. Reload the page and review them again."; `ErrNothingToApprove` `409`;
+  `ErrForkPull` `409`.
   `assist.ErrBusy`: `429`. `ErrManagedUnavailable`, `ErrBudgetExhausted`, `ErrProvider`: `503` with a clear state; the editor stays usable.
 - Onboarding states, each `409` with fixed wording: `onboarding.ErrNoSandbox` "Managed discovery is not available.",
   `onboarding.ErrAlreadyOnboarded` "This repository is already onboarded. Reload the page to see its state.",
@@ -973,11 +994,12 @@ const (
 
 // Settings is the App-owned file. The engine policy schema is untouched by it.
 type Settings struct {
-    Version  int      `yaml:"version"`   // must be 1
-    Owners   []string `yaml:"owners"`    // GitHub logins, or "org/team-slug"; at least one
-    Gate     GateMode `yaml:"gate"`      // default advisory
-    Workflow string   `yaml:"workflow"`  // e.g. ".github/workflows/archfit.yaml"
-    DataMode DataMode `yaml:"data_mode"` // default customer
+    Version  int      `yaml:"version"`          // must be 1
+    Owners   []string `yaml:"owners"`           // GitHub logins, or "org/team-slug"; at least one
+    Agents   []string `yaml:"agents,omitempty"` // logins or App slugs of coding agents, which never approve; nil when none
+    Gate     GateMode `yaml:"gate"`             // default advisory
+    Workflow string   `yaml:"workflow"`         // e.g. ".github/workflows/archfit.yaml"
+    DataMode DataMode `yaml:"data_mode"`        // default customer
 }
 ```
 
@@ -1068,9 +1090,23 @@ func EngineVersions() []string
 - **LCA / Rank / Distance**: control / 1 / 1
 - **Volatility**: high
 - **Balanced?**: yes — parent and child
-- **Shared knowledge**: `Deps` and `New` above. `control` passes its `OAuth`, `CookieKey`, `BaseURL`, `Admissions` and
-  `Operators` through and returns a
+- **Shared knowledge**: `Deps` and `New` above. `control` passes its `OAuth`, `CookieKey`, `BaseURL`, `Admissions`,
+  `Approvals` and `Operators` through and returns a
   `ui.New` error from its own constructor.
+
+### internal/gate (façade)
+
+- **Counterpart**: `internal/gate/module.md`
+- **Direction**: ui depends on the gate façade (`Admissions`, `Approvals`, `Target`, `Candidate`, the refusals,
+  `ClassifyDisplayReason`); never on a gate child
+- **Strength**: contract
+- **LCA / Rank / Distance**: root / 2 / 2
+- **Volatility**: high
+- **Balanced?**: yes
+- **Shared knowledge**: `PullApproval` for the pull request page and `Approve` then `Reevaluate` for the Approve
+  button, always with the `Target` of the authorized repository and the signed-in login; the refusals are mapped to
+  wording here. Who may approve, what the digests are and when an approval holds are the gate's rules: ui shows them
+  and sends back what it was shown.
 
 ### internal/github/auth
 
@@ -1298,7 +1334,11 @@ been withdrawn since the previous request.
 - Ready: `Proposals.Get`; head must equal `head_sha`, state must be `DraftOpen`; then `Proposals.Ready(number)`. ui never merges:
   publication is the merge on GitHub under the customer's ruleset and owner approval, the same path as a GitHub-first edit.
 - Pull request page: `PullSummary(number)` → the settings file on the pull request's base (gate mode only, shown
-  always; none or unparseable reads as advisory) and, side by side, `CheckRuns(head, "archfit/state")`, the run with the highest ID. Its
+  always; none or unparseable reads as advisory) and, side by side, `CheckRuns(head, "archfit/state")`, the run with the highest ID.
+  After them, `Approvals.PullApproval` for the owner approval block; its failure fails the page, like any read. The
+  block (on Findings, above the result, also when findings are unavailable) lists the protected files with their short
+  digests or "deleted by this commit", who approved, the Approve button only when `can_approve`, else the reason, a
+  note that a pull request opened by an agent identity was, and that an approval holds for this commit only. Its
   `Title` is the headline: feedback already states the effect on merge there, so the page never derives one of its own.
   A run that concludes `action_required` shows no finding: the sweep keeps the old run in a withdrawn result's
   `external_id`, so its old report would still match. Its `external_id` is
@@ -1447,6 +1487,8 @@ changed; no private gate child or duplicate TypeScript policy is imported.
   validation and that full checks run in CI with `archfit config lint`.
 - ui never rewrites policy text: it saves the user's bytes as they are. Comments and YAML constructs the App does not
   understand survive every round trip. The graph never writes.
+- An owner approval only on an explicit `POST` of the Approve button by a signed-in user with `write`, for the head
+  and digests the page showed; ui never decides who is an owner or an agent, and nothing else in ui records one.
 - AI only on an explicit `POST` by a user with `write`. Nothing is auto-published. Model text is never rendered by ui; users
   see proposals as the diff on GitHub. A failed assist request leaves the editor, Check and saving working.
 - ui writes into the shell only its nonce and an error page's fixed sentence, HTML-escaped. The web app renders text
@@ -1477,8 +1519,9 @@ changed; no private gate child or duplicate TypeScript policy is imported.
 ## Test Specification
 
 Harness: `ui.New` behind `httptest` with a fixed 32-byte cookie key and a fake `OAuth`, so the real `session` and `graph` run, the real `account` over a memory Store and the real
-`proposal`. GitHub is faked at the HTTP boundary behind a real github/api `Client`. `Onboarding` and `Assist` are faked at
-their interfaces except where a test says otherwise. The clock is injected.
+`proposal`. GitHub is faked at the HTTP boundary behind a real github/api `Client`. `Onboarding`, `Assist` and the gate's
+`Approvals` are faked at their interfaces except where a test says otherwise; the rules of who may approve are the
+gate's and tested there. The clock is injected.
 
 ### Unit Tests
 
@@ -1568,6 +1611,21 @@ their interfaces except where a test says otherwise. The clock is injected.
   reads until all are in flight: the artifact listing and the policy text; the artifact listing and the head's policy;
   the onboarding progress, the branch head and the open pull requests.
   **Expected behavior**: `200`, and each set met; reads made in turn would wait out the timeout and fail.
+- **Test name**: `TestPullJSONCarriesTheApproval`
+  **Scenario**: the gate's `PullApproval` with no protected change; missing for an owner; missing for a non-owner;
+  granted, opened by an agent identity; a fork; a head in another repository; a failed read.
+  **Expected behavior**: no `approval` key; the full head, paths, digests, short digests, `missing`, `can_approve`;
+  `can_approve` false with the not-owner sentence; `granted` with `by`, no `can_approve`, `author_is_agent`; no
+  digests and the fork sentence; the target is the authorized repository, the head and base from GitHub, the
+  signed-in login and the author, and a fork for another head repository; `502`.
+- **Test name**: `TestApprovePull`
+  **Scenario**: an owner approves the head shown; a newer head; the short head; the gate refuses (not an owner, an
+  agent owner with admin, digests changed, nothing to approve, a fork); the re-run fails; a reader; a body naming a
+  repository; signed out; an Actions OIDC bearer token without a session; no CSRF token; a number that is not one.
+  **Expected behavior**: `200` with the approval read again (granted by the user) and the notice, `Approve` with the
+  authorized target, the session login and the digests, then `Reevaluate`; `409` without `Approve`; `409`; `403`,
+  `403`, `409`, `409`, `409` with their sentences and no `Reevaluate`; `502` with the approval recorded; `404`; `422`;
+  `401`, `401`, `403`, `404`, nothing recorded.
 - **Test name**: `TestPullPageNumberMustBeAPull`, `TestPullPageReadsTheGateModeOfTheBase`
   **Scenario**: numbers `0`, `-4`, `x`, `4x`, and `5`, no pull request, on the page, the API and the graph; a pull request whose base branch requires the gate while the default branch is advisory.
   **Expected behavior**: `404` each (`5` on the page only from the API); `required` true.
@@ -1832,14 +1890,19 @@ their interfaces except where a test says otherwise. The clock is injected.
   for a problem of the whole text); the balance words: every quadrant worded, the crossings as the engine gate
   names them (a distributed monolith only in a flagged deploy-unit dependency's reason, never in where the distance
   was measured), the flagged dependency's reason and the count line, the decision sentences for `fail` with and
-  without blockers, `unmeasured`, `pass` and an unknown value.
+  without blockers, `unmeasured`, `pass` and an unknown value; the owner approval words (`lib/approval.ts`): the button
+  only while missing, offered and for a head that was read, a short digest or "deleted by this commit", and who
+  approved which commit.
 - `web/scripts/size.mjs`: the first-load, graph chunk, layout worker and editor chunk budgets above; no lazy chunk in
   the first load.
 - Playwright smoke (`web/e2e/smoke.spec.ts`): the production build behind `vite preview` with `web/csp.txt` as its
   header and `/api` mocked in the browser. Landing, repositories, overview, starting onboarding and discovery, and the
   theme toggle; the pull request page (the cycle drawing, the folds, the engine's decision with an unevaluated rule,
   an advisory's suggested move and owner decision, a metric finding named by its metric and numbers, copying the agent tasks, a link that is neither
-  the App nor GitHub not rendered, a page without a report); the policy page: CodeMirror's `<style>` element with the
+  the App nor GitHub not rendered, a page without a report; the owner approval block: the files and digests, Approve
+  sending the exact head, the digests and the CSRF header, then the approver shown and the button gone; no button and
+  the reason for a refused user, the agent author named; a refused Approve as a sentence in the block; no block
+  without a protected change); the policy page: CodeMirror's `<style>` element with the
   nonce, the problems as a list and as marks, a `#L<n>` hash and a problem selecting their line, Check and Save sending
   the text, the base head and the CSRF header, a refused save keeping the text, a reader offered no write, managed mode
   off with its reason and the inline Allow, and a customer-mode request following its run; the graph pages, laid out by

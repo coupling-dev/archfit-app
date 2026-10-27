@@ -107,6 +107,7 @@ GitHub shows this list when you install the App. Each permission is here for one
 | Policy        | `.archfit.yaml`, the engine policy and its waivers                     |
 | Settings file | `.archfit-app.yaml`, the App file with owners, gate mode, and workflow |
 | Policy owner  | A GitHub login or team listed in `owners`                              |
+| Agent         | A GitHub login or App account listed in `agents`; it never approves    |
 | Protected ref | The pull request base branch, or the default branch for a push         |
 | Gate          | The `archfit/gate` check that can block a merge                        |
 | Waiver        | A policy entry that accepts one finding until a date                   |
@@ -122,7 +123,9 @@ The App reads repository permission from GitHub and caches the answer briefly.
 | `admin`           | Start onboarding, run discovery, and allow or revoke data sharing   |
 
 A policy owner is separate from GitHub permission. The settings file lists each policy owner.
-An owner can be a login such as `alice` or a team such as `acme/architects`.
+An owner can be a login such as `alice` or a team such as `acme/architects`. An agent listed in `agents` never
+approves, even when it is also an owner or a member of an owner team. Approving a pull request in the App needs both:
+a policy owner with `write` permission.
 
 ## Onboard a repository
 
@@ -286,20 +289,33 @@ version: 1
 owners:
   - alice
   - acme/architects
+agents:
+  - alice-agent
+  - copilot-swe-agent[bot]
 gate: advisory
 workflow: .github/workflows/archfit.yaml
 data_mode: customer
 ```
 
-| Key         | Values                            | Meaning                                           |
-| ----------- | --------------------------------- | ------------------------------------------------- |
-| `version`   | `1`                               | Settings file format version                      |
-| `owners`    | One or more logins or teams       | Policy owners                                     |
-| `gate`      | `advisory`, `required`            | `required` publishes the blocking check           |
-| `workflow`  | A path under `.github/workflows/` | The workflow that can upload reports              |
-| `data_mode` | `customer`, `managed`             | `customer` keeps source processing in customer CI |
+| Key         | Values                                       | Meaning                                           |
+| ----------- | -------------------------------------------- | ------------------------------------------------- |
+| `version`   | `1`                                          | Settings file format version                      |
+| `owners`    | One or more logins or teams                  | Policy owners                                     |
+| `agents`    | Logins or `app-slug[bot]` accounts; no teams | Coding-agent identities, which never approve      |
+| `gate`      | `advisory`, `required`                       | `required` publishes the blocking check           |
+| `workflow`  | A path under `.github/workflows/`            | The workflow that can upload reports              |
+| `data_mode` | `customer`, `managed`                        | `customer` keeps source processing in customer CI |
 
-Absent `gate` and `data_mode` keys use `advisory` and `customer`.
+Absent `gate` and `data_mode` keys use `advisory` and `customer`. An absent `agents` key, or `agents: []`, names no
+agent.
+
+`agents` lists the GitHub accounts your coding agents act as: a dedicated agent login, or a GitHub App, written as its
+slug with or without `[bot]` (both mean the same account). Case does not matter. An agent never approves a protected
+change, on GitHub or in the App, even when `owners` names it or an owner team contains it. Listing an owner here is
+allowed; the owner then cannot approve. A pull request opened by an agent is marked on its App page.
+
+The App parses the settings file strictly: an unknown key makes the whole file unreadable, and every pull request then
+gets `settings_missing`. Add `agents` only after the Archfit App release that knows the key serves your repository.
 
 ## Read the feedback
 
@@ -383,7 +399,7 @@ reason applies. The detail lists the dimensions that are not fully measured and 
 
 | Reason                   | Recovery                                                                                                               |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `owner_approval_missing` | Get a policy owner to approve the exact commit, or push it from a policy owner account.                                |
+| `owner_approval_missing` | Get a policy owner to approve the exact commit, on GitHub or with **Approve** on the App's pull request page.          |
 | `settings_missing`       | Merge the onboarding pull request to add `.archfit-app.yaml`.                                                          |
 | `policy_missing`         | Merge the Archfit policy pull request.                                                                                 |
 | `policy_defect`          | Fix the selectors of the listed rules by owner-approved pull request, or mark an intentional guard rule `guard: true`. |
@@ -498,7 +514,7 @@ All policy changes use a pull request. The App never writes to the default branc
 3. Select **Save to draft PR**.
 4. Read the Archfit check on the draft pull request.
 5. Select **Ready for review**.
-6. Get a policy owner approval on GitHub.
+6. Get a policy owner approval of the head commit: on GitHub, or with **Approve** on the pull request's App page.
 7. Merge the pull request on GitHub.
 
 The editor verifies YAML and policy schema rules. The Archfit check verifies engine rules.
@@ -519,23 +535,30 @@ If the draft changed on GitHub after the page loaded, the App refuses the save a
 
 ### Owner approval
 
-A protected-path change needs authorization from a policy owner on the exact head commit. A policy owner authorizes it in
+A protected-path change needs the approval of a policy owner on the exact head commit. A policy owner approves in
 one of two ways:
 
-- An approving review on that commit.
-- Pushing that commit from the owner's own GitHub account. GitHub does not let an author approve their own pull
-  request, so this is how a sole owner changes a protected file. The App reads the pusher from the signed `push`
-  webhook, never from the git author or committer. If you open the pull request from a branch that someone else
-  pushed, the owner who opens it does not authorize those commits; the pusher does.
+- An approving review on that commit on GitHub.
+- **Approve this exact commit** on the pull request's App page (`/r/<owner>/<repo>/pull/<number>`). GitHub does not
+  let an author approve their own pull request, so this is how a sole owner changes a protected file. The page lists
+  each protected file the pull request changes with a short digest of its content at the head, or says that the
+  commit deletes it. Approve records your approval of exactly that commit and those contents; when the files changed
+  since the page loaded, the App refuses and asks you to reload. The button needs `write` permission and shows only
+  for a policy owner who is not listed in `agents`.
 
-Owners are the ones named in `.archfit-app.yaml` on the base branch. A push by anyone else authorizes nothing, and a
-pull request from a fork gets no authorization by push. Pushing someone else's commits from an owner account endorses
-them.
+Pushing a commit is not an approval, whoever pushes it. A local coding agent pushes with its owner's credentials, so
+a push from an owner account says nothing about who decided.
 
-A new push cancels the authorization: the next commit has its own pusher. A dismissed review, or a later request for changes from the same owner, also
-cancels it. The required check then returns to `action_required` with `owner_approval_missing` within the review
-event, or within an hour if the event is lost. No new commit is needed. A new owner approval reruns the workflow,
-and a fresh report sets the result again.
+Owners are the ones named in `.archfit-app.yaml` on the base branch. An approval by anyone else counts for nothing,
+and so does an approval by an account listed in `agents`. A pull request from a fork cannot be approved in the App.
+An App approval also stops counting when its approver is no longer an owner, or when the base branch moves so that the
+pull request changes another set of protected files.
+
+A new commit needs a new approval: an approval holds only for the commit it names. A dismissed review, or a later
+request for changes from the same owner, also cancels a review's approval. The required check then returns to
+`action_required` with `owner_approval_missing` within the review event, or within an hour if the event is lost. No
+new commit is needed. A new owner approval, on GitHub or in the App, reruns the workflow, and a fresh report sets the
+result again.
 
 The protected paths are:
 
@@ -700,6 +723,9 @@ on the pull request links to this page ("Details in Archfit").
 - **Evidence** has one row per dimension: how many the engine measured, then what it counted in its own words, quoted
   as on the comment (`3 of 3 ("classified source files")`), its confidence, and its **Result**: pass, warn or fail.
 - **For coding agents** holds the exact repair tasks of the run; **Copy** puts them on the clipboard.
+- **Owner approval** appears when the pull request changes a protected file: the files with their short digests,
+  who approved which commit, or the **Approve this exact commit** button for a policy owner. Anyone else sees why
+  they cannot approve. A pull request opened by an agent says so. See [Owner approval](#owner-approval).
 - The **Graph** tab draws the same report as a graph. See [The graph of a pull request](#the-graph-of-a-pull-request).
 - The page shows a report only when it is the one the check was computed from, and never under a result that asks
   for action. Otherwise it says why: no result yet, action required, no upload, the report expired, the report does

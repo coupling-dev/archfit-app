@@ -329,9 +329,9 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 	}
 }
 
-func TestStoreWritesOnlyPublicationLeasesAndPusherRecords(t *testing.T) {
-	// guardStore panics on every write but a lease compare-and-swap and a pusher record Put, and on Tenants; this
-	// drives every façade entry point over it.
+func TestStoreWritesOnlyLeasesAndInputsRecords(t *testing.T) {
+	// guardStore panics on every write but a lease compare-and-swap and a compare-and-swap of a pusher or approval
+	// record, and on Tenants; this drives every façade entry point over it.
 	w := newWorld(t)
 	vault := w.addRepo("acme/vault", 12, 201, true)
 	w.entitle(12, Entitlement{SuspendAfter: w.now.Add(time.Hour)})
@@ -344,16 +344,22 @@ func TestStoreWritesOnlyPublicationLeasesAndPusherRecords(t *testing.T) {
 	if _, err := w.gate.Sweep(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	q := w.openPull(vault, 8)
+	w.editsBaseline(q)
+	w.handle(w.event(webhook.PullOpened, q))
+	w.approve(q, ownerLogin)
 	if len(w.store.tenants) == 0 {
 		t.Fatal("the Store was never read")
 	}
-	if len(w.store.pusherTenants) == 0 {
-		t.Fatal("no pusher record was written")
-	}
-	for _, tenant := range w.store.pusherTenants {
+	written := map[string]bool{}
+	for i, tenant := range w.store.recordTenants {
 		if tenant != store.Tenant(12) {
-			t.Errorf("pusher record under tenant %d", tenant)
+			t.Errorf("record %s under tenant %d", w.store.recordKeys[i], tenant)
 		}
+		written[strings.SplitN(w.store.recordKeys[i], "/", 2)[0]+"/"] = true
+	}
+	if !written[pusherKeyPrefix] || !written[approvalKeyPrefix] {
+		t.Fatalf("records touched: %v, want a pusher and an approval record", written)
 	}
 	for i, key := range w.store.keys {
 		if key != EntitlementKey || w.store.tenants[i] == store.SystemTenant {

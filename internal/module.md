@@ -25,7 +25,8 @@ and the invariants in `AGENTS.md`. Choices made without an owner answer are mark
   `success`, `failure`, or `action_required`; never `neutral` or `skipped`.
 - Publish `archfit/state`, `archfit/gate` (when `gate: required`) and one PR comment, idempotently.
 - Enforce architecture-owner approval on the exact head SHA for policy, baseline, settings and
-  workflow changes, including atomic code-and-policy PRs.
+  workflow changes, including atomic code-and-policy PRs. An owner approves by a review on GitHub or with Approve on
+  the App's pull request page; a push never approves, and an agent identity listed in the settings never approves.
 - Recover from missed events with one periodic sweep; schedule around waiver expiry and base policy changes
   by re-running the customer's workflow.
 - Onboard repositories in customer-executed mode (two PRs) and managed mode (sandbox job after consent).
@@ -484,6 +485,12 @@ draft are gone. What the real engine changed in this design:
 - **Test name**: `TestSuspensionIsNeitherArchitectureFailureNorSuccess`
   **Scenario**: private repository after trial and grace with no grant; then a grant.
   **Expected behavior**: `action_required` in category `subscription` with a recovery action; after the grant the workflow is re-run and only a fresh report can produce `success`.
+- **Test name**: `TestSoleOwnerApprovesTheExactCommitInTheApp`, `TestAnAgentIdentityCannotApproveInTheApp`
+  **Scenario**: a policy change that only its sole owner can approve: the owner reads the pull request page, approves
+  the shown head and digests, then the re-run reports; the same with the owner also listed in `agents`.
+  **Expected behavior**: `owner_approval_missing`, then the Approve answers granted by the owner, the workflow run is
+  re-run, nothing turns green before the fresh report, which is `success`; for the agent: no Approve offered, `403`,
+  no re-run, still `owner_approval_missing`.
 - **Test name**: `TestBothOnboardingModesComplete`
   **Scenario**: customer mode through PR 1, discovery upload, PR 2; managed mode with and without consent and with no sandbox configured.
   **Expected behavior**: exactly one PR per step after retries; no consent means no sandbox job and no LLM call; "not available" is a clear state.

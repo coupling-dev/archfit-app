@@ -43,7 +43,7 @@ func lookup(code ReasonCode) (entry, bool) {
 	case ReasonWorkflowNotApproved:
 		return entry{CategoryEvidence, ActionRequired, "Upload from the workflow named in `.archfit-app.yaml`."}, true
 	case ReasonOwnerApprovalMissing:
-		return entry{CategoryGovernance, ActionRequired, "An architecture owner must authorize this exact commit: approve it on GitHub, or push it from an owner account. GitHub does not let an author approve their own pull request; use the App policy editor, where the App authors the commit."}, true
+		return entry{CategoryGovernance, ActionRequired, "An architecture owner must approve this exact commit, on GitHub or with Approve on the pull request page of the Archfit App. An agent identity cannot approve; a new commit needs a new approval."}, true
 	case ReasonSettingsMissing:
 		return entry{CategoryGovernance, ActionRequired, "Merge the Archfit onboarding PR to add `.archfit-app.yaml`."}, true
 	case ReasonForkUnsupported:

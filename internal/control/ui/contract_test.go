@@ -60,6 +60,7 @@ func repoRoutes(fullName string) []route {
 		{http.MethodGet, base + "/pull/4", signedInOnly, nil, nil},
 		{http.MethodGet, api + "/pulls/4", permRead, nil, nil},
 		{http.MethodGet, api + "/pulls/4/graph", permRead, nil, nil},
+		{http.MethodPost, api + "/pulls/4/approve", permWrite, nil, approveJSON{HeadSHA: sha(4)}},
 		{http.MethodGet, api + "/graph", permRead, nil, nil},
 		{http.MethodGet, api + "/findings", permRead, nil, nil},
 		{http.MethodGet, base + "/pull/4/graph", signedInOnly, nil, nil},

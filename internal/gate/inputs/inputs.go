@@ -96,11 +96,10 @@ func (r *resolver) Resolve(ctx context.Context, t Target, now time.Time) (Truste
 		return out, nil
 	}
 
-	changed, truncated, err := r.pulls.ChangedFiles(ctx, t.Repo.RepoRef, t.PullRequest)
+	out.ProtectedPaths, err = r.changedProtected(ctx, t, s)
 	if err != nil {
-		return Trusted{}, fmt.Errorf("inputs: changed files: %w", err)
+		return Trusted{}, err
 	}
-	out.ProtectedPaths = protectedPaths(changed, truncated, s)
 	if len(out.ProtectedPaths) == 0 {
 		return out, nil
 	}
@@ -113,16 +112,13 @@ func (r *resolver) Resolve(ctx context.Context, t Target, now time.Time) (Truste
 	if err != nil {
 		return Trusted{}, fmt.Errorf("inputs: reviews: %w", err)
 	}
-	member := func(team, login string) (bool, error) {
-		return r.pulls.TeamMember(ctx, t.Repo.RepoRef, team, login)
-	}
-	by, err := approver(reviews, s.Owners, t.HeadSHA, member)
+	by, err := approver(reviews, s, t.HeadSHA, r.member(ctx, t))
 	if err != nil {
 		return Trusted{}, fmt.Errorf("inputs: team membership: %w", err)
 	}
 	if by == "" {
-		by, err = r.pusher(ctx, t, s.Owners, member)
-		if err != nil {
+		// GitHub does not let an author approve their own pull request; a sole owner approves in the App instead.
+		if by, err = r.recorded(ctx, t, s, out.ProtectedPaths); err != nil {
 			return Trusted{}, err
 		}
 	}
@@ -216,10 +212,10 @@ func protectedPaths(changed []string, truncated bool, s settings.Settings) []str
 	return out
 }
 
-// RecordPusher adds login to the set of accounts that pushed t's head, so that Resolve can grant the approval of an
-// owner among them. The set is keyed by the head SHA: a later head has its own set, and an empty login writes
-// nothing. It only ever grows, so a later push of the same commit by someone else (a branch cut from it, a mirror,
-// a redelivery) cannot take away what an owner's push granted, and the decision does not depend on event order.
+// RecordPusher adds login to the set of accounts that pushed t's head, for attribution only: nothing grants an
+// approval from it, because a local coding agent pushes with its owner's credentials. The set is keyed by the head
+// SHA: a later head has its own set, and an empty login writes nothing. It only ever grows, so the record does not
+// depend on event order.
 func (r *resolver) RecordPusher(ctx context.Context, t Target, login string) error {
 	if login == "" {
 		return nil
@@ -251,35 +247,14 @@ func (r *resolver) RecordPusher(ctx context.Context, t Target, login string) err
 	return errRecordContention // the queue retries the delivery
 }
 
-// pusher returns the first account that pushed t's head and is an owner in the protected settings, else "".
-// A store failure is an error, not "no pusher": the decision waits for a retry instead of publishing a wrong one.
-func (r *resolver) pusher(ctx context.Context, t Target, owners []string, member func(team, login string) (bool, error)) (string, error) {
-	raw, err := r.store.Get(ctx, store.Tenant(t.Repo.InstallationID), pusherKey(t))
-	if errors.Is(err, store.ErrNotFound) {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("inputs: read pusher: %w", err)
-	}
-	for _, login := range strings.Split(string(raw), pusherSep) {
-		ok, err := isOwner(owners, login, member)
-		if err != nil {
-			return "", fmt.Errorf("inputs: team membership: %w", err)
-		}
-		if ok {
-			return login, nil
-		}
-	}
-	return "", nil
-}
-
 // pusherKey is the Store key of the accounts that pushed t's head. Repository names compare case-insensitively.
 func pusherKey(t Target) string {
 	return "pusher/" + strings.ToLower(t.Repo.FullName) + "/" + t.HeadSHA
 }
 
 // approver returns the first owner, in review order, whose latest non-comment review approves headSHA; "" if none.
-func approver(reviews []api.Review, owners []string, headSHA string, member func(team, login string) (bool, error)) (string, error) {
+// An agent identity of s never approves, also when s names it an owner or a team of owners holds it.
+func approver(reviews []api.Review, s settings.Settings, headSHA string, member func(team, login string) (bool, error)) (string, error) {
 	latest := map[string]int{}
 	for i, rv := range reviews {
 		if rv.State != reviewCommented {
@@ -287,10 +262,11 @@ func approver(reviews []api.Review, owners []string, headSHA string, member func
 		}
 	}
 	for i, rv := range reviews {
-		if rv.State != reviewApproved || rv.CommitSHA != headSHA || latest[strings.ToLower(rv.Reviewer)] != i {
+		if rv.State != reviewApproved || rv.CommitSHA != headSHA || latest[strings.ToLower(rv.Reviewer)] != i ||
+			s.IsAgent(rv.Reviewer) {
 			continue
 		}
-		ok, err := isOwner(owners, rv.Reviewer, member)
+		ok, err := isOwner(s.Owners, rv.Reviewer, member)
 		if err != nil {
 			return "", err
 		}

@@ -223,6 +223,14 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 			f.store = &stubStore{get: func(context.Context) ([]byte, error) { return []byte("MARKER-ENTITLEMENT"), nil }}
 		}},
 		{"github failure", func(f *fixture) { f.pulls.reviewsErr = errBoom }},
+		{"approval recorded in the App", func(f *fixture) {
+			f.pulls.teams[teamOwner] = []string{"marker-reviewer"}
+			seen, _ := f.resolver().Candidate(context.Background(), pullTarget())
+			_ = f.resolver().Approve(context.Background(), pullTarget(), "marker-reviewer", seen.Digests, now)
+		}},
+		{"unreadable approval record", func(f *fixture) {
+			_ = f.store.Put(context.Background(), store.Tenant(installation), approvalKey(pullTarget()), []byte(`{"login":"marker-owner`))
+		}},
 	}
 	for _, sc := range scenarios {
 		t.Run(sc.name, func(t *testing.T) {

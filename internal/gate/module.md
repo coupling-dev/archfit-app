@@ -19,6 +19,8 @@ separate, testable steps. Without this module a report is a self-reported file a
   `owner_approval_missing` when a review withdraws the approval a `success` or `failure` check relied on,
   workflow re-run on a review after `owner_approval_missing` once no approval is missing, and a one-repository sweep
   when a default-branch push changes a protected path.
+- For the App's pull request page only (`Approvals`): read the owner approval of a head, record an architecture
+  owner's approval of the exact head, and re-decide the pull request after it, as a review event does.
 - Run one reconciliation pass on request.
 - Publish, for the control plane, the `Entitlement` record contract, the `Receiver` for discovery uploads,
   and the sweep types.
@@ -42,8 +44,8 @@ feedback are tuned with every pilot. The façade contract is kept small and stab
 
 ```go
 // Deps are the only things the gate path may touch: GitHub, OIDC, the Store and a clock. On the Store the gate
-// path reads the entitlement and the admission, and reads and writes the pusher records of gate/inputs; its only
-// other write is gate/feedback's publication leases.
+// path reads the entitlement and the admission, and reads and writes the pusher and approval records of gate/inputs;
+// its only other write is gate/feedback's publication leases.
 type Deps struct {
     GitHub     *Client
     OIDC       Verifier
@@ -76,6 +78,44 @@ func (g *Gate) HandleEvent(ctx context.Context, e Event) error
 // Sweep runs one reconciliation pass.
 func (g *Gate) Sweep(ctx context.Context) (Summary, error)
 ```
+
+```go
+// Approvals is what the App's pull request page may do about an owner approval of a head: read it, record one and
+// re-decide the pull request. *Gate implements it; no other part of the gate path is reachable through it.
+type Approvals interface {
+    PullApproval(ctx context.Context, t Target, login, author string) (PullApproval, error)
+    Approve(ctx context.Context, t Target, login string, seen map[string]string) error
+    Reevaluate(ctx context.Context, t Target) error
+}
+
+// PullApproval is the owner approval of a pull request head as the App's pull request page shows it.
+type PullApproval struct {
+    Candidate            // no Paths: the pull request needs no owner approval, and nothing below is set
+    Granted       bool   // an owner approved this exact head, on GitHub or in the App
+    ApprovedBy    string // the approving login when Granted
+    Refusal       error  // while not Granted: why login may not approve in the App (an Err* refusal); nil when it may
+    AuthorIsAgent bool   // the pull request was opened by an agent identity of the protected settings
+}
+
+// PullApproval reads the owner approval of t's head for the signed-in login; author is the pull request's.
+func (g *Gate) PullApproval(ctx context.Context, t Target, login, author string) (PullApproval, error)
+
+// Approve records login's approval of t's head in the App: the way a sole owner approves, because GitHub does not let
+// an author approve their own pull request. seen is the Candidate digests the owner was shown. It does not re-decide
+// the pull request; Reevaluate does.
+func (g *Gate) Approve(ctx context.Context, t Target, login string, seen map[string]string) error
+
+// Reevaluate re-decides the pull request t after its owner approval changed, as a review event does: an
+// owner_approval_missing check whose approval is now granted re-runs the workflow, and a result whose approval is gone
+// is withdrawn. Nothing here turns a check green; the re-run's upload does.
+func (g *Gate) Reevaluate(ctx context.Context, t Target) error
+```
+
+The three methods ask `Admitted` first, like every other entry point; an installation no operator approved gets an
+error and nothing is read or written. `PullApproval` calls `Candidate` (no paths → the zero value), then `Resolve`
+for the state, and, only while the approval is missing, `CanApprove` for `login`: a refusal is `Refusal`, a failed
+read is the error. `AuthorIsAgent` is `Settings.IsAgent(author)` of the resolved base settings. `Reevaluate` is the
+`ReviewChanged` reaction (`approvalChanged`) on `t` and logs `gate reevaluate` with identifiers only.
 
 ```go
 // NewReceiver exposes the upload authentication and binding step so that the discovery
@@ -116,6 +156,29 @@ func (a *Admissions) Admitted(ctx context.Context, installationID int64, owner s
 ```
 
 `Admissions` also has `Auto(account)` and `Record(ctx, installationID)`, which `control` uses.
+
+<!-- contract: Candidate, ErrNothingToApprove, ErrForkPull, ErrAgentIdentity, ErrNotOwner, ErrDigestsChanged — restated from internal/gate/inputs/module.md -->
+```go
+// Candidate is what an owner approves in the App: the protected paths a pull request changes and what each holds at
+// its head.
+type Candidate struct {
+    Paths []string // in ProtectedPaths order; empty when the pull request needs no owner approval
+    // Digests is policy.Digest of each path at the head, "" for a path the head deletes, so a deletion is part of what
+    // is approved. Nil for a fork: no head file of a fork is read.
+    Digests map[string]string
+}
+
+// The refusals of Approve and CanApprove. Any other error is a failed read or write.
+var (
+    ErrNothingToApprove = errors.New("inputs: approve: the pull request changes no protected path")
+    ErrForkPull         = errors.New("inputs: approve: the pull request comes from a fork")
+    ErrAgentIdentity    = errors.New("inputs: approve: an agent identity never approves")
+    ErrNotOwner         = errors.New("inputs: approve: not an architecture owner of the protected settings")
+    ErrDigestsChanged   = errors.New("inputs: approve: the protected files at the head are not the ones shown")
+)
+```
+
+`Target` is re-published too; it is restated under Integrations, gate/inputs.
 
 <!-- contract: Entitlement, EntitlementKey — restated from internal/gate/inputs/module.md -->
 ```go
@@ -276,8 +339,9 @@ An approval that cannot be read is the 503 `admission_unavailable` rejection, wh
 - **Volatility**: high
 - **Balanced?**: yes
 - **Shared knowledge**: `Resolve` reads only the protected ref (plus an owner-approved head digest), returns an
-  error on GitHub failures and on a failed read of a pusher record (fail closed), never on a failed read of the
-  entitlement. `SettingsFound == false` means "not onboarded". `Admissions` is built by `app` and passed in
+  error on GitHub failures and on a failed read of an approval record (fail closed), never on a failed read of the
+  entitlement. A push never approves; `RecordPusher` is attribution only. `Candidate`, `CanApprove` and `Approve` are
+  called only from `PullApproval` and `Approve`, for `control/ui`. `SettingsFound == false` means "not onboarded". `Admissions` is built by `app` and passed in
   `Deps.Admissions`; the façade, `ingest` and `sweep` ask it `Admitted`, `Resolve` does not.
   `PolicyDigests[0]` and `BaselineDigests[0]` are the first accepted digests: the base digest when the file exists on
   the protected ref, otherwise the owner-approved head digest; the lists are empty when neither exists. The inputs constructor is `New(repos Repos, pulls Pulls, s Store) Resolver`.
@@ -301,7 +365,7 @@ type Approval string
 
 const (
     ApprovalNotRequired Approval = "not_required" // no protected path changed
-    ApprovalGranted     Approval = "granted"      // a base-version owner approved this exact head SHA
+    ApprovalGranted     Approval = "granted"      // a base-version owner, no agent, approved this exact head SHA
     ApprovalMissing     Approval = "missing"
 )
 
@@ -327,9 +391,20 @@ type Resolver interface {
     // Resolve reads the protected ref and reviews. It never reads policy, settings, baseline,
     // owners, or CODEOWNERS from the head tree, except to hash an owner-approved candidate.
     Resolve(ctx context.Context, t Target, now time.Time) (Trusted, error)
-    // RecordPusher adds the login that pushed t's head, from a signed push delivery, to the set Resolve reads back.
-    // "" records nothing. Opening a pull request records nothing.
+    // RecordPusher adds the login that pushed t's head, from a signed push delivery, to the record of who pushed it.
+    // The record is attribution only: no push approves anything. "" records nothing. Opening a pull request records
+    // nothing.
     RecordPusher(ctx context.Context, t Target, login string) error
+    // Candidate returns the protected paths the pull request t changes, by the rule of Resolve, and the digest of each
+    // at t.HeadSHA: what an owner approves in the App.
+    Candidate(ctx context.Context, t Target) (Candidate, error)
+    // CanApprove reports whether login may approve t's head in the App now: nil, or ErrNothingToApprove, ErrForkPull,
+    // ErrAgentIdentity or ErrNotOwner, in that order. Owners and agents come from the settings of the protected ref.
+    CanApprove(ctx context.Context, t Target, login string) error
+    // Approve records login's approval of t's head, bound to its SHA, when CanApprove allows it and seen equals the
+    // Candidate digests (else ErrDigestsChanged). A record for that head already, by any owner, is success and stays
+    // as it is.
+    Approve(ctx context.Context, t Target, login string, seen map[string]string, now time.Time) error
 }
 ```
 
@@ -780,8 +855,9 @@ type Envelope struct {
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high (gate side); the file format is moderate
 - **Balanced?**: yes
-- **Shared knowledge**: the façade reads `Trusted.Settings.Workflow` and `Trusted.Settings.Gate`. It does not use
-  `Path`: the protected path set, the settings file included, belongs to `gate/inputs`.
+- **Shared knowledge**: the façade reads `Trusted.Settings.Workflow` and `Trusted.Settings.Gate`, and calls
+  `Trusted.Settings.IsAgent` for the author of a pull request. It does not use `Path`: the protected path set, the
+  settings file included, belongs to `gate/inputs`.
 
 <!-- contract: Settings, GateMode, DataMode, Path — restated from internal/wire/settings/module.md -->
 ```go
@@ -804,12 +880,18 @@ const (
 
 // Settings is the App-owned file. The engine policy schema is untouched by it.
 type Settings struct {
-    Version  int      `yaml:"version"`   // must be 1
-    Owners   []string `yaml:"owners"`    // GitHub logins, or "org/team-slug"; at least one
-    Gate     GateMode `yaml:"gate"`      // default advisory
-    Workflow string   `yaml:"workflow"`  // e.g. ".github/workflows/archfit.yaml"
-    DataMode DataMode `yaml:"data_mode"` // default customer
+    Version  int      `yaml:"version"`          // must be 1
+    Owners   []string `yaml:"owners"`           // GitHub logins, or "org/team-slug"; at least one
+    Agents   []string `yaml:"agents,omitempty"` // logins or App slugs of coding agents, which never approve; nil when none
+    Gate     GateMode `yaml:"gate"`             // default advisory
+    Workflow string   `yaml:"workflow"`         // e.g. ".github/workflows/archfit.yaml"
+    DataMode DataMode `yaml:"data_mode"`        // default customer
 }
+
+// IsAgent reports whether login is one of s.Agents. Case is ignored, and "name" and "name[bot]" are one identity:
+// GitHub names an App's account "slug[bot]" and a file may name either form, so a missed suffix never lets an agent
+// through. "" is never an agent.
+func (s Settings) IsAgent(login string) bool
 ```
 
 ### github/webhook
@@ -975,14 +1057,16 @@ type Verifier interface {
 
 - **Counterpart**: internal/store
 - **Direction**: gate depends on store (passes `Deps.Store` to `gate/inputs`, which reads the entitlement and the
-  admission and reads and writes the pusher records, and to `gate/feedback`, which holds the publication leases)
+  admission and reads and writes the pusher and approval records, and to `gate/feedback`, which holds the publication
+  leases)
 - **Strength**: contract
 - **LCA / Rank / Distance**: root / 1 / 1
 - **Volatility**: high (gate side); store is low
 - **Balanced?**: yes
 - **Shared knowledge**: the gate path calls `Get(Tenant(installationID), EntitlementKey)` and
   `Get(Tenant(installationID), AdmissionKey)` inside `gate/inputs`, `Get`
-  and `CompareAndSwap` on `pusher/<repo>/<head_sha>` under the same tenant inside `gate/inputs`, and `Get` and
+  and `CompareAndSwap` on `pusher/<repo>/<head_sha>` and `approval/<repo>/<head_sha>` under the same tenant inside
+  `gate/inputs`, and `Get` and
   `CompareAndSwap` on `feedback/lease/<head_sha>` under the same tenant inside `gate/feedback`. It calls no
   other Store operation. `ErrNotFound` is the store sentinel for a missing key; for the entitlement it means "not
   suspended", for a lease that the lease is free. `SystemTenant` is never used by the gate, and the gate never
@@ -1036,12 +1120,17 @@ type Swap struct {
 
 - **internal/app**: contract (constructor, handlers), root / 1 / 1, low, balanced. Calls `New`, mounts
   `UploadHandler`, calls `HandleEvent` before `control.HandleEvent`, calls `Sweep` from `/internal/sweep`,
-  passes `NewReceiver(...)` to `control`, builds the `Admissions` for `Deps.Admissions` and `NewReceiver`.
+  passes `NewReceiver(...)` to `control`, builds the `Admissions` for `Deps.Admissions` and `NewReceiver`, and passes
+  the `*Gate` to `control` as its `Approvals`.
 - **internal/control/account**: contract, root / 2 / 2, moderate, balanced. Writes the JSON of `Entitlement`
   under `EntitlementKey`, and writes and deletes the JSON of `Admission` under `AdmissionKey`. The gate owns the
   records so that it never imports billing or operator code.
 - **internal/control/onboarding**: contract, root / 2 / 2, high, balanced. Uses `Receiver`, `Rejection`, `Upload`,
   `Binding`, `Problem` for `POST /v1/discoveries`. A discovery upload never reaches `verdict` or `feedback`.
+- **internal/control/ui** (through `control.Deps.Approvals`, which `app` sets to the `*Gate`): contract, root / 2 / 2,
+  high, balanced. Calls `PullApproval` for the pull request page and `Approve` then `Reevaluate` for its Approve
+  button, behind the browser session, CSRF token and write access; maps the refusals to its wording. Nothing on the
+  upload (OIDC) path holds `Approvals`.
 
 ## Internal Design
 
@@ -1129,7 +1218,7 @@ Special targets, all through the same flow:
 | any kind with a repository       | Checked before the rows below: `Admissions.Admitted(e.InstallationID, Owner(e.Repo))` false → reaction `not_admitted`, nothing read or written, `nil` returned. An error → reaction `not_admitted` logged, nothing read or written, the error returned, so the webhook queue retries the delivery. Installation kinds carry no repository and skip this check. |
 | `PullOpened`, `PullSynchronized` | `Resolve`. `!SettingsFound` → nothing. Fork → `Publish(sweep.Without(ReasonForkUnsupported, target, trusted, Receipt{}))`: a zero-run receipt carrying the base digests. Else `Settings.Gate == GateRequired` → `publisher.Pending(target)`. Advisory → nothing. |
 | `ReviewChanged`                  | `Reconcile(target, …)`: inside the lease, a withdrawn approval → `sweep.Withdrawal` (below); reason `owner_approval_missing` and `!verdict.Unapproved(trusted)` **[default: no re-run while an approval is missing]** → `sweep.Rerun`.                           |
-| `BranchPush`                     | `resolver.RecordPusher(target, Pusher)` first, so the record exists before anything decides; a failed write is returned and the queue retries. Then the newest pull request of this repository whose head is `Branch` (`Pulls.PullByHead`): when it is open and its head is `HeadSHA`, run the `ReviewChanged` reaction on it, so a report that arrived before this push is re-evaluated. A push whose `PusherType` is present and not `"user"` (a deploy key) records nothing and logs `gate pusher not recorded` with the delivery id, never the key; the re-evaluation and the sweep still run. No such pull request, a closed one or another head → nothing more. A pull request from a fork is never found. |
+| `BranchPush`                     | `resolver.RecordPusher(target, Pusher)` first, for attribution (the record approves nothing); a failed write is returned and the queue retries. Then the newest pull request of this repository whose head is `Branch` (`Pulls.PullByHead`): when it is open and its head is `HeadSHA`, run the `ReviewChanged` reaction on it. A push whose `PusherType` is present and not `"user"` (a deploy key) records nothing and logs `gate pusher not recorded` with the delivery id, never the key; the re-evaluation and the sweep still run. No such pull request, a closed one or another head → nothing more. A pull request from a fork is never found. |
 | `DefaultBranchPush`              | `RecordPusher` and the pull request lookup as for `BranchPush`; then `ChangedPaths` empty (= unknown), or `inputs.MayBeProtected(path)` for any changed path → `sweeper.RunRepo(ctx, repo, now)` in the request. Otherwise nothing.                                                                                                   |
 | `PullClosed`                     | nothing.                                                                                                                                                                                                                                                         |
 | installation kinds, `Ignored`    | nothing; `control` handles installations.                                                                                                                                                                                                                        |
@@ -1215,15 +1304,20 @@ event left undone.
   fabricated-report gap (a trusted workflow running a PR script that forges a clean report) is not closed and not claimed closed.
 - Unknown identity never compares equal: a manifest miss, a missing profile or a profile version mismatch is never approved.
 - The tenant comes from verified OIDC claims (`ResolveRepo`) or the verified webhook; never from the envelope or a client-supplied ID.
-- Nothing runs for an installation no operator approved. The façade (`HandleEvent`), `ingest` (upload) and `sweep`
-  (pass) each ask `Admitted` before they read or write for it. An approval that cannot be read (a Store error, or a
+- Nothing runs for an installation no operator approved. The façade (`HandleEvent`, `PullApproval`, `Approve`,
+  `Reevaluate`), `ingest` (upload) and `sweep` (pass) each ask `Admitted` before they read or write for it. An approval that cannot be read (a Store error, or a
   record that does not decode) does nothing and is retried: `HandleEvent` returns the error, the upload answers 503
   `admission_unavailable`, the sweep counts the installation in `Summary.Errors`. It is never a refusal and never
   "admitted", unlike the entitlement. The gate only reads the admission; `control/account` writes it.
-- The gate path reads the `Entitlement`, the `Admission` and the pusher records, and writes only the pusher records of `gate/inputs`
-  and `gate/feedback`'s publication leases. A pusher record is `pusher/<repo>/<head_sha>` = the logins that pushed the
-  head, written only from a signed `push` delivery, and only ever added to. It is kept until the installation is deleted; one small key per
-  pushed head is the accepted growth **[default]**, to be pruned by the sweep if tenants grow large.
+- The gate path reads the `Entitlement`, the `Admission` and the pusher and approval records, and writes only the pusher
+  and approval records of `gate/inputs` and `gate/feedback`'s publication leases. A pusher record is
+  `pusher/<repo>/<head_sha>` = the logins that pushed the head, written only from a signed `push` delivery, only ever
+  added to, and read by nothing that decides. An approval record is `approval/<repo>/<head_sha>`, written once, only by
+  `Approve` for `control/ui`'s browser session. Both are kept until the installation is deleted; one small key per
+  pushed or approved head is the accepted growth **[default]**, to be pruned by the sweep if tenants grow large.
+- No push approves, and no agent identity approves: an approval is an owner's review on GitHub or an owner's Approve
+  in the App, for the exact head SHA. No approval API or credential is reachable from the upload (OIDC) routes or the
+  CLI (`TestOwnerApprovalIsReachableOnlyFromTheBrowserSession` in `internal/app`).
   A missing or unreadable `Entitlement` means "not suspended" **[default]**; it never establishes non-payment and
   never blocks a merge by itself (2 second read timeout in `inputs` **[default]**). Recovery of a missing record is
   not the gate's job: `control`'s sweep backfills it (Observe + Refresh for every installation), so a missed
@@ -1240,7 +1334,8 @@ event left undone.
 - Suspension is `action_required` in category `subscription`: never an architecture failure, never a success.
   A restored entitlement re-runs the workflow; an old receipt is never promoted to `success`.
 - Nothing is persisted by the gate but the publication leases, which hold a token and an expiry only and are
-  deleted when the writes end. Reports and payloads live in memory for one request and are dropped.
+  deleted when the writes end, and the pusher and approval records of `gate/inputs`, which hold logins, a head SHA,
+  digests and a time. Reports and payloads live in memory for one request and are dropped.
 - Handlers do their work in the request and are idempotent; GitHub holds the dedup keys (`external_id`, comment marker).
 - GitHub rate-limit exhaustion yields 429 `rate_limited` during `Receive`, 503 with `Retry-After` after it, or a
   stopped sweep; the Action retries both statuses; checks stay pending; never green.
@@ -1347,24 +1442,33 @@ are driven only as far as they go without GitHub. Child internals are tested in 
   **Scenario**: upload, webhook and sweep flows with marker strings in paths and messages, capturing logger.
   **Expected behavior**: IDs, digests, outcomes, timings only.
 
-- **Test name**: `TestStoreWritesOnlyPublicationLeasesAndPusherRecords`
-  **Scenario**: a Store wrapper that panics on `Put`, `Delete`, `Add`, `DeleteTenant`, `Tenants` and on a `CompareAndSwap` outside `feedback/lease/` and `pusher/`; a private repository with an entitlement; drive every façade entry point over it: `HandleEvent` (`PullOpened`, `ReviewChanged`, `DefaultBranchPush`, `BranchPush`), an upload, `Sweep`.
-  **Expected behavior**: no panic; the Store was read at least once; every read outside the leases and the pusher records is `Get` of `EntitlementKey` under the installation's tenant, never `SystemTenant`; every lease operation and every pusher record is under the installation's tenant; a pusher record was written; the pull's lease is gone afterwards.
+- **Test name**: `TestStoreWritesOnlyLeasesAndInputsRecords`
+  **Scenario**: a Store wrapper that panics on `Put`, `Delete`, `Add`, `DeleteTenant`, `Tenants` and on a `CompareAndSwap` outside `feedback/lease/`, `pusher/` and `approval/`; a private repository with an entitlement; drive every façade entry point over it: `HandleEvent` (`PullOpened`, `ReviewChanged`, `DefaultBranchPush`, `BranchPush`), an upload, `Sweep`, `PullApproval`, `Approve` and `Reevaluate`.
+  **Expected behavior**: no panic; the Store was read at least once; every read outside the leases and the records is `Get` of `EntitlementKey` under the installation's tenant, never `SystemTenant`; every lease operation and every record is under the installation's tenant; a pusher and an approval record were written; the pull's lease is gone afterwards.
 - **Test name**: `TestUnadmittedInstallationGetsNothing`
   **Scenario**: the installation is refused by the admission fake; a `PullOpened` event, then an upload; then the refusal is lifted and a `PullSynchronized` event and an upload follow.
   **Expected behavior**: no pending check and no state check while refused; the upload answers 403 `installation_not_approved`; after the lift the upload answers 200 `success`/`healthy`.
 - **Test name**: `TestUnreadableApprovalIsRetriedNotDropped`
   **Scenario**: the admission fake cannot read the approval; a `PullOpened` event and an upload; then the fake recovers and a `PullOpened` event and an upload follow.
   **Expected behavior**: `HandleEvent` returns an error and no check exists; the upload answers 503 `admission_unavailable`; after recovery the event is handled and the upload answers 200 `success`/`healthy`.
-- **Test name**: `TestOwnerPushAuthorizesTheHeadItPushed`
-  **Scenario**: an owner's `BranchPush` for the head of a pull request that edits the policy, (1) before the `PullOpened` event and the report, (2) after the report left `owner_approval_missing`, (3) from a member of an owner team.
-  **Expected behavior**: (1) the report is `success`; (2) one re-run of the report's run, the check stays `action_required` until the new upload, which is `success`; (3) as (2). The receipt carries the approved head policy digest.
-- **Test name**: `TestPushDoesNotAuthorizeUnlessAnOwnerPushedTheExactHead`
-  **Scenario**: a non-owner `BranchPush`; a non-owner push of the owner's commit to another branch after the owner's push (the owner's authorization stays); an owner push followed by a new head pushed by a non-owner; an owner push of an older head; a head-edited settings file and CODEOWNERS naming the pusher; a push event whose head the pull request no longer has; a push to a branch without a pull request.
-  **Expected behavior**: `owner_approval_missing` or no reaction in every row; no re-run; no write for the last two.
+- **Test name**: `TestOwnerPushNeverApproves`
+  **Scenario**: a pull request that replaces the baseline; an owner's `BranchPush` for its head (1) before the `PullOpened` event and the report, (2) after the report left `owner_approval_missing`, (3) from a member of an owner team.
+  **Expected behavior**: (1) the report is `owner_approval_missing`, never `success`; (2) and (3) no re-run, and the report stays `owner_approval_missing`.
 - **Test name**: `TestPusherTypeOtherThanUserRecordsNothing`
   **Scenario**: an owner's `BranchPush` for a head whose report is `owner_approval_missing`, with `PusherType` absent, `"user"`, `"deploy_key"` and an unknown value.
-  **Expected behavior**: absent and `"user"` record the pusher and re-run the workflow; the other two record nothing and re-run nothing.
+  **Expected behavior**: absent and `"user"` record the pusher, the other two record nothing; none re-runs the workflow.
+- **Test name**: `TestAppApprovalReDecidesThePullRequest`
+  **Scenario**: an `owner_approval_missing` receipt on a baseline change; the owner reads `PullApproval`, then `Approve` with its digests and `Reevaluate`; the upload of the re-run; then a new commit.
+  **Expected behavior**: one re-run of the report's run; the check stays `action_required` until the new upload, which is `success` with the approved head baseline digest; `PullApproval` then reads granted by the owner; the new commit is `owner_approval_missing` again.
+- **Test name**: `TestAppApprovalRefusesAgentsAndOthers`
+  **Scenario**: an owner listed as an agent, the `[bot]` account of an agent, a member of an owner team listed as an agent, a non-owner: each approves on GitHub (a review event) and in the App.
+  **Expected behavior**: `ErrAgentIdentity` three times and `ErrNotOwner` from `PullApproval` and `Approve`; no re-run; the report stays `owner_approval_missing`.
+- **Test name**: `TestPullApprovalNamesAnAgentAuthor`, `TestPullApprovalWithoutAProtectedChangeIsEmpty`
+  **Scenario**: a pull request opened by the `[bot]` account of a listed agent, then by an owner; a pull request that changes no protected path.
+  **Expected behavior**: `AuthorIsAgent` true, then false; the zero `PullApproval`, and `Approve` refuses with `ErrNothingToApprove`.
+- **Test name**: `TestApprovalNeedsAnAdmittedInstallation`
+  **Scenario**: the installation is refused after the page read its candidate.
+  **Expected behavior**: `PullApproval`, `Approve` and `Reevaluate` return an error; no GitHub call; no approval record.
 - **Test name**: `TestPusherRecordNeverAuthorizesAFork`
   **Scenario**: a pull request whose head repository is a fork; an owner's `BranchPush` with the fork head's SHA.
   **Expected behavior**: no re-run; the report is `fork_unsupported`.
