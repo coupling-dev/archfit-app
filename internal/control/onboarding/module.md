@@ -161,8 +161,8 @@ progress has not uploaded yet; its conclusion does not matter. **[default]** Fir
 3. Policy present, not reported → `policy_merged`.
 4. Policy present, reported → `gate_advisory` when `Settings.Gate` is advisory. When it is `required`, `Progress.Enforcement`
    is asked of GitHub (`api.Rules.RequiredChecks` on the default branch): `enforced` (a ruleset requires `archfit/gate`) →
-   `gate_required`; `not_enforced` (no ruleset requires it and the branch is not protected) or `unknown` (the read failed,
-   no `Rules` role, or the branch is protected and classic protection is unreadable) → `gate_advisory` with that
+   `gate_required`; `not_enforced` (no readable rule or protection requires it) or `unknown` (the read failed,
+   no `Rules` role, or the branch is protected and GitHub does not list what it requires) → `gate_advisory` with that
    `Enforcement` and a diagnostic that names the rule to add. `unknown` is never shown as enforced.
 
 With valid settings, the workflow file, the policy file and "reported" are read side by side and judged in this

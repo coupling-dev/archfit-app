@@ -79,10 +79,11 @@ type Repos interface {
 
 // BranchRules is what GitHub enforces on one branch, as far as this App can read it.
 type BranchRules struct {
-	// Contexts are the status checks that active rulesets require on the branch.
+	// Contexts are the status checks that active rulesets, and classic branch protection when it is readable, require.
 	Contexts []string
-	// Protected reports that GitHub marks the branch protected. Classic branch protection needs the Administration
-	// permission to read, which the App does not hold, so a protected branch may require checks that Contexts lacks.
+	// Protected reports that GitHub marks the branch protected but does not show which checks it requires: classic
+	// branch protection may need the Administration permission to read, which the App does not hold. Contexts may then
+	// lack a required check.
 	Protected bool
 }
 

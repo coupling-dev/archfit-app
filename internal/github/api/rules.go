@@ -7,8 +7,7 @@ import (
 
 const ruleRequiredChecks = "required_status_checks"
 
-// RequiredChecks reads the status checks that active rulesets require on branch, and whether GitHub marks the branch
-// protected. Both reads need only the Metadata permission.
+// RequiredChecks reads the status checks that active rulesets and readable classic branch protection require on branch.
 func (c *Client) RequiredChecks(ctx context.Context, r RepoRef, branch string) (BranchRules, error) {
 	cr, base, err := r.target()
 	if err != nil {
@@ -44,11 +43,22 @@ func (c *Client) RequiredChecks(ctx context.Context, r RepoRef, branch string) (
 	k = call{cred: cr, method: http.MethodGet, route: "/repos/{r}/branches/{branch}",
 		url: apiURL(base+"/branches/"+escaped, nil)}
 	var branchJSON struct {
-		Protected bool `json:"protected"`
+		Protected  bool `json:"protected"`
+		Protection *struct {
+			Checks *struct {
+				Contexts []string `json:"contexts"`
+			} `json:"required_status_checks"`
+		} `json:"protection"`
 	}
 	if err := c.send(ctx, k, &branchJSON); err != nil {
 		return BranchRules{}, err
 	}
-	out.Protected = branchJSON.Protected
+	// Classic protection lists its required checks only to a token that may read them. When it does, they count like a
+	// ruleset's; a protected branch that does not list them is one whose checks the App cannot see.
+	readable := branchJSON.Protection != nil && branchJSON.Protection.Checks != nil
+	if readable {
+		out.Contexts = append(out.Contexts, branchJSON.Protection.Checks.Contexts...)
+	}
+	out.Protected = branchJSON.Protected && !readable
 	return out, nil
 }

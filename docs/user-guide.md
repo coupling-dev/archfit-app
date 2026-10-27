@@ -654,8 +654,9 @@ baseline already accepts, and accepts nothing new.
 The status page shows `gate_required` only when GitHub requires `archfit/gate` on the default branch. The App reads
 the branch's rulesets for this. If the settings say `gate: required` and no ruleset requires the check, the page stays
 at `gate_advisory`, says "Gate is required in settings, not enforced by GitHub", and names the rule to add. If the App
-cannot tell, it says "enforcement not confirmed" and never shows `gate_required`. The App cannot read classic branch
-protection, so a branch that uses it shows "not confirmed" until you add the check to a ruleset.
+cannot tell, it says "enforcement not confirmed" and never shows `gate_required`. The App reads classic branch
+protection only when GitHub lists its required checks to the App. When GitHub does not, a protected branch shows "not
+confirmed" until you add the check to a ruleset.
 
 > **CAUTION:** Do not require `archfit/gate` while the settings file has `gate: advisory`.
 > The App does not publish that check in advisory mode. The pull request stays blocked.

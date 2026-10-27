@@ -20,13 +20,17 @@ func TestRequiredChecksReadsRulesetsAndTheProtectedFlag(t *testing.T) {
 		name      string
 		rules     any
 		protected bool
+		classic   []string // the checks the branch endpoint lists; nil: it lists none
 		want      BranchRules
 	}{
-		{"ruleset requires checks", []any{map[string]any{"type": "deletion"}, required("archfit/gate", "Test")}, false,
+		{"ruleset requires checks", []any{map[string]any{"type": "deletion"}, required("archfit/gate", "Test")}, false, nil,
 			BranchRules{Contexts: []string{"archfit/gate", "Test"}}},
-		{"two rulesets", []any{required("a"), required("b")}, false, BranchRules{Contexts: []string{"a", "b"}}},
-		{"no rules", []any{}, false, BranchRules{}},
-		{"protected branch without ruleset checks", []any{}, true, BranchRules{Protected: true}},
+		{"two rulesets", []any{required("a"), required("b")}, false, nil, BranchRules{Contexts: []string{"a", "b"}}},
+		{"no rules", []any{}, false, nil, BranchRules{}},
+		{"protected branch that shows no checks", []any{}, true, nil, BranchRules{Protected: true}},
+		{"readable classic protection with the gate", []any{}, true, []string{"Test", "archfit/gate"}, BranchRules{Contexts: []string{"Test", "archfit/gate"}}},
+		{"readable classic protection without the gate", []any{}, true, []string{"Test"}, BranchRules{Contexts: []string{"Test"}}},
+		{"ruleset and readable protection", []any{required("a")}, true, []string{"b"}, BranchRules{Contexts: []string{"a", "b"}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -42,7 +46,11 @@ func TestRequiredChecksReadsRulesetsAndTheProtectedFlag(t *testing.T) {
 					writeJSON(w, http.StatusOK, tt.rules)
 				})
 				mux.HandleFunc("GET /repos/acme/app/branches/{branch...}", func(w http.ResponseWriter, _ *http.Request) {
-					writeJSON(w, http.StatusOK, map[string]any{"name": "release/x", "protected": tt.protected})
+					body := map[string]any{"name": "release/x", "protected": tt.protected}
+					if tt.classic != nil {
+						body["protection"] = map[string]any{"enabled": true, "required_status_checks": map[string]any{"contexts": tt.classic}}
+					}
+					writeJSON(w, http.StatusOK, body)
 				})
 			})
 			got, err := env.c.RequiredChecks(context.Background(), ref, "release/x")
