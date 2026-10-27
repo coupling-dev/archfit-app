@@ -1,8 +1,11 @@
 package ui
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 
@@ -71,5 +74,59 @@ func TestActionRequiredKeepsReviewContextWithoutReadingArtifact(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestIdentityFailureTellsOneStoryOnPageAndComment is the regression for coupling-dev/pumba-pilot#11, where the page
+// withheld the findings and the comment listed them for one head. The check carries the published summary of the
+// unknown-identity golden and names a report that would show cycle findings if either surface admitted it.
+func TestIdentityFailureTellsOneStoryOnPageAndComment(t *testing.T) {
+	golden := func(name string) string {
+		t.Helper()
+		raw, err := os.ReadFile("../../gate/feedback/testdata/golden/unknown-identity." + name + ".md")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(raw)
+	}
+	payload := prArtifact(t, prPolicy)
+	sum := sha256.Sum256(payload)
+	e := newEnv(t)
+	e.gh.checks[repoName+"@"+sha(4)+"#"+checkState] = []api.CheckRun{{
+		ID: 9, Name: checkState, HeadSHA: sha(4), Status: "completed", Conclusion: "action_required",
+		Title: "Action required", ExternalID: "v1:88:1:sha256:" + hex.EncodeToString(sum[:]), Summary: golden("state"),
+	}}
+	e.gh.artifacts[88] = payload
+
+	var page struct {
+		Unavailable    string `json:"unavailable"`
+		ViolationCount int    `json:"violation_count"`
+		AcceptedCount  int    `json:"accepted_count"`
+		AdvisoryCount  int    `json:"advisory_count"`
+		Tasks          string `json:"tasks"`
+		Check          struct {
+			Reason string `json:"reason"`
+			Next   string `json:"next"`
+		} `json:"check"`
+	}
+	e.as("alice", permRead).getJSON("/api/repos/"+repoName+"/pulls/4", &page)
+	if page.Unavailable != actionRequired || page.ViolationCount+page.AcceptedCount+page.AdvisoryCount != 0 || page.Tasks != "" {
+		t.Errorf("page admitted findings under an identity failure: %+v", page)
+	}
+
+	comment := golden("comment")
+	for _, finding := range []string{"no-module-cycles", "pkg_chaos", "pkg_util", "Imbalanced coupling"} {
+		if strings.Contains(comment, finding) {
+			t.Errorf("comment lists %q for a head the page withholds", finding)
+		}
+	}
+	if !strings.Contains(comment, "No usable report") || !strings.Contains(comment, "Cause: Unknown engine identity.") {
+		t.Errorf("comment does not say what the page says:\n%s", comment)
+	}
+	if !strings.Contains(page.Check.Reason, "unknown_engine_identity") || !strings.Contains(comment, "**Next:** CI maintainer: "+page.Check.Next) {
+		t.Errorf("page and comment give different next actions: page %q, comment:\n%s", page.Check.Next, comment)
+	}
+	if calls := e.gh.called("ArtifactByID"); len(calls) != 0 {
+		t.Errorf("page read the artifact of an action-required check: %+v", calls)
 	}
 }
