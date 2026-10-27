@@ -1127,13 +1127,38 @@ func TestStatusPageShowsBranchPullsAndSetup(t *testing.T) {
 			t.Errorf("steps = %+v", body.Steps)
 		}
 	})
-	t.Run("required still names the ruleset", func(t *testing.T) {
+	t.Run("an enforced gate has no setup step left", func(t *testing.T) {
 		e := newEnv(t)
 		setup(e, onboarding.StageRequired)
-		if next := read(e).Next; !strings.Contains(next, "required check in a GitHub ruleset") {
-			t.Errorf("next = %q", next)
+		e.onb.progress.Enforcement = onboarding.EnforcementEnforced
+		body := read(e)
+		if body.Next != "" || body.Stage != "Gate is required" || !stepOf(body, "Required").Current {
+			t.Errorf("stage = %q, next = %q, steps = %+v", body.Stage, body.Next, body.Steps)
 		}
 	})
+	// The settings alone never block a merge: a gate GitHub is not known to require stays on the Advisory step and says
+	// which rule to add, or that the App could not confirm it.
+	for _, tt := range []struct {
+		name        string
+		enforcement onboarding.Enforcement
+		stage, next string
+	}{
+		{"not enforced", onboarding.EnforcementNotEnforced, "Gate is required in settings, not enforced by GitHub",
+			"Make archfit/gate a required status check in a GitHub ruleset on " + mainBranch + "."},
+		{"unknown", onboarding.EnforcementUnknown, "Gate is required in settings, enforcement not confirmed",
+			"Confirm archfit/gate is a required status check on " + mainBranch + "."},
+	} {
+		t.Run("a required gate that is "+tt.name+" stays at advisory", func(t *testing.T) {
+			e := newEnv(t)
+			setup(e, onboarding.StageAdvisory)
+			e.onb.progress.Enforcement = tt.enforcement
+			body := read(e)
+			if body.Stage != tt.stage || body.Next != tt.next || !strings.Contains(body.NextHow, "archfit/gate") ||
+				!stepOf(body, "Advisory").Current || stepOf(body, "Required").Done || stepOf(body, "Required").Current {
+				t.Errorf("stage = %q, next = %q, how = %q, steps = %+v", body.Stage, body.Next, body.NextHow, body.Steps)
+			}
+		})
+	}
 	t.Run("a failed list leaves the page", func(t *testing.T) {
 		e := newEnv(t)
 		setup(e, onboarding.StageAdvisory)
