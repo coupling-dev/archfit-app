@@ -214,7 +214,7 @@ The status page derives its stage from GitHub on every read.
 | `report_received` | First report received | Review and merge the policy pull request |
 | `policy_merged`   | Policy merged         | Wait for the first default-branch run    |
 | `gate_advisory`   | Gate is advisory      | Enable the gate by pull request          |
-| `gate_required`   | Gate is required      | None                                     |
+| `gate_required`   | Gate is required      | None; GitHub requires `archfit/gate`     |
 
 ### Give it to a coding agent
 
@@ -264,7 +264,7 @@ The status page derives its stage from GitHub on every read.
 | `report_received` | First report received | Review and merge the policy pull request |
 | `policy_merged`   | Policy merged         | Wait for the first default-branch run    |
 | `gate_advisory`   | Gate is advisory      | Enable the gate by pull request          |
-| `gate_required`   | Gate is required      | None                                     |
+| `gate_required`   | Gate is required      | None; GitHub requires `archfit/gate`     |
 
 ### Managed discovery
 
@@ -650,6 +650,12 @@ baseline already accepts, and accepts nothing new.
 1. Open a pull request that sets `gate: required` in the settings file.
 2. Get a policy owner approval and merge the pull request.
 3. Add `archfit/gate` as a required check in the GitHub ruleset.
+
+The status page shows `gate_required` only when GitHub requires `archfit/gate` on the default branch. The App reads
+the branch's rulesets for this. If the settings say `gate: required` and no ruleset requires the check, the page stays
+at `gate_advisory`, says "Gate is required in settings, not enforced by GitHub", and names the rule to add. If the App
+cannot tell, it says "enforcement not confirmed" and never shows `gate_required`. The App cannot read classic branch
+protection, so a branch that uses it shows "not confirmed" until you add the check to a ruleset.
 
 > **CAUTION:** Do not require `archfit/gate` while the settings file has `gate: advisory`.
 > The App does not publish that check in advisory mode. The pull request stays blocked.

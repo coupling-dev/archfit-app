@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/policy"
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
@@ -66,7 +67,18 @@ func TestCustomerFlowEndToEnd(t *testing.T) {
 
 	// An owner switches the gate by PR; onboarding never writes "required" itself.
 	f.hub.put(r, r.DefaultBranch, settings.Path, renderSettings(settings.GateRequired, workflowPath))
-	wantStage(t, mustProgress(t, f.svc, r), StageRequired, "Required gate is active")
+	p = mustProgress(t, f.svc, r)
+	wantStage(t, p, StageAdvisory, "GitHub does not enforce it")
+	if p.Enforcement != EnforcementNotEnforced {
+		t.Errorf("Enforcement = %q, want %q until a ruleset requires archfit/gate", p.Enforcement, EnforcementNotEnforced)
+	}
+
+	f.hub.setRules(r, api.BranchRules{Contexts: []string{"archfit/gate"}})
+	p = mustProgress(t, f.svc, r)
+	wantStage(t, p, StageRequired, "Required gate is active")
+	if p.Enforcement != EnforcementEnforced {
+		t.Errorf("Enforcement = %q, want %q", p.Enforcement, EnforcementEnforced)
+	}
 
 	if n := f.hub.prCount(r, ""); n != 2 {
 		t.Errorf("%d pull requests, want exactly two", n)

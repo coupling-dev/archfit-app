@@ -124,6 +124,7 @@ a `truncated` result: it returns the paths read so far with `truncated` true.
 - Pull mapping, everywhere: `Merged` = `merged_at` is set **[default: list responses carry no `merged` flag]**;
   `Body` = `body` (`null` → `""`); `URL` = `html_url`; `State` as GitHub gives it (a merged pull is `closed`).
 - `BranchHead`: `GET /repos/{r}/git/ref/heads/{branch}` → `object.sha`; `404` → `ErrNotFound`.
+- `RequiredChecks` (role `Rules`): `GET /repos/{r}/rules/branches/{branch}` (paged) → the `context` of every `required_status_checks` rule, then `GET /repos/{r}/branches/{branch}` → `protected`. Either read failing fails the call, so a caller shows "unknown", never "not enforced". `Protected` is set because classic branch protection needs the Administration permission to read, which the App does not hold.
 - `ChangedFiles`: `GET /repos/{r}/pulls/{n}/files`; returns `filename` and, for renames, `previous_filename` too,
   deduplicated: renaming a protected file away is a change to it. `truncated` is true when the pagination cap
   was hit, or when the pull's `changed_files` count (one extra `GET /repos/{r}/pulls/{n}`) exceeds the number of

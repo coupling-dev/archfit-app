@@ -77,6 +77,20 @@ type Repos interface {
 	BranchHead(ctx context.Context, r RepoRef, branch string) (string, error)
 }
 
+// BranchRules is what GitHub enforces on one branch, as far as this App can read it.
+type BranchRules struct {
+	// Contexts are the status checks that active rulesets require on the branch.
+	Contexts []string
+	// Protected reports that GitHub marks the branch protected. Classic branch protection needs the Administration
+	// permission to read, which the App does not hold, so a protected branch may require checks that Contexts lacks.
+	Protected bool
+}
+
+// Rules reads what GitHub enforces on a branch.
+type Rules interface {
+	RequiredChecks(ctx context.Context, r RepoRef, branch string) (BranchRules, error)
+}
+
 type Pull struct {
 	Number       int
 	Title        string
@@ -218,6 +232,7 @@ type Users interface {
 
 var (
 	_ Repos    = (*Client)(nil)
+	_ Rules    = (*Client)(nil)
 	_ Pulls    = (*Client)(nil)
 	_ Checks   = (*Client)(nil)
 	_ Comments = (*Client)(nil)

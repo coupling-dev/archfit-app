@@ -24,6 +24,7 @@ func TestStageDerivation(t *testing.T) {
 		policy   bool
 		run      bool
 		check    bool
+		rules    []string // checks a ruleset requires on the default branch
 	}
 	advisory := renderSettings(settings.GateAdvisory, workflowPath)
 	required := renderSettings(settings.GateRequired, workflowPath)
@@ -50,7 +51,7 @@ func TestStageDerivation(t *testing.T) {
 			"", "Waiting for the first run on the default branch", ""},
 		{"policy and report advisory", setup{settings: advisory, workflow: true, policy: true, run: true, check: true}, StageAdvisory,
 			"", "Advisory feedback is active; an owner enables the gate by PR", ""},
-		{"policy and report required", setup{settings: required, workflow: true, policy: true, run: true, check: true}, StageRequired,
+		{"policy and report required", setup{settings: required, workflow: true, policy: true, run: true, check: true, rules: []string{"archfit/gate"}}, StageRequired,
 			"", "Required gate is active", ""},
 	}
 	for _, tc := range tests {
@@ -73,6 +74,10 @@ func TestStageDerivation(t *testing.T) {
 				} else {
 					f.hub.setReported(r, run)
 				}
+			}
+
+			if tc.setup.rules != nil {
+				f.hub.setRules(r, api.BranchRules{Contexts: tc.setup.rules})
 			}
 
 			p := mustProgress(t, f.svc, r)
@@ -535,5 +540,66 @@ func mustStart(t *testing.T, f *fixture) {
 	t.Helper()
 	if _, err := f.svc.StartCustomer(context.Background(), f.repo, owners); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestRequiredGateIsEnforcedOnlyWhenGitHubRequiresIt covers the settings that say gate: required. The stage is Required
+// only when a ruleset requires archfit/gate on the default branch; every other answer keeps the stage at Advisory, and
+// a failed or partial read is unknown, never enforced.
+func TestRequiredGateIsEnforcedOnlyWhenGitHubRequiresIt(t *testing.T) {
+	tests := []struct {
+		name        string
+		rules       *api.BranchRules // nil: the hub answers with no rules at all
+		readFails   bool
+		stage       Stage
+		enforcement Enforcement
+		diagnostic  string
+	}{
+		{"ruleset requires the gate", &api.BranchRules{Contexts: []string{"Test", "archfit/gate"}}, false, StageRequired, EnforcementEnforced, "Required gate is active"},
+		{"no rules", nil, false, StageAdvisory, EnforcementNotEnforced,
+			"Settings say gate: required, but GitHub does not enforce it. Add `archfit/gate` as a required status check in a ruleset on `main`"},
+		{"other checks only", &api.BranchRules{Contexts: []string{"Test"}}, false, StageAdvisory, EnforcementNotEnforced,
+			"Settings say gate: required, but GitHub does not enforce it. Add `archfit/gate` as a required status check in a ruleset on `main`"},
+		{"check named like the gate", &api.BranchRules{Contexts: []string{"archfit/state"}}, false, StageAdvisory, EnforcementNotEnforced,
+			"Settings say gate: required, but GitHub does not enforce it. Add `archfit/gate` as a required status check in a ruleset on `main`"},
+		{"classic protection hides its checks", &api.BranchRules{Protected: true}, false, StageAdvisory, EnforcementUnknown,
+			"Settings say gate: required. The App cannot read whether GitHub enforces it; confirm `archfit/gate` is a required status check on `main`"},
+		{"the read fails", nil, true, StageAdvisory, EnforcementUnknown,
+			"Settings say gate: required. The App cannot read whether GitHub enforces it; confirm `archfit/gate` is a required status check on `main`"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			r := f.repo
+			f.hub.put(r, r.DefaultBranch, settings.Path, renderSettings(settings.GateRequired, workflowPath))
+			f.hub.put(r, r.DefaultBranch, workflowPath, []byte("name: archfit\n"))
+			f.hub.put(r, r.DefaultBranch, ".archfit.yaml", []byte(validPolicy))
+			f.hub.setReported(r, api.WorkflowRun{ID: 9, Event: "push", Status: "completed", HeadSHA: runHeadSHA},
+				api.CheckRun{Name: stateCheck, HeadSHA: runHeadSHA})
+			if tc.rules != nil {
+				f.hub.setRules(r, *tc.rules)
+			}
+			if tc.readFails {
+				f.hub.failOn("RequiredChecks", api.ErrRateLimited)
+			}
+			p := mustProgress(t, f.svc, r)
+			if p.Stage != tc.stage || p.Enforcement != tc.enforcement || p.Diagnostic != tc.diagnostic {
+				t.Errorf("got %q %q %q, want %q %q %q", p.Stage, p.Enforcement, p.Diagnostic, tc.stage, tc.enforcement, tc.diagnostic)
+			}
+		})
+	}
+}
+
+// TestAdvisoryGateCarriesNoEnforcement: the question is asked only of a repository whose settings say required.
+func TestAdvisoryGateCarriesNoEnforcement(t *testing.T) {
+	f := newFixture(t)
+	r := f.repo
+	f.hub.put(r, r.DefaultBranch, settings.Path, renderSettings(settings.GateAdvisory, workflowPath))
+	f.hub.put(r, r.DefaultBranch, workflowPath, []byte("name: archfit\n"))
+	f.hub.put(r, r.DefaultBranch, ".archfit.yaml", []byte(validPolicy))
+	f.hub.setReported(r, api.WorkflowRun{ID: 9, Event: "push", Status: "completed", HeadSHA: runHeadSHA},
+		api.CheckRun{Name: stateCheck, HeadSHA: runHeadSHA})
+	if p := mustProgress(t, f.svc, r); p.Enforcement != "" || f.hub.calls["RequiredChecks"] != 0 {
+		t.Errorf("advisory gate: Enforcement = %q, RequiredChecks calls = %d; want none", p.Enforcement, f.hub.calls["RequiredChecks"])
 	}
 }

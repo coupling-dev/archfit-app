@@ -1248,7 +1248,9 @@ been withdrawn since the previous request.
   Data sharing row (`managed_ai`) only when it succeeds. Its error is not an error of the page; the `POST` routes enforce `admin` themselves.
   Setup steps: the stages of the onboarding path with the current one marked ("First report" is done only once a
   report arrived: `policy_merged` can come without one), and fixed advice at `gate_advisory` (rehearse, then the
-  settings pull request and the ruleset) and at `gate_required` (the ruleset). At `report_received`, `gate_advisory`
+  settings pull request and the ruleset). At `gate_required` GitHub enforces the gate and there is no step left; a gate
+  that settings call required but GitHub does not require (or the App cannot confirm) stays at `gate_advisory` and shows
+  the `Enforcement` wording with the ruleset to add. At `report_received`, `gate_advisory`
   and `gate_required` the page also reads `archfit/state` on the
   default-branch head (the overview's word and title) and `Pulls.OpenPulls`, newest first:
   at most 20 **[default]**, the rest counted, one `CheckRuns(head, "archfit/state")` each, at most 8 at a time; each

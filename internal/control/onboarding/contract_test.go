@@ -260,7 +260,7 @@ func TestNilSandboxIsNotAvailable(t *testing.T) {
 			f := newFixture(t)
 			d := Deps{Tokens: f.tokens, Proposals: fakeProposals{f.hub}, Consents: f.consents, Sandbox: f.sandbox, Now: f.clock.now}
 			tc.mutate(&d)
-			svc := newService(d, roles{repos: f.hub, actions: f.hub, checks: f.hub, pulls: f.hub})
+			svc := newService(d, roles{repos: f.hub, actions: f.hub, checks: f.hub, pulls: f.hub, rules: f.hub})
 
 			_, err := svc.StartManaged(context.Background(), f.repo, owners)
 			if !errors.Is(err, ErrNoSandbox) {
