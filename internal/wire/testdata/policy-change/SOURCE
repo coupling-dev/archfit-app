@@ -1,0 +1,14 @@
+{widen,addrule,exclude}.json: the policy_change object an Action envelope carries, `jq -c .policy_change` of the engine's
+`archfit config compare --json` output (archfit.config-compare.v1), no trailing newline.
+repository: github.com/alexei-led/archfit-action
+commit: e168b961824b6801e74f0f0938b49be7e1286819 (X3b)
+path: tests/fixtures/policy-change/{widen,addrule,exclude}.json (its SOURCE.md has the command and the policies)
+sha256 of the Action files, before jq:
+  widen.json   79a08107a657c97abb7f64127f9738321ff0b3f3578637c21bd818971f29a621
+  addrule.json bb069ce1c27741fae5a259a3cc57202b841ffd1fc4dbed9029a971f9e87feabf
+  exclude.json 91c51bce25d403a3d6495eb626c919f4d5aa3f10b6aae9031fee90af128a502e
+sha256 of the files here:
+  widen.json   2d0bf127caf8c5091c9c0e1dfa7e37b130cb9cfd98fd8c1f3e33048ae5d3c3b1
+  addrule.json 64d830dcd43e4b740d324f25f1c2761d9abccab7669d3282bdda9e4761133940
+  exclude.json 2b71c5ac8b5b39a72f6c0acf041fd2cea1d044f72c56494f5c395bcd02b152a8
+note: used by the envelope and ingest tests to prove the strict decoder and DecodePolicyChange read what the Action sends.
