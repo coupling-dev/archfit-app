@@ -1999,3 +1999,26 @@ test('docs: the screenshots of the report-derived action-required page and the u
     await page.screenshot({ path: new URL(`overview-gate-not-enforced-${scheme}.png`, shotsDir).pathname, fullPage: true });
   }
 });
+
+// The owner approval box of a pull request that changes protected files, as an owner sees it: a person's pull
+// request, and one an agent identity opened, which the box marks before the owner approves. Light and dark, sample data.
+// Regenerate with ARCHFIT_DOCS_SHOTS=1.
+test('docs: the screenshots of the owner approval box', async ({ page }) => {
+  test.skip(!process.env.ARCHFIT_DOCS_SHOTS, 'set ARCHFIT_DOCS_SHOTS=1 to regenerate the guide screenshots');
+  await page.setViewportSize({ width: 1280, height: 900 });
+  // author_is_agent is about who opened the pull request; can_approve is about the owner viewing it.
+  const agentPull = { ...unapprovedPull, approval: { ...approvalMissing, author_is_agent: true } };
+  for (const scheme of ['light', 'dark'] as const) {
+    for (const [name, pull] of [
+      ['owner-approval', unapprovedPull],
+      ['owner-approval-agent-pr', agentPull],
+    ] as const) {
+      await page.unrouteAll();
+      await page.emulateMedia({ colorScheme: scheme });
+      await open(page, '/r/acme/app/pull/4', { pull });
+      const box = page.getByRole('region', { name: 'Owner approval' });
+      await expect(box).toBeVisible();
+      await box.screenshot({ path: new URL(`${name}-${scheme}.png`, shotsDir).pathname });
+    }
+  }
+});

@@ -583,6 +583,18 @@ one of two ways:
   since the page loaded, the App refuses and asks you to reload. The button needs `write` permission and shows only
   for a policy owner who is not listed in `agents`.
 
+![The owner approval box of a pull request that changes protected files](images/owner-approval-light.png#gh-light-mode-only)
+![The owner approval box of a pull request that changes protected files](images/owner-approval-dark.png#gh-dark-mode-only)
+
+_The box lists each protected file and its digest at the head, and shows **Approve this exact commit** only to a policy
+owner. Sample data._
+
+![The owner approval box of a pull request an agent identity opened](images/owner-approval-agent-pr-light.png#gh-light-mode-only)
+![The owner approval box of a pull request an agent identity opened](images/owner-approval-agent-pr-dark.png#gh-dark-mode-only)
+
+_A pull request opened by an account in `agents` is marked, so the owner reviews its changes to the protected files
+before approving. An account in `agents` signed in to the App never sees the button. Sample data._
+
 Pushing a commit is not an approval, whoever pushes it. A local coding agent pushes with its owner's credentials, so
 a push from an owner account says nothing about who decided.
 
