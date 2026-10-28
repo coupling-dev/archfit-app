@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate/feedback"
+	"github.com/alexei-led/archfit-app/internal/gate/ingest"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
 	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -70,23 +72,26 @@ func (g *Gate) serveUpload(w http.ResponseWriter, req *http.Request) {
 
 // decideAndPublish is steps 2 to 7 of the report upload flow. Every error leaves the pending check as it is.
 func (g *Gate) decideAndPublish(ctx context.Context, u Upload) (verdict.Outcome, error) {
+	// The protected ref is always the default branch. A pull request's base is the branch a pull request asks to merge
+	// into, and an agent controls it: the settings and policy read there could be loosened in that very change. A
+	// pull request into any other base therefore never gets a success, which is what unsupported_event says.
 	target := inputs.Target{
 		Repo:        u.Binding.Repo,
 		PullRequest: u.Binding.PullRequest,
 		HeadSHA:     u.Binding.HeadSHA,
-		BaseRef:     u.Binding.BaseRef,
+		BaseRef:     u.Binding.Repo.DefaultBranch,
 		Fork:        u.Binding.Fork,
 	}
-	if target.PullRequest == 0 {
-		// The binding names the branch the run executed on; only the default branch is a protected ref.
-		target.BaseRef = u.Binding.Repo.DefaultBranch
+	problems := u.Problems
+	if u.Binding.PullRequest != 0 && u.Binding.BaseRef != u.Binding.Repo.DefaultBranch {
+		problems = append(slices.Clone(problems), ingest.ProblemUnsupportedEvent)
 	}
 	trusted, err := g.resolver.Resolve(ctx, target, g.now())
 	if err != nil {
 		return verdict.Outcome{}, fmt.Errorf("gate: resolve inputs: %w", err)
 	}
 	outcome := verdict.Decide(verdict.Facts{
-		Problems:         u.Problems,
+		Problems:         problems,
 		BaselineDigest:   u.BaselineDigest,
 		LabelsDigest:     u.LabelsDigest,
 		Report:           u.Report,

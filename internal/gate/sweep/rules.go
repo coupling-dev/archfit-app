@@ -98,12 +98,20 @@ func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted)
 	return nil
 }
 
-// Withdrawn reports whether rc concluded without asking for action although tr now lacks the owner approval that
-// verdict.Decide demands: the approval it relied on was dismissed or followed by a request for changes, the approver
-// left the owners of the protected settings, or the pull now changes a protected path. Only success and failure
-// match, so a pending, zero or unreadable receipt never does.
+// Decided reports whether rc is a decision on the report: success, failure, or an action_required whose reason comes
+// from the report (missing required coverage, a baseline that is not comparable, a policy defect). The report is shown
+// under such a result, and the owner approval that admitted the head's inputs matters to it as to success. Any other
+// action_required result, and a pending, zero or unreadable receipt, already says what to do and is not decided.
+func Decided(rc feedback.Receipt) bool {
+	return rc.Conclusion == verdict.Success || rc.Conclusion == verdict.Failure ||
+		(rc.Conclusion == verdict.ActionRequired && verdict.ReportDerivedAction(rc.Reason))
+}
+
+// Withdrawn reports whether rc is Decided although tr now lacks the owner approval that verdict.Decide demands: the
+// approval it relied on was dismissed or followed by a request for changes, the approver left the owners of the
+// protected settings, or the pull now changes a protected path.
 func Withdrawn(rc feedback.Receipt, tr inputs.Trusted) bool {
-	return (rc.Conclusion == verdict.Success || rc.Conclusion == verdict.Failure) && verdict.Unapproved(tr)
+	return Decided(rc) && verdict.Unapproved(tr)
 }
 
 // stale reports whether the receipt was computed from inputs that are no longer on the protected ref,

@@ -42,6 +42,7 @@ const (
 	fixtureBlocked   = "blocked"
 	fixtureAttention = "attention-warning-only"
 	fixtureNoProfile = "unknown-identity"
+	fixtureCoverage  = "missing-required-evidence"
 
 	basePolicy = "version: 1\nmodules:\n  a:\n    paths: [\"pkg/a/**\"]\n"
 )
@@ -349,13 +350,14 @@ func (w *world) event(kind webhook.EventKind, p *pull) webhook.Event {
 	return webhook.Event{
 		Kind: kind, DeliveryID: "delivery-1", InstallationID: p.repo.InstallationID, Repo: p.repo.FullName,
 		RepoPrivate: p.repo.Private, PullRequest: p.number, HeadSHA: pl.HeadSHA, HeadRepo: pl.HeadRepo, BaseRef: pl.BaseRef,
+		DefaultBranch: p.repo.DefaultBranch,
 	}
 }
 
 func (w *world) pushEvent(r api.Repo, paths ...string) webhook.Event {
 	return webhook.Event{
 		Kind: webhook.DefaultBranchPush, DeliveryID: "delivery-push", InstallationID: r.InstallationID, Repo: r.FullName,
-		RepoPrivate: r.Private, HeadSHA: w.sha(), HeadRepo: r.FullName, BaseRef: r.DefaultBranch, ChangedPaths: paths,
+		RepoPrivate: r.Private, HeadSHA: w.sha(), HeadRepo: r.FullName, BaseRef: r.DefaultBranch, DefaultBranch: r.DefaultBranch, ChangedPaths: paths,
 	}
 }
 

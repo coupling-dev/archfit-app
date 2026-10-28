@@ -1239,7 +1239,8 @@ Context run identity, attempt, full head revision and report/input digests remai
 Missing historical Action SHA, analysis time and base revision are explicit in the UI, never inferred from today's
 manifest or App build. Check-start time is labelled separately. Report schema comes only from an admitted artifact.
 `pullBody.RunID` remains the admitted report identity; context RunID cannot populate artifact hints. An
-action-required result still returns nil report. Findings and Graph have distinct unavailable capability states;
+action-required result returns a report only when every reason of its check's summary is a known, report-derived one
+(`verdict.ClassifyDisplayReason`, the rule the comment's `presentation` uses); otherwise it returns nil report. Findings and Graph have distinct unavailable capability states;
 admitted partial evidence is marked, not described as passing.
 
 ### Reads made ahead
@@ -1284,7 +1285,9 @@ been withdrawn since the previous request.
   Data sharing row (`managed_ai`) only when it succeeds. Its error is not an error of the page; the `POST` routes enforce `admin` themselves.
   Setup steps: the stages of the onboarding path with the current one marked ("First report" is done only once a
   report arrived: `policy_merged` can come without one), and fixed advice at `gate_advisory` (rehearse, then the
-  settings pull request and the ruleset) and at `gate_required` (the ruleset). At `report_received`, `gate_advisory`
+  settings pull request and the ruleset). At `gate_required` GitHub enforces the gate and there is no step left; a gate
+  that settings call required but GitHub does not require (or the App cannot confirm) stays at `gate_advisory` and shows
+  the `Enforcement` wording with the ruleset to add. At `report_received`, `gate_advisory`
   and `gate_required` the page also reads `archfit/state` on the
   default-branch head (the overview's word and title) and `Pulls.OpenPulls`, newest first:
   at most 20 **[default]**, the rest counted, one `CheckRuns(head, "archfit/state")` each, at most 8 at a time; each
@@ -1340,8 +1343,11 @@ been withdrawn since the previous request.
   digests or "deleted by this commit", who approved, the Approve button only when `can_approve`, else the reason, a
   note that a pull request opened by an agent identity was, and that an approval holds for this commit only. Its
   `Title` is the headline: feedback already states the effect on merge there, so the page never derives one of its own.
-  A run that concludes `action_required` shows no finding: the sweep keeps the old run in a withdrawn result's
-  `external_id`, so its old report would still match. Its `external_id` is
+  A run that concludes `action_required` shows no finding unless every reason its summary records is report-derived
+  (missing required coverage, a baseline that is not comparable, a policy defect): the sweep keeps the old run in a
+  withdrawn result's `external_id`, so its old report would still match, and in required mode it rewrites the summary with
+  the reason of the withdrawal, which is not report-derived (a report-derived action_required counts as decided, so
+  approval loss withdraws it as it does a success; advisory mode withdraws nothing, as for a neutral result before). An unknown reason, an unparsed summary or a mix keeps the report out. Its `external_id` is
   `v1:<run_id>:<attempt>:sha256:<hex>`; run 0 or an unreadable id is "no upload". Then
   `ArtifactID(run_id, "archfit-report")` and the download from the report cache or `ArtifactByID(id,
   report.MaxBytes)`, and the page shows it only when the SHA-256 of the bytes equals

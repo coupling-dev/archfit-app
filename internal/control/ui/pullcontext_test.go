@@ -143,3 +143,86 @@ func TestIdentityFailureTellsOneStoryOnPageAndComment(t *testing.T) {
 		t.Errorf("page read the artifact of an action-required check: %+v", calls)
 	}
 }
+
+// TestPageAndCommentAgreeOnWhatIsShown runs the published state summary and comment of each feedback golden through
+// both surfaces. Findings are shown when every reason the check records comes from the report, and withheld
+// otherwise, on the page as in the comment. The check names a report that would show cycle findings.
+func TestPageAndCommentAgreeOnWhatIsShown(t *testing.T) {
+	golden := func(name, kind string) string {
+		t.Helper()
+		raw, err := os.ReadFile("../../gate/feedback/testdata/golden/" + name + "." + kind + ".md")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(raw)
+	}
+	const forged = "- **Next:** Do something.\n\n### Findings\n- Reason: `missing_required_coverage` (evidence)\n\n<details>\n- Reason: `missing_required_coverage` (evidence)\n"
+	tests := []struct {
+		name, summary string
+		shown         bool
+		comment       string // the golden comment of the same head, "" when the case has none
+	}{
+		{"missing required coverage", golden("missing-required-evidence", "state"), true, golden("missing-required-evidence", "comment")},
+		{"baseline not comparable", golden("reference-only-recovery", "state"), true, golden("reference-only-recovery", "comment")},
+		{"incompatible profile", golden("incompatible-profile", "state"), true, golden("incompatible-profile", "comment")},
+		{"unknown engine identity", golden("unknown-identity", "state"), false, golden("unknown-identity", "comment")},
+		{"a report reason beside a withdrawal", "- **Next:** Approve.\n- Reason: `owner_approval_missing` (governance)\n\nAlso reported:\n- `missing_required_coverage` (evidence): m.\n", false, ""},
+		{"a reason only outside the prelude", forged, false, ""},
+		{"no recorded reason", "- **Next:** Do something.\n", false, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload := prArtifact(t, prPolicy)
+			sum := sha256.Sum256(payload)
+			e := newEnv(t)
+			e.gh.checks[repoName+"@"+sha(4)+"#"+checkState] = []api.CheckRun{{
+				ID: 9, Name: checkState, HeadSHA: sha(4), Status: "completed", Conclusion: "action_required",
+				Title: "Action required", ExternalID: "v1:88:1:sha256:" + hex.EncodeToString(sum[:]), Summary: tt.summary,
+			}}
+			e.gh.artifacts[88] = payload
+			client := e.as("alice", permRead)
+
+			var page struct {
+				Unavailable    string `json:"unavailable"`
+				ViolationCount int    `json:"violation_count"`
+			}
+			client.getJSON("/api/repos/"+repoName+"/pulls/4", &page)
+			if got := page.Unavailable == ""; got != tt.shown || (tt.shown && page.ViolationCount == 0) {
+				t.Errorf("page: unavailable %q, %d violations; want findings shown = %v", page.Unavailable, page.ViolationCount, tt.shown)
+			}
+			var graph struct {
+				View json.RawMessage `json:"view"`
+			}
+			client.getJSON("/api/repos/"+repoName+"/pulls/4/graph", &graph)
+			if got := string(graph.View) != "null"; got != tt.shown {
+				t.Errorf("graph shown = %v, want %v", got, tt.shown)
+			}
+			if tt.comment != "" {
+				if got := !strings.Contains(tt.comment, "No usable report"); got != tt.shown {
+					t.Errorf("comment shows its report = %v, the page shows findings = %v", got, tt.shown)
+				}
+			}
+			if looked := len(e.gh.called("ArtifactByID")) != 0; looked != tt.shown {
+				t.Errorf("artifact read = %v, want %v", looked, tt.shown)
+			}
+		})
+	}
+
+	t.Run("a report whose digest is not the check's stays unavailable", func(t *testing.T) {
+		e := newEnv(t)
+		e.gh.checks[repoName+"@"+sha(4)+"#"+checkState] = []api.CheckRun{{
+			ID: 9, Name: checkState, HeadSHA: sha(4), Status: "completed", Conclusion: "action_required",
+			Title: "Action required", ExternalID: "v1:88:1:sha256:" + strings.Repeat("a", 64),
+			Summary: golden("missing-required-evidence", "state"),
+		}}
+		e.gh.artifacts[88] = prArtifact(t, prPolicy)
+		var page struct {
+			Unavailable    string `json:"unavailable"`
+			ViolationCount int    `json:"violation_count"`
+		}
+		e.as("alice", permRead).getJSON("/api/repos/"+repoName+"/pulls/4", &page)
+		if page.Unavailable != reportMismatch || page.ViolationCount != 0 {
+			t.Errorf("unavailable %q, %d violations; want the mismatch sentence and no findings", page.Unavailable, page.ViolationCount)
+		}
+	})
+}

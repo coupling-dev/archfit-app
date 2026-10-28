@@ -31,6 +31,10 @@ type checkContextJSON struct {
 	Schema         string            `json:"schema"` // only from an admitted, digest-matched artifact
 	Profile        string            `json:"profile"`
 	Approved       *producerPinsJSON `json:"approved,omitempty"`
+
+	// reportDerived: every reason this App recorded for the check is a known, report-derived one, so the report may be
+	// shown under an action_required conclusion, as the comment shows it. False for anything unknown or unparsed.
+	reportDerived bool
 }
 
 type producerPinsJSON struct {
@@ -158,6 +162,7 @@ func qualifyHistoricalRecovery(out *checkContextJSON) (needsPins bool) {
 		}
 	}
 	if sourceAdmissible {
+		out.reportDerived = true
 		return needsPins
 	}
 	var diagnostics []recordedRecovery

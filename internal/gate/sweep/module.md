@@ -105,7 +105,7 @@ func Rerun(ctx context.Context, actions Actions, r RepoRef, rc Receipt) (RerunRe
 func Without(code ReasonCode, t Target, tr Trusted, rc Receipt) Publication
 
 // Withdrawn reports whether rc concluded without asking for action although tr now lacks the owner approval that
-// verdict.Decide demands. Only success and failure match, so a pending, zero or unreadable receipt never does.
+// verdict.Decide demands. Success, failure and an action_required whose reason is report-derived and itself asks for action (missing required coverage, a baseline that is not comparable, a policy defect: see `Decided`) match, because the report is shown under them; any other receipt never does.
 func Withdrawn(rc Receipt, tr Trusted) bool
 
 // Withdrawal is rule 5a, decided inside the head's publication lease (Publisher.Reconcile) from the gate check
@@ -166,8 +166,8 @@ Definitions:
   0b and 0c in every case.
   Nothing else of the required rules applies: no pending check, no `missing_upload`, no fork or suspension
   publication, no approval withdrawal, because advisory feedback never blocks and has no gate check to keep honest.
-- Withdrawn receipt: `rc.Conclusion` is `success` or `failure`, and `verdict.Unapproved(Trusted)` holds, the
-  condition of step 5 of `Decide`. `Decide` cannot reach either conclusion with such inputs, so the receipt was
+- Withdrawn receipt: `Decided(rc)` (`rc.Conclusion` is `success` or `failure`, or `action_required` with a report-derived reason that asks for action), and `verdict.Unapproved(Trusted)` holds, the
+  condition of step 5 of `Decide`. `Decide` cannot reach any of these conclusions with such inputs (step 5 comes first), so the receipt was
   decided under an owner approval that is gone: the review was dismissed or followed by a request for changes, the
   approver is no longer in the protected settings' `owners`, or the pull now changes a protected path (a base that
   moved or a new base branch). Edits of the settings file and the workflow file change no receipt digest, so only
