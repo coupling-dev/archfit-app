@@ -1203,7 +1203,8 @@ Context run identity, attempt, full head revision and report/input digests remai
 Missing historical Action SHA, analysis time and base revision are explicit in the UI, never inferred from today's
 manifest or App build. Check-start time is labelled separately. Report schema comes only from an admitted artifact.
 `pullBody.RunID` remains the admitted report identity; context RunID cannot populate artifact hints. An
-action-required result still returns nil report. Findings and Graph have distinct unavailable capability states;
+action-required result returns a report only when every reason of its check's summary is a known, report-derived one
+(`verdict.ClassifyDisplayReason`, the rule the comment's `presentation` uses); otherwise it returns nil report. Findings and Graph have distinct unavailable capability states;
 admitted partial evidence is marked, not described as passing.
 
 ### Reads made ahead
@@ -1302,8 +1303,11 @@ been withdrawn since the previous request.
 - Pull request page: `PullSummary(number)` → the settings file on the pull request's base (gate mode only, shown
   always; none or unparseable reads as advisory) and, side by side, `CheckRuns(head, "archfit/state")`, the run with the highest ID. Its
   `Title` is the headline: feedback already states the effect on merge there, so the page never derives one of its own.
-  A run that concludes `action_required` shows no finding: the sweep keeps the old run in a withdrawn result's
-  `external_id`, so its old report would still match. Its `external_id` is
+  A run that concludes `action_required` shows no finding unless every reason its summary records is report-derived
+  (missing required coverage, a baseline that is not comparable, a policy defect): the sweep keeps the old run in a
+  withdrawn result's `external_id`, so its old report would still match, and in required mode it rewrites the summary with
+  the reason of the withdrawal, which is not report-derived (a report-derived action_required counts as decided, so
+  approval loss withdraws it as it does a success; advisory mode withdraws nothing, as for a neutral result before). An unknown reason, an unparsed summary or a mix keeps the report out. Its `external_id` is
   `v1:<run_id>:<attempt>:sha256:<hex>`; run 0 or an unreadable id is "no upload". Then
   `ArtifactID(run_id, "archfit-report")` and the download from the report cache or `ArtifactByID(id,
   report.MaxBytes)`, and the page shows it only when the SHA-256 of the bytes equals

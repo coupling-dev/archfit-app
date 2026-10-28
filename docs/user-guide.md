@@ -658,6 +658,11 @@ cannot tell, it says "enforcement not confirmed" and never shows `gate_required`
 protection only when GitHub lists its required checks to the App. When GitHub does not, a protected branch shows "not
 confirmed" until you add the check to a ruleset.
 
+![The Overview of a repository whose settings say the gate is required while GitHub does not require it](images/overview-gate-not-enforced-light.png#gh-light-mode-only)
+![The Overview of a repository whose settings say the gate is required while GitHub does not require it](images/overview-gate-not-enforced-dark.png#gh-dark-mode-only)
+
+_The step stays at Advisory, and Needs you names the ruleset to add. Sample data._
+
 > **CAUTION:** Do not require `archfit/gate` while the settings file has `gate: advisory`.
 > The App does not publish that check in advisory mode. The pull request stays blocked.
 
@@ -708,8 +713,10 @@ on the pull request links to this page ("Details in Archfit").
   as on the comment (`3 of 3 ("classified source files")`), its confidence, and its **Result**: pass, warn or fail.
 - **For coding agents** holds the exact repair tasks of the run; **Copy** puts them on the clipboard.
 - The **Graph** tab draws the same report as a graph. See [The graph of a pull request](#the-graph-of-a-pull-request).
-- The page shows a report only when it is the one the check was computed from, and never under a result that asks
-  for action. Otherwise it says why: no result yet, action required, no upload, the report expired, the report does
+- The page shows a report only when it is the one the check was computed from. Under a result that asks for action it
+  shows the report only when every reason the check records comes from the report itself (missing required coverage,
+  a baseline that is not comparable, a policy defect), as the comment does; a withdrawn result, an unknown engine
+  identity or a missing approval never shows one. Otherwise it says why: no result yet, action required, no upload, the report expired, the report does
   not match the check, or the report could not be read.
 
 ### PR analysis and unavailable reports
@@ -730,8 +737,11 @@ repair actions are withheld. Unknown or malformed recovery is not promoted into 
 reference/coverage/selector recovery remains available for an approved but incomplete source. The original stored
 check, its historical outcome, recorded identity and links are not rewritten.
 
-An action-required or withdrawn result shows diagnostics but no report findings, tasks or graph. Findings explains
-that no findings are admitted; Graph explains that an empty view would not prove an absence of dependencies or
+A withdrawn result, or an action-required result with any reason that does not come from the report (stale inputs,
+an expired waiver, a suspension, a missing approval, an unknown engine identity, a mismatch of the policy or the
+baseline), shows diagnostics but no report findings, tasks or graph. An action-required result whose reasons all come
+from the report (missing required coverage, a baseline that is not comparable, a policy defect) shows the report with
+the recovery action, the same as the comment. Findings explains that no findings are admitted; Graph explains that an empty view would not prove an absence of dependencies or
 violations. Neither is a clean result. A report admitted for display can still be blocked or partial: the Findings
 tab marks partial evidence, and the Graph tab marks incomplete graph evidence. Missing evidence is never a pass.
 Provenance authenticates the producer, not the correctness of its report.
@@ -749,6 +759,12 @@ The literal HTML-like text is an escaping test. This is not live production data
 
 _The graph is available, but the engine's missing required rule remains visible. This report is admitted for display,
 not declared complete or safe to merge. Test-binary build fields that were not recorded stay explicit in About._
+
+![An action-required result whose reason comes from the report: the reason and next step, then the findings and the evidence gap](images/pr-report-action-required-light.png#gh-light-mode-only)
+![An action-required result whose reason comes from the report: the reason and next step, then the findings and the evidence gap](images/pr-report-action-required-dark.png#gh-dark-mode-only)
+
+_Missing required coverage ends the check as `action required`, and the report is what explains it, so the page shows
+the findings with the recovery action, as the pull request comment does. Sample data._
 
 ## See the graph
 

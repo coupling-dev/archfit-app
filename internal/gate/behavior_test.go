@@ -345,6 +345,50 @@ func TestReviewTriggersRerun(t *testing.T) {
 
 // An owner approval that a green receipt relied on can end without a new commit: the review is dismissed, or the owner
 // requests changes. Settings and workflow edits move no digest, so only the approval itself can show the change.
+// A report-derived action_required (missing required coverage) shows the report on the PR comment and the Pull page,
+// so the owner approval that admitted the head's inputs matters to it as to a success: when it is gone the result
+// becomes owner_approval_missing, on the event as on the hourly sweep, and the report is withheld.
+func TestWithdrawnApprovalEndsReportDerivedActionRequired(t *testing.T) {
+	ctx := context.Background()
+	triggers := map[string]func(w *world, p *pull){
+		"the ReviewChanged event": func(w *world, p *pull) { w.handle(w.event(webhook.ReviewChanged, p)) },
+		"the event is lost and the hourly sweep runs": func(w *world, _ *pull) {
+			w.now = w.now.Add(time.Hour)
+			if sum, err := w.gate.Sweep(ctx); err != nil || sum.Errors != 0 {
+				w.t.Errorf("sweep = %+v, %v", sum, err)
+			}
+		},
+	}
+	for name, trigger := range triggers {
+		t.Run(name, func(t *testing.T) {
+			w := newWorld(t)
+			p := w.openPull(w.shop, 7)
+			w.changes(p, "pkg/a/a.go", settings.Path) // a protected path with no digest of its own
+			w.handle(w.event(webhook.PullOpened, p))
+			w.review(p, ownerLogin, "APPROVED", p.head)
+			w.wantAnswer(w.upload(p, fixtureCoverage), 200, "action_required", "missing_required_coverage")
+
+			key := pullKey(p.repo.FullName, p.number)
+			for i, rv := range w.gh.reviews[key] {
+				if rv.Reviewer == ownerLogin && rv.State == "APPROVED" {
+					w.gh.reviews[key][i].State = "DISMISSED"
+				}
+			}
+			trigger(w, p)
+
+			if rc := w.receipt(p); rc.Reason != verdict.ReasonOwnerApprovalMissing {
+				t.Errorf("receipt reason = %q, want owner_approval_missing: the report was decided under an approval that is gone", rc.Reason)
+			}
+			w.wantGate(p, runCompleted, "action_required")
+			writes := w.gh.writes()
+			trigger(w, p)
+			if w.gh.writes() != writes || len(w.gh.reruns) != 0 {
+				t.Errorf("a repeated trigger added %d writes and reruns %v", w.gh.writes()-writes, w.gh.reruns)
+			}
+		})
+	}
+}
+
 func TestWithdrawnApprovalEndsSuccess(t *testing.T) {
 	ctx := context.Background()
 	edits := map[string]func(w *world, p *pull) []func(map[string]any){

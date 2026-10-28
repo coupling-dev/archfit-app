@@ -42,6 +42,7 @@ const (
 	fixtureBlocked   = "blocked"
 	fixtureAttention = "attention-warning-only"
 	fixtureNoProfile = "unknown-identity"
+	fixtureCoverage  = "missing-required-evidence"
 
 	basePolicy = "version: 1\nmodules:\n  a:\n    paths: [\"pkg/a/**\"]\n"
 )

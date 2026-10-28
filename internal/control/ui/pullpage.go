@@ -155,8 +155,13 @@ func (s *server) pullReport(ctx context.Context, sc scope, pull api.Pull, runs *
 	body.Check = actionContext(run)
 	// action_required withdraws a result (stale inputs, an expired waiver, a suspension, a missing approval) or says
 	// the evidence is unusable. The sweep keeps the old run in external_id when it withdraws, so the old report would
-	// still match the digest: findings are never shown under a result that asks for action.
-	if run.Conclusion == conclusionActionRequired {
+	// still match the digest: findings are not shown under a result that asks for action, with one exception. When every
+	// reason the check records comes from the report itself (missing required coverage, a baseline that is not
+	// comparable, a policy defect), the report is what explains the result and the comment shows it, so the page does too.
+	// The reasons are those of the check's current summary, which the sweep and the approval events rewrite when they
+	// withdraw a decided result in required mode, a report-derived action_required included (sweep.Decided); a reason
+	// that is unknown, not report-derived or not parsed keeps the report withheld.
+	if run.Conclusion == conclusionActionRequired && !body.Check.reportDerived {
 		body.Unavailable = actionRequired
 		return body, nil, nil
 	}

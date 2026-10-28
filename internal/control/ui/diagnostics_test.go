@@ -14,12 +14,13 @@ func TestHistoricalCheckRecoveryUsesAllReasonAuthority(t *testing.T) {
 	tests := []struct {
 		name, summary string
 		keep, hide    []string
+		admit         bool // every recorded reason is report-derived, so the page looks for the report
 	}{
-		{"unsafe primary", "- **Next:** SAFE_PRODUCER_ACTION\n- Reason: `unknown_engine_identity` (evidence)\n- Detail: safe source diagnostic\n\nAlso reported:\n- `missing_required_coverage` (evidence): REJECTED_RULE_FACT. Next: REJECTED_TOOL_ACTION\n- `blocking_findings` (architecture): REJECTED_BLOCKER_FACT. Next: REJECTED_SOURCE_ACTION\n- `baseline_not_comparable` (evidence): REJECTED_REFERENCE_FACT. Next: REJECTED_BASELINE_ACTION\n- `owner_approval_missing` (governance): protected policy. Next: INDEPENDENT_OWNER_ACTION", []string{"SAFE_PRODUCER_ACTION", "INDEPENDENT_OWNER_ACTION"}, []string{"REJECTED_", "LEGACY_PROFILE_FACT"}},
-		{"disqualifier last", "- **Next:** REJECTED_SOURCE_ACTION\n- Reason: `blocking_findings` (architecture)\n- Detail: REJECTED_BLOCKER_FACT\n\nAlso reported:\n- `missing_required_coverage` (evidence): REJECTED_RULE_FACT. Next: REJECTED_TOOL_ACTION\n- `owner_approval_missing` (governance): protected policy. Next: INDEPENDENT_OWNER_ACTION\n- `unknown_engine_identity` (evidence): safe source diagnostic. Next: SAFE_PRODUCER_ACTION", []string{"SAFE_PRODUCER_ACTION", "INDEPENDENT_OWNER_ACTION"}, []string{"REJECTED_", "LEGACY_PROFILE_FACT"}},
-		{"future code last", "- **Next:** REJECTED_CLEAN_ACTION\n- Reason: `healthy` (architecture)\n\nAlso reported:\n- `policy_mismatch` (evidence): protected digest. Next: INDEPENDENT_INPUT_ACTION\n- `future_reason` (evidence): REJECTED_FUTURE_FACT. Next: REJECTED_FUTURE_ACTION", []string{"INDEPENDENT_INPUT_ACTION"}, []string{"REJECTED_", "healthy (architecture)", "LEGACY_PROFILE_FACT"}},
-		{"malformed primary", "- **Next:** REJECTED_MALFORMED_ACTION\n- Reason: healthy ???\n\nAlso reported:\n- `owner_approval_missing` (governance): protected policy. Next: INDEPENDENT_OWNER_ACTION", []string{"INDEPENDENT_OWNER_ACTION"}, []string{"REJECTED_", "LEGACY_PROFILE_FACT"}},
-		{"approved incomplete source", "- **Next:** SAFE_REFERENCE_ACTION\n- Reason: `baseline_not_comparable` (evidence)\n- Detail: reference inputs changed\n\nAlso reported:\n- `missing_required_coverage` (evidence): independent tool gap. Next: SAFE_TOOL_ACTION\n- `policy_defect` (governance): selector matches nothing. Next: SAFE_SELECTOR_ACTION", []string{"SAFE_REFERENCE_ACTION", "SAFE_TOOL_ACTION", "SAFE_SELECTOR_ACTION", "LEGACY_PROFILE_FACT"}, nil},
+		{"unsafe primary", "- **Next:** SAFE_PRODUCER_ACTION\n- Reason: `unknown_engine_identity` (evidence)\n- Detail: safe source diagnostic\n\nAlso reported:\n- `missing_required_coverage` (evidence): REJECTED_RULE_FACT. Next: REJECTED_TOOL_ACTION\n- `blocking_findings` (architecture): REJECTED_BLOCKER_FACT. Next: REJECTED_SOURCE_ACTION\n- `baseline_not_comparable` (evidence): REJECTED_REFERENCE_FACT. Next: REJECTED_BASELINE_ACTION\n- `owner_approval_missing` (governance): protected policy. Next: INDEPENDENT_OWNER_ACTION", []string{"SAFE_PRODUCER_ACTION", "INDEPENDENT_OWNER_ACTION"}, []string{"REJECTED_", "LEGACY_PROFILE_FACT"}, false},
+		{"disqualifier last", "- **Next:** REJECTED_SOURCE_ACTION\n- Reason: `blocking_findings` (architecture)\n- Detail: REJECTED_BLOCKER_FACT\n\nAlso reported:\n- `missing_required_coverage` (evidence): REJECTED_RULE_FACT. Next: REJECTED_TOOL_ACTION\n- `owner_approval_missing` (governance): protected policy. Next: INDEPENDENT_OWNER_ACTION\n- `unknown_engine_identity` (evidence): safe source diagnostic. Next: SAFE_PRODUCER_ACTION", []string{"SAFE_PRODUCER_ACTION", "INDEPENDENT_OWNER_ACTION"}, []string{"REJECTED_", "LEGACY_PROFILE_FACT"}, false},
+		{"future code last", "- **Next:** REJECTED_CLEAN_ACTION\n- Reason: `healthy` (architecture)\n\nAlso reported:\n- `policy_mismatch` (evidence): protected digest. Next: INDEPENDENT_INPUT_ACTION\n- `future_reason` (evidence): REJECTED_FUTURE_FACT. Next: REJECTED_FUTURE_ACTION", []string{"INDEPENDENT_INPUT_ACTION"}, []string{"REJECTED_", "healthy (architecture)", "LEGACY_PROFILE_FACT"}, false},
+		{"malformed primary", "- **Next:** REJECTED_MALFORMED_ACTION\n- Reason: healthy ???\n\nAlso reported:\n- `owner_approval_missing` (governance): protected policy. Next: INDEPENDENT_OWNER_ACTION", []string{"INDEPENDENT_OWNER_ACTION"}, []string{"REJECTED_", "LEGACY_PROFILE_FACT"}, false},
+		{"approved incomplete source", "- **Next:** SAFE_REFERENCE_ACTION\n- Reason: `baseline_not_comparable` (evidence)\n- Detail: reference inputs changed\n\nAlso reported:\n- `missing_required_coverage` (evidence): independent tool gap. Next: SAFE_TOOL_ACTION\n- `policy_defect` (governance): selector matches nothing. Next: SAFE_SELECTOR_ACTION", []string{"SAFE_REFERENCE_ACTION", "SAFE_TOOL_ACTION", "SAFE_SELECTOR_ACTION", "LEGACY_PROFILE_FACT"}, nil, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -73,8 +74,8 @@ func TestHistoricalCheckRecoveryUsesAllReasonAuthority(t *testing.T) {
 			if string(before) != string(after) {
 				t.Fatal("historical CheckRun was mutated")
 			}
-			if len(e.gh.called("ArtifactID")) != 0 || len(e.gh.called("ArtifactByID")) != 0 {
-				t.Fatal("recovery projection changed report admission")
+			if looked := len(e.gh.called("ArtifactID")) != 0; looked != tt.admit {
+				t.Fatalf("looked for the report = %v, want %v: the recorded reasons decide report admission", looked, tt.admit)
 			}
 		})
 	}
