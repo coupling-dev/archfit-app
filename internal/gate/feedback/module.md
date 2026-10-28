@@ -59,6 +59,7 @@ type Receipt struct {
     PolicyDigest         string     `json:"policy_digest"`
     BaselineDigest       string     `json:"baseline_digest"`
     LabelsDigest         string     `json:"labels_digest"`
+    IdentityKey          string     `json:"identity_key,omitempty"` // the report's result identity, hashed; "" without one
     EarliestWaiverExpiry time.Time  `json:"earliest_waiver_expiry"`
     Conclusion           Conclusion `json:"conclusion"`
     Reason               ReasonCode `json:"reason"`
@@ -96,7 +97,9 @@ type CheckState struct {
 
 type Publisher interface {
     // Publish writes archfit/state, archfit/gate (only when Settings.Gate is required) and the
-    // single PR comment. It is idempotent per Receipt and never overwrites feedback of a newer head or run.
+    // single PR comment. It is idempotent per Receipt and never overwrites feedback of a newer head or run. A
+    // re-run on unchanged inputs updates the checks and the one comment in place; Receipt.IdentityKey never suppresses
+    // a publication (the identity is a claim inside a customer-attested report).
     Publish(ctx context.Context, p Publication) error
     // Pending creates the in_progress gate check if none exists on the head SHA.
     Pending(ctx context.Context, t Target) error

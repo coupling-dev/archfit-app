@@ -11,6 +11,7 @@ type optInt int
 type shadowReport struct {
 	SchemaVersion *string                    `json:"schema_version"`
 	Verdict       *string                    `json:"verdict"`
+	Identity      *shadowIdentity            `json:"identity"` // optional until the engine pin moves past v3.2.3
 	Decision      *shadowDecision            `json:"decision"`
 	Comparison    *shadowComparison          `json:"comparison"`
 	GateReference *shadowComparison          `json:"gate_reference"`
@@ -20,6 +21,23 @@ type shadowReport struct {
 	Findings      []shadowFinding            `json:"findings"`
 	AgentTasks    []shadowTask               `json:"agent_tasks"`
 	Seams         []shadowSeam               `json:"seams"`
+}
+
+type shadowIdentity struct {
+	SchemaVersion          *string          `json:"schema_version"`
+	PolicyDigest           string           `json:"policy_digest"`
+	BaselineDigest         string           `json:"baseline_digest"`
+	LabelsDigest           string           `json:"labels_digest"`
+	PolicyRef              *shadowPolicyRef `json:"policy_ref"`
+	BaseSHA                string           `json:"base_sha"`
+	HeadTreeDigest         string           `json:"head_tree_digest"`
+	EngineVersion          *string          `json:"engine_version"`
+	MeasurementProfileHash string           `json:"measurement_profile_hash"`
+}
+
+type shadowPolicyRef struct {
+	Ref *string `json:"ref"`
+	SHA *string `json:"sha"`
 }
 
 type shadowDecision struct {
@@ -203,9 +221,10 @@ type shadowCoverage struct {
 }
 
 type shadowToolCoverage struct {
-	Tool   *string `json:"tool"`
-	Status *string `json:"status"`
-	Reason string  `json:"reason"`
+	Tool    *string  `json:"tool"`
+	Status  *string  `json:"status"`
+	Reason  string   `json:"reason"`
+	Details []string `json:"details"` // v3.3.0: optional per-project lines; validated and dropped
 }
 
 type shadowSeam struct {

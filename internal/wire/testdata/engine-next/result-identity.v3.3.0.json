@@ -1,0 +1,60 @@
+{
+  "$defs": {
+    "ResultIdentity": {
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "enum": [
+            "archfit.result-identity.v1"
+          ]
+        },
+        "policy_digest": {
+          "type": "string"
+        },
+        "baseline_digest": {
+          "type": "string"
+        },
+        "labels_digest": {
+          "type": "string"
+        },
+        "policy_ref": {
+          "$ref": "#/$defs/PolicyRef"
+        },
+        "base_sha": {
+          "type": "string"
+        },
+        "head_tree_digest": {
+          "type": "string"
+        },
+        "engine_version": {
+          "type": "string"
+        },
+        "measurement_profile_hash": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "schema_version",
+        "engine_version"
+      ]
+    },
+    "PolicyRef": {
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "sha": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ref",
+        "sha"
+      ]
+    }
+  }
+}

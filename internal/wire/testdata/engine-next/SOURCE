@@ -1,0 +1,16 @@
+repository: github.com/alexei-led/archfit
+tag: v3.3.0
+revision: 5f6f7c862a5d6b735a6994fddb38f3a3ee870a77
+path: archfit.state.schema.json (/ResultIdentity and /PolicyRef only)
+sha256: 1d37f7d86fa0c55131acb705ebbeb6a709023344cc7817d0dd1c48caa38a4256
+note: an excerpt of the released state schema, vendored for the decoder's identity tests only. It is NOT the pin (SCHEMA_SOURCE, manifest and image move once, to v3.4.0). Delete this file when archfit.state.schema.json is re-pinned past v3.3.0.
+
+state-*.json: the engine's STATE-REPORT fixtures for the five E1 cases (new violation, existing violation, unmeasured ratchet
+from profile drift, dead selector, missing evidence).
+repository: github.com/alexei-led/archfit
+branch: feat/agent-gate-state-fixtures (PR #108, not merged when vendored)
+revision: 33eb56f8b07d24cb922e0e30912ae57987746270
+path: internal/output/agentout/testdata/cases/<case>.state.json
+note: byte copies. The engine validates them against its state schema (internal/reportschema). They carry the result identity
+block of v3.3.0. They are NOT the pin. The five exported *.json agent-result files of the same directory are another document
+(archfit.agent-result.v1) that the App never ingests.
