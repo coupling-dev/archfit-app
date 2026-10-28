@@ -28,6 +28,7 @@ const (
 	reactionRepoSweep    = "repo_sweep"
 	reactionNotOnboarded = "not_onboarded"
 	reactionNotAdmitted  = "not_admitted" // no operator approved the installation: nothing is read or written
+	reactionOtherBase    = "other_base"   // a pull request into a branch other than the default branch: nothing is read or written
 	// reactionApprovalWithdrawn is owner_approval_missing published over a receipt that asked for no action.
 	reactionApprovalWithdrawn = "approval_withdrawn"
 )
@@ -57,8 +58,14 @@ func (g *Gate) react(ctx context.Context, e webhook.Event) (string, error) {
 	}
 	switch e.Kind {
 	case webhook.PullOpened, webhook.PullSynchronized:
+		if otherBase(e.DefaultBranch, e.BaseRef) {
+			return reactionOtherBase, nil
+		}
 		return g.newHead(ctx, eventTarget(e))
 	case webhook.ReviewChanged:
+		if otherBase(e.DefaultBranch, e.BaseRef) {
+			return reactionOtherBase, nil
+		}
 		return g.approvalChanged(ctx, eventTarget(e))
 	case webhook.BranchPush, webhook.DefaultBranchPush:
 		return g.branchPushed(ctx, e)
@@ -74,7 +81,7 @@ func (g *Gate) branchPushed(ctx context.Context, e webhook.Event) (string, error
 	if err := g.recordPusher(ctx, t, e); err != nil {
 		return reactionNone, err
 	}
-	reaction, err := g.pullOnHead(ctx, t, e.Branch)
+	reaction, err := g.pullOnHead(ctx, t, e.Branch, e.DefaultBranch)
 	if err != nil || e.Kind == webhook.BranchPush || !protectedPush(e.ChangedPaths) {
 		return reaction, err
 	}
@@ -102,7 +109,7 @@ func (g *Gate) recordPusher(ctx context.Context, t inputs.Target, e webhook.Even
 
 // pullOnHead re-evaluates the newest pull request whose head is branch, when that head is the commit just pushed.
 // A pull request from a fork never has a head in this repository, so it is never found here.
-func (g *Gate) pullOnHead(ctx context.Context, t inputs.Target, branch string) (string, error) {
+func (g *Gate) pullOnHead(ctx context.Context, t inputs.Target, branch, defaultBranch string) (string, error) {
 	pr, err := g.pulls.PullByHead(ctx, t.Repo.RepoRef, branch)
 	if errors.Is(err, api.ErrNotFound) {
 		return reactionNone, nil
@@ -113,17 +120,29 @@ func (g *Gate) pullOnHead(ctx context.Context, t inputs.Target, branch string) (
 	if pr.State != "open" || pr.HeadSHA != t.HeadSHA {
 		return reactionNone, nil
 	}
+	if otherBase(defaultBranch, pr.BaseRef) {
+		return reactionOtherBase, nil
+	}
 	t.PullRequest, t.BaseRef = pr.Number, pr.BaseRef
 	return g.approvalChanged(ctx, t)
 }
 
-// eventTarget builds the target from the signed payload. ID and DefaultBranch stay zero:
-// pull request targets and RunRepo do not need them, and that saves one API call.
+// otherBase reports a pull request into a branch other than the default branch. The App decides only against the
+// default branch (the upload does not accept another base), so nothing is read or written for such a pull request. An
+// event whose payload names no default branch is not skipped: no event ever publishes a success.
+func otherBase(defaultBranch, base string) bool {
+	return defaultBranch != "" && base != defaultBranch
+}
+
+// eventTarget builds the target from the signed payload. ID stays zero: pull request targets do not need it, and
+// that saves one API call. The default branch comes from the payload: the repository sweep a push starts decides
+// only the pull requests into it.
 func eventTarget(e webhook.Event) inputs.Target {
 	return inputs.Target{
 		Repo: api.Repo{
-			RepoRef: api.RepoRef{InstallationID: e.InstallationID, FullName: e.Repo},
-			Private: e.RepoPrivate,
+			RepoRef:       api.RepoRef{InstallationID: e.InstallationID, FullName: e.Repo},
+			Private:       e.RepoPrivate,
+			DefaultBranch: e.DefaultBranch, // the repository sweep a push starts decides only pulls into it
 		},
 		PullRequest: e.PullRequest,
 		HeadSHA:     e.HeadSHA,

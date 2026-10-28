@@ -186,7 +186,7 @@ Body read (step 2): only the size cap is a rejection. When `http.MaxBytesReader`
 | `Event`, `HeadSHA`                       | the workflow run                                                             |
 | `RunID`, `RunAttempt`                    | verified claims (equal to the run by steps 10 and 12)                        |
 | `PullRequest`, `BaseSHA`, `MergeBaseSHA` | the resolved pull; zero values when there is none                            |
-| `BaseRef`                                | `pull.BaseRef`; without a pull, the branch of `Claims.Ref` (see below)       |
+| `BaseRef`                                | `pull.BaseRef`; without a pull, the branch of `Claims.Ref` (see below). The gate resolves every upload against the default branch and refuses a pull request whose base is another branch |
 | `Fork`                                   | step 14                                                                      |
 | `WorkflowPath`                           | `oidc.WorkflowPath(Claims.JobWorkflowRef, Repo.FullName)`; `""` if elsewhere |
 

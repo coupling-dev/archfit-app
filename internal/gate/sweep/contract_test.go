@@ -24,6 +24,9 @@ func eachRuleWorld(t *testing.T, now time.Time, fullName, baseRef string) (*worl
 	t.Helper()
 	w := newWorld(t)
 	r := w.repo(1, 11, fullName)
+	// The pulls target the default branch: a pull into any other base is not decided at all.
+	w.repos.repos[1][len(w.repos.repos[1])-1].DefaultBranch = baseRef
+	r.DefaultBranch = baseRef
 	open := func(n int, tr inputs.Trusted) inputs.Target {
 		return w.pullWith(r, api.Pull{Number: n, HeadRepo: fullName, BaseRef: baseRef}, tr)
 	}
@@ -232,8 +235,8 @@ func TestNotOnboardedIsSkipped(t *testing.T) {
 	for _, tg := range w.resolver.calls {
 		resolved = append(resolved, tg.PullRequest)
 	}
-	if !slices.Equal(resolved, []int{1, 3, 4}) {
-		t.Errorf("resolved pulls %v, want one per (repository, base): [1 3 4]", resolved)
+	if !slices.Equal(resolved, []int{1, 4}) {
+		t.Errorf("resolved pulls %v, want one per repository on its default branch: [1 4]; pull 3 targets another base", resolved)
 	}
 	if got := w.calls(); got != (calls{}) || w.pub.stateCalls != 0 {
 		t.Errorf("publisher calls = %+v, state calls = %d, want none", got, w.pub.stateCalls)
@@ -252,8 +255,8 @@ func TestRunRepoIsTheSamePassForOneRepository(t *testing.T) {
 		w.check(w.pull(r, i+1, trusted()), rc, t0.Add(-day))
 	}
 
-	// The caller builds the repository from a webhook: only RepoRef and Private are set.
-	sum := w.passRepo(api.Repo{RepoRef: first.RepoRef}, t0)
+	// The caller builds the repository from a webhook: RepoRef, Private and the default branch are set.
+	sum := w.passRepo(api.Repo{RepoRef: first.RepoRef, DefaultBranch: first.DefaultBranch}, t0)
 
 	if want := (Summary{Repos: 1, Pulls: 1, Rerun: 1}); sum != want {
 		t.Errorf("RunRepo summary = %+v, want %+v", sum, want)
@@ -647,5 +650,42 @@ func TestUnreadableAdmissionSkipsTheInstallationAsAnError(t *testing.T) {
 	}
 	if sum.Errors != 1 || sum.NotAdmitted != 0 || sum.Repos != 2 {
 		t.Errorf("summary = %+v; want 1 error and 2 repositories", sum)
+	}
+}
+
+// A pull request into a branch other than the default branch is not decided against: its upload ends
+// unsupported_event, so a receipt there would never match the inputs read at that base and the pass would re-run
+// it every hour. The pass leaves it alone: nothing resolved, published or re-run.
+func TestPullsIntoOtherBasesAreLeftAlone(t *testing.T) {
+	w := newWorld(t)
+	r := w.repo(1, 11, "acme/shop") // default branch main
+	stale := trusted()
+	stale.PolicyDigests = []string{"p2"} // the receipt below would be stale at its own base
+	tg := w.pullWith(r, api.Pull{Number: 1, HeadRepo: r.FullName, BaseRef: "release"}, stale)
+	w.check(tg, receipt(9, verdict.ReasonHealthy), t0.Add(-day))
+
+	for i := range 2 {
+		w.pass(t0.Add(time.Duration(i) * time.Hour))
+	}
+
+	if len(w.resolver.calls) != 0 || len(w.pub.published) != 0 || len(w.actions.rerunCalls) != 0 || w.calls() != (calls{}) {
+		t.Errorf("resolved %v, published %d, re-runs %v, calls %+v; want nothing for a pull into another base",
+			w.resolver.calls, len(w.pub.published), w.actions.rerunCalls, w.calls())
+	}
+}
+
+// A repository whose default branch is unknown decides nothing: a push event always names it, so an empty one is a
+// caller's mistake, and the safe answer is to read no pull request's base as the protected ref.
+func TestRunRepoWithoutADefaultBranchDecidesNothing(t *testing.T) {
+	w := newWorld(t)
+	r := w.repo(1, 11, "acme/shop")
+	rc := receipt(201, verdict.ReasonHealthy)
+	rc.PolicyDigest = "old"
+	w.check(w.pull(r, 1, trusted()), rc, t0.Add(-day))
+
+	sum := w.passRepo(api.Repo{RepoRef: r.RepoRef}, t0)
+
+	if sum.Pulls != 0 || len(w.resolver.calls) != 0 || len(w.actions.rerunCalls) != 0 || len(w.reasons()) != 0 {
+		t.Errorf("summary %+v, resolved %v, re-runs %v, published %v; want nothing decided", sum, w.resolver.calls, w.actions.rerunCalls, w.reasons())
 	}
 }

@@ -29,23 +29,23 @@ type fixtureCase struct {
 var fixtureCases = []fixtureCase{
 	{"pull_request_opened.json", "pull_request", Event{
 		Kind: PullOpened, InstallationID: 5001, Repo: "acme/shop", RepoPrivate: true, PullRequest: 42,
-		HeadSHA: shaA, HeadRepo: "acme/shop", BaseRef: "main",
+		HeadSHA: shaA, HeadRepo: "acme/shop", BaseRef: "main", DefaultBranch: "main",
 	}},
 	{"pull_request_synchronize.json", "pull_request", Event{
 		Kind: PullSynchronized, InstallationID: 5001, Repo: "acme/shop", RepoPrivate: true, PullRequest: 43,
-		HeadSHA: shaB, HeadRepo: "octocat/shop", BaseRef: "main",
+		HeadSHA: shaB, HeadRepo: "octocat/shop", BaseRef: "main", DefaultBranch: "main",
 	}},
 	{"pull_request_closed.json", "pull_request", Event{
 		Kind: PullClosed, InstallationID: 5001, Repo: "acme/shop", RepoPrivate: true, PullRequest: 44,
-		HeadSHA: "3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f", HeadRepo: "", BaseRef: "release/1.x",
+		HeadSHA: "3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f", HeadRepo: "", BaseRef: "release/1.x", DefaultBranch: "main",
 	}},
 	{"pull_request_review_submitted.json", "pull_request_review", Event{
 		Kind: ReviewChanged, InstallationID: 5002, Repo: "acme/lib", PullRequest: 45,
-		HeadSHA: "4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70", HeadRepo: "acme/lib", BaseRef: "trunk",
+		HeadSHA: "4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70", HeadRepo: "acme/lib", BaseRef: "trunk", DefaultBranch: "trunk",
 	}},
 	{"push_default_branch.json", "push", Event{
 		Kind: DefaultBranchPush, InstallationID: 5002, Repo: "acme/lib",
-		HeadSHA: "6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192", HeadRepo: "acme/lib", BaseRef: "trunk",
+		HeadSHA: "6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192", HeadRepo: "acme/lib", BaseRef: "trunk", DefaultBranch: "trunk",
 		Branch: "trunk", Pusher: "octocat",
 		ChangedPaths: []string{".archfit.yaml", "go.mod", "internal/api/handler.go", "legacy/old.go"},
 	}},
