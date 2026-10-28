@@ -99,6 +99,9 @@ type Review struct {
 	Reviewer  string // login
 	State     string // "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED"
 	CommitSHA string // the head SHA the review was submitted on
+	// SubmittedAt is when the review was submitted; zero when GitHub did not say. A dismissed review keeps the time it
+	// was submitted, not the time it was dismissed.
+	SubmittedAt time.Time
 }
 
 type Pulls interface {

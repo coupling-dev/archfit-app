@@ -208,8 +208,9 @@ func (c *Client) Reviews(ctx context.Context, r RepoRef, number int) ([]Review, 
 		User *struct {
 			Login string `json:"login"`
 		} `json:"user"`
-		State    string `json:"state"`
-		CommitID string `json:"commit_id"`
+		State       string    `json:"state"`
+		CommitID    string    `json:"commit_id"`
+		SubmittedAt time.Time `json:"submitted_at"`
 	}
 	k := call{cred: cr, method: http.MethodGet, route: "/repos/{r}/pulls/{n}/reviews",
 		url: pagedURL(base+"/pulls/"+strconv.Itoa(number)+"/reviews", nil)}
@@ -222,7 +223,7 @@ func (c *Client) Reviews(ctx context.Context, r RepoRef, number int) ([]Review, 
 		if j.State == "PENDING" {
 			continue
 		}
-		rv := Review{State: j.State, CommitSHA: j.CommitID}
+		rv := Review{State: j.State, CommitSHA: j.CommitID, SubmittedAt: j.SubmittedAt}
 		if j.User != nil {
 			rv.Reviewer = j.User.Login
 		}

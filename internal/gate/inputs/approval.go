@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/store"
 	"github.com/alexei-led/archfit-app/internal/wire/policy"
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
@@ -98,8 +99,12 @@ func (r *resolver) Approve(ctx context.Context, t Target, login string, seen map
 	if err != nil {
 		return fmt.Errorf("inputs: approve: %w", err)
 	}
+	reviews, err := r.pulls.Reviews(ctx, t.Repo.RepoRef, t.PullRequest)
+	if err != nil {
+		return fmt.Errorf("inputs: reviews: %w", err)
+	}
 	// The swap is against the bytes judged here, so an approval that lands after this read is never overwritten.
-	if by, err := r.judge(ctx, t, s, paths, old); err != nil || by != "" {
+	if by, err := r.judge(ctx, t, s, paths, reviews, old); err != nil || by != "" {
 		return err
 	}
 	_, err = r.store.CompareAndSwap(ctx, tenant, key, old, raw)
@@ -150,7 +155,7 @@ func (r *resolver) approvable(ctx context.Context, t Target, login string) (sett
 // still an owner and no agent under s, and the recorded digests are those of paths at the head. A base that moved so
 // that the pull request changes other protected paths therefore voids it. A record that does not decode approves
 // nothing; a failed read is an error, so the decision is retried instead of published on a guess.
-func (r *resolver) recorded(ctx context.Context, t Target, s settings.Settings, paths []string) (string, error) {
+func (r *resolver) recorded(ctx context.Context, t Target, s settings.Settings, paths []string, reviews []api.Review) (string, error) {
 	raw, err := r.store.Get(ctx, store.Tenant(t.Repo.InstallationID), approvalKey(t))
 	if errors.Is(err, store.ErrNotFound) {
 		return "", nil
@@ -158,17 +163,17 @@ func (r *resolver) recorded(ctx context.Context, t Target, s settings.Settings, 
 	if err != nil {
 		return "", fmt.Errorf("inputs: read approval: %w", err)
 	}
-	return r.judge(ctx, t, s, paths, raw)
+	return r.judge(ctx, t, s, paths, reviews, raw)
 }
 
 // judge returns the login of the approval record raw when it holds now, else "".
-func (r *resolver) judge(ctx context.Context, t Target, s settings.Settings, paths []string, raw []byte) (string, error) {
+func (r *resolver) judge(ctx context.Context, t Target, s settings.Settings, paths []string, reviews []api.Review, raw []byte) (string, error) {
 	var rec approvalRecord
 	if json.Unmarshal(raw, &rec) != nil || rec.HeadSHA != t.HeadSHA {
 		logOutcome(t, "approval", "unreadable")
 		return "", nil
 	}
-	if rec.Login == "" || s.IsAgent(rec.Login) {
+	if rec.Login == "" || s.IsAgent(rec.Login) || withdrawn(rec, reviews) {
 		return "", nil
 	}
 	ok, err := isOwner(s.Owners, rec.Login, r.member(ctx, t))
@@ -183,6 +188,19 @@ func (r *resolver) judge(ctx context.Context, t Target, s settings.Settings, pat
 		return "", err
 	}
 	return rec.Login, nil
+}
+
+// withdrawn reports that the approver took the approval back on GitHub: a review that requests changes, or one that
+// was dismissed, submitted after the approval. The App has no withdraw button; this is how an owner who can review
+// ends it, as on GitHub. An approval after the review is a new record, so it counts.
+func withdrawn(rec approvalRecord, reviews []api.Review) bool {
+	for _, rv := range reviews {
+		if strings.EqualFold(rv.Reviewer, rec.Login) && (rv.State == reviewChangesRequested || rv.State == reviewDismissed) &&
+			rv.SubmittedAt.After(rec.At) {
+			return true
+		}
+	}
+	return false
 }
 
 // baseSettings reads the settings of the protected ref. found is false when there is no file or it does not parse:

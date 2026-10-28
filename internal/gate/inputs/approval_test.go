@@ -257,6 +257,9 @@ func TestAppApprovalVoidedByTheProtectedRef(t *testing.T) {
 		{"the approver left the owners", func(f *fixture) { f.setBaseSettings([]string{"bob"}) }, "bob"},
 		{"the approver is now an agent", func(f *fixture) { f.setBaseSettings([]string{"alice", teamOwner}, "carol") }, "alice"},
 		{"the approver left the owner team", func(f *fixture) { f.pulls.teams[teamOwner] = nil }, "alice"},
+		{"the approver requested changes afterwards", func(f *fixture) {
+			f.pulls.reviews = []api.Review{{Reviewer: "carol", State: "CHANGES_REQUESTED", CommitSHA: headSHA, SubmittedAt: now.Add(time.Minute)}}
+		}, "alice"},
 		{"the base moved: the pull request changes another protected path", func(f *fixture) {
 			f.pulls.changed = []string{policy.BaselinePath, policy.PolicyPath}
 		}, "alice"},
@@ -283,6 +286,43 @@ func TestAppApprovalVoidedByTheProtectedRef(t *testing.T) {
 				t.Fatalf("Approve by %s: %v", tt.by, err)
 			}
 			wantApproval(t, f.mustResolve(t, pullTarget()), ApprovalGranted, tt.by)
+		})
+	}
+}
+
+// TestAppApprovalWithdrawnByTheApproversReview: an owner who can review ends the approval as on GitHub, by requesting
+// changes or by a review that was dismissed, after approving in the App.
+func TestAppApprovalWithdrawnByTheApproversReview(t *testing.T) {
+	review := func(login, state string, at time.Duration) api.Review {
+		return api.Review{Reviewer: login, State: state, CommitSHA: headSHA, SubmittedAt: now.Add(at)}
+	}
+	tests := []struct {
+		name    string
+		reviews []api.Review
+		want    Approval
+	}{
+		{"no review", nil, ApprovalGranted},
+		{"changes requested later", []api.Review{review("alice", "CHANGES_REQUESTED", time.Minute)}, ApprovalMissing},
+		{"changes requested later, login in other case", []api.Review{review("ALICE", "CHANGES_REQUESTED", time.Minute)}, ApprovalMissing},
+		{"a review dismissed later", []api.Review{review("alice", "DISMISSED", time.Minute)}, ApprovalMissing},
+		{"changes requested earlier", []api.Review{review("alice", "CHANGES_REQUESTED", -time.Minute)}, ApprovalGranted},
+		{"changes requested by someone else", []api.Review{review("bob", "CHANGES_REQUESTED", time.Minute)}, ApprovalGranted},
+		{"a comment later", []api.Review{review("alice", "COMMENTED", time.Minute)}, ApprovalGranted},
+		{"no submission time", []api.Review{{Reviewer: "alice", State: "CHANGES_REQUESTED", CommitSHA: headSHA}}, ApprovalGranted},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture()
+			f.pulls.changed = []string{policy.BaselinePath}
+			if err := f.approve(pullTarget(), "alice", f.shown(t, pullTarget())); err != nil {
+				t.Fatalf("Approve: %v", err)
+			}
+			f.pulls.reviews = tt.reviews
+			by := ""
+			if tt.want == ApprovalGranted {
+				by = "alice"
+			}
+			wantApproval(t, f.mustResolve(t, pullTarget()), tt.want, by)
 		})
 	}
 }
@@ -393,7 +433,7 @@ func (s *approvesBetween) Get(ctx context.Context, tn store.Tenant, key string) 
 	raw, err := s.Store.Get(ctx, tn, key)
 	if key == s.key && err == nil && !s.done {
 		s.done = true
-		_ = s.Store.Put(ctx, tn, key, s.bob)
+		_ = s.Put(ctx, tn, key, s.bob)
 	}
 	return raw, err
 }

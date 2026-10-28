@@ -303,7 +303,8 @@ owner may approve the exact head in the App instead (the Approve button of `cont
   is replaced by a `CompareAndSwap` against the very bytes judged void; an approval that lands after that read wins.
   The key holds the pull request because the protected paths and the base differ between two pull requests of one head.
 - `Resolve` step 11 reads the record when no review approved. It holds only when the recorded login is still an
-  owner and no agent under the current base settings, and the recorded digests equal the `Candidate` digests computed
+  owner and no agent under the current base settings, has not since submitted a review that requests changes or one that
+  was dismissed (`withdrawn`: the same way an owner ends a GitHub approval; the App has no withdraw button), and the recorded digests equal the `Candidate` digests computed
   now. The key holds the head SHA, so a new commit never finds it. A base that moved so that the pull request changes
   another set of protected paths gets other digests, so the record no longer holds.
 - A failed read of the record is an error: the decision is retried, never published on a guess. A missing record is

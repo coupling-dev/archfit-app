@@ -23,6 +23,9 @@ var entitlementTimeout = 2 * time.Second
 const (
 	reviewApproved  = "APPROVED"
 	reviewCommented = "COMMENTED"
+
+	reviewChangesRequested = "CHANGES_REQUESTED"
+	reviewDismissed        = "DISMISSED"
 )
 
 const (
@@ -118,7 +121,7 @@ func (r *resolver) Resolve(ctx context.Context, t Target, now time.Time) (Truste
 	}
 	if by == "" {
 		// GitHub does not let an author approve their own pull request; a sole owner approves in the App instead.
-		if by, err = r.recorded(ctx, t, s, out.ProtectedPaths); err != nil {
+		if by, err = r.recorded(ctx, t, s, out.ProtectedPaths, reviews); err != nil {
 			return Trusted{}, err
 		}
 	}
