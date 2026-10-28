@@ -138,6 +138,12 @@ func TestAppApprovalGrantsTheExactHead(t *testing.T) {
 		next.HeadSHA = "sha-head-3"
 		wantApproval(t, f.mustResolve(t, next), ApprovalMissing, "")
 	})
+	t.Run("another pull request of the same head needs its own approval", func(t *testing.T) {
+		other := pullTarget()
+		other.PullRequest++
+		wantApproval(t, f.mustResolve(t, other), ApprovalMissing, "")
+		wantApproval(t, f.mustResolve(t, pullTarget()), ApprovalGranted, "alice")
+	})
 	t.Run("an owner team member approves too", func(t *testing.T) {
 		f := newFixture()
 		f.pulls.changed = []string{policy.BaselinePath}
@@ -344,4 +350,50 @@ type failingWrites struct{ store.Store }
 
 func (failingWrites) CompareAndSwap(context.Context, store.Tenant, string, []byte, []byte) (bool, error) {
 	return false, errBoom
+}
+
+// TestReplacingAVoidRecordNeverOverwritesALaterApproval: bob's approval lands between alice reading the void record
+// and alice replacing it. alice's replacement is against the bytes she judged void, so it loses and bob's stays.
+func TestReplacingAVoidRecordNeverOverwritesALaterApproval(t *testing.T) {
+	f := newFixture()
+	f.pulls.changed = []string{policy.BaselinePath}
+	f.setBaseSettings([]string{"alice", "bob"})
+	seen := f.shown(t, pullTarget())
+	void, err := json.Marshal(approvalRecord{Login: "gone", HeadSHA: headSHA, Digests: seen, At: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenant, key := store.Tenant(installation), approvalKey(pullTarget())
+	if err := f.store.Put(context.Background(), tenant, key, void); err != nil {
+		t.Fatal(err)
+	}
+	bob, err := json.Marshal(approvalRecord{Login: "bob", HeadSHA: headSHA, Digests: seen, At: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.store = &approvesBetween{Store: f.store, key: key, bob: bob}
+
+	if err := f.approve(pullTarget(), "alice", seen); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	if rec, _ := f.record(t, pullTarget()); rec.Login != "bob" {
+		t.Errorf("record = %+v, want bob's, which landed after alice read the void record", rec)
+	}
+}
+
+// approvesBetween makes bob approve right after the first read of key, as a concurrent request would.
+type approvesBetween struct {
+	store.Store
+	key  string
+	bob  []byte
+	done bool
+}
+
+func (s *approvesBetween) Get(ctx context.Context, tn store.Tenant, key string) ([]byte, error) {
+	raw, err := s.Store.Get(ctx, tn, key)
+	if key == s.key && err == nil && !s.done {
+		s.done = true
+		_ = s.Store.Put(ctx, tn, key, s.bob)
+	}
+	return raw, err
 }

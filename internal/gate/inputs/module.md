@@ -152,7 +152,7 @@ type Resolver interface {
     CanApprove(ctx context.Context, t Target, login string) error
     // Approve records login's approval of t's head, bound to its SHA, when CanApprove allows it and seen equals the
     // Candidate digests (else ErrDigestsChanged). A record for that head already, by any owner, is success and stays
-    // as it is.
+    // as it is, unless it no longer holds: then it is replaced.
     Approve(ctx context.Context, t Target, login string, seen map[string]string, now time.Time) error
 }
 
@@ -297,10 +297,11 @@ owner may approve the exact head in the App instead (the Approve button of `cont
   rule of a reviewer, team membership included (`ErrNotOwner`). Owners and agents come from `BaseRef` only.
 - `Approve(t, login, seen, now)` runs the same checks, computes `Candidate` again and refuses when `seen` is not equal
   to its digests (`ErrDigestsChanged`): what the owner looked at is not what the head holds now. Then it writes
-  `{login, head_sha, digests, at}` as JSON at `approval/<lowercase repo full name>/<t.HeadSHA>` under the installation
-  tenant, by `CompareAndSwap` from nothing. A record already there, by any owner, is success and is never replaced:
-  the first approval of a head is the one kept. One that no longer holds (below) therefore stays void
-  for that head; a new commit, or an approving review on GitHub, is the way on.
+  `{login, head_sha, digests, at}` as JSON at `approval/<lowercase repo full name>/<pull request>/<t.HeadSHA>` under the
+  installation tenant, by `CompareAndSwap` from nothing. A record already there that still holds (below), by any owner,
+  is success and is never replaced: the first approval is the one kept. One that no longer holds approves nothing, so it
+  is replaced by a `CompareAndSwap` against the very bytes judged void; an approval that lands after that read wins.
+  The key holds the pull request because the protected paths and the base differ between two pull requests of one head.
 - `Resolve` step 11 reads the record when no review approved. It holds only when the recorded login is still an
   owner and no agent under the current base settings, and the recorded digests equal the `Candidate` digests computed
   now. The key holds the head SHA, so a new commit never finds it. A base that moved so that the pull request changes

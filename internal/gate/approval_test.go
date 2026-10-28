@@ -5,6 +5,7 @@ import (
 	"errors"
 	"maps"
 	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -160,7 +161,7 @@ func TestApprovalNeedsAnAdmittedInstallation(t *testing.T) {
 	if len(w.gh.calls) != before {
 		t.Errorf("GitHub calls for an installation no operator approved: %v", w.gh.calls[before:])
 	}
-	if _, err := w.mem.Get(context.Background(), store.Tenant(shopInstallation), approvalKeyPrefix+shopName+"/"+p.head); !errors.Is(err, store.ErrNotFound) {
+	if _, err := w.mem.Get(context.Background(), store.Tenant(shopInstallation), approvalKeyPrefix+shopName+"/"+strconv.Itoa(p.number)+"/"+p.head); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("approval record = %v, want none", err)
 	}
 }

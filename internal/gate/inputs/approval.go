@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,9 +42,11 @@ type approvalRecord struct {
 	At      time.Time         `json:"at"`
 }
 
-// approvalKey is the Store key of the approval of t's head. Repository names compare case-insensitively.
+// approvalKey is the Store key of the approval of t's head in its pull request: an approval is of one pull request,
+// as a GitHub review is, because the protected paths and their base differ between two pull requests of one head.
+// Repository names compare case-insensitively.
 func approvalKey(t Target) string {
-	return "approval/" + strings.ToLower(t.Repo.FullName) + "/" + t.HeadSHA
+	return "approval/" + strings.ToLower(t.Repo.FullName) + "/" + strconv.Itoa(t.PullRequest) + "/" + t.HeadSHA
 }
 
 func (r *resolver) Candidate(ctx context.Context, t Target) (Candidate, error) {
@@ -91,14 +94,14 @@ func (r *resolver) Approve(ctx context.Context, t Target, login string, seen map
 	if err != nil || swapped {
 		return wrap("approve", err)
 	}
-	if by, err := r.recorded(ctx, t, s, paths); err != nil || by != "" {
-		return err
-	}
 	old, err := r.store.Get(ctx, tenant, key)
 	if err != nil {
 		return fmt.Errorf("inputs: approve: %w", err)
 	}
-	// A lost swap means another approval landed between the two reads; that one stays.
+	// The swap is against the bytes judged here, so an approval that lands after this read is never overwritten.
+	if by, err := r.judge(ctx, t, s, paths, old); err != nil || by != "" {
+		return err
+	}
 	_, err = r.store.CompareAndSwap(ctx, tenant, key, old, raw)
 	return wrap("approve", err)
 }
@@ -155,6 +158,11 @@ func (r *resolver) recorded(ctx context.Context, t Target, s settings.Settings, 
 	if err != nil {
 		return "", fmt.Errorf("inputs: read approval: %w", err)
 	}
+	return r.judge(ctx, t, s, paths, raw)
+}
+
+// judge returns the login of the approval record raw when it holds now, else "".
+func (r *resolver) judge(ctx context.Context, t Target, s settings.Settings, paths []string, raw []byte) (string, error) {
 	var rec approvalRecord
 	if json.Unmarshal(raw, &rec) != nil || rec.HeadSHA != t.HeadSHA {
 		logOutcome(t, "approval", "unreadable")

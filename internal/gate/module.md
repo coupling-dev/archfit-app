@@ -403,7 +403,7 @@ type Resolver interface {
     CanApprove(ctx context.Context, t Target, login string) error
     // Approve records login's approval of t's head, bound to its SHA, when CanApprove allows it and seen equals the
     // Candidate digests (else ErrDigestsChanged). A record for that head already, by any owner, is success and stays
-    // as it is.
+    // as it is, unless it no longer holds: then it is replaced.
     Approve(ctx context.Context, t Target, login string, seen map[string]string, now time.Time) error
 }
 ```
@@ -1065,7 +1065,7 @@ type Verifier interface {
 - **Balanced?**: yes
 - **Shared knowledge**: the gate path calls `Get(Tenant(installationID), EntitlementKey)` and
   `Get(Tenant(installationID), AdmissionKey)` inside `gate/inputs`, `Get`
-  and `CompareAndSwap` on `pusher/<repo>/<head_sha>` and `approval/<repo>/<head_sha>` under the same tenant inside
+  and `CompareAndSwap` on `pusher/<repo>/<head_sha>` and `approval/<repo>/<pull_request>/<head_sha>` under the same tenant inside
   `gate/inputs`, and `Get` and
   `CompareAndSwap` on `feedback/lease/<head_sha>` under the same tenant inside `gate/feedback`. It calls no
   other Store operation. `ErrNotFound` is the store sentinel for a missing key; for the entitlement it means "not
@@ -1312,7 +1312,7 @@ event left undone.
 - The gate path reads the `Entitlement`, the `Admission` and the pusher and approval records, and writes only the pusher
   and approval records of `gate/inputs` and `gate/feedback`'s publication leases. A pusher record is
   `pusher/<repo>/<head_sha>` = the logins that pushed the head, written only from a signed `push` delivery, only ever
-  added to, and read by nothing that decides. An approval record is `approval/<repo>/<head_sha>`, written once, only by
+  added to, and read by nothing that decides. An approval record is `approval/<repo>/<pull_request>/<head_sha>`, written once (or replaced once it no longer counts), only by
   `Approve` for `control/ui`'s browser session. Both are kept until the installation is deleted; one small key per
   pushed or approved head is the accepted growth **[default]**, to be pruned by the sweep if tenants grow large.
 - No push approves, and no agent identity approves: an approval is an owner's review on GitHub or an owner's Approve
