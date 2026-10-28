@@ -140,6 +140,7 @@ func TestBlockerKeepsUnevaluatedRules(t *testing.T) {
 
 func TestOriginNeverExempts(t *testing.T) {
 	f, _ := fixtureCase(t, "real-v320-blocked-no-baseline")
+	f.IdentityApproved = true // the capture's engine release has left the manifest; this test is about origin, not identity
 	r := f.Report
 	if len(r.AgentTasks) != 1 || len(r.Findings) == 0 {
 		t.Fatalf("fixture has %d tasks and %d findings", len(r.AgentTasks), len(r.Findings))

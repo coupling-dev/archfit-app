@@ -52,6 +52,16 @@ func fields() []field {
 		}},
 		{"base_sha", 0, func(e *Envelope) string { return pullRequestSHA(e, e.BaseSHA) }},
 		{"merge_base_sha", 0, func(e *Envelope) string { return pullRequestSHA(e, e.MergeBaseSHA) }},
+		{"analyzed_sha", 0, func(e *Envelope) string {
+			return rule(isHex(e.AnalyzedSHA, shaHexLen), "must be 40 lowercase hex characters")
+		}},
+		{"integration", 0, func(e *Envelope) string {
+			if e.Event == eventPullRequest {
+				return rule(e.Integration == IntegrationMerged || e.Integration == IntegrationConflicts,
+					"must be merged or conflicts when event is pull_request")
+			}
+			return rule(e.Integration == "", "must be empty unless event is pull_request")
+		}},
 		{"run_id", 64, func(e *Envelope) string { return rule(e.RunID > 0, "must be > 0") }},
 		{"run_attempt", 32, func(e *Envelope) string { return rule(e.RunAttempt >= 1, "must be >= 1") }},
 		{"engine_version", 0, func(e *Envelope) string {

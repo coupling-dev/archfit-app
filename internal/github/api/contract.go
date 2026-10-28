@@ -107,7 +107,12 @@ type Pull struct {
 	BaseRef      string
 	BaseSHA      string
 	MergeBaseSHA string
-	UpdatedAt    time.Time
+	// MergeCommitSHA is GitHub's test merge commit of the head into the base: refs/pull/N/merge. "" while GitHub has not
+	// computed it.
+	MergeCommitSHA string
+	// Mergeable is GitHub's answer whether the head merges cleanly; nil while GitHub has not computed it.
+	Mergeable *bool
+	UpdatedAt time.Time
 }
 
 type Review struct {

@@ -24,7 +24,7 @@ identity could compare as equal to another unknown.
 
 Published language (release identity shared with `archfit` and `archfit-action`). Supporting.
 Volatility: moderate. It changes only with a reviewed engine, image or Action release. The shipped rows are engine
-v3.2.3 on `linux/amd64` (`current`) and `linux/arm64`, plus the four previously approved exact v3.2.2/v3.2.0 platform tuples during rollout.
+v3.2.3 on `linux/amd64` (`current`) and `linux/arm64`. The v3.2.2 and v3.2.0 tuples left with the Actions that carried them.
 
 ## Encapsulated Knowledge
 
@@ -62,11 +62,13 @@ v3.2.3 on `linux/amd64` (`current`) and `linux/arm64`, plus the four previously 
     `sha256:5f2d4a5fff1ace10d7b08937429179631ae0c1d0e1f9e6f37c72b30954cf00db` on `linux/amd64` and
     `sha256:725c3a074358df8ea41881296eda06b07daed7934d7a6d40bb1ecfc3c8a8128d` on `linux/arm64`. The native image outputs in Action CI run40175778074 carry `archfit.measurement.v2`.
 
-  New v3.2.3 rows pin published Action v2.2.1 merged commit `dd835da5025fd6e54707521434a41767c3ec4ddb`.
-  Transition v3.2.2 rows retain `e0a1ef9473d68b426e9c56b2da5986bcee2fc769`; transition v3.2.0 rows retain
-  `cadf35c0d4885a49a3a1482b876f2a456d20de06` (release `v2.2.0`). Each commit accepts only its matching engine release,
-  with explicit engine-version and image-digest inputs. CI validates every distinct Action commit and compares each
-  vendored envelope schema with the App contract, in the existing static required jobs.
+  Every row pins archfit-action commit `ec465980aa52e8aec0bf6ac22ab717efd1b15c77` (X1: pull requests are measured as
+  merged, and the envelope carries `analyzed_sha` and `integration`; vendored envelope schema sha256
+  `d2c79be005eff4fe28a100dc9815de99a812209fe2e601c8070455eec94af0ad`). That commit accepts engine v3.2.3 only, with explicit
+  engine-version and image-digest inputs. CI validates every distinct Action commit and compares each vendored envelope
+  schema with the App contract, in the existing static required jobs: a manifest that still named an older Action would
+  fail it, so the older Actions and the engine releases they carried are not in the manifest. Their uploads end
+  `unknown_engine_identity`. The engine bump replaces these rows once, in the release change.
   `Lookup` does not read `action_ref`; it is what a generated workflow pins.
 - A placeholder is an `image_digest` or `action_ref` whose hex part is one character repeated. Placeholders are
   forbidden in a release: `TestManifestHasNoPlaceholdersInRelease` fails when the environment variable
@@ -121,7 +123,7 @@ Semantics not visible in the signatures:
 - `ProfileVersion` is the value the gate compares with the report's `measurement_profile.version`. This module
   does not know the report type; the consumer passes no report in.
 - `Identity` has no JSON tags: it is not a wire form. The consumer builds it from three envelope strings.
-- `EngineVersions` returns a fresh slice on every call, today `v3.2.3`, `v3.2.2`, then `v3.2.0`. It approves nothing by itself:
+- `EngineVersions` returns a fresh slice on every call, today `v3.2.3`. It approves nothing by itself:
   `Lookup` on the whole identity stays the only approval. The parent `wire` tests read it to tie every approved
   release to the report decoder, to a real capture and, through `Current`, to the policy schema pin.
 
@@ -195,7 +197,7 @@ tolerates the distance of separate repositories and release cycles.
   defective value; the valid base passes.
 - **Test name**: `TestApprovedEngineVersions`
   **Scenario**: call `EngineVersions`, change the returned slice, call it again.
-  **Expected behavior**: `v3.2.3`, `v3.2.2`, `v3.2.0` both times, a release tag; it changes only together with `manifest.json`.
+  **Expected behavior**: `v3.2.3` both times, a release tag; it changes only together with `manifest.json`.
 - **Test name**: `TestManifestHasNoPlaceholdersInRelease`
   **Scenario**: collect every placeholder value of the embedded rows, as `entry index, field`; read `ARCHFIT_RELEASE`. The
   test never skips.
@@ -245,7 +247,7 @@ tolerates the distance of separate repositories and release cycles.
   **Expected behavior**: miss.
 - **Test name**: `TestOlderEngineIsNotApproved`
   **Scenario**: the published v3.0.0 and v2.5.0 identities on both platforms and the v2.4.1 `linux/amd64` identity.
-  **Expected behavior**: all miss; the manifest holds only exact v3.2.3 and retained v3.2.2/v3.2.0 rows.
+  **Expected behavior**: all miss; the manifest holds only the exact v3.2.3 rows.
 - **Test name**: `TestGeneratedWorkflowInputsArePinned`
   **Scenario**: read `Current()` as onboarding would.
   **Expected behavior**: `ActionRef` is a commit SHA and `ImageDigest` a digest; neither is a tag, branch, or `latest`.

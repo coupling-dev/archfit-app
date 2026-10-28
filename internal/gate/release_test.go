@@ -13,8 +13,9 @@ func TestPatchTransitionProducerOutcomes(t *testing.T) {
 	}{
 		{"v3.2.3", "sha256:87323e8d80d519531338ff7a36ce750d337ecf6560e48493bdeb10b864e7b772", "linux/amd64", "success", "healthy"},
 		{"v3.2.3", "sha256:54f6bf1ec99be6f4bdc21ca59e16d3dd65fb5b31a2c2af6c932ad556c89a220c", "linux/arm64", "success", "healthy"},
-		{"v3.2.2", "sha256:bd351ac70610555237974fac5ff914967a1100fb8ef754853151300d5d19ca35", "linux/amd64", "success", "healthy"},
-		{"v3.2.0", "sha256:5f2d4a5fff1ace10d7b08937429179631ae0c1d0e1f9e6f37c72b30954cf00db", "linux/amd64", "success", "healthy"},
+		// v3.2.2 and v3.2.0 left the manifest with the Actions that carried them (archfit-action X1 changed the envelope).
+		{"v3.2.2", "sha256:bd351ac70610555237974fac5ff914967a1100fb8ef754853151300d5d19ca35", "linux/amd64", "action_required", "unknown_engine_identity"},
+		{"v3.2.0", "sha256:5f2d4a5fff1ace10d7b08937429179631ae0c1d0e1f9e6f37c72b30954cf00db", "linux/amd64", "action_required", "unknown_engine_identity"},
 		{"v3.0.1", "sha256:9aac269fa350e643054cbe5ced58426b4ed46000f30d60f49564aa605ece2408", "linux/amd64", "action_required", "unknown_engine_identity"},
 		{"v3.2.3", "sha256:bd351ac70610555237974fac5ff914967a1100fb8ef754853151300d5d19ca35", "linux/amd64", "action_required", "unknown_engine_identity"},
 		{"v3.2.4", "sha256:87323e8d80d519531338ff7a36ce750d337ecf6560e48493bdeb10b864e7b772", "linux/amd64", "action_required", "report_invalid"},

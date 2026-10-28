@@ -352,6 +352,7 @@ func TestNewReceiverIsTheSameReceiver(t *testing.T) {
 		draft := []byte("version: 1\nmodules: {}\n")
 		s := w.spec(p, draft)
 		s.env.Kind, s.env.Event, s.env.PullRequest, s.env.BaseSHA, s.env.MergeBaseSHA = envelope.KindDiscovery, "workflow_dispatch", 0, "", ""
+		s.env.AnalyzedSHA, s.env.Integration = s.env.HeadSHA, "" // a dispatched run measures its own head
 		s.claims.EventName, s.claims.Ref = "workflow_dispatch", "refs/heads/"+testBranch
 
 		u, err := newReceiver(w.gh, w.oidc, testAudience, w.admit).Receive(context.Background(), w.request(s), envelope.KindDiscovery)

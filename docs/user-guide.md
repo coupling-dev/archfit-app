@@ -443,12 +443,13 @@ no approval is needed any more.
 
 ### Engine versions
 
-The locked manifest approves engine v3.2.3 on Linux amd64 and arm64, retaining the exact previously approved
-v3.2.2/v3.2.0 tuples during rollout. New v3.2.3 workflows pin released Action v2.2.1 at merged commit
-`dd835da5025fd6e54707521434a41767c3ec4ddb`. Retained v3.2.2 rows keep `e0a1ef9473d68b426e9c56b2da5986bcee2fc769`;
-v3.2.0 rows keep `cadf35c0d4885a49a3a1482b876f2a456d20de06`. Only the v3.2.3 amd64 row is Current for new workflows/recovery pins.
+The locked manifest approves engine v3.2.3 on Linux amd64 and arm64. New workflows pin archfit-action at commit
+`ec465980aa52e8aec0bf6ac22ab717efd1b15c77`, which measures a pull request as it would land (the merge with the target)
+and states `analyzed_sha` and `integration` in the upload. Only the v3.2.3 amd64 row is Current for new workflows and
+recovery pins.
 
-- Existing approved v3.2.2/v3.2.0 platform tuples remain approved during rollout. Retired or unknown pins give `action_required` with `unknown_engine_identity`.
+- The v3.2.2 and v3.2.0 tuples are no longer approved: the Actions that carried them predate the new envelope. Retired or
+  unknown pins give `action_required` with `unknown_engine_identity`; move the workflow to the pinned Action.
 - Historical v3.0.0/v3.0.1 reports remain readable because their state schema matches v3.2.0/v3.2.2/v3.2.3.
   Reading an old report does not approve its identity. Unknown report releases give `report_invalid`.
 - The policy editor uses the byte-identical v3.2.3 config schema. The engine's check remains the authority for policy semantics.

@@ -41,7 +41,7 @@ func uploads(t *testing.T) []upload {
 		if !ok {
 			continue
 		}
-		env, err := envelope.Decode(raw)
+		env, err := envelope.Decode(withActionX1Fields(t, raw))
 		if err != nil {
 			t.Fatalf("%s: envelope sibling: %v", f.id(), err)
 		}

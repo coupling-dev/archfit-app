@@ -56,6 +56,8 @@ The length limits and character sets below (100, 64, 32) are **[default]**; the 
 | `head_sha`        | `^[0-9a-f]{40}$`                                                                      |
 | `base_sha`        | `^[0-9a-f]{40}$` when `event` is `pull_request`, otherwise exactly `""`               |
 | `merge_base_sha`  | same rule as `base_sha`                                                               |
+| `analyzed_sha`    | `^[0-9a-f]{40}$`, always: the commit the engine measured (see below)                  |
+| `integration`     | `merged` or `conflicts` when `event` is `pull_request`, otherwise exactly `""`        |
 | `run_id`          | integer > 0, no fraction, no exponent                                                 |
 | `run_attempt`     | integer ≥ 1                                                                           |
 | `engine_version`  | `^[A-Za-z0-9._+-]{1,64}$` — format only; approval is the manifest's job               |
@@ -64,6 +66,13 @@ The length limits and character sets below (100, 64, 32) are **[default]**; the 
 | `payload_digest`  | `^sha256:[0-9a-f]{64}$`                                                               |
 | `baseline_digest` | `^[0-9a-f]{64}$` or exactly `""` (no file); bare hex; `""` when `kind` is `discovery` or `baseline`; required (`^[0-9a-f]{64}$`) when `kind` is `reanchor` |
 | `labels_digest`   | `^[0-9a-f]{64}$` or exactly `""` (no file); bare hex; `""` when `kind` is `discovery`               |
+
+`analyzed_sha` and `integration` come from archfit-action X1: a pull request is measured as it would land. `merged`: the
+engine measured GitHub's test merge commit of `head_sha` into the target, and `analyzed_sha` is that commit. `conflicts`:
+GitHub reports a conflict, the head was measured alone, and `analyzed_sha` is `head_sha`. Every other event measures its own
+head: `analyzed_sha` equals `head_sha`. The schema file is byte-identical to the one `archfit-action` vendors at its
+pinned commit (the CI job `Action envelope schema` compares it for every Action commit in the manifest). The App does not
+trust the claim: `gate/ingest` holds it to what GitHub says about the pull request.
 
 Two digest formats exist on purpose. `payload_digest` and `image_digest` keep the `sha256:` prefix **[default]**: they
 are envelope-native values in OCI style. `baseline_digest` and `labels_digest` are bare hex because they are compared
@@ -111,6 +120,8 @@ type Envelope struct {
     HeadSHA       string `json:"head_sha"`       // 40 lowercase hex
     BaseSHA       string `json:"base_sha"`       // "" unless pull_request
     MergeBaseSHA  string `json:"merge_base_sha"` // "" unless pull_request
+    AnalyzedSHA   string `json:"analyzed_sha"`   // 40 lowercase hex: the commit the engine measured
+    Integration   string `json:"integration"`    // "merged" | "conflicts" for a pull_request, "" otherwise
     RunID         int64  `json:"run_id"`
     RunAttempt    int    `json:"run_attempt"`
     EngineVersion string `json:"engine_version"` // e.g. "v3.0.1"
@@ -216,8 +227,11 @@ so `TestSchemaAndDecoderAgree` states that field per fixture name in the test.
   **Expected behavior**: every row is an error naming the field; the unmodified base decodes.
 - **Test name**: `TestDecodeCrossFieldRules`
   **Scenario**: table: `pull_request` event with `pull_request: 0`; `push` with `pull_request: 7`; `push` with a non-empty
-  `base_sha`; `pull_request` event with empty `merge_base_sha`; valid `push`; valid `workflow_dispatch`; valid `pull_request`.
-  **Expected behavior**: the first four fail; the last three decode with the fields unchanged.
+  `base_sha`; `pull_request` event with empty `merge_base_sha`; `integration` empty, unknown, or `merged`/`conflicts` on a push;
+  `analyzed_sha` in capitals, short, empty or null; valid `pull_request` merged and with conflicts; valid `push`; valid
+  `workflow_dispatch`.
+  **Expected behavior**: every invalid row fails naming the field, and the schema agrees; the valid rows decode with the
+  fields unchanged.
 - **Test name**: `TestInputDigestFormats`
   **Scenario**: table for `baseline_digest` and `labels_digest`: 64 lowercase hex; `""`; `sha256:` plus 64 hex; uppercase hex; 63 hex;
   key absent; `null`; a non-empty value with `kind: discovery`. Plus `payload_digest` as bare 64 hex. Plus `kind: baseline`

@@ -7,6 +7,8 @@
   "head_sha": "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f",
   "base_sha": "2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e",
   "merge_base_sha": "3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d",
+  "analyzed_sha": "400e8a467210cc437d407d1d5a1d59cd1ba44545",
+  "integration": "merged",
   "run_id": 17654321098,
   "run_attempt": 1,
   "engine_version": "v3.2.0",

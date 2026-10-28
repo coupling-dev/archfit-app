@@ -176,6 +176,14 @@ The upload handler has a 55-second deadline. The target is feedback within 60 se
 The upload body is at most 5 MiB. A larger body gets `413 payload_too_large`, and the App publishes nothing.
 The App does not read part of a report.
 
+A pull request is measured as it would land, not as its branch stands. The Action measures GitHub's test merge commit of
+the head into the target and states it in the envelope: `analyzed_sha` is that commit and `integration` is `merged`; when
+GitHub reports a conflict the head is measured alone, `analyzed_sha` is `head_sha`, and `integration` is `conflicts`.
+The App holds the claim to what GitHub says about the pull request, never to the envelope: a conflict claim needs GitHub
+to say `mergeable` is false, a merged claim needs the commit to be GitHub's test merge commit, and while GitHub has not
+computed the merge no claim matches. A mismatch ends `action_required` with `envelope_mismatch`; re-running the workflow
+measures the current merge. Approval of a protected change stays bound to `head_sha`, not to the merge commit.
+
 ## Baseline upload
 
 The baseline is a file on the protected ref. It changes only through a pull request that an architecture owner
@@ -243,7 +251,8 @@ The Action must implement this contract in `mode: baseline` when `endpoint` is s
   one-line `archfit.report-envelope.v1` JSON, and `Content-Type: application/json`.
 - Body: the exact bytes of the `.archfit-baseline.json` that `archfit baseline` wrote, at most 1,048,576 bytes.
 - Envelope: `kind` is `baseline`; `event` is `workflow_dispatch` (or `push` to the default branch); `pull_request` is
-  `0`; `base_sha` and `merge_base_sha` are `""`; `head_sha` is the checked-out default-branch commit; `baseline_digest`
+  `0`; `base_sha` and `merge_base_sha` are `""`; `head_sha` is the checked-out default-branch commit; `analyzed_sha` is
+  `head_sha` and `integration` is `""`; `baseline_digest`
   is `""`; `labels_digest` is the bare hex SHA-256 of the labels file the capture read, or `""` without one;
   `payload_digest` is `sha256:<hex>` of the body; the engine identity fields are those of the pinned image.
 

@@ -3,7 +3,7 @@
     "repository": "github.com/alexei-led/archfit",
     "revision": "90c0ca240143329d404eb4eb116b096f607f7dc5",
     "engine_version": "v3.2.2",
-    "command": "Released native linux/arm64 image ghcr.io/alexei-led/archfit@sha256:e97a200a7c26907e4d30982b06e61ac7cc27bffd1d46002ad53bbf6b6594c479; archfit-action at e0a1ef9473d68b426e9c56b2da5986bcee2fc769 tests/helpers.sh write_module on a scratch committed Go repo; prepare/checkout/run/report stages; check --json --refresh --progress=none -c /bundle/.archfit.yaml --root /src; before baseline capture; unmodified report and Action envelope bytes. GitHub event/run metadata is synthetic test input, not a live authenticated upload."
+    "command": "Released native linux/arm64 image ghcr.io/alexei-led/archfit@sha256:e97a200a7c26907e4d30982b06e61ac7cc27bffd1d46002ad53bbf6b6594c479; archfit-action at e0a1ef9473d68b426e9c56b2da5986bcee2fc769 tests/helpers.sh write_module on a scratch committed Go repo; prepare/checkout/run/report stages; check --json --refresh --progress=none -c /bundle/.archfit.yaml --root /src; before baseline capture; unmodified report and Action envelope bytes. GitHub event/run metadata is synthetic test input, not a live authenticated upload. Retired: the manifest no longer lists this engine release (the Action that carried it predates archfit-action X1, which changed the envelope), so a fresh upload from it ends unknown_engine_identity; the report still decodes."
   },
   "decode": "ok",
   "fields": {
@@ -15,9 +15,13 @@
     "gate_reference_status": "non_comparable"
   },
   "gate": {
-    "conclusion": "failure",
+    "conclusion": "action_required",
     "reasons": [
+      "unknown_engine_identity",
       "blocking_findings"
     ]
+  },
+  "facts": {
+    "identity_approved": false
   }
 }
