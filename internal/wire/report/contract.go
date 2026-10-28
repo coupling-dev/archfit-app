@@ -23,8 +23,12 @@ func EngineVersions() []string {
 // findings[].matched_by except MatchedByKeys, agent_tasks[].declarations, metric provenance, seam scores), and any key
 // the schema does not define is a decode error.
 type Report struct {
-	SchemaVersion string               `json:"schema_version"` // must equal StateSchemaV1
-	Verdict       string               `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
+	SchemaVersion string `json:"schema_version"` // must equal StateSchemaV1
+	Verdict       string `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
+	// Identity is what the engine measured and under which inputs (engine v3.3.0 and later); nil for a report that
+	// predates it. It is the engine's own statement, kept for display and for the receipt key. It decides nothing:
+	// trust in inputs comes from the protected ref, never from a digest the report names.
+	Identity      *ResultIdentity      `json:"identity,omitempty"`
 	Decision      Decision             `json:"decision"`
 	Comparison    Comparison           `json:"comparison"`
 	GateReference *Reference           `json:"gate_reference,omitempty"` // persisted-baseline comparison; nil = engine emitted none
@@ -33,6 +37,28 @@ type Report struct {
 	Findings      []Finding            `json:"findings"`
 	AgentTasks    []AgentTask          `json:"agent_tasks"`
 	Seams         []Seam               `json:"seams"`
+}
+
+// ResultIdentitySchemaV1 is the only result identity version read.
+const ResultIdentitySchemaV1 = "archfit.result-identity.v1"
+
+// ResultIdentity is the engine's result identity block. A digest the engine could not compute is "".
+type ResultIdentity struct {
+	SchemaVersion          string     `json:"schema_version"` // must equal ResultIdentitySchemaV1
+	PolicyDigest           string     `json:"policy_digest,omitempty"`
+	BaselineDigest         string     `json:"baseline_digest,omitempty"`
+	LabelsDigest           string     `json:"labels_digest,omitempty"`
+	PolicyRef              *PolicyRef `json:"policy_ref,omitempty"` // the ref and commit the policy was read from
+	BaseSHA                string     `json:"base_sha,omitempty"`
+	HeadTreeDigest         string     `json:"head_tree_digest,omitempty"`
+	EngineVersion          string     `json:"engine_version"`
+	MeasurementProfileHash string     `json:"measurement_profile_hash,omitempty"`
+}
+
+// PolicyRef is where the engine read the policy from: a ref and the commit it pointed at.
+type PolicyRef struct {
+	Ref string `json:"ref"`
+	SHA string `json:"sha"`
 }
 
 // Decision is the engine's structured gate decision. The process exit code is not part of a report:

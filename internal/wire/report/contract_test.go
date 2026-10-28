@@ -237,6 +237,9 @@ func checkKeptInShadow(t *testing.T, loc string, public, shadow reflect.Type) {
 type schemaWalker struct {
 	t    *testing.T
 	root map[string]any
+	// ahead lists shadow fields the walked schema does not define yet: the decoder reads them before the engine pin
+	// moves to a release that has them. TestAheadOfThePinIsNotInThePin makes the pin's move delete them.
+	ahead map[string]bool
 }
 
 // resolve follows local "$ref" pointers such as "#/$defs/finding".
@@ -291,7 +294,7 @@ func (w schemaWalker) check(loc string, node map[string]any, shadow reflect.Type
 		w.check(loc+"."+key, prop.(map[string]any), typ)
 	}
 	for key := range fields {
-		if _, ok := props[key]; !ok {
+		if _, ok := props[key]; !ok && !w.ahead[loc+"."+key] {
 			w.t.Errorf("%s.%s is a shadow field the schema does not define", loc, key)
 		}
 	}
@@ -305,8 +308,44 @@ func TestEngineSchemaKeySetIsCovered(t *testing.T) {
 	mustDecode(t, loadFixture(t, baseFixture))
 	mustDecode(t, loadFixture(t, "report/real-seam-policy.json"))
 
-	w := schemaWalker{t: t, root: parseDoc(t, loadFixture(t, "schema/archfit.state.schema.json"))}
+	w := schemaWalker{t: t, root: parseDoc(t, loadFixture(t, "schema/archfit.state.schema.json")), ahead: aheadOfThePin}
 	w.check("report", w.root, reflect.TypeFor[shadowReport]())
+}
+
+// aheadOfThePin are the keys the decoder reads that the pinned schema (SCHEMA_SOURCE, engine v3.2.3) does not define.
+// The engine pin, the manifest and the image move once, to v3.4.0; until then the decoder is ahead of the pin by
+// exactly these keys, and they are optional so that a v3.2.3 report still decodes.
+var aheadOfThePin = map[string]bool{"report.identity": true, "report.coverage.tools[].details": true}
+
+// aheadOfThePinSchemaPath is where the pinned schema would define each allowed key.
+var aheadOfThePinSchemaPath = map[string][]any{
+	"report.identity":                 {"properties", "identity"},
+	"report.coverage.tools[].details": {"$defs", "StateToolCoverage", "properties", "details"},
+}
+
+// TestAheadOfThePinIsNotInThePin: when the pinned schema defines a key, the allowance for it is stale and must go, and
+// the key becomes whatever the new schema says (identity becomes required).
+func TestAheadOfThePinIsNotInThePin(t *testing.T) {
+	root := parseDoc(t, loadFixture(t, "schema/archfit.state.schema.json"))
+	for loc := range aheadOfThePin {
+		path, ok := aheadOfThePinSchemaPath[loc]
+		if !ok {
+			t.Fatalf("%s has no schema path: add it to aheadOfThePinSchemaPath", loc)
+		}
+		parent := at(t, root, path[:len(path)-1]...).(map[string]any)
+		if _, defined := parent[path[len(path)-1].(string)]; defined {
+			t.Errorf("%s is defined by the pinned schema now: delete it from aheadOfThePin and make the decoder follow the schema", loc)
+		}
+	}
+}
+
+// TestIdentityMatchesTheEnginesDefinition holds the decoder's identity block to the released v3.3.0 definition of
+// ResultIdentity (an excerpt, engine-next/SOURCE), both ways.
+func TestIdentityMatchesTheEnginesDefinition(t *testing.T) {
+	excerpt := parseDoc(t, loadFixture(t, "engine-next/result-identity.v3.3.0.json"))
+	w := schemaWalker{t: t, root: excerpt}
+	w.check("report.identity", map[string]any{"$ref": "#/$defs/ResultIdentity"}, reflect.TypeFor[shadowIdentity]())
+	checkKeptInShadow(t, "report.identity", reflect.TypeFor[ResultIdentity](), reflect.TypeFor[shadowIdentity]())
 }
 
 // shadowFields visits every field of every shadow struct reachable from t, with its JSON location.

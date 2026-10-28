@@ -18,12 +18,16 @@ import (
 // the check run external_id is "v1:<run_id>:<attempt>:<report_digest>", the rest is a hidden
 // JSON marker in the check summary. The check is its own receipt.
 type Receipt struct {
-	RunID                int64              `json:"run_id"`
-	RunAttempt           int                `json:"run_attempt"`
-	ReportDigest         string             `json:"report_digest"`
-	PolicyDigest         string             `json:"policy_digest"`
-	BaselineDigest       string             `json:"baseline_digest"`
-	LabelsDigest         string             `json:"labels_digest"`
+	RunID          int64  `json:"run_id"`
+	RunAttempt     int    `json:"run_attempt"`
+	ReportDigest   string `json:"report_digest"`
+	PolicyDigest   string `json:"policy_digest"`
+	BaselineDigest string `json:"baseline_digest"`
+	LabelsDigest   string `json:"labels_digest"`
+	// IdentityKey names what the engine measured and under which inputs (the report's result identity); "" for a
+	// report without one. The same key and the same outcome on a head mean a re-run changed nothing: Publish writes
+	// nothing for it.
+	IdentityKey          string             `json:"identity_key,omitempty"`
 	EarliestWaiverExpiry time.Time          `json:"earliest_waiver_expiry"`
 	Conclusion           verdict.Conclusion `json:"conclusion"`
 	Reason               verdict.ReasonCode `json:"reason"`

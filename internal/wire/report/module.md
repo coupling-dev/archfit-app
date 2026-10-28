@@ -61,6 +61,14 @@ Volatility: moderate. It changes with a versioned engine release; the caps are *
 ### Engine release and key set
 
 `Decode` reads v3.0.0, v3.0.1, v3.2.0, v3.2.2 and v3.2.3 through one byte-identical state-schema key set.
+
+The decoder is ahead of the pinned schema by two optional keys of engine v3.3.0 (`aheadOfThePin` in the tests):
+`identity`, the result identity block (`ResultIdentity`, held field for field to the released v3.3.0 definition, vendored
+as an excerpt under `testdata/engine-next/`), and `coverage.tools[].details`, a list of one-line strings that is validated
+and dropped. Both are optional, so a v3.2.3 report decodes unchanged. When the pin moves past v3.3.0 the allowance must go
+(`TestAheadOfThePinIsNotInThePin` fails until it does) and `identity` becomes what the new schema says: required.
+`Report.Identity` is the engine's own statement. It decides nothing: the gate trusts inputs from the protected ref only,
+and uses the identity for the receipt key (`gate`, `identityKey`) and for display.
 Other releases, empty versions and unknown keys fail closed. Historical readability preserves stored reports.
 Only the manifest's exact v3.2.3 platform tuples are approved. Old readable uploads end `unknown_engine_identity`, not success.
 No version fallback or second approval path is added.

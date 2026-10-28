@@ -2,6 +2,8 @@ package gate
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +11,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate/feedback"
@@ -18,6 +21,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/envelope"
 	"github.com/alexei-led/archfit-app/internal/wire/manifest"
+	"github.com/alexei-led/archfit-app/internal/wire/report"
 )
 
 const (
@@ -145,6 +149,7 @@ func receipt(u Upload, t inputs.Trusted, o verdict.Outcome) feedback.Receipt {
 		RunID:                u.Binding.RunID,
 		RunAttempt:           u.Binding.RunAttempt,
 		ReportDigest:         u.Digest,
+		IdentityKey:          identityKey(u.Report),
 		PolicyDigest:         acceptedDigest(t.PolicyDigests, configHash),
 		BaselineDigest:       acceptedDigest(t.BaselineDigests, u.BaselineDigest),
 		LabelsDigest:         acceptedDigest(t.LabelsDigests, u.LabelsDigest),
@@ -152,6 +157,23 @@ func receipt(u Upload, t inputs.Trusted, o verdict.Outcome) feedback.Receipt {
 		Conclusion:           o.Conclusion,
 		Reason:               o.Reasons[0].Code,
 	}
+}
+
+// identityKey names what a report's engine measured and under which inputs, from its result identity: the analysed
+// tree, the policy, baseline and labels digests, the comparison base, the engine version and the measurement profile.
+// "" when the report has no identity or lacks a field that makes it a key. The key is the engine's own statement and
+// decides nothing: it only lets an identical re-run publish nothing, and only beside an identical App outcome.
+func identityKey(r *report.Report) string {
+	if r == nil || r.Identity == nil {
+		return ""
+	}
+	id := r.Identity
+	if id.HeadTreeDigest == "" || id.PolicyDigest == "" || id.EngineVersion == "" || id.MeasurementProfileHash == "" {
+		return ""
+	}
+	parts := []string{id.HeadTreeDigest, id.PolicyDigest, id.BaselineDigest, id.LabelsDigest, id.BaseSHA, id.EngineVersion, id.MeasurementProfileHash}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return hex.EncodeToString(sum[:])
 }
 
 // acceptedDigest is the claim when gate/inputs accepts it, else the first trusted digest.
