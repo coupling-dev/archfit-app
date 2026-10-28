@@ -55,6 +55,7 @@ func (c *checker) report(s *shadowReport) Report {
 	}
 	r.Verdict = c.enum("verdict", s.Verdict, "healthy", "needs_attention", "blocked")
 	r.Identity = optional(c, "identity", s.Identity, c.identity)
+	r.GateReasons = stringsOf(c, "gate_reasons", s.GateReasons, maxSmallList, false, classText)
 	r.Decision = object(c, "decision", s.Decision, c.decision)
 	r.Comparison = object(c, "comparison", s.Comparison, c.comparison)
 	r.GateReference = optional(c, "gate_reference", s.GateReference, c.reference)

@@ -62,13 +62,18 @@ Volatility: moderate. It changes with a versioned engine release; the caps are *
 
 `Decode` reads v3.0.0, v3.0.1, v3.2.0, v3.2.2 and v3.2.3 through one byte-identical state-schema key set.
 
-The decoder is ahead of the pinned schema by two optional keys of engine v3.3.0 (`aheadOfThePin` in the tests):
-`identity`, the result identity block (`ResultIdentity`, held field for field to the released v3.3.0 definition, vendored
-as an excerpt under `testdata/engine-next/`), and `coverage.tools[].details`, a list of one-line strings that is validated
-and dropped. Both are optional, so a v3.2.3 report decodes unchanged. When the pin moves past v3.3.0 the allowance must go
-(`TestAheadOfThePinIsNotInThePin` fails until it does) and `identity` becomes what the new schema says: required.
-`Report.Identity` is the engine's own statement. It decides nothing: the gate trusts inputs from the protected ref only,
-and uses the identity for the receipt key (`gate`, `identityKey`) and for display.
+The decoder is ahead of the pinned schema (v3.2.3) by what engine v3.3.0 added, all optional so that a v3.2.3 report
+decodes unchanged (`aheadOfThePin` in the tests): `identity`, the result identity block; `gate_reasons`, the coupling
+gate's own one-line reasons that `check` writes into the state (kept as `Report.GateReasons`, repository attention for
+the owner); `coverage.tools[].details`, one-line strings, validated and dropped; and `null` for
+`seams[].raw_distance.same_owner` and `same_deploy_unit` (marked `optBool`; the engine writes null unless both sides are
+known). New producer names (`dotnet-msbuild`, `roslyn`, `supplied-coverage`) need nothing: `tool` is a free identifier.
+`TestDecoderCoversTheEnginesCurrentSchema` walks the engine's current state schema (`testdata/engine-next/`, `feec08c3`,
+identical to v3.3.0) against the decoder both ways with no allowance, so a key the engine emits and the App does not read
+fails the test before the pin moves. When the pin moves past v3.3.0, `TestAheadOfThePinIsNotInThePin` fails until the
+allowance is removed, and `identity` becomes what the new schema says: required. `Report.Identity` and
+`Report.GateReasons` are the engine's own statements and decide nothing: the gate trusts inputs from the protected ref
+only, and uses the identity for the receipt key (`gate`, `identityKey`) and for display.
 
 `DecodePolicyChange` reads the `policy_change` object of `archfit.config-compare.v1` (engine E11, `feec08c3`): the
 classification of a change to the protected policy. It is strict like `Decode`: every list is required, the value
