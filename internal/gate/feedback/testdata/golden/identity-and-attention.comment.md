@@ -2,7 +2,7 @@
 <!-- archfit:head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb run 7.1 -->
 ## Archfit: Architecture gate passed
 
-Assessment: 0 active findings, 0 advisories, 0 accepted findings. Measured by engine `v3.0.0` against policy `refs/heads/main@aaaaaaa`.
+Assessment: 0 active findings, 0 advisories, 0 accepted findings. Checked with engine `v3.0.0` and policy digest `111111111111`.
 
 PR impact: unknown — no comparable Git-base finding-origin evidence.
 
@@ -34,7 +34,7 @@ Reports are customer-attested. Upload authentication does not independently veri
 <details>
 <summary>For coding agents</summary>
 
-Result identity: engine `v3.0.0`, policy digest `1111111111111111111111111111111111111111111111111111111111111111`, head tree `eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee`, base `dddddddddddddddddddddddddddddddddddddddd`.
+Result identity, as the engine states it: engine `v3.0.0`, policy digest `1111111111111111111111111111111111111111111111111111111111111111`, head tree `eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee`, base `dddddddddddddddddddddddddddddddddddddddd`.
 
 ### Agent tasks
 

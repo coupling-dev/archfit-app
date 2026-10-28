@@ -222,7 +222,7 @@ func shortID(id string) string {
 func renderState(p Publication) string {
 	p = presentation(p)
 	l := layout{head: join(headBlock(p, false), policyCard(p.PolicyChange, p.Trusted.Settings)), decision: decisionBlock(p), inputs: inputsBlock(p), receipt: receiptMarker(p.Receipt)}
-	l.attention = attentionBlock(p)
+	l.attention = attentionBlock(p, false)
 	if !suspended(p.Outcome) {
 		l.findings, l.dims, l.gaps = findingsBlock(p.Report, false), dimensionsBlock(p.Report), gapsBlock(p)
 		if p.Report != nil {
@@ -258,7 +258,7 @@ func renderComment(p Publication, now time.Time, waiver, link string) string {
 			l.tasks, l.hasTasks = encodeTasks(p.Report.AgentTasks), true
 		}
 	}
-	l.attention, l.agentID = attentionBlock(p), agentIdentity(p)
+	l.attention, l.agentID = attentionBlock(p, true), agentIdentity(p)
 	identity := commentIdentity(p)
 	if link != "" {
 		identity += " The App link shows the current PR result/recovery diagnostics, not a historical snapshot."

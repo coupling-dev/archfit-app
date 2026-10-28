@@ -355,8 +355,8 @@ What each item shows:
   earlier report do not stay; GitHub shows the newest run. If the App cannot read the list of changed files, the
   check has no annotations for that upload.
 - The comment leads with the configured Archfit merge effect, assessment and PR impact, or explicitly unknown
-  impact. The assessment line names what measured the result: the engine version, and the policy as the ref and
-  commit the engine read it from (or the policy digest the App checked). Other GitHub protections still apply.
+  impact. The assessment line names what the App checked the result with: the engine version of the approved
+  producer and the first 12 characters of the policy digest the App accepted (compare it with the check's Inputs). Other GitHub protections still apply.
   Introduced means a new finding identity against a comparable Git base; it does not prove a new module pair or that
   every listed source site was added.
 - At most three active findings/advisories, each led by its place (`path:line`) and rule, with the module pair. An
@@ -366,9 +366,11 @@ What each item shows:
   dimensions, full reasons and producer/input digests. The comment has no table wider than four columns, so it reads in
   a plain mail client. There is no comment diagram or separate Archfit email body; GitHub may notify this same text.
 - **Repository attention (for the owner)**, a fold, lists the engine's coupling gate reasons when it reports any (at
-  most ten). They are chores for an architecture owner, not tasks for the pull request's author.
-- **For coding agents**, a fold, opens with the result identity the engine stated (engine, policy and baseline digests,
-  head tree, base), so an agent that re-runs the check can compare what it measured.
+  most ten; the `archfit/state` check shows up to fifty, and the run's report artifact all). They are chores for an
+  architecture owner, not tasks for the pull request's author.
+- **For coding agents**, a fold, opens with the result identity as the engine states it (engine, policy and baseline
+  digests, head tree, base), so an agent that re-runs the check can compare what it measured. It is the engine's claim,
+  not something the App checked.
 - **Next** names the PR author/coding agent, architecture owner or CI maintainer as appropriate. Archfit does not
   invent validation flags or choose which cycle direction to remove. The exact emitted task JSON remains between
   `<!-- archfit:agent-tasks -->` markers; task values and validation flags are preserved. Whole omitted tasks are

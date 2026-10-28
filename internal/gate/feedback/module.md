@@ -18,10 +18,12 @@ keeps in the Store is a short-lived lease per head SHA, because GitHub has no co
 - Create the pending (`in_progress`) gate check for a new head.
 - Read back the gate check of a head SHA as `CheckState`, including the parsed `Receipt`.
 - Add or refresh the waiver-expiry notice in the comment.
-- Render the comment's first screen for a person: the assessment with what measured it (engine, policy ref or digest);
+- Render the comment's first screen for a person: the assessment with what the App checked it with (the approved
+  engine, the accepted policy digest; never the report's own identity claim);
   at most three findings led by place and rule, an active one with its why and fix (300 characters each), an advisory
-  without its coupling why; the owner's repository attention (the engine's gate reasons, at most ten) in its own fold;
-  the result identity first in the fold for coding agents. No table wider than four columns.
+  without its coupling why; the owner's repository attention (the engine's gate reasons, at most ten in the comment and fifty in the
+  archfit/state check) in its own fold; the result identity, labelled as the engine's statement, first in the fold for
+  coding agents. No table wider than four columns.
 - Render the policy change card (`policyCard`) in the comment and the `archfit/state` check when the publication
   carries an engine classification of a change to the protected policy: the direction, the changes in plain words
   (each value cut to 80 characters, the list bounded to about 3 KB, then a count: the card sits in a block that is never

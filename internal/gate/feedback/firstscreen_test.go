@@ -28,29 +28,52 @@ func TestCommentWithIdentityAndAttention(t *testing.T) {
 	golden(t, "identity-and-attention.comment", comment)
 
 	head := comment[:strings.Index(comment, "<details>")]
-	if !strings.Contains(head, "against policy `refs/heads/main@aaaaaaa`") {
-		t.Errorf("first screen does not name the policy ref:\n%s", head)
+	// The first screen states what the App checked, never the report's own claim about its policy.
+	if !strings.Contains(head, "Checked with engine `"+p.Identity.EngineVersion+"` and policy digest `"+p.Receipt.PolicyDigest[:policyDigestLen]+"`") ||
+		strings.Contains(head, "refs/heads/main") {
+		t.Errorf("first screen:\n%s", head)
 	}
 	if strings.Contains(head, "distributed monolith") {
 		t.Error("the owner's chores are on the first screen")
 	}
 	if !strings.Contains(comment, "<summary>Repository attention (for the owner)</summary>") ||
-		!strings.Contains(comment, "Result identity: engine `"+p.Identity.EngineVersion+"`") {
+		!strings.Contains(comment, "Result identity, as the engine states it: engine `"+p.Identity.EngineVersion+"`") {
 		t.Errorf("missing the attention fold or the agents' identity:\n%s", comment)
 	}
 }
 
 func TestAttentionIsBounded(t *testing.T) {
 	p := fixturePublication(t, healthyCase(t), headB)
-	for range attentionCap + 5 {
+	for range attentionStateCap + 5 {
 		p.Report.GateReasons = append(p.Report.GateReasons, strings.Repeat("r", 5000))
 	}
-	block := attentionBlock(p)
-	if strings.Count(block, "\n- ") != attentionCap+1 || !strings.Contains(block, "- and 5 more") {
-		t.Errorf("attention not capped at %d lines:\n%s", attentionCap, block[:min(len(block), 400)])
+	for _, tt := range []struct {
+		inComment bool
+		limit     int
+		more      string
+	}{
+		{true, attentionCap, "- and 45 more: read the archfit/state check"},
+		{false, attentionStateCap, "- and 5 more: they are in the report artifact of this run"},
+	} {
+		block := attentionBlock(p, tt.inComment)
+		if strings.Count(block, "\n- ") != tt.limit+1 || !strings.Contains(block, tt.more) {
+			t.Errorf("comment %v: not capped at %d lines, or the rest is not pointed at:\n%s", tt.inComment, tt.limit, block[len(block)-200:])
+		}
+		if len(block) > tt.limit*(attentionRunes+10)+500 {
+			t.Errorf("comment %v: attention is %d bytes", tt.inComment, len(block))
+		}
 	}
-	if len(block) > attentionCap*(attentionRunes+10)+500 {
-		t.Errorf("attention is %d bytes", len(block))
+}
+
+// A finding's why and fix read as one line: no doubled period, and a metric's why does not repeat its numbers.
+func TestFindingLineWording(t *testing.T) {
+	f := report.Finding{Kind: "gate", Status: "new", RuleID: "no_x", Why: "Forbidden by policy.", Constraint: "Move the code.",
+		Edge: report.Edge{From: report.Endpoint{Module: "a"}, To: report.Endpoint{Module: "b"}}}
+	p := fixturePublication(t, healthyCase(t), headB)
+	p.Report.Findings = []report.Finding{f}
+	got := compactFindings(p)
+	if strings.Contains(got, "..") || !strings.Contains(got, "Why: Forbidden by policy. Fix: Move the code") {
+		t.Errorf("finding line: %s", got)
 	}
 }
 

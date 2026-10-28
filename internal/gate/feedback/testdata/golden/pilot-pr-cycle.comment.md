@@ -2,7 +2,7 @@
 <!-- archfit:head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb run 7.1 -->
 ## Archfit: Architecture violations found · advisory
 
-Assessment: 4 active findings, 0 advisories, 6 accepted findings. Measured by engine `v3.0.0` against policy `111111111111…`.
+Assessment: 4 active findings, 0 advisories, 6 accepted findings. Checked with engine `v3.0.0` and policy digest `111111111111`.
 
 PR impact: 6 introduced findings, 6 pre-existing, 0 unknown. Finding origin does not establish that each module pair or listed source site was added.
 
