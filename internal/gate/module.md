@@ -601,8 +601,8 @@ type CheckState struct {
 type Publisher interface {
     // Publish writes archfit/state, archfit/gate (only when Settings.Gate is required) and the
     // single PR comment. It is idempotent per Receipt and never overwrites feedback of a newer head or run. A
-    // publication whose IdentityKey, outcome and receipt digests equal those already on the head, with the comment of
-    // that head present, writes nothing at all: a re-run on unchanged inputs adds no check run and edits no comment.
+    // re-run on unchanged inputs updates the checks and the one comment in place; Receipt.IdentityKey never suppresses
+    // a publication (the identity is a claim inside a customer-attested report).
     Publish(ctx context.Context, p Publication) error
     // Pending creates the in_progress gate check if none exists on the head SHA.
     Pending(ctx context.Context, t Target) error

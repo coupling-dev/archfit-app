@@ -1058,10 +1058,11 @@ func identityOf(tree, policyDigest, engine string) func(map[string]any) {
 	}
 }
 
-// A1: a re-run whose report states the same result identity, on the same head and with the same App outcome, writes
-// no check run and edits no comment. A different identity (another tree, policy or engine) publishes as before, and a
-// report without an identity is always published.
-func TestRepeatedIdentityPublishesNothing(t *testing.T) {
+// A1: the receipt records the report's result identity, and a re-run on one head updates what is there in place: the
+// gate check stays one run, the PR keeps one comment. The identity is the engine's own claim in a customer-attested
+// report, so it never suppresses feedback: a re-run whose report differs under the same claimed identity is what the
+// pull request shows afterwards.
+func TestReceiptsCarryTheIdentityAndRerunsUpdateInPlace(t *testing.T) {
 	tree, policyDigest := strings.Repeat("e", 40), strings.Repeat("a", 64)
 	same := identityOf(tree, policyDigest, "v3.3.0")
 	rerun := func(w *world, p *pull) {
@@ -1069,68 +1070,53 @@ func TestRepeatedIdentityPublishesNothing(t *testing.T) {
 		run.Attempt++
 		w.gh.runs[p.runID] = run
 	}
-	tests := []struct {
-		name   string
-		second func(map[string]any)
-		writes bool
-	}{
-		{"the same identity", same, false},
-		{"another head tree", identityOf(strings.Repeat("9", 40), policyDigest, "v3.3.0"), true},
-		{"another policy", identityOf(tree, strings.Repeat("7", 64), "v3.3.0"), true},
-		{"another engine", identityOf(tree, policyDigest, "v3.4.0"), true},
-		{"no identity", func(doc map[string]any) { delete(doc, "identity") }, true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			w := newWorld(t)
-			p := w.openPull(w.shop, 7)
-			w.handle(w.event(webhook.PullOpened, p))
-			w.wantAnswer(w.upload(p, fixtureBlocked, same), 200, "failure", "blocking_findings")
-			before, checks := w.gh.writes(), len(w.gh.checkWrites)
-
-			rerun(w, p)
-			w.wantAnswer(w.upload(p, fixtureBlocked, tt.second), 200, "failure", "blocking_findings")
-
-			if wrote := w.gh.writes() != before; wrote != tt.writes {
-				t.Errorf("wrote = %v (%d writes, %d check writes), want %v", wrote, w.gh.writes()-before, len(w.gh.checkWrites)-checks, tt.writes)
-			}
-			w.wantGate(p, runCompleted, "failure")
-		})
-	}
-
-	// The App's own inputs can change under one engine identity: a baseline that is now trusted names another digest in
-	// the receipt, so the check that shows it is rewritten.
-	t.Run("a changed trusted input publishes although the identity is the same", func(t *testing.T) {
+	setup := func(t *testing.T) (*world, *pull) {
 		w := newWorld(t)
 		p := w.openPull(w.shop, 7)
 		w.handle(w.event(webhook.PullOpened, p))
 		w.wantAnswer(w.upload(p, fixtureBlocked, same), 200, "failure", "blocking_findings")
-		before := w.gh.writes()
+		return w, p
+	}
 
-		w.setFile(w.shop, testBranch, policy.LabelsPath, []byte("labels: {}\n"))
+	t.Run("the receipt names the identity; a report without one has no key", func(t *testing.T) {
+		w, p := setup(t)
+		key := w.receipt(p).IdentityKey
+		if len(key) != 64 {
+			t.Fatalf("IdentityKey = %q, want a sha256", key)
+		}
 		rerun(w, p)
-		s := w.spec(p, w.report(w.shop, fixtureBlocked, same))
-		s.env.LabelsDigest = w.digestOf(w.shop, testBranch, policy.LabelsPath)
-		w.wantAnswer(w.send(s), 200, "failure", "blocking_findings")
-
-		if w.gh.writes() == before {
-			t.Error("a receipt with another labels digest wrote nothing")
+		w.wantAnswer(w.upload(p, fixtureBlocked, identityOf(strings.Repeat("9", 40), policyDigest, "v3.3.0")), 200, "failure", "blocking_findings")
+		if other := w.receipt(p).IdentityKey; other == "" || other == key {
+			t.Errorf("another head tree gave key %q, want a new one", other)
+		}
+		rerun(w, p)
+		w.wantAnswer(w.upload(p, fixtureBlocked), 200, "failure", "blocking_findings")
+		if none := w.receipt(p).IdentityKey; none != "" {
+			t.Errorf("a report without identity gave key %q", none)
 		}
 	})
 
-	t.Run("a changed App outcome publishes although the identity is the same", func(t *testing.T) {
-		w := newWorld(t)
-		p := w.openPull(w.shop, 7)
-		w.handle(w.event(webhook.PullOpened, p))
+	t.Run("a repeat adds no check run and no comment", func(t *testing.T) {
+		w, p := setup(t)
+		rerun(w, p)
 		w.wantAnswer(w.upload(p, fixtureBlocked, same), 200, "failure", "blocking_findings")
-		before := w.gh.writes()
+		w.check(p, p.head, gateCheckName) // fails the test on more than one gate check
+		if n := len(w.comments(p)); n != 1 {
+			t.Errorf("%d comments, want the one comment, edited in place", n)
+		}
+		if rc := w.receipt(p); rc.RunAttempt != 2 {
+			t.Errorf("receipt attempt = %d, want the re-run's 2: the run order advances", rc.RunAttempt)
+		}
+	})
 
+	t.Run("a different report under the same claimed identity is shown", func(t *testing.T) {
+		w, p := setup(t)
+		before := w.feedbackText(p)
 		rerun(w, p)
 		w.wantAnswer(w.upload(p, fixtureHealthy, same), 200, "success", "healthy")
-
-		if w.gh.writes() == before {
-			t.Error("a new outcome under the same identity wrote nothing")
-		}
 		w.wantGate(p, runCompleted, "success")
+		if w.feedbackText(p) == before {
+			t.Error("the feedback still shows the first report")
+		}
 	})
 }

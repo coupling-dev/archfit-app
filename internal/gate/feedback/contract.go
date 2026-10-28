@@ -25,8 +25,8 @@ type Receipt struct {
 	BaselineDigest string `json:"baseline_digest"`
 	LabelsDigest   string `json:"labels_digest"`
 	// IdentityKey names what the engine measured and under which inputs (the report's result identity); "" for a
-	// report without one. The same key and the same outcome on a head mean a re-run changed nothing: Publish writes
-	// nothing for it.
+	// report without one. It is a fact a later decision compares (a moved target, a repair task); it never suppresses
+	// a publication: the identity is the engine's own claim in a customer-attested report.
 	IdentityKey          string             `json:"identity_key,omitempty"`
 	EarliestWaiverExpiry time.Time          `json:"earliest_waiver_expiry"`
 	Conclusion           verdict.Conclusion `json:"conclusion"`

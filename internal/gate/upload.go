@@ -162,7 +162,7 @@ func receipt(u Upload, t inputs.Trusted, o verdict.Outcome) feedback.Receipt {
 // identityKey names what a report's engine measured and under which inputs, from its result identity: the analysed
 // tree, the policy, baseline and labels digests, the comparison base, the engine version and the measurement profile.
 // "" when the report has no identity or lacks a field that makes it a key. The key is the engine's own statement and
-// decides nothing: it only lets an identical re-run publish nothing, and only beside an identical App outcome.
+// decides nothing: it is recorded so that a later decision can compare what was measured, never to skip feedback.
 func identityKey(r *report.Report) string {
 	if r == nil || r.Identity == nil {
 		return ""

@@ -70,14 +70,6 @@ func (s *publisher) Publish(ctx context.Context, p Publication) (err error) {
 	}()
 
 	isPull := p.Target.PullRequest != 0 && p.Trusted.SettingsFound
-	same, err := s.unchanged(ctx, p, isPull)
-	if err != nil {
-		return err
-	}
-	if same {
-		gate, state, comment = actionUnchanged, actionUnchanged, actionUnchanged
-		return nil
-	}
 	run := api.CheckRun{
 		HeadSHA:    p.Target.HeadSHA,
 		ExternalID: externalID(p.Receipt),
@@ -118,42 +110,6 @@ func (s *publisher) Publish(ctx context.Context, p Publication) (err error) {
 		return listErr
 	}
 	return nil
-}
-
-// unchanged reports whether publishing p would change nothing a reader sees: the checks it would write are already on
-// the head with the same identity key, outcome and inputs, and the comment is already there for this head. A re-run on
-// unchanged inputs measures the same thing, so it adds no check run and edits no comment. A report without an identity
-// has no key, and is always published.
-func (s *publisher) unchanged(ctx context.Context, p Publication, isPull bool) (bool, error) {
-	key := p.Receipt.IdentityKey
-	if key == "" {
-		return false, nil
-	}
-	names := []string{stateCheck}
-	if required(p) {
-		names = append(names, gateCheck)
-	}
-	for _, name := range names {
-		existing, found, err := s.latestRun(ctx, p.Target.Repo.RepoRef, p.Target.HeadSHA, name)
-		if err != nil || !found || existing.Status != statusCompleted {
-			return false, err
-		}
-		rc, ok := parseReceipt(existing.Summary)
-		if !ok || rc.IdentityKey != key || rc.Conclusion != p.Receipt.Conclusion || rc.Reason != p.Receipt.Reason ||
-			rc.PolicyDigest != p.Receipt.PolicyDigest || rc.BaselineDigest != p.Receipt.BaselineDigest ||
-			rc.LabelsDigest != p.Receipt.LabelsDigest || !rc.EarliestWaiverExpiry.Equal(p.Receipt.EarliestWaiverExpiry) {
-			return false, nil
-		}
-	}
-	if !isPull {
-		return true, nil
-	}
-	existing, found, err := s.findComment(ctx, p.Target)
-	if err != nil || !found {
-		return false, err
-	}
-	head, _, _, ok := parseHead(existing.Body)
-	return ok && head == p.Target.HeadSHA, nil
 }
 
 // stateConclusion fails closed like the gate: missing, unverifiable or ineligible evidence asks for action and is
