@@ -79,6 +79,20 @@ func TestPolicyChangeRules(t *testing.T) {
 			d["rules_added"].([]any)[0].(map[string]any)["id"] = 3
 		}), "policy_change.rules_added[0].id"},
 		{"not an object", []byte(`[]`), "policy_change"},
+		{"an empty direction", edit("widen", func(d map[string]any) { d["direction"] = "" }), "policy_change.direction"},
+		{"an empty coverage kind", edit("exclude", func(d map[string]any) {
+			d["coverage_lost"].([]any)[0].(map[string]any)["kind"] = ""
+		}), "policy_change.coverage_lost[0].kind"},
+		{"a rule field the engine never writes", edit("widen", func(d map[string]any) {
+			d["direction"] = "loosening"
+			d["rules_loosened"] = []any{map[string]any{"id": "r", "field": "selector", "from": "a", "to": "b"}}
+		}), "policy_change.rules_loosened[0].field"},
+		{"a control character in engine text", edit("widen", func(d map[string]any) {
+			d["declarations_changed"] = []any{map[string]any{"key": "layers", "from": "a\x00b", "to": "c"}}
+		}), "policy_change.declarations_changed[0].from"},
+		{"engine text over the cap", edit("widen", func(d map[string]any) {
+			d["declarations_changed"] = []any{map[string]any{"key": "layers", "from": strings.Repeat("x", 9000), "to": "c"}}
+		}), "policy_change.declarations_changed[0].from"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -90,5 +104,35 @@ func TestPolicyChangeRules(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The shapes the engine writes for an ordinary change decode: a moved selector is a "declaration" change whose from and
+// to are the whole rule's canonical JSON, possibly several lines for a duplicated rule ID; a metric ratchet changes its
+// max_new or min_delta; a changed top-level section is a declaration with its canonical JSON.
+func TestPolicyChangeEngineShapes(t *testing.T) {
+	big := `{"layers":[` + strings.Repeat(`{"name":"core","paths":["internal/core/**","pkg/core/**"]},`, 40) + `{"name":"edge"}]}`
+	doc := policyChangeDoc(t, "widen")
+	doc["rules_loosened"] = []any{
+		map[string]any{"id": "no_db", "field": "declaration", "from": "fail  {\"type\":\"forbidden_dependency\"}\nfail  {\"type\":\"forbidden_dependency\",\"guard\":true}", "to": "fail  {}"},
+		map[string]any{"id": "metric/coupling", "field": "max_new", "from": "0", "to": "3"},
+		map[string]any{"id": "metric/churn", "field": "min_delta", "from": "0", "to": "0.5"},
+		map[string]any{"id": "no_db", "field": "gate", "from": "fail", "to": "warn"},
+		map[string]any{"id": "size", "field": "max", "from": "10", "to": "20"},
+	}
+	doc["declarations_changed"] = []any{map[string]any{"key": "layers", "from": big, "to": big + " "}}
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(big) <= maxTextLen {
+		t.Fatal("the section must be longer than ordinary text to test the cap")
+	}
+	p, err := DecodePolicyChange(raw)
+	if err != nil {
+		t.Fatalf("DecodePolicyChange: %v", err)
+	}
+	if p.Direction != DirectionLoosening || len(p.RulesLoosened) != 5 || p.DeclarationsChanged[0].From != big {
+		t.Errorf("got %+v", p)
 	}
 }

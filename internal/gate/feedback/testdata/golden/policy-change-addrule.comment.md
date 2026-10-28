@@ -8,9 +8,9 @@ PR impact: unknown — no comparable Git-base finding-origin evidence.
 
 ### Policy change
 
-This pull request tightens the policy: 1 tightening.
+This pull request tightens the policy (1 change).
 
-- Rule added: `no_direct_a_dependency` (fail)
+- Rule added: `no_direct_a_dependency` (blocks)
 
 A change to the protected policy needs an architecture owner's approval of this exact commit.
 

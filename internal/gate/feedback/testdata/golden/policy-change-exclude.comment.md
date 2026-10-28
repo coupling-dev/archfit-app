@@ -8,11 +8,11 @@ PR impact: unknown — no comparable Git-base finding-origin evidence.
 
 ### Policy change
 
-This pull request loosens the policy: 1 loosening.
+This pull request loosens the policy (1 change).
 
-- Coverage lost: exclude_added `pkg/a/**`
+- Coverage lost: `pkg/a/**` is now excluded from the analysis
 
-A change to the protected policy needs an architecture owner's approval of this exact commit. A loosening is never approved by an agent. Coverage lost is code the analysis no longer reads.
+A change to the protected policy needs an architecture owner's approval of this exact commit. A loosening is never approved by an agent.
 
 **Next:** Nothing to do.
 

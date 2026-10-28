@@ -81,8 +81,11 @@ func (p PolicyChange) direction() string {
 
 // The closed value sets of the engine (internal/assessment/decision/policy_change.go at feec08c3).
 var (
-	policyDirections     = []string{DirectionNone, DirectionTightening, DirectionLoosening, DirectionMixed}
-	ruleDeltaFields      = []string{"gate", "max", "selector", "patterns"}
+	policyDirections = []string{DirectionNone, DirectionTightening, DirectionLoosening, DirectionMixed}
+	// ruleDeltaFields are the values the engine emits (compareRule and the metric ratchets at feec08c3): the gate, the
+	// max, a metric's max_new and min_delta, and "declaration" for any other change to a rule (type, selectors,
+	// patterns, guard). Its doc comment names selector and patterns; the code never writes them.
+	ruleDeltaFields      = []string{"gate", "max", "declaration", "max_new", "min_delta"}
 	allowlistFields      = []string{"depends_on", "visible_to"}
 	coverageLostKinds    = []string{"exclude_added", "language_disabled", "language_mode_lowered", "analyzer_disabled", "module_removed", "module_paths_removed", "module_review_gate_lowered"}
 	coverageGainedKinds  = []string{"exclude_removed", "language_enabled", "language_mode_raised", "analyzer_enabled", "module_review_gate_raised"}
@@ -178,7 +181,7 @@ func (c *checker) policyChange(s *shadowPolicyChange) PolicyChange {
 	}
 	delta := func(r *shadowPolicyRuleDelta) PolicyRuleDelta {
 		d := PolicyRuleDelta{ID: c.str("id", r.ID, classIdentifier), Field: c.str("field", r.Field, classToken),
-			From: c.str("from", r.From, classText), To: c.str("to", r.To, classText)}
+			From: c.str("from", r.From, classBlob), To: c.str("to", r.To, classBlob)}
 		c.oneOf("field", d.Field, ruleDeltaFields)
 		return d
 	}
@@ -189,7 +192,7 @@ func (c *checker) policyChange(s *shadowPolicyChange) PolicyChange {
 	}
 	allow := func(a *shadowPolicyAllowlist) PolicyAllowlist {
 		l := PolicyAllowlist{Module: c.str("module", a.Module, classIdentifier), Field: c.str("field", a.Field, classToken),
-			From: c.str("from", a.From, classText), To: c.str("to", a.To, classText)}
+			From: c.str("from", a.From, classBlob), To: c.str("to", a.To, classBlob)}
 		c.oneOf("field", l.Field, allowlistFields)
 		return l
 	}
@@ -201,7 +204,7 @@ func (c *checker) policyChange(s *shadowPolicyChange) PolicyChange {
 		}
 	}
 	decl := func(d *shadowPolicyDeclaration) PolicyDeclaration {
-		return PolicyDeclaration{Key: c.str("key", d.Key, classIdentifier), From: c.str("from", d.From, classText), To: c.str("to", d.To, classText)}
+		return PolicyDeclaration{Key: c.str("key", d.Key, classIdentifier), From: c.str("from", d.From, classBlob), To: c.str("to", d.To, classBlob)}
 	}
 	n := maxPolicyChangeItems
 	p := PolicyChange{
@@ -227,7 +230,7 @@ func (c *checker) policyChange(s *shadowPolicyChange) PolicyChange {
 
 // oneOf fails when v is not one of values; v itself is never named.
 func (c *checker) oneOf(key, v string, values []string) {
-	if v != "" && !slices.Contains(values, v) {
+	if !slices.Contains(values, v) {
 		c.fail(phaseEnum, key, "must be one of "+strings.Join(values, ", "))
 	}
 }

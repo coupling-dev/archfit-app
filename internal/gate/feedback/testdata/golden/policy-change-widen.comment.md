@@ -8,9 +8,9 @@ PR impact: unknown — no comparable Git-base finding-origin evidence.
 
 ### Policy change
 
-This pull request loosens the policy: 1 loosening.
+This pull request loosens the policy (1 change).
 
-- Allowlist widened: `a` depends_on `none` → `[b]`
+- Allowlist widened: `a` depends_on: `none` → `[b]`
 
 A change to the protected policy needs an architecture owner's approval of this exact commit. A loosening is never approved by an agent.
 
