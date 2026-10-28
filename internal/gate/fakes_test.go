@@ -39,13 +39,17 @@ type fakeGitHub struct {
 	teams         map[string]bool           // "team|login"
 	runs          map[int64]api.WorkflowRun // run IDs are unique across the fake
 	checks        map[string][]api.CheckRun // by full name
-	comments      map[string][]api.Comment  // pullKey
+	comments      map[string][]api.Comment  // pullKey; an issue's comments under its number
+	heads         map[string]string         // branchKey → head commit
+	issues        map[string][]fakeIssue    // by full name, the App's issues
+	unassignable  map[string]bool           // logins GitHub refuses to assign
 	nextID        int64
 
 	fail        map[string]error // method name → injected error
 	calls       []fakeCall
 	checkWrites []api.CheckRun // every created or updated check run, in order
 	commentOps  int            // comments created or updated
+	issueEdits  int            // issue bodies updated
 	reruns      []int64
 	// beforeCheckWrite runs once, unlocked, at the start of the next check run create or update: what it does
 	// happens after that publisher's reads and before its first write.
@@ -80,9 +84,15 @@ func newFakeGitHub() *fakeGitHub {
 		runs:     map[int64]api.WorkflowRun{},
 		checks:   map[string][]api.CheckRun{},
 		comments: map[string][]api.Comment{},
+		heads:    map[string]string{},
+		issues:   map[string][]fakeIssue{},
 		fail:     map[string]error{},
+
+		unassignable: map[string]bool{},
 	}
 }
+
+func branchKey(fullName, branch string) string { return fullName + "|" + branch }
 
 func fileKey(fullName, ref, path string) string { return fullName + "|" + ref + "|" + path }
 func pullKey(fullName string, number int) string {
@@ -146,10 +156,17 @@ func (f *fakeGitHub) File(_ context.Context, r api.RepoRef, ref, path string) ([
 	return slices.Clone(raw), "blob", nil
 }
 
-func (f *fakeGitHub) BranchHead(_ context.Context, r api.RepoRef, _ string) (string, error) {
+func (f *fakeGitHub) BranchHead(_ context.Context, r api.RepoRef, branch string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return "", cmpErr(f.enter("BranchHead", r), api.ErrNotFound)
+	if err := f.enter("BranchHead", r); err != nil {
+		return "", err
+	}
+	head, ok := f.heads[branchKey(r.FullName, branch)]
+	if !ok {
+		return "", api.ErrNotFound
+	}
+	return head, nil
 }
 
 func cmpErr(first, second error) error {
@@ -376,6 +393,77 @@ func (f *fakeGitHub) UpdateComment(_ context.Context, r api.RepoRef, id int64, b
 				f.commentOps++
 				return nil
 			}
+		}
+	}
+	return api.ErrNotFound
+}
+
+// firstIssue is the number of the first issue: issues and pull requests share GitHub's numbers, so the fake keeps
+// issue numbers clear of the pull requests the tests open.
+const firstIssue = 1000
+
+// fakeIssue is an issue the App opened.
+type fakeIssue struct {
+	api.Issue
+	Title    string
+	Assignee string
+	Open     bool
+}
+
+func (f *fakeGitHub) AppIssues(_ context.Context, r api.RepoRef) ([]api.Issue, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter("AppIssues", r); err != nil {
+		return nil, err
+	}
+	out := []api.Issue{}
+	for _, i := range f.issues[r.FullName] {
+		if i.Open {
+			out = append(out, i.Issue)
+		}
+	}
+	return out, nil
+}
+
+// CreateIssue refuses an assignee GitHub cannot assign, as GitHub's 422 does.
+func (f *fakeGitHub) CreateIssue(_ context.Context, r api.RepoRef, i api.NewIssue) (api.Issue, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter("CreateIssue", r); err != nil {
+		return api.Issue{}, err
+	}
+	if f.unassignable[i.Assignee] {
+		return api.Issue{}, errors.New("fake: 422 the assignee cannot be assigned")
+	}
+	issue := fakeIssue{Issue: api.Issue{Number: firstIssue + len(f.issues[r.FullName]), Body: i.Body}, Title: i.Title, Assignee: i.Assignee, Open: true}
+	f.issues[r.FullName] = append(f.issues[r.FullName], issue)
+	return issue.Issue, nil
+}
+
+func (f *fakeGitHub) UpdateIssueBody(_ context.Context, r api.RepoRef, number int, body string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter("UpdateIssueBody", r); err != nil {
+		return err
+	}
+	return f.editIssue(r.FullName, number, func(i *fakeIssue) { i.Body = body; f.issueEdits++ })
+}
+
+func (f *fakeGitHub) CloseIssue(_ context.Context, r api.RepoRef, number int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter("CloseIssue", r); err != nil {
+		return err
+	}
+	return f.editIssue(r.FullName, number, func(i *fakeIssue) { i.Open = false })
+}
+
+// editIssue edits the issue number of fullName. The caller holds the lock.
+func (f *fakeGitHub) editIssue(fullName string, number int, edit func(*fakeIssue)) error {
+	for i := range f.issues[fullName] {
+		if f.issues[fullName][i].Number == number {
+			edit(&f.issues[fullName][i])
+			return nil
 		}
 	}
 	return api.ErrNotFound
@@ -623,6 +711,15 @@ func (p *fakePublisher) Reconcile(ctx context.Context, t inputs.Target, decide f
 
 func (p *fakePublisher) Warn(context.Context, inputs.Target, time.Time) error {
 	panic("the façade never calls Warn")
+}
+
+// fakeRepairer records the publications the façade hands to the repair issue.
+type fakeRepairer struct {
+	repaired []feedback.Publication
+}
+
+func (r *fakeRepairer) Repair(_ context.Context, p feedback.Publication) {
+	r.repaired = append(r.repaired, p)
 }
 
 type fakeSweeper struct {

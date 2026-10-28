@@ -101,3 +101,23 @@ func New(checks api.Checks, comments api.Comments, pulls api.Pulls, s store.Stor
 		wait:  pollWait,
 	}
 }
+
+// Repairer keeps the repair issue of the default branch: one open issue per branch that says what a push broke and
+// closes when a push passes. It is a notification and never a gate.
+type Repairer interface {
+	// Repair opens, updates or closes the repair issue for p, the publication of a push to the default branch, once p
+	// is published. It never fails: GitHub's answer (the Issues permission missing, a rate limit) is logged, and what
+	// was published stays as it is.
+	Repair(ctx context.Context, p Publication)
+}
+
+// NewRepairer returns a Repairer that is safe for concurrent use: Repair holds the head's publication lease in s, as
+// Publish does, so two publications of one head never interleave their issue reads and writes.
+func NewRepairer(checks api.Checks, comments api.Comments, issues api.Issues, repos api.Repos, s store.Store, now func() time.Time) Repairer {
+	return &repairer{
+		lease:    &serialized{next: &publisher{checks: checks, now: now}, store: s, now: now, wait: pollWait},
+		comments: comments,
+		issues:   issues,
+		repos:    repos,
+	}
+}

@@ -177,6 +177,20 @@ func repoRefCalls(c *Client, r RepoRef) map[string]func(context.Context) (bool, 
 		"Comments.UpdateComment": func(ctx context.Context) (bool, error) {
 			return false, c.UpdateComment(ctx, r, 9, "hello")
 		},
+		"Issues.AppIssues": func(ctx context.Context) (bool, error) {
+			is, err := c.AppIssues(ctx, r)
+			return is != nil, err
+		},
+		"Issues.CreateIssue": func(ctx context.Context) (bool, error) {
+			i, err := c.CreateIssue(ctx, r, NewIssue{Title: "t", Body: "b", Assignee: "alice"})
+			return i != Issue{}, err
+		},
+		"Issues.UpdateIssueBody": func(ctx context.Context) (bool, error) {
+			return false, c.UpdateIssueBody(ctx, r, 9, "b")
+		},
+		"Issues.CloseIssue": func(ctx context.Context) (bool, error) {
+			return false, c.CloseIssue(ctx, r, 9)
+		},
 		"Actions.Run": func(ctx context.Context) (bool, error) {
 			wr, err := c.Run(ctx, r, 55)
 			return wr.ID != 0, err
@@ -288,6 +302,10 @@ func TestErrorsCarryNoSecretsOrContent(t *testing.T) {
 			"Artifact": func(ctx context.Context) error { _, err := c.Artifact(ctx, ref, 55, pathMark, 1<<20); return err },
 			"Commit": func(ctx context.Context) error {
 				_, err := c.Commit(ctx, ref, branchMark, bodyMark, []FileChange{{Path: pathMark, Content: []byte(bodyMark)}})
+				return err
+			},
+			"CreateIssue": func(ctx context.Context) error {
+				_, err := c.CreateIssue(ctx, ref, NewIssue{Title: bodyMark, Body: bodyMark, Assignee: userMark})
 				return err
 			},
 			"EnsurePull": func(ctx context.Context) error {

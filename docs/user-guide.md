@@ -65,7 +65,9 @@ its approval, not at its install.
 
 ## GitHub App permissions
 
-GitHub shows this list when you install the App. Each permission is here for one job.
+GitHub shows this list when you install the App. Each permission is here for one job. Issues is new with the release
+that brings the repair issue: GitHub asks each account that installed the App earlier to accept it, and until then
+there is no repair issue.
 
 ### Repository permissions
 
@@ -76,6 +78,7 @@ GitHub shows this list when you install the App. Each permission is here for one
 | Contents      | Read & write | Reads the policy and settings from the protected branch. Writes only branches named `archfit/…`, for its own pull requests.         | The App cannot read the approved policy or propose a change.                                                          |
 | Actions       | Read & write | Reads the Archfit run and its report artifact. Re-runs the Archfit run when its inputs change. Starts discovery and AI assist runs. | After an owner approves, the gate stays red until someone re-runs the job by hand. No discovery button, no AI assist. |
 | Metadata      | Read         | GitHub adds it to every App: repository name, default branch.                                                                       | Not optional.                                                                                                         |
+| Issues        | Read & write | Added by the release that brings the [repair issue](#repair-issue-on-the-default-branch): opens, updates and closes one issue when a push breaks the default branch. | No repair issue. Checks and comments work as before; the App logs each refused issue call. |
 
 ### Organization permissions
 
@@ -306,6 +309,7 @@ data_mode: customer
 | `workflow`  | A path under `.github/workflows/`            | The workflow that can upload reports              |
 | `data_mode` | `customer`, `managed`                        | `customer` keeps source processing in customer CI |
 | `policy_authority` | A mapping with `level`, optional `agents` and `tighten_auto` | Who approves a protected change; only `human` is in force |
+| `repair_assignee` | One login; no team, no list | Who the [repair issue](#repair-issue-on-the-default-branch) is assigned to; absent assigns nobody |
 
 Absent `gate` and `data_mode` keys use `advisory` and `customer`. An absent `agents` key, or `agents: []`, names no
 agent.
@@ -329,8 +333,8 @@ Their keys are `agents`, the architect agents a later rung lets approve, and `ti
 that lets a tightening need no approval. Neither has an effect yet. A loosening never needs less than a human.
 
 The App parses the settings file strictly: an unknown key makes the whole file unreadable, and every pull request then
-gets `settings_missing`. Add `agents` and `policy_authority` only after the Archfit App release that knows the keys
-serves your repository.
+gets `settings_missing`. Add `agents`, `policy_authority` and `repair_assignee` only after the Archfit App release that
+knows the keys serves your repository.
 
 ## Read the feedback
 
@@ -405,6 +409,27 @@ The state check is never a required check. It uses these conclusions:
 | `success`         | The gate result is `success` and the engine verdict is `healthy`                           |
 | `neutral`         | The gate result is `success` with `attention_only`, or `failure`                           |
 | `action_required` | The gate result is `action_required`. Errors and unverifiable evidence are never `neutral` |
+
+### Repair issue on the default branch
+
+The checks of a pull request can be bypassed: an admin merges anyway, or a push lands on the default branch without a
+pull request. When the Archfit workflow runs on that push and its result is not a pass (a `failure`, or
+`action_required`), the App opens one issue, **Architecture repair needed on main** (with your default branch's name).
+It says what broke in words, names the commit and links the run, lists the blocking findings, and holds the
+validation commands and the exact agent tasks between the `<!-- archfit:agent-tasks -->` markers, so a coding agent
+can pick the repair up from the issue.
+
+- **Opens** on the first push whose result is not a pass, in a repository with `gate: required` (an advisory repository
+  gets no issue), assigned to `repair_assignee` when the settings name one.
+  When GitHub refuses that login (for example, it has no access to the repository), the issue opens unassigned.
+- **Updates** on the next push that is still not a pass, whatever broke this time. There is one open repair issue per
+  default branch, never a second. An upload that changes nothing edits nothing.
+- **Closes** on the next push that passes, with a comment that names the commit that fixed it.
+- A result for a commit the default branch has already left, or of an older run, changes nothing.
+
+The repair issue is a notification, never a gate: it blocks no merge and changes no check. It needs the Issues
+permission, which the App asks for from the release that brings the issue. Until an owner grants it, the App logs each
+refused issue call and publishes the checks exactly as before.
 
 ### Reason codes
 

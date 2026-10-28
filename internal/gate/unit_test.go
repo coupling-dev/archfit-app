@@ -286,6 +286,7 @@ type pipelineFakes struct {
 	receiver  *fakeReceiver
 	resolver  *fakeResolver
 	publisher *fakePublisher
+	repairer  *fakeRepairer
 	sweeper   *fakeSweeper
 	actions   *fakeActions
 	gate      *Gate
@@ -293,10 +294,10 @@ type pipelineFakes struct {
 
 func newPipelineFakes() *pipelineFakes {
 	f := &pipelineFakes{
-		receiver: &fakeReceiver{}, resolver: &fakeResolver{}, publisher: &fakePublisher{},
+		receiver: &fakeReceiver{}, resolver: &fakeResolver{}, publisher: &fakePublisher{}, repairer: &fakeRepairer{},
 		sweeper: &fakeSweeper{}, actions: &fakeActions{},
 	}
-	f.gate = newGate(f.receiver, f.resolver, f.publisher, f.sweeper, f.actions, newFakeGitHub(), &fakeAdmitter{refused: map[int64]bool{}}, func() time.Time { return testStart })
+	f.gate = newGate(f.receiver, f.resolver, f.publisher, f.repairer, f.sweeper, f.actions, newFakeGitHub(), &fakeAdmitter{refused: map[int64]bool{}}, func() time.Time { return testStart })
 	return f
 }
 
@@ -540,6 +541,39 @@ func TestUploadPipeline(t *testing.T) {
 			if pub.Outcome.Conclusion == verdict.Success {
 				t.Errorf("published a success for a pull request into another base: %+v", pub.Receipt)
 			}
+		}
+	})
+
+	// Only a run on a push to the default branch says something about the default branch, and only once its decision
+	// is published.
+	t.Run("only a published default-branch push reaches the repair issue", func(t *testing.T) {
+		tests := []struct {
+			name       string
+			binding    Binding
+			publishErr error
+			want       int
+		}{
+			{"push to the default branch", Binding{Repo: repo, Event: "push", HeadSHA: "head", BaseRef: "trunk"}, nil, 1},
+			{"push to another branch", Binding{Repo: repo, Event: "push", HeadSHA: "head", BaseRef: "feature"}, nil, 0},
+			{"pull request", Binding{Repo: repo, Event: "pull_request", PullRequest: 7, HeadSHA: "head", BaseRef: "trunk"}, nil, 0},
+			{"unbound pull request run", Binding{Repo: repo, Event: "pull_request", HeadSHA: "head", BaseRef: "trunk"}, nil, 0},
+			{"dispatched run on the default branch", Binding{Repo: repo, Event: "workflow_dispatch", HeadSHA: "head", BaseRef: "trunk"}, nil, 0},
+			{"publication failed", Binding{Repo: repo, Event: "push", HeadSHA: "head", BaseRef: "trunk"}, errors.New("checks down"), 0},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				f := newPipelineFakes()
+				f.receiver.upload = Upload{Binding: tt.binding, Identity: entry.Identity, Report: healthy}
+				f.resolver.trusted = trusted
+				f.publisher.publishErr = tt.publishErr
+				f.gate.UploadHandler().ServeHTTP(httptest.NewRecorder(), postMarker())
+				if len(f.repairer.repaired) != tt.want {
+					t.Fatalf("repaired %d times, want %d", len(f.repairer.repaired), tt.want)
+				}
+				if tt.want == 1 && !reflect.DeepEqual(f.repairer.repaired[0].Receipt, f.publisher.published[0].Receipt) {
+					t.Errorf("repaired %+v, want the published receipt %+v", f.repairer.repaired[0].Receipt, f.publisher.published[0].Receipt)
+				}
+			})
 		}
 	})
 

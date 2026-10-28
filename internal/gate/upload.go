@@ -30,6 +30,8 @@ const (
 
 	codeRateLimited = "rate_limited"
 	codeUnavailable = "unavailable"
+
+	eventPush = "push" // the GitHub event of a run on a pushed branch
 )
 
 // accepted is the 2xx body: "accepted and published", not "passed".
@@ -74,7 +76,7 @@ func (g *Gate) serveUpload(w http.ResponseWriter, req *http.Request) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-// decideAndPublish is steps 2 to 7 of the report upload flow. Every error leaves the pending check as it is.
+// decideAndPublish is steps 2 to 8 of the report upload flow. Every error leaves the pending check as it is.
 func (g *Gate) decideAndPublish(ctx context.Context, u Upload) (verdict.Outcome, error) {
 	// The protected ref is always the default branch. A pull request's base is the branch a pull request asks to merge
 	// into, and an agent controls it: the settings and policy read there could be loosened in that very change. A
@@ -106,7 +108,7 @@ func (g *Gate) decideAndPublish(ctx context.Context, u Upload) (verdict.Outcome,
 	if len(outcome.Reasons) == 0 {
 		return verdict.Outcome{}, errors.New("gate: decision without a reason")
 	}
-	err = g.publisher.Publish(ctx, feedback.Publication{
+	pub := feedback.Publication{
 		Target:   target,
 		Identity: u.Identity,
 		Outcome:  outcome,
@@ -116,11 +118,21 @@ func (g *Gate) decideAndPublish(ctx context.Context, u Upload) (verdict.Outcome,
 		// A sweep may correct the check between this decision and its publication. Inside the lease feedback refuses
 		// a decision whose inputs are no longer trusted (503 here); the Action's retry decides from the new inputs.
 		Resolve: func(ctx context.Context) (inputs.Trusted, error) { return g.resolver.Resolve(ctx, target, g.now()) },
-	})
-	if err != nil {
+	}
+	if err := g.publisher.Publish(ctx, pub); err != nil {
 		return verdict.Outcome{}, fmt.Errorf("gate: publish: %w", err)
 	}
+	// The repair issue follows the published check and never changes the answer: it only notifies.
+	if defaultBranchPush(u.Binding) {
+		g.repairer.Repair(ctx, pub)
+	}
 	return outcome, nil
+}
+
+// defaultBranchPush reports a run on a push to the default branch. Other uploads without a pull request (a push to
+// another branch, an unbound pull request run) say nothing about the default branch.
+func defaultBranchPush(b Binding) bool {
+	return b.Event == eventPush && b.PullRequest == 0 && b.BaseRef == b.Repo.DefaultBranch
 }
 
 // identityApproved: the claimed identity is a row of the locked manifest and the report was measured

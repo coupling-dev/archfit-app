@@ -7,7 +7,8 @@
 ## Purpose
 
 `.archfit-app.yaml` is the one App-owned file on the protected ref. It names the architecture owners, the coding-agent
-identities that never approve, the gate mode, the approved workflow path, and the data mode. This module owns its format: the types, strict parsing with
+identities that never approve, the gate mode, the approved workflow path, the data mode, and who the default branch's
+repair issue is assigned to. This module owns its format: the types, strict parsing with
 validation, and canonical rendering. Without it, the gate, onboarding and the UI would each read the file their
 own way, and a typo such as `gate: requierd` could silently mean "advisory".
 
@@ -26,7 +27,8 @@ Volatility: moderate. Fields follow product decisions (decisions.md §2, §4); e
 
 ## Encapsulated Knowledge
 
-- The YAML keys and their order: `version`, `owners`, `agents`, `gate`, `workflow`, `data_mode`.
+- The YAML keys and their order: `version`, `owners`, `agents`, `gate`, `workflow`, `data_mode`, `policy_authority`,
+  `repair_assignee`.
 - When two agent names are one identity: case ignored, and `name` equals `name[bot]` (`IsAgent`).
 - The YAML library. It is the single third-party dependency allowed here: the one named in `docs/tech-stack.md`;
   until then `go.yaml.in/yaml/v3` **[default]**, decoded with known-fields checking on. `wire/policy` uses the same library.
@@ -47,6 +49,7 @@ Volatility: moderate. Fields follow product decisions (decisions.md §2, §4); e
 | `gate`      | no       | `advisory` or `required`, exact lowercase; absent means `advisory`                    |
 | `workflow`  | yes      | `^\.github/workflows/[A-Za-z0-9._-]+\.ya?ml$`, at most 255 characters                 |
 | `data_mode` | no       | `customer` or `managed`, exact lowercase; absent means `customer`                     |
+| `repair_assignee` | no | one login by the owner login rule; no team, no list, no `[bot]`; absent means nobody |
 
 - Owner login: `^[A-Za-z0-9-]+$`, at most 39 characters. Owner team: `^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$` ("org/team-slug").
   An `@` prefix is not accepted; the file is not CODEOWNERS.
@@ -54,6 +57,9 @@ Volatility: moderate. Fields follow product decisions (decisions.md §2, §4); e
   App. A team is not accepted: an agent is one identity. A login that is also an owner is not an error: a settings file
   that fails `Parse` stops the gate for every pull request (`settings_missing`), and the agent rule wins over the owner
   list where approvals are decided (`gate/inputs`).
+- Repair assignee: the one login the default branch's repair issue is assigned to (`gate/feedback`). A team is not
+  accepted: GitHub assigns issues to users only. GitHub may still refuse the login (no access to the repository); the
+  issue is then opened unassigned. That is the App's concern, not a parse error.
 - The workflow rule implies: directly under `.github/workflows/`, no subdirectory, no `..`, no leading slash.
 - Document rules: at most 65 536 bytes (64 KiB) **[default]**; valid UTF-8; exactly one YAML document; the root is a mapping; unknown
   keys, duplicate keys, anchors and aliases are errors; an empty or comment-only file is an error.
@@ -63,7 +69,8 @@ Volatility: moderate. Fields follow product decisions (decisions.md §2, §4); e
 
 One header comment line (`# Archfit App settings. Changes need architecture-owner approval.`) **[default]**, then the
 keys in the order above, `owners` and `agents` as block sequences with two-space indentation, `agents` left out when
-it is empty (so a file without agents renders exactly as before the key existed), `gate` and `data_mode` always
+it is empty (so a file without agents renders exactly as before the key existed), `repair_assignee` last and left out
+when it is `""` (likewise), `gate` and `data_mode` always
 written explicitly, LF line endings, one trailing newline. Output is deterministic: equal input, equal bytes.
 
 ## Public Contract
@@ -96,6 +103,8 @@ type Settings struct {
     DataMode DataMode `yaml:"data_mode"`        // default customer
     // PolicyAuthority is who may approve a change to the protected files. Absent means human.
     PolicyAuthority *PolicyAuthority `yaml:"policy_authority,omitempty"`
+    // RepairAssignee is the one login the default branch's repair issue is assigned to; "" assigns nobody.
+    RepairAssignee string `yaml:"repair_assignee,omitempty"`
 }
 
 // PolicyAuthority is the policy_authority block. Only human is in force in this release: a file may name a later
@@ -133,7 +142,8 @@ Semantics not visible in the signatures:
   to one of their constants, never `""`. `Agents` is nil when the key is absent or the list is empty, never `[]`, so
   the round-trip law holds with `Render` leaving an empty list out.
 - `agents` is a new key of version 1. `Parse` stays strict, so an App release older than this key rejects a file
-  that has it: add `agents` only once the App that knows it serves the repository.
+  that has it: add `agents` only once the App that knows it serves the repository. The same holds for
+  `repair_assignee`.
 - The round-trip law covers every `s` that `Parse` returned. It also holds for a hand-built valid `s` whose `Gate`
   and `DataMode` are set. For a valid `s` with an empty `Gate` or `DataMode`, `Render` writes the default and
   `Parse` returns the value with the default filled in.
@@ -165,7 +175,8 @@ Shared knowledge, per counterpart:
 - `internal/gate` imports this module for `GateRequired` only (the `Path` constant is used by `internal/gate/inputs`, which owns the protected-path set). It reads `Settings.Gate` and `Settings.Workflow`
   through `inputs.Trusted`, and calls `IsAgent` on it for the author of a pull request. It holds nothing of the file format.
 - `internal/gate/feedback` and `internal/gate/sweep` import this module for `GateRequired` only, and compare it
-  with `Settings.Gate` read through `inputs.Trusted`.
+  with `Settings.Gate` read through `inputs.Trusted`. `internal/gate/feedback` also reads `Settings.RepairAssignee`
+  there, to assign the default branch's repair issue.
 - `internal/gate/verdict` does not import this module and reads no `Settings` field: it sees only the boolean
   `SettingsFound` of `inputs.Trusted`. It is no consumer and has no row.
 - `internal/control/onboarding` holds `Settings`, `Path`, `Render` and `Parse`: it renders the file for PR 1 with the
@@ -226,6 +237,16 @@ No counterpart contract is used by this module, so nothing is restated here.
   **Scenario**: render with two agents; then with an empty list.
   **Expected behavior**: `agents` as a block sequence between `owners` and `gate`, round trip holds; no `agents` key
   for the empty list.
+- **Test name**: `TestParseRepairAssignee`
+  **Scenario**: `repair_assignee` absent; a login; a login with dashes and digits; 39 characters; a quoted number.
+  **Expected behavior**: `""` for absent, else the login as written; the round trip holds in every row.
+- **Test name**: `TestRepairAssigneeRules`
+  **Scenario**: a team; a flow list and a block list; `@alice`; a space; an App's `[bot]` account; 40 characters; `''`;
+  null; an integer; a mapping; a duplicate key; a marked bad value.
+  **Expected behavior**: every row is an error naming `repair_assignee`; no error echoes the value.
+- **Test name**: `TestRenderWritesRepairAssigneeLast`
+  **Scenario**: render the golden value without an assignee; then with `policy_authority` and an assignee.
+  **Expected behavior**: the golden bytes unchanged; `repair_assignee` the last key, after `policy_authority`; round trip holds.
 - **Test name**: `TestOwnerForms`
   **Scenario**: owners `alice`, `a-b-c`, `acme/platform-team`, `acme/team.one_two`.
   **Expected behavior**: all accepted, order preserved, text unchanged.
@@ -248,7 +269,8 @@ No counterpart contract is used by this module, so nothing is restated here.
 ### Integration Contract Tests
 
 - **Test name**: `TestParseRenderRoundTrip`
-  **Scenario**: property test over generated valid `Settings` with both modes set and zero to three agents; and over
+  **Scenario**: property test over generated valid `Settings` with both modes set, zero to three agents and, in about
+  a third of them, a repair assignee; and over
   every valid fixture file via `Parse` (`full.yaml` holds agents).
   **Expected behavior**: `Parse(Render(s))` equals `s`; `Render(Parse(Render(s)))` equals `Render(s)`.
 - **Test name**: `TestRenderFillsDefaults`

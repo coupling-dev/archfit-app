@@ -267,6 +267,9 @@ Register the App with these settings. Keep the webhook inactive, and install it 
 - Webhook URL: `https://app.coupling.dev/webhooks/github`, inactive
 - Repository permissions: Actions, Checks, Contents and Pull requests read and write; Metadata read. Workflows: no
   access. The App never writes `.github/workflows/`; the owner adds the workflow during onboarding.
+- Issues read and write: needed from the release that adds the repair issue on the default branch. Grant it on that
+  release day under **Permissions & events**; each installation then accepts the new permission. Until then the App
+  logs every refused issue call and publishes checks and comments as before.
 - Organization permissions: Members read
 - Events: Pull request, Pull request review, Push
 - Installable on any account (public). GitHub has no install approval, so the App approves accounts itself: it does
