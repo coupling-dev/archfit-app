@@ -2,13 +2,13 @@
 <!-- archfit:head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb run 7.1 -->
 ## Archfit: Architecture gate failing
 
-Assessment: 1 active finding, 0 advisories, 0 accepted findings.
+Assessment: 1 active finding, 0 advisories, 0 accepted findings. Checked with engine `v3.0.0` and policy digest `111111111111`.
 
 PR impact: unknown — no comparable Git-base finding-origin evidence.
 
 Cause: Blocking findings.
 
-- **active finding** `metric/cycle_count`: metric `cycle_count`: 0 → 2 (max_new 0). Constraint: do not accept this by re-running archfit baseline: restore the metric, or ask the owner to review and re-baseline
+- **active finding** `metric/cycle_count`: metric `cycle_count`: 0 → 2 (max_new 0). Fix: do not accept this by re-running archfit baseline: restore the metric, or ask the owner to review and re-baseline
 
 **Next:** PR author/coding agent: review the reported constraints. Use only the supplied validation commands below; no repair direction is selected here.
 

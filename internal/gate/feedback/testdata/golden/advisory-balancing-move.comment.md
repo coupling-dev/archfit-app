@@ -2,14 +2,14 @@
 <!-- archfit:head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb run 7.1 -->
 ## Archfit: Architecture needs attention · advisory
 
-Assessment: 0 active findings, 2 advisories, 0 accepted findings.
+Assessment: 0 active findings, 2 advisories, 0 accepted findings. Checked with engine `v3.0.0` and policy digest `111111111111`.
 
 PR impact: unknown — no comparable Git-base finding-origin evidence.
 
 **Next:** Advisories never block. Review the listed dimensions and diagnostics on the archfit/state check.
 
-- **advisory** `bc/imbalanced_coupling`: `orders` → `pricing` at `pkg/orders/price.go:3`
-- **advisory** `bc/imbalanced_coupling`: `billing` → `pricing` at `pkg/billing/rate.go:3`
+- **advisory** `pkg/orders/price.go:3` `bc/imbalanced_coupling`: `orders` → `pricing`
+- **advisory** `pkg/billing/rate.go:3` `bc/imbalanced_coupling`: `billing` → `pricing`
 
 HEAD `bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb` · [Run 7 · attempt 1](https://github.com/acme/shop/actions/runs/7/attempts/1). Detailed findings/evidence: `archfit/state` for this HEAD and run.
 

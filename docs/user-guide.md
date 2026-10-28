@@ -355,11 +355,22 @@ What each item shows:
   earlier report do not stay; GitHub shows the newest run. If the App cannot read the list of changed files, the
   check has no annotations for that upload.
 - The comment leads with the configured Archfit merge effect, assessment and PR impact, or explicitly unknown
-  impact. Other GitHub protections still apply. Introduced means a new finding identity against a comparable Git
-  base; it does not prove a new module pair or that every listed source site was added.
-- At most three active findings/advisories get compact text/arrow summaries with a known location and the engine's
-  constraint. Accepted-debt detail, dimensions, full reasons and producer/input digests stay in the exact
-  `archfit/state` check. There is no comment diagram or separate Archfit email body; GitHub may notify this same text.
+  impact. The assessment line names what the App checked the result with: the engine version of the approved
+  producer and the first 12 characters of the policy digest the App accepted (compare it with the check's Inputs). Other GitHub protections still apply.
+  Introduced means a new finding identity against a comparable Git base; it does not prove a new module pair or that
+  every listed source site was added.
+- At most three active findings/advisories, each led by its place (`path:line`) and rule, with the module pair. An
+  active finding also gets the engine's **Why** (the rule's rationale) and **Fix** (its constraint), each cut to 300
+  characters. An advisory gets no why on the first screen: its why is coupling arithmetic (strength, distance,
+  volatility), which stays in the exact `archfit/state` check and on the App page, with accepted-debt detail,
+  dimensions, full reasons and producer/input digests. The comment has no table wider than four columns, so it reads in
+  a plain mail client. There is no comment diagram or separate Archfit email body; GitHub may notify this same text.
+- **Repository attention (for the owner)**, a fold, lists the engine's coupling gate reasons when it reports any (at
+  most ten; the `archfit/state` check shows up to fifty, and the run's report artifact all). They are chores for an
+  architecture owner, not tasks for the pull request's author.
+- **For coding agents**, a fold, opens with the result identity as the engine states it (engine, policy and baseline
+  digests, head tree, base), so an agent that re-runs the check can compare what it measured. It is the engine's claim,
+  not something the App checked.
 - **Next** names the PR author/coding agent, architecture owner or CI maintainer as appropriate. Archfit does not
   invent validation flags or choose which cycle direction to remove. The exact emitted task JSON remains between
   `<!-- archfit:agent-tasks -->` markers; task values and validation flags are preserved. Whole omitted tasks are
@@ -441,8 +452,8 @@ that matches nothing. Other rules that the engine could not evaluate keep `missi
 | `engine_error`                | Read the workflow log. Use the pinned engine image. Run the workflow again.                                                                                                                                         |
 | `envelope_mismatch`           | Run the workflow again. The upload did not match the GitHub run.                                                                                                                                                    |
 | `report_invalid`              | Upload the unmodified engine report. Use the pinned Action version.                                                                                                                                                 |
-| `unsupported_event`           | Run Archfit on `pull_request` or on `push` to the default branch.                                                                                                                                                   |
-| `fork_unsupported`            | Push the branch to this repository or use the documented ruleset bypass.                                                                                                                                            |
+| `unsupported_event`           | Run Archfit on a pull request into the default branch, or on a push to it. A pull request into another branch, and other events, are not checked. |
+| `fork_unsupported`            | The comment asks the contributor to have a maintainer push the branch to this repository and run the workflow there. To merge a fork without that, a repository admin uses a separate GitHub ruleset with a bypass list for the required check: the App never reports a fork as success. |
 
 #### Subscription
 

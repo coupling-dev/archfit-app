@@ -91,12 +91,15 @@ func within(lines []string, limit int) []string {
 	return lines
 }
 
-// short cuts an engine value to policyValueRunes runes. It cuts before sanitizing, which can lengthen a value.
-func short(s string) string {
-	if utf8.RuneCountInString(s) <= policyValueRunes {
+// short cuts a policy value to policyValueRunes runes.
+func short(s string) string { return cutRunes(s, policyValueRunes) }
+
+// cutRunes cuts s to n runes and marks the cut. Callers cut before sanitizing, which can lengthen a value.
+func cutRunes(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
 		return s
 	}
-	return string([]rune(s)[:policyValueRunes]) + "…"
+	return string([]rune(s)[:n]) + "…"
 }
 
 func ruleDelta(r report.PolicyRuleDelta) string {

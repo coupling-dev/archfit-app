@@ -47,9 +47,9 @@ func lookup(code ReasonCode) (entry, bool) {
 	case ReasonSettingsMissing:
 		return entry{CategoryGovernance, ActionRequired, "Merge the Archfit onboarding PR to add `.archfit-app.yaml`."}, true
 	case ReasonForkUnsupported:
-		return entry{CategoryEvidence, ActionRequired, "Push the branch to this repository, or use the documented ruleset bypass."}, true
+		return entry{CategoryEvidence, ActionRequired, "This pull request comes from a fork, which Archfit does not measure. Ask a maintainer to push the branch to this repository and run the workflow there."}, true
 	case ReasonUnsupportedEvent:
-		return entry{CategoryEvidence, ActionRequired, "Run Archfit on `pull_request` or on `push` to the default branch."}, true
+		return entry{CategoryEvidence, ActionRequired, "Run Archfit on a pull request into the default branch, or on a push to it. A pull request into another branch is not checked."}, true
 	case ReasonEnvelopeMismatch:
 		return entry{CategoryEvidence, ActionRequired, "Re-run the Archfit workflow; the upload did not match the GitHub run."}, true
 	case ReasonReportInvalid:

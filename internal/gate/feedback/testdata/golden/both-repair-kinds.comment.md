@@ -2,13 +2,13 @@
 <!-- archfit:head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb run 7.1 -->
 ## Archfit: Architecture gate failing
 
-Assessment: 1 active finding, 0 advisories, 0 accepted findings.
+Assessment: 1 active finding, 0 advisories, 0 accepted findings. Checked with engine `v3.0.0` and policy digest `111111111111`.
 
 PR impact: unknown — no comparable Git-base finding-origin evidence.
 
 Cause: Blocking findings.
 
-- **active finding** `no_direct_b_dependency`: `a` → `b` at `pkg/a/a.go:3`. Constraint: Remove the dependency or move the code
+- **active finding** `pkg/a/a.go:3` `no_direct_b_dependency`: `a` → `b`. Why: Import from pkg/a/** to pkg/b is explicitly forbidden. Fix: Remove the dependency or move the code
 
 **Next:** PR author/coding agent: review the reported constraints. Use only the supplied validation commands below; no repair direction is selected here. Architecture owner: resolve the supplied owner-decision task before selecting a policy change.
 
