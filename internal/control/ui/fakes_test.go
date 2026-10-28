@@ -18,6 +18,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/control/assist"
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/control/proposal"
+	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/auth"
 	"github.com/alexei-led/archfit-app/internal/store"
@@ -613,4 +614,54 @@ func (d *downable) Get(ctx context.Context, t store.Tenant, key string) ([]byte,
 		return nil, errors.New("fake: store down")
 	}
 	return d.Store.Get(ctx, t, key)
+}
+
+// approveCall is one Approve that reached the gate.
+type approveCall struct {
+	target gate.Target
+	login  string
+	seen   map[string]string
+}
+
+// fakeApprovals is the gate façade's owner approval. Approve records the call and, unless refused, grants the head;
+// the rules of who may approve are the gate's and tested there.
+type fakeApprovals struct {
+	mu            sync.Mutex
+	approval      gate.PullApproval // what PullApproval answers
+	readErr       error
+	approveErr    error // a refusal or a failure of Approve
+	reevaluateErr error
+	reads         []approvalRead
+	approved      []approveCall
+	reevaluated   []gate.Target
+}
+
+type approvalRead struct {
+	target        gate.Target
+	login, author string
+}
+
+func (f *fakeApprovals) PullApproval(_ context.Context, t gate.Target, login, author string) (gate.PullApproval, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reads = append(f.reads, approvalRead{t, login, author})
+	return f.approval, f.readErr
+}
+
+func (f *fakeApprovals) Approve(_ context.Context, t gate.Target, login string, seen map[string]string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.approveErr != nil {
+		return f.approveErr
+	}
+	f.approved = append(f.approved, approveCall{t, login, seen})
+	f.approval.Granted, f.approval.ApprovedBy, f.approval.Refusal = true, login, nil
+	return nil
+}
+
+func (f *fakeApprovals) Reevaluate(_ context.Context, t gate.Target) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reevaluated = append(f.reevaluated, t)
+	return f.reevaluateErr
 }

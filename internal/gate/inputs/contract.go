@@ -40,7 +40,7 @@ type Approval string
 
 const (
 	ApprovalNotRequired Approval = "not_required" // no protected path changed
-	ApprovalGranted     Approval = "granted"      // a base-version owner approved this exact head SHA
+	ApprovalGranted     Approval = "granted"      // a base-version owner, no agent, approved this exact head SHA
 	ApprovalMissing     Approval = "missing"
 )
 
@@ -63,9 +63,20 @@ type Resolver interface {
 	// Resolve reads the protected ref and reviews. It never reads policy, settings, baseline,
 	// owners, or CODEOWNERS from the head tree, except to hash an owner-approved candidate.
 	Resolve(ctx context.Context, t Target, now time.Time) (Trusted, error)
-	// RecordPusher adds the login that pushed t's head, from a signed push delivery, to the set Resolve reads back.
-	// "" records nothing. Opening a pull request records nothing.
+	// RecordPusher adds the login that pushed t's head, from a signed push delivery, to the record of who pushed it.
+	// The record is attribution only: no push approves anything. "" records nothing. Opening a pull request records
+	// nothing.
 	RecordPusher(ctx context.Context, t Target, login string) error
+	// Candidate returns the protected paths the pull request t changes, by the rule of Resolve, and the digest of each
+	// at t.HeadSHA: what an owner approves in the App.
+	Candidate(ctx context.Context, t Target) (Candidate, error)
+	// CanApprove reports whether login may approve t's head in the App now: nil, or ErrNothingToApprove, ErrForkPull,
+	// ErrAgentIdentity or ErrNotOwner, in that order. Owners and agents come from the settings of the protected ref.
+	CanApprove(ctx context.Context, t Target, login string) error
+	// Approve records login's approval of t's head, bound to its SHA, when CanApprove allows it and seen equals the
+	// Candidate digests (else ErrDigestsChanged). A record for that head already, by any owner, is success and stays
+	// as it is.
+	Approve(ctx context.Context, t Target, login string, seen map[string]string, now time.Time) error
 }
 
 // Accepts is the digest predicate of the gate: whether claim is acceptable for one digest list of Trusted.

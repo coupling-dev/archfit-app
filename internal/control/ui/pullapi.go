@@ -17,6 +17,7 @@ import (
 type pullJSON struct {
 	pullHead
 	findingsJSON
+	Approval *approvalJSON `json:"approval,omitempty"` // only when the pull request changes a protected file
 }
 
 // pullHead is the header the pull request page and its graph share: which pull request, and what its check says.
@@ -217,6 +218,9 @@ func (s *server) apiPull(r *http.Request, sc scope) (any, error) {
 	body := pullJSON{pullHead: headOf(sc, pull, rep)}
 	if rep != nil {
 		fillFindings(&body.findingsJSON, *rep)
+	}
+	if body.Approval, err = s.approval(r.Context(), sc, pull.Pull); err != nil {
+		return nil, err
 	}
 	return body, nil
 }

@@ -156,6 +156,7 @@ func TestRoutesRequireTheirAuthentication(t *testing.T) {
 		{http.MethodPost, "/api/repos/" + demoRepo + "/policy/ready"},
 		{http.MethodPost, "/api/repos/" + demoRepo + "/assist"},
 		{http.MethodPost, "/api/repos/" + demoRepo + "/data-sharing"},
+		{http.MethodPost, "/api/repos/" + demoRepo + "/pulls/42/approve"},
 		{http.MethodPost, "/auth/logout"},
 	}
 	credentials := []struct {

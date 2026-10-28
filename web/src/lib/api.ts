@@ -197,7 +197,26 @@ export interface Findings {
   task_count: number;
 }
 
-export type Pull = PullHead & Findings;
+// Approval is the owner approval of a pull request head that changes a protected file; absent when it changes none.
+export interface Approval {
+  head_sha: string; // the full head it is for; Approve sends it back
+  paths: string[];
+  digests: Record<string, string> | null; // each path at the head, '' when deleted; null for a fork; Approve sends it back
+  short_digests: Record<string, string> | null;
+  state: 'granted' | 'missing';
+  by?: string;
+  can_approve: boolean;
+  reason?: string; // why the signed-in user cannot approve, while missing
+  author_is_agent: boolean;
+}
+
+export type Pull = PullHead & Findings & { approval?: Approval };
+
+// Approved answers the Approve button: the approval read again.
+export interface Approved {
+  approval: Approval | null;
+  notice: string;
+}
 
 // RepoFindings is the latest report of the default branch, for the overview.
 export type RepoFindings = Findings & {

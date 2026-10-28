@@ -18,7 +18,8 @@ import (
 )
 
 // Deps are the only things the gate path may touch: GitHub, OIDC, the Store and a clock. On the Store the gate
-// path reads the entitlement and the admission, and writes only gate/feedback's publication leases.
+// path reads the entitlement and the admission, and writes only gate/feedback's publication leases and gate/inputs'
+// pusher and owner approval records.
 type Deps struct {
 	GitHub     *api.Client
 	OIDC       oidc.Verifier
@@ -111,6 +112,20 @@ func NewAdmissions(s store.Store, auto []string) *Admissions { return inputs.New
 
 // EntitlementKey is owned by gate/inputs.
 const EntitlementKey = inputs.EntitlementKey
+
+// Target, Candidate and the refusals of an owner approval are owned by gate/inputs.
+type (
+	Target    = inputs.Target
+	Candidate = inputs.Candidate
+)
+
+var (
+	ErrNothingToApprove = inputs.ErrNothingToApprove
+	ErrForkPull         = inputs.ErrForkPull
+	ErrAgentIdentity    = inputs.ErrAgentIdentity
+	ErrNotOwner         = inputs.ErrNotOwner
+	ErrDigestsChanged   = inputs.ErrDigestsChanged
+)
 
 // Entitlement is owned by gate/inputs.
 type Entitlement = inputs.Entitlement

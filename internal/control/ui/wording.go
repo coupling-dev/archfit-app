@@ -10,6 +10,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/control/proposal"
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
+	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/report"
 )
@@ -72,6 +73,16 @@ var sentinels = []struct {
 		"The managed AI budget is used up for now. Editing and saving still work."},
 	{assist.ErrProvider, http.StatusServiceUnavailable, "provider", "The AI provider failed. Editing and saving still work."},
 	{api.ErrRateLimited, http.StatusServiceUnavailable, "rate_limited", "GitHub is rate limiting Archfit. Try again in a minute."},
+	{gate.ErrNothingToApprove, http.StatusConflict, "nothing_to_approve",
+		"This pull request changes no protected file, so there is nothing to approve."},
+	{gate.ErrForkPull, http.StatusConflict, "fork",
+		"A pull request from a fork cannot be approved. Push the branch to this repository."},
+	{gate.ErrAgentIdentity, http.StatusForbidden, "agent_identity",
+		"An agent identity cannot approve. Sign in as a person who is an architecture owner."},
+	{gate.ErrNotOwner, http.StatusForbidden, "not_owner",
+		"Only an architecture owner named in .archfit-app.yaml on the base branch can approve."},
+	{gate.ErrDigestsChanged, http.StatusConflict, "digests_changed",
+		"The protected files changed since this page was loaded. Nothing was approved. Reload the page and review them again."},
 }
 
 // explain maps any error to its status, log outcome and sentence. Unknown errors are upstream failures.
@@ -179,4 +190,5 @@ var notices = map[string]string{
 	"requested":  "The assist workflow is running in your CI. Its proposal arrives as a new commit on the draft pull request.",
 	"onboarding": "The onboarding pull request is open. Next: add the workflow file to it.",
 	"discover":   "Discovery was dispatched. The policy proposal arrives as a pull request.",
+	"approved":   "Approved for this commit. The Archfit check follows when the workflow reports on it; a new commit needs a new approval.",
 }

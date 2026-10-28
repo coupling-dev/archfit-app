@@ -320,6 +320,24 @@ const pull = {
   task_count: 1,
 };
 
+const baselineDigest = 'ab'.repeat(32);
+// approvalMissing is a pull request that replaces the baseline and deletes the labels file, before an owner approves.
+const approvalMissing = {
+  head_sha: 'a1b2c3d' + '0'.repeat(33),
+  paths: ['.archfit-baseline.json', '.archfit-labels.yaml'],
+  digests: { '.archfit-baseline.json': baselineDigest, '.archfit-labels.yaml': '' },
+  short_digests: { '.archfit-baseline.json': baselineDigest.slice(0, 7), '.archfit-labels.yaml': '' },
+  state: 'missing',
+  can_approve: true,
+  author_is_agent: false,
+};
+const unapprovedPull = {
+  ...pull,
+  result: 'action required',
+  unavailable: 'This result asks for action before its findings mean anything.',
+  approval: approvalMissing,
+};
+
 const findings = {
   ...pull,
   unavailable: '',
@@ -528,6 +546,7 @@ interface Mock {
   refuseSave?: boolean; // the save is refused with the problems of the text
   saveNotFound?: boolean; // the save answers 404, as when write access went away
   holdAssist?: Promise<void>; // the AI request answers once this settles
+  approveRefused?: { status: number; sentence: string }; // the Approve button's write is refused
   serverError?: { status: number; sentence: string }; // the server answers the page as its error page
   holdSession?: Promise<void>; // /api/session answers once this settles
 }
@@ -572,6 +591,14 @@ async function open(page: Page, path: string, mock: Mock = {}) {
             run: { state: 'pending', url: 'https://github.com/acme/app/actions/workflows/archfit-assist.yaml' },
             notice: 'The assist workflow is running in your CI.',
           });
+      }
+      if (url.pathname === '/api/repos/acme/app/pulls/4/approve') {
+        if (mock.approveRefused) return json(mock.approveRefused.status, { error: mock.approveRefused.sentence });
+        return json(200, {
+          approval: { ...approvalMissing, state: 'granted', by: 'alice', can_approve: false },
+          notice:
+            'Approved for this commit. The Archfit check follows when the workflow reports on it; a new commit needs a new approval.',
+        });
       }
       const admin = /^\/api\/admin\/installations\/(\d+)\/(approve|revoke)$/.exec(url.pathname);
       if (admin) {
@@ -996,6 +1023,62 @@ test('pull request: no report says why and links the checks', async ({ page }) =
   await expect(page.getByText('GitHub no longer keeps the report')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Checks on GitHub' })).toHaveAttribute('href', pull.checks_url);
   await expectClean(page);
+});
+
+test('pull request: an owner approves the exact commit, and the page says what was approved', async ({ page }) => {
+  const writes = await open(page, '/r/acme/app/pull/4', { pull: unapprovedPull });
+  const box = page.getByRole('region', { name: 'Owner approval' });
+  await expect(box.getByText('An architecture owner must approve commit a1b2c3d')).toBeVisible();
+  const files = box.getByRole('list', { name: 'Protected files this pull request changes' });
+  await expect(files.getByRole('listitem')).toHaveText([
+    `.archfit-baseline.json sha256 ${baselineDigest.slice(0, 7)}`,
+    '.archfit-labels.yaml deleted by this commit',
+  ]);
+  await expect(box.getByText('a new commit needs a new approval')).toBeVisible();
+  await expect(box.getByText('Opened by an agent identity')).toHaveCount(0);
+  await expectClean(page);
+
+  await box.getByRole('button', { name: 'Approve this exact commit' }).click();
+  await expect(box.getByRole('status')).toContainText('Approved for this commit.');
+  await expect(box.getByText('Approved by @alice for commit a1b2c3d.')).toBeVisible();
+  await expect(box.getByRole('button', { name: 'Approve this exact commit' })).toHaveCount(0);
+  expect(writes).toHaveLength(1);
+  const [w] = writes;
+  expect(new URL(w.url()).pathname).toBe('/api/repos/acme/app/pulls/4/approve');
+  expect(w.headers()['x-csrf-token']).toBe(session.csrf);
+  expect(w.postDataJSON()).toEqual({ head_sha: approvalMissing.head_sha, digests: approvalMissing.digests });
+  await expectClean(page);
+});
+
+test('pull request: no Approve button for anyone the server refuses; an agent author is named', async ({ page }) => {
+  const reason = 'An agent identity cannot approve. Sign in as a person who is an architecture owner.';
+  await open(page, '/r/acme/app/pull/4', {
+    pull: { ...unapprovedPull, approval: { ...approvalMissing, can_approve: false, reason, author_is_agent: true } },
+  });
+  const box = page.getByRole('region', { name: 'Owner approval' });
+  await expect(box.getByText('Opened by an agent identity.')).toBeVisible();
+  await expect(box.getByText(reason)).toBeVisible();
+  await expect(box.getByRole('button')).toHaveCount(0);
+  await expectClean(page);
+});
+
+test('pull request: a refused approval is a sentence in the box, and no pull request without one has a box', async ({
+  page,
+}) => {
+  const sentence =
+    'The protected files changed since this page was loaded. Nothing was approved. Reload the page and review them again.';
+  await open(page, '/r/acme/app/pull/4', { pull: unapprovedPull, approveRefused: { status: 409, sentence } });
+  const box = page.getByRole('region', { name: 'Owner approval' });
+  await box.getByRole('button', { name: 'Approve this exact commit' }).click();
+  await expect(box.getByRole('alert')).toHaveText(sentence);
+  await expect(box.getByText('An architecture owner must approve commit a1b2c3d')).toBeVisible();
+  await expect(box.getByRole('button', { name: 'Approve this exact commit' })).toBeEnabled();
+  await expectClean(page);
+
+  await page.unrouteAll();
+  await open(page, '/r/acme/app/pull/4');
+  await expect(page.getByRole('heading', { name: 'feat: read options #4', level: 1 })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Owner approval' })).toHaveCount(0);
 });
 
 for (const graph of [false, true]) {

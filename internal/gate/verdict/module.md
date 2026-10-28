@@ -313,7 +313,7 @@ Categories of integrity, comparability and `Without` codes are **[default]**. `N
 | `unknown_engine_identity`     | evidence     | `action_required`     | empty                                                                                                 | "Move the Archfit workflow to the archfit-action commit and engine image the App approves now; see "Move an installed workflow to a new engine" in the Archfit user guide."                                                     |
 | `measurement_profile_missing` | evidence     | `action_required`     | empty                                                                                                 | "Move the Archfit workflow to the archfit-action commit and engine image the App approves now; see "Move an installed workflow to a new engine" in the Archfit user guide. The report carries no measurement profile."          |
 | `workflow_not_approved`       | evidence     | `action_required`     | empty                                                                                                 | "Upload from the workflow named in `.archfit-app.yaml`."                                                              |
-| `owner_approval_missing`      | governance   | `action_required`     | changed protected paths                                                                               | "An architecture owner must authorize this exact commit: approve it on GitHub, or push it from an owner account. GitHub does not let an author approve their own pull request; use the App policy editor, where the App authors the commit."                                                               |
+| `owner_approval_missing`      | governance   | `action_required`     | changed protected paths                                                                               | "An architecture owner must approve this exact commit, on GitHub or with Approve on the pull request page of the Archfit App. An agent identity cannot approve; a new commit needs a new approval."                                                               |
 | `settings_missing`            | governance   | `action_required`     | empty                                                                                                 | "Merge the Archfit onboarding PR to add `.archfit-app.yaml`."                                                         |
 | `fork_unsupported`            | evidence     | `action_required`     | empty                                                                                                 | "Push the branch to this repository, or use the documented ruleset bypass."                                           |
 | `unsupported_event`           | evidence     | `action_required`     | empty                                                                                                 | "Run Archfit on `pull_request` or on `push` to the default branch."                                                   |
@@ -456,7 +456,7 @@ type Approval string
 
 const (
     ApprovalNotRequired Approval = "not_required" // no protected path changed
-    ApprovalGranted     Approval = "granted"      // a base-version owner approved this exact head SHA
+    ApprovalGranted     Approval = "granted"      // a base-version owner, no agent, approved this exact head SHA
     ApprovalMissing     Approval = "missing"
 )
 

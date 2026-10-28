@@ -16,6 +16,7 @@ const wantHeader = "# Archfit App settings. Changes need architecture-owner appr
 // The rules are restated here on purpose: the checks must not share code with the parser.
 var (
 	ruleLogin    = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
+	ruleAgent    = regexp.MustCompile(`^([A-Za-z0-9-]{1,39})(\[bot\])?$`)
 	ruleTeam     = regexp.MustCompile(`^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$`)
 	ruleWorkflow = regexp.MustCompile(`^\.github/workflows/[A-Za-z0-9._-]+\.ya?ml$`)
 )
@@ -39,6 +40,21 @@ func checkFieldRules(t *testing.T, s Settings) {
 			t.Errorf("accepted duplicate owner %q", o)
 		}
 		seen[strings.ToLower(o)] = true
+	}
+	if (s.Agents != nil && len(s.Agents) == 0) || len(s.Agents) > 100 {
+		t.Errorf("accepted %d agents, nil = %t", len(s.Agents), s.Agents == nil)
+	}
+	agents := map[string]bool{}
+	for _, a := range s.Agents {
+		m := ruleAgent.FindStringSubmatch(a)
+		if m == nil {
+			t.Errorf("accepted agent %q", a)
+			continue
+		}
+		if agents[strings.ToLower(m[1])] {
+			t.Errorf("accepted duplicate agent %q", a)
+		}
+		agents[strings.ToLower(m[1])] = true
 	}
 	if s.Gate != GateAdvisory && s.Gate != GateRequired {
 		t.Errorf("accepted gate %q", s.Gate)
@@ -174,6 +190,19 @@ func randomSettings(r *rand.Rand) Settings {
 		}
 		seen[strings.ToLower(o)] = true
 		s.Owners = append(s.Owners, o)
+	}
+
+	seen = map[string]bool{}
+	for range r.IntN(4) {
+		a := randomName(r, nameAlphabet, 39)
+		if seen[strings.ToLower(a)] {
+			continue
+		}
+		seen[strings.ToLower(a)] = true
+		if r.IntN(2) == 0 {
+			a += "[bot]"
+		}
+		s.Agents = append(s.Agents, a)
 	}
 
 	ext := []string{".yml", ".yaml"}[r.IntN(2)]

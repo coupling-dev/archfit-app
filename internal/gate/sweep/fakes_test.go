@@ -108,6 +108,18 @@ type fakeResolver struct {
 
 func (f *fakeResolver) RecordPusher(context.Context, inputs.Target, string) error { return nil }
 
+func (f *fakeResolver) Candidate(context.Context, inputs.Target) (inputs.Candidate, error) {
+	panic("the sweep never reads an approval candidate")
+}
+
+func (f *fakeResolver) CanApprove(context.Context, inputs.Target, string) error {
+	panic("the sweep never asks who may approve")
+}
+
+func (f *fakeResolver) Approve(context.Context, inputs.Target, string, map[string]string, time.Time) error {
+	panic("the sweep never approves")
+}
+
 func (f *fakeResolver) Resolve(_ context.Context, t inputs.Target, now time.Time) (inputs.Trusted, error) {
 	f.calls = append(f.calls, t)
 	f.nows = append(f.nows, now)

@@ -29,6 +29,7 @@ type Deps struct {
 	Assist     assist.Assist
 	Proposals  proposal.Proposals
 	Admissions *gate.Admissions // which installations the App serves; the others see the Waiting page
+	Approvals  gate.Approvals   // owner approvals of pull request heads: read, and recorded by the Approve button
 	Operators  []int64          // GitHub user IDs that approve installations on /admin
 	Now        func() time.Time
 }
@@ -79,6 +80,7 @@ type server struct {
 	assist     assist.Assist
 	proposals  proposal.Proposals
 	admissions *gate.Admissions
+	approvals  gate.Approvals
 	operators  []int64
 	now        func() time.Time
 	shell      shellPage
@@ -107,6 +109,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 		assist:     d.Assist,
 		proposals:  d.Proposals,
 		admissions: d.Admissions,
+		approvals:  d.Approvals,
 		operators:  d.Operators,
 		now:        d.Now,
 		shell:      newShell(web),
@@ -165,6 +168,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("GET /api/repos/{o}/{n}/graph", s.apiRepo(permRead, s.apiGraph))
 	mux.Handle("GET /api/repos/{o}/{n}/pulls/{number}", s.apiRepo(permRead, s.apiPull))
 	mux.Handle("GET /api/repos/{o}/{n}/pulls/{number}/graph", s.apiRepo(permRead, s.apiPullGraph))
+	mux.Handle("POST /api/repos/{o}/{n}/pulls/{number}/approve", s.apiRepo(permWrite, s.apiApprovePull))
 	mux.Handle("POST /api/repos/{o}/{n}/onboarding", s.apiRepo(permAdmin, s.apiStartOnboarding))
 	mux.Handle("POST /api/repos/{o}/{n}/discover", s.apiRepo(permAdmin, s.apiDiscover))
 	mux.Handle("GET /api/repos/{o}/{n}/data-sharing", s.apiRepo(permAdmin, s.apiDataSharing))

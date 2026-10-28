@@ -424,12 +424,21 @@ func (v *fakeVerifier) Verify(_ context.Context, token, audience string) (oidc.C
 // operation from any other Store access.
 const leaseKeyPrefix = "feedback/lease/"
 
-// pusherKeyPrefix is gate/inputs' unexported prefix of the record of who pushed a head, restated for the same reason.
-const pusherKeyPrefix = "pusher/"
+// pusherKeyPrefix and approvalKeyPrefix are gate/inputs' unexported prefixes of the record of who pushed a head and of
+// an owner approval recorded in the App, restated for the same reason.
+const (
+	pusherKeyPrefix   = "pusher/"
+	approvalKeyPrefix = "approval/"
+)
 
-// guardStore proves the gate path writes nothing but publication leases and pusher records: every other write panics,
-// and so does a compare-and-swap outside the lease and pusher keys. It records the tenants and keys of other reads,
-// and the tenants of lease and pusher operations separately.
+// isRecord reports whether key is a pusher or an approval record of gate/inputs.
+func isRecord(key string) bool {
+	return strings.HasPrefix(key, pusherKeyPrefix) || strings.HasPrefix(key, approvalKeyPrefix)
+}
+
+// guardStore proves the gate path writes nothing but publication leases and the records of gate/inputs: every other
+// write panics, and so does a compare-and-swap outside the lease and record keys. It records the tenants and keys of
+// other reads, and the tenants of lease and record operations separately.
 type guardStore struct {
 	inner store.Store
 	// entitlementErr fails every read except the leases: the control plane's records are unreadable.
@@ -443,20 +452,21 @@ type guardStore struct {
 	tenants       []store.Tenant
 	keys          []string
 	leaseTenants  []store.Tenant
-	pusherTenants []store.Tenant // tenants of every read and write of a pusher record
+	recordTenants []store.Tenant // tenants of every read and write of a pusher or approval record
+	recordKeys    []string       // their keys, in the same order
 }
 
 func (s *guardStore) Get(ctx context.Context, t store.Tenant, key string) ([]byte, error) {
 	s.mu.Lock()
 	lease := strings.HasPrefix(key, leaseKeyPrefix)
-	pusher := strings.HasPrefix(key, pusherKeyPrefix)
+	record := isRecord(key)
 	var hook func()
 	switch {
 	case lease:
 		s.leaseTenants = append(s.leaseTenants, t)
 		hook, s.beforeLease = s.beforeLease, nil
-	case pusher:
-		s.pusherTenants = append(s.pusherTenants, t)
+	case record:
+		s.recordTenants, s.recordKeys = append(s.recordTenants, t), append(s.recordKeys, key)
 	default:
 		s.tenants = append(s.tenants, t)
 		s.keys = append(s.keys, key)
@@ -468,20 +478,20 @@ func (s *guardStore) Get(ctx context.Context, t store.Tenant, key string) ([]byt
 	switch {
 	case s.down != nil:
 		return nil, s.down
-	case !lease && !pusher && s.entitlementErr != nil:
+	case !lease && !record && s.entitlementErr != nil:
 		return nil, s.entitlementErr
 	}
 	return s.inner.Get(ctx, t, key)
 }
 
 func (s *guardStore) CompareAndSwap(ctx context.Context, t store.Tenant, key string, old, value []byte) (bool, error) {
-	pusher := strings.HasPrefix(key, pusherKeyPrefix)
-	if !pusher && !strings.HasPrefix(key, leaseKeyPrefix) {
-		panic("gate path wrote to the Store outside a publication lease or a pusher record: CompareAndSwap")
+	record := isRecord(key)
+	if !record && !strings.HasPrefix(key, leaseKeyPrefix) {
+		panic("gate path wrote to the Store outside a publication lease or a record of gate/inputs: CompareAndSwap")
 	}
 	s.mu.Lock()
-	if pusher {
-		s.pusherTenants = append(s.pusherTenants, t)
+	if record {
+		s.recordTenants, s.recordKeys = append(s.recordTenants, t), append(s.recordKeys, key)
 	} else {
 		s.leaseTenants = append(s.leaseTenants, t)
 	}
@@ -548,6 +558,19 @@ func (r *fakeResolver) Resolve(_ context.Context, t inputs.Target, now time.Time
 func (r *fakeResolver) RecordPusher(_ context.Context, _ inputs.Target, login string) error {
 	r.pushers = append(r.pushers, login)
 	return nil
+}
+
+// The approval methods run only over the real resolver, in the world.
+func (r *fakeResolver) Candidate(context.Context, inputs.Target) (inputs.Candidate, error) {
+	panic("fakeResolver: Candidate")
+}
+
+func (r *fakeResolver) CanApprove(context.Context, inputs.Target, string) error {
+	panic("fakeResolver: CanApprove")
+}
+
+func (r *fakeResolver) Approve(context.Context, inputs.Target, string, map[string]string, time.Time) error {
+	panic("fakeResolver: Approve")
 }
 
 type fakePublisher struct {

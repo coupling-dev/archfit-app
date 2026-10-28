@@ -66,6 +66,7 @@ func TestApprovalAlgorithm(t *testing.T) {
 	tests := []struct {
 		name          string
 		owners        []string
+		agents        []string
 		reviews       []api.Review
 		want          string
 		wantTeamCalls []string
@@ -119,6 +120,16 @@ func TestApprovalAlgorithm(t *testing.T) {
 			name:    "a later review under another login case still wins",
 			reviews: []api.Review{approved("alice", headSHA), {Reviewer: "ALICE", State: "DISMISSED", CommitSHA: headSHA}},
 		},
+		{name: "an owner listed as an agent", agents: []string{"Alice"}, reviews: []api.Review{approved("alice", headSHA)}},
+		{name: "an agent's app account", agents: []string{"alice"}, reviews: []api.Review{approved("alice[bot]", headSHA)}},
+		{name: "an agent in an owner team, never looked up", agents: []string{"carol"}, reviews: []api.Review{approved("carol", headSHA)}},
+		{
+			name:    "an owner approves after an agent",
+			owners:  []string{"alice", "claude"},
+			agents:  []string{"claude"},
+			reviews: []api.Review{approved("claude", headSHA), approved("alice", headSHA)},
+			want:    "alice",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -126,7 +137,8 @@ func TestApprovalAlgorithm(t *testing.T) {
 			if tt.owners == nil {
 				tt.owners = owners
 			}
-			got, err := approver(tt.reviews, tt.owners, headSHA, func(team, login string) (bool, error) {
+			s := settings.Settings{Owners: tt.owners, Agents: tt.agents}
+			got, err := approver(tt.reviews, s, headSHA, func(team, login string) (bool, error) {
 				return pulls.TeamMember(t.Context(), api.RepoRef{}, team, login)
 			})
 			if err != nil {

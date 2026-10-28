@@ -384,10 +384,12 @@ file and the workflow file change no digest in the receipt, so the receipt diges
 or the sweep when the event is lost, then sets the required check to `action_required` with `owner_approval_missing`.
 It requests no rerun: no run can pass until an owner approves the head again, and that approval triggers the rerun.
 The rerun also follows when no approval is needed any more, for example after a base retarget.
-An owner also authorizes a head by pushing it. The `push` webhook names the actor who moved the branch to a commit, and
-the App stores that login under the commit SHA. When the pusher is an owner in the protected settings, the head counts
-as approved, like an approving review on it. A later commit has its own pusher, so the authorization never carries over.
-The App never reads git author or committer fields for this. A pull request from a fork has no such push event.
+A push never approves: a local coding agent pushes with its owner's credentials. GitHub does not let an author approve
+their own pull request, so an owner approves the exact head in the App instead (Approve on the pull request page,
+behind the browser session). The App stores that approval under the commit SHA with the digests of the protected files
+the owner was shown; it counts while the approver is still an owner and the pull request still changes exactly those
+files, and a later commit needs a new one. An account listed under `agents` in the protected settings never approves,
+on GitHub or in the App. A pull request from a fork cannot be approved in the App.
 The review event and the sweep read the check, read the inputs, decide, and write all inside the head's publication
 lease. So a newer run that turned green while they waited is the result they downgrade, and an approval that
 arrives meanwhile is handled by its own review event after the write. An upload decided before the withdrawal reads
