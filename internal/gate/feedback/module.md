@@ -18,6 +18,11 @@ keeps in the Store is a short-lived lease per head SHA, because GitHub has no co
 - Create the pending (`in_progress`) gate check for a new head.
 - Read back the gate check of a head SHA as `CheckState`, including the parsed `Receipt`.
 - Add or refresh the waiver-expiry notice in the comment.
+- Render the policy change card (`policyCard`) in the comment and the `archfit/state` check when the publication
+  carries an engine classification of a change to the protected policy: the direction, the changes in plain words
+  (each value cut to 80 characters, the list bounded to about 3 KB, then a count: the card sits in a block that is never
+  cut and the author controls the values), and the approval rule; a `policy_authority` rung held at human says so.
+  Display only.
 - Render feedback that is useful without an LLM: the verdict, one sentence of what the pull request changed, the
   picture of the dependency cycle, then the next action; findings with rule, modules and locations; the balancing
   move of each advisory in the words of Balanced Coupling; active versus accepted debt; dimensions; a mandatory evidence-gap section;

@@ -35,11 +35,14 @@ type Receipt struct {
 
 // Publication is one complete piece of feedback for one head SHA.
 type Publication struct {
-	Target       inputs.Target
-	Identity     manifest.Identity // claimed engine and image identity; zero when there was no upload
-	Outcome      verdict.Outcome
-	Receipt      Receipt
-	Report       *report.Report // decoded claims; presentation separately checks source authority from all reason codes
+	Target   inputs.Target
+	Identity manifest.Identity // claimed engine and image identity; zero when there was no upload
+	Outcome  verdict.Outcome
+	Receipt  Receipt
+	Report   *report.Report // decoded claims; presentation separately checks source authority from all reason codes
+	// PolicyChange is the engine's classification of a change to the protected policy, for the policy change card;
+	// nil when the pull request changes no policy or the upload carries none. Display only: it decides nothing.
+	PolicyChange *report.PolicyChange
 	Trusted      inputs.Trusted
 	stateCheckID int64 // display-only ID returned by this publication's successful check write; never an admission input
 	// Resolve, when set, reads the trusted inputs again inside the head's publication lease, before anything is

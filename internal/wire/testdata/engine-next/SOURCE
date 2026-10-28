@@ -14,3 +14,9 @@ path: internal/output/agentout/testdata/cases/<case>.state.json
 note: byte copies. The engine validates them against its state schema (internal/reportschema). They carry the result identity
 block of v3.3.0. They are NOT the pin. The five exported *.json agent-result files of the same directory are another document
 (archfit.agent-result.v1) that the App never ingests.
+
+policy-change-*.json: the policy_change object of real `archfit config compare --json` output (archfit.config-compare.v1)
+from engine main feec08c3 (E11, archfit #110), as captured in archfit-action at f5ca98f
+tests/fixtures/policy-change/{widen,addrule,exclude}.json (its SOURCE.md has the command and the policies). Only the
+policy_change object is kept, the part the upload will carry (manager decision, 2026-10-28: embedded in the report upload).
+widen: allowlist widened (loosening); addrule: rule added (tightening); exclude: source excluded (loosening, coverage lost).

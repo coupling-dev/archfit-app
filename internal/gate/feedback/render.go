@@ -221,7 +221,7 @@ func shortID(id string) string {
 
 func renderState(p Publication) string {
 	p = presentation(p)
-	l := layout{head: headBlock(p, false), decision: decisionBlock(p), inputs: inputsBlock(p), receipt: receiptMarker(p.Receipt)}
+	l := layout{head: join(headBlock(p, false), policyCard(p.PolicyChange, p.Trusted.Settings)), decision: decisionBlock(p), inputs: inputsBlock(p), receipt: receiptMarker(p.Receipt)}
 	if !suspended(p.Outcome) {
 		l.findings, l.dims, l.gaps = findingsBlock(p.Report, false), dimensionsBlock(p.Report), gapsBlock(p)
 		if p.Report != nil {
@@ -240,11 +240,12 @@ func renderComment(p Publication, now time.Time, waiver, link string) string {
 	notice := noticeLine(p.Trusted.Entitlement, now)
 	// The next step sits after the violations it answers, in a block that is never cut; with none to answer it
 	// follows the head. The notice comes before the link either way.
+	card := policyCard(p.PolicyChange, p.Trusted.Settings)
 	if nextBelowFindings(p) {
 		l.head = join(l.head, notice)
-		l.tail = join(nextBlock(p), linkLine(link))
+		l.tail = join(card, nextBlock(p), linkLine(link))
 	} else {
-		l.head = join(l.head, nextBlock(p), notice, linkLine(link))
+		l.head = join(l.head, card, nextBlock(p), notice, linkLine(link))
 	}
 	if !suspended(p.Outcome) {
 		l.findings = compactFindings(p)

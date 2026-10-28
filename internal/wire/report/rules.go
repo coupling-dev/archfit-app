@@ -29,6 +29,7 @@ const (
 	maxTaskTextLen   = 4_096 // a task goal or constraint holds a why, two paths or a module's public globs
 	maxCommandLen    = 512
 	maxIdentifierLen = 200
+	maxBlobLen       = 8192 // the engine writes whole canonical declarations; the card shows a few words of them
 	maxTokenLen      = 64
 	maxVersionLen    = 128
 	maxPathLen       = 512
@@ -65,6 +66,7 @@ const (
 	classConfigHash
 	classPath
 	classEndpointPath // a path, or empty
+	classBlob         // engine-written declaration text: may span lines (canonical JSON, a joined rule set); large cap
 )
 
 // checker validates the shadow report while it copies the kept fields. It keeps the first error of each phase.
@@ -204,6 +206,16 @@ func stringsOf(c *checker, key string, in []string, limit int, required bool, cl
 
 // stringRule returns the phase and the rule that s breaks, or an empty rule.
 func stringRule(s string, class strClass) (phase, string) {
+	if class == classBlob {
+		// Line breaks and tabs are the text's own; every other control character, and the Unicode line and
+		// paragraph separators, are not.
+		if strings.ContainsFunc(s, func(r rune) bool {
+			return r != '\n' && r != '\t' && (unicode.IsControl(r) || r == '\u2028' || r == '\u2029')
+		}) {
+			return phaseString, "must be text without control characters"
+		}
+		return phaseString, tooLong(s, maxBlobLen)
+	}
 	if strings.ContainsFunc(s, func(r rune) bool { return unicode.IsControl(r) || r == ' ' || r == ' ' }) {
 		return phaseString, "must be a single line without control characters"
 	}

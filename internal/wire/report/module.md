@@ -69,6 +69,18 @@ and dropped. Both are optional, so a v3.2.3 report decodes unchanged. When the p
 (`TestAheadOfThePinIsNotInThePin` fails until it does) and `identity` becomes what the new schema says: required.
 `Report.Identity` is the engine's own statement. It decides nothing: the gate trusts inputs from the protected ref only,
 and uses the identity for the receipt key (`gate`, `identityKey`) and for display.
+
+`DecodePolicyChange` reads the `policy_change` object of `archfit.config-compare.v1` (engine E11, `feec08c3`): the
+classification of a change to the protected policy. It is strict like `Decode`: every list is required, the value
+sets are what the engine emits (direction; rule-delta fields `gate`, `max`, `declaration`, `max_new`, `min_delta`;
+allowlist fields; the lost and the gained coverage kinds), taken from the engine's code at `feec08c3`, not its doc
+comments; unknown keys and empty values are refused, and errors name the field under `policy_change`. The engine writes
+whole canonical declarations (JSON, a joined rule set) into a declaration's and a rule delta's `from` and `to`: those
+may span lines and run to 8 KiB; every other string is one line. The stated
+direction must be the one its lists give: it decides who may approve, so it is never taken on trust. The fixtures are
+the engine's real output (`testdata/engine-next/policy-change-*.json`). The upload does not carry it yet: the Action
+embeds it in the report upload (manager decision, 2026-10-28) and the App wires it in the change that vendors that
+transport.
 Other releases, empty versions and unknown keys fail closed. Historical readability preserves stored reports.
 Only the manifest's exact v3.2.3 platform tuples are approved. Old readable uploads end `unknown_engine_identity`, not success.
 No version fallback or second approval path is added.

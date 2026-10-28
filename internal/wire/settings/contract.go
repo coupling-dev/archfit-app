@@ -28,6 +28,34 @@ type Settings struct {
 	Gate     GateMode `yaml:"gate"`             // default advisory
 	Workflow string   `yaml:"workflow"`         // e.g. ".github/workflows/archfit.yaml"
 	DataMode DataMode `yaml:"data_mode"`        // default customer
+	// PolicyAuthority is who may approve a change to the protected files. Absent means human.
+	PolicyAuthority *PolicyAuthority `yaml:"policy_authority,omitempty"`
+}
+
+// AuthorityLevel is a rung of the policy authority ladder.
+type AuthorityLevel string
+
+const (
+	AuthorityHuman     AuthorityLevel = "human"     // an owner approves every protected change
+	AuthorityCoSign    AuthorityLevel = "co-sign"   // an architect agent and one owner (not active in this release)
+	AuthorityDelegated AuthorityLevel = "delegated" // an architect agent alone for tightening (not active in this release)
+)
+
+// PolicyAuthority is the policy_authority block. Only AuthorityHuman is in force in this release: a file may name a
+// later rung, which parses so that the file stays valid, and Effective holds it at human.
+type PolicyAuthority struct {
+	Level       AuthorityLevel `yaml:"level"`
+	Agents      []string       `yaml:"agents,omitempty"`       // architect agents a later rung lets approve
+	TightenAuto bool           `yaml:"tighten_auto,omitempty"` // a later rung: tightening needs no approval
+}
+
+// Effective returns the rung in force and, when it differs from the one the file names, why. Every rung but human is
+// held at human in this release, so a file cannot grant an agent approval before the App supports it.
+func (s Settings) Effective() (level AuthorityLevel, held string) {
+	if s.PolicyAuthority == nil || s.PolicyAuthority.Level == AuthorityHuman {
+		return AuthorityHuman, ""
+	}
+	return AuthorityHuman, "policy_authority " + string(s.PolicyAuthority.Level) + " is not supported yet: an owner approves every protected change"
 }
 
 // botSuffix ends the login GitHub shows for a GitHub App's account: "slug[bot]".
@@ -53,10 +81,18 @@ func agentIdentity(login string) string {
 
 // The YAML keys of version 1, in canonical order (the order of the Settings fields).
 const (
-	keyVersion  = "version"
-	keyOwners   = "owners"
-	keyAgents   = "agents"
-	keyGate     = "gate"
-	keyWorkflow = "workflow"
-	keyDataMode = "data_mode"
+	keyVersion   = "version"
+	keyOwners    = "owners"
+	keyAgents    = "agents"
+	keyGate      = "gate"
+	keyWorkflow  = "workflow"
+	keyDataMode  = "data_mode"
+	keyAuthority = "policy_authority"
+)
+
+// The keys of policy_authority.
+const (
+	keyLevel       = "level"
+	keyArchitects  = "agents"
+	keyTightenAuto = "tighten_auto"
 )

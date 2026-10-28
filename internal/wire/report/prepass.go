@@ -64,7 +64,12 @@ type field struct {
 
 // prepass scans payload against the shadow type root.
 func prepass(payload []byte, root reflect.Type) error {
-	s := &scanner{dec: json.NewDecoder(bytes.NewReader(payload)), fields: map[reflect.Type]map[string]field{}}
+	return prepassAt(payload, root, nil)
+}
+
+// prepassAt is prepass for a document that sits at base inside a larger one, so its errors name the full location.
+func prepassAt(payload []byte, root reflect.Type, base []seg) error {
+	s := &scanner{dec: json.NewDecoder(bytes.NewReader(payload)), fields: map[reflect.Type]map[string]field{}, path: base}
 	s.dec.UseNumber()
 	if tok, err := s.dec.Token(); err != nil || tok != json.Delim('{') {
 		return s.fail("must be a JSON object")
