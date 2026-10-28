@@ -305,6 +305,7 @@ data_mode: customer
 | `gate`      | `advisory`, `required`                       | `required` publishes the blocking check           |
 | `workflow`  | A path under `.github/workflows/`            | The workflow that can upload reports              |
 | `data_mode` | `customer`, `managed`                        | `customer` keeps source processing in customer CI |
+| `policy_authority` | A mapping with `level`, optional `agents` and `tighten_auto` | Who approves a protected change; only `human` is in force |
 
 Absent `gate` and `data_mode` keys use `advisory` and `customer`. An absent `agents` key, or `agents: []`, names no
 agent.
@@ -314,8 +315,22 @@ slug with or without `[bot]` (both mean the same account). Case does not matter.
 change, on GitHub or in the App, even when `owners` names it or an owner team contains it. Listing an owner here is
 allowed; the owner then cannot approve. A pull request opened by an agent is marked on its App page.
 
+`policy_authority` says who may approve a change to the protected files. An absent key means `human`:
+
+```yaml
+policy_authority:
+  level: human # human, co-sign or delegated
+```
+
+Only `human` is in force in this release: an architecture owner approves every protected change. `co-sign` (an
+architect agent plus one owner) and `delegated` (an architect agent alone for tightening changes) are later rungs of the
+ladder. A file that names them stays valid, and the App holds them at `human` and says so in the policy change card.
+Their keys are `agents`, the architect agents a later rung lets approve, and `tighten_auto`, a later rung's switch
+that lets a tightening need no approval. Neither has an effect yet. A loosening never needs less than a human.
+
 The App parses the settings file strictly: an unknown key makes the whole file unreadable, and every pull request then
-gets `settings_missing`. Add `agents` only after the Archfit App release that knows the key serves your repository.
+gets `settings_missing`. Add `agents` and `policy_authority` only after the Archfit App release that knows the keys
+serves your repository.
 
 ## Read the feedback
 
@@ -533,6 +548,16 @@ review, owner approval, merged.
 
 If the draft changed on GitHub after the page loaded, the App refuses the save and keeps your text. Select
 **Discard my edits and load the draft**, then apply the edit again.
+
+### Policy change card
+
+When a pull request changes `.archfit.yaml`, the comment and the `archfit/state` check show a **Policy change** card:
+whether the change tightens or loosens the policy, and each change the engine found in the two policies'
+declarations: rules removed, loosened, added or tightened; waivers added or removed; allowlists widened or narrowed;
+coverage lost or gained (code the analysis stops or starts reading, such as an added `exclude`); and declarations it
+cannot order, which count as loosening. A change that "fixes" a violation by excluding its source shows as coverage
+lost. The App derives the direction from those lists and refuses a classification that states another. The card
+informs the owner who approves; it decides nothing.
 
 ### Owner approval
 

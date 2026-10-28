@@ -510,6 +510,8 @@ type Settings struct {
     Gate     GateMode `yaml:"gate"`             // default advisory
     Workflow string   `yaml:"workflow"`         // e.g. ".github/workflows/archfit.yaml"
     DataMode DataMode `yaml:"data_mode"`        // default customer
+    // PolicyAuthority is who may approve a change to the protected files. Absent means human.
+    PolicyAuthority *PolicyAuthority `yaml:"policy_authority,omitempty"`
 }
 ```
 

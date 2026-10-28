@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -82,6 +83,10 @@ func Parse(raw []byte) (s Settings, err error) {
 		return Settings{}, err
 	}
 	s.DataMode = DataMode(dataMode)
+	s.PolicyAuthority, err = parseAuthority(fields[keyAuthority])
+	if err != nil {
+		return Settings{}, err
+	}
 	return s, nil
 }
 
@@ -143,7 +148,7 @@ func rootFields(root *yaml.Node) (map[string]*yaml.Node, error) {
 			return nil, ruleError(scopeDocument, "unknown key")
 		}
 		switch key.Value {
-		case keyVersion, keyOwners, keyAgents, keyGate, keyWorkflow, keyDataMode:
+		case keyVersion, keyOwners, keyAgents, keyGate, keyWorkflow, keyDataMode, keyAuthority:
 		default:
 			return nil, ruleError(scopeDocument, "unknown key")
 		}
@@ -212,35 +217,99 @@ func parseOwners(n *yaml.Node) ([]string, error) {
 // keeps the round trip. A login that is also an owner is not an error: a broken settings file stops the gate for every
 // pull request, and IsAgent wins over the owner list anyway.
 func parseAgents(n *yaml.Node) ([]string, error) {
+	return parseAgentList(n, keyAgents)
+}
+
+// parseAgentList reads a list of agent logins or App slugs under key, by the rule of agents.
+func parseAgentList(n *yaml.Node, key string) ([]string, error) {
 	if n == nil {
 		return nil, nil
 	}
 	if n.Kind != yaml.SequenceNode {
-		return nil, ruleError(keyAgents, "must be a list")
+		return nil, ruleError(key, "must be a list")
 	}
 	if len(n.Content) > maxOwners {
-		return nil, ruleError(keyAgents, fmt.Sprintf("at most %d entries", maxOwners))
+		return nil, ruleError(key, fmt.Sprintf("at most %d entries", maxOwners))
 	}
 
 	const form = `each entry must be a login or "app-slug[bot]", as a string without "@"; teams are not allowed`
 	var agents []string
 	seen := make(map[string]bool, len(n.Content))
 	for _, entry := range n.Content {
-		agent, err := parseString(entry, keyAgents, form)
+		agent, err := parseString(entry, key, form)
 		if err != nil {
 			return nil, err
 		}
 		if !agentRule.MatchString(agent) || len(strings.TrimSuffix(agent, botSuffix)) > maxLoginLen {
-			return nil, ruleError(keyAgents, form)
+			return nil, ruleError(key, form)
 		}
 		id := agentIdentity(agent)
 		if seen[id] {
-			return nil, ruleError(keyAgents, `duplicate entry, ignoring case and "[bot]"`)
+			return nil, ruleError(key, `duplicate entry, ignoring case and "[bot]"`)
 		}
 		seen[id] = true
 		agents = append(agents, agent)
 	}
 	return agents, nil
+}
+
+// parseAuthority reads policy_authority. Absent is nil, which means human. Every rung parses; Settings.Effective holds
+// the ones not supported yet at human. Unknown keys, a missing level and a malformed agent list are errors.
+func parseAuthority(n *yaml.Node) (*PolicyAuthority, error) {
+	if n == nil {
+		return nil, nil
+	}
+	if n.Kind != yaml.MappingNode {
+		return nil, ruleError(keyAuthority, "must be a mapping")
+	}
+	fields := make(map[string]*yaml.Node, len(n.Content)/2)
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		key, value := n.Content[i], n.Content[i+1]
+		if key.Kind != yaml.ScalarNode || key.ShortTag() != tagString {
+			return nil, ruleError(keyAuthority, "unknown key")
+		}
+		switch key.Value {
+		case keyLevel, keyArchitects, keyTightenAuto:
+		default:
+			return nil, ruleError(keyAuthority, "unknown key")
+		}
+		if _, dup := fields[key.Value]; dup {
+			return nil, ruleError(keyAuthority+"."+key.Value, "duplicate key")
+		}
+		fields[key.Value] = value
+	}
+	var a PolicyAuthority
+	if fields[keyLevel] == nil {
+		return nil, ruleError(keyAuthority+"."+keyLevel, "required")
+	}
+	level, err := parseEnum(fields[keyLevel], keyAuthority+"."+keyLevel, string(AuthorityHuman), string(AuthorityCoSign), string(AuthorityDelegated))
+	if err != nil {
+		return nil, err
+	}
+	a.Level = AuthorityLevel(level)
+	if a.Agents, err = parseAgentList(fields[keyArchitects], keyAuthority+"."+keyArchitects); err != nil {
+		return nil, err
+	}
+	if t := fields[keyTightenAuto]; t != nil {
+		if t.Kind != yaml.ScalarNode || t.ShortTag() != "!!bool" {
+			return nil, ruleError(keyAuthority+"."+keyTightenAuto, "must be true or false")
+		}
+		a.TightenAuto = t.Value == "true"
+	}
+	return &a, nil
+}
+
+// parseEnum reads a required string that must be one of values exactly.
+func parseEnum(n *yaml.Node, key string, values ...string) (string, error) {
+	rule := "must be one of " + strings.Join(values, ", ")
+	v, err := parseString(n, key, rule)
+	if err != nil {
+		return "", err
+	}
+	if !slices.Contains(values, v) {
+		return "", ruleError(key, rule)
+	}
+	return v, nil
 }
 
 // parseMode returns def for an absent key. A key that is present must hold def or other exactly.

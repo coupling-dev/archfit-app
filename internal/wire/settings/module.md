@@ -94,7 +94,20 @@ type Settings struct {
     Gate     GateMode `yaml:"gate"`             // default advisory
     Workflow string   `yaml:"workflow"`         // e.g. ".github/workflows/archfit.yaml"
     DataMode DataMode `yaml:"data_mode"`        // default customer
+    // PolicyAuthority is who may approve a change to the protected files. Absent means human.
+    PolicyAuthority *PolicyAuthority `yaml:"policy_authority,omitempty"`
 }
+
+// PolicyAuthority is the policy_authority block. Only human is in force in this release: a file may name a later
+// rung, which parses so that the file stays valid, and Settings.Effective holds it at human with a reason.
+type PolicyAuthority struct {
+    Level       AuthorityLevel `yaml:"level"`                  // human | co-sign | delegated
+    Agents      []string       `yaml:"agents,omitempty"`       // architect agents a later rung lets approve
+    TightenAuto bool           `yaml:"tighten_auto,omitempty"` // a later rung: tightening needs no approval
+}
+
+// Effective returns the rung in force (always human in this release) and, when the file names another, why.
+func (s Settings) Effective() (level AuthorityLevel, held string)
 
 // IsAgent reports whether login is one of s.Agents. Case is ignored, and "name" and "name[bot]" are one identity:
 // GitHub names an App's account "slug[bot]" and a file may name either form, so a missed suffix never lets an agent
