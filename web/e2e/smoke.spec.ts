@@ -2000,21 +2000,14 @@ test('docs: the screenshots of the report-derived action-required page and the u
   }
 });
 
-// The owner approval box of a pull request that changes protected files: an owner who may approve the exact commit,
-// and a pull request an agent identity opened, where the box says why it cannot be approved here. Light and dark,
-// sample data. Regenerate with ARCHFIT_DOCS_SHOTS=1.
+// The owner approval box of a pull request that changes protected files, as an owner sees it: a person's pull
+// request, and one an agent identity opened, which the box marks before the owner approves. Light and dark, sample data.
+// Regenerate with ARCHFIT_DOCS_SHOTS=1.
 test('docs: the screenshots of the owner approval box', async ({ page }) => {
   test.skip(!process.env.ARCHFIT_DOCS_SHOTS, 'set ARCHFIT_DOCS_SHOTS=1 to regenerate the guide screenshots');
   await page.setViewportSize({ width: 1280, height: 900 });
-  const agentPull = {
-    ...unapprovedPull,
-    approval: {
-      ...approvalMissing,
-      can_approve: false,
-      author_is_agent: true,
-      reason: 'An agent identity never approves a protected change. An architecture owner approves it.',
-    },
-  };
+  // author_is_agent is about who opened the pull request; can_approve is about the owner viewing it.
+  const agentPull = { ...unapprovedPull, approval: { ...approvalMissing, author_is_agent: true } };
   for (const scheme of ['light', 'dark'] as const) {
     for (const [name, pull] of [
       ['owner-approval', unapprovedPull],

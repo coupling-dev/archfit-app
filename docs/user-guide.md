@@ -592,8 +592,8 @@ owner. Sample data._
 ![The owner approval box of a pull request an agent identity opened](images/owner-approval-agent-pr-light.png#gh-light-mode-only)
 ![The owner approval box of a pull request an agent identity opened](images/owner-approval-agent-pr-dark.png#gh-dark-mode-only)
 
-_A pull request opened by an account in `agents` is marked, and the box says why that account cannot approve. Sample
-data._
+_A pull request opened by an account in `agents` is marked, so the owner reviews its changes to the protected files
+before approving. An account in `agents` signed in to the App never sees the button. Sample data._
 
 Pushing a commit is not an approval, whoever pushes it. A local coding agent pushes with its owner's credentials, so
 a push from an owner account says nothing about who decided.
