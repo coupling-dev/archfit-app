@@ -134,13 +134,15 @@ func otherBase(defaultBranch, base string) bool {
 	return defaultBranch != "" && base != defaultBranch
 }
 
-// eventTarget builds the target from the signed payload. ID and DefaultBranch stay zero:
-// pull request targets and RunRepo do not need them, and that saves one API call.
+// eventTarget builds the target from the signed payload. ID stays zero: pull request targets do not need it, and
+// that saves one API call. The default branch comes from the payload: the repository sweep a push starts decides
+// only the pull requests into it.
 func eventTarget(e webhook.Event) inputs.Target {
 	return inputs.Target{
 		Repo: api.Repo{
-			RepoRef: api.RepoRef{InstallationID: e.InstallationID, FullName: e.Repo},
-			Private: e.RepoPrivate,
+			RepoRef:       api.RepoRef{InstallationID: e.InstallationID, FullName: e.Repo},
+			Private:       e.RepoPrivate,
+			DefaultBranch: e.DefaultBranch, // the repository sweep a push starts decides only pulls into it
 		},
 		PullRequest: e.PullRequest,
 		HeadSHA:     e.HeadSHA,

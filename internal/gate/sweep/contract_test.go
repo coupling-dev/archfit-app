@@ -255,8 +255,8 @@ func TestRunRepoIsTheSamePassForOneRepository(t *testing.T) {
 		w.check(w.pull(r, i+1, trusted()), rc, t0.Add(-day))
 	}
 
-	// The caller builds the repository from a webhook: only RepoRef and Private are set.
-	sum := w.passRepo(api.Repo{RepoRef: first.RepoRef}, t0)
+	// The caller builds the repository from a webhook: RepoRef, Private and the default branch are set.
+	sum := w.passRepo(api.Repo{RepoRef: first.RepoRef, DefaultBranch: first.DefaultBranch}, t0)
 
 	if want := (Summary{Repos: 1, Pulls: 1, Rerun: 1}); sum != want {
 		t.Errorf("RunRepo summary = %+v, want %+v", sum, want)
@@ -671,5 +671,21 @@ func TestPullsIntoOtherBasesAreLeftAlone(t *testing.T) {
 	if len(w.resolver.calls) != 0 || len(w.pub.published) != 0 || len(w.actions.rerunCalls) != 0 || w.calls() != (calls{}) {
 		t.Errorf("resolved %v, published %d, re-runs %v, calls %+v; want nothing for a pull into another base",
 			w.resolver.calls, len(w.pub.published), w.actions.rerunCalls, w.calls())
+	}
+}
+
+// A repository whose default branch is unknown decides nothing: a push event always names it, so an empty one is a
+// caller's mistake, and the safe answer is to read no pull request's base as the protected ref.
+func TestRunRepoWithoutADefaultBranchDecidesNothing(t *testing.T) {
+	w := newWorld(t)
+	r := w.repo(1, 11, "acme/shop")
+	rc := receipt(201, verdict.ReasonHealthy)
+	rc.PolicyDigest = "old"
+	w.check(w.pull(r, 1, trusted()), rc, t0.Add(-day))
+
+	sum := w.passRepo(api.Repo{RepoRef: r.RepoRef}, t0)
+
+	if sum.Pulls != 0 || len(w.resolver.calls) != 0 || len(w.actions.rerunCalls) != 0 || len(w.reasons()) != 0 {
+		t.Errorf("summary %+v, resolved %v, re-runs %v, published %v; want nothing decided", sum, w.resolver.calls, w.actions.rerunCalls, w.reasons())
 	}
 }

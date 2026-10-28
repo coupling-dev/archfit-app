@@ -975,3 +975,31 @@ func TestEventsForAPullIntoAnotherBaseDoNothing(t *testing.T) {
 	}
 
 }
+
+// The repository sweep that a push to a protected path on the default branch starts decides only the pull requests
+// into that branch. A pull into another base would be resolved at a branch its author controls, found stale, and
+// re-run forever; a pull into the default branch is still swept and re-run by the same push.
+func TestPushSweepLeavesAPullIntoAnotherBaseAlone(t *testing.T) {
+	w := newWorld(t)
+	other, onMain := w.openPull(w.shop, 7), w.openPull(w.shop, 8)
+	for _, p := range []*pull{other, onMain} {
+		w.handle(w.event(webhook.PullOpened, p))
+		w.wantAnswer(w.upload(p, fixtureHealthy), 200, "success", "healthy")
+	}
+
+	// The author retargets one pull at a branch whose policy differs from main's.
+	w.onboardedBase(other.repo, "release")
+	w.setFile(other.repo, "release", policy.PolicyPath, []byte(basePolicy+"# loosened on release\n"))
+	key := pullKey(other.repo.FullName, other.number)
+	pl := w.gh.pulls[key]
+	pl.BaseRef = "release"
+	w.gh.pulls[key] = pl
+	// The push changes main's policy: every receipt computed from the old one is stale.
+	w.setFile(onMain.repo, testBranch, policy.PolicyPath, []byte(basePolicy+"# changed on main\n"))
+
+	w.handle(w.pushEvent(w.shop, policy.PolicyPath))
+
+	if !slices.Equal(w.gh.reruns, []int64{onMain.runID}) {
+		t.Errorf("re-runs = %v, want only the pull into the default branch [%d]", w.gh.reruns, onMain.runID)
+	}
+}
