@@ -41,6 +41,7 @@ var (
 	headSHA      = strings.Repeat("a", 40)
 	baseSHA      = strings.Repeat("b", 40)
 	mergeBaseSHA = strings.Repeat("c", 40)
+	mergeSHA     = strings.Repeat("d", 40) // GitHub's test merge commit of prScenario's pull
 	movedSHA     = strings.Repeat("f", 40)
 	imageDigest  = "sha256:" + strings.Repeat("d", 64)
 )
@@ -126,6 +127,8 @@ func prScenario(t *testing.T) *scenario {
 			HeadSHA:       headSHA,
 			BaseSHA:       baseSHA,
 			MergeBaseSHA:  mergeBaseSHA,
+			AnalyzedSHA:   mergeSHA,
+			Integration:   envelope.IntegrationMerged,
 			RunID:         runID,
 			RunAttempt:    1,
 			EngineVersion: "v3.0.1",
@@ -166,14 +169,15 @@ func prScenario(t *testing.T) *scenario {
 
 func openPull(number int) api.Pull {
 	return api.Pull{
-		Number:       number,
-		State:        "open",
-		HeadSHA:      headSHA,
-		HeadRef:      "feature/x",
-		HeadRepo:     repoName,
-		BaseRef:      "release",
-		BaseSHA:      baseSHA,
-		MergeBaseSHA: mergeBaseSHA,
+		Number:         number,
+		State:          "open",
+		HeadSHA:        headSHA,
+		HeadRef:        "feature/x",
+		HeadRepo:       repoName,
+		BaseRef:        "release",
+		BaseSHA:        baseSHA,
+		MergeBaseSHA:   mergeBaseSHA,
+		MergeCommitSHA: mergeSHA,
 	}
 }
 
@@ -221,6 +225,7 @@ func (s *scenario) toEvent(event, ref string) {
 	s.env.PullRequest = 0
 	s.env.BaseSHA = ""
 	s.env.MergeBaseSHA = ""
+	s.env.AnalyzedSHA, s.env.Integration = s.run.HeadSHA, ""
 }
 
 func (s *scenario) setBody(body []byte) {
@@ -282,6 +287,8 @@ func healthyBinding(s *scenario) Binding {
 		BaseRef:      "release",
 		BaseSHA:      baseSHA,
 		MergeBaseSHA: mergeBaseSHA,
+		AnalyzedSHA:  mergeSHA,
+		Integration:  envelope.IntegrationMerged,
 		RunID:        runID,
 		RunAttempt:   1,
 		WorkflowPath: workflowPath,

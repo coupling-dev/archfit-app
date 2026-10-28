@@ -1,5 +1,5 @@
 {
-  "producer": "synthetic: byte copy of real-baselined-comparable with its policy and baseline; the case is its envelope, which states a baseline digest other than the digest of the baseline file; synthetic transport identity updated to the approved v3.2.0 tuple, report bytes unchanged",
+  "producer": "synthetic: byte copy of real-baselined-comparable with its policy and baseline; the case is its envelope, which states a baseline digest other than the digest of the baseline file; synthetic transport identity updated to the approved v3.2.0 tuple, report bytes unchanged Retired: the manifest no longer lists this engine release (the Action that carried it predates archfit-action X1, which changed the envelope), so a fresh upload from it ends unknown_engine_identity; the report still decodes.",
   "decode": "ok",
   "fields": {
     "verdict": "needs_attention",
@@ -12,10 +12,12 @@
   "gate": {
     "conclusion": "action_required",
     "reasons": [
+      "unknown_engine_identity",
       "baseline_mismatch"
     ]
   },
   "facts": {
-    "baseline_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    "baseline_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "identity_approved": false
   }
 }

@@ -3,7 +3,7 @@
     "repository": "github.com/alexei-led/archfit",
     "revision": "faa4eb4e513859567fd6c380230c91ea22fdaab6",
     "engine_version": "v3.2.0",
-    "command": "Published native linux/arm64 v3.2.0 image at sha256:725c3a074358df8ea41881296eda06b07daed7934d7a6d40bb1ecfc3c8a8128d through released archfit-action v2.2.0 at cadf35c0d4885a49a3a1482b876f2a456d20de06 tests/helpers.sh; scratch write_module repo with base lacking the pkg/b import and feature adding it; prepare/run/report pull_request flow check --json --refresh --progress=none --base <actual scratch merge base> -c /bundle/.archfit.yaml --root /src. Unmodified payload and Action envelope; event/run identity is synthetic test transport, not an authenticated GitHub upload."
+    "command": "Published native linux/arm64 v3.2.0 image at sha256:725c3a074358df8ea41881296eda06b07daed7934d7a6d40bb1ecfc3c8a8128d through released archfit-action v2.2.0 at cadf35c0d4885a49a3a1482b876f2a456d20de06 tests/helpers.sh; scratch write_module repo with base lacking the pkg/b import and feature adding it; prepare/run/report pull_request flow check --json --refresh --progress=none --base <actual scratch merge base> -c /bundle/.archfit.yaml --root /src. Unmodified payload and Action envelope; event/run identity is synthetic test transport, not an authenticated GitHub upload. Retired: the manifest no longer lists this engine release (the Action that carried it predates archfit-action X1, which changed the envelope), so a fresh upload from it ends unknown_engine_identity; the report still decodes."
   },
   "decode": "ok",
   "fields": {
@@ -15,9 +15,13 @@
     "gate_reference_status": "non_comparable"
   },
   "gate": {
-    "conclusion": "failure",
+    "conclusion": "action_required",
     "reasons": [
+      "unknown_engine_identity",
       "blocking_findings"
     ]
+  },
+  "facts": {
+    "identity_approved": false
   }
 }

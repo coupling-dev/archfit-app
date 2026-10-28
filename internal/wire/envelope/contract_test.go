@@ -136,8 +136,8 @@ func TestSchemaDocument(t *testing.T) {
 	for _, name := range doc.Required {
 		required[name] = true
 	}
-	if len(doc.Required) != 16 || len(required) != 16 || len(doc.Properties) != 16 {
-		t.Errorf("want 16 distinct required properties, got %d required, %d properties", len(doc.Required), len(doc.Properties))
+	if len(doc.Required) != 18 || len(required) != 18 || len(doc.Properties) != 18 {
+		t.Errorf("want 18 distinct required properties, got %d required, %d properties", len(doc.Required), len(doc.Properties))
 	}
 	for _, name := range fieldOrder() {
 		if _, declared := doc.Properties[name]; !declared || !required[name] {

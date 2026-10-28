@@ -19,8 +19,9 @@ const (
 	baselineBranch   = "archfit/baseline"
 	workflowPath     = ".github/workflows/archfit.yaml"
 	stateCheckName   = "archfit/state" // published only by the App, only for an accepted upload
-	eventPush        = "push"          // GitHub workflow run event
-	runCompleted     = "completed"     // GitHub workflow run status
+	gateCheckName    = "archfit/gate"
+	eventPush        = "push"      // GitHub workflow run event
+	runCompleted     = "completed" // GitHub workflow run status
 
 	sandboxTimeout = 10 * time.Minute
 	stalledAfter   = sandboxTimeout + time.Minute
@@ -36,6 +37,7 @@ type roles struct {
 	actions api.Actions
 	checks  api.Checks
 	pulls   api.Pulls
+	rules   api.Rules // nil reads as an unknown enforcement
 }
 
 type service struct {

@@ -64,6 +64,7 @@ func (r *receiver) bind(ctx context.Context, kind envelope.Kind, env envelope.En
 		Repo:         repo,
 		Event:        run.Event,
 		HeadSHA:      run.HeadSHA,
+		AnalyzedSHA:  run.HeadSHA,
 		BaseRef:      repo.DefaultBranch,
 		Fork:         run.HeadRepo != repo.FullName, // also the head repository of a workflow_run run
 		RunID:        claims.RunID,
@@ -87,6 +88,7 @@ func (r *receiver) bind(ctx context.Context, kind envelope.Kind, env envelope.En
 			}
 			b.PullRequest = pull.Number
 			b.BaseRef, b.BaseSHA, b.MergeBaseSHA = pull.BaseRef, pull.BaseSHA, pull.MergeBaseSHA
+			b.AnalyzedSHA, b.Integration = landing(pull, run.HeadSHA)
 			b.Fork = b.Fork || pull.HeadRepo != repo.FullName
 		}
 	}
@@ -131,6 +133,19 @@ func (r *receiver) resolvePull(ctx context.Context, repo api.Repo, run api.Workf
 	return &matches[0], nil
 }
 
+// landing is what a pull request run must have measured, from GitHub's own answer and never from the envelope: the
+// head alone when GitHub says it conflicts, else GitHub's test merge commit. While GitHub has not computed the merge
+// there is no answer, and no envelope matches it: the run is made again.
+func landing(pull *api.Pull, head string) (analyzed, integration string) {
+	switch {
+	case pull.Mergeable != nil && !*pull.Mergeable:
+		return head, envelope.IntegrationConflicts
+	case pull.MergeCommitSHA != "":
+		return pull.MergeCommitSHA, envelope.IntegrationMerged
+	}
+	return "", ""
+}
+
 // envelopeMatches is step 15. Repository was compared in step 7.
 func envelopeMatches(env envelope.Envelope, b Binding) bool {
 	return env.Event == b.Event &&
@@ -138,6 +153,8 @@ func envelopeMatches(env envelope.Envelope, b Binding) bool {
 		env.HeadSHA == b.HeadSHA &&
 		env.BaseSHA == b.BaseSHA &&
 		env.MergeBaseSHA == b.MergeBaseSHA &&
+		env.AnalyzedSHA == b.AnalyzedSHA &&
+		env.Integration == b.Integration &&
 		env.RunID == b.RunID &&
 		env.RunAttempt == b.RunAttempt
 }

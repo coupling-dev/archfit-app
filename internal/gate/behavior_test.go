@@ -345,6 +345,50 @@ func TestReviewTriggersRerun(t *testing.T) {
 
 // An owner approval that a green receipt relied on can end without a new commit: the review is dismissed, or the owner
 // requests changes. Settings and workflow edits move no digest, so only the approval itself can show the change.
+// A report-derived action_required (missing required coverage) shows the report on the PR comment and the Pull page,
+// so the owner approval that admitted the head's inputs matters to it as to a success: when it is gone the result
+// becomes owner_approval_missing, on the event as on the hourly sweep, and the report is withheld.
+func TestWithdrawnApprovalEndsReportDerivedActionRequired(t *testing.T) {
+	ctx := context.Background()
+	triggers := map[string]func(w *world, p *pull){
+		"the ReviewChanged event": func(w *world, p *pull) { w.handle(w.event(webhook.ReviewChanged, p)) },
+		"the event is lost and the hourly sweep runs": func(w *world, _ *pull) {
+			w.now = w.now.Add(time.Hour)
+			if sum, err := w.gate.Sweep(ctx); err != nil || sum.Errors != 0 {
+				w.t.Errorf("sweep = %+v, %v", sum, err)
+			}
+		},
+	}
+	for name, trigger := range triggers {
+		t.Run(name, func(t *testing.T) {
+			w := newWorld(t)
+			p := w.openPull(w.shop, 7)
+			w.changes(p, "pkg/a/a.go", settings.Path) // a protected path with no digest of its own
+			w.handle(w.event(webhook.PullOpened, p))
+			w.review(p, ownerLogin, "APPROVED", p.head)
+			w.wantAnswer(w.upload(p, fixtureCoverage), 200, "action_required", "missing_required_coverage")
+
+			key := pullKey(p.repo.FullName, p.number)
+			for i, rv := range w.gh.reviews[key] {
+				if rv.Reviewer == ownerLogin && rv.State == "APPROVED" {
+					w.gh.reviews[key][i].State = "DISMISSED"
+				}
+			}
+			trigger(w, p)
+
+			if rc := w.receipt(p); rc.Reason != verdict.ReasonOwnerApprovalMissing {
+				t.Errorf("receipt reason = %q, want owner_approval_missing: the report was decided under an approval that is gone", rc.Reason)
+			}
+			w.wantGate(p, runCompleted, "action_required")
+			writes := w.gh.writes()
+			trigger(w, p)
+			if w.gh.writes() != writes || len(w.gh.reruns) != 0 {
+				t.Errorf("a repeated trigger added %d writes and reruns %v", w.gh.writes()-writes, w.gh.reruns)
+			}
+		})
+	}
+}
+
 func TestWithdrawnApprovalEndsSuccess(t *testing.T) {
 	ctx := context.Background()
 	edits := map[string]func(w *world, p *pull) []func(map[string]any){
@@ -940,4 +984,66 @@ func TestUnreadableApprovalIsRetriedNotDropped(t *testing.T) {
 	w.admit.down = false
 	w.handle(w.event(webhook.PullOpened, p))
 	w.wantAnswer(w.upload(p, fixtureHealthy), 200, "success", "healthy")
+}
+
+// onboardedBase gives branch the settings and policy of the default branch, as an author who controls it could, so
+// that a pull request into it would be decided if the App looked there.
+func (w *world) onboardedBase(r api.Repo, branch string) {
+	for _, path := range []string{settings.Path, policy.PolicyPath} {
+		w.setFile(r, branch, path, w.gh.files[fileKey(r.FullName, testBranch, path)])
+	}
+}
+
+// A pull request into a branch other than the default branch is not decided against (its upload ends
+// unsupported_event), so the App reads and writes nothing for its events, and no success can come of them.
+func TestEventsForAPullIntoAnotherBaseDoNothing(t *testing.T) {
+	for _, kind := range []webhook.EventKind{webhook.PullOpened, webhook.PullSynchronized} {
+		t.Run(string(kind), func(t *testing.T) {
+			w := newWorld(t)
+			p := w.openPull(w.shop, 7)
+			w.onboardedBase(p.repo, "release")
+			key := pullKey(p.repo.FullName, p.number)
+			pl := w.gh.pulls[key]
+			pl.BaseRef = "release"
+			w.gh.pulls[key] = pl
+
+			w.handle(w.event(kind, p))
+
+			if writes := w.gh.writes(); writes != 0 {
+				t.Errorf("%d writes for a pull into another base", writes)
+			}
+			if _, found := w.check(p, p.head, gateCheckName); found {
+				t.Error("a gate check was created for a pull into another base")
+			}
+		})
+	}
+
+}
+
+// The repository sweep that a push to a protected path on the default branch starts decides only the pull requests
+// into that branch. A pull into another base would be resolved at a branch its author controls, found stale, and
+// re-run forever; a pull into the default branch is still swept and re-run by the same push.
+func TestPushSweepLeavesAPullIntoAnotherBaseAlone(t *testing.T) {
+	w := newWorld(t)
+	other, onMain := w.openPull(w.shop, 7), w.openPull(w.shop, 8)
+	for _, p := range []*pull{other, onMain} {
+		w.handle(w.event(webhook.PullOpened, p))
+		w.wantAnswer(w.upload(p, fixtureHealthy), 200, "success", "healthy")
+	}
+
+	// The author retargets one pull at a branch whose policy differs from main's.
+	w.onboardedBase(other.repo, "release")
+	w.setFile(other.repo, "release", policy.PolicyPath, []byte(basePolicy+"# loosened on release\n"))
+	key := pullKey(other.repo.FullName, other.number)
+	pl := w.gh.pulls[key]
+	pl.BaseRef = "release"
+	w.gh.pulls[key] = pl
+	// The push changes main's policy: every receipt computed from the old one is stale.
+	w.setFile(onMain.repo, testBranch, policy.PolicyPath, []byte(basePolicy+"# changed on main\n"))
+
+	w.handle(w.pushEvent(w.shop, policy.PolicyPath))
+
+	if !slices.Equal(w.gh.reruns, []int64{onMain.runID}) {
+		t.Errorf("re-runs = %v, want only the pull into the default branch [%d]", w.gh.reruns, onMain.runID)
+	}
 }

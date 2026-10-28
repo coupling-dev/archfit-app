@@ -114,7 +114,7 @@ func TestBranchPushFields(t *testing.T) {
 	ev := mustParse(t, "push", payload)
 	want := Event{
 		Kind: BranchPush, DeliveryID: testDelivery, InstallationID: 5001, Repo: "acme/shop", RepoPrivate: false,
-		HeadSHA: shaA, HeadRepo: "acme/shop", Branch: "feature/x", Pusher: "octocat",
+		HeadSHA: shaA, HeadRepo: "acme/shop", DefaultBranch: "main", Branch: "feature/x", Pusher: "octocat",
 	}
 	if !reflect.DeepEqual(ev, want) {
 		t.Errorf("Parse() = %+v, want %+v", ev, want)

@@ -159,7 +159,11 @@ progress has not uploaded yet; its conclusion does not matter. **[default]** Fir
 1. Settings file absent or not parseable, or `Settings.Workflow` file absent → `installed`. `OpenDraft` = `Get("archfit/onboarding")`.
 2. Policy absent, not reported → `workflow_merged`. Policy absent, reported → `report_received`. `OpenDraft` = `Get("archfit/policy")`.
 3. Policy present, not reported → `policy_merged`.
-4. Policy present, reported → `gate_advisory` or `gate_required` from `Settings.Gate`.
+4. Policy present, reported → `gate_advisory` when `Settings.Gate` is advisory. When it is `required`, `Progress.Enforcement`
+   is asked of GitHub (`api.Rules.RequiredChecks` on the default branch): `enforced` (a ruleset requires `archfit/gate`) →
+   `gate_required`; `not_enforced` (no readable rule or protection requires it) or `unknown` (the read failed,
+   no `Rules` role, or the branch is protected and GitHub does not list what it requires) → `gate_advisory` with that
+   `Enforcement` and a diagnostic that names the rule to add. `unknown` is never shown as enforced.
 
 With valid settings, the workflow file, the policy file and "reported" are read side by side and judged in this
 order: a workflow read error first; no workflow → rule 1, whatever the other two said; then a policy read error, then
@@ -566,6 +570,8 @@ type Envelope struct {
     HeadSHA       string `json:"head_sha"`       // 40 lowercase hex
     BaseSHA       string `json:"base_sha"`       // "" unless pull_request
     MergeBaseSHA  string `json:"merge_base_sha"` // "" unless pull_request
+    AnalyzedSHA   string `json:"analyzed_sha"`   // the commit the engine measured; the test merge commit when Integration is "merged"
+    Integration   string `json:"integration"`    // "merged" | "conflicts" for a pull_request, "" otherwise
     RunID         int64  `json:"run_id"`
     RunAttempt    int    `json:"run_attempt"`
     EngineVersion string `json:"engine_version"` // e.g. "v3.0.1"

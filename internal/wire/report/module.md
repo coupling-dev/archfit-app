@@ -62,7 +62,7 @@ Volatility: moderate. It changes with a versioned engine release; the caps are *
 
 `Decode` reads v3.0.0, v3.0.1, v3.2.0, v3.2.2 and v3.2.3 through one byte-identical state-schema key set.
 Other releases, empty versions and unknown keys fail closed. Historical readability preserves stored reports.
-Only the manifest's exact v3.2.3 and retained v3.2.2/v3.2.0 platform tuples are approved. Old readable uploads end `unknown_engine_identity`, not success.
+Only the manifest's exact v3.2.3 platform tuples are approved. Old readable uploads end `unknown_engine_identity`, not success.
 No version fallback or second approval path is added.
 
 - The schema has these keys, among others. Kept: `comparison.classification_hash`, `comparison.origin_status`,

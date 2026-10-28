@@ -217,7 +217,7 @@ The status page derives its stage from GitHub on every read.
 | `report_received` | First report received | Review and merge the policy pull request |
 | `policy_merged`   | Policy merged         | Wait for the first default-branch run    |
 | `gate_advisory`   | Gate is advisory      | Enable the gate by pull request          |
-| `gate_required`   | Gate is required      | None                                     |
+| `gate_required`   | Gate is required      | None; GitHub requires `archfit/gate`     |
 
 ### Give it to a coding agent
 
@@ -267,7 +267,7 @@ The status page derives its stage from GitHub on every read.
 | `report_received` | First report received | Review and merge the policy pull request |
 | `policy_merged`   | Policy merged         | Wait for the first default-branch run    |
 | `gate_advisory`   | Gate is advisory      | Enable the gate by pull request          |
-| `gate_required`   | Gate is required      | None                                     |
+| `gate_required`   | Gate is required      | None; GitHub requires `archfit/gate`     |
 
 ### Managed discovery
 
@@ -443,12 +443,13 @@ no approval is needed any more.
 
 ### Engine versions
 
-The locked manifest approves engine v3.2.3 on Linux amd64 and arm64, retaining the exact previously approved
-v3.2.2/v3.2.0 tuples during rollout. New v3.2.3 workflows pin released Action v2.2.1 at merged commit
-`dd835da5025fd6e54707521434a41767c3ec4ddb`. Retained v3.2.2 rows keep `e0a1ef9473d68b426e9c56b2da5986bcee2fc769`;
-v3.2.0 rows keep `cadf35c0d4885a49a3a1482b876f2a456d20de06`. Only the v3.2.3 amd64 row is Current for new workflows/recovery pins.
+The locked manifest approves engine v3.2.3 on Linux amd64 and arm64. New workflows pin archfit-action at commit
+`ec465980aa52e8aec0bf6ac22ab717efd1b15c77`, which measures a pull request as it would land (the merge with the target)
+and states `analyzed_sha` and `integration` in the upload. Only the v3.2.3 amd64 row is Current for new workflows and
+recovery pins.
 
-- Existing approved v3.2.2/v3.2.0 platform tuples remain approved during rollout. Retired or unknown pins give `action_required` with `unknown_engine_identity`.
+- The v3.2.2 and v3.2.0 tuples are no longer approved: the Actions that carried them predate the new envelope. Retired or
+  unknown pins give `action_required` with `unknown_engine_identity`; move the workflow to the pinned Action.
 - Historical v3.0.0/v3.0.1 reports remain readable because their state schema matches v3.2.0/v3.2.2/v3.2.3.
   Reading an old report does not approve its identity. Unknown report releases give `report_invalid`.
 - The policy editor uses the byte-identical v3.2.3 config schema. The engine's check remains the authority for policy semantics.
@@ -674,6 +675,18 @@ baseline already accepts, and accepts nothing new.
 2. Get a policy owner approval and merge the pull request.
 3. Add `archfit/gate` as a required check in the GitHub ruleset.
 
+The status page shows `gate_required` only when GitHub requires `archfit/gate` on the default branch. The App reads
+the branch's rulesets for this. If the settings say `gate: required` and no ruleset requires the check, the page stays
+at `gate_advisory`, says "Gate is required in settings, not enforced by GitHub", and names the rule to add. If the App
+cannot tell, it says "enforcement not confirmed" and never shows `gate_required`. The App reads classic branch
+protection only when GitHub lists its required checks to the App. When GitHub does not, a protected branch shows "not
+confirmed" until you add the check to a ruleset.
+
+![The Overview of a repository whose settings say the gate is required while GitHub does not require it](images/overview-gate-not-enforced-light.png#gh-light-mode-only)
+![The Overview of a repository whose settings say the gate is required while GitHub does not require it](images/overview-gate-not-enforced-dark.png#gh-dark-mode-only)
+
+_The step stays at Advisory, and Needs you names the ruleset to add. Sample data._
+
 > **CAUTION:** Do not require `archfit/gate` while the settings file has `gate: advisory`.
 > The App does not publish that check in advisory mode. The pull request stays blocked.
 
@@ -727,8 +740,10 @@ on the pull request links to this page ("Details in Archfit").
   who approved which commit, or the **Approve this exact commit** button for a policy owner. Anyone else sees why
   they cannot approve. A pull request opened by an agent says so. See [Owner approval](#owner-approval).
 - The **Graph** tab draws the same report as a graph. See [The graph of a pull request](#the-graph-of-a-pull-request).
-- The page shows a report only when it is the one the check was computed from, and never under a result that asks
-  for action. Otherwise it says why: no result yet, action required, no upload, the report expired, the report does
+- The page shows a report only when it is the one the check was computed from. Under a result that asks for action it
+  shows the report only when every reason the check records comes from the report itself (missing required coverage,
+  a baseline that is not comparable, a policy defect), as the comment does; a withdrawn result, an unknown engine
+  identity or a missing approval never shows one. Otherwise it says why: no result yet, action required, no upload, the report expired, the report does
   not match the check, or the report could not be read.
 
 ### PR analysis and unavailable reports
@@ -749,8 +764,11 @@ repair actions are withheld. Unknown or malformed recovery is not promoted into 
 reference/coverage/selector recovery remains available for an approved but incomplete source. The original stored
 check, its historical outcome, recorded identity and links are not rewritten.
 
-An action-required or withdrawn result shows diagnostics but no report findings, tasks or graph. Findings explains
-that no findings are admitted; Graph explains that an empty view would not prove an absence of dependencies or
+A withdrawn result, or an action-required result with any reason that does not come from the report (stale inputs,
+an expired waiver, a suspension, a missing approval, an unknown engine identity, a mismatch of the policy or the
+baseline), shows diagnostics but no report findings, tasks or graph. An action-required result whose reasons all come
+from the report (missing required coverage, a baseline that is not comparable, a policy defect) shows the report with
+the recovery action, the same as the comment. Findings explains that no findings are admitted; Graph explains that an empty view would not prove an absence of dependencies or
 violations. Neither is a clean result. A report admitted for display can still be blocked or partial: the Findings
 tab marks partial evidence, and the Graph tab marks incomplete graph evidence. Missing evidence is never a pass.
 Provenance authenticates the producer, not the correctness of its report.
@@ -768,6 +786,12 @@ The literal HTML-like text is an escaping test. This is not live production data
 
 _The graph is available, but the engine's missing required rule remains visible. This report is admitted for display,
 not declared complete or safe to merge. Test-binary build fields that were not recorded stay explicit in About._
+
+![An action-required result whose reason comes from the report: the reason and next step, then the findings and the evidence gap](images/pr-report-action-required-light.png#gh-light-mode-only)
+![An action-required result whose reason comes from the report: the reason and next step, then the findings and the evidence gap](images/pr-report-action-required-dark.png#gh-dark-mode-only)
+
+_Missing required coverage ends the check as `action required`, and the report is what explains it, so the page shows
+the findings with the recovery action, as the pull request comment does. Sample data._
 
 ## See the graph
 

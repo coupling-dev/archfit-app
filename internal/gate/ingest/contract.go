@@ -22,6 +22,11 @@ type Binding struct {
 	BaseRef      string // PR base branch; for other events the branch the run executed on
 	BaseSHA      string
 	MergeBaseSHA string
+	// AnalyzedSHA and Integration are what GitHub says the engine must have measured: the head, or the test merge
+	// commit of a pull request that merges. Both are "" for a pull request whose merge GitHub has not computed, so no
+	// envelope matches.
+	AnalyzedSHA  string
+	Integration  string
 	Fork         bool
 	RunID        int64
 	RunAttempt   int

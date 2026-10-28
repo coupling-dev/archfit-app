@@ -452,7 +452,7 @@ func TestUploadPipeline(t *testing.T) {
 	t.Run("pull request upload", func(t *testing.T) {
 		f := newPipelineFakes()
 		f.receiver.upload = Upload{
-			Binding:  Binding{Repo: repo, Event: "pull_request", PullRequest: 7, HeadSHA: "head", BaseRef: "release", RunID: 9, RunAttempt: 2, WorkflowPath: testWorkflow},
+			Binding:  Binding{Repo: repo, Event: "pull_request", PullRequest: 7, HeadSHA: "head", BaseRef: "trunk", RunID: 9, RunAttempt: 2, WorkflowPath: testWorkflow},
 			Identity: entry.Identity, Digest: "sha256:d", Report: healthy,
 		}
 		f.resolver.trusted = trusted
@@ -469,7 +469,7 @@ func TestUploadPipeline(t *testing.T) {
 		if !ok || time.Until(deadline) > 50*time.Second || time.Until(deadline) < 40*time.Second {
 			t.Errorf("handler deadline = %v (set %v), want about 50 s", time.Until(deadline), ok)
 		}
-		wantTarget := inputs.Target{Repo: repo, PullRequest: 7, HeadSHA: "head", BaseRef: "release"}
+		wantTarget := inputs.Target{Repo: repo, PullRequest: 7, HeadSHA: "head", BaseRef: "trunk"}
 		if !reflect.DeepEqual(f.resolver.targets, []inputs.Target{wantTarget}) || !f.resolver.nows[0].Equal(testStart) {
 			t.Errorf("Resolve(%+v, %v)", f.resolver.targets, f.resolver.nows)
 		}
@@ -517,10 +517,36 @@ func TestUploadPipeline(t *testing.T) {
 		}
 	})
 
+	// A pull request into another branch is judged against the default branch, never its own base, and never succeeds:
+	// the base could carry a policy the same change loosened.
+	t.Run("pull request into another base never succeeds", func(t *testing.T) {
+		f := newPipelineFakes()
+		f.receiver.upload = Upload{
+			Binding:  Binding{Repo: repo, Event: "pull_request", PullRequest: 7, HeadSHA: "head", BaseRef: "release", RunID: 9, RunAttempt: 2, WorkflowPath: testWorkflow},
+			Identity: entry.Identity, Digest: "sha256:d", Report: healthy,
+		}
+		f.resolver.trusted = trusted
+		rec := httptest.NewRecorder()
+		f.gate.UploadHandler().ServeHTTP(rec, postMarker())
+
+		if got := strings.TrimSpace(rec.Body.String()); got != `{"conclusion":"action_required","reason":"unsupported_event"}` {
+			t.Errorf("answer = %s", got)
+		}
+		want := inputs.Target{Repo: repo, PullRequest: 7, HeadSHA: "head", BaseRef: "trunk"}
+		if !reflect.DeepEqual(f.resolver.targets, []inputs.Target{want}) {
+			t.Errorf("Resolve targets = %+v, want the default branch %+v", f.resolver.targets, want)
+		}
+		for _, pub := range f.publisher.published {
+			if pub.Outcome.Conclusion == verdict.Success {
+				t.Errorf("published a success for a pull request into another base: %+v", pub.Receipt)
+			}
+		}
+	})
+
 	t.Run("claimed digests reach the decision unchanged", func(t *testing.T) {
 		f := newPipelineFakes()
 		f.receiver.upload = Upload{
-			Binding:  Binding{Repo: repo, PullRequest: 7, HeadSHA: "head", BaseRef: "main", WorkflowPath: testWorkflow},
+			Binding:  Binding{Repo: repo, PullRequest: 7, HeadSHA: "head", BaseRef: "trunk", WorkflowPath: testWorkflow},
 			Identity: entry.Identity, Report: healthy, BaselineDigest: "claimed-baseline",
 		}
 		f.resolver.trusted = trusted

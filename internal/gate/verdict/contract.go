@@ -69,6 +69,18 @@ func ClassifyDisplayReason(code ReasonCode, category Category) (reportDerived, k
 	return false, true
 }
 
+// ReportDerivedAction reports a reason that comes from the report itself and makes a check ask for action: missing
+// required coverage, a baseline that is not comparable, a policy defect. The PR comment and the Pull page show the
+// report under such a result, so the owner approval it was computed under matters as it does for success.
+func ReportDerivedAction(code ReasonCode) bool {
+	e, ok := lookup(code)
+	if !ok || e.conclusion != ActionRequired {
+		return false
+	}
+	derived, _ := ClassifyDisplayReason(code, e.category)
+	return derived
+}
+
 type Reason struct {
 	Code     ReasonCode
 	Category Category

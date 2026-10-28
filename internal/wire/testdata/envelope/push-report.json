@@ -7,6 +7,8 @@
   "head_sha": "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f",
   "base_sha": "",
   "merge_base_sha": "",
+  "analyzed_sha": "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f",
+  "integration": "",
   "run_id": 17654321098,
   "run_attempt": 2,
   "engine_version": "v3.0.0",

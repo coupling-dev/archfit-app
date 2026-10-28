@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -17,6 +18,8 @@ import (
 // state is what one pass over GitHub says about a repository. Nothing of it is kept.
 type state struct {
 	stage           Stage
+	enforcement     Enforcement
+	branch          string          // the default branch, named by the enforcement diagnostics
 	draft           *proposal.Draft // open PR of the branch that belongs to the stage
 	settingsInvalid bool
 	settingsMerged  bool     // installed only: the default branch has valid settings, but not their workflow
@@ -32,7 +35,7 @@ func (s *service) Progress(ctx context.Context, r api.Repo) (Progress, error) {
 	if err != nil {
 		return Progress{}, err
 	}
-	p := Progress{Stage: st.stage, Diagnostic: st.diagnostic(s.now), OpenDraft: st.draft}
+	p := Progress{Stage: st.stage, Enforcement: st.enforcement, Diagnostic: st.diagnostic(s.now), OpenDraft: st.draft}
 	if st.workflow.branch != "" {
 		content, err := renderWorkflow(manifest.Current(), r.DefaultBranch, s.baseURL)
 		if err != nil {
@@ -112,7 +115,7 @@ func (s *service) derive(ctx context.Context, r api.Repo) (state, error) {
 		case !reported:
 			return state{stage: StagePolicyMerged}, nil
 		case set.Gate == settings.GateRequired:
-			return state{stage: StageRequired}, nil
+			return s.enforced(ctx, r), nil
 		}
 		return state{stage: StageAdvisory}, nil
 	}
@@ -123,6 +126,25 @@ func (s *service) derive(ctx context.Context, r api.Repo) (state, error) {
 	}
 	st.draft, err = s.openDraft(ctx, r, policyBranch)
 	return st, err
+}
+
+// enforced is the state of a repository whose settings say gate: required. The stage is Required only when GitHub
+// requires archfit/gate on the default branch; the settings alone never block a merge. A read that fails, and a
+// branch with classic protection whose checks the App cannot read, are unknown and never enforced.
+func (s *service) enforced(ctx context.Context, r api.Repo) state {
+	st := state{stage: StageAdvisory, enforcement: EnforcementUnknown, branch: r.DefaultBranch}
+	if s.gh.rules == nil {
+		return st
+	}
+	rules, err := s.gh.rules.RequiredChecks(ctx, r.RepoRef, r.DefaultBranch)
+	switch {
+	case err != nil:
+	case slices.Contains(rules.Contexts, gateCheckName):
+		st.stage, st.enforcement = StageRequired, EnforcementEnforced
+	case !rules.Protected:
+		st.enforcement = EnforcementNotEnforced
+	}
+	return st
 }
 
 // installed is the state before the workflow is on the default branch. mergedWorkflow is the workflow that merged
@@ -238,6 +260,14 @@ func (st state) diagnostic(now func() time.Time) string {
 		return "Waiting for the first run on the default branch"
 	case StageRequired:
 		return "Required gate is active"
+	}
+	switch st.enforcement {
+	case EnforcementNotEnforced:
+		return "Settings say gate: required, but GitHub does not enforce it. Add `" + gateCheckName +
+			"` as a required status check in a ruleset on `" + st.branch + "`"
+	case EnforcementUnknown:
+		return "Settings say gate: required. The App cannot read whether GitHub enforces it; confirm `" + gateCheckName +
+			"` is a required status check on `" + st.branch + "`"
 	}
 	return "Advisory feedback is active; an owner enables the gate by PR"
 }

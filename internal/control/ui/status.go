@@ -147,6 +147,9 @@ func (s *server) apiStatus(r *http.Request, sc scope) (any, error) {
 	}
 	var next nextStep
 	body.Steps, next = setupSteps(progress.Stage)
+	if stage, advice, ok := unenforcedGate(progress.Enforcement, sc.repo.DefaultBranch); ok {
+		body.Stage, next = stage, advice
+	}
 	if body.CanDiscover {
 		next = discoverNext
 	}
@@ -280,10 +283,28 @@ var nextSteps = map[onboarding.Stage]nextStep{
 			"owner-approved settings pull request that sets gate: required, and add archfit/gate as a required check in a " +
 			"GitHub ruleset: the settings alone never block a merge.",
 	},
-	onboarding.StageRequired: {
-		next: "Make archfit/gate a required check in a GitHub ruleset.",
-		how:  "The settings alone never block a merge.",
-	},
+}
+
+// unenforcedGate is what a repository shows whose settings say gate: required while GitHub is not known to require
+// archfit/gate: the settings alone never block a merge. Its stage stays Advisory until a ruleset requires the check.
+func unenforcedGate(e onboarding.Enforcement, branch string) (stage string, advice nextStep, ok bool) {
+	switch e {
+	case onboarding.EnforcementNotEnforced:
+		return "Gate is required in settings, not enforced by GitHub", nextStep{
+			next: "Make archfit/gate a required status check in a GitHub ruleset on " + branch + ".",
+			how: "The settings say gate: required, but GitHub does not require the check on " + branch + ", so a failing " +
+				"pull request can still be merged. In the repository's Settings, Rules, add a branch ruleset for " + branch +
+				" with the required status check archfit/gate.",
+		}, true
+	case onboarding.EnforcementUnknown:
+		return "Gate is required in settings, enforcement not confirmed", nextStep{
+			next: "Confirm archfit/gate is a required status check on " + branch + ".",
+			how: "The settings say gate: required. The App cannot read whether GitHub requires the check on " + branch +
+				": GitHub did not answer, or the branch uses classic branch protection, which the App cannot read. In the " +
+				"repository's Settings, check that archfit/gate is a required status check, preferably in a ruleset.",
+		}, true
+	}
+	return "", nextStep{}, false
 }
 
 // discoverNext is the step of a repository with the workflow and no policy: its button is "Run discovery".

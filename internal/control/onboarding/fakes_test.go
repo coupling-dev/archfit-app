@@ -42,6 +42,7 @@ type hub struct {
 	prs    []*fakePR
 	runs   map[string][]api.WorkflowRun // "owner/name@branch" → runs, newest first
 	checks map[string][]api.CheckRun    // by repository
+	rules  map[string]api.BranchRules   // "owner/name@branch" → what GitHub enforces there
 	calls  map[string]int
 	reads  []string // repository, op and detail of each File, LatestRun and CheckRuns
 	failFn func(op, detail string) error
@@ -131,6 +132,7 @@ func newHub() *hub {
 		heads:  map[string]string{},
 		runs:   map[string][]api.WorkflowRun{},
 		checks: map[string][]api.CheckRun{},
+		rules:  map[string]api.BranchRules{},
 		calls:  map[string]int{},
 	}
 }
@@ -421,6 +423,22 @@ func (h *hub) BranchHead(ctx context.Context, r api.RepoRef, branch string) (str
 		return "", api.ErrNotFound
 	}
 	return sha, nil
+}
+
+func (h *hub) RequiredChecks(ctx context.Context, r api.RepoRef, branch string) (api.BranchRules, error) {
+	if err := h.enter(ctx, "RequiredChecks", branch); err != nil {
+		return api.BranchRules{}, err
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.rules[refKey(r.FullName, branch)], nil
+}
+
+// setRules makes rules what GitHub enforces on the repository's default branch.
+func (h *hub) setRules(r api.Repo, rules api.BranchRules) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.rules[refKey(r.FullName, r.DefaultBranch)] = rules
 }
 
 func (h *hub) Run(ctx context.Context, _ api.RepoRef, _ int64) (api.WorkflowRun, error) {

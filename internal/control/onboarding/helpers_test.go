@@ -73,7 +73,7 @@ func (f *fixture) newService() *service {
 		Sandbox:   f.sandbox,
 		BaseURL:   testBaseURL,
 		Now:       f.clock.now,
-	}, roles{repos: f.hub, actions: f.hub, checks: f.hub, pulls: f.hub})
+	}, roles{repos: f.hub, actions: f.hub, checks: f.hub, pulls: f.hub, rules: f.hub})
 }
 
 func renderSettings(gateMode settings.GateMode, workflow string) []byte {

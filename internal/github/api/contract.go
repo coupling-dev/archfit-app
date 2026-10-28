@@ -77,6 +77,21 @@ type Repos interface {
 	BranchHead(ctx context.Context, r RepoRef, branch string) (string, error)
 }
 
+// BranchRules is what GitHub enforces on one branch, as far as this App can read it.
+type BranchRules struct {
+	// Contexts are the status checks that active rulesets, and classic branch protection when it is readable, require.
+	Contexts []string
+	// Protected reports that GitHub marks the branch protected but does not show which checks it requires: classic
+	// branch protection may need the Administration permission to read, which the App does not hold. Contexts may then
+	// lack a required check.
+	Protected bool
+}
+
+// Rules reads what GitHub enforces on a branch.
+type Rules interface {
+	RequiredChecks(ctx context.Context, r RepoRef, branch string) (BranchRules, error)
+}
+
 type Pull struct {
 	Number       int
 	Title        string
@@ -92,7 +107,12 @@ type Pull struct {
 	BaseRef      string
 	BaseSHA      string
 	MergeBaseSHA string
-	UpdatedAt    time.Time
+	// MergeCommitSHA is GitHub's test merge commit of the head into the base: refs/pull/N/merge. "" while GitHub has not
+	// computed it.
+	MergeCommitSHA string
+	// Mergeable is GitHub's answer whether the head merges cleanly; nil while GitHub has not computed it.
+	Mergeable *bool
+	UpdatedAt time.Time
 }
 
 type Review struct {
@@ -221,6 +241,7 @@ type Users interface {
 
 var (
 	_ Repos    = (*Client)(nil)
+	_ Rules    = (*Client)(nil)
 	_ Pulls    = (*Client)(nil)
 	_ Checks   = (*Client)(nil)
 	_ Comments = (*Client)(nil)

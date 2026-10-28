@@ -90,10 +90,12 @@ type pull struct {
 	BaseRef   string
 	BaseSHA   string
 	MergeBase string
-	Draft     bool
-	State     string
-	Merged    bool
-	reviews   []review
+	// MergeCommit is GitHub's test merge commit of the head into the base; "" until GitHub has computed it.
+	MergeCommit string
+	Draft       bool
+	State       string
+	Merged      bool
+	reviews     []review
 }
 
 type review struct{ Login, State, Commit string }
@@ -574,7 +576,7 @@ func (rp *repo) pullJSON(p *pull) map[string]any {
 	return map[string]any{
 		"number": p.Number, "node_id": fmt.Sprintf("PR_%d", p.Number), "state": p.State, "draft": p.Draft,
 		"title": p.Title, "body": p.Body, "html_url": fmt.Sprintf("https://github.com/%s/pull/%d", rp.FullName, p.Number),
-		"merged_at": mergedAt, "updated_at": "2026-09-21T12:00:00Z", "changed_files": len(rp.changedFiles(p)),
+		"merged_at": mergedAt, "updated_at": "2026-09-21T12:00:00Z", "changed_files": len(rp.changedFiles(p)), "merge_commit_sha": nilIfEmpty(p.MergeCommit),
 		"head": map[string]any{"sha": rp.branches[p.HeadRef], "ref": p.HeadRef, "repo": map[string]any{"full_name": p.HeadRepo}},
 		"base": map[string]any{"sha": p.BaseSHA, "ref": p.BaseRef},
 	}
@@ -1131,4 +1133,12 @@ func (w *world) publishingWrites() []string {
 		}
 	}
 	return out
+}
+
+// nilIfEmpty is JSON null for "", as GitHub answers for a value it has not computed.
+func nilIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }

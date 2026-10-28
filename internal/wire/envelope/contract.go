@@ -11,6 +11,13 @@ import (
 // SchemaV1 is the only envelope schema version accepted.
 const SchemaV1 = "archfit.report-envelope.v1"
 
+// Integration says how a pull request lands. The engine measures GitHub's test merge commit of the head into the target
+// (merged), or the head alone when the event reports a conflict (conflicts).
+const (
+	IntegrationMerged    = "merged"
+	IntegrationConflicts = "conflicts"
+)
+
 // Kind names the payload that accompanies the envelope.
 type Kind string
 
@@ -32,6 +39,8 @@ type Envelope struct {
 	HeadSHA        string `json:"head_sha"`       // 40 lowercase hex
 	BaseSHA        string `json:"base_sha"`       // "" unless pull_request
 	MergeBaseSHA   string `json:"merge_base_sha"` // "" unless pull_request
+	AnalyzedSHA    string `json:"analyzed_sha"`   // 40 lowercase hex: the commit the engine measured; the test merge commit when Integration is "merged", else HeadSHA
+	Integration    string `json:"integration"`    // "merged" | "conflicts" for a pull_request, "" otherwise
 	RunID          int64  `json:"run_id"`
 	RunAttempt     int    `json:"run_attempt"`
 	EngineVersion  string `json:"engine_version"`  // e.g. "v3.0.1"

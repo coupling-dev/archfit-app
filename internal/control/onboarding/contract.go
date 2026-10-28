@@ -54,12 +54,25 @@ const (
 	StageRequired       Stage = "gate_required"
 )
 
+// Enforcement says whether GitHub makes archfit/gate a required check on the default branch. It is set only when the
+// repository's settings say gate: required.
+type Enforcement string
+
+const (
+	EnforcementEnforced    Enforcement = "enforced"     // a ruleset requires archfit/gate
+	EnforcementNotEnforced Enforcement = "not_enforced" // no ruleset and no branch protection requires it
+	EnforcementUnknown     Enforcement = "unknown"      // the App cannot tell: the read failed, or classic branch protection hides its checks
+)
+
 // Progress is derived from GitHub on every call; nothing is stored.
+// StageRequired means GitHub enforces the gate. A repository whose settings say gate: required but whose
+// default branch does not require archfit/gate stays at StageAdvisory with Enforcement saying why.
 type Progress struct {
-	Stage      Stage
-	Diagnostic string // what to do next
-	OpenDraft  *proposal.Draft
-	Workflow   *WorkflowFile // the file the owner adds by hand; nil when it is in place or not due yet
+	Stage       Stage
+	Enforcement Enforcement
+	Diagnostic  string // what to do next
+	OpenDraft   *proposal.Draft
+	Workflow    *WorkflowFile // the file the owner adds by hand; nil when it is in place or not due yet
 }
 
 // WorkflowFile is the Archfit workflow and where it goes. The App never writes .github/workflows: GitHub allows that
@@ -97,5 +110,5 @@ type Deps struct {
 
 // New builds the Onboarding over the role interfaces of d.GitHub.
 func New(d Deps) Onboarding {
-	return newService(d, roles{repos: d.GitHub, actions: d.GitHub, checks: d.GitHub, pulls: d.GitHub})
+	return newService(d, roles{repos: d.GitHub, actions: d.GitHub, checks: d.GitHub, pulls: d.GitHub, rules: d.GitHub})
 }

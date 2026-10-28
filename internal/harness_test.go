@@ -68,6 +68,7 @@ var (
 	demoHead      = strings.Repeat("1f", 20)
 	demoBase      = strings.Repeat("2e", 20)
 	demoMergeBase = strings.Repeat("3d", 20)
+	demoMerge     = strings.Repeat("4e", 20) // GitHub's test merge commit of the demo pull request
 
 	// testNow is the injected clock's start. OIDC and token expiry use the real clock; nothing else does.
 	testNow = time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)
@@ -249,7 +250,8 @@ func (w *world) seedDemo(f fixture, gateMode string, private bool) {
 		rp.push("main", demoBase, files)
 		rp.branches["feature"] = demoBase
 		rp.push("feature", demoHead, map[string]string{"pkg/a/a.go": "package a\n\nimport _ \"example/pkg/c\"\n"})
-		rp.openPull(demoPull, "feature", "main").MergeBase = demoMergeBase
+		demo := rp.openPull(demoPull, "feature", "main")
+		demo.MergeBase, demo.MergeCommit = demoMergeBase, demoMerge
 		rp.runs[demoRun] = &run{
 			ID: demoRun, Attempt: 1, Event: "pull_request", HeadSHA: demoHead, HeadRepo: demoRepo,
 			Path: workflowPath, Branch: "feature", Status: "completed", Conclusion: "success", Pulls: []int{demoPull},
@@ -268,6 +270,8 @@ type envelope struct {
 	HeadSHA        string `json:"head_sha"`
 	BaseSHA        string `json:"base_sha"`
 	MergeBaseSHA   string `json:"merge_base_sha"`
+	AnalyzedSHA    string `json:"analyzed_sha"`
+	Integration    string `json:"integration"`
 	RunID          int64  `json:"run_id"`
 	RunAttempt     int    `json:"run_attempt"`
 	EngineVersion  string `json:"engine_version"`
@@ -296,6 +300,7 @@ func demoUpload(f fixture) upload {
 		env: envelope{
 			SchemaVersion: "archfit.report-envelope.v1", Kind: "report", Repository: demoRepo, Event: "pull_request",
 			PullRequest: demoPull, HeadSHA: demoHead, BaseSHA: demoBase, MergeBaseSHA: demoMergeBase,
+			AnalyzedSHA: demoMerge, Integration: "merged",
 			RunID: demoRun, RunAttempt: 1, EngineVersion: approved.EngineVersion, ImageDigest: approved.ImageDigest,
 			Platform: approved.Platform, PayloadDigest: "sha256:" + digest(f.report),
 			BaselineDigest: digest(f.baseline), LabelsDigest: digest(f.labels),
@@ -835,7 +840,7 @@ func discoveryUpload(fullName string, repoID, runID int64, head string, policy [
 	return upload{
 		env: envelope{
 			SchemaVersion: "archfit.report-envelope.v1", Kind: "discovery", Repository: fullName, Event: "workflow_dispatch",
-			HeadSHA: head, RunID: runID, RunAttempt: 1, EngineVersion: approved.EngineVersion,
+			HeadSHA: head, AnalyzedSHA: head, RunID: runID, RunAttempt: 1, EngineVersion: approved.EngineVersion,
 			ImageDigest: approved.ImageDigest, Platform: approved.Platform, PayloadDigest: "sha256:" + digest(policy),
 		},
 		body: policy,

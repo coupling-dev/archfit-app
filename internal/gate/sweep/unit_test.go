@@ -93,6 +93,41 @@ func TestWithdrawnReceipt(t *testing.T) {
 	}
 }
 
+// TestDecidedReceipt: success, failure, and an action_required whose reason comes from the report and itself asks
+// for action are decisions on the report. Every other receipt says what to do and is not decided.
+func TestDecidedReceipt(t *testing.T) {
+	tests := []struct {
+		name string
+		rc   feedback.Receipt
+		want bool
+	}{
+		{"success", feedback.Receipt{Conclusion: verdict.Success, Reason: verdict.ReasonHealthy}, true},
+		{"failure", feedback.Receipt{Conclusion: verdict.Failure, Reason: verdict.ReasonBlockingFindings}, true},
+		{"missing required coverage", feedback.Receipt{Conclusion: verdict.ActionRequired, Reason: verdict.ReasonMissingCoverage}, true},
+		{"baseline not comparable", feedback.Receipt{Conclusion: verdict.ActionRequired, Reason: verdict.ReasonBaselineNotComparable}, true},
+		{"policy defect", feedback.Receipt{Conclusion: verdict.ActionRequired, Reason: verdict.ReasonPolicyDefect}, true},
+		{"unknown engine identity", feedback.Receipt{Conclusion: verdict.ActionRequired, Reason: verdict.ReasonUnknownIdentity}, false},
+		{"owner approval missing", feedback.Receipt{Conclusion: verdict.ActionRequired, Reason: verdict.ReasonOwnerApprovalMissing}, false},
+		{"stale inputs", feedback.Receipt{Conclusion: verdict.ActionRequired, Reason: verdict.ReasonStaleInputs}, false},
+		{"incoherent: action required with healthy", feedback.Receipt{Conclusion: verdict.ActionRequired, Reason: verdict.ReasonHealthy}, false},
+		{"incoherent: success with a coverage reason", feedback.Receipt{Conclusion: "neutral", Reason: verdict.ReasonMissingCoverage}, false},
+		{"unreadable", feedback.Receipt{}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Decided(tt.rc); got != tt.want {
+				t.Errorf("Decided(%+v) = %v, want %v", tt.rc, got, tt.want)
+			}
+			if got, want := Withdrawn(tt.rc, inputs.Trusted{Approval: inputs.ApprovalMissing}), tt.want; got != want {
+				t.Errorf("Withdrawn without an approval = %v, want %v", got, want)
+			}
+			if Withdrawn(tt.rc, inputs.Trusted{Approval: inputs.ApprovalGranted}) {
+				t.Error("Withdrawn while the approval holds")
+			}
+		})
+	}
+}
+
 func TestNoPolicyWindowIsQuiet(t *testing.T) {
 	// start is the no-policy window: settings merged, the receipt says policy_missing.
 	start := func(t *testing.T) (*world, api.Repo, inputs.Target) {

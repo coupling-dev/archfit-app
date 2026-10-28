@@ -186,7 +186,8 @@ Body read (step 2): only the size cap is a rejection. When `http.MaxBytesReader`
 | `Event`, `HeadSHA`                       | the workflow run                                                             |
 | `RunID`, `RunAttempt`                    | verified claims (equal to the run by steps 10 and 12)                        |
 | `PullRequest`, `BaseSHA`, `MergeBaseSHA` | the resolved pull; zero values when there is none                            |
-| `BaseRef`                                | `pull.BaseRef`; without a pull, the branch of `Claims.Ref` (see below)       |
+| `AnalyzedSHA`, `Integration`             | from GitHub, never from the envelope: the head and `conflicts` when `pull.Mergeable` is false, else `pull.MergeCommitSHA` and `merged`; both `""` while GitHub has not computed the merge (no envelope matches); the head and `""` for every other event |
+| `BaseRef`                                | `pull.BaseRef`; without a pull, the branch of `Claims.Ref` (see below). The gate resolves every upload against the default branch and refuses a pull request whose base is another branch |
 | `Fork`                                   | step 14                                                                      |
 | `WorkflowPath`                           | `oidc.WorkflowPath(Claims.JobWorkflowRef, Repo.FullName)`; `""` if elsewhere |
 
@@ -244,6 +245,8 @@ type Envelope struct {
     HeadSHA       string `json:"head_sha"`       // 40 lowercase hex
     BaseSHA       string `json:"base_sha"`       // "" unless pull_request
     MergeBaseSHA  string `json:"merge_base_sha"` // "" unless pull_request
+    AnalyzedSHA   string `json:"analyzed_sha"`   // the commit the engine measured; the test merge commit when Integration is "merged"
+    Integration   string `json:"integration"`    // "merged" | "conflicts" for a pull_request, "" otherwise
     RunID         int64  `json:"run_id"`
     RunAttempt    int    `json:"run_attempt"`
     EngineVersion string `json:"engine_version"` // e.g. "v3.0.1"
