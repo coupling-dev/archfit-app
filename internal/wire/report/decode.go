@@ -55,7 +55,9 @@ func (c *checker) report(s *shadowReport) Report {
 	}
 	r.Verdict = c.enum("verdict", s.Verdict, "healthy", "needs_attention", "blocked")
 	r.Identity = optional(c, "identity", s.Identity, c.identity)
-	r.GateReasons = stringsOf(c, "gate_reasons", s.GateReasons, maxSmallList, false, classText)
+	// The coupling gate writes one summary line, then one line per newly introduced seam it blocks on: as many as the
+	// seams the report may hold, plus the summary.
+	r.GateReasons = stringsOf(c, "gate_reasons", s.GateReasons, maxSeams+1, false, classFindingText)
 	r.Decision = object(c, "decision", s.Decision, c.decision)
 	r.Comparison = object(c, "comparison", s.Comparison, c.comparison)
 	r.GateReference = optional(c, "gate_reference", s.GateReference, c.reference)

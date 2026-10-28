@@ -31,6 +31,22 @@ func TestEngineNextValues(t *testing.T) {
 			set(t, d, producers, "comparison", "measurement_profile", "producers")
 		}},
 
+		{name: "a gate reason for every seam the report may hold", edit: func(t *testing.T, d map[string]any) {
+			reasons := make([]any, maxSeams+1)
+			for i := range reasons {
+				reasons[i] = "new distributed-monolith seam"
+			}
+			d["gate_reasons"] = reasons
+		}},
+		{name: "a gate reason longer than ordinary text", edit: func(t *testing.T, d map[string]any) {
+			d["gate_reasons"] = []any{"distributed monolith: " + strings.Repeat("pkg_with_a_long_module_id_", 30) + " crosses deploy units"}
+		}},
+		{name: "more gate reasons than seams", wantLoc: "gate_reasons", edit: func(t *testing.T, d map[string]any) {
+			d["gate_reasons"] = make([]any, maxSeams+2)
+			for i := range d["gate_reasons"].([]any) {
+				d["gate_reasons"].([]any)[i] = "r"
+			}
+		}},
 		{name: "a gate reason that is not a string", wantLoc: "gate_reasons[0]", edit: func(t *testing.T, d map[string]any) {
 			d["gate_reasons"] = []any{7}
 		}},
