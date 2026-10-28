@@ -15,7 +15,11 @@ For each report, the App:
 3. Compares the report with those trusted inputs.
 4. Publishes feedback on the pull request.
 
-The protected ref is the base branch of a pull request. For a default-branch push, it is the default branch.
+The protected ref is the default branch. The App decides an upload only against it. A pull request into any other
+base never gets a success: that base is a branch the change's author controls, and the settings and policy read there
+could be loosened by the same change. Its upload ends `action_required` with `unsupported_event`. Because the
+`archfit/gate` check belongs to a head commit and not to one pull request, a success for one pull request must not
+satisfy the required check of another pull request on the same head.
 
 ## System context
 
