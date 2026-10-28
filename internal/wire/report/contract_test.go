@@ -315,12 +315,15 @@ func TestEngineSchemaKeySetIsCovered(t *testing.T) {
 // aheadOfThePin are the keys the decoder reads that the pinned schema (SCHEMA_SOURCE, engine v3.2.3) does not define.
 // The engine pin, the manifest and the image move once, to v3.4.0; until then the decoder is ahead of the pin by
 // exactly these keys, and they are optional so that a v3.2.3 report still decodes.
-var aheadOfThePin = map[string]bool{"report.identity": true, "report.coverage.tools[].details": true}
+var aheadOfThePin = map[string]bool{
+	"report.identity": true, "report.coverage.tools[].details": true, "report.gate_reasons": true,
+}
 
 // aheadOfThePinSchemaPath is where the pinned schema would define each allowed key.
 var aheadOfThePinSchemaPath = map[string][]any{
 	"report.identity":                 {"properties", "identity"},
 	"report.coverage.tools[].details": {"$defs", "StateToolCoverage", "properties", "details"},
+	"report.gate_reasons":             {"properties", "gate_reasons"},
 }
 
 // TestAheadOfThePinIsNotInThePin: when the pinned schema defines a key, the allowance for it is stale and must go, and
@@ -339,13 +342,20 @@ func TestAheadOfThePinIsNotInThePin(t *testing.T) {
 	}
 }
 
-// TestIdentityMatchesTheEnginesDefinition holds the decoder's identity block to the released v3.3.0 definition of
-// ResultIdentity (an excerpt, engine-next/SOURCE), both ways.
-func TestIdentityMatchesTheEnginesDefinition(t *testing.T) {
-	excerpt := parseDoc(t, loadFixture(t, "engine-next/result-identity.v3.3.0.json"))
-	w := schemaWalker{t: t, root: excerpt}
-	w.check("report.identity", map[string]any{"$ref": "#/$defs/ResultIdentity"}, reflect.TypeFor[shadowIdentity]())
+// TestDecoderCoversTheEnginesCurrentSchema walks the engine's current state schema (engine-next, feec08c3, identical to
+// v3.3.0) against the decoder both ways, with no allowance: every key the engine can emit now has a shadow field, so
+// the pin can move to v3.4.0 without a report ending report_invalid on a key the App never read.
+func TestDecoderCoversTheEnginesCurrentSchema(t *testing.T) {
+	next := parseDoc(t, loadFixture(t, "engine-next/archfit.state.schema.json"))
+	w := schemaWalker{t: t, root: next}
+	w.check("report", w.root, reflect.TypeFor[shadowReport]())
 	checkKeptInShadow(t, "report.identity", reflect.TypeFor[ResultIdentity](), reflect.TypeFor[shadowIdentity]())
+	for loc, path := range aheadOfThePinSchemaPath {
+		parent := at(t, next, path[:len(path)-1]...).(map[string]any)
+		if _, defined := parent[path[len(path)-1].(string)]; !defined {
+			t.Errorf("%s is allowed ahead of the pin, but the engine's current schema does not define it", loc)
+		}
+	}
 }
 
 // shadowFields visits every field of every shadow struct reachable from t, with its JSON location.

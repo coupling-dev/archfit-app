@@ -391,7 +391,11 @@ func TestPresenceRules(t *testing.T) {
 			doc := baseDoc(t)
 			set(t, doc, nil, steps...)
 			_, err := Decode(encode(t, doc), fixtureEngine)
-			if nullable := general == "seams[].scores.p10" || general == "seams[].scores.p90"; nullable != (err == nil) {
+			nullable := slices.Contains([]string{
+				"seams[].scores.p10", "seams[].scores.p90",
+				"seams[].raw_distance.same_owner", "seams[].raw_distance.same_deploy_unit",
+			}, general)
+			if nullable != (err == nil) {
 				t.Errorf("%s null: nullable=%v, err=%v", general, nullable, err)
 			}
 		})

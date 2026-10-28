@@ -28,7 +28,10 @@ type Report struct {
 	// Identity is what the engine measured and under which inputs (engine v3.3.0 and later); nil for a report that
 	// predates it. It is the engine's own statement, kept for display and for the receipt key. It decides nothing:
 	// trust in inputs comes from the protected ref, never from a digest the report names.
-	Identity      *ResultIdentity      `json:"identity,omitempty"`
+	Identity *ResultIdentity `json:"identity,omitempty"`
+	// GateReasons are the engine's own one-line reasons from its coupling gate (engine v3.3.0 and later, check only);
+	// nil when there are none. Repository attention for the owner, never a decision of the App.
+	GateReasons   []string             `json:"gate_reasons,omitempty"`
 	Decision      Decision             `json:"decision"`
 	Comparison    Comparison           `json:"comparison"`
 	GateReference *Reference           `json:"gate_reference,omitempty"` // persisted-baseline comparison; nil = engine emitted none

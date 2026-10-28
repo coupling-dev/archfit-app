@@ -48,7 +48,7 @@ func formatLoc(path []seg) string {
 // scanner is the token pre-pass. encoding/json alone matches keys case-insensitively, keeps the last duplicate
 // key, turns null into a zero value and drops list indexes from its errors. The pre-pass walks the token stream
 // next to the shadow types instead: keys must equal a schema key exactly (which implies ^[a-z][a-z0-9_]*$) of
-// the selected release's key set, no object repeats a key, null is allowed for optInt only, every value has the
+// the selected release's key set, no object repeats a key, null is allowed for optInt and optBool only, every value has the
 // JSON type of its shadow field, and input ends after the top-level object. The keys of a map are free; its
 // duplicates are not.
 type scanner struct {
@@ -176,7 +176,7 @@ func (s *scanner) value(t reflect.Type, depth int) error {
 			return s.list(t.Elem(), depth+1)
 		}
 	case nil:
-		if t != reflect.TypeFor[optInt]() {
+		if t != reflect.TypeFor[optInt]() && t != reflect.TypeFor[optBool]() {
 			return s.fail("null is not allowed")
 		}
 		ok = true
