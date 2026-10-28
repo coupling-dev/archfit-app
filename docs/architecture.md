@@ -17,7 +17,8 @@ For each report, the App:
 
 The protected ref is the default branch. The App decides an upload only against it. A pull request into any other
 base never gets a success: that base is a branch the change's author controls, and the settings and policy read there
-could be loosened by the same change. Its upload ends `action_required` with `unsupported_event`. Because the
+could be loosened by the same change. Its upload ends `action_required` with `unsupported_event`, and neither its events nor the hourly sweep read or write
+anything for it. Because the
 `archfit/gate` check belongs to a head commit and not to one pull request, a success for one pull request must not
 satisfy the required check of another pull request on the same head.
 

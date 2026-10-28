@@ -36,6 +36,7 @@ type Event struct {
 	HeadSHA        string
 	HeadRepo       string // differs from Repo for forks
 	BaseRef        string
+	DefaultBranch  string   // the repository's default branch; "" when the payload does not name one
 	Branch         string   // push kinds only: the branch, without "refs/heads/"
 	Pusher         string   // push kinds only: the login that moved the branch; never a git author or committer
 	PusherType     string   // push kinds only: the payload's pusher_type ("user", or a deploy key); "" when absent

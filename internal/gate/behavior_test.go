@@ -941,3 +941,37 @@ func TestUnreadableApprovalIsRetriedNotDropped(t *testing.T) {
 	w.handle(w.event(webhook.PullOpened, p))
 	w.wantAnswer(w.upload(p, fixtureHealthy), 200, "success", "healthy")
 }
+
+// onboardedBase gives branch the settings and policy of the default branch, as an author who controls it could, so
+// that a pull request into it would be decided if the App looked there.
+func (w *world) onboardedBase(r api.Repo, branch string) {
+	for _, path := range []string{settings.Path, policy.PolicyPath} {
+		w.setFile(r, branch, path, w.gh.files[fileKey(r.FullName, testBranch, path)])
+	}
+}
+
+// A pull request into a branch other than the default branch is not decided against (its upload ends
+// unsupported_event), so the App reads and writes nothing for its events, and no success can come of them.
+func TestEventsForAPullIntoAnotherBaseDoNothing(t *testing.T) {
+	for _, kind := range []webhook.EventKind{webhook.PullOpened, webhook.PullSynchronized} {
+		t.Run(string(kind), func(t *testing.T) {
+			w := newWorld(t)
+			p := w.openPull(w.shop, 7)
+			w.onboardedBase(p.repo, "release")
+			key := pullKey(p.repo.FullName, p.number)
+			pl := w.gh.pulls[key]
+			pl.BaseRef = "release"
+			w.gh.pulls[key] = pl
+
+			w.handle(w.event(kind, p))
+
+			if writes := w.gh.writes(); writes != 0 {
+				t.Errorf("%d writes for a pull into another base", writes)
+			}
+			if _, found := w.check(p, p.head, gateCheckName); found {
+				t.Error("a gate check was created for a pull into another base")
+			}
+		})
+	}
+
+}

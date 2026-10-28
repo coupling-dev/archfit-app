@@ -126,7 +126,9 @@ func (p *pass) repo(ctx context.Context, r api.Repo) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if notOnboarded[pl.BaseRef] {
+		// Only the default branch is decided against; the upload refuses any other base, so a receipt there would
+		// never match the inputs read at that base and the pass would re-run it forever.
+		if notOnboarded[pl.BaseRef] || (r.DefaultBranch != "" && pl.BaseRef != r.DefaultBranch) {
 			continue
 		}
 		t := inputs.Target{

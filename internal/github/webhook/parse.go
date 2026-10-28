@@ -142,6 +142,7 @@ func Parse(eventType, deliveryID string, body []byte) (Event, error) {
 	}
 	ev.Repo = p.Repository.FullName
 	ev.RepoPrivate = p.Repository.Private
+	ev.DefaultBranch = p.Repository.DefaultBranch
 
 	if kind == DefaultBranchPush || kind == BranchPush {
 		ev.HeadSHA = p.After
