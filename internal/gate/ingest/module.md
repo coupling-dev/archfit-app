@@ -78,6 +78,7 @@ type Upload struct {
     LabelsDigest   string // claimed by the envelope; "" = the producer used no labels file
     Payload  []byte   // the exact verified bytes; the only content for KindDiscovery and KindBaseline
     Report   *Report  // nil for KindDiscovery, KindBaseline and when ProblemReportInvalid
+    PolicyChange *PolicyChange // the Action's classification of the policy change; nil when none, or unreadable
     Problems []Problem
 }
 ```
@@ -134,6 +135,7 @@ Steps run in this order. The first failing `Rejection` step ends the call with `
 | 15  | Envelope fields equal authoritative values (below)                                           | `ProblemEnvelopeMismatch`                                  |
 | 16  | `envelope.PayloadDigest(body) == Envelope.PayloadDigest`                                     | 400 `digest_mismatch`                                      |
 | 17  | `kind == KindReport`: `report.Decode(body, Envelope.EngineVersion)`                          | `ProblemReportInvalid`, `Report` nil                       |
+| 18  | `Envelope.PolicyChange` present: `report.DecodePolicyChange`                                 | none: `PolicyChange` stays nil, logged, never a `Problem`  |
 
 Any step: `api.ErrRateLimited` → 429 `rate_limited`. Any other GitHub API error → a plain error (not a
 `Rejection`); the caller answers 503 and publishes nothing. A `Verifier` error matching `oidc.ErrUnavailable`
@@ -566,6 +568,11 @@ type Actions interface {
 - The body is read once, capped, and held in memory only. Nothing is persisted. Payload bytes, envelope
   JSON, tokens, paths and messages are never logged. Logs (`log/slog` default logger **[default]**):
   repository ID, installation ID, run ID, attempt, digests, rejection code or problem list, runner environment, timings.
+- `Upload.PolicyChange` is the engine's classification of the pull request's `.archfit.yaml` change, as the Action put
+  it in the envelope (`policy_change`, only on a pull request report). It is self-reported and display-only: the card it
+  feeds decides nothing, so a value `report.DecodePolicyChange` refuses (an unknown value, a direction the lists do not
+  give) leaves it nil and the upload carries no `Problem`; the log line gets the fact `policy_change_unread`, never the
+  value. Whether the policy changed at all is not known here; `gate` shows the card only where `inputs.Trusted` says so.
 - An undecodable report is a `Problem` with `Report == nil`; the decode error text is not propagated
   (it could quote payload content); only the fact is.
 - No retries inside `Receive`; the API client owns backoff. The Action retries on 429, 503 and other 5xx.
@@ -657,3 +664,8 @@ requests built with `httptest.NewRequest`. No network.
 - **Test name**: `TestApprovedProducerIsAccepted` (T09)
   **Scenario**: the valid approved-producer fixture end to end through `Receive`.
   **Expected behavior**: an `Upload` without problems; replaces the skeleton's refuse-everything test together with `TestRejectionTable`.
+- **Test name**: `TestPolicyChangeIsReadFromTheEnvelope`
+  **Scenario**: a pull request report upload whose envelope carries no `policy_change`, each of the Action's three engine
+  fixtures (widen, addrule, exclude), an unknown coverage kind, and a direction that disagrees with the lists.
+  **Expected behavior**: no `Problem` in any row and the report is kept; the three fixtures give `Upload.PolicyChange` with the
+  engine's direction; the unreadable two leave it nil and log `policy_change_unread` without any value text.

@@ -1,0 +1,1 @@
+{"direction":"tightening","rules_removed":[],"rules_loosened":[],"waivers_added":[],"allowlists_widened":[],"coverage_lost":[],"rules_added":[{"id":"no_direct_a_dependency","type":"forbidden_dependency","gate":"fail"}],"rules_tightened":[],"waivers_removed":[],"allowlists_narrowed":[],"coverage_gained":[],"declarations_changed":[]}

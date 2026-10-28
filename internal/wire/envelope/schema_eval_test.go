@@ -61,6 +61,12 @@ func evalSchema(t *testing.T, schema map[string]any, inst any) bool {
 		switch keyword {
 		case "$schema", "$id", "title", "description", "then", "else":
 			// Annotations; then/else are evaluated with "if".
+		case "items":
+			if items, isArray := inst.([]any); isArray {
+				for _, item := range items {
+					ok = evalSub(t, arg, item) && ok
+				}
+			}
 		case "type":
 			ok = hasType(t, arg, inst) && ok
 		case "const":
@@ -94,7 +100,7 @@ func evalSchema(t *testing.T, schema map[string]any, inst any) bool {
 			if obj, isObject := inst.(map[string]any); isObject {
 				for name, sub := range arg.(map[string]any) {
 					if v, present := obj[name]; present {
-						ok = evalSchema(t, sub.(map[string]any), v) && ok
+						ok = evalSub(t, sub, v) && ok
 					}
 				}
 			}
@@ -128,11 +134,23 @@ func evalSchema(t *testing.T, schema map[string]any, inst any) bool {
 	return ok
 }
 
+// evalSub evaluates a subschema, which may be the boolean schema false: nothing validates against it.
+func evalSub(t *testing.T, sub, inst any) bool {
+	t.Helper()
+	if sub == false {
+		return false
+	}
+	return evalSchema(t, sub.(map[string]any), inst)
+}
+
 func hasType(t *testing.T, arg, inst any) bool {
 	t.Helper()
 	switch arg {
 	case "object":
 		_, ok := inst.(map[string]any)
+		return ok
+	case "array":
+		_, ok := inst.([]any)
 		return ok
 	case "string":
 		_, ok := inst.(string)
