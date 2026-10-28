@@ -592,7 +592,7 @@ func Rerun(ctx context.Context, actions Actions, r RepoRef, rc Receipt) (RerunRe
 func Without(code ReasonCode, t Target, tr Trusted, rc Receipt) Publication
 
 // Withdrawn reports whether rc concluded without asking for action although tr now lacks the owner approval that
-// verdict.Decide demands. Only success and failure match, so a pending, zero or unreadable receipt never does.
+// verdict.Decide demands. Success, failure and an action_required whose reason is report-derived and itself asks for action (missing required coverage, a baseline that is not comparable, a policy defect: see `Decided`) match, because the report is shown under them; any other receipt never does.
 func Withdrawn(rc Receipt, tr Trusted) bool
 
 // Withdrawal is rule 5a, decided inside the head's publication lease (Publisher.Reconcile) from the gate check

@@ -1305,8 +1305,9 @@ been withdrawn since the previous request.
   `Title` is the headline: feedback already states the effect on merge there, so the page never derives one of its own.
   A run that concludes `action_required` shows no finding unless every reason its summary records is report-derived
   (missing required coverage, a baseline that is not comparable, a policy defect): the sweep keeps the old run in a
-  withdrawn result's `external_id`, so its old report would still match, and it rewrites the summary with the reason of
-  the withdrawal, which is not report-derived. An unknown reason, an unparsed summary or a mix keeps the report out. Its `external_id` is
+  withdrawn result's `external_id`, so its old report would still match, and in required mode it rewrites the summary with
+  the reason of the withdrawal, which is not report-derived (a report-derived action_required counts as decided, so
+  approval loss withdraws it as it does a success; advisory mode withdraws nothing, as for a neutral result before). An unknown reason, an unparsed summary or a mix keeps the report out. Its `external_id` is
   `v1:<run_id>:<attempt>:sha256:<hex>`; run 0 or an unreadable id is "no upload". Then
   `ArtifactID(run_id, "archfit-report")` and the download from the report cache or `ArtifactByID(id,
   report.MaxBytes)`, and the page shows it only when the SHA-256 of the bytes equals

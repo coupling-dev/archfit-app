@@ -158,8 +158,9 @@ func (s *server) pullReport(ctx context.Context, sc scope, pull api.Pull, runs *
 	// still match the digest: findings are not shown under a result that asks for action, with one exception. When every
 	// reason the check records comes from the report itself (missing required coverage, a baseline that is not
 	// comparable, a policy defect), the report is what explains the result and the comment shows it, so the page does too.
-	// The reasons are those of the check's current summary, which the sweep rewrites when it withdraws; a reason that
-	// is unknown, not report-derived or not parsed keeps the report withheld.
+	// The reasons are those of the check's current summary, which the sweep and the approval events rewrite when they
+	// withdraw a decided result in required mode, a report-derived action_required included (sweep.Decided); a reason
+	// that is unknown, not report-derived or not parsed keeps the report withheld.
 	if run.Conclusion == conclusionActionRequired && !body.Check.reportDerived {
 		body.Unavailable = actionRequired
 		return body, nil, nil

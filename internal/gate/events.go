@@ -165,8 +165,7 @@ func (g *Gate) approvalChanged(ctx context.Context, t inputs.Target) (string, er
 	reaction := reactionNone
 	err := g.publisher.Reconcile(ctx, t, func(ctx context.Context, current feedback.CheckState) (*feedback.Publication, error) {
 		rc := current.Receipt
-		decided := rc.Conclusion == verdict.Success || rc.Conclusion == verdict.Failure
-		if !decided && rc.Reason != verdict.ReasonOwnerApprovalMissing {
+		if !sweep.Decided(rc) && rc.Reason != verdict.ReasonOwnerApprovalMissing {
 			return nil, nil // the check already asks for action, or there is none yet
 		}
 		trusted, err := g.resolver.Resolve(ctx, t, g.now())
