@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -58,6 +59,9 @@ func (c *Client) CreateIssue(ctx context.Context, r RepoRef, i NewIssue) (Issue,
 	var j issueJSON
 	k := call{cred: cr, method: http.MethodPost, route: "/repos/{r}/issues", url: apiURL(base+"/issues", nil), body: body}
 	if err := c.send(ctx, k, &j); err != nil {
+		if i.Assignee != "" && isStatus(err, http.StatusUnprocessableEntity) {
+			return Issue{}, fmt.Errorf("%w: %w", ErrUnprocessable, err)
+		}
 		return Issue{}, err
 	}
 	if j.Number <= 0 {

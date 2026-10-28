@@ -107,11 +107,11 @@ func (r *repairer) repair(ctx context.Context, p Publication) (string, int, erro
 }
 
 // create opens the issue. When GitHub refuses it with the assignee (a login that cannot be assigned, or that left), it
-// opens the issue unassigned: an issue nobody is assigned to still tells the repository what broke. A rate limit is
-// not retried.
+// opens the issue unassigned: an issue nobody is assigned to still tells the repository what broke. Only that refusal is
+// retried: after a timeout or a 5xx GitHub may have created the issue, and a second one would be a duplicate.
 func (r *repairer) create(ctx context.Context, ref api.RepoRef, i api.NewIssue) (api.Issue, error) {
 	issue, err := r.issues.CreateIssue(ctx, ref, i)
-	if err == nil || i.Assignee == "" || errors.Is(err, api.ErrRateLimited) || ctx.Err() != nil {
+	if err == nil || i.Assignee == "" || !errors.Is(err, api.ErrUnprocessable) {
 		return issue, err
 	}
 	slog.Default().WarnContext(ctx, "feedback repair issue opened without its assignee",

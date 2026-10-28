@@ -26,6 +26,10 @@ var (
 	ErrNotFound    = errors.New("github: not found")
 	ErrRateLimited = errors.New("github: rate limit exhausted") // returned after bounded backoff
 
+	// ErrUnprocessable is GitHub's 422 on creating an issue with an assignee: the request was refused as a whole and
+	// nothing was created, so the same request without the assignee is safe to send.
+	ErrUnprocessable = errors.New("github: request refused")
+
 	// ErrUserTokenRejected is GitHub's 401 on a user's OAuth token: it expired or was revoked. The token cannot
 	// recover, so the call is not repeated and the user must sign in again.
 	ErrUserTokenRejected = errors.New("github: user token rejected")

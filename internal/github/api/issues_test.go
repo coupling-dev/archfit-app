@@ -129,7 +129,8 @@ func TestIssuesFailuresAreErrors(t *testing.T) {
 		{"no Issues permission", http.StatusForbidden, nil, nil},
 		{"rate limited", http.StatusForbidden, map[string]string{"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "4000000000"}, ErrRateLimited},
 		{"gone", http.StatusNotFound, nil, ErrNotFound},
-		{"assignee rejected", http.StatusUnprocessableEntity, nil, nil},
+		{"assignee rejected", http.StatusUnprocessableEntity, nil, ErrUnprocessable},
+		{"server error", http.StatusBadGateway, nil, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

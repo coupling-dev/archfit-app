@@ -123,16 +123,19 @@ func (g *Gate) decideAndPublish(ctx context.Context, u Upload) (verdict.Outcome,
 		return verdict.Outcome{}, fmt.Errorf("gate: publish: %w", err)
 	}
 	// The repair issue follows the published check and never changes the answer: it only notifies.
-	if defaultBranchPush(u.Binding) {
+	if defaultBranchPush(u) {
 		g.repairer.Repair(ctx, pub)
 	}
 	return outcome, nil
 }
 
 // defaultBranchPush reports a run on a push to the default branch. Other uploads without a pull request (a push to
-// another branch, an unbound pull request run) say nothing about the default branch.
-func defaultBranchPush(b Binding) bool {
-	return b.Event == eventPush && b.PullRequest == 0 && b.BaseRef == b.Repo.DefaultBranch
+// another branch, an unbound pull request run) say nothing about the default branch. A push that is not to a branch (a
+// tag) keeps the default branch as its BaseRef but carries unsupported_event: it says nothing either.
+func defaultBranchPush(u Upload) bool {
+	b := u.Binding
+	return b.Event == eventPush && b.PullRequest == 0 && b.BaseRef == b.Repo.DefaultBranch &&
+		!slices.Contains(u.Problems, ingest.ProblemUnsupportedEvent)
 }
 
 // identityApproved: the claimed identity is a row of the locked manifest and the report was measured

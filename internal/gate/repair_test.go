@@ -384,3 +384,37 @@ func TestRepairIssueAssignee(t *testing.T) {
 		})
 	}
 }
+
+// After a timeout or a 5xx GitHub may have created the issue, so the create is not sent again without the assignee.
+func TestRepairIssueIsNotRetriedAfterAnAmbiguousFailure(t *testing.T) {
+	w := newWorld(t)
+	w.setFile(w.shop, testBranch, settings.Path, settings.Render(settings.Settings{
+		Version: 1, Owners: []string{ownerLogin}, Gate: settings.GateRequired, Workflow: testWorkflow,
+		DataMode: settings.DataCustomer, RepairAssignee: "alice",
+	}))
+	w.gh.fail["CreateIssue"] = errors.New("fake: 502 bad gateway")
+	w.wantAnswer(w.uploadPush(w.pushMain(w.shop), fixtureBlocked), 200, "failure", "blocking_findings")
+	creates := 0
+	for _, c := range w.gh.calls {
+		if c.method == "CreateIssue" {
+			creates++
+		}
+	}
+	if creates != 1 {
+		t.Errorf("%d CreateIssue calls, want exactly one", creates)
+	}
+}
+
+// A tag push keeps the default branch as its base but is not a push to it: it carries unsupported_event, and a healthy
+// branch must not get a repair issue from it.
+func TestTagPushOpensNoRepairIssue(t *testing.T) {
+	w := newWorld(t)
+	p := w.pushMain(w.shop)
+	spec := w.pushSpec(p, w.shop.DefaultBranch, w.report(w.shop, fixtureBlocked))
+	spec.claims.Ref = "refs/tags/v1.0.0"
+	spec.claims.JobWorkflowRef = w.shop.FullName + "/" + testWorkflow + "@refs/tags/v1.0.0"
+	w.wantAnswer(w.send(spec), 200, "action_required", "unsupported_event")
+	if n := w.issueCalls(); n != 0 {
+		t.Errorf("%d Issues calls for a tag push", n)
+	}
+}

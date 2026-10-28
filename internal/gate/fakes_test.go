@@ -433,7 +433,7 @@ func (f *fakeGitHub) CreateIssue(_ context.Context, r api.RepoRef, i api.NewIssu
 		return api.Issue{}, err
 	}
 	if f.unassignable[i.Assignee] {
-		return api.Issue{}, errors.New("fake: 422 the assignee cannot be assigned")
+		return api.Issue{}, api.ErrUnprocessable
 	}
 	issue := fakeIssue{Issue: api.Issue{Number: firstIssue + len(f.issues[r.FullName]), Body: i.Body}, Title: i.Title, Assignee: i.Assignee, Open: true}
 	f.issues[r.FullName] = append(f.issues[r.FullName], issue)

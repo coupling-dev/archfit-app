@@ -340,8 +340,9 @@ Inside the head's publication lease, in this order:
    the next pass. Not found → nothing.
 5. Anything else (`failure`, `action_required`) renders the body. Found and byte-identical → nothing (`unchanged`);
    found → `UpdateIssueBody`; not found → `CreateIssue` with the title, the body and `Settings.RepairAssignee` of the
-   trusted settings. When GitHub refuses the create with an assignee (any error but a rate limit), the issue is
-   created once more without it and the refusal is logged.
+   trusted settings. When GitHub refuses the create with an assignee (`api.ErrUnprocessable`, its 422), the issue is
+   created once more without it and the refusal is logged. No other error is retried: after a timeout or a 5xx the
+   first issue may exist, and a second create would duplicate it.
 
 The body is the comment's layout and budget (65 535 bytes, so under GitHub's 65 536 characters): the repair marker,
 the head marker, "## Archfit: " and the headline, one sentence that the issue is a notification that never blocks a
