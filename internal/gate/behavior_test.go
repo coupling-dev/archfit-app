@@ -941,3 +941,65 @@ func TestUnreadableApprovalIsRetriedNotDropped(t *testing.T) {
 	w.handle(w.event(webhook.PullOpened, p))
 	w.wantAnswer(w.upload(p, fixtureHealthy), 200, "success", "healthy")
 }
+
+// onboardedBase gives branch the settings and policy of the default branch, as an author who controls it could, so
+// that a pull request into it would be decided if the App looked there.
+func (w *world) onboardedBase(r api.Repo, branch string) {
+	for _, path := range []string{settings.Path, policy.PolicyPath} {
+		w.setFile(r, branch, path, w.gh.files[fileKey(r.FullName, testBranch, path)])
+	}
+}
+
+// A pull request into a branch other than the default branch is not decided against (its upload ends
+// unsupported_event), so the App reads and writes nothing for its events, and no success can come of them.
+func TestEventsForAPullIntoAnotherBaseDoNothing(t *testing.T) {
+	for _, kind := range []webhook.EventKind{webhook.PullOpened, webhook.PullSynchronized} {
+		t.Run(string(kind), func(t *testing.T) {
+			w := newWorld(t)
+			p := w.openPull(w.shop, 7)
+			w.onboardedBase(p.repo, "release")
+			key := pullKey(p.repo.FullName, p.number)
+			pl := w.gh.pulls[key]
+			pl.BaseRef = "release"
+			w.gh.pulls[key] = pl
+
+			w.handle(w.event(kind, p))
+
+			if writes := w.gh.writes(); writes != 0 {
+				t.Errorf("%d writes for a pull into another base", writes)
+			}
+			if _, found := w.check(p, p.head, gateCheckName); found {
+				t.Error("a gate check was created for a pull into another base")
+			}
+		})
+	}
+
+}
+
+// The repository sweep that a push to a protected path on the default branch starts decides only the pull requests
+// into that branch. A pull into another base would be resolved at a branch its author controls, found stale, and
+// re-run forever; a pull into the default branch is still swept and re-run by the same push.
+func TestPushSweepLeavesAPullIntoAnotherBaseAlone(t *testing.T) {
+	w := newWorld(t)
+	other, onMain := w.openPull(w.shop, 7), w.openPull(w.shop, 8)
+	for _, p := range []*pull{other, onMain} {
+		w.handle(w.event(webhook.PullOpened, p))
+		w.wantAnswer(w.upload(p, fixtureHealthy), 200, "success", "healthy")
+	}
+
+	// The author retargets one pull at a branch whose policy differs from main's.
+	w.onboardedBase(other.repo, "release")
+	w.setFile(other.repo, "release", policy.PolicyPath, []byte(basePolicy+"# loosened on release\n"))
+	key := pullKey(other.repo.FullName, other.number)
+	pl := w.gh.pulls[key]
+	pl.BaseRef = "release"
+	w.gh.pulls[key] = pl
+	// The push changes main's policy: every receipt computed from the old one is stale.
+	w.setFile(onMain.repo, testBranch, policy.PolicyPath, []byte(basePolicy+"# changed on main\n"))
+
+	w.handle(w.pushEvent(w.shop, policy.PolicyPath))
+
+	if !slices.Equal(w.gh.reruns, []int64{onMain.runID}) {
+		t.Errorf("re-runs = %v, want only the pull into the default branch [%d]", w.gh.reruns, onMain.runID)
+	}
+}
