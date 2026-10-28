@@ -2,7 +2,7 @@
 <!-- archfit:head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb run 7.1 -->
 ## Archfit: Action required
 
-Assessment: 0 active findings, 0 advisories, 0 accepted findings.
+Assessment: 0 active findings, 0 advisories, 0 accepted findings. Measured by engine `v3.0.0` against policy `111111111111…`.
 
 PR impact: unknown — no comparable Git-base finding-origin evidence.
 

@@ -8,7 +8,15 @@ import (
 	"github.com/alexei-led/archfit-app/internal/wire/report"
 )
 
-const commentFindingCap = 3
+const (
+	commentFindingCap = 3
+	// commentReasonRunes cuts a finding's why and fix in the comment; the archfit/state check keeps them whole.
+	commentReasonRunes = 300
+	// attentionCap and attentionRunes bound the repository attention fold, which is budgeted before any finding.
+	attentionCap   = 10
+	attentionRunes = 200
+	shortSHALen    = 7
+)
 
 // compactFindings leaves accepted debt and historical details in the exact check.
 func compactFindings(p Publication) string {
@@ -23,12 +31,18 @@ func compactFindings(p Publication) string {
 		if f.Active() {
 			kind = "active finding"
 		}
+		// The place first: a reviewer on a phone reads where, then which rule, then why and what to do.
 		line := fmt.Sprintf("- **%s** %s: %s", kind, code(f.RuleID), subject(f))
 		if len(f.Locations) > 0 {
-			line += " at " + location(f.Locations[0])
+			line = fmt.Sprintf("- **%s** %s %s: %s", kind, location(f.Locations[0]), code(f.RuleID), subject(f))
+		}
+		// An advisory's why is the coupling arithmetic (strength, distance, volatility): the archfit/state check and the
+		// App page keep it; the first screen does not.
+		if f.Why != "" && f.Active() {
+			line += ". Why: " + text(cutRunes(f.Why, commentReasonRunes))
 		}
 		if f.Constraint != "" {
-			line += ". Constraint: " + text(f.Constraint)
+			line += ". Fix: " + text(cutRunes(f.Constraint, commentReasonRunes))
 		}
 		lines = append(lines, line)
 	}
@@ -104,7 +118,65 @@ func commentAssessment(p Publication) string {
 		return s
 	}
 	g := group(p.Report)
-	return fmt.Sprintf("Assessment: %d active %s, %d %s, %d accepted %s.", len(g.violations), plural(len(g.violations), "finding", "findings"), len(g.advisories), plural(len(g.advisories), "advisory", "advisories"), len(g.debt), plural(len(g.debt), "finding", "findings"))
+	return fmt.Sprintf("Assessment: %d active %s, %d %s, %d accepted %s.", len(g.violations), plural(len(g.violations), "finding", "findings"), len(g.advisories), plural(len(g.advisories), "advisory", "advisories"), len(g.debt), plural(len(g.debt), "finding", "findings")) + measuredWith(p)
+}
+
+// measuredWith names the engine that measured and the policy it measured against, so the first screen says what the
+// result is of. The policy is the ref and commit the engine states when it states one, else the digest the App checked.
+func measuredWith(p Publication) string {
+	var parts []string
+	if v := p.Identity.EngineVersion; v != "" {
+		parts = append(parts, "engine "+code(cutRunes(v, 40)))
+	}
+	switch id := p.Report.Identity; {
+	case id != nil && id.PolicyRef != nil && id.PolicyRef.Ref != "":
+		sha := id.PolicyRef.SHA
+		if len(sha) > shortSHALen {
+			sha = sha[:shortSHALen] // a short commit SHA, as GitHub shows one
+		}
+		parts = append(parts, "policy "+code(cutRunes(id.PolicyRef.Ref, 60)+"@"+sha))
+	case p.Receipt.PolicyDigest != "":
+		parts = append(parts, "policy "+code(cutRunes(p.Receipt.PolicyDigest, 12)))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " Measured by " + strings.Join(parts, " against ") + "."
+}
+
+// attentionBlock is the engine's repository attention: the coupling gate's own reasons, for the owner, not the
+// author. Bounded so the fold costs little: it is budgeted before any finding.
+func attentionBlock(p Publication) string {
+	if p.Report == nil || len(p.Report.GateReasons) == 0 || suspended(p.Outcome) {
+		return ""
+	}
+	var lines []string
+	for i, r := range p.Report.GateReasons {
+		if i == attentionCap {
+			lines = append(lines, fmt.Sprintf("- and %d more: read the archfit/state check", len(p.Report.GateReasons)-i))
+			break
+		}
+		lines = append(lines, "- "+text(cutRunes(r, attentionRunes)))
+	}
+	return "The engine's coupling gate reports these for an architecture owner. They are not this pull request's tasks.\n\n" + strings.Join(lines, "\n")
+}
+
+// agentIdentity names what the engine measured, for an agent that re-runs the check and compares; "" without one.
+func agentIdentity(p Publication) string {
+	if p.Report == nil || p.Report.Identity == nil || suspended(p.Outcome) {
+		return ""
+	}
+	id := p.Report.Identity
+	var parts []string
+	for _, f := range []struct{ name, value string }{
+		{"engine", id.EngineVersion}, {"policy digest", id.PolicyDigest}, {"baseline digest", id.BaselineDigest},
+		{"head tree", id.HeadTreeDigest}, {"base", id.BaseSHA},
+	} {
+		if f.value != "" {
+			parts = append(parts, f.name+" "+code(cutRunes(f.value, 64)))
+		}
+	}
+	return "Result identity: " + strings.Join(parts, ", ") + "."
 }
 
 func commentIdentity(p Publication) string {

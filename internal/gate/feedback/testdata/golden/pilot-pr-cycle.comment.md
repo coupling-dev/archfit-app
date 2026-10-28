@@ -2,15 +2,15 @@
 <!-- archfit:head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb run 7.1 -->
 ## Archfit: Architecture violations found · advisory
 
-Assessment: 4 active findings, 0 advisories, 6 accepted findings.
+Assessment: 4 active findings, 0 advisories, 6 accepted findings. Measured by engine `v3.0.0` against policy `111111111111…`.
 
 PR impact: 6 introduced findings, 6 pre-existing, 0 unknown. Finding origin does not establish that each module pair or listed source site was added.
 
 Cause: Architecture rule violations.
 
-- **active finding** `no-module-cycles`: `pkg_chaos` → `pkg_container` at `pkg/chaos/cmd/builder.go:14`. Constraint: Remove one direction of the module cycle; routing the dependency through another module keeps the cycle
-- **active finding** `no-module-cycles`: `pkg_chaos` → `pkg_util` at `pkg/chaos/iptables/parse.go:12`. Constraint: Remove one direction of the module cycle; routing the dependency through another module keeps the cycle
-- **active finding** `no-module-cycles`: `pkg_container` → `pkg_chaos` at `pkg/container/appfilter.go:4`. Constraint: Remove one direction of the module cycle; routing the dependency through another module keeps the cycle
+- **active finding** `pkg/chaos/cmd/builder.go:14` `no-module-cycles`: `pkg_chaos` → `pkg_container`. Why: Module pkg_chaos depends on pkg_container, and the two are in a dependency cycle among 3 declared modules. Fix: Remove one direction of the module cycle; routing the dependency through another module keeps the cycle
+- **active finding** `pkg/chaos/iptables/parse.go:12` `no-module-cycles`: `pkg_chaos` → `pkg_util`. Why: Module pkg_chaos depends on pkg_util, and the two are in a dependency cycle among 3 declared modules. Fix: Remove one direction of the module cycle; routing the dependency through another module keeps the cycle
+- **active finding** `pkg/container/appfilter.go:4` `no-module-cycles`: `pkg_container` → `pkg_chaos`. Why: Module pkg_container depends on pkg_chaos, and the two are in a dependency cycle among 3 declared modules. Fix: Remove one direction of the module cycle; routing the dependency through another module keeps the cycle
 - 1 more active findings/advisories: read the exact archfit/state check.
 
 **Next:** PR author/coding agent: review the reported constraints. Use only the supplied validation commands below; no repair direction is selected here.
