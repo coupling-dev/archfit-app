@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/alexei-led/archfit-app/internal/gate/ingest"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
@@ -106,12 +107,13 @@ func Unapproved(t inputs.Trusted) bool {
 }
 
 // Without returns the fixed outcome for a target that has no report: code is one of ReasonMissingUpload,
-// ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended, ReasonOwnerApprovalMissing.
+// ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended, ReasonOwnerApprovalMissing,
+// ReasonTargetMoved.
 func Without(code ReasonCode) Outcome {
 	var rs reasons
 	switch code {
 	case ReasonMissingUpload, ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended,
-		ReasonOwnerApprovalMissing:
+		ReasonOwnerApprovalMissing, ReasonTargetMoved:
 		rs.add(code, "")
 	default:
 		rs.add(ReasonEngineError, "")
@@ -125,6 +127,64 @@ func ApprovalMissing(t inputs.Trusted) Outcome {
 	var rs reasons
 	rs.add(ReasonOwnerApprovalMissing, strings.Join(t.ProtectedPaths, ", "))
 	return rs.outcome()
+}
+
+// Names of target_moved: how many modules and how many characters of each the reason shows.
+const (
+	movedModulesShown = 5
+	movedModuleRunes  = 80
+	movedCommitChars  = 12
+)
+
+// TargetMoved is Without(ReasonTargetMoved) for a caller that knows what moved. cycle names the modules of the
+// module cycle the target and the pull request close together (none when the pull request could not be compared);
+// base and tip are the commits the pull request was measured on and the default branch is on now ("" for an unknown
+// base). Detail holds the first modules and the commit range; Next names the cycle and the recovery.
+func TargetMoved(cycle []string, base, tip string) Outcome {
+	var rs reasons
+	var shown []string
+	for i, m := range cycle {
+		if i == movedModulesShown {
+			shown = append(shown, "and "+strconv.Itoa(len(cycle)-i)+" more")
+			break
+		}
+		shown = append(shown, cutRunes(m, movedModuleRunes))
+	}
+	modules := strings.Join(shown, ", ")
+	var detail []string
+	for _, part := range []string{modules, commitRange(base, tip)} {
+		if part != "" {
+			detail = append(detail, part)
+		}
+	}
+	rs.add(ReasonTargetMoved, strings.Join(detail, "; "))
+	if len(cycle) > 0 {
+		rs.setNext(ReasonTargetMoved, "The target branch moved, and with it this pull request closes a module cycle: "+modules+". "+updateBranch)
+	}
+	return rs.outcome()
+}
+
+// commitRange is "<base>..<tip>" with both cut to a short SHA; "" when the tip is unknown.
+func commitRange(base, tip string) string {
+	if tip == "" {
+		return ""
+	}
+	return cutChars(base, movedCommitChars) + ".." + cutChars(tip, movedCommitChars)
+}
+
+func cutChars(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
+}
+
+// cutRunes cuts s to n runes and marks the cut.
+func cutRunes(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	return string([]rune(s)[:n]) + "…"
 }
 
 // Suspended is Without(ReasonSuspended) for a caller that holds the entitlement record: Next is

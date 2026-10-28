@@ -27,7 +27,11 @@ type Receipt struct {
 	// IdentityKey names what the engine measured and under which inputs (the report's result identity); "" for a
 	// report without one. It is a fact a later decision compares (a moved target, a repair task); it never suppresses
 	// a publication: the identity is the engine's own claim in a customer-attested report.
-	IdentityKey          string             `json:"identity_key,omitempty"`
+	IdentityKey string `json:"identity_key,omitempty"`
+	// BaseSHA is the default-branch commit the report was measured against: the base tip GitHub merged the head into,
+	// or the merge base of a head that conflicts. "" for a push and for a receipt written before the field
+	// existed. The sweep compares it with the tip (rule 5c); "" is always compared.
+	BaseSHA              string             `json:"base_sha,omitempty"`
 	EarliestWaiverExpiry time.Time          `json:"earliest_waiver_expiry"`
 	Conclusion           verdict.Conclusion `json:"conclusion"`
 	Reason               verdict.ReasonCode `json:"reason"`

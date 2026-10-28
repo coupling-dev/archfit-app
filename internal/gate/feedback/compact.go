@@ -83,6 +83,8 @@ func recoveryRole(code verdict.ReasonCode) string {
 	switch code {
 	case verdict.ReasonBaselineNotComparable, verdict.ReasonOwnerApprovalMissing, verdict.ReasonPolicyDefect, verdict.ReasonWaiverExpired:
 		return "Architecture owner: "
+	case verdict.ReasonTargetMoved:
+		return "Pull request author: "
 	case verdict.ReasonHealthy, verdict.ReasonAttentionOnly, verdict.ReasonBlockingFindings:
 		return ""
 	default:

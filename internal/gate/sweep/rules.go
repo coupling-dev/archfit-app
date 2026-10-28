@@ -65,6 +65,9 @@ func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted)
 		_, err := p.rerun(ctx, "5b", t, rc)
 		return err
 	}
+	if moved, err := p.targetMoved(ctx, t, tr, rc); err != nil || moved { // rule 5c
+		return err
+	}
 
 	e := expiry(rc, tr)
 	if err := p.warn(ctx, t, e); err != nil { // rule 6a
@@ -74,7 +77,7 @@ func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted)
 	// Granted, or no longer needed (a retargeted base, a repointed settings workflow): either way the reason is gone.
 	approvedLate := rc.Reason == verdict.ReasonOwnerApprovalMissing && !verdict.Unapproved(tr)
 	switch {
-	case !e.IsZero() && !p.now.Before(e) && state.StartedAt.Before(e):
+	case !e.IsZero() && !p.now.Before(e) && state.StartedAt.Before(e) && rc.Reason != verdict.ReasonTargetMoved:
 		if err := p.publish(ctx, "6b", t, tr, rc, verdict.ReasonWaiverExpired); err != nil {
 			return err
 		}
@@ -176,7 +179,7 @@ func (p *pass) warn(ctx context.Context, t inputs.Target, e time.Time) error {
 
 // Without builds the publication for a target that has no report: verdict.Without(code),
 // verdict.Suspended(tr.Entitlement) for ReasonSuspended, or verdict.ApprovalMissing(tr) for
-// ReasonOwnerApprovalMissing, with the run identity of rc (zero when there is no previous receipt) and the
+// ReasonOwnerApprovalMissing, with the run identity and base of rc (zero when there is no previous receipt) and the
 // current digests of tr.
 //
 // Keeping the previous run identity keeps the check's external_id, so feedback updates the gate check in
@@ -189,6 +192,12 @@ func Without(code verdict.ReasonCode, t inputs.Target, tr inputs.Trusted, rc fee
 	case verdict.ReasonOwnerApprovalMissing:
 		out = verdict.ApprovalMissing(tr)
 	}
+	return withOutcome(out, code, t, tr, rc)
+}
+
+// withOutcome is the publication of a target that has no new report: out, over the run identity and base of rc and
+// the current digests of tr.
+func withOutcome(out verdict.Outcome, code verdict.ReasonCode, t inputs.Target, tr inputs.Trusted, rc feedback.Receipt) feedback.Publication {
 	return feedback.Publication{
 		Target:  t,
 		Outcome: out,
@@ -196,6 +205,7 @@ func Without(code verdict.ReasonCode, t inputs.Target, tr inputs.Trusted, rc fee
 			RunID:                rc.RunID,
 			RunAttempt:           rc.RunAttempt,
 			ReportDigest:         rc.ReportDigest,
+			BaseSHA:              rc.BaseSHA,
 			PolicyDigest:         inputs.First(tr.PolicyDigests),
 			BaselineDigest:       inputs.First(tr.BaselineDigests),
 			LabelsDigest:         inputs.First(tr.LabelsDigests),
@@ -218,6 +228,24 @@ func Withdrawal(t inputs.Target, current feedback.CheckState, tr inputs.Trusted)
 	}
 	pub := Without(verdict.ReasonOwnerApprovalMissing, t, tr, current.Receipt)
 	return &pub
+}
+
+// recheckPull is rule 5c alone, for the pass a default-branch push starts. A pull request that another rule acts on
+// (a fork, a suspension, a withdrawn approval, stale inputs, and with them a missing, pending or unreadable check) is
+// left to the full pass: target_moved must not replace the reason that rule publishes, nor its re-run.
+func (p *pass) recheckPull(ctx context.Context, t inputs.Target, tr inputs.Trusted) error {
+	if tr.Settings.Gate != settings.GateRequired || t.Fork || tr.Suspended {
+		return nil
+	}
+	state, err := p.publisher.State(ctx, t)
+	if err != nil {
+		return err
+	}
+	if Withdrawn(state.Receipt, tr) || stale(state.Receipt, tr) { // stale holds for the zero receipt of a missing or pending check
+		return nil
+	}
+	_, err = p.targetMoved(ctx, t, tr, state.Receipt)
+	return err
 }
 
 // withdraw is rule 5a. The pass saw a withdrawn receipt outside the lease; Reconcile decides again inside it.

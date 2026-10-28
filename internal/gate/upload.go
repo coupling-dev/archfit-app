@@ -149,6 +149,7 @@ func receipt(u Upload, t inputs.Trusted, o verdict.Outcome) feedback.Receipt {
 		RunID:                u.Binding.RunID,
 		RunAttempt:           u.Binding.RunAttempt,
 		ReportDigest:         u.Digest,
+		BaseSHA:              integratedBase(u.Binding),
 		IdentityKey:          identityKey(u.Report),
 		PolicyDigest:         acceptedDigest(t.PolicyDigests, configHash),
 		BaselineDigest:       acceptedDigest(t.BaselineDigests, u.BaselineDigest),
@@ -157,6 +158,18 @@ func receipt(u Upload, t inputs.Trusted, o verdict.Outcome) feedback.Receipt {
 		Conclusion:           o.Conclusion,
 		Reason:               o.Reasons[0].Code,
 	}
+}
+
+// integratedBase is the default-branch commit the report was measured against: the base tip GitHub merged the head
+// into, or, for a head that conflicts and was measured alone, the merge base. "" when no integration was measured.
+func integratedBase(b Binding) string {
+	switch b.Integration {
+	case envelope.IntegrationMerged:
+		return b.BaseSHA
+	case envelope.IntegrationConflicts:
+		return b.MergeBaseSHA
+	}
+	return ""
 }
 
 // identityKey names what a report's engine measured and under which inputs, from its result identity: the analysed

@@ -391,6 +391,8 @@ The sweep inspects open pull requests for these conditions:
 - The policy, baseline, or labels changed on the protected ref.
 - A waiver expires within seven days or has expired.
 - The subscription changed.
+- The default branch moved after a `success` check, and the report of its new tip and the report of the pull request
+  together close a module cycle that neither holds alone (`target_moved`; see [Merge safety](user-guide.md#merge-safety-when-the-target-moves)).
 
 An owner approval can end without a new commit: the owner dismisses the review or requests changes, the owner leaves
 the settings file on the protected ref, or the pull request starts to change a protected path. Edits to the settings
