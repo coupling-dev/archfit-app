@@ -658,6 +658,11 @@ cannot tell, it says "enforcement not confirmed" and never shows `gate_required`
 protection only when GitHub lists its required checks to the App. When GitHub does not, a protected branch shows "not
 confirmed" until you add the check to a ruleset.
 
+![The Overview of a repository whose settings say the gate is required while GitHub does not require it](images/overview-gate-not-enforced-light.png#gh-light-mode-only)
+![The Overview of a repository whose settings say the gate is required while GitHub does not require it](images/overview-gate-not-enforced-dark.png#gh-dark-mode-only)
+
+_The step stays at Advisory, and Needs you names the ruleset to add. Sample data._
+
 > **CAUTION:** Do not require `archfit/gate` while the settings file has `gate: advisory`.
 > The App does not publish that check in advisory mode. The pull request stays blocked.
 
@@ -754,6 +759,12 @@ The literal HTML-like text is an escaping test. This is not live production data
 
 _The graph is available, but the engine's missing required rule remains visible. This report is admitted for display,
 not declared complete or safe to merge. Test-binary build fields that were not recorded stay explicit in About._
+
+![An action-required result whose reason comes from the report: the reason and next step, then the findings and the evidence gap](images/pr-report-action-required-light.png#gh-light-mode-only)
+![An action-required result whose reason comes from the report: the reason and next step, then the findings and the evidence gap](images/pr-report-action-required-dark.png#gh-dark-mode-only)
+
+_Missing required coverage ends the check as `action required`, and the report is what explains it, so the page shows
+the findings with the recovery action, as the pull request comment does. Sample data._
 
 ## See the graph
 
