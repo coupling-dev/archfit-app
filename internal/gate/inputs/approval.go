@@ -191,12 +191,14 @@ func (r *resolver) judge(ctx context.Context, t Target, s settings.Settings, pat
 }
 
 // withdrawn reports that the approver took the approval back on GitHub: a review that requests changes, or one that
-// was dismissed, submitted after the approval. The App has no withdraw button; this is how an owner who can review
-// ends it, as on GitHub. An approval after the review is a new record, so it counts.
+// was dismissed, submitted at or after the approval. GitHub reports whole seconds, so the approval's time is cut to
+// the second too: a review in the same second as the approval withdraws it rather than being missed. The App has no
+// withdraw button; this is how an owner who can review ends it, as on GitHub. An approval after the review is a new
+// record, so it counts.
 func withdrawn(rec approvalRecord, reviews []api.Review) bool {
 	for _, rv := range reviews {
 		if strings.EqualFold(rv.Reviewer, rec.Login) && (rv.State == reviewChangesRequested || rv.State == reviewDismissed) &&
-			rv.SubmittedAt.After(rec.At) {
+			!rv.SubmittedAt.Before(rec.At.Truncate(time.Second)) {
 			return true
 		}
 	}

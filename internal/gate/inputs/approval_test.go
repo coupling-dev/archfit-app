@@ -304,6 +304,7 @@ func TestAppApprovalWithdrawnByTheApproversReview(t *testing.T) {
 		{"no review", nil, ApprovalGranted},
 		{"changes requested later", []api.Review{review("alice", "CHANGES_REQUESTED", time.Minute)}, ApprovalMissing},
 		{"changes requested later, login in other case", []api.Review{review("ALICE", "CHANGES_REQUESTED", time.Minute)}, ApprovalMissing},
+		{"changes requested in the same second", []api.Review{review("alice", "CHANGES_REQUESTED", 0)}, ApprovalMissing},
 		{"a review dismissed later", []api.Review{review("alice", "DISMISSED", time.Minute)}, ApprovalMissing},
 		{"changes requested earlier", []api.Review{review("alice", "CHANGES_REQUESTED", -time.Minute)}, ApprovalGranted},
 		{"changes requested by someone else", []api.Review{review("bob", "CHANGES_REQUESTED", time.Minute)}, ApprovalGranted},
