@@ -9,6 +9,7 @@ import (
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/webhook"
+	"github.com/alexei-led/archfit-app/internal/wire/policy"
 )
 
 // shareHead opens a pull request that has p's head commit and the given base: the pull request an agent opens from
@@ -219,19 +220,136 @@ func TestSharedHeadOpenedWhileTheUploadWaitsForTheLease(t *testing.T) {
 	})
 }
 
-// RunRepo counts a unit it could not read and returns nil: the event must still fail, so the queue retries it and the
-// success is withdrawn once GitHub answers.
-func TestSharedHeadEventRetriesAFailedSweep(t *testing.T) {
-	w := newWorld(t)
-	b, _ := w.approvedSettingsEdit()
-	other := w.shareHead(b, 8, "loosened")
-	w.gh.fail["OpenPulls"] = errors.New("github down")
+// The event retries when the units on the head fail, and only then.
+func TestSharedHeadEventRetriesAFailedUnit(t *testing.T) {
+	for _, method := range []string{"OpenPulls", "CheckRuns"} {
+		t.Run(method+" fails", func(t *testing.T) {
+			w := newWorld(t)
+			b, _ := w.approvedSettingsEdit()
+			other := w.shareHead(b, 8, "loosened")
+			w.gh.fail[method] = errors.New("github down")
 
-	if err := w.gate.HandleEvent(context.Background(), w.event(webhook.PullOpened, other)); err == nil {
-		t.Fatal("HandleEvent = nil, want an error so the delivery is retried")
+			if err := w.gate.HandleEvent(context.Background(), w.event(webhook.PullOpened, other)); err == nil {
+				t.Fatal("HandleEvent = nil, want an error so the delivery is retried")
+			}
+
+			delete(w.gh.fail, method)
+			w.handle(w.event(webhook.PullOpened, other))
+			w.wantGate(b, runCompleted, "action_required")
+		})
+	}
+}
+
+// A lasting failure of an unrelated pull request (here a re-run GitHub refuses) must not make the event fail: the
+// delivery would be retried for hours and burn the quota for nothing.
+func TestSharedHeadEventIgnoresUnrelatedFailures(t *testing.T) {
+	w := newWorld(t)
+	old := w.openPull(w.shop, 9)
+	w.handle(w.event(webhook.PullOpened, old))
+	w.wantAnswer(w.upload(old, fixtureHealthy), 200, "success", "healthy")
+	w.setFile(w.shop, testBranch, policy.PolicyPath, []byte(basePolicy+"# changed\n")) // `old` is stale now: a pass re-runs it
+	b := w.openPull(w.shop, 7)
+	w.handle(w.event(webhook.PullOpened, b))
+	w.wantAnswer(w.upload(b, fixtureHealthy), 200, "success", "healthy")
+	other := w.shareHead(b, 8, "loosened")
+	w.gh.fail["Rerun"] = errors.New("403")
+	if sum, err := w.gate.sweeper.RunRepo(context.Background(), w.shop, w.now); err != nil || sum.Errors == 0 {
+		t.Fatalf("RunRepo = %+v, %v; the setup must fail a unit of the full pass", sum, err)
+	}
+	w.wantGate(b, runCompleted, "action_required") // the full pass above withdrew it already: put it back
+	w.wantAnswer(w.upload(b, fixtureHealthy), 200, "action_required", "shared_head")
+	w.editPull(other, func(pl *api.Pull) { pl.State = "closed" })
+	w.wantAnswer(w.upload(b, fixtureHealthy), 200, "success", "healthy")
+	w.editPull(other, func(pl *api.Pull) { pl.State = "open" })
+
+	if err := w.gate.HandleEvent(context.Background(), w.event(webhook.PullOpened, other)); err != nil {
+		t.Fatalf("HandleEvent = %v, want nil: the failing re-run belongs to another pull request", err)
 	}
 
-	delete(w.gh.fail, "OpenPulls")
-	w.handle(w.event(webhook.PullOpened, other))
 	w.wantGate(b, runCompleted, "action_required")
+}
+
+// The other pull request becomes visible after the upload's listing inside the lease and before its write. The event
+// waits for the lease, so the success the upload writes is withdrawn right after; or the event runs first and the upload
+// refuses. Either way the check does not end in success, and once the other pull request is closed an upload succeeds.
+func TestSharedHeadEventAndUploadSerializeOnTheLease(t *testing.T) {
+	t.Run("the upload writes first, the event withdraws", func(t *testing.T) {
+		w := newWorld(t)
+		b := w.openPull(w.shop, 7)
+		w.handle(w.event(webhook.PullOpened, b))
+		var done <-chan error
+		w.gh.beforeCheckWrite = func() {
+			other := w.shareHead(b, 8, "loosened")
+			done = w.eventAtLease(w.event(webhook.PullOpened, other))
+		}
+
+		w.wantAnswer(w.upload(b, fixtureHealthy), 200, "success", "healthy")
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+
+		w.wantGate(b, runCompleted, "action_required")
+		if rc := w.receipt(b); rc.Reason != "shared_head" {
+			t.Errorf("receipt reason = %q, want shared_head", rc.Reason)
+		}
+	})
+
+	t.Run("the event writes first, the upload refuses", func(t *testing.T) {
+		w := newWorld(t)
+		b := w.openPull(w.shop, 7)
+		w.handle(w.event(webhook.PullOpened, b))
+		var other *pull
+		w.store.beforeLease = func() {
+			other = w.shareHead(b, 8, "loosened")
+			w.handle(w.event(webhook.PullOpened, other)) // the check is pending: shared_head replaces it
+		}
+
+		if a := w.upload(b, fixtureHealthy); a.status != 503 {
+			t.Fatalf("answer = %d %s, want 503", a.status, a.raw)
+		}
+		w.wantGate(b, runCompleted, "action_required")
+		if rc := w.receipt(b); rc.Reason != "shared_head" {
+			t.Fatalf("receipt reason = %q, want shared_head", rc.Reason)
+		}
+		w.wantAnswer(w.upload(b, fixtureHealthy), 200, "action_required", "shared_head")
+
+		w.editPull(other, func(pl *api.Pull) { pl.State = "closed" })
+		w.wantAnswer(w.upload(b, fixtureHealthy), 200, "success", "healthy")
+		w.wantGate(b, runCompleted, "success")
+	})
+}
+
+// Only the pull requests on the head are looked at: an unrelated pull request adds no read of any check.
+func TestSharedHeadEventReadsOnlyThePullsOnTheHead(t *testing.T) {
+	checkReads := func(withUnrelated bool) int {
+		w := newWorld(t)
+		var unrelated *pull
+		if withUnrelated {
+			unrelated = w.openPull(w.shop, 9)
+			w.handle(w.event(webhook.PullOpened, unrelated))
+			w.wantAnswer(w.upload(unrelated, fixtureHealthy), 200, "success", "healthy")
+		}
+		b := w.openPull(w.shop, 7)
+		w.handle(w.event(webhook.PullOpened, b))
+		w.wantAnswer(w.upload(b, fixtureHealthy), 200, "success", "healthy")
+		other := w.shareHead(b, 8, "loosened")
+		before := len(w.gh.calls)
+
+		w.handle(w.event(webhook.PullOpened, other))
+
+		w.wantGate(b, runCompleted, "action_required")
+		if unrelated != nil {
+			w.wantGate(unrelated, runCompleted, "success")
+		}
+		reads := 0
+		for _, c := range w.gh.calls[before:] {
+			if c.method == "CheckRuns" {
+				reads++
+			}
+		}
+		return reads
+	}
+	if with, without := checkReads(true), checkReads(false); with != without {
+		t.Errorf("%d check reads with an unrelated pull request, %d without", with, without)
+	}
 }

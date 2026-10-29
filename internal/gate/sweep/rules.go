@@ -279,40 +279,55 @@ func SharedWith(pulls []api.Pull, number int, head, defaultBranch string) []verd
 	return out
 }
 
-// sharedHead is rule 5d: shared_head over a success receipt, no re-run. Inside the head's publication lease the open
-// pull requests are listed again, so a pull request closed meanwhile leaves the success as it is; a newer run, a
-// withdrawn approval, stale inputs or a repository out of required mode are left to the rule that owns them. A failed
-// listing is an error, so the success is never touched on a guess.
+// sharedHead is rule 5d: shared_head over a success receipt, no re-run, decided inside the head's publication lease
+// by SharedHeadPublication. Only a success is withdrawn here; a pending check is the upload's to refuse (it lists the
+// open pull requests inside the same lease) or the event's to withdraw (gate: PullOpened into another base). A failed
+// listing is an error of the unit, so the success is never touched on a guess.
 func (p *pass) sharedHead(ctx context.Context, t inputs.Target, rc feedback.Receipt) error {
 	var pub *feedback.Publication
 	err := p.publisher.Reconcile(ctx, t, func(ctx context.Context, current feedback.CheckState) (*feedback.Publication, error) {
 		if current.Receipt != rc {
 			return nil, nil
 		}
-		tr, err := p.resolver.Resolve(ctx, t, p.now)
-		if err != nil {
-			return nil, err
-		}
-		if tr.Settings.Gate != settings.GateRequired || Withdrawn(rc, tr) || stale(rc, tr) {
-			return nil, nil
-		}
-		pulls, err := p.pulls.OpenPulls(ctx, t.Repo.RepoRef)
-		if err != nil {
-			return nil, err
-		}
-		shared := SharedWith(pulls, t.PullRequest, t.HeadSHA, t.Repo.DefaultBranch)
-		if len(shared) == 0 {
-			return nil, nil
-		}
-		out := withOutcome(verdict.SharedHead(shared), verdict.ReasonSharedHead, t, tr, rc)
-		pub = &out
-		return pub, nil
+		var err error
+		pub, err = SharedHeadPublication(ctx, p.pulls, p.resolver, p.now, t, current)
+		return pub, err
 	})
 	if err != nil || pub == nil {
 		return err
 	}
 	p.logPublished("5d", *pub, rc)
 	return nil
+}
+
+// SharedHeadPublication is the shared-head decision of a default-branch pull request t, made inside its head's
+// publication lease from the gate check current there: shared_head over the current receipt (the zero receipt of a
+// pending check, which any upload replaces) when the repository is in required mode, the check is Pending or a success
+// whose approval and inputs still hold, and a fresh OpenPulls listing still names a pull request on the head with
+// another base. nil otherwise. A pending check is written only to refuse the upload that is about to decide it: that
+// upload lists inside the lease too, so it sees this publication or is seen by it.
+func SharedHeadPublication(ctx context.Context, pulls api.Pulls, res inputs.Resolver, now time.Time, t inputs.Target, current feedback.CheckState) (*feedback.Publication, error) {
+	rc := current.Receipt
+	if !current.Exists || (!current.Pending && rc.Conclusion != verdict.Success) {
+		return nil, nil
+	}
+	tr, err := res.Resolve(ctx, t, now)
+	if err != nil {
+		return nil, err
+	}
+	if tr.Settings.Gate != settings.GateRequired || (!current.Pending && (Withdrawn(rc, tr) || stale(rc, tr))) {
+		return nil, nil
+	}
+	open, err := pulls.OpenPulls(ctx, t.Repo.RepoRef)
+	if err != nil {
+		return nil, err
+	}
+	shared := SharedWith(open, t.PullRequest, t.HeadSHA, t.Repo.DefaultBranch)
+	if len(shared) == 0 {
+		return nil, nil
+	}
+	pub := withOutcome(verdict.SharedHead(shared), verdict.ReasonSharedHead, t, tr, rc)
+	return &pub, nil
 }
 
 // withdraw is rule 5a. The pass saw a withdrawn receipt outside the lease; Reconcile decides again inside it.

@@ -942,8 +942,8 @@ Set `integration.recheck: off` to keep results until the next run.
 request into the default branch and of another into a different branch, both pull requests would show the same green
 `archfit/gate`, and the second branch can carry a looser `.archfit.yaml`. Archfit accepts no protected base other than
 the default branch, so it never writes a `success` for a head that another open pull request into a different base
-shares: the upload ends `action_required` with `shared_head`, and the sweep (hourly, and at once when such a pull
-request is opened or pushed) withdraws a `success` that already exists. Close the other pull request or change its base
+shares: the upload ends `action_required` with `shared_head`, and Archfit (at once when such a pull request is opened or
+pushed, and in the hourly sweep) withdraws a `success` that already exists. Close the other pull request or change its base
 to the default branch, then run the Archfit workflow again: nothing re-runs for you.
 
 ## See a repository

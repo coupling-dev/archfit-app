@@ -262,7 +262,11 @@ When the other pull request is closed or retargeted, nothing happens automatical
 rule re-runs, and its `Next` tells the author to run the Archfit workflow again. Only a new upload (which lists the
 pull requests itself) can turn the check green again. A base changed after a pull request was opened sends no event
 (the webhook does not map `edited`), so the hourly pass is what finds it; a pull request opened or pushed into another
-base is also answered at once (`gate`: `RunRepo`).
+base is also answered at once, not by this pass but by `gate`, which calls the same decision, `SharedHeadPublication(ctx,
+pulls, resolver, now, target, current)`, inside the lease of each default-branch pull request on that head. The pass runs
+it for a success only (a pending check is the upload's to refuse, and the upload lists again inside its lease); the
+event also runs it for a pending check, publishing `shared_head` over it with the zero receipt, which a later upload
+replaces as it replaces the refusal of a fork.
 
 ### Rule 5c: target moved
 
