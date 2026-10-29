@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	_ "embed" // the published schema document
 	"encoding/hex"
+	"encoding/json"
 )
 
 // SchemaV1 is the only envelope schema version accepted.
@@ -49,6 +50,10 @@ type Envelope struct {
 	PayloadDigest  string `json:"payload_digest"`  // "sha256:<64 hex>" of the exact payload bytes
 	BaselineDigest string `json:"baseline_digest"` // bare hex SHA-256 of the protected baseline the engine loaded; "" = none for report; required for reanchor; always "" for discovery and baseline
 	LabelsDigest   string `json:"labels_digest"`   // bare hex SHA-256 of the labels file the engine loaded; "" = none
+
+	// PolicyChange is the engine's classification of the pull request's policy file change, as the producer sent it:
+	// optional, only on a pull_request report, and checked here for shape alone (report.DecodePolicyChange reads it).
+	PolicyChange json.RawMessage `json:"policy_change,omitempty"`
 }
 
 //go:embed envelope.v1.schema.json

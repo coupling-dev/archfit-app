@@ -21,6 +21,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/envelope"
 	"github.com/alexei-led/archfit-app/internal/wire/manifest"
+	"github.com/alexei-led/archfit-app/internal/wire/policy"
 	"github.com/alexei-led/archfit-app/internal/wire/report"
 )
 
@@ -107,12 +108,13 @@ func (g *Gate) decideAndPublish(ctx context.Context, u Upload) (verdict.Outcome,
 		return verdict.Outcome{}, errors.New("gate: decision without a reason")
 	}
 	err = g.publisher.Publish(ctx, feedback.Publication{
-		Target:   target,
-		Identity: u.Identity,
-		Outcome:  outcome,
-		Receipt:  receipt(u, trusted, outcome),
-		Report:   u.Report,
-		Trusted:  trusted,
+		Target:       target,
+		Identity:     u.Identity,
+		Outcome:      outcome,
+		Receipt:      receipt(u, trusted, outcome),
+		Report:       u.Report,
+		Trusted:      trusted,
+		PolicyChange: policyChangeFor(u, trusted),
 		// A sweep may correct the check between this decision and its publication. Inside the lease feedback refuses
 		// a decision whose inputs are no longer trusted (503 here); the Action's retry decides from the new inputs.
 		Resolve: func(ctx context.Context) (inputs.Trusted, error) { return g.resolver.Resolve(ctx, target, g.now()) },
@@ -121,6 +123,15 @@ func (g *Gate) decideAndPublish(ctx context.Context, u Upload) (verdict.Outcome,
 		return verdict.Outcome{}, fmt.Errorf("gate: publish: %w", err)
 	}
 	return outcome, nil
+}
+
+// policyChangeFor passes on the Action's classification only when the App's own trusted inputs say this pull request
+// changes the policy file: a card the App's diff does not back is never shown. Self-reported, display only.
+func policyChangeFor(u Upload, t inputs.Trusted) *report.PolicyChange {
+	if !slices.Contains(t.ProtectedPaths, policy.PolicyPath) {
+		return nil
+	}
+	return u.PolicyChange
 }
 
 // identityApproved: the claimed identity is a row of the locked manifest and the report was measured

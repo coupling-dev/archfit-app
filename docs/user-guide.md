@@ -486,8 +486,8 @@ no approval is needed any more.
 ### Engine versions
 
 The locked manifest approves engine v3.2.3 on Linux amd64 and arm64. New workflows pin archfit-action at commit
-`ec465980aa52e8aec0bf6ac22ab717efd1b15c77`, which measures a pull request as it would land (the merge with the target)
-and states `analyzed_sha` and `integration` in the upload. Only the v3.2.3 amd64 row is Current for new workflows and
+`e168b961824b6801e74f0f0938b49be7e1286819`, which measures a pull request as it would land (the merge with the target)
+and states `analyzed_sha`, `integration` and, for a policy change, its classification in the upload. Only the v3.2.3 amd64 row is Current for new workflows and
 recovery pins.
 
 - The v3.2.2 and v3.2.0 tuples are no longer approved: the Actions that carried them predate the new envelope. Retired or
@@ -585,6 +585,11 @@ coverage lost or gained (code the analysis stops or starts reading, such as an a
 cannot order, which count as loosening. A change that "fixes" a violation by excluding its source shows as coverage
 lost. The App derives the direction from those lists and refuses a classification that states another. The card
 informs the owner who approves; it decides nothing.
+
+The classification comes from the Action: with engine v3.4.0 or later it states it in the upload, and the App shows it
+only for a pull request whose changed files, which the App reads from GitHub itself, include `.archfit.yaml`. No card
+means "not classified" (an older engine, a change that orders nothing, an upload the App could not read), never "no
+change": read the diff of `.archfit.yaml` yourself.
 
 ### Owner approval
 
