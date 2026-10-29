@@ -26,6 +26,7 @@ const (
 	reactionForkRefused  = "fork_refused"
 	reactionRerun        = "rerun"
 	reactionRepoSweep    = "repo_sweep"
+	reactionRecheck      = "recheck" // a default-branch push moved the target: open pull requests are checked for a module cycle with it
 	reactionNotOnboarded = "not_onboarded"
 	reactionNotAdmitted  = "not_admitted" // no operator approved the installation: nothing is read or written
 	reactionOtherBase    = "other_base"   // a pull request into a branch other than the default branch: nothing is read or written
@@ -83,8 +84,15 @@ func (g *Gate) branchPushed(ctx context.Context, e webhook.Event) (string, error
 		return reactionNone, err
 	}
 	reaction, err := g.pullOnHead(ctx, t, e.Branch, e.DefaultBranch)
-	if err != nil || e.Kind == webhook.BranchPush || !protectedPush(e.ChangedPaths) {
+	if err != nil || e.Kind == webhook.BranchPush {
 		return reaction, err
+	}
+	if !protectedPush(e.ChangedPaths) {
+		// A rate limit is an error that wraps api.ErrRateLimited: the queue retries the delivery.
+		if _, err := g.sweeper.Recheck(ctx, t.Repo, e.HeadSHA, g.now()); err != nil {
+			return reactionRecheck, fmt.Errorf("gate: recheck: %w", err)
+		}
+		return reactionRecheck, nil
 	}
 	// A rate limit is an error that wraps api.ErrRateLimited: the queue retries the delivery.
 	if _, err := g.sweeper.RunRepo(ctx, t.Repo, g.now()); err != nil {

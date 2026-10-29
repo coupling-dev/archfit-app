@@ -22,6 +22,7 @@ type sweeper struct {
 	publisher feedback.Publisher
 	admit     Admitter
 	cfg       Config
+	graphs    *edgeCache // module graphs of verified reports, shared by the passes of this instance
 }
 
 // pass is one traversal. Nothing of it outlives Run or RunRepo.
@@ -30,8 +31,10 @@ type sweeper struct {
 // every other failure is counted, logged and skipped where it happens.
 type pass struct {
 	*sweeper
-	now time.Time
-	sum Summary
+	now     time.Time
+	sum     Summary
+	recheck bool                     // only rule 5c runs
+	tips    map[api.RepoRef]*tipView // the default-branch tip of each repository, read at most once
 }
 
 func (s *sweeper) Run(ctx context.Context, now time.Time) (Summary, error) {
@@ -63,6 +66,21 @@ func (s *sweeper) Run(ctx context.Context, now time.Time) (Summary, error) {
 // undone and the caller retries it.
 func (s *sweeper) RunRepo(ctx context.Context, r api.Repo, now time.Time) (Summary, error) {
 	p := &pass{sweeper: s, now: now}
+	return p.finish(p.repo(ctx, r))
+}
+
+// Recheck is rule 5c alone for r, after a push moved its default branch to tip. A branch that has moved on since is
+// left to the push that moved it: that push starts its own recheck.
+func (s *sweeper) Recheck(ctx context.Context, r api.Repo, tip string, now time.Time) (Summary, error) {
+	p := &pass{sweeper: s, now: now, recheck: true}
+	head, err := s.repos.BranchHead(ctx, r.RepoRef, r.DefaultBranch)
+	if errors.Is(err, api.ErrNotFound) || (err == nil && head != tip) {
+		return p.finish(nil)
+	}
+	if err != nil {
+		return p.finish(err)
+	}
+	p.remember(r.RepoRef, &tipView{sha: head})
 	return p.finish(p.repo(ctx, r))
 }
 
@@ -156,6 +174,9 @@ func (p *pass) pull(ctx context.Context, t inputs.Target, notOnboarded map[strin
 		return nil
 	}
 	p.sum.Pulls++
+	if p.recheck {
+		return p.recheckPull(ctx, t, tr)
+	}
 	return p.evaluate(ctx, t, tr)
 }
 

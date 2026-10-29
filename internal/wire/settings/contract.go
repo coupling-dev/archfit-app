@@ -30,8 +30,32 @@ type Settings struct {
 	DataMode DataMode `yaml:"data_mode"`        // default customer
 	// PolicyAuthority is who may approve a change to the protected files. Absent means human.
 	PolicyAuthority *PolicyAuthority `yaml:"policy_authority,omitempty"`
+	// Integration is how a pull request is kept honest when its target branch moves after its report. Absent means
+	// the defaults of Recheck.
+	Integration *Integration `yaml:"integration,omitempty"`
 	// RepairAssignee is the one login the default branch's repair issue is assigned to; "" assigns nobody.
 	RepairAssignee string `yaml:"repair_assignee,omitempty"`
+}
+
+// RecheckMode says whether the sweep re-examines a passed pull request after the default branch moved.
+type RecheckMode string
+
+const (
+	RecheckOverlap RecheckMode = "overlap" // default: a passed result goes stale when the moved target closes a module cycle with it
+	RecheckOff     RecheckMode = "off"     // a passed result stays until the next run
+)
+
+// Integration is the integration block.
+type Integration struct {
+	Recheck RecheckMode `yaml:"recheck"`
+}
+
+// Recheck is the mode in force: the default, overlap, when the block is absent.
+func (s Settings) Recheck() RecheckMode {
+	if s.Integration == nil {
+		return RecheckOverlap
+	}
+	return s.Integration.Recheck
 }
 
 // AuthorityLevel is a rung of the policy authority ladder.
@@ -83,14 +107,15 @@ func agentIdentity(login string) string {
 
 // The YAML keys of version 1, in canonical order (the order of the Settings fields).
 const (
-	keyVersion   = "version"
-	keyOwners    = "owners"
-	keyAgents    = "agents"
-	keyGate      = "gate"
-	keyWorkflow  = "workflow"
-	keyDataMode  = "data_mode"
-	keyAuthority = "policy_authority"
-	keyAssignee  = "repair_assignee"
+	keyVersion     = "version"
+	keyOwners      = "owners"
+	keyAgents      = "agents"
+	keyGate        = "gate"
+	keyWorkflow    = "workflow"
+	keyDataMode    = "data_mode"
+	keyAuthority   = "policy_authority"
+	keyIntegration = "integration"
+	keyAssignee    = "repair_assignee"
 )
 
 // The keys of policy_authority.
@@ -99,3 +124,6 @@ const (
 	keyArchitects  = "agents"
 	keyTightenAuto = "tighten_auto"
 )
+
+// The keys of integration.
+const keyRecheck = "recheck"

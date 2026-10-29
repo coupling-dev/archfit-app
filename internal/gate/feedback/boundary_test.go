@@ -95,6 +95,7 @@ func TestGateCheckNeverNeutral(t *testing.T) {
 		verdict.ReasonStaleInputs:           verdict.ActionRequired,
 		verdict.ReasonWaiverExpired:         verdict.Failure,
 		verdict.ReasonSuspended:             verdict.ActionRequired,
+		verdict.ReasonTargetMoved:           verdict.ActionRequired,
 	}
 	allowed := map[string]bool{"success": true, "failure": true, "action_required": true}
 	for code, conclusion := range conclusions {

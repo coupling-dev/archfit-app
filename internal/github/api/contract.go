@@ -26,6 +26,10 @@ var (
 	ErrNotFound    = errors.New("github: not found")
 	ErrRateLimited = errors.New("github: rate limit exhausted") // returned after bounded backoff
 
+	// ErrArtifactInvalid is an artifact that downloaded whole but is not what the App reads: not a zip, not exactly one
+	// regular file, or too large. Downloading it again gives the same bytes, unlike a failed read.
+	ErrArtifactInvalid = errors.New("github: artifact is not a single file")
+
 	// ErrUnprocessable is GitHub's 422 on creating an issue with an assignee: the request was refused as a whole and
 	// nothing was created, so the same request without the assignee is safe to send.
 	ErrUnprocessable = errors.New("github: request refused")

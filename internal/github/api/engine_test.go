@@ -683,3 +683,17 @@ func TestZipExtraction(t *testing.T) {
 		})
 	}
 }
+
+// A zip over the download limit is the same defect on every download; any other failure of the download is not.
+func TestArtifactDefect(t *testing.T) {
+	k := call{method: http.MethodGet, route: "artifact download"}
+	tooLarge := k.errorf("%w", errResponseTooLarge)
+	if err := artifactDefect(k, tooLarge); !errors.Is(err, ErrArtifactInvalid) {
+		t.Errorf("a zip over the limit = %v, want ErrArtifactInvalid", err)
+	}
+	for _, failure := range []error{ErrRateLimited, ErrNotFound, context.DeadlineExceeded, errors.New("connection reset")} {
+		if err := artifactDefect(k, failure); errors.Is(err, ErrArtifactInvalid) || !errors.Is(err, failure) {
+			t.Errorf("%v became %v, want it returned as it is", failure, err)
+		}
+	}
+}

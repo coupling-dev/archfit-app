@@ -87,6 +87,10 @@ func Parse(raw []byte) (s Settings, err error) {
 	if err != nil {
 		return Settings{}, err
 	}
+	s.Integration, err = parseIntegration(fields[keyIntegration])
+	if err != nil {
+		return Settings{}, err
+	}
 	s.RepairAssignee, err = parseAssignee(fields[keyAssignee])
 	if err != nil {
 		return Settings{}, err
@@ -152,7 +156,7 @@ func rootFields(root *yaml.Node) (map[string]*yaml.Node, error) {
 			return nil, ruleError(scopeDocument, "unknown key")
 		}
 		switch key.Value {
-		case keyVersion, keyOwners, keyAgents, keyGate, keyWorkflow, keyDataMode, keyAuthority, keyAssignee:
+		case keyVersion, keyOwners, keyAgents, keyGate, keyWorkflow, keyDataMode, keyAuthority, keyIntegration, keyAssignee:
 		default:
 			return nil, ruleError(scopeDocument, "unknown key")
 		}
@@ -301,6 +305,35 @@ func parseAuthority(n *yaml.Node) (*PolicyAuthority, error) {
 		a.TightenAuto = t.Value == "true"
 	}
 	return &a, nil
+}
+
+// parseIntegration reads integration. Absent is nil, which means the defaults; a block that omits recheck holds
+// overlap, so Render writes it out and the round trip holds. Unknown keys are errors.
+func parseIntegration(n *yaml.Node) (*Integration, error) {
+	if n == nil {
+		return nil, nil
+	}
+	if n.Kind != yaml.MappingNode {
+		return nil, ruleError(keyIntegration, "must be a mapping")
+	}
+	in := Integration{Recheck: RecheckOverlap}
+	seen := false
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		key, value := n.Content[i], n.Content[i+1]
+		if key.Kind != yaml.ScalarNode || key.ShortTag() != tagString || key.Value != keyRecheck {
+			return nil, ruleError(keyIntegration, "unknown key")
+		}
+		if seen {
+			return nil, ruleError(keyIntegration+"."+keyRecheck, "duplicate key")
+		}
+		seen = true
+		mode, err := parseEnum(value, keyIntegration+"."+keyRecheck, string(RecheckOverlap), string(RecheckOff))
+		if err != nil {
+			return nil, err
+		}
+		in.Recheck = RecheckMode(mode)
+	}
+	return &in, nil
 }
 
 // parseAssignee reads repair_assignee: one login by the owner rule. A team is not accepted: GitHub assigns an issue to

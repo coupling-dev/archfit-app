@@ -277,6 +277,9 @@ type Sweeper interface {
     // RunRepo is the same pass limited to one repository (used when the protected ref changes).
     // A rate limit stops it with Summary.RateLimited and an error that wraps api.ErrRateLimited.
     RunRepo(ctx context.Context, r Repo, now time.Time) (Summary, error)
+    // Recheck is rule 5c alone for r, after a push moved its default branch to tip: a passed pull request goes stale
+    // when the moved target closes a module cycle with it. It does nothing when the branch is no longer at tip.
+    Recheck(ctx context.Context, r Repo, tip string, now time.Time) (Summary, error)
 }
 ```
 
@@ -302,7 +305,7 @@ Rate-limit rule, one for the whole gate: `api.ErrRateLimited` during `Receive` (
 retries do not. A rate limit before the gate check is written leaves the pending check pending and writes nothing
 green. The one rate limit that `feedback` returns after the gate check is written, from the changed-file list that
 only filters annotations, leaves the gate check with the decided conclusion; the retry adds the annotations. In the sweep the same error
-stops the pass with `Summary.RateLimited`. In `HandleEvent` it is returned, also from `RunRepo`, so the webhook queue
+stops the pass with `Summary.RateLimited`. In `HandleEvent` it is returned, also from `RunRepo` and `Recheck`, so the webhook queue
 retries the delivery.
 The handler works under a 50 second deadline **[default]**, inside the 60 second feedback target.
 
@@ -496,6 +499,7 @@ const (
     ReasonStaleInputs         ReasonCode = "stale_inputs"
     ReasonWaiverExpired       ReasonCode = "waiver_expired"
     ReasonSuspended           ReasonCode = "subscription_suspended"
+    ReasonTargetMoved         ReasonCode = "target_moved" // the default branch moved and, with this change, closes a module cycle
 )
 
 type Reason struct {
@@ -531,8 +535,15 @@ type Facts struct {
 func Decide(f Facts) Outcome
 
 // Without returns the fixed outcome for a target that has no report: code is one of ReasonMissingUpload,
-// ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended, ReasonOwnerApprovalMissing.
+// ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended, ReasonOwnerApprovalMissing,
+// ReasonTargetMoved.
 func Without(code ReasonCode) Outcome
+
+// TargetMoved is Without(ReasonTargetMoved) for a caller that knows what moved: cycle names the modules of the module
+// cycle the target and the pull request close together (none when the pull request could not be compared), base and
+// tip the commits it was measured on and the default branch is on now. Detail holds the first five modules (then
+// "and N more", each cut to 80 runes) and "<base12>..<tip12>"; Next names the cycle and the recovery.
+func TargetMoved(cycle []string, base, tip string) Outcome
 ```
 
 ### gate/feedback (child)
@@ -566,6 +577,7 @@ type Receipt struct {
     BaselineDigest       string     `json:"baseline_digest"`
     LabelsDigest         string     `json:"labels_digest"`
     IdentityKey          string     `json:"identity_key,omitempty"` // the report's result identity, hashed; "" without one
+    BaseSHA              string     `json:"base_sha,omitempty"`     // the default-branch commit the report was measured against; "" for a push or an old receipt
     EarliestWaiverExpiry time.Time  `json:"earliest_waiver_expiry"`
     Conclusion           Conclusion `json:"conclusion"`
     Reason               ReasonCode `json:"reason"`
@@ -1212,6 +1224,7 @@ the comment links to the App's pull request page), `feedback.NewRepairer(d.GitHu
 | ---------------------- | ------------------------------------------------------------------------------------------------ |
 | `RunID`, `RunAttempt`  | from `Binding`                                                                                   |
 | `ReportDigest`         | `Upload.Digest`                                                                                  |
+| `BaseSHA`              | `Binding.BaseSHA` when `Binding.Integration` is `merged`; `Binding.MergeBaseSHA` when it is `conflicts`; else `""` (sweep rule 5c compares it with the default-branch tip) |
 | `PolicyDigest`         | the report's `ConfigHash` when `Accepts(PolicyDigests, ConfigHash)`; else `First(PolicyDigests)` |
 | `BaselineDigest`       | `Upload.BaselineDigest` when `Accepts(BaselineDigests, it)`; else `First(BaselineDigests)`       |
 | `LabelsDigest`         | `Upload.LabelsDigest` when `Accepts(LabelsDigests, it)`; else `First(LabelsDigests)`             |
@@ -1251,7 +1264,7 @@ Special targets, all through the same flow:
 | `PullOpened`, `PullSynchronized` | `Resolve`. `!SettingsFound` → nothing. Fork → `Publish(sweep.Without(ReasonForkUnsupported, target, trusted, Receipt{}))`: a zero-run receipt carrying the base digests. Else `Settings.Gate == GateRequired` → `publisher.Pending(target)`. Advisory → nothing. |
 | `ReviewChanged`                  | `Reconcile(target, …)`: inside the lease, a withdrawn approval → `sweep.Withdrawal` (below); reason `owner_approval_missing` and `!verdict.Unapproved(trusted)` **[default: no re-run while an approval is missing]** → `sweep.Rerun`.                           |
 | `BranchPush`                     | `resolver.RecordPusher(target, Pusher)` first, for attribution (the record approves nothing); a failed write is returned and the queue retries. Then the newest pull request of this repository whose head is `Branch` (`Pulls.PullByHead`): when it is open and its head is `HeadSHA`, run the `ReviewChanged` reaction on it. A push whose `PusherType` is present and not `"user"` (a deploy key) records nothing and logs `gate pusher not recorded` with the delivery id, never the key; the re-evaluation and the sweep still run. No such pull request, a closed one or another head → nothing more. A pull request from a fork is never found. |
-| `DefaultBranchPush`              | `RecordPusher` and the pull request lookup as for `BranchPush`; then `ChangedPaths` empty (= unknown), or `inputs.MayBeProtected(path)` for any changed path → `sweeper.RunRepo(ctx, repo, now)` in the request. Otherwise nothing.                                                                                                   |
+| `DefaultBranchPush`              | `RecordPusher` and the pull request lookup as for `BranchPush`; then `ChangedPaths` empty (= unknown), or `inputs.MayBeProtected(path)` for any changed path → `sweeper.RunRepo(ctx, repo, now)` in the request. Otherwise `sweeper.Recheck(ctx, repo, HeadSHA, now)` in the request: sweep rule 5c alone, which the full pass of `RunRepo` includes.                                                                                                   |
 | `PullClosed`                     | nothing.                                                                                                                                                                                                                                                         |
 | installation kinds, `Ignored`    | nothing; `control` handles installations.                                                                                                                                                                                                                        |
 
@@ -1412,8 +1425,8 @@ are driven only as far as they go without GitHub. Child internals are tested in 
   **Scenario**: binding path equals settings; differs; empty binding path with empty settings (not onboarded); reusable workflow from another repository (`""`).
   **Expected behavior**: true, false, false, false.
 - **Test name**: `TestReceiptConstruction`
-  **Scenario**: matching policy, baseline and labels digests; approved head policy digest; mismatching `config_hash`; a claimed baseline digest not on the protected ref; no baseline and no labels file anywhere; nil report.
-  **Expected behavior**: the values of the receipt table, all bare hex; the first accepted digest when a claim does not match; `""` when both sides are empty.
+  **Scenario**: matching policy, baseline and labels digests; approved head policy digest; mismatching `config_hash`; a claimed baseline digest not on the protected ref; no baseline and no labels file anywhere; nil report; a merged pull request, a head that conflicts and a push with a base and a merge base in the binding.
+  **Expected behavior**: the values of the receipt table, all bare hex; the first accepted digest when a claim does not match; `""` when both sides are empty; `BaseSHA` is the base tip, the merge base and `""` respectively.
 - **Test name**: `TestReceiptDigestsAreAlwaysAccepted`
   **Scenario**: every combination of a trusted list (empty, one digest, two digests) and a claim (`""`, each entry, an unknown digest, a `sha256:`-prefixed entry), for the policy (as the report's `ConfigHash`), the baseline and the labels.
   **Expected behavior**: the receipt digest is the claim exactly when `inputs.Accepts(list, claim)`, and `inputs.First(list)` otherwise; `inputs.Accepts(list, receipt digest)` is true in every case, which is the sweep's "not stale". `verdict.Decide` reports `baseline_mismatch` (or `labels_mismatch`, `policy_mismatch`) for exactly the combinations where the receipt digest is not the claim.
@@ -1451,10 +1464,10 @@ are driven only as far as they go without GitHub. Child internals are tested in 
   **Expected behavior**: 200 with `action_required` and the matching reason each time (`unsupported_event`, `fork_unsupported`, `report_invalid`, `envelope_mismatch`, `workflow_not_approved`, `unknown_engine_identity`, `measurement_profile_missing`).
 - **Test name**: `TestHandleEventReactions`
   **Scenario**: `PullOpened` in required mode, in advisory mode, without settings, from a fork; `PullSynchronized`; `ReviewChanged` with and without an `owner_approval_missing` receipt and with and without a granting review; `PullClosed`; `DefaultBranchPush` touching only code; `InstallationAdded`; the same delivery twice.
-  **Expected behavior**: pending check; nothing; nothing; `fork_unsupported` published; pending check on the new head; one re-run only for the receipt-plus-granted case; nothing for the rest; redelivery changes nothing.
+  **Expected behavior**: pending check; nothing; nothing; `fork_unsupported` published; pending check on the new head; one re-run only for the receipt-plus-granted case; nothing for the rest (a code-only default-branch push runs the rule 5c recheck, which writes nothing here); redelivery changes nothing.
 - **Test name**: `TestProtectedPushTriggersRepoSweep`
   **Scenario**: table of `DefaultBranchPush.ChangedPaths`: `.archfit.yaml`; `.archfit-baseline.json`; `.archfit-labels.yaml`; `.archfit-app.yaml`; `.github/workflows/archfit.yaml`; another workflow file; only source files; empty list (unknown); each with a second repository that has stale PRs.
-  **Expected behavior**: `RunRepo` for the pushed repository in the first six rows and for the empty list; no call for source-only pushes; the other repository is never touched; a rate limit inside `RunRepo` is returned as a retryable error that wraps `api.ErrRateLimited`, and nothing is written.
+  **Expected behavior**: `RunRepo` for the pushed repository in the first six rows and for the empty list; `Recheck` (rule 5c alone) instead for source-only pushes, and only after `BranchHead` is the pushed commit (`TestDefaultBranchPushRechecksTheTarget` pins the call, the tip and the retryable error); the other repository is never touched; a rate limit inside `RunRepo` is returned as a retryable error that wraps `api.ErrRateLimited`, and nothing is written.
 - **Test name**: `TestNewReceiverIsTheSameReceiver`
   **Scenario**: run the ingest rejection table through `NewReceiver(...)` with `KindDiscovery`.
   **Expected behavior**: identical rejections; a discovery `Upload` carries `Payload` and a nil `Report`; no check is written.

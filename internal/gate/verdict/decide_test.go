@@ -480,8 +480,8 @@ func TestReasonCatalogComplete(t *testing.T) {
 			want[code] = category
 		}
 	}
-	if len(allCodes) != 24 {
-		t.Fatalf("contract has %d reason codes, want 24", len(allCodes))
+	if len(allCodes) != 25 {
+		t.Fatalf("contract has %d reason codes, want 25", len(allCodes))
 	}
 	seen := map[ReasonCode]bool{}
 	for _, code := range allCodes {
@@ -568,6 +568,56 @@ func TestWithout(t *testing.T) {
 	}
 	if r := Without(ReasonSuspended).Reasons[0]; r.Category != CategorySubscription || r.Next != "Archfit subscription inactive." {
 		t.Errorf("suspended = %+v", r)
+	}
+}
+
+func TestTargetMoved(t *testing.T) {
+	long := strings.Repeat("é", 81)
+	tests := []struct {
+		name       string
+		cycle      []string
+		base, tip  string
+		wantDetail string
+		wantNext   string // a part of Next; "" = the catalog's, which claims no cycle
+	}{
+		{"two modules", []string{"a", "b"}, "0123456789abcdef", "fedcba9876543210",
+			"a, b; 0123456789ab..fedcba987654", "The target branch moved, and with it this pull request closes a module cycle: a, b. "},
+		{"five modules are all shown", []string{"a", "b", "c", "d", "e"}, "base", "tip",
+			"a, b, c, d, e; base..tip", "closes a module cycle: a, b, c, d, e. "},
+		{"the sixth module is counted", []string{"a", "b", "c", "d", "e", "f", "g"}, "base", "tip",
+			"a, b, c, d, e, and 2 more; base..tip", "closes a module cycle: a, b, c, d, e, and 2 more. "},
+		{"a long module name is cut", []string{long}, "base", "tip",
+			strings.Repeat("é", 80) + "…; base..tip", "closes a module cycle: " + strings.Repeat("é", 80) + "…. "},
+		{"no cycle known", nil, "base", "tip", "base..tip", ""},
+		{"no cycle known, no base", nil, "", "tip", "..tip", ""},
+		{"nothing known", nil, "", "", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := TargetMoved(tt.cycle, tt.base, tt.tip)
+			checkInvariants(t, o)
+			wantCodes(t, o, ActionRequired, ReasonTargetMoved)
+			r := o.Reasons[0]
+			if r.Category != CategoryEvidence || r.Detail != tt.wantDetail {
+				t.Errorf("category = %q, Detail = %q; want evidence, %q", r.Category, r.Detail, tt.wantDetail)
+			}
+			catalogNext, _ := lookup(ReasonTargetMoved)
+			if tt.wantNext == "" && r.Next != catalogNext.next {
+				t.Errorf("Next = %q, want the catalog's %q", r.Next, catalogNext.next)
+			}
+			if !strings.Contains(r.Next, tt.wantNext) {
+				t.Errorf("Next = %q, want it to contain %q", r.Next, tt.wantNext)
+			}
+			if !strings.Contains(r.Next, "gh pr update-branch") {
+				t.Errorf("Next = %q, want the recovery", r.Next)
+			}
+		})
+	}
+	if ReportDerivedAction(ReasonTargetMoved) {
+		t.Error("target_moved is report-derived: a page would show a report that was measured on another base")
+	}
+	if derived, known := ClassifyDisplayReason(ReasonTargetMoved, CategoryEvidence); derived || !known {
+		t.Errorf("ClassifyDisplayReason = %v, %v, want known and not report-derived", derived, known)
 	}
 }
 

@@ -38,6 +38,10 @@ type Sweeper interface {
 	// A rate limit stops it with Summary.RateLimited and an error that wraps api.ErrRateLimited, so the caller
 	// retries the repository.
 	RunRepo(ctx context.Context, r api.Repo, now time.Time) (Summary, error)
+	// Recheck is rule 5c alone for r, after a push moved its default branch to tip: a passed pull request goes stale
+	// when the moved target closes a module cycle with it. It does nothing when the branch is no longer at tip. A rate
+	// limit stops it as it stops RunRepo.
+	Recheck(ctx context.Context, r api.Repo, tip string, now time.Time) (Summary, error)
 }
 
 // Admitter answers whether the App serves an installation; owner is its account login. inputs.Admissions implements it.
@@ -52,5 +56,5 @@ func New(repos api.Repos, pulls api.Pulls, actions api.Actions, r inputs.Resolve
 	if c.WaiverWarnBefore == 0 {
 		c.WaiverWarnBefore = defaultWaiverWarnBefore
 	}
-	return &sweeper{repos: repos, pulls: pulls, actions: actions, resolver: r, publisher: p, admit: admit, cfg: c}
+	return &sweeper{repos: repos, pulls: pulls, actions: actions, resolver: r, publisher: p, admit: admit, cfg: c, graphs: &edgeCache{}}
 }
