@@ -31,6 +31,8 @@ const (
 	reactionOtherBase    = "other_base"   // a pull request into a branch other than the default branch: nothing is read or written
 	// reactionApprovalWithdrawn is owner_approval_missing published over a receipt that asked for no action.
 	reactionApprovalWithdrawn = "approval_withdrawn"
+	reactionDecisionStale     = "decision_stale"   // pending decision requests went stale with a new head or a closed pull request
+	reactionDecisionIgnored   = "decision_ignored" // a request on a pull request the gate does not decide: nothing is recorded or written
 )
 
 // HandleEvent reacts to a verified webhook event: pending check on a new head, fork refusal,
@@ -62,7 +64,18 @@ func (g *Gate) react(ctx context.Context, e webhook.Event) (string, error) {
 		if otherBase(e.DefaultBranch, e.BaseRef) {
 			return reactionOtherBase, nil
 		}
-		return g.newHead(ctx, eventTarget(e))
+		reaction, err := g.newHead(ctx, eventTarget(e))
+		if e.Kind == webhook.PullSynchronized {
+			err = errors.Join(err, g.requests.HeadMoved(ctx, eventTarget(e), g.now()))
+		}
+		return reaction, err
+	case webhook.PullClosed:
+		if err := g.requests.Closed(ctx, eventTarget(e), g.now()); err != nil {
+			return reactionDecisionStale, fmt.Errorf("gate: close decision requests: %w", err)
+		}
+		return reactionDecisionStale, nil
+	case webhook.PullCommented:
+		return g.commented(ctx, e)
 	case webhook.ReviewChanged:
 		if otherBase(e.DefaultBranch, e.BaseRef) {
 			return reactionOtherBase, nil

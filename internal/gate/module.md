@@ -2,7 +2,7 @@
 
 **Path**: internal/gate/
 **Parent**: internal/ (Archfit App root)
-**Submodules**: ingest, inputs, verdict, feedback, sweep
+**Submodules**: ingest, inputs, verdict, feedback, sweep, decisions
 
 ## Purpose
 
@@ -21,6 +21,9 @@ separate, testable steps. Without this module a report is a self-reported file a
   `owner_approval_missing` when a review withdraws the approval a `success` or `failure` check relied on,
   workflow re-run on a review after `owner_approval_missing` once no approval is missing, and a one-repository sweep
   when a default-branch push changes a protected path.
+- Take in decision requests of unattended agents (a comment on a pull request carrying the `wire/decision` block):
+  check them against GitHub and the protected ref, keep a record and one status comment through `gate/decisions`, and
+  mark pending requests stale when the head moves or the pull request closes. Nothing is granted; an owner decides.
 - For the App's pull request page only (`Approvals`): read the owner approval of a head, record an architecture
   owner's approval of the exact head, and re-decide the pull request after it, as a review event does.
 - Run one reconciliation pass on request.
@@ -46,8 +49,8 @@ feedback are tuned with every pilot. The façade contract is kept small and stab
 
 ```go
 // Deps are the only things the gate path may touch: GitHub, OIDC, the Store and a clock. On the Store the gate
-// path reads the entitlement and the admission, and reads and writes the pusher and approval records of gate/inputs;
-// its only other write is gate/feedback's publication leases.
+// path reads the entitlement and the admission, reads and writes the pusher and approval records of gate/inputs and the
+// request records of gate/decisions; its only other write is gate/feedback's publication leases.
 type Deps struct {
     GitHub     *Client
     OIDC       Verifier
@@ -696,6 +699,18 @@ func Withdrawn(rc Receipt, tr Trusted) bool
 func Withdrawal(t Target, current CheckState, tr Trusted) *Publication
 ```
 
+### gate/decisions (child)
+
+- **Counterpart**: internal/gate/decisions
+- **Direction**: gate depends on decisions
+- **Strength**: functional (composition)
+- **LCA / Rank / Distance**: gate / 1 / 1
+- **Volatility**: high
+- **Balanced?**: yes
+- **Shared knowledge**: `Requests` (`File`, `Answer`, `HeadMoved`, `Closed`), `Filing`, `Outcome`, `ErrTooLarge`. The façade
+  decides what a comment may file (the checks of the intake above); the child keeps the record, the status comment and
+  the stale transitions. `gate/sweep` reaches it through its own `Decisions` interface (rule 8).
+
 ### wire/manifest
 
 - **Counterpart**: internal/wire/manifest
@@ -1079,8 +1094,8 @@ type Verifier interface {
 
 - **Counterpart**: internal/store
 - **Direction**: gate depends on store (passes `Deps.Store` to `gate/inputs`, which reads the entitlement and the
-  admission and reads and writes the pusher and approval records, and to `gate/feedback`, which holds the publication
-  leases)
+  admission and reads and writes the pusher and approval records, to `gate/feedback`, which holds the publication
+  leases, and to `gate/decisions`, which keeps the decision request records)
 - **Strength**: contract
 - **LCA / Rank / Distance**: root / 1 / 1
 - **Volatility**: high (gate side); store is low
@@ -1088,7 +1103,8 @@ type Verifier interface {
 - **Shared knowledge**: the gate path calls `Get(Tenant(installationID), EntitlementKey)` and
   `Get(Tenant(installationID), AdmissionKey)` inside `gate/inputs`, `Get`
   and `CompareAndSwap` on `pusher/<repo>/<head_sha>` and `approval/<repo>/<pull_request>/<head_sha>` under the same tenant inside
-  `gate/inputs`, and `Get` and
+  `gate/inputs`, `Get`, `CompareAndSwap` and `CompareAndSwapAll` on `decision/...` keys under the same tenant inside
+  `gate/decisions`, and `Get` and
   `CompareAndSwap` on `feedback/lease/<head_sha>` under the same tenant inside `gate/feedback`. It calls no
   other Store operation. `ErrNotFound` is the store sentinel for a missing key; for the entitlement it means "not
   suspended", for a lease that the lease is free. `SystemTenant` is never used by the gate, and the gate never
@@ -1248,12 +1264,27 @@ Special targets, all through the same flow:
 | `Event.Kind`                     | Reaction                                                                                                                                                                                                                                                         |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | any kind with a repository       | Checked before the rows below: `Admissions.Admitted(e.InstallationID, Owner(e.Repo))` false → reaction `not_admitted`, nothing read or written, `nil` returned. An error → reaction `not_admitted` logged, nothing read or written, the error returned, so the webhook queue retries the delivery. Installation kinds carry no repository and skip this check. |
-| `PullOpened`, `PullSynchronized` | `Resolve`. `!SettingsFound` → nothing. Fork → `Publish(sweep.Without(ReasonForkUnsupported, target, trusted, Receipt{}))`: a zero-run receipt carrying the base digests. Else `Settings.Gate == GateRequired` → `publisher.Pending(target)`. Advisory → nothing. |
+| `PullOpened`, `PullSynchronized` | `Resolve`. `!SettingsFound` → nothing. Fork → `Publish(sweep.Without(ReasonForkUnsupported, target, trusted, Receipt{}))`: a zero-run receipt carrying the base digests. Else `Settings.Gate == GateRequired` → `publisher.Pending(target)`. Advisory → nothing. `PullSynchronized` also runs `decisions.HeadMoved`: each pending decision request of the pull whose head is not the new head becomes `stale (head moved)`; the two results are joined. |
+| `PullCommented`                  | Decision request intake (below). A comment without the `<!-- archfit:decision-request -->` marker → nothing, no API call. |
 | `ReviewChanged`                  | `Reconcile(target, …)`: inside the lease, a withdrawn approval → `sweep.Withdrawal` (below); reason `owner_approval_missing` and `!verdict.Unapproved(trusted)` **[default: no re-run while an approval is missing]** → `sweep.Rerun`.                           |
 | `BranchPush`                     | `resolver.RecordPusher(target, Pusher)` first, for attribution (the record approves nothing); a failed write is returned and the queue retries. Then the newest pull request of this repository whose head is `Branch` (`Pulls.PullByHead`): when it is open and its head is `HeadSHA`, run the `ReviewChanged` reaction on it. A push whose `PusherType` is present and not `"user"` (a deploy key) records nothing and logs `gate pusher not recorded` with the delivery id, never the key; the re-evaluation and the sweep still run. No such pull request, a closed one or another head → nothing more. A pull request from a fork is never found. |
 | `DefaultBranchPush`              | `RecordPusher` and the pull request lookup as for `BranchPush`; then `ChangedPaths` empty (= unknown), or `inputs.MayBeProtected(path)` for any changed path → `sweeper.RunRepo(ctx, repo, now)` in the request. Otherwise nothing.                                                                                                   |
-| `PullClosed`                     | nothing.                                                                                                                                                                                                                                                         |
+| `PullClosed`                     | `decisions.Closed`: every pending decision request of the pull becomes `stale (pull request closed)`.                                                                                                                                                            |
 | installation kinds, `Ignored`    | nothing; `control` handles installations.                                                                                                                                                                                                                        |
+
+Decision request intake (`PullCommented`). The block is untrusted: only the comment's text is read from it. Order: the
+marker precheck; for a Bot author, `AppComments` must not list the comment (the App's own comments are never input);
+`Pull` (not found → ignored); the pull request must be open, not a fork, and into the default branch of the payload;
+`Resolve` must find settings with `gate: required`. Any failure of these is logged as `decision_ignored` and writes
+nothing. Then `Extract`, `Decode`, and the checks against GitHub: `head_sha` equals the pull request's head (else
+`stale (head moved)`), `policy_digest` is accepted by `Trusted.PolicyDigests` (else `stale (policy changed)`), and
+`policy.Diagnose` accepts `proposal.policy` (else `declined (proposal.policy: not a valid policy file, line n)`). A
+request that fails any of these, or `Decode`, gets no record and one status comment through `Answer` (`declined
+(<field>: <rule>)`, or the stale line); a redelivery edits nothing. Else `Requests.File`: a new record or a refile
+answers `pending`; a duplicate, a declined or approved request, and a full queue write nothing. A failed status comment
+returns the error, so the queue retries; the retry finds the record and writes the comment, never a second record.
+`Requests.File` records `Author` as the requester; the record approves nothing and no approval, check or receipt is
+touched. Decision requests do nothing until the owner subscribes the App to "Issue comment" (release day).
 
 Protected default-branch push: `gate/inputs` owns the protected path set, and `MayBeProtected` is its form for a
 caller without settings. The exact fifth protected path is `Settings.Workflow`, which lives on the protected ref, so

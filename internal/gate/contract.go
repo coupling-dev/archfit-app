@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/alexei-led/archfit-app/internal/gate/decisions"
 	"github.com/alexei-led/archfit-app/internal/gate/feedback"
 	"github.com/alexei-led/archfit-app/internal/gate/ingest"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
@@ -18,8 +19,8 @@ import (
 )
 
 // Deps are the only things the gate path may touch: GitHub, OIDC, the Store and a clock. On the Store the gate
-// path reads the entitlement and the admission, and writes only gate/feedback's publication leases and gate/inputs'
-// pusher and owner approval records.
+// path reads the entitlement and the admission, and writes only gate/feedback's publication leases, gate/inputs'
+// pusher and owner approval records, and gate/decisions' request records.
 type Deps struct {
 	GitHub     *api.Client
 	OIDC       oidc.Verifier
@@ -34,11 +35,13 @@ type Deps struct {
 type Gate struct {
 	receiver   ingest.Receiver
 	resolver   inputs.Resolver
+	requests   requests
 	publisher  feedback.Publisher
 	repairer   feedback.Repairer
 	sweeper    sweep.Sweeper
 	actions    api.Actions
 	pulls      api.Pulls
+	comments   api.Comments
 	admissions admitter
 	now        func() time.Time
 }
@@ -69,13 +72,14 @@ func compose(gh github, v oidc.Verifier, s store.Store, adm admitter, audience s
 		now = time.Now
 	}
 	resolver := inputs.New(gh, gh, s)
+	reqs := decisions.New(s, gh)
 	publisher := feedback.New(gh, gh, gh, s, audience, now) // the audience is the App's base URL
-	return newGate(newReceiver(gh, v, audience, adm), resolver, publisher, feedback.NewRepairer(gh, gh, gh, gh, s, now),
-		sweep.New(gh, gh, gh, resolver, publisher, adm, c), gh, gh, adm, now)
+	return newGate(newReceiver(gh, v, audience, adm), resolver, reqs, publisher, feedback.NewRepairer(gh, gh, gh, gh, s, now),
+		sweep.New(gh, gh, gh, resolver, publisher, adm, reqs, c), gh, gh, gh, adm, now)
 }
 
-func newGate(rc ingest.Receiver, rs inputs.Resolver, p feedback.Publisher, rp feedback.Repairer, sw sweep.Sweeper, a api.Actions, pl api.Pulls, adm admitter, now func() time.Time) *Gate {
-	return &Gate{receiver: rc, resolver: rs, publisher: p, repairer: rp, sweeper: sw, actions: a, pulls: pl, admissions: adm, now: now}
+func newGate(rc ingest.Receiver, rs inputs.Resolver, rq requests, p feedback.Publisher, rp feedback.Repairer, sw sweep.Sweeper, a api.Actions, pl api.Pulls, cm api.Comments, adm admitter, now func() time.Time) *Gate {
+	return &Gate{receiver: rc, resolver: rs, requests: rq, publisher: p, repairer: rp, sweeper: sw, actions: a, pulls: pl, comments: cm, admissions: adm, now: now}
 }
 
 // UploadHandler serves POST /v1/reports.

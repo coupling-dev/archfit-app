@@ -1,0 +1,42 @@
+{
+  "action": "created",
+  "issue": {
+    "url": "https://api.github.com/repos/acme/shop/issues/46",
+    "id": 1002,
+    "number": 47,
+    "title": "Move the read model",
+    "state": "open",
+    "user": {
+      "login": "olivia",
+      "id": 3,
+      "type": "User"
+    },
+    "body": "A pull request."
+  },
+  "comment": {
+    "id": 9002,
+    "node_id": "IC_kw",
+    "user": {
+      "login": "agent-bot[bot]",
+      "id": 77,
+      "type": "Bot"
+    },
+    "created_at": "2026-10-29T09:00:00Z",
+    "author_association": "NONE",
+    "body": "<!-- archfit:decision-request -->\n```json\n{}\n```\n<!-- /archfit:decision-request -->"
+  },
+  "repository": {
+    "id": 101,
+    "full_name": "acme/shop",
+    "private": true,
+    "default_branch": "main"
+  },
+  "sender": {
+    "login": "agent-bot[bot]",
+    "id": 77,
+    "type": "Bot"
+  },
+  "installation": {
+    "id": 5001
+  }
+}

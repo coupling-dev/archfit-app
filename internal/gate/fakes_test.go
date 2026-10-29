@@ -517,11 +517,12 @@ const leaseKeyPrefix = "feedback/lease/"
 const (
 	pusherKeyPrefix   = "pusher/"
 	approvalKeyPrefix = "approval/"
+	decisionKeyPrefix = "decision/" // gate/decisions' request records
 )
 
-// isRecord reports whether key is a pusher or an approval record of gate/inputs.
+// isRecord reports whether key is a pusher or an approval record of gate/inputs, or a request record of gate/decisions.
 func isRecord(key string) bool {
-	return strings.HasPrefix(key, pusherKeyPrefix) || strings.HasPrefix(key, approvalKeyPrefix)
+	return strings.HasPrefix(key, pusherKeyPrefix) || strings.HasPrefix(key, approvalKeyPrefix) || strings.HasPrefix(key, decisionKeyPrefix)
 }
 
 // guardStore proves the gate path writes nothing but publication leases and the records of gate/inputs: every other
@@ -590,8 +591,21 @@ func (s *guardStore) CompareAndSwap(ctx context.Context, t store.Tenant, key str
 	return s.inner.CompareAndSwap(ctx, t, key, old, value)
 }
 
-func (s *guardStore) CompareAndSwapAll(context.Context, store.Tenant, []store.Swap) (bool, error) {
-	panic("gate path wrote to the Store: CompareAndSwapAll")
+// CompareAndSwapAll is allowed for request records only, every key of the call.
+func (s *guardStore) CompareAndSwapAll(ctx context.Context, t store.Tenant, swaps []store.Swap) (bool, error) {
+	s.mu.Lock()
+	for _, sw := range swaps {
+		if !strings.HasPrefix(sw.Key, decisionKeyPrefix) {
+			s.mu.Unlock()
+			panic("gate path wrote to the Store: CompareAndSwapAll outside the decision records")
+		}
+		s.recordTenants, s.recordKeys = append(s.recordTenants, t), append(s.recordKeys, sw.Key)
+	}
+	s.mu.Unlock()
+	if s.down != nil {
+		return false, s.down
+	}
+	return s.inner.CompareAndSwapAll(ctx, t, swaps)
 }
 
 func (s *guardStore) Put(context.Context, store.Tenant, string, []byte) error {

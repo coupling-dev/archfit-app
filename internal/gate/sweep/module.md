@@ -76,7 +76,12 @@ type Admitter interface {
     Admitted(ctx context.Context, installationID int64, owner string) (bool, error)
 }
 
-func New(repos Repos, pulls Pulls, actions Actions, r Resolver, p Publisher, admit Admitter, c Config) Sweeper
+func New(repos Repos, pulls Pulls, actions Actions, r Resolver, p Publisher, admit Admitter, d Decisions, c Config) Sweeper
+
+// Decisions is rule 8's one dependency; gate/decisions implements it.
+type Decisions interface {
+    Revalidate(ctx context.Context, t Target, tr Trusted, now time.Time) error
+}
 ```
 
 Zero `Config` durations are replaced by 60 minutes and 7 days **[default]**.
@@ -154,6 +159,13 @@ The first rule whose condition holds ends the evaluation of that pull, whether o
 | 7a  | `rc.Reason == subscription_suspended` and `!Trusted.Suspended`                  | re-run; if no re-run is possible publish `Without(ReasonMissingUpload)`                                | `Rerun`     |
 | 7b  | `rc.Reason == owner_approval_missing` and `!verdict.Unapproved(Trusted)`        | re-run; if no re-run is possible publish `Without(ReasonMissingUpload)`                                | `Rerun`     |
 | 7c  | `rc.Reason` is `stale_inputs` or `waiver_expired`                               | re-run (retries a re-run request that failed in an earlier pass; the guard makes it a no-op otherwise) | `Rerun`     |
+| 8   | every onboarded pull (`SettingsFound`), after the rules above, whatever they did | `Decisions.Revalidate(target, trusted)`: each pending decision request of the pull whose policy digest `Trusted.PolicyDigests` no longer accepts becomes `stale (policy changed)` and its status comment is edited; a pending request without a status comment gets one | — |
+
+Rule 8 does not take part in the "first rule wins" order: it runs after the check rules and neither skips nor depends
+on them. A failure of rule 8 and a failure of the check rules are both returned (`errors.Join`) and counted once in
+`Errors`. It reads the records `gate/decisions` keeps in the Store through that module only; the sweep keeps no state.
+A pull request that closed without its event is not visited (the sweep walks open pulls): its pending requests stay
+until a later event; this is a stated limit.
 
 Definitions:
 
@@ -781,8 +793,8 @@ type Actions interface {
   `success`; a check that was green, with an approval withdrawn meanwhile, stays green until that pass.
 - Logs (`log/slog` default logger **[default]**): installation ID, repository ID, PR number, head SHA, rule
   number, action, digests, timings, and the `Summary`. Never paths, messages, owner or reviewer names.
-- Imports: standard library, `gate/inputs`, `gate/feedback`, `gate/verdict`, `wire/settings`, `github/api`.
-  Never `control`, `app`, `store`, LLM or UI packages.
+- Imports: standard library, `gate/inputs`, `gate/feedback`, `gate/verdict`, `gate/decisions` (rule 8 only), `wire/settings`,
+  `github/api`. Never `control`, `app`, `store` directly, LLM or UI packages.
 - `now` is a parameter; the sweep never reads the clock.
 
 ## Test Specification
@@ -792,6 +804,9 @@ calls and serves `State` from what was published; injectable errors. Time is the
 
 ### Unit Tests
 
+- **Test name**: `TestDecisionRequestsAreRevalidatedOncePerOnboardedPull`, `TestDecisionRevalidationSkipsPullsThatAreNotOnboarded`, `TestDecisionRevalidationFailureDoesNotSkipTheCheckRules`
+  **Scenario**: three open pulls (one with a second accepted digest, one advisory); a pull without settings; a failing `Revalidate`.
+  **Expected behavior**: `Revalidate` once per onboarded pull with that pull's trusted digests; never for a pull without settings; the check rules still run and the failure counts in `Errors`.
 - **Test name**: `TestStaleReceipt`
   **Scenario**: table: policy digest equal to base; equal to approved head digest; different; trusted policy list empty with receipt digest `""`; trusted policy list empty with a receipt digest; policy `""` with a trusted policy; baseline `""` with no trusted baseline; baseline `""` with a trusted baseline; baseline set with none trusted; zero receipt (empty reason) with empty trusted lists.
   **Expected behavior**: fresh, fresh, stale, fresh, stale, stale, fresh, stale, stale, stale. For every combination of a trusted list (empty, one, two digests) and a receipt digest (`""`, each entry, an unknown one), in each of the three digest fields, a receipt with a reason is stale exactly when `inputs.Accepts` is false.

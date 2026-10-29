@@ -1,6 +1,7 @@
 package sweep
 
 import (
+	"errors"
 	"reflect"
 	"slices"
 	"testing"
@@ -428,5 +429,47 @@ func TestStoreOutageDoesNotSuspend(t *testing.T) {
 
 	if w.calls() != (calls{}) || sum.Suspended != 0 || w.state(tg).Receipt != want {
 		t.Errorf("calls = %+v, summary = %+v, receipt = %+v, want the receipt to stand", w.calls(), sum, w.state(tg).Receipt)
+	}
+}
+
+func TestDecisionRequestsAreRevalidatedOncePerOnboardedPull(t *testing.T) {
+	w := newWorld(t)
+	r := w.repo(1, 11, "acme/shop")
+	first := w.pull(r, 1, trusted())
+	second := w.pull(r, 2, func() inputs.Trusted { tr := trusted(); tr.PolicyDigests = []string{"p2", "p1"}; return tr }())
+	advisory := w.pull(r, 3, func() inputs.Trusted { tr := trusted(); tr.Settings.Gate = settings.GateAdvisory; return tr }())
+	w.pass(t0)
+
+	numbers := map[int][]string{}
+	for i, tg := range w.decisions.targets {
+		numbers[tg.PullRequest] = w.decisions.digests[i]
+	}
+	want := map[int][]string{first.PullRequest: {"p1"}, second.PullRequest: {"p2", "p1"}, advisory.PullRequest: {"p1"}}
+	if !reflect.DeepEqual(numbers, want) || len(w.decisions.targets) != 3 {
+		t.Errorf("revalidated %v (%d calls), want %v: every onboarded pull with its own trusted digests", numbers, len(w.decisions.targets), want)
+	}
+}
+
+func TestDecisionRevalidationSkipsPullsThatAreNotOnboarded(t *testing.T) {
+	w := newWorld(t)
+	r := w.repo(1, 11, "acme/shop")
+	w.pull(r, 1, inputs.Trusted{})
+	w.pass(t0)
+	if len(w.decisions.targets) != 0 {
+		t.Errorf("revalidated %d pulls of a repository without settings", len(w.decisions.targets))
+	}
+}
+
+func TestDecisionRevalidationFailureDoesNotSkipTheCheckRules(t *testing.T) {
+	w := newWorld(t)
+	r := w.repo(1, 11, "acme/shop")
+	tg := w.pull(r, 1, trusted())
+	w.decisions.err = errors.New("fake: store down")
+	sum := w.pass(t0)
+	if !w.state(tg).Exists || !w.state(tg).Pending {
+		t.Errorf("the check rules did not run: %+v", w.state(tg))
+	}
+	if sum.Errors != 1 {
+		t.Errorf("summary = %+v, want the failure counted", sum)
 	}
 }
