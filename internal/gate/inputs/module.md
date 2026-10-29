@@ -22,6 +22,7 @@ PR that violates it.
   App, or not. A push never approves.
 - Record an owner's approval made in the App (`Approve`), bound to the head SHA and to the digests of the protected
   files the owner was shown (`Candidate`), and say who may make one (`CanApprove`).
+  `CanDecide` is the same owner rule without a pull request's protected paths: who may decide a decision request.
 - Record who pushed a head (`RecordPusher`), from a signed `push` delivery, for attribution only.
 - When approved, also accept the head digest of a changed policy, baseline or labels file, for this PR only.
 - Report the earliest upcoming waiver expiry.
@@ -150,6 +151,9 @@ type Resolver interface {
     // CanApprove reports whether login may approve t's head in the App now: nil, or ErrNothingToApprove, ErrForkPull,
     // ErrAgentIdentity or ErrNotOwner, in that order. Owners and agents come from the settings of the protected ref.
     CanApprove(ctx context.Context, t Target, login string) error
+    // CanDecide reports whether login may decide for the owners now, by the owner rule of CanApprove and for no pull
+    // request in particular: nil, ErrAgentIdentity or ErrNotOwner. Owners and agents come from the protected ref t.BaseRef.
+    CanDecide(ctx context.Context, t Target, login string) error
     // Approve records login's approval of t's head, bound to its SHA, when CanApprove allows it and seen equals the
     // Candidate digests (else ErrDigestsChanged). A record for that head already, by any owner, is success and stays
     // as it is, unless it no longer holds: then it is replaced.
@@ -295,6 +299,8 @@ owner may approve the exact head in the App instead (the Approve button of `cont
 - `CanApprove(t, login)` refuses, in this order: no protected path changed (`ErrNothingToApprove`), a fork
   (`ErrForkPull`), an agent identity of the base settings (`ErrAgentIdentity`), a login that is not an owner by the
   rule of a reviewer, team membership included (`ErrNotOwner`). Owners and agents come from `BaseRef` only.
+- `CanDecide(t, login)` is the last two checks alone: `ErrAgentIdentity`, `ErrNotOwner` (also without a settings file),
+  or nil, whatever the pull request changes.
 - `Approve(t, login, seen, now)` runs the same checks, computes `Candidate` again and refuses when `seen` is not equal
   to its digests (`ErrDigestsChanged`): what the owner looked at is not what the head holds now. Then it writes
   `{login, head_sha, digests, at}` as JSON at `approval/<lowercase repo full name>/<pull request>/<t.HeadSHA>` under the
@@ -695,6 +701,10 @@ failing `Store` stub. `NewMemory` is the in-process Store constructor of `intern
   changed; no settings.
   **Expected behavior**: `ErrDigestsChanged` twice, `ErrNotOwner` three times, `ErrAgentIdentity` three times,
   `ErrForkPull`, `ErrNothingToApprove` twice, from `Approve` and from `CanApprove`; no record; `Resolve` not granted.
+- **Test name**: `TestCanDecide`
+  **Scenario**: an owner; a team member; a non-owner; an owner of the head settings only; no login; an owner listed as
+  an agent; no settings on the protected ref.
+  **Expected behavior**: nil twice, `ErrNotOwner` four times, `ErrAgentIdentity` once.
 - **Test name**: `TestAgentNeverApproves`
   **Scenario**: an agent named in `owners` and `agents`, and an agent in an owner team, approve on GitHub and in the App.
   **Expected behavior**: missing both ways, `ErrAgentIdentity`, and no team lookup.

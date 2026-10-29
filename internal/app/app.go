@@ -102,6 +102,7 @@ func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, googl
 			Receiver:      gate.NewReceiver(gh, verifier, c.BaseURL, admissions),
 			Admissions:    admissions,
 			Approvals:     g,
+			Decisions:     g,
 			DecisionQueue: g,
 			Operators:     c.Operators,
 			Sandbox:       sandbox,

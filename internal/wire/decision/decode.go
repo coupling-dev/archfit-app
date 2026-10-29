@@ -290,3 +290,9 @@ func isName(s string, limit int, ok func(byte) bool) bool {
 func isIdentifierChar(c byte) bool {
 	return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || strings.IndexByte("_.:/@+-", c) >= 0
 }
+
+// ValidIDs reports whether findingID and policyDigest have the shape a request states them in: 32 and 64 lowercase
+// hex characters. A caller that takes them from a URL checks them before it names a record.
+func ValidIDs(findingID, policyDigest string) bool {
+	return isHex(findingID, findingHexLen) && isHex(policyDigest, digestHexLen)
+}

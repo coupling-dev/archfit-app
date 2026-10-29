@@ -221,6 +221,39 @@ func TestAppApprovalRefusals(t *testing.T) {
 	}
 }
 
+// CanDecide is the owner rule of CanApprove for no pull request in particular: same owners, same agents, same teams.
+func TestCanDecide(t *testing.T) {
+	tests := []struct {
+		name  string
+		login string
+		edit  func(f *fixture)
+		want  error
+	}{
+		{name: "an owner", login: "alice"},
+		{name: "a team member", login: "carol"},
+		{name: "a non-owner", login: "bob", want: ErrNotOwner},
+		{name: "an owner of the head settings only", login: "mallory", want: ErrNotOwner},
+		{name: "no login", want: ErrNotOwner},
+		{name: "an owner listed as an agent", login: "alice", edit: func(f *fixture) {
+			f.setBaseSettings([]string{"alice", teamOwner}, "Alice")
+		}, want: ErrAgentIdentity},
+		{name: "no settings on the protected ref", login: "alice", edit: func(f *fixture) {
+			delete(f.repos.files, fileCall{baseRef, settings.Path})
+		}, want: ErrNotOwner},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture()
+			if tt.edit != nil {
+				tt.edit(f)
+			}
+			if err := f.resolver().CanDecide(context.Background(), pullTarget(), tt.login); !errors.Is(err, tt.want) {
+				t.Errorf("CanDecide(%q) = %v, want %v", tt.login, err, tt.want)
+			}
+		})
+	}
+}
+
 // An agent identity named among the owners, or held by an owner team, approves neither on GitHub nor in the App.
 func TestAgentNeverApproves(t *testing.T) {
 	tests := []struct {

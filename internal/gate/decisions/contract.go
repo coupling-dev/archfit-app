@@ -29,6 +29,8 @@ var (
 	ErrNoRecord = errors.New("decisions: no such request")
 	// ErrNotPending is Settle's answer for a record that is not pending: it never moves again.
 	ErrNotPending = errors.New("decisions: request is not pending")
+	// ErrStatusComment wraps the failure to write a status comment. After Settle it means the record did move.
+	ErrStatusComment = errors.New("decisions: status comment")
 	// ErrTooLarge means the record would not fit one Store value.
 	ErrTooLarge = errors.New("decisions: request is too large to store")
 	// ErrChanged is SettleAt's answer for a record whose head is not the one the caller saw: it settled or was

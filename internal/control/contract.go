@@ -34,6 +34,8 @@ type Deps struct {
 	Admissions *gate.Admissions
 	// Approvals reads and records owner approvals of pull request heads for the pull request page: the gate façade.
 	Approvals gate.Approvals
+	// Decisions lists, declines and approves the decision requests of unattended agents for the pull request page.
+	Decisions gate.Decisions
 	// DecisionQueue lists the decision requests of unattended agents that wait for an owner, for the overview and the
 	// decisions page: the gate façade. It reads only.
 	DecisionQueue gate.DecisionQueue
@@ -88,7 +90,7 @@ func New(d Deps) (*Control, error) {
 	page, err := ui.New(ui.Deps{
 		OAuth: d.OAuth, CookieKey: d.CookieKey, BaseURL: d.BaseURL, GitHub: d.GitHub,
 		Account: acct, Consents: consents, Onboarding: onb, Assist: asst, Proposals: proposals,
-		Admissions: d.Admissions, Approvals: d.Approvals, DecisionQueue: d.DecisionQueue, Operators: d.Operators, Now: d.Now,
+		Admissions: d.Admissions, Approvals: d.Approvals, Decisions: d.Decisions, DecisionQueue: d.DecisionQueue, Operators: d.Operators, Now: d.Now,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("control: ui: %w", err)
@@ -141,6 +143,8 @@ func (d Deps) validate() error {
 		return errors.New("control: nil Admissions")
 	case d.Approvals == nil:
 		return errors.New("control: nil Approvals")
+	case d.Decisions == nil:
+		return errors.New("control: nil Decisions")
 	case d.DecisionQueue == nil:
 		return errors.New("control: nil DecisionQueue")
 	case len(d.CookieKey) != cookieKeyLen:

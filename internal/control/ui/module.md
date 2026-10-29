@@ -43,7 +43,9 @@ could still work GitHub-first, but onboarding, schema-guided editing and consent
 - Pull request page: the result of one pull request's head, from the `archfit/state` check and the report of the
   run that check names, opening with the first screen of the PR comment as lines of text (worded by the code that words
   the comment); when the pull request changes a protected file, its owner approval (who may approve, what is
-  approved) and, for an architecture owner, an Approve button for the exact head.
+  approved) and, for an architecture owner, an Approve button for the exact head; the decision requests of unattended
+  agents on it (who filed each, the agent's case as quoted text) and, for an architecture owner who did not file one, Approve
+  (opens a draft policy proposal pull request through `proposal`) and Decline.
 - Assist: turn the request into an `assist.Request`, show the outcome or the pending customer run.
 - Data sharing: per managed feature, what leaves the customer's environment, who allowed it and when, and the
   preconditions it still needs; allow and revoke `source_processing` and `managed_llm` consent (repository administrators
@@ -106,6 +108,7 @@ type Deps struct {
     Proposals  Proposals
     Admissions *Admissions // which installations the App serves; the others see the Waiting page
     Approvals  Approvals   // owner approvals of pull request heads: read, and recorded by the Approve button
+    Decisions  Decisions   // decision requests of unattended agents: listed, declined, approved by an owner
     DecisionQueue DecisionQueue // decision requests that wait for an owner: read only
     Operators  []int64     // GitHub user IDs that approve installations on /admin
     Now        func() time.Time
@@ -178,7 +181,12 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   the same cut to 7 characters for display; `state` is `granted` or `missing`; `can_approve` is true only while
   missing and only for the signed-in user who is an architecture owner by the base settings (teams included) and no
   agent identity, on a head in this repository; `reason` is the refusal in the words of the status mapping;
-  `author_is_agent` says the pull request was opened by an agent identity of the base settings. Absent otherwise. `first_screen` is `[{kind, text}]`, the first screen of
+  `author_is_agent` says the pull request was opened by an agent identity of the base settings. Absent otherwise. Also
+  `decisions: [{finding_id, policy_digest, rule_id, from, to, status, reason?, requester, why, alternatives,
+  proposal_pr?, proposal_url?, can_decide}]` (absent when empty), from `Decisions.DecisionRequests` with the page's
+  target and the signed-in login; its failure fails the page. Every text but `status` is the agent's. `can_decide` is
+  true only for an owner who did not file the request, while it is `pending`. `proposal_url` is the pull request's own
+  address with the proposal's number. `first_screen` is `[{kind, text}]`, the first screen of
   the PR comment for this result as plain text (`kind` is `headline`, `heading`, `text` or `item`): `gate.FirstScreen`
   over the recorded `archfit/state` check (title, reasons, policy digest, producer engine, run, check ID, the policy
   change card of its summary) and the report it names. It is absent when the comment would show no report: no report, a
@@ -192,6 +200,23 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   re-runs it within the hour. An approval that cannot be read back afterwards: `502` "The change was saved, but it
   could not be read back. Reload the page." The target's repository is the authorized one, the head and base come from GitHub, and
   a head in another repository (or a deleted one) is a fork.
+- `POST /api/repos/{o}/{n}/pulls/{number}/decisions/{finding}/{digest}/approve` [write] — body `{}` (a body with any
+  key is `422`); `{finding}` is 32 and `{digest}` 64 lowercase hex characters, else `404`. `Decisions.ApproveDecision`
+  authorizes the signed-in login (owner rule of the approval, never the requester) and re-checks the request against
+  GitHub and the protected ref; a stale request is marked so and answers `409`, with no proposal. Then `Propose`
+  (expectHeadSHA `""`) with the branch the gate names (`DecisionCase.Branch`: `archfit/decision-<pull number>-<secret suffix>`; one pull request however often it is
+  retried), base the default branch, one file `.archfit.yaml` with the stored candidate policy, and a draft pull request
+  whose body names the finding, rule, edge, requester and pull request, quotes the agent's case, and says that only an
+  architecture owner approves the policy change. The agent's text goes in as quoted data: a code fence longer than any
+  backtick run in it, controls and format characters (bidirectional overrides, zero width) dropped, the reason cut at
+  1000 characters, each alternative at 300 and at most 10 alternatives. Only then `Decisions.ApprovedDecision(record head, number)`, which refuses (`502`, request stays pending, "not the draft Archfit expected") a pull request that is not the expected draft.
+  Answers `{decisions, notice}`, the list read again. A failed `Propose` leaves the request pending (`502`, or `503` for
+  a rate limit, "Nothing was changed"); a failure between `Propose` and `ApprovedDecision` leaves it pending and the
+  retry settles it. A status comment that cannot be written after the request moved: `502` "The decision was recorded,
+  …". The list that cannot be read back: `502` "The change was saved, …". ui never marks the proposal ready, merges
+  it or approves it.
+- `POST /api/repos/{o}/{n}/pulls/{number}/decisions/{finding}/{digest}/decline` [write] — the same path and body rules;
+  `Decisions.DeclineDecision` authorizes and settles `declined (by an owner)`; answers `{decisions, notice}`.
 - `GET /api/repos/{o}/{n}/pulls/{number}/graph` [read] — `{unavailable, view, stale_reason, policy_href, branch, pull,
   added}`: the pull request page's header and the `graph.View` of the report its check names, each link's `origin` by
   the PR comment's rule; `added` counts the links whose origin is `added`. `policy_href` is the policy file on GitHub
@@ -295,7 +320,11 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   in .archfit-app.yaml on the base branch can approve."; `ErrAgentIdentity` `403` "An agent identity cannot approve.
   Sign in as a person who is an architecture owner."; `ErrDigestsChanged` `409` "The protected files changed since this
   page was loaded. Nothing was approved. Reload the page and review them again."; `ErrNothingToApprove` `409`;
-  `ErrForkPull` `409`.
+  `ErrForkPull` `409`. Decision requests of the gate: `ErrDecisionRequester` `403` "The login that filed a request
+  cannot decide it. Another architecture owner decides."; `ErrDecisionSettled` `409` "This request was already decided or
+  is out of date. …"; `ErrDecisionStale` `409` "The pull request or the policy changed since the agent filed this
+  request, so it is out of date and no proposal was opened. …"; `ErrDecisionNotFound` `404`; `ErrStatusComment` `502`
+  "The decision was recorded, but its status comment on the pull request could not be updated. …".
   `assist.ErrBusy`: `429`. `ErrManagedUnavailable`, `ErrBudgetExhausted`, `ErrProvider`: `503` with a clear state; the editor stays usable.
 - Onboarding states, each `409` with fixed wording: `onboarding.ErrNoSandbox` "Managed discovery is not available.",
   `onboarding.ErrAlreadyOnboarded` "This repository is already onboarded. Reload the page to see its state.",
@@ -665,7 +694,8 @@ type Assist interface {
 - **LCA / Rank / Distance**: control / 1 / 1
 - **Volatility**: high (this side), low (proposal)
 - **Balanced?**: yes
-- **Shared knowledge**: `Get` to load a draft and its head, `Propose` to save, `Ready` to ask for review. ui never calls
+- **Shared knowledge**: `Get` to load a draft and its head, `Propose` to save (also the draft policy pull request of an
+  approved decision request, on branch `archfit/decision-…`), `Ready` to ask for review. ui never calls
   `SetBody`. `ErrStale` is the sentinel meaning the branch moved since the editor loaded it. `Pulls` is the github/api
   pull-request role interface that only proposal's constructor takes. proposal owns the branch-name and head-SHA
   rules: ui checks `?branch=`, the body's `branch` and `head_sha` (when not empty) and `?since=` with `ValidBranch`
@@ -1115,14 +1145,14 @@ func EngineVersions() []string
 - **Volatility**: high
 - **Balanced?**: yes — parent and child
 - **Shared knowledge**: `Deps` and `New` above. `control` passes its `OAuth`, `CookieKey`, `BaseURL`, `Admissions`,
-  `Approvals`, `DecisionQueue` and `Operators` through and returns a
+  `Approvals`, `Decisions`, `DecisionQueue` and `Operators` through and returns a
   `ui.New` error from its own constructor.
 
 ### internal/gate (façade)
 
 - **Counterpart**: `internal/gate/module.md`
-- **Direction**: ui depends on the gate façade (`Admissions`, `Approvals`, `DecisionQueue`, `Target`, `Candidate`, the
-  refusals, `ClassifyDisplayReason`, `FirstScreen`, `RecoveryStep`); never on a gate child
+- **Direction**: ui depends on the gate façade (`Admissions`, `Approvals`, `Decisions`, `DecisionQueue`, `Target`, `Candidate`, the refusals,
+  `ClassifyDisplayReason`, `FirstScreen`, `RecoveryStep`); never on a gate child
 - **Strength**: contract
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high
@@ -1130,9 +1160,11 @@ func EngineVersions() []string
 - **Shared knowledge**: `PullApproval` for the pull request page and `Approve` then `Reevaluate` for the Approve
   button, always with the `Target` of the authorized repository and the signed-in login; the refusals are mapped to
   wording here. Who may approve, what the digests are and when an approval holds are the gate's rules: ui shows them
-  and sends back what it was shown. `FirstScreen` is fed what the check recorded and answers lines of plain text:
-  ui adds no wording of its own to the first screen. `PendingDecisions` reads the repository's pending decision
-  requests (a number and the first records) and grants nothing.
+  and sends back what it was shown. `DecisionRequests`, `ApproveDecision`, `ApprovedDecision` and `DeclineDecision` for
+  the decision requests: who may decide, that the requester never does, and when a request is stale are the gate's
+  rules; opening the proposal is ui's, through `proposal`. `FirstScreen` is fed what the check recorded and answers lines of plain text: ui adds no wording of its own to
+  the first screen. `PendingDecisions` reads the repository's pending decision requests (a number and the first records)
+  and grants nothing.
 
 ### internal/github/auth
 
@@ -1329,8 +1361,9 @@ been withdrawn since the previous request.
   beside `PendingDecisions(repository, 50)`. A pull request is a policy change when its `archfit/state` summary holds the
   `### Policy change` section; only those ask `Approvals.PullApproval`. The listed requests are the entries of the pending
   list (pending, or settled with the comment not yet written); a request settled and published leaves it, so the page
-  shows no history. **Stated limit**: when the owner decision lands (A8b `List`), settled requests are read from their
-  pull requests; this page then adds them.
+  shows no history. **Stated limit**: settled requests are on their pull request page (`Decisions.DecisionRequests` lists them from the comments, one
+  GitHub read and one owner check per pull request: too much for an inbox of 20 pull requests). Upgrade trigger: a repository-wide
+  index of settled requests in `gate/decisions`.
 - Onboarding start: `owners` is split into lines, each trimmed, blank lines dropped: that is all ui decides. The list
   is valid when `settings.Parse(settings.Render(Settings{Version: 1, Owners, Gate: GateAdvisory, Workflow, DataMode:
   DataCustomer}))` succeeds; `Gate`, `Workflow` (a fixed placeholder path) and `DataMode` only make the probe document
@@ -1506,7 +1539,7 @@ changed; no private gate child or duplicate TypeScript policy is imported.
 
 - Page flow, wording, styling, templates, the graph drawing, the editor integration.
 - New pages that read existing contracts (check details, waiver list).
-- The decisions page reads settled requests from their pull requests once `gate/decisions` lists them (A8b); an Agents
+- The decisions page gains settled requests when `gate/decisions` keeps a repository-wide index of them; an Agents
   view (per-identity throughput, pass rate) is deferred until the requests exist in numbers.
 - The CSRF scheme or security headers.
 - Bounded visual edits in the graph: a new handler proposing a text patch through the same save path.
@@ -1580,7 +1613,7 @@ changed; no private gate child or duplicate TypeScript policy is imported.
 
 Harness: `ui.New` behind `httptest` with a fixed 32-byte cookie key and a fake `OAuth`, so the real `session` and `graph` run, the real `account` over a memory Store and the real
 `proposal`. GitHub is faked at the HTTP boundary behind a real github/api `Client`. `Onboarding`, `Assist` and the gate's
-`Approvals` are faked at their interfaces except where a test says otherwise; the rules of who may approve are the
+`Approvals` and `Decisions` are faked at their interfaces except where a test says otherwise; the rules of who may approve are the
 gate's and tested there. The clock is injected.
 
 ### Unit Tests
@@ -1710,6 +1743,21 @@ gate's and tested there. The clock is injected.
   authorized target, the session login and the digests, then `Reevaluate`; `409` without `Approve`; `409`; `403`,
   `403`, `409`, `409`, `409` with their sentences and no `Reevaluate`; `502` with the approval recorded; `404`; `422`;
   `401`, `401`, `403`, `404`, nothing recorded.
+- **Test name**: `TestPullJSONCarriesTheDecisionRequests`
+  **Scenario**: no requests; one pending for an owner; one approved with its proposal pull request; the list cannot be read.
+  **Expected behavior**: no `decisions` key; the fields, `can_decide`; `proposal_url` built from the pull request's address; the gate is asked with the signed-in login and the target from GitHub; `502`.
+- **Test name**: `TestOwnerApprovesADecisionRequest`, `TestApprovingADecisionRequestTwiceOpensOneProposal`
+  **Scenario**: an owner approves; then the status settle fails once after the proposal and the owner retries.
+  **Expected behavior**: exactly one `Propose` with the decision branch, the default branch, `.archfit.yaml` with the candidate policy, no expected head, a draft body naming the finding, rule, edge, requester, pull request and owner-only approval; then `ApprovedDecision` with the proposal number; the answer lists it approved; nothing marked ready. After the crash one draft exists, found again, and the request is settled with its number.
+- **Test name**: `TestDecisionRefusals`
+  **Scenario**: not an owner, an agent identity, the requester, stale, settled, no such request, GitHub refuses or fails the proposal, the status comment fails, a reader, a body naming a repository, bad IDs, a bad number, decline variants, signed out, no CSRF.
+  **Expected behavior**: `403`, `403`, `403`, `409`, `409`, `404`, `503`, `502`, `502`, `404`, `422`, `404`; no `Propose` unless the refusal came after it; the request settled by nothing but the gate.
+- **Test name**: `TestOwnerDeclinesADecisionRequest`, `TestADecisionTakenButNotReadBackSaysSo`
+  **Scenario**: an owner declines; the list cannot be read back afterwards.
+  **Expected behavior**: one `DeclineDecision` for the session login, no proposal, the list read again with `declined`; `502` "The change was saved …" with the decline taken.
+- **Test name**: `TestProposalBodyQuotesTheAgentsText`
+  **Scenario**: a mention, a link and HTML; a fence of its own; a longer fence; bidirectional and zero width characters; control characters; a reason of 5000 characters; 25 alternatives; an alternative with a fake list item.
+  **Expected behavior**: the agent's text only inside one fenced block it cannot close; format and control characters gone; the reason cut with "[cut]"; ten alternatives and a count of the rest; no agent text after the block.
 - **Test name**: `TestPullPageNumberMustBeAPull`, `TestPullPageReadsTheGateModeOfTheBase`
   **Scenario**: numbers `0`, `-4`, `x`, `4x`, and `5`, no pull request, on the page, the API and the graph; a pull request whose base branch requires the gate while the default branch is advisory.
   **Expected behavior**: `404` each (`5` on the page only from the API); `required` true.
@@ -1978,6 +2026,8 @@ gate's and tested there. The clock is injected.
   days, a time that cannot be read, a time ahead of now); the decisions route; the owner approval words (`lib/approval.ts`): the button
   only while missing, offered and for a head that was read, a short digest or "deleted by this commit", and who
   approved which commit.
+- `web/src/lib/decisions.ts` (vitest): which requests offer Approve and Decline (only a pending one the server marks
+  decidable), the status word with its reason, the write's path.
 - `web/scripts/size.mjs`: the first-load, graph chunk, layout worker and editor chunk budgets above; no lazy chunk in
   the first load.
 - Playwright smoke (`web/e2e/smoke.spec.ts`): the production build behind `vite preview` with `web/csp.txt` as its
@@ -1991,7 +2041,9 @@ gate's and tested there. The clock is injected.
   the App nor GitHub not rendered, a page without a report; the owner approval block: the files and digests, Approve
   sending the exact head, the digests and the CSRF header, then the approver shown and the button gone; no button and
   the reason for a refused user, the agent author named; a refused Approve as a sentence in the block; no block
-  without a protected change); the policy page: CodeMirror's `<style>` element with the
+  without a protected change; the decision requests section: the agent's case as text, Approve and Decline posting an empty
+  object with the CSRF header at the request's path, the proposal pull request linked once approved, no button for a
+  user who cannot decide, a refusal as a sentence in the section); the policy page: CodeMirror's `<style>` element with the
   nonce, the problems as a list and as marks, a `#L<n>` hash and a problem selecting their line, Check and Save sending
   the text, the base head and the CSRF header, a refused save keeping the text, a reader offered no write, managed mode
   off with its reason and the inline Allow, and a customer-mode request following its run; the graph pages, laid out by

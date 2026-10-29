@@ -391,6 +391,23 @@ const unapprovedPull = {
   approval: approvalMissing,
 };
 
+const decisionFinding = '0a'.repeat(16);
+const decisionDigest = '5b'.repeat(32);
+// decisionPending is a request an unattended agent filed on the pull request, as an owner who did not file it sees it.
+const decisionPending = {
+  finding_id: decisionFinding,
+  policy_digest: decisionDigest,
+  rule_id: 'boundary.no-import',
+  from: 'billing',
+  to: 'orders',
+  status: 'pending',
+  requester: 'ci-agent',
+  why: 'billing reads the order total to price a refund.\nThe read model is the narrowest way in.',
+  alternatives: ['moved the type into shared', 'called orders through the existing port'],
+  can_decide: true,
+};
+const decisionPull = { ...pull, decisions: [decisionPending] };
+
 const findings = {
   ...pull,
   unavailable: '',
@@ -652,6 +669,7 @@ interface Mock {
   saveNotFound?: boolean; // the save answers 404, as when write access went away
   holdAssist?: Promise<void>; // the AI request answers once this settles
   approveRefused?: { status: number; sentence: string }; // the Approve button's write is refused
+  decideRefused?: { status: number; sentence: string }; // the write of a decision request is refused
   serverError?: { status: number; sentence: string }; // the server answers the page as its error page
   holdSession?: Promise<void>; // /api/session answers once this settles
   inbox?: object; // the decisions page
@@ -704,6 +722,24 @@ async function open(page: Page, path: string, mock: Mock = {}) {
           approval: { ...approvalMissing, state: 'granted', by: 'alice', can_approve: false },
           notice:
             'Approved for this commit. The Archfit check follows when the workflow reports on it; a new commit needs a new approval.',
+        });
+      }
+      const decide = /^\/api\/repos\/acme\/app\/pulls\/4\/decisions\/([0-9a-f]{32})\/([0-9a-f]{64})\/(approve|decline)$/.exec(
+        url.pathname,
+      );
+      if (decide) {
+        if (mock.decideRefused) return json(mock.decideRefused.status, { error: mock.decideRefused.sentence });
+        const asked = (mock.pull as { decisions: object[] }).decisions;
+        const approving = decide[3] === 'approve';
+        const outcome = approving
+          ? { status: 'approved', proposal_pr: 12, proposal_url: 'https://github.com/acme/app/pull/12' }
+          : { status: 'declined', reason: 'by an owner' };
+        const settled = { ...decisionPending, can_decide: false, ...outcome };
+        return json(200, {
+          decisions: asked.map((r) => ((r as typeof decisionPending).finding_id === decide[1] ? settled : r)),
+          notice: approving
+            ? 'Approved. A draft pull request with the proposed policy is open; an architecture owner approves it like any policy change.'
+            : 'Declined. The agent sees the answer in the pull request thread, and it stays until the policy changes.',
         });
       }
       const admin = /^\/api\/admin\/installations\/(\d+)\/(approve|revoke)$/.exec(url.pathname);
@@ -1303,6 +1339,8 @@ test('pull request: no report says why and links the checks', async ({ page }) =
     },
   });
   await expect(page.getByText('GitHub no longer keeps the report')).toBeVisible();
+  await expect(page.getByText('Follow the next step in PR analysis above.')).toBeVisible();
+  await expect(page.getByText('re-run the workflow')).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Checks on GitHub' })).toHaveAttribute('href', pull.checks_url);
   await expectClean(page);
 });
@@ -1361,6 +1399,66 @@ test('pull request: a refused approval is a sentence in the box, and no pull req
   await open(page, '/r/acme/app/pull/4');
   await expect(page.getByRole('heading', { name: 'feat: read options #4', level: 1 })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Owner approval' })).toHaveCount(0);
+});
+
+test('pull request: an owner approves a decision request, and the page links the proposal pull request', async ({ page }) => {
+  const writes = await open(page, '/r/acme/app/pull/4', { pull: decisionPull });
+  const box = page.getByRole('region', { name: 'Decision requests' });
+  await expect(box.getByText('boundary.no-import')).toBeVisible();
+  await expect(box.getByText('Requested by @ci-agent.')).toBeVisible();
+  await expect(box.getByText('billing reads the order total to price a refund.')).toBeVisible();
+  await expect(box.getByRole('list', { name: 'Decision requests on this pull request' }).getByText('pending')).toBeVisible();
+  await expect(box.getByText('called orders through the existing port')).toBeVisible();
+  await expectClean(page);
+
+  await box.getByRole('button', { name: 'Approve and open a proposal pull request' }).click();
+  await expect(box.getByRole('status')).toContainText('Approved. A draft pull request');
+  await expect(box.getByRole('link', { name: 'Proposal PR #12' })).toHaveAttribute('href', 'https://github.com/acme/app/pull/12');
+  await expect(box.getByRole('button')).toHaveCount(0);
+  expect(writes).toHaveLength(1);
+  const [w] = writes;
+  expect(new URL(w.url()).pathname).toBe(
+    `/api/repos/acme/app/pulls/4/decisions/${decisionFinding}/${decisionDigest}/approve`,
+  );
+  expect(w.headers()['x-csrf-token']).toBe(session.csrf);
+  expect(w.postDataJSON()).toEqual({});
+  await expectClean(page);
+});
+
+test('pull request: an owner declines a decision request', async ({ page }) => {
+  const writes = await open(page, '/r/acme/app/pull/4', { pull: decisionPull });
+  const box = page.getByRole('region', { name: 'Decision requests' });
+  await box.getByRole('button', { name: 'Decline' }).click();
+  await expect(box.getByRole('status')).toContainText('Declined.');
+  await expect(box.getByText('declined (by an owner)')).toBeVisible();
+  await expect(box.getByRole('button')).toHaveCount(0);
+  expect(new URL(writes[0].url()).pathname).toMatch(/\/decline$/);
+});
+
+test('pull request: someone who cannot decide reads the requests and gets no buttons', async ({ page }) => {
+  await open(page, '/r/acme/app/pull/4', {
+    pull: { ...pull, decisions: [{ ...decisionPending, can_decide: false }] },
+  });
+  const box = page.getByRole('region', { name: 'Decision requests' });
+  await expect(box.getByText('billing reads the order total to price a refund.')).toBeVisible();
+  await expect(box.getByRole('button')).toHaveCount(0);
+  await expectClean(page);
+});
+
+test('pull request: a refused decision is a sentence in the section, and the buttons stay', async ({ page }) => {
+  const sentence =
+    'The pull request or the policy changed since the agent filed this request, so it is out of date and no proposal was opened. The agent files a new request.';
+  await open(page, '/r/acme/app/pull/4', { pull: decisionPull, decideRefused: { status: 409, sentence } });
+  const box = page.getByRole('region', { name: 'Decision requests' });
+  await box.getByRole('button', { name: 'Approve and open a proposal pull request' }).click();
+  await expect(box.getByRole('alert')).toHaveText(sentence);
+  await expect(box.getByRole('button', { name: 'Approve and open a proposal pull request' })).toBeEnabled();
+  await expectClean(page);
+
+  await page.unrouteAll();
+  await open(page, '/r/acme/app/pull/4');
+  await expect(page.getByRole('heading', { name: 'feat: read options #4', level: 1 })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Decision requests' })).toHaveCount(0);
 });
 
 for (const graph of [false, true]) {
@@ -2341,5 +2439,33 @@ test('docs: the screenshots of the overview counters and the decisions page', as
     await open(page, '/r/acme/app/decisions');
     await expect(page.getByRole('region', { name: /^Policy changes/ })).toContainText('approved by @vladikk');
     await page.screenshot({ path: new URL(`decisions-${scheme}.png`, shotsDir).pathname, fullPage: true });
+  }
+});
+
+// The decision requests of a pull request, as an owner sees them: one pending, with the buttons, and the same request
+// after the owner approved it, with the link to the proposal pull request. Light and dark, sample data.
+// Regenerate with ARCHFIT_DOCS_SHOTS=1.
+test('docs: the screenshots of the decision requests', async ({ page }) => {
+  test.skip(!process.env.ARCHFIT_DOCS_SHOTS, 'set ARCHFIT_DOCS_SHOTS=1 to regenerate the guide screenshots');
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const approved = {
+    ...decisionPending,
+    status: 'approved',
+    can_decide: false,
+    proposal_pr: 12,
+    proposal_url: 'https://github.com/acme/app/pull/12',
+  };
+  for (const scheme of ['light', 'dark'] as const) {
+    for (const [name, decisions] of [
+      ['decision-request', [decisionPending]],
+      ['decision-request-approved', [approved]],
+    ] as const) {
+      await page.unrouteAll();
+      await page.emulateMedia({ colorScheme: scheme });
+      await open(page, '/r/acme/app/pull/4', { pull: { ...pull, decisions } });
+      const box = page.getByRole('region', { name: 'Decision requests' });
+      await expect(box).toBeVisible();
+      await box.screenshot({ path: new URL(`${name}-${scheme}.png`, shotsDir).pathname });
+    }
   }
 });

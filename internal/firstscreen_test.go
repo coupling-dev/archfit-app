@@ -92,3 +92,22 @@ func TestPullPageFirstScreenEqualsTheCommentsFirstScreen(t *testing.T) {
 		})
 	}
 }
+
+// The decisions page reads through the seam control hands ui: a repository with no request answers empty lists.
+func TestDecisionsPageIsServedThroughTheWiredQueue(t *testing.T) {
+	f := loadFixture(t, "real-healthy")
+	w := newWorld(t)
+	w.seedDemo(f, "required", true)
+	w.allow(owner, demoRepo, "read")
+	s := newSystem(t, w, options{})
+	b := newBrowser(t, s.do)
+	b.signIn(owner)
+	resp, raw := b.get("/api/repos/" + demoRepo + "/decisions")
+	var page struct {
+		Requests []any `json:"requests"`
+		Error    bool  `json:"requests_error"`
+	}
+	if resp.StatusCode != http.StatusOK || json.Unmarshal([]byte(raw), &page) != nil || page.Requests == nil || page.Error {
+		t.Fatalf("decisions page = %d %.300s; want empty lists and no error", resp.StatusCode, raw)
+	}
+}

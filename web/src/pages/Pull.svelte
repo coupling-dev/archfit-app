@@ -2,6 +2,7 @@
   import FindingGroups from '../components/FindingGroups.svelte';
   import FirstScreen from '../components/FirstScreen.svelte';
   import DecisionLine from '../components/DecisionLine.svelte';
+  import DecisionRequests from '../components/DecisionRequests.svelte';
   import PullHead from '../components/PullHead.svelte';
   import { basisText, resultWord } from '../lib/evidence';
   import Skeleton from '../components/Skeleton.svelte';
@@ -108,6 +109,17 @@
       </div>
     </section>
   {/if}
+  {#if body.decisions?.length}
+    <DecisionRequests
+      requests={body.decisions}
+      number={route.number}
+      fullName={route.fullName}
+      {session}
+      {here}
+      onchange={(list) => (body!.decisions = list)}
+      onfailed={load}
+    />
+  {/if}
   {#if !first.length && !body.unavailable && body.required && body.result !== 'action required' && body.decision?.hard_gates === 'pass' && body.decision.blockers === 0 && !body.decision.unevaluated.length && body.violation_count === 0}
     <p class="flash success">No required architecture change requested in the evaluated scope.{body.accepted_count ? ' Accepted debt remains.' : ''}</p>
   {/if}
@@ -118,7 +130,7 @@
       <div class="box-body stack-sm">
         <p>{body.unavailable}</p>
         <p>No findings, counts or agent tasks from this report are admitted for display. This is not a clean result.</p>
-        <p>Resolve the reason in PR analysis above, then re-run the workflow to obtain usable evidence.</p>
+        <p>Follow the next step in PR analysis above. A usable result follows when the workflow reports on the commit.</p>
       </div>
     </section>
   {:else}

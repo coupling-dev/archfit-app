@@ -28,11 +28,8 @@ type DecisionQueue interface {
 	PendingDecisions(ctx context.Context, t Target, limit int) (PendingDecisions, error)
 }
 
-// PendingDecisions and DecisionRecord are owned by gate/decisions.
-type (
-	PendingDecisions = decisions.Queue
-	DecisionRecord   = decisions.Record
-)
+// PendingDecisions is owned by gate/decisions.
+type PendingDecisions = decisions.Queue
 
 // PendingDecisions reads the repository's pending decision requests: their number and the records of the first limit.
 // t names the repository.

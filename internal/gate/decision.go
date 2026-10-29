@@ -30,6 +30,11 @@ type requests interface {
 	File(ctx context.Context, t inputs.Target, f decisions.Filing, now time.Time) (decisions.Outcome, error)
 	Answer(ctx context.Context, t inputs.Target, findingID, digest string, status decision.Status, reason string) (bool, error)
 	PendingQueue(ctx context.Context, t inputs.Target, limit int) (decisions.Queue, error)
+	List(ctx context.Context, t inputs.Target) ([]decisions.Record, error)
+	Get(ctx context.Context, t inputs.Target, findingID, digest string) (decisions.Record, error)
+	Policy(ctx context.Context, t inputs.Target, findingID, digest string) (string, error)
+	BranchSuffix(ctx context.Context, t inputs.Target, findingID, digest, head string) (string, error)
+	SettleAt(ctx context.Context, t inputs.Target, findingID, digest, expectedHead string, status decision.Status, reason string, proposalPR int, now time.Time) error
 	HeadMoved(ctx context.Context, t inputs.Target, now time.Time) error
 	Closed(ctx context.Context, t inputs.Target, now time.Time) error
 }

@@ -95,7 +95,7 @@ func TestOverviewListsPendingDecisionRequests(t *testing.T) {
 	path := "/api/repos/" + repoName + "/overview"
 	t.Run("counts all, lists the pending ones read", func(t *testing.T) {
 		e := advisoryRepo(t)
-		e.decisions.queue = gate.PendingDecisions{Open: 7, Records: []gate.DecisionRecord{
+		e.queue.queue = gate.PendingDecisions{Open: 7, Records: []gate.DecisionRecord{
 			record(4, "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a", decision.StatusPending, at),
 			record(4, "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", decision.StatusStale, at),
 		}}
@@ -108,15 +108,15 @@ func TestOverviewListsPendingDecisionRequests(t *testing.T) {
 		if body.DecisionsPending != 7 || len(body.Decisions) != 1 || body.Decisions[0] != want || body.DecisionsError {
 			t.Errorf("pending = %d, rows = %+v, error = %v; want 7 and [%+v]", body.DecisionsPending, body.Decisions, body.DecisionsError, want)
 		}
-		if len(e.decisions.reads) != 1 || e.decisions.limits[0] != maxNeedsYouDecisions || e.decisions.reads[0].Repo.FullName != repoName {
-			t.Errorf("reads = %+v with limits %v; want one read, bounded, for the repository", e.decisions.reads, e.decisions.limits)
+		if len(e.queue.reads) != 1 || e.queue.limits[0] != maxNeedsYouDecisions || e.queue.reads[0].Repo.FullName != repoName {
+			t.Errorf("reads = %+v with limits %v; want one read, bounded, for the repository", e.queue.reads, e.queue.limits)
 		}
 	})
 	t.Run("text of an agent is cut", func(t *testing.T) {
 		e := advisoryRepo(t)
 		rec := record(4, "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a", decision.StatusPending, at)
 		rec.RuleID, rec.EdgeFrom, rec.EdgeTo, rec.Requester = strings.Repeat("r", 500), strings.Repeat("é", 500), strings.Repeat("b", 500), strings.Repeat("u", 500)
-		e.decisions.queue = gate.PendingDecisions{Open: 1, Records: []gate.DecisionRecord{rec}}
+		e.queue.queue = gate.PendingDecisions{Open: 1, Records: []gate.DecisionRecord{rec}}
 		var body statusBody
 		e.as("alice", permRead).getJSON(path, &body)
 		r := body.Decisions[0]
@@ -134,8 +134,8 @@ func TestOverviewListsPendingDecisionRequests(t *testing.T) {
 		delete(e.gh.pulls, repoName+"#4")
 		var body statusBody
 		e.as("alice", permRead).getJSON(path, &body)
-		if len(e.decisions.reads) != 0 || body.DecisionsPending != 0 || len(body.Decisions) != 0 {
-			t.Errorf("reads = %d, body = %d %v", len(e.decisions.reads), body.DecisionsPending, body.Decisions)
+		if len(e.queue.reads) != 0 || body.DecisionsPending != 0 || len(body.Decisions) != 0 {
+			t.Errorf("reads = %d, body = %d %v", len(e.queue.reads), body.DecisionsPending, body.Decisions)
 		}
 	})
 	t.Run("before the first report nothing is read", func(t *testing.T) {
@@ -143,14 +143,14 @@ func TestOverviewListsPendingDecisionRequests(t *testing.T) {
 		e.onb.progress = onboarding.Progress{Stage: onboarding.StageWorkflowMerged}
 		var body statusBody
 		e.as("alice", permRead).getJSON(path, &body)
-		if len(e.decisions.reads) != 0 || body.DecisionsPending != 0 {
-			t.Errorf("reads = %d, pending = %d", len(e.decisions.reads), body.DecisionsPending)
+		if len(e.queue.reads) != 0 || body.DecisionsPending != 0 {
+			t.Errorf("reads = %d, pending = %d", len(e.queue.reads), body.DecisionsPending)
 		}
 	})
 	t.Run("a failed read is said, not shown as none", func(t *testing.T) {
 		e := advisoryRepo(t)
-		e.decisions.err = errors.New("store down")
-		e.decisions.queue = gate.PendingDecisions{Open: 3}
+		e.queue.err = errors.New("store down")
+		e.queue.queue = gate.PendingDecisions{Open: 3}
 		var body statusBody
 		e.as("alice", permRead).getJSON(path, &body)
 		if !body.DecisionsError || body.DecisionsPending != 0 || len(body.Decisions) != 0 || body.MainState == "" {
@@ -164,7 +164,7 @@ func TestDecisionsPage(t *testing.T) {
 	at := time.Date(2026, 9, 21, 8, 0, 0, 0, time.UTC)
 	t.Run("pending first, newest first, read only", func(t *testing.T) {
 		e := advisoryRepo(t)
-		e.decisions.queue = gate.PendingDecisions{Open: 3, Records: []gate.DecisionRecord{
+		e.queue.queue = gate.PendingDecisions{Open: 3, Records: []gate.DecisionRecord{
 			record(4, "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c", decision.StatusStale, at.Add(3*time.Hour)),
 			record(4, "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a", decision.StatusPending, at),
 			record(4, "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", decision.StatusPending, at.Add(time.Hour)),
@@ -229,7 +229,7 @@ func TestDecisionsPage(t *testing.T) {
 	})
 	t.Run("a failed read of the requests leaves the pull requests", func(t *testing.T) {
 		e := advisoryRepo(t)
-		e.decisions.err = errors.New("store down")
+		e.queue.err = errors.New("store down")
 		var body inboxBody
 		e.as("alice", permRead).getJSON(path, &body)
 		if !body.RequestsError || len(body.Requests) != 0 || body.PolicyError {
@@ -250,7 +250,7 @@ func TestDecisionsPage(t *testing.T) {
 		wantStatus(t, e.anonymous().get(path), http.StatusUnauthorized)
 		wantStatus(t, e.anonymous().get("/r/"+repoName+"/decisions"), http.StatusSeeOther)
 		wantStatus(t, e.as("mallory", "").get(path), http.StatusNotFound)
-		if len(e.decisions.reads) != 0 {
+		if len(e.queue.reads) != 0 {
 			t.Error("the queue was read without access")
 		}
 	})

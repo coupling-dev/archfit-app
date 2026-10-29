@@ -257,7 +257,31 @@ export interface ScreenLine {
   text: string;
 }
 
-export type Pull = PullHead & Findings & { approval?: Approval; first_screen?: ScreenLine[] };
+// DecisionRequest is a request an unattended agent filed on the pull request. Every text in it but the status is the
+// agent's: render it as text only.
+export interface DecisionRequest {
+  finding_id: string;
+  policy_digest: string; // with finding_id, the key of the request; Approve and Decline send it back in the path
+  rule_id: string;
+  from: string;
+  to: string;
+  status: 'pending' | 'approved' | 'declined' | 'stale';
+  reason?: string; // why it is declined or stale
+  requester: string;
+  why: string;
+  alternatives: string[];
+  proposal_pr?: number;
+  proposal_url?: string;
+  can_decide: boolean; // the signed-in user is an owner who did not file it, and it is pending
+}
+
+export type Pull = PullHead & Findings & { approval?: Approval; decisions?: DecisionRequest[]; first_screen?: ScreenLine[] };
+
+// Decided answers the Approve and Decline buttons of a decision request: the requests as they stand now.
+export interface Decided {
+  decisions: DecisionRequest[];
+  notice: string;
+}
 
 // Approved answers the Approve button: the approval read again.
 export interface Approved {

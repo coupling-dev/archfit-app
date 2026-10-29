@@ -22,7 +22,8 @@ the gate would still verify reports, but nobody could onboard, edit a policy, st
 - Apply the operator's manual beta grant.
 - Pass the admission seam (`Admissions`) and the operator IDs to `ui`, which lets an operator approve an installation.
 - Pass the gate's owner approval seam (`Approvals`) to `ui`, whose pull request page shows an owner approval and
-  records one with its Approve button.
+  records one with its Approve button, and the decision seam (`Decisions`), through which its pull request page lists
+  the decision requests of unattended agents and lets an owner decline or approve one.
 - Pass the gate's decision queue seam (`DecisionQueue`) to `ui`, whose overview and decisions page list the decision
   requests that wait for an owner. It reads only.
 - Re-publish the two platform seams, `Sandbox` and `Provider`, so `app` and platform packages cite one place.
@@ -56,6 +57,8 @@ type Deps struct {
     Admissions *Admissions
     // Approvals reads and records owner approvals of pull request heads for the pull request page: the gate façade.
     Approvals Approvals
+    // Decisions lists, declines and approves the decision requests of unattended agents for the pull request page.
+    Decisions Decisions
     // DecisionQueue lists the decision requests that wait for an owner, for the overview and the decisions page: the gate façade.
     DecisionQueue DecisionQueue
     Operators []int64
@@ -149,7 +152,7 @@ type Completion struct {
 
 ### Operation rules
 
-- `New` returns an error, and no `Control`, on a wiring bug: nil `GitHub`, `OAuth`, `Store`, `Receiver`, `Admissions`, `Approvals` or `DecisionQueue`, `CookieKey` not
+- `New` returns an error, and no `Control`, on a wiring bug: nil `GitHub`, `OAuth`, `Store`, `Receiver`, `Admissions`, `Approvals`, `Decisions` or `DecisionQueue`, `CookieKey` not
   32 bytes, empty `BaseURL`, a non-nil `Sandbox` with nil `Tokens`, or an error from `ui.New`. Nil `Now` means `time.Now`.
   Nil `Sandbox` and nil `Provider` are valid. It never panics. **[default]**
 - `NewWorker` returns an error, and no `Control`, on a nil `GitHub`, `Store` or `Admissions`. It builds only `account`: no `ui`,
@@ -326,6 +329,7 @@ type Deps struct {
     Proposals  Proposals
     Admissions *Admissions // which installations the App serves; the others see the Waiting page
     Approvals  Approvals   // owner approvals of pull request heads: read, and recorded by the Approve button
+    Decisions  Decisions   // decision requests of unattended agents: listed, declined, approved by an owner
     DecisionQueue DecisionQueue // decision requests that wait for an owner: read only
     Operators  []int64     // GitHub user IDs that approve installations on /admin
     Now        func() time.Time
@@ -357,6 +361,7 @@ constants and `AssistWorkflowPath` are unused by the façade; they are part of t
   operator. `InstallationRemoved` and the orphan cleanup call `Forget`, which deletes the admission with the tenant.
   `Deps.Approvals` and `Deps.DecisionQueue` are the `*Gate` that `app` builds; the façade hands it to `ui` untouched and never calls it, and
   hands it to no other child, so the discovery, baseline and re-anchor uploads (OIDC) cannot reach an approval.
+  `Deps.Decisions` is the same `*Gate`, handed to `ui` the same way and reaching nothing else.
 
 ### internal/store
 
@@ -551,7 +556,7 @@ func New(ts TokenSource, hc *http.Client) *Client
 2. `proposal.New(d.GitHub, d.GitHub)` → `Proposals`.
 3. `onboarding.New(Deps{GitHub, Tokens, Receiver, Proposals, Consents, Sandbox, BaseURL, Now})` → `Onboarding`.
 4. `assist.New(Deps{GitHub, Provider, Consents, Budget, Proposals, Now})` → `Assist`.
-5. `ui.New(Deps{OAuth, CookieKey, BaseURL, GitHub, Account, Consents, Onboarding, Assist, Proposals, Admissions, Approvals, DecisionQueue, Operators, Now})` → the UI handler, or an error that `New` returns.
+5. `ui.New(Deps{OAuth, CookieKey, BaseURL, GitHub, Account, Consents, Onboarding, Assist, Proposals, Admissions, Approvals, Decisions, DecisionQueue, Operators, Now})` → the UI handler, or an error that `New` returns.
 
 | Child        | Contributes                                                        | Depends on siblings                          |
 | ------------ | ------------------------------------------------------------------ | -------------------------------------------- |
@@ -615,8 +620,8 @@ fake `Sandbox` and `Provider`, and a fixed clock.
 ### Unit Tests
 
 - **Test name**: `TestNewValidatesWiring`
-  **Scenario**: table: nil `GitHub`; nil `OAuth`; nil `Store`; nil `Receiver`; nil `Admissions`; nil `Approvals`; nil `DecisionQueue`; 16-byte `CookieKey`; empty `BaseURL`; `Sandbox` set with nil `Tokens`; nil `Now`; nil `Sandbox`, `Provider` and `Tokens`.
-  **Expected behavior**: error and nil `Control` for the first eight, no panic; the last two construct a working `Control`.
+  **Scenario**: table: nil `GitHub`; nil `OAuth`; nil `Store`; nil `Receiver`; nil `Admissions`; nil `Approvals`; nil `Decisions`; nil `DecisionQueue`; 16-byte `CookieKey`; empty `BaseURL`; `Sandbox` set with nil `Tokens`; nil `Now`; nil `Sandbox`, `Provider` and `Tokens`.
+  **Expected behavior**: error and nil `Control` for the first ten, no panic; the last two construct a working `Control`.
 - **Test name**: `TestNewWorkerNeedsNoUISecrets`
   **Scenario**: `NewWorker` with nil `GitHub`, with nil `Store`, with nil `Admissions`, then with `GitHub`, `Store`, `Admissions` and `Now`;
   `InstallationAdded`, `Grant` and `Sweep` on the result.

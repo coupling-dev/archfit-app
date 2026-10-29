@@ -87,10 +87,11 @@ func HasRequest(commentBody string) bool          // the cheap precheck: the ope
 func Extract(commentBody string) ([]byte, error)   // the JSON of the one block; ErrNoRequest when there is none
 func Decode(raw []byte) (Request, error)           // strict; zero Request with every error
 func Identify(raw []byte) (findingID, policyDigest string)
+func ValidIDs(findingID, policyDigest string) bool  // 32 and 64 lowercase hex characters
 func Schema() []byte                               // a fresh copy
 
 type Status string // StatusPending, StatusApproved, StatusDeclined, StatusStale
-const ReasonHeadMoved, ReasonPolicyChanged, ReasonPullClosed
+const ReasonHeadMoved, ReasonPolicyChanged, ReasonPullClosed, ReasonBaseChanged, ReasonOwnerDeclined
 const StatusMarkerPrefix, Unknown
 func StatusMarker(findingID, policyDigest string) string
 func ApprovedDetail(proposalPR int) string
@@ -128,6 +129,6 @@ Tests are table-driven in the package; there is no shared fixture folder (the kn
   names its field and the schema evaluator agrees, except the rows only the decoder can see.
 - `TestDecodeRejectsNonStrictJSON`: extra keys, duplicates, case variants, `null` and absence of every key, wrong
   types, nested arrays, trailing data, truncation, invalid UTF-8, an oversize block.
-- `TestErrorsNeverEchoValues`, `FuzzDecode`, `FuzzExtract`, `TestIdentify`.
+- `TestErrorsNeverEchoValues`, `FuzzDecode`, `FuzzExtract`, `TestIdentify`, `TestValidIDs`.
 - `TestExtract`, `TestHasRequest`: no block, a block with prose, CRLF, two blocks, unclosed, unfenced, a block past the scan cap.
 - `TestStatusMarkerAndLine`, `TestSchemaDocument`, `TestPackageImportsStdlibOnly`.
