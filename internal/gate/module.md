@@ -336,6 +336,13 @@ type Sweeper interface {
 | Approval unreadable (a `*Rejection` of `Receive`)               | 503                        | `{"error": "admission_unavailable"}`     |
 | `api.ErrRateLimited` while resolving inputs or publishing       | 503 with `Retry-After: 60` | `{"error": "rate_limited"}`              |
 | Any other error after authentication                            | 503 **[default]**          | `{"error": "unavailable"}`               |
+| `Pulls.OpenPulls` fails for an upload into the default branch   | 503 (`rate_limited` for a rate limit) | `{"error": "unavailable"}`    |
+
+A pull request upload into the default branch lists the repository's open pull requests (`sweep.SharedWith`) before it
+decides. Another open pull request with the same head commit and a base that is not the default branch is passed to
+`verdict.Decide` as `Facts.SharedHead`, so the answer is `action_required` with `shared_head`, never `success`: a check
+is written per head commit and that pull request would show it. The App accepts no protected base other than the
+default branch. A failed listing is an error the Action retries, never a success.
 
 `reason` is `Outcome.Reasons[0].Code`. A 2xx means "accepted and published", not "passed". The producer
 retries on every non-2xx except 400, 401, 403, 409 and 413. On 503 the pending check stays pending.
@@ -542,6 +549,7 @@ const (
     ReasonWaiverExpired       ReasonCode = "waiver_expired"
     ReasonSuspended           ReasonCode = "subscription_suspended"
     ReasonTargetMoved         ReasonCode = "target_moved" // the default branch moved and, with this change, closes a module cycle
+    ReasonSharedHead          ReasonCode = "shared_head"  // another open pull request into a non-default branch has this head commit
 )
 
 type Reason struct {
@@ -1318,7 +1326,7 @@ Special targets, all through the same flow:
 | `Event.Kind`                     | Reaction                                                                                                                                                                                                                                                         |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | any kind with a repository       | Checked before the rows below: `Admissions.Admitted(e.InstallationID, Owner(e.Repo))` false → reaction `not_admitted`, nothing read or written, `nil` returned. An error → reaction `not_admitted` logged, nothing read or written, the error returned, so the webhook queue retries the delivery. Installation kinds carry no repository and skip this check. |
-| `PullOpened`, `PullSynchronized` | `Resolve`. `!SettingsFound` → nothing. Fork → `Publish(sweep.Without(ReasonForkUnsupported, target, trusted, Receipt{}))`: a zero-run receipt carrying the base digests. Else `Settings.Gate == GateRequired` → `publisher.Pending(target)`. Advisory → nothing. `PullSynchronized` also runs `decisions.HeadMoved`: each pending decision request of the pull whose head is not the pull request's head, read now (not the event's), becomes `stale (head moved)`; the two results are joined. |
+| `PullOpened`, `PullSynchronized` | A payload base that is not the payload's default branch (`otherBase`): nothing is decided or published for it, but the head may be shared with a pull request into the default branch whose success its checks would show, so `sweeper.RunRepo(ctx, repo, now)` runs in the request (reaction `repo_sweep`; sweep rule 5d withdraws that success with `shared_head`). A base changed after opening sends no event (`edited` is not mapped): the hourly sweep is the net. Otherwise `Resolve`. `!SettingsFound` → nothing. Fork → `Publish(sweep.Without(ReasonForkUnsupported, target, trusted, Receipt{}))`: a zero-run receipt carrying the base digests. Else `Settings.Gate == GateRequired` → `publisher.Pending(target)`. Advisory → nothing. `PullSynchronized` also runs `decisions.HeadMoved`: each pending decision request of the pull whose head is not the pull request's head, read now (not the event's), becomes `stale (head moved)`; the two results are joined. |
 | `PullCommented`                  | Decision request intake (below). A comment without the `<!-- archfit:decision-request -->` marker → nothing, no API call. |
 | `ReviewChanged`                  | `Reconcile(target, …)`: inside the lease, a withdrawn approval → `sweep.Withdrawal` (below); reason `owner_approval_missing` and `!verdict.Unapproved(trusted)` **[default: no re-run while an approval is missing]** → `sweep.Rerun`.                           |
 | `BranchPush`                     | `resolver.RecordPusher(target, Pusher)` first, for attribution (the record approves nothing); a failed write is returned and the queue retries. Then the newest pull request of this repository whose head is `Branch` (`Pulls.PullByHead`): when it is open and its head is `HeadSHA`, run the `ReviewChanged` reaction on it. A push whose `PusherType` is present and not `"user"` (a deploy key) records nothing and logs `gate pusher not recorded` with the delivery id, never the key; the re-evaluation and the sweep still run. No such pull request, a closed one or another head → nothing more. A pull request from a fork is never found. |

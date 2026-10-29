@@ -1,9 +1,11 @@
 package sweep
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate/feedback"
@@ -17,7 +19,7 @@ const runCompleted = "completed"
 
 // evaluate applies the rule table of module.md to one onboarded pull. The first rule whose condition
 // holds ends the evaluation, whether or not it had to write; only rule 6a lets the evaluation go on.
-func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted) error {
+func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted, shared []verdict.SharedPull) error {
 	if tr.Settings.Gate != settings.GateRequired { // rule 0
 		return p.advisory(ctx, t, tr)
 	}
@@ -67,6 +69,9 @@ func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted)
 		}
 		_, err := p.rerun(ctx, "5b", t, rc)
 		return err
+	}
+	if rc.Conclusion == verdict.Success && len(shared) > 0 { // rule 5d, ahead of 5c: both withdraw the same success
+		return p.sharedHead(ctx, t, rc)
 	}
 	if moved, err := p.targetMoved(ctx, t, tr, rc); err != nil || moved { // rule 5c
 		return err
@@ -258,6 +263,56 @@ func (p *pass) recheckPull(ctx context.Context, t inputs.Target, tr inputs.Trust
 	}
 	_, err = p.targetMoved(ctx, t, tr, state.Receipt)
 	return err
+}
+
+// SharedWith lists the open pull requests of pulls, other than number, whose head is head and whose base is not the
+// default branch, by number. A check is written per head commit, so each of them shows the result of the pull request
+// into the default branch, on a base whose protected inputs the agent that opened it may have loosened.
+func SharedWith(pulls []api.Pull, number int, head, defaultBranch string) []verdict.SharedPull {
+	var out []verdict.SharedPull
+	for _, pl := range pulls {
+		if pl.Number != number && pl.HeadSHA == head && pl.BaseRef != defaultBranch {
+			out = append(out, verdict.SharedPull{Number: pl.Number, BaseRef: pl.BaseRef})
+		}
+	}
+	slices.SortFunc(out, func(a, b verdict.SharedPull) int { return cmp.Compare(a.Number, b.Number) })
+	return out
+}
+
+// sharedHead is rule 5d: shared_head over a success receipt, no re-run. Inside the head's publication lease the open
+// pull requests are listed again, so a pull request closed meanwhile leaves the success as it is; a newer run, a
+// withdrawn approval, stale inputs or a repository out of required mode are left to the rule that owns them. A failed
+// listing is an error, so the success is never touched on a guess.
+func (p *pass) sharedHead(ctx context.Context, t inputs.Target, rc feedback.Receipt) error {
+	var pub *feedback.Publication
+	err := p.publisher.Reconcile(ctx, t, func(ctx context.Context, current feedback.CheckState) (*feedback.Publication, error) {
+		if current.Receipt != rc {
+			return nil, nil
+		}
+		tr, err := p.resolver.Resolve(ctx, t, p.now)
+		if err != nil {
+			return nil, err
+		}
+		if tr.Settings.Gate != settings.GateRequired || Withdrawn(rc, tr) || stale(rc, tr) {
+			return nil, nil
+		}
+		pulls, err := p.pulls.OpenPulls(ctx, t.Repo.RepoRef)
+		if err != nil {
+			return nil, err
+		}
+		shared := SharedWith(pulls, t.PullRequest, t.HeadSHA, t.Repo.DefaultBranch)
+		if len(shared) == 0 {
+			return nil, nil
+		}
+		out := withOutcome(verdict.SharedHead(shared), verdict.ReasonSharedHead, t, tr, rc)
+		pub = &out
+		return pub, nil
+	})
+	if err != nil || pub == nil {
+		return err
+	}
+	p.logPublished("5d", *pub, rc)
+	return nil
 }
 
 // withdraw is rule 5a. The pass saw a withdrawn receipt outside the lease; Reconcile decides again inside it.

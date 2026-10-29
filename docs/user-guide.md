@@ -481,6 +481,7 @@ that matches nothing. Other rules that the engine could not evaluate keep `missi
 | `missing_upload`              | Read the workflow run and run the workflow again.                                                                                                                                                                   |
 | `stale_inputs`                | The policy or baseline changed on the base branch. Run the workflow again if no rerun appears.                                                                                                                      |
 | `target_moved`                | The default branch moved since this pull request was measured. The comment names the commits, and the modules when this pull request closes a module cycle with the new default branch. The pull request author updates the branch (**Update branch** on GitHub, `gh pr update-branch`, or merge the target); the new commit is measured again. No rerun is requested and rerunning the workflow does not help: a rerun would measure the old commit. |
+| `shared_head`                 | Another open pull request into a branch other than the default branch has the same head commit, and GitHub shows one check per commit on both. Close that pull request or change its base to the default branch, then run the Archfit workflow again. Nothing runs by itself when it is gone.                                                                                       |
 | `policy_mismatch`             | Run the workflow with the policy from the base branch. Run it again if the base changed.                                                                                                                            |
 | `baseline_mismatch`           | Run the workflow with the baseline from the base branch.                                                                                                                                                            |
 | `labels_mismatch`             | Run the workflow with the labels file from the base branch.                                                                                                                                                         |
@@ -936,6 +937,14 @@ check is not covered. Where the window matters, require branches to be up to dat
 Archfit as the check they run.
 
 Set `integration.recheck: off` to keep results until the next run.
+
+**One head, one base.** Checks belong to a commit, not to a pull request. If the same commit is the head of a pull
+request into the default branch and of another into a different branch, both pull requests would show the same green
+`archfit/gate`, and the second branch can carry a looser `.archfit.yaml`. Archfit accepts no protected base other than
+the default branch, so it never writes a `success` for a head that another open pull request into a different base
+shares: the upload ends `action_required` with `shared_head`, and the sweep (hourly, and at once when such a pull
+request is opened or pushed) withdraws a `success` that already exists. Close the other pull request or change its base
+to the default branch, then run the Archfit workflow again: nothing re-runs for you.
 
 ## See a repository
 

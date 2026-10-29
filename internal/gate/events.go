@@ -63,7 +63,7 @@ func (g *Gate) react(ctx context.Context, e webhook.Event) (string, error) {
 	switch e.Kind {
 	case webhook.PullOpened, webhook.PullSynchronized:
 		if otherBase(e.DefaultBranch, e.BaseRef) {
-			return reactionOtherBase, nil
+			return g.sharedHeadOpened(ctx, e)
 		}
 		reaction, err := g.newHead(ctx, eventTarget(e))
 		if e.Kind == webhook.PullSynchronized {
@@ -86,6 +86,18 @@ func (g *Gate) react(ctx context.Context, e webhook.Event) (string, error) {
 		return g.branchPushed(ctx, e)
 	}
 	return reactionNone, nil
+}
+
+// sharedHeadOpened reacts to a pull request into another base. Nothing is decided for it, but its head may be the
+// head of a pull request into the default branch whose success the check on that head now shows to it: the repository
+// sweep (rule 5d) withdraws that success at once. A base changed after the pull request was opened sends no event
+// (the webhook does not map `edited`), so the hourly sweep is the net for it.
+func (g *Gate) sharedHeadOpened(ctx context.Context, e webhook.Event) (string, error) {
+	// A rate limit is an error that wraps api.ErrRateLimited: the queue retries the delivery.
+	if _, err := g.sweeper.RunRepo(ctx, eventTarget(e).Repo, g.now()); err != nil {
+		return reactionRepoSweep, fmt.Errorf("gate: repository sweep: %w", err)
+	}
+	return reactionRepoSweep, nil
 }
 
 // branchPushed records who moved the branch to e.HeadSHA, then re-evaluates the pull request on that head as a review

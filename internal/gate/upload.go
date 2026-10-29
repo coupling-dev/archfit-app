@@ -17,6 +17,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/gate/feedback"
 	"github.com/alexei-led/archfit-app/internal/gate/ingest"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
+	"github.com/alexei-led/archfit-app/internal/gate/sweep"
 	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/envelope"
@@ -90,8 +91,20 @@ func (g *Gate) decideAndPublish(ctx context.Context, u Upload) (verdict.Outcome,
 		Fork:        u.Binding.Fork,
 	}
 	problems := u.Problems
-	if u.Binding.PullRequest != 0 && u.Binding.BaseRef != u.Binding.Repo.DefaultBranch {
-		problems = append(slices.Clone(problems), ingest.ProblemUnsupportedEvent)
+	var shared []verdict.SharedPull
+	if u.Binding.PullRequest != 0 {
+		if u.Binding.BaseRef != u.Binding.Repo.DefaultBranch {
+			problems = append(slices.Clone(problems), ingest.ProblemUnsupportedEvent)
+		} else {
+			// Checks are written per head commit: a pull request into another base on this head would show the
+			// result. Only the default branch is a protected base, so a shared head never gets a success. A failed
+			// listing is an error (503, the Action retries), never a success.
+			pulls, err := g.pulls.OpenPulls(ctx, u.Binding.Repo.RepoRef)
+			if err != nil {
+				return verdict.Outcome{}, fmt.Errorf("gate: list open pull requests: %w", err)
+			}
+			shared = sweep.SharedWith(pulls, u.Binding.PullRequest, u.Binding.HeadSHA, u.Binding.Repo.DefaultBranch)
+		}
 	}
 	trusted, err := g.resolver.Resolve(ctx, target, g.now())
 	if err != nil {
@@ -102,6 +115,7 @@ func (g *Gate) decideAndPublish(ctx context.Context, u Upload) (verdict.Outcome,
 		BaselineDigest:   u.BaselineDigest,
 		LabelsDigest:     u.LabelsDigest,
 		Report:           u.Report,
+		SharedHead:       shared,
 		IdentityApproved: identityApproved(u),
 		WorkflowApproved: workflowApproved(u.Binding, trusted),
 		Trusted:          trusted,

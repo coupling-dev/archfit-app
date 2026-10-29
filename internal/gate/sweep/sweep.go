@@ -11,6 +11,7 @@ import (
 
 	"github.com/alexei-led/archfit-app/internal/gate/feedback"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
+	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 )
 
@@ -155,7 +156,7 @@ func (p *pass) repo(ctx context.Context, r api.Repo) error {
 			Repo: r, PullRequest: pl.Number, HeadSHA: pl.HeadSHA, BaseRef: pl.BaseRef,
 			Fork: pl.HeadRepo != r.FullName,
 		}
-		if err := p.pull(ctx, t, notOnboarded); err != nil {
+		if err := p.pull(ctx, t, SharedWith(pulls, t.PullRequest, t.HeadSHA, r.DefaultBranch), notOnboarded); err != nil {
 			if err := p.skip(ctx, err, "pull", targetAttrs(t)...); err != nil {
 				return err
 			}
@@ -165,7 +166,7 @@ func (p *pass) repo(ctx context.Context, r api.Repo) error {
 }
 
 // pull returns every error; the caller decides whether it stops the pass.
-func (p *pass) pull(ctx context.Context, t inputs.Target, notOnboarded map[string]bool) error {
+func (p *pass) pull(ctx context.Context, t inputs.Target, shared []verdict.SharedPull, notOnboarded map[string]bool) error {
 	tr, err := p.resolver.Resolve(ctx, t, p.now)
 	if err != nil {
 		return err
@@ -179,7 +180,7 @@ func (p *pass) pull(ctx context.Context, t inputs.Target, notOnboarded map[strin
 		return p.recheckPull(ctx, t, tr)
 	}
 	// Rule 8 is independent of the check rules: a failure of one never skips the other.
-	return errors.Join(p.evaluate(ctx, t, tr), p.decisions.Revalidate(ctx, t, tr, p.now))
+	return errors.Join(p.evaluate(ctx, t, tr, shared), p.decisions.Revalidate(ctx, t, tr, p.now))
 }
 
 // skip counts and logs a failed unit. It returns an error only when the failure stops the pass.

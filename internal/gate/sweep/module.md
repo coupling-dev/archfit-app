@@ -25,6 +25,8 @@ and a changed base policy, an expired waiver or a restored subscription would ne
 - Warn 7 days before the earliest waiver expiry; after expiry publish `waiver_expired` and re-run.
 - After the default branch moved, publish `target_moved` over a `success` receipt when the tip's report and the pull
   request's report together close a module cycle that neither holds alone (rule 5c). No re-run.
+- Publish `shared_head` over a `success` receipt while another open pull request into a base other than the default
+  branch has the same head commit (rule 5d). No re-run.
 - Re-run after a restored entitlement or a late owner approval.
 - Run the same pass for one repository on request (`RunRepo`), used when the protected ref changes.
 - Run rule 5c alone for one repository on request (`Recheck`), used when any default-branch push moves the tip.
@@ -168,6 +170,7 @@ The first rule whose condition holds ends the evaluation of that pull, whether o
 | 5a  | `Withdrawn(rc, Trusted)`: the approval a decided receipt relied on is gone      | `Publisher.Reconcile` with `Withdrawal` decided inside the lease (below); no re-run                    | —           |
 | 5b  | has receipt and it is stale (below)                                             | base behind (below): publish `target_moved`, no re-run. Else publish `Without(ReasonStaleInputs)`, then re-run | `Rerun`     |
 | 5c  | required mode, `rc.Conclusion == success`, `Settings.Recheck() == overlap`, and `rc.BaseSHA` is `""` or not the default-branch tip: the tip's and the pull request's reports close a cycle neither holds alone, or the pull request's report cannot be proved, or the tip has had no report for `MissingUploadAfter` | publish `Without(ReasonTargetMoved)` carrying the cycle and the commit range, inside `Publisher.Reconcile`; no re-run | — |
+| 5d  | required mode, `rc.Conclusion == success`, and an open pull request other than this one has this head and a base that is not the default branch (evaluated before 5c, which it excludes while it holds) | `Publisher.Reconcile`: inside the lease the open pull requests are listed again, and `verdict.SharedHead` over the current receipt is published only if the receipt, the inputs and a shared head still hold (below); no re-run | —           |
 | 6a  | expiry `e` set, `now < e` and `e − now ≤ WaiverWarnBefore`                      | `Publisher.Warn(target, e)`                                                                            | `Warned`    |
 | 6b  | expiry `e` set, `now ≥ e`, `state.StartedAt < e` and `rc.Reason != target_moved` | base behind: publish `target_moved`, no re-run. Else publish `Without(ReasonWaiverExpired)`, then re-run | `Rerun`     |
 | 7a  | `rc.Reason == subscription_suspended` and `!Trusted.Suspended`                  | base behind: publish `target_moved`, no re-run. Else re-run; if none is possible publish `Without(ReasonMissingUpload)` | `Rerun`     |
@@ -234,6 +237,32 @@ Definitions:
   arrives and the pending check ends `missing_upload`.
 - "No re-run is possible" in rules 7a and 7b: `rc.RunID == 0`, the run is gone, or the run already has a newer
   completed attempt that uploaded nothing. The reason then becomes `missing_upload`, which is true and names the recovery.
+
+### Rule 5d: shared head
+
+A check is written per (head commit, check name), so every pull request on a head shows the checks written for it. An
+agent can open a pull request into a branch it controls (`b`, with a loosened `.archfit.yaml`) from the same feature
+head as the pull request into the default branch; the green check of the second is then shown on the first. The upload
+already refuses any other base (`unsupported_event`) and this pass decides only default-branch pull requests; rule 5d
+closes the remaining gap. The App accepts no protected base other than the default branch.
+
+The pass lists the repository's open pull requests anyway. For a pull request into the default branch whose receipt is
+a `success`, `SharedWith(pulls, number, head, defaultBranch)` names the other open pull requests with the same head and a
+base that is not the default branch. Any such pull request makes the rule publish `verdict.SharedHead` over the
+receipt (same run identity and current digests, as `Without` does), reason `shared_head`, `action_required`. The rule
+runs before 5c and ends the evaluation: both withdraw the same success.
+
+It is decided twice, as rule 5a is. Inside `Publisher.Reconcile` the lease reads the check again; the rule publishes only
+when the receipt is still the one the pass saw, the repository is in required mode, no approval is withdrawn, the inputs
+are not stale, and a fresh `OpenPulls` listing still names a pull request on the head. A pull request closed meanwhile
+leaves the success; a failed listing is an error of the unit (counted, skipped), never a decision. The `Recheck` pass
+(rule 5c alone) does not run it.
+
+When the other pull request is closed or retargeted, nothing happens automatically: `shared_head` is not a reason any
+rule re-runs, and its `Next` tells the author to run the Archfit workflow again. Only a new upload (which lists the
+pull requests itself) can turn the check green again. A base changed after a pull request was opened sends no event
+(the webhook does not map `edited`), so the hourly pass is what finds it; a pull request opened or pushed into another
+base is also answered at once (`gate`: `RunRepo`).
 
 ### Rule 5c: target moved
 
