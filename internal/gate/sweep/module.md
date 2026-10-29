@@ -23,8 +23,11 @@ and a changed base policy, an expired waiver or a restored subscription would ne
 - Detect receipts whose policy, baseline or labels digest no longer matches the protected ref; publish
   `stale_inputs` and re-run the customer's workflow.
 - Warn 7 days before the earliest waiver expiry; after expiry publish `waiver_expired` and re-run.
+- After the default branch moved, publish `target_moved` over a `success` receipt when the tip's report and the pull
+  request's report together close a module cycle that neither holds alone (rule 5c). No re-run.
 - Re-run after a restored entitlement or a late owner approval.
 - Run the same pass for one repository on request (`RunRepo`), used when the protected ref changes.
+- Run rule 5c alone for one repository on request (`Recheck`), used when any default-branch push moves the tip.
 - Stop cleanly on GitHub rate-limit exhaustion: the next `Run` continues, and `RunRepo` returns the limit so its caller retries.
 - Return counts only, including the number of skipped units.
 
@@ -38,6 +41,10 @@ tuned against rate limits and pilot behavior.
 - The rule order per pull request and which rule ends the evaluation.
 - What "stale" and "withdrawn" mean for a receipt, and the expiry test based on the check's `StartedAt`.
 - The re-run guard that keeps re-runs to one per receipt.
+- Predicate (B) of rule 5c: the directed union of the tip's and the pull request's module graphs, its strongly
+  connected components of two or more modules, and which of them are new. The graphs come from verified report
+  artifacts; the sweep reads no file list, parses no policy and matches no glob.
+- What a read that proves nothing means for rule 5c: no decision for the tip's report, stale for the pull request's own.
 - How a `Without` publication keeps the previous run identity so that feedback updates the gate check in place.
 - The traversal order and its rotation.
 - Which errors stop the pass and which are skipped.
@@ -66,6 +73,10 @@ type Sweeper interface {
     // RunRepo is the same pass limited to one repository (used when the protected ref changes).
     // A rate limit stops it with Summary.RateLimited and an error that wraps api.ErrRateLimited.
     RunRepo(ctx context.Context, r Repo, now time.Time) (Summary, error)
+    // Recheck is rule 5c alone for r, after a push moved its default branch to tip: a passed pull request goes stale
+    // when the moved target closes a module cycle with it. It does nothing when the branch is no longer at tip. A rate
+    // limit stops it as it stops RunRepo.
+    Recheck(ctx context.Context, r Repo, tip string, now time.Time) (Summary, error)
 }
 ```
 
@@ -105,7 +116,7 @@ func Rerun(ctx context.Context, actions Actions, r RepoRef, rc Receipt) (RerunRe
 ```go
 // Without builds the publication for a target that has no report: verdict.Without(code),
 // verdict.Suspended(tr.Entitlement) for ReasonSuspended, or verdict.ApprovalMissing(tr) for
-// ReasonOwnerApprovalMissing, with the run identity of rc (zero when there is no previous receipt) and the
+// ReasonOwnerApprovalMissing, with the run identity and base of rc (zero when there is no previous receipt) and the
 // current digests of tr.
 func Without(code ReasonCode, t Target, tr Trusted, rc Receipt) Publication
 
@@ -132,6 +143,8 @@ func Withdrawal(t Target, current CheckState, tr Trusted) *Publication
    `(repository, BaseRef)` for the rest of the pass. Otherwise `Summary.Pulls++` and the rules below run.
 5. Sequential, one pull at a time **[default]**.
 
+`Recheck(ctx, r, tip, now)` is the same traversal with rule 5c as the only rule (see "Rule 5c").
+
 `RunRepo(ctx, r, now)` is steps 3 to 5 for the one repository `r`, without the admission check (its caller, the
 gate's `HandleEvent`, asked `Admitted` for the event already): same rules, same guards, same error
 handling, `Summary.Repos == 1`. The caller supplies `r` from a verified webhook; only `r.RepoRef` and
@@ -153,12 +166,13 @@ The first rule whose condition holds ends the evaluation of that pull, whether o
 | 3   | `!state.Exists`                                                                 | `Publisher.Pending(target)`                                                                            | `Pended`    |
 | 4   | `state.Pending`                                                                 | if `now − state.StartedAt ≥ MissingUploadAfter`: publish `Without(ReasonMissingUpload)`                | `TimedOut`  |
 | 5a  | `Withdrawn(rc, Trusted)`: the approval a decided receipt relied on is gone      | `Publisher.Reconcile` with `Withdrawal` decided inside the lease (below); no re-run                    | —           |
-| 5b  | has receipt and it is stale (below)                                             | publish `Without(ReasonStaleInputs)`, then re-run                                                      | `Rerun`     |
+| 5b  | has receipt and it is stale (below)                                             | base behind (below): publish `target_moved`, no re-run. Else publish `Without(ReasonStaleInputs)`, then re-run | `Rerun`     |
+| 5c  | required mode, `rc.Conclusion == success`, `Settings.Recheck() == overlap`, and `rc.BaseSHA` is `""` or not the default-branch tip: the tip's and the pull request's reports close a cycle neither holds alone, or the pull request's report cannot be proved, or the tip has had no report for `MissingUploadAfter` | publish `Without(ReasonTargetMoved)` carrying the cycle and the commit range, inside `Publisher.Reconcile`; no re-run | — |
 | 6a  | expiry `e` set, `now < e` and `e − now ≤ WaiverWarnBefore`                      | `Publisher.Warn(target, e)`                                                                            | `Warned`    |
-| 6b  | expiry `e` set, `now ≥ e` and `state.StartedAt < e`                             | publish `Without(ReasonWaiverExpired)`, then re-run                                                    | `Rerun`     |
-| 7a  | `rc.Reason == subscription_suspended` and `!Trusted.Suspended`                  | re-run; if no re-run is possible publish `Without(ReasonMissingUpload)`                                | `Rerun`     |
-| 7b  | `rc.Reason == owner_approval_missing` and `!verdict.Unapproved(Trusted)`        | re-run; if no re-run is possible publish `Without(ReasonMissingUpload)`                                | `Rerun`     |
-| 7c  | `rc.Reason` is `stale_inputs` or `waiver_expired`                               | re-run (retries a re-run request that failed in an earlier pass; the guard makes it a no-op otherwise) | `Rerun`     |
+| 6b  | expiry `e` set, `now ≥ e`, `state.StartedAt < e` and `rc.Reason != target_moved` | base behind: publish `target_moved`, no re-run. Else publish `Without(ReasonWaiverExpired)`, then re-run | `Rerun`     |
+| 7a  | `rc.Reason == subscription_suspended` and `!Trusted.Suspended`                  | base behind: publish `target_moved`, no re-run. Else re-run; if none is possible publish `Without(ReasonMissingUpload)` | `Rerun`     |
+| 7b  | `rc.Reason == owner_approval_missing` and `!verdict.Unapproved(Trusted)`        | base behind: publish `target_moved`, no re-run. Else re-run; if none is possible publish `Without(ReasonMissingUpload)` | `Rerun`     |
+| 7c  | `rc.Reason` is `stale_inputs` or `waiver_expired` (never `target_moved`: only a new head measures the merge) | base behind: publish `target_moved`, no re-run. Else re-run (retries a re-run request that failed in an earlier pass; the guard makes it a no-op otherwise) | `Rerun`     |
 | 8   | every onboarded pull (`SettingsFound`), after the rules above, whatever they did | `Decisions.Revalidate(target, trusted)`: each pending decision request of the pull whose policy digest `Trusted.PolicyDigests` no longer accepts becomes `stale (policy changed)` and its status comment is edited; a pending request without a status comment gets one | — |
 
 Rule 8 does not take part in the "first rule wins" order: it runs after the check rules and neither skips nor depends
@@ -221,10 +235,112 @@ Definitions:
 - "No re-run is possible" in rules 7a and 7b: `rc.RunID == 0`, the run is gone, or the run already has a newer
   completed attempt that uploaded nothing. The reason then becomes `missing_upload`, which is true and names the recovery.
 
+### Rule 5c: target moved
+
+Two pull requests that each pass alone can still land a module cycle together: the second one was measured on a
+default branch that did not yet hold the first. Rule 5c re-examines a passed pull request once the default branch has
+moved, with no compare call, no file list, no policy parse and no glob match: only two reports.
+
+Where it sits: after rule 5b, before rule 6a. It ends the evaluation when it publishes, as rule 5b does; when it
+decides nothing, rule 6a and the rules after it run. It applies only in required mode (rule 0 sends advisory pulls
+away, so an advisory repository never runs it), to a pull request into the default branch (the traversal skips any
+other base), and only to `rc.Conclusion == success`: a `failure`, a report-derived `action_required` and every other
+reason are not a passed result, and nothing here may add to them. `Settings.Recheck()` must be `overlap`
+(`integration.recheck`, default `overlap`); `off` skips the rule.
+
+Steps, in this order, stopping at the first that decides nothing:
+
+1. The tip is `Repos.BranchHead(default branch)`, read once per repository per pass. `ErrNotFound` decides nothing.
+   `rc.BaseSHA == tip` decides nothing and reads nothing more: the receipt was measured on this very base. A receipt
+   whose `BaseSHA` is `""` (written before the field existed, or a push) is always compared, so an old receipt never
+   fails open. `Receipt.BaseSHA` is the upload's `Binding.BaseSHA` when GitHub merged the head into the base, and
+   `Binding.MergeBaseSHA` when the head conflicts and was measured alone.
+2. The tip's report, read once per repository per pass: the `archfit/state` check on the tip commit
+   (`Publisher.AdvisoryState`), its receipt's `RunID` and `ReportDigest`, the run's `archfit-report` artifact, proved
+   with `report.DecodeArtifact` (digest check, then the strict decode). Only a check the App decided counts
+   (`Decided`): the report of a rejected upload (unknown engine, unapproved workflow, mismatched envelope) is no
+   measurement of the tip, however well it decodes. Nothing is stored. When there is no report to read:
+   - no `archfit/state` check on the tip yet: no decision. The check's `StartedAt` is the only clock the sweep has for
+     a tip, so a tip that never gets a check never goes overdue (stated limit; A7's repair issue is the net);
+   - a check whose report cannot be proved (an undecided receipt, no run or digest in its receipt, an expired
+     artifact, an artifact that is not one file (`api.ErrArtifactInvalid`), a digest mismatch, bytes that are no
+     report): no decision while `now − StartedAt < MissingUploadAfter`, the clock and limit of rule 4;
+     from then on the tip is overdue and the pull request is stale. A `StartedAt` in the future makes the difference
+     negative, which counts as overdue: a skewed or forged time never keeps the recheck off;
+   - a failed read (not `ErrNotFound`, not `ErrArtifactInvalid`): the error ends the unit (counted in `Summary.Errors`; a rate limit stops the
+     pass), nothing is written.
+3. The pull request's own report, by `rc.RunID` and `rc.ReportDigest`, proved the same way. When it cannot be proved
+   (no run or digest, an expired artifact, an artifact that is not one file, a digest mismatch, bytes that are no report)
+   the receipt is stale: an update of the branch makes a new report, so this costs the author one click and never lets
+   an unmeasured merge through. A failed read (a GitHub or blob-store error, a timeout, a rate limit) proves nothing
+   either way: the error ends the unit, nothing is written, and the next pass reads again. A GitHub incident therefore
+   never turns a green receipt stale.
+4. Predicate (B) over the two graphs. A graph has one directed edge `from_module → to_module` per seam of the report
+   whose two modules are named; a seam within one module is not an edge. The union of both graphs is stale when it has a
+   strongly connected component of two or more modules that is not, member for member, a component of the tip's graph
+   alone or of the pull request's graph alone. The modules of every such component, sorted, are the cycle.
+   - a cycle the target already holds, with no change by the pull request, is not new;
+   - a cycle the pull request closes with its own edges only was measured by its own run;
+   - a pull request that adds edges to an existing cycle makes a larger component, which is new;
+   - a hub (`a→h`, `c→h`) with no edge back is not a cycle.
+
+   The engine builds a seam for every resolved cross-module edge and `module_cycle` counts a subset of them (production
+   edges between declared modules), so a module cycle the engine would report on the merge is a component here.
+5. Stale: `Publisher.Reconcile` holds the head's lease, and inside it the decision is made again from the check as it is
+   and the inputs resolved at the pass's `now`: nothing is written unless the current receipt still equals `rc`, the
+   repository is still in required mode with `overlap`, and the receipt is neither `stale` (rule 5b) nor `Withdrawn`
+   (rule 5a). A newer run, a changed policy or a withdrawn approval is left to the rule that owns it. The publication
+   is `Without`'s receipt (run identity, `BaseSHA` and report digest of `rc`, the current digests) with the outcome
+   `verdict.TargetMoved(cycle, rc.BaseSHA, tip)`: category evidence, `action_required`, not report-derived, so the Pull
+   page withholds the report as it does under `stale_inputs`. No re-run: a GitHub re-run reuses the old commit and the
+   upload fails `envelope_mismatch`, and only a new head measures the merge. The recovery owner is the pull request
+   author. The next pass finds a non-`success` receipt and decides nothing.
+
+#### Base behind: rules 5b, 6b, 7a, 7b, 7c
+
+A GitHub re-run reuses the original event payload and commit, so it measures the old merge commit, and ingest holds
+the envelope to GitHub's current base and merge commit: once the default branch moved, the upload of a re-run is
+`envelope_mismatch`, whose recovery is "re-run". Every rule that would request a re-run therefore asks first whether
+the receipt is behind: `rc.BaseSHA` is not `""` and not the default-branch tip (the tip is read once per pass, as in
+rule 5c). If it is, the rule requests no re-run and publishes `verdict.TargetMoved(nil, rc.BaseSHA, tip)` in place of
+its own reason (`stale_inputs`, `waiver_expired`, `missing_upload`): the range only, and the generic "update the branch"
+recovery. This holds in required mode whatever `integration.recheck` says, and for any conclusion of `rc`; rule 5b
+replaces a green receipt whose inputs went stale as well. The publication goes through `publishMoved`, the path of
+rule 5c: inside `Publisher.Reconcile` the decision is made again, and a newer run, a withdrawn approval or a repository
+that left required mode is left to the rule that owns it. Rules 6b, 7a, 7b and 7c also leave a receipt that went stale
+meanwhile to rule 5b; rule 5b alone may replace a stale receipt. The receipt is `target_moved` afterwards, so the next
+pass finds nothing to do.
+
+A receipt with `BaseSHA == ""` (written before the field existed) and a receipt measured on the tip keep the rule's
+behaviour, re-run included. A tip that cannot be read (not `ErrNotFound`) counts nothing new and does what the rule did
+before; a rate limit or a cancelled context stops the pass, as everywhere. Rule 5a requests no re-run and is unchanged.
+
+Rules 6b and 7c leave a `target_moved` receipt alone; 5b still replaces it with `stale_inputs` when the protected inputs
+change, and rules 5a, 7a and 7b never match it. A new upload after the branch update replaces it.
+
+`Recheck(ctx, r, tip, now)` is the trigger that does not wait for the hour. The gate calls it for every default-branch
+push that changes no protected path (a protected push runs `RunRepo`, whose full rule table already includes rule 5c).
+It reads `BranchHead` and returns an empty `Summary` with a nil error unless the head is `tip`: a newer push starts its
+own recheck. Otherwise it walks the repository's open pull requests as `RunRepo` does and runs rule 5c alone on each
+one that no other rule would act on: a fork, a suspended repository, a withdrawn approval, stale inputs and a missing,
+pending or unreadable check are left to the full pass (their reason must not be hidden, nor their re-run lost). A rate
+limit is returned as an error that wraps `api.ErrRateLimited`, like `RunRepo`.
+
+Cost: one `BranchHead` and one `AdvisoryState` per repository per pass, one artifact read for the tip, one per pull request
+whose receipt was not measured on the tip. Verified graphs are kept in an in-process cache keyed by repository and
+report digest, at most 512 entries, oldest first out **[default]**: a report never changes, so a later pass or push reads
+nothing again. No Store record exists for rule 5c; every decision is derived from GitHub and the two reports.
+
+What rule 5c does not catch, so that nobody relies on it: a package-level `cycle` inside one module, aggregate gates
+(`max_new_seams`, dimension deltas) and budgets. They need a measurement of the merge; the repair issue of A7 on a broken
+default branch is the net. The window is the CI time of the default-branch push run (the tip has no report before it
+ends) plus the sweep interval (the hourly pass; `Recheck` runs earlier only when the tip's report is already there).
+
 ### Without publications
 
 `Without(code, target, trusted, rc)` is exported: the sweep owns the construction, and `gate` calls it for the fork
-refusal of a new head with the zero `rc`. It returns
+refusal of a new head with the zero `rc`. Rule 5c builds the same publication around `verdict.TargetMoved`, which carries
+the cycle and the commit range. It returns
 `Publication{Target, Identity: zero, Outcome, Receipt, Report: nil, Trusted}` with a nil `Resolve`.
 `Outcome` is `verdict.Without(code)`; for `ReasonSuspended` it is
 `verdict.Suspended(Trusted.Entitlement)`, so a suspension published by the sweep shows `Entitlement.Reason` as its
@@ -235,6 +351,7 @@ makes feedback print "no upload" and label the digests "from the protected ref".
 | Field                                 | Value                                       |
 | ------------------------------------- | ------------------------------------------- |
 | `RunID`, `RunAttempt`, `ReportDigest` | copied from `rc` (zero when there is none)  |
+| `BaseSHA`                             | copied from `rc`                            |
 | `PolicyDigest`                        | `inputs.First(Trusted.PolicyDigests)`       |
 | `BaselineDigest`                      | `inputs.First(Trusted.BaselineDigests)`     |
 | `LabelsDigest`                        | `inputs.First(Trusted.LabelsDigests)`       |
@@ -390,7 +507,8 @@ func First(trusted []string) string
 - **LCA / Rank / Distance**: gate / 1 / 1
 - **Volatility**: high
 - **Balanced?**: yes
-- **Shared knowledge**: `State` reads the `archfit/gate` check of the head SHA; `StartedAt` is the time of the
+- **Shared knowledge**: `State` reads the `archfit/gate` check of the head SHA; `AdvisoryState` reads the `archfit/state`
+  check, which rule 0 uses for an advisory pull and rule 5c uses for the tip commit; `StartedAt` is the time of the
   last publication; `Publish` never overwrites a receipt with a higher `(RunID, RunAttempt)`; `Pending` and
   `Warn` are idempotent; a `Report` of nil is a valid publication. `Identity` is an opaque part of `Publication`
   for this module; the sweep always leaves it zero.
@@ -407,6 +525,10 @@ type Receipt struct {
     PolicyDigest         string     `json:"policy_digest"`
     BaselineDigest       string     `json:"baseline_digest"`
     LabelsDigest         string     `json:"labels_digest"`
+    // BaseSHA is the default-branch commit the report was measured against: the base tip GitHub merged the head into,
+    // or the merge base of a head that conflicts. "" for a push and for a receipt written before the field existed.
+    // The sweep compares it with the tip (rule 5c); "" is always compared.
+    BaseSHA              string     `json:"base_sha,omitempty"`
     EarliestWaiverExpiry time.Time  `json:"earliest_waiver_expiry"`
     Conclusion           Conclusion `json:"conclusion"`
     Reason               ReasonCode `json:"reason"`
@@ -474,7 +596,8 @@ type Decision func(ctx context.Context, current CheckState) (*Publication, error
 - **LCA / Rank / Distance**: gate / 1 / 1
 - **Volatility**: high
 - **Balanced?**: yes
-- **Shared knowledge**: `Without` always returns `ActionRequired`; the sweep never calls `Decide` and never
+- **Shared knowledge**: `Without` always returns `ActionRequired`; `TargetMoved` is the only outcome the sweep builds
+  with data of its own, and its recovery owner is the pull request author; the sweep never calls `Decide` and never
   produces `Success`. `Facts` is not used here. `Problem` is an opaque part of `Facts` for this module, and
   `Report` is always nil in a sweep publication.
 
@@ -526,6 +649,7 @@ const (
     ReasonStaleInputs         ReasonCode = "stale_inputs"
     ReasonWaiverExpired       ReasonCode = "waiver_expired"
     ReasonSuspended           ReasonCode = "subscription_suspended"
+    ReasonTargetMoved         ReasonCode = "target_moved" // the default branch moved and, with this change, closes a module cycle
 )
 
 type Reason struct {
@@ -561,8 +685,15 @@ type Facts struct {
 func Decide(f Facts) Outcome
 
 // Without returns the fixed outcome for a target that has no report: code is one of ReasonMissingUpload,
-// ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended, ReasonOwnerApprovalMissing.
+// ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended, ReasonOwnerApprovalMissing,
+// ReasonTargetMoved.
 func Without(code ReasonCode) Outcome
+
+// TargetMoved is Without(ReasonTargetMoved) for a caller that knows what moved: cycle names the modules of the module
+// cycle the target and the pull request close together (none when the pull request could not be compared), base and
+// tip the commits it was measured on and the default branch is on now. Detail holds the first five modules (then
+// "and N more", each cut to 80 runes) and "<base12>..<tip12>"; Next names the cycle and the recovery.
+func TargetMoved(cycle []string, base, tip string) Outcome
 ```
 
 <!-- contract: Suspended, ApprovalMissing, Unapproved — restated from internal/gate/verdict/module.md -->
@@ -588,7 +719,7 @@ func Unapproved(t Trusted) bool
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high (sweep side); the file format is moderate
 - **Balanced?**: yes
-- **Shared knowledge**: only `Trusted.Settings.Gate` and `GateRequired` are read.
+- **Shared knowledge**: only `Trusted.Settings.Gate`, `GateRequired` and `Settings.Recheck()` (`RecheckOverlap`) are read.
 
 <!-- contract: Settings, GateMode, DataMode, Path — restated from internal/wire/settings/module.md -->
 ```go
@@ -617,8 +748,39 @@ type Settings struct {
     Gate     GateMode `yaml:"gate"`             // default advisory
     Workflow string   `yaml:"workflow"`         // e.g. ".github/workflows/archfit.yaml"
     DataMode DataMode `yaml:"data_mode"`        // default customer
+    // Integration is how a pull request is kept honest when its target branch moves after its report. Absent means
+    // the defaults of Recheck.
+    Integration *Integration `yaml:"integration,omitempty"`
 }
+
+type RecheckMode string
+
+const (
+    RecheckOverlap RecheckMode = "overlap" // default: a passed result goes stale when the moved target closes a module cycle with it
+    RecheckOff     RecheckMode = "off"     // a passed result stays until the next run
+)
+
+type Integration struct {
+    Recheck RecheckMode `yaml:"recheck"`
+}
+
+// Recheck is the mode in force: the default, overlap, when the block is absent.
+func (s Settings) Recheck() RecheckMode
 ```
+
+### wire/report
+
+- **Counterpart**: internal/wire/report
+- **Direction**: sweep depends on wire/report
+- **Strength**: contract (`DecodeArtifact`, `ArtifactName`, `MaxBytes`, `ErrDigestMismatch`, and `Report.Seams` with `Seam.FromModule` and `Seam.ToModule`)
+- **LCA / Rank / Distance**: root / 2 / 2
+- **Volatility**: high (sweep side); the decoder is moderate
+- **Balanced?**: yes
+- **Shared knowledge**: `DecodeArtifact(payload, digest)` proves that payload is the report the digest names ("sha256:<hex>"
+  or bare hex; a mismatch is `ErrDigestMismatch`) and decodes it as the newest engine release, whose key set holds every older
+  one. `control/ui` calls the same function for the Pull page, so a page and the sweep never disagree about what a
+  verified report is. Of the report the sweep reads only the seams' two module names. A decoded report is the producer's
+  claim in a customer-attested artifact: the sweep uses it to withdraw a result, never to grant one.
 
 ### github/api
 
@@ -631,8 +793,9 @@ type Settings struct {
 - **Shared knowledge**: `OpenPulls` includes drafts. `Run` returns the latest attempt. `Rerun` needs the App's
   `actions: write` permission and spends the customer's CI minutes. `ErrRateLimited` is the sentinel returned
   after bounded backoff; `ErrNotFound` is the sentinel for a missing object. Conditional requests make repeated
-  reads cheap. Used methods: `Repos.ListInstallations`, `Repos.ListRepos`, `Pulls.OpenPulls`, `Actions.Run`,
-  `Actions.Rerun`. `Review` is not used here.
+  reads cheap. Used methods: `Repos.ListInstallations`, `Repos.ListRepos`, `Repos.BranchHead` (rule 5c and `Recheck`),
+  `Pulls.OpenPulls`, `Actions.Run`, `Actions.Rerun`, `Actions.Artifact` (rule 5c, named `report.ArtifactName`, capped at
+  `report.MaxBytes`). `Review` is not used here.
 
 <!-- contract: RepoRef, Repo, ErrNotFound, ErrRateLimited — restated from internal/github/api/module.md -->
 ```go
@@ -754,6 +917,7 @@ type Actions interface {
 
 - **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Constructs the sweeper with `Deps.Sweep` and the `Admissions` as the `Admitter`,
   calls `Run(ctx, Deps.Now())` from `Gate.Sweep` and `RunRepo` from `HandleEvent` on a protected default-branch push,
+  calls `Recheck` from `HandleEvent` on a default-branch push that changes no protected path,
   calls `Rerun` for `ReviewChanged` and `Without` for the fork refusal of a new head, re-publishes `Sweeper`, `Summary` and `Config` to `app`.
 
 ## Change Vectors
@@ -761,6 +925,10 @@ type Actions interface {
 - New repair rules or thresholds; a per-repository threshold.
 - Bounded parallelism, or a stored cursor, if rate limits demand it.
 - More triggers for `RunRepo` (for example after an entitlement change).
+- A trigger for `Recheck` at the upload of a default-branch report, which would shrink the window of rule 5c to the CI time.
+- Re-running the rules that re-run (5b, 6b, 7a, 7b, 7c) after the target moved: a GitHub re-run reuses the old commit, so the
+  upload fails `envelope_mismatch`. A pull request whose `rc.BaseSHA` is not the tip would be published with an "update the
+  branch" recovery and no re-run request.
 
 ## Constraints and Invariants
 
@@ -777,6 +945,9 @@ type Actions interface {
   `OpenPulls` returns raw pulls. The owner of the rule is `gate/ingest` (`Binding.Fork`); `gate` computes it a third
   time from the webhook payload. If they drift, a fork is refused on one path and judged on another. It stays while
   `inputs.Target.Fork` is a plain boolean each caller fills; remove it when `github/api` or `gate/ingest` publishes a predicate.
+- Rule 5c only ever withdraws a `success`: it publishes `action_required` and never reads a report to grant anything.
+  A read that proves nothing about the tip decides nothing; one that proves nothing about the pull request's own report
+  withdraws the result. A `target_moved` receipt is replaced only by an upload of a new head (or by rule 5b).
 - Rate-limit exhaustion leaves checks pending or unchanged; it never produces green. `Run` ends with
   `RateLimited` and a nil error so the scheduler does not treat it as a failure. `RunRepo` returns the error, so the
   webhook queue retries the push that started it.
@@ -786,6 +957,8 @@ type Actions interface {
   tries again.
 - Reconciliation window (stated, not zero): a missed event or an expiry is repaired within one sweep interval
   (hourly **[default]**) plus the customer's CI time. During that window the old check result stands.
+  For rule 5c the window is the CI time of the default-branch push run plus the sweep interval: until the tip has a
+  report there is nothing to compare with, and a push-time `Recheck` that finds none decides nothing.
 - A Store outage inside `Resolve` means "not suspended"; the sweep never suspends on missing data. A pull whose approval
   record cannot be read counts as an error and keeps its check, like the lease failure below. The same outage
   fails every `Publish`, `Pending`, `Warn` and `Reconcile`, which need `gate/feedback`'s publication lease: each such
@@ -794,7 +967,7 @@ type Actions interface {
 - Logs (`log/slog` default logger **[default]**): installation ID, repository ID, PR number, head SHA, rule
   number, action, digests, timings, and the `Summary`. Never paths, messages, owner or reviewer names.
 - Imports: standard library, `gate/inputs`, `gate/feedback`, `gate/verdict`, `gate/decisions` (rule 8 only), `wire/settings`,
-  `github/api`. Never `control`, `app`, `store` directly, LLM or UI packages.
+  `wire/report`, `github/api`. Never `control`, `app`, `store` directly, LLM or UI packages.
 - `now` is a parameter; the sweep never reads the clock.
 
 ## Test Specification
@@ -836,6 +1009,13 @@ calls and serves `State` from what was published; injectable errors. Time is the
 - **Test name**: `TestTraversalRotation`
   **Scenario**: three installations; `now` at three consecutive hours.
   **Expected behavior**: the start index rotates; every installation is visited each pass.
+
+- **Test name**: `TestEdges`, `TestCycles`, `TestClosedCycle`
+  **Scenario**: seams within one module or without a module; a graph with two cycles, a self edge and a tail; the table of predicate (B): two-cycle across the reports, three-cycle across the reports (edges split either way), hub with no edge back, a cycle the target already holds (alone, and repeated by the pull request), an existing cycle that grows (by the pull request, and by a module only the target reaches), a cycle only in one report, two new cycles, a chain, no edges.
+  **Expected behavior**: only cross-module seams are edges; components of two or more modules, sorted; the cycle is non-empty exactly when the union has a component that is no component of either graph alone, and then names all its modules.
+- **Test name**: `TestEdgeCache`
+  **Scenario**: put and get; the same digest in another repository; `edgeCacheSize` further entries.
+  **Expected behavior**: an entry is found only under its repository; the oldest entry goes first and the cache never holds more than `edgeCacheSize`.
 
 ### Integration Contract Tests
 
@@ -927,3 +1107,31 @@ calls and serves `State` from what was published; injectable errors. Time is the
 - **Test name**: `TestStoreOutageDoesNotSuspend` (T21)
   **Scenario**: the resolver reports `Suspended` false because the Store failed, for a pull with a `success` receipt.
   **Expected behavior**: no publication; the receipt stands.
+
+- **Test name**: `TestOverlapStaleness` (A3)
+  **Scenario**: one pull request that passed on an old base, a tip report, and the pull request's own report: the pull request closes a cycle with the one merged before it; a three-module cycle spread over both reports; a hub with no edge back; a cycle the tip already holds with nothing added, and with the same edges again; an existing cycle that grows; a cycle only the pull request's own report holds; a self edge; no edges; a second, unrelated cycle beside an existing one.
+  **Expected behavior**: the receipt stays (no write, no re-run) unless the union closes a new cycle. Then exactly one `target_moved` publication follows: `action_required`, evidence, `Detail` `"<modules>; <base>..<tip>"`, `Next` naming the cycle and the update-branch recovery, the run identity, report digest and `BaseSHA` of the old receipt, no re-run; the next pass writes nothing.
+- **Test name**: `TestOverlapIsOnlyForPassedRequiredPulls` (A3)
+  **Scenario**: the same cycle with `recheck: off`; advisory mode; a `failure` receipt; a report-derived `action_required`; a receipt whose base is the tip; the default `overlap`; `overlap` written out; a receipt without a base.
+  **Expected behavior**: the first four read nothing (no `BranchHead`, no artifact); the base-is-tip row reads `BranchHead` once and no artifact; the last three publish `target_moved`.
+- **Test name**: `TestOverlapWithoutATipReport` (A3)
+  **Scenario**: no `archfit/state` check on the tip (now, and a day later); a check whose artifact expired, started 59 minutes, 60 minutes and a day ago, and one that starts in the future; an artifact that is not the report the receipt names (young, old); an artifact that is not one file (young, old); the report of a rejected upload (young, old); a receipt without a run (old, young); a failing artifact read, state-check read and `BranchHead`.
+  **Expected behavior**: no decision (nothing written) without a check and while the check is younger than `MissingUploadAfter`; `target_moved` from 60 minutes, for an old check and for a check in the future, with only the commit range in `Detail` and no claim of a cycle; a failed read counts one error and writes nothing.
+- **Test name**: `TestOverlapWithoutAVerifiablePullReport` (A3)
+  **Scenario**: the pull request's artifact expired; its digest does not match; verified bytes that are no report; a receipt without a digest; an artifact that is not one file; a failing artifact read; a rate limit.
+  **Expected behavior**: `target_moved` for the first five (range only in `Detail`); the rate limit stops the pass and writes nothing; a failing read counts one error and writes nothing.
+- **Test name**: `TestOverlapReadsTheTargetOncePerPass` (A3)
+  **Scenario**: three pull requests, then a second pass.
+  **Expected behavior**: one `BranchHead`, one tip check read, one artifact read for the tip and one for each pull request; the second pass reads no artifact (the cache).
+- **Test name**: `TestRecheckAfterAPush` (A3)
+  **Scenario**: `Recheck` for the current tip; for an older tip; a missing branch; a rate limit; pull requests with stale inputs, a withdrawn approval, a suspension, a pending check, no check and advisory mode; a fork.
+  **Expected behavior**: the first publishes `target_moved`; the second does nothing, resolves nothing and reads no artifact; the missing branch does nothing; the rate limit is returned wrapping `api.ErrRateLimited` with `Summary.RateLimited`; every other row writes nothing and reads no tip report.
+- **Test name**: `TestTargetMovedIsNotRepairedByOtherRules` (A3)
+  **Scenario**: a `target_moved` receipt with a waiver that expired after it was written, and one without a waiver.
+  **Expected behavior**: no write and no re-run (rules 6b and 7c).
+- **Test name**: `TestTargetMovedDecidesInsideTheLease` (A3)
+  **Scenario**: while the pass waits for the lease a newer run replaces the receipt, the policy changes, the approval is withdrawn, recheck is switched off, or the inputs cannot be read.
+  **Expected behavior**: nothing is written; the unreadable inputs count one error.
+- **Test name**: `TestTargetMovedFailsClosedOnReadErrors` (A3)
+  **Scenario**: a rate limit on `BranchHead`; a failing `Reconcile`.
+  **Expected behavior**: the pass stops with `RateLimited` and nothing written; the failed publication counts one error and the receipt stands.

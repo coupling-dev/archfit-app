@@ -76,6 +76,7 @@ type Receipt struct {
     BaselineDigest       string     `json:"baseline_digest"`
     LabelsDigest         string     `json:"labels_digest"`
     IdentityKey          string     `json:"identity_key,omitempty"` // the report's result identity, hashed; "" without one
+    BaseSHA              string     `json:"base_sha,omitempty"`     // the default-branch commit the report was measured against; "" for a push or an old receipt
     EarliestWaiverExpiry time.Time  `json:"earliest_waiver_expiry"`
     Conclusion           Conclusion `json:"conclusion"`
     Reason               ReasonCode `json:"reason"`
@@ -389,7 +390,8 @@ The compact PR comment is text-first; GitHub can notify the same bytes by email:
   engine constraint. Line zero is file-only. Accepted debt details and dimension tables stay in the exact check.
   No Mermaid/image/graph is emitted in the comment.
 - Role-aware reported recovery; no invented validation flags or selected cycle direction. Owner-decision tasks
-  identify the architecture owner's role.
+  identify the architecture owner's role. The recovery of `target_moved` (update the branch) is the pull request
+  author's: "Pull request author:", never "CI maintainer:".
 - Exact HEAD, workflow run/attempt and actual state-check object link when its successful write returned an ID.
   The App link is explicitly the current PR result/recovery diagnostics, not a historical snapshot. A check object can be
   updated; its ID does not promise immutable content. Failed/superseded writes and annotation-batch races supply no ID.
@@ -484,6 +486,7 @@ const (
     ReasonMissingUpload       ReasonCode = "missing_upload"
     ReasonStaleInputs         ReasonCode = "stale_inputs"
     ReasonWaiverExpired       ReasonCode = "waiver_expired"
+    ReasonTargetMoved         ReasonCode = "target_moved" // the default branch moved and, with this change, closes a module cycle
     ReasonSuspended           ReasonCode = "subscription_suspended"
 )
 

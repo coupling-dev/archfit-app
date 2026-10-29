@@ -49,6 +49,7 @@ Volatility: moderate. Fields follow product decisions (decisions.md §2, §4); e
 | `gate`      | no       | `advisory` or `required`, exact lowercase; absent means `advisory`                    |
 | `workflow`  | yes      | `^\.github/workflows/[A-Za-z0-9._-]+\.ya?ml$`, at most 255 characters                 |
 | `data_mode` | no       | `customer` or `managed`, exact lowercase; absent means `customer`                     |
+| `integration` | no     | mapping with the one key `recheck`: `overlap` or `off`, exact lowercase; a block without `recheck` holds `overlap`; absent means the defaults (`Settings.Recheck()` is `overlap`); unknown or duplicate keys are errors |
 | `repair_assignee` | no | one login by the owner login rule; no team, no list, no `[bot]`; absent means nobody |
 
 - Owner login: `^[A-Za-z0-9-]+$`, at most 39 characters. Owner team: `^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$` ("org/team-slug").
@@ -103,9 +104,28 @@ type Settings struct {
     DataMode DataMode `yaml:"data_mode"`        // default customer
     // PolicyAuthority is who may approve a change to the protected files. Absent means human.
     PolicyAuthority *PolicyAuthority `yaml:"policy_authority,omitempty"`
+    // Integration is how a pull request is kept honest when its target branch moves after its report. Absent means
+    // the defaults of Recheck.
+    Integration *Integration `yaml:"integration,omitempty"`
     // RepairAssignee is the one login the default branch's repair issue is assigned to; "" assigns nobody.
     RepairAssignee string `yaml:"repair_assignee,omitempty"`
 }
+
+// RecheckMode says whether the sweep re-examines a passed pull request after the default branch moved.
+type RecheckMode string
+
+const (
+    RecheckOverlap RecheckMode = "overlap" // default: a passed result goes stale when the moved target closes a module cycle with it
+    RecheckOff     RecheckMode = "off"     // a passed result stays until the next run
+)
+
+// Integration is the integration block.
+type Integration struct {
+    Recheck RecheckMode `yaml:"recheck"`
+}
+
+// Recheck is the mode in force: the default, overlap, when the block is absent.
+func (s Settings) Recheck() RecheckMode
 
 // PolicyAuthority is the policy_authority block. Only human is in force in this release: a file may name a later
 // rung, which parses so that the file stays valid, and Settings.Effective holds it at human with a reason.
@@ -237,6 +257,11 @@ No counterpart contract is used by this module, so nothing is restated here.
   **Scenario**: render with two agents; then with an empty list.
   **Expected behavior**: `agents` as a block sequence between `owners` and `gate`, round trip holds; no `agents` key
   for the empty list.
+- **Test name**: `TestParseIntegration`, `TestIntegrationRules`
+  **Scenario**: `integration` absent, `recheck: overlap`, `recheck: off`, an empty mapping; a scalar, null, an unknown
+  key, a duplicate `recheck`, `recheck: Off`, `recheck: true`, `recheck:` empty.
+  **Expected behavior**: nil (mode overlap), overlap, off, overlap, all round-tripping through `Render`; every bad row
+  is an error naming `integration`.
 - **Test name**: `TestParseRepairAssignee`
   **Scenario**: `repair_assignee` absent; a login; a login with dashes and digits; 39 characters; a quoted number.
   **Expected behavior**: `""` for absent, else the login as written; the round trip holds in every row.

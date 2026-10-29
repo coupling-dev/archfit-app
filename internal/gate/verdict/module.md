@@ -89,6 +89,7 @@ const (
     ReasonMissingUpload       ReasonCode = "missing_upload"
     ReasonStaleInputs         ReasonCode = "stale_inputs"
     ReasonWaiverExpired       ReasonCode = "waiver_expired"
+    ReasonTargetMoved         ReasonCode = "target_moved" // the default branch moved and, with this change, closes a module cycle
     ReasonSuspended           ReasonCode = "subscription_suspended"
 )
 
@@ -128,8 +129,15 @@ type Facts struct {
 func Decide(f Facts) Outcome
 
 // Without returns the fixed outcome for a target that has no report: code is one of ReasonMissingUpload,
-// ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended, ReasonOwnerApprovalMissing.
+// ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended, ReasonOwnerApprovalMissing,
+// ReasonTargetMoved.
 func Without(code ReasonCode) Outcome
+
+// TargetMoved is Without(ReasonTargetMoved) for a caller that knows what moved: cycle names the modules of the module
+// cycle the target and the pull request close together (none when the pull request could not be compared), base and
+// tip the commits it was measured on and the default branch is on now. Detail holds the first five modules (then
+// "and N more", each cut to 80 runes) and "<base12>..<tip12>"; Next names the cycle and the recovery.
+func TargetMoved(cycle []string, base, tip string) Outcome
 ```
 
 ```go
@@ -322,12 +330,15 @@ Categories of integrity, comparability and `Without` codes are **[default]**. `N
 | `missing_upload`              | evidence     | `action_required`     | empty                                                                                                 | "No report arrived. Check the Archfit workflow run and re-run it."                                                    |
 | `stale_inputs`                | evidence     | `action_required`     | empty                                                                                                 | "Policy or baseline changed on the base branch. A re-run was requested; re-run the Archfit workflow if none appears." |
 | `waiver_expired`              | governance   | `action_required`     | empty                                                                                                 | "A waiver expired. A re-run was requested; renew the waiver by owner-approved PR or fix the finding."                 |
+| `target_moved`                | evidence     | `action_required`     | the modules of the new cycle and `<base12>..<tip12>` (`TargetMoved`; empty in the catalog)            | "The target branch moved and this pull request cannot be compared with it. Update the branch (Update branch on GitHub, `gh pr update-branch`, or merge the target) to measure it again." `TargetMoved` with a cycle says instead "The target branch moved, and with it this pull request closes a module cycle: <modules>. " and the same recovery. |
 | `subscription_suspended`      | subscription | `action_required`     | empty                                                                                                 | `Entitlement.Reason` in `Decide` and `Suspended` when not empty; else "Archfit subscription inactive."                |
 
 `Detail` carries protected path names for `owner_approval_missing`; these are the five fixed protected
 paths, not customer source paths. The one engine-authored text in a `Detail` is the capped reason list of
 `baseline_not_comparable` (single-line, length-capped by the decoder, no source). No `Detail` carries a finding,
-a file path from the report, or a module name. The `attention_only` Detail holds only fixed dimension keys and a
+a file path from the report, or a module name, with one exception: `target_moved` names the modules of the cycle the
+sweep found (identifiers from a decoded report, single-line and length-capped by the decoder, at most five, each cut to
+80 runes) and the two commits it compares. The `attention_only` Detail holds only fixed dimension keys and a
 count; the `policy_defect` Detail holds rule IDs, never the dead glob (feedback shows the engine reason with the
 glob in the evidence-gap section). `labels_mismatch` is category evidence **[default]**.
 
@@ -817,10 +828,13 @@ type Seam struct {
   **Scenario**: `IdentityApproved` false with profile nil, with profile present, and with `Report` nil.
   **Expected behavior**: `measurement_profile_missing`, `unknown_engine_identity`, and only `report_invalid` respectively.
 - **Test name**: `TestReasonCatalogComplete`
-  **Scenario**: iterate every `ReasonCode` constant of the contract (twenty-four).
+  **Scenario**: iterate every `ReasonCode` constant of the contract (twenty-five).
   **Expected behavior**: each has the catalog category and conclusion (`success` for `healthy` and `attention_only`); every code except `healthy` has a non-empty `Next`; the `Next` texts of `workflow_not_approved` and `settings_missing` name `settings.Path`; those of `unknown_engine_identity` and `measurement_profile_missing` name the user-guide section "Move an installed workflow to a new engine" and never the onboarding workflow, which keeps the pin it was written with.
+- **Test name**: `TestTargetMoved`
+  **Scenario**: a cycle of two modules; five; seven; a module name over 80 runes; no cycle with a base; no cycle and no base; nothing known.
+  **Expected behavior**: `action_required`, evidence; `Detail` lists the first five modules, then "and N more", each cut to 80 runes, then `; <base12>..<tip12>`; `Next` names the cycle and the update-branch recovery, and without a cycle it is the catalog text, which claims none; `target_moved` is not report-derived (`ReportDerivedAction`, `ClassifyDisplayReason`).
 - **Test name**: `TestWithout`
-  **Scenario**: the six allowed codes, then `ReasonHealthy` and an unknown code.
+  **Scenario**: the seven allowed codes, then `ReasonHealthy` and an unknown code.
   **Expected behavior**: `ActionRequired` with one reason each; the last two give `engine_error`.
 - **Test name**: `TestSuspended`
   **Scenario**: an entitlement with a `Reason`; the zero entitlement; `Decide` for suspended facts with the same two records.

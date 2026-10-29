@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	reportArtifact = "archfit-report"
+	reportArtifact = report.ArtifactName
 
 	// GitHub run values. Only a push run uploads the report; dispatched runs upload policy or baseline artifacts.
 	eventPush         = "push"

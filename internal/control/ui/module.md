@@ -1350,8 +1350,9 @@ been withdrawn since the previous request.
   approval loss withdraws it as it does a success; advisory mode withdraws nothing, as for a neutral result before). An unknown reason, an unparsed summary or a mix keeps the report out. Its `external_id` is
   `v1:<run_id>:<attempt>:sha256:<hex>`; run 0 or an unreadable id is "no upload". Then
   `ArtifactID(run_id, "archfit-report")` and the download from the report cache or `ArtifactByID(id,
-  report.MaxBytes)`, and the page shows it only when the SHA-256 of the bytes equals
-  the digest in the id: a report is never shown beside a check it did not produce. States, each with fixed wording and a
+  report.MaxBytes)`, and the page shows it only when `report.DecodeArtifact` finds the SHA-256 of the bytes equal to
+  the digest in the id (`report.ErrDigestMismatch` otherwise): a report is never shown beside a check it did not produce.
+  The sweep (rule 5c) proves a report with the same function. States, each with fixed wording and a
   link to the checks on GitHub: no check yet, action required, no upload, report expired (`ErrNotFound`, GitHub retention), report does
   not match its check, report unavailable (decode error). With a report, in the groups and words of the PR comment:
   rule violations open (`report.Group`: active gate findings first, then any status this version does not know, which

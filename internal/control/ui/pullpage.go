@@ -3,8 +3,6 @@ package ui
 import (
 	"cmp"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"net/http"
 	"slices"
@@ -180,13 +178,11 @@ func (s *server) pullReport(ctx context.Context, sc scope, pull api.Pull, runs *
 	if err != nil {
 		return pullBody{}, nil, err
 	}
-	sum := sha256.Sum256(payload)
-	if hex.EncodeToString(sum[:]) != digest {
+	rep, err := report.DecodeArtifact(payload, digest)
+	if errors.Is(err, report.ErrDigestMismatch) {
 		body.Unavailable = reportMismatch
 		return body, nil, nil
 	}
-	releases := report.EngineVersions()
-	rep, err := report.Decode(payload, releases[len(releases)-1])
 	if err != nil {
 		body.Unavailable = reportUnavailable
 		return body, nil, nil

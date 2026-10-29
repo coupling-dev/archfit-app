@@ -21,6 +21,21 @@ import (
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
+// A receipt written before base_sha existed, and one that has none, read as "" and are written without the key.
+func TestReceiptBaseSHAIsOptional(t *testing.T) {
+	old := `<!-- archfit:receipt {"run_id":7,"run_attempt":1,"report_digest":"d","policy_digest":"p","baseline_digest":"","labels_digest":"","earliest_waiver_expiry":"0001-01-01T00:00:00Z","conclusion":"success","reason":"healthy"} -->`
+	got, ok := parseReceipt(old)
+	if !ok || got.BaseSHA != "" || got.RunID != 7 || got.Reason != verdict.ReasonHealthy {
+		t.Errorf("old marker parsed as %+v, ok=%v", got, ok)
+	}
+	if strings.Contains(receiptMarker(Receipt{RunID: 7}), "base_sha") {
+		t.Error("an empty base is written")
+	}
+	if !strings.Contains(receiptMarker(Receipt{RunID: 7, BaseSHA: "abc"}), `"base_sha":"abc"`) {
+		t.Error("a base is not written")
+	}
+}
+
 func TestReceiptRoundTrip(t *testing.T) {
 	full := Receipt{
 		RunID:                7,
@@ -29,6 +44,7 @@ func TestReceiptRoundTrip(t *testing.T) {
 		PolicyDigest:         policyDigest,
 		BaselineDigest:       baselineDigest,
 		LabelsDigest:         labelsDigest,
+		BaseSHA:              "0123456789abcdef0123456789abcdef01234567",
 		EarliestWaiverExpiry: time.Date(2026, 10, 1, 12, 30, 0, 0, time.UTC),
 		Conclusion:           verdict.Failure,
 		Reason:               verdict.ReasonBlockingFindings,
