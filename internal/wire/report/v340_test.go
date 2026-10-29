@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-// The keys and values engine v3.3.0 and later emit that v3.2.3 did not: the decoder reads them before the pin moves,
-// and refuses malformed ones like any other key.
-func TestEngineNextValues(t *testing.T) {
+// The keys and values engine v3.3.0 and later emit that v3.2.3 did not, as the pinned v3.4.0 schema defines them:
+// the decoder reads them, and refuses malformed ones like any other key.
+func TestEngineV340Values(t *testing.T) {
 	rows := []mutation{
 		{name: "gate reasons", edit: func(t *testing.T, d map[string]any) {
 			d["gate_reasons"] = []any{"coupling gate: 2 seams over the strength limit", "coupling gate: drift unmeasured"}
@@ -57,6 +57,12 @@ func TestEngineNextValues(t *testing.T) {
 		{name: "same owner not a boolean", wantLoc: "seams[0].raw_distance.same_owner", edit: func(t *testing.T, d map[string]any) {
 			set(t, d, "yes", "seams", 0, "raw_distance", "same_owner")
 		}},
+		{name: "same deploy unit not a boolean", wantLoc: "seams[0].raw_distance.same_deploy_unit", edit: func(t *testing.T, d map[string]any) {
+			set(t, d, "yes", "seams", 0, "raw_distance", "same_deploy_unit")
+		}},
+		{name: "a head tree the engine marks dirty", edit: func(t *testing.T, d map[string]any) {
+			set(t, d, strings.Repeat("e", 40)+"+dirty", "identity", "head_tree_digest")
+		}},
 		{name: "a producer without a tool", wantLoc: "producers[12].tool", edit: func(t *testing.T, d map[string]any) {
 			producers := at(t, d, "comparison", "measurement_profile", "producers").([]any)
 			set(t, d, append(producers, map[string]any{"semantics_version": "roslyn.v1", "status": "ok"}), "comparison", "measurement_profile", "producers")
@@ -70,7 +76,7 @@ func TestEngineNextValues(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			doc := baseDoc(t)
 			row.edit(t, doc)
-			r, err := Decode(encode(t, doc), "v3.2.3")
+			r, err := Decode(encode(t, doc), "v3.4.0")
 			if row.wantLoc != "" {
 				wantError(t, err, row.wantLoc)
 				return

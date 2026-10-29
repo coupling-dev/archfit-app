@@ -28,7 +28,7 @@ func Digest(raw []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// Schema returns the engine v3.2.2 config JSON Schema, embedded unchanged: Diagnose's schema, the assist
+// Schema returns the engine v3.4.0 config JSON Schema, embedded unchanged: Diagnose's schema, the assist
 // prompt's context, and the file served for editors outside the App.
 func Schema() []byte {
 	return bytes.Clone(schema)

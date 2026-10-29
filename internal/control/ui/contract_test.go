@@ -366,7 +366,7 @@ func TestGraphPageShowsTheEngineSeamPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rep, err := report.Decode(payload, "v3.0.0")
+	rep, err := report.DecodeStored(payload)
 	if err != nil {
 		t.Fatalf("capture does not decode: %v", err)
 	}

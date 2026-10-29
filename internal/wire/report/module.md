@@ -8,7 +8,7 @@
 
 An engine state report is produced in the customer's CI and uploaded to Archfit. The product promise is that no
 source code reaches Archfit. This module is where that promise is enforced on the payload. It mirrors the engine
-state contract `archfit.architecture-state.v1` (engines v3.0.0, v3.0.1, v3.2.0, v3.2.2 and v3.2.3, one `archfit.state.schema.json`) and turns it into a
+state contract `archfit.architecture-state.v1` (engines v3.0.0 to v3.2.3, and v3.4.0 with the pinned `archfit.state.schema.json`) and turns it into a
 no-source transport: it knows every key of that schema, keeps an allowlisted subset under length caps, drops the
 rest, and refuses anything the schema does not define. Without it,
 "schema-valid engine JSON" would be mistaken for "no-source payload" (plan T04): a real report carries source
@@ -18,9 +18,9 @@ identifiers in `agent_tasks[].declarations`.
 
 - Define the transport types for verdict, gate decision, comparison identity, gate reference, dimensions,
   coverage, findings, repair tasks and seams.
-- `Decode`: strict JSON decoding against the v3.0.0/v3.0.1/v3.2.0/v3.2.2/v3.2.3 key set, size cap, enum checks, per-field caps, path rules,
+- `Decode`: strict JSON decoding against the pinned v3.4.0 key set (`identity` required from v3.4.0), size cap, enum checks, per-field caps, path rules,
   single-line rule, duplicate-ID rule; known but non-allowlisted keys are type-checked and dropped.
-- `EngineVersions`: the engine releases `Decode` reads (`v3.0.0`, `v3.0.1`, `v3.2.0`, `v3.2.2`, `v3.2.3`), so that a consumer can tie an approved
+- `EngineVersions`: the engine releases `Decode` reads (`v3.0.0`, `v3.0.1`, `v3.2.0`, `v3.2.2`, `v3.2.3`, `v3.4.0`), so that a consumer can tie an approved
   identity to the key set.
 - Preserve what the gate and feedback need, unchanged: `verdict`, `decision.hard_gates`,
   `unevaluated_required_rules`, `comparison.config_hash`, `measurement_profile`, `gate_reference`, both repair
@@ -36,9 +36,9 @@ Volatility: moderate. It changes with a versioned engine release; the caps are *
 
 ## Encapsulated Knowledge
 
-- The complete key set of the state schema, pinned at engine v3.2.3 (revision
-  `c7490636480a8faedddf3bff1d0a678a7ab7987c`, `internal/wire/testdata/schema/`; the v3.0.0 file at
-  `bbd658f008bcc4bc83e063cf305d20dc4508da2e` is byte-identical), and the split into kept and
+- The complete key set of the state schema, pinned at engine v3.4.0 (revision
+  `2692cd6b8aab23e559d0aa76712a192d69b4229f`, sha256 `1d37f7d8…`, `internal/wire/testdata/schema/`; the v3.0.0 file at
+  `bbd658f008bcc4bc83e063cf305d20dc4508da2e` differs by what v3.3.0 and v3.4.0 added), and the split into kept and
   dropped keys below. Field names and enum values in the Public Contract are taken from that schema, not guessed.
 - The engine releases `Decode` reads (see "Engine release and key set" below).
 - The decoding technique. `Decode` unmarshals into unexported shadow types that mirror the whole schema, dropped
@@ -60,20 +60,21 @@ Volatility: moderate. It changes with a versioned engine release; the caps are *
 
 ### Engine release and key set
 
-`Decode` reads v3.0.0, v3.0.1, v3.2.0, v3.2.2 and v3.2.3 through one byte-identical state-schema key set.
+`Decode` reads v3.0.0, v3.0.1, v3.2.0, v3.2.2, v3.2.3 and v3.4.0 through one key set, the pinned v3.4.0 schema.
 
-The decoder is ahead of the pinned schema (v3.2.3) by what engine v3.3.0 added, all optional so that a v3.2.3 report
-decodes unchanged (`aheadOfThePin` in the tests): `identity`, the result identity block; `gate_reasons`, the coupling
+What v3.3.0 and v3.4.0 added to the state schema: `identity`, the result identity block; `gate_reasons`, the coupling
 gate's own one-line reasons that `check` writes into the state (kept as `Report.GateReasons`, repository attention for
-the owner); `coverage.tools[].details`, one-line strings, validated and dropped; and `null` for
+the owner); `coverage.tools[].details`, a list of one-line strings (at most `maxToolDetails`, 10,000 entries of at most `maxDetailLen`, 8,192 runes: the engine writes one per .NET project and caps neither; `MaxBytes` bounds the total, so about 640 maximum-length lines fit), validated and dropped; and `null` for
 `seams[].raw_distance.same_owner` and `same_deploy_unit` (marked `optBool`; the engine writes null unless both sides are
 known). New producer names (`dotnet-msbuild`, `roslyn`, `supplied-coverage`) need nothing: `tool` is a free identifier.
-`TestDecoderCoversTheEnginesCurrentSchema` walks the engine's current state schema (`testdata/engine-next/`, `feec08c3`,
-identical to v3.3.0) against the decoder both ways with no allowance, so a key the engine emits and the App does not read
-fails the test before the pin moves. When the pin moves past v3.3.0, `TestAheadOfThePinIsNotInThePin` fails until the
-allowance is removed, and `identity` becomes what the new schema says: required. `Report.Identity` and
-`Report.GateReasons` are the engine's own statements and decide nothing: the gate trusts inputs from the protected ref
-only, and uses the identity for the receipt key (`gate`, `identityKey`) and for display.
+The v3.4.0 schema requires `identity`, and so does `Decode` from v3.4.0 (`identityFrom`): a v3.4.0 upload without it is
+`report_invalid`. The releases before it carry none and still decode, with `Report.Identity == nil`, so that their
+uploads end `unknown_engine_identity` at the manifest and stored reports stay readable. `TestIdentityIsRequiredFromThePin`
+covers both sides, and `TestDecodeStored` the optional side for kept artifacts; `TestPinnedSchemaRequiresIdentity` ties `identityFrom` to the schema.
+`TestEngineSchemaKeySetIsCovered` walks the pinned schema against the decoder both ways with no allowance, so a key the
+engine emits and the App does not read fails the test. `Report.Identity` and `Report.GateReasons` are the engine's own
+statements and decide nothing: the gate trusts inputs from the protected ref only, and uses the identity for the receipt
+key (`gate`, `identityKey`) and for display.
 
 `DecodePolicyChange` reads the `policy_change` object of `archfit.config-compare.v1` (engine E11, `feec08c3`): the
 classification of a change to the protected policy. It is strict like `Decode`: every list is required, the value
@@ -83,11 +84,10 @@ comments; unknown keys and empty values are refused, and errors name the field u
 whole canonical declarations (JSON, a joined rule set) into a declaration's and a rule delta's `from` and `to`: those
 may span lines and run to 8 KiB; every other string is one line. The stated
 direction must be the one its lists give: it decides who may approve, so it is never taken on trust. The fixtures are
-the engine's real output (`testdata/engine-next/policy-change-*.json`). The upload does not carry it yet: the Action
-embeds it in the report upload (manager decision, 2026-10-28) and the App wires it in the change that vendors that
-transport.
+the engine's real output (`testdata/engine-next/policy-change-*.json`; the Action's captures at Action v3.0.0 hold the same
+objects, re-captured from the v3.4.0 image).
 Other releases, empty versions and unknown keys fail closed. Historical readability preserves stored reports.
-Only the manifest's exact v3.2.3 platform tuples are approved. Old readable uploads end `unknown_engine_identity`, not success.
+Only the manifest's exact v3.4.0 platform tuples are approved. Old readable uploads end `unknown_engine_identity`, not success.
 No version fallback or second approval path is added.
 
 - The schema has these keys, among others. Kept: `comparison.classification_hash`, `comparison.origin_status`,
@@ -121,7 +121,7 @@ No version fallback or second approval path is added.
 
 ### Order of checks
 
-Engine release is `v3.0.0`, `v3.0.1`, `v3.2.0`, `v3.2.2` or `v3.2.3` → size over `MaxBytes` → valid UTF-8 → token pre-pass → typed
+Engine release is `v3.0.0`, `v3.0.1`, `v3.2.0`, `v3.2.2`, `v3.2.3` or `v3.4.0` → size over `MaxBytes` → valid UTF-8 → token pre-pass → typed
 decode with unknown fields disallowed → required keys → `schema_version` → enums → collection caps → string rules →
 path rules → duplicate finding IDs. The first failure is returned. No partial `Report` is ever returned.
 
@@ -296,7 +296,7 @@ sets are **[default]**. Classes:
 ## Public Contract
 
 ```go
-// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v3.0.0, v3.0.1, v3.2.0, v3.2.2 and v3.2.3: one file).
+// StateSchemaV1 is the engine state contract accepted (archfit.state.schema.json, engine v3.0.0 to v3.4.0: the pinned v3.4.0 file).
 const StateSchemaV1 = "archfit.architecture-state.v1"
 
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
@@ -314,7 +314,7 @@ var ErrDigestMismatch = errors.New("report: artifact does not match its digest")
 func DecodeArtifact(payload []byte, digest string) (Report, error)
 
 // Report is the no-source transport form of an engine state report. The decoder knows every key of the engine
-// state schema of v3.0.0, v3.0.1, v3.2.0, v3.2.2 and v3.2.3: keys listed here are kept (length-capped), the other known keys are validated and dropped
+// state schema pinned at v3.4.0: keys listed here are kept (length-capped), the other known keys are validated and dropped
 // (measurement, findings[].matched_by except MatchedByKeys, agent_tasks[].declarations, metric provenance, seam
 // scores), and any key the schema does not define is a decode error.
 type Report struct {
@@ -653,9 +653,9 @@ Semantics not visible in the signatures:
 
 - `Decode` returns a zero `Report` with every error. Errors are plain `error` values; the caller maps any of them
   to one problem (`report_invalid`). The message names location and rule only.
-- `engineVersion` is compared exactly with `v3.0.0`, `v3.0.1`, `v3.2.0`, `v3.2.2` and `v3.2.3`: no trimming, no `v` added, no ranges. Any other value, the
+- `engineVersion` is compared exactly with `v3.0.0`, `v3.0.1`, `v3.2.0`, `v3.2.2`, `v3.2.3` and `v3.4.0`: no trimming, no `v` added, no ranges. Any other value, the
   empty string included, is an error naming `engine_version`, before the payload is read.
-- `EngineVersions` returns `v3.0.0`, `v3.0.1`, `v3.2.0`, `v3.2.2`, `v3.2.3`, oldest first, as a fresh slice on every call. A caller without a
+- `EngineVersions` returns `v3.0.0`, `v3.0.1`, `v3.2.0`, `v3.2.2`, `v3.2.3`, `v3.4.0`, oldest first, as a fresh slice on every call. A caller without a
   bound release that only displays a report (the graph page) passes the last one; the gate passes the envelope's.
 - A decoded `Report` owns its memory; it does not alias `payload`.
 - `Decode` never drops, reorders, or rewrites findings, tasks, seams, or validation commands. The only dropped
@@ -683,7 +683,7 @@ table; the `internal/gate` row is computed (LCA root, deeper module two levels d
 | `internal/gate`                  | through gate/ingest, no import   | Contract                      | root / 2 / 2              | High       | Yes       |
 | `internal/control/ui`            | ui depends on report             | Contract                      | root / 2 / 2              | High       | Yes       |
 | `internal/control/ui/graph`      | graph depends on report          | Contract                      | root / 3 / 3              | Moderate   | Yes       |
-| `archfit` engine state (v3.2.3)  | report mirrors the engine schema | Contract (versioned schema)   | outside the tree; highest | Moderate   | Yes       |
+| `archfit` engine state (v3.4.0)  | report mirrors the engine schema | Contract (versioned schema)   | outside the tree; highest | Moderate   | Yes       |
 | `archfit-action` (external repo) | the Action uploads engine state  | Contract                      | outside the tree; highest | Moderate   | Yes       |
 
 Shared knowledge, per counterpart:
@@ -710,12 +710,12 @@ Shared knowledge, per counterpart:
   only) to prove and read the module graph of a tip report and of a pull request's own report (sweep rule 5c). It
   uses the graph to withdraw a passed result and never to grant one.
 - `internal/control/ui` holds `Decode`, `EngineVersions`, `MaxBytes`, `ArtifactName` and `DecodeArtifact` to read the
-  `archfit-report` workflow artifact for the graph page and the Pull page (digest check included). The artifact names no release, so it decodes as the last release, `v3.2.3`.
+  `archfit-report` workflow artifact for the graph page and the Pull page (digest check included). The artifact names no release, so it decodes with `DecodeStored`: the newest key set with `identity` optional (a kept report was verified at ingest and may come from a release before `identityFrom`; a present identity is still validated). The graph page uses `DecodeStored` too.
 - `internal/control/ui/graph` holds `Report`, `Seam` (`Seam.Policy` included, the status it shows when present),
   `Comparison.ConfigHash` and `Finding.Active`, which decides the links it marks as active gate findings in a
   report without `seams[].policy`.
 - `archfit` engine state: this module holds the whole state schema key set, its enums and required lists, pinned
-  at v3.2.3, revision `c7490636480a8faedddf3bff1d0a678a7ab7987c`. It holds no engine Go types (trust-and-reporting.md §7).
+  at v3.4.0, revision `2692cd6b8aab23e559d0aa76712a192d69b4229f`. It holds no engine Go types (trust-and-reporting.md §7).
 - `archfit-action` uploads the engine's state file bytes as they are, or with dropped keys stripped. Contract
   coupling through a version constant, strict decoding and shared fixtures tolerates the distance of three repositories.
 
@@ -743,7 +743,7 @@ No counterpart contract is used by this module, so nothing is restated here.
 - Enforcement is never filtered by `Origin` or finding `Status`; this module keeps every finding it accepts.
 - Empty `locations` stay empty. No consumer may invent a location.
 - `Decode` is total and bounded: no input panics; work is bounded by `MaxBytes`, the depth cap and the collection caps.
-- Strict: a document gets the v3.0.0/v3.0.1/v3.2.0/v3.2.2/v3.2.3 key set and nothing else. Any other release is refused, never read with this
+- Strict: a document gets the pinned v3.4.0 key set and nothing else. Any other release is refused, never read with this
   key set.
 - Errors never contain payload values or the engine release. Callers log IDs, digests, outcomes and timings only.
 - No I/O, no clock, no logging, no mutable globals: the release list is read-only. Standard library only. No other
@@ -755,8 +755,8 @@ No counterpart contract is used by this module, so nothing is restated here.
 Fixtures live in `internal/wire/testdata/report/` and `internal/wire/testdata/leakage/`, read by relative path.
 Each fixture has an `.expect.json` sibling recording its producer artifact and expected outcome (see the parent document);
 this module asserts its `decode` and `fields` keys. The pinned engine schema is `internal/wire/testdata/schema/archfit.state.schema.json`.
-This module has no private fixture and no `testdata` folder of its own. Captures cover v3.0.0, v3.0.1, v3.2.0, v3.2.2 and v3.2.3;
-the tests decode each one as the release that produced it (synthetic ones as v3.2.2).
+This module has no private fixture and no `testdata` folder of its own. Captures cover v3.0.0, v3.0.1, v3.2.0, v3.2.2, v3.2.3 and v3.4.0;
+the tests decode each one as the release that produced it (synthetic ones as v3.4.0, with an identity).
 
 ### Unit Tests
 
@@ -892,7 +892,7 @@ the tests decode each one as the release that produced it (synthetic ones as v3.
   **Expected behavior**: no `declarations`, `measurement`, `provenance`, `denominator` or `scores` key anywhere, and no `matched_by` key
   outside `MatchedByKeys`; the second decode equals the first; counts of findings, tasks and seams equal the counts in the fixture file.
 - **Test name**: `TestEngineSchemaKeySetIsCovered`
-  **Scenario**: walk the pinned v3.2.3 `internal/wire/testdata/schema/archfit.state.schema.json` and the shadow types by
+  **Scenario**: walk the pinned v3.4.0 `internal/wire/testdata/schema/archfit.state.schema.json` and the shadow types by
   reflection; decode the real capture, the all-keys fixture and `real-seam-policy`.
   **Expected behavior**: every schema property is a shadow field, and the reverse; kept plus dropped equals the schema key set. A
   missing schema file fails the test; it never skips.
@@ -903,7 +903,7 @@ the tests decode each one as the release that produced it (synthetic ones as v3.
   `.`; the why ends with ` — <rationale> (see <docs>)`, the constraint with ` (see <docs>)`; the task has the `rationale: ` entry.
 - **Test name**: `TestEngineVersions`
   **Scenario**: call `EngineVersions`, change the returned slice, call it again.
-  **Expected behavior**: `v3.0.0`, `v3.0.1`, `v3.2.0`, `v3.2.2`, `v3.2.3` both times: the caller gets a copy.
+  **Expected behavior**: `v3.0.0`, `v3.0.1`, `v3.2.0`, `v3.2.2`, `v3.2.3`, `v3.4.0` both times: the caller gets a copy.
 - **Test name**: `TestDecodeArtifact`
   **Scenario**: the artifact with its digest as "sha256:<hex>" and as bare hex; another artifact's digest; an empty digest; the prefix alone; altered bytes; verified bytes that are no report.
   **Expected behavior**: the first two decode exactly as `Decode` does; the next four are `ErrDigestMismatch` with a zero `Report`; the last is a decode error that is not a digest mismatch.

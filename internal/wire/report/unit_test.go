@@ -316,6 +316,8 @@ func TestTaskHoldsWhatItsFindingHolds(t *testing.T) {
 func optionalKeys() []string {
 	return []string{
 		"gate_reference", "gate_reference.base_ref", "measurement", "measurement.",
+		"identity.policy_digest", "identity.baseline_digest", "identity.labels_digest", "identity.base_sha",
+		"identity.head_tree_digest", "identity.measurement_profile_hash", "identity.policy_ref", "identity.policy_ref.",
 		"gate_reference.config_hash", "gate_reference.model_hash", "gate_reference.labels_hash",
 		"gate_reference.rubric_version", "gate_reference.measurement_profile", "gate_reference.measurement_profile.",
 		"gate_reference.drift", "gate_reference.baseline_present",

@@ -1,0 +1,18 @@
+{
+  "producer": "synthetic: report/healthy.json with a dotnet-msbuild entry in coverage.tools carrying details, the engine v3.4.0 shape (a list of one-line strings)",
+  "decode": "ok",
+  "fields": {
+    "verdict": "healthy",
+    "hard_gates": "pass",
+    "unevaluated_rule_ids": [],
+    "has_profile": true,
+    "profile_version": "archfit.measurement.v2",
+    "gate_reference_status": "non_comparable"
+  },
+  "gate": {
+    "conclusion": "success",
+    "reasons": [
+      "healthy"
+    ]
+  }
+}

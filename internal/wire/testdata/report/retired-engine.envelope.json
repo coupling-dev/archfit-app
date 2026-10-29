@@ -14,7 +14,7 @@
   "engine_version": "v3.0.0",
   "image_digest": "sha256:0eab810538fd8e75115f548154edecfe294ee70e1f13e1a158008ded43119909",
   "platform": "linux/amd64",
-  "payload_digest": "sha256:b5705aa1aee560c6df357ed0d1ec065d81d3347fda5ffacce19d9744d9f7eb59",
+  "payload_digest": "sha256:09149e4965b20358c2447b864c43e09b9c934cd6c016ad90f72cf9b9922ff4c3",
   "baseline_digest": "",
   "labels_digest": ""
 }

@@ -16,7 +16,7 @@ const (
 
 	// fixtureEngine is the engine release a synthetic fixture is a document of. A capture is a document of the
 	// release its producer names (fixtureRelease).
-	fixtureEngine = "v3.2.2"
+	fixtureEngine = "v3.4.0"
 )
 
 // fixtureRoot is the shared corpus; its layout and expectation format are defined in internal/wire/module.md.
@@ -91,6 +91,12 @@ func fixtures(t testing.TB, dir string) []string {
 func mustDecode(t testing.TB, payload []byte) Report {
 	t.Helper()
 	return mustDecodeAs(t, payload, fixtureEngine)
+}
+
+// mustDecodeFixture decodes a fixture as the release its producer names.
+func mustDecodeFixture(t testing.TB, rel string) Report {
+	t.Helper()
+	return mustDecodeAs(t, loadFixture(t, rel), fixtureRelease(t, rel))
 }
 
 func mustDecodeAs(t testing.TB, payload []byte, release string) Report {
