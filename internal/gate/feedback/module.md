@@ -28,7 +28,9 @@ keeps in the Store is a short-lived lease per head SHA, because GitHub has no co
   carries an engine classification of a change to the protected policy: the direction, the changes in plain words
   (each value cut to 80 characters, the list bounded to about 3 KB, then a count: the card sits in a block that is never
   cut and the author controls the values), and the approval rule; a `policy_authority` rung held at human says so.
-  Display only.
+  Display only. The classification is the Action's, carried by the upload (engine v3.4.0 or later) and passed on by `gate`
+  only when its own trusted inputs say the pull request changes the policy file; a sweep publication has no envelope and
+  carries no card. No card means "not classified", never "no change".
 - Render feedback that is useful without an LLM: the verdict, one sentence of what the pull request changed, the
   picture of the dependency cycle, then the next action; findings with rule, modules and locations; the balancing
   move of each advisory in the words of Balanced Coupling; active versus accepted debt; dimensions; a mandatory evidence-gap section;
@@ -88,6 +90,7 @@ type Publication struct {
     Outcome  Outcome
     Receipt  Receipt
     Report   *Report // nil when there is no usable report
+    PolicyChange *PolicyChange // the Action's classification, set only for a pull request that changes the policy file; nil on a sweep
     Trusted  Trusted
     // Resolve, when set, reads the trusted inputs again inside the head's publication lease, before anything is
     // written. When the result differs from Trusted in any field (a digest, the owner approval, the settings) or no

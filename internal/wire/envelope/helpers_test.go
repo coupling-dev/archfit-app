@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -123,7 +124,7 @@ func wantDecoded(t *testing.T, raw []byte) envelope.Envelope {
 	if err != nil {
 		t.Fatalf("Decode: unexpected error: %v", err)
 	}
-	if want := lenient(t, raw); got != want {
+	if want := lenient(t, raw); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Decode changed fields:\n got %+v\nwant %+v", got, want)
 	}
 	return got
@@ -136,7 +137,7 @@ func wantRejected(t *testing.T, raw []byte, field string) string {
 	if err == nil {
 		t.Fatalf("Decode accepted an invalid envelope")
 	}
-	if got != (envelope.Envelope{}) {
+	if !reflect.DeepEqual(got, envelope.Envelope{}) {
 		t.Errorf("Decode returned a non-zero Envelope with an error")
 	}
 	if field != "" && !strings.HasPrefix(err.Error(), "envelope: "+field+":") {

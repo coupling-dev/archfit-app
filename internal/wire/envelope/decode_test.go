@@ -3,6 +3,7 @@ package envelope_test
 import (
 	"bytes"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -37,7 +38,7 @@ func TestDecodeFieldRules(t *testing.T) {
 			Platform:      "linux/amd64",
 			PayloadDigest: "sha256:" + hex64,
 		}
-		if got != want {
+		if !reflect.DeepEqual(got, want) {
 			t.Errorf("got %+v\nwant %+v", got, want)
 		}
 	})
@@ -335,7 +336,7 @@ func FuzzDecode(f *testing.F) {
 	f.Fuzz(func(t *testing.T, raw []byte) {
 		env, err := envelope.Decode(raw)
 		if err != nil {
-			if env != (envelope.Envelope{}) {
+			if !reflect.DeepEqual(env, envelope.Envelope{}) {
 				t.Fatalf("non-zero Envelope with error %v", err)
 			}
 			return
@@ -348,7 +349,15 @@ func FuzzDecode(f *testing.F) {
 		if err != nil {
 			t.Fatalf("re-marshaled envelope does not decode: %v", err)
 		}
-		if got != env {
+		// Marshal compacts the policy_change bytes the producer may have spaced.
+		var compact bytes.Buffer
+		if env.PolicyChange != nil {
+			if err := json.Compact(&compact, env.PolicyChange); err != nil {
+				t.Fatalf("compact: %v", err)
+			}
+			env.PolicyChange = compact.Bytes()
+		}
+		if !reflect.DeepEqual(got, env) {
 			t.Fatalf("round trip changed the envelope:\n got %+v\nwant %+v", got, env)
 		}
 	})

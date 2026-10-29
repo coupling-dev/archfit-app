@@ -13,7 +13,7 @@ func TestNewWorkflowUsesReleasedV323Pins(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, pin := range []string{
-		"ec465980aa52e8aec0bf6ac22ab717efd1b15c77",
+		"e168b961824b6801e74f0f0938b49be7e1286819",
 		"v3.2.3",
 		"sha256:87323e8d80d519531338ff7a36ce750d337ecf6560e48493bdeb10b864e7b772",
 	} {

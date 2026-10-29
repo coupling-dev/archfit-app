@@ -495,8 +495,8 @@ no approval is needed any more.
 ### Engine versions
 
 The locked manifest approves engine v3.2.3 on Linux amd64 and arm64. New workflows pin archfit-action at commit
-`ec465980aa52e8aec0bf6ac22ab717efd1b15c77`, which measures a pull request as it would land (the merge with the target)
-and states `analyzed_sha` and `integration` in the upload. Only the v3.2.3 amd64 row is Current for new workflows and
+`e168b961824b6801e74f0f0938b49be7e1286819`, which measures a pull request as it would land (the merge with the target)
+and states `analyzed_sha`, `integration` and, for a policy change, its classification in the upload. Only the v3.2.3 amd64 row is Current for new workflows and
 recovery pins.
 
 - The v3.2.2 and v3.2.0 tuples are no longer approved: the Actions that carried them predate the new envelope. Retired or
@@ -595,6 +595,11 @@ cannot order, which count as loosening. A change that "fixes" a violation by exc
 lost. The App derives the direction from those lists and refuses a classification that states another. The card
 informs the owner who approves; it decides nothing.
 
+The classification comes from the Action: with engine v3.4.0 or later it states it in the upload, and the App shows it
+only for a pull request whose changed files, which the App reads from GitHub itself, include `.archfit.yaml`. No card
+means "not classified" (an older engine, a change that orders nothing, an upload the App could not read), never "no
+change": read the diff of `.archfit.yaml` yourself.
+
 ### Owner approval
 
 A protected-path change needs the approval of a policy owner on the exact head commit. A policy owner approves in
@@ -607,6 +612,18 @@ one of two ways:
   commit deletes it. Approve records your approval of exactly that commit and those contents; when the files changed
   since the page loaded, the App refuses and asks you to reload. The button needs `write` permission and shows only
   for a policy owner who is not listed in `agents`.
+
+![The owner approval box of a pull request that changes protected files](images/owner-approval-light.png#gh-light-mode-only)
+![The owner approval box of a pull request that changes protected files](images/owner-approval-dark.png#gh-dark-mode-only)
+
+_The box lists each protected file and its digest at the head, and shows **Approve this exact commit** only to a policy
+owner. Sample data._
+
+![The owner approval box of a pull request an agent identity opened](images/owner-approval-agent-pr-light.png#gh-light-mode-only)
+![The owner approval box of a pull request an agent identity opened](images/owner-approval-agent-pr-dark.png#gh-dark-mode-only)
+
+_A pull request opened by an account in `agents` is marked, so the owner reviews its changes to the protected files
+before approving. An account in `agents` signed in to the App never sees the button. Sample data._
 
 Pushing a commit is not an approval, whoever pushes it. A local coding agent pushes with its owner's credentials, so
 a push from an owner account says nothing about who decided.

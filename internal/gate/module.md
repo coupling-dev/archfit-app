@@ -581,6 +581,7 @@ type Publication struct {
     Outcome  Outcome
     Receipt  Receipt
     Report   *Report // nil when there is no usable report
+    PolicyChange *PolicyChange // the Action's classification, set only for a pull request that changes the policy file; nil on a sweep
     Trusted  Trusted
     // Resolve, when set, reads the trusted inputs again inside the head's publication lease, before anything is
     // written. When the result differs from Trusted in any field (a digest, the owner approval, the settings) or no
@@ -1192,7 +1193,9 @@ the comment links to the App's pull request page), `feedback.NewRepairer(d.GitHu
    `Decide`; if one ever does, the façade treats it as a failed step: 503 `unavailable`, nothing published, the
    pending check stays. It never reads `Reasons[0]` of an empty list and never invents a reason.
 7. Receipt (table below); `publisher.Publish(ctx, Publication{target, u.Identity, outcome, receipt, u.Report, trusted,
-   Resolve})`. `Identity` is the envelope's claim; feedback prints it as claimed. `Resolve` calls
+   Resolve})`, with `PolicyChange: u.PolicyChange` only when `trusted.ProtectedPaths` names the policy file (the App's
+   own diff backs the card; the Action's word alone never shows one, and a sweep publication has none).
+   `Identity` is the envelope's claim; feedback prints it as claimed. `Resolve` calls
    `resolver.Resolve(ctx, target, now)` again, inside the publication lease: a sweep may have corrected the check
    from newer inputs between step 3 and the lease, under the same run identity, and an owner may dismiss the
    approval step 5 relied on. When the new inputs differ from `trusted` in any field or no longer accept a receipt

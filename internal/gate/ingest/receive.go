@@ -129,6 +129,14 @@ func (r *receiver) receive(ctx context.Context, req *http.Request, kind envelope
 			up.Report = &rep
 		}
 	}
+	if len(env.PolicyChange) > 0 {
+		// A card that cannot be read is no card: it decides nothing, so it is logged and never a Problem.
+		if pc, err := report.DecodePolicyChange(env.PolicyChange); err != nil {
+			f.policyChangeUnread = true
+		} else {
+			up.PolicyChange = &pc
+		}
+	}
 	up.Problems = problems.list()
 	return up, nil
 }

@@ -62,9 +62,10 @@ v3.2.3 on `linux/amd64` (`current`) and `linux/arm64`. The v3.2.2 and v3.2.0 tup
     `sha256:5f2d4a5fff1ace10d7b08937429179631ae0c1d0e1f9e6f37c72b30954cf00db` on `linux/amd64` and
     `sha256:725c3a074358df8ea41881296eda06b07daed7934d7a6d40bb1ecfc3c8a8128d` on `linux/arm64`. The native image outputs in Action CI run40175778074 carry `archfit.measurement.v2`.
 
-  Every row pins archfit-action commit `ec465980aa52e8aec0bf6ac22ab717efd1b15c77` (X1: pull requests are measured as
-  merged, and the envelope carries `analyzed_sha` and `integration`; vendored envelope schema sha256
-  `d2c79be005eff4fe28a100dc9815de99a812209fe2e601c8070455eec94af0ad`). That commit accepts engine v3.2.3 only, with explicit
+  Every row pins archfit-action commit `e168b961824b6801e74f0f0938b49be7e1286819` (X1: pull requests are measured as
+  merged, and the envelope carries `analyzed_sha` and `integration`; X3b: the envelope may carry the engine's
+  `policy_change`; vendored envelope schema sha256
+  `0c2de1a3691ac85935f04887b94bc98dbc01f57f65a9c4fc3db276d5bf78b7e6`). That commit accepts engine v3.2.3 only, with explicit
   engine-version and image-digest inputs. CI validates every distinct Action commit and compares each vendored envelope
   schema with the App contract, in the existing static required jobs: a manifest that still named an older Action would
   fail it, so the older Actions and the engine releases they carried are not in the manifest. Their uploads end
