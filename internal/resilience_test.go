@@ -245,16 +245,17 @@ func TestSweepRepairsMissedEvents(t *testing.T) {
 			rp.push("main", strings.Repeat("5b", 20), map[string]string{".archfit.yaml": string(f.policy) + "# tightened\n"})
 		})
 		before := w.checkRuns(demoRepo)
-		if sum := s.sweep(); sum.Rerun != 1 {
-			t.Errorf("summary = %+v; want one re-run", sum)
+		// The policy change is a push to the default branch, so the target moved: a re-run would measure the old merge commit.
+		if sum := s.sweep(); sum.Rerun != 0 {
+			t.Errorf("summary = %+v; want no re-run", sum)
 		}
 		assertNoNewGreen(t, before, w.checkRuns(demoRepo))
 		c := w.check(demoRepo, demoHead, checkGate)
-		if c.Conclusion != "action_required" || c.receipt(t).Reason != "stale_inputs" {
-			t.Errorf("archfit/gate = %s %+v; want action_required stale_inputs", c.Conclusion, c.receipt(t))
+		if c.Conclusion != "action_required" || c.receipt(t).Reason != "target_moved" {
+			t.Errorf("archfit/gate = %s %+v; want action_required target_moved", c.Conclusion, c.receipt(t))
 		}
-		if reruns := w.rerunsOf(demoRepo); len(reruns) != 1 || reruns[0] != demoRun {
-			t.Errorf("re-runs = %v", reruns)
+		if reruns := w.rerunsOf(demoRepo); len(reruns) != 0 {
+			t.Errorf("re-runs = %v, want none", reruns)
 		}
 	})
 

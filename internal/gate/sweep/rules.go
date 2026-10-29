@@ -59,6 +59,9 @@ func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted)
 		// No re-run: no run can pass before an owner approves again, and rule 7b re-runs then.
 		return p.withdraw(ctx, t)
 	case stale(rc, tr):
+		if moved, err := p.retarget(ctx, "5b", t, rc, true); err != nil || moved {
+			return err
+		}
 		if err := p.publish(ctx, "5b", t, tr, rc, verdict.ReasonStaleInputs); err != nil {
 			return err
 		}
@@ -78,6 +81,9 @@ func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted)
 	approvedLate := rc.Reason == verdict.ReasonOwnerApprovalMissing && !verdict.Unapproved(tr)
 	switch {
 	case !e.IsZero() && !p.now.Before(e) && state.StartedAt.Before(e) && rc.Reason != verdict.ReasonTargetMoved:
+		if moved, err := p.retarget(ctx, "6b", t, rc, false); err != nil || moved {
+			return err
+		}
 		if err := p.publish(ctx, "6b", t, tr, rc, verdict.ReasonWaiverExpired); err != nil {
 			return err
 		}
@@ -88,6 +94,9 @@ func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted)
 		if approvedLate {
 			rule = "7b"
 		}
+		if moved, err := p.retarget(ctx, rule, t, rc, false); err != nil || moved {
+			return err
+		}
 		res, err := p.rerun(ctx, rule, t, rc)
 		if err != nil || res != RerunImpossible {
 			return err
@@ -95,6 +104,9 @@ func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted)
 		// Only a new workflow run can bring evidence now; missing_upload is true and names that recovery.
 		return p.publish(ctx, rule, t, tr, rc, verdict.ReasonMissingUpload)
 	case rc.Reason == verdict.ReasonStaleInputs || rc.Reason == verdict.ReasonWaiverExpired:
+		if moved, err := p.retarget(ctx, "7c", t, rc, false); err != nil || moved {
+			return err
+		}
 		_, err := p.rerun(ctx, "7c", t, rc)
 		return err
 	}

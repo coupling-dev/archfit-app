@@ -161,13 +161,13 @@ The first rule whose condition holds ends the evaluation of that pull, whether o
 | 3   | `!state.Exists`                                                                 | `Publisher.Pending(target)`                                                                            | `Pended`    |
 | 4   | `state.Pending`                                                                 | if `now − state.StartedAt ≥ MissingUploadAfter`: publish `Without(ReasonMissingUpload)`                | `TimedOut`  |
 | 5a  | `Withdrawn(rc, Trusted)`: the approval a decided receipt relied on is gone      | `Publisher.Reconcile` with `Withdrawal` decided inside the lease (below); no re-run                    | —           |
-| 5b  | has receipt and it is stale (below)                                             | publish `Without(ReasonStaleInputs)`, then re-run                                                      | `Rerun`     |
+| 5b  | has receipt and it is stale (below)                                             | base behind (below): publish `target_moved`, no re-run. Else publish `Without(ReasonStaleInputs)`, then re-run | `Rerun`     |
 | 5c  | required mode, `rc.Conclusion == success`, `Settings.Recheck() == overlap`, and `rc.BaseSHA` is `""` or not the default-branch tip: the tip's and the pull request's reports close a cycle neither holds alone, or the pull request's report cannot be proved, or the tip has had no report for `MissingUploadAfter` | publish `Without(ReasonTargetMoved)` carrying the cycle and the commit range, inside `Publisher.Reconcile`; no re-run | — |
 | 6a  | expiry `e` set, `now < e` and `e − now ≤ WaiverWarnBefore`                      | `Publisher.Warn(target, e)`                                                                            | `Warned`    |
-| 6b  | expiry `e` set, `now ≥ e`, `state.StartedAt < e` and `rc.Reason != target_moved` | publish `Without(ReasonWaiverExpired)`, then re-run                                                    | `Rerun`     |
-| 7a  | `rc.Reason == subscription_suspended` and `!Trusted.Suspended`                  | re-run; if no re-run is possible publish `Without(ReasonMissingUpload)`                                | `Rerun`     |
-| 7b  | `rc.Reason == owner_approval_missing` and `!verdict.Unapproved(Trusted)`        | re-run; if no re-run is possible publish `Without(ReasonMissingUpload)`                                | `Rerun`     |
-| 7c  | `rc.Reason` is `stale_inputs` or `waiver_expired` (never `target_moved`: only a new head measures the merge) | re-run (retries a re-run request that failed in an earlier pass; the guard makes it a no-op otherwise) | `Rerun`     |
+| 6b  | expiry `e` set, `now ≥ e`, `state.StartedAt < e` and `rc.Reason != target_moved` | base behind: publish `target_moved`, no re-run. Else publish `Without(ReasonWaiverExpired)`, then re-run | `Rerun`     |
+| 7a  | `rc.Reason == subscription_suspended` and `!Trusted.Suspended`                  | base behind: publish `target_moved`, no re-run. Else re-run; if none is possible publish `Without(ReasonMissingUpload)` | `Rerun`     |
+| 7b  | `rc.Reason == owner_approval_missing` and `!verdict.Unapproved(Trusted)`        | base behind: publish `target_moved`, no re-run. Else re-run; if none is possible publish `Without(ReasonMissingUpload)` | `Rerun`     |
+| 7c  | `rc.Reason` is `stale_inputs` or `waiver_expired` (never `target_moved`: only a new head measures the merge) | base behind: publish `target_moved`, no re-run. Else re-run (retries a re-run request that failed in an earlier pass; the guard makes it a no-op otherwise) | `Rerun`     |
 
 Definitions:
 
@@ -283,6 +283,25 @@ Steps, in this order, stopping at the first that decides nothing:
    page withholds the report as it does under `stale_inputs`. No re-run: a GitHub re-run reuses the old commit and the
    upload fails `envelope_mismatch`, and only a new head measures the merge. The recovery owner is the pull request
    author. The next pass finds a non-`success` receipt and decides nothing.
+
+#### Base behind: rules 5b, 6b, 7a, 7b, 7c
+
+A GitHub re-run reuses the original event payload and commit, so it measures the old merge commit, and ingest holds
+the envelope to GitHub's current base and merge commit: once the default branch moved, the upload of a re-run is
+`envelope_mismatch`, whose recovery is "re-run". Every rule that would request a re-run therefore asks first whether
+the receipt is behind: `rc.BaseSHA` is not `""` and not the default-branch tip (the tip is read once per pass, as in
+rule 5c). If it is, the rule requests no re-run and publishes `verdict.TargetMoved(nil, rc.BaseSHA, tip)` in place of
+its own reason (`stale_inputs`, `waiver_expired`, `missing_upload`): the range only, and the generic "update the branch"
+recovery. This holds in required mode whatever `integration.recheck` says, and for any conclusion of `rc`; rule 5b
+replaces a green receipt whose inputs went stale as well. The publication goes through `publishMoved`, the path of
+rule 5c: inside `Publisher.Reconcile` the decision is made again, and a newer run, a withdrawn approval or a repository
+that left required mode is left to the rule that owns it. Rules 6b, 7a, 7b and 7c also leave a receipt that went stale
+meanwhile to rule 5b; rule 5b alone may replace a stale receipt. The receipt is `target_moved` afterwards, so the next
+pass finds nothing to do.
+
+A receipt with `BaseSHA == ""` (written before the field existed) and a receipt measured on the tip keep the rule's
+behaviour, re-run included. A tip that cannot be read (not `ErrNotFound`) counts nothing new and does what the rule did
+before; a rate limit or a cancelled context stops the pass, as everywhere. Rule 5a requests no re-run and is unchanged.
 
 Rules 6b and 7c leave a `target_moved` receipt alone; 5b still replaces it with `stale_inputs` when the protected inputs
 change, and rules 5a, 7a and 7b never match it. A new upload after the branch update replaces it.

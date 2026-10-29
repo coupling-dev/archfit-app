@@ -480,7 +480,7 @@ that matches nothing. Other rules that the engine could not evaluate keep `missi
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `missing_upload`              | Read the workflow run and run the workflow again.                                                                                                                                                                   |
 | `stale_inputs`                | The policy or baseline changed on the base branch. Run the workflow again if no rerun appears.                                                                                                                      |
-| `target_moved`                | The default branch moved, and with it this pull request closes a module cycle the comment names. The pull request author updates the branch (**Update branch** on GitHub, `gh pr update-branch`, or merge the target); the new commit is measured again. No rerun is requested: a rerun would measure the old commit. |
+| `target_moved`                | The default branch moved since this pull request was measured. The comment names the commits, and the modules when this pull request closes a module cycle with the new default branch. The pull request author updates the branch (**Update branch** on GitHub, `gh pr update-branch`, or merge the target); the new commit is measured again. No rerun is requested and rerunning the workflow does not help: a rerun would measure the old commit. |
 | `policy_mismatch`             | Run the workflow with the policy from the base branch. Run it again if the base changed.                                                                                                                            |
 | `baseline_mismatch`           | Run the workflow with the baseline from the base branch.                                                                                                                                                            |
 | `labels_mismatch`             | Run the workflow with the labels file from the base branch.                                                                                                                                                         |
@@ -504,6 +504,9 @@ that matches nothing. Other rules that the engine could not evaluate keep `missi
 The sweep requests a workflow rerun after stale inputs, an expired waiver, late owner approval, or restored subscription.
 A rerun uses customer CI minutes. A fresh report is required for a new `success` result. `target_moved` requests no
 rerun, because a rerun measures the commit the old run measured: the author updates the branch.
+The sweep also requests none when the default branch moved since the check was measured, whatever the reason: a rerun
+measures the old commit, and its upload would fail `envelope_mismatch`. The check says `target_moved` instead and the
+author updates the branch.
 When an owner approval that a passed check relied on is withdrawn, the review event sets `owner_approval_missing` at
 once; the sweep does it within an hour if the event is lost. No rerun is requested until an owner approves again or
 no approval is needed any more.
@@ -797,6 +800,12 @@ report has alone (a pull request that adds `b → a` to a default branch that ga
 the default branch already has), the pull request's check changes to `action_required` with `target_moved`. The comment
 names the modules and the commits. The author updates the branch and the new commit is measured on the new default
 branch, which then reports the cycle as a finding.
+
+**Re-runs cannot help once the target moved.** A workflow re-run measures the commit the first run measured, and the
+App holds every upload to the default branch as it is now. When the default branch has moved, the sweep therefore
+requests no rerun, for a changed policy or baseline, an expired waiver, a late owner approval or a restored
+subscription: it sets `target_moved`, without a cycle in the comment, and the author updates the branch. Rerunning the
+workflow by hand ends in `envelope_mismatch`.
 
 A pull request that only touches the same modules, or depends on a module the default branch changed, keeps its result:
 no new cycle, no stale check.

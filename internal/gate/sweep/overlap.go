@@ -288,13 +288,41 @@ func (p *pass) targetMoved(ctx context.Context, t inputs.Target, tr inputs.Trust
 			}
 		}
 	}
-	return true, p.publishMoved(ctx, t, rc, cycle, tip.sha)
+	return true, p.publishMoved(ctx, "5c", t, rc, cycle, tip.sha, func(tr inputs.Trusted) bool {
+		return tr.Settings.Recheck() == settings.RecheckOverlap && !stale(rc, tr)
+	})
+}
+
+// retarget is the base-behind branch of rules 5b, 6b, 7a, 7b and 7c, which would otherwise ask for a re-run. A re-run
+// reuses the commit the old run measured, and the upload of a commit whose base is not the tip fails envelope_mismatch,
+// so only a new run on an updated branch can bring evidence: target_moved, without a cycle, names that recovery in
+// place of the rule's own reason. It reports whether it ended the evaluation. A receipt without a base (written before
+// the field existed) and one measured on the tip are not behind, and neither is any receipt when the tip cannot be
+// read: the rule then does what it did before, and only a rate limit or a cancelled ctx stops the pass.
+// replaceStale is for rule 5b, whose receipt is stale by definition; the other rules leave a stale receipt to it.
+func (p *pass) retarget(ctx context.Context, rule string, t inputs.Target, rc feedback.Receipt, replaceStale bool) (bool, error) {
+	if rc.BaseSHA == "" {
+		return false, nil
+	}
+	tip, err := p.tip(ctx, t.Repo)
+	if err != nil {
+		if errors.Is(err, api.ErrRateLimited) || ctx.Err() != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	if tip.sha == "" || tip.sha == rc.BaseSHA {
+		return false, nil
+	}
+	return true, p.publishMoved(ctx, rule, t, rc, nil, tip.sha, func(tr inputs.Trusted) bool {
+		return replaceStale || !stale(rc, tr)
+	})
 }
 
 // publishMoved writes target_moved over rc inside the head's publication lease. The decision is made again there from
-// the check and the inputs as they are: a newer run, a changed policy or a withdrawn approval is left to the rule
-// that owns it.
-func (p *pass) publishMoved(ctx context.Context, t inputs.Target, rc feedback.Receipt, cycle []string, tip string) error {
+// the check and the inputs as they are: a newer run, a withdrawn approval, a repository that left required mode or
+// that admits answers false are left to the rule that owns them.
+func (p *pass) publishMoved(ctx context.Context, rule string, t inputs.Target, rc feedback.Receipt, cycle []string, tip string, admits func(inputs.Trusted) bool) error {
 	var pub *feedback.Publication
 	err := p.publisher.Reconcile(ctx, t, func(ctx context.Context, current feedback.CheckState) (*feedback.Publication, error) {
 		if current.Receipt != rc {
@@ -304,8 +332,7 @@ func (p *pass) publishMoved(ctx context.Context, t inputs.Target, rc feedback.Re
 		if err != nil {
 			return nil, err
 		}
-		if tr.Settings.Gate != settings.GateRequired || tr.Settings.Recheck() != settings.RecheckOverlap ||
-			stale(rc, tr) || Withdrawn(rc, tr) {
+		if tr.Settings.Gate != settings.GateRequired || Withdrawn(rc, tr) || !admits(tr) {
 			return nil, nil
 		}
 		moved := withOutcome(verdict.TargetMoved(cycle, rc.BaseSHA, tip), verdict.ReasonTargetMoved, t, tr, rc)
@@ -315,6 +342,6 @@ func (p *pass) publishMoved(ctx context.Context, t inputs.Target, rc feedback.Re
 	if err != nil || pub == nil {
 		return err
 	}
-	p.logPublished("5c", *pub, rc)
+	p.logPublished(rule, *pub, rc)
 	return nil
 }
