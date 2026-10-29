@@ -10,9 +10,8 @@ locals {
   # Cloud Run quotas: 8 vCPU, 4 GiB and 4 services in the one region, 0 everywhere else, one region per project, and
   # no GPUs, jobs or worker pools. A preference without a region applies to every region that has no own preference.
   # CPU: a release brings up a new revision of each service beside the live one, so the worst case is 2 services x
-  # 2 instances (max_instance_count before #82) x 2 revisions (live + new) x 1 vCPU = 8 vCPU. With 8 the max of 1 that
-  # #82 set is no longer needed for a release to fit; it stays in code as the cheaper default. Memory: 8 instances x
-  # 512 MiB = 4 GiB, so the memory quota stays 4 GiB.
+  # 2 instances (max_instance_count in infra/runtime) x 2 revisions (live + new) x 1 vCPU = 8 vCPU. Memory: 8 instances x
+  # 512 MiB = 4 GiB, so the memory quota stays 4 GiB. Raise these before raising the instance count.
   run_quota_preferences = {
     "run-cpu-europe-west1"      = { quota_id = "CpuAllocPerProjectRegion", value = "8000", region = var.region }
     "run-cpu-all-regions"       = { quota_id = "CpuAllocPerProjectRegion", value = "0", region = null }

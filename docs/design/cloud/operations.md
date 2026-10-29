@@ -85,9 +85,8 @@ Limits:
 - An Owner or Editor credential can reverse every control in the table. The controls slow an attacker down. The alert
   tells the owner. Least privilege on the deploy identity is the control a leaked credential cannot undo.
 - No budget action stops spending. A billing kill switch can delete resources, so the beta does not use one.
-- Sizing: a release runs a new revision of each service beside the live one. 8 vCPU = 2 services × 2 instances × 2
-  revisions × 1 vCPU, and 8 × 512 MiB = the 4 GiB memory quota. The runtime sets `max_instance_count = 1` (#82), which
-  needs only 4 vCPU; with 8 that cap is optional.
+- Sizing: a release runs a new revision of each service beside the live one. 8 vCPU = 2 services × 2 instances
+  (`max_instance_count = 2`) × 2 revisions × 1 vCPU, and 8 × 512 MiB = the 4 GiB memory quota.
 - Raise a Cloud Run quota before a release needs more: `gcloud quotas preferences update run-cpu-europe-west1
 --service=run.googleapis.com --quota-id=CpuAllocPerProjectRegion --preferred-value=<milli-vCPU>`.
   A quota change also triggers the guardrail alert.
