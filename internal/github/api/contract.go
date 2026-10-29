@@ -26,6 +26,10 @@ var (
 	ErrNotFound    = errors.New("github: not found")
 	ErrRateLimited = errors.New("github: rate limit exhausted") // returned after bounded backoff
 
+	// ErrArtifactInvalid is an artifact that downloaded whole but is not what the App reads: not a zip, not exactly one
+	// regular file, or too large. Downloading it again gives the same bytes, unlike a failed read.
+	ErrArtifactInvalid = errors.New("github: artifact is not a single file")
+
 	// ErrUserTokenRejected is GitHub's 401 on a user's OAuth token: it expired or was revoked. The token cannot
 	// recover, so the call is not repeated and the user must sign in again.
 	ErrUserTokenRejected = errors.New("github: user token rejected")

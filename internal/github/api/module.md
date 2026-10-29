@@ -151,7 +151,7 @@ a `truncated` result: it returns the paths read so far with `truncated` true.
   `GET .../artifacts/{id}/zip`, which redirects to blob storage; the `Authorization` header is not forwarded
   across hosts. The zip must hold exactly one regular file; its declared size and the bytes actually read
   (through a limited reader) must both be ≤ `maxBytes`, else error. The zip itself is read through a limit of
-  `maxBytes` + 1 MiB **[default]**; any second entry, even a directory, is an error.
+  `maxBytes` + 1 MiB **[default]**; any second entry, even a directory, is an error. Each of these download defects wraps `ErrArtifactInvalid` (the same bytes come back on every download), unlike a failed read, so a caller can tell a defective artifact from an outage.
 - `ArtifactID` is `Artifact`'s listing alone and returns the artifact's ID; `ArtifactByID` is its download alone.
   `Artifact` is exactly the two in turn: the same requests. An artifact never changes, so a reader may keep a
   download under its ID.

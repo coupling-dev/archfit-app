@@ -245,20 +245,24 @@ Steps, in this order, stopping at the first that decides nothing:
    `Binding.MergeBaseSHA` when the head conflicts and was measured alone.
 2. The tip's report, read once per repository per pass: the `archfit/state` check on the tip commit
    (`Publisher.AdvisoryState`), its receipt's `RunID` and `ReportDigest`, the run's `archfit-report` artifact, proved
-   with `report.DecodeArtifact` (digest check, then the strict decode). Nothing is stored. When there is no report
-   to read:
+   with `report.DecodeArtifact` (digest check, then the strict decode). Only a check the App decided counts
+   (`Decided`): the report of a rejected upload (unknown engine, unapproved workflow, mismatched envelope) is no
+   measurement of the tip, however well it decodes. Nothing is stored. When there is no report to read:
    - no `archfit/state` check on the tip yet: no decision. The check's `StartedAt` is the only clock the sweep has for
      a tip, so a tip that never gets a check never goes overdue (stated limit; A7's repair issue is the net);
-   - a check whose report cannot be proved (no run or digest in its receipt, an expired artifact, a digest mismatch,
-     bytes that are no report): no decision while `now − StartedAt < MissingUploadAfter`, the clock and limit of rule 4;
+   - a check whose report cannot be proved (an undecided receipt, no run or digest in its receipt, an expired
+     artifact, an artifact that is not one file (`api.ErrArtifactInvalid`), a digest mismatch, bytes that are no
+     report): no decision while `now − StartedAt < MissingUploadAfter`, the clock and limit of rule 4;
      from then on the tip is overdue and the pull request is stale. A `StartedAt` in the future makes the difference
      negative, which counts as overdue: a skewed or forged time never keeps the recheck off;
-   - a failed read (not `ErrNotFound`): the error ends the unit (counted in `Summary.Errors`; a rate limit stops the
+   - a failed read (not `ErrNotFound`, not `ErrArtifactInvalid`): the error ends the unit (counted in `Summary.Errors`; a rate limit stops the
      pass), nothing is written.
 3. The pull request's own report, by `rc.RunID` and `rc.ReportDigest`, proved the same way. When it cannot be proved
-   (no run or digest, an expired artifact, a digest mismatch, bytes that are no report, or a failed read other than a
-   rate limit) the receipt is stale: an update of the branch makes a new report, so this costs the author one click and
-   never lets an unmeasured merge through. A rate limit or a cancelled context returns the error instead.
+   (no run or digest, an expired artifact, an artifact that is not one file, a digest mismatch, bytes that are no report)
+   the receipt is stale: an update of the branch makes a new report, so this costs the author one click and never lets
+   an unmeasured merge through. A failed read (a GitHub or blob-store error, a timeout, a rate limit) proves nothing
+   either way: the error ends the unit, nothing is written, and the next pass reads again. A GitHub incident therefore
+   never turns a green receipt stale.
 4. Predicate (B) over the two graphs. A graph has one directed edge `from_module → to_module` per seam of the report
    whose two modules are named; a seam within one module is not an edge. The union of both graphs is stale when it has a
    strongly connected component of two or more modules that is not, member for member, a component of the tip's graph
@@ -1077,11 +1081,11 @@ calls and serves `State` from what was published; injectable errors. Time is the
   **Scenario**: the same cycle with `recheck: off`; advisory mode; a `failure` receipt; a report-derived `action_required`; a receipt whose base is the tip; the default `overlap`; `overlap` written out; a receipt without a base.
   **Expected behavior**: the first four read nothing (no `BranchHead`, no artifact); the base-is-tip row reads `BranchHead` once and no artifact; the last three publish `target_moved`.
 - **Test name**: `TestOverlapWithoutATipReport` (A3)
-  **Scenario**: no `archfit/state` check on the tip (now, and a day later); a check whose artifact expired, started 59 minutes, 60 minutes and a day ago, and one that starts in the future; an artifact that is not the report the receipt names (young, old); a receipt without a run (old, young); a failing artifact read, state-check read and `BranchHead`.
+  **Scenario**: no `archfit/state` check on the tip (now, and a day later); a check whose artifact expired, started 59 minutes, 60 minutes and a day ago, and one that starts in the future; an artifact that is not the report the receipt names (young, old); an artifact that is not one file (young, old); the report of a rejected upload (young, old); a receipt without a run (old, young); a failing artifact read, state-check read and `BranchHead`.
   **Expected behavior**: no decision (nothing written) without a check and while the check is younger than `MissingUploadAfter`; `target_moved` from 60 minutes, for an old check and for a check in the future, with only the commit range in `Detail` and no claim of a cycle; a failed read counts one error and writes nothing.
 - **Test name**: `TestOverlapWithoutAVerifiablePullReport` (A3)
-  **Scenario**: the pull request's artifact expired; its digest does not match; verified bytes that are no report; a receipt without a digest; a failing artifact read; a rate limit.
-  **Expected behavior**: `target_moved` for the first five (range only in `Detail`); the rate limit stops the pass and writes nothing.
+  **Scenario**: the pull request's artifact expired; its digest does not match; verified bytes that are no report; a receipt without a digest; an artifact that is not one file; a failing artifact read; a rate limit.
+  **Expected behavior**: `target_moved` for the first five (range only in `Detail`); the rate limit stops the pass and writes nothing; a failing read counts one error and writes nothing.
 - **Test name**: `TestOverlapReadsTheTargetOncePerPass` (A3)
   **Scenario**: three pull requests, then a second pass.
   **Expected behavior**: one `BranchHead`, one tip check read, one artifact read for the tip and one for each pull request; the second pass reads no artifact (the cache).

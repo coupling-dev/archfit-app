@@ -154,8 +154,8 @@ func (c *edgeCache) put(k edgeKey, e []edge) {
 }
 
 // edges is the module graph of the report that run uploaded, proved to be the report digest names. ok is false when
-// there is no such report: no run, an expired artifact, bytes that are not the digest's or not a report. An error
-// is a failed read, which proves nothing either way.
+// there is no such report: no run, an expired artifact, an artifact that is not one file, bytes that are not the
+// digest's or not a report. Those stay so on every read. An error is a failed read, which proves nothing either way.
 func (s *sweeper) edges(ctx context.Context, r api.RepoRef, runID int64, digest string) (edges []edge, ok bool, err error) {
 	if runID == 0 || digest == "" {
 		return nil, false, nil
@@ -165,7 +165,7 @@ func (s *sweeper) edges(ctx context.Context, r api.RepoRef, runID int64, digest 
 		return e, true, nil
 	}
 	payload, err := s.actions.Artifact(ctx, r, runID, report.ArtifactName, report.MaxBytes)
-	if errors.Is(err, api.ErrNotFound) {
+	if errors.Is(err, api.ErrNotFound) || errors.Is(err, api.ErrArtifactInvalid) {
 		return nil, false, nil
 	}
 	if err != nil {
@@ -222,8 +222,9 @@ func (p *pass) remember(r api.RepoRef, v *tipView) {
 }
 
 // load reads the report of the tip: the archfit/state check on the tip commit names a run and a report digest, the
-// run's artifact must be that report. No check yet is no decision, as is a check without a verifiable report until
-// MissingUploadAfter has passed on its clock; the clock of a check that starts in the future reads as run out, so a
+// run's artifact must be that report, and the run must be one the App decided (Decided): a rejected upload (unknown
+// engine, unapproved workflow, mismatched envelope) is no measurement of the tip, however well it decodes. No check
+// yet is no decision, as is a check without a verifiable report until MissingUploadAfter has passed on its clock; the clock of a check that starts in the future reads as run out, so a
 // skewed or forged time never keeps the recheck off.
 func (p *pass) load(ctx context.Context, r api.Repo, v *tipView) error {
 	if v.loaded {
@@ -235,9 +236,13 @@ func (p *pass) load(ctx context.Context, r api.Repo, v *tipView) error {
 	}
 	if state.Exists {
 		rc := state.Receipt
-		edges, ok, err := p.edges(ctx, r.RepoRef, rc.RunID, rc.ReportDigest)
-		if err != nil {
-			return err
+		var edges []edge
+		ok := false
+		if Decided(rc) {
+			var err error
+			if edges, ok, err = p.edges(ctx, r.RepoRef, rc.RunID, rc.ReportDigest); err != nil {
+				return err
+			}
 		}
 		age := p.now.Sub(state.StartedAt)
 		switch {
@@ -253,9 +258,10 @@ func (p *pass) load(ctx context.Context, r api.Repo, v *tipView) error {
 
 // targetMoved is rule 5c: a success receipt measured on a base that is not the default branch tip any more goes
 // stale when the tip's report and the pull request's report together close a module cycle that neither holds alone.
-// It reports whether it ended the evaluation (it published, or found the check changed). Every read that fails or
-// proves nothing about the tip decides nothing; one that proves nothing about the pull request's own report goes
-// stale, because an update of the branch makes a new report.
+// It reports whether it ended the evaluation (it published, or found the check changed). A read that fails decides
+// nothing, whichever report it was for. A report that is missing or defective for good proves nothing about the tip
+// (nothing is decided until MissingUploadAfter), but for the pull request's own report it goes stale at once, because
+// an update of the branch makes a new report.
 func (p *pass) targetMoved(ctx context.Context, t inputs.Target, tr inputs.Trusted, rc feedback.Receipt) (bool, error) {
 	if rc.Conclusion != verdict.Success || tr.Settings.Recheck() != settings.RecheckOverlap {
 		return false, nil
@@ -273,7 +279,7 @@ func (p *pass) targetMoved(ctx context.Context, t inputs.Target, tr inputs.Trust
 		return false, nil
 	case tipRead:
 		mine, ok, err := p.edges(ctx, t.Repo.RepoRef, rc.RunID, rc.ReportDigest)
-		if err != nil && (errors.Is(err, api.ErrRateLimited) || ctx.Err() != nil) {
+		if err != nil {
 			return false, err
 		}
 		if ok {

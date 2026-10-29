@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"os"
 	"reflect"
@@ -65,6 +66,17 @@ func (w *world) tipReport(r api.Repo, startedAt time.Time, edges ...string) {
 	w.t.Helper()
 	payload := reportPayload(w.t, edges...)
 	rc := receipt(tipRunID, verdict.ReasonHealthy)
+	rc.ReportDigest = envelope.PayloadDigest(payload)
+	w.actions.artifacts[tipRunID] = payload
+	w.tipCheck(r, startedAt, rc)
+}
+
+// tipRejected gives the tip a state check of an upload the App refused (unknown engine identity), whose report has no
+// edges at all.
+func (w *world) tipRejected(r api.Repo, startedAt time.Time) {
+	w.t.Helper()
+	payload := reportPayload(w.t)
+	rc := receipt(tipRunID, verdict.ReasonUnknownIdentity)
 	rc.ReportDigest = envelope.PayloadDigest(payload)
 	w.actions.artifacts[tipRunID] = payload
 	w.tipCheck(r, startedAt, rc)
@@ -251,6 +263,21 @@ func TestOverlapWithoutATipReport(t *testing.T) {
 			w.tipReport(r, t0.Add(-day), "a>b")
 			w.actions.artifactErrs[tipRunID] = errBoom
 		}, t0, false, 1},
+		{"artifact is not one file, young", func(w *world, r api.Repo) {
+			w.tipReport(r, t0.Add(-time.Minute), "a>b")
+			w.actions.artifactErrs[tipRunID] = fmt.Errorf("download: %w", api.ErrArtifactInvalid)
+		}, t0, false, 0},
+		{"artifact is not one file, old", func(w *world, r api.Repo) {
+			w.tipReport(r, t0.Add(-day), "a>b")
+			w.actions.artifactErrs[tipRunID] = fmt.Errorf("download: %w", api.ErrArtifactInvalid)
+		}, t0, true, 0},
+		// The report decodes and its digest matches, but the App rejected the upload: it measures nothing.
+		{"report of a rejected upload, young", func(w *world, r api.Repo) {
+			w.tipRejected(r, t0.Add(-time.Minute))
+		}, t0, false, 0},
+		{"report of a rejected upload, old", func(w *world, r api.Repo) {
+			w.tipRejected(r, t0.Add(-day))
+		}, t0, true, 0},
 		{"state check read fails", func(w *world, r api.Repo) {
 			w.tipReport(r, t0.Add(-day), "a>b")
 			w.pub.errs["AdvisoryState:"+r.FullName] = errBoom
@@ -304,7 +331,9 @@ func TestOverlapWithoutAVerifiablePullReport(t *testing.T) {
 			rc.ReportDigest = ""
 			w.check(tg, rc, t0.Add(-day))
 		}},
-		{"artifact read fails", func(w *world, _ inputs.Target, rc feedback.Receipt) { w.actions.artifactErrs[rc.RunID] = errBoom }},
+		{"artifact is not one file", func(w *world, _ inputs.Target, rc feedback.Receipt) {
+			w.actions.artifactErrs[rc.RunID] = fmt.Errorf("download: %w", api.ErrArtifactInvalid)
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -331,6 +360,18 @@ func TestOverlapWithoutAVerifiablePullReport(t *testing.T) {
 
 		if !sum.RateLimited || w.calls() != (calls{}) {
 			t.Errorf("summary = %+v, calls = %+v, want a stopped pass and no write", sum, w.calls())
+		}
+	})
+
+	// A GitHub or blob-store failure says nothing about the report: the receipt stays and the next pass reads again.
+	t.Run("a failed read decides nothing and is counted", func(t *testing.T) {
+		w, tg, rc := movedWorld(t, []string{"a>b"}, []string{"c>d"})
+		w.actions.artifactErrs[rc.RunID] = errBoom
+
+		sum := w.pass(t0)
+
+		if sum.Errors != 1 || w.calls() != (calls{}) || w.state(tg).Receipt != rc {
+			t.Errorf("summary = %+v, calls = %+v, want one error and the receipt kept", sum, w.calls())
 		}
 	})
 }

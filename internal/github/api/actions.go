@@ -200,7 +200,7 @@ func (c *Client) ArtifactByID(ctx context.Context, r RepoRef, id int64, maxBytes
 	}
 	data, err := extractSingleFile(res.body, maxBytes)
 	if err != nil {
-		return nil, k.errorf("%w", err)
+		return nil, k.errorf("%w: %w", ErrArtifactInvalid, err)
 	}
 	return data, nil
 }
