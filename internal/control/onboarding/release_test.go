@@ -12,16 +12,14 @@ func TestNewWorkflowUsesReleasedV340Pins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, pin := range []string{
-		"fb2520cb069571d6bdc9274ac97d4df49994b6c7",
-		"v3.4.0",
-		"sha256:bdcfe29bf9def9a4f0ae544923bc3e755fdec2c2cd6c46ec353c01e60642896b",
-	} {
-		if !strings.Contains(string(raw), pin) {
-			t.Errorf("new workflow lacks released pin %q", pin)
-		}
+	// Action v3.1.0 runs the engine it pins (v3.4.0) with the digest of the runner's platform: the workflow names the
+	// Action commit only, so an arm64 runner never gets the amd64 digest.
+	if !strings.Contains(string(raw), "alexei-led/archfit-action@7ade3b8fc989ec416ea5d570e7e236f47f7845fc\n") {
+		t.Errorf("new workflow does not pin Action v3.1.0 at 7ade3b8fc989ec416ea5d570e7e236f47f7845fc:\n%s", raw)
 	}
-	if strings.Contains(string(raw), "v3.2.0") || strings.Contains(string(raw), "v3.2.2") || strings.Contains(string(raw), "v3.2.3") {
-		t.Error("new workflow uses the transition release")
+	for _, input := range []string{"engine-version:", "image-digest:"} {
+		if strings.Contains(string(raw), input) {
+			t.Errorf("new workflow passes %s, which the pinned Action supplies itself", input)
+		}
 	}
 }

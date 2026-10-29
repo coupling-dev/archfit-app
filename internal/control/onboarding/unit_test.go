@@ -253,8 +253,6 @@ func TestWorkflowTemplate(t *testing.T) {
 
 	for name, re := range map[string]string{
 		"action pinned by SHA": `(?m)^\s+- uses: \S+/archfit-action@` + entry.ActionRef + `$`,
-		"image digest":         regexp.QuoteMeta(entry.ImageDigest),
-		"engine version":       `v3\.0\.0`,
 		"endpoint":             `(?m)^\s+endpoint: "https://archfit\.example"$`,
 		"audience":             `(?m)^\s+audience: "https://archfit\.example"$`,
 		"pull_request trigger": `(?m)^  pull_request:\s*$`,
@@ -266,6 +264,13 @@ func TestWorkflowTemplate(t *testing.T) {
 	} {
 		if !regexp.MustCompile(re).MatchString(got) {
 			t.Errorf("%s: no match for %s in\n%s", name, re, got)
+		}
+	}
+
+	// The pinned Action names its own engine and the digest for the runner's platform.
+	for _, absent := range []string{"engine-version:", "image-digest:", entry.ImageDigest, entry.EngineVersion} {
+		if strings.Contains(got, absent) {
+			t.Errorf("workflow names %q; the pinned Action supplies the engine itself", absent)
 		}
 	}
 
