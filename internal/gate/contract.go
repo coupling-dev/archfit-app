@@ -35,6 +35,7 @@ type Gate struct {
 	receiver   ingest.Receiver
 	resolver   inputs.Resolver
 	publisher  feedback.Publisher
+	repairer   feedback.Repairer
 	sweeper    sweep.Sweeper
 	actions    api.Actions
 	pulls      api.Pulls
@@ -55,6 +56,7 @@ type github interface {
 	api.Actions
 	api.Checks
 	api.Comments
+	api.Issues
 }
 
 func New(d Deps) *Gate {
@@ -68,12 +70,12 @@ func compose(gh github, v oidc.Verifier, s store.Store, adm admitter, audience s
 	}
 	resolver := inputs.New(gh, gh, s)
 	publisher := feedback.New(gh, gh, gh, s, audience, now) // the audience is the App's base URL
-	return newGate(newReceiver(gh, v, audience, adm), resolver, publisher,
+	return newGate(newReceiver(gh, v, audience, adm), resolver, publisher, feedback.NewRepairer(gh, gh, gh, gh, s, now),
 		sweep.New(gh, gh, gh, resolver, publisher, adm, c), gh, gh, adm, now)
 }
 
-func newGate(rc ingest.Receiver, rs inputs.Resolver, p feedback.Publisher, sw sweep.Sweeper, a api.Actions, pl api.Pulls, adm admitter, now func() time.Time) *Gate {
-	return &Gate{receiver: rc, resolver: rs, publisher: p, sweeper: sw, actions: a, pulls: pl, admissions: adm, now: now}
+func newGate(rc ingest.Receiver, rs inputs.Resolver, p feedback.Publisher, rp feedback.Repairer, sw sweep.Sweeper, a api.Actions, pl api.Pulls, adm admitter, now func() time.Time) *Gate {
+	return &Gate{receiver: rc, resolver: rs, publisher: p, repairer: rp, sweeper: sw, actions: a, pulls: pl, admissions: adm, now: now}
 }
 
 // UploadHandler serves POST /v1/reports.
