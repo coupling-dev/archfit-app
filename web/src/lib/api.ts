@@ -66,6 +66,7 @@ export interface Inbox {
   policy_changes: PolicyChangeRow[];
   policy_more: number;
   policy_error: boolean;
+  policy_unread: number; // open pull requests whose check could not be read
 }
 
 export interface Step {
@@ -85,6 +86,7 @@ export interface Overview {
   pulls_more: number;
   pulls_error: boolean;
   pulls_to_update: number; // listed pull requests that wait for an update after the target moved
+  pulls_unread: number; // listed pull requests whose check could not be read: pulls_to_update is a floor
   decisions_pending: number; // decision requests that wait for an owner, in all pull requests
   decisions: DecisionRow[]; // the first few
   decisions_error: boolean;

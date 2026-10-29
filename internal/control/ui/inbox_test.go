@@ -255,3 +255,22 @@ func TestDecisionsPage(t *testing.T) {
 		}
 	})
 }
+
+// A pull request whose check could not be read is counted as unread on both pages: a count built from the others is a
+// floor, and an empty policy list is not "no policy change".
+func TestUnreadChecksAreNeverCountedAsNothing(t *testing.T) {
+	e := advisoryRepo(t)
+	e.gh.fail["CheckRuns "+sha(4)+"#"+checkState] = errors.New("github 502")
+
+	var overview statusBody
+	e.as("alice", permRead).getJSON("/api/repos/"+repoName+"/overview", &overview)
+	if overview.PullsError || overview.PullsUnread != 1 {
+		t.Errorf("overview: pulls error %v, unread %d; want the list read and 1 unread", overview.PullsError, overview.PullsUnread)
+	}
+
+	var inbox inboxBody
+	e.as("alice", permRead).getJSON("/api/repos/"+repoName+"/decisions", &inbox)
+	if inbox.PolicyError || inbox.PolicyUnread != 1 {
+		t.Errorf("decisions: policy error %v, unread %d; want the list read and 1 unread", inbox.PolicyError, inbox.PolicyUnread)
+	}
+}

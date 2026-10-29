@@ -165,12 +165,14 @@
   {#if body.main_state}
     <div class="stats" role="group" aria-label="Pull requests and decision requests" id="watch">
       <div>
-        <span class="n">{body.pulls_error ? '–' : body.pulls_to_update}</span>
-        <span class="t">{!body.pulls_error && body.pulls_to_update === 1 ? 'Pull request' : 'Pull requests'} to update</span>
+        <span class="n">{body.pulls_error ? '–' : body.pulls_unread ? `${body.pulls_to_update}+` : body.pulls_to_update}</span>
+        <span class="t">{!body.pulls_error && !body.pulls_unread && body.pulls_to_update === 1 ? 'Pull request' : 'Pull requests'} to update</span>
         <span class="s"
           >{body.pulls_error
             ? 'the open pull requests could not be read'
-            : 'the target branch moved under them: update the branch'}</span
+            : body.pulls_unread
+              ? `${body.pulls_unread} could not be read, so there may be more`
+              : 'the target branch moved under them: update the branch'}</span
         >
       </div>
       <div>

@@ -79,6 +79,7 @@ const reporting = {
   main_sha: '',
   main_at: '',
   pulls_to_update: 0,
+  pulls_unread: 0,
   decisions_pending: 0,
   decisions: [],
   decisions_error: false,
@@ -138,6 +139,7 @@ const watching = {
   main_at: ago(2 * hour),
   pulls: [...reporting.pulls, movedPull],
   pulls_to_update: 1,
+  pulls_unread: 0,
   decisions_pending: 7,
   decisions: [
     decisionRequest(),
@@ -630,6 +632,7 @@ const inbox = {
   ],
   policy_more: 0,
   policy_error: false,
+  policy_unread: 0,
 };
 
 // The first screen of the PR comment for a blocked pull request, as the server words it.
@@ -926,6 +929,11 @@ test('overview: counters say when they could not be read, and a quiet repository
   await expect(counters).toContainText('– Decision requests pending could not be read');
   await expect(page.getByRole('region', { name: 'Needs you' }).getByText('decision request')).toHaveCount(0);
 
+  // One pull request's check could not be read: the count is a floor and says so, never the whole.
+  await page.unrouteAll();
+  await open(page, '/r/acme/app', { overview: { ...watching, pulls_unread: 2 } });
+  await expect(counters).toContainText('1+ Pull requests to update 2 could not be read, so there may be more');
+
   await page.unrouteAll();
   await open(page, '/r/acme/app');
   await expect(counters).toContainText('0 Pull requests to update');
@@ -981,6 +989,15 @@ test('decisions: nothing waiting is said in the product voice, and a failed read
   await expect(page.getByText('The decision requests could not be read. Try again in a minute.')).toBeVisible();
   await expect(page.getByText('The open pull requests could not be read. Try again in a minute.')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'No decision request' })).toHaveCount(0);
+
+  // A pull request whose check could not be read is not "no policy change".
+  await page.unrouteAll();
+  await open(page, '/r/acme/app/decisions', { inbox: { ...inbox, policy_changes: [], policy_unread: 1 } });
+  await expect(page.getByText('1 open pull request could not be read, so a policy change may be missing here.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'No policy change' })).toHaveCount(0);
+  await page.unrouteAll();
+  await open(page, '/r/acme/app/decisions', { inbox: { ...inbox, policy_unread: 3 } });
+  await expect(page.getByText('3 more open pull requests could not be read; a policy change among them is not listed.')).toBeVisible();
 
   await page.unrouteAll();
   await open(page, '/r/acme/app/decisions', { inbox: { ...inbox, requests_more: 12, policy_more: 3 } });

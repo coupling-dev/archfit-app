@@ -49,6 +49,7 @@ type statusBody struct {
 	PullsMore     int       `json:"pulls_more"`      // open pull requests past maxStatusPulls
 	PullsError    bool      `json:"pulls_error"`     // the list could not be read; the rest of the page stands
 	PullsToUpdate int       `json:"pulls_to_update"` // listed pull requests that wait for an update after the target moved
+	PullsUnread   int       `json:"pulls_unread"`    // listed pull requests whose check could not be read: PullsToUpdate is a floor
 
 	// DecisionsPending counts the decision requests that wait for an owner in all pull requests; Decisions lists the
 	// first few. Neither is read for a repository without an open pull request.
@@ -112,9 +113,9 @@ func (s *server) apiStatus(r *http.Request, sc scope) (any, error) {
 		bannerText  string
 		main        branchCheck
 		pulls       struct {
-			rows   []pullRow
-			more   int
-			failed bool
+			rows         []pullRow
+			more, unread int
+			failed       bool
 		}
 	)
 	together(
@@ -134,7 +135,7 @@ func (s *server) apiStatus(r *http.Request, sc scope) (any, error) {
 			bannerText = banner(st)
 		},
 		func() { main = s.defaultBranchState(ctx, sc.repo) },
-		func() { pulls.rows, pulls.more, pulls.failed = s.openPulls(ctx, sc) },
+		func() { pulls.rows, pulls.more, pulls.unread, pulls.failed = s.openPulls(ctx, sc) },
 	)
 	if progressErr != nil {
 		return nil, progressErr
@@ -172,7 +173,7 @@ func (s *server) apiStatus(r *http.Request, sc scope) (any, error) {
 		if !main.at.IsZero() {
 			body.MainSHA, body.MainAt = main.sha[:min(len(main.sha), shortSHA)], main.at.UTC().Format(time.RFC3339)
 		}
-		body.Pulls, body.PullsMore, body.PullsError = pulls.rows, pulls.more, pulls.failed
+		body.Pulls, body.PullsMore, body.PullsError, body.PullsUnread = pulls.rows, pulls.more, pulls.failed, pulls.unread
 		for _, p := range pulls.rows {
 			if p.Rerun != "" {
 				body.PullsToUpdate++
@@ -300,6 +301,21 @@ type pullCheck struct {
 	run           *api.CheckRun // nil without a check or when it could not be read
 }
 
+// unread reports a pull request whose check could not be read: latestCheck answers stateUnknown without a run only then.
+func (c pullCheck) unread() bool { return c.run == nil && c.state == stateUnknown }
+
+// unreadChecks counts the pull requests whose check could not be read. A count built from the others is then a floor,
+// so a page says so instead of showing it as the whole.
+func unreadChecks(checks []pullCheck) int {
+	n := 0
+	for _, c := range checks {
+		if c.unread() {
+			n++
+		}
+	}
+	return n
+}
+
 type step struct {
 	Label   string `json:"label"`
 	Done    bool   `json:"done"`
@@ -408,8 +424,9 @@ func (s *server) openPullChecks(ctx context.Context, sc scope) (checks []pullChe
 }
 
 // openPulls is openPullChecks as the repository page lists it.
-func (s *server) openPulls(ctx context.Context, sc scope) (rows []pullRow, more int, failed bool) {
+func (s *server) openPulls(ctx context.Context, sc scope) (rows []pullRow, more, unread int, failed bool) {
 	checks, more, failed := s.openPullChecks(ctx, sc)
+	unread = unreadChecks(checks)
 	rows = make([]pullRow, len(checks))
 	for i, c := range checks {
 		rows[i] = pullRow{
@@ -417,7 +434,7 @@ func (s *server) openPulls(ctx context.Context, sc scope) (rows []pullRow, more 
 			Href: repoPath(sc, "/pull/"+strconv.Itoa(c.pull.Number)), Rerun: rerunStep(c.run),
 		}
 	}
-	return rows, more, failed
+	return rows, more, unread, failed
 }
 
 // targetMoved is the reason code of a pull request the sweep withdrew because the target branch moved under it.

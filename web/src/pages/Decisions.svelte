@@ -107,6 +107,11 @@
     </div>
     {#if body.policy_error}
       <p class="box-row muted">The open pull requests could not be read. Try again in a minute.</p>
+    {:else if body.policy_unread && !body.policy_changes.length}
+      <p class="box-row muted">
+        {body.policy_unread} open {body.policy_unread === 1 ? 'pull request' : 'pull requests'} could not be read, so a
+        policy change may be missing here. Try again in a minute.
+      </p>
     {:else if !body.policy_changes.length}
       <div class="blankslate">
         <h3>No policy change</h3>
@@ -122,6 +127,12 @@
           <p class="small">{p.headline}</p>
         </div>
       {/each}
+    {/if}
+    {#if body.policy_unread && body.policy_changes.length}
+      <p class="box-foot">
+        {body.policy_unread} more open {body.policy_unread === 1 ? 'pull request' : 'pull requests'} could not be read; a
+        policy change among them is not listed.
+      </p>
     {/if}
     {#if body.policy_more}
       <p class="box-foot">{body.policy_more} more open pull requests are not read here.</p>

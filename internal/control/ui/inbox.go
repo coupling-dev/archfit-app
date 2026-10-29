@@ -56,8 +56,9 @@ type inboxBody struct {
 	RequestsMore  int               `json:"requests_more"`  // pending requests past the listed ones
 	RequestsError bool              `json:"requests_error"` // they could not be read; the rest of the page stands
 	Policy        []policyChangeRow `json:"policy_changes"`
-	PolicyMore    int               `json:"policy_more"`  // open pull requests past maxStatusPulls
-	PolicyError   bool              `json:"policy_error"` // the open pull requests could not be read
+	PolicyMore    int               `json:"policy_more"`   // open pull requests past maxStatusPulls
+	PolicyError   bool              `json:"policy_error"`  // the open pull requests could not be read
+	PolicyUnread  int               `json:"policy_unread"` // open pull requests whose check could not be read: a policy change among them is not listed
 }
 
 const (
@@ -134,7 +135,7 @@ func (s *server) apiDecisions(r *http.Request, sc scope) (any, error) {
 		return cmp.Or(cmp.Compare(b.statusRank(), a.statusRank()), strings.Compare(b.Created, a.Created))
 	})
 	body.RequestsMore = max(0, q.Open-pendingIn(body.Requests))
-	body.Policy = s.policyChanges(ctx, sc, checks)
+	body.Policy, body.PolicyUnread = s.policyChanges(ctx, sc, checks), unreadChecks(checks)
 	return body, nil
 }
 
