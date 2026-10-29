@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/alexei-led/archfit-app/internal/gate/ingest"
@@ -73,6 +74,7 @@ func Decide(f Facts) Outcome {
 		rs.add(ReasonSettingsMissing, "")
 	}
 	eligibility(&rs, f)
+	rs.sharedHead(f.SharedHead)
 	if !t.SettingsFound {
 		// No trusted inputs to compare with: steps 4 to 8 are skipped.
 		return rs.outcome()
@@ -108,12 +110,12 @@ func Unapproved(t inputs.Trusted) bool {
 
 // Without returns the fixed outcome for a target that has no report: code is one of ReasonMissingUpload,
 // ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended, ReasonOwnerApprovalMissing,
-// ReasonTargetMoved.
+// ReasonTargetMoved, ReasonSharedHead.
 func Without(code ReasonCode) Outcome {
 	var rs reasons
 	switch code {
 	case ReasonMissingUpload, ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended,
-		ReasonOwnerApprovalMissing, ReasonTargetMoved:
+		ReasonOwnerApprovalMissing, ReasonTargetMoved, ReasonSharedHead:
 		rs.add(code, "")
 	default:
 		rs.add(ReasonEngineError, "")
@@ -162,6 +164,54 @@ func TargetMoved(cycle []string, base, tip string) Outcome {
 		rs.setNext(ReasonTargetMoved, "The target branch moved, and with it this pull request closes a module cycle: "+modules+". "+updateBranch)
 	}
 	return rs.outcome()
+}
+
+// Names of shared_head: how many pull requests and how many characters of a branch name the reason shows.
+const (
+	sharedPullsShown = 5
+	sharedBaseRunes  = 80
+)
+
+// SharedHead is Without(ReasonSharedHead) for a caller that knows the other pull requests: Detail lists the first
+// five by number with their bases, then "and N more"; Next names the base of the first.
+func SharedHead(others []SharedPull) Outcome {
+	var rs reasons
+	rs.sharedHead(others)
+	return rs.outcome()
+}
+
+// sharedHead is shared_head for the pull requests in others, none when it is empty. A base is a branch name an agent
+// chose: backticks and control characters would break the Next sentence, so they are dropped and the name is cut.
+func (rs *reasons) sharedHead(others []SharedPull) {
+	if len(others) == 0 {
+		return
+	}
+	var shown []string
+	for i, o := range others {
+		if i == sharedPullsShown {
+			shown = append(shown, "and "+strconv.Itoa(len(others)-i)+" more")
+			break
+		}
+		shown = append(shown, "#"+strconv.Itoa(o.Number)+" into "+branchName(o.BaseRef))
+	}
+	rs.add(ReasonSharedHead, strings.Join(shown, ", "))
+	rs.setNext(ReasonSharedHead, sharedHeadNext(branchName(others[0].BaseRef)))
+}
+
+func sharedHeadNext(base string) string {
+	return "Another open pull request into `" + base + "` has this head commit, so its checks would show this result. " +
+		"Close that pull request or change its base to the default branch, then run the Archfit workflow again."
+}
+
+// branchName is s without backticks and control characters, cut to sharedBaseRunes.
+func branchName(s string) string {
+	clean := strings.Map(func(r rune) rune {
+		if r == '`' || unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+	return cutRunes(clean, sharedBaseRunes)
 }
 
 // commitRange is "<base>..<tip>" with both cut to a short SHA; "" when the tip is unknown.
