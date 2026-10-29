@@ -414,7 +414,8 @@ check keeps its current conclusion until the Store is back and the next review e
 advisory mode there is no required check, and neither path changes the advisory `archfit/state` check.
 
 The sweep reruns the customer workflow after stale inputs, an expired waiver, late owner approval, or restored
-subscription. A missing upload becomes `action_required`. A fresh report is required for a new `success` result.
+subscription, unless the default branch moved since the result was measured: a re-run measures the old merge
+commit, so the check says `target_moved` and asks the author to update the branch. A missing upload becomes `action_required`. A fresh report is required for a new `success` result.
 
 ## Trust rules
 
