@@ -52,6 +52,7 @@ const (
 	ReasonMissingUpload         ReasonCode = "missing_upload"
 	ReasonStaleInputs           ReasonCode = "stale_inputs"
 	ReasonWaiverExpired         ReasonCode = "waiver_expired"
+	ReasonTargetMoved           ReasonCode = "target_moved" // the default branch moved and, with this change, closes a module cycle
 	ReasonSuspended             ReasonCode = "subscription_suspended"
 )
 

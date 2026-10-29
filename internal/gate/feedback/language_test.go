@@ -93,7 +93,7 @@ func TestExactCheckIDIsAbsentForFailedOrSupersededWrites(t *testing.T) {
 }
 
 func TestRejectedReportNeverBecomesRepairAdvice(t *testing.T) {
-	for _, code := range []verdict.ReasonCode{verdict.ReasonUnknownIdentity, verdict.ReasonProfileMissing, verdict.ReasonWorkflowNotApproved, verdict.ReasonEnvelopeMismatch, verdict.ReasonPolicyMismatch, verdict.ReasonBaselineMismatch, verdict.ReasonLabelsMismatch, verdict.ReasonPolicyMissing, verdict.ReasonOwnerApprovalMissing, verdict.ReasonSettingsMissing, verdict.ReasonStaleInputs, verdict.ReasonWaiverExpired, verdict.ReasonSuspended, verdict.ReasonForkUnsupported, verdict.ReasonUnsupportedEvent, verdict.ReasonReportInvalid, verdict.ReasonMissingUpload, verdict.ReasonEngineError, "future_rejection"} {
+	for _, code := range []verdict.ReasonCode{verdict.ReasonUnknownIdentity, verdict.ReasonProfileMissing, verdict.ReasonWorkflowNotApproved, verdict.ReasonEnvelopeMismatch, verdict.ReasonPolicyMismatch, verdict.ReasonBaselineMismatch, verdict.ReasonLabelsMismatch, verdict.ReasonPolicyMissing, verdict.ReasonOwnerApprovalMissing, verdict.ReasonSettingsMissing, verdict.ReasonStaleInputs, verdict.ReasonWaiverExpired, verdict.ReasonSuspended, verdict.ReasonForkUnsupported, verdict.ReasonUnsupportedEvent, verdict.ReasonReportInvalid, verdict.ReasonMissingUpload, verdict.ReasonEngineError, verdict.ReasonTargetMoved, "future_rejection"} {
 		t.Run(string(code), func(t *testing.T) {
 			p := blockedPublication(t, headB, 7, 1)
 			p.Report.Findings[0].RuleID = "rejected_claim_rule"
@@ -174,6 +174,17 @@ func TestReferenceOnlyRecoveryHasOneOwnerAction(t *testing.T) {
 	}
 	p.Report.Decision.UnevaluatedRequiredRules = append(p.Report.Decision.UnevaluatedRequiredRules, report.UnevaluatedRule{RuleID: "layers", Reason: "required tool absent"})
 	mustContain(t, renderComment(p, t0, "", ""), "CI maintainer:")
+}
+
+// The recovery of target_moved is the author's: only a new head measures the merge.
+func TestTargetMovedNamesTheAuthorAsRecoveryOwner(t *testing.T) {
+	p := blockedPublication(t, headB, 7, 1)
+	p.Outcome = verdict.TargetMoved([]string{"a", "b"}, "0123456789abcdef", "fedcba9876543210")
+	p.Receipt = receiptFor(p.Outcome, 7, 1)
+	body := renderComment(p, t0, "", "")
+	mustContain(t, body, "**Next:** Pull request author: ", "closes a module cycle: a, b.")
+	mustNotContain(t, body, "CI maintainer:", "Architecture owner:")
+	mustContain(t, renderGate(p), "Detail: a, b; 0123456789ab..fedcba987654")
 }
 
 func TestAnnotationRaceNeverSuppliesAnExactCheckID(t *testing.T) {

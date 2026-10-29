@@ -302,6 +302,17 @@ const StateSchemaV1 = "archfit.architecture-state.v1"
 // MaxBytes caps an uploaded payload: 5 MiB (the "5 MB" cap of decisions.md).
 const MaxBytes = 5 << 20
 
+// ArtifactName is the workflow artifact that carries the report bytes of a run.
+const ArtifactName = "archfit-report"
+
+// ErrDigestMismatch is returned by DecodeArtifact when the bytes are not the report the digest names.
+var ErrDigestMismatch = errors.New("report: artifact does not match its digest")
+
+// DecodeArtifact decodes a report artifact after proving it is the one a check names. digest is the report digest of
+// a receipt or of a check's external_id, "sha256:<hex>" or the bare hex; "" matches nothing. The artifact names no
+// engine release, so it decodes as the newest one, whose key set holds every older one.
+func DecodeArtifact(payload []byte, digest string) (Report, error)
+
 // Report is the no-source transport form of an engine state report. The decoder knows every key of the engine
 // state schema pinned at v3.4.0: keys listed here are kept (length-capped), the other known keys are validated and dropped
 // (measurement, findings[].matched_by except MatchedByKeys, agent_tasks[].declarations, metric provenance, seam
@@ -695,8 +706,11 @@ Shared knowledge, per counterpart:
 - `internal/gate` does not import this module. It reads `Report`, `Comparison` and `MeasurementProfile` through the
   `Report` field of `ingest.Upload`: a `nil` profile or a version different from the manifest entry means the identity
   is not approved. A change to those fields still reaches it.
-- `internal/control/ui` holds `Decode`, `EngineVersions` and `MaxBytes` to read the `archfit-report` workflow
-  artifact for the graph page. The artifact names no release, so it decodes as the last release, `v3.4.0`: an older artifact without an identity ends as unreadable there.
+- `internal/gate/sweep` holds `DecodeArtifact`, `ArtifactName`, `MaxBytes` and `Report.Seams` (`FromModule`, `ToModule`
+  only) to prove and read the module graph of a tip report and of a pull request's own report (sweep rule 5c). It
+  uses the graph to withdraw a passed result and never to grant one.
+- `internal/control/ui` holds `Decode`, `EngineVersions`, `MaxBytes`, `ArtifactName` and `DecodeArtifact` to read the
+  `archfit-report` workflow artifact for the graph page and the Pull page (digest check included). The artifact names no release, so it decodes as the last release, `v3.4.0`: an older artifact without an identity ends as unreadable there.
 - `internal/control/ui/graph` holds `Report`, `Seam` (`Seam.Policy` included, the status it shows when present),
   `Comparison.ConfigHash` and `Finding.Active`, which decides the links it marks as active gate findings in a
   report without `seams[].policy`.
@@ -890,6 +904,9 @@ the tests decode each one as the release that produced it (synthetic ones as v3.
 - **Test name**: `TestEngineVersions`
   **Scenario**: call `EngineVersions`, change the returned slice, call it again.
   **Expected behavior**: `v3.0.0`, `v3.0.1`, `v3.2.0`, `v3.2.2`, `v3.2.3`, `v3.4.0` both times: the caller gets a copy.
+- **Test name**: `TestDecodeArtifact`
+  **Scenario**: the artifact with its digest as "sha256:<hex>" and as bare hex; another artifact's digest; an empty digest; the prefix alone; altered bytes; verified bytes that are no report.
+  **Expected behavior**: the first two decode exactly as `Decode` does; the next four are `ErrDigestMismatch` with a zero `Report`; the last is a decode error that is not a digest mismatch.
 - **Test name**: `TestUnknownEngineVersionIsRefused`
   **Scenario**: the real capture with the release `""`, `v2.5.0`, `v2.6.0`, `3.0.0`, `v3.0.0 ` (trailing space), `V3.0.0`,
   `v3.0.2`, `v3.1.0` and a `v3.0.1` carrying `LEAK-7f3a`.

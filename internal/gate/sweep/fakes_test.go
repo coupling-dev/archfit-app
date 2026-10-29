@@ -13,6 +13,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
 	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/alexei-led/archfit-app/internal/wire/report"
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
@@ -36,7 +37,24 @@ type fakeRepos struct {
 	listInstErr   error
 	listReposErr  map[int64]error
 	listInstCalls int
-	listRepos     []int64 // installation IDs in call order
+	listRepos     []int64           // installation IDs in call order
+	tips          map[string]string // default-branch head by repository full name; tip0 when absent
+	tipErrs       map[string]error
+	tipCalls      []string // full names, in call order
+}
+
+// tip0 is the default-branch head of a repository whose test scripts none.
+const tip0 = "tip0"
+
+func (f *fakeRepos) BranchHead(_ context.Context, r api.RepoRef, _ string) (string, error) {
+	f.tipCalls = append(f.tipCalls, r.FullName)
+	if err := f.tipErrs[r.FullName]; err != nil {
+		return "", err
+	}
+	if sha, ok := f.tips[r.FullName]; ok {
+		return sha, nil
+	}
+	return tip0, nil
 }
 
 func (f *fakeRepos) ListInstallations(context.Context) ([]api.Installation, error) {
@@ -67,11 +85,29 @@ func (f *fakePulls) OpenPulls(_ context.Context, r api.RepoRef) ([]api.Pull, err
 
 type fakeActions struct {
 	api.Actions
-	runs       map[int64]*api.WorkflowRun
-	runErrs    map[int64]error
-	rerunErrs  map[int64]error
-	runCalls   []int64
-	rerunCalls []int64 // every request, failed ones included
+	runs          map[int64]*api.WorkflowRun
+	runErrs       map[int64]error
+	rerunErrs     map[int64]error
+	runCalls      []int64
+	rerunCalls    []int64          // every request, failed ones included
+	artifacts     map[int64][]byte // report artifact by run; a missing run has none (api.ErrNotFound)
+	artifactErrs  map[int64]error
+	artifactCalls []int64
+}
+
+func (f *fakeActions) Artifact(_ context.Context, _ api.RepoRef, runID int64, name string, _ int64) ([]byte, error) {
+	f.artifactCalls = append(f.artifactCalls, runID)
+	if name != report.ArtifactName {
+		return nil, fmt.Errorf("artifact %q: %w", name, api.ErrNotFound)
+	}
+	if err := f.artifactErrs[runID]; err != nil {
+		return nil, err
+	}
+	payload, ok := f.artifacts[runID]
+	if !ok {
+		return nil, fmt.Errorf("run %d: %w", runID, api.ErrNotFound)
+	}
+	return payload, nil
 }
 
 func (f *fakeActions) Run(_ context.Context, _ api.RepoRef, runID int64) (api.WorkflowRun, error) {
@@ -243,10 +279,11 @@ func (a fakeAdmitter) Admitted(_ context.Context, installationID int64, _ string
 func newWorld(t *testing.T) *world {
 	t.Helper()
 	w := &world{
-		t:        t,
-		repos:    &fakeRepos{repos: map[int64][]api.Repo{}, listReposErr: map[int64]error{}},
-		pulls:    &fakePulls{open: map[string][]api.Pull{}, errs: map[string]error{}},
-		actions:  &fakeActions{runs: map[int64]*api.WorkflowRun{}, runErrs: map[int64]error{}, rerunErrs: map[int64]error{}},
+		t:     t,
+		repos: &fakeRepos{repos: map[int64][]api.Repo{}, listReposErr: map[int64]error{}, tips: map[string]string{}, tipErrs: map[string]error{}},
+		pulls: &fakePulls{open: map[string][]api.Pull{}, errs: map[string]error{}},
+		actions: &fakeActions{runs: map[int64]*api.WorkflowRun{}, runErrs: map[int64]error{}, rerunErrs: map[int64]error{},
+			artifacts: map[int64][]byte{}, artifactErrs: map[int64]error{}},
 		resolver: &fakeResolver{trusted: map[string]inputs.Trusted{}, errs: map[string]error{}},
 		pub:      &fakePublisher{states: map[string]feedback.CheckState{}, errs: map[string]error{}},
 	}

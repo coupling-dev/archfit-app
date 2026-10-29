@@ -723,10 +723,16 @@ func (r *fakeRepairer) Repair(_ context.Context, p feedback.Publication) {
 }
 
 type fakeSweeper struct {
-	summary Summary
-	err     error
-	runs    []time.Time
-	repos   []api.Repo
+	summary  Summary
+	err      error
+	runs     []time.Time
+	repos    []api.Repo
+	rechecks []recheckCall
+}
+
+type recheckCall struct {
+	repo api.Repo
+	tip  string
 }
 
 func (s *fakeSweeper) Run(_ context.Context, now time.Time) (Summary, error) {
@@ -736,6 +742,12 @@ func (s *fakeSweeper) Run(_ context.Context, now time.Time) (Summary, error) {
 
 func (s *fakeSweeper) RunRepo(_ context.Context, r api.Repo, now time.Time) (Summary, error) {
 	s.repos = append(s.repos, r)
+	s.runs = append(s.runs, now)
+	return s.summary, s.err
+}
+
+func (s *fakeSweeper) Recheck(_ context.Context, r api.Repo, tip string, now time.Time) (Summary, error) {
+	s.rechecks = append(s.rechecks, recheckCall{r, tip})
 	s.runs = append(s.runs, now)
 	return s.summary, s.err
 }

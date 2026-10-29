@@ -391,6 +391,8 @@ The sweep inspects open pull requests for these conditions:
 - The policy, baseline, or labels changed on the protected ref.
 - A waiver expires within seven days or has expired.
 - The subscription changed.
+- The default branch moved after a `success` check, and the report of its new tip and the report of the pull request
+  together close a module cycle that neither holds alone (`target_moved`; see [Merge safety](user-guide.md#merge-safety-when-the-target-moves)).
 
 An owner approval can end without a new commit: the owner dismisses the review or requests changes, the owner leaves
 the settings file on the protected ref, or the pull request starts to change a protected path. Edits to the settings
@@ -412,7 +414,8 @@ check keeps its current conclusion until the Store is back and the next review e
 advisory mode there is no required check, and neither path changes the advisory `archfit/state` check.
 
 The sweep reruns the customer workflow after stale inputs, an expired waiver, late owner approval, or restored
-subscription. A missing upload becomes `action_required`. A fresh report is required for a new `success` result.
+subscription, unless the default branch moved since the result was measured: a re-run measures the old merge
+commit, so the check says `target_moved` and asks the author to update the branch. A missing upload becomes `action_required`. A fresh report is required for a new `success` result.
 
 ## Trust rules
 

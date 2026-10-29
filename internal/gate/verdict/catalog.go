@@ -8,7 +8,11 @@ type entry struct {
 	next       string
 }
 
-const suspendedNext = "Archfit subscription inactive."
+const (
+	suspendedNext = "Archfit subscription inactive."
+	// updateBranch is the recovery of target_moved: a new head is the only thing that measures the pull request again.
+	updateBranch = "Update the branch (Update branch on GitHub, `gh pr update-branch`, or merge the target) to measure it again."
+)
 
 // lookup is the reason catalog and the only place a Conclusion is produced from.
 // It is a switch, not a map, so the package holds no state.
@@ -60,6 +64,8 @@ func lookup(code ReasonCode) (entry, bool) {
 		return entry{CategoryEvidence, ActionRequired, "Policy or baseline changed on the base branch. A re-run was requested; re-run the Archfit workflow if none appears."}, true
 	case ReasonWaiverExpired:
 		return entry{CategoryGovernance, ActionRequired, "A waiver expired. A re-run was requested; renew the waiver by owner-approved PR or fix the finding."}, true
+	case ReasonTargetMoved:
+		return entry{CategoryEvidence, ActionRequired, "The target branch moved and this pull request cannot be compared with it. " + updateBranch}, true
 	case ReasonSuspended:
 		return entry{CategorySubscription, ActionRequired, suspendedNext}, true
 	}

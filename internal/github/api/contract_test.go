@@ -618,9 +618,8 @@ func TestActionsContract(t *testing.T) {
 		t.Error("ArtifactByID maxBytes 0: want error")
 	}
 
-	if _, err := env.c.Artifact(ctx, repoA, 55, "archfit-report", int64(len(report))-1); err == nil {
-		t.Error("artifact over maxBytes: want error")
-	}
+	_, err = env.c.Artifact(ctx, repoA, 55, "archfit-report", int64(len(report))-1)
+	wantErrIs(t, "artifact over maxBytes", err, ErrArtifactInvalid)
 	_, err = env.c.Artifact(ctx, repoA, 55, "absent", 1<<20)
 	wantErrIs(t, "no artifact", err, ErrNotFound)
 	env.gh.reset()

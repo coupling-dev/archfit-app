@@ -309,6 +309,7 @@ data_mode: customer
 | `workflow`  | A path under `.github/workflows/`            | The workflow that can upload reports              |
 | `data_mode` | `customer`, `managed`                        | `customer` keeps source processing in customer CI |
 | `policy_authority` | A mapping with `level`, optional `agents` and `tighten_auto` | Who approves a protected change; only `human` is in force |
+| `integration` | A mapping with the one key `recheck`: `overlap` or `off` | Whether a passed pull request is re-examined after the default branch moved; absent means `overlap` |
 | `repair_assignee` | One login; no team, no list | Who the [repair issue](#repair-issue-on-the-default-branch) is assigned to; absent assigns nobody |
 
 Absent `gate` and `data_mode` keys use `advisory` and `customer`. An absent `agents` key, or `agents: []`, names no
@@ -332,8 +333,21 @@ ladder. A file that names them stays valid, and the App holds them at `human` an
 Their keys are `agents`, the architect agents a later rung lets approve, and `tighten_auto`, a later rung's switch
 that lets a tightening need no approval. Neither has an effect yet. A loosening never needs less than a human.
 
+`integration` sets how a pull request that already passed is treated when the default branch moves after its report. An
+absent key, or a block without `recheck`, means `overlap`:
+
+```yaml
+integration:
+  recheck: overlap # overlap or off
+```
+
+With `overlap` the sweep withdraws a `success` as `target_moved` when the new default branch and the pull request
+together close a module cycle that neither has alone. `off` keeps the result until the next run. The recheck runs only
+with `gate: required`; an advisory repository never gets `target_moved`. See
+[Merge safety when the target moves](#merge-safety-when-the-target-moves).
+
 The App parses the settings file strictly: an unknown key makes the whole file unreadable, and every pull request then
-gets `settings_missing`. Add `agents`, `policy_authority` and `repair_assignee` only after the Archfit App release that
+gets `settings_missing`. Add `agents`, `policy_authority`, `integration` and `repair_assignee` only after the Archfit App release that
 knows the keys serves your repository.
 
 ## Read the feedback
@@ -466,6 +480,7 @@ that matches nothing. Other rules that the engine could not evaluate keep `missi
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `missing_upload`              | Read the workflow run and run the workflow again.                                                                                                                                                                   |
 | `stale_inputs`                | The policy or baseline changed on the base branch. Run the workflow again if no rerun appears.                                                                                                                      |
+| `target_moved`                | The default branch moved since this pull request was measured. The comment names the commits, and the modules when this pull request closes a module cycle with the new default branch. The pull request author updates the branch (**Update branch** on GitHub, `gh pr update-branch`, or merge the target); the new commit is measured again. No rerun is requested and rerunning the workflow does not help: a rerun would measure the old commit. |
 | `policy_mismatch`             | Run the workflow with the policy from the base branch. Run it again if the base changed.                                                                                                                            |
 | `baseline_mismatch`           | Run the workflow with the baseline from the base branch.                                                                                                                                                            |
 | `labels_mismatch`             | Run the workflow with the labels file from the base branch.                                                                                                                                                         |
@@ -487,7 +502,11 @@ that matches nothing. Other rules that the engine could not evaluate keep `missi
 | `subscription_suspended` | Contact the Archfit team or remove the Archfit requirement from the ruleset. |
 
 The sweep requests a workflow rerun after stale inputs, an expired waiver, late owner approval, or restored subscription.
-A rerun uses customer CI minutes. A fresh report is required for a new `success` result.
+A rerun uses customer CI minutes. A fresh report is required for a new `success` result. `target_moved` requests no
+rerun, because a rerun measures the commit the old run measured: the author updates the branch.
+The sweep also requests none when the default branch moved since the check was measured, whatever the reason: a rerun
+measures the old commit, and its upload would fail `envelope_mismatch`. The check says `target_moved` instead and the
+author updates the branch.
 When an owner approval that a passed check relied on is withdrawn, the review event sets `owner_approval_missing` at
 once; the sweep does it within an hour if the event is lost. No rerun is requested until an owner approves again or
 no approval is needed any more.
@@ -770,6 +789,43 @@ _The step stays at Advisory, and Needs you names the ruleset to add. Sample data
 
 > **CAUTION:** Do not require `archfit/gate` while the settings file has `gate: advisory`.
 > The App does not publish that check in advisory mode. The pull request stays blocked.
+
+## Merge safety when the target moves
+
+Two pull requests can each pass alone and still break the architecture together: the second was measured on a default
+branch that did not yet hold the first. A merge queue or "require branches to be up to date" closes that gap by
+measuring every merge. Archfit's check on its own is cheaper and weaker, and this section says where the line is.
+
+**What it catches.** In `gate: required` mode with `integration.recheck: overlap` (the default), the sweep compares each
+passed pull request that was measured on an older default branch with the report of the default branch's new tip. Both
+reports list module-to-module dependencies. When the two together contain a cycle of two or more modules that neither
+report has alone (a pull request that adds `b → a` to a default branch that gained `a → b`, or one that grows a cycle
+the default branch already has), the pull request's check changes to `action_required` with `target_moved`. The comment
+names the modules and the commits. The author updates the branch and the new commit is measured on the new default
+branch, which then reports the cycle as a finding.
+
+**Re-runs cannot help once the target moved.** A workflow re-run measures the commit the first run measured, and the
+App holds every upload to the default branch as it is now. When the default branch has moved, the sweep therefore
+requests no rerun, for a changed policy or baseline, an expired waiver, a late owner approval or a restored
+subscription: it sets `target_moved`, without a cycle in the comment, and the author updates the branch. Rerunning the
+workflow by hand ends in `envelope_mismatch`.
+
+A pull request that only touches the same modules, or depends on a module the default branch changed, keeps its result:
+no new cycle, no stale check.
+
+**What it misses.** It compares module cycles only. It does not see a package-level cycle inside one module, an aggregate
+gate such as `max_new_seams` or a dimension delta, or a budget: those need a measurement of the merged code. Two pull
+requests that break one of these together both stay green until they merge. Archfit's repair issue on a broken default
+branch is the net for them: it opens when the default branch itself fails, after the merge.
+
+**The window.** The comparison needs the default branch's report, so it starts when the workflow run of the push to the
+default branch has uploaded. The window in which a stale pass can be merged is that run's CI time plus the sweep
+interval (hourly). While the default branch's check has no provable report, nothing is decided for 60 minutes; after
+that a passed pull request is marked `target_moved` rather than left green. A default branch that never gets a report
+check is not covered. Where the window matters, require branches to be up to date or use a merge queue, and keep
+Archfit as the check they run.
+
+Set `integration.recheck: off` to keep results until the next run.
 
 ## See a repository
 

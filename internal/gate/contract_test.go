@@ -41,7 +41,7 @@ func TestUploadPublishesApprovedProducer(t *testing.T) {
 		t.Errorf("%d comments, want 1", n)
 	}
 	want := feedback.Receipt{
-		RunID: p.runID, RunAttempt: 1, ReportDigest: s.env.PayloadDigest,
+		RunID: p.runID, RunAttempt: 1, ReportDigest: s.env.PayloadDigest, BaseSHA: s.env.BaseSHA,
 		PolicyDigest:   w.digestOf(w.shop, testBranch, policy.PolicyPath),
 		BaselineDigest: s.env.BaselineDigest, LabelsDigest: s.env.LabelsDigest,
 		Conclusion: verdict.Success, Reason: verdict.ReasonHealthy,

@@ -377,7 +377,7 @@ func TestRerunGuard(t *testing.T) {
 func TestWithoutReceipt(t *testing.T) {
 	codes := []verdict.ReasonCode{
 		verdict.ReasonMissingUpload, verdict.ReasonStaleInputs, verdict.ReasonWaiverExpired,
-		verdict.ReasonForkUnsupported, verdict.ReasonSuspended,
+		verdict.ReasonForkUnsupported, verdict.ReasonSuspended, verdict.ReasonTargetMoved,
 	}
 	expiry := t0.Add(3 * day)
 	full := trusted()
@@ -386,7 +386,7 @@ func TestWithoutReceipt(t *testing.T) {
 	full.LabelsDigests = []string{"l1", "l2"}
 	full.EarliestWaiverExpiry = expiry
 	previous := feedback.Receipt{
-		RunID: 9, RunAttempt: 2, ReportDigest: "rd", PolicyDigest: "old", BaselineDigest: "old", LabelsDigest: "old",
+		RunID: 9, RunAttempt: 2, ReportDigest: "rd", BaseSHA: "base", PolicyDigest: "old", BaselineDigest: "old", LabelsDigest: "old",
 		EarliestWaiverExpiry: t0.Add(-day), Conclusion: verdict.Success, Reason: verdict.ReasonHealthy,
 	}
 	tg := inputs.Target{Repo: api.Repo{ID: 11}, PullRequest: 1, HeadSHA: "abc", BaseRef: "main"}
@@ -399,7 +399,7 @@ func TestWithoutReceipt(t *testing.T) {
 			want    feedback.Receipt
 		}{
 			{"previous receipt", full, previous, feedback.Receipt{
-				RunID: 9, RunAttempt: 2, ReportDigest: "rd", PolicyDigest: "p1", BaselineDigest: "b1", LabelsDigest: "l1",
+				RunID: 9, RunAttempt: 2, ReportDigest: "rd", BaseSHA: "base", PolicyDigest: "p1", BaselineDigest: "b1", LabelsDigest: "l1",
 				EarliestWaiverExpiry: expiry, Conclusion: verdict.ActionRequired, Reason: code,
 			}},
 			{"no previous receipt, nothing trusted", inputs.Trusted{SettingsFound: true}, feedback.Receipt{},
