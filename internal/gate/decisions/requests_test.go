@@ -529,22 +529,41 @@ func TestAnswerWritesOverAStaleRequestAndNeverOverALiveOne(t *testing.T) {
 	}
 }
 
-func TestRevalidateSettlesARequestForAnOldHead(t *testing.T) {
-	r, c, _ := newRequests()
-	ctx := context.Background()
-	if _, err := r.File(ctx, target(7), filing(hex32), t0); err != nil {
-		t.Fatal(err)
-	}
-	tg := target(7)
-	tg.HeadSHA = strings.Repeat("e", 40)
+// The sweep lists the pull requests once and reaches this one later: its head is the live head only if the pull request
+// is read again, never the head the listing held.
+func TestRevalidateComparesTheLiveHeadNotTheListedOne(t *testing.T) {
 	accepting := inputs.Trusted{PolicyDigests: []string{hex64}}
-	if err := r.Revalidate(ctx, tg, accepting, t0); err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name       string
+		live       api.Pull
+		listedHead string
+		want       decision.Status
+	}{
+		{"a push the sweep has not seen", api.Pull{State: "open", HeadSHA: strings.Repeat("e", 40)}, hex40, decision.StatusStale},
+		{"a request filed after the listing", api.Pull{State: "open", HeadSHA: hex40}, strings.Repeat("d", 40), decision.StatusPending},
+		{"the listing and the request agree", api.Pull{State: "open", HeadSHA: hex40}, hex40, decision.StatusPending},
+		{"a closed pull request is the close rule's", api.Pull{State: "closed", HeadSHA: strings.Repeat("e", 40)}, hex40, decision.StatusPending},
 	}
-	if rec, _ := r.Get(ctx, target(7), hex32, hex64); rec.Status != decision.StatusStale || rec.Reason != decision.ReasonHeadMoved {
-		t.Errorf("record = %+v", rec)
-	}
-	if got := statusLine(bodyOf(t, c)); got != "stale (head moved)" {
-		t.Errorf("thread says %q", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, c, p, _ := newRequestsWithPulls()
+			ctx := context.Background()
+			if _, err := r.File(ctx, target(7), filing(hex32), t0); err != nil {
+				t.Fatal(err)
+			}
+			p.pull = tt.live
+			tg := target(7)
+			tg.HeadSHA = tt.listedHead
+			if err := r.Revalidate(ctx, tg, accepting, t0); err != nil {
+				t.Fatal(err)
+			}
+			rec, _ := r.Get(ctx, target(7), hex32, hex64)
+			if rec.Status != tt.want {
+				t.Errorf("status = %s, want %s", rec.Status, tt.want)
+			}
+			if tt.want == decision.StatusStale && statusLine(bodyOf(t, c)) != "stale (head moved)" {
+				t.Errorf("thread says %q", statusLine(bodyOf(t, c)))
+			}
+		})
 	}
 }
