@@ -3,6 +3,7 @@ package decisions
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -175,6 +176,28 @@ func (r *Requests) Policy(ctx context.Context, t inputs.Target, findingID, diges
 		return "", ErrNoRecord
 	}
 	return string(raw), nil
+}
+
+// BranchSuffix returns the secret suffix of the proposal branch of a request on one head, creating it on first use.
+// It is 128 random bits, stored beside the record before anything is written to GitHub, so that a retry, a second
+// instance or a crash between the proposal and the settle all name the same branch, and nobody who sees the request
+// can name it in advance. The agent states the finding ID, the digest and the head; none of them is in the suffix.
+func (r *Requests) BranchSuffix(ctx context.Context, t inputs.Target, findingID, digest, head string) (string, error) {
+	key := recordKey(t, t.PullRequest, findingID, digest) + "/branch/" + head
+	for range recordAttempts {
+		cur, err := r.load(ctx, t, key)
+		if err != nil {
+			return "", err
+		}
+		if cur != nil {
+			return string(cur), nil
+		}
+		fresh := strings.ToLower(rand.Text()) // 128 random bits, base32
+		if _, err := r.store.CompareAndSwap(ctx, tenant(t), key, nil, []byte(fresh)); err != nil {
+			return "", fmt.Errorf("decisions: write branch suffix: %w", err)
+		}
+	}
+	return "", errContention
 }
 
 // List returns the records of t's pull request: the ones in the pending list (pending, or settled and not yet in the

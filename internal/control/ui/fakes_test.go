@@ -713,7 +713,7 @@ func (f *fakeDecisions) ApproveDecision(_ context.Context, t gate.Target, login,
 	}
 	for _, r := range f.rows {
 		if r.FindingID == finding && r.PolicyDigest == digest {
-			return gate.DecisionCase{Record: r.DecisionRecord, Policy: f.policy}, nil
+			return gate.DecisionCase{Record: r.DecisionRecord, Policy: f.policy, Branch: proposalBranchOf(r.DecisionRecord)}, nil
 		}
 	}
 	return gate.DecisionCase{}, gate.ErrDecisionNotFound
@@ -751,4 +751,9 @@ func (f *fakeDecisions) settle(finding, digest string, status decision.Status, r
 			f.rows[i].Status, f.rows[i].Reason, f.rows[i].ProposalPR, f.rows[i].CanDecide = status, reason, pr, false
 		}
 	}
+}
+
+// proposalBranchOf is the branch the gate names for a request: its pull request and a suffix only the gate knows.
+func proposalBranchOf(r gate.DecisionRecord) string {
+	return "archfit/decision-" + strconv.Itoa(r.PullRequest) + "-" + strings.Repeat("c", 26)
 }

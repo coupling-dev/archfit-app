@@ -193,12 +193,12 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   key is `422`); `{finding}` is 32 and `{digest}` 64 lowercase hex characters, else `404`. `Decisions.ApproveDecision`
   authorizes the signed-in login (owner rule of the approval, never the requester) and re-checks the request against
   GitHub and the protected ref; a stale request is marked so and answers `409`, with no proposal. Then `Propose`
-  (expectHeadSHA `""`) with branch `archfit/decision-<finding[:8]>-<digest[:8]>` (one pull request however often it is
+  (expectHeadSHA `""`) with the branch the gate names (`DecisionCase.Branch`: `archfit/decision-<pull number>-<secret suffix>`; one pull request however often it is
   retried), base the default branch, one file `.archfit.yaml` with the stored candidate policy, and a draft pull request
   whose body names the finding, rule, edge, requester and pull request, quotes the agent's case, and says that only an
   architecture owner approves the policy change. The agent's text goes in as quoted data: a code fence longer than any
   backtick run in it, controls and format characters (bidirectional overrides, zero width) dropped, the reason cut at
-  1000 characters, each alternative at 300 and at most 10 alternatives. Only then `Decisions.ApprovedDecision(record head, number)`.
+  1000 characters, each alternative at 300 and at most 10 alternatives. Only then `Decisions.ApprovedDecision(record head, number)`, which refuses (`502`, request stays pending, "not the draft Archfit expected") a pull request that is not the expected draft.
   Answers `{decisions, notice}`, the list read again. A failed `Propose` leaves the request pending (`502`, or `503` for
   a rate limit, "Nothing was changed"); a failure between `Propose` and `ApprovedDecision` leaves it pending and the
   retry settles it. A status comment that cannot be written after the request moved: `502` "The decision was recorded,

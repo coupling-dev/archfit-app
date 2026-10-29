@@ -91,7 +91,7 @@ func ValidIDs(findingID, policyDigest string) bool  // 32 and 64 lowercase hex c
 func Schema() []byte                               // a fresh copy
 
 type Status string // StatusPending, StatusApproved, StatusDeclined, StatusStale
-const ReasonHeadMoved, ReasonPolicyChanged, ReasonPullClosed, ReasonOwnerDeclined
+const ReasonHeadMoved, ReasonPolicyChanged, ReasonPullClosed, ReasonBaseChanged, ReasonOwnerDeclined
 const StatusMarkerPrefix, Unknown
 func StatusMarker(findingID, policyDigest string) string
 func ApprovedDetail(proposalPR int) string

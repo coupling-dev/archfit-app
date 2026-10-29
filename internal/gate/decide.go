@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/alexei-led/archfit-app/internal/gate/decisions"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/decision"
+	"github.com/alexei-led/archfit-app/internal/wire/policy"
 )
 
 // The refusals of a decision. Any other error is a failed read or write. The owner rule is that of an approval:
@@ -23,6 +25,8 @@ var (
 	ErrDecisionStale = errors.New("gate: decision: the request is stale")
 	// ErrDecisionNotFound means there is no such request, or no such pull request.
 	ErrDecisionNotFound = errors.New("gate: decision: no such request")
+	// ErrDecisionProposal means the pull request opened for an approval is not the draft Archfit asked for; nothing was settled.
+	ErrDecisionProposal = errors.New("gate: decision: the proposal pull request is not the expected draft")
 )
 
 // ErrStatusComment is gate/decisions' error for a status comment that could not be written. After a decision it
@@ -53,6 +57,9 @@ type DecisionRequest struct {
 type DecisionCase struct {
 	Record DecisionRecord
 	Policy string // the candidate policy the agent proposed, verbatim
+	// Branch is the proposal's branch: the pull request number and a random suffix stored with the request, so it is
+	// the same on every retry and nobody can create it first.
+	Branch string
 }
 
 // DecisionRequests lists the requests of t's pull request. t is the page's target: the repository and the pull
@@ -65,9 +72,11 @@ func (g *Gate) DecisionRequests(ctx context.Context, t Target, login string) ([]
 	if err != nil {
 		return nil, err
 	}
+	// A pull request retargeted away from the default branch decides nothing; the owner rule reads the default branch.
+	retargeted := t.BaseRef != t.Repo.DefaultBranch
 	owner := false
 	for _, rec := range recs {
-		if rec.Status == decision.StatusPending {
+		if rec.Status == decision.StatusPending && !retargeted {
 			if owner, err = g.mayDecide(ctx, t, login); err != nil {
 				return nil, err
 			}
@@ -120,7 +129,16 @@ func (g *Gate) ApproveDecision(ctx context.Context, t Target, login, findingID, 
 	if err != nil {
 		return DecisionCase{}, notFound(err)
 	}
-	return DecisionCase{Record: d.rec, Policy: text}, nil
+	suffix, err := g.requests.BranchSuffix(ctx, d.target, findingID, digest, d.rec.HeadSHA)
+	if err != nil {
+		return DecisionCase{}, err
+	}
+	return DecisionCase{Record: d.rec, Policy: text, Branch: proposalBranch(t.PullRequest, suffix)}, nil
+}
+
+// proposalBranch names the proposal of one request: its pull request and its secret suffix.
+func proposalBranch(pull int, suffix string) string {
+	return "archfit/decision-" + strconv.Itoa(pull) + "-" + suffix
 }
 
 // staleReason is why the request no longer holds, "" when it does.
@@ -146,7 +164,34 @@ func (g *Gate) ApprovedDecision(ctx context.Context, t Target, findingID, digest
 	if err := g.admitted(ctx, t); err != nil {
 		return err
 	}
+	if err := g.checkProposal(ctx, t, findingID, digest, head, proposalPR); err != nil {
+		return err
+	}
 	return g.settle(ctx, t, findingID, digest, head, decision.StatusApproved, "", proposalPR)
+}
+
+// checkProposal refuses to settle on a pull request that is not the draft Archfit opened for this request: open, a
+// draft, from the request's own branch in this repository into the default branch, changing exactly .archfit.yaml.
+// Limit: the roles the gate holds cannot list a branch's commits, so "one commit" and the file's content are not read
+// back; the unguessable branch is what keeps anyone else's commits out.
+func (g *Gate) checkProposal(ctx context.Context, t Target, findingID, digest, head string, number int) error {
+	suffix, err := g.requests.BranchSuffix(ctx, t, findingID, digest, head)
+	if err != nil {
+		return err
+	}
+	pl, err := g.pulls.Pull(ctx, t.Repo.RepoRef, number)
+	if err != nil {
+		return fmt.Errorf("gate: proposal pull request: %w", err)
+	}
+	paths, truncated, err := g.pulls.ChangedFiles(ctx, t.Repo.RepoRef, number)
+	if err != nil {
+		return fmt.Errorf("gate: proposal files: %w", err)
+	}
+	if pl.State != "open" || !pl.Draft || pl.HeadRef != proposalBranch(t.PullRequest, suffix) || !strings.EqualFold(pl.HeadRepo, t.Repo.FullName) ||
+		pl.BaseRef != t.Repo.DefaultBranch || truncated || len(paths) != 1 || paths[0] != policy.PolicyPath {
+		return ErrDecisionProposal
+	}
+	return nil
 }
 
 // DeclineDecision declines the request for login. It stays declined until the policy digest changes.
@@ -176,7 +221,9 @@ func (g *Gate) authorizeDecision(ctx context.Context, t Target, login, findingID
 	if err != nil {
 		return authorized{}, notFound(err)
 	}
-	t.HeadSHA, t.BaseRef, t.Fork = pl.HeadSHA, pl.BaseRef, !strings.EqualFold(pl.HeadRepo, t.Repo.FullName)
+	// The protected ref is the default branch, as everywhere else in the gate: a base the pull request was retargeted to
+	// is the pull request author's to write, so it decides nothing.
+	t.HeadSHA, t.BaseRef, t.Fork = pl.HeadSHA, t.Repo.DefaultBranch, !strings.EqualFold(pl.HeadRepo, t.Repo.FullName)
 	if err := g.resolver.CanDecide(ctx, t, login); err != nil {
 		return authorized{}, err
 	}
@@ -188,6 +235,11 @@ func (g *Gate) authorizeDecision(ctx context.Context, t Target, login, findingID
 		return authorized{}, ErrDecisionRequester
 	case rec.Status != decision.StatusPending:
 		return authorized{}, ErrDecisionSettled
+	case pl.BaseRef != t.Repo.DefaultBranch:
+		if err := g.settle(ctx, t, findingID, digest, rec.HeadSHA, decision.StatusStale, decision.ReasonBaseChanged, 0); err != nil {
+			return authorized{}, err
+		}
+		return authorized{}, ErrDecisionStale
 	}
 	return authorized{target: t, open: pl.State == "open", rec: rec}, nil
 }

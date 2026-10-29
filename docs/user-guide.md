@@ -759,6 +759,7 @@ Ignore a status line from any other author: it grants nothing and means nothing.
 | `declined (<field>: <rule>)`                       | The request was not valid, for example `declined (why: must be 1 to 2000 characters)`. Nothing was recorded; fix it and post again. |
 | `stale (head moved)`                               | The head is not the one the request names, or a push moved it. Post it again for the new head.      |
 | `stale (policy changed)`                           | The policy on the default branch changed after the finding. Run the check again and ask again.      |
+| `stale (base branch changed)`                      | The pull request no longer targets the default branch; an owner's decision is refused for it.   |
 | `stale (pull request closed)`                      | The pull request closed.                                                                            |
 
 **Decide (architecture owners).** Open the pull request on the App's pages. Under **Decision requests** each request
@@ -771,13 +772,15 @@ the list. An owner sees **Approve and open a proposal pull request** and **Decli
 
 - Who may decide is the rule of the [owner approval](#owner-approval): an owner of the protected settings, no agent
   identity. The login that filed the request can never decide it, even when it is an owner.
+- Only a pull request into the default branch can be decided. The owners are read from the default branch, never from a branch the pull request was retargeted to; a retargeted pull request goes `stale (base branch changed)` when an owner tries, and the page offers no buttons for it.
 - **Approve** first checks again, against GitHub and the default branch rather than the stored request, that the pull
   request is open, its head is still the one the request names, and the policy is still the one the finding was measured
   under. If not, the request goes `stale` and nothing is opened. Otherwise the App opens a **draft** pull request on the
-  branch `archfit/decision-<first 8 of finding_id>-<first 8 of policy_digest>`, changing `.archfit.yaml` to the agent's
+  branch `archfit/decision-<pull request number>-<random suffix>` (the suffix is made on the first approval, stored with the request and not derivable from anything the agent states, so nobody can create the branch first), changing `.archfit.yaml` to the agent's
   candidate policy. Its description names the finding, rule, edge, the requester, the link to the pull request and the
   agent's case, quoted. The request becomes `approved (proposal PR #n)`. Approving again after a failure finds the same
-  pull request; it never opens a second one.
+  pull request; it never opens a second one. Before it records the request as approved, the App refuses a pull request
+  that is not an open draft from that branch into the default branch changing `.archfit.yaml` alone.
 - The proposal is a policy change like any other: only an architecture owner approves it, on its exact head, and its
   page shows the policy change card. Nothing here merges it, marks it ready or approves it, and nothing reaches the agent
   that lets it do so.

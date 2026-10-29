@@ -60,6 +60,7 @@ const (
 	ReasonHeadMoved     = "head moved"
 	ReasonPolicyChanged = "policy changed"
 	ReasonPullClosed    = "pull request closed"
+	ReasonBaseChanged   = "base branch changed" // the pull request no longer targets the default branch
 )
 
 // ReasonOwnerDeclined is the reason of a request an owner declined.

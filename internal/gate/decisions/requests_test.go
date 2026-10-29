@@ -660,3 +660,49 @@ func TestListKeepsASettledRequestWhoseCommentFailed(t *testing.T) {
 		t.Errorf("List = %+v, %v; want the approved request, though its comment still says pending", got, err)
 	}
 }
+
+func TestBranchSuffixIsOneSecretPerRequestAndHead(t *testing.T) {
+	r, _, s := newRequests()
+	ctx := context.Background()
+	got := make(chan string, 20)
+	var wg sync.WaitGroup
+	for range 20 {
+		wg.Go(func() {
+			sfx, err := r.BranchSuffix(ctx, target(7), hex32, hex64, hex40)
+			if err != nil {
+				t.Error(err)
+			}
+			got <- sfx
+		})
+	}
+	wg.Wait()
+	close(got)
+	first := ""
+	for sfx := range got {
+		if first == "" {
+			first = sfx
+		}
+		if sfx != first {
+			t.Fatalf("two suffixes %q and %q for one request", first, sfx)
+		}
+	}
+	if len(first) < 24 {
+		t.Errorf("suffix %q has fewer than 96 bits", first)
+	}
+	raw, err := s.Get(ctx, 11, "decision/acme/shop/7/"+hex32+"/"+hex64+"/branch/"+hex40)
+	if err != nil || string(raw) != first {
+		t.Errorf("stored suffix = %q, %v; a retry after a restart must read the same", raw, err)
+	}
+	for name, other := range map[string][3]string{
+		"another pull request": {"8", hex64, hex40}, "another head": {"7", hex64, strings.Repeat("2", 40)},
+	} {
+		pull := 7
+		if other[0] == "8" {
+			pull = 8
+		}
+		sfx, err := r.BranchSuffix(ctx, target(pull), hex32, other[1], other[2])
+		if err != nil || sfx == first {
+			t.Errorf("%s: suffix %q, %v; want its own", name, sfx, err)
+		}
+	}
+}

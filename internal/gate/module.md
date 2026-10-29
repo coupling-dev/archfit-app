@@ -136,9 +136,9 @@ type Decisions interface {
 
 type DecisionRecord = decisions.Record
 type DecisionRequest struct { DecisionRecord; CanDecide bool } // CanDecide: owner, no agent, not the requester, pending
-type DecisionCase struct { Record DecisionRecord; Policy string } // the candidate policy, verbatim
+type DecisionCase struct { Record DecisionRecord; Policy string; Branch string } // Branch: archfit/decision-<pull>-<secret suffix>
 
-var ErrDecisionRequester, ErrDecisionSettled, ErrDecisionStale, ErrDecisionNotFound, ErrStatusComment error
+var ErrDecisionRequester, ErrDecisionSettled, ErrDecisionStale, ErrDecisionNotFound, ErrDecisionProposal, ErrStatusComment error
 ```
 
 `DecisionRequests` takes the page's target (repository, pull request, head and base as GitHub reports them) and calls
@@ -151,7 +151,7 @@ when the pull request is not open (`pull request closed`), its head is not the r
 no longer accepts the record's policy digest (`policy changed`); else it returns the stored candidate policy and
 changes nothing: the request is settled only by `ApprovedDecision`, after the proposal exists, so a crash between the
 two leaves it pending and a retry finds the same proposal. `DeclineDecision` settles `declined (by an owner)`.
-Every settle is `SettleAt` with the record's head, so it takes the status lease and publish path of A8a; `ErrNotPending`
+The protected ref is the repository's default branch, as for uploads and events: `Target.BaseRef` is overwritten with it, so owners and policy digests are never read from a base the pull request was retargeted to. A pull request whose live base is not the default branch cannot be decided: after the owner check and the record checks the request is settled `stale (base branch changed)` and `ErrDecisionStale` is returned, and `DecisionRequests` reports `CanDecide` false for it. `ApproveDecision` returns `Branch` built from the pull number and `Requests.BranchSuffix` (created and stored before the caller writes to GitHub). `ApprovedDecision` first checks the pull request the caller opened: open, a draft, `HeadRef` is that branch, head repository is this one, base is the default branch, and `ChangedFiles` is exactly `.archfit.yaml` untruncated, else `ErrDecisionProposal` and nothing is settled. **Stated limit**: the gate's roles cannot list a branch's commits, so "one commit" and the file content are not read back; the unguessable branch is what keeps others' commits out. Every settle is `SettleAt` with the record's head, so it takes the status lease and publish path of A8a; `ErrNotPending`
 and `ErrChanged` (refiled on another head since) map to `ErrDecisionSettled`, `ErrNoRecord` to `ErrDecisionNotFound`. A failed status comment is
 `ErrStatusComment`, and then the record did move.
 
@@ -1684,3 +1684,9 @@ are driven only as far as they go without GitHub. Child internals are tested in 
 - **Test name**: `TestApprovingARequestThatNoLongerHoldsMarksItStale`
   **Scenario**: no webhook arrives; the head moves, the default branch policy changes, or the pull request closes; then approve.
   **Expected behavior**: `ErrDecisionStale`; the record and its status comment are `stale (head moved)`, `stale (policy changed)`, `stale (pull request closed)`.
+- **Test name**: `TestProposalBranchIsSecretStablePerRequestAndPerHead`, `TestApprovalIsRefusedForAPullRequestThatIsNotTheExpectedDraft`
+  **Scenario**: approve twice, on two pull requests with the same finding and digest, and after a refile on a new head; then a proposal pull request from a guessed (old-scheme) branch, not a draft, closed, from a fork, into another base, with more or other files.
+  **Expected behavior**: the same branch on a retry, another per pull request and per head, a long suffix, never the old name; every bad proposal is `ErrDecisionProposal`, the record stays pending and the status line unchanged.
+- **Test name**: `TestARetargetedPullRequestDecidesNothing`
+  **Scenario**: the pull request is retargeted to a branch whose settings name another owner; that writer, then a real owner, approve and decline; the page lists it.
+  **Expected behavior**: `ErrNotOwner` for the writer; `ErrDecisionStale` for the owner with `stale (base branch changed)`; `CanDecide` false for both.

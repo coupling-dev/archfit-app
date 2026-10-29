@@ -84,6 +84,7 @@ func New(s store.Store, c api.Comments, p api.Pulls, now func() time.Time) *Requ
 func (r *Requests) File(ctx, t inputs.Target, f Filing, now time.Time) (Outcome, error)
 func (r *Requests) Answer(ctx, t inputs.Target, findingID, digest string, status decision.Status, reason string) (written bool, err error)
 func (r *Requests) List(ctx, t inputs.Target) ([]Record, error)                      // oldest first
+func (r *Requests) BranchSuffix(ctx, t inputs.Target, findingID, digest, head string) (string, error)
 func (r *Requests) Get(ctx, t inputs.Target, findingID, digest string) (Record, error)
 func (r *Requests) Policy(ctx, t inputs.Target, findingID, digest string) (string, error)
 func (r *Requests) Settle(ctx, t inputs.Target, findingID, digest string, status decision.Status, reason string, proposalPR int, now time.Time) error
@@ -112,6 +113,10 @@ returns that error (`ErrStatusComment`, wrapped) with the record already settled
 
 ## Change Vectors
 
+- `BranchSuffix`: the secret part of a request's proposal branch, 128 random bits (lower-case base32), created on first use by
+  `CompareAndSwap` at `<record key>/branch/<head>` and returned unchanged to every later caller, so a retry, a second
+  instance and a restart name the same branch while nothing the agent states can predict it. One per pull request, finding,
+  digest and head.
 - A per-pull-request index of all records, if the comment-derived `List` is not enough.
 - A5: a view of Needs you reads the pending list and the records.
 - A cap or a comment limit changes: constants.
@@ -141,6 +146,7 @@ returns that error (`ErrStatusComment`, wrapped) with the record already settled
 - `TestSettleAtRefusesAChangedHead`, `TestHeadMovedAndClosedReadTheLivePullRequest`.
 - `TestSettleMovesOnlyPendingRecords`: missing, approved, then stale refused; a closed pull request leaves an approved record alone.
 - `TestListReturnsPendingAndSettledRequestsOfOnePullRequest`: pending and declined records of pull request 7, not 8, not the answer without a record.
+- `TestBranchSuffixIsOneSecretPerRequestAndHead`: 20 goroutines get one suffix, stored under the key; another pull request or head gets its own.
 - `TestListKeepsASettledRequestWhoseCommentFailed`: `ErrStatusComment` from `Settle`; the approved request is still listed.
 - `TestStatusCommentsOfOnePullRequestAreCapped`: 45 answers leave 40 comments.
 - `TestUnreadableRecordsFailClosed`: a corrupt pending list stops `File` and `Closed`, nothing written.

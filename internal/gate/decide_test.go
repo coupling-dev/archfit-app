@@ -3,6 +3,7 @@ package gate
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
@@ -21,6 +22,15 @@ func (w *world) requested() (*pull, string) {
 	p := w.openPull(w.shop, 7)
 	w.handle(w.askFor(p))
 	return p, w.digestOf(p.repo, testBranch, policy.PolicyPath)
+}
+
+// proposal is the draft pull request control/ui opens for an approved case: number, from the case's branch, into the
+// default branch, changing .archfit.yaml alone.
+func (w *world) proposal(number int, c DecisionCase) *pull {
+	pp := w.openPull(w.shop, number)
+	w.editPull(pp, func(pl *api.Pull) { pl.Draft, pl.HeadRef = true, c.Branch })
+	w.changes(pp, policy.PolicyPath)
+	return pp
 }
 
 func (w *world) wantStatusOf(p *pull, digest, line string) {
@@ -105,11 +115,13 @@ func TestOwnerApprovesAfterTheRequestStillHolds(t *testing.T) {
 		t.Fatalf("ApproveDecision = %+v, %v", c, err)
 	}
 	w.wantRecord(p, digest, decision.StatusPending, "", 0) // nothing moved until the proposal exists
+	w.proposal(31, c)
 	if err := w.gate.ApprovedDecision(ctx, w.pageTarget(p), findingA, digest, p.head, 31); err != nil {
 		t.Fatal(err)
 	}
 	w.wantRecord(p, digest, decision.StatusApproved, "", 31)
 	w.wantStatusOf(p, digest, "approved (proposal PR #31)")
+	w.proposal(32, c)
 	if err := w.gate.ApprovedDecision(ctx, w.pageTarget(p), findingA, digest, p.head, 32); !errors.Is(err, ErrDecisionSettled) {
 		t.Errorf("a second ApprovedDecision = %v, want ErrDecisionSettled", err)
 	}
@@ -223,15 +235,155 @@ func TestDecisionsUseThePublishPathAndTheHeadTheOwnerSaw(t *testing.T) {
 	w := newWorld(t)
 	p, digest := w.requested()
 	ctx := context.Background()
-	if err := w.gate.ApprovedDecision(ctx, w.pageTarget(p), findingA, digest, "not-the-head", 31); !errors.Is(err, ErrDecisionSettled) {
-		t.Fatalf("ApprovedDecision on another head = %v, want ErrDecisionSettled", err)
+	c, err := w.gate.ApproveDecision(ctx, w.pageTarget(p), ownerLogin, findingA, digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.proposal(31, c)
+	oldHead := p.head
+	w.push(p)
+	w.handle(w.askFor(p)) // the agent files again on the new head
+	if err := w.gate.ApprovedDecision(ctx, w.pageTarget(p), findingA, digest, oldHead, 31); !errors.Is(err, ErrDecisionSettled) {
+		t.Fatalf("ApprovedDecision on the old head = %v, want ErrDecisionSettled", err)
 	}
 	w.wantRecord(p, digest, decision.StatusPending, "", 0)
 
-	if err := w.gate.ApprovedDecision(ctx, w.pageTarget(p), findingA, digest, p.head, 31); err != nil {
+	c2, err := w.gate.ApproveDecision(ctx, w.pageTarget(p), ownerLogin, findingA, digest)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if rec := w.record(p, findingA); rec.Published != "approved (proposal PR #31)" {
+	w.proposal(32, c2)
+	if err := w.gate.ApprovedDecision(ctx, w.pageTarget(p), findingA, digest, p.head, 32); err != nil {
+		t.Fatal(err)
+	}
+	if rec := w.record(p, findingA); rec.Published != "approved (proposal PR #32)" {
 		t.Errorf("Published = %q, want the line written to the thread", rec.Published)
 	}
+}
+
+func TestProposalBranchIsSecretStablePerRequestAndPerHead(t *testing.T) {
+	w := newWorld(t)
+	p, digest := w.requested()
+	q := w.openPull(w.shop, 8)
+	w.handle(w.askFor(q)) // another pull request, the same finding and policy digest
+	ctx := context.Background()
+	branch := func(pull *pull) string {
+		c, err := w.gate.ApproveDecision(ctx, w.pageTarget(pull), ownerLogin, findingA, digest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c.Branch
+	}
+	first, again, other := branch(p), branch(p), branch(q)
+	if first != again {
+		t.Errorf("a retry names %s, the first approval named %s: the branch must be stable", again, first)
+	}
+	if first == other || !strings.HasPrefix(first, "archfit/decision-7-") || !strings.HasPrefix(other, "archfit/decision-8-") {
+		t.Errorf("branches %q and %q: two pull requests must not share one", first, other)
+	}
+	suffix := strings.TrimPrefix(first, "archfit/decision-7-")
+	if len(suffix) < 24 || strings.Contains(suffix, findingA[:8]) || strings.Contains(first, digest[:8]) {
+		t.Errorf("suffix %q is short or derived from what the agent states", suffix)
+	}
+	if old := "archfit/decision-" + findingA[:8] + "-" + digest[:8]; first == old || other == old {
+		t.Error("the branch is the old, guessable name")
+	}
+	w.push(p)
+	w.handle(w.askFor(p))
+	if refiled := branch(p); refiled == first {
+		t.Error("a new head reuses the branch of the old one")
+	}
+}
+
+func TestApprovalIsRefusedForAPullRequestThatIsNotTheExpectedDraft(t *testing.T) {
+	tests := []struct {
+		name string
+		edit func(w *world, pp *pull, c DecisionCase)
+	}{
+		{name: "an agent's own pull request from a guessed branch", edit: func(w *world, pp *pull, _ DecisionCase) {
+			w.editPull(pp, func(pl *api.Pull) {
+				pl.HeadRef = "archfit/decision-" + findingA[:8] + "-" + w.digestOf(w.shop, testBranch, policy.PolicyPath)[:8]
+			})
+		}},
+		{name: "not a draft", edit: func(w *world, pp *pull, _ DecisionCase) { w.editPull(pp, func(pl *api.Pull) { pl.Draft = false }) }},
+		{name: "closed", edit: func(w *world, pp *pull, _ DecisionCase) { w.editPull(pp, func(pl *api.Pull) { pl.State = "closed" }) }},
+		{name: "a fork's branch", edit: func(w *world, pp *pull, _ DecisionCase) {
+			w.editPull(pp, func(pl *api.Pull) { pl.HeadRepo = "mallory/shop" })
+		}},
+		{name: "another base", edit: func(w *world, pp *pull, _ DecisionCase) {
+			w.editPull(pp, func(pl *api.Pull) { pl.BaseRef = "release" })
+		}},
+		{name: "more files than the policy", edit: func(w *world, pp *pull, _ DecisionCase) { w.changes(pp, policy.PolicyPath, "pkg/a/a.go") }},
+		{name: "another file", edit: func(w *world, pp *pull, _ DecisionCase) { w.changes(pp, ".github/workflows/x.yaml") }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := newWorld(t)
+			p, digest := w.requested()
+			ctx := context.Background()
+			c, err := w.gate.ApproveDecision(ctx, w.pageTarget(p), ownerLogin, findingA, digest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pp := w.proposal(31, c)
+			tt.edit(w, pp, c)
+			if err := w.gate.ApprovedDecision(ctx, w.pageTarget(p), findingA, digest, p.head, 31); !errors.Is(err, ErrDecisionProposal) {
+				t.Fatalf("ApprovedDecision = %v, want ErrDecisionProposal", err)
+			}
+			w.wantRecord(p, digest, decision.StatusPending, "", 0)
+			w.wantStatusOf(p, digest, "pending")
+		})
+	}
+}
+
+// The protected ref is the default branch. A pull request retargeted to a branch its author controls decides nothing.
+func TestARetargetedPullRequestDecidesNothing(t *testing.T) {
+	retarget := func(w *world, p *pull) {
+		w.setOwners(w.shop, "release", []string{ownerLogin, "mallory"}) // the author's branch names a new owner
+		w.setFile(w.shop, "release", policy.PolicyPath, []byte(basePolicy))
+		w.editPull(p, func(pl *api.Pull) { pl.BaseRef = "release" })
+	}
+	ctx := context.Background()
+	t.Run("a writer who owns only the retarget base is refused", func(t *testing.T) {
+		w := newWorld(t)
+		p, digest := w.requested()
+		retarget(w, p)
+		_, approveErr := w.gate.ApproveDecision(ctx, w.pageTarget(p), "mallory", findingA, digest)
+		declineErr := w.gate.DeclineDecision(ctx, w.pageTarget(p), "mallory", findingA, digest)
+		if !errors.Is(approveErr, ErrNotOwner) || !errors.Is(declineErr, ErrNotOwner) {
+			t.Errorf("approve = %v, decline = %v; want ErrNotOwner", approveErr, declineErr)
+		}
+		w.wantRecord(p, digest, decision.StatusPending, "", 0)
+	})
+	t.Run("an owner is refused and the request goes stale", func(t *testing.T) {
+		for _, decide := range []string{"approve", "decline"} {
+			w := newWorld(t)
+			p, digest := w.requested()
+			retarget(w, p)
+			var err error
+			if decide == "approve" {
+				_, err = w.gate.ApproveDecision(ctx, w.pageTarget(p), ownerLogin, findingA, digest)
+			} else {
+				err = w.gate.DeclineDecision(ctx, w.pageTarget(p), ownerLogin, findingA, digest)
+			}
+			if !errors.Is(err, ErrDecisionStale) {
+				t.Fatalf("%s = %v, want ErrDecisionStale", decide, err)
+			}
+			w.wantRecord(p, digest, decision.StatusStale, decision.ReasonBaseChanged, 0)
+			w.wantStatusOf(p, digest, "stale (base branch changed)")
+		}
+	})
+	t.Run("the page offers nothing", func(t *testing.T) {
+		w := newWorld(t)
+		p, _ := w.requested()
+		retarget(w, p)
+		target := w.target(p)
+		target.BaseRef = "release" // the page's target carries the live base
+		for _, login := range []string{ownerLogin, "mallory"} {
+			got, err := w.gate.DecisionRequests(ctx, target, login)
+			if err != nil || len(got) != 1 || got[0].CanDecide {
+				t.Errorf("DecisionRequests(%s) = %+v, %v; want one row, not decidable", login, got, err)
+			}
+		}
+	})
 }

@@ -88,6 +88,8 @@ var sentinels = []struct {
 	{gate.ErrDecisionStale, http.StatusConflict, "decision_stale",
 		"The pull request or the policy changed since the agent filed this request, so it is out of date and no proposal was opened. " +
 			"The agent files a new request."},
+	{gate.ErrDecisionProposal, http.StatusBadGateway, "decision_proposal",
+		"The pull request opened for this request is not the draft Archfit expected, so nothing was recorded. Check it on GitHub."},
 	{gate.ErrDecisionNotFound, http.StatusNotFound, "not_found", "Not found."},
 	{gate.ErrStatusComment, http.StatusBadGateway, "decision_comment",
 		"The decision was recorded, but its status comment on the pull request could not be updated. Reload the page."},

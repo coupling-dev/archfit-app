@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	// idPrefix is how much of a finding ID and of a policy digest names the proposal branch.
+	// idPrefix is how much of a finding ID the commit message names.
 	idPrefix = 8
 	// maxCaseRunes bounds the agent's text in the proposal body: the reason, and each alternative.
 	maxWhyRunes, maxAlternativeRunes, maxAlternatives = 1000, 300, 10
@@ -142,17 +142,12 @@ func (s *server) apiApproveDecision(r *http.Request, sc scope) (any, error) {
 	return s.decided(ctx, sc, t.PullRequest, notices["decision_approved"])
 }
 
-// decisionBranch names the proposal of a request: one branch, so one pull request, however often the owner retries.
-func decisionBranch(findingID, digest string) string {
-	return "archfit/decision-" + findingID[:idPrefix] + "-" + digest[:idPrefix]
-}
-
 // proposalOf is the draft pull request of an approved request: the agent's candidate policy as the one file change.
 func proposalOf(sc scope, p api.Pull, c gate.DecisionCase) proposal.Change {
 	rec := c.Record
 	return proposal.Change{
 		Repo:    sc.repo.RepoRef,
-		Branch:  decisionBranch(rec.FindingID, rec.PolicyDigest),
+		Branch:  c.Branch, // from the gate: the request's pull request and a secret suffix, the same on every retry
 		Base:    sc.repo.DefaultBranch,
 		Title:   "Archfit policy change requested by an agent: " + rec.RuleID,
 		Body:    decisionBody(p, rec),

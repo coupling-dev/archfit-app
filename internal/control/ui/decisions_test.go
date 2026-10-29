@@ -98,7 +98,7 @@ func TestOwnerApprovesADecisionRequest(t *testing.T) {
 		t.Fatalf("%d proposals, want exactly one", len(e.props.proposes))
 	}
 	c := e.props.proposes[0]
-	if c.change.Branch != "archfit/decision-0a0a0a0a-5b5b5b5b" || c.change.Base != mainBranch || c.change.Repo.FullName != repoName ||
+	if c.change.Branch != proposalBranchOf(pendingRequest().DecisionRecord) || c.change.Base != mainBranch || c.change.Repo.FullName != repoName ||
 		len(c.change.Files) != 1 || c.change.Files[0].Path != ".archfit.yaml" || string(c.change.Files[0].Content) != proposed || c.expectHead != "" {
 		t.Errorf("Propose(%+v, %q), want the decision branch, the default branch and the candidate policy as .archfit.yaml", c.change, c.expectHead)
 	}
@@ -185,6 +185,8 @@ func TestDecisionRefusals(t *testing.T) {
 		{name: "proposal failure", path: approveReq, proposeErr: errors.New("github down"), status: http.StatusBadGateway, sentence: "Nothing was changed", proposals: 1},
 		{name: "proposal opened, status comment failed", path: approveReq, approvedErr: gate.ErrStatusComment, status: http.StatusBadGateway,
 			sentence: "The decision was recorded", proposals: 1},
+		{name: "the pull request opened is not the draft expected", path: approveReq, approvedErr: gate.ErrDecisionProposal, status: http.StatusBadGateway,
+			sentence: "not the draft Archfit expected", proposals: 1},
 		{name: "a read-only user", path: approveReq, permission: permRead, status: http.StatusNotFound, sentence: "Not found."},
 		{name: "a body naming a repository", path: approveReq, body: map[string]any{"repository": otherRepo}, status: http.StatusUnprocessableEntity,
 			sentence: "The request could not be read."},
