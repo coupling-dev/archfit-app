@@ -64,7 +64,7 @@ Volatility: moderate. It changes with a versioned engine release; the caps are *
 
 What v3.3.0 and v3.4.0 added to the state schema: `identity`, the result identity block; `gate_reasons`, the coupling
 gate's own one-line reasons that `check` writes into the state (kept as `Report.GateReasons`, repository attention for
-the owner); `coverage.tools[].details`, a list of one-line strings (at most `maxToolDetails`, 10,000: the engine writes one per .NET project and does not cap them), validated and dropped; and `null` for
+the owner); `coverage.tools[].details`, a list of one-line strings (at most `maxToolDetails`, 10,000 entries of at most `maxDetailLen`, 8,192 runes: the engine writes one per .NET project and caps neither; `MaxBytes` bounds the total, so about 640 maximum-length lines fit), validated and dropped; and `null` for
 `seams[].raw_distance.same_owner` and `same_deploy_unit` (marked `optBool`; the engine writes null unless both sides are
 known). New producer names (`dotnet-msbuild`, `roslyn`, `supplied-coverage`) need nothing: `tool` is a free identifier.
 The v3.4.0 schema requires `identity`, and so does `Decode` from v3.4.0 (`identityFrom`): a v3.4.0 upload without it is

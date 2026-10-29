@@ -31,6 +31,7 @@ const (
 	maxTaskTextLen   = 4_096 // a task goal or constraint holds a why, two paths or a module's public globs
 	maxCommandLen    = 512
 	maxIdentifierLen = 200
+	maxDetailLen     = 8192 // a details line joins a project, its status, frameworks and the reasons the extractor gives
 	maxBlobLen       = 8192 // the engine writes whole canonical declarations; the card shows a few words of them
 	maxTokenLen      = 64
 	maxVersionLen    = 128
@@ -58,6 +59,7 @@ type strClass int
 
 const (
 	classText        strClass = iota
+	classDetailText           // a coverage.tools[].details line: one line, engine-built from paths, statuses and diagnostics, unbounded there
 	classFindingText          // a finding why or constraint: text with a larger cap
 	classTaskText             // a task goal or constraint: text with the largest cap
 	classCommand
@@ -227,6 +229,8 @@ func stringRule(s string, class strClass) (phase, string) {
 	switch class {
 	case classText:
 		return phaseString, tooLong(s, maxTextLen)
+	case classDetailText:
+		return phaseString, tooLong(s, maxDetailLen)
 	case classFindingText:
 		return phaseString, tooLong(s, maxFindingLen)
 	case classTaskText:

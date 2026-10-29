@@ -162,6 +162,15 @@ func TestToolCoverageDetailsRules(t *testing.T) {
 		{name: "more projects than the small lists hold", edit: func(t *testing.T, d map[string]any) {
 			set(t, d, projects(maxSmallList+1), "coverage", "tools", 0, "details")
 		}},
+		{name: "a line over the ordinary text length", edit: func(t *testing.T, d map[string]any) {
+			set(t, d, []any{strings.Repeat("x", maxTextLen+1)}, "coverage", "tools", 0, "details")
+		}},
+		{name: "a line of the longest length", edit: func(t *testing.T, d map[string]any) {
+			set(t, d, []any{strings.Repeat("x", maxDetailLen)}, "coverage", "tools", 0, "details")
+		}},
+		{name: "a line over the longest length", wantLoc: "coverage.tools[0].details", edit: func(t *testing.T, d map[string]any) {
+			set(t, d, []any{strings.Repeat("x", maxDetailLen+1)}, "coverage", "tools", 0, "details")
+		}},
 		{name: "as many items as the bound", edit: func(t *testing.T, d map[string]any) {
 			set(t, d, projects(maxToolDetails), "coverage", "tools", 0, "details")
 		}},

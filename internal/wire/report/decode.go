@@ -268,7 +268,7 @@ func (c *checker) coverage(s *shadowCoverage) Coverage {
 		Partial:    c.count("partial", s.Partial, math.MaxInt),
 		Unmeasured: c.count("unmeasured", s.Unmeasured, math.MaxInt),
 		Tools: list(c, "tools", s.Tools, maxSmallList, true, func(t *shadowToolCoverage) ToolCoverage {
-			stringsOf(c, "details", t.Details, maxToolDetails, false, classText) // validated, not kept
+			stringsOf(c, "details", t.Details, maxToolDetails, false, classDetailText) // validated, not kept
 			return ToolCoverage{
 				Tool:   c.str("tool", t.Tool, classIdentifier),
 				Status: c.str("status", t.Status, classToken),
