@@ -612,3 +612,83 @@ func TestAStaleVerdictIsConfirmedAgainstTheLivePullRequest(t *testing.T) {
 		})
 	}
 }
+
+func TestPendingQueueReadsTheStoreOnly(t *testing.T) {
+	ctx := context.Background()
+	repo := target(0)
+	fill := func(t *testing.T, r *Requests, pulls ...int) {
+		t.Helper()
+		for i, pull := range pulls {
+			if _, err := r.File(ctx, target(pull), filing(fmt.Sprintf("%032x", i+1)), t0); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	t.Run("counts all, lists the first limit in filing order", func(t *testing.T) {
+		r, _, p, _ := newRequestsWithPulls()
+		fill(t, r, 7, 9, 7)
+		reads := p.reads
+		q, err := r.PendingQueue(ctx, repo, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if q.Open != 3 || len(q.Records) != 2 || q.Records[0].PullRequest != 7 || q.Records[1].PullRequest != 9 {
+			t.Errorf("queue = %+v; want 3 open, the pull requests 7 and 9 listed", q)
+		}
+		if p.reads != reads {
+			t.Error("the queue called GitHub")
+		}
+	})
+	t.Run("limit 0 counts only", func(t *testing.T) {
+		r, _, _, _ := newRequestsWithPulls()
+		fill(t, r, 7)
+		if q, err := r.PendingQueue(ctx, repo, 0); err != nil || q.Open != 1 || len(q.Records) != 0 {
+			t.Errorf("queue = %+v, %v", q, err)
+		}
+	})
+	t.Run("a settled request is listed but not counted", func(t *testing.T) {
+		r, c, p, _ := newRequestsWithPulls()
+		fill(t, r, 7)
+		p.pull.HeadSHA = strings.Repeat("e", 40)
+		c.updateErr = api.ErrRateLimited
+		_ = r.HeadMoved(ctx, target(7), t0)
+		q, err := r.PendingQueue(ctx, repo, 5)
+		if err != nil || q.Open != 0 || len(q.Records) != 1 || q.Records[0].Status != decision.StatusStale {
+			t.Errorf("queue = %+v, %v; want none open and the stale record listed", q, err)
+		}
+	})
+	t.Run("another repository's requests are not read", func(t *testing.T) {
+		r, _, _, _ := newRequestsWithPulls()
+		fill(t, r, 7)
+		other := repo
+		other.Repo.FullName = "Acme/Other"
+		if q, err := r.PendingQueue(ctx, other, 5); err != nil || q.Open != 0 || len(q.Records) != 0 {
+			t.Errorf("queue = %+v, %v", q, err)
+		}
+	})
+	t.Run("an unreadable list fails closed", func(t *testing.T) {
+		r, _, _, s := newRequestsWithPulls()
+		if err := s.Put(ctx, 11, "decision/acme/shop/pending", []byte("{not json")); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := r.PendingQueue(ctx, repo, 5); err == nil {
+			t.Error("an unreadable pending list was read as empty")
+		}
+	})
+	t.Run("a record that is gone is skipped, one that is unreadable is not", func(t *testing.T) {
+		r, _, _, s := newRequestsWithPulls()
+		fill(t, r, 7, 7)
+		if err := s.Delete(ctx, 11, recordKey(target(7), 7, fmt.Sprintf("%032x", 1), hex64)); err != nil {
+			t.Fatal(err)
+		}
+		if q, err := r.PendingQueue(ctx, repo, 5); err != nil || q.Open != 2 || len(q.Records) != 1 {
+			t.Errorf("queue = %+v, %v", q, err)
+		}
+		if err := s.Put(ctx, 11, recordKey(target(7), 7, fmt.Sprintf("%032x", 2), hex64), []byte("{x")); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := r.PendingQueue(ctx, repo, 5); err == nil {
+			t.Error("an unreadable record was skipped")
+		}
+	})
+}

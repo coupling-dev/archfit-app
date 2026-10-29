@@ -18,6 +18,8 @@ export function firstPaths(route: Route): string[] {
       return [repoAPI(route.owner, route.name, `pulls/${route.number}`)];
     case 'pull-graph':
       return [repoAPI(route.owner, route.name, `pulls/${route.number}/graph`)];
+    case 'decisions':
+      return [repoAPI(route.owner, route.name, 'decisions')];
     case 'data-sharing':
       return [repoAPI(route.owner, route.name, 'data-sharing')];
   }

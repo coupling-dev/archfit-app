@@ -1,5 +1,6 @@
 <script lang="ts">
   import FindingGroups from '../components/FindingGroups.svelte';
+  import FirstScreen from '../components/FirstScreen.svelte';
   import DecisionLine from '../components/DecisionLine.svelte';
   import PullHead from '../components/PullHead.svelte';
   import { basisText, resultWord } from '../lib/evidence';
@@ -65,7 +66,10 @@
   <Skeleton rows={2} box={false} />
   <Skeleton rows={5} />
 {:else}
-  <PullHead head={body} fullName={route.fullName} current="findings" />
+  {@const first = body.first_screen ?? []}
+  <PullHead head={body} fullName={route.fullName} current="findings">
+    {#snippet screen()}{#if first.length}<FirstScreen lines={first} />{/if}{/snippet}
+  </PullHead>
   <DecisionLine decision={body.decision} />
   {#if body.approval}
     {@const a = body.approval}
@@ -104,7 +108,7 @@
       </div>
     </section>
   {/if}
-  {#if !body.unavailable && body.required && body.result !== 'action required' && body.decision?.hard_gates === 'pass' && body.decision.blockers === 0 && !body.decision.unevaluated.length && body.violation_count === 0}
+  {#if !first.length && !body.unavailable && body.required && body.result !== 'action required' && body.decision?.hard_gates === 'pass' && body.decision.blockers === 0 && !body.decision.unevaluated.length && body.violation_count === 0}
     <p class="flash success">No required architecture change requested in the evaluated scope.{body.accepted_count ? ' Accepted debt remains.' : ''}</p>
   {/if}
 

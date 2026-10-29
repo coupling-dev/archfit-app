@@ -29,6 +29,7 @@ const authorTypeBot = "Bot"
 type requests interface {
 	File(ctx context.Context, t inputs.Target, f decisions.Filing, now time.Time) (decisions.Outcome, error)
 	Answer(ctx context.Context, t inputs.Target, findingID, digest string, status decision.Status, reason string) (bool, error)
+	PendingQueue(ctx context.Context, t inputs.Target, limit int) (decisions.Queue, error)
 	HeadMoved(ctx context.Context, t inputs.Target, now time.Time) error
 	Closed(ctx context.Context, t inputs.Target, now time.Time) error
 }

@@ -108,7 +108,7 @@
       <div class="box-body stack-sm">
         <p>{body.unavailable || 'This report has no drawable graph.'}</p>
         <p>No admitted dependency graph is available. An empty view would not prove there are no dependencies or rule violations.</p>
-        <p>{body.pull ? 'Resolve the reason in PR analysis above, then re-run the workflow.' : 'Run the architecture workflow to produce a report with dependency evidence.'}</p>
+        <p>{body.pull ? 'Follow the next step in PR analysis above. The graph appears when the workflow reports a usable result for the commit.' : 'Run the architecture workflow to produce a report with dependency evidence.'}</p>
       </div>
     </section>
   {:else}

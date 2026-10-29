@@ -20,8 +20,9 @@ func TestNewValidatesWiring(t *testing.T) {
 		return Deps{
 			GitHub: gh.client(), Tokens: fakeTokens{}, OAuth: fakeOAuth{}, Store: store.NewMemory(),
 			Receiver: &fakeReceiver{}, Admissions: admissions,
-			Approvals: gate.New(gate.Deps{GitHub: gh.client(), Store: store.NewMemory(), Admissions: admissions, Audience: testBaseURL}),
-			Sandbox:   &fakeSandbox{}, Provider: &fakeProvider{},
+			Approvals:     gate.New(gate.Deps{GitHub: gh.client(), Store: store.NewMemory(), Admissions: admissions, Audience: testBaseURL}),
+			DecisionQueue: gate.New(gate.Deps{GitHub: gh.client(), Store: store.NewMemory(), Admissions: admissions, Audience: testBaseURL}),
+			Sandbox:       &fakeSandbox{}, Provider: &fakeProvider{},
 			CookieKey: testCookieKey, BaseURL: testBaseURL, Now: newClock().Now,
 		}
 	}
@@ -36,6 +37,7 @@ func TestNewValidatesWiring(t *testing.T) {
 		{"nil Receiver", func(d *Deps) { d.Receiver = nil }, true},
 		{"nil Admissions", func(d *Deps) { d.Admissions = nil }, true},
 		{"nil Approvals", func(d *Deps) { d.Approvals = nil }, true},
+		{"nil DecisionQueue", func(d *Deps) { d.DecisionQueue = nil }, true},
 		{"16-byte CookieKey", func(d *Deps) { d.CookieKey = testCookieKey[:16] }, true},
 		{"empty BaseURL", func(d *Deps) { d.BaseURL = "" }, true},
 		{"Sandbox without Tokens", func(d *Deps) { d.Tokens = nil }, true},

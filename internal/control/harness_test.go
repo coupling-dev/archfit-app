@@ -49,9 +49,10 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 	admissions := gate.NewAdmissions(h.store, testAccounts)
 	d := Deps{
 		GitHub: h.gh.client(), Tokens: fakeTokens{}, OAuth: fakeOAuth{}, Store: h.store, Receiver: h.receiver,
-		Admissions: admissions,
-		Approvals:  gate.New(gate.Deps{GitHub: h.gh.client(), Store: h.store, Admissions: admissions, Audience: testBaseURL, Now: h.clock.Now}),
-		Sandbox:    h.sandbox, Provider: h.provider, CookieKey: testCookieKey, BaseURL: testBaseURL, Now: h.clock.Now,
+		Admissions:    admissions,
+		Approvals:     gate.New(gate.Deps{GitHub: h.gh.client(), Store: h.store, Admissions: admissions, Audience: testBaseURL, Now: h.clock.Now}),
+		DecisionQueue: gate.New(gate.Deps{GitHub: h.gh.client(), Store: h.store, Admissions: admissions, Audience: testBaseURL, Now: h.clock.Now}),
+		Sandbox:       h.sandbox, Provider: h.provider, CookieKey: testCookieKey, BaseURL: testBaseURL, Now: h.clock.Now,
 	}
 	for _, o := range opts {
 		o(&d)

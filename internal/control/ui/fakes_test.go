@@ -665,3 +665,21 @@ func (f *fakeApprovals) Reevaluate(_ context.Context, t gate.Target) error {
 	f.reevaluated = append(f.reevaluated, t)
 	return f.reevaluateErr
 }
+
+// fakeDecisionQueue is the gate façade's list of the decision requests that wait for an owner.
+type fakeDecisionQueue struct {
+	mu     sync.Mutex
+	queue  gate.PendingDecisions // what PendingDecisions answers, cut to the limit
+	err    error
+	reads  []gate.Target
+	limits []int
+}
+
+func (f *fakeDecisionQueue) PendingDecisions(_ context.Context, t gate.Target, limit int) (gate.PendingDecisions, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reads, f.limits = append(f.reads, t), append(f.limits, limit)
+	q := f.queue
+	q.Records = q.Records[:min(len(q.Records), limit)]
+	return q, f.err
+}

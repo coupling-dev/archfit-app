@@ -261,7 +261,7 @@ All integrations are constructor or handler calls: contract strength. `app` hold
 - **LCA / Rank / Distance**: internal (root) / 1 / 1
 - **Volatility**: high on the gate side; the façade is kept small on purpose
 - **Balanced?**: yes
-- **Shared knowledge**: the façade, the sweep summary that `/internal/sweep` returns, and `NewReceiver`, which `app` passes to `control`; `app` also passes the `*Gate` itself to `control.Deps.Approvals`, the seam of the pull request page's Approve button. `app` builds one `Admissions` with `NewAdmissions(Store,
+- **Shared knowledge**: the façade, the sweep summary that `/internal/sweep` returns, and `NewReceiver`, which `app` passes to `control`; `app` also passes the `*Gate` itself to `control.Deps.Approvals`, the seam of the pull request page's Approve button, and to `control.Deps.DecisionQueue`, the read-only list of the decision requests that wait for an owner. `app` builds one `Admissions` with `NewAdmissions(Store,
   ApprovedAccounts)` and passes that same value to `Deps.Admissions`, `NewReceiver` and `control.Deps.Admissions`, so the
   three agree on who is served. The worker role builds it too, for the gate.
   In these blocks `Config` means `gate.Config` (the sweep thresholds), not this module's `Config`. `app` sets
@@ -361,7 +361,7 @@ type Receiver interface {
 - **Volatility**: high inside control; the façade is stable
 - **Balanced?**: yes
 - **Shared knowledge**: the façade and the two platform seams `app` fills. In this block `Deps` means `control.Deps`.
-  `app` also passes `Admissions` (the value the gate uses), `Approvals` (the `*Gate`) and `Operators`
+  `app` also passes `Admissions` (the value the gate uses), `Approvals` and `DecisionQueue` (the `*Gate`) and `Operators`
   (`Config.Operators`); `New` refuses a nil `Admissions` or `Approvals`. `NewWorker` takes `Admissions` too (required), for installation events and the sweep, and no `Operators`.
 
 <!-- contract: Control, Deps, New, WorkerDeps, NewWorker — restated from internal/control/module.md -->

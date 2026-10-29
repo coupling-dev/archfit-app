@@ -1,11 +1,18 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import type { PullHead } from '../lib/api';
   import Analysis from './Analysis.svelte';
   import { trustSentence } from '../lib/feedback';
   import { repoPage, safeHref } from '../lib/route';
 
   // The header the pull request page and its graph share: which pull request, its result and the two views.
-  let { head, fullName, current }: { head: PullHead; fullName: string; current: 'findings' | 'graph' } = $props();
+  // screen is what the page shows between the result and the analysis: the comment's first screen, on the pull request page.
+  let {
+    head,
+    fullName,
+    current,
+    screen,
+  }: { head: PullHead; fullName: string; current: 'findings' | 'graph'; screen?: Snippet } = $props();
 
   const stateTone: Record<string, string> = { open: 'success', draft: 'neutral', merged: 'done', closed: 'danger' };
   const page = $derived(repoPage(fullName, `/pull/${head.number}`));
@@ -58,5 +65,7 @@
     </div>
   </section>
 {/if}
+
+{@render screen?.()}
 
 <Analysis {head} />

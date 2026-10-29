@@ -556,3 +556,23 @@ func TestDecisionSweepStalesARequestForAnOldHeadWithoutAnEvent(t *testing.T) {
 	}
 	w.wantStatus(p, findingA, "stale (head moved)")
 }
+
+func TestPendingDecisionsAreReadForAnAdmittedInstallationOnly(t *testing.T) {
+	ctx := context.Background()
+	w := newWorld(t)
+	p := w.openPull(w.shop, 7)
+	w.handle(w.askFor(p))
+
+	q, err := w.gate.PendingDecisions(ctx, w.target(p), 5)
+	if err != nil || q.Open != 1 || len(q.Records) != 1 || q.Records[0].FindingID != findingA {
+		t.Fatalf("PendingDecisions = %+v, %v; want the filed request", q, err)
+	}
+	w.admit.refused[shopInstallation] = true
+	calls := len(w.gh.calls)
+	if _, err := w.gate.PendingDecisions(ctx, w.target(p), 5); !errors.Is(err, errNotAdmitted) {
+		t.Errorf("PendingDecisions = %v, want errNotAdmitted", err)
+	}
+	if len(w.gh.calls) != calls {
+		t.Errorf("GitHub calls for an installation no operator approved: %v", w.gh.calls[calls:])
+	}
+}

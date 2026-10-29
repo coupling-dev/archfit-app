@@ -15,7 +15,7 @@ could still work GitHub-first, but onboarding, schema-guided editing and consent
 ## Functional Responsibilities
 
 - Serve the web app (`web/`, Svelte 5 built by Vite, embedded from `spa/`) for the overview, the repository page,
-  the pull request page, both graph pages, Data sharing and the policy editor, and its JSON API under `/api/`. ui
+  the pull request page, both graph pages, the decisions page, Data sharing and the policy editor, and its JSON API under `/api/`. ui
   renders no HTML of its own: an error page is the same shell with the error's status and sentence.
 - Authenticate every request through `session` and authorize every repository API call at the needed permission. A
   repository page is the shell, the same for every repository, and needs only a session.
@@ -25,7 +25,11 @@ could still work GitHub-first, but onboarding, schema-guided editing and consent
   Waiting page instead of an empty repository.
 - Admin: for an operator only, list the App's installations, waiting first, and approve or revoke one through
   `Account.Admit` and `Account.Unadmit`.
-- Repository status: onboarding `Progress`, actions to start onboarding or dispatch discovery, entitlement banner.
+- Repository status: onboarding `Progress`, actions to start onboarding or dispatch discovery, entitlement banner; once
+  a report came in, a watch line on the default branch, the pull requests that wait for an update after the target moved
+  and the decision requests that wait for an owner.
+- Decisions: a read-only inbox of the decision requests of unattended agents and of the pull requests that change the
+  protected policy. The buttons are on the pull request page; nothing here decides.
 - Policy editor: load the policy into a CodeMirror 6 editor (YAML, line numbers, folding, history, search), check it
   on the server (when loaded, on Check, and before every save) and list its problems by line, above the editor and as
   marks in it, save as a commit on a draft branch through `proposal` bound to the head SHA that was loaded, show the
@@ -37,7 +41,8 @@ could still work GitHub-first, but onboarding, schema-guided editing and consent
 - Repository findings: the latest default-branch report's findings in the groups and words of the PR comment, for the
   overview's counters and list.
 - Pull request page: the result of one pull request's head, from the `archfit/state` check and the report of the
-  run that check names; when the pull request changes a protected file, its owner approval (who may approve, what is
+  run that check names, opening with the first screen of the PR comment as lines of text (worded by the code that words
+  the comment); when the pull request changes a protected file, its owner approval (who may approve, what is
   approved) and, for an architecture owner, an Approve button for the exact head.
 - Assist: turn the request into an `assist.Request`, show the outcome or the pending customer run.
 - Data sharing: per managed feature, what leaves the customer's environment, who allowed it and when, and the
@@ -101,6 +106,7 @@ type Deps struct {
     Proposals  Proposals
     Admissions *Admissions // which installations the App serves; the others see the Waiting page
     Approvals  Approvals   // owner approvals of pull request heads: read, and recorded by the Approve button
+    DecisionQueue DecisionQueue // decision requests that wait for an owner: read only
     Operators  []int64     // GitHub user IDs that approve installations on /admin
     Now        func() time.Time
 }
@@ -172,7 +178,12 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   the same cut to 7 characters for display; `state` is `granted` or `missing`; `can_approve` is true only while
   missing and only for the signed-in user who is an architecture owner by the base settings (teams included) and no
   agent identity, on a head in this repository; `reason` is the refusal in the words of the status mapping;
-  `author_is_agent` says the pull request was opened by an agent identity of the base settings. Absent otherwise.
+  `author_is_agent` says the pull request was opened by an agent identity of the base settings. Absent otherwise. `first_screen` is `[{kind, text}]`, the first screen of
+  the PR comment for this result as plain text (`kind` is `headline`, `heading`, `text` or `item`): `gate.FirstScreen`
+  over the recorded `archfit/state` check (title, reasons, policy digest, producer engine, run, check ID, the policy
+  change card of its summary) and the report it names. It is absent when the comment would show no report: no report, a
+  reason that is not report-derived, or no recorded reason. It leaves out the link to the page and the plan and waiver
+  notices.
 - `POST /api/repos/{o}/{n}/pulls/{number}/approve` [write] — body `{head_sha, digests}`, the `approval` the page
   read. A `head_sha` that is not the pull request's current head (`PullSummary`), the short one included: `409`,
   nothing approved. Then `Approvals.Approve(target, user login, digests)` and, on success, `Approvals.Reevaluate`, as
@@ -192,8 +203,21 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   the verdict `needs_attention`, follows the engine's rule in its order: active advisories, required rules not
   evaluated (or `hard_gates: unmeasured`), then the dimensions partially measured and those not measured. The overview
   shows it under the default-branch state only when that state reads "attention".
+- `GET /api/repos/{o}/{n}/decisions` [read] — `{requests, requests_more, requests_error, policy_changes, policy_more,
+  policy_error}`. `requests` are rows `{pull, title?, status, finding, rule, edge, requester, head, created, href}` of the
+  first 50 entries of the repository's pending list (`DecisionQueue.PendingDecisions`), pending first, each group newest
+  first; `requests_more` counts the pending requests past those listed. `policy_changes` are rows `{number, title,
+  headline, approval, by?, href}` of the open pull requests (at most 20, `policy_more` counts the rest) whose
+  `archfit/state` summary holds the policy change card: `headline` is the card's one-line classification, `approval` is
+  `granted`, `missing`, `not_needed` (the pull request changes no protected file) or `unknown` (the read failed). A list
+  that cannot be read sets its `*_error` and is empty: never shown as none. Every text of a row (rule, edge, requester,
+  titles) is data, cut to 80 runes for what an agent wrote. It reads and decides nothing.
 - `GET /api/repos/{o}/{n}/overview` [read] — default-branch state, open pull requests with their result, setup steps,
   onboarding progress, entitlement banner, history links, and whether the user may start onboarding or discovery.
+  After a report: `main_sha` (short) and `main_at` (RFC 3339) of the check the state is read from, `pulls_to_update`
+  (listed pull requests whose row has `rerun`), each pull request row's `rerun` (the recorded `target_moved` next step in
+  the comment's words, naming the modules; absent for any other result), `decisions_pending` (open requests in the
+  repository), `decisions` (the first 5 pending ones, as above) and `decisions_error`.
   While the owner still has to add the workflow, `workflow` is `{path, branch, content, add_url}`: `add_url` is GitHub's
   new-file page on `branch` with `filename` and `value` filled in. GitHub does not document those two parameters
   (checked by hand on 2026-10-22 with a branch name holding a `/`); the page also offers the content to copy and to
@@ -1091,14 +1115,14 @@ func EngineVersions() []string
 - **Volatility**: high
 - **Balanced?**: yes — parent and child
 - **Shared knowledge**: `Deps` and `New` above. `control` passes its `OAuth`, `CookieKey`, `BaseURL`, `Admissions`,
-  `Approvals` and `Operators` through and returns a
+  `Approvals`, `DecisionQueue` and `Operators` through and returns a
   `ui.New` error from its own constructor.
 
 ### internal/gate (façade)
 
 - **Counterpart**: `internal/gate/module.md`
-- **Direction**: ui depends on the gate façade (`Admissions`, `Approvals`, `Target`, `Candidate`, the refusals,
-  `ClassifyDisplayReason`); never on a gate child
+- **Direction**: ui depends on the gate façade (`Admissions`, `Approvals`, `DecisionQueue`, `Target`, `Candidate`, the
+  refusals, `ClassifyDisplayReason`, `FirstScreen`, `RecoveryStep`); never on a gate child
 - **Strength**: contract
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high
@@ -1106,7 +1130,9 @@ func EngineVersions() []string
 - **Shared knowledge**: `PullApproval` for the pull request page and `Approve` then `Reevaluate` for the Approve
   button, always with the `Target` of the authorized repository and the signed-in login; the refusals are mapped to
   wording here. Who may approve, what the digests are and when an approval holds are the gate's rules: ui shows them
-  and sends back what it was shown.
+  and sends back what it was shown. `FirstScreen` is fed what the check recorded and answers lines of plain text:
+  ui adds no wording of its own to the first screen. `PendingDecisions` reads the repository's pending decision
+  requests (a number and the first records) and grants nothing.
 
 ### internal/github/auth
 
@@ -1292,7 +1318,19 @@ been withdrawn since the previous request.
   default-branch head (the overview's word and title) and `Pulls.OpenPulls`, newest first:
   at most 20 **[default]**, the rest counted, one `CheckRuns(head, "archfit/state")` each, at most 8 at a time; each
   row links to `/r/{o}/{n}/pull/{number}`. A failed list shows fixed wording and never fails the page; a failed
-  lookup is "unknown" for its row only.
+  lookup is "unknown" for its row only. The same check run gives the watch line (the run's start time and the tip's
+  short SHA; none without a run) and the re-run state: a run that concludes `action_required` whose summary records
+  `target_moved` gives the row `rerun`, `gate.RecoveryStep("target_moved", recorded next step)` (the comment's role
+  prefix and sanitized words, so the modules are named without parsing the detail; a fixed sentence when no step was
+  recorded). Decision requests: when the repository has an open pull request (or the list failed), one
+  `DecisionQueue.PendingDecisions(repository, 5)` per request: one Store read for the list and one per record, no GitHub
+  call; a failure sets `decisions_error` and the counter reads "could not be read", never zero.
+- Decisions page: the open pull requests are read as the overview reads them (`CheckRuns` each, at most 20, 8 at a time),
+  beside `PendingDecisions(repository, 50)`. A pull request is a policy change when its `archfit/state` summary holds the
+  `### Policy change` section; only those ask `Approvals.PullApproval`. The listed requests are the entries of the pending
+  list (pending, or settled with the comment not yet written); a request settled and published leaves it, so the page
+  shows no history. **Stated limit**: when the owner decision lands (A8b `List`), settled requests are read from their
+  pull requests; this page then adds them.
 - Onboarding start: `owners` is split into lines, each trimmed, blank lines dropped: that is all ui decides. The list
   is valid when `settings.Parse(settings.Render(Settings{Version: 1, Owners, Gate: GateAdvisory, Workflow, DataMode:
   DataCustomer}))` succeeds; `Gate`, `Workflow` (a fixed placeholder path) and `DataMode` only make the probe document
@@ -1338,7 +1376,11 @@ been withdrawn since the previous request.
   publication is the merge on GitHub under the customer's ruleset and owner approval, the same path as a GitHub-first edit.
 - Pull request page: `PullSummary(number)` → the settings file on the pull request's base (gate mode only, shown
   always; none or unparseable reads as advisory) and, side by side, `CheckRuns(head, "archfit/state")`, the run with the highest ID.
-  After them, `Approvals.PullApproval` for the owner approval block; its failure fails the page, like any read. The
+  After them, `Approvals.PullApproval` for the owner approval block; its failure fails the page, like any read. When the run is
+  report-derived and a report is shown, `gate.FirstScreen` words the first screen from the recorded reasons, the policy
+  digest and producer engine of the summary's inputs section, the run and attempt of the external ID, the check run ID,
+  the gate mode and the policy change card section of the summary (bounded to 8 KiB), with the check's title as the
+  headline. The
   block (on Findings, above the result, also when findings are unavailable) lists the protected files with their short
   digests or "deleted by this commit", who approved, the Approve button only when `can_approve`, else the reason, a
   note that a pull request opened by an agent identity was, and that an approval holds for this commit only. Its
@@ -1464,6 +1506,8 @@ changed; no private gate child or duplicate TypeScript policy is imported.
 
 - Page flow, wording, styling, templates, the graph drawing, the editor integration.
 - New pages that read existing contracts (check details, waiver list).
+- The decisions page reads settled requests from their pull requests once `gate/decisions` lists them (A8b); an Agents
+  view (per-identity throughput, pass rate) is deferred until the requests exist in numbers.
 - The CSRF scheme or security headers.
 - Bounded visual edits in the graph: a new handler proposing a text patch through the same save path.
 - Another way to approve an account: the operator list and the configured accounts are inputs of `app`; ui only asks.
@@ -1520,6 +1564,15 @@ changed; no private gate child or duplicate TypeScript policy is imported.
   (feedback) owns and publishes them but exports no constant, and control imports only the gate façade;
   `control/onboarding` restates `archfit/state` too. On drift the overview and the editor show "no state yet" for every
   repository; no gate result changes. Removal trigger: a rename of a check, at which point gate exports the names.
+- Declared restatement: the shape of the `archfit/state` summary that `gate/feedback` writes: the `### Policy change`
+  heading, the producer line `engine <version>, image …` and the baseline word `no baseline` are read back by literal
+  here (the recovery prelude and the inputs section already are). `FirstScreen` receives them as plain fields. On drift the
+  page shows no first screen (an unread reason or card), or the comment's assessment line instead of "No required
+  architecture change" (an unread baseline word); the root test of the first screen against the comment fails first.
+  Removal trigger: feedback exports a parser of its own summary.
+- The first screen is never worded here: every line is `gate.FirstScreen`'s, the page adds no sentence. The decisions
+  page and the overview's decision rows are data, never an approval: nothing there writes, and an agent's text is cut and
+  shown as text.
 - Bounded work per request, each **[default]** except the last: 100 repositories, 8 parallel GitHub lookups, 512 KB bodies;
   5 MB artifact (`report.MaxBytes`).
 
@@ -1577,6 +1630,30 @@ gate's and tested there. The clock is injected.
   **Expected behavior**: decision `blocked` / "hard gates fail, 4 active blockers, every required rule evaluated", `fail` with 4 blockers and empty lists; no advisory listed or counted, both new ones
   "Imbalanced coupling · critical" in the `also` of their cycle directions; then the rule with its reason, the note,
   one advisory with the words of `follow_rule` as its move, and exactly one owner decision.
+- **Test name**: `TestPullPageFirstScreenIsWordedByTheComment`, `TestPullPageFirstScreenNeedsAReport`, `TestScreenInputReadsTheRecordedCheck`
+  **Scenario**: the state summary feedback wrote for the healthy fixture, required mode, with and without a policy change
+  card after its prelude; a title with markup; a reason that is not report-derived; a summary without a reason; no check
+  on the head; the input built from a recorded check with a producer line of each shape.
+  **Expected behavior**: `first_screen` holds the comment's lines (headline from the check title, the engine and policy
+  digest, the next step, the identity line with the check ID, the card's heading and items) as plain text, no Markdown
+  mark; none for the withheld cases; the engine version read from `engine <v>, …` only, an empty one for no upload.
+  The same fixtures through the whole App, against the comment itself, are in the root `TestPullPageFirstScreenEqualsTheCommentsFirstScreen`.
+- **Test name**: `TestOverviewNamesTheLastCheckedMergeOfTheDefaultBranch`, `TestOverviewCountsPullRequestsToUpdateAfterTheTargetMoved`, `TestOverviewListsPendingDecisionRequests`
+  **Scenario**: two runs of `archfit/state` on the default-branch tip; none; `target_moved` with a recorded step, without
+  one, another reason, a success that still holds the summary, no summary, escaped repository text in the step; a queue of
+  7 with a pending and a stale record, an agent's long rule and edge, no open pull request, no report yet, and a failed read.
+  **Expected behavior**: the latest run's word, short SHA and start time, none without a check; `rerun` with the role
+  prefix and the modules, a fixed sentence without a recorded step, empty for the others, and `pulls_to_update` counting
+  the rows; 7 pending and the one pending record as a row with the pull request's title and link, cut texts, one queue read
+  bounded to 5 for the repository; no read without an open pull request or a report; `decisions_error` with no rows.
+- **Test name**: `TestDecisionsPage`
+  **Scenario**: three records (two pending, one stale) in a queue of three; an empty repository; a card on one open pull
+  request with the approval missing, granted, unreadable and not needed; a failed queue; a failed list of pull requests;
+  a POST; no session; a user without the repository.
+  **Expected behavior**: pending first, each group newest first, `requests_more` the pending count past the listed;
+  empty lists, never null; one policy row with the card's classification and the approval word, none for the pull
+  request without a card; `requests_error` with the pull requests still read; `policy_error`; no write and no approval
+  call; `401`, `303` to login for the page, `404`; no queue read without access.
 - **Test name**: `TestPullPageListsTheKnownIssuesFixedAsTheCommentDoes`
   **Scenario**: a new, a baseline and a fixed finding.
   **Expected behavior**: one fixed row (`old → gone`, meta "high"); the fixed finding counts as neither a violation
@@ -1897,14 +1974,19 @@ gate's and tested there. The clock is injected.
   for a problem of the whole text); the balance words: every quadrant worded, the crossings as the engine gate
   names them (a distributed monolith only in a flagged deploy-unit dependency's reason, never in where the distance
   was measured), the flagged dependency's reason and the count line, the decision sentences for `fail` with and
-  without blockers, `unmeasured`, `pass` and an unknown value; the owner approval words (`lib/approval.ts`): the button
+  without blockers, `unmeasured`, `pass` and an unknown value; the age words (`lib/age.ts`: just now, minutes, hours,
+  days, a time that cannot be read, a time ahead of now); the decisions route; the owner approval words (`lib/approval.ts`): the button
   only while missing, offered and for a head that was read, a short digest or "deleted by this commit", and who
   approved which commit.
 - `web/scripts/size.mjs`: the first-load, graph chunk, layout worker and editor chunk budgets above; no lazy chunk in
   the first load.
 - Playwright smoke (`web/e2e/smoke.spec.ts`): the production build behind `vite preview` with `web/csp.txt` as its
   header and `/api` mocked in the browser. Landing, repositories, overview, starting onboarding and discovery, and the
-  theme toggle; the pull request page (the cycle drawing, the folds, the engine's decision with an unevaluated rule,
+  theme toggle; the overview's watch line, its two counts (a count that could not be read shown as "–" with its reason),
+  the decision requests under Needs you with a link to the decisions page and the pull request that waits for an update
+  with the modules named; the Decisions tab (pending first, the approval of each policy change, no button, the empty and
+  failed states, text of an agent staying text, no link outside the App or github.com); the pull request page (the first
+  screen of the comment between the result and the analysis, as text, absent when the server sends none; the cycle drawing, the folds, the engine's decision with an unevaluated rule,
   an advisory's suggested move and owner decision, a metric finding named by its metric and numbers, copying the agent tasks, a link that is neither
   the App nor GitHub not rendered, a page without a report; the owner approval block: the files and digests, Approve
   sending the exact head, the digests and the CSRF header, then the approver shown and the button gone; no button and

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/report"
 )
@@ -18,6 +19,14 @@ type pullJSON struct {
 	pullHead
 	findingsJSON
 	Approval *approvalJSON `json:"approval,omitempty"` // only when the pull request changes a protected file
+	// FirstScreen is the first screen of the PR comment for this result, as lines of text, worded by the code that words
+	// the comment. Absent when the comment would show no report.
+	FirstScreen []screenLineJSON `json:"first_screen,omitempty"`
+}
+
+type screenLineJSON struct {
+	Kind string `json:"kind"` // headline, heading, text or item
+	Text string `json:"text"`
 }
 
 // pullHead is the header the pull request page and its graph share: which pull request, and what its check says.
@@ -218,11 +227,40 @@ func (s *server) apiPull(r *http.Request, sc scope) (any, error) {
 	body := pullJSON{pullHead: headOf(sc, pull, rep)}
 	if rep != nil {
 		fillFindings(&body.findingsJSON, *rep)
+		for _, l := range gate.FirstScreen(screenInput(sc, pull, rep)) {
+			body.FirstScreen = append(body.FirstScreen, screenLineJSON{l.Kind, l.Text})
+		}
 	}
 	if body.Approval, err = s.approval(r.Context(), sc, pull.Pull); err != nil {
 		return nil, err
 	}
 	return body, nil
+}
+
+// screenInput is what the check recorded and the report it names, for the words of the comment's first screen.
+func screenInput(sc scope, pull pullBody, rep *report.Report) gate.ScreenInput {
+	c := pull.Check
+	if c == nil || !c.reportDerived {
+		return gate.ScreenInput{}
+	}
+	engine := ""
+	if rest, ok := strings.CutPrefix(c.Producer, "engine "); ok {
+		engine, _, _ = strings.Cut(rest, ", ")
+	}
+	return gate.ScreenInput{
+		Repo: sc.repo.FullName, HeadSHA: pull.Pull.HeadSHA, PullRequest: pull.Pull.Number, Title: pull.Headline,
+		CheckID: pull.CheckID, Required: pull.Required, Reasons: c.screenReasons, EngineVersion: engine,
+		PolicyDigest: noneAsEmpty(c.PolicyDigest), BaselineDigest: c.BaselineDigest, RunID: c.RunID, RunAttempt: c.RunAttempt,
+		PolicyCard: c.policyCard, Report: rep,
+	}
+}
+
+// noneAsEmpty reads the "(none)" feedback writes for an empty value as empty.
+func noneAsEmpty(s string) string {
+	if s == "(none)" {
+		return ""
+	}
+	return s
 }
 
 // metricSubject names a metric ratchet finding as the PR comment does: the metric, then the engine's numbers when it

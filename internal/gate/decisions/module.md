@@ -34,6 +34,9 @@ could not read an answer, and the owners' view (Needs you, later) would have not
 - Stale rules: `HeadMoved` and `Closed` read the live pull request first (a late or retried delivery names a head or a
   state that no longer holds, and must not stale a newer request), and `Revalidate` (the sweep's rule 8: the head is not the pull request's live head (read again, not the head of the sweep's listing: a request may have been filed after it; a request that looks stale is confirmed with one more read before it is settled, because a walk loads its records one by one), or the policy digest
   is no longer accepted). All three also write any status comment that is out of date. **Stated limit**: the policy digest is checked against the trusted inputs the sweep resolved before it walked, not re-resolved per record; a request filed with a newer digest while the sweep runs can be marked `stale (policy changed)` once, and the agent's next post for the same head refiles it. Nothing fails open: a pending request decides no check.
+- Read the queue for the pages (`PendingQueue`): the number of open requests of a repository and the records of the
+  first entries of its pending list, from the Store alone: no GitHub call, no lease, no write. A record that is gone
+  is skipped; an unreadable list or record is an error.
 - Nothing grants anything: the requester is whoever commented; no approval, check or receipt is touched.
 
 Not here: deciding whether a comment may file (the façade), the owner's approve and decline, opening the proposal pull
@@ -80,6 +83,8 @@ type Outcome string // Filed, Refiled, Duplicate, Sticky, Capped
 func New(s store.Store, c api.Comments, p api.Pulls, now func() time.Time) *Requests // now clocks the lease only
 func (r *Requests) File(ctx, t inputs.Target, f Filing, now time.Time) (Outcome, error)
 func (r *Requests) Answer(ctx, t inputs.Target, findingID, digest string, status decision.Status, reason string) (written bool, err error)
+func (r *Requests) PendingQueue(ctx, t inputs.Target, limit int) (Queue, error) // t names the repository; limit 0 counts only
+type Queue struct { Open int; Records []Record } // open requests in the repository; the first records of the pending list, filing order
 func (r *Requests) Get(ctx, t inputs.Target, findingID, digest string) (Record, error)
 func (r *Requests) Policy(ctx, t inputs.Target, findingID, digest string) (string, error)
 func (r *Requests) Settle(ctx, t inputs.Target, findingID, digest string, status decision.Status, reason string, proposalPR int, now time.Time) error
@@ -109,7 +114,8 @@ returns that error with the record already settled; the request stays listed unt
 ## Change Vectors
 
 - A8b: the owner approves (`Settle` to `approved` with the proposal pull request) or declines.
-- A5: a view of Needs you reads the pending list and the records.
+- A5 (built): the overview's Needs you and the decisions page read the pending list and the records (`PendingQueue`).
+  The pending list holds no request settled and published, so a history view needs a read of the comments (A8b's `List`).
 - A cap or a comment limit changes: constants.
 - A sweep that visits closed pull requests (today a missed close is repaired by no pass).
 

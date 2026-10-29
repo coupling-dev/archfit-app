@@ -26,6 +26,10 @@ separate, testable steps. Without this module a report is a self-reported file a
   mark pending requests stale when the head moves or the pull request closes. Nothing is granted; an owner decides.
 - For the App's pull request page only (`Approvals`): read the owner approval of a head, record an architecture
   owner's approval of the exact head, and re-decide the pull request after it, as a review event does.
+- For the App's pages only (`DecisionQueue`): count the decision requests that wait for an owner and return the records
+  of the first few, from the Store alone, for the overview's counters and the decisions page. It grants nothing.
+- For the App's pull request page only (`FirstScreen`, `RecoveryStep`): word a published result with the code that
+  words the comment, so the page's first screen is the comment's. Pure functions of what the check recorded.
 - Run one reconciliation pass on request.
 - Publish, for the control plane, the `Entitlement` record contract, the `Receiver` for discovery uploads,
   and the sweep types.
@@ -116,7 +120,28 @@ func (g *Gate) Approve(ctx context.Context, t Target, login string, seen map[str
 func (g *Gate) Reevaluate(ctx context.Context, t Target) error
 ```
 
-The three methods ask `Admitted` first, like every other entry point; an installation no operator approved gets an
+```go
+// DecisionQueue is what the App's pages read of the decision requests of unattended agents. *Gate implements it.
+type DecisionQueue interface {
+    PendingDecisions(ctx context.Context, t Target, limit int) (PendingDecisions, error)
+}
+
+type PendingDecisions = decisions.Queue   // {Open int; Records []Record}: pending requests in the repository; the first records
+type DecisionRecord = decisions.Record
+
+// FirstScreen is the comment's first screen for a published result, as plain-text lines; nil when it would show no report.
+func FirstScreen(in ScreenInput) []ScreenLine
+// RecoveryStep is the next step of a recorded reason, worded for its role as the comment words it.
+func RecoveryStep(code, next string) string
+
+type ScreenInput = feedback.ScreenInput; type ScreenReason = feedback.ScreenReason; type ScreenLine = feedback.Line
+```
+
+`PendingDecisions` asks `Admitted` first and then `decisions.PendingQueue(t, limit)`: `t.Repo` names the repository, the
+pull request is not read. It is a read of the Store: no GitHub call, no lease, and an unreadable list or record is the
+error. `FirstScreen` and `RecoveryStep` read nothing and need no admission.
+
+The three methods of `Approvals` ask `Admitted` first, like every other entry point; an installation no operator approved gets an
 error and nothing is read or written. `PullApproval` calls `Candidate` (no paths → the zero value), then `Resolve`
 for the state, and, only while the approval is missing, `CanApprove` for `login`: a refusal is `Refusal`, a failed
 read is the error. `AuthorIsAgent` is `Settings.IsAgent(author)` of the resolved base settings. `Reevaluate` is the
@@ -719,7 +744,7 @@ func Withdrawal(t Target, current CheckState, tr Trusted) *Publication
 - **LCA / Rank / Distance**: gate / 1 / 1
 - **Volatility**: high
 - **Balanced?**: yes
-- **Shared knowledge**: `Requests` (`File`, `Answer`, `HeadMoved`, `Closed`), `Filing`, `Outcome`, `ErrTooLarge`. The façade
+- **Shared knowledge**: `Requests` (`File`, `Answer`, `PendingQueue`, `HeadMoved`, `Closed`), `Queue`, `Filing`, `Outcome`, `ErrTooLarge`. The façade
   decides what a comment may file (the checks of the intake above); the child keeps the record, the status comment and
   the stale transitions. `gate/sweep` reaches it through its own `Decisions` interface (rule 8).
 
@@ -1171,7 +1196,7 @@ type Swap struct {
 - **internal/app**: contract (constructor, handlers), root / 1 / 1, low, balanced. Calls `New`, mounts
   `UploadHandler`, calls `HandleEvent` before `control.HandleEvent`, calls `Sweep` from `/internal/sweep`,
   passes `NewReceiver(...)` to `control`, builds the `Admissions` for `Deps.Admissions` and `NewReceiver`, and passes
-  the `*Gate` to `control` as its `Approvals`.
+  the `*Gate` to `control` as its `Approvals` and its `DecisionQueue`.
 - **internal/control/account**: contract, root / 2 / 2, moderate, balanced. Writes the JSON of `Entitlement`
   under `EntitlementKey`, and writes and deletes the JSON of `Admission` under `AdmissionKey`. The gate owns the
   records so that it never imports billing or operator code.
@@ -1180,7 +1205,9 @@ type Swap struct {
 - **internal/control/ui** (through `control.Deps.Approvals`, which `app` sets to the `*Gate`): contract, root / 2 / 2,
   high, balanced. Calls `PullApproval` for the pull request page and `Approve` then `Reevaluate` for its Approve
   button, behind the browser session, CSRF token and write access; maps the refusals to its wording. Nothing on the
-  upload (OIDC) path holds `Approvals`.
+  upload (OIDC) path holds `Approvals`. Also (through `control.Deps.DecisionQueue`, the same `*Gate`) calls
+  `PendingDecisions` for the overview and the decisions page, and `FirstScreen` and `RecoveryStep` for the pull request
+  page and the overview's re-run rows.
 
 ## Internal Design
 
@@ -1548,6 +1575,9 @@ are driven only as far as they go without GitHub. Child internals are tested in 
 - **Test name**: `TestPullApprovalNamesAnAgentAuthor`, `TestPullApprovalWithoutAProtectedChangeIsEmpty`
   **Scenario**: a pull request opened by the `[bot]` account of a listed agent, then by an owner; a pull request that changes no protected path.
   **Expected behavior**: `AuthorIsAgent` true, then false; the zero `PullApproval`, and `Approve` refuses with `ErrNothingToApprove`.
+- **Test name**: `TestPendingDecisionsAreReadForAnAdmittedInstallationOnly`
+  **Scenario**: a decision request filed on a pull request; `PendingDecisions` for the repository; then the installation refused by the admission fake.
+  **Expected behavior**: one open request and its record; then `errNotAdmitted` and no GitHub call.
 - **Test name**: `TestApprovalNeedsAnAdmittedInstallation`
   **Scenario**: the installation is refused after the page read its candidate.
   **Expected behavior**: `PullApproval`, `Approve` and `Reevaluate` return an error; no GitHub call; no approval record.

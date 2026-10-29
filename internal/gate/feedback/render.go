@@ -66,6 +66,9 @@ const (
 // shortIDLen is the length of a finding ID prefix, as the engine prints it.
 const shortIDLen = 8
 
+// noBaseline is what the inputs section says of a result measured without a baseline.
+const noBaseline = "no baseline"
+
 // dimensionOrder is the engine's fixed order of its nine dimension keys.
 var dimensionOrder = [...]string{
 	"intent", "structure", "modularity", "coupling", "change_locality", "complexity", "testability", "operations", "drift",
@@ -237,19 +240,9 @@ func renderState(p Publication) string {
 // link is the App's page of this pull request, or "" for none.
 func renderComment(p Publication, now time.Time, waiver, link string) string {
 	p = presentation(p)
-	l := layout{head: headBlock(p, true), inputs: fixedTrustSentence}
-	notice := noticeLine(p.Trusted.Entitlement, now)
-	// The next step sits after the violations it answers, in a block that is never cut; with none to answer it
-	// follows the head. The notice comes before the link either way.
-	card := policyCard(p.PolicyChange, p.Trusted.Settings)
-	if nextBelowFindings(p) {
-		l.head = join(l.head, notice)
-		l.tail = join(card, nextBlock(p), linkLine(link))
-	} else {
-		l.head = join(l.head, card, nextBlock(p), notice, linkLine(link))
-	}
+	s := screenOf(p, commentHeading(p), policyCard(p.PolicyChange, p.Trusted.Settings), now, link)
+	l := layout{head: s.head, findings: s.findings, tail: s.tail, inputs: fixedTrustSentence}
 	if !suspended(p.Outcome) {
-		l.findings = compactFindings(p)
 		l.gaps = headGaps + "\n\n- No usable report"
 		if p.Report != nil {
 			l.gaps = compactEvidence(p)
@@ -259,11 +252,6 @@ func renderComment(p Publication, now time.Time, waiver, link string) string {
 		}
 	}
 	l.attention, l.agentID = attentionBlock(p, true), agentIdentity(p)
-	identity := commentIdentity(p)
-	if link != "" {
-		identity += " The App link shows the current PR result/recovery diagnostics, not a historical snapshot."
-	}
-	l.tail = join(l.tail, identity)
 	// Room for the notice section is always kept, so Warn can add it later without a size check.
 	reserve := len(waiverSection(time.DateOnly)) + 2
 	body := l.assemble(maxBody - reserve)
@@ -287,7 +275,7 @@ func headBlock(p Publication, markers bool) string {
 	// The comment carries the headline as its heading. A check summary does not: GitHub prints the check title, which
 	// is the headline, right above it.
 	if markers {
-		return commentHead(p, commentMarker+"\n"+headMarker(p.Target.HeadSHA, p.Receipt)+"\n## Archfit: "+headline(p))
+		return commentHead(p, commentHeading(p))
 	}
 	var parts []string
 	if advisory(p) && p.Outcome.Conclusion != verdict.ActionRequired && !suspended(p.Outcome) {
@@ -361,7 +349,7 @@ func nextBlock(p Publication) string {
 		if r.Next == "" || referenceCoversRecovery(p, r.Code) {
 			continue
 		}
-		s := recoveryRole(r.Code) + text(r.Next)
+		s := recoveryStep(r)
 		if r.Code == verdict.ReasonBlockingFindings {
 			s = "PR author/coding agent: review the reported constraints. Use only the supplied validation commands below; no repair direction is selected here."
 			if p.Report != nil && slices.ContainsFunc(p.Report.AgentTasks, func(task report.AgentTask) bool { return task.RepairKind == "needs_owner_decision" }) {
@@ -383,6 +371,9 @@ func nextBlock(p Publication) string {
 	}
 	return ""
 }
+
+// recoveryStep is a reason's next step with the role that takes it.
+func recoveryStep(r verdict.Reason) string { return recoveryRole(r.Code) + text(r.Next) }
 
 // decisionBlock is the engine's decision in one line, then every reason of the outcome in words with its category and
 // detail, and its code at the end. In the comment it sits in the evidence fold; a check summary shows the reasons in
@@ -645,7 +636,7 @@ func inputsBlock(p Publication) string {
 	if p.Receipt.BaselineDigest != "" {
 		lines = append(lines, "- Baseline digest: "+code(p.Receipt.BaselineDigest)+digestSource(p, verdict.ReasonBaselineMismatch))
 	} else {
-		lines = append(lines, "- Baseline digest: no baseline")
+		lines = append(lines, "- Baseline digest: "+noBaseline)
 	}
 	if p.Receipt.LabelsDigest != "" {
 		lines = append(lines, "- Labels digest: "+code(p.Receipt.LabelsDigest)+digestSource(p, verdict.ReasonLabelsMismatch))

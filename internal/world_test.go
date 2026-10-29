@@ -1,6 +1,7 @@
 package internal_test
 
 import (
+	"archive/zip"
 	"bytes"
 	"crypto/sha1" //nolint:gosec // fake git object IDs
 	"encoding/base64"
@@ -77,6 +78,7 @@ type repo struct {
 	checks     []*checkRun
 	comments   []*comment
 	runs       map[int64]*run
+	artifacts  map[int64][]byte // workflow run ID → the report file of its artifact
 	reruns     []int64
 	dispatches []dispatch
 }
@@ -429,6 +431,17 @@ func (w *world) everythingPublished() string {
 // fail forces status for the next times requests that match; times < 0 means every one.
 func (w *world) fail(status, times int, match func(r *http.Request) bool) {
 	w.locked(func() { w.failures = append(w.failures, &failure{match: match, status: status, times: times}) })
+}
+
+// keepReport makes payload the report artifact of a workflow run, as GitHub keeps it for the App's page.
+func (w *world) keepReport(fullName string, runID int64, payload []byte) {
+	w.locked(func() {
+		rp := w.repos[fullName]
+		if rp.artifacts == nil {
+			rp.artifacts = map[int64][]byte{}
+		}
+		rp.artifacts[runID] = payload
+	})
 }
 
 func (w *world) allow(login, fullName, perm string) {
@@ -1106,9 +1119,35 @@ func (w *world) routes() {
 		writeJSON(rw, http.StatusOK, map[string]any{"total_count": len(out), "workflow_runs": out})
 	})
 	mux.HandleFunc("GET "+R+"/actions/runs/{id}/artifacts", func(rw http.ResponseWriter, r *http.Request) {
-		if rp := w.repoOf(rw, r); rp != nil {
-			writeJSON(rw, http.StatusOK, map[string]any{"total_count": 0, "artifacts": []any{}})
+		rp := w.repoOf(rw, r)
+		if rp == nil {
+			return
 		}
+		list := []any{}
+		if id, err := strconv.ParseInt(r.PathValue("id"), 10, 64); err == nil && rp.artifacts[id] != nil {
+			// The artifact's ID is its run's.
+			list = append(list, map[string]any{"id": id, "name": r.URL.Query().Get("name"), "expired": false, "created_at": time.Now()})
+		}
+		writeJSON(rw, http.StatusOK, map[string]any{"total_count": len(list), "artifacts": list})
+	})
+	mux.HandleFunc("GET "+R+"/actions/artifacts/{id}/zip", func(rw http.ResponseWriter, r *http.Request) {
+		rp := w.repoOf(rw, r)
+		if rp == nil {
+			return
+		}
+		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		payload := rp.artifacts[id]
+		if payload == nil {
+			notFound(rw)
+			return
+		}
+		var buf bytes.Buffer
+		zw := zip.NewWriter(&buf)
+		f, _ := zw.Create("report.json")
+		_, _ = f.Write(payload)
+		_ = zw.Close()
+		rw.Header().Set("Content-Type", "application/zip")
+		_, _ = rw.Write(buf.Bytes())
 	})
 	mux.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
 		w.t.Logf("test world: unhandled %s %s?%s", r.Method, r.URL.Path, r.URL.RawQuery)

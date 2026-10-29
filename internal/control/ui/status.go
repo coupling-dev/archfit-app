@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"log/slog"
@@ -10,9 +11,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
+	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
@@ -40,12 +43,21 @@ type statusBody struct {
 	MainState     string    `json:"main_state"`  // archfit/state on the default-branch head, a word; "" before a report
 	MainReason    string    `json:"main_reason"` // its title
 	MainTone      string    `json:"main_tone"`
+	MainSHA       string    `json:"main_sha"` // the default-branch commit that check is on, short
+	MainAt        string    `json:"main_at"`  // when it started, RFC 3339 UTC; "" without a check
 	Pulls         []pullRow `json:"pulls"`
-	PullsMore     int       `json:"pulls_more"`  // open pull requests past maxStatusPulls
-	PullsError    bool      `json:"pulls_error"` // the list could not be read; the rest of the page stands
-	Steps         []step    `json:"steps"`
-	Next          string    `json:"next"`     // the next setup step in one sentence, "" when there is none
-	NextHow       string    `json:"next_how"` // its details, shown behind "How"
+	PullsMore     int       `json:"pulls_more"`      // open pull requests past maxStatusPulls
+	PullsError    bool      `json:"pulls_error"`     // the list could not be read; the rest of the page stands
+	PullsToUpdate int       `json:"pulls_to_update"` // listed pull requests that wait for an update after the target moved
+
+	// DecisionsPending counts the decision requests that wait for an owner in all pull requests; Decisions lists the
+	// first few. Neither is read for a repository without an open pull request.
+	DecisionsPending int           `json:"decisions_pending"`
+	Decisions        []decisionRow `json:"decisions"`
+	DecisionsError   bool          `json:"decisions_error"` // the requests could not be read; the rest of the page stands
+	Steps            []step        `json:"steps"`
+	Next             string        `json:"next"`     // the next setup step in one sentence, "" when there is none
+	NextHow          string        `json:"next_how"` // its details, shown behind "How"
 
 	Stage       string `json:"stage"`
 	Diagnostic  string `json:"diagnostic"`
@@ -98,7 +110,7 @@ func (s *server) apiStatus(r *http.Request, sc scope) (any, error) {
 		admin       bool
 		managedAI   string
 		bannerText  string
-		main        struct{ state, reason string }
+		main        branchCheck
 		pulls       struct {
 			rows   []pullRow
 			more   int
@@ -121,7 +133,7 @@ func (s *server) apiStatus(r *http.Request, sc scope) (any, error) {
 			}
 			bannerText = banner(st)
 		},
-		func() { main.state, main.reason = s.defaultBranchState(ctx, sc.repo) },
+		func() { main = s.defaultBranchState(ctx, sc.repo) },
 		func() { pulls.rows, pulls.more, pulls.failed = s.openPulls(ctx, sc) },
 	)
 	if progressErr != nil {
@@ -138,6 +150,7 @@ func (s *server) apiStatus(r *http.Request, sc scope) (any, error) {
 		Admin:         admin,
 		ManagedAI:     managedAI,
 		Banner:        bannerText,
+		Decisions:     []decisionRow{},
 	}
 	if d := progress.OpenDraft; d != nil {
 		body.DraftURL, body.DraftState = d.URL, draftWords[d.State]
@@ -156,7 +169,23 @@ func (s *server) apiStatus(r *http.Request, sc scope) (any, error) {
 	body.Next, body.NextHow = next.next, next.how
 	if hasReport(progress.Stage) {
 		body.MainState, body.MainReason, body.MainTone = main.state, main.reason, toneOf(main.state)
+		if !main.at.IsZero() {
+			body.MainSHA, body.MainAt = main.sha[:min(len(main.sha), shortSHA)], main.at.UTC().Format(time.RFC3339)
+		}
 		body.Pulls, body.PullsMore, body.PullsError = pulls.rows, pulls.more, pulls.failed
+		for _, p := range pulls.rows {
+			if p.Rerun != "" {
+				body.PullsToUpdate++
+			}
+		}
+		// A decision request belongs to an open pull request: without one there is nothing to read.
+		if len(pulls.rows) > 0 || pulls.failed {
+			titles := map[int]string{}
+			for _, p := range pulls.rows {
+				titles[p.Number] = p.Title
+			}
+			body.DecisionsPending, body.Decisions, body.DecisionsError = s.pendingDecisions(ctx, sc, maxNeedsYouDecisions, titles)
+		}
 	}
 	return body, nil
 }
@@ -259,6 +288,16 @@ type pullRow struct {
 	Tone   string `json:"tone"`
 	Reason string `json:"reason"` // its title: the headline feedback wrote
 	Href   string `json:"href"`
+	// Rerun is set while the pull request waits for an update after the target branch moved (target_moved): the next
+	// step as the comment words it, with the modules the pull request and the target close a cycle through.
+	Rerun string `json:"rerun,omitempty"`
+}
+
+// pullCheck is an open pull request with the archfit/state check on its head.
+type pullCheck struct {
+	pull          api.Pull
+	state, reason string
+	run           *api.CheckRun // nil without a check or when it could not be read
 }
 
 type step struct {
@@ -339,9 +378,9 @@ func setupSteps(current onboarding.Stage) ([]step, nextStep) {
 	return steps, nextSteps[current]
 }
 
-// openPulls reads each open pull request's archfit/state, newest first. A failed list leaves the rest of the page
-// standing; a failed lookup is "unknown" for that row only.
-func (s *server) openPulls(ctx context.Context, sc scope) (rows []pullRow, more int, failed bool) {
+// openPullChecks reads each open pull request's archfit/state, newest first. A failed list leaves the rest of the page
+// standing; a failed lookup is "unknown" for that pull request only.
+func (s *server) openPullChecks(ctx context.Context, sc scope) (checks []pullCheck, more int, failed bool) {
 	pulls, err := s.gh.pulls.OpenPulls(ctx, sc.repo.RepoRef)
 	if err != nil {
 		slog.Warn("ui open pull requests unavailable", "repository_id", sc.repo.ID, "installation_id", sc.repo.InstallationID)
@@ -350,7 +389,7 @@ func (s *server) openPulls(ctx context.Context, sc scope) (rows []pullRow, more 
 	if len(pulls) > maxStatusPulls {
 		more, pulls = len(pulls)-maxStatusPulls, pulls[:maxStatusPulls]
 	}
-	rows = make([]pullRow, len(pulls))
+	checks = make([]pullCheck, len(pulls))
 	slots := make(chan struct{}, parallelLookups)
 	var wg sync.WaitGroup
 	for i, p := range pulls {
@@ -359,10 +398,44 @@ func (s *server) openPulls(ctx context.Context, sc scope) (rows []pullRow, more 
 		go func() {
 			defer wg.Done()
 			defer func() { <-slots }()
-			state, reason := s.checkWord(ctx, sc.repo.RepoRef, p.HeadSHA, checkState)
-			rows[i] = pullRow{Number: p.Number, Title: p.Title, State: state, Tone: toneOf(state), Reason: reason, Href: repoPath(sc, "/pull/"+strconv.Itoa(p.Number))}
+			c := pullCheck{pull: p}
+			c.run, c.state, c.reason = s.latestCheck(ctx, sc.repo.RepoRef, p.HeadSHA, checkState)
+			checks[i] = c
 		}()
 	}
 	wg.Wait()
-	return rows, more, false
+	return checks, more, false
 }
+
+// openPulls is openPullChecks as the repository page lists it.
+func (s *server) openPulls(ctx context.Context, sc scope) (rows []pullRow, more int, failed bool) {
+	checks, more, failed := s.openPullChecks(ctx, sc)
+	rows = make([]pullRow, len(checks))
+	for i, c := range checks {
+		rows[i] = pullRow{
+			Number: c.pull.Number, Title: c.pull.Title, State: c.state, Tone: toneOf(c.state), Reason: c.reason,
+			Href: repoPath(sc, "/pull/"+strconv.Itoa(c.pull.Number)), Rerun: rerunStep(c.run),
+		}
+	}
+	return rows, more, failed
+}
+
+// targetMoved is the reason code of a pull request the sweep withdrew because the target branch moved under it.
+const targetMoved = "target_moved"
+
+// rerunStep is the next step of a pull request whose check records target_moved, in the comment's words; "" for any
+// other check. The sweep records it in required mode only. The words and the module names are the recorded Next of the
+// reason, which feedback sanitized when it wrote it: nothing is parsed out of the detail.
+func rerunStep(run *api.CheckRun) string {
+	if run == nil || run.Conclusion != conclusionActionRequired {
+		return ""
+	}
+	recorded := actionContext(*run)
+	if code, _, _ := strings.Cut(recorded.Reason, " ("); code != targetMoved {
+		return ""
+	}
+	return gate.RecoveryStep(targetMoved, cmp.Or(recorded.Next, updateBranchSentence))
+}
+
+// updateBranchSentence is the step when the check records the move without saying more.
+const updateBranchSentence = "The target branch moved. Update the branch to measure it again."
