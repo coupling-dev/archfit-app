@@ -184,7 +184,7 @@ func (c *Client) ArtifactByID(ctx context.Context, r RepoRef, id int64, maxBytes
 		url: apiURL(base+"/actions/artifacts/"+itoa(id)+"/zip", nil), redirect: true, maxBody: maxBytes + zipOverhead}
 	res, err := c.do(ctx, k)
 	if err != nil {
-		return nil, err
+		return nil, artifactDefect(k, err)
 	}
 	if res.location != "" {
 		// The blob store is another host: it gets the signed URL and no GitHub credential.
@@ -195,7 +195,7 @@ func (c *Client) ArtifactByID(ctx context.Context, r RepoRef, id int64, maxBytes
 		k = call{cred: cred{kind: credNone}, method: http.MethodGet, route: "artifact download", url: res.location,
 			maxBody: maxBytes + zipOverhead}
 		if res, err = c.do(ctx, k); err != nil {
-			return nil, err
+			return nil, artifactDefect(k, err)
 		}
 	}
 	data, err := extractSingleFile(res.body, maxBytes)
@@ -203,6 +203,15 @@ func (c *Client) ArtifactByID(ctx context.Context, r RepoRef, id int64, maxBytes
 		return nil, k.errorf("%w: %w", ErrArtifactInvalid, err)
 	}
 	return data, nil
+}
+
+// artifactDefect marks a zip over its size limit as ErrArtifactInvalid: the artifact is what it is on every download.
+// Any other failure of the download is returned as it is.
+func artifactDefect(k call, err error) error {
+	if errors.Is(err, errResponseTooLarge) {
+		return k.errorf("%w: %w", ErrArtifactInvalid, err)
+	}
+	return err
 }
 
 // extractSingleFile returns the content of a zip that holds exactly one regular file of at most maxBytes.
