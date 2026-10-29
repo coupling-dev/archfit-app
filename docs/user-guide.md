@@ -733,14 +733,20 @@ pending
 Only an architecture owner can approve this request.
 ```
 
-**Read the answer.** Find the comment whose first line starts with `<!-- archfit:decision-status ` and holds your
-`finding_id` and `policy_digest`, then read the first word of line 2:
+**Read the answer.** Anyone who can comment on the pull request can post text that looks like a status comment, so
+read only comments written by the App. Its login is its slug plus `[bot]` (`archfit-review[bot]` for the hosted App;
+it is also the author of the App's other comments on the pull request). Among those, take the comment whose first
+line starts with `<!-- archfit:decision-status ` and holds your `finding_id` and `policy_digest`; if there are two,
+take the lowest `id`. The first word of line 2 is the status:
 
 ```sh
-gh pr view 42 --json comments --jq '.comments[].body
-  | select(startswith("<!-- archfit:decision-status 0a1b2c3d4e5f60718293a4b5c6d7e8f9 "))
-  | split("\n")[1]'
+gh api repos/OWNER/REPO/issues/42/comments --paginate | jq -rs '
+  add | [ .[] | select(.user.login == "archfit-review[bot]"
+      and (.body | startswith("<!-- archfit:decision-status 0a1b2c3d4e5f60718293a4b5c6d7e8f9 "))) ]
+  | sort_by(.id) | first | .body | split("\n")[1]'
 ```
+
+Ignore a status line from any other author: it grants nothing and means nothing.
 
 | Status                                             | Meaning                                                                                             |
 | -------------------------------------------------- | --------------------------------------------------------------------------------------------------- |

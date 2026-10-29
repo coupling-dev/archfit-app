@@ -55,9 +55,9 @@ Known keys are informative only; their owners define them: `entitlement` (owned 
 `control/account`), `account` and `consent/<kind>` (private to `control/account`), `feedback/lease/<head_sha>`
 (private to `gate/feedback`, written only by `CompareAndSwap`), and under `SystemTenant`
 `llm-budget/<YYYY-MM>` (`control/account`), `decision/<repo>/<pr>/<finding_id>/<policy_digest>` with its `/policy` text and
-`decision/<repo>/pending` (private to `gate/decisions`: a decision request, the proposed policy kept apart because a
-value is at most 64 KiB, and the list of pending requests, because the Store cannot list keys; written only with
-`CompareAndSwapAll`). `store` never parses a key or a value except a counter in `Add`.
+`decision/<repo>/pending` and `decision/<repo>/lease/<pr>` (private to `gate/decisions`: a decision request, the proposed
+policy kept apart because a value is at most 64 KiB, the list of requests to walk because the Store cannot list keys,
+written with `CompareAndSwapAll`, and the status lease of a pull request, written only by `CompareAndSwap`). `store` never parses a key or a value except a counter in `Add`.
 
 ## Public Contract
 

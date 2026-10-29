@@ -72,7 +72,7 @@ func compose(gh github, v oidc.Verifier, s store.Store, adm admitter, audience s
 		now = time.Now
 	}
 	resolver := inputs.New(gh, gh, s)
-	reqs := decisions.New(s, gh)
+	reqs := decisions.New(s, gh, gh, now)
 	publisher := feedback.New(gh, gh, gh, s, audience, now) // the audience is the App's base URL
 	return newGate(newReceiver(gh, v, audience, adm), resolver, reqs, publisher, feedback.NewRepairer(gh, gh, gh, gh, s, now),
 		sweep.New(gh, gh, gh, resolver, publisher, adm, reqs, c), gh, gh, gh, adm, now)

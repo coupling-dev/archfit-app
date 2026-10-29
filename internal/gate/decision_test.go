@@ -452,3 +452,61 @@ func TestDecisionSweepRepairsAMissingStatusComment(t *testing.T) {
 	}
 	w.wantStatus(p, findingA, "pending")
 }
+
+func TestDecisionLateSynchronizeForAnOldHeadDoesNotStaleTheNewHeadsRequest(t *testing.T) {
+	w := newWorld(t)
+	p := w.openPull(w.shop, 7)
+	late := w.event(webhook.PullSynchronized, p) // the delivery for head A, retried late
+	w.push(p)
+	w.handle(w.askFor(p)) // a request for head B
+	w.handle(late)
+	if rec := w.record(p, findingA); rec.Status != decision.StatusPending || rec.HeadSHA != p.head {
+		t.Errorf("record = %+v", rec)
+	}
+	w.wantStatus(p, findingA, "pending")
+}
+
+func TestDecisionLateCloseAfterAReopenDoesNotStaleANewRequest(t *testing.T) {
+	w := newWorld(t)
+	p := w.openPull(w.shop, 7)
+	closed := w.event(webhook.PullClosed, p)
+	w.handle(w.askFor(p)) // the pull request was reopened; this request is new
+	w.handle(closed)
+	if rec := w.record(p, findingA); rec.Status != decision.StatusPending {
+		t.Errorf("record = %+v", rec)
+	}
+	w.wantStatus(p, findingA, "pending")
+}
+
+func TestDecisionSettledRequestIsRepairedAfterAFailedCommentEdit(t *testing.T) {
+	repairs := map[string]func(w *world, p *pull, e webhook.Event){
+		"the event is redelivered": func(w *world, p *pull, e webhook.Event) { w.handle(e) },
+		"the sweep runs": func(w *world, p *pull, e webhook.Event) {
+			if _, err := w.gate.Sweep(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+		},
+	}
+	for name, repair := range repairs {
+		t.Run(name, func(t *testing.T) {
+			w := newWorld(t)
+			p := w.openPull(w.shop, 7)
+			w.handle(w.askFor(p))
+			w.push(p)
+			e := w.event(webhook.PullSynchronized, p)
+			w.gh.fail["UpdateComment"] = api.ErrRateLimited
+			if err := w.gate.HandleEvent(context.Background(), e); !errors.Is(err, api.ErrRateLimited) {
+				t.Fatalf("HandleEvent = %v, want the failed edit", err)
+			}
+			w.wantStatus(p, findingA, "pending") // the thread is out of date; the record is stale
+			delete(w.gh.fail, "UpdateComment")
+
+			repair(w, p, e)
+			w.wantStatus(p, findingA, "stale (head moved)")
+			raw, err := w.mem.Get(context.Background(), store.Tenant(shopInstallation), "decision/acme/shop/pending")
+			if err != nil || strings.Contains(string(raw), findingA) {
+				t.Errorf("pending list = %s (%v), want the request dropped once published", raw, err)
+			}
+		})
+	}
+}

@@ -30,7 +30,10 @@ var (
 	// ErrNotPending is Settle's answer for a record that is not pending: it never moves again.
 	ErrNotPending = errors.New("decisions: request is not pending")
 	// ErrTooLarge means the record would not fit one Store value.
-	ErrTooLarge   = errors.New("decisions: request is too large to store")
+	ErrTooLarge = errors.New("decisions: request is too large to store")
+	// ErrChanged is SettleAt's answer for a record whose head is not the one the caller saw: it settled or was
+	// refiled meanwhile, and the caller's reason no longer holds.
+	ErrChanged    = errors.New("decisions: request changed")
 	errContention = errors.New("decisions: request records changed concurrently")
 )
 
@@ -52,6 +55,7 @@ type Record struct {
 	Reason            string          `json:"reason,omitempty"` // the stale reason, or why a request was declined
 	ProposalPR        int             `json:"proposal_pr,omitempty"`
 	StatusCommentID   int64           `json:"status_comment_id,omitempty"`
+	Published         string          `json:"published,omitempty"` // the status line last written to the thread
 	CreatedAt         time.Time       `json:"created_at"`
 	UpdatedAt         time.Time       `json:"updated_at"`
 }
@@ -78,20 +82,25 @@ const (
 type Requests struct {
 	store    store.Store
 	comments api.Comments
+	pulls    api.Pulls
+	now      func() time.Time // the clock of the status lease only
+	// wait pauses between polls of a held lease. Tests replace it to observe contention.
+	wait func(context.Context) error
 }
 
-func New(s store.Store, c api.Comments) *Requests { return &Requests{store: s, comments: c} }
+// New returns Requests over the Store, the App's comments and the pull requests. pulls is read to confirm that a
+// head or a close still holds before a request goes stale for it; now clocks the status lease.
+func New(s store.Store, c api.Comments, p api.Pulls, now func() time.Time) *Requests {
+	return &Requests{store: s, comments: c, pulls: p, now: now, wait: pollWait}
+}
 
 // Revalidate is the sweep's rule for one pull request: a pending request whose policy digest the protected ref no
-// longer accepts goes stale (policy changed), and a pending request whose status comment is missing gets it.
+// longer accepts goes stale (policy changed). It also writes any status comment that is missing or out of date.
 func (r *Requests) Revalidate(ctx context.Context, t inputs.Target, tr inputs.Trusted, now time.Time) error {
-	return r.eachPending(ctx, t, func(rec Record) error {
-		if !inputs.Accepts(tr.PolicyDigests, rec.PolicyDigest) {
-			return r.Settle(ctx, t, rec.FindingID, rec.PolicyDigest, decision.StatusStale, decision.ReasonPolicyChanged, 0, now)
+	return r.walk(ctx, t, func(rec Record) (bool, error) {
+		if inputs.Accepts(tr.PolicyDigests, rec.PolicyDigest) {
+			return false, nil
 		}
-		if rec.StatusCommentID == 0 {
-			return r.publish(ctx, t, rec)
-		}
-		return nil
+		return true, r.SettleAt(ctx, t, rec.FindingID, rec.PolicyDigest, rec.HeadSHA, decision.StatusStale, decision.ReasonPolicyChanged, 0, now)
 	})
 }

@@ -22,11 +22,15 @@ could not read an answer, and the owners' view (Needs you, later) would have not
 - Cap pending records: 20 per pull request, 200 per repository. Beyond a cap `File` returns `Capped` and writes nothing.
 - Write the status comment: the App's one comment per record, found by its marker among its own comments, created
   once, edited in place when its text changes; at most 40 status comments per pull request (`Answer` for a request that
-  has no record counts too). A failure to write it never loses the record; the next event or sweep repairs it.
-- Move a pending record to `approved`, `declined` or `stale` and update the comment (`Settle`). The seam for the
-  owner's decision (stage A8b, not built here) is `Get`, `Policy` and `Settle`.
-- Stale rules: `HeadMoved`, `Closed`, and `Revalidate` (the sweep's rule 8: policy digest no longer accepted; also
-  writes a missing status comment).
+  has no record counts too). Every status write runs inside a status lease (below) and derives its text from the
+  stored record, never from what a caller meant to publish. A failure to write it never loses the record: the record
+  says what it last published (`Published`), the request stays in the pending list while that differs from its status,
+  and the next event or sweep writes the comment.
+- Move a pending record to `approved`, `declined` or `stale` and update the comment (`Settle`, `SettleAt`). The seam
+  for the owner's decision (stage A8b, not built here) is `Get`, `Policy` and `Settle`.
+- Stale rules: `HeadMoved` and `Closed` read the live pull request first (a late or retried delivery names a head or a
+  state that no longer holds, and must not stale a newer request), and `Revalidate` (the sweep's rule 8: policy digest
+  no longer accepted). All three also write any status comment that is out of date.
 - Nothing grants anything: the requester is whoever commented; no approval, check or receipt is touched.
 
 Not here: deciding whether a comment may file (the façade), the owner's approve and decline, opening the proposal pull
@@ -40,10 +44,18 @@ Core with the gate path; volatility high (the request flow is new and will gain 
 
 - Keys under the installation tenant (repository names lowercase, as `gate/inputs` keys them; the event carries no
   repository ID): `decision/<repo>/<pr>/<finding_id>/<policy_digest>` (JSON `Record`), the same plus `/policy` (the raw
-  proposed policy), and `decision/<repo>/pending` (JSON list of the pending requests: pull request, finding ID, policy digest).
-  The pending list exists because the Store cannot list keys: every rule that walks requests walks it, and only pending
-  requests are in it. A record and the list change together with `CompareAndSwapAll`, retried five times against a
-  concurrent writer; then the delivery is retried by the queue.
+  proposed policy), `decision/<repo>/pending` (JSON list: pull request, finding ID, policy digest, `open`) and
+  `decision/<repo>/lease/<pr>` (the status lease).
+  The list exists because the Store cannot list keys: every rule that walks requests walks it. It holds the pending
+  requests (`open: true`) and the ones that left pending but whose new status is not yet in the thread (`open: false`);
+  a request leaves it, in one transaction with the record's `Published`, only after its comment was written. The caps
+  count `open` entries only. A record and the list change together with `CompareAndSwapAll`, retried five times
+  against a concurrent writer; then the delivery is retried by the queue.
+- The status lease: the lease of `gate/feedback` (a Store key held with `CompareAndSwap`, 60 s, work stops 10 s
+  early, released after success or a definite failure, kept after a write whose outcome is unknown), keyed per pull
+  request so that the 40-comment cap is exact. Inside it: re-read the record, derive the line from it, list the App's
+  comments, create or edit, then record `Published` and `StatusCommentID`. `Answer` re-checks inside the lease that no
+  record exists.
 - The policy lives in its own key because one value is at most 64 KiB and the policy alone may be that large. A record
   that would not fit is `ErrTooLarge` and nothing is written.
 - Records are encoded without HTML escaping, so the size the decoder allowed is the size stored.
@@ -58,16 +70,17 @@ const MaxPendingPerPull, MaxPendingPerRepo = 20, 200
 var ErrNoRecord, ErrNotPending, ErrTooLarge error
 
 type Record struct { /* PullRequest, FindingID, RuleID, EdgeFrom, EdgeTo, HeadSHA, PolicyDigest, Why, AlternativesTried,
-   ProposalDigest, Requester, CommentID, Status, Reason, ProposalPR, StatusCommentID, CreatedAt, UpdatedAt */ }
+   ProposalDigest, Requester, CommentID, Status, Reason, ProposalPR, StatusCommentID, Published, CreatedAt, UpdatedAt */ }
 type Filing struct { Request decision.Request; Requester string; CommentID int64 }
 type Outcome string // Filed, Refiled, Duplicate, Sticky, Capped
 
-func New(s store.Store, c api.Comments) *Requests
+func New(s store.Store, c api.Comments, p api.Pulls, now func() time.Time) *Requests // now clocks the lease only
 func (r *Requests) File(ctx, t inputs.Target, f Filing, now time.Time) (Outcome, error)
 func (r *Requests) Answer(ctx, t inputs.Target, findingID, digest string, status decision.Status, reason string) error
 func (r *Requests) Get(ctx, t inputs.Target, findingID, digest string) (Record, error)
 func (r *Requests) Policy(ctx, t inputs.Target, findingID, digest string) (string, error)
 func (r *Requests) Settle(ctx, t inputs.Target, findingID, digest string, status decision.Status, reason string, proposalPR int, now time.Time) error
+func (r *Requests) SettleAt(ctx, t inputs.Target, findingID, digest, expectedHead string, status decision.Status, reason string, proposalPR int, now time.Time) error
 func (r *Requests) HeadMoved(ctx, t inputs.Target, now time.Time) error   // t.HeadSHA is the new head
 func (r *Requests) Closed(ctx, t inputs.Target, now time.Time) error
 func (r *Requests) Revalidate(ctx, t inputs.Target, tr inputs.Trusted, now time.Time) error
@@ -75,7 +88,9 @@ func (r *Requests) Revalidate(ctx, t inputs.Target, tr inputs.Trusted, now time.
 
 `t.PullRequest` names the pull request in every call; the caller has already checked it is open, not a fork, and
 onboarded in required mode. `File` returns the outcome even when only the status comment failed (the error says so).
-`Settle` returns `ErrNoRecord` or `ErrNotPending` and changes nothing then.
+`Settle` returns `ErrNoRecord` or `ErrNotPending` and changes nothing then. `SettleAt` also returns `ErrChanged` when the
+record's head is not `expectedHead`, checked in the same transaction as the status. A settle whose comment write fails
+returns that error with the record already settled; the request stays listed until a later walk writes the comment.
 
 ## Integrations
 
@@ -100,14 +115,21 @@ onboarded in required mode. `File` returns the outcome even when only the status
 - A record never grants anything. No approval, receipt or check is read or written here.
 - Fail closed: an unreadable record or pending list is an error and nothing is written over it.
 - Stale and declined records are never deleted. A declined or approved request never moves again.
-- Only pending requests are in the pending list; a record and the list change in one atomic step.
+- Only pending requests and requests whose status is not yet published are in the pending list; a record and the list change in one atomic step.
 - No clock: `now` is a parameter. Logs carry installation ID and pull request number, never request text.
 - Writes only keys under `decision/`.
+- The thread is written only inside the status lease, from the stored record.
 
 ## Test Specification
 
 - `TestFileConcurrentlyKeepsOneRecordAndOneIndexEntry` (-race): 20 goroutines file one request: one `Filed`, one list entry, one comment.
 - `TestFileRefusesARecordTooLargeForTheStore`: `ErrTooLarge`, no key, no comment.
+- `TestAnswerRacingFileLeavesThePendingCommentAlone`, `TestStatusWritersOfOneRequestCreateOneComment`,
+  `TestStatusCommentCapHoldsUnderConcurrency` (-race): the lease; an answer never overwrites a stored request, two writers
+  create one comment, the cap is exact.
+- `TestSettledRequestStaysListedUntilItsCommentIsWritten`, `TestCapsCountOnlyPendingRequests`,
+  `TestRepositoryCapCountsOnlyPendingRequests`: settle with a failing edit, then a later walk repairs it; unpublished requests do not count.
+- `TestSettleAtRefusesAChangedHead`, `TestHeadMovedAndClosedReadTheLivePullRequest`.
 - `TestSettleMovesOnlyPendingRecords`: missing, approved, then stale refused; a closed pull request leaves an approved record alone.
 - `TestStatusCommentsOfOnePullRequestAreCapped`: 45 answers leave 40 comments.
 - `TestUnreadableRecordsFailClosed`: a corrupt pending list stops `File` and `Closed`, nothing written.

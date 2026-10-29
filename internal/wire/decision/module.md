@@ -63,7 +63,8 @@ The limits and the identifier charset are **[default]**; the hex shapes are the 
 First line of the App's comment: `<!-- archfit:decision-status <finding_id> <policy_digest> -->`. Second line:
 `pending`, `approved (proposal PR #n)`, `declined`, `declined (<reason>)`, or `stale (head moved | policy changed |
 pull request closed)`. A request that failed a check and has no record is answered with `-` for an ID it did not state
-in a valid form (`Unknown`). A program reads the status as the first word of line 2.
+in a valid form (`Unknown`). A program reads the status as the first word of line 2. The marker is trusted only on a comment written by the App
+itself (its bot login): any commenter can type the same text, so a reader must check the comment's author first.
 
 ## Public Contract
 

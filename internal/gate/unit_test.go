@@ -324,7 +324,7 @@ func newPipelineFakes() *pipelineFakes {
 		sweeper: &fakeSweeper{}, actions: &fakeActions{},
 	}
 	gh := newFakeGitHub()
-	f.gate = newGate(f.receiver, f.resolver, decisions.New(store.NewMemory(), gh), f.publisher, f.repairer, f.sweeper, f.actions, gh, gh, &fakeAdmitter{refused: map[int64]bool{}}, func() time.Time { return testStart })
+	f.gate = newGate(f.receiver, f.resolver, decisions.New(store.NewMemory(), gh, gh, func() time.Time { return testStart }), f.publisher, f.repairer, f.sweeper, f.actions, gh, gh, &fakeAdmitter{refused: map[int64]bool{}}, func() time.Time { return testStart })
 	return f
 }
 
