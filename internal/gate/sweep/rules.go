@@ -1,9 +1,11 @@
 package sweep
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate/feedback"
@@ -17,7 +19,7 @@ const runCompleted = "completed"
 
 // evaluate applies the rule table of module.md to one onboarded pull. The first rule whose condition
 // holds ends the evaluation, whether or not it had to write; only rule 6a lets the evaluation go on.
-func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted) error {
+func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted, shared []verdict.SharedPull) error {
 	if tr.Settings.Gate != settings.GateRequired { // rule 0
 		return p.advisory(ctx, t, tr)
 	}
@@ -67,6 +69,9 @@ func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted)
 		}
 		_, err := p.rerun(ctx, "5b", t, rc)
 		return err
+	}
+	if rc.Conclusion == verdict.Success && len(shared) > 0 { // rule 5d, ahead of 5c: both withdraw the same success
+		return p.sharedHead(ctx, t, rc)
 	}
 	if moved, err := p.targetMoved(ctx, t, tr, rc); err != nil || moved { // rule 5c
 		return err
@@ -258,6 +263,71 @@ func (p *pass) recheckPull(ctx context.Context, t inputs.Target, tr inputs.Trust
 	}
 	_, err = p.targetMoved(ctx, t, tr, state.Receipt)
 	return err
+}
+
+// SharedWith lists the open pull requests of pulls, other than number, whose head is head and whose base is not the
+// default branch, by number. A check is written per head commit, so each of them shows the result of the pull request
+// into the default branch, on a base whose protected inputs the agent that opened it may have loosened.
+func SharedWith(pulls []api.Pull, number int, head, defaultBranch string) []verdict.SharedPull {
+	var out []verdict.SharedPull
+	for _, pl := range pulls {
+		if pl.Number != number && pl.HeadSHA == head && pl.BaseRef != defaultBranch {
+			out = append(out, verdict.SharedPull{Number: pl.Number, BaseRef: pl.BaseRef})
+		}
+	}
+	slices.SortFunc(out, func(a, b verdict.SharedPull) int { return cmp.Compare(a.Number, b.Number) })
+	return out
+}
+
+// sharedHead is rule 5d: shared_head over a success receipt, no re-run, decided inside the head's publication lease
+// by SharedHeadPublication. Only a success is withdrawn here; a pending check is the upload's to refuse (it lists the
+// open pull requests inside the same lease) or the event's to withdraw (gate: PullOpened into another base). A failed
+// listing is an error of the unit, so the success is never touched on a guess.
+func (p *pass) sharedHead(ctx context.Context, t inputs.Target, rc feedback.Receipt) error {
+	var pub *feedback.Publication
+	err := p.publisher.Reconcile(ctx, t, func(ctx context.Context, current feedback.CheckState) (*feedback.Publication, error) {
+		if current.Receipt != rc {
+			return nil, nil
+		}
+		var err error
+		pub, err = SharedHeadPublication(ctx, p.pulls, p.resolver, p.now, t, current)
+		return pub, err
+	})
+	if err != nil || pub == nil {
+		return err
+	}
+	p.logPublished("5d", *pub, rc)
+	return nil
+}
+
+// SharedHeadPublication is the shared-head decision of a default-branch pull request t, made inside its head's
+// publication lease from the gate check current there: shared_head over the current receipt (the zero receipt of a
+// pending check, which any upload replaces) when the repository is in required mode, the check is Pending or a success
+// whose approval and inputs still hold, and a fresh OpenPulls listing still names a pull request on the head with
+// another base. nil otherwise. A pending check is written only to refuse the upload that is about to decide it: that
+// upload lists inside the lease too, so it sees this publication or is seen by it.
+func SharedHeadPublication(ctx context.Context, pulls api.Pulls, res inputs.Resolver, now time.Time, t inputs.Target, current feedback.CheckState) (*feedback.Publication, error) {
+	rc := current.Receipt
+	if !current.Exists || (!current.Pending && rc.Conclusion != verdict.Success) {
+		return nil, nil
+	}
+	tr, err := res.Resolve(ctx, t, now)
+	if err != nil {
+		return nil, err
+	}
+	if tr.Settings.Gate != settings.GateRequired || (!current.Pending && (Withdrawn(rc, tr) || stale(rc, tr))) {
+		return nil, nil
+	}
+	open, err := pulls.OpenPulls(ctx, t.Repo.RepoRef)
+	if err != nil {
+		return nil, err
+	}
+	shared := SharedWith(open, t.PullRequest, t.HeadSHA, t.Repo.DefaultBranch)
+	if len(shared) == 0 {
+		return nil, nil
+	}
+	pub := withOutcome(verdict.SharedHead(shared), verdict.ReasonSharedHead, t, tr, rc)
+	return &pub, nil
 }
 
 // withdraw is rule 5a. The pass saw a withdrawn receipt outside the lease; Reconcile decides again inside it.

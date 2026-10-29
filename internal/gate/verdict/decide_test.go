@@ -480,8 +480,8 @@ func TestReasonCatalogComplete(t *testing.T) {
 			want[code] = category
 		}
 	}
-	if len(allCodes) != 25 {
-		t.Fatalf("contract has %d reason codes, want 25", len(allCodes))
+	if len(allCodes) != 26 {
+		t.Fatalf("contract has %d reason codes, want 26", len(allCodes))
 	}
 	seen := map[ReasonCode]bool{}
 	for _, code := range allCodes {
@@ -618,6 +618,61 @@ func TestTargetMoved(t *testing.T) {
 	}
 	if derived, known := ClassifyDisplayReason(ReasonTargetMoved, CategoryEvidence); derived || !known {
 		t.Errorf("ClassifyDisplayReason = %v, %v, want known and not report-derived", derived, known)
+	}
+}
+
+func TestSharedHead(t *testing.T) {
+	long := strings.Repeat("é", 81)
+	pr := func(n int, base string) SharedPull { return SharedPull{n, base} }
+	tests := []struct {
+		name       string
+		others     []SharedPull
+		wantDetail string
+		wantBase   string // the base named in Next
+	}{
+		{"one", []SharedPull{pr(8, "loosened")}, "#8 into loosened", "loosened"},
+		{"five are all shown", []SharedPull{pr(1, "a"), pr(2, "b"), pr(3, "c"), pr(4, "d"), pr(5, "e")},
+			"#1 into a, #2 into b, #3 into c, #4 into d, #5 into e", "a"},
+		{"the sixth is counted", []SharedPull{pr(1, "a"), pr(2, "b"), pr(3, "c"), pr(4, "d"), pr(5, "e"), pr(6, "f"), pr(7, "g")},
+			"#1 into a, #2 into b, #3 into c, #4 into d, #5 into e, and 2 more", "a"},
+		{"backticks and control characters are dropped", []SharedPull{pr(8, "x`\n`y\x00z")}, "#8 into xyz", "xyz"},
+		{"a long base is cut", []SharedPull{pr(8, long)}, "#8 into " + strings.Repeat("é", 80) + "…", strings.Repeat("é", 80) + "…"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := SharedHead(tt.others)
+			checkInvariants(t, o)
+			wantCodes(t, o, ActionRequired, ReasonSharedHead)
+			r := o.Reasons[0]
+			if r.Category != CategoryEvidence || r.Detail != tt.wantDetail {
+				t.Errorf("category = %q, Detail = %q; want evidence, %q", r.Category, r.Detail, tt.wantDetail)
+			}
+			wantNext := "Another open pull request into `" + tt.wantBase + "` has this head commit, so its checks would show this result. " +
+				"Close that pull request or change its base to the default branch, then run the Archfit workflow again."
+			if r.Next != wantNext {
+				t.Errorf("Next = %q, want %q", r.Next, wantNext)
+			}
+		})
+	}
+	if ReportDerivedAction(ReasonSharedHead) {
+		t.Error("shared_head is report-derived: a page would show a report under a result that is not about it")
+	}
+}
+
+// A shared head ends in action_required whatever else the decision found, success included.
+func TestDecideSharedHeadNeverSucceeds(t *testing.T) {
+	f := healthyFacts()
+	if o := Decide(f); o.Conclusion != Success {
+		t.Fatalf("healthy facts = %+v", o)
+	}
+	f.SharedHead = []SharedPull{{8, "loosened"}}
+	o := Decide(f)
+	checkInvariants(t, o)
+	wantCodes(t, o, ActionRequired, ReasonSharedHead)
+
+	f.Report.Verdict, f.Report.Decision.HardGates = verdictBlocked, gatesFail
+	if o := Decide(f); o.Conclusion != ActionRequired || o.Reasons[0].Code != ReasonSharedHead {
+		t.Errorf("blocked report with a shared head = %+v, want shared_head first", o)
 	}
 }
 

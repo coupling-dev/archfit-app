@@ -17,10 +17,12 @@ For each report, the App:
 
 The protected ref is the default branch. The App decides an upload only against it. A pull request into any other
 base never gets a success: that base is a branch the change's author controls, and the settings and policy read there
-could be loosened by the same change. Its upload ends `action_required` with `unsupported_event`, and neither its events nor the hourly sweep read or write
-anything for it. Because the
-`archfit/gate` check belongs to a head commit and not to one pull request, a success for one pull request must not
-satisfy the required check of another pull request on the same head.
+could be loosened by the same change. Its upload ends `action_required` with `unsupported_event`, and the hourly sweep
+decides nothing for it. Because the `archfit/gate` check belongs to a head commit and not to one pull request, a success
+for a pull request into the default branch would show on another pull request on the same head. The App accepts no
+protected base other than the default branch, so it writes no success for a head that an open pull request into another
+base shares: the upload and the sweep (rule 5d, also started by the event of such a pull request) end it
+`action_required` with `shared_head`.
 
 ## System context
 
@@ -307,7 +309,7 @@ Approval and readability are separate contracts:
 - The gate uses the structured decision, trusted input bindings, measurement identity, and gate reference.
   Origin remains display-only. A missing producer or required rule cannot become a healthy zero.
 
-New workflows pin Action v3.0.0 at commit `fb2520cb069571d6bdc9274ac97d4df49994b6c7` and its matching engine platform digest.
+New workflows pin Action v3.1.0 at commit `7ade3b8fc989ec416ea5d570e7e236f47f7845fc`; it runs engine v3.4.0 with the digest of the runner's platform.
 This Action commit accepts v3.4.0 only and requires explicit engine-version and platform-digest inputs, requests fresh measurements, and passes only fixed HOME and checkout-scoped Git settings.
 It forwards no credentials. The container is not network-isolated, and reports remain customer-attested.
 The `action-conformance` CI job verifies every distinct manifest Action commit against the App's unchanged envelope schema.

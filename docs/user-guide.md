@@ -481,6 +481,7 @@ that matches nothing. Other rules that the engine could not evaluate keep `missi
 | `missing_upload`              | Read the workflow run and run the workflow again.                                                                                                                                                                   |
 | `stale_inputs`                | The policy or baseline changed on the base branch. Run the workflow again if no rerun appears.                                                                                                                      |
 | `target_moved`                | The default branch moved since this pull request was measured. The comment names the commits, and the modules when this pull request closes a module cycle with the new default branch. The pull request author updates the branch (**Update branch** on GitHub, `gh pr update-branch`, or merge the target); the new commit is measured again. No rerun is requested and rerunning the workflow does not help: a rerun would measure the old commit. |
+| `shared_head`                 | Another open pull request into a branch other than the default branch has the same head commit, and GitHub shows one check per commit on both. Close that pull request or change its base to the default branch, then run the Archfit workflow again. Nothing runs by itself when it is gone.                                                                                       |
 | `policy_mismatch`             | Run the workflow with the policy from the base branch. Run it again if the base changed.                                                                                                                            |
 | `baseline_mismatch`           | Run the workflow with the baseline from the base branch.                                                                                                                                                            |
 | `labels_mismatch`             | Run the workflow with the labels file from the base branch.                                                                                                                                                         |
@@ -514,7 +515,8 @@ no approval is needed any more.
 ### Engine versions
 
 The locked manifest approves engine v3.4.0 on Linux amd64 and arm64. New workflows pin archfit-action at commit
-`fb2520cb069571d6bdc9274ac97d4df49994b6c7` (Action v3.0.0, which runs engine v3.4.0 only). It measures a pull request as
+`7ade3b8fc989ec416ea5d570e7e236f47f7845fc` (Action v3.1.0, which runs engine v3.4.0 only and picks the image digest for the runner's platform). A workflow
+still pinned to Action v3.0.0 (`fb2520cb069571d6bdc9274ac97d4df49994b6c7`) keeps working: it sends the same identity. It measures a pull request as
 it would land (the merge with the target) and states `analyzed_sha`, `integration` and, for a policy change, its
 classification in the upload. Only the v3.4.0 amd64 row is Current for new workflows and recovery pins.
 
@@ -533,15 +535,13 @@ classification in the upload. Only the v3.4.0 amd64 row is Current for new workf
 After the App release approves the new tuple, open an owner-reviewed pull request changing only these pins:
 
 ```yaml
-- uses: alexei-led/archfit-action@fb2520cb069571d6bdc9274ac97d4df49994b6c7
+- uses: alexei-led/archfit-action@7ade3b8fc989ec416ea5d570e7e236f47f7845fc # v3.1.0
   with:
-    # endpoint, audience and mode stay as they are
-    engine-version: "v3.4.0"
-    image-digest: "sha256:bdcfe29bf9def9a4f0ae544923bc3e755fdec2c2cd6c46ec353c01e60642896b"
+    # endpoint, audience and mode stay as they are; remove engine-version and image-digest
 ```
 
-This example is for an amd64 Linux runner. Use the manifest's arm64 digest on an arm64 runner.
-This Action commit accepts v3.4.0 only. Pass that engine version and its exact platform digest explicitly. Keep the repository's settings, policy owners, and gate mode unchanged.
+Action v3.1.0 runs engine v3.4.0 and picks the image digest for the runner's platform, so the workflow passes neither
+input. If you keep them, they must name v3.4.0 and the exact digest for the runner's platform from the manifest. Keep the repository's settings, policy owners, and gate mode unchanged.
 The App does not update installed workflow files automatically.
 
 Run a fresh scan after moving the pins. Missing compiler or required-rule evidence cannot be repaired by a baseline approval.
@@ -959,6 +959,14 @@ check is not covered. Where the window matters, require branches to be up to dat
 Archfit as the check they run.
 
 Set `integration.recheck: off` to keep results until the next run.
+
+**One head, one base.** Checks belong to a commit, not to a pull request. If the same commit is the head of a pull
+request into the default branch and of another into a different branch, both pull requests would show the same green
+`archfit/gate`, and the second branch can carry a looser `.archfit.yaml`. Archfit accepts no protected base other than
+the default branch, so it never writes a `success` for a head that another open pull request into a different base
+shares: the upload ends `action_required` with `shared_head`, and Archfit (at once when such a pull request is opened or
+pushed, and in the hourly sweep) withdraws a `success` that already exists. Close the other pull request or change its base
+to the default branch, then run the Archfit workflow again: nothing re-runs for you.
 
 ## See a repository
 

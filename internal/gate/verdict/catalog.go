@@ -66,6 +66,8 @@ func lookup(code ReasonCode) (entry, bool) {
 		return entry{CategoryGovernance, ActionRequired, "A waiver expired. A re-run was requested; renew the waiver by owner-approved PR or fix the finding."}, true
 	case ReasonTargetMoved:
 		return entry{CategoryEvidence, ActionRequired, "The target branch moved and this pull request cannot be compared with it. " + updateBranch}, true
+	case ReasonSharedHead:
+		return entry{CategoryEvidence, ActionRequired, sharedHeadNext("another branch")}, true
 	case ReasonSuspended:
 		return entry{CategorySubscription, ActionRequired, suspendedNext}, true
 	}

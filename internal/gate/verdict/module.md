@@ -90,6 +90,7 @@ const (
     ReasonStaleInputs         ReasonCode = "stale_inputs"
     ReasonWaiverExpired       ReasonCode = "waiver_expired"
     ReasonTargetMoved         ReasonCode = "target_moved" // the default branch moved and, with this change, closes a module cycle
+    ReasonSharedHead          ReasonCode = "shared_head"  // another open pull request into a non-default branch has this head commit
     ReasonSuspended           ReasonCode = "subscription_suspended"
 )
 
@@ -116,12 +117,19 @@ type Outcome struct {
 ```
 
 ```go
+// SharedPull is an open pull request into a branch other than the default branch whose head is the commit being decided.
+type SharedPull struct {
+    Number  int
+    BaseRef string
+}
+
 // Facts is the closed input of the decision. Report is nil when no usable report exists.
 type Facts struct {
     Problems         []Problem
     BaselineDigest   string // claimed by the envelope; "" = none used
     LabelsDigest     string // claimed by the envelope; "" = none used
     Report           *Report
+    SharedHead       []SharedPull // the other open pull requests that share the head commit and are not into the default branch
     IdentityApproved bool
     WorkflowApproved bool
     Trusted          Trusted
@@ -134,8 +142,13 @@ func Decide(f Facts) Outcome
 
 // Without returns the fixed outcome for a target that has no report: code is one of ReasonMissingUpload,
 // ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended, ReasonOwnerApprovalMissing,
-// ReasonTargetMoved.
+// ReasonTargetMoved, ReasonSharedHead.
 func Without(code ReasonCode) Outcome
+
+// SharedHead is Without(ReasonSharedHead) for a caller that knows the other pull requests. Detail lists the first five
+// as "#<number> into <base>" (then "and N more"); a base loses backticks and control characters and is cut to 80
+// runes; Next names the base of the first.
+func SharedHead(others []SharedPull) Outcome
 
 // TargetMoved is Without(ReasonTargetMoved) for a caller that knows what moved: cycle names the modules of the module
 // cycle the target and the pull request close together (none when the pull request could not be compared), base and
@@ -184,6 +197,7 @@ never empty.
 | 3b   | `Problems` contains `unsupported_event`                                                                         | `unsupported_event`           | no             |
 | 3c   | `Problems` contains `envelope_mismatch`                                                                         | `envelope_mismatch`           | no             |
 | 3d   | `Problems` contains `report_invalid`, or `Report == nil` **[default]**                                          | `report_invalid`              | no             |
+| 3e   | `len(SharedHead) > 0` (checks are per head commit: the other pull request would show this result)               | `shared_head`                 | no             |
 | 4a   | `!WorkflowApproved`                                                                                             | `workflow_not_approved`       | no             |
 | 4b   | `!IdentityApproved` and `Comparison.MeasurementProfile == nil`                                                  | `measurement_profile_missing` | yes            |
 | 4c   | `!IdentityApproved` and the profile is present                                                                  | `unknown_engine_identity`     | yes            |
@@ -335,12 +349,15 @@ Categories of integrity, comparability and `Without` codes are **[default]**. `N
 | `stale_inputs`                | evidence     | `action_required`     | empty                                                                                                 | "Policy or baseline changed on the base branch. A re-run was requested; re-run the Archfit workflow if none appears." |
 | `waiver_expired`              | governance   | `action_required`     | empty                                                                                                 | "A waiver expired. A re-run was requested; renew the waiver by owner-approved PR or fix the finding."                 |
 | `target_moved`                | evidence     | `action_required`     | the modules of the new cycle and `<base12>..<tip12>` (`TargetMoved`; empty in the catalog)            | "The target branch moved and this pull request cannot be compared with it. Update the branch (Update branch on GitHub, `gh pr update-branch`, or merge the target) to measure it again." `TargetMoved` with a cycle says instead "The target branch moved, and with it this pull request closes a module cycle: <modules>. " and the same recovery. |
+| `shared_head`                 | evidence     | `action_required`     | the other pull requests as `#<n> into <base>`, at most five, then "and N more" (`SharedHead`; empty in the catalog) | "Another open pull request into `<base>` has this head commit, so its checks would show this result. Close that pull request or change its base to the default branch, then run the Archfit workflow again." Recovery owner: the pull request author. |
 | `subscription_suspended`      | subscription | `action_required`     | empty                                                                                                 | `Entitlement.Reason` in `Decide` and `Suspended` when not empty; else "Archfit subscription inactive."                |
 
 `Detail` carries protected path names for `owner_approval_missing`; these are the five fixed protected
 paths, not customer source paths. The one engine-authored text in a `Detail` is the capped reason list of
 `baseline_not_comparable` (single-line, length-capped by the decoder, no source). No `Detail` carries a finding,
-a file path from the report, or a module name, with one exception: `target_moved` names the modules of the cycle the
+a file path from the report, or a module name, with two exceptions: `shared_head` names the numbers and base branch names of the other pull requests (a base is chosen by
+whoever opened the pull request: backticks and control characters are dropped, each is cut to 80 runes, at most five are
+listed), and `target_moved` names the modules of the cycle the
 sweep found (identifiers from a decoded report, single-line and length-capped by the decoder, at most five, each cut to
 80 runes) and the two commits it compares. The `attention_only` Detail holds only fixed dimension keys and a
 count; the `policy_defect` Detail holds rule IDs, never the dead glob (feedback shows the engine reason with the
@@ -832,13 +849,19 @@ type Seam struct {
   **Scenario**: `IdentityApproved` false with profile nil, with profile present, and with `Report` nil.
   **Expected behavior**: `measurement_profile_missing`, `unknown_engine_identity`, and only `report_invalid` respectively.
 - **Test name**: `TestReasonCatalogComplete`
-  **Scenario**: iterate every `ReasonCode` constant of the contract (twenty-five).
+  **Scenario**: iterate every `ReasonCode` constant of the contract (twenty-six).
   **Expected behavior**: each has the catalog category and conclusion (`success` for `healthy` and `attention_only`); every code except `healthy` has a non-empty `Next`; the `Next` texts of `workflow_not_approved` and `settings_missing` name `settings.Path`; those of `unknown_engine_identity` and `measurement_profile_missing` name the user-guide section "Move an installed workflow to a new engine" and never the onboarding workflow, which keeps the pin it was written with.
 - **Test name**: `TestTargetMoved`
   **Scenario**: a cycle of two modules; five; seven; a module name over 80 runes; no cycle with a base; no cycle and no base; nothing known.
   **Expected behavior**: `action_required`, evidence; `Detail` lists the first five modules, then "and N more", each cut to 80 runes, then `; <base12>..<tip12>`; `Next` names the cycle and the update-branch recovery, and without a cycle it is the catalog text, which claims none; `target_moved` is not report-derived (`ReportDerivedAction`, `ClassifyDisplayReason`).
+- **Test name**: `TestSharedHead`
+  **Scenario**: one other pull request; five; seven; a base with backticks, a newline and a NUL; a base over 80 runes.
+  **Expected behavior**: `action_required`, evidence; `Detail` lists the first five as `#<n> into <base>`, then "and N more"; `Next` is the catalog sentence naming the sanitized base of the first; the reason is not report-derived.
+- **Test name**: `TestDecideSharedHeadNeverSucceeds`
+  **Scenario**: healthy facts, then the same with `SharedHead` set, then with a blocked report as well.
+  **Expected behavior**: `success`; then `action_required` with `shared_head` only; then `shared_head` still first.
 - **Test name**: `TestWithout`
-  **Scenario**: the seven allowed codes, then `ReasonHealthy` and an unknown code.
+  **Scenario**: the eight allowed codes, then `ReasonHealthy` and an unknown code.
   **Expected behavior**: `ActionRequired` with one reason each; the last two give `engine_error`.
 - **Test name**: `TestSuspended`
   **Scenario**: an entitlement with a `Reason`; the zero entitlement; `Decide` for suspended facts with the same two records.

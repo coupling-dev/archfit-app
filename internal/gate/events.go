@@ -26,7 +26,8 @@ const (
 	reactionForkRefused  = "fork_refused"
 	reactionRerun        = "rerun"
 	reactionRepoSweep    = "repo_sweep"
-	reactionRecheck      = "recheck" // a default-branch push moved the target: open pull requests are checked for a module cycle with it
+	reactionSharedHead   = "shared_head" // a pull request into another base: the pull requests into the default branch on its head are checked
+	reactionRecheck      = "recheck"     // a default-branch push moved the target: open pull requests are checked for a module cycle with it
 	reactionNotOnboarded = "not_onboarded"
 	reactionNotAdmitted  = "not_admitted" // no operator approved the installation: nothing is read or written
 	reactionOtherBase    = "other_base"   // a pull request into a branch other than the default branch: nothing is read or written
@@ -63,7 +64,7 @@ func (g *Gate) react(ctx context.Context, e webhook.Event) (string, error) {
 	switch e.Kind {
 	case webhook.PullOpened, webhook.PullSynchronized:
 		if otherBase(e.DefaultBranch, e.BaseRef) {
-			return reactionOtherBase, nil
+			return g.sharedHeadOpened(ctx, e)
 		}
 		reaction, err := g.newHead(ctx, eventTarget(e))
 		if e.Kind == webhook.PullSynchronized {
@@ -86,6 +87,35 @@ func (g *Gate) react(ctx context.Context, e webhook.Event) (string, error) {
 		return g.branchPushed(ctx, e)
 	}
 	return reactionNone, nil
+}
+
+// sharedHeadOpened reacts to a pull request into another base. Nothing is decided for it, but its head may be the head
+// of a pull request into the default branch, whose checks it would show. For each such pull request the shared-head
+// decision runs inside the head's publication lease (sweep.SharedHeadPublication): it withdraws a success, and
+// refuses a pending check, so an upload that listed the open pull requests before this one was visible cannot write a
+// success after it (the upload lists again inside the same lease). Only failures of these units are returned, so the
+// queue retries the delivery; an unrelated pull request of the repository is never read. A base changed after opening
+// sends no event (the webhook does not map `edited`), so the hourly sweep (rule 5d) is the net for it.
+func (g *Gate) sharedHeadOpened(ctx context.Context, e webhook.Event) (string, error) {
+	repo := eventTarget(e).Repo
+	open, err := g.pulls.OpenPulls(ctx, repo.RepoRef)
+	if err != nil {
+		return reactionSharedHead, fmt.Errorf("gate: list open pull requests: %w", err)
+	}
+	var errs error
+	for _, pl := range open {
+		if pl.Number == e.PullRequest || pl.HeadSHA != e.HeadSHA || pl.BaseRef != e.DefaultBranch {
+			continue
+		}
+		t := inputs.Target{Repo: repo, PullRequest: pl.Number, HeadSHA: pl.HeadSHA, BaseRef: pl.BaseRef, Fork: pl.HeadRepo != repo.FullName}
+		err := g.publisher.Reconcile(ctx, t, func(ctx context.Context, current feedback.CheckState) (*feedback.Publication, error) {
+			return sweep.SharedHeadPublication(ctx, g.pulls, g.resolver, g.now(), t, current)
+		})
+		if err != nil {
+			errs = errors.Join(errs, fmt.Errorf("gate: shared head of pull request %d: %w", pl.Number, err))
+		}
+	}
+	return reactionSharedHead, errs
 }
 
 // branchPushed records who moved the branch to e.HeadSHA, then re-evaluates the pull request on that head as a review
