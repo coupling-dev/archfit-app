@@ -199,7 +199,7 @@
             <ul class="plain" aria-label="Decision requests that wait for an owner">
               {#each body.decisions as d (d.href + d.finding + d.created)}
                 <li>
-                  <a href={safeHref(d.href)}>#{d.pull}{d.title ? ' ' + d.title : ''}</a>
+                  <a class="inline" href={safeHref(d.href)}>#{d.pull}{d.title ? ' ' + d.title : ''}</a>
                   <span class="muted small"
                     ><code>{d.rule}</code> {d.edge} · requested by @{d.requester} · {ageWord(d.created)}</span
                   >

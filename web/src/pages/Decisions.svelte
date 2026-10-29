@@ -82,7 +82,7 @@
               <tr>
                 <td><span class="status {statusTone[r.status] ?? 'neutral'}">{r.status}</span></td>
                 <td data-label="Pull request">
-                  <a href={safeHref(r.href)}>#{r.pull}{r.title ? ' ' + r.title : ''}</a>
+                  <a class="inline" href={safeHref(r.href)}>#{r.pull}{r.title ? ' ' + r.title : ''}</a>
                   <span class="muted small mono" title="Finding">{r.finding}</span>
                 </td>
                 <td data-label="Rule"><code>{r.rule}</code></td>
