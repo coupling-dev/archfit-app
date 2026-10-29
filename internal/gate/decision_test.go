@@ -510,3 +510,49 @@ func TestDecisionSettledRequestIsRepairedAfterAFailedCommentEdit(t *testing.T) {
 		})
 	}
 }
+
+func TestDecisionInvalidRepostAfterAStaleRequestIsAnswered(t *testing.T) {
+	for name, stale := range map[string]func(w *world, p *pull){
+		"head moved": func(w *world, p *pull) {
+			w.push(p)
+			w.handle(w.event(webhook.PullSynchronized, p))
+		},
+		"closed and reopened": func(w *world, p *pull) {
+			w.editPull(p, func(pl *api.Pull) { pl.State = "closed" })
+			w.handle(w.event(webhook.PullClosed, p))
+			w.editPull(p, func(pl *api.Pull) { pl.State = "open" })
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			w := newWorld(t)
+			p := w.openPull(w.shop, 7)
+			w.handle(w.askFor(p))
+			stale(w, p)
+			if line := strings.Split(w.statusComments(p)[0], "\n")[1]; !strings.HasPrefix(line, "stale") {
+				t.Fatalf("setup: status line %q", line)
+			}
+			w.handle(w.askFor(p, func(d map[string]any) { d["why"] = "" }))
+			if line := strings.Split(w.statusComments(p)[0], "\n")[1]; line != "declined (why: must be 1 to 2000 characters)" {
+				t.Errorf("status line = %q: the agent must see why its repost was refused", line)
+			}
+			w.handle(w.askFor(p)) // and a valid repost still goes pending
+			w.wantStatus(p, findingA, "pending")
+		})
+	}
+}
+
+func TestDecisionSweepStalesARequestForAnOldHeadWithoutAnEvent(t *testing.T) {
+	w := newWorld(t)
+	p := w.openPull(w.shop, 7)
+	w.handle(w.askFor(p))
+	w.push(p) // the synchronize delivery never arrived
+	if _, err := w.gate.Sweep(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	digest := w.digestOf(p.repo, testBranch, policy.PolicyPath)
+	rec, err := w.requests().Get(context.Background(), w.target(p), findingA, digest)
+	if err != nil || rec.Status != decision.StatusStale || rec.Reason != decision.ReasonHeadMoved {
+		t.Fatalf("record = %+v, %v", rec, err)
+	}
+	w.wantStatus(p, findingA, "stale (head moved)")
+}

@@ -1293,7 +1293,7 @@ nothing. Then `Extract`, `Decode`, and the checks against GitHub: `head_sha` equ
 `stale (head moved)`), `policy_digest` is accepted by `Trusted.PolicyDigests` (else `stale (policy changed)`), and
 `policy.Diagnose` accepts `proposal.policy` (else `declined (proposal.policy: not a valid policy file, line n)`). A
 request that fails any of these, or `Decode`, gets no record and one status comment through `Answer` (`declined
-(<field>: <rule>)`, or the stale line); a redelivery edits nothing. Else `Requests.File`: a new record or a refile
+(<field>: <rule>)`, or the stale line; it also answers a request whose record is stale, and never one that is pending, approved or declined); a redelivery edits nothing. Else `Requests.File`: a new record or a refile
 answers `pending`; a duplicate, a declined or approved request, and a full queue write nothing. A failed status comment
 returns the error, so the queue retries; the retry finds the record and writes the comment, never a second record.
 `Requests.File` records `Author` as the requester; the record approves nothing and no approval, check or receipt is

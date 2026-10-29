@@ -29,6 +29,8 @@ type fakeComments struct {
 	list      []api.Comment
 	next      int64
 	updateErr error
+	// landsThenErr applies the next edit and still returns this error, as a timed-out request that GitHub applied.
+	landsThenErr error
 	// meet makes the first n listings wait, after they took their snapshot, until n listings have arrived or a
 	// timeout passes: two writers that are not serialized both see the thread as it was before either wrote.
 	meet    int
@@ -71,6 +73,15 @@ func (f *fakeComments) UpdateComment(_ context.Context, _ api.RepoRef, id int64,
 	defer f.mu.Unlock()
 	if f.updateErr != nil {
 		return f.updateErr
+	}
+	if err := f.landsThenErr; err != nil {
+		f.landsThenErr = nil
+		for i := range f.list {
+			if f.list[i].ID == id {
+				f.list[i].Body = body
+			}
+		}
+		return err
 	}
 	for i := range f.list {
 		if f.list[i].ID == id {
@@ -188,7 +199,7 @@ func TestStatusCommentsOfOnePullRequestAreCapped(t *testing.T) {
 	r, c, _ := newRequests()
 	ctx := context.Background()
 	for n := range maxStatusComments + 5 {
-		if err := r.Answer(ctx, target(7), fmt.Sprintf("%032x", n), hex64, decision.StatusDeclined, "why"); err != nil {
+		if _, err := r.Answer(ctx, target(7), fmt.Sprintf("%032x", n), hex64, decision.StatusDeclined, "why"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -237,7 +248,7 @@ func TestAnswerRacingFileLeavesThePendingCommentAlone(t *testing.T) {
 	ctx := context.Background()
 	var wg sync.WaitGroup
 	wg.Go(func() {
-		if err := r.Answer(ctx, target(7), hex32, hex64, decision.StatusDeclined, "why: bad"); err != nil {
+		if _, err := r.Answer(ctx, target(7), hex32, hex64, decision.StatusDeclined, "why: bad"); err != nil {
 			t.Error(err)
 		}
 	})
@@ -273,7 +284,7 @@ func TestStatusCommentCapHoldsUnderConcurrency(t *testing.T) {
 	var wg sync.WaitGroup
 	for n := range maxStatusComments + 20 {
 		wg.Go(func() {
-			if err := r.Answer(context.Background(), target(7), fmt.Sprintf("%032x", n), hex64, decision.StatusDeclined, "why"); err != nil {
+			if _, err := r.Answer(context.Background(), target(7), fmt.Sprintf("%032x", n), hex64, decision.StatusDeclined, "why"); err != nil {
 				t.Error(err)
 			}
 		})
@@ -402,5 +413,138 @@ func TestRepositoryCapCountsOnlyPendingRequests(t *testing.T) {
 	c.updateErr = nil
 	if o, err := r.File(ctx, target(99), filing(hex32), t0); err != nil || o != Filed {
 		t.Errorf("File = %v, %v: unpublished stale requests must not count toward the repository cap", o, err)
+	}
+}
+
+// losingStore applies the first n compare-and-swaps of several keys after arm, then loses the rest without writing.
+type losingStore struct {
+	store.Store
+	armed bool
+	calls int
+	apply int
+}
+
+func (l *losingStore) CompareAndSwapAll(ctx context.Context, t store.Tenant, swaps []store.Swap) (bool, error) {
+	if l.armed {
+		l.calls++
+		if l.calls > l.apply {
+			return false, nil
+		}
+	}
+	return l.Store.CompareAndSwapAll(ctx, t, swaps)
+}
+
+func refiling(head string) Filing {
+	f := filing(hex32)
+	f.Request.HeadSHA = head
+	return f
+}
+
+func TestRefileDoesNotTrustAPublishedLineOlderThanTheThread(t *testing.T) {
+	newHead := strings.Repeat("e", 40)
+	tests := []struct {
+		name string
+		// strand makes the stale comment reach the thread without Published following.
+		strand func(c *fakeComments, l *losingStore)
+	}{
+		{"the edit lands but returns an unknown outcome", func(c *fakeComments, l *losingStore) { c.landsThenErr = errors.New("timeout") }},
+		{"the record write loses to a concurrent writer", func(c *fakeComments, l *losingStore) { l.armed, l.apply = true, 1 }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clock := t0
+			ls := &losingStore{Store: store.NewMemory()}
+			c, p := &fakeComments{}, &fakePulls{pull: api.Pull{State: "open", HeadSHA: hex40}}
+			c.changed = sync.NewCond(&c.mu)
+			r := New(ls, c, p, func() time.Time { return clock })
+			ctx := context.Background()
+			if _, err := r.File(ctx, target(7), filing(hex32), t0); err != nil {
+				t.Fatal(err)
+			}
+			p.pull.HeadSHA = newHead
+			tt.strand(c, ls)
+			if err := r.HeadMoved(ctx, target(7), t0); err == nil {
+				t.Fatal("HeadMoved reported no failure")
+			}
+			if got := statusLine(bodyOf(t, c)); got != "stale (head moved)" {
+				t.Fatalf("setup: thread says %q", got)
+			}
+			ls.armed = false
+			clock = clock.Add(2 * time.Minute) // an unknown outcome keeps the lease for a minute
+
+			if _, err := r.File(ctx, target(7), refiling(newHead), t0); err != nil {
+				t.Fatal(err)
+			}
+			if got := statusLine(bodyOf(t, c)); got != "pending" {
+				t.Errorf("thread says %q for a live pending request", got)
+			}
+		})
+	}
+}
+
+func TestAnswerWritesOverAStaleRequestAndNeverOverALiveOne(t *testing.T) {
+	tests := []struct {
+		name     string
+		status   decision.Status
+		reason   string
+		write    bool
+		wantLine string
+	}{
+		{"pending", decision.StatusPending, "", false, "pending"},
+		{"declined", decision.StatusDeclined, "", false, "declined"},
+		{"approved", decision.StatusApproved, "", false, "approved (proposal PR #3)"},
+		{"stale", decision.StatusStale, decision.ReasonHeadMoved, true, "declined (why: bad)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, c, _ := newRequests()
+			ctx := context.Background()
+			if _, err := r.File(ctx, target(7), filing(hex32), t0); err != nil {
+				t.Fatal(err)
+			}
+			if tt.status != decision.StatusPending {
+				if err := r.Settle(ctx, target(7), hex32, hex64, tt.status, tt.reason, 3, t0); err != nil {
+					t.Fatal(err)
+				}
+			}
+			written, err := r.Answer(ctx, target(7), hex32, hex64, decision.StatusDeclined, "why: bad")
+			if err != nil || written != tt.write {
+				t.Fatalf("Answer = %v, %v, want written %v", written, err, tt.write)
+			}
+			if got := statusLine(bodyOf(t, c)); got != tt.wantLine {
+				t.Errorf("thread says %q, want %q", got, tt.wantLine)
+			}
+			rec, _ := r.Get(ctx, target(7), hex32, hex64)
+			if tt.write && (rec.Status != decision.StatusStale || rec.Published != tt.wantLine) {
+				t.Errorf("record = %+v: stale, and Published naming the line written", rec)
+			}
+			// A later walk must not put the stale line back over the answer.
+			if err := r.Closed(ctx, target(7), t0); err != nil {
+				t.Fatal(err)
+			}
+			if got := statusLine(bodyOf(t, c)); got != tt.wantLine {
+				t.Errorf("after a walk the thread says %q, want %q", got, tt.wantLine)
+			}
+		})
+	}
+}
+
+func TestRevalidateSettlesARequestForAnOldHead(t *testing.T) {
+	r, c, _ := newRequests()
+	ctx := context.Background()
+	if _, err := r.File(ctx, target(7), filing(hex32), t0); err != nil {
+		t.Fatal(err)
+	}
+	tg := target(7)
+	tg.HeadSHA = strings.Repeat("e", 40)
+	accepting := inputs.Trusted{PolicyDigests: []string{hex64}}
+	if err := r.Revalidate(ctx, tg, accepting, t0); err != nil {
+		t.Fatal(err)
+	}
+	if rec, _ := r.Get(ctx, target(7), hex32, hex64); rec.Status != decision.StatusStale || rec.Reason != decision.ReasonHeadMoved {
+		t.Errorf("record = %+v", rec)
+	}
+	if got := statusLine(bodyOf(t, c)); got != "stale (head moved)" {
+		t.Errorf("thread says %q", got)
 	}
 }

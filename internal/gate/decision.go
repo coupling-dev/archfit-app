@@ -28,7 +28,7 @@ const authorTypeBot = "Bot"
 // requests is what the gate asks of gate/decisions. *decisions.Requests implements it.
 type requests interface {
 	File(ctx context.Context, t inputs.Target, f decisions.Filing, now time.Time) (decisions.Outcome, error)
-	Answer(ctx context.Context, t inputs.Target, findingID, digest string, status decision.Status, reason string) error
+	Answer(ctx context.Context, t inputs.Target, findingID, digest string, status decision.Status, reason string) (bool, error)
 	HeadMoved(ctx context.Context, t inputs.Target, now time.Time) error
 	Closed(ctx context.Context, t inputs.Target, now time.Time) error
 }
@@ -112,8 +112,12 @@ func (g *Gate) commented(ctx context.Context, e webhook.Event) (string, error) {
 }
 
 func (g *Gate) refuse(ctx context.Context, t inputs.Target, findingID, digest string, status decision.Status, why string) (string, error) {
-	if err := g.requests.Answer(ctx, t, findingID, digest, status, why); err != nil {
+	written, err := g.requests.Answer(ctx, t, findingID, digest, status, why)
+	switch {
+	case err != nil:
 		return reactionDecisionAnswered, fmt.Errorf("gate: answer decision request: %w", err)
+	case !written:
+		return reactionDecisionKept, nil
 	}
 	return reactionDecisionAnswered, nil
 }

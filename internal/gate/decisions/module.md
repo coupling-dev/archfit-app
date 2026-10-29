@@ -28,9 +28,12 @@ could not read an answer, and the owners' view (Needs you, later) would have not
   and the next event or sweep writes the comment.
 - Move a pending record to `approved`, `declined` or `stale` and update the comment (`Settle`, `SettleAt`). The seam
   for the owner's decision (stage A8b, not built here) is `Get`, `Policy` and `Settle`.
+- A refiled record never inherits `Published`: it starts empty, so the next publish writes (idempotent by body equality).
+  `Answer` reports whether it wrote. It never overwrites a pending, approved or declined request; it may answer a stale
+  one, whose record stays stale and takes the written line as `Published`.
 - Stale rules: `HeadMoved` and `Closed` read the live pull request first (a late or retried delivery names a head or a
-  state that no longer holds, and must not stale a newer request), and `Revalidate` (the sweep's rule 8: policy digest
-  no longer accepted). All three also write any status comment that is out of date.
+  state that no longer holds, and must not stale a newer request), and `Revalidate` (the sweep's rule 8: the head is not the pull request's head as the sweep read it, or the policy digest
+  is no longer accepted). All three also write any status comment that is out of date.
 - Nothing grants anything: the requester is whoever commented; no approval, check or receipt is touched.
 
 Not here: deciding whether a comment may file (the façade), the owner's approve and decline, opening the proposal pull
@@ -76,7 +79,7 @@ type Outcome string // Filed, Refiled, Duplicate, Sticky, Capped
 
 func New(s store.Store, c api.Comments, p api.Pulls, now func() time.Time) *Requests // now clocks the lease only
 func (r *Requests) File(ctx, t inputs.Target, f Filing, now time.Time) (Outcome, error)
-func (r *Requests) Answer(ctx, t inputs.Target, findingID, digest string, status decision.Status, reason string) error
+func (r *Requests) Answer(ctx, t inputs.Target, findingID, digest string, status decision.Status, reason string) (written bool, err error)
 func (r *Requests) Get(ctx, t inputs.Target, findingID, digest string) (Record, error)
 func (r *Requests) Policy(ctx, t inputs.Target, findingID, digest string) (string, error)
 func (r *Requests) Settle(ctx, t inputs.Target, findingID, digest string, status decision.Status, reason string, proposalPR int, now time.Time) error
@@ -129,6 +132,8 @@ returns that error with the record already settled; the request stays listed unt
   create one comment, the cap is exact.
 - `TestSettledRequestStaysListedUntilItsCommentIsWritten`, `TestCapsCountOnlyPendingRequests`,
   `TestRepositoryCapCountsOnlyPendingRequests`: settle with a failing edit, then a later walk repairs it; unpublished requests do not count.
+- `TestRefileDoesNotTrustAPublishedLineOlderThanTheThread` (an edit that lands with an unknown outcome; a lost record write): a refile starts with `Published` empty, so the next publish always writes.
+- `TestAnswerWritesOverAStaleRequestAndNeverOverALiveOne`, `TestRevalidateSettlesARequestForAnOldHead`.
 - `TestSettleAtRefusesAChangedHead`, `TestHeadMovedAndClosedReadTheLivePullRequest`.
 - `TestSettleMovesOnlyPendingRecords`: missing, approved, then stale refused; a closed pull request leaves an approved record alone.
 - `TestStatusCommentsOfOnePullRequestAreCapped`: 45 answers leave 40 comments.

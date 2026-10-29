@@ -95,12 +95,15 @@ func New(s store.Store, c api.Comments, p api.Pulls, now func() time.Time) *Requ
 }
 
 // Revalidate is the sweep's rule for one pull request: a pending request whose policy digest the protected ref no
-// longer accepts goes stale (policy changed). It also writes any status comment that is missing or out of date.
+// longer accepts goes stale (policy changed), and one whose head is not t's goes stale (head moved). It also writes any status comment that is missing or out of date.
 func (r *Requests) Revalidate(ctx context.Context, t inputs.Target, tr inputs.Trusted, now time.Time) error {
 	return r.walk(ctx, t, func(rec Record) (bool, error) {
-		if inputs.Accepts(tr.PolicyDigests, rec.PolicyDigest) {
-			return false, nil
+		switch {
+		case rec.HeadSHA != t.HeadSHA: // t is the pull request as the sweep read it now: a missed or racing synchronize
+			return true, r.SettleAt(ctx, t, rec.FindingID, rec.PolicyDigest, rec.HeadSHA, decision.StatusStale, decision.ReasonHeadMoved, 0, now)
+		case !inputs.Accepts(tr.PolicyDigests, rec.PolicyDigest):
+			return true, r.SettleAt(ctx, t, rec.FindingID, rec.PolicyDigest, rec.HeadSHA, decision.StatusStale, decision.ReasonPolicyChanged, 0, now)
 		}
-		return true, r.SettleAt(ctx, t, rec.FindingID, rec.PolicyDigest, rec.HeadSHA, decision.StatusStale, decision.ReasonPolicyChanged, 0, now)
+		return false, nil
 	})
 }

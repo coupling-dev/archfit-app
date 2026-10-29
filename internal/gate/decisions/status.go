@@ -100,22 +100,71 @@ func (r *Requests) settledSwaps(recKey, pendKey string, oldRec, oldPend []byte, 
 	return swaps, nil
 }
 
-// Answer writes a status comment for a request that has no record: one that failed a check. Inside the status lease
-// it checks again that no record exists for the same IDs, so a bad refile never overwrites the status of a good
-// request, even one stored a moment ago.
-func (r *Requests) Answer(ctx context.Context, t inputs.Target, findingID, digest string, status decision.Status, reason string) error {
-	return r.hold(ctx, t, func(ctx context.Context) error {
-		if findingID != decision.Unknown && digest != decision.Unknown {
-			raw, err := r.load(ctx, t, recordKey(t, t.PullRequest, findingID, digest))
-			if err != nil || raw != nil {
+// Answer writes a status comment for a request that failed a check, and reports whether it wrote one. Inside the
+// status lease it checks again what is stored for the same IDs: a pending, approved or declined request is never
+// overwritten, even one stored a moment ago. A stale request may be answered (the agent posted again and the new block
+// is invalid): the record stays stale and records the line written, so that record and thread agree.
+func (r *Requests) Answer(ctx context.Context, t inputs.Target, findingID, digest string, status decision.Status, reason string) (bool, error) {
+	written := false
+	err := r.hold(ctx, t, func(ctx context.Context) error {
+		line := decision.StatusLine(status, reason)
+		marker := decision.StatusMarker(findingID, digest)
+		if findingID == decision.Unknown || digest == decision.Unknown {
+			_, err := r.writeComment(ctx, t, marker, line)
+			written = err == nil
+			return wrapStatus(err)
+		}
+		recKey, pendKey := recordKey(t, t.PullRequest, findingID, digest), pendingKey(t)
+		for range recordAttempts {
+			oldRec, err := r.load(ctx, t, recKey)
+			if err != nil {
 				return err
 			}
+			rec, err := parseRecord(oldRec)
+			if err != nil {
+				return err
+			}
+			if rec != nil && rec.Status != decision.StatusStale {
+				return nil
+			}
+			if _, err := r.writeComment(ctx, t, marker, line); err != nil {
+				return wrapStatus(err)
+			}
+			written = true
+			if rec == nil {
+				return nil
+			}
+			oldPend, err := r.load(ctx, t, pendKey)
+			if err != nil {
+				return err
+			}
+			list, err := parsePending(oldPend)
+			if err != nil {
+				return err
+			}
+			rec.Published = line
+			swaps, err := r.settledSwaps(recKey, pendKey, oldRec, oldPend, rec, list, entry{t.PullRequest, findingID, digest, false})
+			if err != nil || len(swaps) == 0 {
+				return err
+			}
+			swapped, err := r.store.CompareAndSwapAll(ctx, tenant(t), swaps)
+			if err != nil {
+				return fmt.Errorf("decisions: write request: %w", err)
+			}
+			if swapped {
+				return nil
+			}
 		}
-		if _, err := r.writeComment(ctx, t, decision.StatusMarker(findingID, digest), decision.StatusLine(status, reason)); err != nil {
-			return fmt.Errorf("decisions: status comment: %w", err)
-		}
-		return nil
+		return errContention
 	})
+	return written && err == nil, err
+}
+
+func wrapStatus(err error) error {
+	if err != nil {
+		return fmt.Errorf("decisions: status comment: %w", err)
+	}
+	return nil
 }
 
 // writeComment creates the App's comment that starts with marker, or edits it in place when its text differs. The

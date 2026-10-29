@@ -207,7 +207,6 @@ func (r *Requests) File(ctx context.Context, t inputs.Target, f Filing, now time
 		wasPending := false
 		created := now
 		var commentID int64
-		var published string
 		if old != nil {
 			switch {
 			case old.Status == decision.StatusDeclined || old.Status == decision.StatusApproved:
@@ -218,7 +217,7 @@ func (r *Requests) File(ctx context.Context, t inputs.Target, f Filing, now time
 				}
 				return Duplicate, nil
 			}
-			wasPending, created, commentID, published = old.Status == decision.StatusPending, old.CreatedAt, old.StatusCommentID, old.Published
+			wasPending, created, commentID = old.Status == decision.StatusPending, old.CreatedAt, old.StatusCommentID
 		}
 		if !wasPending {
 			if list.openInPull(t.PullRequest) >= MaxPendingPerPull || list.open() >= MaxPendingPerRepo {
@@ -231,7 +230,7 @@ func (r *Requests) File(ctx context.Context, t inputs.Target, f Filing, now time
 			EdgeFrom: req.Edge.From, EdgeTo: req.Edge.To, HeadSHA: req.HeadSHA, PolicyDigest: req.PolicyDigest,
 			Why: req.Why, AlternativesTried: req.AlternativesTried, ProposalDigest: policy.Digest([]byte(req.Proposal.Policy)),
 			Requester: f.Requester, CommentID: f.CommentID, Status: decision.StatusPending,
-			StatusCommentID: commentID, Published: published, CreatedAt: created, UpdatedAt: now,
+			StatusCommentID: commentID, CreatedAt: created, UpdatedAt: now,
 		}
 		newRec, err := marshal(rec)
 		if err != nil {
