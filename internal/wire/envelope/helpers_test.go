@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -24,7 +25,7 @@ const (
 func fieldOrder() []string {
 	return []string{
 		"schema_version", "kind", "repository", "event", "pull_request", "head_sha", "base_sha",
-		"merge_base_sha", "run_id", "run_attempt", "engine_version", "image_digest", "platform",
+		"merge_base_sha", "analyzed_sha", "integration", "run_id", "run_attempt", "engine_version", "image_digest", "platform",
 		"payload_digest", "baseline_digest", "labels_digest",
 	}
 }
@@ -40,6 +41,8 @@ func prFields() map[string]string {
 		"head_sha":        `"` + hex40 + `"`,
 		"base_sha":        `"` + hex40 + `"`,
 		"merge_base_sha":  `"` + hex40 + `"`,
+		"analyzed_sha":    `"` + hex40 + `"`,
+		"integration":     `"merged"`,
 		"run_id":          `17654321098`,
 		"run_attempt":     `1`,
 		"engine_version":  `"v3.0.0"`,
@@ -58,6 +61,7 @@ func pushFields(event string) map[string]string {
 	f["pull_request"] = `0`
 	f["base_sha"] = `""`
 	f["merge_base_sha"] = `""`
+	f["integration"] = `""`
 	return f
 }
 
@@ -120,7 +124,7 @@ func wantDecoded(t *testing.T, raw []byte) envelope.Envelope {
 	if err != nil {
 		t.Fatalf("Decode: unexpected error: %v", err)
 	}
-	if want := lenient(t, raw); got != want {
+	if want := lenient(t, raw); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Decode changed fields:\n got %+v\nwant %+v", got, want)
 	}
 	return got
@@ -133,7 +137,7 @@ func wantRejected(t *testing.T, raw []byte, field string) string {
 	if err == nil {
 		t.Fatalf("Decode accepted an invalid envelope")
 	}
-	if got != (envelope.Envelope{}) {
+	if !reflect.DeepEqual(got, envelope.Envelope{}) {
 		t.Errorf("Decode returned a non-zero Envelope with an error")
 	}
 	if field != "" && !strings.HasPrefix(err.Error(), "envelope: "+field+":") {

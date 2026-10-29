@@ -26,17 +26,22 @@ const (
 	reactionForkRefused  = "fork_refused"
 	reactionRerun        = "rerun"
 	reactionRepoSweep    = "repo_sweep"
+	reactionSharedHead   = "shared_head" // a pull request into another base: the pull requests into the default branch on its head are checked
+	reactionRecheck      = "recheck"     // a default-branch push moved the target: open pull requests are checked for a module cycle with it
 	reactionNotOnboarded = "not_onboarded"
 	reactionNotAdmitted  = "not_admitted" // no operator approved the installation: nothing is read or written
 	reactionOtherBase    = "other_base"   // a pull request into a branch other than the default branch: nothing is read or written
 	// reactionApprovalWithdrawn is owner_approval_missing published over a receipt that asked for no action.
 	reactionApprovalWithdrawn = "approval_withdrawn"
+	reactionDecisionStale     = "decision_stale"   // pending decision requests went stale with a new head or a closed pull request
+	reactionDecisionIgnored   = "decision_ignored" // a request on a pull request the gate does not decide: nothing is recorded or written
 )
 
 // HandleEvent reacts to a verified webhook event: pending check on a new head, fork refusal,
 // owner_approval_missing on a review change that withdraws the approval a receipt relied on, re-run on a
-// review change when the last receipt was owner_approval_missing, a pusher record and a re-evaluation of the
-// pull request on a pushed head, and a one-repository sweep when a default-branch push changes a protected path.
+// review change when the last receipt was owner_approval_missing, a pusher record (attribution only, never an
+// approval) and a re-evaluation of the pull request on a pushed head, and a one-repository sweep when a
+// default-branch push changes a protected path.
 func (g *Gate) HandleEvent(ctx context.Context, e webhook.Event) error {
 	reaction, err := g.react(ctx, e)
 	slog.Default().InfoContext(ctx, "gate event",
@@ -59,9 +64,20 @@ func (g *Gate) react(ctx context.Context, e webhook.Event) (string, error) {
 	switch e.Kind {
 	case webhook.PullOpened, webhook.PullSynchronized:
 		if otherBase(e.DefaultBranch, e.BaseRef) {
-			return reactionOtherBase, nil
+			return g.sharedHeadOpened(ctx, e)
 		}
-		return g.newHead(ctx, eventTarget(e))
+		reaction, err := g.newHead(ctx, eventTarget(e))
+		if e.Kind == webhook.PullSynchronized {
+			err = errors.Join(err, g.requests.HeadMoved(ctx, eventTarget(e), g.now()))
+		}
+		return reaction, err
+	case webhook.PullClosed:
+		if err := g.requests.Closed(ctx, eventTarget(e), g.now()); err != nil {
+			return reactionDecisionStale, fmt.Errorf("gate: close decision requests: %w", err)
+		}
+		return reactionDecisionStale, nil
+	case webhook.PullCommented:
+		return g.commented(ctx, e)
 	case webhook.ReviewChanged:
 		if otherBase(e.DefaultBranch, e.BaseRef) {
 			return reactionOtherBase, nil
@@ -73,17 +89,53 @@ func (g *Gate) react(ctx context.Context, e webhook.Event) (string, error) {
 	return reactionNone, nil
 }
 
-// branchPushed records who moved the branch to e.HeadSHA, then re-evaluates the pull request on that head: a report
-// may have asked for an owner approval before the record existed. A default-branch push that changes a protected
-// path also runs the repository sweep.
+// sharedHeadOpened reacts to a pull request into another base. Nothing is decided for it, but its head may be the head
+// of a pull request into the default branch, whose checks it would show. For each such pull request the shared-head
+// decision runs inside the head's publication lease (sweep.SharedHeadPublication): it withdraws a success, and
+// refuses a pending check, so an upload that listed the open pull requests before this one was visible cannot write a
+// success after it (the upload lists again inside the same lease). Only failures of these units are returned, so the
+// queue retries the delivery; an unrelated pull request of the repository is never read. A base changed after opening
+// sends no event (the webhook does not map `edited`), so the hourly sweep (rule 5d) is the net for it.
+func (g *Gate) sharedHeadOpened(ctx context.Context, e webhook.Event) (string, error) {
+	repo := eventTarget(e).Repo
+	open, err := g.pulls.OpenPulls(ctx, repo.RepoRef)
+	if err != nil {
+		return reactionSharedHead, fmt.Errorf("gate: list open pull requests: %w", err)
+	}
+	var errs error
+	for _, pl := range open {
+		if pl.Number == e.PullRequest || pl.HeadSHA != e.HeadSHA || pl.BaseRef != e.DefaultBranch {
+			continue
+		}
+		t := inputs.Target{Repo: repo, PullRequest: pl.Number, HeadSHA: pl.HeadSHA, BaseRef: pl.BaseRef, Fork: pl.HeadRepo != repo.FullName}
+		err := g.publisher.Reconcile(ctx, t, func(ctx context.Context, current feedback.CheckState) (*feedback.Publication, error) {
+			return sweep.SharedHeadPublication(ctx, g.pulls, g.resolver, g.now(), t, current)
+		})
+		if err != nil {
+			errs = errors.Join(errs, fmt.Errorf("gate: shared head of pull request %d: %w", pl.Number, err))
+		}
+	}
+	return reactionSharedHead, errs
+}
+
+// branchPushed records who moved the branch to e.HeadSHA, then re-evaluates the pull request on that head as a review
+// event does. The record approves nothing: a local coding agent pushes with its owner's credentials. A default-branch
+// push that changes a protected path also runs the repository sweep.
 func (g *Gate) branchPushed(ctx context.Context, e webhook.Event) (string, error) {
 	t := eventTarget(e)
 	if err := g.recordPusher(ctx, t, e); err != nil {
 		return reactionNone, err
 	}
 	reaction, err := g.pullOnHead(ctx, t, e.Branch, e.DefaultBranch)
-	if err != nil || e.Kind == webhook.BranchPush || !protectedPush(e.ChangedPaths) {
+	if err != nil || e.Kind == webhook.BranchPush {
 		return reaction, err
+	}
+	if !protectedPush(e.ChangedPaths) {
+		// A rate limit is an error that wraps api.ErrRateLimited: the queue retries the delivery.
+		if _, err := g.sweeper.Recheck(ctx, t.Repo, e.HeadSHA, g.now()); err != nil {
+			return reactionRecheck, fmt.Errorf("gate: recheck: %w", err)
+		}
+		return reactionRecheck, nil
 	}
 	// A rate limit is an error that wraps api.ErrRateLimited: the queue retries the delivery.
 	if _, err := g.sweeper.RunRepo(ctx, t.Repo, g.now()); err != nil {
@@ -92,9 +144,9 @@ func (g *Gate) branchPushed(ctx context.Context, e webhook.Event) (string, error
 	return reactionRepoSweep, nil
 }
 
-// recordPusher records e.Pusher as a pusher of the head. A push whose pusher_type is present and not "user" (a deploy
-// key) records nothing: GitHub does not say whose login sender carries then, and an owner's authorization must not be
-// open to whoever holds a key. An absent pusher_type still trusts sender.
+// recordPusher records e.Pusher as a pusher of the head, for attribution. A push whose pusher_type is present and not
+// "user" (a deploy key) records nothing: GitHub does not say whose login sender carries then. An absent pusher_type
+// still trusts sender.
 func (g *Gate) recordPusher(ctx context.Context, t inputs.Target, e webhook.Event) error {
 	if e.PusherType != "" && e.PusherType != pusherTypeUser {
 		slog.Default().InfoContext(ctx, "gate pusher not recorded",
@@ -174,9 +226,9 @@ func (g *Gate) newHead(ctx context.Context, t inputs.Target) (string, error) {
 	return reactionNone, nil
 }
 
-// approvalChanged reacts to an event that may withdraw or grant an owner approval: a review, or a push that records
-// an owner as the pusher of t's head. It reads the gate check, decides and writes inside the head's publication lease
-// (Publisher.Reconcile), so no other publication for the head lands in between. A receipt that asks for no action
+// approvalChanged reacts to an event that may withdraw or grant an owner approval: a review, an approval recorded in
+// the App (Reevaluate), or a push of t's head. It reads the gate check, decides and writes inside the head's
+// publication lease (Publisher.Reconcile), so no other publication for the head lands in between. A receipt that asks for no action
 // while the approval it needs is gone becomes owner_approval_missing at once, as sweep rule 5a does it. After
 // owner_approval_missing, an event once no approval is missing re-runs the workflow; the check stays as it is until
 // the new upload, so nothing here can turn it green.

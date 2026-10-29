@@ -6,8 +6,9 @@
 
 ## Purpose
 
-`.archfit-app.yaml` is the one App-owned file on the protected ref. It names the architecture owners, the gate
-mode, the approved workflow path, and the data mode. This module owns its format: the types, strict parsing with
+`.archfit-app.yaml` is the one App-owned file on the protected ref. It names the architecture owners, the coding-agent
+identities that never approve, the gate mode, the approved workflow path, the data mode, and who the default branch's
+repair issue is assigned to. This module owns its format: the types, strict parsing with
 validation, and canonical rendering. Without it, the gate, onboarding and the UI would each read the file their
 own way, and a typo such as `gate: requierd` could silently mean "advisory".
 
@@ -16,6 +17,7 @@ own way, and a typo such as `gate: requierd` could silently mean "advisory".
 - Define `Settings`, `GateMode`, `DataMode` and the file location `Path`.
 - `Parse`: strict YAML decoding plus validation of every field; defaults for `gate` and `data_mode`.
 - `Render`: canonical YAML for a `Settings` value, used for the onboarding PR and UI edits.
+- `IsAgent`: whether a login is one the file names under `agents`, by the identity rule of that key.
 - Nothing else. It does not read repositories, decide who is an owner of what, or check approvals.
 
 ## Subdomain Classification
@@ -25,14 +27,17 @@ Volatility: moderate. Fields follow product decisions (decisions.md §2, §4); e
 
 ## Encapsulated Knowledge
 
-- The YAML keys and their order: `version`, `owners`, `gate`, `workflow`, `data_mode`.
+- The YAML keys and their order: `version`, `owners`, `agents`, `gate`, `workflow`, `data_mode`, `policy_authority`,
+  `repair_assignee`.
+- When two agent names are one identity: case ignored, and `name` equals `name[bot]` (`IsAgent`).
 - The YAML library. It is the single third-party dependency allowed here: the one named in `docs/tech-stack.md`;
   until then `go.yaml.in/yaml/v3` **[default]**, decoded with known-fields checking on. `wire/policy` uses the same library.
   The file is decoded to YAML nodes, not to `Settings`: only nodes show aliases, a key that is present but empty, and
   `1` versus `"1"`. The unknown-key and duplicate-key checks are therefore this module's own walk over the root mapping.
   Library error text quotes the file, so it is never passed on.
 - The validation rules below and the canonical output form. All limits are unexported. Every numeric limit is
-  **[default]**: 100 owners, 39-character login (GitHub's login limit), 255-character workflow path, 65 536-byte (64 KiB) file.
+  **[default]**: 100 owners, 100 agents, 39-character login (GitHub's login limit), 255-character workflow path,
+  65 536-byte (64 KiB) file.
 
 ### Field rules (version 1)
 
@@ -40,12 +45,22 @@ Volatility: moderate. Fields follow product decisions (decisions.md §2, §4); e
 | ----------- | -------- | ------------------------------------------------------------------------------------- |
 | `version`   | yes      | integer, exactly `1`                                                                  |
 | `owners`    | yes      | list of 1 to 100 strings; each a login or a team (below); no duplicates ignoring case |
+| `agents`    | no       | list of 0 to 100 strings; each a login or `app-slug[bot]` (below); no team; no duplicates ignoring case and `[bot]`; absent or `[]` means none |
 | `gate`      | no       | `advisory` or `required`, exact lowercase; absent means `advisory`                    |
 | `workflow`  | yes      | `^\.github/workflows/[A-Za-z0-9._-]+\.ya?ml$`, at most 255 characters                 |
 | `data_mode` | no       | `customer` or `managed`, exact lowercase; absent means `customer`                     |
+| `integration` | no     | mapping with the one key `recheck`: `overlap` or `off`, exact lowercase; a block without `recheck` holds `overlap`; absent means the defaults (`Settings.Recheck()` is `overlap`); unknown or duplicate keys are errors |
+| `repair_assignee` | no | one login by the owner login rule; no team, no list, no `[bot]`; absent means nobody |
 
 - Owner login: `^[A-Za-z0-9-]+$`, at most 39 characters. Owner team: `^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$` ("org/team-slug").
   An `@` prefix is not accepted; the file is not CODEOWNERS.
+- Agent: `^[A-Za-z0-9-]+(\[bot\])?$`, at most 39 characters before `[bot]`: a GitHub login, or the account of a GitHub
+  App. A team is not accepted: an agent is one identity. A login that is also an owner is not an error: a settings file
+  that fails `Parse` stops the gate for every pull request (`settings_missing`), and the agent rule wins over the owner
+  list where approvals are decided (`gate/inputs`).
+- Repair assignee: the one login the default branch's repair issue is assigned to (`gate/feedback`). A team is not
+  accepted: GitHub assigns issues to users only. GitHub may still refuse the login (no access to the repository); the
+  issue is then opened unassigned. That is the App's concern, not a parse error.
 - The workflow rule implies: directly under `.github/workflows/`, no subdirectory, no `..`, no leading slash.
 - Document rules: at most 65 536 bytes (64 KiB) **[default]**; valid UTF-8; exactly one YAML document; the root is a mapping; unknown
   keys, duplicate keys, anchors and aliases are errors; an empty or comment-only file is an error.
@@ -54,8 +69,10 @@ Volatility: moderate. Fields follow product decisions (decisions.md §2, §4); e
 ### Canonical form written by Render
 
 One header comment line (`# Archfit App settings. Changes need architecture-owner approval.`) **[default]**, then the
-five keys in the order above, `owners` as a block sequence with two-space indentation, `gate` and `data_mode`
-always written explicitly, LF line endings, one trailing newline. Output is deterministic: equal input, equal bytes.
+keys in the order above, `owners` and `agents` as block sequences with two-space indentation, `agents` left out when
+it is empty (so a file without agents renders exactly as before the key existed), `repair_assignee` last and left out
+when it is `""` (likewise), `gate` and `data_mode` always
+written explicitly, LF line endings, one trailing newline. Output is deterministic: equal input, equal bytes.
 
 ## Public Contract
 
@@ -79,12 +96,52 @@ const (
 
 // Settings is the App-owned file. The engine policy schema is untouched by it.
 type Settings struct {
-    Version  int      `yaml:"version"`   // must be 1
-    Owners   []string `yaml:"owners"`    // GitHub logins, or "org/team-slug"; at least one
-    Gate     GateMode `yaml:"gate"`      // default advisory
-    Workflow string   `yaml:"workflow"`  // e.g. ".github/workflows/archfit.yaml"
-    DataMode DataMode `yaml:"data_mode"` // default customer
+    Version  int      `yaml:"version"`          // must be 1
+    Owners   []string `yaml:"owners"`           // GitHub logins, or "org/team-slug"; at least one
+    Agents   []string `yaml:"agents,omitempty"` // logins or App slugs of coding agents, which never approve; nil when none
+    Gate     GateMode `yaml:"gate"`             // default advisory
+    Workflow string   `yaml:"workflow"`         // e.g. ".github/workflows/archfit.yaml"
+    DataMode DataMode `yaml:"data_mode"`        // default customer
+    // PolicyAuthority is who may approve a change to the protected files. Absent means human.
+    PolicyAuthority *PolicyAuthority `yaml:"policy_authority,omitempty"`
+    // Integration is how a pull request is kept honest when its target branch moves after its report. Absent means
+    // the defaults of Recheck.
+    Integration *Integration `yaml:"integration,omitempty"`
+    // RepairAssignee is the one login the default branch's repair issue is assigned to; "" assigns nobody.
+    RepairAssignee string `yaml:"repair_assignee,omitempty"`
 }
+
+// RecheckMode says whether the sweep re-examines a passed pull request after the default branch moved.
+type RecheckMode string
+
+const (
+    RecheckOverlap RecheckMode = "overlap" // default: a passed result goes stale when the moved target closes a module cycle with it
+    RecheckOff     RecheckMode = "off"     // a passed result stays until the next run
+)
+
+// Integration is the integration block.
+type Integration struct {
+    Recheck RecheckMode `yaml:"recheck"`
+}
+
+// Recheck is the mode in force: the default, overlap, when the block is absent.
+func (s Settings) Recheck() RecheckMode
+
+// PolicyAuthority is the policy_authority block. Only human is in force in this release: a file may name a later
+// rung, which parses so that the file stays valid, and Settings.Effective holds it at human with a reason.
+type PolicyAuthority struct {
+    Level       AuthorityLevel `yaml:"level"`                  // human | co-sign | delegated
+    Agents      []string       `yaml:"agents,omitempty"`       // architect agents a later rung lets approve
+    TightenAuto bool           `yaml:"tighten_auto,omitempty"` // a later rung: tightening needs no approval
+}
+
+// Effective returns the rung in force (always human in this release) and, when the file names another, why.
+func (s Settings) Effective() (level AuthorityLevel, held string)
+
+// IsAgent reports whether login is one of s.Agents. Case is ignored, and "name" and "name[bot]" are one identity:
+// GitHub names an App's account "slug[bot]" and a file may name either form, so a missed suffix never lets an agent
+// through. "" is never an agent.
+func (s Settings) IsAgent(login string) bool
 ```
 
 ```go
@@ -102,7 +159,11 @@ mode that also publishes `archfit/gate`. `DataCustomer` is the data mode in whic
 Semantics not visible in the signatures:
 
 - `Parse` returns a zero `Settings` with every error. A returned `Settings` always has `Gate` and `DataMode` set
-  to one of their constants, never `""`.
+  to one of their constants, never `""`. `Agents` is nil when the key is absent or the list is empty, never `[]`, so
+  the round-trip law holds with `Render` leaving an empty list out.
+- `agents` is a new key of version 1. `Parse` stays strict, so an App release older than this key rejects a file
+  that has it: add `agents` only once the App that knows it serves the repository. The same holds for
+  `repair_assignee`.
 - The round-trip law covers every `s` that `Parse` returned. It also holds for a hand-built valid `s` whose `Gate`
   and `DataMode` are set. For a valid `s` with an empty `Gate` or `DataMode`, `Render` writes the default and
   `Parse` returns the value with the default filled in.
@@ -129,11 +190,13 @@ below are its consumers (the consumer depends on this module). Values are from t
 Shared knowledge, per counterpart:
 
 - `internal/gate/inputs` holds the whole Public Contract. It reads `Path` at the protected ref only, calls `Parse`,
-  publishes the result inside its own `Trusted` value, and resolves `Settings.Owners`.
+  publishes the result inside its own `Trusted` value, resolves `Settings.Owners`, and calls `IsAgent` so that an agent
+  identity never approves.
 - `internal/gate` imports this module for `GateRequired` only (the `Path` constant is used by `internal/gate/inputs`, which owns the protected-path set). It reads `Settings.Gate` and `Settings.Workflow`
-  through `inputs.Trusted`. It holds nothing of the file format.
+  through `inputs.Trusted`, and calls `IsAgent` on it for the author of a pull request. It holds nothing of the file format.
 - `internal/gate/feedback` and `internal/gate/sweep` import this module for `GateRequired` only, and compare it
-  with `Settings.Gate` read through `inputs.Trusted`.
+  with `Settings.Gate` read through `inputs.Trusted`. `internal/gate/feedback` also reads `Settings.RepairAssignee`
+  there, to assign the default branch's repair issue.
 - `internal/gate/verdict` does not import this module and reads no `Settings` field: it sees only the boolean
   `SettingsFound` of `inputs.Trusted`. It is no consumer and has no row.
 - `internal/control/onboarding` holds `Settings`, `Path`, `Render` and `Parse`: it renders the file for PR 1 with the
@@ -177,6 +240,38 @@ No counterpart contract is used by this module, so nothing is restated here.
 - **Test name**: `TestParseDefaults`
   **Scenario**: a file without `gate` and `data_mode`.
   **Expected behavior**: `Gate == GateAdvisory`, `DataMode == DataCustomer`.
+- **Test name**: `TestParseAgents`
+  **Scenario**: `agents` absent; `[]`; logins and an App's `[bot]` account; an owner also listed as an agent; 39
+  characters before `[bot]`; a flow list.
+  **Expected behavior**: nil, nil, the entries as written; owners unchanged in every row.
+- **Test name**: `TestParseAgentsRules`
+  **Scenario**: a scalar; null; a team; `@claude`; a space; `[bot]` alone, twice, in capitals, another suffix; `""`; 40
+  characters; an integer; a nested list; 101 entries; duplicates ignoring case, and ignoring `[bot]`; 100 entries; a
+  marked bad value.
+  **Expected behavior**: every row but 100 entries is an error naming `agents`; no error echoes the value.
+- **Test name**: `TestIsAgent`
+  **Scenario**: agents `Claude` and `copilot-swe-agent[bot]`; logins in other cases, with and without `[bot]`; a near
+  name; `[bot]` and `""`; a file without agents.
+  **Expected behavior**: one identity ignoring case and `[bot]`; false for the near name, `[bot]`, `""` and no agents.
+- **Test name**: `TestRenderWritesAgentsAfterOwners`
+  **Scenario**: render with two agents; then with an empty list.
+  **Expected behavior**: `agents` as a block sequence between `owners` and `gate`, round trip holds; no `agents` key
+  for the empty list.
+- **Test name**: `TestParseIntegration`, `TestIntegrationRules`
+  **Scenario**: `integration` absent, `recheck: overlap`, `recheck: off`, an empty mapping; a scalar, null, an unknown
+  key, a duplicate `recheck`, `recheck: Off`, `recheck: true`, `recheck:` empty.
+  **Expected behavior**: nil (mode overlap), overlap, off, overlap, all round-tripping through `Render`; every bad row
+  is an error naming `integration`.
+- **Test name**: `TestParseRepairAssignee`
+  **Scenario**: `repair_assignee` absent; a login; a login with dashes and digits; 39 characters; a quoted number.
+  **Expected behavior**: `""` for absent, else the login as written; the round trip holds in every row.
+- **Test name**: `TestRepairAssigneeRules`
+  **Scenario**: a team; a flow list and a block list; `@alice`; a space; an App's `[bot]` account; 40 characters; `''`;
+  null; an integer; a mapping; a duplicate key; a marked bad value.
+  **Expected behavior**: every row is an error naming `repair_assignee`; no error echoes the value.
+- **Test name**: `TestRenderWritesRepairAssigneeLast`
+  **Scenario**: render the golden value without an assignee; then with `policy_authority` and an assignee.
+  **Expected behavior**: the golden bytes unchanged; `repair_assignee` the last key, after `policy_authority`; round trip holds.
 - **Test name**: `TestOwnerForms`
   **Scenario**: owners `alice`, `a-b-c`, `acme/platform-team`, `acme/team.one_two`.
   **Expected behavior**: all accepted, order preserved, text unchanged.
@@ -199,7 +294,9 @@ No counterpart contract is used by this module, so nothing is restated here.
 ### Integration Contract Tests
 
 - **Test name**: `TestParseRenderRoundTrip`
-  **Scenario**: property test over generated valid `Settings` with both modes set; and over every valid fixture file via `Parse`.
+  **Scenario**: property test over generated valid `Settings` with both modes set, zero to three agents and, in about
+  a third of them, a repair assignee; and over
+  every valid fixture file via `Parse` (`full.yaml` holds agents).
   **Expected behavior**: `Parse(Render(s))` equals `s`; `Render(Parse(Render(s)))` equals `Render(s)`.
 - **Test name**: `TestRenderFillsDefaults`
   **Scenario**: valid `Settings` with empty `Gate` and `DataMode`.

@@ -148,7 +148,7 @@ run "worker_is_internal_and_checks_the_invoker" {
   }
 }
 
-run "each_service_runs_as_its_own_account_with_at_most_two_instances" {
+run "each_service_runs_as_its_own_account_with_at_most_one_instance" {
   command = plan
 
   assert {
@@ -171,7 +171,7 @@ run "each_service_runs_as_its_own_account_with_at_most_two_instances" {
 
   assert {
     condition     = alltrue([for s in google_cloud_run_v2_service.this : s.template[0].scaling[0].max_instance_count == 2])
-    error_message = "Two instances per service cap cost."
+    error_message = "Two instances per service: 2 services x 2 instances x (live + new revision) x 1 vCPU must fit the 8 vCPU quota."
   }
 }
 

@@ -5,12 +5,18 @@ package report
 // Kept required keys and the optional enum seams[].policy are pointers or slices so that nil means absent: the
 // pre-pass rejects null, so nothing else produces nil. Fields marked dropped are type-checked and never copied.
 
-// optInt marks the only values that may be null: seams[].scores.p10 and p90.
+// optInt marks the integers that may be null: seams[].scores.p10 and p90. optBool, below, marks the booleans.
 type optInt int
+
+// optBool marks the booleans that may be null: seams[].raw_distance.same_owner and same_deploy_unit (engine v3.3.0
+// and later write null unless both sides are known).
+type optBool bool
 
 type shadowReport struct {
 	SchemaVersion *string                    `json:"schema_version"`
 	Verdict       *string                    `json:"verdict"`
+	Identity      *shadowIdentity            `json:"identity"`     // required from identityFrom
+	GateReasons   []string                   `json:"gate_reasons"` // v3.3.0: the coupling gate's reasons, when there are any
 	Decision      *shadowDecision            `json:"decision"`
 	Comparison    *shadowComparison          `json:"comparison"`
 	GateReference *shadowComparison          `json:"gate_reference"`
@@ -20,6 +26,23 @@ type shadowReport struct {
 	Findings      []shadowFinding            `json:"findings"`
 	AgentTasks    []shadowTask               `json:"agent_tasks"`
 	Seams         []shadowSeam               `json:"seams"`
+}
+
+type shadowIdentity struct {
+	SchemaVersion          *string          `json:"schema_version"`
+	PolicyDigest           string           `json:"policy_digest"`
+	BaselineDigest         string           `json:"baseline_digest"`
+	LabelsDigest           string           `json:"labels_digest"`
+	PolicyRef              *shadowPolicyRef `json:"policy_ref"`
+	BaseSHA                string           `json:"base_sha"`
+	HeadTreeDigest         string           `json:"head_tree_digest"`
+	EngineVersion          *string          `json:"engine_version"`
+	MeasurementProfileHash string           `json:"measurement_profile_hash"`
+}
+
+type shadowPolicyRef struct {
+	Ref *string `json:"ref"`
+	SHA *string `json:"sha"`
 }
 
 type shadowDecision struct {
@@ -203,9 +226,10 @@ type shadowCoverage struct {
 }
 
 type shadowToolCoverage struct {
-	Tool   *string `json:"tool"`
-	Status *string `json:"status"`
-	Reason string  `json:"reason"`
+	Tool    *string  `json:"tool"`
+	Status  *string  `json:"status"`
+	Reason  string   `json:"reason"`
+	Details []string `json:"details"` // v3.3.0: optional per-project lines; validated and dropped
 }
 
 type shadowSeam struct {
@@ -241,16 +265,16 @@ type shadowSeam struct {
 }
 
 type shadowRawDistance struct {
-	Level             string `json:"level"`
-	Basis             string `json:"basis"`
-	FromOwner         string `json:"from_owner"`
-	ToOwner           string `json:"to_owner"`
-	FromDeployUnit    string `json:"from_deploy_unit"`
-	ToDeployUnit      string `json:"to_deploy_unit"`
-	SameOwner         bool   `json:"same_owner"`
-	SameDeployUnit    bool   `json:"same_deploy_unit"`
-	BoundaryCrossings int    `json:"boundary_crossings"`
-	SharedAncestor    int    `json:"shared_ancestor"`
+	Level             string   `json:"level"`
+	Basis             string   `json:"basis"`
+	FromOwner         string   `json:"from_owner"`
+	ToOwner           string   `json:"to_owner"`
+	FromDeployUnit    string   `json:"from_deploy_unit"`
+	ToDeployUnit      string   `json:"to_deploy_unit"`
+	SameOwner         *optBool `json:"same_owner"`
+	SameDeployUnit    *optBool `json:"same_deploy_unit"`
+	BoundaryCrossings int      `json:"boundary_crossings"`
+	SharedAncestor    int      `json:"shared_ancestor"`
 }
 
 type shadowScores struct {

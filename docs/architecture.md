@@ -17,10 +17,12 @@ For each report, the App:
 
 The protected ref is the default branch. The App decides an upload only against it. A pull request into any other
 base never gets a success: that base is a branch the change's author controls, and the settings and policy read there
-could be loosened by the same change. Its upload ends `action_required` with `unsupported_event`, and neither its events nor the hourly sweep read or write
-anything for it. Because the
-`archfit/gate` check belongs to a head commit and not to one pull request, a success for one pull request must not
-satisfy the required check of another pull request on the same head.
+could be loosened by the same change. Its upload ends `action_required` with `unsupported_event`, and the hourly sweep
+decides nothing for it. Because the `archfit/gate` check belongs to a head commit and not to one pull request, a success
+for a pull request into the default branch would show on another pull request on the same head. The App accepts no
+protected base other than the default branch, so it writes no success for a head that an open pull request into another
+base shares: the upload and the sweep (rule 5d, also started by the event of such a pull request) end it
+`action_required` with `shared_head`.
 
 ## System context
 
@@ -176,6 +178,14 @@ The upload handler has a 55-second deadline. The target is feedback within 60 se
 The upload body is at most 5 MiB. A larger body gets `413 payload_too_large`, and the App publishes nothing.
 The App does not read part of a report.
 
+A pull request is measured as it would land, not as its branch stands. The Action measures GitHub's test merge commit of
+the head into the target and states it in the envelope: `analyzed_sha` is that commit and `integration` is `merged`; when
+GitHub reports a conflict the head is measured alone, `analyzed_sha` is `head_sha`, and `integration` is `conflicts`.
+The App holds the claim to what GitHub says about the pull request, never to the envelope: a conflict claim needs GitHub
+to say `mergeable` is false, a merged claim needs the commit to be GitHub's test merge commit, and while GitHub has not
+computed the merge no claim matches. A mismatch ends `action_required` with `envelope_mismatch`; re-running the workflow
+measures the current merge. Approval of a protected change stays bound to `head_sha`, not to the merge commit.
+
 ## Baseline upload
 
 The baseline is a file on the protected ref. It changes only through a pull request that an architecture owner
@@ -243,7 +253,8 @@ The Action must implement this contract in `mode: baseline` when `endpoint` is s
   one-line `archfit.report-envelope.v1` JSON, and `Content-Type: application/json`.
 - Body: the exact bytes of the `.archfit-baseline.json` that `archfit baseline` wrote, at most 1,048,576 bytes.
 - Envelope: `kind` is `baseline`; `event` is `workflow_dispatch` (or `push` to the default branch); `pull_request` is
-  `0`; `base_sha` and `merge_base_sha` are `""`; `head_sha` is the checked-out default-branch commit; `baseline_digest`
+  `0`; `base_sha` and `merge_base_sha` are `""`; `head_sha` is the checked-out default-branch commit; `analyzed_sha` is
+  `head_sha` and `integration` is `""`; `baseline_digest`
   is `""`; `labels_digest` is the bare hex SHA-256 of the labels file the capture read, or `""` without one;
   `payload_digest` is `sha256:<hex>` of the body; the engine identity fields are those of the pinned image.
 
@@ -291,15 +302,15 @@ for recovery actions.
 
 Approval and readability are separate contracts:
 
-- `wire/manifest` approves exact v3.2.2 and transition v3.2.0 Linux platform tuples, with one current v3.2.2 amd64 row.
-- `wire/report` reads v3.2.2, v3.2.0 and historical v3.0.0/v3.0.1 using their identical state-schema key set.
+- `wire/manifest` approves the exact v3.4.0 Linux platform tuples, with one current v3.4.0 amd64 row.
+- `wire/report` reads v3.4.0 through the pinned state schema, which requires `identity`, and the historical releases up to v3.2.3 without it.
   Unknown keys and unknown releases fail decoding. Historical readability grants no producer approval.
-- `wire/policy` embeds the v3.2.2 config schema, byte-identical to v3.2.0.
+- `wire/policy` embeds the v3.4.0 config schema.
 - The gate uses the structured decision, trusted input bindings, measurement identity, and gate reference.
   Origin remains display-only. A missing producer or required rule cannot become a healthy zero.
 
-New workflows pin Action commit `e0a1ef9473d68b426e9c56b2da5986bcee2fc769` and its matching engine platform digest.
-This Action commit accepts v3.2.2 only and requires explicit engine-version and platform-digest inputs, requests fresh measurements, and passes only fixed HOME and checkout-scoped Git settings.
+New workflows pin Action v3.1.0 at commit `7ade3b8fc989ec416ea5d570e7e236f47f7845fc`; it runs engine v3.4.0 with the digest of the runner's platform.
+This Action commit accepts v3.4.0 only and requires explicit engine-version and platform-digest inputs, requests fresh measurements, and passes only fixed HOME and checkout-scoped Git settings.
 It forwards no credentials. The container is not network-isolated, and reports remain customer-attested.
 The `action-conformance` CI job verifies every distinct manifest Action commit against the App's unchanged envelope schema.
 
@@ -382,6 +393,8 @@ The sweep inspects open pull requests for these conditions:
 - The policy, baseline, or labels changed on the protected ref.
 - A waiver expires within seven days or has expired.
 - The subscription changed.
+- The default branch moved after a `success` check, and the report of its new tip and the report of the pull request
+  together close a module cycle that neither holds alone (`target_moved`; see [Merge safety](user-guide.md#merge-safety-when-the-target-moves)).
 
 An owner approval can end without a new commit: the owner dismisses the review or requests changes, the owner leaves
 the settings file on the protected ref, or the pull request starts to change a protected path. Edits to the settings
@@ -389,10 +402,12 @@ file and the workflow file change no digest in the receipt, so the receipt diges
 or the sweep when the event is lost, then sets the required check to `action_required` with `owner_approval_missing`.
 It requests no rerun: no run can pass until an owner approves the head again, and that approval triggers the rerun.
 The rerun also follows when no approval is needed any more, for example after a base retarget.
-An owner also authorizes a head by pushing it. The `push` webhook names the actor who moved the branch to a commit, and
-the App stores that login under the commit SHA. When the pusher is an owner in the protected settings, the head counts
-as approved, like an approving review on it. A later commit has its own pusher, so the authorization never carries over.
-The App never reads git author or committer fields for this. A pull request from a fork has no such push event.
+A push never approves: a local coding agent pushes with its owner's credentials. GitHub does not let an author approve
+their own pull request, so an owner approves the exact head in the App instead (Approve on the pull request page,
+behind the browser session). The App stores that approval under the commit SHA with the digests of the protected files
+the owner was shown; it counts while the approver is still an owner and the pull request still changes exactly those
+files, and a later commit needs a new one. An account listed under `agents` in the protected settings never approves,
+on GitHub or in the App. A pull request from a fork cannot be approved in the App.
 The review event and the sweep read the check, read the inputs, decide, and write all inside the head's publication
 lease. So a newer run that turned green while they waited is the result they downgrade, and an approval that
 arrives meanwhile is handled by its own review event after the write. An upload decided before the withdrawal reads
@@ -401,7 +416,8 @@ check keeps its current conclusion until the Store is back and the next review e
 advisory mode there is no required check, and neither path changes the advisory `archfit/state` check.
 
 The sweep reruns the customer workflow after stale inputs, an expired waiver, late owner approval, or restored
-subscription. A missing upload becomes `action_required`. A fresh report is required for a new `success` result.
+subscription, unless the default branch moved since the result was measured: a re-run measures the old merge
+commit, so the check says `target_moved` and asks the author to update the branch. A missing upload becomes `action_required`. A fresh report is required for a new `success` result.
 
 ## Trust rules
 

@@ -32,12 +32,19 @@ type Deps struct {
 	Receiver gate.Receiver
 	// Admissions says which installations the App serves; Operators (GitHub user IDs) approve the others on /admin.
 	Admissions *gate.Admissions
-	Operators  []int64
-	Sandbox    Sandbox
-	Provider   Provider
-	CookieKey  []byte
-	BaseURL    string
-	Now        func() time.Time
+	// Approvals reads and records owner approvals of pull request heads for the pull request page: the gate façade.
+	Approvals gate.Approvals
+	// Decisions lists, declines and approves the decision requests of unattended agents for the pull request page.
+	Decisions gate.Decisions
+	// DecisionQueue lists the decision requests of unattended agents that wait for an owner, for the overview and the
+	// decisions page: the gate façade. It reads only.
+	DecisionQueue gate.DecisionQueue
+	Operators     []int64
+	Sandbox       Sandbox
+	Provider      Provider
+	CookieKey     []byte
+	BaseURL       string
+	Now           func() time.Time
 }
 
 // tenantLister is the only Store method the façade calls itself.
@@ -83,7 +90,7 @@ func New(d Deps) (*Control, error) {
 	page, err := ui.New(ui.Deps{
 		OAuth: d.OAuth, CookieKey: d.CookieKey, BaseURL: d.BaseURL, GitHub: d.GitHub,
 		Account: acct, Consents: consents, Onboarding: onb, Assist: asst, Proposals: proposals,
-		Admissions: d.Admissions, Operators: d.Operators, Now: d.Now,
+		Admissions: d.Admissions, Approvals: d.Approvals, Decisions: d.Decisions, DecisionQueue: d.DecisionQueue, Operators: d.Operators, Now: d.Now,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("control: ui: %w", err)
@@ -134,6 +141,12 @@ func (d Deps) validate() error {
 		return errors.New("control: nil Receiver")
 	case d.Admissions == nil:
 		return errors.New("control: nil Admissions")
+	case d.Approvals == nil:
+		return errors.New("control: nil Approvals")
+	case d.Decisions == nil:
+		return errors.New("control: nil Decisions")
+	case d.DecisionQueue == nil:
+		return errors.New("control: nil DecisionQueue")
 	case len(d.CookieKey) != cookieKeyLen:
 		return fmt.Errorf("control: CookieKey must be %d bytes", cookieKeyLen)
 	case d.BaseURL == "":

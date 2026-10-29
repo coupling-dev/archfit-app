@@ -15,10 +15,11 @@ const truncatedNote = "Output truncated."
 // Folds keep the visible part short: the headline, the reasons and the findings stay open; evidence, identity,
 // validation commands and agent tasks fold away. Agents read the raw Markdown, so the task markers still parse.
 const (
-	foldEvidence = "<details>\n<summary>Evidence and inputs</summary>"
-	foldTasks    = "<details>\n<summary>For coding agents</summary>"
-	foldClose    = "</details>"
-	fenceClose   = "\n```"
+	foldEvidence  = "<details>\n<summary>Evidence and inputs</summary>"
+	foldTasks     = "<details>\n<summary>For coding agents</summary>"
+	foldAttention = "<details>\n<summary>Repository attention (for the owner)</summary>"
+	foldClose     = "</details>"
+	fenceClose    = "\n```"
 )
 
 // commandsBudget keeps a long command list from starving findings and agent tasks.
@@ -55,18 +56,19 @@ func code(s string) string {
 
 // layout holds the rendered blocks of one body. Empty blocks are left out.
 type layout struct {
-	head     string // blocks 1 to 3, with the comment markers
-	decision string // the comment's reasons with their codes, first in the evidence fold
-	findings string // block 5, the violations
-	tail     string // the next step and the link: never cut, after the violations and before the folds
-	folds    string // block 5, advisories, accepted debt and fixed findings: cut after the violations
-	dims     string // block 6
-	gaps     string // block 7
-	inputs   string // block 8
-	commands commandList
-	tasks    []string // block 10, one encoded task each
-	hasTasks bool
-	receipt  string
+	head      string // blocks 1 to 3, with the comment markers
+	decision  string // the comment's reasons with their codes, first in the evidence fold
+	findings  string // block 5, the violations
+	tail      string // the next step and the link: never cut, after the violations and before the folds
+	attention string // the engine's repository attention, bounded by its builder, in its own fold
+	agentID   string // the result identity, bounded, first in the fold for coding agents
+	dims      string // block 6
+	gaps      string // block 7
+	inputs    string // block 8
+	commands  commandList
+	tasks     []string // block 10, one encoded task each
+	hasTasks  bool
+	receipt   string
 }
 
 func cost(block string) int {
@@ -80,7 +82,8 @@ func cost(block string) int {
 // first. Whole agent tasks reserve space before discretionary dimensions, commands and finding detail. Omitted tasks
 // are counted with an exact-run report fallback; JSON, delimiters, the next step and identity are never split.
 func (l layout) assemble(limit int) string {
-	rest := limit + 2 - cost(l.head) - cost(l.tail) - cost(l.decision) - cost(l.inputs) - cost(l.receipt) - cost(foldEvidence) - cost(foldTasks) - 2*cost(foldClose)
+	attention := fold(foldAttention, l.attention)
+	rest := limit + 2 - cost(l.head) - cost(l.tail) - cost(l.decision) - cost(l.inputs) - cost(l.receipt) - cost(foldEvidence) - cost(foldTasks) - 2*cost(foldClose) - cost(attention) - cost(l.agentID)
 	l.gaps = cutLines(l.gaps, rest-2) // last resort: only a pathological gap list does not fit
 	rest -= cost(l.gaps)
 
@@ -104,10 +107,8 @@ func (l layout) assemble(limit int) string {
 	commands := l.commands.render(min(rest-2, commandsBudget))
 	rest -= cost(commands)
 	l.findings = cutLines(l.findings, rest-2)
-	rest -= cost(l.findings)
-	l.folds = cutLines(l.folds, rest-2)
 
-	body := join(l.head, l.findings, l.tail, l.folds, fold(foldEvidence, join(l.decision, l.dims, l.gaps, l.inputs, commands)), fold(foldTasks, tasks))
+	body := join(l.head, l.findings, l.tail, attention, fold(foldEvidence, join(l.decision, l.dims, l.gaps, l.inputs, commands)), fold(foldTasks, join(l.agentID, tasks)))
 	if l.receipt == "" {
 		return cutLines(body, limit)
 	}

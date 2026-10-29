@@ -8,7 +8,11 @@ type entry struct {
 	next       string
 }
 
-const suspendedNext = "Archfit subscription inactive."
+const (
+	suspendedNext = "Archfit subscription inactive."
+	// updateBranch is the recovery of target_moved: a new head is the only thing that measures the pull request again.
+	updateBranch = "Update the branch (Update branch on GitHub, `gh pr update-branch`, or merge the target) to measure it again."
+)
 
 // lookup is the reason catalog and the only place a Conclusion is produced from.
 // It is a switch, not a map, so the package holds no state.
@@ -43,13 +47,13 @@ func lookup(code ReasonCode) (entry, bool) {
 	case ReasonWorkflowNotApproved:
 		return entry{CategoryEvidence, ActionRequired, "Upload from the workflow named in `.archfit-app.yaml`."}, true
 	case ReasonOwnerApprovalMissing:
-		return entry{CategoryGovernance, ActionRequired, "An architecture owner must authorize this exact commit: approve it on GitHub, or push it from an owner account. GitHub does not let an author approve their own pull request; use the App policy editor, where the App authors the commit."}, true
+		return entry{CategoryGovernance, ActionRequired, "An architecture owner must approve this exact commit, on GitHub or with Approve on the pull request page of the Archfit App. An agent identity cannot approve; a new commit needs a new approval."}, true
 	case ReasonSettingsMissing:
 		return entry{CategoryGovernance, ActionRequired, "Merge the Archfit onboarding PR to add `.archfit-app.yaml`."}, true
 	case ReasonForkUnsupported:
-		return entry{CategoryEvidence, ActionRequired, "Push the branch to this repository, or use the documented ruleset bypass."}, true
+		return entry{CategoryEvidence, ActionRequired, "This pull request comes from a fork, which Archfit does not measure. Ask a maintainer to push the branch to this repository and run the workflow there."}, true
 	case ReasonUnsupportedEvent:
-		return entry{CategoryEvidence, ActionRequired, "Run Archfit on `pull_request` or on `push` to the default branch."}, true
+		return entry{CategoryEvidence, ActionRequired, "Run Archfit on a pull request into the default branch, or on a push to it. A pull request into another branch is not checked."}, true
 	case ReasonEnvelopeMismatch:
 		return entry{CategoryEvidence, ActionRequired, "Re-run the Archfit workflow; the upload did not match the GitHub run."}, true
 	case ReasonReportInvalid:
@@ -60,6 +64,10 @@ func lookup(code ReasonCode) (entry, bool) {
 		return entry{CategoryEvidence, ActionRequired, "Policy or baseline changed on the base branch. A re-run was requested; re-run the Archfit workflow if none appears."}, true
 	case ReasonWaiverExpired:
 		return entry{CategoryGovernance, ActionRequired, "A waiver expired. A re-run was requested; renew the waiver by owner-approved PR or fix the finding."}, true
+	case ReasonTargetMoved:
+		return entry{CategoryEvidence, ActionRequired, "The target branch moved and this pull request cannot be compared with it. " + updateBranch}, true
+	case ReasonSharedHead:
+		return entry{CategoryEvidence, ActionRequired, sharedHeadNext("another branch")}, true
 	case ReasonSuspended:
 		return entry{CategorySubscription, ActionRequired, suspendedNext}, true
 	}

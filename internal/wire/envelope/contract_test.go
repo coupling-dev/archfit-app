@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os/exec"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -56,7 +57,7 @@ func TestDecodeAcceptsConformanceEnvelopes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Decode: %v", err)
 			}
-			if got != fx.expect.Envelope {
+			if !reflect.DeepEqual(got, fx.expect.Envelope) {
 				t.Errorf("got %+v\nwant %+v", got, fx.expect.Envelope)
 			}
 		})
@@ -136,13 +137,16 @@ func TestSchemaDocument(t *testing.T) {
 	for _, name := range doc.Required {
 		required[name] = true
 	}
-	if len(doc.Required) != 16 || len(required) != 16 || len(doc.Properties) != 16 {
-		t.Errorf("want 16 distinct required properties, got %d required, %d properties", len(doc.Required), len(doc.Properties))
+	if len(doc.Required) != 18 || len(required) != 18 || len(doc.Properties) != 19 {
+		t.Errorf("want 18 distinct required properties and the optional policy_change, got %d required, %d properties", len(doc.Required), len(doc.Properties))
 	}
 	for _, name := range fieldOrder() {
 		if _, declared := doc.Properties[name]; !declared || !required[name] {
 			t.Errorf("property %q must be declared and required", name)
 		}
+	}
+	if _, declared := doc.Properties["policy_change"]; !declared || required["policy_change"] {
+		t.Errorf("policy_change must be declared and optional")
 	}
 
 	first, second := envelope.Schema(), envelope.Schema()

@@ -18,12 +18,20 @@ import (
 // the check run external_id is "v1:<run_id>:<attempt>:<report_digest>", the rest is a hidden
 // JSON marker in the check summary. The check is its own receipt.
 type Receipt struct {
-	RunID                int64              `json:"run_id"`
-	RunAttempt           int                `json:"run_attempt"`
-	ReportDigest         string             `json:"report_digest"`
-	PolicyDigest         string             `json:"policy_digest"`
-	BaselineDigest       string             `json:"baseline_digest"`
-	LabelsDigest         string             `json:"labels_digest"`
+	RunID          int64  `json:"run_id"`
+	RunAttempt     int    `json:"run_attempt"`
+	ReportDigest   string `json:"report_digest"`
+	PolicyDigest   string `json:"policy_digest"`
+	BaselineDigest string `json:"baseline_digest"`
+	LabelsDigest   string `json:"labels_digest"`
+	// IdentityKey names what the engine measured and under which inputs (the report's result identity); "" for a
+	// report without one. It is a fact a later decision compares (a moved target, a repair task); it never suppresses
+	// a publication: the identity is the engine's own claim in a customer-attested report.
+	IdentityKey string `json:"identity_key,omitempty"`
+	// BaseSHA is the default-branch commit the report was measured against: the base tip GitHub merged the head into,
+	// or the merge base of a head that conflicts. "" for a push and for a receipt written before the field
+	// existed. The sweep compares it with the tip (rule 5c); "" is always compared.
+	BaseSHA              string             `json:"base_sha,omitempty"`
 	EarliestWaiverExpiry time.Time          `json:"earliest_waiver_expiry"`
 	Conclusion           verdict.Conclusion `json:"conclusion"`
 	Reason               verdict.ReasonCode `json:"reason"`
@@ -31,11 +39,14 @@ type Receipt struct {
 
 // Publication is one complete piece of feedback for one head SHA.
 type Publication struct {
-	Target       inputs.Target
-	Identity     manifest.Identity // claimed engine and image identity; zero when there was no upload
-	Outcome      verdict.Outcome
-	Receipt      Receipt
-	Report       *report.Report // decoded claims; presentation separately checks source authority from all reason codes
+	Target   inputs.Target
+	Identity manifest.Identity // claimed engine and image identity; zero when there was no upload
+	Outcome  verdict.Outcome
+	Receipt  Receipt
+	Report   *report.Report // decoded claims; presentation separately checks source authority from all reason codes
+	// PolicyChange is the engine's classification of a change to the protected policy, for the policy change card;
+	// nil when the pull request changes no policy or the upload carries none. Display only: it decides nothing.
+	PolicyChange *report.PolicyChange
 	Trusted      inputs.Trusted
 	stateCheckID int64 // display-only ID returned by this publication's successful check write; never an admission input
 	// Resolve, when set, reads the trusted inputs again inside the head's publication lease, before anything is
@@ -92,5 +103,25 @@ func New(checks api.Checks, comments api.Comments, pulls api.Pulls, s store.Stor
 		store: s,
 		now:   now,
 		wait:  pollWait,
+	}
+}
+
+// Repairer keeps the repair issue of the default branch: one open issue per branch that says what a push broke and
+// closes when a push passes. It is a notification and never a gate.
+type Repairer interface {
+	// Repair opens, updates or closes the repair issue for p, the publication of a push to the default branch, once p
+	// is published. It never fails: GitHub's answer (the Issues permission missing, a rate limit) is logged, and what
+	// was published stays as it is.
+	Repair(ctx context.Context, p Publication)
+}
+
+// NewRepairer returns a Repairer that is safe for concurrent use: Repair holds the head's publication lease in s, as
+// Publish does, so two publications of one head never interleave their issue reads and writes.
+func NewRepairer(checks api.Checks, comments api.Comments, issues api.Issues, repos api.Repos, s store.Store, now func() time.Time) Repairer {
+	return &repairer{
+		lease:    &serialized{next: &publisher{checks: checks, now: now}, store: s, now: now, wait: pollWait},
+		comments: comments,
+		issues:   issues,
+		repos:    repos,
 	}
 }

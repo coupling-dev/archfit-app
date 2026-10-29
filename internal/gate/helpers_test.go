@@ -144,7 +144,7 @@ func (w *world) openPull(r api.Repo, number int) *pull {
 	p := &pull{repo: r, number: number}
 	w.gh.pulls[pullKey(r.FullName, number)] = api.Pull{
 		Number: number, State: "open", HeadRef: fmt.Sprintf("feature-%d", number), HeadRepo: r.FullName,
-		BaseRef: testBranch, BaseSHA: w.sha(), MergeBaseSHA: w.sha(),
+		BaseRef: testBranch, BaseSHA: w.sha(), MergeBaseSHA: w.sha(), MergeCommitSHA: w.sha(),
 	}
 	w.push(p)
 	return p
@@ -155,6 +155,7 @@ func (w *world) push(p *pull) {
 	key := pullKey(p.repo.FullName, p.number)
 	pl := w.gh.pulls[key]
 	pl.HeadSHA = w.sha()
+	pl.MergeCommitSHA = w.sha() // GitHub makes a new test merge commit for the new head
 	w.gh.pulls[key] = pl
 	w.nextRun++
 	p.head, p.runID = pl.HeadSHA, w.nextRun
@@ -211,6 +212,7 @@ func (w *world) spec(p *pull, body []byte) uploadSpec {
 		env: envelope.Envelope{
 			SchemaVersion: envelope.SchemaV1, Kind: envelope.KindReport, Repository: p.repo.FullName,
 			Event: "pull_request", PullRequest: p.number, HeadSHA: p.head, BaseSHA: pl.BaseSHA, MergeBaseSHA: pl.MergeBaseSHA,
+			AnalyzedSHA: pl.MergeCommitSHA, Integration: envelope.IntegrationMerged,
 			RunID: p.runID, RunAttempt: run.Attempt,
 			EngineVersion: id.EngineVersion, ImageDigest: id.ImageDigest, Platform: id.Platform,
 			PayloadDigest: envelope.PayloadDigest(body),

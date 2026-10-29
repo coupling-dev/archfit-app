@@ -8,7 +8,8 @@ import (
 	"unicode/utf8"
 )
 
-const maxCommentChars = 65536
+// maxBodyChars is GitHub's limit for a comment or an issue body.
+const maxBodyChars = 65536
 
 type commentJSON struct {
 	ID   int64  `json:"id"`
@@ -18,9 +19,9 @@ type commentJSON struct {
 	} `json:"user"`
 }
 
-func checkCommentBody(body string) error {
-	if utf8.RuneCountInString(body) > maxCommentChars {
-		return errors.New("github: comment body over 65536 characters")
+func checkBody(body string) error {
+	if utf8.RuneCountInString(body) > maxBodyChars {
+		return errors.New("github: body over 65536 characters")
 	}
 	return nil
 }
@@ -50,7 +51,7 @@ func (c *Client) AppComments(ctx context.Context, r RepoRef, pull int) ([]Commen
 }
 
 func (c *Client) CreateComment(ctx context.Context, r RepoRef, pull int, body string) (Comment, error) {
-	if err := checkCommentBody(body); err != nil {
+	if err := checkBody(body); err != nil {
 		return Comment{}, err
 	}
 	cr, base, err := r.target()
@@ -70,7 +71,7 @@ func (c *Client) CreateComment(ctx context.Context, r RepoRef, pull int, body st
 }
 
 func (c *Client) UpdateComment(ctx context.Context, r RepoRef, id int64, body string) error {
-	if err := checkCommentBody(body); err != nil {
+	if err := checkBody(body); err != nil {
 		return err
 	}
 	cr, base, err := r.target()

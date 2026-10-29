@@ -1,6 +1,9 @@
 package wire_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -20,7 +23,7 @@ func TestV323NativeCapturesPreserveMetricApplicability(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			env, err := envelope.Decode(readFile(t, filepath.Join(corpusRoot, folderReport, name+".envelope.json")))
+			env, err := envelope.Decode(withActionX1Fields(t, readFile(t, filepath.Join(corpusRoot, folderReport, name+".envelope.json"))))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -190,4 +193,32 @@ func TestV322CaptureBytesAreUnmodified(t *testing.T) {
 	if !reflect.DeepEqual(captured.Metrics, reanchored.Metrics) {
 		t.Errorf("reanchor changed current measured references: %v -> %v", captured.Metrics, reanchored.Metrics)
 	}
+}
+
+// withActionX1Fields adapts an envelope that predates archfit-action X1 to the current one: the Action now also states
+// analyzed_sha (the head, or the test merge commit of a pull request) and integration. The captures' bytes stay
+// untouched on disk (TestV32xCaptureBytesAreUnmodified); only what a test decodes gains the two fields. A push keeps its
+// head as analyzed_sha; a pull request is read as merged, with a merge commit derived from its head and base so that it
+// is a different, well-formed commit. An envelope that already has the fields is returned as it is.
+func withActionX1Fields(t *testing.T, raw []byte) []byte {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return raw // not a JSON object: the decoder reports it
+	}
+	if _, has := doc["analyzed_sha"]; has {
+		return raw
+	}
+	head, _ := doc["head_sha"].(string)
+	base, _ := doc["base_sha"].(string)
+	doc["analyzed_sha"], doc["integration"] = head, ""
+	if doc["event"] == "pull_request" {
+		sum := sha256.Sum256([]byte(head + base))
+		doc["analyzed_sha"], doc["integration"] = hex.EncodeToString(sum[:])[:40], "merged"
+	}
+	out, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }

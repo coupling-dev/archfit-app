@@ -1,0 +1,26 @@
+{
+  "producer": {
+    "repository": "github.com/alexei-led/archfit",
+    "revision": "2692cd6b8aab23e559d0aa76712a192d69b4229f",
+    "engine_version": "v3.4.0",
+    "command": "Released native linux/arm64 image ghcr.io/alexei-led/archfit@sha256:0cadc39c41de4dc58bb115b22bdd0296cb81688175a6ea1839a1e16ed2c35e1f (archfit version v3.4.0, commit 2692cd6); archfit-action tests/engine-smoke.sh at fb2520cb069571d6bdc9274ac97d4df49994b6c7 drives prepare/checkout/run/report on a scratch committed Go repository, no endpoint (tests/fixtures/state.json, unmodified). The envelope is built here around it: GitHub event/run fields are synthetic, the Action's export of its own envelope is not committed."
+  },
+  "decode": "ok",
+  "fields": {
+    "verdict": "blocked",
+    "hard_gates": "fail",
+    "unevaluated_rule_ids": [],
+    "has_profile": true,
+    "profile_version": "archfit.measurement.v2",
+    "gate_reference_status": "non_comparable"
+  },
+  "gate": {
+    "conclusion": "failure",
+    "reasons": [
+      "blocking_findings"
+    ]
+  },
+  "facts": {
+    "identity_approved": true
+  }
+}

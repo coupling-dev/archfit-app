@@ -206,7 +206,7 @@ func TestPullsContract(t *testing.T) {
 		})
 		mux.HandleFunc("GET /repos/o/r/pulls/5/reviews", func(w http.ResponseWriter, _ *http.Request) {
 			writeJSON(w, http.StatusOK, []map[string]any{
-				{"user": map[string]any{"login": "alice"}, "state": "APPROVED", "commit_id": "c1"},
+				{"user": map[string]any{"login": "alice"}, "state": "APPROVED", "commit_id": "c1", "submitted_at": "2026-10-27T10:00:00Z"},
 				{"user": map[string]any{"login": "bob"}, "state": "PENDING", "commit_id": "c1"},
 				{"user": map[string]any{"login": "alice"}, "state": "CHANGES_REQUESTED", "commit_id": "c2"},
 			})
@@ -326,7 +326,10 @@ func TestPullsContract(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := []Review{{Reviewer: "alice", State: "APPROVED", CommitSHA: "c1"}, {Reviewer: "alice", State: "CHANGES_REQUESTED", CommitSHA: "c2"}}
+		want := []Review{
+			{Reviewer: "alice", State: "APPROVED", CommitSHA: "c1", SubmittedAt: time.Date(2026, 10, 27, 10, 0, 0, 0, time.UTC)},
+			{Reviewer: "alice", State: "CHANGES_REQUESTED", CommitSHA: "c2"},
+		}
 		if !reflect.DeepEqual(reviews, want) {
 			t.Errorf("Reviews = %+v, want %+v", reviews, want)
 		}
@@ -615,9 +618,8 @@ func TestActionsContract(t *testing.T) {
 		t.Error("ArtifactByID maxBytes 0: want error")
 	}
 
-	if _, err := env.c.Artifact(ctx, repoA, 55, "archfit-report", int64(len(report))-1); err == nil {
-		t.Error("artifact over maxBytes: want error")
-	}
+	_, err = env.c.Artifact(ctx, repoA, 55, "archfit-report", int64(len(report))-1)
+	wantErrIs(t, "artifact over maxBytes", err, ErrArtifactInvalid)
 	_, err = env.c.Artifact(ctx, repoA, 55, "absent", 1<<20)
 	wantErrIs(t, "no artifact", err, ErrNotFound)
 	env.gh.reset()

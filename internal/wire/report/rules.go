@@ -22,13 +22,17 @@ const (
 	maxTaskFiles        = maxLocations + 2 // every location file and both edge endpoints
 	maxDimensionFacts   = 256              // metrics, unknown, delta metrics
 	maxFindingRefs      = 10_000
-	maxSmallList        = 64 // producers, unknowns, coverage.tools, every reasons list
+	// maxToolDetails bounds coverage.tools[].details: the engine writes one line per .NET project and does not cap them.
+	maxToolDetails = 10_000
+	maxSmallList   = 64 // producers, unknowns, coverage.tools, every reasons list
 
 	maxTextLen       = 500
 	maxFindingLen    = 2_000 // a finding why or constraint ends with the rule's rationale and docs reference
 	maxTaskTextLen   = 4_096 // a task goal or constraint holds a why, two paths or a module's public globs
 	maxCommandLen    = 512
 	maxIdentifierLen = 200
+	maxDetailLen     = 8192 // a details line joins a project, its status, frameworks and the reasons the extractor gives
+	maxBlobLen       = 8192 // the engine writes whole canonical declarations; the card shows a few words of them
 	maxTokenLen      = 64
 	maxVersionLen    = 128
 	maxPathLen       = 512
@@ -55,6 +59,7 @@ type strClass int
 
 const (
 	classText        strClass = iota
+	classDetailText           // a coverage.tools[].details line: one line, engine-built from paths, statuses and diagnostics, unbounded there
 	classFindingText          // a finding why or constraint: text with a larger cap
 	classTaskText             // a task goal or constraint: text with the largest cap
 	classCommand
@@ -65,6 +70,7 @@ const (
 	classConfigHash
 	classPath
 	classEndpointPath // a path, or empty
+	classBlob         // engine-written declaration text: may span lines (canonical JSON, a joined rule set); large cap
 )
 
 // checker validates the shadow report while it copies the kept fields. It keeps the first error of each phase.
@@ -72,6 +78,9 @@ type checker struct {
 	path []seg
 	errs [phaseCount]error
 	ids  map[string]struct{} // finding IDs seen
+
+	// identityRequired is set for a release whose state schema requires the identity block.
+	identityRequired bool
 }
 
 func (c *checker) err() error {
@@ -204,12 +213,24 @@ func stringsOf(c *checker, key string, in []string, limit int, required bool, cl
 
 // stringRule returns the phase and the rule that s breaks, or an empty rule.
 func stringRule(s string, class strClass) (phase, string) {
+	if class == classBlob {
+		// Line breaks and tabs are the text's own; every other control character, and the Unicode line and
+		// paragraph separators, are not.
+		if strings.ContainsFunc(s, func(r rune) bool {
+			return r != '\n' && r != '\t' && (unicode.IsControl(r) || r == '\u2028' || r == '\u2029')
+		}) {
+			return phaseString, "must be text without control characters"
+		}
+		return phaseString, tooLong(s, maxBlobLen)
+	}
 	if strings.ContainsFunc(s, func(r rune) bool { return unicode.IsControl(r) || r == ' ' || r == ' ' }) {
 		return phaseString, "must be a single line without control characters"
 	}
 	switch class {
 	case classText:
 		return phaseString, tooLong(s, maxTextLen)
+	case classDetailText:
+		return phaseString, tooLong(s, maxDetailLen)
 	case classFindingText:
 		return phaseString, tooLong(s, maxFindingLen)
 	case classTaskText:

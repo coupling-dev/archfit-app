@@ -41,12 +41,17 @@ func TestUploadPublishesApprovedProducer(t *testing.T) {
 		t.Errorf("%d comments, want 1", n)
 	}
 	want := feedback.Receipt{
-		RunID: p.runID, RunAttempt: 1, ReportDigest: s.env.PayloadDigest,
+		RunID: p.runID, RunAttempt: 1, ReportDigest: s.env.PayloadDigest, BaseSHA: s.env.BaseSHA,
 		PolicyDigest:   w.digestOf(w.shop, testBranch, policy.PolicyPath),
 		BaselineDigest: s.env.BaselineDigest, LabelsDigest: s.env.LabelsDigest,
 		Conclusion: verdict.Success, Reason: verdict.ReasonHealthy,
 	}
-	if got := w.receipt(p); got != want {
+	got := w.receipt(p)
+	if len(got.IdentityKey) != 64 {
+		t.Errorf("IdentityKey = %q, want the sha256 of the report's identity", got.IdentityKey)
+	}
+	want.IdentityKey = got.IdentityKey
+	if got != want {
 		t.Errorf("receipt =\n %+v, want\n %+v", got, want)
 	}
 }
@@ -352,6 +357,7 @@ func TestNewReceiverIsTheSameReceiver(t *testing.T) {
 		draft := []byte("version: 1\nmodules: {}\n")
 		s := w.spec(p, draft)
 		s.env.Kind, s.env.Event, s.env.PullRequest, s.env.BaseSHA, s.env.MergeBaseSHA = envelope.KindDiscovery, "workflow_dispatch", 0, "", ""
+		s.env.AnalyzedSHA, s.env.Integration = s.env.HeadSHA, "" // a dispatched run measures its own head
 		s.claims.EventName, s.claims.Ref = "workflow_dispatch", "refs/heads/"+testBranch
 
 		u, err := newReceiver(w.gh, w.oidc, testAudience, w.admit).Receive(context.Background(), w.request(s), envelope.KindDiscovery)

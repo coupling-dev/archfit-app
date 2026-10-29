@@ -35,7 +35,18 @@ type checkContextJSON struct {
 	// reportDerived: every reason this App recorded for the check is a known, report-derived one, so the report may be
 	// shown under an action_required conclusion, as the comment shows it. False for anything unknown or unparsed.
 	reportDerived bool
+	// screenReasons are the recorded reasons, only when reportDerived: what the comment's first screen is worded from.
+	screenReasons []gate.ScreenReason
+	// policyCard is the "### Policy change" section of the summary, Markdown as feedback wrote it, bounded; policySummary
+	// is its one-line classification, as text.
+	policyCard, policySummary string
 }
+
+// policyCardHeading opens the policy change card in a check summary.
+const policyCardHeading = "### Policy change"
+
+// maxPolicyCardBytes bounds the card read back from a summary; feedback writes at most a few thousand bytes of it.
+const maxPolicyCardBytes = 8 << 10
 
 type producerPinsJSON struct {
 	EngineVersion string `json:"engine_version"`
@@ -70,14 +81,23 @@ func actionContext(run api.CheckRun) *checkContextJSON {
 	if len(run.Summary) > 65535 {
 		return out
 	}
-	prelude, secondary, inputs := true, false, false
+	prelude, secondary, inputs, card := true, false, false, false
 	plain := func(s string) string { return html.UnescapeString(strings.ReplaceAll(s, "`", "")) }
 	for line := range strings.Lines(run.Summary) {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "### ") || strings.HasPrefix(line, "<") {
 			prelude = false
 			inputs = line == "### Inputs and identity"
+			if card = line == policyCardHeading; card {
+				out.policyCard = line
+			}
 			continue
+		}
+		if card && line != "" && len(out.policyCard)+len(line) < maxPolicyCardBytes {
+			out.policyCard += "\n" + line
+			if out.policySummary == "" {
+				out.policySummary = plain(line)
+			}
 		}
 		if inputs {
 			fields := []struct {
@@ -123,8 +143,8 @@ func actionContext(run api.CheckRun) *checkContextJSON {
 
 // recordedRecovery is a display projection of an App-authored prelude, not an admitted report fact.
 type recordedRecovery struct {
-	reason, detail, next, raw, code string
-	reportDerived, known            bool
+	reason, detail, next, raw, code, category string
+	reportDerived, known                      bool
 }
 
 func classifyRecordedRecovery(reason, detail, next string) recordedRecovery {
@@ -132,7 +152,7 @@ func classifyRecordedRecovery(reason, detail, next string) recordedRecovery {
 	code, rest, opened := strings.Cut(reason, " (")
 	category, tail, closed := strings.Cut(rest, ")")
 	if opened && closed && tail == "" {
-		out.code = code
+		out.code, out.category = code, category
 		out.reportDerived, out.known = gate.ClassifyDisplayReason(code, category)
 	}
 	return out
@@ -163,6 +183,9 @@ func qualifyHistoricalRecovery(out *checkContextJSON) (needsPins bool) {
 	}
 	if sourceAdmissible {
 		out.reportDerived = true
+		for _, record := range records {
+			out.screenReasons = append(out.screenReasons, gate.ScreenReason{Code: record.code, Category: record.category, Detail: record.detail, Next: record.next})
+		}
 		return needsPins
 	}
 	var diagnostics []recordedRecovery

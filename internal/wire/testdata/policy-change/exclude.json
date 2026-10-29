@@ -1,0 +1,1 @@
+{"direction":"loosening","rules_removed":[],"rules_loosened":[],"waivers_added":[],"allowlists_widened":[],"coverage_lost":[{"kind":"exclude_added","detail":"pkg/a/**"}],"rules_added":[],"rules_tightened":[],"waivers_removed":[],"allowlists_narrowed":[],"coverage_gained":[],"declarations_changed":[]}

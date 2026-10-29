@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"maps"
 	"net/http"
 	"reflect"
 	"testing"
@@ -89,6 +90,52 @@ func TestRequiredChecksFailsWhenEitherReadFails(t *testing.T) {
 			})
 			if got, err := env.c.RequiredChecks(context.Background(), ref, "main"); err == nil {
 				t.Errorf("RequiredChecks = %+v, want an error: the caller must show unknown, not not-enforced", got)
+			}
+		})
+	}
+}
+
+// TestPullReportsGitHubsMergeState: the test merge commit and the mergeable verdict are what an upload's envelope is
+// held to. GitHub leaves both null until it has computed the merge, and a conflict has no merge commit.
+func TestPullReportsGitHubsMergeState(t *testing.T) {
+	yes, no := true, false
+	tests := []struct {
+		number    string
+		fields    map[string]any
+		wantSHA   string
+		wantMerge *bool
+	}{
+		{"1", map[string]any{"merge_commit_sha": "mc1", "mergeable": true}, "mc1", &yes},
+		{"2", map[string]any{"merge_commit_sha": nil, "mergeable": nil}, "", nil},
+		{"3", map[string]any{"merge_commit_sha": nil, "mergeable": false}, "", &no},
+		{"4", map[string]any{}, "", nil},
+	}
+	env := muxEnv(t, func(mux *http.ServeMux) {
+		mux.HandleFunc("GET /repos/acme/app/installation", func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, http.StatusOK, map[string]any{"id": 7})
+		})
+		mux.HandleFunc("GET /repos/acme/app/pulls/{n}", func(w http.ResponseWriter, r *http.Request) {
+			for _, tt := range tests {
+				if tt.number == r.PathValue("n") {
+					body := pullFixture(1, "open", "feature", "acme/app", nil)
+					maps.Copy(body, tt.fields)
+					writeJSON(w, http.StatusOK, body)
+					return
+				}
+			}
+			w.WriteHeader(http.StatusNotFound)
+		})
+	})
+	ref := RepoRef{InstallationID: 7, FullName: "acme/app"}
+	for _, tt := range tests {
+		t.Run("pull "+tt.number, func(t *testing.T) {
+			n := int(tt.number[0] - '0')
+			p, err := env.c.PullSummary(context.Background(), ref, n)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if p.MergeCommitSHA != tt.wantSHA || !reflect.DeepEqual(p.Mergeable, tt.wantMerge) {
+				t.Errorf("MergeCommitSHA = %q, Mergeable = %v; want %q, %v", p.MergeCommitSHA, p.Mergeable, tt.wantSHA, tt.wantMerge)
 			}
 		})
 	}

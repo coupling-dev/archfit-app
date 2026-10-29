@@ -4,6 +4,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/alexei-led/archfit-app/internal/gate/ingest"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
@@ -72,6 +74,7 @@ func Decide(f Facts) Outcome {
 		rs.add(ReasonSettingsMissing, "")
 	}
 	eligibility(&rs, f)
+	rs.sharedHead(f.SharedHead)
 	if !t.SettingsFound {
 		// No trusted inputs to compare with: steps 4 to 8 are skipped.
 		return rs.outcome()
@@ -106,12 +109,13 @@ func Unapproved(t inputs.Trusted) bool {
 }
 
 // Without returns the fixed outcome for a target that has no report: code is one of ReasonMissingUpload,
-// ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended, ReasonOwnerApprovalMissing.
+// ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended, ReasonOwnerApprovalMissing,
+// ReasonTargetMoved, ReasonSharedHead.
 func Without(code ReasonCode) Outcome {
 	var rs reasons
 	switch code {
 	case ReasonMissingUpload, ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended,
-		ReasonOwnerApprovalMissing:
+		ReasonOwnerApprovalMissing, ReasonTargetMoved, ReasonSharedHead:
 		rs.add(code, "")
 	default:
 		rs.add(ReasonEngineError, "")
@@ -125,6 +129,112 @@ func ApprovalMissing(t inputs.Trusted) Outcome {
 	var rs reasons
 	rs.add(ReasonOwnerApprovalMissing, strings.Join(t.ProtectedPaths, ", "))
 	return rs.outcome()
+}
+
+// Names of target_moved: how many modules and how many characters of each the reason shows.
+const (
+	movedModulesShown = 5
+	movedModuleRunes  = 80
+	movedCommitChars  = 12
+)
+
+// TargetMoved is Without(ReasonTargetMoved) for a caller that knows what moved. cycle names the modules of the
+// module cycle the target and the pull request close together (none when the pull request could not be compared);
+// base and tip are the commits the pull request was measured on and the default branch is on now ("" for an unknown
+// base). Detail holds the first modules and the commit range; Next names the cycle and the recovery.
+func TargetMoved(cycle []string, base, tip string) Outcome {
+	var rs reasons
+	var shown []string
+	for i, m := range cycle {
+		if i == movedModulesShown {
+			shown = append(shown, "and "+strconv.Itoa(len(cycle)-i)+" more")
+			break
+		}
+		shown = append(shown, cutRunes(m, movedModuleRunes))
+	}
+	modules := strings.Join(shown, ", ")
+	var detail []string
+	for _, part := range []string{modules, commitRange(base, tip)} {
+		if part != "" {
+			detail = append(detail, part)
+		}
+	}
+	rs.add(ReasonTargetMoved, strings.Join(detail, "; "))
+	if len(cycle) > 0 {
+		rs.setNext(ReasonTargetMoved, "The target branch moved, and with it this pull request closes a module cycle: "+modules+". "+updateBranch)
+	}
+	return rs.outcome()
+}
+
+// Names of shared_head: how many pull requests and how many characters of a branch name the reason shows.
+const (
+	sharedPullsShown = 5
+	sharedBaseRunes  = 80
+)
+
+// SharedHead is Without(ReasonSharedHead) for a caller that knows the other pull requests: Detail lists the first
+// five by number with their bases, then "and N more"; Next names the base of the first.
+func SharedHead(others []SharedPull) Outcome {
+	var rs reasons
+	rs.sharedHead(others)
+	return rs.outcome()
+}
+
+// sharedHead is shared_head for the pull requests in others, none when it is empty. A base is a branch name an agent
+// chose: backticks and control characters would break the Next sentence, so they are dropped and the name is cut.
+func (rs *reasons) sharedHead(others []SharedPull) {
+	if len(others) == 0 {
+		return
+	}
+	var shown []string
+	for i, o := range others {
+		if i == sharedPullsShown {
+			shown = append(shown, "and "+strconv.Itoa(len(others)-i)+" more")
+			break
+		}
+		shown = append(shown, "#"+strconv.Itoa(o.Number)+" into "+branchName(o.BaseRef))
+	}
+	rs.add(ReasonSharedHead, strings.Join(shown, ", "))
+	rs.setNext(ReasonSharedHead, sharedHeadNext(branchName(others[0].BaseRef)))
+}
+
+func sharedHeadNext(base string) string {
+	return "Another open pull request into `" + base + "` has this head commit, so its checks would show this result. " +
+		"Close that pull request or change its base to the default branch, then run the Archfit workflow again."
+}
+
+// branchName is s without backticks and control characters, cut to sharedBaseRunes.
+func branchName(s string) string {
+	clean := strings.Map(func(r rune) rune {
+		if r == '`' || unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+	return cutRunes(clean, sharedBaseRunes)
+}
+
+// commitRange is "<base>..<tip>" with both cut to a short SHA; "" when the tip is unknown.
+func commitRange(base, tip string) string {
+	if tip == "" {
+		return ""
+	}
+	return cutChars(base, movedCommitChars) + ".." + cutChars(tip, movedCommitChars)
+}
+
+func cutChars(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
+}
+
+// cutRunes cuts s to n runes and marks the cut.
+func cutRunes(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	return string([]rune(s)[:n]) + "…"
 }
 
 // Suspended is Without(ReasonSuspended) for a caller that holds the entitlement record: Next is

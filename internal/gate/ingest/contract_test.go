@@ -91,6 +91,7 @@ func TestReceiveDefaultBranchPush(t *testing.T) {
 		wantCalls(t, s, "verify", "resolve", "run")
 		want := healthyBinding(s)
 		want.Event, want.PullRequest, want.BaseRef, want.BaseSHA, want.MergeBaseSHA = "push", 0, defaultBranch, "", ""
+		want.AnalyzedSHA, want.Integration = headSHA, "" // a push measures its own head
 		if !reflect.DeepEqual(up.Binding, want) {
 			t.Errorf("binding = %+v, want %+v", up.Binding, want)
 		}

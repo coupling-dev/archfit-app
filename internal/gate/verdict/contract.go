@@ -52,6 +52,8 @@ const (
 	ReasonMissingUpload         ReasonCode = "missing_upload"
 	ReasonStaleInputs           ReasonCode = "stale_inputs"
 	ReasonWaiverExpired         ReasonCode = "waiver_expired"
+	ReasonTargetMoved           ReasonCode = "target_moved" // the default branch moved and, with this change, closes a module cycle
+	ReasonSharedHead            ReasonCode = "shared_head"  // another open pull request into a non-default branch has this head commit
 	ReasonSuspended             ReasonCode = "subscription_suspended"
 )
 
@@ -81,6 +83,15 @@ func ReportDerivedAction(code ReasonCode) bool {
 	return derived
 }
 
+// ConclusionOf is the conclusion the catalog gives an outcome whose first reason is code, for a page that restates a
+// recorded outcome in the comment's words. It decides nothing: a code outside the catalog is action_required.
+func ConclusionOf(code ReasonCode) Conclusion {
+	if e, ok := lookup(code); ok {
+		return e.conclusion
+	}
+	return ActionRequired
+}
+
 type Reason struct {
 	Code     ReasonCode
 	Category Category
@@ -94,12 +105,19 @@ type Outcome struct {
 	Reasons    []Reason
 }
 
+// SharedPull is an open pull request into a branch other than the default branch whose head is the commit being decided.
+type SharedPull struct {
+	Number  int
+	BaseRef string
+}
+
 // Facts is the closed input of the decision. Report is nil when no usable report exists.
 type Facts struct {
 	Problems         []ingest.Problem
 	BaselineDigest   string // claimed by the envelope; "" = none used
 	LabelsDigest     string // claimed by the envelope; "" = none used
 	Report           *report.Report
+	SharedHead       []SharedPull // the other open pull requests that share the head commit and are not into the default branch
 	IdentityApproved bool
 	WorkflowApproved bool
 	Trusted          inputs.Trusted

@@ -16,6 +16,7 @@ const (
 	PullSynchronized    EventKind = "pull_synchronized" // new head SHA
 	PullClosed          EventKind = "pull_closed"
 	ReviewChanged       EventKind = "review_changed" // submitted, edited, dismissed
+	PullCommented       EventKind = "pull_commented" // a comment created on a pull request
 	DefaultBranchPush   EventKind = "default_branch_push"
 	BranchPush          EventKind = "branch_push"          // a push to a branch other than the default branch
 	InstallationAdded   EventKind = "installation_added"   // created, or repositories added
@@ -41,6 +42,10 @@ type Event struct {
 	Pusher         string   // push kinds only: the login that moved the branch; never a git author or committer
 	PusherType     string   // push kinds only: the payload's pusher_type ("user", or a deploy key); "" when absent
 	ChangedPaths   []string // default_branch_push only
+	CommentID      int64    // pull_commented only: the comment's ID
+	Author         string   // pull_commented only: the login that wrote the comment
+	AuthorType     string   // pull_commented only: the account type, "User" or "Bot"; "" when absent
+	Body           string   // pull_commented only: the comment text
 }
 
 // Header names of a GitHub webhook delivery. Callers read these headers and pass their values to VerifyAny and Parse.

@@ -25,7 +25,8 @@ and the invariants in `AGENTS.md`. Choices made without an owner answer are mark
   `success`, `failure`, or `action_required`; never `neutral` or `skipped`.
 - Publish `archfit/state`, `archfit/gate` (when `gate: required`) and one PR comment, idempotently.
 - Enforce architecture-owner approval on the exact head SHA for policy, baseline, settings and
-  workflow changes, including atomic code-and-policy PRs.
+  workflow changes, including atomic code-and-policy PRs. An owner approves by a review on GitHub or with Approve on
+  the App's pull request page; a push never approves, and an agent identity listed in the settings never approves.
 - Recover from missed events with one periodic sweep; schedule around waiver expiry and base policy changes
   by re-running the customer's workflow.
 - Onboard repositories in customer-executed mode (two PRs) and managed mode (sandbox job after consent).
@@ -156,6 +157,7 @@ internal/                         Archfit App (root)
 ├── app/                          composition root: config, roles, wiring, routes, webhook intake and processing, operator endpoints
 ├── wire/                         published language (versioned contracts, no domain logic)
 │   ├── envelope/                 report-envelope v1: schema, strict decode, payload digest
+│   ├── decision/                 decision-request v1: the comment block an unattended agent files, strict decode, status marker
 │   ├── report/                   engine state v1 as no-source allowlist transport
 │   ├── settings/                 .archfit-app.yaml: owners, gate mode, workflow path, data mode
 │   ├── policy/                   engine file paths, raw-byte digest, waiver reader, config schema
@@ -175,6 +177,7 @@ internal/                         Archfit App (root)
 │   ├── inputs/                   trusted inputs from the protected ref; owner approval; entitlement read
 │   ├── verdict/                  pure decision: facts → conclusion and reasons
 │   ├── feedback/                 check runs, the PR comment, receipts, idempotency
+│   ├── decisions/                decision requests of unattended agents: records, status comments, stale rules
 │   └── sweep/                    reconciliation of open PRs
 └── control/                      control plane (never on the gate path)
     ├── account/                  entitlements, consent records, LLM budget (all KV state)
@@ -234,13 +237,13 @@ GitHub's own headers and body, named after the delivery ID, so a repeated delive
 that the queue refuses runs inline. The worker verifies the signature again and hands the event to
 `gate.HandleEvent` or `control.HandleEvent`. The halves are separate tasks: a `control` error never blocks or repeats
 gate work. A transient error is retried by the queue; a permanent one is logged and dropped. New head → pending gate check (required
-mode) or fork refusal. A default-branch push that changes a protected path → a one-repository sweep, in the request. Review change → re-run the workflow if the last receipt was `owner_approval_missing`.
+mode) or fork refusal. A pull request opened or pushed into another base → the pull requests into the default branch on the same head are checked in the request (`shared_head` over a success or a pending check; only a failure of those units is retried). A default-branch push that changes a protected path → a one-repository sweep, in the request; any other default-branch push → the target-moved recheck of the open pull requests (sweep rule 5c), in the request. Review change → re-run the workflow if the last receipt was `owner_approval_missing`.
 Installation events → trial start, uninstall cleanup.
 
 **Sweep** (`POST /internal/sweep`, hourly **[default]**): `control.Sweep` refreshes entitlement records and forgets Store tenants whose installation is gone, then
 `gate.Sweep` walks installations → repositories with a settings file → open PRs and repairs: missing pending
 check, missing upload after 60 minutes, receipt digests that no longer match the protected ref (re-run),
-waiver expiry (warn 7 days before, re-run after), suspension and restoration. The two sweeps fail independently.
+waiver expiry (warn 7 days before, re-run after), suspension and restoration, and a passed PR whose target moved and now closes a module cycle with it (`target_moved`, no re-run), or whose head is shared with an open pull request into another base (`shared_head`, no re-run). The two sweeps fail independently.
 
 **Customer onboarding**: UI → `onboarding.StartCustomer` → `proposal` opens PR 1 (settings with owners, CODEOWNERS
 entries). The UI hands out the workflow, and the owner commits it to PR 1's branch from a filled-in GitHub page. After merge, the UI dispatches discovery; the workflow uploads a draft policy to
@@ -267,10 +270,13 @@ Distance scale and thresholds are those of the Fractal Design skill. Depths: roo
 
 | Integration                                                                 | Strength                          | LCA            | Rank | Distance | Volatility | Balanced? | Action                                           |
 | --------------------------------------------------------------------------- | --------------------------------- | -------------- | ---- | -------- | ---------- | --------- | ------------------------------------------------ |
-| gate → gate/{ingest,inputs,verdict,feedback,sweep}                          | Functional (composition)          | gate           | 1    | 1        | High       | Yes       | —                                                |
+| gate → gate/{ingest,inputs,verdict,feedback,sweep,decisions}                | Functional (composition)          | gate           | 1    | 1        | High       | Yes       | —                                                |
+| gate/sweep → gate/decisions (`Revalidate`); gate/decisions → gate/inputs    | Contract                          | gate           | 1    | 1        | High       | Yes       | —                                                |
+| gate/decisions → wire/decision, wire/policy, github/api, store              | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
 | gate/verdict → gate/ingest (`Problem`), gate/inputs (`Trusted`)             | Model                             | gate           | 1    | 1        | High       | Yes       | —                                                |
 | gate/feedback → gate/verdict (`Outcome`), gate/inputs (`Target`, `Trusted`) | Model                             | gate           | 1    | 1        | High       | Yes       | —                                                |
 | gate/sweep → gate/inputs, gate/feedback, gate/verdict                       | Contract                          | gate           | 1    | 1        | High       | Yes       | —                                                |
+| gate/sweep → wire/report (`DecodeArtifact`, `Seams`)                        | Contract (published language)     | root           | 2    | 2        | High       | Yes       | —                                                |
 | gate/ingest → wire/envelope, wire/report, wire/manifest                     | Contract (versioned schema)       | root           | 2    | 2        | High       | Yes       | —                                                |
 | gate/ingest → github/oidc, github/api                                       | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
 | gate/inputs → wire/settings, wire/policy                                    | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
@@ -484,6 +490,12 @@ draft are gone. What the real engine changed in this design:
 - **Test name**: `TestSuspensionIsNeitherArchitectureFailureNorSuccess`
   **Scenario**: private repository after trial and grace with no grant; then a grant.
   **Expected behavior**: `action_required` in category `subscription` with a recovery action; after the grant the workflow is re-run and only a fresh report can produce `success`.
+- **Test name**: `TestSoleOwnerApprovesTheExactCommitInTheApp`, `TestAnAgentIdentityCannotApproveInTheApp`
+  **Scenario**: a policy change that only its sole owner can approve: the owner reads the pull request page, approves
+  the shown head and digests, then the re-run reports; the same with the owner also listed in `agents`.
+  **Expected behavior**: `owner_approval_missing`, then the Approve answers granted by the owner, the workflow run is
+  re-run, nothing turns green before the fresh report, which is `success`; for the agent: no Approve offered, `403`,
+  no re-run, still `owner_approval_missing`.
 - **Test name**: `TestBothOnboardingModesComplete`
   **Scenario**: customer mode through PR 1, discovery upload, PR 2; managed mode with and without consent and with no sandbox configured.
   **Expected behavior**: exactly one PR per step after retries; no consent means no sandbox job and no LLM call; "not available" is a clear state.

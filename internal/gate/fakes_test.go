@@ -39,13 +39,17 @@ type fakeGitHub struct {
 	teams         map[string]bool           // "team|login"
 	runs          map[int64]api.WorkflowRun // run IDs are unique across the fake
 	checks        map[string][]api.CheckRun // by full name
-	comments      map[string][]api.Comment  // pullKey
+	comments      map[string][]api.Comment  // pullKey; an issue's comments under its number
+	heads         map[string]string         // branchKey → head commit
+	issues        map[string][]fakeIssue    // by full name, the App's issues
+	unassignable  map[string]bool           // logins GitHub refuses to assign
 	nextID        int64
 
 	fail        map[string]error // method name → injected error
 	calls       []fakeCall
 	checkWrites []api.CheckRun // every created or updated check run, in order
 	commentOps  int            // comments created or updated
+	issueEdits  int            // issue bodies updated
 	reruns      []int64
 	// beforeCheckWrite runs once, unlocked, at the start of the next check run create or update: what it does
 	// happens after that publisher's reads and before its first write.
@@ -80,9 +84,15 @@ func newFakeGitHub() *fakeGitHub {
 		runs:     map[int64]api.WorkflowRun{},
 		checks:   map[string][]api.CheckRun{},
 		comments: map[string][]api.Comment{},
+		heads:    map[string]string{},
+		issues:   map[string][]fakeIssue{},
 		fail:     map[string]error{},
+
+		unassignable: map[string]bool{},
 	}
 }
+
+func branchKey(fullName, branch string) string { return fullName + "|" + branch }
 
 func fileKey(fullName, ref, path string) string { return fullName + "|" + ref + "|" + path }
 func pullKey(fullName string, number int) string {
@@ -146,10 +156,17 @@ func (f *fakeGitHub) File(_ context.Context, r api.RepoRef, ref, path string) ([
 	return slices.Clone(raw), "blob", nil
 }
 
-func (f *fakeGitHub) BranchHead(_ context.Context, r api.RepoRef, _ string) (string, error) {
+func (f *fakeGitHub) BranchHead(_ context.Context, r api.RepoRef, branch string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return "", cmpErr(f.enter("BranchHead", r), api.ErrNotFound)
+	if err := f.enter("BranchHead", r); err != nil {
+		return "", err
+	}
+	head, ok := f.heads[branchKey(r.FullName, branch)]
+	if !ok {
+		return "", api.ErrNotFound
+	}
+	return head, nil
 }
 
 func cmpErr(first, second error) error {
@@ -381,6 +398,77 @@ func (f *fakeGitHub) UpdateComment(_ context.Context, r api.RepoRef, id int64, b
 	return api.ErrNotFound
 }
 
+// firstIssue is the number of the first issue: issues and pull requests share GitHub's numbers, so the fake keeps
+// issue numbers clear of the pull requests the tests open.
+const firstIssue = 1000
+
+// fakeIssue is an issue the App opened.
+type fakeIssue struct {
+	api.Issue
+	Title    string
+	Assignee string
+	Open     bool
+}
+
+func (f *fakeGitHub) AppIssues(_ context.Context, r api.RepoRef) ([]api.Issue, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter("AppIssues", r); err != nil {
+		return nil, err
+	}
+	out := []api.Issue{}
+	for _, i := range f.issues[r.FullName] {
+		if i.Open {
+			out = append(out, i.Issue)
+		}
+	}
+	return out, nil
+}
+
+// CreateIssue refuses an assignee GitHub cannot assign, as GitHub's 422 does.
+func (f *fakeGitHub) CreateIssue(_ context.Context, r api.RepoRef, i api.NewIssue) (api.Issue, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter("CreateIssue", r); err != nil {
+		return api.Issue{}, err
+	}
+	if f.unassignable[i.Assignee] {
+		return api.Issue{}, api.ErrUnprocessable
+	}
+	issue := fakeIssue{Issue: api.Issue{Number: firstIssue + len(f.issues[r.FullName]), Body: i.Body}, Title: i.Title, Assignee: i.Assignee, Open: true}
+	f.issues[r.FullName] = append(f.issues[r.FullName], issue)
+	return issue.Issue, nil
+}
+
+func (f *fakeGitHub) UpdateIssueBody(_ context.Context, r api.RepoRef, number int, body string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter("UpdateIssueBody", r); err != nil {
+		return err
+	}
+	return f.editIssue(r.FullName, number, func(i *fakeIssue) { i.Body = body; f.issueEdits++ })
+}
+
+func (f *fakeGitHub) CloseIssue(_ context.Context, r api.RepoRef, number int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter("CloseIssue", r); err != nil {
+		return err
+	}
+	return f.editIssue(r.FullName, number, func(i *fakeIssue) { i.Open = false })
+}
+
+// editIssue edits the issue number of fullName. The caller holds the lock.
+func (f *fakeGitHub) editIssue(fullName string, number int, edit func(*fakeIssue)) error {
+	for i := range f.issues[fullName] {
+		if f.issues[fullName][i].Number == number {
+			edit(&f.issues[fullName][i])
+			return nil
+		}
+	}
+	return api.ErrNotFound
+}
+
 // writes is the number of check and comment writes so far.
 func (f *fakeGitHub) writes() int {
 	f.mu.Lock()
@@ -424,12 +512,22 @@ func (v *fakeVerifier) Verify(_ context.Context, token, audience string) (oidc.C
 // operation from any other Store access.
 const leaseKeyPrefix = "feedback/lease/"
 
-// pusherKeyPrefix is gate/inputs' unexported prefix of the record of who pushed a head, restated for the same reason.
-const pusherKeyPrefix = "pusher/"
+// pusherKeyPrefix and approvalKeyPrefix are gate/inputs' unexported prefixes of the record of who pushed a head and of
+// an owner approval recorded in the App, restated for the same reason.
+const (
+	pusherKeyPrefix   = "pusher/"
+	approvalKeyPrefix = "approval/"
+	decisionKeyPrefix = "decision/" // gate/decisions' request records
+)
 
-// guardStore proves the gate path writes nothing but publication leases and pusher records: every other write panics,
-// and so does a compare-and-swap outside the lease and pusher keys. It records the tenants and keys of other reads,
-// and the tenants of lease and pusher operations separately.
+// isRecord reports whether key is a pusher or an approval record of gate/inputs, or a request record of gate/decisions.
+func isRecord(key string) bool {
+	return strings.HasPrefix(key, pusherKeyPrefix) || strings.HasPrefix(key, approvalKeyPrefix) || strings.HasPrefix(key, decisionKeyPrefix)
+}
+
+// guardStore proves the gate path writes nothing but publication leases and the records of gate/inputs: every other
+// write panics, and so does a compare-and-swap outside the lease and record keys. It records the tenants and keys of
+// other reads, and the tenants of lease and record operations separately.
 type guardStore struct {
 	inner store.Store
 	// entitlementErr fails every read except the leases: the control plane's records are unreadable.
@@ -443,20 +541,21 @@ type guardStore struct {
 	tenants       []store.Tenant
 	keys          []string
 	leaseTenants  []store.Tenant
-	pusherTenants []store.Tenant // tenants of every read and write of a pusher record
+	recordTenants []store.Tenant // tenants of every read and write of a pusher or approval record
+	recordKeys    []string       // their keys, in the same order
 }
 
 func (s *guardStore) Get(ctx context.Context, t store.Tenant, key string) ([]byte, error) {
 	s.mu.Lock()
 	lease := strings.HasPrefix(key, leaseKeyPrefix)
-	pusher := strings.HasPrefix(key, pusherKeyPrefix)
+	record := isRecord(key)
 	var hook func()
 	switch {
 	case lease:
 		s.leaseTenants = append(s.leaseTenants, t)
 		hook, s.beforeLease = s.beforeLease, nil
-	case pusher:
-		s.pusherTenants = append(s.pusherTenants, t)
+	case record:
+		s.recordTenants, s.recordKeys = append(s.recordTenants, t), append(s.recordKeys, key)
 	default:
 		s.tenants = append(s.tenants, t)
 		s.keys = append(s.keys, key)
@@ -468,20 +567,20 @@ func (s *guardStore) Get(ctx context.Context, t store.Tenant, key string) ([]byt
 	switch {
 	case s.down != nil:
 		return nil, s.down
-	case !lease && !pusher && s.entitlementErr != nil:
+	case !lease && !record && s.entitlementErr != nil:
 		return nil, s.entitlementErr
 	}
 	return s.inner.Get(ctx, t, key)
 }
 
 func (s *guardStore) CompareAndSwap(ctx context.Context, t store.Tenant, key string, old, value []byte) (bool, error) {
-	pusher := strings.HasPrefix(key, pusherKeyPrefix)
-	if !pusher && !strings.HasPrefix(key, leaseKeyPrefix) {
-		panic("gate path wrote to the Store outside a publication lease or a pusher record: CompareAndSwap")
+	record := isRecord(key)
+	if !record && !strings.HasPrefix(key, leaseKeyPrefix) {
+		panic("gate path wrote to the Store outside a publication lease or a record of gate/inputs: CompareAndSwap")
 	}
 	s.mu.Lock()
-	if pusher {
-		s.pusherTenants = append(s.pusherTenants, t)
+	if record {
+		s.recordTenants, s.recordKeys = append(s.recordTenants, t), append(s.recordKeys, key)
 	} else {
 		s.leaseTenants = append(s.leaseTenants, t)
 	}
@@ -492,8 +591,21 @@ func (s *guardStore) CompareAndSwap(ctx context.Context, t store.Tenant, key str
 	return s.inner.CompareAndSwap(ctx, t, key, old, value)
 }
 
-func (s *guardStore) CompareAndSwapAll(context.Context, store.Tenant, []store.Swap) (bool, error) {
-	panic("gate path wrote to the Store: CompareAndSwapAll")
+// CompareAndSwapAll is allowed for request records only, every key of the call.
+func (s *guardStore) CompareAndSwapAll(ctx context.Context, t store.Tenant, swaps []store.Swap) (bool, error) {
+	s.mu.Lock()
+	for _, sw := range swaps {
+		if !strings.HasPrefix(sw.Key, decisionKeyPrefix) {
+			s.mu.Unlock()
+			panic("gate path wrote to the Store: CompareAndSwapAll outside the decision records")
+		}
+		s.recordTenants, s.recordKeys = append(s.recordTenants, t), append(s.recordKeys, sw.Key)
+	}
+	s.mu.Unlock()
+	if s.down != nil {
+		return false, s.down
+	}
+	return s.inner.CompareAndSwapAll(ctx, t, swaps)
 }
 
 func (s *guardStore) Put(context.Context, store.Tenant, string, []byte) error {
@@ -550,6 +662,23 @@ func (r *fakeResolver) RecordPusher(_ context.Context, _ inputs.Target, login st
 	return nil
 }
 
+// The approval methods run only over the real resolver, in the world.
+func (r *fakeResolver) Candidate(context.Context, inputs.Target) (inputs.Candidate, error) {
+	panic("fakeResolver: Candidate")
+}
+
+func (r *fakeResolver) CanApprove(context.Context, inputs.Target, string) error {
+	panic("fakeResolver: CanApprove")
+}
+
+func (r *fakeResolver) CanDecide(context.Context, inputs.Target, string) error {
+	panic("fakeResolver: CanDecide")
+}
+
+func (r *fakeResolver) Approve(context.Context, inputs.Target, string, map[string]string, time.Time) error {
+	panic("fakeResolver: Approve")
+}
+
 type fakePublisher struct {
 	state      feedback.CheckState
 	stateErr   error
@@ -602,11 +731,26 @@ func (p *fakePublisher) Warn(context.Context, inputs.Target, time.Time) error {
 	panic("the façade never calls Warn")
 }
 
+// fakeRepairer records the publications the façade hands to the repair issue.
+type fakeRepairer struct {
+	repaired []feedback.Publication
+}
+
+func (r *fakeRepairer) Repair(_ context.Context, p feedback.Publication) {
+	r.repaired = append(r.repaired, p)
+}
+
 type fakeSweeper struct {
-	summary Summary
-	err     error
-	runs    []time.Time
-	repos   []api.Repo
+	summary  Summary
+	err      error
+	runs     []time.Time
+	repos    []api.Repo
+	rechecks []recheckCall
+}
+
+type recheckCall struct {
+	repo api.Repo
+	tip  string
 }
 
 func (s *fakeSweeper) Run(_ context.Context, now time.Time) (Summary, error) {
@@ -616,6 +760,12 @@ func (s *fakeSweeper) Run(_ context.Context, now time.Time) (Summary, error) {
 
 func (s *fakeSweeper) RunRepo(_ context.Context, r api.Repo, now time.Time) (Summary, error) {
 	s.repos = append(s.repos, r)
+	s.runs = append(s.runs, now)
+	return s.summary, s.err
+}
+
+func (s *fakeSweeper) Recheck(_ context.Context, r api.Repo, tip string, now time.Time) (Summary, error) {
+	s.rechecks = append(s.rechecks, recheckCall{r, tip})
 	s.runs = append(s.runs, now)
 	return s.summary, s.err
 }

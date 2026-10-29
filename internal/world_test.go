@@ -1,6 +1,7 @@
 package internal_test
 
 import (
+	"archive/zip"
 	"bytes"
 	"crypto/sha1" //nolint:gosec // fake git object IDs
 	"encoding/base64"
@@ -77,6 +78,7 @@ type repo struct {
 	checks     []*checkRun
 	comments   []*comment
 	runs       map[int64]*run
+	artifacts  map[int64][]byte // workflow run ID → the report file of its artifact
 	reruns     []int64
 	dispatches []dispatch
 }
@@ -90,10 +92,12 @@ type pull struct {
 	BaseRef   string
 	BaseSHA   string
 	MergeBase string
-	Draft     bool
-	State     string
-	Merged    bool
-	reviews   []review
+	// MergeCommit is GitHub's test merge commit of the head into the base; "" until GitHub has computed it.
+	MergeCommit string
+	Draft       bool
+	State       string
+	Merged      bool
+	reviews     []review
 }
 
 type review struct{ Login, State, Commit string }
@@ -429,6 +433,17 @@ func (w *world) fail(status, times int, match func(r *http.Request) bool) {
 	w.locked(func() { w.failures = append(w.failures, &failure{match: match, status: status, times: times}) })
 }
 
+// keepReport makes payload the report artifact of a workflow run, as GitHub keeps it for the App's page.
+func (w *world) keepReport(fullName string, runID int64, payload []byte) {
+	w.locked(func() {
+		rp := w.repos[fullName]
+		if rp.artifacts == nil {
+			rp.artifacts = map[int64][]byte{}
+		}
+		rp.artifacts[runID] = payload
+	})
+}
+
 func (w *world) allow(login, fullName, perm string) {
 	w.locked(func() { w.perms[login+" "+fullName] = perm })
 }
@@ -574,7 +589,7 @@ func (rp *repo) pullJSON(p *pull) map[string]any {
 	return map[string]any{
 		"number": p.Number, "node_id": fmt.Sprintf("PR_%d", p.Number), "state": p.State, "draft": p.Draft,
 		"title": p.Title, "body": p.Body, "html_url": fmt.Sprintf("https://github.com/%s/pull/%d", rp.FullName, p.Number),
-		"merged_at": mergedAt, "updated_at": "2026-09-21T12:00:00Z", "changed_files": len(rp.changedFiles(p)),
+		"merged_at": mergedAt, "updated_at": "2026-09-21T12:00:00Z", "changed_files": len(rp.changedFiles(p)), "merge_commit_sha": nilIfEmpty(p.MergeCommit),
 		"head": map[string]any{"sha": rp.branches[p.HeadRef], "ref": p.HeadRef, "repo": map[string]any{"full_name": p.HeadRepo}},
 		"base": map[string]any{"sha": p.BaseSHA, "ref": p.BaseRef},
 	}
@@ -1104,9 +1119,35 @@ func (w *world) routes() {
 		writeJSON(rw, http.StatusOK, map[string]any{"total_count": len(out), "workflow_runs": out})
 	})
 	mux.HandleFunc("GET "+R+"/actions/runs/{id}/artifacts", func(rw http.ResponseWriter, r *http.Request) {
-		if rp := w.repoOf(rw, r); rp != nil {
-			writeJSON(rw, http.StatusOK, map[string]any{"total_count": 0, "artifacts": []any{}})
+		rp := w.repoOf(rw, r)
+		if rp == nil {
+			return
 		}
+		list := []any{}
+		if id, err := strconv.ParseInt(r.PathValue("id"), 10, 64); err == nil && rp.artifacts[id] != nil {
+			// The artifact's ID is its run's.
+			list = append(list, map[string]any{"id": id, "name": r.URL.Query().Get("name"), "expired": false, "created_at": time.Now()})
+		}
+		writeJSON(rw, http.StatusOK, map[string]any{"total_count": len(list), "artifacts": list})
+	})
+	mux.HandleFunc("GET "+R+"/actions/artifacts/{id}/zip", func(rw http.ResponseWriter, r *http.Request) {
+		rp := w.repoOf(rw, r)
+		if rp == nil {
+			return
+		}
+		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		payload := rp.artifacts[id]
+		if payload == nil {
+			notFound(rw)
+			return
+		}
+		var buf bytes.Buffer
+		zw := zip.NewWriter(&buf)
+		f, _ := zw.Create("report.json")
+		_, _ = f.Write(payload)
+		_ = zw.Close()
+		rw.Header().Set("Content-Type", "application/zip")
+		_, _ = rw.Write(buf.Bytes())
 	})
 	mux.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
 		w.t.Logf("test world: unhandled %s %s?%s", r.Method, r.URL.Path, r.URL.RawQuery)
@@ -1131,4 +1172,12 @@ func (w *world) publishingWrites() []string {
 		}
 	}
 	return out
+}
+
+// nilIfEmpty is JSON null for "", as GitHub answers for a value it has not computed.
+func nilIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }

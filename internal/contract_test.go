@@ -144,10 +144,12 @@ func TestRoutesRequireTheirAuthentication(t *testing.T) {
 		{http.MethodPost, "/internal/grants"},
 		{http.MethodGet, "/r/" + demoRepo},
 		{http.MethodGet, "/r/" + demoRepo + "/policy"},
+		{http.MethodGet, "/r/" + demoRepo + "/decisions"},
 		{http.MethodGet, "/r/" + demoRepo + "/data-sharing"},
 		{http.MethodGet, "/r/" + demoRepo + "/consent"},
 		{http.MethodGet, "/api/repos/" + demoRepo + "/data-sharing"},
 		{http.MethodGet, "/api/repos/" + demoRepo + "/overview"},
+		{http.MethodGet, "/api/repos/" + demoRepo + "/decisions"},
 		{http.MethodPost, "/api/repos/" + demoRepo + "/onboarding"},
 		{http.MethodPost, "/api/repos/" + demoRepo + "/discover"},
 		{http.MethodGet, "/api/repos/" + demoRepo + "/policy"},
@@ -156,6 +158,7 @@ func TestRoutesRequireTheirAuthentication(t *testing.T) {
 		{http.MethodPost, "/api/repos/" + demoRepo + "/policy/ready"},
 		{http.MethodPost, "/api/repos/" + demoRepo + "/assist"},
 		{http.MethodPost, "/api/repos/" + demoRepo + "/data-sharing"},
+		{http.MethodPost, "/api/repos/" + demoRepo + "/pulls/42/approve"},
 		{http.MethodPost, "/auth/logout"},
 	}
 	credentials := []struct {

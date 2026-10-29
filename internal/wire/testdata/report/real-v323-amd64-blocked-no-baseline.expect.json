@@ -15,12 +15,13 @@
     "gate_reference_status": "non_comparable"
   },
   "gate": {
-    "conclusion": "failure",
+    "conclusion": "action_required",
     "reasons": [
+      "unknown_engine_identity",
       "blocking_findings"
     ]
   },
   "facts": {
-    "identity_approved": true
+    "identity_approved": false
   }
 }

@@ -316,6 +316,8 @@ func TestTaskHoldsWhatItsFindingHolds(t *testing.T) {
 func optionalKeys() []string {
 	return []string{
 		"gate_reference", "gate_reference.base_ref", "measurement", "measurement.",
+		"identity.policy_digest", "identity.baseline_digest", "identity.labels_digest", "identity.base_sha",
+		"identity.head_tree_digest", "identity.measurement_profile_hash", "identity.policy_ref", "identity.policy_ref.",
 		"gate_reference.config_hash", "gate_reference.model_hash", "gate_reference.labels_hash",
 		"gate_reference.rubric_version", "gate_reference.measurement_profile", "gate_reference.measurement_profile.",
 		"gate_reference.drift", "gate_reference.baseline_present",
@@ -391,7 +393,11 @@ func TestPresenceRules(t *testing.T) {
 			doc := baseDoc(t)
 			set(t, doc, nil, steps...)
 			_, err := Decode(encode(t, doc), fixtureEngine)
-			if nullable := general == "seams[].scores.p10" || general == "seams[].scores.p90"; nullable != (err == nil) {
+			nullable := slices.Contains([]string{
+				"seams[].scores.p10", "seams[].scores.p90",
+				"seams[].raw_distance.same_owner", "seams[].raw_distance.same_deploy_unit",
+			}, general)
+			if nullable != (err == nil) {
 				t.Errorf("%s null: nullable=%v, err=%v", general, nullable, err)
 			}
 		})

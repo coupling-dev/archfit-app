@@ -8,6 +8,7 @@
   import { guideURL, parseRoute, serverError } from './lib/route';
   import Admin from './pages/Admin.svelte';
   import DataSharing from './pages/DataSharing.svelte';
+  import Decisions from './pages/Decisions.svelte';
   import Landing from './pages/Landing.svelte';
   import Overview from './pages/Overview.svelte';
   import Pull from './pages/Pull.svelte';
@@ -53,8 +54,8 @@
         ? `${route.fullName} #${route.number}${route.kind === 'pull-graph' ? ' graph' : ''}`
         : route.kind === 'repo' || route.kind === 'graph'
           ? `${route.fullName}${route.kind === 'graph' ? ' architecture' : ''}`
-          : route.kind === 'data-sharing' || route.kind === 'policy'
-            ? `${route.fullName} ${route.kind === 'policy' ? 'policy' : 'data sharing'}`
+          : route.kind === 'data-sharing' || route.kind === 'policy' || route.kind === 'decisions'
+            ? `${route.fullName} ${route.kind === 'policy' ? 'policy' : route.kind === 'decisions' ? 'decisions' : 'data sharing'}`
             : signedOut
               ? 'Sign in'
               : 'Repositories',
@@ -72,7 +73,11 @@
 <Header
   {session}
   {repo}
-  tab={route.kind === 'repo' ? 'overview' : route.kind === 'graph' || route.kind === 'policy' ? route.kind : ''}
+  tab={route.kind === 'repo'
+    ? 'overview'
+    : route.kind === 'graph' || route.kind === 'policy' || route.kind === 'decisions'
+      ? route.kind
+      : ''}
   pull={route.kind === 'pull' || route.kind === 'pull-graph' ? route.number : 0}
 />
 <main class="page" id="main">
@@ -95,10 +100,12 @@
     <Admin {session} {here} />
   {:else if route.kind === 'repo'}
     <Overview {route} {session} {here} />
+  {:else if route.kind === 'decisions'}
+    <Decisions {route} {here} />
   {:else if route.kind === 'data-sharing'}
     <DataSharing {route} {session} {here} />
   {:else if route.kind === 'pull'}
-    <Pull {route} {here} />
+    <Pull {route} {session} {here} />
   {:else if (route.kind === 'graph' || route.kind === 'pull-graph') && graphPage}
     {#await graphPage}
       <Skeleton rows={6} />

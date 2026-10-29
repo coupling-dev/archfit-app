@@ -13,6 +13,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
 	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/alexei-led/archfit-app/internal/wire/report"
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
@@ -36,7 +37,24 @@ type fakeRepos struct {
 	listInstErr   error
 	listReposErr  map[int64]error
 	listInstCalls int
-	listRepos     []int64 // installation IDs in call order
+	listRepos     []int64           // installation IDs in call order
+	tips          map[string]string // default-branch head by repository full name; tip0 when absent
+	tipErrs       map[string]error
+	tipCalls      []string // full names, in call order
+}
+
+// tip0 is the default-branch head of a repository whose test scripts none.
+const tip0 = "tip0"
+
+func (f *fakeRepos) BranchHead(_ context.Context, r api.RepoRef, _ string) (string, error) {
+	f.tipCalls = append(f.tipCalls, r.FullName)
+	if err := f.tipErrs[r.FullName]; err != nil {
+		return "", err
+	}
+	if sha, ok := f.tips[r.FullName]; ok {
+		return sha, nil
+	}
+	return tip0, nil
 }
 
 func (f *fakeRepos) ListInstallations(context.Context) ([]api.Installation, error) {
@@ -67,11 +85,29 @@ func (f *fakePulls) OpenPulls(_ context.Context, r api.RepoRef) ([]api.Pull, err
 
 type fakeActions struct {
 	api.Actions
-	runs       map[int64]*api.WorkflowRun
-	runErrs    map[int64]error
-	rerunErrs  map[int64]error
-	runCalls   []int64
-	rerunCalls []int64 // every request, failed ones included
+	runs          map[int64]*api.WorkflowRun
+	runErrs       map[int64]error
+	rerunErrs     map[int64]error
+	runCalls      []int64
+	rerunCalls    []int64          // every request, failed ones included
+	artifacts     map[int64][]byte // report artifact by run; a missing run has none (api.ErrNotFound)
+	artifactErrs  map[int64]error
+	artifactCalls []int64
+}
+
+func (f *fakeActions) Artifact(_ context.Context, _ api.RepoRef, runID int64, name string, _ int64) ([]byte, error) {
+	f.artifactCalls = append(f.artifactCalls, runID)
+	if name != report.ArtifactName {
+		return nil, fmt.Errorf("artifact %q: %w", name, api.ErrNotFound)
+	}
+	if err := f.artifactErrs[runID]; err != nil {
+		return nil, err
+	}
+	payload, ok := f.artifacts[runID]
+	if !ok {
+		return nil, fmt.Errorf("run %d: %w", runID, api.ErrNotFound)
+	}
+	return payload, nil
 }
 
 func (f *fakeActions) Run(_ context.Context, _ api.RepoRef, runID int64) (api.WorkflowRun, error) {
@@ -107,6 +143,22 @@ type fakeResolver struct {
 }
 
 func (f *fakeResolver) RecordPusher(context.Context, inputs.Target, string) error { return nil }
+
+func (f *fakeResolver) Candidate(context.Context, inputs.Target) (inputs.Candidate, error) {
+	panic("the sweep never reads an approval candidate")
+}
+
+func (f *fakeResolver) CanApprove(context.Context, inputs.Target, string) error {
+	panic("the sweep never asks who may approve")
+}
+
+func (f *fakeResolver) CanDecide(context.Context, inputs.Target, string) error {
+	panic("the sweep never asks who may decide")
+}
+
+func (f *fakeResolver) Approve(context.Context, inputs.Target, string, map[string]string, time.Time) error {
+	panic("the sweep never approves")
+}
 
 func (f *fakeResolver) Resolve(_ context.Context, t inputs.Target, now time.Time) (inputs.Trusted, error) {
 	f.calls = append(f.calls, t)
@@ -208,14 +260,28 @@ func checkKey(t inputs.Target) string { return t.Repo.FullName + "@" + t.HeadSHA
 
 // world is one GitHub account as the fakes see it, plus the sweeper under test.
 type world struct {
-	t        *testing.T
-	repos    *fakeRepos
-	pulls    *fakePulls
-	actions  *fakeActions
-	resolver *fakeResolver
-	pub      *fakePublisher
-	admit    fakeAdmitter
-	sweeper  Sweeper
+	t         *testing.T
+	repos     *fakeRepos
+	pulls     *fakePulls
+	actions   *fakeActions
+	resolver  *fakeResolver
+	pub       *fakePublisher
+	admit     fakeAdmitter
+	decisions *fakeDecisions
+	sweeper   Sweeper
+}
+
+// fakeDecisions records the pull requests whose decision requests the sweep revalidated, with the digests it offered.
+type fakeDecisions struct {
+	targets []inputs.Target
+	digests [][]string
+	err     error
+}
+
+func (d *fakeDecisions) Revalidate(_ context.Context, t inputs.Target, tr inputs.Trusted, _ time.Time) error {
+	d.targets = append(d.targets, t)
+	d.digests = append(d.digests, tr.PolicyDigests)
+	return d.err
 }
 
 // fakeAdmitter admits every installation except the refused ones; a down one cannot be read.
@@ -231,15 +297,17 @@ func (a fakeAdmitter) Admitted(_ context.Context, installationID int64, _ string
 func newWorld(t *testing.T) *world {
 	t.Helper()
 	w := &world{
-		t:        t,
-		repos:    &fakeRepos{repos: map[int64][]api.Repo{}, listReposErr: map[int64]error{}},
-		pulls:    &fakePulls{open: map[string][]api.Pull{}, errs: map[string]error{}},
-		actions:  &fakeActions{runs: map[int64]*api.WorkflowRun{}, runErrs: map[int64]error{}, rerunErrs: map[int64]error{}},
+		t:     t,
+		repos: &fakeRepos{repos: map[int64][]api.Repo{}, listReposErr: map[int64]error{}, tips: map[string]string{}, tipErrs: map[string]error{}},
+		pulls: &fakePulls{open: map[string][]api.Pull{}, errs: map[string]error{}},
+		actions: &fakeActions{runs: map[int64]*api.WorkflowRun{}, runErrs: map[int64]error{}, rerunErrs: map[int64]error{},
+			artifacts: map[int64][]byte{}, artifactErrs: map[int64]error{}},
 		resolver: &fakeResolver{trusted: map[string]inputs.Trusted{}, errs: map[string]error{}},
 		pub:      &fakePublisher{states: map[string]feedback.CheckState{}, errs: map[string]error{}},
 	}
 	w.admit = fakeAdmitter{refused: map[int64]bool{}, down: map[int64]bool{}}
-	w.sweeper = New(w.repos, w.pulls, w.actions, w.resolver, w.pub, w.admit, Config{})
+	w.decisions = &fakeDecisions{}
+	w.sweeper = New(w.repos, w.pulls, w.actions, w.resolver, w.pub, w.admit, w.decisions, Config{})
 	t.Cleanup(w.assertNeverSuccess)
 	return w
 }

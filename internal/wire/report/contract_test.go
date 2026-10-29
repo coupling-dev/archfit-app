@@ -42,7 +42,7 @@ func checkExpectation(t *testing.T, r Report, want expectedFields) {
 
 func TestDecodeRealEngineReport(t *testing.T) {
 	const fixture = "report/real-blocked-no-baseline.json"
-	r := mustDecode(t, loadFixture(t, fixture))
+	r := mustDecodeFixture(t, fixture)
 	checkExpectation(t, r, loadExpectation(t, fixture).Fields)
 
 	if r.SchemaVersion != StateSchemaV1 || r.Verdict != "blocked" || r.Decision.HardGates != "fail" || r.Decision.ActiveBlockers != 1 {
@@ -93,7 +93,7 @@ func TestProducerToolVersionsSurvive(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.fixture, func(t *testing.T) {
-			r := mustDecode(t, loadFixture(t, tt.fixture))
+			r := mustDecodeFixture(t, tt.fixture)
 			checkExpectation(t, r, loadExpectation(t, tt.fixture).Fields)
 			got := map[string]Producer{}
 			for _, p := range r.Comparison.MeasurementProfile.Producers {
@@ -301,12 +301,24 @@ func TestEngineSchemaKeySetIsCovered(t *testing.T) {
 	checkKeptInShadow(t, "report", reflect.TypeFor[Report](), reflect.TypeFor[shadowReport]())
 
 	// Every key of a real capture and of the all-keys fixture must be a shadow field: both decode strictly.
-	mustDecode(t, loadFixture(t, "report/real-blocked-no-baseline.json"))
+	mustDecodeFixture(t, "report/real-blocked-no-baseline.json")
 	mustDecode(t, loadFixture(t, baseFixture))
-	mustDecode(t, loadFixture(t, "report/real-seam-policy.json"))
+	mustDecodeFixture(t, "report/real-seam-policy.json")
 
 	w := schemaWalker{t: t, root: parseDoc(t, loadFixture(t, "schema/archfit.state.schema.json"))}
 	w.check("report", w.root, reflect.TypeFor[shadowReport]())
+	checkKeptInShadow(t, "report.identity", reflect.TypeFor[ResultIdentity](), reflect.TypeFor[shadowIdentity]())
+}
+
+// The pinned schema requires identity from the release the decoder requires it from.
+func TestPinnedSchemaRequiresIdentity(t *testing.T) {
+	root := parseDoc(t, loadFixture(t, "schema/archfit.state.schema.json"))
+	if !slices.Contains(at(t, root, "required").([]any), any("identity")) {
+		t.Error("the pinned state schema does not require identity")
+	}
+	if !slices.Contains(engineVersions, identityFrom) || engineVersions[len(engineVersions)-1] != identityFrom {
+		t.Errorf("identityFrom %s must be the pinned (last) release of %q", identityFrom, engineVersions)
+	}
 }
 
 // shadowFields visits every field of every shadow struct reachable from t, with its JSON location.
@@ -389,7 +401,7 @@ func TestWrongSchemaVersion(t *testing.T) {
 
 func TestEngineVersions(t *testing.T) {
 	got := EngineVersions()
-	if want := []string{"v3.0.0", "v3.0.1", "v3.2.0", "v3.2.2", "v3.2.3"}; !slices.Equal(got, want) {
+	if want := []string{"v3.0.0", "v3.0.1", "v3.2.0", "v3.2.2", "v3.2.3", "v3.4.0"}; !slices.Equal(got, want) {
 		t.Errorf("EngineVersions() = %q, want %q", got, want)
 	}
 	got[0] = "changed"
@@ -567,7 +579,7 @@ func TestSeamBalanceReadingsKeepOnlyEngineTokens(t *testing.T) {
 // TestRootImporterCapture: the engine names an importer that no module owns by its package directory, "." for the
 // repository root, and ends the finding why and constraint with the rule's rationale and docs reference.
 func TestRootImporterCapture(t *testing.T) {
-	r := mustDecode(t, loadFixture(t, "report/real-root-importer.json"))
+	r := mustDecodeFixture(t, "report/real-root-importer.json")
 	if len(r.Findings) != 1 || len(r.AgentTasks) != 1 {
 		t.Fatalf("%d findings, %d tasks, want one each", len(r.Findings), len(r.AgentTasks))
 	}

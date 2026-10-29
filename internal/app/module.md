@@ -261,7 +261,7 @@ All integrations are constructor or handler calls: contract strength. `app` hold
 - **LCA / Rank / Distance**: internal (root) / 1 / 1
 - **Volatility**: high on the gate side; the façade is kept small on purpose
 - **Balanced?**: yes
-- **Shared knowledge**: the façade, the sweep summary that `/internal/sweep` returns, and `NewReceiver`, which `app` passes to `control`. `app` builds one `Admissions` with `NewAdmissions(Store,
+- **Shared knowledge**: the façade, the sweep summary that `/internal/sweep` returns, and `NewReceiver`, which `app` passes to `control`; `app` also passes the `*Gate` itself to `control.Deps.Approvals`, the seam of the pull request page's Approve button, and to `control.Deps.Decisions`, the seam of its decision request buttons. `app` builds one `Admissions` with `NewAdmissions(Store, `app` also passes it to `control.Deps.DecisionQueue`, the read-only list of the decision requests that wait for an owner.
   ApprovedAccounts)` and passes that same value to `Deps.Admissions`, `NewReceiver` and `control.Deps.Admissions`, so the
   three agree on who is served. The worker role builds it too, for the gate.
   In these blocks `Config` means `gate.Config` (the sweep thresholds), not this module's `Config`. `app` sets
@@ -271,8 +271,8 @@ All integrations are constructor or handler calls: contract strength. `app` hold
 <!-- contract: Gate, Deps, New — restated from internal/gate/module.md -->
 ```go
 // Deps are the only things the gate path may touch: GitHub, OIDC, the Store and a clock. On the Store the gate
-// path reads the entitlement and the admission, and reads and writes the pusher records of gate/inputs; its only
-// other write is gate/feedback's publication leases.
+// path reads the entitlement and the admission, and reads and writes the pusher and approval records of gate/inputs;
+// its only other write is gate/feedback's publication leases.
 type Deps struct {
     GitHub     *Client
     OIDC       Verifier
@@ -361,8 +361,8 @@ type Receiver interface {
 - **Volatility**: high inside control; the façade is stable
 - **Balanced?**: yes
 - **Shared knowledge**: the façade and the two platform seams `app` fills. In this block `Deps` means `control.Deps`.
-  `app` also passes `Admissions` (the value the gate uses) and `Operators` (`Config.Operators`); `New` refuses a nil
-  `Admissions`. `NewWorker` takes `Admissions` too (required), for installation events and the sweep, and no `Operators`.
+  `app` also passes `Admissions` (the value the gate uses), `Approvals`, `Decisions` and `DecisionQueue` (all the `*Gate`) and `Operators`
+  (`Config.Operators`); `New` refuses a nil `Admissions`, `Approvals`, `Decisions` or `DecisionQueue`. `NewWorker` takes `Admissions` too (required), for installation events and the sweep, and no `Operators`.
 
 <!-- contract: Control, Deps, New, WorkerDeps, NewWorker — restated from internal/control/module.md -->
 ```go
@@ -375,7 +375,11 @@ type Deps struct {
     Receiver  Receiver
     // Admissions says which installations the App serves; Operators (GitHub user IDs) approve the others on /admin.
     Admissions *Admissions
-    Operators  []int64
+    // Approvals reads and records owner approvals of pull request heads for the pull request page: the gate façade.
+    Approvals Approvals
+    // Decisions lists, declines and approves the decision requests of unattended agents for the pull request page.
+    Decisions Decisions
+    Operators []int64
     Sandbox    Sandbox
     Provider   Provider
     CookieKey  []byte
@@ -853,6 +857,12 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
 - Secrets arrive as file paths; their contents are never logged, never placed in `Config` string form, never echoed in errors.
 - The approved accounts are logins and compare case-insensitively; the operators are user IDs, never logins, because a
   released login can be taken by someone else. The lists are configuration, not secrets.
+- An owner approval of a pull request head is reachable only behind `control/ui`'s browser session: no `/v1/` route
+  (OIDC uploads) and no CLI reaches `gate.Approvals`. `app` hands the `*Gate` to `control.Deps.Approvals` and `control.Deps.Decisions` and to nothing
+  else; `TestOwnerApprovalIsReachableOnlyFromTheBrowserSession` and `TestDecisionsAreReachableOnlyFromTheBrowserSession` pin it.
+- Declared restatement: that test names `control/ui`'s route `POST /api/repos/{o}/{n}/pulls/{number}/approve` and
+  `gate/inputs`' record key prefix `approval/` to prove where they are mounted and written. Owner of each: those two
+  modules. On drift the test fails; it never changes a route.
 - Tenant identity is never taken from a request here. `/internal/grants` is operator-authenticated and is the single place an installation ID arrives in a body; it is logged with the operator action.
 - Webhook body cap 25 MB **[default]**; bodies are never logged. Unknown events answer `202` and do nothing.
 - The server write timeout is greater than every route deadline. Raising a route deadline means raising the write timeout with it.
@@ -978,6 +988,18 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
 - **Test name**: `TestImportsStayInsideTheDesign`
   **Scenario**: list the package's imports with `go list`.
   **Expected behavior**: every import outside the standard library is a module listed under Integrations; anything else fails the test.
+- **Test name**: `TestDecisionsAreReachableOnlyFromTheBrowserSession`
+  **Scenario**: the same parse and route tables; `POST` the two decision paths (approve, decline) with an Actions OIDC bearer token on every role.
+  **Expected behavior**: `ApproveDecision`, `ApprovedDecision`, `DeclineDecision` and `DecisionRequests` are each used only in `control/ui`; both routes are mounted as `s.apiRepo(permWrite, …)`; the paths reach `control.UI` and nothing else (the worker role reaches nothing).
+- **Test name**: `TestOwnerApprovalIsReachableOnlyFromTheBrowserSession`
+  **Scenario**: parse every non-test Go file under `cmd/` and `internal/`; read the route tables of `control/ui` and of
+  this package; `go list -deps` of `gate/ingest` and `github/oidc`; `POST` the approve path, a `/v1/reports/approve`
+  path and `/v1/reports` with an Actions OIDC bearer token on every role.
+  **Expected behavior**: `Approve` is used only in `gate.(*Gate).Approve` and `ui.(*server).apiApprovePull`; the
+  handler only in `control/ui`'s route table, at the approve route, as `s.apiRepo(permWrite, s.apiApprovePull)`
+  (session, CSRF token, write access); the record key only in `gate/inputs`; the four `/v1/` routes are served by no
+  UI handler; the upload authentication links neither `gate/inputs` nor `store`; the approve paths reach only
+  `control.UI` (nothing on the worker) and `/v1/reports` only `gate.Upload`.
 
 ### Boundary Tests
 

@@ -3,6 +3,7 @@ package envelope_test
 import (
 	"bytes"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -28,6 +29,8 @@ func TestDecodeFieldRules(t *testing.T) {
 			HeadSHA:       hex40,
 			BaseSHA:       hex40,
 			MergeBaseSHA:  hex40,
+			AnalyzedSHA:   hex40,
+			Integration:   envelope.IntegrationMerged,
 			RunID:         17654321098,
 			RunAttempt:    1,
 			EngineVersion: "v3.0.0",
@@ -35,7 +38,7 @@ func TestDecodeFieldRules(t *testing.T) {
 			Platform:      "linux/amd64",
 			PayloadDigest: "sha256:" + hex64,
 		}
-		if got != want {
+		if !reflect.DeepEqual(got, want) {
 			t.Errorf("got %+v\nwant %+v", got, want)
 		}
 	})
@@ -91,6 +94,16 @@ func TestDecodeCrossFieldRules(t *testing.T) {
 		{"push with pull_request 7", with(pushFields("push"), "pull_request", "7"), "pull_request"},
 		{"push with base_sha", with(pushFields("push"), "base_sha", quoted(hex40)), "base_sha"},
 		{"pull_request event with empty merge_base_sha", with(prFields(), "merge_base_sha", quoted("")), "merge_base_sha"},
+		{"pull_request event merged", prFields(), ""},
+		{"pull_request event with conflicts", with(with(prFields(), "integration", quoted("conflicts")), "analyzed_sha", quoted(hex40)), ""},
+		{"pull_request event with empty integration", with(prFields(), "integration", quoted("")), "integration"},
+		{"pull_request event with unknown integration", with(prFields(), "integration", quoted("rebased")), "integration"},
+		{"push with integration merged", with(pushFields("push"), "integration", quoted("merged")), "integration"},
+		{"push with integration conflicts", with(pushFields("push"), "integration", quoted("conflicts")), "integration"},
+		{"analyzed_sha uppercase", with(prFields(), "analyzed_sha", quoted(strings.ToUpper(hex40))), "analyzed_sha"},
+		{"analyzed_sha short", with(prFields(), "analyzed_sha", quoted(hex40[:39])), "analyzed_sha"},
+		{"analyzed_sha empty on a push", with(pushFields("push"), "analyzed_sha", quoted("")), "analyzed_sha"},
+		{"analyzed_sha null", with(prFields(), "analyzed_sha", "null"), "analyzed_sha"},
 		{"valid push", pushFields("push"), ""},
 		{"valid workflow_dispatch", pushFields("workflow_dispatch"), ""},
 		{"valid pull_request", prFields(), ""},
@@ -323,7 +336,7 @@ func FuzzDecode(f *testing.F) {
 	f.Fuzz(func(t *testing.T, raw []byte) {
 		env, err := envelope.Decode(raw)
 		if err != nil {
-			if env != (envelope.Envelope{}) {
+			if !reflect.DeepEqual(env, envelope.Envelope{}) {
 				t.Fatalf("non-zero Envelope with error %v", err)
 			}
 			return
@@ -336,7 +349,15 @@ func FuzzDecode(f *testing.F) {
 		if err != nil {
 			t.Fatalf("re-marshaled envelope does not decode: %v", err)
 		}
-		if got != env {
+		// Marshal compacts the policy_change bytes the producer may have spaced.
+		var compact bytes.Buffer
+		if env.PolicyChange != nil {
+			if err := json.Compact(&compact, env.PolicyChange); err != nil {
+				t.Fatalf("compact: %v", err)
+			}
+			env.PolicyChange = compact.Bytes()
+		}
+		if !reflect.DeepEqual(got, env) {
 			t.Fatalf("round trip changed the envelope:\n got %+v\nwant %+v", got, env)
 		}
 	})

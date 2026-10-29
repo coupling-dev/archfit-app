@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -18,12 +19,22 @@ const (
 	digestHexLen     = 64
 )
 
+// policyListKeys are the eleven lists of policy_change, beside direction. The items are the engine's: the envelope
+// checks that each is an object and report.DecodePolicyChange checks what is inside.
+var policyListKeys = []string{
+	"rules_removed", "rules_loosened", "waivers_added", "allowlists_widened", "coverage_lost", "declarations_changed",
+	"rules_added", "rules_tightened", "waivers_removed", "allowlists_narrowed", "coverage_gained",
+}
+
 // field is one envelope key: its JSON type and its v1 rule.
 type field struct {
 	name  string
-	bits  int                      // 0 = string; otherwise an integer of this size
+	bits  int                      // 0 = string; jsonObject = the optional policy_change object; otherwise an integer of this size
 	check func(e *Envelope) string // the violated rule; "" when the value conforms
 }
+
+// jsonObject marks the one key whose value is an object, and the one key that may be absent.
+const jsonObject = -1
 
 func fields() []field {
 	return []field{
@@ -52,6 +63,16 @@ func fields() []field {
 		}},
 		{"base_sha", 0, func(e *Envelope) string { return pullRequestSHA(e, e.BaseSHA) }},
 		{"merge_base_sha", 0, func(e *Envelope) string { return pullRequestSHA(e, e.MergeBaseSHA) }},
+		{"analyzed_sha", 0, func(e *Envelope) string {
+			return rule(isHex(e.AnalyzedSHA, shaHexLen), "must be 40 lowercase hex characters")
+		}},
+		{"integration", 0, func(e *Envelope) string {
+			if e.Event == eventPullRequest {
+				return rule(e.Integration == IntegrationMerged || e.Integration == IntegrationConflicts,
+					"must be merged or conflicts when event is pull_request")
+			}
+			return rule(e.Integration == "", "must be empty unless event is pull_request")
+		}},
 		{"run_id", 64, func(e *Envelope) string { return rule(e.RunID > 0, "must be > 0") }},
 		{"run_attempt", 32, func(e *Envelope) string { return rule(e.RunAttempt >= 1, "must be >= 1") }},
 		{"engine_version", 0, func(e *Envelope) string {
@@ -74,6 +95,11 @@ func fields() []field {
 			return inputDigest(e, e.BaselineDigest)
 		}},
 		{"labels_digest", 0, func(e *Envelope) string { return inputDigest(e, e.LabelsDigest) }},
+		{"policy_change", jsonObject, func(e *Envelope) string {
+			// Only a pull request report has a policy change to classify.
+			return rule(e.PolicyChange == nil || e.Kind == KindReport && e.Event == eventPullRequest,
+				"must be absent unless kind is report and event is pull_request")
+		}},
 	}
 }
 
@@ -136,6 +162,16 @@ func checkShape(raw []byte, fs []field) error {
 		}
 		seen[f.name] = true
 
+		if f.bits == jsonObject {
+			var value json.RawMessage
+			if err := dec.Decode(&value); err != nil {
+				return errMalformed()
+			}
+			if violated := policyChangeShape(value); violated != "" {
+				return fieldError(f.name, violated)
+			}
+			continue
+		}
 		value, err := dec.Token()
 		if err != nil {
 			return errMalformed()
@@ -151,11 +187,66 @@ func checkShape(raw []byte, fs []field) error {
 		return errors.New("envelope: trailing data after the object")
 	}
 	for _, f := range fs {
-		if !seen[f.name] {
+		if !seen[f.name] && f.bits != jsonObject {
 			return fieldError(f.name, "required")
 		}
 	}
 	return nil
+}
+
+// policyChangeShape checks what the schema checks of policy_change: an object of exactly the twelve keys, each once,
+// a known direction, and every list an array of objects. What an item holds is not checked here.
+func policyChangeShape(raw []byte) string {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		return "must be an object"
+	}
+	seen := make(map[string]bool, len(policyListKeys)+1)
+	for dec.More() {
+		key, err := dec.Token()
+		if err != nil {
+			return "must be an object"
+		}
+		name, _ := key.(string)
+		if seen[name] {
+			return "duplicate key " + strconv.Quote(name)
+		}
+		var value json.RawMessage
+		if err := dec.Decode(&value); err != nil {
+			return "must be an object"
+		}
+		switch {
+		case name == "direction":
+			var direction string
+			if json.Unmarshal(value, &direction) != nil || direction != "tightening" && direction != "loosening" && direction != "mixed" {
+				return "direction must be tightening, loosening or mixed"
+			}
+		case slices.Contains(policyListKeys, name):
+			if !isObjectArray(value) {
+				return name + " must be an array of objects"
+			}
+		default:
+			return "unknown key"
+		}
+		seen[name] = true
+	}
+	if len(seen) != len(policyListKeys)+1 {
+		return "must have exactly direction and the eleven lists"
+	}
+	return ""
+}
+
+func isObjectArray(raw json.RawMessage) bool {
+	var items []json.RawMessage
+	if len(raw) == 0 || raw[0] != '[' || json.Unmarshal(raw, &items) != nil {
+		return false
+	}
+	for _, item := range items {
+		if len(item) == 0 || item[0] != '{' {
+			return false
+		}
+	}
+	return true
 }
 
 func lookup(fs []field, key json.Token) (field, bool) {

@@ -1,19 +1,25 @@
 <script lang="ts">
   import FindingGroups from '../components/FindingGroups.svelte';
+  import FirstScreen from '../components/FirstScreen.svelte';
   import DecisionLine from '../components/DecisionLine.svelte';
+  import DecisionRequests from '../components/DecisionRequests.svelte';
   import PullHead from '../components/PullHead.svelte';
   import { basisText, resultWord } from '../lib/evidence';
   import Skeleton from '../components/Skeleton.svelte';
-  import { explainLoad, repoAPI, type ApiError, type Pull } from '../lib/api';
+  import { explain, explainLoad, postJSON, repoAPI, type ApiError, type Approved, type Pull, type Session } from '../lib/api';
+  import { digestWord, offersApprove, stateLine } from '../lib/approval';
   import { firstJSON } from '../lib/early';
   import { repoPage, type Repo } from '../lib/route';
   import { trustSentence } from '../lib/feedback';
 
-  let { route, here }: { route: Repo & { number: number }; here: string } = $props();
+  let { route, session, here }: { route: Repo & { number: number }; session: Session; here: string } = $props();
 
   let body = $state<Pull | null>(null);
   let failure = $state('');
   let copied = $state('');
+  let approving = $state(false);
+  let approvalNotice = $state('');
+  let approvalError = $state('');
 
   function load() {
     firstJSON<Pull>(repoAPI(route.owner, route.name, `pulls/${route.number}`)).then(
@@ -22,6 +28,26 @@
     );
   }
   load();
+
+  // approve sends back the exact head and the digests the page showed: the server refuses any other.
+  async function approve() {
+    const a = body?.approval;
+    if (!body || !a) return;
+    approving = true;
+    approvalNotice = approvalError = '';
+    try {
+      const path = repoAPI(route.owner, route.name, `pulls/${route.number}/approve`);
+      const res = await postJSON<Approved>(path, session.csrf, { head_sha: a.head_sha, digests: a.digests });
+      body.approval = res.approval ?? undefined;
+      approvalNotice = res.notice;
+    } catch (e) {
+      // A refusal or a failure after the record was written: show the sentence over the state read again.
+      approvalError = explain(e as ApiError, here);
+      load();
+    } finally {
+      approving = false;
+    }
+  }
 
   async function copyTasks() {
     if (!body) return;
@@ -41,9 +67,60 @@
   <Skeleton rows={2} box={false} />
   <Skeleton rows={5} />
 {:else}
-  <PullHead head={body} fullName={route.fullName} current="findings" />
+  {@const first = body.first_screen ?? []}
+  <PullHead head={body} fullName={route.fullName} current="findings">
+    {#snippet screen()}{#if first.length}<FirstScreen lines={first} />{/if}{/snippet}
+  </PullHead>
   <DecisionLine decision={body.decision} />
-  {#if !body.unavailable && body.required && body.result !== 'action required' && body.decision?.hard_gates === 'pass' && body.decision.blockers === 0 && !body.decision.unevaluated.length && body.violation_count === 0}
+  {#if body.approval}
+    {@const a = body.approval}
+    <section class="box" aria-labelledby="owner-approval">
+      <div class="box-head">
+        <h2 id="owner-approval">Owner approval</h2>
+        <span class="status {a.state === 'granted' ? 'success' : 'attention'}">
+          {a.state === 'granted' ? 'approved' : 'needed'}
+        </span>
+      </div>
+      <div class="box-body stack-sm">
+        {#if a.author_is_agent}
+          <p class="flash warn">Opened by an agent identity. Review its changes to the protected files before you approve.</p>
+        {/if}
+        <p>{stateLine(a, body.head_sha)}</p>
+        <ul class="plain" aria-label="Protected files this pull request changes">
+          {#each a.paths as path (path)}
+            <li><code>{path}</code> <span class="muted small">{digestWord(a, path)}</span></li>
+          {/each}
+        </ul>
+        {#if offersApprove(a)}
+          <div>
+            <button class="btn sm primary" type="button" disabled={approving} onclick={approve}>
+              Approve this exact commit
+            </button>
+          </div>
+        {:else if a.state === 'missing' && a.reason}
+          <p class="muted">{a.reason}</p>
+        {/if}
+        <p class="muted small">
+          An approval holds for this commit only: a new commit needs a new approval. Approve on GitHub, or here when
+          GitHub does not let you approve your own pull request.
+        </p>
+        {#if approvalNotice}<p class="flash success" role="status">{approvalNotice}</p>{/if}
+        {#if approvalError}<p class="flash error" role="alert">{approvalError}</p>{/if}
+      </div>
+    </section>
+  {/if}
+  {#if body.decisions?.length}
+    <DecisionRequests
+      requests={body.decisions}
+      number={route.number}
+      fullName={route.fullName}
+      {session}
+      {here}
+      onchange={(list) => (body!.decisions = list)}
+      onfailed={load}
+    />
+  {/if}
+  {#if !first.length && !body.unavailable && body.required && body.result !== 'action required' && body.decision?.hard_gates === 'pass' && body.decision.blockers === 0 && !body.decision.unevaluated.length && body.violation_count === 0}
     <p class="flash success">No required architecture change requested in the evaluated scope.{body.accepted_count ? ' Accepted debt remains.' : ''}</p>
   {/if}
 
@@ -53,7 +130,7 @@
       <div class="box-body stack-sm">
         <p>{body.unavailable}</p>
         <p>No findings, counts or agent tasks from this report are admitted for display. This is not a clean result.</p>
-        <p>Resolve the reason in PR analysis above, then re-run the workflow to obtain usable evidence.</p>
+        <p>Follow the next step in PR analysis above. A usable result follows when the workflow reports on the commit.</p>
       </div>
     </section>
   {:else}

@@ -31,6 +31,42 @@ export interface PullRow {
   tone: Tone;
   reason: string;
   href: string;
+  rerun?: string; // the pull request waits for an update after the target branch moved: the next step, with the modules
+}
+
+// DecisionRow is a decision request of an unattended agent. Every text is data written by an agent or GitHub.
+export interface DecisionRow {
+  pull: number;
+  title?: string;
+  status: 'pending' | 'approved' | 'declined' | 'stale';
+  finding: string; // short ID
+  rule: string;
+  edge: string; // "from → to"
+  requester: string; // whoever commented; never an approval
+  head: string; // short
+  created: string; // RFC 3339
+  href: string; // the pull request page, where an owner decides
+}
+
+// PolicyChangeRow is an open pull request that changes the protected policy.
+export interface PolicyChangeRow {
+  number: number;
+  title: string;
+  headline: string; // the policy change card's classification
+  approval: 'granted' | 'missing' | 'not_needed' | 'unknown';
+  by?: string;
+  href: string;
+}
+
+// Inbox is the decisions page: what waits for an owner. Read only.
+export interface Inbox {
+  requests: DecisionRow[];
+  requests_more: number;
+  requests_error: boolean;
+  policy_changes: PolicyChangeRow[];
+  policy_more: number;
+  policy_error: boolean;
+  policy_unread: number; // open pull requests whose check could not be read
 }
 
 export interface Step {
@@ -44,9 +80,16 @@ export interface Overview {
   main_state: string;
   main_tone: Tone;
   main_reason: string;
+  main_sha: string; // the default-branch commit that check is on, short
+  main_at: string; // when it started, RFC 3339; '' without a check
   pulls: PullRow[] | null;
   pulls_more: number;
   pulls_error: boolean;
+  pulls_to_update: number; // listed pull requests that wait for an update after the target moved
+  pulls_unread: number; // listed pull requests whose check could not be read: pulls_to_update is a floor
+  decisions_pending: number; // decision requests that wait for an owner, in all pull requests
+  decisions: DecisionRow[]; // the first few
+  decisions_error: boolean;
   steps: Step[];
   next: string;
   next_how: string;
@@ -197,7 +240,56 @@ export interface Findings {
   task_count: number;
 }
 
-export type Pull = PullHead & Findings;
+// Approval is the owner approval of a pull request head that changes a protected file; absent when it changes none.
+export interface Approval {
+  head_sha: string; // the full head it is for; Approve sends it back
+  paths: string[];
+  digests: Record<string, string> | null; // each path at the head, '' when deleted; null for a fork; Approve sends it back
+  short_digests: Record<string, string> | null;
+  state: 'granted' | 'missing';
+  by?: string;
+  can_approve: boolean;
+  reason?: string; // why the signed-in user cannot approve, while missing
+  author_is_agent: boolean;
+}
+
+// ScreenLine is one line of the comment's first screen, as plain text.
+export interface ScreenLine {
+  kind: 'headline' | 'heading' | 'text' | 'item';
+  text: string;
+}
+
+// DecisionRequest is a request an unattended agent filed on the pull request. Every text in it but the status is the
+// agent's: render it as text only.
+export interface DecisionRequest {
+  finding_id: string;
+  policy_digest: string; // with finding_id, the key of the request; Approve and Decline send it back in the path
+  rule_id: string;
+  from: string;
+  to: string;
+  status: 'pending' | 'approved' | 'declined' | 'stale';
+  reason?: string; // why it is declined or stale
+  requester: string;
+  why: string;
+  alternatives: string[];
+  proposal_pr?: number;
+  proposal_url?: string;
+  can_decide: boolean; // the signed-in user is an owner who did not file it, and it is pending
+}
+
+export type Pull = PullHead & Findings & { approval?: Approval; decisions?: DecisionRequest[]; first_screen?: ScreenLine[] };
+
+// Decided answers the Approve and Decline buttons of a decision request: the requests as they stand now.
+export interface Decided {
+  decisions: DecisionRequest[];
+  notice: string;
+}
+
+// Approved answers the Approve button: the approval read again.
+export interface Approved {
+  approval: Approval | null;
+  notice: string;
+}
 
 // RepoFindings is the latest report of the default branch, for the overview.
 export type RepoFindings = Findings & {

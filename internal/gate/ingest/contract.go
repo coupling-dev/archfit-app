@@ -22,6 +22,11 @@ type Binding struct {
 	BaseRef      string // PR base branch; for other events the branch the run executed on
 	BaseSHA      string
 	MergeBaseSHA string
+	// AnalyzedSHA and Integration are what GitHub says the engine must have measured: the head, or the test merge
+	// commit of a pull request that merges. Both are "" for a pull request whose merge GitHub has not computed, so no
+	// envelope matches.
+	AnalyzedSHA  string
+	Integration  string
 	Fork         bool
 	RunID        int64
 	RunAttempt   int
@@ -50,7 +55,11 @@ type Upload struct {
 	LabelsDigest   string            // claimed by the envelope; "" = the producer used no labels file
 	Payload        []byte            // the exact verified bytes; the only content for KindDiscovery, KindBaseline and KindReanchor
 	Report         *report.Report    // nil for KindDiscovery, KindBaseline and when ProblemReportInvalid
-	Problems       []Problem
+	// PolicyChange is the engine's classification of the pull request's policy change, as the Action sent it in the
+	// envelope. nil when it sent none or sent one report.DecodePolicyChange refuses; neither is a Problem, because the
+	// card it feeds is display-only. Self-reported: gate/inputs, not this, says whether the policy changed.
+	PolicyChange *report.PolicyChange
+	Problems     []Problem
 }
 
 // Rejection is returned when no tenant could be authenticated or the upload is stale.

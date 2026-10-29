@@ -129,8 +129,11 @@ The design leaves these choices to the implementation. Each one is the simplest 
   During webhook rotation, `webhook_secret_previous_version` mounts another numeric version of the same secret on both
   services. It defaults to `null`. A new value reaches a service only through a new revision. `latest` is never used.
 - **Secret replication** is user-managed in `europe-west1`, so secrets stay in the one region.
-- **Sizing.** 2 services × 2 instances × 1 vCPU uses the full 4 vCPU quota. During a rollout, new instances can wait
-  for quota. Raise the quota before a release needs more (see [Project guardrails](../docs/design/cloud/operations.md#project-guardrails)).
+- **Sizing.** 2 services × 2 instances × 1 vCPU. A release runs a new revision of each service beside the live one, so
+  the Cloud Run CPU quota is 8 vCPU: 2 services × 2 instances × (live + new revision). Memory: 8 × 512 MiB = the 4 GiB
+  quota. Under the earlier 4 vCPU quota the live revisions alone filled it and traffic could not move to a new
+  revision. Raise the quota before you raise the instance count (see
+  [Project guardrails](../docs/design/cloud/operations.md#project-guardrails)).
 - **Timeouts.** The public service has 330 s, above the 300 s deadline of the managed assist route. Uploads and the
   other routes stop at 55 s in the App. The worker has 600 s, for the sweep.
 - **The uptime check calls the `run.app` URL**, so it works before DNS. `/health` does not depend on the host.
@@ -265,8 +268,14 @@ Register the App with these settings. Keep the webhook inactive, and install it 
 - Webhook URL: `https://app.coupling.dev/webhooks/github`, inactive
 - Repository permissions: Actions, Checks, Contents and Pull requests read and write; Metadata read. Workflows: no
   access. The App never writes `.github/workflows/`; the owner adds the workflow during onboarding.
+- Issues read and write: needed from the release that adds the repair issue on the default branch. Grant it on that
+  release day under **Permissions & events**; each installation then accepts the new permission. Until then the App
+  logs every refused issue call and publishes checks and comments as before.
 - Organization permissions: Members read
 - Events: Pull request, Pull request review, Push
+- Issue comment event: the release that brings [decision requests](../docs/user-guide.md#decision-requests-from-unattended-agents)
+  subscribes the App to it under **Permissions & events**. The code ignores the event until then; the subscription is
+  part of that release's checklist and is not done yet.
 - Installable on any account (public). GitHub has no install approval, so the App approves accounts itself: it does
   nothing for an account that is neither in `ARCHFIT_APPROVED_ACCOUNTS` nor approved by an operator on `/admin`. See
   [Who the App serves](../docs/user-guide.md#who-the-app-serves).

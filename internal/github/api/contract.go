@@ -26,6 +26,14 @@ var (
 	ErrNotFound    = errors.New("github: not found")
 	ErrRateLimited = errors.New("github: rate limit exhausted") // returned after bounded backoff
 
+	// ErrArtifactInvalid is an artifact that downloaded whole but is not what the App reads: not a zip, not exactly one
+	// regular file, or too large. Downloading it again gives the same bytes, unlike a failed read.
+	ErrArtifactInvalid = errors.New("github: artifact is not a single file")
+
+	// ErrUnprocessable is GitHub's 422 on creating an issue with an assignee: the request was refused as a whole and
+	// nothing was created, so the same request without the assignee is safe to send.
+	ErrUnprocessable = errors.New("github: request refused")
+
 	// ErrUserTokenRejected is GitHub's 401 on a user's OAuth token: it expired or was revoked. The token cannot
 	// recover, so the call is not repeated and the user must sign in again.
 	ErrUserTokenRejected = errors.New("github: user token rejected")
@@ -107,13 +115,21 @@ type Pull struct {
 	BaseRef      string
 	BaseSHA      string
 	MergeBaseSHA string
-	UpdatedAt    time.Time
+	// MergeCommitSHA is GitHub's test merge commit of the head into the base: refs/pull/N/merge. "" while GitHub has not
+	// computed it.
+	MergeCommitSHA string
+	// Mergeable is GitHub's answer whether the head merges cleanly; nil while GitHub has not computed it.
+	Mergeable *bool
+	UpdatedAt time.Time
 }
 
 type Review struct {
 	Reviewer  string // login
 	State     string // "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED"
 	CommitSHA string // the head SHA the review was submitted on
+	// SubmittedAt is when the review was submitted; zero when GitHub did not say. A dismissed review keeps the time it
+	// was submitted, not the time it was dismissed.
+	SubmittedAt time.Time
 }
 
 type Pulls interface {
@@ -170,6 +186,27 @@ type Comments interface {
 	AppComments(ctx context.Context, r RepoRef, pull int) ([]Comment, error)
 	CreateComment(ctx context.Context, r RepoRef, pull int, body string) (Comment, error)
 	UpdateComment(ctx context.Context, r RepoRef, id int64, body string) error
+}
+
+type Issue struct {
+	Number int
+	Body   string
+}
+
+type NewIssue struct {
+	Title, Body string
+	Assignee    string // one login; "" assigns nobody
+}
+
+// Issues are repository issues opened by the App. A pull request is never one: GitHub lists pull requests among
+// issues, and they are left out.
+type Issues interface {
+	// AppIssues lists the open issues the App opened.
+	AppIssues(ctx context.Context, r RepoRef) ([]Issue, error)
+	CreateIssue(ctx context.Context, r RepoRef, i NewIssue) (Issue, error)
+	UpdateIssueBody(ctx context.Context, r RepoRef, number int, body string) error
+	// CloseIssue closes the issue number. A number that names a pull request is an error, and nothing is closed.
+	CloseIssue(ctx context.Context, r RepoRef, number int) error
 }
 
 type WorkflowRun struct {
@@ -237,6 +274,7 @@ var (
 	_ Pulls    = (*Client)(nil)
 	_ Checks   = (*Client)(nil)
 	_ Comments = (*Client)(nil)
+	_ Issues   = (*Client)(nil)
 	_ Actions  = (*Client)(nil)
 	_ Changes  = (*Client)(nil)
 	_ Users    = (*Client)(nil)

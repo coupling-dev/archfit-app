@@ -1,9 +1,11 @@
 package sweep
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate/feedback"
@@ -17,7 +19,7 @@ const runCompleted = "completed"
 
 // evaluate applies the rule table of module.md to one onboarded pull. The first rule whose condition
 // holds ends the evaluation, whether or not it had to write; only rule 6a lets the evaluation go on.
-func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted) error {
+func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted, shared []verdict.SharedPull) error {
 	if tr.Settings.Gate != settings.GateRequired { // rule 0
 		return p.advisory(ctx, t, tr)
 	}
@@ -59,10 +61,19 @@ func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted)
 		// No re-run: no run can pass before an owner approves again, and rule 7b re-runs then.
 		return p.withdraw(ctx, t)
 	case stale(rc, tr):
+		if moved, err := p.retarget(ctx, "5b", t, rc, true); err != nil || moved {
+			return err
+		}
 		if err := p.publish(ctx, "5b", t, tr, rc, verdict.ReasonStaleInputs); err != nil {
 			return err
 		}
 		_, err := p.rerun(ctx, "5b", t, rc)
+		return err
+	}
+	if rc.Conclusion == verdict.Success && len(shared) > 0 { // rule 5d, ahead of 5c: both withdraw the same success
+		return p.sharedHead(ctx, t, rc)
+	}
+	if moved, err := p.targetMoved(ctx, t, tr, rc); err != nil || moved { // rule 5c
 		return err
 	}
 
@@ -74,7 +85,10 @@ func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted)
 	// Granted, or no longer needed (a retargeted base, a repointed settings workflow): either way the reason is gone.
 	approvedLate := rc.Reason == verdict.ReasonOwnerApprovalMissing && !verdict.Unapproved(tr)
 	switch {
-	case !e.IsZero() && !p.now.Before(e) && state.StartedAt.Before(e):
+	case !e.IsZero() && !p.now.Before(e) && state.StartedAt.Before(e) && rc.Reason != verdict.ReasonTargetMoved:
+		if moved, err := p.retarget(ctx, "6b", t, rc, false); err != nil || moved {
+			return err
+		}
 		if err := p.publish(ctx, "6b", t, tr, rc, verdict.ReasonWaiverExpired); err != nil {
 			return err
 		}
@@ -85,6 +99,9 @@ func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted)
 		if approvedLate {
 			rule = "7b"
 		}
+		if moved, err := p.retarget(ctx, rule, t, rc, false); err != nil || moved {
+			return err
+		}
 		res, err := p.rerun(ctx, rule, t, rc)
 		if err != nil || res != RerunImpossible {
 			return err
@@ -92,6 +109,9 @@ func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted)
 		// Only a new workflow run can bring evidence now; missing_upload is true and names that recovery.
 		return p.publish(ctx, rule, t, tr, rc, verdict.ReasonMissingUpload)
 	case rc.Reason == verdict.ReasonStaleInputs || rc.Reason == verdict.ReasonWaiverExpired:
+		if moved, err := p.retarget(ctx, "7c", t, rc, false); err != nil || moved {
+			return err
+		}
 		_, err := p.rerun(ctx, "7c", t, rc)
 		return err
 	}
@@ -176,7 +196,7 @@ func (p *pass) warn(ctx context.Context, t inputs.Target, e time.Time) error {
 
 // Without builds the publication for a target that has no report: verdict.Without(code),
 // verdict.Suspended(tr.Entitlement) for ReasonSuspended, or verdict.ApprovalMissing(tr) for
-// ReasonOwnerApprovalMissing, with the run identity of rc (zero when there is no previous receipt) and the
+// ReasonOwnerApprovalMissing, with the run identity and base of rc (zero when there is no previous receipt) and the
 // current digests of tr.
 //
 // Keeping the previous run identity keeps the check's external_id, so feedback updates the gate check in
@@ -189,6 +209,12 @@ func Without(code verdict.ReasonCode, t inputs.Target, tr inputs.Trusted, rc fee
 	case verdict.ReasonOwnerApprovalMissing:
 		out = verdict.ApprovalMissing(tr)
 	}
+	return withOutcome(out, code, t, tr, rc)
+}
+
+// withOutcome is the publication of a target that has no new report: out, over the run identity and base of rc and
+// the current digests of tr.
+func withOutcome(out verdict.Outcome, code verdict.ReasonCode, t inputs.Target, tr inputs.Trusted, rc feedback.Receipt) feedback.Publication {
 	return feedback.Publication{
 		Target:  t,
 		Outcome: out,
@@ -196,6 +222,7 @@ func Without(code verdict.ReasonCode, t inputs.Target, tr inputs.Trusted, rc fee
 			RunID:                rc.RunID,
 			RunAttempt:           rc.RunAttempt,
 			ReportDigest:         rc.ReportDigest,
+			BaseSHA:              rc.BaseSHA,
 			PolicyDigest:         inputs.First(tr.PolicyDigests),
 			BaselineDigest:       inputs.First(tr.BaselineDigests),
 			LabelsDigest:         inputs.First(tr.LabelsDigests),
@@ -218,6 +245,89 @@ func Withdrawal(t inputs.Target, current feedback.CheckState, tr inputs.Trusted)
 	}
 	pub := Without(verdict.ReasonOwnerApprovalMissing, t, tr, current.Receipt)
 	return &pub
+}
+
+// recheckPull is rule 5c alone, for the pass a default-branch push starts. A pull request that another rule acts on
+// (a fork, a suspension, a withdrawn approval, stale inputs, and with them a missing, pending or unreadable check) is
+// left to the full pass: target_moved must not replace the reason that rule publishes, nor its re-run.
+func (p *pass) recheckPull(ctx context.Context, t inputs.Target, tr inputs.Trusted) error {
+	if tr.Settings.Gate != settings.GateRequired || t.Fork || tr.Suspended {
+		return nil
+	}
+	state, err := p.publisher.State(ctx, t)
+	if err != nil {
+		return err
+	}
+	if Withdrawn(state.Receipt, tr) || stale(state.Receipt, tr) { // stale holds for the zero receipt of a missing or pending check
+		return nil
+	}
+	_, err = p.targetMoved(ctx, t, tr, state.Receipt)
+	return err
+}
+
+// SharedWith lists the open pull requests of pulls, other than number, whose head is head and whose base is not the
+// default branch, by number. A check is written per head commit, so each of them shows the result of the pull request
+// into the default branch, on a base whose protected inputs the agent that opened it may have loosened.
+func SharedWith(pulls []api.Pull, number int, head, defaultBranch string) []verdict.SharedPull {
+	var out []verdict.SharedPull
+	for _, pl := range pulls {
+		if pl.Number != number && pl.HeadSHA == head && pl.BaseRef != defaultBranch {
+			out = append(out, verdict.SharedPull{Number: pl.Number, BaseRef: pl.BaseRef})
+		}
+	}
+	slices.SortFunc(out, func(a, b verdict.SharedPull) int { return cmp.Compare(a.Number, b.Number) })
+	return out
+}
+
+// sharedHead is rule 5d: shared_head over a success receipt, no re-run, decided inside the head's publication lease
+// by SharedHeadPublication. Only a success is withdrawn here; a pending check is the upload's to refuse (it lists the
+// open pull requests inside the same lease) or the event's to withdraw (gate: PullOpened into another base). A failed
+// listing is an error of the unit, so the success is never touched on a guess.
+func (p *pass) sharedHead(ctx context.Context, t inputs.Target, rc feedback.Receipt) error {
+	var pub *feedback.Publication
+	err := p.publisher.Reconcile(ctx, t, func(ctx context.Context, current feedback.CheckState) (*feedback.Publication, error) {
+		if current.Receipt != rc {
+			return nil, nil
+		}
+		var err error
+		pub, err = SharedHeadPublication(ctx, p.pulls, p.resolver, p.now, t, current)
+		return pub, err
+	})
+	if err != nil || pub == nil {
+		return err
+	}
+	p.logPublished("5d", *pub, rc)
+	return nil
+}
+
+// SharedHeadPublication is the shared-head decision of a default-branch pull request t, made inside its head's
+// publication lease from the gate check current there: shared_head over the current receipt (the zero receipt of a
+// pending check, which any upload replaces) when the repository is in required mode, the check is Pending or a success
+// whose approval and inputs still hold, and a fresh OpenPulls listing still names a pull request on the head with
+// another base. nil otherwise. A pending check is written only to refuse the upload that is about to decide it: that
+// upload lists inside the lease too, so it sees this publication or is seen by it.
+func SharedHeadPublication(ctx context.Context, pulls api.Pulls, res inputs.Resolver, now time.Time, t inputs.Target, current feedback.CheckState) (*feedback.Publication, error) {
+	rc := current.Receipt
+	if !current.Exists || (!current.Pending && rc.Conclusion != verdict.Success) {
+		return nil, nil
+	}
+	tr, err := res.Resolve(ctx, t, now)
+	if err != nil {
+		return nil, err
+	}
+	if tr.Settings.Gate != settings.GateRequired || (!current.Pending && (Withdrawn(rc, tr) || stale(rc, tr))) {
+		return nil, nil
+	}
+	open, err := pulls.OpenPulls(ctx, t.Repo.RepoRef)
+	if err != nil {
+		return nil, err
+	}
+	shared := SharedWith(open, t.PullRequest, t.HeadSHA, t.Repo.DefaultBranch)
+	if len(shared) == 0 {
+		return nil, nil
+	}
+	pub := withOutcome(verdict.SharedHead(shared), verdict.ReasonSharedHead, t, tr, rc)
+	return &pub, nil
 }
 
 // withdraw is rule 5a. The pass saw a withdrawn receipt outside the lease; Reconcile decides again inside it.

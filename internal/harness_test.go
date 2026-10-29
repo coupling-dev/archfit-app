@@ -68,6 +68,7 @@ var (
 	demoHead      = strings.Repeat("1f", 20)
 	demoBase      = strings.Repeat("2e", 20)
 	demoMergeBase = strings.Repeat("3d", 20)
+	demoMerge     = strings.Repeat("4e", 20) // GitHub's test merge commit of the demo pull request
 
 	// testNow is the injected clock's start. OIDC and token expiry use the real clock; nothing else does.
 	testNow = time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)
@@ -202,7 +203,7 @@ func readFixture(t *testing.T, elem ...string) []byte {
 // loadFixture reads a report of the shared corpus with its trusted-input siblings.
 func loadFixture(t *testing.T, name string) fixture {
 	t.Helper()
-	f := fixture{name: name, report: readFixture(t, "report", name+".json"), policy: readFixture(t, "report", name+".policy.yaml")}
+	f := fixture{name: name, report: withIdentity(t, readFixture(t, "report", name+".json")), policy: readFixture(t, "report", name+".policy.yaml")}
 	if raw, err := os.ReadFile(filepath.Join("wire", "testdata", "report", name+".baseline.json")); err == nil {
 		f.baseline = raw
 	}
@@ -212,8 +213,30 @@ func loadFixture(t *testing.T, name string) fixture {
 	return f
 }
 
-// approved is the identity of the manifest row new workflows pin (linux/amd64). The corpus captures are v3.0.0
-// documents; every approved release reads them with the same key set.
+// withIdentity gives a corpus report the identity block that engine v3.4.0 states in every report, which the
+// approved release requires. Captures of older engines have none; the block is the only thing added.
+func withIdentity(t *testing.T, raw []byte) []byte {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if _, has := doc["identity"]; has {
+		return raw
+	}
+	doc["identity"] = map[string]any{
+		"schema_version": "archfit.result-identity.v1", "engine_version": approved.EngineVersion,
+		"policy_digest": strings.Repeat("a", 64), "head_tree_digest": strings.Repeat("e", 40),
+		"measurement_profile_hash": strings.Repeat("f", 64),
+	}
+	out, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// approved is the identity of the manifest row new workflows pin (linux/amd64).
 var approved = manifest.Current().Identity
 
 func digest(raw []byte) string {
@@ -249,7 +272,8 @@ func (w *world) seedDemo(f fixture, gateMode string, private bool) {
 		rp.push("main", demoBase, files)
 		rp.branches["feature"] = demoBase
 		rp.push("feature", demoHead, map[string]string{"pkg/a/a.go": "package a\n\nimport _ \"example/pkg/c\"\n"})
-		rp.openPull(demoPull, "feature", "main").MergeBase = demoMergeBase
+		demo := rp.openPull(demoPull, "feature", "main")
+		demo.MergeBase, demo.MergeCommit = demoMergeBase, demoMerge
 		rp.runs[demoRun] = &run{
 			ID: demoRun, Attempt: 1, Event: "pull_request", HeadSHA: demoHead, HeadRepo: demoRepo,
 			Path: workflowPath, Branch: "feature", Status: "completed", Conclusion: "success", Pulls: []int{demoPull},
@@ -268,6 +292,8 @@ type envelope struct {
 	HeadSHA        string `json:"head_sha"`
 	BaseSHA        string `json:"base_sha"`
 	MergeBaseSHA   string `json:"merge_base_sha"`
+	AnalyzedSHA    string `json:"analyzed_sha"`
+	Integration    string `json:"integration"`
 	RunID          int64  `json:"run_id"`
 	RunAttempt     int    `json:"run_attempt"`
 	EngineVersion  string `json:"engine_version"`
@@ -296,6 +322,7 @@ func demoUpload(f fixture) upload {
 		env: envelope{
 			SchemaVersion: "archfit.report-envelope.v1", Kind: "report", Repository: demoRepo, Event: "pull_request",
 			PullRequest: demoPull, HeadSHA: demoHead, BaseSHA: demoBase, MergeBaseSHA: demoMergeBase,
+			AnalyzedSHA: demoMerge, Integration: "merged",
 			RunID: demoRun, RunAttempt: 1, EngineVersion: approved.EngineVersion, ImageDigest: approved.ImageDigest,
 			Platform: approved.Platform, PayloadDigest: "sha256:" + digest(f.report),
 			BaselineDigest: digest(f.baseline), LabelsDigest: digest(f.labels),
@@ -440,7 +467,7 @@ func newSystem(t *testing.T, w *world, o options) *system {
 	})
 	s.ctl, err = control.New(control.Deps{
 		GitHub: gh, Tokens: tokens, OAuth: oauth, Store: o.store, Receiver: gate.NewReceiver(gh, verifier, baseURL, admissions),
-		Admissions: admissions, Operators: []int64{operatorID}, Sandbox: o.sandbox, Provider: o.provider, CookieKey: []byte(cookieKey), BaseURL: baseURL, Now: s.clock.Now,
+		Admissions: admissions, Approvals: s.gate, Decisions: s.gate, DecisionQueue: s.gate, Operators: []int64{operatorID}, Sandbox: o.sandbox, Provider: o.provider, CookieKey: []byte(cookieKey), BaseURL: baseURL, Now: s.clock.Now,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -835,7 +862,7 @@ func discoveryUpload(fullName string, repoID, runID int64, head string, policy [
 	return upload{
 		env: envelope{
 			SchemaVersion: "archfit.report-envelope.v1", Kind: "discovery", Repository: fullName, Event: "workflow_dispatch",
-			HeadSHA: head, RunID: runID, RunAttempt: 1, EngineVersion: approved.EngineVersion,
+			HeadSHA: head, AnalyzedSHA: head, RunID: runID, RunAttempt: 1, EngineVersion: approved.EngineVersion,
 			ImageDigest: approved.ImageDigest, Platform: approved.Platform, PayloadDigest: "sha256:" + digest(policy),
 		},
 		body: policy,

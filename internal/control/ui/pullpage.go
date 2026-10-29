@@ -3,8 +3,6 @@ package ui
 import (
 	"cmp"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"net/http"
 	"slices"
@@ -41,6 +39,7 @@ type pullBody struct {
 	Conclusion string // of archfit/state: neutral, success, action_required, …
 	Required   bool   // the protected settings require archfit/gate
 	RunID      int64  // report run selected for artifact lookup, not diagnostic context
+	CheckID    int64  // the archfit/state check run, display only
 	Check      *checkContextJSON
 }
 
@@ -151,7 +150,7 @@ func (s *server) pullReport(ctx context.Context, sc scope, pull api.Pull, runs *
 		return body, nil, nil
 	}
 	run := slices.MaxFunc(checks, func(a, b api.CheckRun) int { return cmp.Compare(a.ID, b.ID) })
-	body.Headline, body.Conclusion = run.Title, run.Conclusion
+	body.Headline, body.Conclusion, body.CheckID = run.Title, run.Conclusion, run.ID
 	body.Check = actionContext(run)
 	// action_required withdraws a result (stale inputs, an expired waiver, a suspension, a missing approval) or says
 	// the evidence is unusable. The sweep keeps the old run in external_id when it withdraws, so the old report would
@@ -180,13 +179,11 @@ func (s *server) pullReport(ctx context.Context, sc scope, pull api.Pull, runs *
 	if err != nil {
 		return pullBody{}, nil, err
 	}
-	sum := sha256.Sum256(payload)
-	if hex.EncodeToString(sum[:]) != digest {
+	rep, err := report.DecodeArtifact(payload, digest)
+	if errors.Is(err, report.ErrDigestMismatch) {
 		body.Unavailable = reportMismatch
 		return body, nil, nil
 	}
-	releases := report.EngineVersions()
-	rep, err := report.Decode(payload, releases[len(releases)-1])
 	if err != nil {
 		body.Unavailable = reportUnavailable
 		return body, nil, nil

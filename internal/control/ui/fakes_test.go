@@ -18,9 +18,11 @@ import (
 	"github.com/alexei-led/archfit-app/internal/control/assist"
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/control/proposal"
+	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/auth"
 	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/alexei-led/archfit-app/internal/wire/decision"
 )
 
 func sha(n int) string { return fmt.Sprintf("%040x", n) }
@@ -613,4 +615,163 @@ func (d *downable) Get(ctx context.Context, t store.Tenant, key string) ([]byte,
 		return nil, errors.New("fake: store down")
 	}
 	return d.Store.Get(ctx, t, key)
+}
+
+// approveCall is one Approve that reached the gate.
+type approveCall struct {
+	target gate.Target
+	login  string
+	seen   map[string]string
+}
+
+// fakeApprovals is the gate façade's owner approval. Approve records the call and, unless refused, grants the head;
+// the rules of who may approve are the gate's and tested there.
+type fakeApprovals struct {
+	mu            sync.Mutex
+	approval      gate.PullApproval // what PullApproval answers
+	readErr       error
+	approveErr    error // a refusal or a failure of Approve
+	reevaluateErr error
+	reads         []approvalRead
+	approved      []approveCall
+	reevaluated   []gate.Target
+}
+
+type approvalRead struct {
+	target        gate.Target
+	login, author string
+}
+
+func (f *fakeApprovals) PullApproval(_ context.Context, t gate.Target, login, author string) (gate.PullApproval, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reads = append(f.reads, approvalRead{t, login, author})
+	return f.approval, f.readErr
+}
+
+func (f *fakeApprovals) Approve(_ context.Context, t gate.Target, login string, seen map[string]string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.approveErr != nil {
+		return f.approveErr
+	}
+	f.approved = append(f.approved, approveCall{t, login, seen})
+	f.approval.Granted, f.approval.ApprovedBy, f.approval.Refusal = true, login, nil
+	return nil
+}
+
+func (f *fakeApprovals) Reevaluate(_ context.Context, t gate.Target) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reevaluated = append(f.reevaluated, t)
+	return f.reevaluateErr
+}
+
+// fakeDecisionQueue is the gate façade's list of the decision requests that wait for an owner.
+type fakeDecisionQueue struct {
+	mu     sync.Mutex
+	queue  gate.PendingDecisions // what PendingDecisions answers, cut to the limit
+	err    error
+	reads  []gate.Target
+	limits []int
+}
+
+func (f *fakeDecisionQueue) PendingDecisions(_ context.Context, t gate.Target, limit int) (gate.PendingDecisions, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reads, f.limits = append(f.reads, t), append(f.limits, limit)
+	q := f.queue
+	q.Records = q.Records[:min(len(q.Records), limit)]
+	return q, f.err
+}
+
+type decideCall struct {
+	target                 gate.Target
+	login, finding, digest string
+}
+
+type approvedCall struct {
+	target          gate.Target
+	finding, digest string
+	head            string
+	proposalPR      int
+}
+
+// fakeDecisions is the gate façade's decision requests. The rules of who may decide and when a request is stale are
+// the gate's and tested there; the fake answers what a test sets and records what ui asked.
+type fakeDecisions struct {
+	mu           sync.Mutex
+	rows         []gate.DecisionRequest // what DecisionRequests answers
+	policy       string                 // the candidate policy ApproveDecision hands back
+	listErr      error
+	approveErr   error
+	approvedErr  error // set for ApprovedDecision's first call only when approvedOnce
+	declineErr   error
+	approvedOnce bool
+
+	listed   []decideCall
+	approves []decideCall
+	approved []approvedCall
+	declined []decideCall
+}
+
+func (f *fakeDecisions) DecisionRequests(_ context.Context, t gate.Target, login string) ([]gate.DecisionRequest, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.listed = append(f.listed, decideCall{target: t, login: login})
+	return slices.Clone(f.rows), f.listErr
+}
+
+func (f *fakeDecisions) ApproveDecision(_ context.Context, t gate.Target, login, finding, digest string) (gate.DecisionCase, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.approves = append(f.approves, decideCall{t, login, finding, digest})
+	if f.approveErr != nil {
+		return gate.DecisionCase{}, f.approveErr
+	}
+	for _, r := range f.rows {
+		if r.FindingID == finding && r.PolicyDigest == digest {
+			return gate.DecisionCase{Record: r.DecisionRecord, Policy: f.policy, Branch: proposalBranchOf(r.DecisionRecord)}, nil
+		}
+	}
+	return gate.DecisionCase{}, gate.ErrDecisionNotFound
+}
+
+func (f *fakeDecisions) ApprovedDecision(_ context.Context, t gate.Target, finding, digest, head string, proposalPR int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.approvedErr != nil {
+		err := f.approvedErr
+		if f.approvedOnce {
+			f.approvedErr = nil
+		}
+		return err
+	}
+	f.approved = append(f.approved, approvedCall{t, finding, digest, head, proposalPR})
+	f.settle(finding, digest, decision.StatusApproved, "", proposalPR)
+	return nil
+}
+
+func (f *fakeDecisions) DeclineDecision(_ context.Context, t gate.Target, login, finding, digest string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.declineErr != nil {
+		return f.declineErr
+	}
+	f.declined = append(f.declined, decideCall{t, login, finding, digest})
+	f.settle(finding, digest, decision.StatusDeclined, decision.ReasonOwnerDeclined, 0)
+	return nil
+}
+
+func (f *fakeDecisions) settle(finding, digest string, status decision.Status, reason string, pr int) {
+	for i, r := range f.rows {
+		if r.FindingID == finding && r.PolicyDigest == digest {
+			f.rows[i].Status, f.rows[i].Reason, f.rows[i].ProposalPR, f.rows[i].CanDecide = status, reason, pr, false
+		}
+	}
+}
+
+// proposalBranchOf is the branch the gate names for a request: its pull request and a suffix only the gate knows.
+func proposalBranchOf(r gate.DecisionRecord) string {
+	return "archfit/decision-" + strconv.Itoa(r.PullRequest) + "-" + strings.Repeat("c", 26)
 }

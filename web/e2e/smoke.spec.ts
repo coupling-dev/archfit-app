@@ -76,6 +76,13 @@ const reporting = {
   ],
   pulls_more: 2,
   pulls_error: false,
+  main_sha: '',
+  main_at: '',
+  pulls_to_update: 0,
+  pulls_unread: 0,
+  decisions_pending: 0,
+  decisions: [],
+  decisions_error: false,
   steps: steps(4),
   next: 'Make the gate required. Rehearse it first on one forbidden and one legitimate change.',
   next_how: 'A forbidden change must show a rule violation on archfit/state. Then merge the settings pull request.',
@@ -90,6 +97,54 @@ const reporting = {
   can_discover: false, // discovery is no step once the policy is merged
   pulls_url: 'https://github.com/acme/app/pulls',
   checks_url: 'https://github.com/acme/app/commits/main',
+};
+
+// ago is a time that long before now, so the page words its age the same on every run.
+const hour = 3600e3;
+const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
+
+const decisionRequest = (over: object = {}) => ({
+  pull: 4,
+  title: 'feat: read options',
+  status: 'pending',
+  finding: '0a1b2c3d',
+  rule: 'boundary.no-import',
+  edge: 'orders → billing',
+  requester: 'release-agent',
+  head: 'a1b2c3d',
+  created: ago(3 * hour),
+  href: '/r/acme/app/pull/4',
+  ...over,
+});
+
+const movedPull = {
+  number: 6,
+  title: 'refactor: split orders',
+  state: 'action required',
+  tone: 'attention',
+  reason: 'Action required',
+  href: '/r/acme/app/pull/6',
+  rerun:
+    'Pull request author: The target branch moved, and with it this pull request closes a module cycle: orders, billing. Update the branch (Update branch on GitHub, gh pr update-branch, or merge the target) to measure it again.',
+};
+
+// watching is a repository whose gate runs with agents: the main branch was checked, a pull request waits for an update
+// after the target moved, and decision requests wait for an owner.
+const watching = {
+  ...reporting,
+  main_state: 'healthy',
+  main_tone: 'success',
+  main_reason: 'Architecture healthy',
+  main_sha: '9f3a2c1',
+  main_at: ago(2 * hour),
+  pulls: [...reporting.pulls, movedPull],
+  pulls_to_update: 1,
+  pulls_unread: 0,
+  decisions_pending: 7,
+  decisions: [
+    decisionRequest(),
+    decisionRequest({ pull: 5, title: 'chore: bump deps', finding: '7e8f9a0b', created: ago(26 * hour), href: '/r/acme/app/pull/5' }),
+  ],
 };
 
 const installed = {
@@ -320,6 +375,41 @@ const pull = {
   task_count: 1,
 };
 
+const baselineDigest = 'ab'.repeat(32);
+// approvalMissing is a pull request that replaces the baseline and deletes the labels file, before an owner approves.
+const approvalMissing = {
+  head_sha: 'a1b2c3d' + '0'.repeat(33),
+  paths: ['.archfit-baseline.json', '.archfit-labels.yaml'],
+  digests: { '.archfit-baseline.json': baselineDigest, '.archfit-labels.yaml': '' },
+  short_digests: { '.archfit-baseline.json': baselineDigest.slice(0, 7), '.archfit-labels.yaml': '' },
+  state: 'missing',
+  can_approve: true,
+  author_is_agent: false,
+};
+const unapprovedPull = {
+  ...pull,
+  result: 'action required',
+  unavailable: 'This result asks for action before its findings mean anything.',
+  approval: approvalMissing,
+};
+
+const decisionFinding = '0a'.repeat(16);
+const decisionDigest = '5b'.repeat(32);
+// decisionPending is a request an unattended agent filed on the pull request, as an owner who did not file it sees it.
+const decisionPending = {
+  finding_id: decisionFinding,
+  policy_digest: decisionDigest,
+  rule_id: 'boundary.no-import',
+  from: 'billing',
+  to: 'orders',
+  status: 'pending',
+  requester: 'ci-agent',
+  why: 'billing reads the order total to price a refund.\nThe read model is the narrowest way in.',
+  alternatives: ['moved the type into shared', 'called orders through the existing port'],
+  can_decide: true,
+};
+const decisionPull = { ...pull, decisions: [decisionPending] };
+
 const findings = {
   ...pull,
   unavailable: '',
@@ -513,6 +603,59 @@ const installations = {
   unreadable: 0,
 };
 
+// inbox is the decisions page: two requests that wait for an owner, one that does not, and two pull requests that change
+// the policy.
+const inbox = {
+  requests: [
+    decisionRequest({ finding: '7e8f9a0b', pull: 5, title: 'chore: bump deps', created: ago(26 * hour), href: '/r/acme/app/pull/5' }),
+    decisionRequest(),
+    decisionRequest({ status: 'stale', finding: '51c2d3e4', created: ago(120 * hour) }),
+  ],
+  requests_more: 0,
+  requests_error: false,
+  policy_changes: [
+    {
+      number: 7,
+      title: 'chore: loosen the orders boundary',
+      headline: 'This pull request loosens the policy (2 changes).',
+      approval: 'missing',
+      href: '/r/acme/app/pull/7',
+    },
+    {
+      number: 8,
+      title: 'chore: add a layering rule',
+      headline: 'This pull request tightens the policy (1 change).',
+      approval: 'granted',
+      by: 'vladikk',
+      href: '/r/acme/app/pull/8',
+    },
+  ],
+  policy_more: 0,
+  policy_error: false,
+  policy_unread: 0,
+};
+
+// The first screen of the PR comment for a blocked pull request, as the server words it.
+const firstScreen = [
+  { kind: 'headline', text: 'Architecture gate failing' },
+  {
+    kind: 'text',
+    text: 'Assessment: 1 active finding, 0 advisories, 0 accepted findings. Checked with engine v3.4.0 and policy digest 1d44a1486570.',
+  },
+  { kind: 'text', text: 'PR impact: unknown — no comparable Git-base finding-origin evidence.' },
+  { kind: 'text', text: 'Cause: Blocking findings.' },
+  {
+    kind: 'item',
+    text: 'active finding pkg/a/a.go:3 no_direct_b_dependency: a → b. Why: Import from pkg/a/ to pkg/b is explicitly forbidden. Fix: Remove the dependency or move the code',
+  },
+  { kind: 'heading', text: 'Policy change' },
+  { kind: 'text', text: 'This pull request loosens the policy (1 change).' },
+  { kind: 'item', text: 'Allowlist widened: a depends_on: none → [b]' },
+  { kind: 'text', text: 'A loosening is never approved by an agent.' },
+  { kind: 'text', text: 'Next: PR author/coding agent: review the reported constraints.' },
+  { kind: 'text', text: 'HEAD ' + 'a'.repeat(40) + ' · Run 88 · attempt 1 · archfit/state check 9' },
+];
+
 interface Mock {
   signedIn?: boolean;
   operator?: boolean; // the signed-in user approves installations
@@ -528,8 +671,11 @@ interface Mock {
   refuseSave?: boolean; // the save is refused with the problems of the text
   saveNotFound?: boolean; // the save answers 404, as when write access went away
   holdAssist?: Promise<void>; // the AI request answers once this settles
+  approveRefused?: { status: number; sentence: string }; // the Approve button's write is refused
+  decideRefused?: { status: number; sentence: string }; // the write of a decision request is refused
   serverError?: { status: number; sentence: string }; // the server answers the page as its error page
   holdSession?: Promise<void>; // /api/session answers once this settles
+  inbox?: object; // the decisions page
 }
 
 // open answers /api in the browser from the mock, opens the page, and returns the writes the page sent. Each page records the CSP violations
@@ -573,6 +719,32 @@ async function open(page: Page, path: string, mock: Mock = {}) {
             notice: 'The assist workflow is running in your CI.',
           });
       }
+      if (url.pathname === '/api/repos/acme/app/pulls/4/approve') {
+        if (mock.approveRefused) return json(mock.approveRefused.status, { error: mock.approveRefused.sentence });
+        return json(200, {
+          approval: { ...approvalMissing, state: 'granted', by: 'alice', can_approve: false },
+          notice:
+            'Approved for this commit. The Archfit check follows when the workflow reports on it; a new commit needs a new approval.',
+        });
+      }
+      const decide = /^\/api\/repos\/acme\/app\/pulls\/4\/decisions\/([0-9a-f]{32})\/([0-9a-f]{64})\/(approve|decline)$/.exec(
+        url.pathname,
+      );
+      if (decide) {
+        if (mock.decideRefused) return json(mock.decideRefused.status, { error: mock.decideRefused.sentence });
+        const asked = (mock.pull as { decisions: object[] }).decisions;
+        const approving = decide[3] === 'approve';
+        const outcome = approving
+          ? { status: 'approved', proposal_pr: 12, proposal_url: 'https://github.com/acme/app/pull/12' }
+          : { status: 'declined', reason: 'by an owner' };
+        const settled = { ...decisionPending, can_decide: false, ...outcome };
+        return json(200, {
+          decisions: asked.map((r) => ((r as typeof decisionPending).finding_id === decide[1] ? settled : r)),
+          notice: approving
+            ? 'Approved. A draft pull request with the proposed policy is open; an architecture owner approves it like any policy change.'
+            : 'Declined. The agent sees the answer in the pull request thread, and it stays until the policy changes.',
+        });
+      }
       const admin = /^\/api\/admin\/installations\/(\d+)\/(approve|revoke)$/.exec(url.pathname);
       if (admin) {
         if (!mock.operator) return json(404, { error: 'Not found.' });
@@ -611,6 +783,8 @@ async function open(page: Page, path: string, mock: Mock = {}) {
             error: 'GitHub or an Archfit service failed. Nothing was changed. Try again.',
           });
         return json(200, sharing(allowed));
+      case '/api/repos/acme/app/decisions':
+        return json(200, mock.inbox ?? inbox);
       case '/api/repos/acme/app/pulls/4':
         return json(200, mock.pull ?? pull);
       case '/api/repos/acme/app/findings':
@@ -717,6 +891,194 @@ test('overview: state, pull requests, setup and history', async ({ page }) => {
   await expect(needs.getByRole('button')).toHaveCount(0);
   await expectClean(page);
   expect(writes).toEqual([]);
+});
+
+test('overview: counters, the main-branch watch line and the decision requests under Needs you', async ({ page }) => {
+  const writes = await open(page, '/r/acme/app', { overview: watching });
+  const counters = page.getByRole('group', { name: 'Pull requests and decision requests' });
+  await expect(counters).toContainText('1 Pull request to update');
+  await expect(counters).toContainText('7 Decision requests pending');
+  await expect(counters.getByRole('link', { name: 'All decisions' })).toHaveAttribute('href', '/r/acme/app/decisions');
+  await expect(page.locator('#main-watch')).toHaveText('Last checked commit on main: 9f3a2c1, 2 hours ago.');
+
+  const needs = page.getByRole('region', { name: 'Needs you' });
+  await expect(needs).toContainText('7 decision requests wait for an owner.');
+  await expect(needs).toContainText('An agent cannot approve its own request');
+  const list = needs.getByRole('list', { name: 'Decision requests that wait for an owner' });
+  await expect(list.getByRole('listitem')).toHaveCount(2);
+  await expect(list.getByRole('link', { name: '#4 feat: read options' })).toHaveAttribute('href', '/r/acme/app/pull/4');
+  await expect(list.first()).toContainText('boundary.no-import orders → billing · requested by @release-agent · 3 hours ago');
+  await expect(needs).toContainText('5 more.');
+  await expect(needs.getByRole('link', { name: 'See all decisions' })).toHaveAttribute('href', '/r/acme/app/decisions');
+
+  // the pull request that waits for an update names the modules, in the words of the comment
+  const pulls = page.getByRole('region', { name: 'Open pull requests' });
+  await expect(pulls.getByRole('link', { name: '#6 refactor: split orders' })).toHaveAttribute('href', '/r/acme/app/pull/6');
+  await expect(pulls).toContainText('To update. Pull request author: The target branch moved');
+  await expect(pulls).toContainText('closes a module cycle: orders, billing.');
+  await expect(pulls.getByText('To update.')).toHaveCount(1);
+  await expect(page.getByRole('link', { name: 'Decisions', exact: true })).toHaveAttribute('href', '/r/acme/app/decisions');
+  await expectClean(page);
+  expect(writes).toEqual([]);
+});
+
+test('overview: counters say when they could not be read, and a quiet repository shows zeros', async ({ page }) => {
+  await open(page, '/r/acme/app', { overview: { ...watching, pulls_error: true, decisions_error: true, decisions: [], decisions_pending: 0 } });
+  const counters = page.getByRole('group', { name: 'Pull requests and decision requests' });
+  await expect(counters).toContainText('– Pull requests to update the open pull requests could not be read');
+  await expect(counters).toContainText('– Decision requests pending could not be read');
+  await expect(page.getByRole('region', { name: 'Needs you' }).getByText('decision request')).toHaveCount(0);
+
+  // One pull request's check could not be read: the count is a floor and says so, never the whole.
+  await page.unrouteAll();
+  await open(page, '/r/acme/app', { overview: { ...watching, pulls_unread: 2 } });
+  await expect(counters).toContainText('1+ Pull requests to update 2 could not be read, so there may be more');
+
+  await page.unrouteAll();
+  await open(page, '/r/acme/app');
+  await expect(counters).toContainText('0 Pull requests to update');
+  await expect(counters).toContainText('0 Decision requests pending');
+  await expect(page.locator('#main-watch')).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Needs you' })).not.toContainText('wait for an owner');
+});
+
+test('decisions: requests and policy changes that wait for an owner, read only', async ({ page }) => {
+  const writes = await open(page, '/r/acme/app/decisions');
+  await expect(page.getByRole('heading', { name: 'Decisions', level: 1 })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Decisions', exact: true })).toHaveAttribute('aria-current', 'page');
+  const requests = page.getByRole('region', { name: /^Decision requests/ });
+  const rows = requests.locator('tbody tr');
+  await expect(rows).toHaveCount(3);
+  // pending first, as the server sent them
+  await expect(rows.nth(0)).toContainText('pending');
+  await expect(rows.nth(0)).toContainText('#5 chore: bump deps');
+  await expect(rows.nth(0)).toContainText('boundary.no-import');
+  await expect(rows.nth(0)).toContainText('orders → billing');
+  await expect(rows.nth(0)).toContainText('@release-agent');
+  await expect(rows.nth(0)).toContainText('a1b2c3d');
+  await expect(rows.nth(0)).toContainText('1 day ago');
+  await expect(rows.nth(2)).toContainText('stale');
+  await expect(rows.nth(2)).toContainText('5 days ago');
+  await expect(rows.nth(1).getByRole('link', { name: '#4 feat: read options' })).toHaveAttribute('href', '/r/acme/app/pull/4');
+  await expect(rows.nth(0).locator('.status')).toHaveClass(/attention/);
+
+  const policy = page.getByRole('region', { name: /^Policy changes/ });
+  await expect(policy.getByRole('link', { name: '#7 chore: loosen the orders boundary' })).toHaveAttribute('href', '/r/acme/app/pull/7');
+  await expect(policy).toContainText('This pull request loosens the policy (2 changes).');
+  await expect(policy).toContainText('approval needed');
+  await expect(policy).toContainText('approved by @vladikk');
+
+  // the page decides nothing: the buttons are on the pull request page
+  await expect(page.locator('main').getByRole('button')).toHaveCount(0);
+  await expectClean(page);
+  expect(writes).toEqual([]);
+});
+
+test('decisions: nothing waiting is said in the product voice, and a failed read is not "none"', async ({ page }) => {
+  await open(page, '/r/acme/app/decisions', {
+    inbox: { ...inbox, requests: [], policy_changes: [] },
+  });
+  await expect(page.getByRole('heading', { name: 'No decision request' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'No policy change' })).toBeVisible();
+  await expectClean(page);
+
+  await page.unrouteAll();
+  await open(page, '/r/acme/app/decisions', {
+    inbox: { ...inbox, requests: [], requests_error: true, policy_changes: [], policy_error: true, requests_more: 0 },
+  });
+  await expect(page.getByText('The decision requests could not be read. Try again in a minute.')).toBeVisible();
+  await expect(page.getByText('The open pull requests could not be read. Try again in a minute.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'No decision request' })).toHaveCount(0);
+
+  // A pull request whose check could not be read is not "no policy change".
+  await page.unrouteAll();
+  await open(page, '/r/acme/app/decisions', { inbox: { ...inbox, policy_changes: [], policy_unread: 1 } });
+  await expect(page.getByText('1 open pull request could not be read, so a policy change may be missing here.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'No policy change' })).toHaveCount(0);
+  await page.unrouteAll();
+  await open(page, '/r/acme/app/decisions', { inbox: { ...inbox, policy_unread: 3 } });
+  await expect(page.getByText('3 more open pull requests could not be read; a policy change among them is not listed.')).toBeVisible();
+
+  await page.unrouteAll();
+  await open(page, '/r/acme/app/decisions', { inbox: { ...inbox, requests_more: 12, policy_more: 3 } });
+  await expect(page.getByText('12 more pending requests are not listed here.')).toBeVisible();
+  await expect(page.getByText('3 more open pull requests are not read here.')).toBeVisible();
+});
+
+test('decisions: text an agent or a repository wrote stays text', async ({ page }) => {
+  await open(page, '/r/acme/app/decisions', {
+    inbox: {
+      ...inbox,
+      requests: [
+        decisionRequest({
+          rule: '<img src=x onerror=alert(1)>',
+          edge: '<b>a</b> → b',
+          requester: '<script>alert(2)</script>',
+          href: 'javascript:alert(3)',
+          title: '<i>t</i>',
+        }),
+      ],
+      policy_changes: [{ ...inbox.policy_changes[0], title: '<u>p</u>', headline: '<img src=y>', href: '//evil.example/x' }],
+    },
+  });
+  await expect(page.getByRole('heading', { name: 'Decisions', level: 1 })).toBeVisible();
+  await expect(page.locator('main img, main script, main b, main i, main u')).toHaveCount(0);
+  await expect(page.locator('main')).toContainText('<img src=x onerror=alert(1)>');
+  await expect(page.locator('main a[href^="javascript:"], main a[href^="//"]')).toHaveCount(0);
+});
+
+test('pull request: the first screen is the comment, as text', async ({ page }) => {
+  await open(page, '/r/acme/app/pull/4', {
+    pull: { ...pull, first_screen: [...firstScreen, { kind: 'text', text: '<img src=x onerror=alert(1)> **not bold**' }] },
+  });
+  const screen = page.getByRole('region', { name: 'Architecture gate failing' });
+  await expect(screen).toBeVisible();
+  await expect(screen).toContainText('Checked with engine v3.4.0 and policy digest 1d44a1486570.');
+  await expect(screen.getByRole('listitem').first()).toContainText('active finding pkg/a/a.go:3 no_direct_b_dependency: a → b. Why:');
+  await expect(screen.getByRole('heading', { name: 'Policy change', level: 3 })).toBeVisible();
+  await expect(screen.getByRole('listitem')).toHaveCount(2);
+  await expect(screen).toContainText('<img src=x onerror=alert(1)> **not bold**');
+  await expect(screen.locator('img, strong, b')).toHaveCount(0);
+  // it sits between the result and the analysis
+  const order = await page.locator('#result, #first-screen, #analysis').evaluateAll((els) => els.map((e) => e.id));
+  expect(order).toEqual(['result', 'first-screen', 'analysis']);
+  await expectClean(page);
+});
+
+test('pull request: the first screen carries the sentence the green flash said, once', async ({ page }) => {
+  const clean = {
+    ...pull,
+    required: true,
+    result: 'healthy',
+    tone: 'success',
+    headline: 'Architecture gate passed',
+    decision: { verdict: 'healthy', detail: '', hard_gates: 'pass', blockers: 0, unevaluated: [], origin_reasons: [] },
+    violation_count: 0,
+    cycles: null,
+    other: null,
+  };
+  const sentence = 'No required architecture change requested in the evaluated scope.';
+  await open(page, '/r/acme/app/pull/4', { pull: clean });
+  await expect(page.locator('.flash.success')).toContainText(sentence);
+
+  await page.unrouteAll();
+  await open(page, '/r/acme/app/pull/4', {
+    pull: {
+      ...clean,
+      first_screen: [
+        { kind: 'headline', text: 'Architecture gate passed' },
+        { kind: 'text', text: sentence + ' Checked with engine v3.4.0 and policy digest 1d44a1486570.' },
+      ],
+    },
+  });
+  await expect(page.getByText(sentence)).toHaveCount(1);
+  await expect(page.locator('.flash.success')).toHaveCount(0);
+});
+
+test('pull request: without a first screen the page is as it was', async ({ page }) => {
+  await open(page, '/r/acme/app/pull/4');
+  await expect(page.getByRole('heading', { name: 'PR analysis' })).toBeVisible();
+  await expect(page.locator('#first-screen')).toHaveCount(0);
 });
 
 test('overview: discovery is offered at its own step and runs in the workflow', async ({ page }) => {
@@ -994,8 +1356,126 @@ test('pull request: no report says why and links the checks', async ({ page }) =
     },
   });
   await expect(page.getByText('GitHub no longer keeps the report')).toBeVisible();
+  await expect(page.getByText('Follow the next step in PR analysis above.')).toBeVisible();
+  await expect(page.getByText('re-run the workflow')).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Checks on GitHub' })).toHaveAttribute('href', pull.checks_url);
   await expectClean(page);
+});
+
+test('pull request: an owner approves the exact commit, and the page says what was approved', async ({ page }) => {
+  const writes = await open(page, '/r/acme/app/pull/4', { pull: unapprovedPull });
+  const box = page.getByRole('region', { name: 'Owner approval' });
+  await expect(box.getByText('An architecture owner must approve commit a1b2c3d')).toBeVisible();
+  const files = box.getByRole('list', { name: 'Protected files this pull request changes' });
+  await expect(files.getByRole('listitem')).toHaveText([
+    `.archfit-baseline.json sha256 ${baselineDigest.slice(0, 7)}`,
+    '.archfit-labels.yaml deleted by this commit',
+  ]);
+  await expect(box.getByText('a new commit needs a new approval')).toBeVisible();
+  await expect(box.getByText('Opened by an agent identity')).toHaveCount(0);
+  await expectClean(page);
+
+  await box.getByRole('button', { name: 'Approve this exact commit' }).click();
+  await expect(box.getByRole('status')).toContainText('Approved for this commit.');
+  await expect(box.getByText('Approved by @alice for commit a1b2c3d.')).toBeVisible();
+  await expect(box.getByRole('button', { name: 'Approve this exact commit' })).toHaveCount(0);
+  expect(writes).toHaveLength(1);
+  const [w] = writes;
+  expect(new URL(w.url()).pathname).toBe('/api/repos/acme/app/pulls/4/approve');
+  expect(w.headers()['x-csrf-token']).toBe(session.csrf);
+  expect(w.postDataJSON()).toEqual({ head_sha: approvalMissing.head_sha, digests: approvalMissing.digests });
+  await expectClean(page);
+});
+
+test('pull request: no Approve button for anyone the server refuses; an agent author is named', async ({ page }) => {
+  const reason = 'An agent identity cannot approve. Sign in as a person who is an architecture owner.';
+  await open(page, '/r/acme/app/pull/4', {
+    pull: { ...unapprovedPull, approval: { ...approvalMissing, can_approve: false, reason, author_is_agent: true } },
+  });
+  const box = page.getByRole('region', { name: 'Owner approval' });
+  await expect(box.getByText('Opened by an agent identity.')).toBeVisible();
+  await expect(box.getByText(reason)).toBeVisible();
+  await expect(box.getByRole('button')).toHaveCount(0);
+  await expectClean(page);
+});
+
+test('pull request: a refused approval is a sentence in the box, and no pull request without one has a box', async ({
+  page,
+}) => {
+  const sentence =
+    'The protected files changed since this page was loaded. Nothing was approved. Reload the page and review them again.';
+  await open(page, '/r/acme/app/pull/4', { pull: unapprovedPull, approveRefused: { status: 409, sentence } });
+  const box = page.getByRole('region', { name: 'Owner approval' });
+  await box.getByRole('button', { name: 'Approve this exact commit' }).click();
+  await expect(box.getByRole('alert')).toHaveText(sentence);
+  await expect(box.getByText('An architecture owner must approve commit a1b2c3d')).toBeVisible();
+  await expect(box.getByRole('button', { name: 'Approve this exact commit' })).toBeEnabled();
+  await expectClean(page);
+
+  await page.unrouteAll();
+  await open(page, '/r/acme/app/pull/4');
+  await expect(page.getByRole('heading', { name: 'feat: read options #4', level: 1 })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Owner approval' })).toHaveCount(0);
+});
+
+test('pull request: an owner approves a decision request, and the page links the proposal pull request', async ({ page }) => {
+  const writes = await open(page, '/r/acme/app/pull/4', { pull: decisionPull });
+  const box = page.getByRole('region', { name: 'Decision requests' });
+  await expect(box.getByText('boundary.no-import')).toBeVisible();
+  await expect(box.getByText('Requested by @ci-agent.')).toBeVisible();
+  await expect(box.getByText('billing reads the order total to price a refund.')).toBeVisible();
+  await expect(box.getByRole('list', { name: 'Decision requests on this pull request' }).getByText('pending')).toBeVisible();
+  await expect(box.getByText('called orders through the existing port')).toBeVisible();
+  await expectClean(page);
+
+  await box.getByRole('button', { name: 'Approve and open a proposal pull request' }).click();
+  await expect(box.getByRole('status')).toContainText('Approved. A draft pull request');
+  await expect(box.getByRole('link', { name: 'Proposal PR #12' })).toHaveAttribute('href', 'https://github.com/acme/app/pull/12');
+  await expect(box.getByRole('button')).toHaveCount(0);
+  expect(writes).toHaveLength(1);
+  const [w] = writes;
+  expect(new URL(w.url()).pathname).toBe(
+    `/api/repos/acme/app/pulls/4/decisions/${decisionFinding}/${decisionDigest}/approve`,
+  );
+  expect(w.headers()['x-csrf-token']).toBe(session.csrf);
+  expect(w.postDataJSON()).toEqual({});
+  await expectClean(page);
+});
+
+test('pull request: an owner declines a decision request', async ({ page }) => {
+  const writes = await open(page, '/r/acme/app/pull/4', { pull: decisionPull });
+  const box = page.getByRole('region', { name: 'Decision requests' });
+  await box.getByRole('button', { name: 'Decline' }).click();
+  await expect(box.getByRole('status')).toContainText('Declined.');
+  await expect(box.getByText('declined (by an owner)')).toBeVisible();
+  await expect(box.getByRole('button')).toHaveCount(0);
+  expect(new URL(writes[0].url()).pathname).toMatch(/\/decline$/);
+});
+
+test('pull request: someone who cannot decide reads the requests and gets no buttons', async ({ page }) => {
+  await open(page, '/r/acme/app/pull/4', {
+    pull: { ...pull, decisions: [{ ...decisionPending, can_decide: false }] },
+  });
+  const box = page.getByRole('region', { name: 'Decision requests' });
+  await expect(box.getByText('billing reads the order total to price a refund.')).toBeVisible();
+  await expect(box.getByRole('button')).toHaveCount(0);
+  await expectClean(page);
+});
+
+test('pull request: a refused decision is a sentence in the section, and the buttons stay', async ({ page }) => {
+  const sentence =
+    'The pull request or the policy changed since the agent filed this request, so it is out of date and no proposal was opened. The agent files a new request.';
+  await open(page, '/r/acme/app/pull/4', { pull: decisionPull, decideRefused: { status: 409, sentence } });
+  const box = page.getByRole('region', { name: 'Decision requests' });
+  await box.getByRole('button', { name: 'Approve and open a proposal pull request' }).click();
+  await expect(box.getByRole('alert')).toHaveText(sentence);
+  await expect(box.getByRole('button', { name: 'Approve and open a proposal pull request' })).toBeEnabled();
+  await expectClean(page);
+
+  await page.unrouteAll();
+  await open(page, '/r/acme/app/pull/4');
+  await expect(page.getByRole('heading', { name: 'feat: read options #4', level: 1 })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Decision requests' })).toHaveCount(0);
 });
 
 for (const graph of [false, true]) {
@@ -1372,6 +1852,16 @@ test('graph: no report says why', async ({ page }) => {
   await expectClean(page);
 });
 
+test('pull request graph: a withdrawn result sends the reader to the next step, not to a re-run', async ({ page }) => {
+  await open(page, '/r/acme/app/pull/4/graph', {
+    pullGraph: { ...pullGraph, view: null, unavailable: 'This result asks for action before its findings mean anything.' },
+  });
+  await expect(page.getByText('This result asks for action before its findings mean anything.')).toBeVisible();
+  await expect(page.getByText('Follow the next step in PR analysis above.')).toBeVisible();
+  await expect(page.getByText('re-run the workflow')).toHaveCount(0);
+  await expectClean(page);
+});
+
 test('graph: a layout worker that fails to load says so instead of laying out forever', async ({ page }) => {
   await page.route('**/assets/layout.worker-*.js', (route) => route.fulfill({ status: 404, body: 'gone' }));
   await open(page, '/r/acme/app/graph');
@@ -1718,6 +2208,7 @@ const everyPage = [
   '/r/acme/app/pull/4/graph',
   '/r/acme/app/data-sharing',
   '/r/acme/app/policy',
+  '/r/acme/app/decisions',
   '/r/octo/tool',
   '/admin',
 ];
@@ -1914,5 +2405,84 @@ test('docs: the screenshots of the report-derived action-required page and the u
     await open(page, '/r/acme/app', { overview: unenforced });
     await expect(page.getByText('Make archfit/gate a required status check in a GitHub ruleset on main.')).toBeVisible();
     await page.screenshot({ path: new URL(`overview-gate-not-enforced-${scheme}.png`, shotsDir).pathname, fullPage: true });
+  }
+});
+
+// The owner approval box of a pull request that changes protected files, as an owner sees it: a person's pull
+// request, and one an agent identity opened, which the box marks before the owner approves. Light and dark, sample data.
+// Regenerate with ARCHFIT_DOCS_SHOTS=1.
+test('docs: the screenshots of the owner approval box', async ({ page }) => {
+  test.skip(!process.env.ARCHFIT_DOCS_SHOTS, 'set ARCHFIT_DOCS_SHOTS=1 to regenerate the guide screenshots');
+  await page.setViewportSize({ width: 1280, height: 900 });
+  // author_is_agent is about who opened the pull request; can_approve is about the owner viewing it.
+  const agentPull = { ...unapprovedPull, approval: { ...approvalMissing, author_is_agent: true } };
+  for (const scheme of ['light', 'dark'] as const) {
+    for (const [name, pull] of [
+      ['owner-approval', unapprovedPull],
+      ['owner-approval-agent-pr', agentPull],
+    ] as const) {
+      await page.unrouteAll();
+      await page.emulateMedia({ colorScheme: scheme });
+      await open(page, '/r/acme/app/pull/4', { pull });
+      const box = page.getByRole('region', { name: 'Owner approval' });
+      await expect(box).toBeVisible();
+      await box.screenshot({ path: new URL(`${name}-${scheme}.png`, shotsDir).pathname });
+    }
+  }
+});
+
+// The pages of the agent-first gate that watch many agents: the repository overview with its counters, the watch line on
+// the main branch and the decision requests under Needs you, and the Decisions page. Light and dark, sample data.
+// Regenerate with ARCHFIT_DOCS_SHOTS=1.
+test('docs: the screenshots of the overview counters and the decisions page', async ({ page }) => {
+  test.skip(!process.env.ARCHFIT_DOCS_SHOTS, 'set ARCHFIT_DOCS_SHOTS=1 to regenerate the guide screenshots');
+  await page.setViewportSize({ width: 1280, height: 900 });
+  for (const scheme of ['light', 'dark'] as const) {
+    await page.unrouteAll();
+    await page.emulateMedia({ colorScheme: scheme });
+    await open(page, '/r/acme/app', { overview: watching });
+    await expect(page.getByRole('region', { name: 'Needs you' })).toContainText('7 decision requests wait for an owner.');
+    await expect(page.getByRole('heading', { name: 'Findings on main' })).toBeVisible();
+    await page.screenshot({
+      path: new URL(`overview-watch-${scheme}.png`, shotsDir).pathname,
+      clip: { x: 0, y: 0, width: 1280, height: 900 },
+    });
+
+    await page.getByRole('region', { name: 'Open pull requests' }).screenshot({
+      path: new URL(`overview-pulls-to-update-${scheme}.png`, shotsDir).pathname,
+    });
+
+    await page.unrouteAll();
+    await open(page, '/r/acme/app/decisions');
+    await expect(page.getByRole('region', { name: /^Policy changes/ })).toContainText('approved by @vladikk');
+    await page.screenshot({ path: new URL(`decisions-${scheme}.png`, shotsDir).pathname, fullPage: true });
+  }
+});
+
+// The decision requests of a pull request, as an owner sees them: one pending, with the buttons, and the same request
+// after the owner approved it, with the link to the proposal pull request. Light and dark, sample data.
+// Regenerate with ARCHFIT_DOCS_SHOTS=1.
+test('docs: the screenshots of the decision requests', async ({ page }) => {
+  test.skip(!process.env.ARCHFIT_DOCS_SHOTS, 'set ARCHFIT_DOCS_SHOTS=1 to regenerate the guide screenshots');
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const approved = {
+    ...decisionPending,
+    status: 'approved',
+    can_decide: false,
+    proposal_pr: 12,
+    proposal_url: 'https://github.com/acme/app/pull/12',
+  };
+  for (const scheme of ['light', 'dark'] as const) {
+    for (const [name, decisions] of [
+      ['decision-request', [decisionPending]],
+      ['decision-request-approved', [approved]],
+    ] as const) {
+      await page.unrouteAll();
+      await page.emulateMedia({ colorScheme: scheme });
+      await open(page, '/r/acme/app/pull/4', { pull: { ...pull, decisions } });
+      const box = page.getByRole('region', { name: 'Decision requests' });
+      await expect(box).toBeVisible();
+      await box.screenshot({ path: new URL(`${name}-${scheme}.png`, shotsDir).pathname });
+    }
   }
 });

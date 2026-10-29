@@ -23,6 +23,17 @@ func Decode(payload []byte, engineVersion string) (Report, error) {
 		// The version is input: it is never echoed.
 		return Report{}, locError("engine_version", "is not a release this decoder reads")
 	}
+	return decode(payload, slices.Index(engineVersions, engineVersion) >= slices.Index(engineVersions, identityFrom))
+}
+
+// DecodeStored decodes a report that was verified when it was received and kept since: an artifact, which names no
+// engine release. It reads the newest key set with identity optional, because a kept report may come from a release
+// before identityFrom; a present identity is validated like any other key. Never use it for an upload.
+func DecodeStored(payload []byte) (Report, error) {
+	return decode(payload, false)
+}
+
+func decode(payload []byte, identityRequired bool) (Report, error) {
 	if len(payload) > MaxBytes {
 		return Report{}, locError("payload", "is larger than MaxBytes")
 	}
@@ -40,7 +51,7 @@ func Decode(payload []byte, engineVersion string) (Report, error) {
 		// quote the payload, so it is not passed on.
 		return Report{}, locError("payload", "invalid JSON")
 	}
-	c := &checker{ids: map[string]struct{}{}}
+	c := &checker{ids: map[string]struct{}{}, identityRequired: identityRequired}
 	r := c.report(&shadow)
 	if err := c.err(); err != nil {
 		return Report{}, err
@@ -54,6 +65,15 @@ func (c *checker) report(s *shadowReport) Report {
 		c.fail(phaseVersion, "schema_version", "must equal "+StateSchemaV1)
 	}
 	r.Verdict = c.enum("verdict", s.Verdict, "healthy", "needs_attention", "blocked")
+	if c.identityRequired {
+		id := object(c, "identity", s.Identity, c.identity)
+		r.Identity = &id
+	} else {
+		r.Identity = optional(c, "identity", s.Identity, c.identity)
+	}
+	// The coupling gate writes one summary line, then one line per newly introduced seam it blocks on: as many as the
+	// seams the report may hold, plus the summary.
+	r.GateReasons = stringsOf(c, "gate_reasons", s.GateReasons, maxSeams+1, false, classFindingText)
 	r.Decision = object(c, "decision", s.Decision, c.decision)
 	r.Comparison = object(c, "comparison", s.Comparison, c.comparison)
 	r.GateReference = optional(c, "gate_reference", s.GateReference, c.reference)
@@ -63,6 +83,26 @@ func (c *checker) report(s *shadowReport) Report {
 	r.AgentTasks = list(c, "agent_tasks", s.AgentTasks, maxAgentTasks, true, c.task)
 	r.Seams = list(c, "seams", s.Seams, maxSeams, true, c.seam)
 	return r
+}
+
+func (c *checker) identity(s *shadowIdentity) ResultIdentity {
+	id := ResultIdentity{
+		SchemaVersion:          c.str("schema_version", s.SchemaVersion, classVersion),
+		PolicyDigest:           c.opt("policy_digest", s.PolicyDigest, classToken),
+		BaselineDigest:         c.opt("baseline_digest", s.BaselineDigest, classToken),
+		LabelsDigest:           c.opt("labels_digest", s.LabelsDigest, classToken),
+		BaseSHA:                c.opt("base_sha", s.BaseSHA, classToken),
+		HeadTreeDigest:         c.opt("head_tree_digest", s.HeadTreeDigest, classToken),
+		EngineVersion:          c.str("engine_version", s.EngineVersion, classVersion),
+		MeasurementProfileHash: c.opt("measurement_profile_hash", s.MeasurementProfileHash, classToken),
+		PolicyRef: optional(c, "policy_ref", s.PolicyRef, func(p *shadowPolicyRef) PolicyRef {
+			return PolicyRef{Ref: c.str("ref", p.Ref, classIdentifier), SHA: c.str("sha", p.SHA, classToken)}
+		}),
+	}
+	if s.SchemaVersion != nil && id.SchemaVersion != ResultIdentitySchemaV1 {
+		c.fail(phaseVersion, "schema_version", "must equal "+ResultIdentitySchemaV1)
+	}
+	return id
 }
 
 func (c *checker) decision(s *shadowDecision) Decision {
@@ -228,6 +268,7 @@ func (c *checker) coverage(s *shadowCoverage) Coverage {
 		Partial:    c.count("partial", s.Partial, math.MaxInt),
 		Unmeasured: c.count("unmeasured", s.Unmeasured, math.MaxInt),
 		Tools: list(c, "tools", s.Tools, maxSmallList, true, func(t *shadowToolCoverage) ToolCoverage {
+			stringsOf(c, "details", t.Details, maxToolDetails, false, classDetailText) // validated, not kept
 			return ToolCoverage{
 				Tool:   c.str("tool", t.Tool, classIdentifier),
 				Status: c.str("status", t.Status, classToken),

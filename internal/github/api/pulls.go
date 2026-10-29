@@ -24,6 +24,8 @@ type pullJSON struct {
 	MergedAt     *string   `json:"merged_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 	ChangedFiles int       `json:"changed_files"`
+	MergeCommit  string    `json:"merge_commit_sha"` // null stays ""
+	Mergeable    *bool     `json:"mergeable"`        // null until GitHub has computed it
 	Head         struct {
 		SHA  string `json:"sha"`
 		Ref  string `json:"ref"`
@@ -43,7 +45,7 @@ func (j pullJSON) pull() Pull {
 		// List responses carry no "merged" flag, so merged_at decides everywhere.
 		Merged:  j.MergedAt != nil && *j.MergedAt != "",
 		HeadSHA: j.Head.SHA, HeadRef: j.Head.Ref, BaseRef: j.Base.Ref, BaseSHA: j.Base.SHA,
-		UpdatedAt: j.UpdatedAt,
+		UpdatedAt: j.UpdatedAt, MergeCommitSHA: j.MergeCommit, Mergeable: j.Mergeable,
 	}
 	if j.Head.Repo != nil {
 		p.HeadRepo = j.Head.Repo.FullName
@@ -208,8 +210,9 @@ func (c *Client) Reviews(ctx context.Context, r RepoRef, number int) ([]Review, 
 		User *struct {
 			Login string `json:"login"`
 		} `json:"user"`
-		State    string `json:"state"`
-		CommitID string `json:"commit_id"`
+		State       string    `json:"state"`
+		CommitID    string    `json:"commit_id"`
+		SubmittedAt time.Time `json:"submitted_at"`
 	}
 	k := call{cred: cr, method: http.MethodGet, route: "/repos/{r}/pulls/{n}/reviews",
 		url: pagedURL(base+"/pulls/"+strconv.Itoa(number)+"/reviews", nil)}
@@ -222,7 +225,7 @@ func (c *Client) Reviews(ctx context.Context, r RepoRef, number int) ([]Review, 
 		if j.State == "PENDING" {
 			continue
 		}
-		rv := Review{State: j.State, CommitSHA: j.CommitID}
+		rv := Review{State: j.State, CommitSHA: j.CommitID, SubmittedAt: j.SubmittedAt}
 		if j.User != nil {
 			rv.Reviewer = j.User.Login
 		}

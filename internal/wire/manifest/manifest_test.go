@@ -145,7 +145,7 @@ func TestManifestValidationRules(t *testing.T) {
 // TestApprovedEngineVersions lists the shipped releases; change it with manifest.json.
 func TestApprovedEngineVersions(t *testing.T) {
 	got := EngineVersions()
-	if want := []string{"v3.2.3", "v3.2.2", "v3.2.0"}; !slices.Equal(got, want) {
+	if want := []string{"v3.4.0"}; !slices.Equal(got, want) {
 		t.Errorf("EngineVersions() = %q, want %q", got, want)
 	}
 	got[0] = "changed"
@@ -524,14 +524,26 @@ func TestGeneratedWorkflowInputsArePinned(t *testing.T) {
 }
 
 func TestReleasedApprovalTuples(t *testing.T) {
-	const action = "dd835da5025fd6e54707521434a41767c3ec4ddb"
+	// The Action commit that vendors the envelope with analyzed_sha, integration and policy_change (archfit-action X1, X3b). Every row names
+	// it: the envelope check fetches each distinct Action commit, so no older Action may stay beside it.
+	const action = "7ade3b8fc989ec416ea5d570e7e236f47f7845fc"
 	want := []Identity{
+		{EngineVersion: "v3.4.0", ImageDigest: "sha256:bdcfe29bf9def9a4f0ae544923bc3e755fdec2c2cd6c46ec353c01e60642896b", Platform: "linux/amd64"},
+		{EngineVersion: "v3.4.0", ImageDigest: "sha256:0cadc39c41de4dc58bb115b22bdd0296cb81688175a6ea1839a1e16ed2c35e1f", Platform: "linux/arm64"},
+	}
+	// The engine releases the previous Actions carried left the manifest; their identities are no longer approved.
+	retired := []Identity{
 		{EngineVersion: "v3.2.3", ImageDigest: "sha256:87323e8d80d519531338ff7a36ce750d337ecf6560e48493bdeb10b864e7b772", Platform: "linux/amd64"},
 		{EngineVersion: "v3.2.3", ImageDigest: "sha256:54f6bf1ec99be6f4bdc21ca59e16d3dd65fb5b31a2c2af6c932ad556c89a220c", Platform: "linux/arm64"},
 		{EngineVersion: "v3.2.2", ImageDigest: "sha256:bd351ac70610555237974fac5ff914967a1100fb8ef754853151300d5d19ca35", Platform: "linux/amd64"},
 		{EngineVersion: "v3.2.2", ImageDigest: "sha256:e97a200a7c26907e4d30982b06e61ac7cc27bffd1d46002ad53bbf6b6594c479", Platform: "linux/arm64"},
 		{EngineVersion: "v3.2.0", ImageDigest: "sha256:5f2d4a5fff1ace10d7b08937429179631ae0c1d0e1f9e6f37c72b30954cf00db", Platform: "linux/amd64"},
 		{EngineVersion: "v3.2.0", ImageDigest: "sha256:725c3a074358df8ea41881296eda06b07daed7934d7a6d40bb1ecfc3c8a8128d", Platform: "linux/arm64"},
+	}
+	for _, id := range retired {
+		if got, ok := Lookup(id); ok {
+			t.Errorf("retired identity %s %s still approved: %+v", id.EngineVersion, id.Platform, got)
+		}
 	}
 	var file struct {
 		Entries []json.RawMessage `json:"entries"`
@@ -544,14 +556,7 @@ func TestReleasedApprovalTuples(t *testing.T) {
 	}
 	for _, id := range want {
 		e, ok := Lookup(id)
-		wantAction := action
-		if id.EngineVersion == "v3.2.2" {
-			wantAction = "e0a1ef9473d68b426e9c56b2da5986bcee2fc769"
-		}
-		if id.EngineVersion == "v3.2.0" {
-			wantAction = "cadf35c0d4885a49a3a1482b876f2a456d20de06"
-		}
-		if !ok || e.ActionRef != wantAction || e.ProfileVersion != "archfit.measurement.v2" {
+		if !ok || e.ActionRef != action || e.ProfileVersion != "archfit.measurement.v2" {
 			t.Errorf("released identity %s: entry=%+v, approved=%v", id.Platform, e, ok)
 		}
 	}
@@ -571,9 +576,10 @@ func TestPatchTransitionRejectsMixedAndUnknownTuples(t *testing.T) {
 		{EngineVersion: "v3.2.2", ImageDigest: current.ImageDigest, Platform: "linux/arm64"},
 		{EngineVersion: "v3.2.0", ImageDigest: current.ImageDigest, Platform: current.Platform},
 		{EngineVersion: "v3.2.1", ImageDigest: current.ImageDigest, Platform: current.Platform},
-		{EngineVersion: "v3.2.3", ImageDigest: "sha256:a1ada076a294482ae2b695246dc1cf965ed46be8dae30c8b77a6b94951763137", Platform: current.Platform},
-		{EngineVersion: "v3.2.3", ImageDigest: current.ImageDigest, Platform: "linux/arm64"},
-		{EngineVersion: "v3.2.4", ImageDigest: current.ImageDigest, Platform: current.Platform},
+		{EngineVersion: "v3.2.3", ImageDigest: "sha256:87323e8d80d519531338ff7a36ce750d337ecf6560e48493bdeb10b864e7b772", Platform: current.Platform},
+		{EngineVersion: "v3.4.0", ImageDigest: "sha256:a1ada076a294482ae2b695246dc1cf965ed46be8dae30c8b77a6b94951763137", Platform: current.Platform},
+		{EngineVersion: "v3.4.0", ImageDigest: current.ImageDigest, Platform: "linux/arm64"},
+		{EngineVersion: "v3.4.1", ImageDigest: current.ImageDigest, Platform: current.Platform},
 	} {
 		if _, ok := Lookup(id); ok {
 			t.Errorf("unapproved tuple hit: %+v", id)

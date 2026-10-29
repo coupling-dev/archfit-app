@@ -15,10 +15,12 @@ and "the bytes are what the producer stated" could not be checked.
 ## Functional Responsibilities
 
 - Publish the `archfit.report-envelope.v1` JSON Schema as an embedded artifact (`Schema`).
-- Decode envelope JSON strictly into `Envelope` (`Decode`): exact keys, all keys required, formats checked.
+- Decode envelope JSON strictly into `Envelope` (`Decode`): exact keys, the 18 required ones and the optional `policy_change`, formats checked.
 - Compute the payload digest, `sha256:<hex>` of the exact payload bytes (`PayloadDigest`).
 - Carry the producer's statement of which baseline and labels bytes the engine loaded (`baseline_digest`,
   `labels_digest`), because the engine report itself contains no digest of those files.
+- Carry the engine's classification of the pull request's policy change (`policy_change`) as raw bytes, checked for shape
+  only; `wire/report` reads what is inside.
 - Nothing else. It does not read HTTP requests, compare fields with GitHub data, or decide eligibility.
 
 ## Subdomain Classification
@@ -31,13 +33,14 @@ accepts (decisions.md §3: the verifier owns the envelope schema).
 
 - The schema file `envelope.v1.schema.json`, embedded with `go:embed`. JSON Schema draft 2020-12 **[default]**,
   `$id` `https://archfit.dev/schemas/report-envelope.v1.json` **[default]**, `additionalProperties: false`,
-  every property required.
+  every property required except the optional `policy_change`.
 - Validation is a hand-written decoder, not a JSON Schema library **[default]**. The schema file is the published
   artifact; the decoder is the enforcement. A test proves both agree on the fixtures.
 - The strict JSON technique. `encoding/json` alone is not strict enough: it matches keys case-insensitively,
   keeps the last of duplicate keys, turns `null` into a zero value, and ignores absent keys. The decoder
-  therefore runs a token pre-pass over the top-level object first: every key must be one of the 16 exact
-  lowercase names, appear exactly once, and carry a non-null value. Then it decodes with
+  therefore runs a token pre-pass over the top-level object first: every key must be one of the 19 exact
+  lowercase names (the 18 contract keys and `policy_change`), appear exactly once, and carry a non-null value; all but
+  `policy_change` must be present. The `policy_change` value is read whole and checked by its own shape rule below. Then it decodes with
   `DisallowUnknownFields`, requires end of input after the object, and applies the field rules below.
 - Size limit of the raw envelope: 8 192 bytes **[default]**, unexported.
 - Error text policy: an error names the field and the rule, never the offending value.
@@ -56,6 +59,8 @@ The length limits and character sets below (100, 64, 32) are **[default]**; the 
 | `head_sha`        | `^[0-9a-f]{40}$`                                                                      |
 | `base_sha`        | `^[0-9a-f]{40}$` when `event` is `pull_request`, otherwise exactly `""`               |
 | `merge_base_sha`  | same rule as `base_sha`                                                               |
+| `analyzed_sha`    | `^[0-9a-f]{40}$`, always: the commit the engine measured (see below)                  |
+| `integration`     | `merged` or `conflicts` when `event` is `pull_request`, otherwise exactly `""`        |
 | `run_id`          | integer > 0, no fraction, no exponent                                                 |
 | `run_attempt`     | integer ≥ 1                                                                           |
 | `engine_version`  | `^[A-Za-z0-9._+-]{1,64}$` — format only; approval is the manifest's job               |
@@ -64,6 +69,21 @@ The length limits and character sets below (100, 64, 32) are **[default]**; the 
 | `payload_digest`  | `^sha256:[0-9a-f]{64}$`                                                               |
 | `baseline_digest` | `^[0-9a-f]{64}$` or exactly `""` (no file); bare hex; `""` when `kind` is `discovery` or `baseline`; required (`^[0-9a-f]{64}$`) when `kind` is `reanchor` |
 | `labels_digest`   | `^[0-9a-f]{64}$` or exactly `""` (no file); bare hex; `""` when `kind` is `discovery`               |
+| `policy_change`   | optional; absent unless `kind` is `report` and `event` is `pull_request`; when present an object (not `null`) of exactly twelve keys, each once: `direction` (`tightening`, `loosening` or `mixed`) and eleven lists (`rules_removed`, `rules_loosened`, `waivers_added`, `allowlists_widened`, `coverage_lost`, `declarations_changed`, `rules_added`, `rules_tightened`, `waivers_removed`, `allowlists_narrowed`, `coverage_gained`), each an array of objects |
+
+`policy_change` comes from archfit-action X3b: the engine's classification (`archfit config compare`) of the pull
+request's `.archfit.yaml` change. The Action sends it only when the change orders something and the whole envelope still
+fits the 8 192-byte limit; otherwise it is absent, which means "not classified". The envelope checks the shape and keeps
+the bytes in `Envelope.PolicyChange`; the content of the items, the closed value sets and the direction the lists
+give are `wire/report`'s `DecodePolicyChange`, because the card decides nothing and a bad value must not turn the whole
+upload into a `400`. Self-reported like every other field.
+
+`analyzed_sha` and `integration` come from archfit-action X1: a pull request is measured as it would land. `merged`: the
+engine measured GitHub's test merge commit of `head_sha` into the target, and `analyzed_sha` is that commit. `conflicts`:
+GitHub reports a conflict, the head was measured alone, and `analyzed_sha` is `head_sha`. Every other event measures its own
+head: `analyzed_sha` equals `head_sha`. The schema file is byte-identical to the one `archfit-action` vendors at its
+pinned commit (the CI job `Action envelope schema` compares it for every Action commit in the manifest). The App does not
+trust the claim: `gate/ingest` holds it to what GitHub says about the pull request.
 
 Two digest formats exist on purpose. `payload_digest` and `image_digest` keep the `sha256:` prefix **[default]**: they
 are envelope-native values in OCI style. `baseline_digest` and `labels_digest` are bare hex because they are compared
@@ -111,6 +131,8 @@ type Envelope struct {
     HeadSHA       string `json:"head_sha"`       // 40 lowercase hex
     BaseSHA       string `json:"base_sha"`       // "" unless pull_request
     MergeBaseSHA  string `json:"merge_base_sha"` // "" unless pull_request
+    AnalyzedSHA   string `json:"analyzed_sha"`   // 40 lowercase hex: the commit the engine measured
+    Integration   string `json:"integration"`    // "merged" | "conflicts" for a pull_request, "" otherwise
     RunID         int64  `json:"run_id"`
     RunAttempt    int    `json:"run_attempt"`
     EngineVersion string `json:"engine_version"` // e.g. "v3.0.1"
@@ -119,6 +141,7 @@ type Envelope struct {
     PayloadDigest  string `json:"payload_digest"`  // "sha256:<64 hex>" of the exact payload bytes
     BaselineDigest string `json:"baseline_digest"` // bare hex SHA-256 of the baseline file the engine loaded; "" = none; always "" for discovery and baseline
     LabelsDigest   string `json:"labels_digest"`   // bare hex SHA-256 of the labels file the engine loaded; "" = none
+    PolicyChange   json.RawMessage `json:"policy_change,omitempty"` // optional; pull_request report only; shape-checked bytes
 }
 ```
 
@@ -176,7 +199,7 @@ Shared knowledge, per counterpart:
 - `internal/control/onboarding` holds `Kind`, `KindDiscovery` and `KindBaseline` only, to ask the gate's receiver for a
   discovery or a baseline upload. It reads `LabelsDigest` of a baseline upload through `ingest.Upload`.
 - `archfit-action` holds the schema document returned by `Schema` and the digest rule. It must send exactly the
-  16 keys, and state the baseline and labels digests of the bytes it handed to the engine. Contract coupling tolerates the distance: separate repository, separate release cycle, versioned schema,
+  18 keys (and `policy_change` where it applies), and state the baseline and labels digests of the bytes it handed to the engine. Contract coupling tolerates the distance: separate repository, separate release cycle, versioned schema,
   strict decoding. The Action ships after the App for any additive change (see the parent's versioning rule).
 
 ## Change Vectors
@@ -216,14 +239,25 @@ so `TestSchemaAndDecoderAgree` states that field per fixture name in the test.
   **Expected behavior**: every row is an error naming the field; the unmodified base decodes.
 - **Test name**: `TestDecodeCrossFieldRules`
   **Scenario**: table: `pull_request` event with `pull_request: 0`; `push` with `pull_request: 7`; `push` with a non-empty
-  `base_sha`; `pull_request` event with empty `merge_base_sha`; valid `push`; valid `workflow_dispatch`; valid `pull_request`.
-  **Expected behavior**: the first four fail; the last three decode with the fields unchanged.
+  `base_sha`; `pull_request` event with empty `merge_base_sha`; `integration` empty, unknown, or `merged`/`conflicts` on a push;
+  `analyzed_sha` in capitals, short, empty or null; valid `pull_request` merged and with conflicts; valid `push`; valid
+  `workflow_dispatch`.
+  **Expected behavior**: every invalid row fails naming the field, and the schema agrees; the valid rows decode with the
+  fields unchanged.
 - **Test name**: `TestInputDigestFormats`
   **Scenario**: table for `baseline_digest` and `labels_digest`: 64 lowercase hex; `""`; `sha256:` plus 64 hex; uppercase hex; 63 hex;
   key absent; `null`; a non-empty value with `kind: discovery`. Plus `payload_digest` as bare 64 hex. Plus `kind: baseline`
   with both digests `""`, with a non-empty `baseline_digest`, and with a non-empty `labels_digest`.
   **Expected behavior**: only the first two decode; a bare `payload_digest` is an error too. For `kind: baseline` a
   non-empty `baseline_digest` is an error and a non-empty `labels_digest` decodes.
+- **Test name**: `TestDecodeAcceptsThePoliciesTheActionSends`, `TestPolicyChangeRules`
+  **Scenario**: the Action's three engine fixtures (`testdata/policy-change/`, with a SOURCE note) inside a pull request
+  report envelope; then `policy_change` on a push, a `workflow_dispatch` report, and a discovery, baseline and reanchor upload;
+  `null`, a string, an array, `{}`; a missing list, a missing direction, an unknown key, a duplicate list and direction;
+  direction `none`, another word, `null`, a number; a list that is an object, a string, `null`; an item that is a number, `null`,
+  an array, or a string after a valid item; an item with unknown contents; an envelope over 8 192 bytes.
+  **Expected behavior**: the fixtures decode with the bytes kept; every other row is an error naming `policy_change` without
+  the value, except item contents, which decode; the schema agrees on every row but the duplicate keys, which a schema cannot see.
 - **Test name**: `TestPayloadDigestKnownVectors`
   **Scenario**: table: empty input; `"abc"`; a 5 MB buffer; the same text with LF and with CRLF.
   **Expected behavior**: empty gives `sha256:e3b0c442…b855`; `"abc"` gives `sha256:ba7816bf…15ad`; LF and CRLF differ; output always matches `^sha256:[0-9a-f]{64}$`.
@@ -239,12 +273,12 @@ so `TestSchemaAndDecoderAgree` states that field per fixture name in the test.
 - **Test name**: `TestSchemaAndDecoderAgree`
   **Scenario**: run every envelope fixture, valid and invalid, through `Decode` and through a test-local evaluator of `Schema()`
   that supports only the keywords the schema uses (`type`, `const`, `enum`, `pattern`, `minimum`, `maxLength`, `required`,
-  `properties`, `additionalProperties`, `allOf`, `if`/`then`/`else`).
+  `properties`, `additionalProperties`, `items`, `allOf`, `if`/`then`/`else`, and the boolean schema `false`).
   **Expected behavior**: both accept or both reject each fixture; a rejection by `Decode` names the field the test records for that
   fixture; the evaluator fails the test on any keyword it does not know.
 - **Test name**: `TestSchemaDocument`
   **Scenario**: parse `Schema()`.
-  **Expected behavior**: valid JSON; `schema_version` is `const` `SchemaV1`; 16 required properties; `additionalProperties` is false; two calls return equal but independent slices.
+  **Expected behavior**: valid JSON; `schema_version` is `const` `SchemaV1`; 18 required properties and the optional `policy_change`; `additionalProperties` is false; two calls return equal but independent slices.
 
 ### Boundary Tests
 

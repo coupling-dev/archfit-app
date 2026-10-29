@@ -13,12 +13,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alexei-led/archfit-app/internal/gate/decisions"
 	"github.com/alexei-led/archfit-app/internal/gate/feedback"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
 	"github.com/alexei-led/archfit-app/internal/gate/sweep"
 	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/webhook"
+	"github.com/alexei-led/archfit-app/internal/store"
 	"github.com/alexei-led/archfit-app/internal/wire/envelope"
 	"github.com/alexei-led/archfit-app/internal/wire/manifest"
 	"github.com/alexei-led/archfit-app/internal/wire/report"
@@ -268,6 +270,30 @@ func TestReceiptConstruction(t *testing.T) {
 			outcome: blocked,
 			want:    feedback.Receipt{PolicyDigest: basePol, BaselineDigest: baseline, Conclusion: verdict.ActionRequired, Reason: verdict.ReasonOwnerApprovalMissing},
 		},
+		{
+			name: "a merged pull request names the base tip it was merged into",
+			upload: Upload{Report: withHash(basePol), Binding: Binding{
+				Integration: envelope.IntegrationMerged, BaseSHA: "tip", MergeBaseSHA: "fork-point"}},
+			trusted: inputs.Trusted{PolicyDigests: []string{basePol}},
+			outcome: success,
+			want:    feedback.Receipt{PolicyDigest: basePol, BaseSHA: "tip", Conclusion: verdict.Success, Reason: verdict.ReasonHealthy},
+		},
+		{
+			name: "a head that conflicts names its merge base",
+			upload: Upload{Report: withHash(basePol), Binding: Binding{
+				Integration: envelope.IntegrationConflicts, BaseSHA: "tip", MergeBaseSHA: "fork-point"}},
+			trusted: inputs.Trusted{PolicyDigests: []string{basePol}},
+			outcome: success,
+			want:    feedback.Receipt{PolicyDigest: basePol, BaseSHA: "fork-point", Conclusion: verdict.Success, Reason: verdict.ReasonHealthy},
+		},
+		{
+			name: "a push has no base",
+			upload: Upload{Report: withHash(basePol), Binding: Binding{
+				BaseSHA: "tip", MergeBaseSHA: "fork-point"}},
+			trusted: inputs.Trusted{PolicyDigests: []string{basePol}},
+			outcome: success,
+			want:    feedback.Receipt{PolicyDigest: basePol, Conclusion: verdict.Success, Reason: verdict.ReasonHealthy},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -286,6 +312,7 @@ type pipelineFakes struct {
 	receiver  *fakeReceiver
 	resolver  *fakeResolver
 	publisher *fakePublisher
+	repairer  *fakeRepairer
 	sweeper   *fakeSweeper
 	actions   *fakeActions
 	gate      *Gate
@@ -293,10 +320,11 @@ type pipelineFakes struct {
 
 func newPipelineFakes() *pipelineFakes {
 	f := &pipelineFakes{
-		receiver: &fakeReceiver{}, resolver: &fakeResolver{}, publisher: &fakePublisher{},
+		receiver: &fakeReceiver{}, resolver: &fakeResolver{}, publisher: &fakePublisher{}, repairer: &fakeRepairer{},
 		sweeper: &fakeSweeper{}, actions: &fakeActions{},
 	}
-	f.gate = newGate(f.receiver, f.resolver, f.publisher, f.sweeper, f.actions, newFakeGitHub(), &fakeAdmitter{refused: map[int64]bool{}}, func() time.Time { return testStart })
+	gh := newFakeGitHub()
+	f.gate = newGate(f.receiver, f.resolver, decisions.New(store.NewMemory(), gh, gh, func() time.Time { return testStart }), f.publisher, f.repairer, f.sweeper, f.actions, gh, gh, &fakeAdmitter{refused: map[int64]bool{}}, func() time.Time { return testStart })
 	return f
 }
 
@@ -372,6 +400,44 @@ func TestProtectedPushFollowsInputs(t *testing.T) {
 	if got := push(); got != 1 {
 		t.Errorf("a push without paths swept %d repositories, want 1", got)
 	}
+}
+
+// A default-branch push that changes no protected path still moves the target, so open pull requests are rechecked
+// against the new tip (sweep rule 5c); a protected one runs the full repository pass, which includes the recheck.
+func TestDefaultBranchPushRechecksTheTarget(t *testing.T) {
+	const tip = "1111111111111111111111111111111111111111"
+	tests := []struct {
+		name         string
+		kind         webhook.EventKind
+		paths        []string
+		wantSwept    int
+		wantRechecks []recheckCall
+	}{
+		{"unprotected push", webhook.DefaultBranchPush, []string{"pkg/a/a.go"}, 0, []recheckCall{{api.Repo{RepoRef: api.RepoRef{InstallationID: 11, FullName: shopName}, DefaultBranch: testBranch}, tip}}},
+		{"protected push", webhook.DefaultBranchPush, []string{"pkg/a/a.go", settings.Path}, 1, nil},
+		{"push to another branch", webhook.BranchPush, []string{"pkg/a/a.go"}, 0, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newPipelineFakes()
+			e := webhook.Event{Kind: tt.kind, InstallationID: 11, Repo: shopName, DefaultBranch: testBranch, HeadSHA: tip, ChangedPaths: tt.paths}
+			if err := f.gate.HandleEvent(context.Background(), e); err != nil {
+				t.Fatal(err)
+			}
+			if len(f.sweeper.repos) != tt.wantSwept || !reflect.DeepEqual(f.sweeper.rechecks, tt.wantRechecks) {
+				t.Errorf("swept %d repositories, rechecks %+v; want %d, %+v", len(f.sweeper.repos), f.sweeper.rechecks, tt.wantSwept, tt.wantRechecks)
+			}
+		})
+	}
+
+	t.Run("a failed recheck is returned so the delivery is retried", func(t *testing.T) {
+		f := newPipelineFakes()
+		f.sweeper.err = api.ErrRateLimited
+		e := webhook.Event{Kind: webhook.DefaultBranchPush, InstallationID: 11, Repo: shopName, HeadSHA: tip, ChangedPaths: []string{"a.go"}}
+		if err := f.gate.HandleEvent(context.Background(), e); !errors.Is(err, api.ErrRateLimited) {
+			t.Errorf("err = %v, want the rate limit", err)
+		}
+	})
 }
 
 func TestHTTPMapping(t *testing.T) {
@@ -540,6 +606,39 @@ func TestUploadPipeline(t *testing.T) {
 			if pub.Outcome.Conclusion == verdict.Success {
 				t.Errorf("published a success for a pull request into another base: %+v", pub.Receipt)
 			}
+		}
+	})
+
+	// Only a run on a push to the default branch says something about the default branch, and only once its decision
+	// is published.
+	t.Run("only a published default-branch push reaches the repair issue", func(t *testing.T) {
+		tests := []struct {
+			name       string
+			binding    Binding
+			publishErr error
+			want       int
+		}{
+			{"push to the default branch", Binding{Repo: repo, Event: "push", HeadSHA: "head", BaseRef: "trunk"}, nil, 1},
+			{"push to another branch", Binding{Repo: repo, Event: "push", HeadSHA: "head", BaseRef: "feature"}, nil, 0},
+			{"pull request", Binding{Repo: repo, Event: "pull_request", PullRequest: 7, HeadSHA: "head", BaseRef: "trunk"}, nil, 0},
+			{"unbound pull request run", Binding{Repo: repo, Event: "pull_request", HeadSHA: "head", BaseRef: "trunk"}, nil, 0},
+			{"dispatched run on the default branch", Binding{Repo: repo, Event: "workflow_dispatch", HeadSHA: "head", BaseRef: "trunk"}, nil, 0},
+			{"publication failed", Binding{Repo: repo, Event: "push", HeadSHA: "head", BaseRef: "trunk"}, errors.New("checks down"), 0},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				f := newPipelineFakes()
+				f.receiver.upload = Upload{Binding: tt.binding, Identity: entry.Identity, Report: healthy}
+				f.resolver.trusted = trusted
+				f.publisher.publishErr = tt.publishErr
+				f.gate.UploadHandler().ServeHTTP(httptest.NewRecorder(), postMarker())
+				if len(f.repairer.repaired) != tt.want {
+					t.Fatalf("repaired %d times, want %d", len(f.repairer.repaired), tt.want)
+				}
+				if tt.want == 1 && !reflect.DeepEqual(f.repairer.repaired[0].Receipt, f.publisher.published[0].Receipt) {
+					t.Errorf("repaired %+v, want the published receipt %+v", f.repairer.repaired[0].Receipt, f.publisher.published[0].Receipt)
+				}
+			})
 		}
 	})
 

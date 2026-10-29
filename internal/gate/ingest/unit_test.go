@@ -223,6 +223,7 @@ func resolutionRows() []resolutionRow {
 			s.env.PullRequest = 0
 			s.env.BaseSHA = ""
 			s.env.MergeBaseSHA = ""
+			s.env.Integration = ""
 		}, problems: mismatch},
 		{name: "eleven candidates", mutate: func(s *scenario) {
 			s.run.PullRequests = nil
@@ -274,8 +275,10 @@ func TestEnvelopeComparison(t *testing.T) {
 	}{
 		// envelope.Decode ties pull_request, base_sha and merge_base_sha to the event.
 		{"event", func(e *envelope.Envelope) {
-			e.Event, e.PullRequest, e.BaseSHA, e.MergeBaseSHA = eventPush, 0, "", ""
+			e.Event, e.PullRequest, e.BaseSHA, e.MergeBaseSHA, e.Integration = eventPush, 0, "", "", ""
 		}},
+		{"analyzed commit", func(e *envelope.Envelope) { e.AnalyzedSHA = movedSHA }},
+		{"integration", func(e *envelope.Envelope) { e.Integration = envelope.IntegrationConflicts }},
 		{"PR number", func(e *envelope.Envelope) { e.PullRequest = 8 }},
 		{"head", func(e *envelope.Envelope) { e.HeadSHA = movedSHA }},
 		{"base", func(e *envelope.Envelope) { e.BaseSHA = movedSHA }},
@@ -361,5 +364,45 @@ func TestAdmissionIsAskedForTheResolvedInstallationAndOwner(t *testing.T) {
 	owner, _, _ := strings.Cut(repoName, "/")
 	if want := []string{fmt.Sprintf("%d %s", installationID, owner)}; !slices.Equal(s.admitAsked, want) {
 		t.Errorf("Admitted asked %v; want %v", s.admitAsked, want)
+	}
+}
+
+// TestLandingComesFromGitHub: what the engine must have measured is GitHub's answer, never the envelope's claim. A
+// pull request that GitHub says conflicts is measured at its head; one that merges, at GitHub's test merge commit; one
+// whose merge GitHub has not computed matches no claim.
+func TestLandingComesFromGitHub(t *testing.T) {
+	no, yes := false, true
+	tests := []struct {
+		name        string
+		github      func(*api.Pull)
+		analyzed    string
+		integration string
+		mismatch    bool
+	}{
+		{"merges cleanly", func(p *api.Pull) { p.Mergeable = &yes }, mergeSHA, envelope.IntegrationMerged, false},
+		{"mergeability not computed, merge commit known", func(p *api.Pull) { p.Mergeable = nil }, mergeSHA, envelope.IntegrationMerged, false},
+		{"conflicts", func(p *api.Pull) { p.Mergeable, p.MergeCommitSHA = &no, "" }, headSHA, envelope.IntegrationConflicts, false},
+		{"conflicts, a stale merge commit still named", func(p *api.Pull) { p.Mergeable = &no }, headSHA, envelope.IntegrationConflicts, false},
+		{"envelope claims merged while GitHub says conflicts", func(p *api.Pull) { p.Mergeable, p.MergeCommitSHA = &no, "" }, mergeSHA, envelope.IntegrationMerged, true},
+		{"envelope claims conflicts while GitHub says it merges", func(p *api.Pull) { p.Mergeable = &yes }, headSHA, envelope.IntegrationConflicts, true},
+		{"envelope names a commit that is not GitHub's merge commit", func(*api.Pull) {}, movedSHA, envelope.IntegrationMerged, true},
+		{"envelope analyses the head alone while GitHub merges", func(*api.Pull) {}, headSHA, envelope.IntegrationMerged, true},
+		{"GitHub has no merge commit and no verdict", func(p *api.Pull) { p.Mergeable, p.MergeCommitSHA = nil, "" }, mergeSHA, envelope.IntegrationMerged, true},
+		{"GitHub has no merge commit and the envelope claims conflicts", func(p *api.Pull) { p.Mergeable, p.MergeCommitSHA = nil, "" }, headSHA, envelope.IntegrationConflicts, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := prScenario(t)
+			pull := s.pulls[prNumber]
+			tt.github(&pull)
+			s.pulls[prNumber] = pull
+			s.env.AnalyzedSHA, s.env.Integration = tt.analyzed, tt.integration
+			up, err := s.receive(t)
+			if tt.mismatch {
+				wantProblems(t, up, err, ProblemEnvelopeMismatch)
+			} else {
+				wantProblems(t, up, err)
+			}
+		})
 	}
 }

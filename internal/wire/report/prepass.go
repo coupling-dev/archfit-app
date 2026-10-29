@@ -48,7 +48,7 @@ func formatLoc(path []seg) string {
 // scanner is the token pre-pass. encoding/json alone matches keys case-insensitively, keeps the last duplicate
 // key, turns null into a zero value and drops list indexes from its errors. The pre-pass walks the token stream
 // next to the shadow types instead: keys must equal a schema key exactly (which implies ^[a-z][a-z0-9_]*$) of
-// the selected release's key set, no object repeats a key, null is allowed for optInt only, every value has the
+// the selected release's key set, no object repeats a key, null is allowed for optInt and optBool only, every value has the
 // JSON type of its shadow field, and input ends after the top-level object. The keys of a map are free; its
 // duplicates are not.
 type scanner struct {
@@ -64,7 +64,12 @@ type field struct {
 
 // prepass scans payload against the shadow type root.
 func prepass(payload []byte, root reflect.Type) error {
-	s := &scanner{dec: json.NewDecoder(bytes.NewReader(payload)), fields: map[reflect.Type]map[string]field{}}
+	return prepassAt(payload, root, nil)
+}
+
+// prepassAt is prepass for a document that sits at base inside a larger one, so its errors name the full location.
+func prepassAt(payload []byte, root reflect.Type, base []seg) error {
+	s := &scanner{dec: json.NewDecoder(bytes.NewReader(payload)), fields: map[reflect.Type]map[string]field{}, path: base}
 	s.dec.UseNumber()
 	if tok, err := s.dec.Token(); err != nil || tok != json.Delim('{') {
 		return s.fail("must be a JSON object")
@@ -171,7 +176,7 @@ func (s *scanner) value(t reflect.Type, depth int) error {
 			return s.list(t.Elem(), depth+1)
 		}
 	case nil:
-		if t != reflect.TypeFor[optInt]() {
+		if t != reflect.TypeFor[optInt]() && t != reflect.TypeFor[optBool]() {
 			return s.fail("null is not allowed")
 		}
 		ok = true

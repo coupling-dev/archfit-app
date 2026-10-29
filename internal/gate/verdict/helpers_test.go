@@ -32,12 +32,12 @@ var allCodes = []ReasonCode{
 	ReasonPolicyMissing, ReasonUnknownIdentity, ReasonProfileMissing, ReasonWorkflowNotApproved,
 	ReasonOwnerApprovalMissing, ReasonSettingsMissing, ReasonForkUnsupported, ReasonUnsupportedEvent,
 	ReasonEnvelopeMismatch, ReasonReportInvalid, ReasonMissingUpload, ReasonStaleInputs,
-	ReasonWaiverExpired, ReasonSuspended, ReasonPolicyDefect,
+	ReasonWaiverExpired, ReasonSuspended, ReasonPolicyDefect, ReasonTargetMoved, ReasonSharedHead,
 }
 
 var withoutCodes = []ReasonCode{
 	ReasonMissingUpload, ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended,
-	ReasonOwnerApprovalMissing,
+	ReasonOwnerApprovalMissing, ReasonTargetMoved, ReasonSharedHead,
 }
 
 // healthyFacts is a passing pull request on a repository with a policy, a baseline and a labels file.

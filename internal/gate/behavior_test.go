@@ -1047,3 +1047,75 @@ func TestPushSweepLeavesAPullIntoAnotherBaseAlone(t *testing.T) {
 		t.Errorf("re-runs = %v, want only the pull into the default branch [%d]", w.gh.reruns, onMain.runID)
 	}
 }
+
+// identityOf states the engine's result identity (v3.3.0 and later) in the report.
+func identityOf(tree, policyDigest, engine string) func(map[string]any) {
+	return func(doc map[string]any) {
+		doc["identity"] = map[string]any{
+			"schema_version": "archfit.result-identity.v1", "policy_digest": policyDigest, "head_tree_digest": tree,
+			"base_sha": strings.Repeat("b", 40), "engine_version": engine, "measurement_profile_hash": strings.Repeat("f", 64),
+		}
+	}
+}
+
+// A1: the receipt records the report's result identity, and a re-run on one head updates what is there in place: the
+// gate check stays one run, the PR keeps one comment. The identity is the engine's own claim in a customer-attested
+// report, so it never suppresses feedback: a re-run whose report differs under the same claimed identity is what the
+// pull request shows afterwards.
+func TestReceiptsCarryTheIdentityAndRerunsUpdateInPlace(t *testing.T) {
+	tree, policyDigest := strings.Repeat("e", 40), strings.Repeat("a", 64)
+	same := identityOf(tree, policyDigest, "v3.3.0")
+	rerun := func(w *world, p *pull) {
+		run := w.gh.runs[p.runID]
+		run.Attempt++
+		w.gh.runs[p.runID] = run
+	}
+	setup := func(t *testing.T) (*world, *pull) {
+		w := newWorld(t)
+		p := w.openPull(w.shop, 7)
+		w.handle(w.event(webhook.PullOpened, p))
+		w.wantAnswer(w.upload(p, fixtureBlocked, same), 200, "failure", "blocking_findings")
+		return w, p
+	}
+
+	t.Run("the receipt names the identity; a report without one is refused", func(t *testing.T) {
+		w, p := setup(t)
+		key := w.receipt(p).IdentityKey
+		if len(key) != 64 {
+			t.Fatalf("IdentityKey = %q, want a sha256", key)
+		}
+		rerun(w, p)
+		w.wantAnswer(w.upload(p, fixtureBlocked, identityOf(strings.Repeat("9", 40), policyDigest, "v3.3.0")), 200, "failure", "blocking_findings")
+		other := w.receipt(p).IdentityKey
+		if other == "" || other == key {
+			t.Errorf("another head tree gave key %q, want a new one", other)
+		}
+		rerun(w, p)
+		w.wantAnswer(w.upload(p, fixtureBlocked, func(doc map[string]any) { delete(doc, "identity") }), 200, "action_required", "report_invalid")
+		w.noSuccess()
+	})
+
+	t.Run("a repeat adds no check run and no comment", func(t *testing.T) {
+		w, p := setup(t)
+		rerun(w, p)
+		w.wantAnswer(w.upload(p, fixtureBlocked, same), 200, "failure", "blocking_findings")
+		w.check(p, p.head, gateCheckName) // fails the test on more than one gate check
+		if n := len(w.comments(p)); n != 1 {
+			t.Errorf("%d comments, want the one comment, edited in place", n)
+		}
+		if rc := w.receipt(p); rc.RunAttempt != 2 {
+			t.Errorf("receipt attempt = %d, want the re-run's 2: the run order advances", rc.RunAttempt)
+		}
+	})
+
+	t.Run("a different report under the same claimed identity is shown", func(t *testing.T) {
+		w, p := setup(t)
+		before := w.feedbackText(p)
+		rerun(w, p)
+		w.wantAnswer(w.upload(p, fixtureHealthy, same), 200, "success", "healthy")
+		w.wantGate(p, runCompleted, "success")
+		if w.feedbackText(p) == before {
+			t.Error("the feedback still shows the first report")
+		}
+	})
+}
