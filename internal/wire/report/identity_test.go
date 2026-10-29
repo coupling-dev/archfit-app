@@ -11,7 +11,7 @@ var engineCases = []string{"new_violation", "existing_violation", "unmeasured_ra
 func TestEngineStateFixturesDecodeWithTheirIdentity(t *testing.T) {
 	for _, name := range engineCases {
 		t.Run(name, func(t *testing.T) {
-			r := mustDecodeAs(t, loadFixture(t, "engine-next/state-"+name+".json"), "v3.2.3")
+			r := mustDecodeAs(t, loadFixture(t, "engine-next/state-"+name+".json"), "v3.4.0")
 			id := r.Identity
 			if id == nil {
 				t.Fatal("Identity = nil, want the block the engine states")
@@ -24,14 +24,31 @@ func TestEngineStateFixturesDecodeWithTheirIdentity(t *testing.T) {
 	}
 }
 
-// Until the engine pin moves, a report without the block (engine v3.2.3 and earlier) still decodes, with no identity.
-func TestIdentityIsOptionalUntilThePinMoves(t *testing.T) {
-	doc := baseDoc(t)
-	if _, has := doc["identity"]; has {
-		t.Fatal("the base fixture predates the identity block")
-	}
-	if r := mustDecode(t, encode(t, doc)); r.Identity != nil {
-		t.Errorf("Identity = %+v for a report without one", *r.Identity)
+// From engine v3.4.0 the state schema requires identity: a report without it is refused. The releases before it carry
+// none and still decode, with no identity, so that their uploads end unknown_engine_identity at the manifest.
+func TestIdentityIsRequiredFromThePin(t *testing.T) {
+	for _, tt := range []struct {
+		release  string
+		required bool
+	}{
+		{"v3.0.0", false}, {"v3.0.1", false}, {"v3.2.0", false}, {"v3.2.2", false}, {"v3.2.3", false},
+		{"v3.4.0", true},
+	} {
+		t.Run(tt.release, func(t *testing.T) {
+			doc := baseDoc(t)
+			delete(doc, "identity")
+			r, err := Decode(encode(t, doc), tt.release)
+			if tt.required {
+				wantError(t, err, "identity")
+				return
+			}
+			if err != nil {
+				t.Fatalf("Decode: %v", err)
+			}
+			if r.Identity != nil {
+				t.Errorf("Identity = %+v for a report without one", *r.Identity)
+			}
+		})
 	}
 }
 
@@ -98,7 +115,7 @@ func TestIdentityRules(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			doc := baseDoc(t)
 			row.edit(t, doc)
-			r, err := Decode(encode(t, doc), "v3.2.3")
+			r, err := Decode(encode(t, doc), "v3.4.0")
 			if row.wantLoc != "" {
 				wantError(t, err, row.wantLoc)
 				for _, leak := range []string{"<script>", "rm -rf", "abc\\ndef", "archfit.result-identity.v2"} {
@@ -120,9 +137,12 @@ func TestIdentityRules(t *testing.T) {
 
 // coverage.tools[].details (engine v3.3.0) is an optional list of one-line strings: validated, not kept.
 func TestToolCoverageDetailsRules(t *testing.T) {
-	many := make([]any, maxSmallList+1)
-	for i := range many {
-		many[i] = "project"
+	projects := func(n int) []any {
+		list := make([]any, n)
+		for i := range list {
+			list[i] = "project"
+		}
+		return list
 	}
 	rows := []mutation{
 		{name: "absent"},
@@ -139,8 +159,23 @@ func TestToolCoverageDetailsRules(t *testing.T) {
 		{name: "a line break in an item", wantLoc: "coverage.tools[0].details", edit: func(t *testing.T, d map[string]any) {
 			set(t, d, []any{"a\nb"}, "coverage", "tools", 0, "details")
 		}},
-		{name: "too many items", wantLoc: "coverage.tools[0].details", edit: func(t *testing.T, d map[string]any) {
-			set(t, d, many, "coverage", "tools", 0, "details")
+		{name: "more projects than the small lists hold", edit: func(t *testing.T, d map[string]any) {
+			set(t, d, projects(maxSmallList+1), "coverage", "tools", 0, "details")
+		}},
+		{name: "a line over the ordinary text length", edit: func(t *testing.T, d map[string]any) {
+			set(t, d, []any{strings.Repeat("x", maxTextLen+1)}, "coverage", "tools", 0, "details")
+		}},
+		{name: "a line of the longest length", edit: func(t *testing.T, d map[string]any) {
+			set(t, d, []any{strings.Repeat("x", maxDetailLen)}, "coverage", "tools", 0, "details")
+		}},
+		{name: "a line over the longest length", wantLoc: "coverage.tools[0].details", edit: func(t *testing.T, d map[string]any) {
+			set(t, d, []any{strings.Repeat("x", maxDetailLen+1)}, "coverage", "tools", 0, "details")
+		}},
+		{name: "as many items as the bound", edit: func(t *testing.T, d map[string]any) {
+			set(t, d, projects(maxToolDetails), "coverage", "tools", 0, "details")
+		}},
+		{name: "one item over the bound", wantLoc: "coverage.tools[0].details", edit: func(t *testing.T, d map[string]any) {
+			set(t, d, projects(maxToolDetails+1), "coverage", "tools", 0, "details")
 		}},
 		{name: "null", wantLoc: "coverage.tools[0].details", edit: func(t *testing.T, d map[string]any) {
 			set(t, d, nil, "coverage", "tools", 0, "details")
@@ -152,7 +187,7 @@ func TestToolCoverageDetailsRules(t *testing.T) {
 			if row.edit != nil {
 				row.edit(t, doc)
 			}
-			_, err := Decode(encode(t, doc), "v3.2.3")
+			_, err := Decode(encode(t, doc), "v3.4.0")
 			if row.wantLoc != "" {
 				wantError(t, err, row.wantLoc)
 				return

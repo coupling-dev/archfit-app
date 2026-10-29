@@ -25,6 +25,7 @@ import (
 const (
 	wirePackage     = "github.com/alexei-led/archfit-app/internal/wire"
 	realCapture     = "real-v320-blocked-no-baseline"
+	pinnedCapture   = "real-v340-arm64-blocked-no-baseline"
 	verdictBlocked  = "blocked"
 	statusNonCompar = "non_comparable"
 )
@@ -256,7 +257,7 @@ func TestRealPullRequestCaptureCarriesOrigin(t *testing.T) {
 func TestEveryApprovedEngineVersionIsReadable(t *testing.T) {
 	var capture []byte
 	for _, f := range inFolder(loadCorpus(t), folderReport) {
-		if f.Name == realCapture {
+		if f.Name == pinnedCapture {
 			capture = f.bytes(t)
 		}
 	}
@@ -266,7 +267,7 @@ func TestEveryApprovedEngineVersionIsReadable(t *testing.T) {
 			continue
 		}
 		if _, err := report.Decode(capture, release); err != nil {
-			t.Errorf("the real capture does not decode as a %s document: %v", release, err)
+			t.Errorf("the pinned release capture does not decode as a %s document: %v", release, err)
 		}
 	}
 }

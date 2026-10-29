@@ -22,13 +22,16 @@ const (
 	maxTaskFiles        = maxLocations + 2 // every location file and both edge endpoints
 	maxDimensionFacts   = 256              // metrics, unknown, delta metrics
 	maxFindingRefs      = 10_000
-	maxSmallList        = 64 // producers, unknowns, coverage.tools, every reasons list
+	// maxToolDetails bounds coverage.tools[].details: the engine writes one line per .NET project and does not cap them.
+	maxToolDetails = 10_000
+	maxSmallList   = 64 // producers, unknowns, coverage.tools, every reasons list
 
 	maxTextLen       = 500
 	maxFindingLen    = 2_000 // a finding why or constraint ends with the rule's rationale and docs reference
 	maxTaskTextLen   = 4_096 // a task goal or constraint holds a why, two paths or a module's public globs
 	maxCommandLen    = 512
 	maxIdentifierLen = 200
+	maxDetailLen     = 8192 // a details line joins a project, its status, frameworks and the reasons the extractor gives
 	maxBlobLen       = 8192 // the engine writes whole canonical declarations; the card shows a few words of them
 	maxTokenLen      = 64
 	maxVersionLen    = 128
@@ -56,6 +59,7 @@ type strClass int
 
 const (
 	classText        strClass = iota
+	classDetailText           // a coverage.tools[].details line: one line, engine-built from paths, statuses and diagnostics, unbounded there
 	classFindingText          // a finding why or constraint: text with a larger cap
 	classTaskText             // a task goal or constraint: text with the largest cap
 	classCommand
@@ -74,6 +78,9 @@ type checker struct {
 	path []seg
 	errs [phaseCount]error
 	ids  map[string]struct{} // finding IDs seen
+
+	// identityRequired is set for a release whose state schema requires the identity block.
+	identityRequired bool
 }
 
 func (c *checker) err() error {
@@ -222,6 +229,8 @@ func stringRule(s string, class strClass) (phase, string) {
 	switch class {
 	case classText:
 		return phaseString, tooLong(s, maxTextLen)
+	case classDetailText:
+		return phaseString, tooLong(s, maxDetailLen)
 	case classFindingText:
 		return phaseString, tooLong(s, maxFindingLen)
 	case classTaskText:

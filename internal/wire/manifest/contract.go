@@ -7,7 +7,7 @@ import (
 )
 
 // The image_digest values in manifest.json are the published per-platform digests of
-// ghcr.io/alexei-led/archfit v3.2.0, v3.2.2 and v3.2.3; action_ref is the archfit-action commit that generated workflows pin.
+// ghcr.io/alexei-led/archfit v3.4.0; action_ref is the archfit-action commit that generated workflows pin.
 // TestManifestHasNoPlaceholdersInRelease fails a build tested with ARCHFIT_RELEASE=1 if a placeholder returns.
 //
 //go:embed manifest.json

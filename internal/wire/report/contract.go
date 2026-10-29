@@ -11,7 +11,11 @@ const MaxBytes = 5 << 20
 
 // engineVersions share one verified state-schema key set, oldest first. Historical
 // reports remain readable; only the manifest decides which producer tuple is approved.
-var engineVersions = []string{"v3.0.0", "v3.0.1", "v3.2.0", "v3.2.2", "v3.2.3"}
+var engineVersions = []string{"v3.0.0", "v3.0.1", "v3.2.0", "v3.2.2", "v3.2.3", "v3.4.0"}
+
+// identityFrom is the first release whose state schema requires the result identity block (v3.4.0 and later).
+// Reports of the releases before it carry none and still decode, to end unknown_engine_identity at the manifest.
+const identityFrom = "v3.4.0"
 
 // EngineVersions returns the engine releases whose state document Decode reads.
 func EngineVersions() []string {
@@ -25,8 +29,8 @@ func EngineVersions() []string {
 type Report struct {
 	SchemaVersion string `json:"schema_version"` // must equal StateSchemaV1
 	Verdict       string `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
-	// Identity is what the engine measured and under which inputs (engine v3.3.0 and later); nil for a report that
-	// predates it. It is the engine's own statement, kept for display and for the receipt key. It decides nothing:
+	// Identity is what the engine measured and under which inputs (engine v3.3.0 and later); nil only for a report
+	// of a release before identityFrom. It is the engine's own statement, kept for display and for the receipt key. It decides nothing:
 	// trust in inputs comes from the protected ref, never from a digest the report names.
 	Identity *ResultIdentity `json:"identity,omitempty"`
 	// GateReasons are the engine's own one-line reasons from its coupling gate (engine v3.3.0 and later, check only);

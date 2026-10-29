@@ -42,7 +42,7 @@ func checkExpectation(t *testing.T, r Report, want expectedFields) {
 
 func TestDecodeRealEngineReport(t *testing.T) {
 	const fixture = "report/real-blocked-no-baseline.json"
-	r := mustDecode(t, loadFixture(t, fixture))
+	r := mustDecodeFixture(t, fixture)
 	checkExpectation(t, r, loadExpectation(t, fixture).Fields)
 
 	if r.SchemaVersion != StateSchemaV1 || r.Verdict != "blocked" || r.Decision.HardGates != "fail" || r.Decision.ActiveBlockers != 1 {
@@ -93,7 +93,7 @@ func TestProducerToolVersionsSurvive(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.fixture, func(t *testing.T) {
-			r := mustDecode(t, loadFixture(t, tt.fixture))
+			r := mustDecodeFixture(t, tt.fixture)
 			checkExpectation(t, r, loadExpectation(t, tt.fixture).Fields)
 			got := map[string]Producer{}
 			for _, p := range r.Comparison.MeasurementProfile.Producers {
@@ -237,9 +237,6 @@ func checkKeptInShadow(t *testing.T, loc string, public, shadow reflect.Type) {
 type schemaWalker struct {
 	t    *testing.T
 	root map[string]any
-	// ahead lists shadow fields the walked schema does not define yet: the decoder reads them before the engine pin
-	// moves to a release that has them. TestAheadOfThePinIsNotInThePin makes the pin's move delete them.
-	ahead map[string]bool
 }
 
 // resolve follows local "$ref" pointers such as "#/$defs/finding".
@@ -294,7 +291,7 @@ func (w schemaWalker) check(loc string, node map[string]any, shadow reflect.Type
 		w.check(loc+"."+key, prop.(map[string]any), typ)
 	}
 	for key := range fields {
-		if _, ok := props[key]; !ok && !w.ahead[loc+"."+key] {
+		if _, ok := props[key]; !ok {
 			w.t.Errorf("%s.%s is a shadow field the schema does not define", loc, key)
 		}
 	}
@@ -304,57 +301,23 @@ func TestEngineSchemaKeySetIsCovered(t *testing.T) {
 	checkKeptInShadow(t, "report", reflect.TypeFor[Report](), reflect.TypeFor[shadowReport]())
 
 	// Every key of a real capture and of the all-keys fixture must be a shadow field: both decode strictly.
-	mustDecode(t, loadFixture(t, "report/real-blocked-no-baseline.json"))
+	mustDecodeFixture(t, "report/real-blocked-no-baseline.json")
 	mustDecode(t, loadFixture(t, baseFixture))
-	mustDecode(t, loadFixture(t, "report/real-seam-policy.json"))
+	mustDecodeFixture(t, "report/real-seam-policy.json")
 
-	w := schemaWalker{t: t, root: parseDoc(t, loadFixture(t, "schema/archfit.state.schema.json")), ahead: aheadOfThePin}
-	w.check("report", w.root, reflect.TypeFor[shadowReport]())
-}
-
-// aheadOfThePin are the keys the decoder reads that the pinned schema (SCHEMA_SOURCE, engine v3.2.3) does not define.
-// The engine pin, the manifest and the image move once, to v3.4.0; until then the decoder is ahead of the pin by
-// exactly these keys, and they are optional so that a v3.2.3 report still decodes.
-var aheadOfThePin = map[string]bool{
-	"report.identity": true, "report.coverage.tools[].details": true, "report.gate_reasons": true,
-}
-
-// aheadOfThePinSchemaPath is where the pinned schema would define each allowed key.
-var aheadOfThePinSchemaPath = map[string][]any{
-	"report.identity":                 {"properties", "identity"},
-	"report.coverage.tools[].details": {"$defs", "StateToolCoverage", "properties", "details"},
-	"report.gate_reasons":             {"properties", "gate_reasons"},
-}
-
-// TestAheadOfThePinIsNotInThePin: when the pinned schema defines a key, the allowance for it is stale and must go, and
-// the key becomes whatever the new schema says (identity becomes required).
-func TestAheadOfThePinIsNotInThePin(t *testing.T) {
-	root := parseDoc(t, loadFixture(t, "schema/archfit.state.schema.json"))
-	for loc := range aheadOfThePin {
-		path, ok := aheadOfThePinSchemaPath[loc]
-		if !ok {
-			t.Fatalf("%s has no schema path: add it to aheadOfThePinSchemaPath", loc)
-		}
-		parent := at(t, root, path[:len(path)-1]...).(map[string]any)
-		if _, defined := parent[path[len(path)-1].(string)]; defined {
-			t.Errorf("%s is defined by the pinned schema now: delete it from aheadOfThePin and make the decoder follow the schema", loc)
-		}
-	}
-}
-
-// TestDecoderCoversTheEnginesCurrentSchema walks the engine's current state schema (engine-next, feec08c3, identical to
-// v3.3.0) against the decoder both ways, with no allowance: every key the engine can emit now has a shadow field, so
-// the pin can move to v3.4.0 without a report ending report_invalid on a key the App never read.
-func TestDecoderCoversTheEnginesCurrentSchema(t *testing.T) {
-	next := parseDoc(t, loadFixture(t, "engine-next/archfit.state.schema.json"))
-	w := schemaWalker{t: t, root: next}
+	w := schemaWalker{t: t, root: parseDoc(t, loadFixture(t, "schema/archfit.state.schema.json"))}
 	w.check("report", w.root, reflect.TypeFor[shadowReport]())
 	checkKeptInShadow(t, "report.identity", reflect.TypeFor[ResultIdentity](), reflect.TypeFor[shadowIdentity]())
-	for loc, path := range aheadOfThePinSchemaPath {
-		parent := at(t, next, path[:len(path)-1]...).(map[string]any)
-		if _, defined := parent[path[len(path)-1].(string)]; !defined {
-			t.Errorf("%s is allowed ahead of the pin, but the engine's current schema does not define it", loc)
-		}
+}
+
+// The pinned schema requires identity from the release the decoder requires it from.
+func TestPinnedSchemaRequiresIdentity(t *testing.T) {
+	root := parseDoc(t, loadFixture(t, "schema/archfit.state.schema.json"))
+	if !slices.Contains(at(t, root, "required").([]any), any("identity")) {
+		t.Error("the pinned state schema does not require identity")
+	}
+	if !slices.Contains(engineVersions, identityFrom) || engineVersions[len(engineVersions)-1] != identityFrom {
+		t.Errorf("identityFrom %s must be the pinned (last) release of %q", identityFrom, engineVersions)
 	}
 }
 
@@ -438,7 +401,7 @@ func TestWrongSchemaVersion(t *testing.T) {
 
 func TestEngineVersions(t *testing.T) {
 	got := EngineVersions()
-	if want := []string{"v3.0.0", "v3.0.1", "v3.2.0", "v3.2.2", "v3.2.3"}; !slices.Equal(got, want) {
+	if want := []string{"v3.0.0", "v3.0.1", "v3.2.0", "v3.2.2", "v3.2.3", "v3.4.0"}; !slices.Equal(got, want) {
 		t.Errorf("EngineVersions() = %q, want %q", got, want)
 	}
 	got[0] = "changed"
@@ -616,7 +579,7 @@ func TestSeamBalanceReadingsKeepOnlyEngineTokens(t *testing.T) {
 // TestRootImporterCapture: the engine names an importer that no module owns by its package directory, "." for the
 // repository root, and ends the finding why and constraint with the rule's rationale and docs reference.
 func TestRootImporterCapture(t *testing.T) {
-	r := mustDecode(t, loadFixture(t, "report/real-root-importer.json"))
+	r := mustDecodeFixture(t, "report/real-root-importer.json")
 	if len(r.Findings) != 1 || len(r.AgentTasks) != 1 {
 		t.Fatalf("%d findings, %d tasks, want one each", len(r.Findings), len(r.AgentTasks))
 	}

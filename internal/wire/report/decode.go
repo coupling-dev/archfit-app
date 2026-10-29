@@ -23,6 +23,17 @@ func Decode(payload []byte, engineVersion string) (Report, error) {
 		// The version is input: it is never echoed.
 		return Report{}, locError("engine_version", "is not a release this decoder reads")
 	}
+	return decode(payload, slices.Index(engineVersions, engineVersion) >= slices.Index(engineVersions, identityFrom))
+}
+
+// DecodeStored decodes a report that was verified when it was received and kept since: an artifact, which names no
+// engine release. It reads the newest key set with identity optional, because a kept report may come from a release
+// before identityFrom; a present identity is validated like any other key. Never use it for an upload.
+func DecodeStored(payload []byte) (Report, error) {
+	return decode(payload, false)
+}
+
+func decode(payload []byte, identityRequired bool) (Report, error) {
 	if len(payload) > MaxBytes {
 		return Report{}, locError("payload", "is larger than MaxBytes")
 	}
@@ -40,7 +51,7 @@ func Decode(payload []byte, engineVersion string) (Report, error) {
 		// quote the payload, so it is not passed on.
 		return Report{}, locError("payload", "invalid JSON")
 	}
-	c := &checker{ids: map[string]struct{}{}}
+	c := &checker{ids: map[string]struct{}{}, identityRequired: identityRequired}
 	r := c.report(&shadow)
 	if err := c.err(); err != nil {
 		return Report{}, err
@@ -54,7 +65,12 @@ func (c *checker) report(s *shadowReport) Report {
 		c.fail(phaseVersion, "schema_version", "must equal "+StateSchemaV1)
 	}
 	r.Verdict = c.enum("verdict", s.Verdict, "healthy", "needs_attention", "blocked")
-	r.Identity = optional(c, "identity", s.Identity, c.identity)
+	if c.identityRequired {
+		id := object(c, "identity", s.Identity, c.identity)
+		r.Identity = &id
+	} else {
+		r.Identity = optional(c, "identity", s.Identity, c.identity)
+	}
 	// The coupling gate writes one summary line, then one line per newly introduced seam it blocks on: as many as the
 	// seams the report may hold, plus the summary.
 	r.GateReasons = stringsOf(c, "gate_reasons", s.GateReasons, maxSeams+1, false, classFindingText)
@@ -252,7 +268,7 @@ func (c *checker) coverage(s *shadowCoverage) Coverage {
 		Partial:    c.count("partial", s.Partial, math.MaxInt),
 		Unmeasured: c.count("unmeasured", s.Unmeasured, math.MaxInt),
 		Tools: list(c, "tools", s.Tools, maxSmallList, true, func(t *shadowToolCoverage) ToolCoverage {
-			stringsOf(c, "details", t.Details, maxSmallList, false, classText) // validated, not kept
+			stringsOf(c, "details", t.Details, maxToolDetails, false, classDetailText) // validated, not kept
 			return ToolCoverage{
 				Tool:   c.str("tool", t.Tool, classIdentifier),
 				Status: c.str("status", t.Status, classToken),

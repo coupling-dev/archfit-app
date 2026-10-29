@@ -513,16 +513,19 @@ no approval is needed any more.
 
 ### Engine versions
 
-The locked manifest approves engine v3.2.3 on Linux amd64 and arm64. New workflows pin archfit-action at commit
-`e168b961824b6801e74f0f0938b49be7e1286819`, which measures a pull request as it would land (the merge with the target)
-and states `analyzed_sha`, `integration` and, for a policy change, its classification in the upload. Only the v3.2.3 amd64 row is Current for new workflows and
-recovery pins.
+The locked manifest approves engine v3.4.0 on Linux amd64 and arm64. New workflows pin archfit-action at commit
+`fb2520cb069571d6bdc9274ac97d4df49994b6c7` (Action v3.0.0, which runs engine v3.4.0 only). It measures a pull request as
+it would land (the merge with the target) and states `analyzed_sha`, `integration` and, for a policy change, its
+classification in the upload. Only the v3.4.0 amd64 row is Current for new workflows and recovery pins.
 
-- The v3.2.2 and v3.2.0 tuples are no longer approved: the Actions that carried them predate the new envelope. Retired or
-  unknown pins give `action_required` with `unknown_engine_identity`; move the workflow to the pinned Action.
-- Historical v3.0.0/v3.0.1 reports remain readable because their state schema matches v3.2.0/v3.2.2/v3.2.3.
-  Reading an old report does not approve its identity. Unknown report releases give `report_invalid`.
-- The policy editor uses the byte-identical v3.2.3 config schema. The engine's check remains the authority for policy semantics.
+- The v3.2.3, v3.2.2 and v3.2.0 tuples are no longer approved: the Actions that carried them run an older engine.
+  Retired or unknown pins give `action_required` with `unknown_engine_identity`; move the workflow to the pinned Action.
+- Engine v3.4.0 states a result identity in every report. A v3.4.0 report without it gives `report_invalid`.
+- Historical v3.0.0 to v3.2.3 reports remain readable, without an identity, because their state schema matches except for
+  the keys v3.3.0 and v3.4.0 added. Reading an old report does not approve its identity. Unknown report releases give
+  `report_invalid`.
+- The policy editor uses the v3.4.0 config schema, which adds `target_branch` and `module_review.change_gate`. The
+  engine's check remains the authority for policy semantics.
 - Pull-request origin comes from `--base <merge base>`. It is display evidence, never an exemption from a blocker.
 
 #### Move an installed workflow to a new engine
@@ -530,15 +533,15 @@ recovery pins.
 After the App release approves the new tuple, open an owner-reviewed pull request changing only these pins:
 
 ```yaml
-- uses: alexei-led/archfit-action@dd835da5025fd6e54707521434a41767c3ec4ddb
+- uses: alexei-led/archfit-action@fb2520cb069571d6bdc9274ac97d4df49994b6c7
   with:
     # endpoint, audience and mode stay as they are
-    engine-version: "v3.2.3"
-    image-digest: "sha256:87323e8d80d519531338ff7a36ce750d337ecf6560e48493bdeb10b864e7b772"
+    engine-version: "v3.4.0"
+    image-digest: "sha256:bdcfe29bf9def9a4f0ae544923bc3e755fdec2c2cd6c46ec353c01e60642896b"
 ```
 
 This example is for an amd64 Linux runner. Use the manifest's arm64 digest on an arm64 runner.
-This Action commit accepts v3.2.3 only. Pass that engine version and its exact platform digest explicitly. Keep the repository's settings, policy owners, and gate mode unchanged.
+This Action commit accepts v3.4.0 only. Pass that engine version and its exact platform digest explicitly. Keep the repository's settings, policy owners, and gate mode unchanged.
 The App does not update installed workflow files automatically.
 
 Run a fresh scan after moving the pins. Missing compiler or required-rule evidence cannot be repaired by a baseline approval.

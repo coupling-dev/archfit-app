@@ -114,9 +114,8 @@ func (s *server) latestDecoded(ctx context.Context, repo api.Repo) (*report.Repo
 		return nil, "", err
 	}
 	// The artifact carries no envelope that names its engine release. The App only displays it, and the newest
-	// release's key set holds every older one, so the newest is the one to read it with.
-	releases := report.EngineVersions()
-	rep, err := report.Decode(payload, releases[len(releases)-1])
+	// release's key set holds every older one but the identity, which a kept report may lack: DecodeStored reads it.
+	rep, err := report.DecodeStored(payload)
 	if err != nil {
 		return nil, reportUnavailable, nil
 	}
