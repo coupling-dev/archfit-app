@@ -22,13 +22,16 @@ func TestSchemaIsThePinnedEngineFile(t *testing.T) {
 			source[key] = value
 		}
 	}
-	if got, want := source["revision"], "c7490636480a8faedddf3bff1d0a678a7ab7987c"; got != want {
+	if got, want := source["revision"], "2692cd6b8aab23e559d0aa76712a192d69b4229f"; got != want {
 		t.Errorf("SCHEMA_SOURCE revision = %q, want %q", got, want)
+	}
+	if got, want := source["tag"], "v3.4.0"; got != want {
+		t.Errorf("SCHEMA_SOURCE tag = %q, want %q", got, want)
 	}
 	if got, want := source["path"], "archfit.schema.json"; got != want {
 		t.Errorf("SCHEMA_SOURCE path = %q, want %q", got, want)
 	}
-	const pinned = "37a4b6d65a9ba8dcdf3e9eb4d2ce5338e8685e249b555faf201a54b8c4dad32e"
+	const pinned = "edffa7dbae646ef970a537b090d8ceb9b7b311b1a547b1e1cc00ba8938e48f2d"
 	sum := sha256.Sum256(Schema())
 	if got := hex.EncodeToString(sum[:]); got != pinned || source["sha256"] != pinned {
 		t.Errorf("Schema() sha256 = %s, SCHEMA_SOURCE says %q, want %s", got, source["sha256"], pinned)

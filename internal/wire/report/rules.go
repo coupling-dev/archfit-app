@@ -74,6 +74,9 @@ type checker struct {
 	path []seg
 	errs [phaseCount]error
 	ids  map[string]struct{} // finding IDs seen
+
+	// identityRequired is set for a release whose state schema requires the identity block.
+	identityRequired bool
 }
 
 func (c *checker) err() error {

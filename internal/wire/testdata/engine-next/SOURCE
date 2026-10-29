@@ -1,10 +1,3 @@
-archfit.state.schema.json: the engine's current state schema, byte for byte.
-repository: github.com/alexei-led/archfit
-revision: feec08c35ff8eb61d9f6dfb27733ae00393abfde (main, after v3.3.0, E5 and E11; identical to tag v3.3.0)
-sha256: 1d37f7d86fa0c55131acb705ebbeb6a709023344cc7817d0dd1c48caa38a4256
-note: vendored for the decoder's tests only, to prove it reads every key the engine emits now. It is NOT the pin
-(SCHEMA_SOURCE, manifest and image move once, to v3.4.0). Delete it when archfit.state.schema.json is re-pinned.
-
 state-*.json: the engine's STATE-REPORT fixtures for the five E1 cases (new violation, existing violation, unmeasured ratchet
 from profile drift, dead selector, missing evidence).
 repository: github.com/alexei-led/archfit

@@ -12,3 +12,6 @@ sha256 of the files here:
   addrule.json 64d830dcd43e4b740d324f25f1c2761d9abccab7669d3282bdda9e4761133940
   exclude.json 2b71c5ac8b5b39a72f6c0acf041fd2cea1d044f72c56494f5c395bcd02b152a8
 note: used by the envelope and ingest tests to prove the strict decoder and DecodePolicyChange read what the Action sends.
+v3.4.0: checked against archfit-action at fb2520cb069571d6bdc9274ac97d4df49994b6c7 (Action v3.0.0), whose tests/fixtures/policy-change/*.json
+were re-captured from the published v3.4.0 image: `jq -c .policy_change | tr -d '\n'` of each is byte-identical to the file here, so v3.4.0 changed
+nothing for them.

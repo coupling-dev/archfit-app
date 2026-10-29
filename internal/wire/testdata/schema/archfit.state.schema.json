@@ -495,6 +495,62 @@
         "unit"
       ]
     },
+    "PolicyRef": {
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "sha": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ref",
+        "sha"
+      ]
+    },
+    "ResultIdentity": {
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "enum": [
+            "archfit.result-identity.v1"
+          ]
+        },
+        "policy_digest": {
+          "type": "string"
+        },
+        "baseline_digest": {
+          "type": "string"
+        },
+        "labels_digest": {
+          "type": "string"
+        },
+        "policy_ref": {
+          "$ref": "#/$defs/PolicyRef"
+        },
+        "base_sha": {
+          "type": "string"
+        },
+        "head_tree_digest": {
+          "type": "string"
+        },
+        "engine_version": {
+          "type": "string"
+        },
+        "measurement_profile_hash": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "schema_version",
+        "engine_version"
+      ]
+    },
     "Seam": {
       "properties": {
         "id": {
@@ -619,7 +675,15 @@
           "type": "string"
         },
         "same_owner": {
-          "type": "boolean"
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Whether both sides share the value, or null unless both sides are known."
         },
         "from_deploy_unit": {
           "type": "string"
@@ -628,7 +692,15 @@
           "type": "string"
         },
         "same_deploy_unit": {
-          "type": "boolean"
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Whether both sides share the value, or null unless both sides are known."
         },
         "boundary_crossings": {
           "type": "integer"
@@ -877,6 +949,12 @@
         },
         "reason": {
           "type": "string"
+        },
+        "details": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "additionalProperties": false,
@@ -982,6 +1060,15 @@
         "blocked"
       ]
     },
+    "identity": {
+      "$ref": "#/$defs/ResultIdentity"
+    },
+    "gate_reasons": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "decision": {
       "$ref": "#/$defs/StateDecision"
     },
@@ -1024,6 +1111,7 @@
   "required": [
     "schema_version",
     "verdict",
+    "identity",
     "decision",
     "comparison",
     "measurement",

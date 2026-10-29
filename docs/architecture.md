@@ -300,15 +300,15 @@ for recovery actions.
 
 Approval and readability are separate contracts:
 
-- `wire/manifest` approves exact v3.2.2 and transition v3.2.0 Linux platform tuples, with one current v3.2.2 amd64 row.
-- `wire/report` reads v3.2.2, v3.2.0 and historical v3.0.0/v3.0.1 using their identical state-schema key set.
+- `wire/manifest` approves the exact v3.4.0 Linux platform tuples, with one current v3.4.0 amd64 row.
+- `wire/report` reads v3.4.0 through the pinned state schema, which requires `identity`, and the historical releases up to v3.2.3 without it.
   Unknown keys and unknown releases fail decoding. Historical readability grants no producer approval.
-- `wire/policy` embeds the v3.2.2 config schema, byte-identical to v3.2.0.
+- `wire/policy` embeds the v3.4.0 config schema.
 - The gate uses the structured decision, trusted input bindings, measurement identity, and gate reference.
   Origin remains display-only. A missing producer or required rule cannot become a healthy zero.
 
-New workflows pin Action commit `e0a1ef9473d68b426e9c56b2da5986bcee2fc769` and its matching engine platform digest.
-This Action commit accepts v3.2.2 only and requires explicit engine-version and platform-digest inputs, requests fresh measurements, and passes only fixed HOME and checkout-scoped Git settings.
+New workflows pin Action v3.0.0 at commit `fb2520cb069571d6bdc9274ac97d4df49994b6c7` and its matching engine platform digest.
+This Action commit accepts v3.4.0 only and requires explicit engine-version and platform-digest inputs, requests fresh measurements, and passes only fixed HOME and checkout-scoped Git settings.
 It forwards no credentials. The container is not network-isolated, and reports remain customer-attested.
 The `action-conformance` CI job verifies every distinct manifest Action commit against the App's unchanged envelope schema.
 

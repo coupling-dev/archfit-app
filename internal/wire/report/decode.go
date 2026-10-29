@@ -40,7 +40,7 @@ func Decode(payload []byte, engineVersion string) (Report, error) {
 		// quote the payload, so it is not passed on.
 		return Report{}, locError("payload", "invalid JSON")
 	}
-	c := &checker{ids: map[string]struct{}{}}
+	c := &checker{ids: map[string]struct{}{}, identityRequired: slices.Index(engineVersions, engineVersion) >= slices.Index(engineVersions, identityFrom)}
 	r := c.report(&shadow)
 	if err := c.err(); err != nil {
 		return Report{}, err
@@ -54,7 +54,12 @@ func (c *checker) report(s *shadowReport) Report {
 		c.fail(phaseVersion, "schema_version", "must equal "+StateSchemaV1)
 	}
 	r.Verdict = c.enum("verdict", s.Verdict, "healthy", "needs_attention", "blocked")
-	r.Identity = optional(c, "identity", s.Identity, c.identity)
+	if c.identityRequired {
+		id := object(c, "identity", s.Identity, c.identity)
+		r.Identity = &id
+	} else {
+		r.Identity = optional(c, "identity", s.Identity, c.identity)
+	}
 	// The coupling gate writes one summary line, then one line per newly introduced seam it blocks on: as many as the
 	// seams the report may hold, plus the summary.
 	r.GateReasons = stringsOf(c, "gate_reasons", s.GateReasons, maxSeams+1, false, classFindingText)

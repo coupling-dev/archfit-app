@@ -30,9 +30,9 @@ core modules, which is why everything here is contract-strength and strictly ver
 
 - The rule for what belongs here: transport types, schemas, strict decoding, digests. No domain decisions, no I/O.
 - The fixture corpus: its layout, the named cases, and the producer artifact each one was captured from.
-- Current engine schemas are pinned to v3.2.2 at `90c0ca240143329d404eb4eb116b096f607f7dc5`, byte-identical to v3.2.0.
-  The state schema is byte-identical to historical v3.0.0/v3.0.1; the config schema's AI fields changed.
-  New workflows pin Action commit `e0a1ef9473d68b426e9c56b2da5986bcee2fc769`; transition v3.2.0 rows retain Action v2.2.0 at `cadf35c0d4885a49a3a1482b876f2a456d20de06`. The App still owns the unchanged envelope schema.
+- Current engine schemas are pinned to v3.4.0 at `2692cd6b8aab23e559d0aa76712a192d69b4229f` (state sha256 `1d37f7d8…`, config sha256 `edffa7db…`).
+  The state schema adds to v3.0.0/v3.0.1 the keys v3.3.0 and v3.4.0 emit and requires `identity`; the config schema adds `target_branch` and `module_review.change_gate`.
+  New workflows pin Action v3.0.0 at commit `fb2520cb069571d6bdc9274ac97d4df49994b6c7`, the only Action in the manifest. The App still owns the unchanged envelope schema.
 - Each child's internals (decoder technique, caps, file formats) stay in that child.
 
 ## Public Contract
@@ -55,14 +55,14 @@ child is normative in the child's own `module.md`; it is not restated here.
 
 - Every contract carries a version identifier: envelope `archfit.report-envelope.v1`; report
   `archfit.architecture-state.v1`; settings file `version: 1`; manifest data `version: 1`; policy follows the
-  engine release of the manifest's `current` row, v3.2.2 today; the engine baseline file `archfit.baseline.v3`.
+  engine release of the manifest's `current` row, v3.4.0 today; the engine baseline file `archfit.baseline.v3`.
 - Unknown fields are rejected by every decoder here. Three deliberate nuances: the policy readers ignore
-  engine-owned keys they do not read; the report decoder knows every key of the engine v3.0.0/v3.0.1/v3.2.0/v3.2.2 state schema and
+  engine-owned keys they do not read; the report decoder knows every key of the pinned engine v3.4.0 state schema and
   drops the known keys that are not allowlisted, while a key that schema does not define is still an error;
   the baseline reader (`policy.ReadBaseline`) ignores baseline keys it does not read, as the engine's own decoder does.
 - The envelope `kind` enum gained `baseline` inside v1: a new accepted value is additive, so the version stays.
-- The manifest approves v3.2.2 and transition v3.2.0, with one Action SHA and two exact platform digests per release. Only v3.2.2 amd64 is current.
-  The decoder also reads historical v3.0.0/v3.0.1 through their identical state schema. Readability is not approval.
+- The manifest approves v3.4.0, with one Action SHA and two exact platform digests. Only v3.4.0 amd64 is current.
+  The decoder also reads historical releases (v3.0.0 to v3.2.3) without an identity. Readability is not approval.
   Engine/Action releases provide actual identities and captures before the App replaces its approval rows.
   After App deployment, owners update installed workflows by pull request. No automatic pin, baseline, or debt change occurs.
 - Two digest formats exist and are never compared with each other: engine-style bare lowercase hex (`policy.Digest`,
@@ -151,7 +151,7 @@ tampering fixture overrides `baseline_digest` with a value outside `trusted_base
 
 Fixtures captured from the engine cite their engine release and that release's pinned revision (v3.0.0:
 `bbd658f0…`; v3.0.1: `0649e504…`; v3.2.0: `faa4eb4e…`; v3.2.2: `90c0ca24…`); fixtures from a mutable branch are not allowed. A capture is a document of its own
-release; every synthetic fixture uses the current v3.2.2 key set. The tests, and every consumer test that reads the whole
+release; every synthetic fixture uses the current v3.4.0 key set, identity included. The tests, and every consumer test that reads the whole
 corpus, decode each fixture as its release; the known releases share one key set.
 Required report fixtures (plan T02): `healthy`, `attention-pass` (verdict `needs_attention` with passing hard
 gates), `blocked`, `missing-evidence` (`hard_gates: unmeasured`), `unknown-identity`, `profile-comparable` (symmetric
@@ -197,6 +197,14 @@ through the qualified Action commit. The unmodified baseline/reanchor outputs an
 [`testdata/release-v322/SOURCE.md`](testdata/release-v322/SOURCE.md). Tests bind all five capture hashes, preserve N/A
 encapsulation omission and measured cycle zero, and structurally read both baseline outputs. No authenticated upload
 or execution of the engine's reanchor algorithm is claimed by these App tests.
+
+`real-v340-arm64-blocked-no-baseline` is the unmodified `tests/fixtures/state.json` of archfit-action at `fb2520cb069571d6bdc9274ac97d4df49994b6c7`
+(sha256 `958a3de5…`), emitted by the released native arm64 engine v3.4.0 image. Only the report is real: the Action's
+CI export of its own envelope is not committed, so the sibling envelope is built here around it (synthetic GitHub fields,
+the manifest's arm64 digest, the payload digest of the report). It is the capture the manifest's v3.4.0 rows need; the
+v3.2.3 captures stay as history and no longer carry an approved identity. The synthetic report fixtures carry the
+`identity` block v3.4.0 states, because Decode requires it from that release; `coverage-details` and
+`coverage-details-malformed` hold a `coverage.tools[].details` list that is accepted and one that is `report_invalid`.
 
 Four v3.2.0 captures remain transition evidence: `real-v320-blocked-no-baseline`, `real-v320-baselined-comparable`,
 `real-v320-pr-origin`, and `real-v320-missing-compiler`. Reports and captured baseline/envelope bytes are unmodified.
@@ -251,13 +259,13 @@ External counterparts, reached only through these contracts:
 
 | Counterpart                       | Direction                                       | Strength                    | LCA / Rank / Distance     | Volatility | Balanced? |
 | --------------------------------- | ----------------------------------------------- | --------------------------- | ------------------------- | ---------- | --------- |
-| `archfit` engine (v3.2.2)         | report, policy, manifest follow engine releases | Contract (versioned schema) | outside the tree; highest | Moderate   | Yes       |
+| `archfit` engine (v3.4.0)         | report, policy, manifest follow engine releases | Contract (versioned schema) | outside the tree; highest | Moderate   | Yes       |
 | `archfit-action` (external repo)  | the Action conforms to envelope and report      | Contract (JSON Schema)      | outside the tree; highest | Moderate   | Yes       |
 | customer repositories (the files) | customers write settings and policy files       | Contract (versioned file)   | outside the tree; highest | Moderate   | Yes       |
 
 Shared knowledge: with the engine, the complete state schema key set, its enums and decision semantics, the config
 schema, waiver keys, the `modules` map shape, the three input file names, the bare-hex hashing rule and released
-identities, with current schemas pinned at revision `90c0ca240143329d404eb4eb116b096f607f7dc5` (v3.2.2) and verified against real reports; with the Action, the envelope schema, both digest rules and the no-source transport; with customers, the settings field rules. Separate repositories and release cycles are the highest
+identities, with current schemas pinned at revision `2692cd6b8aab23e559d0aa76712a192d69b4229f` (v3.4.0) and verified against real reports; with the Action, the envelope schema, both digest rules and the no-source transport; with customers, the settings field rules. Separate repositories and release cycles are the highest
 distance the system has. Contract coupling with explicit versions, strict decoding and a shared fixture corpus is
 what keeps it balanced.
 
@@ -326,7 +334,7 @@ Parent tests live in package `wire_test` and exercise the children together and 
   **Expected behavior**: each contains `LEAK-7f3a`; all have `decode: "error"` except the one surviving declarations fixture, which has `decode: "ok"`.
 - **Test name**: `TestPinnedEngineSchemaIsRecorded`
   **Scenario**: read `testdata/schema/`.
-  **Expected behavior**: `archfit.state.schema.json` is present with a source note citing tag `v3.2.2`, revision `90c0ca240143329d404eb4eb116b096f607f7dc5` and its SHA-256; the hash matches.
+  **Expected behavior**: `archfit.state.schema.json` is present with a source note citing tag `v3.4.0`, revision `2692cd6b8aab23e559d0aa76712a192d69b4229f` and its SHA-256; the hash matches.
 
 ### Integration Contract Tests
 

@@ -15,7 +15,7 @@ type optBool bool
 type shadowReport struct {
 	SchemaVersion *string                    `json:"schema_version"`
 	Verdict       *string                    `json:"verdict"`
-	Identity      *shadowIdentity            `json:"identity"`     // optional until the engine pin moves past v3.2.3
+	Identity      *shadowIdentity            `json:"identity"`     // required from identityFrom
 	GateReasons   []string                   `json:"gate_reasons"` // v3.3.0: the coupling gate's reasons, when there are any
 	Decision      *shadowDecision            `json:"decision"`
 	Comparison    *shadowComparison          `json:"comparison"`

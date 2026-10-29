@@ -203,7 +203,7 @@ func readFixture(t *testing.T, elem ...string) []byte {
 // loadFixture reads a report of the shared corpus with its trusted-input siblings.
 func loadFixture(t *testing.T, name string) fixture {
 	t.Helper()
-	f := fixture{name: name, report: readFixture(t, "report", name+".json"), policy: readFixture(t, "report", name+".policy.yaml")}
+	f := fixture{name: name, report: withIdentity(t, readFixture(t, "report", name+".json")), policy: readFixture(t, "report", name+".policy.yaml")}
 	if raw, err := os.ReadFile(filepath.Join("wire", "testdata", "report", name+".baseline.json")); err == nil {
 		f.baseline = raw
 	}
@@ -213,8 +213,30 @@ func loadFixture(t *testing.T, name string) fixture {
 	return f
 }
 
-// approved is the identity of the manifest row new workflows pin (linux/amd64). The corpus captures are v3.0.0
-// documents; every approved release reads them with the same key set.
+// withIdentity gives a corpus report the identity block that engine v3.4.0 states in every report, which the
+// approved release requires. Captures of older engines have none; the block is the only thing added.
+func withIdentity(t *testing.T, raw []byte) []byte {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if _, has := doc["identity"]; has {
+		return raw
+	}
+	doc["identity"] = map[string]any{
+		"schema_version": "archfit.result-identity.v1", "engine_version": approved.EngineVersion,
+		"policy_digest": strings.Repeat("a", 64), "head_tree_digest": strings.Repeat("e", 40),
+		"measurement_profile_hash": strings.Repeat("f", 64),
+	}
+	out, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// approved is the identity of the manifest row new workflows pin (linux/amd64).
 var approved = manifest.Current().Identity
 
 func digest(raw []byte) string {

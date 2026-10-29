@@ -1078,7 +1078,7 @@ func TestReceiptsCarryTheIdentityAndRerunsUpdateInPlace(t *testing.T) {
 		return w, p
 	}
 
-	t.Run("the receipt names the identity; a report without one has no key", func(t *testing.T) {
+	t.Run("the receipt names the identity; a report without one is refused", func(t *testing.T) {
 		w, p := setup(t)
 		key := w.receipt(p).IdentityKey
 		if len(key) != 64 {
@@ -1086,14 +1086,13 @@ func TestReceiptsCarryTheIdentityAndRerunsUpdateInPlace(t *testing.T) {
 		}
 		rerun(w, p)
 		w.wantAnswer(w.upload(p, fixtureBlocked, identityOf(strings.Repeat("9", 40), policyDigest, "v3.3.0")), 200, "failure", "blocking_findings")
-		if other := w.receipt(p).IdentityKey; other == "" || other == key {
+		other := w.receipt(p).IdentityKey
+		if other == "" || other == key {
 			t.Errorf("another head tree gave key %q, want a new one", other)
 		}
 		rerun(w, p)
-		w.wantAnswer(w.upload(p, fixtureBlocked), 200, "failure", "blocking_findings")
-		if none := w.receipt(p).IdentityKey; none != "" {
-			t.Errorf("a report without identity gave key %q", none)
-		}
+		w.wantAnswer(w.upload(p, fixtureBlocked, func(doc map[string]any) { delete(doc, "identity") }), 200, "action_required", "report_invalid")
+		w.noSuccess()
 	})
 
 	t.Run("a repeat adds no check run and no comment", func(t *testing.T) {

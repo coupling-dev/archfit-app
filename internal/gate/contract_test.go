@@ -46,7 +46,12 @@ func TestUploadPublishesApprovedProducer(t *testing.T) {
 		BaselineDigest: s.env.BaselineDigest, LabelsDigest: s.env.LabelsDigest,
 		Conclusion: verdict.Success, Reason: verdict.ReasonHealthy,
 	}
-	if got := w.receipt(p); got != want {
+	got := w.receipt(p)
+	if len(got.IdentityKey) != 64 {
+		t.Errorf("IdentityKey = %q, want the sha256 of the report's identity", got.IdentityKey)
+	}
+	want.IdentityKey = got.IdentityKey
+	if got != want {
 		t.Errorf("receipt =\n %+v, want\n %+v", got, want)
 	}
 }

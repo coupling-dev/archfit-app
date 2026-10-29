@@ -1,0 +1,15 @@
+{
+  "producer": "synthetic: report/healthy.json with a dotnet-msbuild entry in coverage.tools whose details is a list of objects, not of strings",
+  "decode": "error",
+  "gate": {
+    "conclusion": "action_required",
+    "reasons": [
+      "report_invalid"
+    ]
+  },
+  "facts": {
+    "problems": [
+      "report_invalid"
+    ]
+  }
+}
