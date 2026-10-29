@@ -612,3 +612,97 @@ func TestAStaleVerdictIsConfirmedAgainstTheLivePullRequest(t *testing.T) {
 		})
 	}
 }
+
+func TestListReturnsPendingAndSettledRequestsOfOnePullRequest(t *testing.T) {
+	r, _, _ := newRequests()
+	ctx := context.Background()
+	ids := []string{hex32, "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"}
+	for i, id := range ids {
+		if _, err := r.File(ctx, target(7), filing(id), t0.Add(time.Duration(i)*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := r.File(ctx, target(8), filing(hex32), t0); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Settle(ctx, target(7), ids[0], hex64, decision.StatusDeclined, decision.ReasonOwnerDeclined, 0, t0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Answer(ctx, target(7), decision.Unknown, decision.Unknown, decision.StatusDeclined, "why"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := r.List(ctx, target(7))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seen []string
+	for _, rec := range got {
+		seen = append(seen, rec.FindingID+":"+string(rec.Status))
+	}
+	want := []string{ids[0] + ":declined", ids[1] + ":pending", ids[2] + ":pending"}
+	if strings.Join(seen, " ") != strings.Join(want, " ") {
+		t.Errorf("List = %v, want %v", seen, want)
+	}
+}
+
+func TestListKeepsASettledRequestWhoseCommentFailed(t *testing.T) {
+	r, c, _ := newRequests()
+	ctx := context.Background()
+	if _, err := r.File(ctx, target(7), filing(hex32), t0); err != nil {
+		t.Fatal(err)
+	}
+	c.updateErr = errors.New("github down")
+	if err := r.Settle(ctx, target(7), hex32, hex64, decision.StatusApproved, "", 12, t0); !errors.Is(err, ErrStatusComment) {
+		t.Fatalf("Settle = %v, want ErrStatusComment", err)
+	}
+	got, err := r.List(ctx, target(7))
+	if err != nil || len(got) != 1 || got[0].Status != decision.StatusApproved || got[0].ProposalPR != 12 {
+		t.Errorf("List = %+v, %v; want the approved request, though its comment still says pending", got, err)
+	}
+}
+
+func TestBranchSuffixIsOneSecretPerRequestAndHead(t *testing.T) {
+	r, _, s := newRequests()
+	ctx := context.Background()
+	got := make(chan string, 20)
+	var wg sync.WaitGroup
+	for range 20 {
+		wg.Go(func() {
+			sfx, err := r.BranchSuffix(ctx, target(7), hex32, hex64, hex40)
+			if err != nil {
+				t.Error(err)
+			}
+			got <- sfx
+		})
+	}
+	wg.Wait()
+	close(got)
+	first := ""
+	for sfx := range got {
+		if first == "" {
+			first = sfx
+		}
+		if sfx != first {
+			t.Fatalf("two suffixes %q and %q for one request", first, sfx)
+		}
+	}
+	if len(first) < 24 {
+		t.Errorf("suffix %q has fewer than 96 bits", first)
+	}
+	raw, err := s.Get(ctx, 11, "decision/acme/shop/7/"+hex32+"/"+hex64+"/branch/"+hex40)
+	if err != nil || string(raw) != first {
+		t.Errorf("stored suffix = %q, %v; a retry after a restart must read the same", raw, err)
+	}
+	for name, other := range map[string][3]string{
+		"another pull request": {"8", hex64, hex40}, "another head": {"7", hex64, strings.Repeat("2", 40)},
+	} {
+		pull := 7
+		if other[0] == "8" {
+			pull = 8
+		}
+		sfx, err := r.BranchSuffix(ctx, target(pull), hex32, other[1], other[2])
+		if err != nil || sfx == first {
+			t.Errorf("%s: suffix %q, %v; want its own", name, sfx, err)
+		}
+	}
+}

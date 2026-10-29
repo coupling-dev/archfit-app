@@ -71,6 +71,16 @@ func (r *resolver) CanApprove(ctx context.Context, t Target, login string) error
 	return err
 }
 
+// CanDecide is the owner rule of CanApprove for an approval that is not of a pull request head: ErrAgentIdentity,
+// ErrNotOwner (also without a settings file on the protected ref) or nil.
+func (r *resolver) CanDecide(ctx context.Context, t Target, login string) error {
+	s, _, err := r.baseSettings(ctx, t)
+	if err != nil {
+		return err
+	}
+	return r.owner(ctx, t, s, login) // no settings file: no owners, so ErrNotOwner
+}
+
 // Approve records login's approval of t's head when seen is what the head holds now. A record that still counts is
 // never replaced: one for this head already, by any owner, is success. One that no longer counts approves nothing, so
 // it is replaced; it must not shadow the approval of an owner who may approve now.
@@ -136,19 +146,30 @@ func (r *resolver) approvable(ctx context.Context, t Target, login string) (sett
 		return s, nil, ErrNothingToApprove
 	case t.Fork:
 		return s, nil, ErrForkPull
+	}
+	if err := r.owner(ctx, t, s, login); err != nil {
+		return s, nil, err
+	}
+	return s, paths, nil
+}
+
+// owner is the rule of who may approve in the App, whatever it is they approve: login is no agent identity and is an
+// owner of s, directly or through a team.
+func (r *resolver) owner(ctx context.Context, t Target, s settings.Settings, login string) error {
+	switch {
 	case s.IsAgent(login):
-		return s, nil, ErrAgentIdentity
+		return ErrAgentIdentity
 	case login == "":
-		return s, nil, ErrNotOwner
+		return ErrNotOwner
 	}
 	ok, err := isOwner(s.Owners, login, r.member(ctx, t))
 	if err != nil {
-		return s, nil, fmt.Errorf("inputs: team membership: %w", err)
+		return fmt.Errorf("inputs: team membership: %w", err)
 	}
 	if !ok {
-		return s, nil, ErrNotOwner
+		return ErrNotOwner
 	}
-	return s, paths, nil
+	return nil
 }
 
 // recorded returns the login of the approval recorded in the App for t's head when it holds now, else "": the login is

@@ -51,7 +51,7 @@ func (r *Requests) publish(ctx context.Context, t inputs.Target, findingID, dige
 			if rec.Published != line {
 				id, err := r.writeComment(ctx, t, decision.StatusMarker(findingID, digest), line)
 				if err != nil {
-					return fmt.Errorf("decisions: status comment: %w", err)
+					return fmt.Errorf("%w: %w", ErrStatusComment, err)
 				}
 				if id != 0 {
 					rec.StatusCommentID = id
@@ -162,7 +162,7 @@ func (r *Requests) Answer(ctx context.Context, t inputs.Target, findingID, diges
 
 func wrapStatus(err error) error {
 	if err != nil {
-		return fmt.Errorf("decisions: status comment: %w", err)
+		return fmt.Errorf("%w: %w", ErrStatusComment, err)
 	}
 	return nil
 }

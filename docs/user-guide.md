@@ -755,11 +755,43 @@ Ignore a status line from any other author: it grants nothing and means nothing.
 | -------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `pending`                                          | Recorded. Wait for an owner.                                                                        |
 | `approved (proposal PR #n)`                        | An owner approved; the App opened pull request `n` with the policy change. It goes through the owner approval of any policy change. |
-| `declined`                                         | An owner declined. It stays declined until the policy changes on the default branch.                |
+| `declined (by an owner)`                           | An owner declined. It stays declined until the policy changes on the default branch.                |
 | `declined (<field>: <rule>)`                       | The request was not valid, for example `declined (why: must be 1 to 2000 characters)`. Nothing was recorded; fix it and post again. |
 | `stale (head moved)`                               | The head is not the one the request names, or a push moved it. Post it again for the new head.      |
 | `stale (policy changed)`                           | The policy on the default branch changed after the finding. Run the check again and ask again.      |
+| `stale (base branch changed)`                      | The pull request no longer targets the default branch; an owner's decision is refused for it.   |
 | `stale (pull request closed)`                      | The pull request closed.                                                                            |
+
+**Decide (architecture owners).** Open the pull request on the App's pages. Under **Decision requests** each request
+shows the finding, the rule and edge, who filed it, and the agent's case: its reason and the alternatives it says it
+tried. That text is the agent's, shown as quoted data and not verified. Everyone with access to the repository can read
+the list. An owner sees **Approve and open a proposal pull request** and **Decline** on a pending request.
+
+![The decision requests of a pull request, as an owner sees them: one pending request with its buttons](images/decision-request-light.png#gh-light-mode-only)
+![The decision requests of a pull request, as an owner sees them: one pending request with its buttons](images/decision-request-dark.png#gh-dark-mode-only)
+
+- Who may decide is the rule of the [owner approval](#owner-approval): an owner of the protected settings, no agent
+  identity. The login that filed the request can never decide it, even when it is an owner.
+- Only a pull request into the default branch can be decided. The owners are read from the default branch, never from a branch the pull request was retargeted to; a retargeted pull request goes `stale (base branch changed)` when an owner tries, and the page offers no buttons for it.
+- **Approve** first checks again, against GitHub and the default branch rather than the stored request, that the pull
+  request is open, its head is still the one the request names, and the policy is still the one the finding was measured
+  under. If not, the request goes `stale` and nothing is opened. Otherwise the App opens a **draft** pull request on the
+  branch `archfit/decision-<pull request number>-<random suffix>` (the suffix is made on the first approval, stored with the request and not derivable from anything the agent states, so nobody can create the branch first), changing `.archfit.yaml` to the agent's
+  candidate policy. Its description names the finding, rule, edge, the requester, the link to the pull request and the
+  agent's case, quoted. The request becomes `approved (proposal PR #n)`. Approving again after a failure finds the same
+  pull request; it never opens a second one. Before it records the request as approved, the App refuses a pull request
+  that is not an open draft from that branch into the default branch changing `.archfit.yaml` alone.
+- The proposal is a policy change like any other: only an architecture owner approves it, on its exact head, and its
+  page shows the policy change card. Nothing here merges it, marks it ready or approves it, and nothing reaches the agent
+  that lets it do so.
+- **Decline** records the owner's no. The agent reads `declined (by an owner)`; it holds until the policy on the default
+  branch changes, so asking again for the same finding changes nothing.
+- A request settled once never moves again. If the App cannot write the status comment, the page says the decision was
+  recorded and to reload. The list is found from the App's status comments on the pull request: a settled request
+  whose status comment was deleted, or never written because the thread was full, is not listed.
+
+![The same request after an owner approved it, with the link to the proposal pull request](images/decision-request-approved-light.png#gh-light-mode-only)
+![The same request after an owner approved it, with the link to the proposal pull request](images/decision-request-approved-dark.png#gh-dark-mode-only)
 
 Posting the same request for the same head again changes nothing. Posting it for a new head replaces the record and
 sets it back to `pending`; a declined request is not reopened that way.

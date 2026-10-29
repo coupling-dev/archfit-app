@@ -26,6 +26,11 @@ separate, testable steps. Without this module a report is a self-reported file a
   mark pending requests stale when the head moves or the pull request closes. Nothing is granted; an owner decides.
 - For the App's pull request page only (`Approvals`): read the owner approval of a head, record an architecture
   owner's approval of the exact head, and re-decide the pull request after it, as a review event does.
+- For the App's pull request page only (`Decisions`): list the decision requests of a pull request, and let an
+  architecture owner decline one or approve one. The owner rule is that of an approval (`CanDecide`), plus: the login
+  that filed the request never decides it. Approving re-checks from GitHub and the protected ref that the pull request
+  is open on the head the request names under a policy digest still accepted, else marks it stale. The proposal pull
+  request itself is opened by `control/ui` through `control/proposal`; the gate never writes a branch.
 - Run one reconciliation pass on request.
 - Publish, for the control plane, the `Entitlement` record contract, the `Receiver` for discovery uploads,
   and the sweep types.
@@ -115,6 +120,40 @@ func (g *Gate) Approve(ctx context.Context, t Target, login string, seen map[str
 // is withdrawn. Nothing here turns a check green; the re-run's upload does.
 func (g *Gate) Reevaluate(ctx context.Context, t Target) error
 ```
+
+```go
+// Decisions is what the App's pull request page may do about the decision requests of a pull request. *Gate
+// implements it. Nothing here grants anything to the requester.
+type Decisions interface {
+    DecisionRequests(ctx context.Context, t Target, login string) ([]DecisionRequest, error)
+    // ApproveDecision authorizes login and re-checks the request; t names the repository and the pull request.
+    ApproveDecision(ctx context.Context, t Target, login, findingID, digest string) (DecisionCase, error)
+    // ApprovedDecision settles the request as approved once the caller has opened the proposal pull request;
+    // head is the record's head it was approved on.
+    ApprovedDecision(ctx context.Context, t Target, findingID, digest, head string, proposalPR int) error
+    DeclineDecision(ctx context.Context, t Target, login, findingID, digest string) error
+}
+
+type DecisionRecord = decisions.Record
+type DecisionRequest struct { DecisionRecord; CanDecide bool } // CanDecide: owner, no agent, not the requester, pending
+type DecisionCase struct { Record DecisionRecord; Policy string; Branch string } // Branch: archfit/decision-<pull>-<secret suffix>
+
+var ErrDecisionRequester, ErrDecisionSettled, ErrDecisionStale, ErrDecisionNotFound, ErrDecisionProposal, ErrStatusComment error
+```
+
+`DecisionRequests` takes the page's target (repository, pull request, head and base as GitHub reports them) and calls
+`CanDecide` only while a request is pending. `ApproveDecision` and `DeclineDecision` read the pull request themselves
+and check, in this order, so the first failure is the one worded: admitted; the pull request exists
+(`ErrDecisionNotFound`); `Resolver.CanDecide` against the pull request's base (`ErrNotOwner`, `ErrAgentIdentity`); the
+record exists (`ErrDecisionNotFound`); the login did not file it (`ErrDecisionRequester`, compared without case); it
+is pending (`ErrDecisionSettled`). `ApproveDecision` then settles the request `stale` and returns `ErrDecisionStale`
+when the pull request is not open (`pull request closed`), its head is not the record's (`head moved`), or `Resolve`
+no longer accepts the record's policy digest (`policy changed`); else it returns the stored candidate policy and
+changes nothing: the request is settled only by `ApprovedDecision`, after the proposal exists, so a crash between the
+two leaves it pending and a retry finds the same proposal. `DeclineDecision` settles `declined (by an owner)`.
+The protected ref is the repository's default branch, as for uploads and events: `Target.BaseRef` is overwritten with it, so owners and policy digests are never read from a base the pull request was retargeted to. A pull request whose live base is not the default branch cannot be decided: after the owner check and the record checks the request is settled `stale (base branch changed)` and `ErrDecisionStale` is returned, and `DecisionRequests` reports `CanDecide` false for it. `ApproveDecision` returns `Branch` built from the pull number and `Requests.BranchSuffix` (created and stored before the caller writes to GitHub). `ApprovedDecision` first checks the pull request the caller opened: open, a draft, `HeadRef` is that branch, head repository is this one, base is the default branch, and `ChangedFiles` is exactly `.archfit.yaml` untruncated, else `ErrDecisionProposal` and nothing is settled. **Stated limit**: the gate's roles cannot list a branch's commits, so "one commit" and the file content are not read back; the unguessable branch is what keeps others' commits out. Every settle is `SettleAt` with the record's head, so it takes the status lease and publish path of A8a; `ErrNotPending`
+and `ErrChanged` (refiled on another head since) map to `ErrDecisionSettled`, `ErrNoRecord` to `ErrDecisionNotFound`. A failed status comment is
+`ErrStatusComment`, and then the record did move.
 
 The three methods ask `Admitted` first, like every other entry point; an installation no operator approved gets an
 error and nothing is read or written. `PullApproval` calls `Candidate` (no paths → the zero value), then `Resolve`
@@ -719,7 +758,8 @@ func Withdrawal(t Target, current CheckState, tr Trusted) *Publication
 - **LCA / Rank / Distance**: gate / 1 / 1
 - **Volatility**: high
 - **Balanced?**: yes
-- **Shared knowledge**: `Requests` (`File`, `Answer`, `HeadMoved`, `Closed`), `Filing`, `Outcome`, `ErrTooLarge`. The façade
+- **Shared knowledge**: `Requests` (`File`, `Answer`, `List`, `Get`, `Policy`, `Settle`, `HeadMoved`, `Closed`), `Filing`,
+  `Outcome`, `Record`, `ErrTooLarge`, `ErrNoRecord`, `ErrNotPending`, `ErrStatusComment`. The façade
   decides what a comment may file (the checks of the intake above); the child keeps the record, the status comment and
   the stale transitions. `gate/sweep` reaches it through its own `Decisions` interface (rule 8).
 
@@ -1171,7 +1211,7 @@ type Swap struct {
 - **internal/app**: contract (constructor, handlers), root / 1 / 1, low, balanced. Calls `New`, mounts
   `UploadHandler`, calls `HandleEvent` before `control.HandleEvent`, calls `Sweep` from `/internal/sweep`,
   passes `NewReceiver(...)` to `control`, builds the `Admissions` for `Deps.Admissions` and `NewReceiver`, and passes
-  the `*Gate` to `control` as its `Approvals`.
+  the `*Gate` to `control` as its `Approvals` and its `Decisions`.
 - **internal/control/account**: contract, root / 2 / 2, moderate, balanced. Writes the JSON of `Entitlement`
   under `EntitlementKey`, and writes and deletes the JSON of `Admission` under `AdmissionKey`. The gate owns the
   records so that it never imports billing or operator code.
@@ -1179,8 +1219,9 @@ type Swap struct {
   `Binding`, `Problem` for `POST /v1/discoveries`. A discovery upload never reaches `verdict` or `feedback`.
 - **internal/control/ui** (through `control.Deps.Approvals`, which `app` sets to the `*Gate`): contract, root / 2 / 2,
   high, balanced. Calls `PullApproval` for the pull request page and `Approve` then `Reevaluate` for its Approve
-  button, behind the browser session, CSRF token and write access; maps the refusals to its wording. Nothing on the
-  upload (OIDC) path holds `Approvals`.
+  button, behind the browser session, CSRF token and write access; maps the refusals to its wording. It calls
+  `DecisionRequests`, `ApproveDecision`, `ApprovedDecision` and `DeclineDecision` for the decision requests of the page.
+  Nothing on the upload (OIDC) path holds `Approvals` or `Decisions`.
 
 ## Internal Design
 
@@ -1631,3 +1672,21 @@ are driven only as far as they go without GitHub. Child internals are tested in 
 - **Test name**: `TestSweepThroughFacade` (T13, T16)
   **Scenario**: lost `PullOpened` webhook; no upload for 60 minutes; base policy change; waiver expiry; all via `Gate.Sweep` with the fixed clock.
   **Expected behavior**: the repairs of `gate/sweep`; `Summary` counts match; nothing turned green without a fresh report.
+- **Test name**: `TestDecisionRequestsAreListedForAnyoneAndDecidableByAnOwnerWhoDidNotFileThem`
+  **Scenario**: one pending request; listed for an owner, a reader, the agent that filed it, an owner who filed it, and an agent identity named an owner.
+  **Expected behavior**: one row each; `CanDecide` only for the first.
+- **Test name**: `TestOwnerApprovesAfterTheRequestStillHolds`, `TestOwnerDeclinesAndTheRequestStaysDeclined`
+  **Scenario**: the page target names only repository and pull request. `ApproveDecision` then `ApprovedDecision`; `DeclineDecision` then approve, decline again and a refile on a new head.
+  **Expected behavior**: the candidate policy is returned and the record stays pending until `ApprovedDecision` (`approved (proposal PR #31)`); a second settle is `ErrDecisionSettled`; declined stays declined; no check is written.
+- **Test name**: `TestDecisionsUseThePublishPathAndTheHeadTheOwnerSaw` (approval on another head refused; `Published` is the written line), `TestDecisionRefusalsChangeNothing`, `TestTheRequesterNeverDecidesItsOwnRequest`
+  **Scenario**: a non-owner, no login, an agent identity, an unknown request; the requester (an owner, in another case).
+  **Expected behavior**: `ErrNotOwner`, `ErrNotOwner`, `ErrAgentIdentity`, `ErrDecisionNotFound`, `ErrDecisionRequester`, from both approve and decline; the record stays pending, the status comment unchanged.
+- **Test name**: `TestApprovingARequestThatNoLongerHoldsMarksItStale`
+  **Scenario**: no webhook arrives; the head moves, the default branch policy changes, or the pull request closes; then approve.
+  **Expected behavior**: `ErrDecisionStale`; the record and its status comment are `stale (head moved)`, `stale (policy changed)`, `stale (pull request closed)`.
+- **Test name**: `TestProposalBranchIsSecretStablePerRequestAndPerHead`, `TestApprovalIsRefusedForAPullRequestThatIsNotTheExpectedDraft`
+  **Scenario**: approve twice, on two pull requests with the same finding and digest, and after a refile on a new head; then a proposal pull request from a guessed (old-scheme) branch, not a draft, closed, from a fork, into another base, with more or other files.
+  **Expected behavior**: the same branch on a retry, another per pull request and per head, a long suffix, never the old name; every bad proposal is `ErrDecisionProposal`, the record stays pending and the status line unchanged.
+- **Test name**: `TestARetargetedPullRequestDecidesNothing`
+  **Scenario**: the pull request is retargeted to a branch whose settings name another owner; that writer, then a real owner, approve and decline; the page lists it.
+  **Expected behavior**: `ErrNotOwner` for the writer; `ErrDecisionStale` for the owner with `stale (base branch changed)`; `CanDecide` false for both.

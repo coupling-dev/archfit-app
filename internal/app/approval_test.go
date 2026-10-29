@@ -199,3 +199,63 @@ func TestOwnerApprovalIsReachableOnlyFromTheBrowserSession(t *testing.T) {
 		}
 	})
 }
+
+// A decision on an agent's request is made only behind the browser session of control/ui: no upload route and no
+// credential an agent holds reaches it, and the requester's login is refused by the gate besides.
+func TestDecisionsAreReachableOnlyFromTheBrowserSession(t *testing.T) {
+	files := parsedFiles(t)
+	const (
+		approveDecision = "POST /api/repos/{o}/{n}/pulls/{number}/decisions/{finding}/{digest}/approve"
+		declineDecision = "POST /api/repos/{o}/{n}/pulls/{number}/decisions/{finding}/{digest}/decline"
+	)
+
+	t.Run("one caller of each decision, in control/ui", func(t *testing.T) {
+		want := map[string][]string{
+			"ApproveDecision":  {"internal/control/ui.apiApproveDecision"},
+			"ApprovedDecision": {"internal/control/ui.apiApproveDecision"},
+			"DeclineDecision":  {"internal/control/ui.apiDeclineDecision"},
+			"DecisionRequests": {"internal/control/ui.decisionRequests"},
+		}
+		for name, callers := range want {
+			if got := selectorsNamed(files, name); !slices.Equal(got, callers) {
+				t.Errorf("%s is used in %v, want only %v", name, got, callers)
+			}
+		}
+	})
+
+	t.Run("control/ui mounts them behind the session, CSRF and write access", func(t *testing.T) {
+		ui := routes(t, files["internal/control/ui/ui.go"])
+		for pattern, handler := range map[string]string{approveDecision: "apiApproveDecision", declineDecision: "apiDeclineDecision"} {
+			expr, ok := ui[pattern]
+			if !ok {
+				t.Fatalf("control/ui does not mount %s", pattern)
+			}
+			if got := names(expr); !slices.Equal(got, []string{"s", "apiRepo", "permWrite", "s", handler}) {
+				t.Errorf("%s is served by %v, want s.apiRepo(permWrite, s.%s)", pattern, got, handler)
+			}
+		}
+	})
+
+	t.Run("the decision paths reach only the UI handler, on every role", func(t *testing.T) {
+		const decisionPath = "/api/repos/acme/app/pulls/4/decisions/" + "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a" + "/" +
+			"5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b"
+		want := map[string]string{roleAll: "control.UI", rolePublic: "control.UI", roleWorker: ""}
+		for _, role := range slices.Sorted(maps.Keys(want)) {
+			for _, action := range []string{"/approve", "/decline"} {
+				f := newRoleFixture(role)
+				req := httptest.NewRequest(http.MethodPost, decisionPath+action, strings.NewReader(`{}`))
+				req.Header.Set("Authorization", "Bearer an-actions-oidc-token")
+				req.Header.Set("Content-Type", "application/json")
+				rec := f.do(req)
+				calls := f.calls.get()
+				first := ""
+				if len(calls) > 0 {
+					first = calls[0]
+				}
+				if first != want[role] {
+					t.Errorf("%s %s reached %v (status %d), want %q", role, action, calls, rec.Code, want[role])
+				}
+			}
+		}
+	})
+}

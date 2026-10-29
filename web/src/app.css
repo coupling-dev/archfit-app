@@ -646,6 +646,8 @@ details.disclosure.locations-all { border-top: 0; }
 .editor .cm-scroller { overflow: auto; }
 .editor .cm-editor.cm-focused { outline: 2px solid var(--accent); outline-offset: -2px; }
 .plain { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+/* Text an agent wrote, shown as quoted data: its line breaks kept, a long line wrapped. */
+.quote { margin: 0; padding-left: 12px; border-left: 3px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere; }
 fieldset { border: 0; margin: 0; padding: 0; }
 legend { font-weight: 600; padding: 0; margin-bottom: 4px; }
 

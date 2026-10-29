@@ -26,8 +26,11 @@ could not read an answer, and the owners' view (Needs you, later) would have not
   stored record, never from what a caller meant to publish. A failure to write it never loses the record: the record
   says what it last published (`Published`), the request stays in the pending list while that differs from its status,
   and the next event or sweep writes the comment.
-- Move a pending record to `approved`, `declined` or `stale` and update the comment (`Settle`, `SettleAt`). The seam
-  for the owner's decision (stage A8b, not built here) is `Get`, `Policy` and `Settle`.
+- Move a pending record to `approved`, `declined` or `stale` and update the comment (`Settle`, `SettleAt`). The owner's
+  decision (`gate`, stage A8b) reads with `Get`, `Policy` and `List` and writes with `SettleAt`, on the head it read.
+- List the records of a pull request (`List`): the ones in the pending list (pending, or settled and not yet in the
+  thread) and every other one the App wrote a status comment for, found by the comment's marker. A settled request
+  whose comment was deleted, or never written because the thread was full, and that left the list, is not listed.
 - A refiled record never inherits `Published`: it starts empty, so the next publish writes (idempotent by body equality).
   `Answer` reports whether it wrote. It never overwrites a pending, approved or declined request; it may answer a stale
   one, whose record stays stale and takes the written line as `Published`.
@@ -36,8 +39,8 @@ could not read an answer, and the owners' view (Needs you, later) would have not
   is no longer accepted). All three also write any status comment that is out of date. **Stated limit**: the policy digest is checked against the trusted inputs the sweep resolved before it walked, not re-resolved per record; a request filed with a newer digest while the sweep runs can be marked `stale (policy changed)` once, and the agent's next post for the same head refiles it. Nothing fails open: a pending request decides no check.
 - Nothing grants anything: the requester is whoever commented; no approval, check or receipt is touched.
 
-Not here: deciding whether a comment may file (the façade), the owner's approve and decline, opening the proposal pull
-request, any UI.
+Not here: deciding whether a comment may file (the façade), who may decide (`gate`), opening the proposal pull
+request (`control/proposal`), any UI.
 
 ## Subdomain Classification
 
@@ -70,7 +73,7 @@ Core with the gate path; volatility high (the request flow is new and will gain 
 
 ```go
 const MaxPendingPerPull, MaxPendingPerRepo = 20, 200
-var ErrNoRecord, ErrNotPending, ErrTooLarge error
+var ErrNoRecord, ErrNotPending, ErrTooLarge, ErrStatusComment error
 
 type Record struct { /* PullRequest, FindingID, RuleID, EdgeFrom, EdgeTo, HeadSHA, PolicyDigest, Why, AlternativesTried,
    ProposalDigest, Requester, CommentID, Status, Reason, ProposalPR, StatusCommentID, Published, CreatedAt, UpdatedAt */ }
@@ -80,6 +83,8 @@ type Outcome string // Filed, Refiled, Duplicate, Sticky, Capped
 func New(s store.Store, c api.Comments, p api.Pulls, now func() time.Time) *Requests // now clocks the lease only
 func (r *Requests) File(ctx, t inputs.Target, f Filing, now time.Time) (Outcome, error)
 func (r *Requests) Answer(ctx, t inputs.Target, findingID, digest string, status decision.Status, reason string) (written bool, err error)
+func (r *Requests) List(ctx, t inputs.Target) ([]Record, error)                      // oldest first
+func (r *Requests) BranchSuffix(ctx, t inputs.Target, findingID, digest, head string) (string, error)
 func (r *Requests) Get(ctx, t inputs.Target, findingID, digest string) (Record, error)
 func (r *Requests) Policy(ctx, t inputs.Target, findingID, digest string) (string, error)
 func (r *Requests) Settle(ctx, t inputs.Target, findingID, digest string, status decision.Status, reason string, proposalPR int, now time.Time) error
@@ -93,7 +98,7 @@ func (r *Requests) Revalidate(ctx, t inputs.Target, tr inputs.Trusted, now time.
 onboarded in required mode. `File` returns the outcome even when only the status comment failed (the error says so).
 `Settle` returns `ErrNoRecord` or `ErrNotPending` and changes nothing then. `SettleAt` also returns `ErrChanged` when the
 record's head is not `expectedHead`, checked in the same transaction as the status. A settle whose comment write fails
-returns that error with the record already settled; the request stays listed until a later walk writes the comment.
+returns that error (`ErrStatusComment`, wrapped) with the record already settled; the request stays listed until a later walk writes the comment.
 
 ## Integrations
 
@@ -108,7 +113,11 @@ returns that error with the record already settled; the request stays listed unt
 
 ## Change Vectors
 
-- A8b: the owner approves (`Settle` to `approved` with the proposal pull request) or declines.
+- `BranchSuffix`: the secret part of a request's proposal branch, 128 random bits (lower-case base32), created on first use by
+  `CompareAndSwap` at `<record key>/branch/<head>` and returned unchanged to every later caller, so a retry, a second
+  instance and a restart name the same branch while nothing the agent states can predict it. One per pull request, finding,
+  digest and head.
+- A per-pull-request index of all records, if the comment-derived `List` is not enough.
 - A5: a view of Needs you reads the pending list and the records.
 - A cap or a comment limit changes: constants.
 - A sweep that visits closed pull requests (today a missed close is repaired by no pass).
@@ -136,6 +145,9 @@ returns that error with the record already settled; the request stays listed unt
 - `TestAnswerWritesOverAStaleRequestAndNeverOverALiveOne`, `TestRevalidateSettlesARequestForAnOldHead`.
 - `TestSettleAtRefusesAChangedHead`, `TestHeadMovedAndClosedReadTheLivePullRequest`.
 - `TestSettleMovesOnlyPendingRecords`: missing, approved, then stale refused; a closed pull request leaves an approved record alone.
+- `TestListReturnsPendingAndSettledRequestsOfOnePullRequest`: pending and declined records of pull request 7, not 8, not the answer without a record.
+- `TestBranchSuffixIsOneSecretPerRequestAndHead`: 20 goroutines get one suffix, stored under the key; another pull request or head gets its own.
+- `TestListKeepsASettledRequestWhoseCommentFailed`: `ErrStatusComment` from `Settle`; the approved request is still listed.
 - `TestStatusCommentsOfOnePullRequestAreCapped`: 45 answers leave 40 comments.
 - `TestUnreadableRecordsFailClosed`: a corrupt pending list stops `File` and `Closed`, nothing written.
 - Behavior through the façade, in `internal/gate/decision_test.go`: record and answer, same-head dedupe, refile, sticky
