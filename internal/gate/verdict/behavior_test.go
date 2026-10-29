@@ -35,6 +35,26 @@ func TestDisplayReasonClassificationDoesNotDecideAnOutcome(t *testing.T) {
 	}
 }
 
+// ConclusionOf restates the catalog for a page that shows a recorded outcome; a code the catalog does not hold asks for action.
+func TestConclusionOfIsTheCatalogsAndFailsClosed(t *testing.T) {
+	for _, code := range allCodes {
+		entry, _ := lookup(code)
+		if got := ConclusionOf(code); got != entry.conclusion {
+			t.Errorf("ConclusionOf(%s) = %s; the catalog says %s", code, got, entry.conclusion)
+		}
+	}
+	for code, want := range map[ReasonCode]Conclusion{ReasonHealthy: Success, ReasonBlockingFindings: Failure, ReasonMissingCoverage: ActionRequired} {
+		if got := ConclusionOf(code); got != want {
+			t.Errorf("ConclusionOf(%s) = %s; want %s", code, got, want)
+		}
+	}
+	for _, code := range []ReasonCode{"", "future_reason"} {
+		if got := ConclusionOf(code); got != ActionRequired {
+			t.Errorf("ConclusionOf(%q) = %s; an unknown code must not read as a pass", code, got)
+		}
+	}
+}
+
 func TestUnknownIdentityNeverComparesEqual(t *testing.T) {
 	profileLess := &report.Reference{Status: refNonComparable, BaseRef: "baseline", Reasons: []string{"baseline carries no measurement profile"}}
 	snapshot := &report.Reference{Status: refNonComparable, BaseRef: "baseline", Reasons: []string{"baseline is a stale numerical snapshot"}}

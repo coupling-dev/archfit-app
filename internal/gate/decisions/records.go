@@ -255,6 +255,43 @@ func markedEntry(t inputs.Target, body string) (entry, bool) {
 	return entry{t.PullRequest, ids[0], ids[1], false}, true
 }
 
+// Queue is the requests of a repository that wait for an owner, for a page that lists them.
+type Queue struct {
+	Open    int      // requests still pending, in all pull requests
+	Records []Record // the records of the first entries of the pending list, in filing order: pending ones, and settled ones whose comment is not yet written
+}
+
+// PendingQueue reads the repository's pending list and the records of its first limit entries. It reads the Store only
+// (one read for the list, one for each record): no call to GitHub and no lease. A record the list names that is gone
+// is skipped. limit 0 counts only. t names the repository; its pull request is not read.
+func (r *Requests) PendingQueue(ctx context.Context, t inputs.Target, limit int) (Queue, error) {
+	raw, err := r.load(ctx, t, pendingKey(t))
+	if err != nil {
+		return Queue{}, err
+	}
+	list, err := parsePending(raw)
+	if err != nil {
+		return Queue{}, err
+	}
+	q := Queue{Open: list.open()}
+	for _, e := range list.Entries[:min(max(limit, 0), len(list.Entries))] {
+		rec, err := r.Get(ctx, forPull(t, e.PullRequest), e.FindingID, e.PolicyDigest)
+		if errors.Is(err, ErrNoRecord) {
+			continue
+		}
+		if err != nil {
+			return Queue{}, err
+		}
+		q.Records = append(q.Records, rec)
+	}
+	return q, nil
+}
+
+func forPull(t inputs.Target, pull int) inputs.Target {
+	t.PullRequest = pull
+	return t
+}
+
 // File stores a request that the caller has checked against GitHub and the protected ref. The same request on the
 // same head writes nothing. A new head replaces the record and makes it pending again, unless the owners declined or
 // approved it: that stays until the policy digest changes, which is a new key.

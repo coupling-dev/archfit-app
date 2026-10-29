@@ -14,6 +14,7 @@ describe('early reads', () => {
     ['/r/acme/app/pull/4', ['/api/repos/acme/app/pulls/4']],
     ['/r/acme/app/pull/4/graph', ['/api/repos/acme/app/pulls/4/graph']],
     ['/r/acme/app/data-sharing', ['/api/repos/acme/app/data-sharing']],
+    ['/r/acme/app/decisions', ['/api/repos/acme/app/decisions']],
     ['/r/acme/app/policy', []],
     ['/nowhere', []],
   ])('starts the first reads of %s', (path, want) => {

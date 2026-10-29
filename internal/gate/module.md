@@ -26,6 +26,10 @@ separate, testable steps. Without this module a report is a self-reported file a
   mark pending requests stale when the head moves or the pull request closes. Nothing is granted; an owner decides.
 - For the App's pull request page only (`Approvals`): read the owner approval of a head, record an architecture
   owner's approval of the exact head, and re-decide the pull request after it, as a review event does.
+- For the App's pages only (`DecisionQueue`): count the decision requests that wait for an owner and return the records
+  of the first few, from the Store alone, for the overview's counters and the decisions page. It grants nothing.
+- For the App's pull request page only (`FirstScreen`, `RecoveryStep`): word a published result with the code that
+  words the comment, so the page's first screen is the comment's. Pure functions of what the check recorded.
 - For the App's pull request page only (`Decisions`): list the decision requests of a pull request, and let an
   architecture owner decline one or approve one. The owner rule is that of an approval (`CanDecide`), plus: the login
   that filed the request never decides it. Approving re-checks from GitHub and the protected ref that the pull request
@@ -154,6 +158,26 @@ two leaves it pending and a retry finds the same proposal. `DeclineDecision` set
 The protected ref is the repository's default branch, as for uploads and events: `Target.BaseRef` is overwritten with it, so owners and policy digests are never read from a base the pull request was retargeted to. A pull request whose live base is not the default branch cannot be decided: after the owner check and the record checks the request is settled `stale (base branch changed)` and `ErrDecisionStale` is returned, and `DecisionRequests` reports `CanDecide` false for it. `ApproveDecision` returns `Branch` built from the pull number and `Requests.BranchSuffix` (created and stored before the caller writes to GitHub). `ApprovedDecision` first checks the pull request the caller opened: open, a draft, `HeadRef` is that branch, head repository is this one, base is the default branch, and `ChangedFiles` is exactly `.archfit.yaml` untruncated, else `ErrDecisionProposal` and nothing is settled. **Stated limit**: the gate's roles cannot list a branch's commits, so "one commit" and the file content are not read back; the unguessable branch is what keeps others' commits out. Every settle is `SettleAt` with the record's head, so it takes the status lease and publish path of A8a; `ErrNotPending`
 and `ErrChanged` (refiled on another head since) map to `ErrDecisionSettled`, `ErrNoRecord` to `ErrDecisionNotFound`. A failed status comment is
 `ErrStatusComment`, and then the record did move.
+
+```go
+// DecisionQueue is what the App's pages read of the decision requests of unattended agents. *Gate implements it.
+type DecisionQueue interface {
+    PendingDecisions(ctx context.Context, t Target, limit int) (PendingDecisions, error)
+}
+
+type PendingDecisions = decisions.Queue // {Open int; Records []Record}: pending requests in the repository; the first records
+
+// FirstScreen is the comment's first screen for a published result, as plain-text lines; nil when it would show no report.
+func FirstScreen(in ScreenInput) []ScreenLine
+// RecoveryStep is the next step of a recorded reason, worded for its role as the comment words it.
+func RecoveryStep(code, next string) string
+
+type ScreenInput = feedback.ScreenInput; type ScreenReason = feedback.ScreenReason; type ScreenLine = feedback.Line
+```
+
+`PendingDecisions` asks `Admitted` first and then `decisions.PendingQueue(t, limit)`: `t.Repo` names the repository, the
+pull request is not read. It is a read of the Store: no GitHub call, no lease, and an unreadable list or record is the
+error. `FirstScreen` and `RecoveryStep` read nothing and need no admission.
 
 The three methods ask `Admitted` first, like every other entry point; an installation no operator approved gets an
 error and nothing is read or written. `PullApproval` calls `Candidate` (no paths → the zero value), then `Resolve`
@@ -766,8 +790,8 @@ func Withdrawal(t Target, current CheckState, tr Trusted) *Publication
 - **LCA / Rank / Distance**: gate / 1 / 1
 - **Volatility**: high
 - **Balanced?**: yes
-- **Shared knowledge**: `Requests` (`File`, `Answer`, `List`, `Get`, `Policy`, `Settle`, `HeadMoved`, `Closed`), `Filing`,
-  `Outcome`, `Record`, `ErrTooLarge`, `ErrNoRecord`, `ErrNotPending`, `ErrStatusComment`. The façade
+- **Shared knowledge**: `Requests` (`File`, `Answer`, `PendingQueue`, `List`, `Get`, `Policy`, `Settle`, `HeadMoved`, `Closed`), `Filing`,
+  `Outcome`, `Record`, `Queue`, `ErrTooLarge`, `ErrNoRecord`, `ErrNotPending`, `ErrStatusComment`. The façade
   decides what a comment may file (the checks of the intake above); the child keeps the record, the status comment and
   the stale transitions. `gate/sweep` reaches it through its own `Decisions` interface (rule 8).
 
@@ -1219,7 +1243,7 @@ type Swap struct {
 - **internal/app**: contract (constructor, handlers), root / 1 / 1, low, balanced. Calls `New`, mounts
   `UploadHandler`, calls `HandleEvent` before `control.HandleEvent`, calls `Sweep` from `/internal/sweep`,
   passes `NewReceiver(...)` to `control`, builds the `Admissions` for `Deps.Admissions` and `NewReceiver`, and passes
-  the `*Gate` to `control` as its `Approvals` and its `Decisions`.
+  the `*Gate` to `control` as its `Approvals` its `Decisions` and its `DecisionQueue`.
 - **internal/control/account**: contract, root / 2 / 2, moderate, balanced. Writes the JSON of `Entitlement`
   under `EntitlementKey`, and writes and deletes the JSON of `Admission` under `AdmissionKey`. The gate owns the
   records so that it never imports billing or operator code.
@@ -1229,7 +1253,9 @@ type Swap struct {
   high, balanced. Calls `PullApproval` for the pull request page and `Approve` then `Reevaluate` for its Approve
   button, behind the browser session, CSRF token and write access; maps the refusals to its wording. It calls
   `DecisionRequests`, `ApproveDecision`, `ApprovedDecision` and `DeclineDecision` for the decision requests of the page.
-  Nothing on the upload (OIDC) path holds `Approvals` or `Decisions`.
+  Also (through `control.Deps.DecisionQueue`, the same `*Gate`) calls `PendingDecisions` for the overview and the decisions
+  page, and `FirstScreen` and `RecoveryStep` for the pull request page and the overview's re-run rows.
+  Nothing on the upload (OIDC) path holds `Approvals`, `Decisions` or `DecisionQueue`.
 
 ## Internal Design
 
@@ -1597,6 +1623,9 @@ are driven only as far as they go without GitHub. Child internals are tested in 
 - **Test name**: `TestPullApprovalNamesAnAgentAuthor`, `TestPullApprovalWithoutAProtectedChangeIsEmpty`
   **Scenario**: a pull request opened by the `[bot]` account of a listed agent, then by an owner; a pull request that changes no protected path.
   **Expected behavior**: `AuthorIsAgent` true, then false; the zero `PullApproval`, and `Approve` refuses with `ErrNothingToApprove`.
+- **Test name**: `TestPendingDecisionsAreReadForAnAdmittedInstallationOnly`
+  **Scenario**: a decision request filed on a pull request; `PendingDecisions` for the repository; then the installation refused by the admission fake.
+  **Expected behavior**: one open request and its record; then `errNotAdmitted` and no GitHub call.
 - **Test name**: `TestApprovalNeedsAnAdmittedInstallation`
   **Scenario**: the installation is refused after the page read its candidate.
   **Expected behavior**: `PullApproval`, `Approve` and `Reevaluate` return an error; no GitHub call; no approval record.

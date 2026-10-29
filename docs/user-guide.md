@@ -806,6 +806,29 @@ GitHub and the default branch.
 
 A command, `archfit decision request`, that posts the block and reads the answer is planned for a later engine release.
 
+### Decisions page
+
+The **Decisions** tab (`/r/<owner>/<repo>/decisions`) is the owner's inbox. It is read only: it lists, and the buttons
+stay on the pull request page.
+
+- **Decision requests**: each request with its status, the pull request, the finding (its short ID), the rule, the
+  dependency, who requested it, the commit it is about and its age. Pending requests come first, each group newest
+  first. Every row links to its pull request. The page lists up to 50 requests of the App's pending list: those that wait,
+  and those whose new status is not yet in the pull request thread. A request an owner settled and the thread already
+  shows leaves this list.
+- **Policy changes**: the open pull requests (up to 20) whose `archfit/state` check carries the policy change card, with
+  the card's classification and the owner approval of the head: approved by whom, needed, not needed, or "cannot
+  tell" when it could not be read.
+
+With nothing waiting, the page says so. A list that could not be read says that, never "none". Text an agent or a
+repository wrote is shown as text.
+
+![The Decisions page: requests that wait for an owner and the pull requests that change the policy](images/decisions-light.png#gh-light-mode-only)
+![The Decisions page: requests that wait for an owner and the pull requests that change the policy](images/decisions-dark.png#gh-dark-mode-only)
+
+_Two pending requests and one stale one, then a loosening that needs an owner and a tightening an owner approved.
+Sample data._
+
 ## Data sharing
 
 Archfit runs in customer CI, so source code and reports stay there. Two managed features send data out of that
@@ -955,12 +978,34 @@ onboarding or discovery, only when that is the step's action. After the first re
   report's terms (advisories, a rule not evaluated, dimensions partially or not measured). An advisory repository's
   check is neutral, so every page reads its headline: a check that found violations reads "violations found" on the overview, the repository
   list, the open pull requests and the pull request page alike, never "attention";
+- under the result, a watch line: the commit of the default branch that Archfit last checked, and how long ago. It reads
+  the `archfit/state` check on the branch tip, so it names what the check saw, not what was merged since;
 - three counts: rule violations and advisories in the latest default-branch report, and the open pull requests whose
   Archfit result needs attention. They are counts, never a score;
-- the open pull requests, newest first, each with its result and a link to its page (up to 20);
+- two more counts: the pull requests to update (their result was withdrawn with `target_moved` after the default branch
+  moved, see [Merge safety when the target moves](#merge-safety-when-the-target-moves)) and the decision requests that
+  wait for an owner. Each reads "could not be read" rather than zero when the App could not read it. The pending
+  requests of a repository are read from the App's own records, only when the repository has an open pull request;
+- under **Needs you**, the first pending decision requests with the pull request, the rule, the dependency, who asked
+  and how long ago, each linking to the pull request page where an owner decides. An agent cannot approve its own
+  request, so nothing on the overview approves or declines;
+- the open pull requests, newest first, each with its result and a link to its page (up to 20). A pull request that
+  waits for an update says so under its row and names the modules the pull request and the default branch close a
+  cycle through, in the words of the comment;
 - **Findings on** the default branch: its violations, advisories and accepted debt, grouped as on a pull request page.
 
-The tabs under the header open the graph (Architecture) and the policy editor (Policy). The header switches between
+![The Overview of a repository with agents: the watch line, the counts of pull requests to update and decision requests pending, and the requests under Needs you](images/overview-watch-light.png#gh-light-mode-only)
+![The Overview of a repository with agents: the watch line, the counts of pull requests to update and decision requests pending, and the requests under Needs you](images/overview-watch-dark.png#gh-dark-mode-only)
+
+_The watch line under the result, the two counts, and the decision requests under Needs you. Sample data._
+
+![The open pull requests of a repository, one waiting for an update after the default branch moved](images/overview-pulls-to-update-light.png#gh-light-mode-only)
+![The open pull requests of a repository, one waiting for an update after the default branch moved](images/overview-pulls-to-update-dark.png#gh-dark-mode-only)
+
+_A pull request waiting for an update names the modules of the cycle, as the pull request comment does. Sample data._
+
+The tabs under the header open the graph (Architecture), the decisions page ([Decisions](#decisions-page)) and the
+policy editor (Policy). The header switches between
 the light and the dark theme, or follows the system (Auto); the choice is kept in this browser. The App needs a
 browser with JavaScript.
 
@@ -969,6 +1014,12 @@ browser with JavaScript.
 Open `/r/<owner>/<repo>/pull/<number>` for the Archfit result of the pull request's head commit. The Archfit comment
 on the pull request links to this page ("Details in Archfit").
 
+- Under the result, the first screen is the first screen of the pull request comment, line for line: the headline,
+  what was checked and with which engine and policy digest, the impact, the findings that lead with the place and the
+  rule and carry their why and fix, the policy change card, the next step and the identity of the result. The page words
+  it with the same code that words the comment, from the recorded `archfit/state` check and the report it names. It
+  leaves out what only the comment carries (the link to the page and the notices about the plan and about an expiring
+  waiver). It shows only when the comment would show a report. Everything below it is detail.
 - The headline is the title of the `archfit/state` check, with the gate mode beside it. In advisory mode the check does
   not block merging. When a report is available, the engine's verdict appears in the comment's words, for example "Engine verdict
   blocked: hard gates fail, 3 active blockers, every required rule evaluated".

@@ -24,6 +24,13 @@ keeps in the Store is a short-lived lease per head SHA, because GitHub has no co
   without its coupling why; the owner's repository attention (the engine's gate reasons, at most ten in the comment and fifty in the
   archfit/state check) in its own fold; the result identity, labelled as the engine's statement, first in the fold for
   coding agents. No table wider than four columns.
+- Give the comment's first screen as plain-text lines for the App's pull request page (`FirstScreen`, `RecoveryStep`):
+  the same function (`screenOf`) builds the comment's head, findings and tail and the page's lines, so the two cannot
+  word the story differently. `FirstScreen` takes what a published `archfit/state` check recorded (its title, reasons,
+  digest, producer engine, run, check ID and the policy change card of its summary) and the report it names, rebuilds a
+  `Publication` from them, and returns lines (`headline`, `heading`, `text`, `item`) with Markdown marks and links
+  reduced to their words; nil when `presentation` would drop the report (a reason that is not report-derived) or no reason
+  was recorded. The link to the page and the entitlement and waiver notices are the comment's alone.
 - Render the policy change card (`policyCard`) in the comment and the `archfit/state` check when the publication
   carries an engine classification of a change to the protected policy: the direction, the changes in plain words
   (each value cut to 80 characters, the list bounded to about 3 KB, then a count: the card sits in a block that is never
@@ -161,6 +168,23 @@ type Repairer interface {
 // Publish does, so two publications of one head never interleave their issue reads and writes.
 func NewRepairer(checks Checks, comments Comments, issues Issues, repos Repos, s Store, now func() time.Time) Repairer
 ```
+
+```go
+// FirstScreen is the comment's first screen for a published result as plain-text lines; nil when the comment would show no report.
+func FirstScreen(in ScreenInput) []Line
+// RecoveryStep is a recorded reason's next step with the role that takes it, as the comment words it, as text.
+func RecoveryStep(code, next string) string
+
+type Line struct{ Kind, Text string } // Kind: headline, heading, text, item
+type ScreenReason struct{ Code, Category, Detail, Next string }
+type ScreenInput struct { /* Repo, HeadSHA, PullRequest, Title, CheckID, Required, Reasons []ScreenReason, EngineVersion,
+   PolicyDigest, BaselineDigest, RunID, RunAttempt, PolicyCard (Markdown), Report *report.Report */ }
+```
+
+`Title` is the headline: the check's title is `headline(p)` for a published report, and the page takes it as it is. The
+conclusion is `verdict.ConclusionOf` the first reason, the baseline is trusted unless `BaselineDigest` is empty or starts
+with the `no baseline` word of the inputs section, and the gate mode comes from `Required`. Nothing in `ScreenInput` is
+decided here; it restates what the check recorded.
 
 ### Fixed names and markers
 
@@ -1460,6 +1484,16 @@ Golden files hold rendered bodies for the wire fixtures.
 - **Test name**: `TestSuspensionFeedback` (T21)
   **Scenario**: suspended outcome with a report compared with the base, whose violations are introduced; entitlement with `WarnFrom` in the past and not suspended; `WarnFrom` in the future.
   **Expected behavior**: subscription reason with `Entitlement.Reason` as next action, no findings and no lead sentence; the notice line appears; no notice.
+- **Test name**: `TestFirstScreenIsTheCommentsFirstScreen`, `TestFirstScreenWithoutBaseline`, `TestFirstScreenWithPolicyChangeCard`, `TestFirstScreenGolden`
+  **Scenario**: every fixture case published as a comment (zero clock, no waiver, no link), with the page's input built from the state check
+  the same publication writes (title, reasons, digests, card section, check ID); no trusted baseline; a policy change card;
+  the blocked and healthy pages and the card page as goldens.
+  **Expected behavior**: the page's lines equal the comment's text before its first fold, line for line (markers and the
+  link to the page not counted); nil exactly when `presentation` drops the report; the three goldens match.
+- **Test name**: `TestFirstScreenWithheld`, `TestFirstScreenIsPlainText`, `TestRecoveryStepNamesTheRole`
+  **Scenario**: no report; no reason; a reason that is not report-derived; a category that does not match; a title with
+  markup, backticks and a comment marker; the target-moved, owner-approval and missing-upload steps.
+  **Expected behavior**: nil each; no Markdown mark or marker in any line; the role prefix and the unescaped words.
 - **Test name**: `TestPendingThenFinal` (T13)
   **Scenario**: `Pending`, then `Publish` of a failure, in required mode.
   **Expected behavior**: the same check run goes from `in_progress` to `completed`/`failure`; no second gate check exists.

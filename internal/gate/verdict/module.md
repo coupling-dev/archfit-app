@@ -98,6 +98,10 @@ const (
 // reportDerived identifies the six assessment/recovery families; unknown or mismatched metadata is unclassified.
 func ClassifyDisplayReason(code ReasonCode, category Category) (reportDerived, known bool)
 
+// ConclusionOf is the conclusion the catalog gives an outcome whose first reason is code: for a page that restates a
+// recorded outcome in the comment's words. It decides nothing; a code outside the catalog is action_required.
+func ConclusionOf(code ReasonCode) Conclusion
+
 type Reason struct {
     Code     ReasonCode
     Category Category

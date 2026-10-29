@@ -13,6 +13,7 @@
     type ShareState,
   } from '../lib/api';
   import Skeleton from '../components/Skeleton.svelte';
+  import { ageWord } from '../lib/age';
   import { firstJSON } from '../lib/early';
   import { guideURL, repoPage, safeHref } from '../lib/route';
 
@@ -99,7 +100,10 @@
     body?.pulls?.filter((p) => p.tone !== 'success' && !waitingStates.includes(p.state)).length ?? 0,
   );
   const actions = $derived(body !== null && body.admin && (body.can_start || body.can_discover));
-  const needsYou = $derived(body !== null && (body.next !== '' || body.diagnostic !== '' || actions));
+  const decisionsPage = $derived(repoPage(route.fullName, '/decisions'));
+  const needsYou = $derived(
+    body !== null && (body.next !== '' || body.diagnostic !== '' || actions || body.decisions.length > 0),
+  );
 </script>
 
 <div class="page-head">
@@ -111,6 +115,11 @@
         <span class="muted">on <code>{body.default_branch}</code></span>
         {#if body.main_reason}<span class="muted">{body.main_reason}</span>{/if}
       </div>
+      {#if body.main_sha && body.main_at}
+        <p class="muted small" id="main-watch" title={body.main_at}>
+          Last checked commit on <code>{body.default_branch}</code>: <code>{body.main_sha}</code>, {ageWord(body.main_at)}.
+        </p>
+      {/if}
       <!-- Why "attention", in the engine's terms, when the latest report says so: never over another word. -->
       {#if body.main_tone === 'attention' && findings?.attention_reason}
         <p class="muted small" id="attention-reason">In the latest report: {findings.attention_reason}.</p>
@@ -153,10 +162,59 @@
     </div>
   {/if}
 
+  {#if body.main_state}
+    <div class="stats" role="group" aria-label="Pull requests and decision requests" id="watch">
+      <div>
+        <span class="n">{body.pulls_error ? '–' : body.pulls_unread ? `${body.pulls_to_update}+` : body.pulls_to_update}</span>
+        <span class="t">{!body.pulls_error && !body.pulls_unread && body.pulls_to_update === 1 ? 'Pull request' : 'Pull requests'} to update</span>
+        <span class="s"
+          >{body.pulls_error
+            ? 'the open pull requests could not be read'
+            : body.pulls_unread
+              ? `${body.pulls_unread} could not be read, so there may be more`
+              : 'the target branch moved under them: update the branch'}</span
+        >
+      </div>
+      <div>
+        <span class="n">{body.decisions_error ? '–' : body.decisions_pending}</span>
+        <span class="t">Decision {!body.decisions_error && body.decisions_pending === 1 ? 'request' : 'requests'} pending</span>
+        <span class="s"
+          >{body.decisions_error ? 'could not be read' : 'wait for an owner'} · <a class="inline" href={decisionsPage}>All decisions</a></span
+        >
+      </div>
+    </div>
+  {/if}
+
   {#if needsYou}
     <section class="box" aria-labelledby="needs-you">
       <div class="box-head"><h2 id="needs-you">Needs you</h2></div>
       <div class="box-body stack">
+        {#if body.decisions.length}
+          <div class="stack-sm" id="needs-decisions">
+            <p>
+              <strong
+                >{body.decisions_pending} decision {body.decisions_pending === 1 ? 'request waits' : 'requests wait'} for an
+                owner.</strong
+              >
+              An agent cannot approve its own request: an architecture owner decides on the pull request page.
+            </p>
+            <ul class="plain" aria-label="Decision requests that wait for an owner">
+              {#each body.decisions as d (d.href + d.finding + d.created)}
+                <li>
+                  <a class="inline" href={safeHref(d.href)}>#{d.pull}{d.title ? ' ' + d.title : ''}</a>
+                  <span class="muted small"
+                    ><code>{d.rule}</code> {d.edge} · requested by @{d.requester} · {ageWord(d.created)}</span
+                  >
+                </li>
+              {/each}
+            </ul>
+            {#if body.decisions_pending > body.decisions.length}
+              <p class="muted small">
+                {body.decisions_pending - body.decisions.length} more. <a class="inline" href={decisionsPage}>See all decisions</a>.
+              </p>
+            {/if}
+          </div>
+        {/if}
         {#if body.next}
           <p><strong>Next:</strong> {body.next}</p>
           {#if body.next_how}
@@ -273,12 +331,15 @@
         <p class="box-row muted">None.</p>
       {:else}
         {#each body.pulls as p (p.number)}
-          <div class="box-row row-between">
-            <a href={safeHref(p.href)}>#{p.number} {p.title}</a>
-            <span class="row">
-              <span class="status {p.tone}">{p.state}</span>
-              {#if p.reason}<span class="muted small">{p.reason}</span>{/if}
-            </span>
+          <div class="box-row stack-sm">
+            <div class="row-between">
+              <a href={safeHref(p.href)}>#{p.number} {p.title}</a>
+              <span class="row">
+                <span class="status {p.tone}">{p.state}</span>
+                {#if p.reason}<span class="muted small">{p.reason}</span>{/if}
+              </span>
+            </div>
+            {#if p.rerun}<p class="small rerun"><strong>To update.</strong> {p.rerun}</p>{/if}
           </div>
         {/each}
       {/if}

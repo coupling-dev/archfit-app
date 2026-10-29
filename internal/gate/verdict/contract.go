@@ -83,6 +83,15 @@ func ReportDerivedAction(code ReasonCode) bool {
 	return derived
 }
 
+// ConclusionOf is the conclusion the catalog gives an outcome whose first reason is code, for a page that restates a
+// recorded outcome in the comment's words. It decides nothing: a code outside the catalog is action_required.
+func ConclusionOf(code ReasonCode) Conclusion {
+	if e, ok := lookup(code); ok {
+		return e.conclusion
+	}
+	return ActionRequired
+}
+
 type Reason struct {
 	Code     ReasonCode
 	Category Category

@@ -39,6 +39,7 @@ type pullBody struct {
 	Conclusion string // of archfit/state: neutral, success, action_required, …
 	Required   bool   // the protected settings require archfit/gate
 	RunID      int64  // report run selected for artifact lookup, not diagnostic context
+	CheckID    int64  // the archfit/state check run, display only
 	Check      *checkContextJSON
 }
 
@@ -149,7 +150,7 @@ func (s *server) pullReport(ctx context.Context, sc scope, pull api.Pull, runs *
 		return body, nil, nil
 	}
 	run := slices.MaxFunc(checks, func(a, b api.CheckRun) int { return cmp.Compare(a.ID, b.ID) })
-	body.Headline, body.Conclusion = run.Title, run.Conclusion
+	body.Headline, body.Conclusion, body.CheckID = run.Title, run.Conclusion, run.ID
 	body.Check = actionContext(run)
 	// action_required withdraws a result (stale inputs, an expired waiver, a suspension, a missing approval) or says
 	// the evidence is unusable. The sweep keeps the old run in external_id when it withdraws, so the old report would

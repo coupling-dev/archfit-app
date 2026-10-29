@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
 )
@@ -56,31 +57,51 @@ func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
 		go func() {
 			defer wg.Done()
 			defer func() { <-slots }()
-			state, reason := s.defaultBranchState(r.Context(), repo)
-			body.Repos[i] = overviewRow{FullName: repo.FullName, State: state, Tone: toneOf(state), Reason: reason}
+			main := s.defaultBranchState(r.Context(), repo)
+			body.Repos[i] = overviewRow{FullName: repo.FullName, State: main.state, Tone: toneOf(main.state), Reason: main.reason}
 		}()
 	}
 	wg.Wait()
 	return body, nil
 }
 
+// branchCheck is archfit/state on a commit of the default branch: the word and title of its latest run, and which
+// commit and when.
+type branchCheck struct {
+	state, reason string
+	sha           string    // the branch tip the check was read on
+	at            time.Time // when the check started; zero without a check
+}
+
 // defaultBranchState reads archfit/state on the default-branch head. A failed lookup is "unknown" for this row only.
-func (s *server) defaultBranchState(ctx context.Context, repo api.Repo) (state, reason string) {
+func (s *server) defaultBranchState(ctx context.Context, repo api.Repo) branchCheck {
 	head, err := s.gh.files.BranchHead(ctx, repo.RepoRef, repo.DefaultBranch)
 	if err != nil {
-		return stateUnknown, ""
+		return branchCheck{state: stateUnknown}
 	}
-	return s.checkWord(ctx, repo.RepoRef, head, checkState)
+	run, state, reason := s.latestCheck(ctx, repo.RepoRef, head, checkState)
+	out := branchCheck{state: state, reason: reason, sha: head}
+	if run != nil {
+		out.at = run.StartedAt
+	}
+	return out
 }
 
 // checkWord is the latest run of one check on a commit, as a word and its reason title.
 func (s *server) checkWord(ctx context.Context, ref api.RepoRef, headSHA, name string) (state, reason string) {
+	_, state, reason = s.latestCheck(ctx, ref, headSHA, name)
+	return state, reason
+}
+
+// latestCheck is the latest run of one check on a commit, as the run, a word and its reason title; the run is nil when
+// there is none or the read failed.
+func (s *server) latestCheck(ctx context.Context, ref api.RepoRef, headSHA, name string) (run *api.CheckRun, state, reason string) {
 	runs, err := s.gh.checks.CheckRuns(ctx, ref, headSHA, name)
 	if err != nil {
-		return stateUnknown, ""
+		return nil, stateUnknown, ""
 	}
 	if len(runs) == 0 {
-		return stateNone, ""
+		return nil, stateNone, ""
 	}
 	latest := runs[0]
 	for _, run := range runs[1:] {
@@ -88,5 +109,5 @@ func (s *server) checkWord(ctx context.Context, ref api.RepoRef, headSHA, name s
 			latest = run
 		}
 	}
-	return stateWord(latest.Conclusion, latest.Title), latest.Title
+	return &latest, stateWord(latest.Conclusion, latest.Title), latest.Title
 }
