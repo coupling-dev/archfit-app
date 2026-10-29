@@ -22,7 +22,9 @@ const (
 	maxTaskFiles        = maxLocations + 2 // every location file and both edge endpoints
 	maxDimensionFacts   = 256              // metrics, unknown, delta metrics
 	maxFindingRefs      = 10_000
-	maxSmallList        = 64 // producers, unknowns, coverage.tools, every reasons list
+	// maxToolDetails bounds coverage.tools[].details: the engine writes one line per .NET project and does not cap them.
+	maxToolDetails = 10_000
+	maxSmallList   = 64 // producers, unknowns, coverage.tools, every reasons list
 
 	maxTextLen       = 500
 	maxFindingLen    = 2_000 // a finding why or constraint ends with the rule's rationale and docs reference

@@ -357,7 +357,7 @@ func TestGraphPageBuildsFromArtifact(t *testing.T) {
 	}
 }
 
-// TestGraphPageShowsTheEngineSeamPolicy: an engine v3.0.0 capture, given the identity v3.4.0 states, decodes, and each link shows the engine's
+// TestGraphPageShowsTheEngineSeamPolicy: an engine v3.0.0 artifact decodes, and each link shows the engine's
 // seams[].policy status, allowed included, raised by the accepted advisories it leaves out (graph.Build).
 func TestGraphPageShowsTheEngineSeamPolicy(t *testing.T) {
 	e := newEnv(t)
@@ -366,16 +366,7 @@ func TestGraphPageShowsTheEngineSeamPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The page reads an artifact as the newest release, which states an identity; the capture predates it.
-	var doc map[string]any
-	if err := json.Unmarshal(payload, &doc); err != nil {
-		t.Fatal(err)
-	}
-	doc["identity"] = map[string]any{"schema_version": report.ResultIdentitySchemaV1, "engine_version": "v3.4.0"}
-	if payload, err = json.Marshal(doc); err != nil {
-		t.Fatal(err)
-	}
-	rep, err := report.Decode(payload, "v3.4.0")
+	rep, err := report.DecodeStored(payload)
 	if err != nil {
 		t.Fatalf("capture does not decode: %v", err)
 	}

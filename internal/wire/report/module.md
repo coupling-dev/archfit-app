@@ -64,13 +64,13 @@ Volatility: moderate. It changes with a versioned engine release; the caps are *
 
 What v3.3.0 and v3.4.0 added to the state schema: `identity`, the result identity block; `gate_reasons`, the coupling
 gate's own one-line reasons that `check` writes into the state (kept as `Report.GateReasons`, repository attention for
-the owner); `coverage.tools[].details`, a list of one-line strings, validated and dropped; and `null` for
+the owner); `coverage.tools[].details`, a list of one-line strings (at most `maxToolDetails`, 10,000: the engine writes one per .NET project and does not cap them), validated and dropped; and `null` for
 `seams[].raw_distance.same_owner` and `same_deploy_unit` (marked `optBool`; the engine writes null unless both sides are
 known). New producer names (`dotnet-msbuild`, `roslyn`, `supplied-coverage`) need nothing: `tool` is a free identifier.
 The v3.4.0 schema requires `identity`, and so does `Decode` from v3.4.0 (`identityFrom`): a v3.4.0 upload without it is
 `report_invalid`. The releases before it carry none and still decode, with `Report.Identity == nil`, so that their
 uploads end `unknown_engine_identity` at the manifest and stored reports stay readable. `TestIdentityIsRequiredFromThePin`
-covers both sides; `TestPinnedSchemaRequiresIdentity` ties `identityFrom` to the schema.
+covers both sides, and `TestDecodeStored` the optional side for kept artifacts; `TestPinnedSchemaRequiresIdentity` ties `identityFrom` to the schema.
 `TestEngineSchemaKeySetIsCovered` walks the pinned schema against the decoder both ways with no allowance, so a key the
 engine emits and the App does not read fails the test. `Report.Identity` and `Report.GateReasons` are the engine's own
 statements and decide nothing: the gate trusts inputs from the protected ref only, and uses the identity for the receipt
@@ -710,7 +710,7 @@ Shared knowledge, per counterpart:
   only) to prove and read the module graph of a tip report and of a pull request's own report (sweep rule 5c). It
   uses the graph to withdraw a passed result and never to grant one.
 - `internal/control/ui` holds `Decode`, `EngineVersions`, `MaxBytes`, `ArtifactName` and `DecodeArtifact` to read the
-  `archfit-report` workflow artifact for the graph page and the Pull page (digest check included). The artifact names no release, so it decodes as the last release, `v3.4.0`: an older artifact without an identity ends as unreadable there.
+  `archfit-report` workflow artifact for the graph page and the Pull page (digest check included). The artifact names no release, so it decodes with `DecodeStored`: the newest key set with `identity` optional (a kept report was verified at ingest and may come from a release before `identityFrom`; a present identity is still validated). The graph page uses `DecodeStored` too.
 - `internal/control/ui/graph` holds `Report`, `Seam` (`Seam.Policy` included, the status it shows when present),
   `Comparison.ConfigHash` and `Finding.Active`, which decides the links it marks as active gate findings in a
   report without `seams[].policy`.

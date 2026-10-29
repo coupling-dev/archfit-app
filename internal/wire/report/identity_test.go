@@ -137,9 +137,12 @@ func TestIdentityRules(t *testing.T) {
 
 // coverage.tools[].details (engine v3.3.0) is an optional list of one-line strings: validated, not kept.
 func TestToolCoverageDetailsRules(t *testing.T) {
-	many := make([]any, maxSmallList+1)
-	for i := range many {
-		many[i] = "project"
+	projects := func(n int) []any {
+		list := make([]any, n)
+		for i := range list {
+			list[i] = "project"
+		}
+		return list
 	}
 	rows := []mutation{
 		{name: "absent"},
@@ -156,8 +159,14 @@ func TestToolCoverageDetailsRules(t *testing.T) {
 		{name: "a line break in an item", wantLoc: "coverage.tools[0].details", edit: func(t *testing.T, d map[string]any) {
 			set(t, d, []any{"a\nb"}, "coverage", "tools", 0, "details")
 		}},
-		{name: "too many items", wantLoc: "coverage.tools[0].details", edit: func(t *testing.T, d map[string]any) {
-			set(t, d, many, "coverage", "tools", 0, "details")
+		{name: "more projects than the small lists hold", edit: func(t *testing.T, d map[string]any) {
+			set(t, d, projects(maxSmallList+1), "coverage", "tools", 0, "details")
+		}},
+		{name: "as many items as the bound", edit: func(t *testing.T, d map[string]any) {
+			set(t, d, projects(maxToolDetails), "coverage", "tools", 0, "details")
+		}},
+		{name: "one item over the bound", wantLoc: "coverage.tools[0].details", edit: func(t *testing.T, d map[string]any) {
+			set(t, d, projects(maxToolDetails+1), "coverage", "tools", 0, "details")
 		}},
 		{name: "null", wantLoc: "coverage.tools[0].details", edit: func(t *testing.T, d map[string]any) {
 			set(t, d, nil, "coverage", "tools", 0, "details")

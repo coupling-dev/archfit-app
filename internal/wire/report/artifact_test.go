@@ -52,3 +52,57 @@ func TestDecodeArtifact(t *testing.T) {
 		})
 	}
 }
+
+// A kept artifact names no release and is read by the newest key set with identity optional: captures of every release
+// decode, and an identity that is present is still validated.
+func TestDecodeStored(t *testing.T) {
+	captures := []string{
+		"report/real-blocked-no-baseline.json", "report/real-pr-origin.json", "report/real-v320-blocked-no-baseline.json",
+		"report/real-v322-blocked-no-baseline.json", "report/real-v323-amd64-blocked-no-baseline.json",
+		"report/real-v340-arm64-blocked-no-baseline.json",
+	}
+	for _, name := range captures {
+		t.Run(name, func(t *testing.T) {
+			payload := loadFixture(t, name)
+			got, err := DecodeStored(payload)
+			if err != nil {
+				t.Fatalf("DecodeStored: %v", err)
+			}
+			if want := mustDecodeFixture(t, name); !reflect.DeepEqual(got, want) {
+				t.Error("the stored report decodes differently from Decode as its own release")
+			}
+			sum := sha256.Sum256(payload)
+			if _, err := DecodeArtifact(payload, hex.EncodeToString(sum[:])); err != nil {
+				t.Errorf("DecodeArtifact: %v", err)
+			}
+		})
+	}
+
+	rows := []mutation{
+		{name: "no identity"},
+		{name: "a wrong identity version", wantLoc: "identity.schema_version", edit: func(t *testing.T, d map[string]any) {
+			d["identity"] = map[string]any{"schema_version": "archfit.result-identity.v2", "engine_version": "v3.4.0"}
+		}},
+		{name: "an identity without an engine version", wantLoc: "identity.engine_version", edit: func(t *testing.T, d map[string]any) {
+			d["identity"] = map[string]any{"schema_version": ResultIdentitySchemaV1}
+		}},
+		{name: "an identity with a key the engine does not define", wantLoc: "identity", edit: func(t *testing.T, d map[string]any) {
+			d["identity"] = map[string]any{"schema_version": ResultIdentitySchemaV1, "engine_version": "v3.4.0", "trusted": true}
+		}},
+		{name: "a null identity", wantLoc: "identity", edit: func(t *testing.T, d map[string]any) { d["identity"] = nil }},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			doc := parseDoc(t, loadFixture(t, "report/real-blocked-no-baseline.json"))
+			if row.edit != nil {
+				row.edit(t, doc)
+			}
+			_, err := DecodeStored(encode(t, doc))
+			if row.wantLoc != "" {
+				wantError(t, err, row.wantLoc)
+			} else if err != nil {
+				t.Fatalf("DecodeStored: %v", err)
+			}
+		})
+	}
+}
