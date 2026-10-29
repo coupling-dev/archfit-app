@@ -83,13 +83,13 @@ resource "google_cloud_run_v2_service" "this" {
     service_account = local.data.service_accounts[each.key]
     timeout         = each.value.timeout
 
-    # One instance per service. The region's Cloud Run quota is 4 vCPU and each instance takes 1 vCPU. A release brings
-    # up a new revision of each service while the live one still serves: with one instance per revision that is at most
-    # 4 vCPU (2 live + 2 new). Two per service filled the quota with the live revisions alone, so traffic could not move
-    # to a new revision ("Quota exceeded for total allowable CPU", deploy run 40731326038).
+    # Two instances per service, each 1 vCPU. A release brings up a new revision of each service while the live one
+    # still serves: 2 services x 2 instances x (live + new) = 8 vCPU, the region's Cloud Run quota (infra/data). Under the
+    # old 4 vCPU quota the live revisions alone filled it and traffic could not move to a new revision ("Quota exceeded
+    # for total allowable CPU", deploy run 40731326038). Raise the quota before raising this.
     scaling {
       min_instance_count = 0
-      max_instance_count = 1
+      max_instance_count = 2
     }
 
     containers {

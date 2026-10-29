@@ -129,9 +129,10 @@ The design leaves these choices to the implementation. Each one is the simplest 
   During webhook rotation, `webhook_secret_previous_version` mounts another numeric version of the same secret on both
   services. It defaults to `null`. A new value reaches a service only through a new revision. `latest` is never used.
 - **Secret replication** is user-managed in `europe-west1`, so secrets stay in the one region.
-- **Sizing.** 2 services × 1 instance × 1 vCPU. A release runs a new revision of each service beside the live one, so
-  2 live + 2 new instances use the full 4 vCPU quota. With 2 instances per service the live revisions alone filled it
-  and traffic could not move to a new revision. Raise the quota before you raise the instance count (see
+- **Sizing.** 2 services × 2 instances × 1 vCPU. A release runs a new revision of each service beside the live one, so
+  the Cloud Run CPU quota is 8 vCPU: 2 services × 2 instances × (live + new revision). Memory: 8 × 512 MiB = the 4 GiB
+  quota. Under the earlier 4 vCPU quota the live revisions alone filled it and traffic could not move to a new
+  revision. Raise the quota before you raise the instance count (see
   [Project guardrails](../docs/design/cloud/operations.md#project-guardrails)).
 - **Timeouts.** The public service has 330 s, above the 300 s deadline of the managed assist route. Uploads and the
   other routes stop at 55 s in the App. The worker has 600 s, for the sweep.

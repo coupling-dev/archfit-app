@@ -236,6 +236,16 @@ run "guardrail_quotas_allow_only_the_one_region" {
   }
 
   assert {
+    condition     = google_cloud_quotas_quota_preference.run["run-cpu-europe-west1"].quota_config[0].preferred_value == "8000"
+    error_message = "8 vCPU in europe-west1: 2 services x 2 instances x (live + new revision) x 1 vCPU must fit during a release."
+  }
+
+  assert {
+    condition     = google_cloud_quotas_quota_preference.run["run-mem-europe-west1"].quota_config[0].preferred_value == "4294967296"
+    error_message = "4 GiB in europe-west1: 8 instances x 512 MiB."
+  }
+
+  assert {
     condition     = length(google_cloud_quotas_quota_preference.run) == 13
     error_message = "All 13 existing quota preferences are managed."
   }

@@ -170,8 +170,8 @@ run "each_service_runs_as_its_own_account_with_at_most_one_instance" {
   }
 
   assert {
-    condition     = alltrue([for s in google_cloud_run_v2_service.this : s.template[0].scaling[0].max_instance_count == 1])
-    error_message = "One instance per service: a live and a new revision of both services must fit the 4 vCPU quota."
+    condition     = alltrue([for s in google_cloud_run_v2_service.this : s.template[0].scaling[0].max_instance_count == 2])
+    error_message = "Two instances per service: 2 services x 2 instances x (live + new revision) x 1 vCPU must fit the 8 vCPU quota."
   }
 }
 
