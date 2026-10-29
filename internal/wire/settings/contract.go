@@ -33,6 +33,8 @@ type Settings struct {
 	// Integration is how a pull request is kept honest when its target branch moves after its report. Absent means
 	// the defaults of Recheck.
 	Integration *Integration `yaml:"integration,omitempty"`
+	// RepairAssignee is the one login the default branch's repair issue is assigned to; "" assigns nobody.
+	RepairAssignee string `yaml:"repair_assignee,omitempty"`
 }
 
 // RecheckMode says whether the sweep re-examines a passed pull request after the default branch moved.
@@ -113,6 +115,7 @@ const (
 	keyDataMode    = "data_mode"
 	keyAuthority   = "policy_authority"
 	keyIntegration = "integration"
+	keyAssignee    = "repair_assignee"
 )
 
 // The keys of policy_authority.

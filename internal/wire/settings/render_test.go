@@ -65,6 +65,9 @@ func checkFieldRules(t *testing.T, s Settings) {
 	if !ruleWorkflow.MatchString(s.Workflow) || len(s.Workflow) > 255 {
 		t.Errorf("accepted workflow %q", s.Workflow)
 	}
+	if a := s.RepairAssignee; a != "" && (!ruleLogin.MatchString(a) || len(a) > 39) {
+		t.Errorf("accepted repair_assignee %q", a)
+	}
 }
 
 // checkRoundTrip asserts the round-trip law for a valid s with both modes set.
@@ -216,6 +219,9 @@ func randomSettings(r *rand.Rand) Settings {
 		name += strings.Repeat("w", maxName-len(name))
 	}
 	s.Workflow = ".github/workflows/" + name + ext
+	if r.IntN(3) == 0 {
+		s.RepairAssignee = randomName(r, nameAlphabet, 39)
+	}
 	return s
 }
 

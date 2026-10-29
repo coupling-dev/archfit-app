@@ -7,7 +7,7 @@
 ## Purpose
 
 `api` is the App's only GitHub REST client. It offers small role interfaces (repositories, pull requests,
-checks, comments, Actions, changes, users) over one `Client`, and hides URL shapes, headers, pagination,
+checks, comments, issues, Actions, changes, users) over one `Client`, and hides URL shapes, headers, pagination,
 conditional requests and rate-limit handling. Without it, every gate and control module would speak HTTP to
 GitHub, and "never a false green on rate-limit exhaustion" would depend on each caller.
 
@@ -16,6 +16,7 @@ GitHub, and "never a false green on rate-limit exhaustion" would depend on each 
 - Authenticate each call with the right credential: App JWT, installation token, or a user's OAuth token.
 - Read installations, repositories, files at a ref, pull requests, changed files, reviews, team membership.
 - Create and update check runs; list, create and update the App's own PR comments.
+- List, open, edit and close the App's own issues; never a pull request through the issues endpoints.
 - Read workflow runs, re-run and dispatch workflows, download one artifact file under a size cap.
 - Write branches, commits and pull requests idempotently (`EnsureBranch`, `EnsurePull`).
 - Follow pagination to a cap and fail, not truncate, beyond it.
@@ -100,7 +101,7 @@ needs one. It is a wide leaf on purpose: role interfaces keep each consumer's kn
 
 `per_page=100`, follow `Link: rel="next"`. Cap: 1 000 items per call **[default]**. Beyond the cap the call
 returns an error, never a silent partial list. This holds for `ListInstallations`, `ListRepos`, `UserRepos`,
-`OpenPulls`, `Reviews`, `AppComments` and `CheckRuns`. The one exception is `ChangedFiles`, whose contract has
+`OpenPulls`, `Reviews`, `AppComments`, `AppIssues` and `CheckRuns`. The one exception is `ChangedFiles`, whose contract has
 a `truncated` result: it returns the paths read so far with `truncated` true.
 
 ### Endpoints
@@ -140,7 +141,17 @@ a `truncated` result: it returns the paths read so far with `truncated` true.
 - `CreateCheckRun`: `POST /repos/{r}/check-runs`; `UpdateCheckRun`: `PATCH /repos/{r}/check-runs/{id}`. An
   annotation maps to `start_line = end_line = Line`, and `Line` 0 to line 1. GitHub appends annotations on update.
 - `AppComments`: `GET /repos/{r}/issues/{n}/comments`, kept when `user.login` is the bot login.
-  `CreateComment`: `POST` there; `UpdateComment`: `PATCH /repos/{r}/issues/comments/{id}`.
+  `CreateComment`: `POST` there; `UpdateComment`: `PATCH /repos/{r}/issues/comments/{id}`. A comment on an issue is
+  the same call with the issue number.
+- `AppIssues` (role `Issues`): `GET /repos/{r}/issues?state=open` (paged), kept when `user.login` is the bot login
+  and the item has no `pull_request` key (GitHub lists pull requests among issues). GitHub's `creator` parameter is not
+  sent **[default]**: whether it matches an App's `slug[bot]` login is not documented, and a filter that silently
+  matched nothing would make the caller open a second issue. The cost is a list of every open issue and pull request:
+beyond the 1 000-item cap the call fails, so such a repository gets no repair issue, never a second one.
+  `CreateIssue`: `POST /repos/{r}/issues` with `title`, `body` and, when `Assignee` is set, `assignees: [login]`; the
+  number from the answer. `UpdateIssueBody`: `PATCH /repos/{r}/issues/{n}` with `body`. `CloseIssue`:
+  `GET /repos/{r}/issues/{n}` first; an answer with a `pull_request` key is an error and nothing is sent; else
+  `PATCH` there with `state: closed`. All need the App's Issues permission; without it GitHub answers `403`.
 - `Run`: `GET /repos/{r}/actions/runs/{id}`; `WorkflowPath` = `path` unchanged; `Event` = `event` unchanged;
   `PullRequests` =
   `pull_requests[].number` (GitHub leaves it empty for fork PRs). `Rerun`: `POST .../runs/{id}/rerun`.
@@ -318,6 +329,29 @@ type Comments interface {
 ```
 
 ```go
+type Issue struct {
+    Number int
+    Body   string
+}
+
+type NewIssue struct {
+    Title, Body string
+    Assignee    string // one login; "" assigns nobody
+}
+
+// Issues are repository issues opened by the App. A pull request is never one: GitHub lists pull requests among
+// issues, and they are left out.
+type Issues interface {
+    // AppIssues lists the open issues the App opened.
+    AppIssues(ctx context.Context, r RepoRef) ([]Issue, error)
+    CreateIssue(ctx context.Context, r RepoRef, i NewIssue) (Issue, error)
+    UpdateIssueBody(ctx context.Context, r RepoRef, number int, body string) error
+    // CloseIssue closes the issue number. A number that names a pull request is an error, and nothing is closed.
+    CloseIssue(ctx context.Context, r RepoRef, number int) error
+}
+```
+
+```go
 type WorkflowRun struct {
     ID           int64
     Attempt      int
@@ -422,7 +456,8 @@ of `github/auth`; `api` only receives its result, a user token string, in the `U
 - `CreateCheckRun`, `UpdateCheckRun`: `Summary` over 65 535 bytes or more than 50 annotations (GitHub's limits), `completed` without
   `Conclusion`, `in_progress` with one, or `UpdateCheckRun` with `ID` 0 → error before any request. `api`
   never truncates.
-- `CreateComment`, `UpdateComment`: a body over 65 536 characters (GitHub's limit) → error before any request.
+- `CreateComment`, `UpdateComment`, `CreateIssue`, `UpdateIssueBody`: a body over 65 536 characters (GitHub's
+  limit) → error before any request.
 - `Artifact`, `ArtifactByID`: `maxBytes` ≤ 0 → error.
 - Lists return an empty slice, not `ErrNotFound`, when the parent exists and has no items.
 - `RepoRef` identity is trusted by the caller's construction; `api` does not re-derive the installation.
@@ -473,7 +508,8 @@ type TokenSource interface {
 - **Volatility**: High (the gate side)
 - **Balanced?**: Yes
 - **Shared knowledge**: role interfaces only. `ingest`: `Repos`, `Pulls`, `Actions`. `inputs`: `Repos`, `Pulls`.
-  `feedback`: `Checks`, `Comments`, `Pulls`. `sweep`: `Repos`, `Pulls`, `Actions`. They rely on: `ErrRateLimited`
+  `feedback`: `Checks`, `Comments`, `Pulls`, `Issues`, `Repos` (`BranchHead`). `sweep`: `Repos`, `Pulls`, `Actions`.
+  They rely on: `ErrRateLimited`
   is returned after bounded backoff, so the caller can stop before it writes and leave checks pending for the sweep;
   lists are complete or an error; `Reviews` order; `ChangedFiles` includes rename sources and `truncated` means
   "assume any path changed"; `CheckRuns` holds this App's runs only, with `AnnotationCount`; GitHub appends annotations.
@@ -518,7 +554,8 @@ type TokenSource interface {
 - **Shared knowledge**: the Endpoints list; rate-limit and ETag semantics above. App permissions needed:
   `checks: write`, `pull_requests: write`, `contents: write`, `actions: write`, `metadata: read`,
   `members: read` (`TeamMember`), and `workflows: write`, which GitHub demands for any commit that touches
-  `.github/workflows/` (the onboarding PR).
+  `.github/workflows/` (the onboarding PR). `issues: write` (the `Issues` role, for the repair issue) is added with
+  the release that brings that issue; until the owner grants it, every `Issues` call is GitHub's `403`.
 
 ## Change Vectors
 
@@ -538,7 +575,8 @@ type TokenSource interface {
   Revoked access, a removed repository and a cross-installation `RepoRef` all end as `ErrNotFound` or an error,
   never as data (T07).
 - User-token calls never use App credentials; App calls never use a user token.
-- Writes are never force-pushes; `api` has no method that deletes a branch, merges, or closes a pull request.
+- Writes are never force-pushes; `api` has no method that deletes a branch, merges, or closes a pull request:
+  `CloseIssue` reads the issue first and refuses a pull request.
 - Wire contracts stay separate: `api` imports no `wire/*` package; its structs are not serialized by anyone.
 - No logging. Errors hold method, route template, status and request ID: no tokens, bodies, paths, or messages.
 - Standard library and `github/auth` only. No GitHub SDK.
@@ -622,6 +660,17 @@ One test per role interface; each asserts method, route, credential, request bod
 - **Test name**: `TestCommentsContract`
   **Scenario**: a thread with user comments, another bot's comments and two of the App's; create; update.
   **Expected behavior**: only the App's two returned; `GET /app` called once across calls.
+- **Test name**: `TestIssuesContract`
+  **Scenario**: an issue list with a user's issue, another bot's, two of the App's (one with a `null` body), the App's
+  own pull request, an impostor login and a ghost user; create with and without an assignee; update; close an issue and
+  a pull request; bodies of 65 536 and 65 537 characters.
+  **Expected behavior**: only the App's two issues, the `null` body as `""`; the list query is `state=open` and
+  `per_page=100` without `creator`; `assignees` sent only when set; `body` patched; `state: closed` patched for the
+  issue, nothing patched and an error for the pull request; the oversized bodies error without a request.
+- **Test name**: `TestIssuesFailuresAreErrors`
+  **Scenario**: `CreateIssue` answered `403` without rate-limit headers (no Issues permission), `403` with an exhausted
+  rate limit, `404`, `422` (an assignee GitHub refuses).
+  **Expected behavior**: a plain error with status `403`; `ErrRateLimited`; `ErrNotFound`; a plain error with status `422`.
 - **Test name**: `TestActionsContract`
   **Scenario**: `Run`; `Rerun`; `Dispatch` with inputs; `LatestRun` with and without runs; `Artifact` through a
   redirect to another host.

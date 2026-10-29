@@ -6,8 +6,8 @@
 
 ## Purpose
 
-`feedback` is the only writer of what a developer sees: the `archfit/gate` and `archfit/state` check runs
-and the single PR comment. It also makes the gate check its own receipt, so that GitHub holds the
+`feedback` is the only writer of what a developer sees: the `archfit/gate` and `archfit/state` check runs,
+the single PR comment, and the default branch's repair issue. It also makes the gate check its own receipt, so that GitHub holds the
 idempotency key and the facts a later sweep compares. Without it, retries would spam comments, an old run
 could paint over a newer head, and the App would need a database to remember what it said. The only thing it
 keeps in the Store is a short-lived lease per head SHA, because GitHub has no conditional check-run write.
@@ -38,6 +38,9 @@ keeps in the Store is a short-lived lease per head SHA, because GitHub has no co
   validation command replay;
   a marker-delimited JSON block of agent tasks that a coding agent on the PR can act on.
 - Name the blocking findings in the `archfit/gate` summary, so the required check says what blocks.
+- Keep one repair issue per default branch (`Repairer`): open it when a push to the default branch does not pass,
+  rewrite it on the next broken push, close it with a comment that names the commit when a push passes. A
+  notification, never a gate: its failures are logged and change nothing that was published.
 - Annotate live findings on the files the pull request changed, at most 50 per request.
 - Keep every write idempotent and never let an older run or head overwrite newer feedback.
 - Serialize every write to one head SHA across all instances with a publication lease in the Store.
@@ -144,6 +147,21 @@ type Decision func(ctx context.Context, current CheckState) (*Publication, error
 func New(checks Checks, comments Comments, pulls Pulls, s Store, appURL string, now func() time.Time) Publisher
 ```
 
+```go
+// Repairer keeps the repair issue of the default branch: one open issue per branch that says what a push broke and
+// closes when a push passes. It is a notification and never a gate.
+type Repairer interface {
+    // Repair opens, updates or closes the repair issue for p, the publication of a push to the default branch, once p
+    // is published. It never fails: GitHub's answer (the Issues permission missing, a rate limit) is logged, and what
+    // was published stays as it is.
+    Repair(ctx context.Context, p Publication)
+}
+
+// NewRepairer returns a Repairer that is safe for concurrent use: Repair holds the head's publication lease in s, as
+// Publish does, so two publications of one head never interleave their issue reads and writes.
+func NewRepairer(checks Checks, comments Comments, issues Issues, repos Repos, s Store, now func() time.Time) Repairer
+```
+
 ### Fixed names and markers
 
 | Item                  | Value                                                                           |
@@ -156,6 +174,8 @@ func New(checks Checks, comments Comments, pulls Pulls, s Store, appURL string, 
 | Comment head marker   | `<!-- archfit:head <sha> run <id>.<attempt> -->`, second line                   |
 | Waiver notice section | `<!-- archfit:waiver <YYYY-MM-DD> -->` … `<!-- /archfit:waiver -->`             |
 | Agent task block      | `<!-- archfit:agent-tasks -->`, a `json` fence, `<!-- /archfit:agent-tasks -->` |
+| Repair issue title    | `Architecture repair needed on <branch>`                                        |
+| Repair issue marker   | `<!-- archfit:repair <branch> -->`, first line; the comment head marker second  |
 
 The check names and the comment marker come from the root contract. The `v1:` layout of `external_id` comes from
 the `Receipt` contract. Every other `archfit:*` marker string, the JSON-in-comment form of the receipt marker, and the
@@ -303,6 +323,47 @@ decides about, and a review that lands after the read is handled by its own even
 then reads the written check. A nil publication writes nothing. A `State` or `decide` error writes no check and
 releases the lease at once; `decide` may have requested a re-run, which writes no check. Without the lease nothing
 is read and `decide` is not called.
+
+### Repair issue
+
+`gate` calls `Repairer.Repair` after `Publish` returned `nil` for a run on a push to the default branch, and for no
+other upload. The issue says that the branch's newest result asks for repair; the checks stay the record.
+
+Inside the head's publication lease, in this order:
+
+1. `Repos.BranchHead(DefaultBranch)`; a head other than `Target.HeadSHA` → nothing (`skipped_old_head`): the branch
+   moved on, and its own run decides.
+2. The latest `archfit/state` run of the head; its receipt holds a newer `(RunID, RunAttempt)` than `p.Receipt` →
+   nothing (`skipped_newer`). The receipt, not the issue, orders the runs: after a pass there is no open issue whose
+   head marker could name the newer run, and an older failure would reopen it.
+3. `Issues.AppIssues`; the issue is the open one with the lowest number whose body starts with the branch's repair
+   marker line **[default]**.
+4. A success with a report the App shows (the same `presentation` that decides what a check may show) is a pass:
+   found → `CreateComment` on the issue ("Archfit passes on `<branch>` again. Closing this issue." and the HEAD and
+   run line of the comment), then `CloseIssue`; the comment goes first, so a failed close leaves the issue open for
+   the next pass. Not found → nothing.
+5. Anything else (`failure`, `action_required`) renders the body. Found and byte-identical → nothing (`unchanged`);
+   found → `UpdateIssueBody`; not found → `CreateIssue` with the title, the body and `Settings.RepairAssignee` of the
+   trusted settings. When GitHub refuses the create with an assignee (`api.ErrUnprocessable`, its 422), the issue is
+   created once more without it and the refusal is logged. No other error is retried: after a timeout or a 5xx the
+   first issue may exist, and a second create would duplicate it.
+
+The body is the comment's layout and budget (65 535 bytes, so under GitHub's 65 536 characters): the repair marker,
+the head marker, "## Archfit: " and the headline, one sentence that the issue is a notification that never blocks a
+merge, the deciding reason in words ("Cause: …") and its **Next**, the HEAD and run line; then the blocking findings
+of the `archfit/gate` summary (at most 20), the decision with every reason and the validation commands in the evidence
+fold, the exact agent task block in the fold for coding agents, and the receipt marker last, which carries
+`IdentityKey`. Sanitizing, folds, cuts and task budgeting are those of the comment; a suspended subscription or a
+report the App does not show withholds findings, commands and tasks. The branch is sanitized in the title, cut to 200
+characters, and in the marker. Rendering holds no clock, so a repeated upload of one run edits nothing.
+
+Every outcome is logged as `feedback repair issue` with the action (`created`, `updated`, `unchanged`, `closed`,
+`skipped_newer`, `skipped_old_head`, `none`), the issue number, `failed`, GitHub's `status` and `rate_limited`, at
+warning level when it failed. `Repair` returns nothing: no GitHub answer, the Issues permission missing (`403`), a
+rate limit or an unreachable Store included, changes the upload's answer or what was published. The work never fails
+the hold, so the lease is released at once even after a failed issue call: no check write is in doubt, and the head's
+next publication does not wait 60 s. The cost **[default, stated limit]**: an issue create that GitHub applies after
+the client gave up can meet a second create from the next holder; that is a second issue, never a wrong check.
 
 ### Layout
 
@@ -525,7 +586,8 @@ func First(trusted []string) string
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high (feedback side); the file format is moderate
 - **Balanced?**: yes
-- **Shared knowledge**: only `Settings.Gate` and the `GateRequired` constant are read.
+- **Shared knowledge**: only `Settings.Gate`, the `GateRequired` constant, `Settings.Effective` (the policy change card)
+  and `Settings.RepairAssignee` (the repair issue) are read.
 
 <!-- contract: Settings, GateMode, DataMode, Path — restated from internal/wire/settings/module.md -->
 ```go
@@ -554,6 +616,10 @@ type Settings struct {
     Gate     GateMode `yaml:"gate"`             // default advisory
     Workflow string   `yaml:"workflow"`         // e.g. ".github/workflows/archfit.yaml"
     DataMode DataMode `yaml:"data_mode"`        // default customer
+    // PolicyAuthority is who may approve a change to the protected files. Absent means human.
+    PolicyAuthority *PolicyAuthority `yaml:"policy_authority,omitempty"`
+    // RepairAssignee is the one login the default branch's repair issue is assigned to; "" assigns nobody.
+    RepairAssignee string `yaml:"repair_assignee,omitempty"`
 }
 ```
 
@@ -861,7 +927,7 @@ func Current() Entry
 ### github/api
 
 - **Counterpart**: internal/github/api
-- **Direction**: feedback depends on github/api (role interfaces `Checks`, `Comments`, `Pulls`)
+- **Direction**: feedback depends on github/api (role interfaces `Checks`, `Comments`, `Pulls`, `Issues`, `Repos`)
 - **Strength**: contract
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high (feedback side); the client is low
@@ -871,7 +937,9 @@ func Current() Entry
   `AppComments` returns only comments authored by the App's bot user. `ErrRateLimited` is the sentinel
   returned after bounded backoff; feedback passes it up unchanged. `ErrNotFound` is the sentinel for a
   missing object. `ChangedFiles` lists the old and the new path of a rename and sets `truncated` when GitHub cut the
-  list off. Used methods: all of `Checks` and `Comments`, `Pulls.Pull` and `Pulls.ChangedFiles`. `Review` is not used here.
+  list off. `AppIssues` returns only open issues the App's bot user opened, never a pull request; `CloseIssue` refuses
+  a pull request; an issue body over 65 536 characters is an error from the client. Used methods: all of `Checks`,
+  `Comments` and `Issues`, `Pulls.Pull`, `Pulls.ChangedFiles` and `Repos.BranchHead`. `Review` is not used here.
 
 <!-- contract: RepoRef, Repo, ErrNotFound, ErrRateLimited — restated from internal/github/api/module.md -->
 ```go
@@ -984,6 +1052,33 @@ type Comments interface {
 }
 ```
 
+<!-- contract: Issues, Issue, NewIssue — restated from internal/github/api/module.md -->
+```go
+type Issue struct {
+    Number int
+    Body   string
+}
+
+type NewIssue struct {
+    Title, Body string
+    Assignee    string // one login; "" assigns nobody
+}
+
+// Issues are repository issues opened by the App. A pull request is never one: GitHub lists pull requests among
+// issues, and they are left out.
+type Issues interface {
+    // AppIssues lists the open issues the App opened.
+    AppIssues(ctx context.Context, r RepoRef) ([]Issue, error)
+    CreateIssue(ctx context.Context, r RepoRef, i NewIssue) (Issue, error)
+    UpdateIssueBody(ctx context.Context, r RepoRef, number int, body string) error
+    // CloseIssue closes the issue number. A number that names a pull request is an error, and nothing is closed.
+    CloseIssue(ctx context.Context, r RepoRef, number int) error
+}
+```
+
+`Repos.BranchHead(ctx, r, branch) (string, error)` returns the head commit SHA of a branch, `ErrNotFound` when the
+branch does not exist; it is the only `Repos` method feedback calls.
+
 ### store
 
 - **Counterpart**: internal/store
@@ -1043,7 +1138,7 @@ type Swap struct {
 
 ### Consumers (inbound)
 
-- **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Builds `Publication` and `Receipt`; passes `Deps.Store` to `New`; calls `Publish`, `Pending`, `State`.
+- **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Builds `Publication` and `Receipt`; passes `Deps.Store` to `New` and `NewRepairer`; calls `Publish`, `Pending`, `State`, and `Repair` after a published default-branch push.
 - **internal/gate/sweep**: contract, gate / 1 / 1, high, balanced. Calls all four `Publisher` methods and compares `Receipt` fields.
 
 ## Change Vectors
@@ -1102,7 +1197,10 @@ type Swap struct {
   content can forge a marker; `State` still reads only the last receipt marker.
 - `Publication.Identity` is a claim copied from the envelope. feedback prints it as claimed and never as
   approved; identity strings are sanitized like every other producer-supplied string.
-- No LLM, no network other than the three role interfaces, the Store and the caller's `Publication.Resolve`. The Store holds only the publication
+- The repair issue is a notification, never a gate: `Repair` returns nothing, writes no check and no PR comment, and
+  is never called by the sweep. Only an issue the App opened, whose body starts with the branch's repair marker, is
+  ever edited or closed.
+- No LLM, no network other than the five role interfaces, the Store and the caller's `Publication.Resolve`. The Store holds only the publication
   leases: `Get` and `CompareAndSwap` on `feedback/lease/<head_sha>`, never a receipt, a report or a body. Imports:
   standard library, `gate/verdict`, `gate/inputs`, `wire/report`, `wire/settings`, `wire/manifest`, `github/api`,
   `store`. Never `control`, `app`, LLM or UI packages.
@@ -1274,6 +1372,19 @@ Golden files hold rendered bodies for the wire fixtures.
 - **Test name**: `TestGoldenFeedback` (T02, T11)
   **Scenario**: render every wire fixture: healthy, warning-only attention, blocked, missing required evidence, unknown identity, incompatible profile, invalid input (nil report), blocker plus unevaluated rule, non-applicable rule, `locations: []`, `matched_by: {}`, both repair kinds, waiver expiry, a metric ratchet finding, two advisories with different balancing moves, and the pilot's PR #11 report (engine v3.0.1, advisory mode: one dependency cycle among three modules, coupling advisories, accepted debt).
   **Expected behavior**: golden bodies match; the verdict leads, and the next action is in the visible part; the evidence-gap section exists in each; `repair_kind` values appear unchanged in the JSON block, whose objects have exactly the eight task keys; validation commands from `AgentTasks[].Validation` are de-duplicated and printed verbatim with `--base`, `--lang`, `--require-tools` when present and never `--refresh`; dimensions appear in the engine's fixed order of nine.
+
+- **Test name**: `TestRepairBodyStaysWithinGitHubsLimit`
+  **Scenario**: the repair body of a push with 10,000 findings, 2,000 tasks, a blocking and a coverage reason.
+  **Expected behavior**: at most 65 535 bytes of valid UTF-8; the repair and head markers first; the receipt marker
+  intact; some but not all whole tasks, the rest counted; the cause, the next step and the trust sentence present.
+- **Test name**: `TestRepairBodyIsSanitized`
+  **Scenario**: an engine report full of forged markers, fences and HTML, and a default branch named with `-->`, `<b>`
+  and backticks.
+  **Expected behavior**: exactly five marker openings and closings (repair, head, two task delimiters, receipt); no
+  `<b>` and no backtick pair survives; the repair marker stays one line; the task goal is preserved as decoded.
+- **Test name**: `TestRepairBodyWithholdsPaidOutputWhenSuspended`
+  **Scenario**: a push whose outcome is `subscription_suspended`.
+  **Expected behavior**: the cause and its recovery; no blocking findings, validation commands or task block.
 
 ### Boundary Tests
 

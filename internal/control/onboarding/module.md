@@ -622,6 +622,8 @@ type Settings struct {
     DataMode DataMode `yaml:"data_mode"`        // default customer
     // PolicyAuthority is who may approve a change to the protected files. Absent means human.
     PolicyAuthority *PolicyAuthority `yaml:"policy_authority,omitempty"`
+    // RepairAssignee is the one login the default branch's repair issue is assigned to; "" assigns nobody.
+    RepairAssignee string `yaml:"repair_assignee,omitempty"`
 }
 ```
 

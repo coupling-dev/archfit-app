@@ -14,7 +14,9 @@ separate, testable steps. Without this module a report is a self-reported file a
 ## Functional Responsibilities
 
 - Serve `POST /v1/reports`: authenticate and bind the upload, resolve trusted inputs, check the engine
-  identity against the locked manifest and the workflow path against settings, decide, publish, answer.
+  identity against the locked manifest and the workflow path against settings, decide, publish, answer. After a
+  published push to the default branch, keep the branch's repair issue (`gate/feedback`'s `Repairer`): a notification
+  that never changes the answer.
 - React to verified webhook events: pending gate check on a new head (required mode), fork refusal,
   `owner_approval_missing` when a review withdraws the approval a `success` or `failure` check relied on,
   workflow re-run on a review after `owner_approval_missing` once no approval is missing, and a one-repository sweep
@@ -558,7 +560,9 @@ func TargetMoved(cycle []string, base, tip string) Outcome
   the PR head is no longer `Target.HeadSHA` (old-head skip; the old head's own checks are still written). Both
   return nil, so the upload still answers 200. `Pending` is idempotent. `State` reads the `archfit/gate` check of a head SHA.
   The feedback constructor is `New(checks Checks, comments Comments, pulls Pulls, now func() time.Time) Publisher`;
-  `Checks` and `Comments` are role interfaces of `github/api` that `*Client` implements.
+  `Checks` and `Comments` are role interfaces of `github/api` that `*Client` implements. `NewRepairer(checks, comments,
+  issues, repos, s, now) Repairer` keeps the default branch's repair issue; `Repair` returns nothing, so no issue
+  failure can reach the upload answer.
 
 <!-- contract: Receipt — restated from internal/gate/feedback/module.md -->
 ```go
@@ -634,6 +638,18 @@ type Publisher interface {
 // Decision decides, from the gate check as it is inside the publication lease, what Reconcile publishes; nil
 // publishes nothing. An error writes nothing and is returned by Reconcile.
 type Decision func(ctx context.Context, current CheckState) (*Publication, error)
+```
+
+<!-- contract: Repairer — restated from internal/gate/feedback/module.md -->
+```go
+// Repairer keeps the repair issue of the default branch: one open issue per branch that says what a push broke and
+// closes when a push passes. It is a notification and never a gate.
+type Repairer interface {
+    // Repair opens, updates or closes the repair issue for p, the publication of a push to the default branch, once p
+    // is published. It never fails: GitHub's answer (the Issues permission missing, a rate limit) is logged, and what
+    // was published stays as it is.
+    Repair(ctx context.Context, p Publication)
+}
 ```
 
 ### gate/sweep (child)
@@ -1156,10 +1172,11 @@ type Swap struct {
 
 `New(d)` builds, once: `ingest.New(d.GitHub, d.GitHub, d.GitHub, d.OIDC, d.Audience, d.Admissions)`,
 `inputs.New(d.GitHub, d.GitHub, d.Store)`, `feedback.New(d.GitHub, d.GitHub, d.GitHub, d.Store, d.Audience, d.Now)` (the audience is the App's base URL, so
-the comment links to the App's pull request page), and
+the comment links to the App's pull request page), `feedback.NewRepairer(d.GitHub, d.GitHub, d.GitHub, d.GitHub, d.Store, d.Now)`, and
 `sweep.New(d.GitHub, d.GitHub, d.GitHub, resolver, publisher, d.Admissions, d.Sweep)`. `verdict` has no constructor.
 `NewReceiver` is `ingest.New` with the same argument pattern. A nil `Deps.Now` means `time.Now` **[default]**.
-`New` delegates to the unexported `compose`, which takes the five `github/api` roles as one interface, and
+`New` delegates to the unexported `compose`, which takes the six `github/api` roles (`Repos`, `Pulls`, `Actions`,
+`Checks`, `Comments`, `Issues`) as one interface, and
 `compose` to `newGate`, which takes the children as interfaces; both exist so that tests can replace GitHub or a child.
 
 | Child      | Contributes                                                                                              | Depends on siblings                                           |
@@ -1167,7 +1184,7 @@ the comment links to the App's pull request page), and
 | `ingest`   | authenticated, bound `Upload` or a `Rejection`                                                           | none                                                          |
 | `inputs`   | `Trusted` for a `Target`; owns the `Entitlement` and `Admission` records, the digest predicate and the protected path set | none                                                        |
 | `verdict`  | `Outcome` from `Facts`; `Without`, `Suspended`                                                           | `ingest` (`Problem`), `inputs` (`Trusted`) — model            |
-| `feedback` | checks, comment, receipt; `State`, `Pending`, `Warn`                                                     | `verdict` (`Outcome`), `inputs` (`Target`, `Trusted`) — model |
+| `feedback` | checks, comment, receipt, repair issue; `State`, `Pending`, `Warn`, `Repair`                             | `verdict` (`Outcome`), `inputs` (`Target`, `Trusted`) — model |
 | `sweep`    | reconciliation of open PRs; owns `Rerun` and `Without`                                                   | `inputs`, `feedback`, `verdict` — contract                    |
 
 ### Report upload flow
@@ -1196,7 +1213,12 @@ the comment links to the App's pull request page), and
    approval step 5 relied on. When the new inputs differ from `trusted` in any field or no longer accept a receipt
    digest, feedback writes nothing and returns `ErrStaleInputs`; the upload answers 503 `unavailable` and
    the Action's retry decides from the new inputs. The correction stays until then.
-8. Answer 200 with conclusion and reason.
+8. For a run on a push to the default branch (`Binding.Event == "push"`, `PullRequest == 0`, `Binding.BaseRef ==
+   Repo.DefaultBranch`) and only after step 7 returned `nil`: `repairer.Repair(ctx, publication)`. It opens, updates or
+   closes the branch's repair issue and returns nothing: an issue failure (no Issues permission, a rate limit) is
+   logged and the answer stays the published decision. A push to another branch or an unbound pull request run
+   (`PullRequest == 0` too) never reaches it.
+9. Answer 200 with conclusion and reason.
 
 | `Receipt` field        | Value                                                                                            |
 | ---------------------- | ------------------------------------------------------------------------------------------------ |
@@ -1216,7 +1238,9 @@ fresh receipt stale. A nil report has the claim `""` for the policy.
 Special targets, all through the same flow:
 
 - Default-branch push (`PullRequest == 0`): the "eligible default-branch run". feedback writes `archfit/state` on
-  the commit only; no gate check, no comment.
+  the commit only; no gate check, no comment. Then the repair issue (step 8): opened or updated when the decision is
+  not a success with a report the App shows and the repository is `gate: required`; closed when it is a success, in any
+  mode.
 - No settings file on the protected ref (not onboarded): `Decide` returns `settings_missing`; feedback writes `archfit/state` only.
 - Settings merged but no policy on the protected ref yet (between onboarding PR 1 and PR 2): `Decide` returns
   `policy_missing`, not `policy_mismatch`. The receipt's `PolicyDigest` is `""`, so once the policy PR merges the sweep
@@ -1357,7 +1381,9 @@ event left undone.
 - Nothing is persisted by the gate but the publication leases, which hold a token and an expiry only and are
   deleted when the writes end, and the pusher and approval records of `gate/inputs`, which hold logins, a head SHA,
   digests and a time. Reports and payloads live in memory for one request and are dropped.
-- Handlers do their work in the request and are idempotent; GitHub holds the dedup keys (`external_id`, comment marker).
+- Handlers do their work in the request and are idempotent; GitHub holds the dedup keys (`external_id`, comment marker,
+  repair issue marker).
+- The repair issue never gates: no `Repair` outcome changes an upload answer or a check, and the sweep never calls it.
 - GitHub rate-limit exhaustion yields 429 `rate_limited` during `Receive`, 503 with `Retry-After` after it, or a
   stopped sweep; the Action retries both statuses; checks stay pending; never green.
 - Logs (`log/slog` default logger **[default]**, because `Deps` carries none): installation ID, repository ID, PR number,
@@ -1414,6 +1440,10 @@ are driven only as far as they go without GitHub. Child internals are tested in 
 - **Test name**: `TestUploadPipeline`
   **Scenario**: hand-written fakes of the children through `newGate`: a clean pull request upload; a non-PR upload with `ProblemUnsupportedEvent` and `ProblemFork` whose binding names a feature branch; an upload whose claimed baseline digest is not trusted.
   **Expected behavior**: `Receive` gets `KindReport` under a deadline of about 50 seconds; `Resolve` gets the target of the binding and the clock; the `Publication` equals the one built from `verdict.Decide` and the receipt table, apart from `Resolve`, which is set and returns the resolver's current inputs for the same target. The non-PR target has `BaseRef` = the default branch and keeps `Fork`; the answer is `fork_unsupported`. An upload for a pull request into another base resolves against the default branch too, gets `ProblemUnsupportedEvent` added, and is never a success: `unsupported_event`. The events of such a pull request (`PullOpened`, `PullSynchronized`, `ReviewChanged`, and the pull found by a branch push) and the sweep skip it (`reactionOtherBase`; the webhook `Event` carries `DefaultBranch`), so the sweep never re-runs a receipt that the inputs read at that base could not match. The claimed digest reaches `Decide` unchanged: `baseline_mismatch`.
+- **Test name**: `TestUploadPipeline`, subtest "only a published default-branch push reaches the repair issue"
+  **Scenario**: bindings of a push to the default branch, a push to another branch, a pull request, an unbound pull
+  request run, a dispatched run on the default branch; and a default-branch push whose `Publish` fails.
+  **Expected behavior**: `Repair` is called once, with the published receipt, for the first row only.
 - **Test name**: `TestHandleEventRules`
   **Scenario**: the `HandleEvent` table over fakes of the children: a new head in required mode; a fork of a repository that is not onboarded; a deleted fork repository (`HeadRepo == ""`); a review against each row of the re-run guard table (receipt without a run, run not found, in progress, newer attempt, completed at the receipt's attempt), with approval still missing, with no approval needed any more, with another receipt reason, with a pending check and with no check; a review on a `success` receipt whose approval is now missing, and the same with the approval still granted, in advisory mode, and on an `action_required` receipt; an error from each child call (`Resolve`, `Pending`, `State`, `Actions.Run`, `Actions.Rerun`, `RunRepo`, the withdrawal `Publish`); `Sweep`.
   **Expected behavior**: the target is built from the verified event; the not-onboarded fork gets nothing; the deleted fork gets the `sweep.Without(ReasonForkUnsupported, …)` publication with a zero run and the first trusted digests; `Actions.Rerun` is called only for the completed run at the receipt's attempt (with an approval granted or no longer needed); a receipt without a run makes no GitHub call; a run that is not found is a nil error without a re-run; the withdrawn approval gets exactly the `sweep.Without(ReasonOwnerApprovalMissing, …)` publication through `Reconcile`, from one check read and one `Resolve`, and no re-run; every other review event writes no feedback; every child error is returned and nothing is published; `Sweep` passes the clock and the summary through.
@@ -1538,6 +1568,35 @@ are driven only as far as they go without GitHub. Child internals are tested in 
 - **Test name**: `TestBasePolicyChangeReachesOpenPullsAtOnce` (T12, T16)
   **Scenario**: three open PRs with `success` receipts; a policy PR merges and the `DefaultBranchPush` event arrives; separately the same merge with the event lost, followed by the hourly `Gate.Sweep`.
   **Expected behavior**: within `HandleEvent` each PR shows `stale_inputs` and one re-run is requested per PR; with the event lost the sweep performs the same repair; in both cases nothing is green until a fresh report arrives, and a later sweep adds nothing.
+- **Test name**: `TestBrokenDefaultBranchOpensOneRepairIssue`
+  **Scenario**: in the world, a push to the default branch uploads the blocked fixture; separately the
+  missing-evidence fixture.
+  **Expected behavior**: `failure` and `action_required` answers and state checks as without the issue; exactly one open
+  issue titled "Architecture repair needed on main", unassigned, whose body starts with the repair and head markers
+  and names the HEAD and the run link; for the blocked fixture the cause, the blocking findings, the agent task block
+  between its markers and the validation command.
+- **Test name**: `TestFurtherBrokenPushUpdatesTheSameIssue`
+  **Scenario**: two broken pushes, with the same and with other findings; then the second upload once more.
+  **Expected behavior**: one issue, the same number, naming only the second push; the repeated upload edits nothing.
+- **Test name**: `TestPassingPushClosesTheRepairIssue`, `TestPassingPushWithoutAnIssueWritesNothing`
+  **Scenario**: a broken push, then a passing one; separately a passing push with no issue.
+  **Expected behavior**: the issue is closed with one comment naming the passing HEAD; without an issue no issue is
+  created, edited or closed and no comment is written.
+- **Test name**: `TestIssueFailureNeverChangesTheUpload`
+  **Scenario**: every `Issues` call fails, as without the Issues permission (`403`) and as rate limited.
+  **Expected behavior**: the answer is `failure`/`blocking_findings`, the state check is published, the log has a
+  failed `feedback repair issue` line, and the head's lease is released.
+- **Test name**: `TestOlderRunNeverRewritesTheIssue`
+  **Scenario**: on one commit, an older run after a newer break and after a newer pass; a re-run of a commit the
+  branch left, after a pass and after a newer break.
+  **Expected behavior**: the issue keeps the newer run's body; no issue is opened over the newer pass; the old commit
+  neither reopens the closed issue nor renames the open one.
+- **Test name**: `TestOnlyDefaultBranchPushesTouchIssues`
+  **Scenario**: a blocked pull request upload; a blocked upload of a push to another branch.
+  **Expected behavior**: no `Issues` call.
+- **Test name**: `TestRepairIssueAssignee`
+  **Scenario**: settings with `repair_assignee: alice`; GitHub assigns her, or refuses her.
+  **Expected behavior**: the issue is assigned to alice; when refused it is opened unassigned and the refusal is logged.
 - **Test name**: `TestSweepThroughFacade` (T13, T16)
   **Scenario**: lost `PullOpened` webhook; no upload for 60 minutes; base policy change; waiver expiry; all via `Gate.Sweep` with the fixed clock.
   **Expected behavior**: the repairs of `gate/sweep`; `Summary` counts match; nothing turned green without a fresh report.

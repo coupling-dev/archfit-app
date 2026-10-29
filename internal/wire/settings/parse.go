@@ -91,6 +91,10 @@ func Parse(raw []byte) (s Settings, err error) {
 	if err != nil {
 		return Settings{}, err
 	}
+	s.RepairAssignee, err = parseAssignee(fields[keyAssignee])
+	if err != nil {
+		return Settings{}, err
+	}
 	return s, nil
 }
 
@@ -152,7 +156,7 @@ func rootFields(root *yaml.Node) (map[string]*yaml.Node, error) {
 			return nil, ruleError(scopeDocument, "unknown key")
 		}
 		switch key.Value {
-		case keyVersion, keyOwners, keyAgents, keyGate, keyWorkflow, keyDataMode, keyAuthority, keyIntegration:
+		case keyVersion, keyOwners, keyAgents, keyGate, keyWorkflow, keyDataMode, keyAuthority, keyIntegration, keyAssignee:
 		default:
 			return nil, ruleError(scopeDocument, "unknown key")
 		}
@@ -330,6 +334,23 @@ func parseIntegration(n *yaml.Node) (*Integration, error) {
 		in.Recheck = RecheckMode(mode)
 	}
 	return &in, nil
+}
+
+// parseAssignee reads repair_assignee: one login by the owner rule. A team is not accepted: GitHub assigns an issue to
+// users only. Absent is "".
+func parseAssignee(n *yaml.Node) (string, error) {
+	if n == nil {
+		return "", nil
+	}
+	const rule = `must be one login, as a string without "@"; teams and lists are not allowed`
+	login, err := parseString(n, keyAssignee, rule)
+	if err != nil {
+		return "", err
+	}
+	if !loginRule.MatchString(login) || len(login) > maxLoginLen {
+		return "", ruleError(keyAssignee, rule)
+	}
+	return login, nil
 }
 
 // parseEnum reads a required string that must be one of values exactly.
