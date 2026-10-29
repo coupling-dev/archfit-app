@@ -94,8 +94,13 @@ func (g *Gate) react(ctx context.Context, e webhook.Event) (string, error) {
 // (the webhook does not map `edited`), so the hourly sweep is the net for it.
 func (g *Gate) sharedHeadOpened(ctx context.Context, e webhook.Event) (string, error) {
 	// A rate limit is an error that wraps api.ErrRateLimited: the queue retries the delivery.
-	if _, err := g.sweeper.RunRepo(ctx, eventTarget(e).Repo, g.now()); err != nil {
+	sum, err := g.sweeper.RunRepo(ctx, eventTarget(e).Repo, g.now())
+	if err != nil {
 		return reactionRepoSweep, fmt.Errorf("gate: repository sweep: %w", err)
+	}
+	// The pass skips a failed unit and counts it; a skipped pull request may be the one to withdraw, so retry.
+	if sum.Errors > 0 {
+		return reactionRepoSweep, fmt.Errorf("gate: repository sweep skipped %d units", sum.Errors)
 	}
 	return reactionRepoSweep, nil
 }

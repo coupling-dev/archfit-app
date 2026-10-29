@@ -161,3 +161,77 @@ func TestSharedHeadClosedPullLeavesTheSuccess(t *testing.T) {
 		t.Errorf("re-runs = %v", w.gh.reruns)
 	}
 }
+
+// The listing of the upload is repeated inside the publication lease. A pull request into another base that opens
+// after the first listing is invisible to the decision, and its event finds the check pending or already withdrawn: the
+// lease is the last place that can keep the upload from writing a success.
+func TestSharedHeadOpenedWhileTheUploadWaitsForTheLease(t *testing.T) {
+	t.Run("a pull request opens before the lease", func(t *testing.T) {
+		w := newWorld(t)
+		b := w.openPull(w.shop, 7)
+		w.handle(w.event(webhook.PullOpened, b))
+		w.store.beforeLease = func() { w.shareHead(b, 8, "loosened") }
+
+		a := w.upload(b, fixtureHealthy)
+
+		if a.status != 503 || a.Error != "unavailable" {
+			t.Fatalf("answer = %d %s, want 503 unavailable", a.status, a.raw)
+		}
+		w.wantGate(b, "in_progress", "")
+		w.noSuccess()
+		w.wantAnswer(w.upload(b, fixtureHealthy), 200, "action_required", "shared_head")
+		w.noSuccess()
+	})
+
+	t.Run("a withdrawal lands before the lease of a stale upload of the same run", func(t *testing.T) {
+		w := newWorld(t)
+		b, s := w.approvedSettingsEdit()
+		writes := w.successWrites()
+		w.store.beforeLease = func() {
+			other := w.shareHead(b, 8, "loosened")
+			w.handle(w.event(webhook.PullOpened, other))
+		}
+
+		a := w.send(s)
+
+		if a.status != 503 {
+			t.Fatalf("answer = %d %s, want 503", a.status, a.raw)
+		}
+		w.wantGate(b, runCompleted, "action_required")
+		if rc := w.receipt(b); rc.Reason != "shared_head" || w.successWrites() != writes {
+			t.Errorf("receipt reason = %q, success writes %d -> %d; want shared_head and no new success", rc.Reason, writes, w.successWrites())
+		}
+	})
+
+	t.Run("the listing inside the lease fails", func(t *testing.T) {
+		w := newWorld(t)
+		b := w.openPull(w.shop, 7)
+		w.handle(w.event(webhook.PullOpened, b))
+		w.store.beforeLease = func() { w.gh.fail["OpenPulls"] = errors.New("github down") }
+
+		a := w.upload(b, fixtureHealthy)
+
+		if a.status != 503 {
+			t.Fatalf("answer = %d %s, want 503", a.status, a.raw)
+		}
+		w.wantGate(b, "in_progress", "")
+		w.noSuccess()
+	})
+}
+
+// RunRepo counts a unit it could not read and returns nil: the event must still fail, so the queue retries it and the
+// success is withdrawn once GitHub answers.
+func TestSharedHeadEventRetriesAFailedSweep(t *testing.T) {
+	w := newWorld(t)
+	b, _ := w.approvedSettingsEdit()
+	other := w.shareHead(b, 8, "loosened")
+	w.gh.fail["OpenPulls"] = errors.New("github down")
+
+	if err := w.gate.HandleEvent(context.Background(), w.event(webhook.PullOpened, other)); err == nil {
+		t.Fatal("HandleEvent = nil, want an error so the delivery is retried")
+	}
+
+	delete(w.gh.fail, "OpenPulls")
+	w.handle(w.event(webhook.PullOpened, other))
+	w.wantGate(b, runCompleted, "action_required")
+}

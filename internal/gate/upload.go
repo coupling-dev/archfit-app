@@ -132,8 +132,24 @@ func (g *Gate) decideAndPublish(ctx context.Context, u Upload) (verdict.Outcome,
 		Trusted:      trusted,
 		PolicyChange: policyChangeFor(u, trusted),
 		// A sweep may correct the check between this decision and its publication. Inside the lease feedback refuses
-		// a decision whose inputs are no longer trusted (503 here); the Action's retry decides from the new inputs.
-		Resolve: func(ctx context.Context) (inputs.Trusted, error) { return g.resolver.Resolve(ctx, target, g.now()) },
+		// a decision whose inputs or shared heads are no longer current (503 here); the Action's retry decides from the new inputs.
+		Resolve: func(ctx context.Context) (inputs.Trusted, error) {
+			tr, err := g.resolver.Resolve(ctx, target, g.now())
+			if err != nil || u.Binding.PullRequest == 0 || u.Binding.BaseRef != u.Binding.Repo.DefaultBranch {
+				return tr, err
+			}
+			// A pull request into another base may have opened since the listing above. Its event found the check
+			// still pending and withdrew nothing, so this is the only place that catches it before a success is written.
+			pulls, err := g.pulls.OpenPulls(ctx, u.Binding.Repo.RepoRef)
+			if err != nil {
+				return inputs.Trusted{}, fmt.Errorf("gate: list open pull requests: %w", err)
+			}
+			now := sweep.SharedWith(pulls, u.Binding.PullRequest, u.Binding.HeadSHA, u.Binding.Repo.DefaultBranch)
+			if !slices.Equal(now, shared) {
+				return inputs.Trusted{}, feedback.ErrStaleInputs
+			}
+			return tr, nil
+		},
 	}
 	if err := g.publisher.Publish(ctx, pub); err != nil {
 		return verdict.Outcome{}, fmt.Errorf("gate: publish: %w", err)
