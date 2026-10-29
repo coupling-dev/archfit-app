@@ -33,7 +33,7 @@ could not read an answer, and the owners' view (Needs you, later) would have not
   one, whose record stays stale and takes the written line as `Published`.
 - Stale rules: `HeadMoved` and `Closed` read the live pull request first (a late or retried delivery names a head or a
   state that no longer holds, and must not stale a newer request), and `Revalidate` (the sweep's rule 8: the head is not the pull request's live head (read again, not the head of the sweep's listing: a request may have been filed after it; a request that looks stale is confirmed with one more read before it is settled, because a walk loads its records one by one), or the policy digest
-  is no longer accepted). All three also write any status comment that is out of date.
+  is no longer accepted). All three also write any status comment that is out of date. **Stated limit**: the policy digest is checked against the trusted inputs the sweep resolved before it walked, not re-resolved per record; a request filed with a newer digest while the sweep runs can be marked `stale (policy changed)` once, and the agent's next post for the same head refiles it. Nothing fails open: a pending request decides no check.
 - Nothing grants anything: the requester is whoever commented; no approval, check or receipt is touched.
 
 Not here: deciding whether a comment may file (the façade), the owner's approve and decline, opening the proposal pull
