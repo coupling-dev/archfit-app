@@ -107,9 +107,18 @@ func filing(finding string) Filing {
 type fakePulls struct {
 	api.Pulls
 	pull api.Pull
+	// after, when set, answers every read but the first: the pull request has moved on since a walk first read it.
+	after *api.Pull
+	reads int
 }
 
-func (f *fakePulls) Pull(context.Context, api.RepoRef, int) (api.Pull, error) { return f.pull, nil }
+func (f *fakePulls) Pull(context.Context, api.RepoRef, int) (api.Pull, error) {
+	f.reads++
+	if f.after != nil && f.reads > 1 {
+		return *f.after, nil
+	}
+	return f.pull, nil
+}
 
 func newRequests() (*Requests, *fakeComments, store.Store) {
 	r, c, _, s := newRequestsWithPulls()
@@ -563,6 +572,42 @@ func TestRevalidateComparesTheLiveHeadNotTheListedOne(t *testing.T) {
 			}
 			if tt.want == decision.StatusStale && statusLine(bodyOf(t, c)) != "stale (head moved)" {
 				t.Errorf("thread says %q", statusLine(bodyOf(t, c)))
+			}
+		})
+	}
+}
+
+// A walk reads the live pull request once and loads the records one by one. A request filed for the new head while the
+// walk is under way looks stale against the first read: it is confirmed against the pull request as it is now.
+func TestAStaleVerdictIsConfirmedAgainstTheLivePullRequest(t *testing.T) {
+	newHead := strings.Repeat("e", 40)
+	accepting := inputs.Trusted{PolicyDigests: []string{hex64}}
+	for _, tt := range []struct {
+		name string
+		act  func(*Requests, context.Context) error
+	}{
+		{"head moved", func(r *Requests, ctx context.Context) error { return r.HeadMoved(ctx, target(7), t0) }},
+		{"sweep", func(r *Requests, ctx context.Context) error { return r.Revalidate(ctx, target(7), accepting, t0) }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			r, _, p, _ := newRequestsWithPulls()
+			ctx := context.Background()
+			if _, err := r.File(ctx, target(7), filing(hex32), t0); err != nil {
+				t.Fatal(err)
+			}
+			other := strings.Repeat("c", 32)
+			f := filing(other)
+			f.Request.HeadSHA = newHead
+			if _, err := r.File(ctx, target(7), f, t0); err != nil {
+				t.Fatal(err)
+			}
+			// The walk's first read still sees the first head; the pull request is at the new head by the next read.
+			p.after = &api.Pull{State: "open", HeadSHA: newHead}
+			if err := tt.act(r, ctx); err != nil {
+				t.Fatal(err)
+			}
+			if rec, _ := r.Get(ctx, target(7), other, hex64); rec.Status != decision.StatusPending {
+				t.Errorf("the request for the live head is %s, want pending", rec.Status)
 			}
 		})
 	}

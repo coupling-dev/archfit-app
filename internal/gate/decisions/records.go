@@ -325,10 +325,7 @@ func (r *Requests) SettleAt(ctx context.Context, t inputs.Target, findingID, dig
 // already names the live head. t.HeadSHA is not used.
 func (r *Requests) HeadMoved(ctx context.Context, t inputs.Target, now time.Time) error {
 	return r.walkLive(ctx, t, func(rec Record, live api.Pull) (bool, error) {
-		if live.State != "open" || rec.HeadSHA == live.HeadSHA {
-			return false, nil
-		}
-		return true, r.SettleAt(ctx, t, rec.FindingID, rec.PolicyDigest, rec.HeadSHA, decision.StatusStale, decision.ReasonHeadMoved, 0, now)
+		return r.settleIfStill(ctx, t, rec, live, headMoved, decision.ReasonHeadMoved, now)
 	})
 }
 
@@ -336,26 +333,52 @@ func (r *Requests) HeadMoved(ctx context.Context, t inputs.Target, now time.Time
 // now: a delayed close delivery after a reopen must not stale a new request.
 func (r *Requests) Closed(ctx context.Context, t inputs.Target, now time.Time) error {
 	return r.walkLive(ctx, t, func(rec Record, live api.Pull) (bool, error) {
-		if live.State == "open" {
-			return false, nil
-		}
-		return true, r.SettleAt(ctx, t, rec.FindingID, rec.PolicyDigest, rec.HeadSHA, decision.StatusStale, decision.ReasonPullClosed, 0, now)
+		return r.settleIfStill(ctx, t, rec, live, notOpen, decision.ReasonPullClosed, now)
 	})
 }
 
+// headMoved and notOpen are the two ways a live pull request makes a request stale.
+func headMoved(rec Record, live api.Pull) bool {
+	return live.State == "open" && rec.HeadSHA != live.HeadSHA
+}
+func notOpen(_ Record, live api.Pull) bool { return live.State != "open" }
+
+// settleIfStill settles rec as stale for reason when stale(rec, live) holds, and holds again on a pull request read
+// once more just before. A walk reads the pull request once and loads the records one by one; a request filed meanwhile
+// names a head the first read cannot know, so a record that looks stale is confirmed against GitHub as it is now.
+func (r *Requests) settleIfStill(ctx context.Context, t inputs.Target, rec Record, live api.Pull, stale func(Record, api.Pull) bool, reason string, now time.Time) (bool, error) {
+	if !stale(rec, live) {
+		return false, nil
+	}
+	again, err := r.livePull(ctx, t)
+	if err != nil || !stale(rec, again) {
+		return false, err
+	}
+	return true, r.SettleAt(ctx, t, rec.FindingID, rec.PolicyDigest, rec.HeadSHA, decision.StatusStale, reason, 0, now)
+}
+
+// livePull is the pull request as GitHub has it now. A pull request GitHub no longer knows is closed.
+func (r *Requests) livePull(ctx context.Context, t inputs.Target) (api.Pull, error) {
+	pl, err := r.pulls.Pull(ctx, t.Repo.RepoRef, t.PullRequest)
+	if errors.Is(err, api.ErrNotFound) {
+		return api.Pull{State: "closed"}, nil
+	}
+	if err != nil {
+		return api.Pull{}, fmt.Errorf("decisions: pull request: %w", err)
+	}
+	return pl, nil
+}
+
 // walkLive is walk with the pull request as GitHub has it now, read once and only when there is something to walk.
-// A pull request GitHub no longer knows is closed.
+// A rule that settles on what it saw confirms it with settleIfStill.
 func (r *Requests) walkLive(ctx context.Context, t inputs.Target, rule func(Record, api.Pull) (bool, error)) error {
 	var live api.Pull
 	read := false
 	return r.walk(ctx, t, func(rec Record) (bool, error) {
 		if !read {
-			pl, err := r.pulls.Pull(ctx, t.Repo.RepoRef, t.PullRequest)
-			if errors.Is(err, api.ErrNotFound) {
-				pl, err = api.Pull{State: "closed"}, nil
-			}
+			pl, err := r.livePull(ctx, t)
 			if err != nil {
-				return false, fmt.Errorf("decisions: pull request: %w", err)
+				return false, err
 			}
 			live, read = pl, true
 		}

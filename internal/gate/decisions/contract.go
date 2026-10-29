@@ -101,8 +101,8 @@ func New(s store.Store, c api.Comments, p api.Pulls, now func() time.Time) *Requ
 func (r *Requests) Revalidate(ctx context.Context, t inputs.Target, tr inputs.Trusted, now time.Time) error {
 	return r.walkLive(ctx, t, func(rec Record, live api.Pull) (bool, error) {
 		switch {
-		case live.State == "open" && rec.HeadSHA != live.HeadSHA: // a missed or racing synchronize
-			return true, r.SettleAt(ctx, t, rec.FindingID, rec.PolicyDigest, rec.HeadSHA, decision.StatusStale, decision.ReasonHeadMoved, 0, now)
+		case headMoved(rec, live): // a missed or racing synchronize
+			return r.settleIfStill(ctx, t, rec, live, headMoved, decision.ReasonHeadMoved, now)
 		case !inputs.Accepts(tr.PolicyDigests, rec.PolicyDigest):
 			return true, r.SettleAt(ctx, t, rec.FindingID, rec.PolicyDigest, rec.HeadSHA, decision.StatusStale, decision.ReasonPolicyChanged, 0, now)
 		}

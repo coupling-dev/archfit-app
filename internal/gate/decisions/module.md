@@ -32,7 +32,7 @@ could not read an answer, and the owners' view (Needs you, later) would have not
   `Answer` reports whether it wrote. It never overwrites a pending, approved or declined request; it may answer a stale
   one, whose record stays stale and takes the written line as `Published`.
 - Stale rules: `HeadMoved` and `Closed` read the live pull request first (a late or retried delivery names a head or a
-  state that no longer holds, and must not stale a newer request), and `Revalidate` (the sweep's rule 8: the head is not the pull request's live head (read again, not the head of the sweep's listing: a request may have been filed after it), or the policy digest
+  state that no longer holds, and must not stale a newer request), and `Revalidate` (the sweep's rule 8: the head is not the pull request's live head (read again, not the head of the sweep's listing: a request may have been filed after it; a request that looks stale is confirmed with one more read before it is settled, because a walk loads its records one by one), or the policy digest
   is no longer accepted). All three also write any status comment that is out of date.
 - Nothing grants anything: the requester is whoever commented; no approval, check or receipt is touched.
 
