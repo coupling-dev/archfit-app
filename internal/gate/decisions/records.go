@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -174,6 +175,61 @@ func (r *Requests) Policy(ctx context.Context, t inputs.Target, findingID, diges
 		return "", ErrNoRecord
 	}
 	return string(raw), nil
+}
+
+// List returns the records of t's pull request: the ones in the pending list (pending, or settled and not yet in the
+// thread), and every other one the App
+// wrote a status comment for, found by its marker. Oldest first. A settled request whose status comment was never
+// written (the thread was full) or was deleted is not listed.
+func (r *Requests) List(ctx context.Context, t inputs.Target) ([]Record, error) {
+	raw, err := r.load(ctx, t, pendingKey(t))
+	if err != nil {
+		return nil, err
+	}
+	list, err := parsePending(raw)
+	if err != nil {
+		return nil, err
+	}
+	var ids []entry
+	for _, e := range list.Entries {
+		if e.PullRequest == t.PullRequest {
+			ids = append(ids, e)
+		}
+	}
+	comments, err := r.comments.AppComments(ctx, t.Repo.RepoRef, t.PullRequest)
+	if err != nil {
+		return nil, fmt.Errorf("decisions: list comments: %w", err)
+	}
+	for _, c := range comments {
+		if e, ok := markedEntry(t, c.Body); ok && !slices.ContainsFunc(ids, e.same) {
+			ids = append(ids, e)
+		}
+	}
+	var out []Record
+	for _, e := range ids {
+		rec, err := r.Get(ctx, t, e.FindingID, e.PolicyDigest)
+		if errors.Is(err, ErrNoRecord) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
+	}
+	slices.SortStableFunc(out, func(a, b Record) int { return a.CreatedAt.Compare(b.CreatedAt) })
+	return out, nil
+}
+
+// markedEntry reads the request a status comment answers from its first line; a request with an unknown ID has none.
+func markedEntry(t inputs.Target, body string) (entry, bool) {
+	line, _, _ := strings.Cut(body, "\n")
+	rest, ok := strings.CutPrefix(line, decision.StatusMarkerPrefix)
+	rest, ok2 := strings.CutSuffix(rest, " -->")
+	ids := strings.Fields(rest)
+	if !ok || !ok2 || len(ids) != 2 || ids[0] == decision.Unknown || ids[1] == decision.Unknown {
+		return entry{}, false
+	}
+	return entry{t.PullRequest, ids[0], ids[1], false}, true
 }
 
 // File stores a request that the caller has checked against GitHub and the protected ref. The same request on the

@@ -62,6 +62,11 @@ const (
 	ReasonPullClosed    = "pull request closed"
 )
 
+// ReasonOwnerDeclined is the reason of a request an owner declined.
+const (
+	ReasonOwnerDeclined = "by an owner"
+)
+
 // Unknown stands in the status marker for an ID the request did not state in a valid form.
 const Unknown = "-"
 

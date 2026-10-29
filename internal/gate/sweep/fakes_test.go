@@ -152,6 +152,10 @@ func (f *fakeResolver) CanApprove(context.Context, inputs.Target, string) error 
 	panic("the sweep never asks who may approve")
 }
 
+func (f *fakeResolver) CanDecide(context.Context, inputs.Target, string) error {
+	panic("the sweep never asks who may decide")
+}
+
 func (f *fakeResolver) Approve(context.Context, inputs.Target, string, map[string]string, time.Time) error {
 	panic("the sweep never approves")
 }

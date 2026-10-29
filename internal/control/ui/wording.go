@@ -81,6 +81,16 @@ var sentinels = []struct {
 		"An agent identity cannot approve. Sign in as a person who is an architecture owner."},
 	{gate.ErrNotOwner, http.StatusForbidden, "not_owner",
 		"Only an architecture owner named in .archfit-app.yaml on the base branch can approve."},
+	{gate.ErrDecisionRequester, http.StatusForbidden, "decision_requester",
+		"The login that filed a request cannot decide it. Another architecture owner decides."},
+	{gate.ErrDecisionSettled, http.StatusConflict, "decision_settled",
+		"This request was already decided or is out of date. Nothing was changed. Reload the page."},
+	{gate.ErrDecisionStale, http.StatusConflict, "decision_stale",
+		"The pull request or the policy changed since the agent filed this request, so it is out of date and no proposal was opened. " +
+			"The agent files a new request."},
+	{gate.ErrDecisionNotFound, http.StatusNotFound, "not_found", "Not found."},
+	{gate.ErrStatusComment, http.StatusBadGateway, "decision_comment",
+		"The decision was recorded, but its status comment on the pull request could not be updated. Reload the page."},
 	{gate.ErrDigestsChanged, http.StatusConflict, "digests_changed",
 		"The protected files changed since this page was loaded. Nothing was approved. Reload the page and review them again."},
 }
@@ -183,12 +193,14 @@ func banner(st account.Status) string {
 }
 
 var notices = map[string]string{
-	"saved":      "Saved as a commit on the draft pull request.",
-	"unchanged":  "Nothing to save: the text is already on the branch.",
-	"ready":      "The draft pull request is marked ready for review.",
-	"proposed":   "The proposal is a new commit on the draft pull request. Review the diff on GitHub.",
-	"requested":  "The assist workflow is running in your CI. Its proposal arrives as a new commit on the draft pull request.",
-	"onboarding": "The onboarding pull request is open. Next: add the workflow file to it.",
-	"discover":   "Discovery was dispatched. The policy proposal arrives as a pull request.",
-	"approved":   "Approved for this commit. The Archfit check follows when the workflow reports on it; a new commit needs a new approval.",
+	"saved":             "Saved as a commit on the draft pull request.",
+	"unchanged":         "Nothing to save: the text is already on the branch.",
+	"ready":             "The draft pull request is marked ready for review.",
+	"proposed":          "The proposal is a new commit on the draft pull request. Review the diff on GitHub.",
+	"requested":         "The assist workflow is running in your CI. Its proposal arrives as a new commit on the draft pull request.",
+	"onboarding":        "The onboarding pull request is open. Next: add the workflow file to it.",
+	"discover":          "Discovery was dispatched. The policy proposal arrives as a pull request.",
+	"declined":          "Declined. The agent sees the answer in the pull request thread, and it stays until the policy changes.",
+	"decision_approved": "Approved. A draft pull request with the proposed policy is open; an architecture owner approves it like any policy change.",
+	"approved":          "Approved for this commit. The Archfit check follows when the workflow reports on it; a new commit needs a new approval.",
 }

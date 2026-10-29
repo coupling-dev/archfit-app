@@ -18,6 +18,8 @@ type pullJSON struct {
 	pullHead
 	findingsJSON
 	Approval *approvalJSON `json:"approval,omitempty"` // only when the pull request changes a protected file
+	// Decisions are the decision requests of unattended agents on the pull request; absent when there are none.
+	Decisions []decisionRequestJSON `json:"decisions,omitempty"`
 }
 
 // pullHead is the header the pull request page and its graph share: which pull request, and what its check says.
@@ -220,6 +222,9 @@ func (s *server) apiPull(r *http.Request, sc scope) (any, error) {
 		fillFindings(&body.findingsJSON, *rep)
 	}
 	if body.Approval, err = s.approval(r.Context(), sc, pull.Pull); err != nil {
+		return nil, err
+	}
+	if body.Decisions, err = s.decisionRequests(r.Context(), sc, pull.Pull); err != nil {
 		return nil, err
 	}
 	return body, nil

@@ -671,6 +671,10 @@ func (r *fakeResolver) CanApprove(context.Context, inputs.Target, string) error 
 	panic("fakeResolver: CanApprove")
 }
 
+func (r *fakeResolver) CanDecide(context.Context, inputs.Target, string) error {
+	panic("fakeResolver: CanDecide")
+}
+
 func (r *fakeResolver) Approve(context.Context, inputs.Target, string, map[string]string, time.Time) error {
 	panic("fakeResolver: Approve")
 }

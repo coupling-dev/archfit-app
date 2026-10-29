@@ -284,6 +284,28 @@ func TestIdentify(t *testing.T) {
 	}
 }
 
+func TestValidIDs(t *testing.T) {
+	tests := []struct {
+		name, finding, digest string
+		want                  bool
+	}{
+		{"both valid", hex32, hex64, true},
+		{"short finding", hex32[1:], hex64, false},
+		{"long digest", hex32, hex64 + "0", false},
+		{"upper case", strings.ToUpper(hex32), hex64, false},
+		{"path", "../" + hex32[3:], hex64, false},
+		{"unknown stand-in", decision.Unknown, hex64, false},
+		{"empty", "", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := decision.ValidIDs(tt.finding, tt.digest); got != tt.want {
+				t.Errorf("ValidIDs = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func FuzzDecode(f *testing.F) {
 	f.Add(render(f, validDoc()))
 	f.Add([]byte(`{"finding_id":null,"finding_id":[{}]}`))

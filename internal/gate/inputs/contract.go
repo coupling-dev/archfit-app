@@ -73,6 +73,9 @@ type Resolver interface {
 	// CanApprove reports whether login may approve t's head in the App now: nil, or ErrNothingToApprove, ErrForkPull,
 	// ErrAgentIdentity or ErrNotOwner, in that order. Owners and agents come from the settings of the protected ref.
 	CanApprove(ctx context.Context, t Target, login string) error
+	// CanDecide reports whether login may decide for the owners now, by the owner rule of CanApprove and for no pull
+	// request in particular: nil, ErrAgentIdentity or ErrNotOwner. Owners and agents come from the protected ref t.BaseRef.
+	CanDecide(ctx context.Context, t Target, login string) error
 	// Approve records login's approval of t's head, bound to its SHA, when CanApprove allows it and seen equals the
 	// Candidate digests (else ErrDigestsChanged). A record for that head already, by any owner, is success and stays
 	// as it is.
