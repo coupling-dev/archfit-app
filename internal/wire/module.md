@@ -33,7 +33,7 @@ core modules, which is why everything here is contract-strength and strictly ver
 - The fixture corpus: its layout, the named cases, and the producer artifact each one was captured from.
 - Current engine schemas are pinned to v3.4.0 at `2692cd6b8aab23e559d0aa76712a192d69b4229f` (state sha256 `1d37f7d8…`, config sha256 `edffa7db…`).
   The state schema adds to v3.0.0/v3.0.1 the keys v3.3.0 and v3.4.0 emit and requires `identity`; the config schema adds `target_branch` and `module_review.change_gate`.
-  New workflows pin Action v3.0.0 at commit `fb2520cb069571d6bdc9274ac97d4df49994b6c7`, the only Action in the manifest. The App still owns the unchanged envelope schema.
+  New workflows pin Action v3.1.0 at commit `7ade3b8fc989ec416ea5d570e7e236f47f7845fc`, the only Action in the manifest. The App still owns the unchanged envelope schema.
 - Each child's internals (decoder technique, caps, file formats) stay in that child.
 
 ## Public Contract

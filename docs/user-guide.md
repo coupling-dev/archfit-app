@@ -514,7 +514,8 @@ no approval is needed any more.
 ### Engine versions
 
 The locked manifest approves engine v3.4.0 on Linux amd64 and arm64. New workflows pin archfit-action at commit
-`fb2520cb069571d6bdc9274ac97d4df49994b6c7` (Action v3.0.0, which runs engine v3.4.0 only). It measures a pull request as
+`7ade3b8fc989ec416ea5d570e7e236f47f7845fc` (Action v3.1.0, which runs engine v3.4.0 only and picks the image digest for the runner's platform). A workflow
+still pinned to Action v3.0.0 (`fb2520cb069571d6bdc9274ac97d4df49994b6c7`) keeps working: it sends the same identity. It measures a pull request as
 it would land (the merge with the target) and states `analyzed_sha`, `integration` and, for a policy change, its
 classification in the upload. Only the v3.4.0 amd64 row is Current for new workflows and recovery pins.
 
@@ -533,15 +534,13 @@ classification in the upload. Only the v3.4.0 amd64 row is Current for new workf
 After the App release approves the new tuple, open an owner-reviewed pull request changing only these pins:
 
 ```yaml
-- uses: alexei-led/archfit-action@fb2520cb069571d6bdc9274ac97d4df49994b6c7
+- uses: alexei-led/archfit-action@7ade3b8fc989ec416ea5d570e7e236f47f7845fc # v3.1.0
   with:
-    # endpoint, audience and mode stay as they are
-    engine-version: "v3.4.0"
-    image-digest: "sha256:bdcfe29bf9def9a4f0ae544923bc3e755fdec2c2cd6c46ec353c01e60642896b"
+    # endpoint, audience and mode stay as they are; remove engine-version and image-digest
 ```
 
-This example is for an amd64 Linux runner. Use the manifest's arm64 digest on an arm64 runner.
-This Action commit accepts v3.4.0 only. Pass that engine version and its exact platform digest explicitly. Keep the repository's settings, policy owners, and gate mode unchanged.
+Action v3.1.0 runs engine v3.4.0 and picks the image digest for the runner's platform, so the workflow passes neither
+input. If you keep them, they must name v3.4.0 and the exact digest for the runner's platform from the manifest. Keep the repository's settings, policy owners, and gate mode unchanged.
 The App does not update installed workflow files automatically.
 
 Run a fresh scan after moving the pins. Missing compiler or required-rule evidence cannot be repaired by a baseline approval.
