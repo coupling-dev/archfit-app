@@ -2,7 +2,7 @@
 
 **Path**: internal/wire/
 **Parent**: internal/ (Archfit App)
-**Submodules**: envelope, report, settings, policy, manifest
+**Submodules**: envelope, decision, report, settings, policy, manifest
 
 ## Purpose
 
@@ -13,9 +13,10 @@ and the control plane, a version bump would touch domain logic, and nobody could
 
 ## Functional Responsibilities
 
-- Publish five child packages, each owning one contract: the upload envelope, the no-source state report, the App
-  settings file, the App's view of the engine policy files, and the approved identity manifest.
-- State the versioning rule all five follow.
+- Publish six child packages, each owning one contract: the upload envelope, the decision request an unattended agent
+  files, the no-source state report, the App settings file, the App's view of the engine policy files, and the approved
+  identity manifest.
+- State the versioning rule all six follow.
 - Hold the shared conformance fixtures in `wire/testdata/` (a transparent folder, not a module) used by the
   children's tests and by consumer tests such as the gate verdict table.
 - The parent package itself has no code except `doc.go`.
@@ -46,6 +47,7 @@ child is normative in the child's own `module.md`; it is not restated here.
 | Package                  | Owns                                                                                                 |
 | ------------------------ | ---------------------------------------------------------------------------------------------------- |
 | `internal/wire/envelope` | report-envelope v1: `Envelope`, `Kind`, `Decode`, `PayloadDigest`, `Schema`                          |
+| `internal/wire/decision` | decision-request v1: `Request`, `Extract`, `Decode`, `Identify`, `Schema`, `StatusMarker`, `StatusLine`  |
 | `internal/wire/report`   | engine state v1 as no-source transport: `Report` and its parts, `Decode`, `EngineVersions`, size cap |
 | `internal/wire/settings` | `.archfit-app.yaml`: `Settings`, modes, `Parse`, `Render`, file location                             |
 | `internal/wire/policy`   | engine file locations, bare-hex `Digest`, `Waivers`, `Modules`, `ReadBaseline` readers, config `Schema` |
@@ -53,7 +55,7 @@ child is normative in the child's own `module.md`; it is not restated here.
 
 ### Versioning rule
 
-- Every contract carries a version identifier: envelope `archfit.report-envelope.v1`; report
+- Every contract carries a version identifier: envelope `archfit.report-envelope.v1`; decision request `archfit.decision-request.v1`; report
   `archfit.architecture-state.v1`; settings file `version: 1`; manifest data `version: 1`; policy follows the
   engine release of the manifest's `current` row, v3.4.0 today; the engine baseline file `archfit.baseline.v3`.
 - Unknown fields are rejected by every decoder here. Three deliberate nuances: the policy readers ignore
@@ -271,7 +273,7 @@ what keeps it balanced.
 
 ## Internal Design
 
-Five independent leaves. There is no flow between them and no composition in the parent.
+Six independent leaves. There is no flow between them and no composition in the parent.
 
 | Child      | Contributes                                                  | Third-party imports |
 | ---------- | ------------------------------------------------------------ | ------------------- |
@@ -291,7 +293,7 @@ Rules between children:
   `envelope` and `report`; SHA-256 hex formatting exists in `envelope` (prefixed) and `policy` (bare). Each is a few
   lines, and the two digests have different formats and meanings.
 - `doc.go` in the parent states the placement rule and the versioning rule for Go readers.
-- Fan-out is five, within the 4±1 guidance.
+- Fan-out is six, one over the 4±1 guidance: the leaves share nothing, so the count adds no coupling.
 
 ## Change Vectors
 
@@ -352,7 +354,7 @@ Parent tests live in package `wire_test` and exercise the children together and 
   are `introduced`, `no_direct_b_dependency` and the other are `pre_existing`; each task carries its finding's origin.
 - **Test name**: `TestPublishedPackagesExist`
   **Scenario**: `go list ./internal/wire/...`.
-  **Expected behavior**: exactly the parent and the five published packages; the parent exports no identifiers.
+  **Expected behavior**: exactly the parent and the six published packages; the parent exports no identifiers.
 - **Test name**: `TestUnknownVersionRejectedEverywhere`
   **Scenario**: an envelope with `archfit.report-envelope.v2`, a report with `archfit.architecture-state.v2` as a document of each readable release,
   the real capture as a document of engine `v2.6.0`, a settings file with `version: 2`.

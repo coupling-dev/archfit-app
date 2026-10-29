@@ -49,12 +49,18 @@ type Admitter interface {
 	Admitted(ctx context.Context, installationID int64, owner string) (bool, error)
 }
 
-func New(repos api.Repos, pulls api.Pulls, actions api.Actions, r inputs.Resolver, p feedback.Publisher, admit Admitter, c Config) Sweeper {
+// Decisions is the one rule of the sweep that touches decision requests (rule 8). decisions.Requests implements it.
+type Decisions interface {
+	// Revalidate marks the pending requests of t's pull request stale when their policy digest is no longer accepted.
+	Revalidate(ctx context.Context, t inputs.Target, tr inputs.Trusted, now time.Time) error
+}
+
+func New(repos api.Repos, pulls api.Pulls, actions api.Actions, r inputs.Resolver, p feedback.Publisher, admit Admitter, d Decisions, c Config) Sweeper {
 	if c.MissingUploadAfter == 0 {
 		c.MissingUploadAfter = defaultMissingUploadAfter
 	}
 	if c.WaiverWarnBefore == 0 {
 		c.WaiverWarnBefore = defaultWaiverWarnBefore
 	}
-	return &sweeper{repos: repos, pulls: pulls, actions: actions, resolver: r, publisher: p, admit: admit, cfg: c, graphs: &edgeCache{}}
+	return &sweeper{repos: repos, pulls: pulls, actions: actions, resolver: r, publisher: p, admit: admit, decisions: d, cfg: c, graphs: &edgeCache{}}
 }

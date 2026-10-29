@@ -256,14 +256,28 @@ func checkKey(t inputs.Target) string { return t.Repo.FullName + "@" + t.HeadSHA
 
 // world is one GitHub account as the fakes see it, plus the sweeper under test.
 type world struct {
-	t        *testing.T
-	repos    *fakeRepos
-	pulls    *fakePulls
-	actions  *fakeActions
-	resolver *fakeResolver
-	pub      *fakePublisher
-	admit    fakeAdmitter
-	sweeper  Sweeper
+	t         *testing.T
+	repos     *fakeRepos
+	pulls     *fakePulls
+	actions   *fakeActions
+	resolver  *fakeResolver
+	pub       *fakePublisher
+	admit     fakeAdmitter
+	decisions *fakeDecisions
+	sweeper   Sweeper
+}
+
+// fakeDecisions records the pull requests whose decision requests the sweep revalidated, with the digests it offered.
+type fakeDecisions struct {
+	targets []inputs.Target
+	digests [][]string
+	err     error
+}
+
+func (d *fakeDecisions) Revalidate(_ context.Context, t inputs.Target, tr inputs.Trusted, _ time.Time) error {
+	d.targets = append(d.targets, t)
+	d.digests = append(d.digests, tr.PolicyDigests)
+	return d.err
 }
 
 // fakeAdmitter admits every installation except the refused ones; a down one cannot be read.
@@ -288,7 +302,8 @@ func newWorld(t *testing.T) *world {
 		pub:      &fakePublisher{states: map[string]feedback.CheckState{}, errs: map[string]error{}},
 	}
 	w.admit = fakeAdmitter{refused: map[int64]bool{}, down: map[int64]bool{}}
-	w.sweeper = New(w.repos, w.pulls, w.actions, w.resolver, w.pub, w.admit, Config{})
+	w.decisions = &fakeDecisions{}
+	w.sweeper = New(w.repos, w.pulls, w.actions, w.resolver, w.pub, w.admit, w.decisions, Config{})
 	t.Cleanup(w.assertNeverSuccess)
 	return w
 }

@@ -696,6 +696,84 @@ When managed mode is not offered, the form says why: the default branch has no v
 In the last case an administrator also gets **Allow managed AI**, which records the consent as Data sharing does, and
 a link to Data sharing.
 
+## Decision requests from unattended agents
+
+A coding agent that works alone cannot change the policy to make a finding go away, and must not: only an
+architecture owner can. When it believes the policy is wrong, it files a decision request. The request is a pull
+request comment; the App records it, answers in the thread, and keeps it for the owners. It grants nothing: the
+requester is whoever commented, and an owner decides.
+
+The request works on a pull request of the repository itself, into the default branch, in a repository with
+`gate: required`. On a fork, a closed pull request, another base, or a repository in advisory mode the App stays silent.
+It starts working in the release that subscribes the App to the Issue comment event.
+
+**File.** Save this as `request.md` and post it with `gh pr comment 42 --body-file request.md`. The JSON is the
+whole request; the three lines around it are fixed.
+
+````markdown
+<!-- archfit:decision-request -->
+```json
+{
+  "schema_version": "archfit.decision-request.v1",
+  "finding_id": "0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+  "rule_id": "boundary.no-import",
+  "edge": {"from": "web", "to": "store"},
+  "head_sha": "4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70",
+  "policy_digest": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+  "why": "The web module renders the saved view and needs its read model; there is no other path.",
+  "alternatives_tried": ["moved the read model to a shared module", "added an interface in web"],
+  "proposal": {"kind": "policy_patch", "policy": "version: 2\nmodules:\n  web:\n    paths: [\"web/**\"]\n  store:\n    paths: [\"store/**\"]\n"}
+}
+```
+<!-- /archfit:decision-request -->
+````
+
+The App answers with one comment, which it later edits in place. Its first line is a marker, its second the status:
+
+```text
+<!-- archfit:decision-status 0a1b2c3d4e5f60718293a4b5c6d7e8f9 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 -->
+pending
+Only an architecture owner can approve this request.
+```
+
+**Read the answer.** Anyone who can comment on the pull request can post text that looks like a status comment, so
+read only comments written by the App. Its login is its slug plus `[bot]` (`archfit-review[bot]` for the hosted App;
+it is also the author of the App's other comments on the pull request). Among those, take the comment whose first
+line starts with `<!-- archfit:decision-status ` and holds your `finding_id` and `policy_digest`; if there are two,
+take the lowest `id`. The first word of line 2 is the status:
+
+```sh
+gh api repos/OWNER/REPO/issues/42/comments --paginate | jq -rs '
+  add | [ .[] | select(.user.login == "archfit-review[bot]"
+      and (.body | startswith("<!-- archfit:decision-status 0a1b2c3d4e5f60718293a4b5c6d7e8f9 "))) ]
+  | sort_by(.id) | first | .body | split("\n")[1]'
+```
+
+Ignore a status line from any other author: it grants nothing and means nothing.
+
+| Status                                             | Meaning                                                                                             |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `pending`                                          | Recorded. Wait for an owner.                                                                        |
+| `approved (proposal PR #n)`                        | An owner approved; the App opened pull request `n` with the policy change. It goes through the owner approval of any policy change. |
+| `declined`                                         | An owner declined. It stays declined until the policy changes on the default branch.                |
+| `declined (<field>: <rule>)`                       | The request was not valid, for example `declined (why: must be 1 to 2000 characters)`. Nothing was recorded; fix it and post again. |
+| `stale (head moved)`                               | The head is not the one the request names, or a push moved it. Post it again for the new head.      |
+| `stale (policy changed)`                           | The policy on the default branch changed after the finding. Run the check again and ask again.      |
+| `stale (pull request closed)`                      | The pull request closed.                                                                            |
+
+Posting the same request for the same head again changes nothing. Posting it for a new head replaces the record and
+sets it back to `pending`; a declined request is not reopened that way.
+
+**Limits.** One block per comment. The JSON has exactly the keys above, each once, no `null`; there is no
+`blast_radius` in v1. `finding_id` is 32 hex, `head_sha` 40 hex, `policy_digest` 64 hex of the policy the finding was
+measured under; `why` is up to 2000 characters, `alternatives_tried` up to 20 entries of 500, `proposal.policy` the
+whole candidate `.archfit.yaml` up to 64 KiB, and it must be a valid policy file. Free text holds no control
+characters except newline and tab. At most 20 pending requests per pull request and 200 per repository; beyond that
+the App ignores the request. The App never trusts the block: head, policy digest and policy are checked against
+GitHub and the default branch.
+
+A command, `archfit decision request`, that posts the block and reads the answer is planned for a later engine release.
+
 ## Data sharing
 
 Archfit runs in customer CI, so source code and reports stay there. Two managed features send data out of that

@@ -11,6 +11,7 @@ import (
 const (
 	typePullRequest       = "pull_request"
 	typePullRequestReview = "pull_request_review"
+	typeIssueComment      = "issue_comment"
 	typePush              = "push"
 	typeInstallation      = "installation"
 	typeInstallationRepos = "installation_repositories"
@@ -31,6 +32,7 @@ var (
 	errNoRepository   = errors.New("webhook: payload has no repository name")
 	errNoPullRequest  = errors.New("webhook: payload has no pull request number")
 	errBadHeadSHA     = errors.New("webhook: payload has no valid head SHA")
+	errNoComment      = errors.New("webhook: payload has no comment ID or author")
 )
 
 // actionKinds is the Mapping table for every known event type except push, which has no action.
@@ -46,6 +48,9 @@ var actionKinds = map[string]map[string]EventKind{
 		"submitted": ReviewChanged,
 		"edited":    ReviewChanged,
 		"dismissed": ReviewChanged,
+	},
+	typeIssueComment: {
+		"created": PullCommented, // only on a pull request: payload.kind checks issue.pull_request
 	},
 	typeInstallation: {
 		"created": InstallationAdded,
@@ -83,6 +88,18 @@ type payload struct {
 			Ref string `json:"ref"`
 		} `json:"base"`
 	} `json:"pull_request"`
+	Issue struct {
+		Number      int       `json:"number"`
+		PullRequest *struct{} `json:"pull_request"` // present only when the issue is a pull request
+	} `json:"issue"`
+	Comment struct {
+		ID   int64  `json:"id"`
+		Body string `json:"body"`
+		User struct {
+			Login string `json:"login"`
+			Type  string `json:"type"`
+		} `json:"user"`
+	} `json:"comment"`
 	Sender struct {
 		Login string `json:"login"`
 	} `json:"sender"`
@@ -144,6 +161,17 @@ func Parse(eventType, deliveryID string, body []byte) (Event, error) {
 	ev.RepoPrivate = p.Repository.Private
 	ev.DefaultBranch = p.Repository.DefaultBranch
 
+	if kind == PullCommented {
+		if p.Issue.Number <= 0 {
+			return Event{}, errNoPullRequest
+		}
+		if p.Comment.ID <= 0 || p.Comment.User.Login == "" {
+			return Event{}, errNoComment
+		}
+		ev.PullRequest = p.Issue.Number
+		ev.CommentID, ev.Author, ev.AuthorType, ev.Body = p.Comment.ID, p.Comment.User.Login, p.Comment.User.Type, p.Comment.Body
+		return ev, nil
+	}
 	if kind == DefaultBranchPush || kind == BranchPush {
 		ev.HeadSHA = p.After
 		ev.HeadRepo = ev.Repo
@@ -184,6 +212,9 @@ func (p *payload) kind(eventType string) EventKind {
 		}
 	}
 	if kind, ok := actionKinds[eventType][p.Action]; ok {
+		if kind == PullCommented && p.Issue.PullRequest == nil {
+			return Ignored // a comment on a plain issue
+		}
 		return kind
 	}
 	return Ignored

@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://archfit.dev/schemas/decision-request.v1.json",
+  "title": "archfit decision request v1",
+  "description": "What an unattended agent asks of the architecture owners: change this policy so this finding stops blocking. Every field is self-reported. The decoder is stricter than this document in four ways a schema cannot express: no duplicate keys, no U+2028 or U+2029 in free text, a policy of at most 65536 bytes (maxLength counts characters), and a raw block of at most 262144 bytes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "finding_id",
+    "rule_id",
+    "edge",
+    "head_sha",
+    "policy_digest",
+    "why",
+    "alternatives_tried",
+    "proposal"
+  ],
+  "properties": {
+    "schema_version": { "const": "archfit.decision-request.v1" },
+    "finding_id": {
+      "type": "string",
+      "description": "The engine's finding ID.",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "rule_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:/@+-]{1,128}$"
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to"],
+      "properties": {
+        "from": { "type": "string", "description": "Module name.", "pattern": "^[A-Za-z0-9_.:/@+-]{1,200}$" },
+        "to": { "type": "string", "description": "Module name.", "pattern": "^[A-Za-z0-9_.:/@+-]{1,200}$" }
+      }
+    },
+    "head_sha": {
+      "type": "string",
+      "description": "The commit the request is about.",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "policy_digest": {
+      "type": "string",
+      "description": "Digest of the policy the finding was measured under: bare hex SHA-256.",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "why": {
+      "type": "string",
+      "description": "The agent's case, in one paragraph.",
+      "minLength": 1,
+      "maxLength": 2000,
+      "pattern": "^[^\\x00-\\x08\\x0b-\\x1f\\x7f-\\x9f]*$"
+    },
+    "alternatives_tried": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500,
+        "pattern": "^[^\\x00-\\x08\\x0b-\\x1f\\x7f-\\x9f]*$"
+      }
+    },
+    "proposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "policy"],
+      "properties": {
+        "kind": { "const": "policy_patch" },
+        "policy": {
+          "type": "string",
+          "description": "The full candidate .archfit.yaml.",
+          "minLength": 1,
+          "maxLength": 65536,
+          "pattern": "^[^\\x00-\\x08\\x0b-\\x1f\\x7f-\\x9f]*$"
+        }
+      }
+    }
+  }
+}

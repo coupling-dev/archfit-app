@@ -13,12 +13,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alexei-led/archfit-app/internal/gate/decisions"
 	"github.com/alexei-led/archfit-app/internal/gate/feedback"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
 	"github.com/alexei-led/archfit-app/internal/gate/sweep"
 	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/webhook"
+	"github.com/alexei-led/archfit-app/internal/store"
 	"github.com/alexei-led/archfit-app/internal/wire/envelope"
 	"github.com/alexei-led/archfit-app/internal/wire/manifest"
 	"github.com/alexei-led/archfit-app/internal/wire/report"
@@ -321,7 +323,8 @@ func newPipelineFakes() *pipelineFakes {
 		receiver: &fakeReceiver{}, resolver: &fakeResolver{}, publisher: &fakePublisher{}, repairer: &fakeRepairer{},
 		sweeper: &fakeSweeper{}, actions: &fakeActions{},
 	}
-	f.gate = newGate(f.receiver, f.resolver, f.publisher, f.repairer, f.sweeper, f.actions, newFakeGitHub(), &fakeAdmitter{refused: map[int64]bool{}}, func() time.Time { return testStart })
+	gh := newFakeGitHub()
+	f.gate = newGate(f.receiver, f.resolver, decisions.New(store.NewMemory(), gh, gh, func() time.Time { return testStart }), f.publisher, f.repairer, f.sweeper, f.actions, gh, gh, &fakeAdmitter{refused: map[int64]bool{}}, func() time.Time { return testStart })
 	return f
 }
 

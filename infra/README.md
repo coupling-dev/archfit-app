@@ -272,6 +272,9 @@ Register the App with these settings. Keep the webhook inactive, and install it 
   logs every refused issue call and publishes checks and comments as before.
 - Organization permissions: Members read
 - Events: Pull request, Pull request review, Push
+- Issue comment event: the release that brings [decision requests](../docs/user-guide.md#decision-requests-from-unattended-agents)
+  subscribes the App to it under **Permissions & events**. The code ignores the event until then; the subscription is
+  part of that release's checklist and is not done yet.
 - Installable on any account (public). GitHub has no install approval, so the App approves accounts itself: it does
   nothing for an account that is neither in `ARCHFIT_APPROVED_ACCOUNTS` nor approved by an operator on `/admin`. See
   [Who the App serves](../docs/user-guide.md#who-the-app-serves).
