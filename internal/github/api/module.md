@@ -217,7 +217,7 @@ var (
     ErrQueueForbidden = errors.New("github: merge queue not readable: Merge queues permission missing")
 
     // ErrQueueTooLong is returned when a merge queue holds more entries than one read takes.
-    ErrQueueTooLong = errors.New("api: merge queue too long to read")
+    ErrQueueTooLong = errors.New("github: merge queue too long to read")
 
     // ErrUserTokenRejected is GitHub's 401 on a user's OAuth token: it expired or was revoked. The token cannot
     // recover, so the call is not repeated and the user must sign in again.

@@ -161,7 +161,9 @@ func (r *resolver) members(ctx context.Context, t Target, entries []api.QueueEnt
 		switch {
 		case pull.HeadRepo != t.Repo.FullName:
 			return nil, GroupFork, n, nil
-		case pull.State != "open" || pull.BaseRef != t.BaseRef || pull.HeadSHA != e.PullHeadSHA || e.PullHeadSHA == "":
+		// A member that merged since the queue read is still the queued pull request: its change is in the group, and
+		// its approval is still checked. Any other closed pull request is not.
+		case (pull.State != "open" && !pull.Merged) || pull.BaseRef != t.BaseRef || pull.HeadSHA != e.PullHeadSHA || e.PullHeadSHA == "":
 			return nil, GroupUnverified, n + " is not the queued pull request", nil
 		}
 		out = append(out, member{number: e.PullRequest, head: pull.HeadSHA})

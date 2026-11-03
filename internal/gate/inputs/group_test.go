@@ -41,7 +41,8 @@ type groupWorld struct {
 	teams   map[string][]string
 	store   store.Store
 
-	queueErr, headErr error
+	queueErr, headErr, pullErr error
+	fileErr                    map[fileCall]error
 }
 
 func newGroupWorld() *groupWorld {
@@ -110,6 +111,9 @@ func (w groupRepos) ResolveRepo(context.Context, string) (api.Repo, error)      
 func (w groupRepos) File(_ context.Context, _ api.RepoRef, ref, path string) ([]byte, string, error) {
 	c := fileCall{ref, path}
 	w.reads = append(w.reads, c)
+	if err := w.fileErr[c]; err != nil {
+		return nil, "", err
+	}
 	raw, ok := w.files[c]
 	if !ok {
 		return nil, "", api.ErrNotFound
@@ -129,6 +133,9 @@ type groupPulls struct {
 }
 
 func (w groupPulls) Pull(_ context.Context, _ api.RepoRef, n int) (api.Pull, error) {
+	if w.pullErr != nil {
+		return api.Pull{}, w.pullErr
+	}
 	p, ok := w.pulls[n]
 	if !ok {
 		return api.Pull{}, api.ErrNotFound
@@ -252,6 +259,13 @@ func TestMergeGroupInputs(t *testing.T) {
 			p.BaseRef = "release"
 			w.pulls[2] = p
 		}, ApprovalNotRequired, GroupUnverified, []string{digest(basePolicy)}, nil, "", "", "#2"},
+		{"a member that merged since the queue read still counts", func(w *groupWorld) {
+			p := w.pulls[1]
+			p.State, p.Merged = "closed", true
+			w.pulls[1] = p
+			w.changePolicy(1, pr1Head, policyA)
+			w.files[fileCall{groupSHA, policy.PolicyPath}] = policyA
+		}, ApprovalMissing, "", []string{digest(basePolicy)}, []string{policy.PolicyPath}, "#1 .archfit.yaml", "", ""},
 		{"a closed member", func(w *groupWorld) {
 			p := w.pulls[1]
 			p.State = "closed"
@@ -341,14 +355,28 @@ func TestMergeGroupSoleOwnerApprovesInTheApp(t *testing.T) {
 func TestMergeGroupReadFailuresAreErrors(t *testing.T) {
 	boom := errors.New("boom")
 	for name, set := range map[string]func(*groupWorld){
-		"queue unreadable":       func(w *groupWorld) { w.queueErr = boom },
-		"default branch unknown": func(w *groupWorld) { w.headErr = boom },
+		"queue unreadable":                    func(w *groupWorld) { w.queueErr = boom },
+		"default branch unknown":              func(w *groupWorld) { w.headErr = boom },
+		"pull request unreadable":             func(w *groupWorld) { w.pullErr = boom },
+		"pull request rate limited":           func(w *groupWorld) { w.pullErr = api.ErrRateLimited },
+		"settings unreadable at the snapshot": func(w *groupWorld) { w.fileErr = map[fileCall]error{{tipSHA, settings.Path}: boom} },
+		"policy unreadable at the group":      func(w *groupWorld) { w.fileErr = map[fileCall]error{{groupSHA, policy.PolicyPath}: boom} },
+		"policy unreadable at a member head": func(w *groupWorld) {
+			w.changePolicy(1, pr1Head, policyA)
+			w.approve(1, "alice", pr1Head)
+			w.files[fileCall{groupSHA, policy.PolicyPath}] = policyA
+			w.fileErr = map[fileCall]error{{pr1Head, policy.PolicyPath}: boom}
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			w := newGroupWorld()
 			set(w)
-			if got, err := w.try(); err == nil {
+			got, err := w.try()
+			if err == nil {
 				t.Fatalf("got %+v; want an error, never inputs", got)
+			}
+			if !reflect.DeepEqual(got, Trusted{}) {
+				t.Fatalf("got %+v with the error; want the zero Trusted", got)
 			}
 		})
 	}

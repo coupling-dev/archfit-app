@@ -147,8 +147,9 @@ Any step: `api.ErrRateLimited` → 429 `rate_limited` (also from the merge queue
 `Rejection`); the caller answers 503 and publishes nothing. A `Verifier` error matching `oidc.ErrUnavailable`
 (`errors.Is`) is the 503 `oidc_unavailable` rejection, so the Action retries; every other `Verifier` error is 401.
 
-Steps 9a and 13a are numbered so that the later step numbers stay put. The tenant is authenticated after step 12. Steps 13 to 17 never reject, except the two cases where nothing
-could be published truthfully: the head moved (step 14) and the bytes are not what the producer stated (step 16).
+Steps 9a and 13a are numbered so that the later step numbers stay put. The tenant is authenticated after step 12. Steps 13 to 17 never reject, except the three cases where
+nothing could be published truthfully: the merge queue lists no group with this commit (step 13a, 409 `stale_group`),
+the head moved (step 14) and the bytes are not what the producer stated (step 16).
 
 ### Event eligibility (step 13)
 

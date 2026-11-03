@@ -372,7 +372,11 @@ A pull request upload into the default branch lists the repository's open pull r
 decides. Another open pull request with the same head commit and a base that is not the default branch is passed to
 `verdict.Decide` as `Facts.SharedHead`, so the answer is `action_required` with `shared_head`, never `success`: a check
 is written per head commit and that pull request would show it. The App accepts no protected base other than the
-default branch. A failed listing is an error the Action retries, never a success.
+default branch. A failed listing is an error the Action retries, never a success. A merge group upload does the same for the
+group commit, before deciding and again inside the lease: a group commit is a branch head a pull request into another
+base can share. A `PullOpened` or `PullSynchronized` of a pull request into another base also reads the merge queue of
+the default branch and, when its head is a queued group commit, runs `sweep.SharedHeadPublication` for that group
+inside its lease; `ErrQueueForbidden` there means no group result exists and nothing is read further.
 
 A merge group upload (`Binding.MergeGroup`) is decided on the group commit and lists no pull requests: it has no
 `SharedHead`. Its `Resolve` hook inside the lease resolves the group again (queue, members, approvals, protected

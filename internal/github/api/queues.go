@@ -39,7 +39,7 @@ type QueueEntry struct {
 }
 
 // ErrQueueTooLong is returned when a merge queue holds more entries than one read takes.
-var ErrQueueTooLong = errors.New("api: merge queue too long to read")
+var ErrQueueTooLong = errors.New("github: merge queue too long to read")
 
 // ErrQueueForbidden is GraphQL's FORBIDDEN on the merge queue: the installation lacks the Merge queues permission.
 var ErrQueueForbidden = errors.New("github: merge queue not readable: Merge queues permission missing")
@@ -116,11 +116,21 @@ func (c *Client) MergeQueue(ctx context.Context, r RepoRef, branch string) ([]Qu
 		}
 		page := repo.MergeQueue.Entries
 		for _, n := range page.Nodes {
-			if n.HeadCommit == nil || n.BaseCommit == nil || n.PullRequest == nil {
-				return nil, k.errorf("merge queue entry without commits or pull request")
+			// GitHub's schema makes both commits nullable: an entry beyond the build concurrency has no group commit
+			// yet. It stays an entry, with no HeadSHA, so it binds no upload. An entry without a pull request cannot be
+			// attributed to anyone, so the read fails rather than drop a member.
+			if n.PullRequest == nil {
+				return nil, k.errorf("merge queue entry without a pull request")
+			}
+			var head, base string
+			if n.HeadCommit != nil {
+				head = n.HeadCommit.OID
+			}
+			if n.BaseCommit != nil {
+				base = n.BaseCommit.OID
 			}
 			out = append(out, QueueEntry{
-				Position: n.Position, HeadSHA: n.HeadCommit.OID, BaseSHA: n.BaseCommit.OID,
+				Position: n.Position, HeadSHA: head, BaseSHA: base,
 				PullRequest: n.PullRequest.Number, PullHeadSHA: n.PullRequest.HeadRefOID, CrossRepo: n.PullRequest.IsCrossRepository,
 			})
 		}
@@ -131,5 +141,5 @@ func (c *Client) MergeQueue(ctx context.Context, r RepoRef, branch string) ([]Qu
 		cursor := page.PageInfo.EndCursor
 		after = &cursor
 	}
-	return nil, ErrQueueTooLong
+	return nil, call{method: http.MethodPost, route: graphqlRoute}.errorf("%w", ErrQueueTooLong)
 }

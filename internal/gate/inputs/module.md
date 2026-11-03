@@ -310,7 +310,8 @@ commit `X`, `t.BaseRef` the default branch, `t.PullRequest` 0. `Trusted.Group` i
    branch name. Policy, baseline and labels digests of `S` and the waivers of the policy at `S` are the starting result.
 3. Members: the queue entries from position 1 up to the entry whose `HeadSHA` is `X`. None → `GroupUnverified`. Per
    entry: `CrossRepo` → `GroupFork`; `Pulls.Pull` by number (`api.ErrNotFound` → `GroupUnverified`, other errors are
-   errors); `pull.HeadRepo` not this repository → `GroupFork`; not open, `BaseRef` not `t.BaseRef`, or head not the
+   errors); `pull.HeadRepo` not this repository → `GroupFork`; closed and not merged (a member that merged since the
+   queue read stays a member, and its approval is still checked), `BaseRef` not `t.BaseRef`, or head not the
    entry's `PullHeadSHA` (or that is empty) → `GroupUnverified`. A problem stops the resolution with the `S` digests.
 4. Per member: the protected paths its own pull request changes (the rule of step 8, by the settings at `S`), and when
    there are any, its owner approval of its own head by the rules of the pull request (reviews of the head, else the
@@ -866,7 +867,7 @@ failing `Store` stub. `NewMemory` is the in-process Store constructor of `intern
 ### Behavior Tests
 
 - **Test name**: `TestMergeGroupInputs`
-  **Scenario**: table over a two-entry queue: a group that changes no protected file; an approved policy change that is the combined blob (also approved by a team member); an unapproved member change, also one the group reverts; an agent's approval, an approval of an older head, a withdrawn approval; two approved members changing one file; a combined file that is not the approved head's; a protected change no member makes; an approved deletion of the baseline; a member behind the group; a fork member (flagged by the queue, or only by the pull request); a member whose head moved, into another base, or closed; a group commit the queue no longer lists.
+  **Scenario**: table over a two-entry queue: a group that changes no protected file; an approved policy change that is the combined blob (also approved by a team member); an unapproved member change, also one the group reverts; an agent's approval, an approval of an older head, a withdrawn approval; two approved members changing one file; a combined file that is not the approved head's; a protected change no member makes; an approved deletion of the baseline; a member behind the group; a fork member (flagged by the queue, or only by the pull request); a member that merged since the queue read; a member whose head moved, into another base, or closed; a group commit the queue no longer lists.
   **Expected behavior**: `S`'s digests and `ApprovalNotRequired`; `X`'s digests, `ApprovalGranted`, `ApprovedBy` naming the member; `Group.Unapproved` and `ApprovalMissing`; same, with no approval counted; `GroupConflict`; `GroupConflict`; `GroupConflict`; the deletion accepted; the member behind does not count; `GroupFork`; `GroupUnverified`; `GroupUnverified`.
 - **Test name**: `TestMergeGroupWaiversComeFromTheAcceptedPolicy`, `TestMergeGroupSoleOwnerApprovesInTheApp`, `TestMergeGroupReadFailuresAreErrors`, `TestMergeGroupWithoutSettingsIsNotOnboarded`
   **Scenario**: a waiver in the policy at `X`; an owner approval recorded in the App; a failing queue, snapshot, file or pull request read; no settings file at `S`.

@@ -89,7 +89,7 @@ func (g *Gate) react(ctx context.Context, e webhook.Event) (string, error) {
 		if err != nil {
 			return reaction, err
 		}
-		if _, err := g.groupsOf(ctx, eventTarget(e)); err != nil {
+		if err := g.groupsOf(ctx, eventTarget(e)); err != nil {
 			return reactionGroupChecked, err
 		}
 		return reaction, nil
@@ -135,7 +135,34 @@ func (g *Gate) sharedHeadOpened(ctx context.Context, e webhook.Event) (string, e
 			errs = errors.Join(errs, fmt.Errorf("gate: shared head of pull request %d: %w", pl.Number, err))
 		}
 	}
-	return reactionSharedHead, errs
+	return reactionSharedHead, errors.Join(errs, g.sharedGroupHead(ctx, repo, e.HeadSHA))
+}
+
+// sharedGroupHead withdraws a merge group commit's success, as sharedHeadOpened does for a pull request, when the
+// pull request into another base has a queued group commit of the default branch as its head. Without the Merge
+// queues permission no group result exists, so nothing is withdrawn.
+func (g *Gate) sharedGroupHead(ctx context.Context, repo api.Repo, head string) error {
+	if repo.DefaultBranch == "" {
+		return nil
+	}
+	entries, err := g.queues.MergeQueue(ctx, repo.RepoRef, repo.DefaultBranch)
+	if errors.Is(err, api.ErrQueueForbidden) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("gate: merge queue: %w", err)
+	}
+	if !slices.ContainsFunc(entries, func(e api.QueueEntry) bool { return e.HeadSHA == head }) {
+		return nil
+	}
+	t := inputs.Target{Repo: repo, HeadSHA: head, BaseRef: repo.DefaultBranch, MergeGroup: true}
+	err = g.publisher.Reconcile(ctx, t, func(ctx context.Context, current feedback.CheckState) (*feedback.Publication, error) {
+		return sweep.SharedHeadPublication(ctx, g.pulls, g.resolver, g.now(), t, current)
+	})
+	if err != nil {
+		return fmt.Errorf("gate: shared head of merge group %s: %w", head, err)
+	}
+	return nil
 }
 
 // branchPushed records who moved the branch to e.HeadSHA, then re-evaluates the pull request on that head as a review
@@ -271,31 +298,34 @@ func (g *Gate) groupCheck(ctx context.Context, t inputs.Target) error {
 // groupsOf re-checks every merge group of the default branch's queue that holds the pull request t: its own entry's
 // group and every group behind it. A review of a queued pull request can withdraw the approval such a group relied on.
 // A pull request that is not queued reads the queue only.
-func (g *Gate) groupsOf(ctx context.Context, t inputs.Target) (int, error) {
+func (g *Gate) groupsOf(ctx context.Context, t inputs.Target) error {
 	if t.Repo.DefaultBranch == "" || t.PullRequest == 0 {
-		return 0, nil
+		return nil
 	}
 	entries, err := g.queues.MergeQueue(ctx, t.Repo.RepoRef, t.Repo.DefaultBranch)
 	if errors.Is(err, api.ErrQueueForbidden) {
 		// Without the Merge queues permission no merge-group upload is ever accepted (ingest reads the same queue), so
 		// no group result exists to withdraw. The review itself is handled; it is not retried for this.
-		return 0, nil
+		return nil
 	}
 	if err != nil {
-		return 0, fmt.Errorf("gate: merge queue: %w", err)
+		return fmt.Errorf("gate: merge queue: %w", err)
 	}
 	at := slices.IndexFunc(entries, func(e api.QueueEntry) bool { return e.PullRequest == t.PullRequest })
 	if at < 0 {
-		return 0, nil
+		return nil
 	}
 	var errs error
 	for _, e := range entries[at:] {
+		if e.HeadSHA == "" {
+			continue // not built yet: no group commit, no check
+		}
 		gt := inputs.Target{Repo: t.Repo, HeadSHA: e.HeadSHA, BaseRef: t.Repo.DefaultBranch, MergeGroup: true}
 		if err := g.groupCheck(ctx, gt); err != nil {
 			errs = errors.Join(errs, fmt.Errorf("gate: merge group of pull request %d: %w", e.PullRequest, err))
 		}
 	}
-	return len(entries) - at, errs
+	return errs
 }
 
 func (g *Gate) newHead(ctx context.Context, t inputs.Target) (string, error) {

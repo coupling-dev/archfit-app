@@ -56,6 +56,25 @@ func TestMergeQueueReadsEveryPageInPositionOrder(t *testing.T) {
 	}
 }
 
+func TestMergeQueueKeepsAnEntryNotBuiltYet(t *testing.T) {
+	ref := RepoRef{InstallationID: 7, FullName: "acme/app"}
+	env := muxEnv(t, func(mux *http.ServeMux) {
+		mux.HandleFunc("POST /graphql", func(w http.ResponseWriter, _ *http.Request) {
+			unbuilt := queueNode(2, "", 12)
+			unbuilt["headCommit"], unbuilt["baseCommit"] = nil, nil
+			writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"repository": map[string]any{"mergeQueue": map[string]any{"entries": map[string]any{
+				"pageInfo": map[string]any{"hasNextPage": false}, "nodes": []any{queueNode(1, strings.Repeat("1", 40), 11), unbuilt}}}}}})
+		})
+	})
+	got, err := env.c.MergeQueue(context.Background(), ref, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[1].HeadSHA != "" || got[1].PullRequest != 12 || got[0].HeadSHA != strings.Repeat("1", 40) {
+		t.Fatalf("got %+v; want both entries, the second without a group commit", got)
+	}
+}
+
 func TestMergeQueueNeverGuessesMembership(t *testing.T) {
 	ref := RepoRef{InstallationID: 7, FullName: "acme/app"}
 	tests := []struct {
@@ -70,8 +89,8 @@ func TestMergeQueueNeverGuessesMembership(t *testing.T) {
 		{"other GraphQL error", map[string]any{"errors": []any{map[string]any{"type": "INTERNAL"}}}, nil, false},
 		{"rate limited", map[string]any{"errors": []any{map[string]any{"type": "RATE_LIMITED"}}}, ErrRateLimited, false},
 		{"repository gone", map[string]any{"data": map[string]any{"repository": nil}}, ErrNotFound, false},
-		{"entry without a head commit", map[string]any{"data": map[string]any{"repository": map[string]any{"mergeQueue": map[string]any{"entries": map[string]any{
-			"pageInfo": map[string]any{"hasNextPage": false}, "nodes": []any{map[string]any{"position": 1, "pullRequest": map[string]any{"number": 1}}}}}}}}, nil, false},
+		{"entry without a pull request", map[string]any{"data": map[string]any{"repository": map[string]any{"mergeQueue": map[string]any{"entries": map[string]any{
+			"pageInfo": map[string]any{"hasNextPage": false}, "nodes": []any{map[string]any{"position": 1, "headCommit": map[string]any{"oid": "x"}}}}}}}}, nil, false},
 		{"endless queue", map[string]any{"data": map[string]any{"repository": map[string]any{"mergeQueue": map[string]any{"entries": map[string]any{
 			"pageInfo": map[string]any{"hasNextPage": true, "endCursor": "x"}, "nodes": []any{}}}}}}, ErrQueueTooLong, false},
 	}

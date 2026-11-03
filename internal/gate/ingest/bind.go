@@ -51,7 +51,7 @@ func eligible(kind envelope.Kind, event string, onDefaultBranch bool) bool {
 }
 
 // bind builds the binding from the claims, the run and the resolved pull (steps 13 to 15).
-// The only rejections here are the rate limit and a moved head.
+// The only rejections here are the rate limit, a moved head and a merge group the queue no longer lists.
 func (r *receiver) bind(ctx context.Context, kind envelope.Kind, env envelope.Envelope, claims oidc.Claims,
 	repo api.Repo, run api.WorkflowRun,
 ) (Binding, problemSet, error) {

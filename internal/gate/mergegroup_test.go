@@ -317,3 +317,43 @@ func TestMergeGroupQueueUnreadableIsNeverASuccess(t *testing.T) {
 	// A review event is still handled without the permission: no group result can exist to withdraw.
 	w.handle(w.event(webhook.ReviewChanged, one))
 }
+
+// pullOnGroupHead opens a pull request into another base whose head is the group commit.
+func (w *world) pullOnGroupHead(g *group, number int) *pull {
+	p := w.openPull(g.repo, number)
+	w.editPull(p, func(pl *api.Pull) { pl.BaseRef, pl.HeadSHA = "release", g.sha })
+	p.head = g.sha
+	return p
+}
+
+func TestMergeGroupSharedWithAPullIntoAnotherBaseNeverSucceeds(t *testing.T) {
+	w := newWorld(t)
+	one := w.openPull(w.shop, 1)
+	groups := w.enqueue(one)
+	w.pullOnGroupHead(groups[0], 9)
+	w.wantAnswer(w.uploadGroup(groups[0], fixtureHealthy), http.StatusOK, "action_required", "shared_head")
+	w.noSuccess()
+}
+
+func TestPullIntoAnotherBaseOnAGroupCommitWithdrawsItsSuccess(t *testing.T) {
+	w := newWorld(t)
+	one := w.openPull(w.shop, 1)
+	groups := w.enqueue(one)
+	w.wantAnswer(w.uploadGroup(groups[0], fixtureHealthy), http.StatusOK, "success", "healthy")
+	other := w.pullOnGroupHead(groups[0], 9)
+	w.handle(w.event(webhook.PullOpened, other))
+	c := w.wantGroupGate(groups[0], "action_required")
+	if !strings.Contains(c.Summary, "shared_head") {
+		t.Errorf("summary does not name shared_head:\n%s", c.Summary)
+	}
+}
+
+func TestMergeGroupBehindAnUnbuiltEntryIsUnaffected(t *testing.T) {
+	w := newWorld(t)
+	one, two := w.openPull(w.shop, 1), w.openPull(w.shop, 2)
+	groups := w.enqueue(one, two)
+	key := branchKey(w.shop.FullName, testBranch)
+	w.gh.queue[key][1].HeadSHA = "" // #2 not built yet
+	w.wantAnswer(w.uploadGroup(groups[0], fixtureHealthy), http.StatusOK, "success", "healthy")
+	w.handle(w.event(webhook.ReviewChanged, two)) // no group commit to re-check
+}

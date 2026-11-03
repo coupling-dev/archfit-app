@@ -77,8 +77,9 @@ All other answers are those of every report upload.
 ## Members and the combined inputs
 
 The members of a group are the queue entries from position 1 up to the entry whose head commit is the group commit:
-each entry's build holds every entry ahead of it. For each member the App reads the pull request: open, base is the
-default branch, head commit is the entry's, not a fork. A fork member ends `fork_unsupported`; another mismatch ends
+each entry's build holds every entry ahead of it. For each member the App reads the pull request: open (or merged since the queue
+was read), base is the default branch, head commit is the entry's, not a fork. An entry GitHub has not built yet has no
+group commit and binds no upload. A fork member ends `fork_unsupported`; another mismatch ends
 `merge_group_unverified`.
 
 The App reads the default-branch head commit `S` once. It reads every protected file at the two commit SHAs `S` and
@@ -103,6 +104,9 @@ approved: GitHub created it, and queue membership, a push or an `approved_by` te
 
 - `archfit/gate` is written on the group commit when the protected settings say `gate: required`, with
   `archfit/state`. No pull request comment is written for a group.
+- A group commit is a branch head, so a pull request into another base can share it. As for a pull request head, the
+  App never writes a `success` then: the upload ends `shared_head`, and opening such a pull request withdraws an
+  existing group success.
 - The `merge_group` webhook with `checks_requested` creates the pending `archfit/gate` on the group commit. A group
   without an upload stays pending until GitHub's status check timeout fails it.
 - The webhook with `destroyed`, for a reason other than `merged`, turns a pending or successful group check into
@@ -116,7 +120,7 @@ approved: GitHub created it, and queue membership, a push or an `approved_by` te
 | Reason | What to do |
 | --- | --- |
 | `merge_group_conflict` | Two queued pull requests change the same protected file, or the queued file is not the one an owner approved. Remove all but one from the queue and queue the others again after it merges. Or update the branch and have an owner approve the new head. |
-| `merge_group_unverified` | The App could not confirm the group from GitHub: it was destroyed, a member changed, or the App lacks the Merge queues permission. Queue the pull request again. |
+| `merge_group_unverified` | The App could not confirm the group from GitHub: it was destroyed or rebuilt, or a member changed. Queue the pull request again. (A missing Merge queues permission is not this reason: the upload answers `503`, see Limits.) |
 | `owner_approval_missing` | An owner approves the named pull request's head; then queue it again. |
 
 ## Limits
