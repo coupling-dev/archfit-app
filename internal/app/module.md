@@ -261,7 +261,7 @@ All integrations are constructor or handler calls: contract strength. `app` hold
 - **LCA / Rank / Distance**: internal (root) / 1 / 1
 - **Volatility**: high on the gate side; the façade is kept small on purpose
 - **Balanced?**: yes
-- **Shared knowledge**: the façade, the sweep summary that `/internal/sweep` returns, and `NewReceiver`, which `app` passes to `control`; `app` also passes the `*Gate` itself to `control.Deps.Approvals`, the seam of the pull request page's Approve button, and to `control.Deps.Decisions`, the seam of its decision request buttons. `app` builds one `Admissions` with `NewAdmissions(Store, `app` also passes it to `control.Deps.DecisionQueue`, the read-only list of the decision requests that wait for an owner.
+- **Shared knowledge**: the façade, the sweep summary that `/internal/sweep` returns, and `NewReceiver`, which `app` passes to `control`; `app` also passes the `*Gate` itself to `control.Deps.Approvals`, the seam for the pull-request architecture-decision banner and actions, and to `control.Deps.Decisions`, the seam of its decision request buttons. `app` builds one `Admissions` with `NewAdmissions(Store, `app` also passes it to `control.Deps.DecisionQueue`, the read-only list of the decision requests that wait for an owner.
   ApprovedAccounts)` and passes that same value to `Deps.Admissions`, `NewReceiver` and `control.Deps.Admissions`, so the
   three agree on who is served. The worker role builds it too, for the gate.
   In these blocks `Config` means `gate.Config` (the sweep thresholds), not this module's `Config`. `app` sets
@@ -270,9 +270,8 @@ All integrations are constructor or handler calls: contract strength. `app` hold
 
 <!-- contract: Gate, Deps, New — restated from internal/gate/module.md -->
 ```go
-// Deps are the only things the gate path may touch: GitHub, OIDC, the Store and a clock. On the Store the gate
-// path reads the entitlement and the admission, and reads and writes the pusher and approval records of gate/inputs;
-// its only other write is gate/feedback's publication leases.
+// Deps are the only things the gate path may touch: GitHub, OIDC, the Store and a clock. The Store holds entitlements,
+// admissions, pusher attribution, bounded owner-decision/reviewer-request state and publication leases.
 type Deps struct {
     GitHub     *Client
     OIDC       Verifier
@@ -375,7 +374,7 @@ type Deps struct {
     Receiver  Receiver
     // Admissions says which installations the App serves; Operators (GitHub user IDs) approve the others on /admin.
     Admissions *Admissions
-    // Approvals reads and records owner approvals of pull request heads for the pull request page: the gate façade.
+    // Approvals reads protected owner authority and records authenticated PR decisions through the gate façade.
     Approvals Approvals
     // Decisions lists, declines and approves the decision requests of unattended agents for the pull request page.
     Decisions Decisions

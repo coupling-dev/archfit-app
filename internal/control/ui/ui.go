@@ -65,7 +65,10 @@ type (
 )
 
 type github struct {
-	files    fileReader
+	files fileReader
+	heads interface {
+		BranchHead(context.Context, api.RepoRef, string) (string, error)
+	}
 	checks   checkReader
 	actions  workflows
 	pulls    pullReader
@@ -87,6 +90,7 @@ type server struct {
 	decisionQueue gate.DecisionQueue
 	operators     []int64
 	now           func() time.Time
+	baseURL       string
 	shell         shellPage
 	reports       *reportCache
 	hints         *hints
@@ -98,7 +102,7 @@ func New(d Deps) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	gh := github{files: d.GitHub, checks: d.GitHub, actions: d.GitHub, pulls: d.GitHub, users: d.GitHub, installs: d.GitHub}
+	gh := github{files: d.GitHub, heads: d.GitHub, checks: d.GitHub, actions: d.GitHub, pulls: d.GitHub, users: d.GitHub, installs: d.GitHub}
 	return newHandler(d, gh, sessions, builtWeb()), nil
 }
 
@@ -118,6 +122,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 		decisionQueue: d.DecisionQueue,
 		operators:     d.Operators,
 		now:           d.Now,
+		baseURL:       d.BaseURL,
 		shell:         newShell(web),
 		reports:       newReportCache(reportCacheBytes),
 		hints:         newHints(),
@@ -177,6 +182,10 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("GET /api/repos/{o}/{n}/pulls/{number}", s.apiRepo(permRead, s.apiPull))
 	mux.Handle("GET /api/repos/{o}/{n}/pulls/{number}/graph", s.apiRepo(permRead, s.apiPullGraph))
 	mux.Handle("POST /api/repos/{o}/{n}/pulls/{number}/approve", s.apiRepo(permWrite, s.apiApprovePull))
+	mux.Handle("POST /api/repos/{o}/{n}/pulls/{number}/request-changes", s.apiRepo(permWrite, s.apiRequestChangesPull))
+	mux.Handle("POST /api/repos/{o}/{n}/pulls/{number}/withdraw", s.apiRepo(permWrite, s.apiWithdrawPull))
+	mux.Handle("POST /api/repos/{o}/{n}/pulls/{number}/override", s.apiRepo(permWrite, s.apiOverridePull))
+	mux.Handle("POST /api/repos/{o}/{n}/pulls/{number}/refresh-decision", s.apiRepo(permWrite, s.apiRefreshDecision))
 	mux.Handle("POST /api/repos/{o}/{n}/pulls/{number}/decisions/{finding}/{digest}/approve", s.apiRepo(permWrite, s.apiApproveDecision))
 	mux.Handle("POST /api/repos/{o}/{n}/pulls/{number}/decisions/{finding}/{digest}/decline", s.apiRepo(permWrite, s.apiDeclineDecision))
 	mux.Handle("POST /api/repos/{o}/{n}/onboarding", s.apiRepo(permAdmin, s.apiStartOnboarding))

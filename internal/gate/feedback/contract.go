@@ -48,7 +48,8 @@ type Publication struct {
 	// nil when the pull request changes no policy or the upload carries none. Display only: it decides nothing.
 	PolicyChange *report.PolicyChange
 	Trusted      inputs.Trusted
-	stateCheckID int64 // display-only ID returned by this publication's successful check write; never an admission input
+	ownerBanner  string // display-only owner-decision block, budgeted with each rendered body
+	stateCheckID int64  // display-only ID returned by this publication's successful check write; never an admission input
 	// Resolve, when set, reads the trusted inputs again inside the head's publication lease, before anything is
 	// written. When the result differs from Trusted in any field (a digest, the owner approval, the settings) or no
 	// longer accepts a Receipt digest, the decision was computed from inputs that are no longer current: Publish
@@ -71,8 +72,11 @@ type CheckState struct {
 
 type Publisher interface {
 	// Publish writes archfit/state, archfit/gate (only when Settings.Gate is required) and the
-	// single PR comment. It is idempotent per Receipt and never overwrites feedback of a newer head or run.
+	// single PR result comment. It is idempotent per Receipt and never overwrites feedback of a newer head or run.
 	Publish(ctx context.Context, p Publication) error
+	// DecisionBanner writes or updates the owner/governance banner before a report exists; in required mode it also
+	// creates/updates the pending gate check. It reads only Trusted protected settings and changed paths.
+	DecisionBanner(ctx context.Context, t inputs.Target, tr inputs.Trusted) error
 	// Pending creates the in_progress gate check if none exists on the head SHA.
 	Pending(ctx context.Context, t inputs.Target) error
 	State(ctx context.Context, t inputs.Target) (CheckState, error)

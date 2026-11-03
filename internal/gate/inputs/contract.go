@@ -33,6 +33,7 @@ type Target struct {
 	PullRequest int // 0 for a default-branch push
 	HeadSHA     string
 	BaseRef     string // protected ref; the default branch for a push and a merge group
+	BaseSHA     string // protected-ref commit, pinned for PR events and uploads when absent
 	Fork        bool
 	// MergeGroup marks HeadSHA as a merge group commit of BaseRef's merge queue; PullRequest is 0. Its inputs are read
 	// at immutable commit SHAs and its members' approvals are their own pull requests' (resolveGroup).
@@ -51,12 +52,15 @@ const (
 type Trusted struct {
 	Settings             settings.Settings
 	SettingsFound        bool
+	SettingsSHA          string   // exact commit of the protected settings snapshot when this PR was resolved
 	PolicyDigests        []string // base digest, plus the head digest when Approval == ApprovalGranted; a merge group: the one governing digest
 	BaselineDigests      []string // same rule; empty = no baseline on the protected ref
 	LabelsDigests        []string // same rule; empty = no labels file on the protected ref
 	ProtectedPaths       []string // protected paths this PR changes
 	Approval             Approval
 	ApprovedBy           string
+	Objections           []Objection
+	DecisionHistory      []DecisionHistory
 	EarliestWaiverExpiry time.Time // zero = no waivers
 	Suspended            bool
 	Entitlement          Entitlement
@@ -96,13 +100,58 @@ type Resolver interface {
 	// CanApprove reports whether login may approve t's head in the App now: nil, or ErrNothingToApprove, ErrForkPull,
 	// ErrAgentIdentity or ErrNotOwner, in that order. Owners and agents come from the settings of the protected ref.
 	CanApprove(ctx context.Context, t Target, login string) error
+	// CanWithdraw reports whether login has an App or native grant they can withdraw for this candidate.
+	CanWithdraw(ctx context.Context, t Target, login string) (bool, error)
+	// Decide records an authenticated architecture decision against the exact candidate. overrideIDs must match the
+	// complete set of displayed App/GitHub objection versions, including earlier overridden objections for DecisionOverride. A native review remains on GitHub.
+	Decide(ctx context.Context, t Target, login string, seen map[string]string, action DecisionAction, reason string, overrideIDs []string, now time.Time) error
+	// MirrorDecisions retries App-authored reason comments for persisted decisions; a mirror failure never rolls back authority.
+	MirrorDecisions(ctx context.Context, t Target, comments api.Comments) error
+	// RequestEligibleReviewers best-effort requests missing configured owners/teams and returns notification failure only.
+	RequestEligibleReviewers(ctx context.Context, t Target, author string, now time.Time) bool
+	// ReviewerNotificationProblem reads the saved notification outcome without sending requests or writing state.
+	ReviewerNotificationProblem(ctx context.Context, t Target) bool
 	// CanDecide reports whether login may decide for the owners now, by the owner rule of CanApprove and for no pull
 	// request in particular: nil, ErrAgentIdentity or ErrNotOwner. Owners and agents come from the protected ref t.BaseRef.
 	CanDecide(ctx context.Context, t Target, login string) error
 	// Approve records login's approval of t's head, bound to its SHA, when CanApprove allows it and seen equals the
-	// Candidate digests (else ErrDigestsChanged). A record for that head already, by any owner, is success and stays
-	// as it is.
+	// Candidate digests (else ErrDigestsChanged). A repeated current grant by the same owner is a no-op. An active objection requires an explicit override.
 	Approve(ctx context.Context, t Target, login string, seen map[string]string, now time.Time) error
+}
+
+// DecisionAction is one authenticated architecture decision; it is not a GitHub merge or policy publication.
+type DecisionAction string
+
+const (
+	DecisionApprove        DecisionAction = "approve"
+	DecisionRequestChanges DecisionAction = "request_changes"
+	DecisionWithdraw       DecisionAction = "withdraw"
+	DecisionOverride       DecisionAction = "override"
+)
+
+// Objection is an active request for changes. ID is a version identity from GitHub or the App ledger; body/reason is
+// untrusted display data and is never parsed as authority.
+type Objection struct {
+	ID         string
+	Login      string
+	Source     string // "github" or "app"
+	Reason     string
+	HeadSHA    string
+	At         time.Time
+	Overridden bool
+}
+
+// DecisionHistory is a bounded audit entry for one authenticated App decision.
+type DecisionHistory struct {
+	ID                 string
+	Login              string
+	Action             DecisionAction
+	Reason             string
+	HeadSHA            string
+	BaseSHA            string
+	At                 time.Time
+	Overrode           []string
+	OverrodeObjections []Objection
 }
 
 // Accepts is the digest predicate of the gate: whether claim is acceptable for one digest list of Trusted.

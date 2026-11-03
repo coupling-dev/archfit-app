@@ -324,7 +324,7 @@ func newPipelineFakes() *pipelineFakes {
 		sweeper: &fakeSweeper{}, actions: &fakeActions{},
 	}
 	gh := newFakeGitHub()
-	f.gate = newGate(f.receiver, f.resolver, decisions.New(store.NewMemory(), gh, gh, func() time.Time { return testStart }), f.publisher, f.repairer, f.sweeper, f.actions, gh, gh, gh, &fakeAdmitter{refused: map[int64]bool{}}, func() time.Time { return testStart })
+	f.gate = newGate(f.receiver, f.resolver, decisions.New(store.NewMemory(), gh, gh, func() time.Time { return testStart }), f.publisher, f.repairer, f.sweeper, f.actions, gh, gh, gh, gh, &fakeAdmitter{refused: map[int64]bool{}}, func() time.Time { return testStart })
 	return f
 }
 
@@ -801,25 +801,29 @@ func TestHandleEventRules(t *testing.T) {
 		}
 	})
 	quiet := []struct {
-		name    string
-		state   feedback.CheckState
-		trusted inputs.Trusted
+		name          string
+		state         feedback.CheckState
+		trusted       inputs.Trusted
+		wantPublished bool
 	}{
-		{"the approval still holds", green, func() inputs.Trusted { tr := withdrawn; tr.Approval = inputs.ApprovalGranted; return tr }()},
-		{"advisory mode", green, func() inputs.Trusted { tr := withdrawn; tr.Settings.Gate = settings.GateAdvisory; return tr }()},
+		{"the approval still holds", green, func() inputs.Trusted { tr := withdrawn; tr.Approval = inputs.ApprovalGranted; return tr }(), false},
+		{"advisory mode withdraws stale state too", green, func() inputs.Trusted { tr := withdrawn; tr.Settings.Gate = settings.GateAdvisory; return tr }(), true},
 		{"the check already asks for action", feedback.CheckState{Exists: true, Receipt: feedback.Receipt{
 			RunID: 9, RunAttempt: 2, Conclusion: verdict.ActionRequired, Reason: verdict.ReasonPolicyMismatch,
-		}}, withdrawn},
+		}}, withdrawn, false},
 	}
 	for _, tc := range quiet {
-		t.Run("review: nothing to withdraw: "+tc.name, func(t *testing.T) {
+		t.Run("review: owner objection: "+tc.name, func(t *testing.T) {
 			f := newPipelineFakes()
 			f.publisher.state, f.resolver.trusted = tc.state, tc.trusted
 			if err := f.gate.HandleEvent(ctx, pullEvent(webhook.ReviewChanged)); err != nil {
 				t.Fatal(err)
 			}
-			if len(f.publisher.published) != 0 || len(f.actions.reran) != 0 {
-				t.Errorf("published %d, reran %v", len(f.publisher.published), f.actions.reran)
+			if got := len(f.publisher.published) == 1; got != tc.wantPublished || len(f.actions.reran) != 0 {
+				t.Errorf("published %d, reran %v; want published=%t and no rerun", len(f.publisher.published), f.actions.reran, tc.wantPublished)
+			}
+			if tc.wantPublished && f.publisher.published[0].Receipt.Reason != verdict.ReasonOwnerApprovalMissing {
+				t.Errorf("advisory state reason = %q, want owner_approval_missing", f.publisher.published[0].Receipt.Reason)
 			}
 		})
 	}

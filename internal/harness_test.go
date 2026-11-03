@@ -273,6 +273,7 @@ func (w *world) seedDemo(f fixture, gateMode string, private bool) {
 		rp.branches["feature"] = demoBase
 		rp.push("feature", demoHead, map[string]string{"pkg/a/a.go": "package a\n\nimport _ \"example/pkg/c\"\n"})
 		demo := rp.openPull(demoPull, "feature", "main")
+		demo.Author = owner // the sole configured owner is also the PR author; reviewers use the App flow
 		demo.MergeBase, demo.MergeCommit = demoMergeBase, demoMerge
 		rp.runs[demoRun] = &run{
 			ID: demoRun, Attempt: 1, Event: "pull_request", HeadSHA: demoHead, HeadRepo: demoRepo,

@@ -18,9 +18,9 @@ import (
 	"github.com/alexei-led/archfit-app/internal/store"
 )
 
-// Deps are the only things the gate path may touch: GitHub, OIDC, the Store and a clock. On the Store the gate
-// path reads the entitlement and the admission, and writes only gate/feedback's publication leases, gate/inputs'
-// pusher and owner approval records, and gate/decisions' request records.
+// Deps are the only things the gate path may touch: GitHub, OIDC, the Store and a clock. The Store holds entitlements,
+// admissions, pusher attribution, bounded gate/inputs owner decisions and reviewer-request notifications, gate/decisions
+// agent requests, and gate/feedback publication leases.
 type Deps struct {
 	GitHub     *api.Client
 	OIDC       oidc.Verifier
@@ -40,6 +40,7 @@ type Gate struct {
 	repairer   feedback.Repairer
 	sweeper    sweep.Sweeper
 	actions    api.Actions
+	repos      api.Repos
 	pulls      api.Pulls
 	queues     api.MergeQueues
 	comments   api.Comments
@@ -77,11 +78,11 @@ func compose(gh github, v oidc.Verifier, s store.Store, adm admitter, audience s
 	reqs := decisions.New(s, gh, gh, now)
 	publisher := feedback.New(gh, gh, gh, s, audience, now) // the audience is the App's base URL
 	return newGate(newReceiver(gh, v, audience, adm), resolver, reqs, publisher, feedback.NewRepairer(gh, gh, gh, gh, s, now),
-		sweep.New(gh, gh, gh, resolver, publisher, adm, reqs, c), gh, gh, gh, gh, adm, now)
+		sweep.New(gh, gh, gh, resolver, publisher, adm, reqs, c), gh, gh, gh, gh, gh, adm, now)
 }
 
-func newGate(rc ingest.Receiver, rs inputs.Resolver, rq requests, p feedback.Publisher, rp feedback.Repairer, sw sweep.Sweeper, a api.Actions, pl api.Pulls, q api.MergeQueues, cm api.Comments, adm admitter, now func() time.Time) *Gate {
-	return &Gate{receiver: rc, resolver: rs, requests: rq, publisher: p, repairer: rp, sweeper: sw, actions: a, pulls: pl, queues: q, comments: cm, admissions: adm, now: now}
+func newGate(rc ingest.Receiver, rs inputs.Resolver, rq requests, p feedback.Publisher, rp feedback.Repairer, sw sweep.Sweeper, a api.Actions, repos api.Repos, pl api.Pulls, q api.MergeQueues, cm api.Comments, adm admitter, now func() time.Time) *Gate {
+	return &Gate{receiver: rc, resolver: rs, requests: rq, publisher: p, repairer: rp, sweeper: sw, actions: a, repos: repos, pulls: pl, queues: q, comments: cm, admissions: adm, now: now}
 }
 
 // UploadHandler serves POST /v1/reports.
@@ -123,16 +124,32 @@ const EntitlementKey = inputs.EntitlementKey
 
 // Target, Candidate and the refusals of an owner approval are owned by gate/inputs.
 type (
-	Target    = inputs.Target
-	Candidate = inputs.Candidate
+	Target          = inputs.Target
+	Candidate       = inputs.Candidate
+	DecisionAction  = inputs.DecisionAction
+	Objection       = inputs.Objection
+	DecisionHistory = inputs.DecisionHistory
 )
 
 var (
-	ErrNothingToApprove = inputs.ErrNothingToApprove
-	ErrForkPull         = inputs.ErrForkPull
-	ErrAgentIdentity    = inputs.ErrAgentIdentity
-	ErrNotOwner         = inputs.ErrNotOwner
-	ErrDigestsChanged   = inputs.ErrDigestsChanged
+	ErrNothingToApprove     = inputs.ErrNothingToApprove
+	ErrForkPull             = inputs.ErrForkPull
+	ErrAgentIdentity        = inputs.ErrAgentIdentity
+	ErrNotOwner             = inputs.ErrNotOwner
+	ErrDigestsChanged       = inputs.ErrDigestsChanged
+	ErrActiveObjections     = inputs.ErrActiveObjections
+	ErrOwnerDecisionStale   = inputs.ErrOwnerDecisionStale
+	ErrDecisionReason       = inputs.ErrDecisionReason
+	ErrNoApprovalToWithdraw = inputs.ErrNoApprovalToWithdraw
+	ErrDecisionInvalid      = inputs.ErrDecisionInvalid
+	ErrDecisionHistoryFull  = inputs.ErrDecisionHistoryFull
+)
+
+const (
+	DecisionApprove        = inputs.DecisionApprove
+	DecisionRequestChanges = inputs.DecisionRequestChanges
+	DecisionWithdraw       = inputs.DecisionWithdraw
+	DecisionOverride       = inputs.DecisionOverride
 )
 
 // Entitlement is owned by gate/inputs.

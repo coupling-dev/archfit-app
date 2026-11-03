@@ -251,23 +251,11 @@ overwrite feedback for a newer head. Ordinary feedback needs no LLM.
 
 ## 6. Governance and baseline migration
 
-Architecture-owner approval is separate authority, not a mandatory separate PR.
-Code and policy may land atomically with approval bound to the exact head and
-policy snapshot. Resolve owner authority from protected policy. Head-edited
-CODEOWNERS cannot grant approval rights. An owner approves an exact head in
-one of two ways: an approving review on that head, or Approve on the App's pull
-request page. The App approval is needed because GitHub does not let an author
-approve their own pull request, so a sole owner could otherwise never change
-policy. It is recorded under the head SHA with the digests of the protected
-files the owner was shown, and holds only while the approver is still an owner
-and the pull request still changes exactly those files; a later commit needs a
-new approval. A push never approves: a local coding agent pushes with its
-owner's credentials, so the pusher says nothing about who decided. Accounts
-listed under `agents` in the protected settings never approve, also when they
-are owners or members of an owner team. A fork head cannot be approved in the
-App. Strict, narrow, expiring exceptions
-follow the [product governance rules](product.md#3-architecture-policy-and-authority)
-and T14–T16, not an automatic accepted-debt refresh.
+Architecture authority is separate from repository write permission; no separate policy PR is mandatory. Code and policy may land atomically, but the decision is bound to the exact head, protected-file digest map and current protected-settings SHA. The App reads owners/teams only from `.archfit-app.yaml` at the protected ref. Head settings, CODEOWNERS, pusher identity, comments and repository admin status never grant architecture authority. A push never approves, including a sole owner's push.
+
+An eligible current non-agent owner may approve through a native GitHub review on the exact head or record an App decision. An owner request for changes blocks ordinary approval, including when its GitHub review body is empty. A current owner may explicitly override an App or GitHub objection with a reason and exact objection versions. This grants Archfit authorization only; the App does not dismiss a native review or bypass branch protection, which GitHub may still enforce independently. A withdrawal suppresses the owner's prior Archfit grants for that exact candidate, including native approval versions present at withdrawal, without changing the native GitHub review; a newly submitted native approval or App approval can authorize Archfit again. The PR author who is the sole configured owner can use the App because GitHub does not accept a self-review. A new head or change to protected settings content invalidates an old grant/override; App objections remain visible across pushes until a new explicit decision resolves them. App reasons and bounded history are stored under the installation and mirrored as public PR comments. A fork cannot receive an App decision. Reviewer requests are notifications only, deduped per unchanged head and protected-settings snapshot, and their failure never changes owner authority. Rollback to an older App image requires a merge pause/forward fix because old code does not understand negative decision records; see the user guide's rollback note.
+
+Strict, narrow, expiring exceptions follow the [product governance rules](product.md#3-architecture-policy-and-authority) and T14–T16, not an automatic accepted-debt refresh.
 
 ### Engine waiver contract
 

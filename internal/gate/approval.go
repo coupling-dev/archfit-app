@@ -14,16 +14,25 @@ import (
 type Approvals interface {
 	PullApproval(ctx context.Context, t Target, login, author string) (PullApproval, error)
 	Approve(ctx context.Context, t Target, login string, seen map[string]string) error
+	Decide(ctx context.Context, t Target, login string, seen map[string]string, action DecisionAction, reason string, overrideIDs []string) error
 	Reevaluate(ctx context.Context, t Target) error
 }
 
 // PullApproval is the owner approval of a pull request head as the App's pull request page shows it.
 type PullApproval struct {
-	Candidate            // no Paths: the pull request needs no owner approval, and nothing below is set
-	Granted       bool   // an owner approved this exact head, on GitHub or in the App
-	ApprovedBy    string // the approving login when Granted
-	Refusal       error  // while not Granted: why login may not approve in the App (an Err* refusal); nil when it may
-	AuthorIsAgent bool   // the pull request was opened by an agent identity of the protected settings
+	Candidate
+	SettingsFound       bool
+	Owners              []string
+	SettingsRef         string
+	GateMode            string
+	Granted             bool
+	ApprovedBy          string
+	Refusal             error
+	CanWithdraw         bool
+	NotificationProblem bool
+	AuthorIsAgent       bool
+	Objections          []Objection
+	History             []DecisionHistory
 }
 
 // errNotAdmitted refuses an installation no operator approved. The App's pages answer it before they get here.
@@ -35,7 +44,7 @@ func (g *Gate) PullApproval(ctx context.Context, t Target, login, author string)
 		return PullApproval{}, err
 	}
 	c, err := g.resolver.Candidate(ctx, t)
-	if err != nil || len(c.Paths) == 0 {
+	if err != nil {
 		return PullApproval{}, err
 	}
 	trusted, err := g.resolver.Resolve(ctx, t, g.now())
@@ -43,17 +52,38 @@ func (g *Gate) PullApproval(ctx context.Context, t Target, login, author string)
 		return PullApproval{}, fmt.Errorf("gate: resolve inputs: %w", err)
 	}
 	out := PullApproval{
-		Candidate: c, Granted: trusted.Approval == inputs.ApprovalGranted, ApprovedBy: trusted.ApprovedBy,
-		AuthorIsAgent: trusted.Settings.IsAgent(author),
+		Candidate: c, SettingsFound: trusted.SettingsFound, Owners: append([]string{}, trusted.Settings.Owners...),
+		SettingsRef: protectedSettingsRef(t), GateMode: string(trusted.Settings.Gate),
+		Granted: trusted.Approval == inputs.ApprovalGranted, ApprovedBy: trusted.ApprovedBy,
+		AuthorIsAgent: trusted.Settings.IsAgent(author), Objections: append([]Objection{}, trusted.Objections...),
+		History: append([]DecisionHistory{}, trusted.DecisionHistory...),
 	}
-	if out.Granted {
+	if len(c.Paths) == 0 || !trusted.SettingsFound {
 		return out, nil
 	}
-	switch err := g.resolver.CanApprove(ctx, t, login); {
-	case refusal(err):
-		out.Refusal = err
-	case err != nil:
-		return PullApproval{}, err
+	if t.Fork {
+		out.Refusal = inputs.ErrForkPull
+		return out, nil
+	}
+	out.NotificationProblem = g.resolver.ReviewerNotificationProblem(ctx, t)
+	if err := g.resolver.CanApprove(ctx, t, login); err != nil {
+		if refusal(err) {
+			out.Refusal = err
+		} else {
+			return PullApproval{}, err
+		}
+	}
+	if out.Refusal == nil {
+		canWithdraw, err := g.resolver.CanWithdraw(ctx, t, login)
+		if err != nil {
+			if refusal(err) {
+				out.Refusal = err
+			} else {
+				return PullApproval{}, err
+			}
+		} else {
+			out.CanWithdraw = canWithdraw
+		}
 	}
 	return out, nil
 }
@@ -68,14 +98,27 @@ func refusal(err error) bool {
 	return false
 }
 
+// protectedSettingsRef is the immutable protected settings ref when available.
+func protectedSettingsRef(t Target) string {
+	if t.BaseSHA != "" {
+		return t.BaseSHA
+	}
+	return t.BaseRef
+}
+
 // Approve records login's approval of t's head in the App: the way a sole owner approves, because GitHub does not let
 // an author approve their own pull request. seen is the Candidate digests the owner was shown. It does not re-decide
 // the pull request; Reevaluate does.
 func (g *Gate) Approve(ctx context.Context, t Target, login string, seen map[string]string) error {
+	return g.Decide(ctx, t, login, seen, DecisionApprove, "", nil)
+}
+
+// Decide records an owner decision bound to the shown head and protected-file digests.
+func (g *Gate) Decide(ctx context.Context, t Target, login string, seen map[string]string, action DecisionAction, reason string, overrideIDs []string) error {
 	if err := g.admitted(ctx, t); err != nil {
 		return err
 	}
-	return g.resolver.Approve(ctx, t, login, seen, g.now())
+	return g.resolver.Decide(ctx, t, login, seen, action, reason, overrideIDs, g.now())
 }
 
 // Reevaluate re-decides the pull request t after its owner approval changed, as a review event does: an
@@ -85,7 +128,7 @@ func (g *Gate) Reevaluate(ctx context.Context, t Target) error {
 	if err := g.admitted(ctx, t); err != nil {
 		return err
 	}
-	reaction, err := g.approvalChanged(ctx, t)
+	reaction, err := g.refreshOwnerDecision(ctx, t)
 	slog.Default().InfoContext(ctx, "gate reevaluate",
 		"installation_id", t.Repo.InstallationID, "pr", t.PullRequest, "head_sha", t.HeadSHA,
 		"reaction", reaction, "failed", err != nil)

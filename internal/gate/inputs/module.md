@@ -6,23 +6,19 @@
 
 ## Purpose
 
-`inputs` resolves everything the gate is allowed to believe about a pull request: settings, policy,
-baseline and labels digests from the protected ref, the changed protected paths, the architecture owner's approval
-on the exact head SHA (a GitHub review, or an approval recorded in the App), the earliest waiver expiry, and the
-cached entitlement. Without it, the gate would
-compare a report with whatever the head tree says, and a contributor could weaken the gate in the same
-PR that violates it.
+`inputs` resolves everything the gate is allowed to believe about a pull request: settings, policy, baseline and labels digests from an immutable protected-ref snapshot, changed protected paths, native and App owner decisions on an exact candidate, active objections, the earliest waiver expiry, and the cached entitlement. It owns the durable App decision ledger and bounded audit history. Without it, the gate could trust a pull request's head-tree authority or silently approve a candidate that an owner objected to.
 
 ## Functional Responsibilities
 
-- Read `.archfit-app.yaml`, `.archfit.yaml`, `.archfit-baseline.json` and `.archfit-labels.yaml` at the target's `BaseRef`.
+- Pin the current protected branch head for a pull-request target when `Target.BaseSHA` is empty, then read `.archfit-app.yaml`, `.archfit.yaml`, `.archfit-baseline.json` and `.archfit-labels.yaml` at that immutable SHA. A supplied `BaseSHA` is the exact settings snapshot shown for an interactive decision.
 - Compute raw-byte digests (bare lowercase hex SHA-256) of policy, baseline and labels.
 - Find which protected paths the PR changes.
-- Decide `Approval`: a base-version owner who is no agent identity approved this exact head SHA, on GitHub or in the
-  App, or not. A push never approves.
-- Record an owner's approval made in the App (`Approve`), bound to the head SHA and to the digests of the protected
-  files the owner was shown (`Candidate`), and say who may make one (`CanApprove`).
-  `CanDecide` is the same owner rule without a pull request's protected paths: who may decide a decision request.
+- Decide `Approval`: a current base-version owner who is no agent identity approved this exact head and protected-file candidate, on GitHub or in the App, and no active owner objection remains. A push never approves.
+- Return current native/App objections and the bounded App decision history for the PR. Imported native review ID, state, body and identity come from GitHub. A comment, including a mirrored App decision comment, is never a decision.
+- Record `approve`, `request_changes`, `withdraw` and explicit `override` actions with CAS against the current candidate and objection versions. A reason is required for request changes, withdrawal and override. An override can cover App or native objections for Archfit only; it never dismisses a GitHub review or bypasses branch protection.
+- Preserve valid unchanged-head legacy `approval/` records. A current-candidate withdrawal suppresses the owner's prior App/legacy grant and the exact native approval version present at withdrawal for Archfit; a newly submitted native approval or App approval can grant again. It never changes the GitHub review. A new head or change to protected settings content cannot reuse an old App grant or override.
+- Best-effort request missing configured owners/teams without requesting the PR author, known agent logins, already requested principals or every member of a team. Notification state is read without writes on UI/inbox GETs. Requests run on PR events, and notification failure is separate from authority and retried at most three times per pull-request head and protected-settings snapshot.
+- `CanDecide` is the owner rule without a pull request's protected paths: who may decide a decision request.
 - Record who pushed a head (`RecordPusher`), from a signed `push` delivery, for attribution only.
 - Resolve the trusted inputs of a merge group commit (`Target.MergeGroup`): read the default branch's merge queue,
   take the queued pull requests ahead of and at the group as its members, read every protected file at two commit SHAs,
@@ -44,8 +40,7 @@ rules and the protected path set will change with pilots.
 - The protected path set and how a changed path is detected, for a caller that has the settings of the
   protected ref (`ProtectedPaths`) and for one that has not read them (`MayBeProtected`).
 - The digest predicate: what a trusted digest list accepts (`Accepts`), and which digest stands for a list (`First`).
-- The approval algorithm: which reviews count, how owners and teams are matched, latest-review-wins, that an agent
-  identity of the settings (`Settings.IsAgent`) never approves, and when an approval recorded in the App holds.
+- The decision algorithm: latest native owner review, active native/App objections, exact-head grants, current owner/team membership, agent exclusion, explicit reasoned override, and how legacy App approvals are preserved or superseded.
 - The exception rule for owner-approved head policy, baseline and labels digests.
 - The merge group rules: who the members are, the snapshot commit `S`, per-file attribution of a change to exactly one
   owner-approved member, and that the group commit itself is never approved.
@@ -114,6 +109,7 @@ type Target struct {
     PullRequest int // 0 for a default-branch push and a merge group
     HeadSHA     string
     BaseRef     string // protected ref; the default branch for a push and a merge group
+    BaseSHA     string // exact protected-settings snapshot for an interactive PR decision; otherwise pinned by Resolve
     Fork        bool
     // MergeGroup marks HeadSHA as a merge group commit of BaseRef's merge queue; PullRequest is 0. Its inputs are read
     // at immutable commit SHAs and its members' approvals are their own pull requests' (resolveGroup).
@@ -132,12 +128,15 @@ const (
 type Trusted struct {
     Settings             Settings
     SettingsFound        bool
+    SettingsSHA          string // exact commit whose protected settings were resolved
     PolicyDigests        []string // base digest, plus the head digest when Approval == ApprovalGranted
     BaselineDigests      []string // same rule; empty = no baseline on the protected ref
     LabelsDigests        []string // same rule; empty = no labels file on the protected ref
     ProtectedPaths       []string // protected paths this PR changes
     Approval             Approval
     ApprovedBy           string
+    Objections           []Objection // includes native objections explicitly overridden for Archfit, marked Overridden
+    DecisionHistory      []DecisionHistory
     EarliestWaiverExpiry time.Time // zero = no waivers
     Suspended            bool
     Entitlement          Entitlement
@@ -166,28 +165,69 @@ type Group struct {
 
 ```go
 type Resolver interface {
-    // Resolve reads the protected ref and reviews. It never reads policy, settings, baseline,
-    // owners, or CODEOWNERS from the head tree, except to hash an owner-approved candidate. A merge-group
-    // Target takes the separate path of "Merge group resolution" below.
+    // Resolve pins a pull request to the current protected branch head when BaseSHA is empty, then reads trusted inputs
+    // at that commit. It never trusts settings, owners, policy, baseline or CODEOWNERS from the candidate head.
+    // A merge-group Target takes the snapshot path below.
     Resolve(ctx context.Context, t Target, now time.Time) (Trusted, error)
-    // RecordPusher adds the login that pushed t's head, from a signed push delivery, to the record of who pushed it.
-    // The record is attribution only: no push approves anything. "" records nothing. Opening a pull request records
-    // nothing.
+    // RecordPusher adds the login from a signed push delivery for attribution only; it never approves anything.
     RecordPusher(ctx context.Context, t Target, login string) error
-    // Candidate returns the protected paths the pull request t changes, by the rule of Resolve, and the digest of each
-    // at t.HeadSHA: what an owner approves in the App.
+    // Candidate returns the protected paths and head digests shown for an App decision.
     Candidate(ctx context.Context, t Target) (Candidate, error)
-    // CanApprove reports whether login may approve t's head in the App now: nil, or ErrNothingToApprove, ErrForkPull,
-    // ErrAgentIdentity or ErrNotOwner, in that order. Owners and agents come from the settings of the protected ref.
+    // CanApprove applies the current protected-owner, agent, fork and protected-path rules.
     CanApprove(ctx context.Context, t Target, login string) error
-    // CanDecide reports whether login may decide for the owners now, by the owner rule of CanApprove and for no pull
-    // request in particular: nil, ErrAgentIdentity or ErrNotOwner. Owners and agents come from the protected ref t.BaseRef.
+    // CanWithdraw reports whether login has an App or native grant they can withdraw for this candidate.
+    CanWithdraw(ctx context.Context, t Target, login string) (bool, error)
+    // Decide serializes an authenticated transition by CAS. Request changes, withdrawal and override require a reason.
+    // Override IDs must exactly match all App/GitHub objection versions displayed, including earlier overrides for this current candidate.
+    Decide(ctx context.Context, t Target, login string, seen map[string]string, action DecisionAction, reason string, overrideIDs []string, now time.Time) error
+    // MirrorDecisions retries persisted App reasons with idempotent marker comments; a mirror failure never rolls back authority.
+    MirrorDecisions(ctx context.Context, t Target, comments api.Comments) error
+    // RequestEligibleReviewers best-effort requests missing configured owners/teams. It returns notification failure only.
+    RequestEligibleReviewers(ctx context.Context, t Target, author string, now time.Time) bool
+    // Read saved notification state without sending reviewer requests or writing state.
+    ReviewerNotificationProblem(ctx context.Context, t Target) bool
+    // CanDecide applies the current owner rule without a particular pull-request candidate.
     CanDecide(ctx context.Context, t Target, login string) error
-    // Approve records login's approval of t's head, bound to its SHA, when CanApprove allows it and seen equals the
-    // Candidate digests (else ErrDigestsChanged). A record for that head already, by any owner, is success and stays
-    // as it is, unless it no longer holds: then it is replaced.
+    // Approve is a compatibility façade for Decide(DecisionApprove).
     Approve(ctx context.Context, t Target, login string, seen map[string]string, now time.Time) error
 }
+
+// DecisionAction is one authenticated architecture decision. It never merges or publishes a pull request.
+type DecisionAction string
+
+const (
+    DecisionApprove        DecisionAction = "approve"
+    DecisionRequestChanges DecisionAction = "request_changes"
+    DecisionWithdraw       DecisionAction = "withdraw"
+    DecisionOverride       DecisionAction = "override"
+)
+
+// Objection is the latest active request for changes from an eligible non-agent owner. Native fields are imported from GitHub.
+type Objection struct {
+    ID, Login, Source, Reason, HeadSHA string
+    At time.Time
+    Overridden bool // an exact reasoned Archfit override; a native GitHub review remains on GitHub
+}
+
+// DecisionHistory is one bounded App audit entry, including the objection snapshots an override covered.
+type DecisionHistory struct {
+    ID, Login string
+    Action DecisionAction
+    Reason, HeadSHA, BaseSHA string
+    At time.Time
+    Overrode []string
+    OverrodeObjections []Objection
+}
+
+// The refusals of App decisions. Other errors are failed authority, GitHub or Store reads/writes.
+var (
+    ErrActiveObjections = errors.New("inputs: active owner objections require an explicit override")
+    ErrOwnerDecisionStale = errors.New("inputs: decision candidate or objection set changed")
+    ErrDecisionReason = errors.New("inputs: this architecture decision requires a reason")
+    ErrNoApprovalToWithdraw = errors.New("inputs: no active architecture approval by this owner to withdraw")
+    ErrDecisionInvalid = errors.New("inputs: unknown or malformed architecture decision")
+    ErrDecisionHistoryFull = errors.New("inputs: architecture decision history is full")
+)
 
 // Candidate is what an owner approves in the App: the protected paths a pull request changes and what each holds at
 // its head.
@@ -265,38 +305,15 @@ superset stated in `MayBeProtected`.
 
 ### Resolve, step by step
 
-1. Entitlement (always first, never fails the call): `Store.Get(Tenant(t.Repo.InstallationID), EntitlementKey)`
-   under a 2 second timeout **[default]**. `store.ErrNotFound`, any other error, a timeout, or JSON that
-   does not decode gives the zero `Entitlement`, which means "not suspended" **[default]**. Log the outcome
-   (`found`, `missing`, `unreadable`) and the installation ID only. Recovery of a missing record is outside the
-   gate: `control`'s sweep backfills it (Observe + Refresh for every installation), so a missed installation
-   webhook delays the trial start by at most one sweep interval. A Store outage never fails the entitlement
-   read, so it never fails `Resolve` by itself; only a failed read of an approval record does (below). That
-   publishing then also needs the Store for its lease is `gate/feedback`'s rule, not this module's.
+1. Entitlement is read first under its bounded timeout. Missing, invalid or unreadable entitlement data gives the zero value; it never grants owner authority. The outcome and installation ID are logged.
 2. `Suspended = t.Repo.Private && !SuspendAfter.IsZero() && !now.Before(SuspendAfter)`.
-3. Settings: `Repos.File(ref = t.BaseRef, settings.Path)`. `api.ErrNotFound` → return
-   `Trusted{SettingsFound: false}` with only `Entitlement` and `Suspended` filled; `Approval` is
-   `ApprovalNotRequired`. `settings.Parse` error → same result (a broken settings file is a missing one) **[default]**.
-4. Policy: `Repos.File(t.BaseRef, policy.PolicyPath)`. Found → `PolicyDigests = [policy.Digest(raw)]`.
-   Absent (`api.ErrNotFound` only) → empty list; the verdict then reports `policy_missing`.
-5. Baseline: `Repos.File(t.BaseRef, policy.BaselinePath)`. Found → `BaselineDigests = [policy.Digest(raw)]`. Absent → empty.
-   Labels: the same with `policy.LabelsPath` and `LabelsDigests`. inputs never parses either file.
-6. Waivers: `policy.Waivers(basePolicy)`. An error gives no waivers and one log line with the outcome;
-   the engine enforces waivers anyway.
-7. `t.PullRequest == 0` (push): stop. `ProtectedPaths` empty, `ApprovalNotRequired`.
-8. `Trusted.ProtectedPaths` = `Pulls.ChangedFiles` ∩ `ProtectedPaths(settings)` ({`policy.PolicyPath`,
-   `policy.BaselinePath`, `policy.LabelsPath`, `settings.Path`, `Settings.Workflow`}), in that fixed order. When
-   `ChangedFiles` reports `truncated == true`, any path may have changed: all five paths count as changed (fail closed).
-9. `ProtectedPaths` empty → `ApprovalNotRequired`. Stop.
-10. `t.Fork` → `ApprovalMissing`. Stop. No head file is read for a fork.
-11. Approval from `Pulls.Reviews` (algorithm below). When no owner approved there, the approval recorded in the App for
-    `t.HeadSHA` (below). Neither → `ApprovalMissing`. Stop. Who pushed the head is never read here.
-12. Granted → `ApprovedBy` = the approving login. If the policy path is in `ProtectedPaths`: read it at
-    `ref = t.HeadSHA`, append its digest to `PolicyDigests` (absent at head → nothing appended). Same for
-    the baseline and the labels file. Head waivers are parsed from the approved head policy.
-13. `EarliestWaiverExpiry` = the earliest `Waiver.Expires` that is not before `now`, over the base policy
-    and the approved head policy; zero when there is none **[default: expired waivers are skipped so that
-    an old expiry does not hide the next one]**.
+3. For a PR with empty `Target.BaseSHA`, pin `BaseRef` with `Repos.BranchHead`; a supplied `BaseSHA` is the already selected immutable protected-settings snapshot. A read failure is an error. Set `Trusted.SettingsSHA` to that commit.
+4. Read and parse settings at `Trusted.SettingsSHA`. Missing or unparsable settings returns `SettingsFound: false`, no owners and `ApprovalNotRequired`. Read policy, baseline and labels at the same commit; only `api.ErrNotFound` means absent.
+5. For a PR, intersect `ChangedFiles` with `ProtectedPaths(settings)` in fixed order. A truncated list counts every protected path. No protected path gives `ApprovalNotRequired`. A fork is `ApprovalMissing`; no fork head file is read.
+6. Read current GitHub reviews and the current App decision ledger. Compute native objections, latest eligible App objections, and which objection IDs an exact-current-candidate override covers. `Trusted.Objections` includes overridden objects with `Overridden: true` for display/audit; only unoverridden objects block.
+7. Any unoverridden owner objection blocks ordinary approval. Otherwise a current-head native approval or a valid current-candidate App grant gives `ApprovalGranted`. A current-candidate withdrawal suppresses the withdrawing owner's native approval version(s) that existed at the time of withdrawal, for Archfit only; a newly submitted native approval or App approval can grant again. An explicit App override is itself an App grant, including for a GitHub-origin objection; the native review stays on GitHub. No decision may dismiss that native review or alter branch rules.
+8. When granted, hash only changed protected policy/baseline/labels files at the candidate head and append those digests. Head contents are never parsed as authority. Settings owners/gate mode remain from the protected snapshot.
+9. Compute the earliest upcoming waiver expiry from the protected policy and, only for an approved candidate, the approved head policy.
 
 ### Merge group resolution
 
@@ -327,54 +344,27 @@ commit `X`, `t.BaseRef` the default branch, `t.PullRequest` 0. `Trusted.Group` i
    `"<login> (#<n>), ..."`; else `ApprovalNotRequired`. The accepted digests, and the waivers, are those of the blobs at
    `X` (equal to `S`'s for a path no member changed). The group commit is never an approval subject.
 
-### Approval algorithm
+### Native review and objection algorithm
 
-- Owners are `Settings.Owners` of the file at `BaseRef`. Nothing at head (settings, CODEOWNERS) is read.
-- Reviews are taken in the order GitHub returns them (chronological). `COMMENTED` reviews are ignored
-  **[default]**; of the rest, the latest review per reviewer wins.
-- An agent identity (`Settings.IsAgent` of the base settings: case ignored, `name` and `name[bot]` one identity)
-  never approves, before any owner check: also when `owners` names it, or an owner team holds it. No team lookup is
-  made for it. A local coding agent acts with its owner's credentials, so naming that account in `agents` is the
-  owner's way to keep it from approving.
-- A reviewer approves when that latest review has `State == "APPROVED"` and `CommitSHA == t.HeadSHA`.
-  A `DISMISSED` or `CHANGES_REQUESTED` latest review does not approve. A re-push changes the head SHA, so
-  every earlier approval stops counting.
-- A reviewer is an owner when the login equals an owner entry without `/` (case-insensitive), or
-  `Pulls.TeamMember(repo, entry, login)` is true for an entry with `/`. Team lookups happen only for
-  reviewers with a qualifying approval.
-- The first approving owner in review order is `ApprovedBy`.
-- An ordinary approving review by a non-owner confers nothing.
+- Owners and agents come only from `.archfit-app.yaml` at the pinned protected-settings commit. Head settings, CODEOWNERS and repository write/admin permission do not confer authority.
+- `Reviews` are processed in GitHub order. `COMMENTED` reviews do not supersede an earlier review; the latest non-comment review by each reviewer wins. Identity, review ID, state, body and submitted time are imported from GitHub. Native objection IDs include a digest of those review-version fields, so an edit is a new objection version.
+- An eligible owner review with `APPROVED` on `t.HeadSHA` grants Archfit authorization unless an unoverridden owner objection remains. An owner `CHANGES_REQUESTED` review is an objection even with an empty body. A dismissed review grants nothing and is not an objection. Dismissal does not revoke an unrelated App grant based on the old `SubmittedAt` time.
+- A native review or App request for changes blocks ordinary approval. An explicit App `DecisionOverride` may cover a displayed native or App objection, but it is bound to `HeadSHA`, the protected-settings snapshot, candidate digests and every objection ID shown. It changes only Archfit authorization; the native GitHub review is not dismissed and branch protection remains independent.
+- Agents never approve or object as architecture owners, even when an owner team contains an agent. Team membership errors fail closed.
+- A re-push requires an approval of the new head. App objections remain visible across heads; an override or grant from an old head/settings snapshot does not apply to a new candidate.
 
-### Approval in the App
+### Decisions in the App
 
-A design rule of the product: anyone may propose a policy change, only an architecture owner can authorize it, and
-GitHub does not let an author approve their own pull request. A sole owner would never get a change through. So an
-owner may approve the exact head in the App instead (the Approve button of `control/ui`'s pull request page).
+The pull-request page resolves authoritative owners and changed protected paths even when the report is absent or rejected. The page binds every form to the current head, protected-settings commit and the raw-byte digests shown.
 
-- `Candidate(t)`: the settings of `BaseRef` (none or unparsable → no paths), `ChangedFiles` ∩ `ProtectedPaths` by the
-  rule of `Resolve` step 8 (a truncated list counts every path), and for each path `policy.Digest` of the file at
-  `t.HeadSHA`, `""` when the head deletes it. The bytes are hashed, never parsed. A fork gets its paths and no digest:
-  no head file of a fork is read.
-- `CanApprove(t, login)` refuses, in this order: no protected path changed (`ErrNothingToApprove`), a fork
-  (`ErrForkPull`), an agent identity of the base settings (`ErrAgentIdentity`), a login that is not an owner by the
-  rule of a reviewer, team membership included (`ErrNotOwner`). Owners and agents come from `BaseRef` only.
-- `CanDecide(t, login)` is the last two checks alone: `ErrAgentIdentity`, `ErrNotOwner` (also without a settings file),
-  or nil, whatever the pull request changes.
-- `Approve(t, login, seen, now)` runs the same checks, computes `Candidate` again and refuses when `seen` is not equal
-  to its digests (`ErrDigestsChanged`): what the owner looked at is not what the head holds now. Then it writes
-  `{login, head_sha, digests, at}` as JSON at `approval/<lowercase repo full name>/<pull request>/<t.HeadSHA>` under the
-  installation tenant, by `CompareAndSwap` from nothing. A record already there that still holds (below), by any owner,
-  is success and is never replaced: the first approval is the one kept. One that no longer holds approves nothing, so it
-  is replaced by a `CompareAndSwap` against the very bytes judged void; an approval that lands after that read wins.
-  The key holds the pull request because the protected paths and the base differ between two pull requests of one head.
-- `Resolve` step 11 reads the record when no review approved. It holds only when the recorded login is still an
-  owner and no agent under the current base settings, has not since submitted a review that requests changes or one that
-  was dismissed (`withdrawn`: the same way an owner ends a GitHub approval; the App has no withdraw button), and the recorded digests equal the `Candidate` digests computed
-  now. The key holds the head SHA, so a new commit never finds it. A base that moved so that the pull request changes
-  another set of protected paths gets other digests, so the record no longer holds.
-- A failed read of the record is an error: the decision is retried, never published on a guess. A missing record is
-  "not approved"; a record that does not decode approves nothing (one log line, outcome `unreadable`).
-- A fork never gets here: `Resolve` stops at step 10, and `Approve` refuses it.
+- `Candidate(t)` reads the protected settings snapshot, `ChangedFiles` ∩ `ProtectedPaths` (a truncated list counts every path), and `policy.Digest` for each changed path at `t.HeadSHA`; `""` means deleted. It never reads a fork head.
+- `Decide(t, login, seen, action, reason, overrideIDs, now)` rechecks current owner/team membership, known-agent status, the protected candidate and native/App objections inside a bounded CAS loop. `request_changes`, `withdraw` and `override` require a bounded reason. Ordinary `approve` fails while another active objection exists; a same-owner App objection can be resolved with a new explicit approval. Overrides must name the complete current objection-ID set and exact candidate, including native review IDs.
+- The current decision and up to 64 audit actions are stored in `owner-decision/<lowercase repo>/<pull>` under the installation tenant. Each action records owner, action, reason, head SHA, protected settings SHA, digests, timestamp and (for override) objection snapshots. At the cap, the App refuses a new decision rather than dropping history.
+- Each stored App reason is mirrored to an idempotent App-authored PR comment. A mirror failure does not roll back the authenticated decision; the App retries it from the same record. Mirrored comments are display/audit data and are never read as authority.
+- Existing `approval/<repo>/<pull>/<head>` records are read for compatibility. A current unchanged-head legacy grant remains valid until a newer App request/withdrawal supersedes that owner's grant or current owner/input checks invalidate it. Unknown or malformed new decision records fail closed. See rollback note in the user guide: older deployed App images do not understand negative decision records.
+- `RequestEligibleReviewers` best-effort requests only configured direct owners/teams missing from GitHub's requested-reviewer list. It skips the PR author, known agent logins, teams containing the PR author, current-head reviewers, and already requested principals. It never requests every team member, removes unrelated requests, or affects authority. Requests are deduplicated per pull-request head and protected-settings snapshot with at most three attempts for each snapshot; API, membership or permission failures are surfaced as notification problems only.
+- `CanDecide(t, login)` applies the current owner/agent/team rule without a particular pull-request candidate.
+- A fork never receives an App grant or reviewer request.
 
 ### Pusher record
 
@@ -386,11 +376,7 @@ coding agent pushes with its owner's credentials, so a push from an owner accoun
 
 ### Errors
 
-`Resolve` returns an error for any GitHub failure other than "file absent" (including
-`api.ErrRateLimited`, matchable with `errors.Is`). The zero `Trusted` accompanies an error. The caller
-must not publish a passing result on error; the pending check stays. A failed Store read of the entitlement never
-returns an error; a failed Store read of an approval record does, because "not approved" would publish a guess.
-`Candidate`, `CanApprove` and `Approve` return GitHub and Store failures as errors too, never as a refusal.
+`Resolve` returns an error for any GitHub failure other than "file absent" (including `api.ErrRateLimited`). The zero `Trusted` accompanies an error; callers never publish a pass on an error. A failed entitlement read does not fail `Resolve`; a failed decision-ledger or legacy-approval read does. `Candidate`, `CanApprove`, `CanWithdraw`, `Decide` and `MirrorDecisions` return authority/Store failures as errors. Reviewer-request failures are deliberately reduced to a notification-problem flag and never alter authority.
 
 A protected file that exists but cannot be read is such a failure, never "absent": a file over the API client's
 size cap (1 MiB), a 5xx, a timeout. "Absent" is only `api.ErrNotFound`. `Resolve` returns the error, `gate` answers
@@ -402,8 +388,7 @@ size cap (1 MiB), a 5xx, a timeout. "Absent" is only `api.ErrNotFound`. `Resolve
 ### store
 
 - **Counterpart**: internal/store
-- **Direction**: inputs depends on store (`Get` of the entitlement and of the pusher and approval records,
-  `CompareAndSwap` of a pusher or approval record)
+- **Direction**: inputs depends on store (`Get` of entitlements, pusher, legacy approval and decision records; `CompareAndSwap` of pusher, decision and reviewer-request records/leases)
 - **Strength**: contract
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high (inputs side); store is low
@@ -413,11 +398,11 @@ size cap (1 MiB), a 5xx, a timeout. "Absent" is only `api.ErrNotFound`. `Resolve
   decode and a record with `by_id <= 0` are an error from `Admitted` and `Record`.
   Key `EntitlementKey`; value is the JSON of `Entitlement`.
   `ErrNotFound` is the sentinel of `store` for a missing key; for the entitlement inputs treats it like every other
-  Store error, for a pusher record it means "no pusher" and for an approval record "not approved".
-  Key `pusher/<lowercase repo full name>/<head sha>`; the value is the pushers' logins, one per line.
-  Key `approval/<lowercase repo full name>/<head sha>`; the value is the JSON `{login, head_sha, digests, at}`.
-  inputs calls only `Get` and, for those two records, `CompareAndSwap`; never `Put`, `Delete`, `Add`,
-  `CompareAndSwapAll`, `DeleteTenant` or `Tenants`. `SystemTenant` is never used here.
+  Store error, for a pusher record it means "no pusher" and for a legacy approval record "not approved". A malformed or unknown owner-decision record is an error, never a grant.
+  Key `pusher/<lowercase repo>/<head sha>`; the value is the pushers' logins, one per line.
+  Legacy key `approval/<lowercase repo>/<pull>/<head sha>`; valid records remain readable for unchanged candidates.
+  New key `owner-decision/<lowercase repo>/<pull>`; a versioned bounded ledger stores actions, reasons, candidate head/settings SHA/digests, objection snapshots and mirror state. CAS serializes transitions and mirror acknowledgement.
+  Reviewer notification key `review-request/<lowercase repo>/<pull>/<head sha>/<protected settings SHA>` plus a short lease; it records bounded attempts and completion per settings snapshot and never authorizes a decision. inputs calls only `Get` and `CompareAndSwap` for these gate-owned records; it never uses `Put`, `Delete`, `Add`, `CompareAndSwapAll`, `DeleteTenant` or `Tenants`. `SystemTenant` is never used here.
 
 <!-- contract: Tenant, SystemTenant — restated from internal/store/module.md -->
 ```go
@@ -578,10 +563,10 @@ func Waivers(policy []byte) ([]Waiver, error)
   absent file. `ErrRateLimited` is the sentinel returned after bounded backoff. `Review.CommitSHA` is the
   head SHA the review was submitted on. `ChangedFiles` lists both the old and the new path of a rename, and
   sets `truncated` when GitHub cut the list off. `PullByHead` and `OpenPulls` are not
-  called here; `BranchHead` and `Pull` only for a merge group. `MergeQueue` returns the entries of a branch's queue in
+  called here; `BranchHead` pins each PR to an immutable protected snapshot; `Pull` is also read for merge groups. `MergeQueue` returns the entries of a branch's queue in
   position order, none when it has no queue; a missing Merge queues permission (`api.ErrQueueForbidden`) and a queue
   over the read bound (`api.ErrQueueTooLong`) are errors, never an empty queue. Used methods: `Repos.File`,
-  `Pulls.ChangedFiles`, `Pulls.Reviews`, `Pulls.TeamMember`, and for a merge group `Repos.BranchHead`, `Pulls.Pull`,
+  `Pulls.ChangedFiles`, `Pulls.Reviews`, `Pulls.TeamMember`, `Repos.BranchHead`, reviewer request roles and comment mirroring; and for a merge group `Pulls.Pull`,
   `MergeQueues.MergeQueue`. `Installation` is not used here.
 
 <!-- contract: RepoRef, Repo, ErrNotFound, ErrRateLimited — restated from internal/github/api/module.md -->
@@ -686,11 +671,7 @@ type MergeQueues interface {
 
 ### Consumers (inbound)
 
-- **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Constructs the resolver, calls `Resolve`
-  per upload and per webhook, builds receipt digests with `Accepts` and `First`, decides the protected-push trigger
-  with `MayBeProtected`, re-publishes `Entitlement` and `EntitlementKey` to `control/account`, and `Target`,
-  `Candidate` and the refusals of an approval to `control/ui`, whose pull request page reaches `Candidate`,
-  `CanApprove` and `Approve` only through the façade.
+- **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Constructs the resolver, calls `Resolve` per upload/webhook, re-publishes the gate-owned decision façade to `control/ui`, mirrors decisions and re-evaluates required/advisory state and queued groups. It never routes Store decision writes through the upload/OIDC path.
 - **internal/gate/verdict**: model, gate / 1 / 1, high, balanced. Reads `Trusted` (`Group` included); calls `Accepts` for the digest checks.
 - **internal/gate/feedback**: model, gate / 1 / 1, high, balanced. Reads `Target` and `Trusted`.
 - **internal/gate/ingest** and **internal/gate/sweep** (through the gate façade): contract, gate / 1 / 1, high,
@@ -712,24 +693,19 @@ type MergeQueues interface {
 
 ## Constraints and Invariants
 
-- Never trust the head tree. Settings, owners, policy, baseline and the workflow path come from
-  `BaseRef` only. The single exception: the digest of a head policy, baseline or labels file for a PR whose exact head
-  SHA a base-version owner approved. `Candidate` hashes the changed protected files at the head to show and bind what
-  an owner approves; nothing in them is believed. CODEOWNERS is never read.
+- Never trust the head tree. Settings, owners, policy, baseline and workflow path come from the current protected-ref commit (`BaseSHA`/`SettingsSHA`), never the candidate head. The single exception is the digest of a changed head policy, baseline or labels file after the exact candidate is authorized. `Candidate` hashes protected head bytes for display/binding; it never parses them. CODEOWNERS is not an authority source.
 - For a fork, no head file is read and approval is never granted. A merge group with a fork member is `GroupFork`.
 - A merge group's membership comes from GitHub's queue and the pull requests read again by number; nothing the uploader
   states selects a member, and the `gh-readonly-queue/...` branch name is never read. A merge group commit is never an
   approval subject: only a member's own head is. An accepted group digest is the blob at `X`, once exactly one
   approved member's head holds it.
-- Approval is bound to `t.HeadSHA`. Any new commit invalidates it.
+- App grants/overrides bind the exact head SHA, protected settings SHA, digest map and objection-ID set. New heads, protected-settings snapshots or objections cannot inherit stale overrides. Active App objections survive a push until a later explicit decision resolves them.
 - One digest predicate and one protected path list. No other gate module compares a digest with a trusted list or
   names a protected path; they call `Accepts`, `First`, `ProtectedPaths` and `MayBeProtected`. The literal
   `.github/workflows/` exists here only; it restates the directory rule of `wire/settings` (owner: `wire/settings`,
   which exports no constant for it). If the two drift, `MayBeProtected` stops being a superset and a workflow push
   is noticed by the hourly sweep instead of at once. Remove the literal when `wire/settings` exports the directory.
-- The App never writes the baseline or the policy; inputs is read-only on GitHub, and on the Store it writes only the
-  pusher and approval records (the admission record is only read). An approval record is written only by `Approve`,
-  which the gate façade calls only for `control/ui`'s browser session; nothing on the upload (OIDC) path reaches it.
+- The App never writes the baseline or policy. On GitHub, inputs is read-only except for the narrow reviewer-request capability, which is notification-only. On Store it writes only pusher records, the bounded owner-decision ledger, and per-head/protected-settings-snapshot reviewer notification state/leases; the admission record is read-only. Decision writes are reachable only from the authenticated UI façade, never from report upload/OIDC.
 - A push never approves, and an agent identity never approves, on GitHub or in the App.
 - A Store outage, missing record, or malformed record never means non-payment: `Suspended` is false.
 - Public repositories are never suspended.
@@ -741,7 +717,7 @@ type MergeQueues interface {
 - Fail closed on GitHub errors: return the error; never return partial `Trusted` that could pass.
 - The tenant is `t.Repo.InstallationID`, which callers build from verified OIDC claims or a verified
   webhook; never from a client-supplied ID.
-- No cache, no state between calls **[default]**; the API client's conditional requests absorb repeat reads.
+- No process cache. Decision history and reviewer-request dedupe are explicit tenant-scoped persisted state. Reviewer requests are serialized per pull-request head and protected-settings snapshot, idempotent against GitHub's current request list, and bounded to three attempts for each snapshot; failure never changes authority.
 - Logs (`log/slog` default logger **[default]**, because the constructor carries none): installation ID,
   repository ID, digests, outcomes, timings. Never file content, owner lists, or reviewer names.
 - Imports: standard library, `wire/settings`, `wire/policy`, `github/api`, `store`. Never `control`, `app`, LLM or UI packages.
@@ -766,18 +742,17 @@ failing `Store` stub. `NewMemory` is the in-process Store constructor of `intern
 - **Test name**: `TestApprovalAlgorithm`
   **Scenario**: table: owner approved head; owner approved an older SHA; non-owner approved head; owner approved then requested changes; owner approved then commented; owner approval dismissed; login case differs; team owner with member and with non-member; two owners, second approves; an owner listed as an agent; the `[bot]` account of an agent; an agent in an owner team; an owner approving after an agent.
   **Expected behavior**: granted, missing, missing, missing, granted, missing, granted, granted, missing, granted with the second owner as `ApprovedBy`; missing three times, no team lookup for the agent; granted with the owner.
-- **Test name**: `TestOwnerPushNeverApproves`
-  **Scenario**: a baseline change whose head an owner, then a member of an owner team, pushed (a pusher record).
-  **Expected behavior**: missing; the base baseline digest only; no head read.
+- **Test name**: `TestReviewerRequestsOnlyMissingEligiblePrincipalsAndDedupesHead`, `TestReviewerRequestsNewOwnerAfterSettingsChangeAtSameHead`, `TestReviewerRequestsSkipTeamContainingPRAuthor`, `TestReviewerRequestFailureIsBoundedAndDoesNotGrantAuthority`
+  **Scenario**: a changed protected candidate with an existing CODEOWNERS request, a current-head reviewer, the PR author, an agent, an owner team and a failing notification endpoint; then owner settings change while the PR head stays fixed.
+  **Expected behavior**: only missing eligible configured principals are requested; the PR author, known agent and unrelated requests are untouched; notifications are bounded and deduped by head plus settings SHA, and a new snapshot requests newly configured owners only; notification failure leaves `ApprovalMissing` and never changes authority.
 - **Test name**: `TestCandidate`
   **Scenario**: nothing protected changed; baseline and settings; a labels file deleted at the head; a truncated list;
   a fork; no settings on the protected ref.
   **Expected behavior**: no paths; both paths with their head digests; the path with `""`; every path, an absent
   workflow `""`; the path and no digest, no head read; nothing.
-- **Test name**: `TestAppApprovalGrantsTheExactHead`
-  **Scenario**: an owner approves what `Candidate` showed; then a new head SHA; a member of an owner team approves.
-  **Expected behavior**: granted with the owner as `ApprovedBy`, base and head baseline digests, the record fields;
-  missing for the new head; granted for the team member.
+- **Test name**: `TestRequestChangesAndExplicitOverride`, `TestNativeReviewObjectionAndDismissalAreIndependentOfAppGrant`, `TestEditingOverriddenNativeReviewCreatesNewObjectionVersion`, `TestWithdrawalSuppressesPriorNativeApprovalWithoutChangingGitHubReview`, `TestOverrideIsBoundToNativeReviewVersions`, `TestOverrideDoesNotCarryToANewProtectedSettingsSnapshot`
+  **Scenario**: an App objection after a grant; ordinary approve; wrong and exact override IDs; a native `CHANGES_REQUESTED` review with an empty body; an explicit override followed by an unchanged native review; a new native review; a new protected settings SHA.
+  **Expected behavior**: objections block ordinary approval; overrides apply to either App or GitHub objections only for the exact head/settings/digests/objection IDs. An override grants Archfit while the native review remains `CHANGES_REQUESTED`; GitHub is not mutated. New objection versions and new protected-settings snapshots are not covered by stale overrides.
 - **Test name**: `TestAppApprovalRefusals`
   **Scenario**: digests changed or a path left out; a non-owner; an owner of the head settings only; no login; an
   owner listed as an agent; the `[bot]` account of an agent; an agent in an owner team; a fork; nothing protected
@@ -795,14 +770,12 @@ failing `Store` stub. `NewMemory` is the in-process Store constructor of `intern
   **Scenario**: after an App approval: the approver leaves the owners; becomes an agent; leaves the owner team; the
   pull request changes another protected path, or no longer one the owner approved.
   **Expected behavior**: missing each time; the head digest is not accepted.
-- **Test name**: `TestAppApprovalIsCreateOnly`
-  **Scenario**: a second `Approve` by the same owner and by another, later.
-  **Expected behavior**: success; the record keeps the first login and time.
-- **Test name**: `TestAppApprovalRecordFailures`, `TestPusherRecordFailuresAreErrors`
-  **Scenario**: the Store fails the read of the approval record; a record that does not decode; a record of another
-  installation; a failed compare-and-swap; the Store fails a pusher record read.
-  **Expected behavior**: `Resolve` returns the error; missing; missing; `Approve` returns the error; `RecordPusher`
-  returns the error.
+- **Test name**: `TestAppApprovalHistoryRecordsEveryOwnerDecision`, `TestDecisionCASKeepsAConcurrentApproval`
+  **Scenario**: repeated approvals and a second owner action racing between a read and CAS.
+  **Expected behavior**: each authenticated action remains in bounded history; CAS preserves both owners' records and re-evaluates the current objection set after a lost write.
+- **Test name**: `TestLegacyApprovalIsPreservedAndExplicitlyWithdrawn`, `TestUnknownDecisionRecordFailsClosed`, `TestMirrorDecisionsEscapesReasonsAndRetriesUnknownCreateOutcome`, `TestMirrorFailureLeavesDecisionSavedAndUnpublished`
+  **Scenario**: a valid released approval record; an unknown version; a public reason containing HTML/mentions; an App comment create that landed with an unknown response; mirror API failure.
+  **Expected behavior**: valid legacy grant remains usable until a newer negative action; unknown decision state fails closed; mirrored text is escaped and idempotent; mirror failure keeps the authenticated decision saved and retryable.
 - **Test name**: `TestPusherRecordIsBounded`
   **Scenario**: more than 32 logins recorded for one head.
   **Expected behavior**: the record holds 32.
@@ -827,7 +800,7 @@ failing `Store` stub. `NewMemory` is the in-process Store constructor of `intern
 
 - **Test name**: `TestResolveCleanPullRequest`
   **Scenario**: settings, policy and baseline on base; PR changes only code.
-  **Expected behavior**: `SettingsFound`, one policy digest equal to `policy.Digest(raw)` (bare hex), one baseline digest, one labels digest, no protected paths, `ApprovalNotRequired`; `Reviews` was never called.
+  **Expected behavior**: `SettingsFound`, `SettingsSHA` equals the immutable protected branch head, one policy digest equal to `policy.Digest(raw)` (bare hex), one baseline digest, one labels digest, no protected paths, `ApprovalNotRequired`; `Reviews` was never called.
 - **Test name**: `TestResolveApprovedPolicyChange`
   **Scenario**: PR changes `.archfit.yaml`; an owner approved the head SHA.
   **Expected behavior**: `ApprovalGranted`, `ApprovedBy` set, `PolicyDigests` = base digest then head digest; `BaselineDigests` and `LabelsDigests` unchanged. The same PR changing only the labels file gives two labels digests and one policy digest.

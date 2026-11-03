@@ -93,6 +93,7 @@ func (w *world) addRepo(fullName string, installationID, id int64, private bool)
 		ID:      id, Private: private, DefaultBranch: testBranch,
 	}
 	w.gh.repos[fullName] = r
+	w.gh.heads[branchKey(fullName, testBranch)] = fmt.Sprintf("%040x", id)
 	known := false
 	for _, inst := range w.gh.installations {
 		known = known || inst.ID == installationID
@@ -142,9 +143,13 @@ type pull struct {
 
 func (w *world) openPull(r api.Repo, number int) *pull {
 	p := &pull{repo: r, number: number}
+	baseSHA := w.gh.heads[branchKey(r.FullName, testBranch)]
+	if baseSHA == "" {
+		baseSHA = w.sha()
+	}
 	w.gh.pulls[pullKey(r.FullName, number)] = api.Pull{
 		Number: number, State: "open", HeadRef: fmt.Sprintf("feature-%d", number), HeadRepo: r.FullName,
-		BaseRef: testBranch, BaseSHA: w.sha(), MergeBaseSHA: w.sha(), MergeCommitSHA: w.sha(),
+		BaseRef: testBranch, BaseSHA: baseSHA, MergeBaseSHA: w.sha(), MergeCommitSHA: w.sha(),
 	}
 	w.push(p)
 	return p

@@ -2,21 +2,17 @@ package inputs
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/store"
 	"github.com/alexei-led/archfit-app/internal/wire/policy"
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
-// The refusals of Approve and CanApprove. Any other error is a failed read or write.
+// The refusals of App approve/eligibility checks. Any other error is a failed read, authority lookup or write.
 var (
 	ErrNothingToApprove = errors.New("inputs: approve: the pull request changes no protected path")
 	ErrForkPull         = errors.New("inputs: approve: the pull request comes from a fork")
@@ -34,8 +30,8 @@ type Candidate struct {
 	Digests map[string]string
 }
 
-// approvalRecord is an owner's approval recorded in the App, under approvalKey. The key holds the head SHA, so a new
-// commit never finds the record of an older one.
+// approvalRecord is the released App's legacy grant format under approvalKey. New App decisions use the separate
+// per-PR decision ledger so objections, overrides and withdrawals can be audited without dropping this real data.
 type approvalRecord struct {
 	Login   string            `json:"login"`
 	HeadSHA string            `json:"head_sha"`
@@ -43,14 +39,18 @@ type approvalRecord struct {
 	At      time.Time         `json:"at"`
 }
 
-// approvalKey is the Store key of the approval of t's head in its pull request: an approval is of one pull request,
-// as a GitHub review is, because the protected paths and their base differ between two pull requests of one head.
-// Repository names compare case-insensitively.
+// approvalKey is the legacy Store key of the grant of t's head in its pull request. It remains read-only for
+// compatibility; new actions use decisionKey. Repository names compare case-insensitively.
 func approvalKey(t Target) string {
 	return "approval/" + strings.ToLower(t.Repo.FullName) + "/" + strconv.Itoa(t.PullRequest) + "/" + t.HeadSHA
 }
 
 func (r *resolver) Candidate(ctx context.Context, t Target) (Candidate, error) {
+	var err error
+	t, err = r.pinProtectedRef(ctx, t)
+	if err != nil {
+		return Candidate{}, err
+	}
 	s, found, err := r.baseSettings(ctx, t)
 	if err != nil || !found {
 		return Candidate{}, err
@@ -71,6 +71,31 @@ func (r *resolver) CanApprove(ctx context.Context, t Target, login string) error
 	return err
 }
 
+func (r *resolver) CanWithdraw(ctx context.Context, t Target, login string) (bool, error) {
+	var err error
+	t, err = r.pinProtectedRef(ctx, t)
+	if err != nil {
+		return false, err
+	}
+	s, paths, err := r.approvable(ctx, t, login)
+	if err != nil {
+		return false, err
+	}
+	current, err := r.headDigests(ctx, t, paths)
+	if err != nil {
+		return false, err
+	}
+	rec, _, err := r.readDecisionRecord(ctx, t)
+	if err != nil {
+		return false, err
+	}
+	reviews, err := r.pulls.Reviews(ctx, t.Repo.RepoRef, t.PullRequest)
+	if err != nil {
+		return false, fmt.Errorf("inputs: reviews: %w", err)
+	}
+	return r.ownerHasGrant(ctx, t, s, login, current, reviews, rec)
+}
+
 // CanDecide is the owner rule of CanApprove for an approval that is not of a pull request head: ErrAgentIdentity,
 // ErrNotOwner (also without a settings file on the protected ref) or nil.
 func (r *resolver) CanDecide(ctx context.Context, t Target, login string) error {
@@ -81,56 +106,19 @@ func (r *resolver) CanDecide(ctx context.Context, t Target, login string) error 
 	return r.owner(ctx, t, s, login) // no settings file: no owners, so ErrNotOwner
 }
 
-// Approve records login's approval of t's head when seen is what the head holds now. A record that still counts is
-// never replaced: one for this head already, by any owner, is success. One that no longer counts approves nothing, so
-// it is replaced; it must not shadow the approval of an owner who may approve now.
+// Approve is the legacy façade action and now records the same audited, objection-aware transition as Decide.
 func (r *resolver) Approve(ctx context.Context, t Target, login string, seen map[string]string, now time.Time) error {
-	s, paths, err := r.approvable(ctx, t, login)
-	if err != nil {
-		return err
-	}
-	digests, err := r.headDigests(ctx, t, paths)
-	if err != nil {
-		return err
-	}
-	if !maps.Equal(seen, digests) {
-		return ErrDigestsChanged
-	}
-	raw, err := json.Marshal(approvalRecord{Login: login, HeadSHA: t.HeadSHA, Digests: digests, At: now.UTC()})
-	if err != nil {
-		return fmt.Errorf("inputs: approve: %w", err)
-	}
-	tenant, key := store.Tenant(t.Repo.InstallationID), approvalKey(t)
-	swapped, err := r.store.CompareAndSwap(ctx, tenant, key, nil, raw)
-	if err != nil || swapped {
-		return wrap("approve", err)
-	}
-	old, err := r.store.Get(ctx, tenant, key)
-	if err != nil {
-		return fmt.Errorf("inputs: approve: %w", err)
-	}
-	reviews, err := r.pulls.Reviews(ctx, t.Repo.RepoRef, t.PullRequest)
-	if err != nil {
-		return fmt.Errorf("inputs: reviews: %w", err)
-	}
-	// The swap is against the bytes judged here, so an approval that lands after this read is never overwritten.
-	if by, err := r.judge(ctx, t, s, paths, reviews, old); err != nil || by != "" {
-		return err
-	}
-	_, err = r.store.CompareAndSwap(ctx, tenant, key, old, raw)
-	return wrap("approve", err)
-}
-
-func wrap(op string, err error) error {
-	if err == nil {
-		return nil
-	}
-	return fmt.Errorf("inputs: %s: %w", op, err)
+	return r.Decide(ctx, t, login, seen, DecisionApprove, "", nil, now)
 }
 
 // approvable returns the protected settings and the protected paths t changes when login may approve its head, else
 // the refusal. The checks run in this order, so a caller can word the first one that fails.
 func (r *resolver) approvable(ctx context.Context, t Target, login string) (settings.Settings, []string, error) {
+	var err error
+	t, err = r.pinProtectedRef(ctx, t)
+	if err != nil {
+		return settings.Settings{}, nil, err
+	}
 	s, found, err := r.baseSettings(ctx, t)
 	if err != nil {
 		return s, nil, err
@@ -172,64 +160,34 @@ func (r *resolver) owner(ctx context.Context, t Target, s settings.Settings, log
 	return nil
 }
 
-// recorded returns the login of the approval recorded in the App for t's head when it holds now, else "": the login is
-// still an owner and no agent under s, and the recorded digests are those of paths at the head. A base that moved so
-// that the pull request changes other protected paths therefore voids it. A record that does not decode approves
-// nothing; a failed read is an error, so the decision is retried instead of published on a guess.
-func (r *resolver) recorded(ctx context.Context, t Target, s settings.Settings, paths []string, reviews []api.Review) (string, error) {
-	raw, err := r.store.Get(ctx, store.Tenant(t.Repo.InstallationID), approvalKey(t))
-	if errors.Is(err, store.ErrNotFound) {
-		return "", nil
+// pinProtectedRef selects one immutable protected-settings snapshot for a PR decision.
+func (r *resolver) pinProtectedRef(ctx context.Context, t Target) (Target, error) {
+	if t.PullRequest == 0 || t.BaseRef == "" || t.BaseSHA != "" {
+		return t, nil
 	}
+	sha, err := r.repos.BranchHead(ctx, t.Repo.RepoRef, t.BaseRef)
 	if err != nil {
-		return "", fmt.Errorf("inputs: read approval: %w", err)
+		return Target{}, fmt.Errorf("inputs: read protected branch head: %w", err)
 	}
-	return r.judge(ctx, t, s, paths, reviews, raw)
+	if sha == "" {
+		return Target{}, errors.New("inputs: protected branch has no head commit")
+	}
+	t.BaseSHA = sha
+	return t, nil
 }
 
-// judge returns the login of the approval record raw when it holds now, else "".
-func (r *resolver) judge(ctx context.Context, t Target, s settings.Settings, paths []string, reviews []api.Review, raw []byte) (string, error) {
-	var rec approvalRecord
-	if json.Unmarshal(raw, &rec) != nil || rec.HeadSHA != t.HeadSHA {
-		logOutcome(t, "approval", "unreadable")
-		return "", nil
+// protectedRef prefers the pinned protected commit over the mutable branch name.
+func protectedRef(t Target) string {
+	if t.PullRequest != 0 && t.BaseSHA != "" {
+		return t.BaseSHA
 	}
-	if rec.Login == "" || s.IsAgent(rec.Login) || withdrawn(rec, reviews) {
-		return "", nil
-	}
-	ok, err := isOwner(s.Owners, rec.Login, r.member(ctx, t))
-	if err != nil {
-		return "", fmt.Errorf("inputs: team membership: %w", err)
-	}
-	if !ok {
-		return "", nil
-	}
-	digests, err := r.headDigests(ctx, t, paths)
-	if err != nil || !maps.Equal(rec.Digests, digests) {
-		return "", err
-	}
-	return rec.Login, nil
-}
-
-// withdrawn reports that the approver took the approval back on GitHub: a review that requests changes, or one that
-// was dismissed, submitted at or after the approval. GitHub reports whole seconds, so the approval's time is cut to
-// the second too: a review in the same second as the approval withdraws it rather than being missed. The App has no
-// withdraw button; this is how an owner who can review ends it, as on GitHub. An approval after the review is a new
-// record, so it counts.
-func withdrawn(rec approvalRecord, reviews []api.Review) bool {
-	for _, rv := range reviews {
-		if strings.EqualFold(rv.Reviewer, rec.Login) && (rv.State == reviewChangesRequested || rv.State == reviewDismissed) &&
-			!rv.SubmittedAt.Before(rec.At.Truncate(time.Second)) {
-			return true
-		}
-	}
-	return false
+	return t.BaseRef
 }
 
 // baseSettings reads the settings of the protected ref. found is false when there is no file or it does not parse:
 // a broken settings file is a missing one.
 func (r *resolver) baseSettings(ctx context.Context, t Target) (s settings.Settings, found bool, err error) {
-	raw, err := r.file(ctx, t, t.BaseRef, settings.Path)
+	raw, err := r.file(ctx, t, protectedRef(t), settings.Path)
 	if err != nil || raw == nil {
 		return settings.Settings{}, false, err
 	}

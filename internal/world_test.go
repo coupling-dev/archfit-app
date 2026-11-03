@@ -86,6 +86,7 @@ type repo struct {
 type pull struct {
 	Number    int
 	Title     string
+	Author    string
 	Body      string
 	HeadRef   string
 	HeadRepo  string
@@ -93,11 +94,13 @@ type pull struct {
 	BaseSHA   string
 	MergeBase string
 	// MergeCommit is GitHub's test merge commit of the head into the base; "" until GitHub has computed it.
-	MergeCommit string
-	Draft       bool
-	State       string
-	Merged      bool
-	reviews     []review
+	MergeCommit    string
+	Draft          bool
+	State          string
+	Merged         bool
+	reviews        []review
+	requestedUsers []string
+	requestedTeams []string
 }
 
 type review struct{ Login, State, Commit string }
@@ -278,7 +281,7 @@ func (rp *repo) push(branch, id string, files map[string]string) {
 // openPull opens a pull request from headRef (already pushed) into base.
 func (rp *repo) openPull(number int, headRef, base string) *pull {
 	p := &pull{
-		Number: number, HeadRef: headRef, HeadRepo: rp.FullName, BaseRef: base,
+		Number: number, Author: "contributor", HeadRef: headRef, HeadRepo: rp.FullName, BaseRef: base,
 		BaseSHA: rp.branches[base], MergeBase: rp.branches[base], State: "open",
 	}
 	rp.pulls = append(rp.pulls, p)
@@ -588,7 +591,7 @@ func (rp *repo) pullJSON(p *pull) map[string]any {
 	}
 	return map[string]any{
 		"number": p.Number, "node_id": fmt.Sprintf("PR_%d", p.Number), "state": p.State, "draft": p.Draft,
-		"title": p.Title, "body": p.Body, "html_url": fmt.Sprintf("https://github.com/%s/pull/%d", rp.FullName, p.Number),
+		"title": p.Title, "body": p.Body, "user": map[string]any{"login": p.Author}, "html_url": fmt.Sprintf("https://github.com/%s/pull/%d", rp.FullName, p.Number),
 		"merged_at": mergedAt, "updated_at": "2026-09-21T12:00:00Z", "changed_files": len(rp.changedFiles(p)), "merge_commit_sha": nilIfEmpty(p.MergeCommit),
 		"head": map[string]any{"sha": rp.branches[p.HeadRef], "ref": p.HeadRef, "repo": map[string]any{"full_name": p.HeadRepo}},
 		"base": map[string]any{"sha": p.BaseSHA, "ref": p.BaseRef},
@@ -656,6 +659,9 @@ func (w *world) routes() {
 
 	mux.HandleFunc("GET /app", func(rw http.ResponseWriter, _ *http.Request) {
 		writeJSON(rw, http.StatusOK, map[string]any{"id": appID, "slug": appSlug, "name": "Archfit"})
+	})
+	mux.HandleFunc("POST /graphql", func(rw http.ResponseWriter, _ *http.Request) {
+		writeJSON(rw, http.StatusOK, map[string]any{"data": map[string]any{"repository": map[string]any{"mergeQueue": nil}}})
 	})
 	mux.HandleFunc("GET /app/installations", func(rw http.ResponseWriter, r *http.Request) {
 		if !callerOf(r).app {
@@ -956,11 +962,48 @@ func (w *world) routes() {
 	mux.HandleFunc("GET "+R+"/pulls/{n}/reviews", func(rw http.ResponseWriter, r *http.Request) {
 		if _, p := pullOf(rw, r); p != nil {
 			out := []map[string]any{}
-			for _, rv := range p.reviews {
-				out = append(out, map[string]any{"user": map[string]any{"login": rv.Login}, "state": rv.State, "commit_id": rv.Commit})
+			for i, rv := range p.reviews {
+				out = append(out, map[string]any{"id": i + 1, "user": map[string]any{"login": rv.Login}, "state": rv.State, "commit_id": rv.Commit})
 			}
 			writeJSON(rw, http.StatusOK, out)
 		}
+	})
+	mux.HandleFunc("GET "+R+"/pulls/{n}/requested_reviewers", func(rw http.ResponseWriter, r *http.Request) {
+		if _, p := pullOf(rw, r); p != nil {
+			users := []map[string]any{}
+			for _, login := range p.requestedUsers {
+				users = append(users, map[string]any{"login": login})
+			}
+			teams := []map[string]any{}
+			for _, full := range p.requestedTeams {
+				org, slug, _ := strings.Cut(full, "/")
+				teams = append(teams, map[string]any{"slug": slug, "organization": map[string]any{"login": org}})
+			}
+			writeJSON(rw, http.StatusOK, map[string]any{"users": users, "teams": teams})
+		}
+	})
+	mux.HandleFunc("POST "+R+"/pulls/{n}/requested_reviewers", func(rw http.ResponseWriter, r *http.Request) {
+		rp, p := pullOf(rw, r)
+		if p == nil {
+			return
+		}
+		payload := body(r)
+		if requested, ok := payload["reviewers"].([]any); ok {
+			for _, value := range requested {
+				if login, ok := value.(string); ok && !slices.Contains(p.requestedUsers, login) {
+					p.requestedUsers = append(p.requestedUsers, login)
+				}
+			}
+		}
+		if requested, ok := payload["team_reviewers"].([]any); ok {
+			org, _, _ := strings.Cut(rp.FullName, "/")
+			for _, value := range requested {
+				if slug, ok := value.(string); ok && !slices.Contains(p.requestedTeams, org+"/"+slug) {
+					p.requestedTeams = append(p.requestedTeams, org+"/"+slug)
+				}
+			}
+		}
+		writeJSON(rw, http.StatusCreated, map[string]any{})
 	})
 	mux.HandleFunc("GET "+R+"/compare/{spec}", func(rw http.ResponseWriter, r *http.Request) {
 		rp := w.repoOf(rw, r)

@@ -389,3 +389,26 @@ func TestMergeGroupWithoutSettingsIsNotOnboarded(t *testing.T) {
 		t.Fatalf("settings found without a settings file at the snapshot: %+v", got)
 	}
 }
+
+func TestQueuedAppApprovalSurvivesAnUnrelatedBaseMove(t *testing.T) {
+	w := newGroupWorld()
+	w.changePolicy(1, pr1Head, policyA)
+	w.files[fileCall{groupSHA, policy.PolicyPath}] = policyA
+	oldTip := "previous-main-tip"
+	for _, path := range []string{settings.Path, policy.PolicyPath, policy.BaselinePath} {
+		w.files[fileCall{oldTip, path}] = w.files[fileCall{tipSHA, path}]
+	}
+	target := Target{Repo: groupTarget().Repo, PullRequest: 1, HeadSHA: pr1Head, BaseRef: baseRef, BaseSHA: oldTip}
+	r := New(groupRepos{w}, groupPulls{w}, groupQueues{w}, w.store)
+	candidate, err := r.Candidate(t.Context(), target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Decide(t.Context(), target, "alice", candidate.Digests, DecisionApprove, "", nil, now); err != nil {
+		t.Fatal(err)
+	}
+	got := w.resolve(t)
+	if got.Approval != ApprovalGranted || got.Group.Problem != "" {
+		t.Fatalf("queued approval after unrelated merge = %+v", got)
+	}
+}

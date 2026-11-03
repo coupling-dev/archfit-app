@@ -61,8 +61,16 @@ func (r *resolver) Resolve(ctx context.Context, t Target, now time.Time) (Truste
 		Suspended:   suspended(t.Repo.Private, ent, now),
 		Entitlement: ent,
 	}
-
-	raw, err := r.file(ctx, t, t.BaseRef, settings.Path)
+	if t.PullRequest != 0 {
+		var err error
+		t, err = r.pinProtectedRef(ctx, t)
+		if err != nil {
+			return Trusted{}, err
+		}
+	}
+	out.SettingsSHA = t.BaseSHA
+	protectedRef := protectedRef(t)
+	raw, err := r.file(ctx, t, protectedRef, settings.Path)
 	if err != nil {
 		return Trusted{}, err
 	}
@@ -87,7 +95,7 @@ func (r *resolver) Resolve(ctx context.Context, t Target, now time.Time) (Truste
 	}
 	var waivers []policy.Waiver
 	for _, f := range trusted {
-		raw, err := r.file(ctx, t, t.BaseRef, f.path)
+		raw, err := r.file(ctx, t, protectedRef, f.path)
 		if err != nil {
 			return Trusted{}, err
 		}
@@ -120,16 +128,11 @@ func (r *resolver) Resolve(ctx context.Context, t Target, now time.Time) (Truste
 	if err != nil {
 		return Trusted{}, fmt.Errorf("inputs: reviews: %w", err)
 	}
-	by, err := approver(reviews, s, t.HeadSHA, r.member(ctx, t))
+	by, objections, history, err := r.approvalDecision(ctx, t, s, out.ProtectedPaths, reviews)
 	if err != nil {
-		return Trusted{}, fmt.Errorf("inputs: team membership: %w", err)
+		return Trusted{}, err
 	}
-	if by == "" {
-		// GitHub does not let an author approve their own pull request; a sole owner approves in the App instead.
-		if by, err = r.recorded(ctx, t, s, out.ProtectedPaths, reviews); err != nil {
-			return Trusted{}, err
-		}
-	}
+	out.Objections, out.DecisionHistory = objections, history
 	if by == "" {
 		return out, nil
 	}

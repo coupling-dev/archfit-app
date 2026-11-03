@@ -92,6 +92,13 @@ func (g *Gate) decideAndPublish(ctx context.Context, u Upload) (verdict.Outcome,
 		// A merge group's members and inputs are read by gate/inputs from the queue, again inside the lease.
 		MergeGroup: u.Binding.MergeGroup,
 	}
+	if target.PullRequest != 0 {
+		var err error
+		target, err = g.pinProtectedRef(ctx, target)
+		if err != nil {
+			return verdict.Outcome{}, fmt.Errorf("gate: read protected ref head: %w", err)
+		}
+	}
 	problems := u.Problems
 	var shared []verdict.SharedPull
 	if u.Binding.PullRequest != 0 || u.Binding.MergeGroup {
@@ -136,6 +143,9 @@ func (g *Gate) decideAndPublish(ctx context.Context, u Upload) (verdict.Outcome,
 		// A sweep may correct the check between this decision and its publication. Inside the lease feedback refuses
 		// a decision whose inputs or shared heads are no longer current (503 here); the Action's retry decides from the new inputs.
 		Resolve: func(ctx context.Context) (inputs.Trusted, error) {
+			if err := g.checkProtectedRef(ctx, target); err != nil {
+				return inputs.Trusted{}, err
+			}
 			tr, err := g.resolver.Resolve(ctx, target, g.now())
 			if err != nil || (u.Binding.PullRequest == 0 && !u.Binding.MergeGroup) || u.Binding.BaseRef != u.Binding.Repo.DefaultBranch {
 				return tr, err

@@ -65,6 +65,15 @@ func (f *fakeRepos) File(_ context.Context, _ api.RepoRef, ref, path string) ([]
 	return raw, "blob", nil
 }
 
+func (f *fakeRepos) BranchHead(_ context.Context, _ api.RepoRef, branch string) (string, error) {
+	for call := range f.files {
+		if call.ref == branch {
+			return branch, nil // the fixture uses the ref string as its immutable test commit identity
+		}
+	}
+	return "", api.ErrNotFound
+}
+
 func (f *fakeRepos) headReads() []string {
 	var paths []string
 	for _, c := range f.calls {
@@ -82,6 +91,11 @@ type fakePulls struct {
 	reviews   []api.Review
 	teams     map[string][]string // "org/team-slug" -> member logins
 
+	requestedUsers, requestedTeams         []string
+	requestedErr, requestErr               error
+	requestCalls                           int
+	lastRequestedUsers, lastRequestedTeams []string
+
 	changedErr, reviewsErr, teamErr error
 
 	changedCalls, reviewsCalls int
@@ -96,6 +110,28 @@ func (f *fakePulls) ChangedFiles(context.Context, api.RepoRef, int) ([]string, b
 func (f *fakePulls) Reviews(context.Context, api.RepoRef, int) ([]api.Review, error) {
 	f.reviewsCalls++
 	return f.reviews, f.reviewsErr
+}
+
+func (f *fakePulls) RequestedReviewers(context.Context, api.RepoRef, int) ([]string, []string, error) {
+	if f.requestedErr != nil {
+		return nil, nil, f.requestedErr
+	}
+	return slices.Clone(f.requestedUsers), slices.Clone(f.requestedTeams), nil
+}
+
+func (f *fakePulls) RequestReviewers(_ context.Context, _ api.RepoRef, _ int, users, teams []string) error {
+	f.requestCalls++
+	f.lastRequestedUsers, f.lastRequestedTeams = slices.Clone(users), slices.Clone(teams)
+	if f.requestErr != nil {
+		return f.requestErr
+	}
+	f.requestedUsers = append(f.requestedUsers, users...)
+	for _, team := range teams {
+		if !slices.Contains(f.requestedTeams, team) {
+			f.requestedTeams = append(f.requestedTeams, team)
+		}
+	}
+	return nil
 }
 
 func (f *fakePulls) TeamMember(_ context.Context, _ api.RepoRef, team, login string) (bool, error) {

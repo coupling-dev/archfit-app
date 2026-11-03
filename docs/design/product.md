@@ -121,11 +121,7 @@ it does not automatically turn every current dependency into an approved one.
 | Contributor or coding agent           | Propose code and policy changes; consume feedback and suggestions                                   |
 | Billing administrator                 | Manage subscription; billing authority alone does not confer architecture approval authority        |
 
-Exact role mapping and bootstrap UX still need specification. A protected
-policy path and CODEOWNERS provide the starting point.
-Authority must be resolved from trusted configuration, never from the PR's own
-edited ownership declarations. Administrative GitHub bypass remains a separate,
-explicit override, not an architecture approval.
+Exact role mapping and bootstrap UX still need specification. The protected `.archfit-app.yaml` file names architecture owners and teams. CODEOWNERS and GitHub review requests can help notify reviewers, but they do not define architecture authority. Authority must be resolved from trusted configuration, never from the PR's own edited ownership declarations. Administrative GitHub bypass remains a separate control, not an architecture approval.
 
 ### Code and policy in the same PR
 
@@ -133,14 +129,9 @@ Anyone entitled to propose a PR may propose a policy change. Only a designated
 architecture owner can authorize it. Code and policy may land atomically in one
 PR; a separate policy PR is not mandatory.
 
-Architecture approval is bound to the exact head SHA and policy snapshot. New
-commits invalidate it. An owner gives it either by an approving review on that
-head or by pushing that head: the signed push event names the actor, and GitHub
-does not let an author approve their own pull request, so the push is how a sole
-owner authorizes their own change. Owners come from the protected policy, never
-from the head. The App may evaluate an owner-approved candidate policy
-for that exact PR, but must resolve and issue the snapshot itself. It never
-accepts arbitrary head-tree policy as a trusted gate input.
+An architecture decision is bound to the exact pull-request head, the digests of the protected files shown, and the current protected-settings snapshot. A push never approves a change. An owner may approve through a GitHub review on that head or record an App decision; this gives a sole owner who opened the pull request a way to decide without treating their push as approval. Owners and teams come from `.archfit-app.yaml` on the protected ref, never from the head, CODEOWNERS, or repository permission alone.
+
+A current owner's request for changes blocks ordinary approval. Any current architecture owner may explicitly override a displayed App or GitHub objection with a reason. This changes Archfit's authorization only: the App does not dismiss the GitHub review or bypass branch protection. A withdrawal suppresses that owner's prior Archfit grants for the exact candidate, including the native approval versions then present, without changing the GitHub review; a later review version or App approval can grant Archfit authorization again. A new head or change to protected settings content requires a fresh decision; previous objections remain visible until resolved or explicitly overridden for the current candidate. App decisions and reasons are stored by the App and mirrored to the pull-request thread. The App may evaluate an owner-authorized candidate for that exact PR, but it resolves inputs from the protected ref and never trusts arbitrary head-tree policy.
 
 Concurrent UI and Git edits require version checks. Stale edits or AI responses
 cannot overwrite a newer proposal without review.

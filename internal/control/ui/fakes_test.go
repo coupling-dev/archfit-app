@@ -235,6 +235,17 @@ func (g *fakeGH) File(_ context.Context, r api.RepoRef, ref, path string) ([]byt
 	}
 	c, ok := g.files[r.FullName+"@"+ref+":"+path]
 	if !ok {
+		for branchKey, head := range g.heads {
+			if head == ref && strings.HasPrefix(branchKey, r.FullName+"@") {
+				branch := strings.TrimPrefix(branchKey, r.FullName+"@")
+				c, ok = g.files[r.FullName+"@"+branch+":"+path]
+				if ok {
+					break
+				}
+			}
+		}
+	}
+	if !ok {
 		return nil, "", api.ErrNotFound
 	}
 	return c, "blob", nil
@@ -248,10 +259,21 @@ func (g *fakeGH) BranchHead(_ context.Context, r api.RepoRef, branch string) (st
 		return "", err
 	}
 	head, ok := g.heads[r.FullName+"@"+branch]
-	if !ok {
-		return "", api.ErrNotFound
+	if ok {
+		return head, nil
 	}
-	return head, nil
+	for key, pull := range g.pulls {
+		if strings.HasPrefix(key, r.FullName+"#") && pull.BaseRef == branch {
+			return branch, nil // the fixture has a pull targeting this branch but no commit identity
+		}
+	}
+	prefix := r.FullName + "@" + branch + ":"
+	for key := range g.files {
+		if strings.HasPrefix(key, prefix) {
+			return branch, nil
+		}
+	}
+	return "", api.ErrNotFound
 }
 
 func (g *fakeGH) CheckRuns(_ context.Context, r api.RepoRef, headSHA, name string) ([]api.CheckRun, error) {
@@ -634,6 +656,8 @@ type fakeApprovals struct {
 	reevaluateErr error
 	reads         []approvalRead
 	approved      []approveCall
+	decisions     []ownerDecisionCall
+	decisionErr   error
 	reevaluated   []gate.Target
 }
 
@@ -657,6 +681,32 @@ func (f *fakeApprovals) Approve(_ context.Context, t gate.Target, login string, 
 	}
 	f.approved = append(f.approved, approveCall{t, login, seen})
 	f.approval.Granted, f.approval.ApprovedBy, f.approval.Refusal = true, login, nil
+	return nil
+}
+
+type ownerDecisionCall struct {
+	target      gate.Target
+	login       string
+	seen        map[string]string
+	action      gate.DecisionAction
+	reason      string
+	overrideIDs []string
+}
+
+func (f *fakeApprovals) Decide(_ context.Context, t gate.Target, login string, seen map[string]string, action gate.DecisionAction, reason string, overrideIDs []string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.decisionErr != nil {
+		return f.decisionErr
+	}
+	if action == gate.DecisionApprove && f.approveErr != nil {
+		return f.approveErr
+	}
+	f.decisions = append(f.decisions, ownerDecisionCall{t, login, seen, action, reason, overrideIDs})
+	if action == gate.DecisionApprove || action == gate.DecisionOverride {
+		f.approved = append(f.approved, approveCall{t, login, seen})
+		f.approval.Granted, f.approval.ApprovedBy = true, login
+	}
 	return nil
 }
 

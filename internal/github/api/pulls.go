@@ -207,11 +207,13 @@ func (c *Client) Reviews(ctx context.Context, r RepoRef, number int) ([]Review, 
 		return nil, err
 	}
 	type reviewJSON struct {
+		ID   int64 `json:"id"`
 		User *struct {
 			Login string `json:"login"`
 		} `json:"user"`
 		State       string    `json:"state"`
 		CommitID    string    `json:"commit_id"`
+		Body        string    `json:"body"`
 		SubmittedAt time.Time `json:"submitted_at"`
 	}
 	k := call{cred: cr, method: http.MethodGet, route: "/repos/{r}/pulls/{n}/reviews",
@@ -225,7 +227,7 @@ func (c *Client) Reviews(ctx context.Context, r RepoRef, number int) ([]Review, 
 		if j.State == "PENDING" {
 			continue
 		}
-		rv := Review{State: j.State, CommitSHA: j.CommitID, SubmittedAt: j.SubmittedAt}
+		rv := Review{ID: j.ID, State: j.State, CommitSHA: j.CommitID, Body: j.Body, SubmittedAt: j.SubmittedAt}
 		if j.User != nil {
 			rv.Reviewer = j.User.Login
 		}

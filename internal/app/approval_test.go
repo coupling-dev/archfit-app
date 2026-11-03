@@ -16,8 +16,14 @@ import (
 	"testing"
 )
 
-// approvePattern is control/ui's route of the Approve button, restated: the test proves where it is mounted.
-const approvePattern = "POST /api/repos/{o}/{n}/pulls/{number}/approve"
+// ownerDecisionPatterns are control/ui's authenticated decision routes, restated for the boundary test.
+var ownerDecisionPatterns = []string{
+	"POST /api/repos/{o}/{n}/pulls/{number}/approve",
+	"POST /api/repos/{o}/{n}/pulls/{number}/request-changes",
+	"POST /api/repos/{o}/{n}/pulls/{number}/withdraw",
+	"POST /api/repos/{o}/{n}/pulls/{number}/override",
+	"POST /api/repos/{o}/{n}/pulls/{number}/refresh-decision",
+}
 
 // repoRoot is the module root, two levels above this package.
 var repoRoot = filepath.Join("..", "..")
@@ -104,42 +110,47 @@ func names(e ast.Expr) []string {
 	return out
 }
 
-// No approval API or credential is reachable from the Action's OIDC uploads or the CLI: an owner approval is written
-// only behind the browser session of control/ui.
-func TestOwnerApprovalIsReachableOnlyFromTheBrowserSession(t *testing.T) {
+// No owner-decision write or credential is reachable from the Action's OIDC uploads or the CLI; every action is
+// reachable only behind the browser session of control/ui.
+func TestOwnerDecisionIsReachableOnlyFromTheBrowserSession(t *testing.T) {
 	files := parsedFiles(t)
 
-	t.Run("one writer of the record and one caller of each Approve", func(t *testing.T) {
-		want := []string{"internal/control/ui.apiApprovePull", "internal/gate.Approve"}
-		if got := selectorsNamed(files, "Approve"); !slices.Equal(got, want) {
-			t.Errorf("Approve is used in %v, want only %v", got, want)
+	t.Run("App decisions are delegated through the gate façade", func(t *testing.T) {
+		if got := selectorsNamed(files, "Approve"); len(got) != 0 {
+			t.Errorf("legacy Approve bypass is still called from %v", got)
 		}
-		if got := selectorsNamed(files, "apiApprovePull"); !slices.Equal(got, []string{"internal/control/ui.newHandler"}) {
-			t.Errorf("the Approve handler is used in %v, want only the route table of control/ui", got)
+		if got := selectorsNamed(files, "Decide"); !slices.Contains(got, "internal/control/ui.apiOwnerDecision") ||
+			!slices.Contains(got, "internal/gate.Decide") || !slices.Contains(got, "internal/gate.Approve") {
+			t.Errorf("decision call graph = %v; want the browser handler and gate façade only", got)
 		}
 		for path, f := range files {
 			ast.Inspect(f, func(n ast.Node) bool {
-				if lit, ok := n.(*ast.BasicLit); ok && strings.Contains(lit.Value, `"approval/`) && filepath.Dir(path) != "internal/gate/inputs" {
-					t.Errorf("%s names the approval record key", path)
+				lit, ok := n.(*ast.BasicLit)
+				if !ok {
+					return true
+				}
+				for _, prefix := range []string{`"approval/`, `"owner-decision/`, `"review-request/`} {
+					if strings.Contains(lit.Value, prefix) && filepath.Dir(path) != "internal/gate/inputs" {
+						t.Errorf("%s names gate/inputs record prefix %s", path, prefix)
+					}
 				}
 				return true
 			})
 		}
 	})
 
-	t.Run("control/ui mounts Approve behind the session, CSRF and write access", func(t *testing.T) {
+	t.Run("control/ui mounts every owner decision route behind write/session/CSRF", func(t *testing.T) {
 		ui := routes(t, files["internal/control/ui/ui.go"])
-		var mounted []string
-		for pattern, handler := range ui {
-			if slices.Contains(names(handler), "apiApprovePull") {
-				mounted = append(mounted, pattern)
-				if got := names(handler); !slices.Equal(got, []string{"s", "apiRepo", "permWrite", "s", "apiApprovePull"}) {
-					t.Errorf("%s is served by %v, want s.apiRepo(permWrite, s.apiApprovePull)", pattern, got)
-				}
+		for _, pattern := range ownerDecisionPatterns {
+			expr, ok := ui[pattern]
+			if !ok {
+				t.Errorf("control/ui does not mount %s", pattern)
+				continue
 			}
-		}
-		if !slices.Equal(mounted, []string{approvePattern}) {
-			t.Errorf("Approve is mounted at %v, want only %s", mounted, approvePattern)
+			got := names(expr)
+			if !slices.Contains(got, "apiRepo") || !slices.Contains(got, "permWrite") || !slices.Contains(got, "s") {
+				t.Errorf("%s is served by %v, want signed-in write route", pattern, got)
+			}
 		}
 	})
 
@@ -173,12 +184,21 @@ func TestOwnerApprovalIsReachableOnlyFromTheBrowserSession(t *testing.T) {
 		}
 	})
 
-	t.Run("the approve path reaches only the UI handler, on every role", func(t *testing.T) {
-		paths := []string{"/api/repos/acme/app/pulls/4/approve", "/v1/reports/approve", "/v1/reports"}
-		want := map[string]map[string]string{
-			roleAll:    {paths[0]: "control.UI", paths[1]: "control.UI", paths[2]: "gate.Upload"},
-			rolePublic: {paths[0]: "control.UI", paths[1]: "control.UI", paths[2]: "gate.Upload"},
-			roleWorker: {paths[0]: "", paths[1]: "", paths[2]: ""},
+	t.Run("owner decision paths reach only the UI handler, on every role", func(t *testing.T) {
+		ownerPaths := []string{
+			"/api/repos/acme/app/pulls/4/approve", "/api/repos/acme/app/pulls/4/request-changes",
+			"/api/repos/acme/app/pulls/4/withdraw", "/api/repos/acme/app/pulls/4/override",
+			"/api/repos/acme/app/pulls/4/refresh-decision",
+		}
+		paths := append(slices.Clone(ownerPaths), "/v1/reports/approve", "/v1/reports")
+		want := map[string]map[string]string{roleAll: {}, rolePublic: {}, roleWorker: {}}
+		for _, path := range ownerPaths {
+			want[roleAll][path], want[rolePublic][path] = "control.UI", "control.UI"
+		}
+		want[roleAll][paths[len(paths)-2]], want[rolePublic][paths[len(paths)-2]] = "control.UI", "control.UI"
+		want[roleAll][paths[len(paths)-1]], want[rolePublic][paths[len(paths)-1]] = "gate.Upload", "gate.Upload"
+		for _, path := range paths {
+			want[roleWorker][path] = ""
 		}
 		for _, role := range slices.Sorted(maps.Keys(want)) {
 			for _, path := range paths {

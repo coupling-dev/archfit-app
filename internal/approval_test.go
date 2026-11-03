@@ -11,6 +11,7 @@ import (
 // pullApproval is the approval block of the pull request page's JSON.
 type pullApproval struct {
 	HeadSHA    string            `json:"head_sha"`
+	BaseSHA    string            `json:"base_sha"`
 	Paths      []string          `json:"paths"`
 	Digests    map[string]string `json:"digests"`
 	State      string            `json:"state"`
@@ -62,7 +63,7 @@ func TestSoleOwnerApprovesTheExactCommitInTheApp(t *testing.T) {
 		t.Fatalf("approval = %+v; want the owner offered the head's policy", shown)
 	}
 
-	resp, raw := b.postJSON("/api/repos/"+demoRepo+"/pulls/42/approve", map[string]any{"head_sha": shown.HeadSHA, "digests": shown.Digests})
+	resp, raw := b.postJSON("/api/repos/"+demoRepo+"/pulls/42/approve", map[string]any{"head_sha": shown.HeadSHA, "base_sha": shown.BaseSHA, "digests": shown.Digests})
 	if resp.StatusCode != http.StatusOK || !strings.Contains(raw, `"state":"granted"`) || !strings.Contains(raw, `"by":"`+owner+`"`) {
 		t.Fatalf("approve = %d %.300s; want granted by %s", resp.StatusCode, raw, owner)
 	}
@@ -95,7 +96,7 @@ func TestAnAgentIdentityCannotApproveInTheApp(t *testing.T) {
 	if shown.CanApprove || !strings.Contains(shown.Reason, "agent identity") {
 		t.Fatalf("approval = %+v; want no Approve and the agent reason", shown)
 	}
-	resp, raw := b.postJSON("/api/repos/"+demoRepo+"/pulls/42/approve", map[string]any{"head_sha": shown.HeadSHA, "digests": shown.Digests})
+	resp, raw := b.postJSON("/api/repos/"+demoRepo+"/pulls/42/approve", map[string]any{"head_sha": shown.HeadSHA, "base_sha": shown.BaseSHA, "digests": shown.Digests})
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("approve = %d %.300s; want 403", resp.StatusCode, raw)
 	}

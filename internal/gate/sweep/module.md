@@ -128,7 +128,7 @@ func Withdrawn(rc Receipt, tr Trusted) bool
 
 // Withdrawal is rule 5a, decided inside the head's publication lease (Publisher.Reconcile) from the gate check
 // current there and inputs tr resolved there: Without(ReasonOwnerApprovalMissing) over the current receipt when the
-// repository is in required mode and that receipt is Withdrawn, else nil.
+// check exists and its receipt is Withdrawn, in either gate mode, else nil.
 func Withdrawal(t Target, current CheckState, tr Trusted) *Publication
 
 // GroupWithdrawal corrects a merge group's required check, decided inside the group commit's publication lease from
