@@ -106,7 +106,7 @@ approved: GitHub created it, and queue membership, a push or an `approved_by` te
   `archfit/state`. No pull request comment is written for a group.
 - A group commit is a branch head, so a pull request into another base can share it. As for a pull request head, the
   App never writes a `success` then: the upload ends `shared_head`, and opening such a pull request withdraws an
-  existing group success.
+  existing group success, also after the group merged and the default branch moved to its commit.
 - The `merge_group` webhook with `checks_requested` creates the pending `archfit/gate` on the group commit. A group
   without an upload stays pending until GitHub's status check timeout fails it.
 - The webhook with `destroyed`, for a reason other than `merged`, turns a pending or successful group check into

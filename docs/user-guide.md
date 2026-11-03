@@ -987,6 +987,8 @@ builds a new group with a new commit. The App sets a destroyed group's `archfit/
 - A pull request from a fork stays refused in a group, as on its own (`fork_unsupported`).
 - The hourly sweep does not look at merge groups: a group lives only until it merges or GitHub's timeout. A waiver
   that expires while a group waits is checked when the group's report arrives.
+- A group whose commit has no `.archfit.yaml` uploads nothing, so its pending `archfit/gate` fails by GitHub's
+  timeout. To remove the policy, take `archfit/gate` out of the branch rule first, then merge the removal.
 - If the branch rule allows a pull request whose checks failed into a group ("Only merge non-failing pull requests"
   off), the group still checks every protected change it holds.
 

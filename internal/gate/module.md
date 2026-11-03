@@ -374,13 +374,14 @@ decides. Another open pull request with the same head commit and a base that is 
 is written per head commit and that pull request would show it. The App accepts no protected base other than the
 default branch. A failed listing is an error the Action retries, never a success. A merge group upload does the same for the
 group commit, before deciding and again inside the lease: a group commit is a branch head a pull request into another
-base can share. A `PullOpened` or `PullSynchronized` of a pull request into another base also reads the merge queue of
-the default branch and, when its head is a queued group commit, runs `sweep.SharedHeadPublication` for that group
-inside its lease; `ErrQueueForbidden` there means no group result exists and nothing is read further.
+base can share. A `PullOpened` or `PullSynchronized` of a pull request into another base whose head no open pull request into the
+default branch has also runs `sweep.SharedHeadPublication` for that head as a merge group target, inside its lease:
+a success there is a merge group's, queued or merged (the default branch fast-forwards to a merged group commit, so a
+pull request from it into another base is routine), and it becomes `shared_head`. Without a gate check on the head
+nothing more is read; `ErrQueueForbidden` means no group result exists and nothing is written.
 
-A merge group upload (`Binding.MergeGroup`) is decided on the group commit and lists no pull requests: it has no
-`SharedHead`. Its `Resolve` hook inside the lease resolves the group again (queue, members, approvals, protected
-files); inputs that differ from those of the decision write nothing and answer 503 (`feedback.ErrStaleInputs`).
+A merge group upload (`Binding.MergeGroup`) is decided on the group commit. Its `Resolve` hook inside the lease resolves the group again (queue, members, approvals, protected
+files) and lists the open pull requests again; inputs or shared heads that differ from those of the decision write nothing and answer 503 (`feedback.ErrStaleInputs`).
 
 `reason` is `Outcome.Reasons[0].Code`. A 2xx means "accepted and published", not "passed". The producer
 retries on every non-2xx except 400, 401, 403, 409 and 413. On 503 the pending check stays pending.

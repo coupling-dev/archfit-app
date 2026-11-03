@@ -357,3 +357,23 @@ func TestMergeGroupBehindAnUnbuiltEntryIsUnaffected(t *testing.T) {
 	w.wantAnswer(w.uploadGroup(groups[0], fixtureHealthy), http.StatusOK, "success", "healthy")
 	w.handle(w.event(webhook.ReviewChanged, two)) // no group commit to re-check
 }
+
+func TestPullIntoAnotherBaseOnAMergedGroupCommitWithdrawsItsSuccess(t *testing.T) {
+	w := newWorld(t)
+	one := w.openPull(w.shop, 1)
+	groups := w.enqueue(one)
+	w.wantAnswer(w.uploadGroup(groups[0], fixtureHealthy), http.StatusOK, "success", "healthy")
+	// The queue merges the group: the default branch fast-forwards to the group commit and the member closes.
+	w.dequeueAll(w.shop)
+	w.gh.heads[branchKey(w.shop.FullName, testBranch)] = groups[0].sha
+	w.editPull(one, func(p *api.Pull) { p.State, p.Merged = "closed", true })
+	w.handle(w.groupEvent(webhook.MergeGroupDestroyed, groups[0], "merged"))
+	w.wantGroupGate(groups[0], "success")
+
+	release := w.pullOnGroupHead(groups[0], 9) // main → release, on the merged commit
+	w.handle(w.event(webhook.PullOpened, release))
+	c := w.wantGroupGate(groups[0], "action_required")
+	if !strings.Contains(c.Summary, "shared_head") {
+		t.Errorf("summary does not name shared_head:\n%s", c.Summary)
+	}
+}

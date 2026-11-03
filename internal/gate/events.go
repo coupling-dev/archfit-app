@@ -135,30 +135,29 @@ func (g *Gate) sharedHeadOpened(ctx context.Context, e webhook.Event) (string, e
 			errs = errors.Join(errs, fmt.Errorf("gate: shared head of pull request %d: %w", pl.Number, err))
 		}
 	}
-	return reactionSharedHead, errors.Join(errs, g.sharedGroupHead(ctx, repo, e.HeadSHA))
+	owned := slices.ContainsFunc(open, func(pl api.Pull) bool { return pl.HeadSHA == e.HeadSHA && pl.BaseRef == e.DefaultBranch })
+	if !owned {
+		errs = errors.Join(errs, g.sharedGroupHead(ctx, repo, e.HeadSHA))
+	}
+	return reactionSharedHead, errs
 }
 
-// sharedGroupHead withdraws a merge group commit's success, as sharedHeadOpened does for a pull request, when the
-// pull request into another base has a queued group commit of the default branch as its head. Without the Merge
-// queues permission no group result exists, so nothing is withdrawn.
+// sharedGroupHead withdraws a success on head, as sharedHeadOpened does for a pull request into the default branch,
+// when no open pull request into the default branch has head: the check there is a merge group's, queued or already
+// merged (the default branch then fast-forwards to it, and a pull request from it into another base is routine). It
+// is decided as a merge group target inside the head's lease, so a commit the queue no longer lists still gets
+// shared_head over its success. Without the Merge queues permission no group result exists, so nothing is withdrawn.
 func (g *Gate) sharedGroupHead(ctx context.Context, repo api.Repo, head string) error {
 	if repo.DefaultBranch == "" {
 		return nil
 	}
-	entries, err := g.queues.MergeQueue(ctx, repo.RepoRef, repo.DefaultBranch)
+	t := inputs.Target{Repo: repo, HeadSHA: head, BaseRef: repo.DefaultBranch, MergeGroup: true}
+	err := g.publisher.Reconcile(ctx, t, func(ctx context.Context, current feedback.CheckState) (*feedback.Publication, error) {
+		return sweep.SharedHeadPublication(ctx, g.pulls, g.resolver, g.now(), t, current)
+	})
 	if errors.Is(err, api.ErrQueueForbidden) {
 		return nil
 	}
-	if err != nil {
-		return fmt.Errorf("gate: merge queue: %w", err)
-	}
-	if !slices.ContainsFunc(entries, func(e api.QueueEntry) bool { return e.HeadSHA == head }) {
-		return nil
-	}
-	t := inputs.Target{Repo: repo, HeadSHA: head, BaseRef: repo.DefaultBranch, MergeGroup: true}
-	err = g.publisher.Reconcile(ctx, t, func(ctx context.Context, current feedback.CheckState) (*feedback.Publication, error) {
-		return sweep.SharedHeadPublication(ctx, g.pulls, g.resolver, g.now(), t, current)
-	})
 	if err != nil {
 		return fmt.Errorf("gate: shared head of merge group %s: %w", head, err)
 	}
