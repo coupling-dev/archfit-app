@@ -62,7 +62,7 @@ func TestDecodeAcceptsConformanceEnvelopes(t *testing.T) {
 			}
 		})
 	}
-	for _, name := range []string{"pr-report", "push-report", "discovery-dispatch", "baseline-dispatch"} {
+	for _, name := range []string{"pr-report", "push-report", "merge-group-report", "discovery-dispatch", "baseline-dispatch"} {
 		if !seen[name] {
 			t.Errorf("conformance fixture %q is missing", name)
 		}
@@ -81,6 +81,7 @@ func TestSchemaAndDecoderAgree(t *testing.T) {
 		"invalid-null-kind":                "kind",
 		"invalid-prefixed-baseline-digest": "baseline_digest",
 		"invalid-push-with-pull-request":   "pull_request",
+		"invalid-merge-group-with-base":    "base_sha",
 		"invalid-schema-version":           "schema_version",
 	}
 	for _, fx := range loadFixtures(t) {
