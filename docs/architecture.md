@@ -315,7 +315,7 @@ Approval and readability are separate contracts:
 - The gate uses the structured decision, trusted input bindings, measurement identity, and gate reference.
   Origin remains display-only. A missing producer or required rule cannot become a healthy zero.
 
-New workflows pin Action v3.1.0 at commit `7ade3b8fc989ec416ea5d570e7e236f47f7845fc`; it runs engine v3.4.0 with the digest of the runner's platform.
+New workflows pin Action v3.1.1 at commit `2221f4bfece0725a657414fed751cdc090ba1bd4`; it runs on `merge_group` too and runs engine v3.4.0 with the digest of the runner's platform.
 This Action commit accepts v3.4.0 only and requires explicit engine-version and platform-digest inputs, requests fresh measurements, and passes only fixed HOME and checkout-scoped Git settings.
 It forwards no credentials. The container is not network-isolated, and reports remain customer-attested.
 The `action-conformance` CI job verifies every distinct manifest Action commit against the App's unchanged envelope schema.

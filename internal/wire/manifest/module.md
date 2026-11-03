@@ -66,7 +66,7 @@ v3.4.0 on `linux/amd64` (`current`) and `linux/arm64`. The v3.2.3, v3.2.2 and v3
     `sha256:5f2d4a5fff1ace10d7b08937429179631ae0c1d0e1f9e6f37c72b30954cf00db` on `linux/amd64` and
     `sha256:725c3a074358df8ea41881296eda06b07daed7934d7a6d40bb1ecfc3c8a8128d` on `linux/arm64`. The native image outputs in Action CI run40175778074 carry `archfit.measurement.v2`.
 
-  Every row pins archfit-action commit `7ade3b8fc989ec416ea5d570e7e236f47f7845fc` (Action v3.1.0) (X1: pull requests are measured as
+  Every row pins archfit-action commit `2221f4bfece0725a657414fed751cdc090ba1bd4` (Action v3.1.1, which adds the merge_group run; Action v3.1.0 `7ade3b8fc989ec416ea5d570e7e236f47f7845fc` sends the same identity and envelope bytes and keeps working) (X1: pull requests are measured as
   merged, and the envelope carries `analyzed_sha` and `integration`; X3b: the envelope may carry the engine's
   `policy_change`; vendored envelope schema sha256
   `0c2de1a3691ac85935f04887b94bc98dbc01f57f65a9c4fc3db276d5bf78b7e6`). That commit runs engine v3.4.0 only; its engine-version and image-digest inputs are optional and default to

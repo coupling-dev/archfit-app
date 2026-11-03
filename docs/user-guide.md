@@ -518,8 +518,8 @@ no approval is needed any more.
 ### Engine versions
 
 The locked manifest approves engine v3.4.0 on Linux amd64 and arm64. New workflows pin archfit-action at commit
-`7ade3b8fc989ec416ea5d570e7e236f47f7845fc` (Action v3.1.0, which runs engine v3.4.0 only and picks the image digest for the runner's platform). A workflow
-still pinned to Action v3.0.0 (`fb2520cb069571d6bdc9274ac97d4df49994b6c7`) keeps working: it sends the same identity. It measures a pull request as
+`2221f4bfece0725a657414fed751cdc090ba1bd4` (Action v3.1.1, which runs engine v3.4.0 only, picks the image digest for the runner's platform, and runs on
+`merge_group`). A workflow still pinned to Action v3.1.0 (`7ade3b8fc989ec416ea5d570e7e236f47f7845fc`) or v3.0.0 (`fb2520cb069571d6bdc9274ac97d4df49994b6c7`) keeps working for pull requests and pushes: it sends the same identity, but it refuses `merge_group`. It measures a pull request as
 it would land (the merge with the target) and states `analyzed_sha`, `integration` and, for a policy change, its
 classification in the upload. Only the v3.4.0 amd64 row is Current for new workflows and recovery pins.
 
@@ -538,12 +538,12 @@ classification in the upload. Only the v3.4.0 amd64 row is Current for new workf
 After the App release approves the new tuple, open an owner-reviewed pull request changing only these pins:
 
 ```yaml
-- uses: alexei-led/archfit-action@7ade3b8fc989ec416ea5d570e7e236f47f7845fc # v3.1.0
+- uses: alexei-led/archfit-action@2221f4bfece0725a657414fed751cdc090ba1bd4 # v3.1.1
   with:
     # endpoint, audience and mode stay as they are; remove engine-version and image-digest
 ```
 
-Action v3.1.0 runs engine v3.4.0 and picks the image digest for the runner's platform, so the workflow passes neither
+Action v3.1.1 runs engine v3.4.0 and picks the image digest for the runner's platform, so the workflow passes neither
 input. If you keep them, they must name v3.4.0 and the exact digest for the runner's platform from the manifest. Keep the repository's settings, policy owners, and gate mode unchanged.
 The App does not update installed workflow files automatically.
 
