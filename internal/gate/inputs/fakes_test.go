@@ -157,7 +157,7 @@ func newFixture() *fixture {
 }
 
 func (f *fixture) resolve(t Target) (Trusted, error) {
-	return New(f.repos, f.pulls, f.store).Resolve(context.Background(), t, now)
+	return New(f.repos, f.pulls, nil, f.store).Resolve(context.Background(), t, now)
 }
 
 func (f *fixture) mustResolve(tb testing.TB, t Target) Trusted {

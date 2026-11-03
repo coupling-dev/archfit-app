@@ -21,6 +21,10 @@ separate, testable steps. Without this module a report is a self-reported file a
   `owner_approval_missing` when a review withdraws the approval a `success` or `failure` check relied on,
   workflow re-run on a review after `owner_approval_missing` once no approval is missing, and a one-repository sweep
   when a default-branch push changes a protected path.
+- Gate the merge queue of the default branch: serve the upload of a merge group report on the group commit, create its
+  pending required check on `merge_group` `checks_requested`, correct that check when the group is destroyed or a queued
+  pull request loses its owner approval. The members are read from GitHub's queue (`gate/inputs`), never from the
+  upload or the event.
 - Take in decision requests of unattended agents (a comment on a pull request carrying the `wire/decision` block):
   check them against GitHub and the protected ref, keep a record and one status comment through `gate/decisions`, and
   mark pending requests stale when the head moves or the pull request closes. Nothing is granted; an owner decides.
@@ -361,12 +365,23 @@ type Sweeper interface {
 | `api.ErrRateLimited` while resolving inputs or publishing       | 503 with `Retry-After: 60` | `{"error": "rate_limited"}`              |
 | Any other error after authentication                            | 503 **[default]**          | `{"error": "unavailable"}`               |
 | `Pulls.OpenPulls` fails for an upload into the default branch   | 503 (`rate_limited` for a rate limit) | `{"error": "unavailable"}`    |
+| Merge group upload: the queue lists no entry with the run's commit (`*Rejection` of `Receive`) | 409                        | `{"error": "stale_group"}`               |
+| Merge group upload: the queue, the members or the inputs cannot be read, or changed before the write | 503 (`rate_limited` for a rate limit; a missing Merge queues permission is `unavailable`) | `{"error": "unavailable"}` |
 
 A pull request upload into the default branch lists the repository's open pull requests (`sweep.SharedWith`) before it
 decides. Another open pull request with the same head commit and a base that is not the default branch is passed to
 `verdict.Decide` as `Facts.SharedHead`, so the answer is `action_required` with `shared_head`, never `success`: a check
 is written per head commit and that pull request would show it. The App accepts no protected base other than the
-default branch. A failed listing is an error the Action retries, never a success.
+default branch. A failed listing is an error the Action retries, never a success. A merge group upload does the same for the
+group commit, before deciding and again inside the lease: a group commit is a branch head a pull request into another
+base can share. A `PullOpened` or `PullSynchronized` of a pull request into another base whose head no open pull request into the
+default branch has also runs `sweep.SharedHeadPublication` for that head as a merge group target, inside its lease:
+a success there is a merge group's, queued or merged (the default branch fast-forwards to a merged group commit, so a
+pull request from it into another base is routine), and it becomes `shared_head`. Without a gate check on the head
+nothing more is read; `ErrQueueForbidden` means no group result exists and nothing is written.
+
+A merge group upload (`Binding.MergeGroup`) is decided on the group commit. Its `Resolve` hook inside the lease resolves the group again (queue, members, approvals, protected
+files) and lists the open pull requests again; inputs or shared heads that differ from those of the decision write nothing and answer 503 (`feedback.ErrStaleInputs`).
 
 `reason` is `Outcome.Reasons[0].Code`. A 2xx means "accepted and published", not "passed". The producer
 retries on every non-2xx except 400, 401, 403, 409 and 413. On 503 the pending check stays pending.
@@ -394,14 +409,15 @@ The handler works under a 50 second deadline **[default]**, inside the 60 second
 - **Balanced?**: yes (functional strength at distance 1)
 - **Shared knowledge**: `Upload`, `Binding`, `Problem`, `Receiver`, `Rejection` (restated in Public Contract
   above). `Receive` returns `*Rejection` (find it with `errors.As`) or a plain error for transient failures.
-  `Binding.BaseRef` is the PR base branch, or for other events the branch the run executed on. A JWKS outage is
+  `Binding.BaseRef` is the PR base branch, the default branch for a merge group, or for other events the branch the run executed on.
+  `Binding.MergeGroup` is true when GitHub's merge queue of the default branch lists the run's commit as an entry's. A JWKS outage is
   the 503 `oidc_unavailable` rejection, which the Action retries. `Actions` and `Verifier` are restated below.
   `Repos` is a role interface of `github/api` that `*Client` implements; the façade only passes it to the children.
   `Pulls` is a role interface of `github/api` that `*Client` implements; the façade only passes it to the children.
 
 <!-- contract: New — restated from internal/gate/ingest/module.md -->
 ```go
-func New(repos Repos, pulls Pulls, actions Actions, v Verifier, audience string, admit Admitter) Receiver
+func New(repos Repos, pulls Pulls, actions Actions, queues MergeQueues, v Verifier, audience string, admit Admitter) Receiver
 ```
 
 After it resolves the repository and checks the repository ID, `Receive` asks `Admitter.Admitted` for the installation
@@ -422,7 +438,7 @@ An approval that cannot be read is the 503 `admission_unavailable` rejection, wh
   called only from `PullApproval` and `Approve`, for `control/ui`. `SettingsFound == false` means "not onboarded". `Admissions` is built by `app` and passed in
   `Deps.Admissions`; the façade, `ingest` and `sweep` ask it `Admitted`, `Resolve` does not.
   `PolicyDigests[0]` and `BaselineDigests[0]` are the first accepted digests: the base digest when the file exists on
-  the protected ref, otherwise the owner-approved head digest; the lists are empty when neither exists. The inputs constructor is `New(repos Repos, pulls Pulls, s Store) Resolver`.
+  the protected ref, otherwise the owner-approved head digest; the lists are empty when neither exists. The inputs constructor is `New(repos Repos, pulls Pulls, queues MergeQueues, s Store) Resolver`. A `Target` with `MergeGroup` takes the merge group path of `inputs`, and `Trusted.Group` carries what the queue said.
   `inputs` owns the digest predicate and the protected path set. The façade compares no digest and names no
   protected path: a receipt digest is the claim when `Accepts` takes it and `First` of the list otherwise, and the
   `DefaultBranchPush` trigger asks `MayBeProtected` for every changed path. `ProtectedPaths` is not called here
@@ -430,13 +446,14 @@ An approval that cannot be read is the 503 `admission_unavailable` rejection, wh
 
 <!-- contract: Target, Trusted, Approval — restated from internal/gate/inputs/module.md -->
 ```go
-// Target is the pull request (or default-branch push) whose trusted inputs are resolved.
+// Target is the pull request (or default-branch push, or merge group) whose trusted inputs are resolved.
 type Target struct {
     Repo        Repo
-    PullRequest int // 0 for a default-branch push
+    PullRequest int // 0 for a default-branch push and a merge group
     HeadSHA     string
     BaseRef     string // protected ref; the default branch for every upload. Events and the sweep still set the pull request's base
     Fork        bool
+    MergeGroup  bool // HeadSHA is a merge group commit of BaseRef's merge queue
 }
 
 type Approval string
@@ -460,6 +477,7 @@ type Trusted struct {
     EarliestWaiverExpiry time.Time // zero = no waivers
     Suspended            bool
     Entitlement          Entitlement
+    Group                *Group // set for a merge-group Target only: Problem "fork" | "unverified" | "conflict", Detail, Unapproved
 }
 ```
 
@@ -739,7 +757,9 @@ type Repairer interface {
   repository, and it returns the rate limit as an error that wraps `api.ErrRateLimited`; it needs only `RepoRef` and `Private` of the `Repo` it is given. `Errors` counts skipped units.
   The sweep owns the rules the façade also needs, and exports them: the re-run guard (`Rerun`, called for
   `ReviewChanged`), the publication for a target without a report (`Without`, called for the fork refusal of a
-  new head), and the withdrawn-approval rule 5a (`Withdrawn` and `Withdrawal`, called for `ReviewChanged`). The
+  new head), the withdrawn-approval rule 5a (`Withdrawn` and `Withdrawal`, called for `ReviewChanged`), and the
+  correction of a merge group's check (`GroupWithdrawal`, called for `MergeGroupDestroyed` and for a review of a queued
+  pull request). The
   façade has no copy of any of them.
 
 <!-- contract: New — restated from internal/gate/sweep/module.md -->
@@ -1040,6 +1060,8 @@ const (
     InstallationAdded  EventKind = "installation_added"  // created, or repositories added
     InstallationRemoved EventKind = "installation_removed" // deleted
     ReposRemoved       EventKind = "repos_removed"
+    MergeGroupRequested EventKind = "merge_group_requested" // checks_requested: GitHub built a merge group commit
+    MergeGroupDestroyed EventKind = "merge_group_destroyed" // destroyed: merged, dequeued or invalidated
     Ignored            EventKind = "ignored"
 )
 
@@ -1055,10 +1077,12 @@ type Event struct {
     HeadSHA        string
     HeadRepo       string // differs from Repo for forks
     BaseRef        string
+    DefaultBranch  string   // the repository's default branch; "" when the payload does not name one
     Branch         string   // push kinds only: the branch, without "refs/heads/"
     Pusher         string   // push kinds only: the login that moved the branch; never a git author or committer
     PusherType     string   // push kinds only: the payload's pusher_type ("user", or a deploy key); "" when absent
     ChangedPaths   []string // default_branch_push only
+    GroupReason    string   // merge_group_destroyed only: "merged", "dequeued", "invalidated" or what GitHub sends
 }
 ```
 
@@ -1071,7 +1095,9 @@ type Event struct {
 - **Volatility**: high (gate side); the client is low
 - **Balanced?**: yes
 - **Shared knowledge**: `*Client` implements every role interface; the façade hands the same client to each child
-  under the role it needs and itself calls only `Actions.Run` and `Actions.Rerun`. `ErrRateLimited` is the sentinel
+  under the role it needs and itself calls only `Actions.Run` and `Actions.Rerun`, `Pulls.OpenPulls` and
+  `MergeQueues.MergeQueue` (the queued groups of a pull request). `ErrQueueForbidden` (the Merge queues permission is
+  missing) and `ErrQueueTooLong` are the sentinels of `MergeQueue`. `ErrRateLimited` is the sentinel
   returned after bounded backoff; `ErrNotFound` is the sentinel for a missing object. `TokenSource` is the
   credential interface of `github/auth` that `app` passes to the client constructor; the gate never sees it.
   The `New` in the last block below is the client constructor of `github/api`, called by `app`, not by the gate.
@@ -1261,13 +1287,13 @@ type Swap struct {
 
 ### Composition
 
-`New(d)` builds, once: `ingest.New(d.GitHub, d.GitHub, d.GitHub, d.OIDC, d.Audience, d.Admissions)`,
-`inputs.New(d.GitHub, d.GitHub, d.Store)`, `feedback.New(d.GitHub, d.GitHub, d.GitHub, d.Store, d.Audience, d.Now)` (the audience is the App's base URL, so
+`New(d)` builds, once: `ingest.New(d.GitHub, d.GitHub, d.GitHub, d.GitHub, d.OIDC, d.Audience, d.Admissions)`,
+`inputs.New(d.GitHub, d.GitHub, d.GitHub, d.Store)`, `feedback.New(d.GitHub, d.GitHub, d.GitHub, d.Store, d.Audience, d.Now)` (the audience is the App's base URL, so
 the comment links to the App's pull request page), `feedback.NewRepairer(d.GitHub, d.GitHub, d.GitHub, d.GitHub, d.Store, d.Now)`, and
 `sweep.New(d.GitHub, d.GitHub, d.GitHub, resolver, publisher, d.Admissions, d.Sweep)`. `verdict` has no constructor.
 `NewReceiver` is `ingest.New` with the same argument pattern. A nil `Deps.Now` means `time.Now` **[default]**.
-`New` delegates to the unexported `compose`, which takes the six `github/api` roles (`Repos`, `Pulls`, `Actions`,
-`Checks`, `Comments`, `Issues`) as one interface, and
+`New` delegates to the unexported `compose`, which takes the seven `github/api` roles (`Repos`, `Pulls`, `Actions`,
+`Checks`, `Comments`, `Issues`, `MergeQueues`) as one interface, and
 `compose` to `newGate`, which takes the children as interfaces; both exist so that tests can replace GitHub or a child.
 
 | Child      | Contributes                                                                                              | Depends on siblings                                           |
@@ -1281,9 +1307,10 @@ the comment links to the App's pull request page), `feedback.NewRepairer(d.GitHu
 ### Report upload flow
 
 1. `u, err := receiver.Receive(ctx, req, KindReport)`. `*Rejection` → answer and stop. Nothing is published.
-2. `target = Target{Repo: u.Binding.Repo, PullRequest, HeadSHA, BaseRef, Fork}` from the binding. For a non-PR
+2. `target = Target{Repo: u.Binding.Repo, PullRequest, HeadSHA, BaseRef, Fork, MergeGroup}` from the binding. For a non-PR
    upload (`PullRequest == 0`) `Target.BaseRef` is `Repo.DefaultBranch`, not `Binding.BaseRef`: the binding names the
-   branch the run executed on, which is a protected ref only when it is the default branch.
+   branch the run executed on, which is a protected ref only when it is the default branch. `MergeGroup` is
+   `Binding.MergeGroup`: `Resolve` then reads the queue and the members.
 3. `trusted, err := resolver.Resolve(ctx, target, now)`. Error → 503; the pending check stays.
 4. `IdentityApproved` = `manifest.Lookup(u.Identity)` hits **and** `entry.ProfileVersion != ""` **and**
    `u.Report.Comparison.MeasurementProfile != nil` **and** its `Version == entry.ProfileVersion`. A manifest row
@@ -1353,8 +1380,10 @@ Special targets, all through the same flow:
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | any kind with a repository       | Checked before the rows below: `Admissions.Admitted(e.InstallationID, Owner(e.Repo))` false → reaction `not_admitted`, nothing read or written, `nil` returned. An error → reaction `not_admitted` logged, nothing read or written, the error returned, so the webhook queue retries the delivery. Installation kinds carry no repository and skip this check. |
 | `PullOpened`, `PullSynchronized` | A payload base that is not the payload's default branch (`otherBase`): nothing is decided or published for it, but the head may be shared with a pull request into the default branch, whose checks it would show. One `OpenPulls` listing finds the open pull requests into the default branch whose head is `HeadSHA`; for each, `Reconcile` runs `sweep.SharedHeadPublication` inside the head's lease (reaction `shared_head`): when the check is Pending or a success and a fresh listing still shows the shared head, `shared_head` is published over it (over a pending check with the zero receipt, which any later upload replaces). Because it waits for the lease, it runs either before an in-flight upload, which then lists again inside its lease and answers 503, or after it, and withdraws the success. Only failures of these units (the listing, the check read, the lease) are returned, so the queue retries; no other pull request of the repository is read. A base changed after opening sends no event (`edited` is not mapped): the hourly sweep, rule 5d, is the net. Otherwise `Resolve`. `!SettingsFound` → nothing. Fork → `Publish(sweep.Without(ReasonForkUnsupported, target, trusted, Receipt{}))`: a zero-run receipt carrying the base digests. Else `Settings.Gate == GateRequired` → `publisher.Pending(target)`. Advisory → nothing. `PullSynchronized` also runs `decisions.HeadMoved`: each pending decision request of the pull whose head is not the pull request's head, read now (not the event's), becomes `stale (head moved)`; the two results are joined. |
+| `MergeGroupRequested`            | `otherBase` (the event's `BaseRef` is not its `DefaultBranch`) or an empty `DefaultBranch` → nothing (reaction `other_base`): only the default branch's queue is gated. Otherwise the target is the group commit (`MergeGroup`, `PullRequest` 0, `BaseRef` = the default branch) and only the settings are resolved (`MergeGroup` unset for this `Resolve`): `!SettingsFound` → nothing (`not_onboarded`); `Settings.Gate == GateRequired` → `publisher.Pending(target)` on the group commit (reaction `pending`); advisory → nothing. A group whose upload never arrives stays pending until GitHub's status check timeout fails it; the hourly sweep does not scan merge groups. |
+| `MergeGroupDestroyed`            | `otherBase`, an empty `DefaultBranch`, or `GroupReason == "merged"` (the result stands) → nothing. Otherwise `Reconcile(groupTarget, …)` (reaction `group_checked`): inside the lease, no gate check → nothing; else `Resolve` of the group, then `sweep.GroupWithdrawal(target, current, trusted)`. A group no longer in the queue resolves `unverified`, so a pending or decided check becomes `action_required` `merge_group_unverified`. Never a success. |
 | `PullCommented`                  | Decision request intake (below). A comment without the `<!-- archfit:decision-request -->` marker → nothing, no API call. |
-| `ReviewChanged`                  | `Reconcile(target, …)`: inside the lease, a withdrawn approval → `sweep.Withdrawal` (below); reason `owner_approval_missing` and `!verdict.Unapproved(trusted)` **[default: no re-run while an approval is missing]** → `sweep.Rerun`.                           |
+| `ReviewChanged`                  | `Reconcile(target, …)`: inside the lease, a withdrawn approval → `sweep.Withdrawal` (below); reason `owner_approval_missing` and `!verdict.Unapproved(trusted)` **[default: no re-run while an approval is missing]** → `sweep.Rerun`. Then (not for a pull request into another base) `MergeQueues.MergeQueue(default branch)`: the entries from this pull request's own entry to the end of the queue are the groups that hold it; each gets the `MergeGroupDestroyed` reconciliation (`group_checked`). Not queued → nothing more. `ErrQueueForbidden` → nothing more (no group result can exist without the permission). Any other queue or group error is returned and the queue retries the delivery; one group's error does not stop the others.                           |
 | `BranchPush`                     | `resolver.RecordPusher(target, Pusher)` first, for attribution (the record approves nothing); a failed write is returned and the queue retries. Then the newest pull request of this repository whose head is `Branch` (`Pulls.PullByHead`): when it is open and its head is `HeadSHA`, run the `ReviewChanged` reaction on it. A push whose `PusherType` is present and not `"user"` (a deploy key) records nothing and logs `gate pusher not recorded` with the delivery id, never the key; the re-evaluation and the sweep still run. No such pull request, a closed one or another head → nothing more. A pull request from a fork is never found. |
 | `DefaultBranchPush`              | `RecordPusher` and the pull request lookup as for `BranchPush`; then `ChangedPaths` empty (= unknown), or `inputs.MayBeProtected(path)` for any changed path → `sweeper.RunRepo(ctx, repo, now)` in the request. Otherwise `sweeper.Recheck(ctx, repo, HeadSHA, now)` in the request: sweep rule 5c alone, which the full pass of `RunRepo` includes.                                                                                                   |
 | `PullClosed`                     | `decisions.Closed`: every pending decision request of the pull becomes `stale (pull request closed)`, unless the pull request is open now (a delayed delivery after a reopen).                                                                                                                                                            |
@@ -1635,6 +1664,18 @@ are driven only as far as they go without GitHub. Child internals are tested in 
 
 ### Behavior Tests
 
+- **Test name**: `TestMergeGroupThatViolatesPolicyFailsOnTheGroupCommit`, `TestValidMergeGroupSucceedsOnTheGroupCommitOnly`
+  **Scenario**: two queued pull requests that each pass alone; a group upload that breaks a rule only together, and a healthy one.
+  **Expected behavior**: `failure` `blocking_findings`, and `success` `healthy`, on the group commit only; the pull request heads keep their own results; no comment and no details link for a group; another group's commit is untouched.
+- **Test name**: `TestMergeGroupUploadNotQueuedIsRefused`, `TestMergeGroupQueueUnreadableIsNeverASuccess`, `TestMergeGroupWithoutSettingsGetsNoPendingCheck`
+  **Scenario**: an upload for a group the queue no longer lists; an upload while the queue answers `ErrQueueForbidden` (a `ReviewChanged` event follows); a `checks_requested` event of a repository without settings.
+  **Expected behavior**: 409 `stale_group` and no check; 503 and no success, and the review event is handled without error; no pending check.
+- **Test name**: `TestMergeGroupWithUnapprovedProtectedChangeInAnyMember`, `TestMergeGroupWithOwnerApprovedPolicyChange`, `TestMergeGroupConflictingPolicyChanges`, `TestMergeGroupWithForkMember`
+  **Scenario**: a policy change by an earlier member without approval; by one approved member (the upload's `config_hash` is the combined file's digest, and the default branch's digest instead); by two approved members; a fork member.
+  **Expected behavior**: `owner_approval_missing`; `success`, and `policy_mismatch` for the default branch's digest; `merge_group_conflict` for the later group while the earlier group still passes; `fork_unsupported`.
+- **Test name**: `TestMergeGroupDestroyedInvalidatesItsResult`, `TestMergeGroupMergedKeepsItsResult`, `TestOwnerWithdrawalOnAQueuedPullDowngradesItsGroups`
+  **Scenario**: a decided or pending group check; `merge_group` `destroyed` with a reason other than `merged`, and with `merged`; a queued pull request whose owner approval is withdrawn by a review, with groups at and behind it.
+  **Expected behavior**: `action_required` `merge_group_unverified` (a late upload then gets 409 `stale_group`), never a success; the result stands; every group that holds the pull request becomes `action_required`.
 - **Test name**: `TestLegitimateChangePassesAndViolationFails` (T02)
   **Scenario**: the paired healthy and blocked fixtures of each claimed erosion scenario; the warning-only attention fixture.
   **Expected behavior**: `success`, `failure`, `success` on `archfit/gate`; the upload answer for the `needs_attention` verdict is `success`/`attention_only`, with `archfit/state` `neutral`; feedback names rule, modules, locations and the validation command.

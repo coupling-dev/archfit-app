@@ -119,14 +119,19 @@ func headline(p Publication) string {
 	return h
 }
 
-// required reports whether this publication writes archfit/gate; advisory, whether it is a pull request whose
-// feedback never blocks. A push is neither: there is no merge to block.
+// required reports whether this publication writes archfit/gate; advisory, whether it is a pull request or merge
+// group whose feedback never blocks. A push is neither: there is no merge to block.
 func required(p Publication) bool {
-	return p.Target.PullRequest != 0 && p.Trusted.SettingsFound && p.Trusted.Settings.Gate == settings.GateRequired
+	return merges(p.Target) && p.Trusted.SettingsFound && p.Trusted.Settings.Gate == settings.GateRequired
 }
 
 func advisory(p Publication) bool {
-	return p.Target.PullRequest != 0 && p.Trusted.SettingsFound && p.Trusted.Settings.Gate != settings.GateRequired
+	return merges(p.Target) && p.Trusted.SettingsFound && p.Trusted.Settings.Gate != settings.GateRequired
+}
+
+// merges reports a target whose check a merge waits for: a pull request, or a merge group commit of the queue.
+func merges(t inputs.Target) bool {
+	return t.PullRequest != 0 || t.MergeGroup
 }
 
 func stateTitle(p Publication) string {

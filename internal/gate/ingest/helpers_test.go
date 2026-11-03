@@ -95,6 +95,9 @@ type scenario struct {
 	runErr     error
 	pulls      map[int]api.Pull
 	pullErr    error
+	queue      []api.QueueEntry
+	queueErr   error
+	queueAsked []string // branch per MergeQueue call
 
 	calls    []string
 	resolved []string
@@ -189,6 +192,23 @@ func pushScenario(t *testing.T) *scenario {
 	return s
 }
 
+// groupSHA is the merge group commit of mergeGroupScenario.
+var groupSHA = strings.Repeat("e", 40)
+
+// mergeGroupScenario is the healthy report upload from a merge_group run of the default branch's queue.
+func mergeGroupScenario(t *testing.T) *scenario {
+	t.Helper()
+	s := prScenario(t)
+	s.run.HeadSHA = groupSHA
+	s.env.HeadSHA = groupSHA
+	s.toEvent(eventMergeGroup, "refs/heads/gh-readonly-queue/main/pr-7-"+baseSHA)
+	s.queue = []api.QueueEntry{
+		{Position: 1, HeadSHA: strings.Repeat("1", 40), BaseSHA: baseSHA, PullRequest: 3, PullHeadSHA: strings.Repeat("3", 40)},
+		{Position: 2, HeadSHA: groupSHA, BaseSHA: baseSHA, PullRequest: prNumber, PullHeadSHA: headSHA},
+	}
+	return s
+}
+
 // discoveryScenario is the healthy discovery upload from a workflow_dispatch run.
 func discoveryScenario(t *testing.T) *scenario {
 	t.Helper()
@@ -263,7 +283,7 @@ func (s *scenario) request(t *testing.T) *http.Request {
 func (s *scenario) receive(t *testing.T) (Upload, error) {
 	t.Helper()
 	s.calls, s.resolved, s.refs = nil, nil, nil
-	r := New(fakeRepos{s: s}, fakePulls{s: s}, fakeActions{s: s}, fakeVerifier{s: s}, testAudience, fakeAdmitter{s: s})
+	r := New(fakeRepos{s: s}, fakePulls{s: s}, fakeActions{s: s}, fakeQueues{s: s}, fakeVerifier{s: s}, testAudience, fakeAdmitter{s: s})
 	return r.Receive(context.Background(), s.request(t), s.kind)
 }
 
@@ -359,6 +379,15 @@ func (f fakePulls) Pull(_ context.Context, r api.RepoRef, number int) (api.Pull,
 		return api.Pull{}, api.ErrNotFound
 	}
 	return p, nil
+}
+
+type fakeQueues struct{ s *scenario }
+
+func (f fakeQueues) MergeQueue(_ context.Context, r api.RepoRef, branch string) ([]api.QueueEntry, error) {
+	f.s.calls = append(f.s.calls, "queue")
+	f.s.refs = append(f.s.refs, r)
+	f.s.queueAsked = append(f.s.queueAsked, branch)
+	return f.s.queue, f.s.queueErr
 }
 
 func wantRejection(t *testing.T, up Upload, err error, status int, code string) {

@@ -24,6 +24,12 @@ protected base other than the default branch, so it writes no success for a head
 base shares: the upload and the sweep (rule 5d, also started by the event of such a pull request) end it
 `action_required` with `shared_head`.
 
+A merge group of the default branch's merge queue is decided on its own commit, which holds the default branch and
+every queued pull request up to it. The App reads the group's members from GitHub's merge queue API and the protected
+files at two immutable commits: the default-branch head and the group commit. A protected file the group changes
+needs exactly one queued pull request that changes it, holds an owner approval of its own head, and has exactly that
+file; every member that changes a protected file needs its own approval. See [Merge queue](design/merge-queue.md).
+
 ## System context
 
 ```mermaid
@@ -309,7 +315,7 @@ Approval and readability are separate contracts:
 - The gate uses the structured decision, trusted input bindings, measurement identity, and gate reference.
   Origin remains display-only. A missing producer or required rule cannot become a healthy zero.
 
-New workflows pin Action v3.1.0 at commit `7ade3b8fc989ec416ea5d570e7e236f47f7845fc`; it runs engine v3.4.0 with the digest of the runner's platform.
+New workflows pin Action v3.1.1 at commit `2221f4bfece0725a657414fed751cdc090ba1bd4`; it runs on `merge_group` too and runs engine v3.4.0 with the digest of the runner's platform.
 This Action commit accepts v3.4.0 only and requires explicit engine-version and platform-digest inputs, requests fresh measurements, and passes only fixed HOME and checkout-scoped Git settings.
 It forwards no credentials. The container is not network-isolated, and reports remain customer-attested.
 The `action-conformance` CI job verifies every distinct manifest Action commit against the App's unchanged envelope schema.
@@ -363,7 +369,9 @@ The arrows show recovery flow. The sweep does not compute a new report because t
 | New pull request head                                    | Set a pending required check or refuse a fork                                                                                                                                | None                                  |
 | Push to the default branch that changes a protected path | Sweep that repository                                                                                                                                                        | None                                  |
 | Push to any branch                                       | Record who pushed the head. Then re-evaluate the open pull request on that head, as for a review change                                                                      | None                                  |
-| Review change                                            | Set `owner_approval_missing` when a `success` or `failure` check lost its owner approval; rerun when the last reason was `owner_approval_missing` and no approval is missing | None                                  |
+| Merge group requested (`merge_group`, `checks_requested`) | Set a pending required check on the group commit                                                                                                                               | None                                  |
+| Merge group destroyed, not merged                        | Set `action_required` `merge_group_unverified` on a pending or decided group check                                                                                              | None                                  |
+| Review change                                            | Set `owner_approval_missing` when a `success` or `failure` check lost its owner approval; rerun when the last reason was `owner_approval_missing` and no approval is missing. Re-check the merge groups that hold the pull request | None                                  |
 | Installation added or removed                            | None                                                                                                                                                                         | Start the trial or delete tenant data |
 
 Webhook intake verifies the signature and queues two tasks: the gate half, then the control half. Each task carries
@@ -426,6 +434,8 @@ These invariants keep repository authors from weakening the gate:
 - Read policy, baseline, labels, settings, owners, and workflow from the protected ref.
 - Verify the policy digest against the report.
 - Accept a head policy only when an architecture owner approved the exact head SHA.
+- Accept a merge group's changed protected file only when it is exactly the file of one queued pull request whose own
+  head an owner approved. Never approve the group commit itself.
 - Treat missing, incompatible, or unverifiable evidence as not successful.
 - Describe report provenance as `customer-attested`, never as `verified`.
 - Keep LLM output, billing, and UI code off the gate path.

@@ -207,11 +207,11 @@ parse counts as stalled.
 - `.archfit-app.yaml` = `settings.Render(Settings{Version: 1, Owners: owners, Gate: GateAdvisory, Workflow: <workflow path>, DataMode: DataCustomer | DataManaged})`.
 - No workflow file: `Progress.Workflow` hands it out and the owner commits it to `archfit/onboarding`. An App commit to
   the branch after the owner's keeps the file: `Commit` builds on the branch head's tree. The template, rendered with `manifest.Current()`: Action pinned to `ActionRef` (commit SHA), `EngineVersion`,
-  `ImageDigest`; triggers exactly `pull_request`, `push` to `r.DefaultBranch` and `workflow_dispatch` (the Action refuses
-  every other event, `workflow_run`, `pull_request_target` and `merge_group` included); the one dispatch input `mode`
+  `ImageDigest`; triggers exactly `pull_request`, `merge_group` (`types: [checks_requested]`), `push` to `r.DefaultBranch` and
+  `workflow_dispatch` (the Action refuses every other event, `workflow_run` and `pull_request_target` included); the one dispatch input `mode`
   (choice `report` | `discovery` | `baseline` | `reanchor`, default `report`), passed to the Action as
   `mode: ${{ inputs.mode }}`. The UI's Discover button dispatches `{"mode": "discovery"}`. A dispatched `report` is refused
-  by the Action: reports come from `pull_request` and `push` runs.
+  by the Action: reports come from `pull_request`, `merge_group` and `push` runs.
   `permissions: contents: read, id-token: write`; no secrets; no step runs repository scripts.
   `Deps.BaseURL` is written as the Action's upload endpoint and OIDC audience. **[default: Action input names pinned in the plan]**
   Action obligation, stated in the workflow's header comment and the PR body: the Action reads `.archfit.yaml`,
@@ -392,16 +392,17 @@ type Receiver interface {
 // Binding is the authoritative identity of an upload, resolved from OIDC claims and the GitHub API.
 type Binding struct {
     Repo         Repo   // resolved by the App, never from the envelope
-    Event        string // "pull_request" | "push"; discovery and baseline uploads also "workflow_dispatch"
+    Event        string // "pull_request" | "push" | "merge_group"; discovery and baseline uploads also "workflow_dispatch"
     PullRequest  int    // 0 unless pull_request
-    HeadSHA      string
-    BaseRef      string // PR base branch; for other events the branch the run executed on
+    HeadSHA      string // for merge_group the group commit
+    BaseRef      string // PR base branch; the default branch for a merge group; for other events the branch the run executed on
     BaseSHA      string
     MergeBaseSHA string
     Fork         bool
     RunID        int64
     RunAttempt   int
     WorkflowPath string
+    MergeGroup   bool // a merge_group report whose head the default branch's merge queue lists
 }
 
 // Problem is an eligibility defect found after the tenant was authenticated.
@@ -565,7 +566,7 @@ type Envelope struct {
     SchemaVersion string `json:"schema_version"` // must equal SchemaV1
     Kind          Kind   `json:"kind"`
     Repository    string `json:"repository"`     // "owner/name"
-    Event         string `json:"event"`          // "pull_request" | "push" | "workflow_dispatch"
+    Event         string `json:"event"`          // "pull_request" | "push" | "merge_group" | "workflow_dispatch"
     PullRequest   int    `json:"pull_request"`   // 0 unless Event == "pull_request"
     HeadSHA       string `json:"head_sha"`       // 40 lowercase hex
     BaseSHA       string `json:"base_sha"`       // "" unless pull_request
@@ -1056,7 +1057,7 @@ Test doubles only at boundaries: in-memory GitHub roles (`Repos`, `Actions`, `Ch
   **Expected behavior**: unchanged; unchanged; removed; removed; `&lt;`/`&gt;`; removed; unchanged; `mono` is the sanitized value in backticks; no reassembled string holds `<`, `>`, a backtick, a line break, `<!--` or `-->`.
 - **Test name**: `TestWorkflowTemplate`
   **Scenario**: render with a manifest entry and default branch `trunk`.
-  **Expected behavior**: Action pinned by 40-hex `ActionRef`; image digest and engine version present; `Deps.BaseURL` as endpoint and audience; triggers exactly `pull_request`, `push` on `trunk` and `workflow_dispatch`; dispatch inputs `mode` (choice `report`, `discovery`, `baseline`, default `report`) and boolean `discover`, passed as `mode: ${{ inputs.discover && 'discovery' || inputs.mode }}` and `discover: ${{ inputs.discover }}`; `id-token: write`, `contents: read`; the header comment names the three files, says they are read per file (PR head when the PR changes the file, else the base branch tip), never "base-ref", and names the two digests the Action reports; no `secrets.`, no `run:` step, no `workflow_run`, no `pull_request_target`, no `merge_group`.
+  **Expected behavior**: Action pinned by 40-hex `ActionRef`; image digest and engine version present; `Deps.BaseURL` as endpoint and audience; triggers exactly `pull_request`, `merge_group` (`types: [checks_requested]`), `push` on `trunk` and `workflow_dispatch`; dispatch inputs `mode` (choice `report`, `discovery`, `baseline`, default `report`) and boolean `discover`, passed as `mode: ${{ inputs.discover && 'discovery' || inputs.mode }}` and `discover: ${{ inputs.discover }}`; `id-token: write`, `contents: read`; the header comment names the three files, says they are read per file (PR head when the PR changes the file, else the base branch tip; the merge group commit for a merge group run), never "base-ref", and names the two digests the Action reports; no `secrets.`, no `run:` step, no `workflow_run`, no `pull_request_target`.
 - **Test name**: `TestCodeownersAppend`
   **Scenario**: table: no file; file in `.github/`; file at root only; file without trailing newline; entries already present; team owner.
   **Expected behavior**: original bytes are a prefix of the result; five lines added once (policy, baseline, labels, settings, workflow); second run adds nothing; location precedence honored; `@org/team` form used.

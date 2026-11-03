@@ -21,7 +21,7 @@ func (f *fixture) setBaseSettings(owners []string, agents ...string) {
 	})
 }
 
-func (f *fixture) resolver() Resolver { return New(f.repos, f.pulls, f.store) }
+func (f *fixture) resolver() Resolver { return New(f.repos, f.pulls, nil, f.store) }
 
 // shown is what the App shows an owner for t: the Candidate digests.
 func (f *fixture) shown(tb testing.TB, t Target) map[string]string {

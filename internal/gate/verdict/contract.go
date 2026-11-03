@@ -55,6 +55,11 @@ const (
 	ReasonTargetMoved           ReasonCode = "target_moved" // the default branch moved and, with this change, closes a module cycle
 	ReasonSharedHead            ReasonCode = "shared_head"  // another open pull request into a non-default branch has this head commit
 	ReasonSuspended             ReasonCode = "subscription_suspended"
+	// ReasonMergeGroupConflict: a protected file a merge group changes is not exactly one owner-approved member's file.
+	ReasonMergeGroupConflict ReasonCode = "merge_group_conflict"
+	// ReasonMergeGroupUnverified: GitHub does not confirm the merge group: it is gone, or a member is not the queued
+	// pull request.
+	ReasonMergeGroupUnverified ReasonCode = "merge_group_unverified"
 )
 
 // ClassifyDisplayReason classifies recorded reason metadata for presentation only, never a gate decision.

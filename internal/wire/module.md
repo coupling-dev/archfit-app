@@ -33,7 +33,7 @@ core modules, which is why everything here is contract-strength and strictly ver
 - The fixture corpus: its layout, the named cases, and the producer artifact each one was captured from.
 - Current engine schemas are pinned to v3.4.0 at `2692cd6b8aab23e559d0aa76712a192d69b4229f` (state sha256 `1d37f7d8…`, config sha256 `edffa7db…`).
   The state schema adds to v3.0.0/v3.0.1 the keys v3.3.0 and v3.4.0 emit and requires `identity`; the config schema adds `target_branch` and `module_review.change_gate`.
-  New workflows pin Action v3.1.0 at commit `7ade3b8fc989ec416ea5d570e7e236f47f7845fc`, the only Action in the manifest. The App still owns the unchanged envelope schema.
+  New workflows pin Action v3.1.1 at commit `2221f4bfece0725a657414fed751cdc090ba1bd4`, the only Action in the manifest. The App still owns the unchanged envelope schema.
 - Each child's internals (decoder technique, caps, file formats) stay in that child.
 
 ## Public Contract
@@ -117,6 +117,13 @@ Every fixture `<name>.<ext>` has a sibling `<name>.expect.json` with these keys 
 | `fields`   | for `ok`: the decision and identity values the child's contract test asserts                           |
 | `gate`     | report fixtures only: object with `conclusion` and `reasons`, the ordered list of reason codes         |
 | `facts`    | optional, report fixtures only: object of overrides to the clean facts; absent means all clean         |
+
+`envelope/` holds these named envelope fixtures: valid `pr-report`, `pr-report-with-inputs`, `push-report`,
+`merge-group-report`, `discovery-dispatch`, `baseline-dispatch`; refused `invalid-*`, among them
+`invalid-merge-group-with-base`. `merge-group-report` is a `merge_group` report with `pull_request` 0, no `base_sha`,
+`merge_base_sha` or `integration`, and `analyzed_sha` equal to `head_sha` (the merge group commit);
+`invalid-merge-group-with-base` is the same with `base_sha` set. Both are hand-written against the schema for the
+merge group binding of `docs/design/merge-queue.md`, which the schema does not change.
 
 A synthetic `producer` is one string, `"synthetic: <reason>"`; for a hand-edited report the reason records the
 source capture and the exact `jq` edit **[default]**. `fields` by folder: `envelope/` holds the whole decoded

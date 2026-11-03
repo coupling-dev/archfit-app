@@ -1,0 +1,24 @@
+{
+  "producer": "synthetic: hand-written by the envelope module against envelope.v1.schema.json for the merge_group binding of docs/design/merge-queue.md",
+  "decode": "ok",
+  "fields": {
+    "schema_version": "archfit.report-envelope.v1",
+    "kind": "report",
+    "repository": "alexei-led/archfit-demo",
+    "event": "merge_group",
+    "pull_request": 0,
+    "head_sha": "2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a",
+    "base_sha": "",
+    "merge_base_sha": "",
+    "analyzed_sha": "2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a",
+    "integration": "",
+    "run_id": 17654321099,
+    "run_attempt": 1,
+    "engine_version": "v3.4.0",
+    "image_digest": "sha256:5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d",
+    "platform": "linux/amd64",
+    "payload_digest": "sha256:65f76b60085ecaccd761d3e45381c6d772661f477189b0607dbdd2e7e2d249b6",
+    "baseline_digest": "6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e",
+    "labels_digest": ""
+  }
+}

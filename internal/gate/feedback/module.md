@@ -214,6 +214,8 @@ marker and an `external_id` with run ID, attempt and report digest exist.
 | Pull request, advisory                        | yes             | no                                             | yes     |
 | Pull request, `!Trusted.SettingsFound`        | yes             | no                                             | no      |
 | Push (`Target.PullRequest == 0`)              | yes             | no                                             | no      |
+| Merge group (`Target.MergeGroup`), `GateRequired` | yes         | yes, `Conclusion = string(Outcome.Conclusion)`, on the group commit | no |
+| Merge group, advisory                         | yes             | no                                             | no      |
 
 `archfit/state` conclusion:
 
@@ -283,7 +285,7 @@ read as a receipt.
 
 `Warn`: find the comment as above. Section with the same date present → nothing. Present with another
 date → replace. Comment without section → insert after the verdict block. No comment → create one holding the
-comment marker and the section. No-op for `Target.PullRequest == 0`.
+comment marker and the section. No-op for `Target.PullRequest == 0` (a push and a merge group).
 
 ### Publication lease
 
@@ -536,7 +538,7 @@ type Outcome struct {
 - **LCA / Rank / Distance**: gate / 1 / 1
 - **Volatility**: high
 - **Balanced?**: yes
-- **Shared knowledge**: `Target.PullRequest == 0` is a push; `Trusted.Settings.Gate` selects required mode;
+- **Shared knowledge**: `Target.PullRequest == 0` is a push, or a merge group when `Target.MergeGroup` (a merge waits for its `archfit/gate` check as for a pull request's, but it gets no comment); `Trusted.Settings.Gate` selects required mode;
   `Entitlement.Notice` is shown from `WarnFrom` on. feedback never resolves inputs itself: it calls the caller's
   `Publication.Resolve` and checks the receipt digests with `Accepts`, the predicate the sweep's stale rule uses.
 
@@ -557,13 +559,14 @@ type Entitlement struct {
 
 <!-- contract: Target, Trusted, Approval — restated from internal/gate/inputs/module.md -->
 ```go
-// Target is the pull request (or default-branch push) whose trusted inputs are resolved.
+// Target is the pull request (or default-branch push, or merge group) whose trusted inputs are resolved.
 type Target struct {
     Repo        Repo
-    PullRequest int // 0 for a default-branch push
+    PullRequest int // 0 for a default-branch push and a merge group
     HeadSHA     string
-    BaseRef     string // protected ref; the default branch for a push
+    BaseRef     string // protected ref; the default branch for a push and a merge group
     Fork        bool
+    MergeGroup  bool // HeadSHA is a merge group commit of BaseRef's merge queue
 }
 
 type Approval string
@@ -587,6 +590,7 @@ type Trusted struct {
     EarliestWaiverExpiry time.Time // zero = no waivers
     Suspended            bool
     Entitlement          Entitlement
+    Group                *Group // set for a merge-group Target only
 }
 ```
 
@@ -1379,8 +1383,8 @@ Golden files hold rendered bodies for the wire fixtures.
 ### Integration Contract Tests
 
 - **Test name**: `TestPublishMatrix`
-  **Scenario**: the four rows of "What is written when".
-  **Expected behavior**: exactly the listed objects are created, with the fixed names; push and settings-missing targets get no comment and no gate check.
+  **Scenario**: the rows of "What is written when".
+  **Expected behavior**: exactly the listed objects are created, with the fixed names; push and settings-missing targets get no comment and no gate check; a merge group gets a gate check in required mode and never a comment.
 - **Test name**: `TestPendingIsIdempotent`
   **Scenario**: `Pending` twice; `Pending` after a completed check exists.
   **Expected behavior**: one `in_progress` `archfit/gate` run with `StartedAt` from the clock; no write in the other cases.

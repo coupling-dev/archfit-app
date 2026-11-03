@@ -1,0 +1,13 @@
+{
+  "action": "checks_requested",
+  "merge_group": {
+    "head_sha": "2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a",
+    "head_ref": "refs/heads/gh-readonly-queue/main/pr-12-3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b",
+    "base_sha": "3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b",
+    "base_ref": "refs/heads/main",
+    "head_commit": {"id": "2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a", "message": "Merge pull request #12"}
+  },
+  "repository": {"full_name": "acme/app", "private": true, "default_branch": "main"},
+  "installation": {"id": 42},
+  "sender": {"login": "github-merge-queue[bot]"}
+}

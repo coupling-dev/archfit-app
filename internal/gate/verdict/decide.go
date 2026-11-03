@@ -92,7 +92,12 @@ func Decide(f Facts) Outcome {
 		}
 	}
 	// Step 5.
-	if Unapproved(t) {
+	switch {
+	case t.Group != nil && t.Group.Problem == inputs.GroupConflict:
+		rs.add(ReasonMergeGroupConflict, t.Group.Detail)
+	case t.Group != nil && t.Group.Unapproved != "":
+		rs.add(ReasonOwnerApprovalMissing, t.Group.Unapproved)
+	case Unapproved(t):
 		rs.add(ReasonOwnerApprovalMissing, strings.Join(t.ProtectedPaths, ", "))
 	}
 	integrity(&rs, f)
@@ -110,17 +115,43 @@ func Unapproved(t inputs.Trusted) bool {
 
 // Without returns the fixed outcome for a target that has no report: code is one of ReasonMissingUpload,
 // ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended, ReasonOwnerApprovalMissing,
-// ReasonTargetMoved, ReasonSharedHead.
+// ReasonTargetMoved, ReasonSharedHead, ReasonMergeGroupUnverified.
 func Without(code ReasonCode) Outcome {
 	var rs reasons
 	switch code {
 	case ReasonMissingUpload, ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended,
-		ReasonOwnerApprovalMissing, ReasonTargetMoved, ReasonSharedHead:
+		ReasonOwnerApprovalMissing, ReasonTargetMoved, ReasonSharedHead, ReasonMergeGroupUnverified:
 		rs.add(code, "")
 	default:
 		rs.add(ReasonEngineError, "")
 	}
 	return rs.outcome()
+}
+
+// GroupBlocked is the outcome of a merge group whose trusted inputs t no longer allow any result but action_required:
+// a fork member, an unverified group, conflicting protected files, or a member change without its owner approval.
+// ok is false when t is no merge group's or allows a decision.
+func GroupBlocked(t inputs.Trusted) (out Outcome, ok bool) {
+	g := t.Group
+	if g == nil {
+		return Outcome{}, false
+	}
+	var rs reasons
+	switch {
+	case g.Problem == inputs.GroupFork:
+		rs.add(ReasonForkUnsupported, "")
+	case g.Problem == inputs.GroupConflict:
+		rs.add(ReasonMergeGroupConflict, g.Detail)
+	case g.Problem != "":
+		rs.add(ReasonMergeGroupUnverified, g.Detail)
+	case g.Unapproved != "":
+		rs.add(ReasonOwnerApprovalMissing, g.Unapproved)
+	case Unapproved(t):
+		rs.add(ReasonOwnerApprovalMissing, strings.Join(t.ProtectedPaths, ", "))
+	default:
+		return Outcome{}, false
+	}
+	return rs.outcome(), true
 }
 
 // ApprovalMissing is Without(ReasonOwnerApprovalMissing) for a caller that holds the trusted inputs: Detail names
@@ -266,6 +297,17 @@ func eligibility(rs *reasons, f Facts) {
 			invalid = true
 		default:
 			envelope = true
+		}
+	}
+	if g := f.Trusted.Group; g != nil {
+		// A merge group's trust problems are eligibility: none of them is cured by an approval. A value this package
+		// does not know is an unverified group.
+		switch g.Problem {
+		case "", inputs.GroupConflict:
+		case inputs.GroupFork:
+			fork = true
+		default:
+			rs.add(ReasonMergeGroupUnverified, g.Detail)
 		}
 	}
 	if fork {

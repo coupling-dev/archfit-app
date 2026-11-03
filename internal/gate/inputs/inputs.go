@@ -40,16 +40,21 @@ const (
 var errRecordContention = errors.New("inputs: record pusher: store contention")
 
 type resolver struct {
-	repos api.Repos
-	pulls api.Pulls
-	store store.Store
+	repos  api.Repos
+	pulls  api.Pulls
+	queues api.MergeQueues
+	store  store.Store
 }
 
-func New(repos api.Repos, pulls api.Pulls, s store.Store) Resolver {
-	return &resolver{repos: repos, pulls: pulls, store: s}
+// New returns the Resolver. queues is read only for a merge-group Target.
+func New(repos api.Repos, pulls api.Pulls, queues api.MergeQueues, s store.Store) Resolver {
+	return &resolver{repos: repos, pulls: pulls, queues: queues, store: s}
 }
 
 func (r *resolver) Resolve(ctx context.Context, t Target, now time.Time) (Trusted, error) {
+	if t.MergeGroup {
+		return r.resolveGroup(ctx, t, now)
+	}
 	ent := r.entitlement(ctx, t.Repo.InstallationID)
 	out := Trusted{
 		Approval:    ApprovalNotRequired,

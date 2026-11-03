@@ -89,15 +89,17 @@ func (g *Gate) decideAndPublish(ctx context.Context, u Upload) (verdict.Outcome,
 		HeadSHA:     u.Binding.HeadSHA,
 		BaseRef:     u.Binding.Repo.DefaultBranch,
 		Fork:        u.Binding.Fork,
+		// A merge group's members and inputs are read by gate/inputs from the queue, again inside the lease.
+		MergeGroup: u.Binding.MergeGroup,
 	}
 	problems := u.Problems
 	var shared []verdict.SharedPull
-	if u.Binding.PullRequest != 0 {
+	if u.Binding.PullRequest != 0 || u.Binding.MergeGroup {
 		if u.Binding.BaseRef != u.Binding.Repo.DefaultBranch {
 			problems = append(slices.Clone(problems), ingest.ProblemUnsupportedEvent)
 		} else {
-			// Checks are written per head commit: a pull request into another base on this head would show the
-			// result. Only the default branch is a protected base, so a shared head never gets a success. A failed
+			// Checks are written per head commit: a pull request into another base on this head (a merge group commit
+			// is a branch head anyone with push access can open a pull request from) would show the result. Only the default branch is a protected base, so a shared head never gets a success. A failed
 			// listing is an error (503, the Action retries), never a success.
 			pulls, err := g.pulls.OpenPulls(ctx, u.Binding.Repo.RepoRef)
 			if err != nil {
@@ -135,7 +137,7 @@ func (g *Gate) decideAndPublish(ctx context.Context, u Upload) (verdict.Outcome,
 		// a decision whose inputs or shared heads are no longer current (503 here); the Action's retry decides from the new inputs.
 		Resolve: func(ctx context.Context) (inputs.Trusted, error) {
 			tr, err := g.resolver.Resolve(ctx, target, g.now())
-			if err != nil || u.Binding.PullRequest == 0 || u.Binding.BaseRef != u.Binding.Repo.DefaultBranch {
+			if err != nil || (u.Binding.PullRequest == 0 && !u.Binding.MergeGroup) || u.Binding.BaseRef != u.Binding.Repo.DefaultBranch {
 				return tr, err
 			}
 			// A pull request into another base may have opened since the listing above. Its event found the check

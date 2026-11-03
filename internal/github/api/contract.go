@@ -145,6 +145,14 @@ type Pulls interface {
 	TeamMember(ctx context.Context, r RepoRef, team, login string) (bool, error)
 }
 
+// MergeQueues reads a branch's merge queue: the authoritative membership of its merge groups.
+type MergeQueues interface {
+	// MergeQueue returns the entries in position order; none when the branch has no queue. An entry not built yet has
+	// HeadSHA "". A GraphQL error, such as
+	// a missing Merge queues permission, is an error, never an empty queue.
+	MergeQueue(ctx context.Context, r RepoRef, branch string) ([]QueueEntry, error)
+}
+
 type Annotation struct {
 	Path    string
 	Line    int

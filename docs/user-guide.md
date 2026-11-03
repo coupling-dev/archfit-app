@@ -79,6 +79,7 @@ there is no repair issue.
 | Actions       | Read & write | Reads the Archfit run and its report artifact. Re-runs the Archfit run when its inputs change. Starts discovery and AI assist runs. | After an owner approves, the gate stays red until someone re-runs the job by hand. No discovery button, no AI assist. |
 | Metadata      | Read         | GitHub adds it to every App: repository name, default branch.                                                                       | Not optional.                                                                                                         |
 | Issues        | Read & write | Added by the release that brings the [repair issue](#repair-issue-on-the-default-branch): opens, updates and closes one issue when a push breaks the default branch. | No repair issue. Checks and comments work as before; the App logs each refused issue call. |
+| Merge queues  | Read         | Added by the release that brings [merge queue](#merge-queue) support: reads which pull requests a merge group holds, and receives the `merge_group` event. | A merge group never passes: its upload answers `503` and GitHub's timeout fails it. Pull requests work as before. |
 
 ### Organization permissions
 
@@ -469,6 +470,7 @@ reason applies. The detail lists the dimensions that are not fully measured and 
 | `policy_missing`         | Merge the Archfit policy pull request.                                                                                 |
 | `policy_defect`          | Fix the selectors of the listed rules by owner-approved pull request, or mark an intentional guard rule `guard: true`. |
 | `waiver_expired`         | Renew the waiver by owner-approved pull request or fix the finding.                                                    |
+| `merge_group_conflict`   | Queued pull requests change the same protected file, or the queued file is not the one an owner approved. Remove all but one from the merge queue, or update the branch and have an owner approve the new head. See [Merge queue](#merge-queue). |
 
 `policy_defect` names required rules whose selector matches nothing in the repository. The engine cannot evaluate
 such a rule, so the gate asks for a policy fix instead of more evidence. The comment shows each rule with the selector
@@ -494,6 +496,7 @@ that matches nothing. Other rules that the engine could not evaluate keep `missi
 | `envelope_mismatch`           | Run the workflow again. The upload did not match the GitHub run.                                                                                                                                                    |
 | `report_invalid`              | Upload the unmodified engine report. Use the pinned Action version.                                                                                                                                                 |
 | `unsupported_event`           | Run Archfit on a pull request into the default branch, or on a push to it. A pull request into another branch, and other events, are not checked. |
+| `merge_group_unverified`      | GitHub does not confirm the merge group: it was destroyed or rebuilt, or a queued pull request changed. Queue the pull request again. See [Merge queue](#merge-queue). |
 | `fork_unsupported`            | The comment asks the contributor to have a maintainer push the branch to this repository and run the workflow there. To merge a fork without that, a repository admin uses a separate GitHub ruleset with a bypass list for the required check: the App never reports a fork as success. |
 
 #### Subscription
@@ -515,8 +518,8 @@ no approval is needed any more.
 ### Engine versions
 
 The locked manifest approves engine v3.4.0 on Linux amd64 and arm64. New workflows pin archfit-action at commit
-`7ade3b8fc989ec416ea5d570e7e236f47f7845fc` (Action v3.1.0, which runs engine v3.4.0 only and picks the image digest for the runner's platform). A workflow
-still pinned to Action v3.0.0 (`fb2520cb069571d6bdc9274ac97d4df49994b6c7`) keeps working: it sends the same identity. It measures a pull request as
+`2221f4bfece0725a657414fed751cdc090ba1bd4` (Action v3.1.1, which runs engine v3.4.0 only, picks the image digest for the runner's platform, and runs on
+`merge_group`). A workflow still pinned to Action v3.1.0 (`7ade3b8fc989ec416ea5d570e7e236f47f7845fc`) or v3.0.0 (`fb2520cb069571d6bdc9274ac97d4df49994b6c7`) keeps working for pull requests and pushes: it sends the same identity, but it refuses `merge_group`. It measures a pull request as
 it would land (the merge with the target) and states `analyzed_sha`, `integration` and, for a policy change, its
 classification in the upload. Only the v3.4.0 amd64 row is Current for new workflows and recovery pins.
 
@@ -535,12 +538,12 @@ classification in the upload. Only the v3.4.0 amd64 row is Current for new workf
 After the App release approves the new tuple, open an owner-reviewed pull request changing only these pins:
 
 ```yaml
-- uses: alexei-led/archfit-action@7ade3b8fc989ec416ea5d570e7e236f47f7845fc # v3.1.0
+- uses: alexei-led/archfit-action@2221f4bfece0725a657414fed751cdc090ba1bd4 # v3.1.1
   with:
     # endpoint, audience and mode stay as they are; remove engine-version and image-digest
 ```
 
-Action v3.1.0 runs engine v3.4.0 and picks the image digest for the runner's platform, so the workflow passes neither
+Action v3.1.1 runs engine v3.4.0 and picks the image digest for the runner's platform, so the workflow passes neither
 input. If you keep them, they must name v3.4.0 and the exact digest for the runner's platform from the manifest. Keep the repository's settings, policy owners, and gate mode unchanged.
 The App does not update installed workflow files automatically.
 
@@ -922,6 +925,72 @@ _The step stays at Advisory, and Needs you names the ruleset to add. Sample data
 
 > **CAUTION:** Do not require `archfit/gate` while the settings file has `gate: advisory`.
 > The App does not publish that check in advisory mode. The pull request stays blocked.
+
+## Merge queue
+
+Archfit gates GitHub's [merge queue](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue)
+of the default branch. GitHub tests each queued pull request as a merge group: a temporary commit that holds the
+default branch, every pull request ahead in the queue, and this one. Archfit measures that commit and writes
+`archfit/gate` on it. A pass of the pull request's own head is not a pass of its group: two pull requests that pass
+alone can fail together.
+
+**Set it up.**
+
+1. The App needs the **Merge queues: Read** permission and the **Merge group** event. When the App asks for them,
+   an owner of your account accepts them on the installation page (`https://github.com/organizations/<org>/settings/installations`,
+   or `https://github.com/settings/installations` for a user account): **Configure** on Archfit Review, then the
+   review request for the new permissions
+   (see [GitHub App permissions](#github-app-permissions)).
+2. The workflow must run on `merge_group`. A workflow the App generates has the trigger:
+
+   ```yaml
+   on:
+     pull_request:
+     merge_group:
+       types: [checks_requested]
+   ```
+
+   An installed workflow gets it by an owner-approved pull request, with the Action pin of
+   [Engine versions](#engine-versions): older Actions refuse the event.
+3. Require `archfit/gate` in the ruleset of the default branch and turn on **Require merge queue**. GitHub then waits
+   for `archfit/gate` on each merge group commit.
+
+**How a group is decided.** The App reads the queue from GitHub's API, never from the queue branch name or from the
+upload. The members are the entries from the front of the queue up to the group's own entry. The App reads each
+protected file (policy, baseline, labels, settings, workflow) at the default-branch head and at the group commit:
+
+- A file the group does not change: the default branch's file governs, as for any pull request.
+- A file the group changes: exactly one queued pull request must change it, an owner must have approved that pull
+  request's own head (on GitHub or with **Approve** in the App, under [Owner approval](#owner-approval)), and the
+  group's file must be exactly the file at that head. Then that file governs the group.
+- Every queued pull request that changes a protected file needs its own owner approval, also when the group's file
+  ends up equal to the default branch's. A pull request without one ends the group `owner_approval_missing`, naming it.
+
+The group commit is never approved itself. Putting a pull request in the queue, pushing, or text in the pull request
+approves nothing. Settings, owners, agents and the gate mode come from the default branch.
+
+**A policy change through the queue.** An owner approves the pull request's head, then it is queued like any other.
+Two pull requests that change the same protected file cannot share a group: that group ends `merge_group_conflict`.
+Remove all but one from the queue; queue the others again after it merges, each with a fresh approval if the update
+changed its head. When the queued file is not the approved one (the default branch changed that file in the meantime),
+update the branch and have an owner approve the new head.
+
+**When a group goes away.** GitHub destroys a group when a pull request leaves the queue or one ahead of it fails, and
+builds a new group with a new commit. The App sets a destroyed group's `archfit/gate` to `action_required` with
+`merge_group_unverified`, and refuses a late upload for it with `409 stale_group`. An owner who withdraws an approval
+(requests changes or dismisses the review) on a queued pull request turns every group that holds it to
+`action_required`. A group without an upload stays pending until GitHub's status check timeout fails it.
+
+**Limits.**
+
+- Only the merge queue of the default branch. A queue on another branch gets nothing from the App.
+- A pull request from a fork stays refused in a group, as on its own (`fork_unsupported`).
+- The hourly sweep does not look at merge groups: a group lives only until it merges or GitHub's timeout. A waiver
+  that expires while a group waits is checked when the group's report arrives.
+- A group whose commit has no `.archfit.yaml` uploads nothing, so its pending `archfit/gate` fails by GitHub's
+  timeout. To remove the policy, take `archfit/gate` out of the branch rule first, then merge the removal.
+- If the branch rule allows a pull request whose checks failed into a group ("Only merge non-failing pull requests"
+  off), the group still checks every protected change it holds.
 
 ## Merge safety when the target moves
 

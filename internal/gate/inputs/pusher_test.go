@@ -24,7 +24,7 @@ func TestOwnerPushNeverApproves(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			f := newFixture()
 			f.pulls.changed = []string{policy.BaselinePath}
-			if err := New(f.repos, f.pulls, f.store).RecordPusher(context.Background(), pullTarget(), tt.pusher); err != nil {
+			if err := New(f.repos, f.pulls, nil, f.store).RecordPusher(context.Background(), pullTarget(), tt.pusher); err != nil {
 				t.Fatalf("RecordPusher: %v", err)
 			}
 
@@ -39,7 +39,7 @@ func TestOwnerPushNeverApproves(t *testing.T) {
 func TestPusherRecordIsBounded(t *testing.T) {
 	f := newFixture()
 	f.pulls.changed = []string{policy.PolicyPath}
-	r := New(f.repos, f.pulls, f.store)
+	r := New(f.repos, f.pulls, nil, f.store)
 	for i := range maxPushers + 5 {
 		if err := r.RecordPusher(context.Background(), pullTarget(), fmt.Sprintf("user%d", i)); err != nil {
 			t.Fatal(err)
@@ -58,7 +58,7 @@ func TestPusherRecordFailuresAreErrors(t *testing.T) {
 	f := newFixture()
 	f.store = &stubStore{get: func(context.Context) ([]byte, error) { return nil, errBoom }}
 
-	err := New(f.repos, f.pulls, f.store).RecordPusher(context.Background(), pullTarget(), "alice")
+	err := New(f.repos, f.pulls, nil, f.store).RecordPusher(context.Background(), pullTarget(), "alice")
 	if !errors.Is(err, errBoom) {
 		t.Fatalf("RecordPusher error = %v, want the store error", err)
 	}

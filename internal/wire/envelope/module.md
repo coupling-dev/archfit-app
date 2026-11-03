@@ -81,7 +81,9 @@ upload into a `400`. Self-reported like every other field.
 `analyzed_sha` and `integration` come from archfit-action X1: a pull request is measured as it would land. `merged`: the
 engine measured GitHub's test merge commit of `head_sha` into the target, and `analyzed_sha` is that commit. `conflicts`:
 GitHub reports a conflict, the head was measured alone, and `analyzed_sha` is `head_sha`. Every other event measures its own
-head: `analyzed_sha` equals `head_sha`. The schema file is byte-identical to the one `archfit-action` vendors at its
+head: `analyzed_sha` equals `head_sha`. For `merge_group` the head is the merge group commit (`merge_group.head_sha`, the
+run's `GITHUB_SHA`): `pull_request` is 0 and `base_sha`, `merge_base_sha` and `integration` are `""`, as for a push; the
+schema is unchanged and `gate/ingest` binds the commit to GitHub's merge queue. The schema file is byte-identical to the one `archfit-action` vendors at its
 pinned commit (the CI job `Action envelope schema` compares it for every Action commit in the manifest). The App does not
 trust the claim: `gate/ingest` holds it to what GitHub says about the pull request.
 
@@ -126,7 +128,7 @@ type Envelope struct {
     SchemaVersion string `json:"schema_version"` // must equal SchemaV1
     Kind          Kind   `json:"kind"`
     Repository    string `json:"repository"`     // "owner/name"
-    Event         string `json:"event"`          // "pull_request" | "push" | "workflow_dispatch"
+    Event         string `json:"event"`          // "pull_request" | "push" | "merge_group" | "workflow_dispatch"
     PullRequest   int    `json:"pull_request"`   // 0 unless Event == "pull_request"
     HeadSHA       string `json:"head_sha"`       // 40 lowercase hex
     BaseSHA       string `json:"base_sha"`       // "" unless pull_request
@@ -241,7 +243,7 @@ so `TestSchemaAndDecoderAgree` states that field per fixture name in the test.
   **Scenario**: table: `pull_request` event with `pull_request: 0`; `push` with `pull_request: 7`; `push` with a non-empty
   `base_sha`; `pull_request` event with empty `merge_base_sha`; `integration` empty, unknown, or `merged`/`conflicts` on a push;
   `analyzed_sha` in capitals, short, empty or null; valid `pull_request` merged and with conflicts; valid `push`; valid
-  `workflow_dispatch`.
+  `merge_group`; `merge_group` with a non-empty `base_sha`; valid `workflow_dispatch`.
   **Expected behavior**: every invalid row fails naming the field, and the schema agrees; the valid rows decode with the
   fields unchanged.
 - **Test name**: `TestInputDigestFormats`
@@ -268,7 +270,7 @@ so `TestSchemaAndDecoderAgree` states that field per fixture name in the test.
 ### Integration Contract Tests
 
 - **Test name**: `TestDecodeAcceptsConformanceEnvelopes`
-  **Scenario**: every fixture in `internal/wire/testdata/envelope/` marked `decode: ok` (PR report, default-branch push report, discovery by `workflow_dispatch`, baseline by `workflow_dispatch`).
+  **Scenario**: every fixture in `internal/wire/testdata/envelope/` marked `decode: ok` (PR report, default-branch push report, merge group report, discovery by `workflow_dispatch`, baseline by `workflow_dispatch`).
   **Expected behavior**: decodes; each `Envelope` field equals the value recorded in the fixture's expectation.
 - **Test name**: `TestSchemaAndDecoderAgree`
   **Scenario**: run every envelope fixture, valid and invalid, through `Decode` and through a test-local evaluator of `Schema()`

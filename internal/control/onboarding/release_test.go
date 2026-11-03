@@ -12,10 +12,10 @@ func TestNewWorkflowUsesReleasedV340Pins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Action v3.1.0 runs the engine it pins (v3.4.0) with the digest of the runner's platform: the workflow names the
+	// Action v3.1.1 runs the engine it pins (v3.4.0) with the digest of the runner's platform: the workflow names the
 	// Action commit only, so an arm64 runner never gets the amd64 digest.
-	if !strings.Contains(string(raw), "alexei-led/archfit-action@7ade3b8fc989ec416ea5d570e7e236f47f7845fc\n") {
-		t.Errorf("new workflow does not pin Action v3.1.0 at 7ade3b8fc989ec416ea5d570e7e236f47f7845fc:\n%s", raw)
+	if !strings.Contains(string(raw), "alexei-led/archfit-action@2221f4bfece0725a657414fed751cdc090ba1bd4\n") {
+		t.Errorf("new workflow does not pin Action v3.1.1 at 2221f4bfece0725a657414fed751cdc090ba1bd4:\n%s", raw)
 	}
 	for _, input := range []string{"engine-version:", "image-digest:"} {
 		if strings.Contains(string(raw), input) {

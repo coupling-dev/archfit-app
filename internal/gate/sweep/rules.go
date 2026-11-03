@@ -247,6 +247,21 @@ func Withdrawal(t inputs.Target, current feedback.CheckState, tr inputs.Trusted)
 	return &pub
 }
 
+// GroupWithdrawal is the correction of a merge group's required check when its trusted inputs tr, read now, block it
+// (verdict.GroupBlocked): the group was destroyed or rebuilt, a member changed, or a member's owner approval is gone.
+// Only a pending check or a decided result is replaced; one that already asks for action stays. nil writes nothing.
+func GroupWithdrawal(t inputs.Target, current feedback.CheckState, tr inputs.Trusted) *feedback.Publication {
+	if tr.Settings.Gate != settings.GateRequired || !current.Exists || (!current.Pending && !Decided(current.Receipt)) {
+		return nil
+	}
+	out, blocked := verdict.GroupBlocked(tr)
+	if !blocked {
+		return nil
+	}
+	pub := withOutcome(out, out.Reasons[0].Code, t, tr, current.Receipt)
+	return &pub
+}
+
 // recheckPull is rule 5c alone, for the pass a default-branch push starts. A pull request that another rule acts on
 // (a fork, a suspension, a withdrawn approval, stale inputs, and with them a missing, pending or unreadable check) is
 // left to the full pass: target_moved must not replace the reason that rule publishes, nor its re-run.
@@ -315,7 +330,9 @@ func SharedHeadPublication(ctx context.Context, pulls api.Pulls, res inputs.Reso
 	if err != nil {
 		return nil, err
 	}
-	if tr.Settings.Gate != settings.GateRequired || (!current.Pending && (Withdrawn(rc, tr) || stale(rc, tr))) {
+	// A pull request's withdrawn or stale success is left to rules 5a and 5b. The sweep never visits a merge group, so
+	// its success becomes shared_head whatever else is wrong with it.
+	if tr.Settings.Gate != settings.GateRequired || (!current.Pending && !t.MergeGroup && (Withdrawn(rc, tr) || stale(rc, tr))) {
 		return nil, nil
 	}
 	open, err := pulls.OpenPulls(ctx, t.Repo.RepoRef)

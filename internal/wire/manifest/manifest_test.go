@@ -524,9 +524,9 @@ func TestGeneratedWorkflowInputsArePinned(t *testing.T) {
 }
 
 func TestReleasedApprovalTuples(t *testing.T) {
-	// The Action commit that vendors the envelope with analyzed_sha, integration and policy_change (archfit-action X1, X3b). Every row names
-	// it: the envelope check fetches each distinct Action commit, so no older Action may stay beside it.
-	const action = "7ade3b8fc989ec416ea5d570e7e236f47f7845fc"
+	// The Action commit (v3.1.1) that vendors the envelope with analyzed_sha, integration and policy_change (archfit-action X1, X3b) and
+	// runs on merge_group. Every row names it: the envelope check fetches each distinct Action commit, so no older Action may stay beside it.
+	const action = "2221f4bfece0725a657414fed751cdc090ba1bd4"
 	want := []Identity{
 		{EngineVersion: "v3.4.0", ImageDigest: "sha256:bdcfe29bf9def9a4f0ae544923bc3e755fdec2c2cd6c46ec353c01e60642896b", Platform: "linux/amd64"},
 		{EngineVersion: "v3.4.0", ImageDigest: "sha256:0cadc39c41de4dc58bb115b22bdd0296cb81688175a6ea1839a1e16ed2c35e1f", Platform: "linux/arm64"},

@@ -223,6 +223,8 @@ form of "keep LLM output off the gate path" and of decisions.md §2 gate indepen
 
 ### Key flows
 
+**Merge group report**: the same upload with event `merge_group`. `gate/ingest` binds the run's commit to an entry of the default branch's merge queue (GraphQL) or answers 409 `stale_group`; `gate/inputs` takes the queued pull requests up to that entry as members, reads every protected file at the default-branch head and at the group commit, and accepts a changed file only as exactly one owner-approved member's; `gate/feedback` writes `archfit/gate` on the group commit, with no comment. Contract: `docs/design/merge-queue.md`.
+
 **Report upload** (`POST /v1/reports`): `gate/ingest` enforces the size cap, strictly decodes the envelope,
 verifies the OIDC token, resolves repository, installation, run, PR, head, base and merge-base from the GitHub
 API, compares them with the envelope, checks the payload digest and decodes the no-source report. A request
@@ -237,7 +239,7 @@ GitHub's own headers and body, named after the delivery ID, so a repeated delive
 that the queue refuses runs inline. The worker verifies the signature again and hands the event to
 `gate.HandleEvent` or `control.HandleEvent`. The halves are separate tasks: a `control` error never blocks or repeats
 gate work. A transient error is retried by the queue; a permanent one is logged and dropped. New head → pending gate check (required
-mode) or fork refusal. A pull request opened or pushed into another base → the pull requests into the default branch on the same head are checked in the request (`shared_head` over a success or a pending check; only a failure of those units is retried). A default-branch push that changes a protected path → a one-repository sweep, in the request; any other default-branch push → the target-moved recheck of the open pull requests (sweep rule 5c), in the request. Review change → re-run the workflow if the last receipt was `owner_approval_missing`.
+mode) or fork refusal. A pull request opened or pushed into another base → the pull requests into the default branch on the same head are checked in the request (`shared_head` over a success or a pending check; only a failure of those units is retried). A default-branch push that changes a protected path → a one-repository sweep, in the request; any other default-branch push → the target-moved recheck of the open pull requests (sweep rule 5c), in the request. Review change → re-run the workflow if the last receipt was `owner_approval_missing`, and re-check the queued merge groups that hold the pull request. `merge_group` `checks_requested` → pending gate check on the group commit (required mode); `destroyed` for a reason other than `merged` → a pending or decided group check becomes `action_required` `merge_group_unverified`.
 Installation events → trial start, uninstall cleanup.
 
 **Sweep** (`POST /internal/sweep`, hourly **[default]**): `control.Sweep` refreshes entitlement records and forgets Store tenants whose installation is gone, then

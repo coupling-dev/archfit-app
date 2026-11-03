@@ -48,6 +48,9 @@ delivery ID header are not covered by the signature; only the body is.
   "Issue comment"; until then nothing arrives.
 - `push`: `ref` equals `refs/heads/` + `repository.default_branch` and `deleted` is false → `DefaultBranchPush`;
   any other branch ref with `deleted` false → `BranchPush`; a tag or a deletion → `Ignored`.
+- `merge_group`: `checks_requested` → `MergeGroupRequested`; `destroyed` → `MergeGroupDestroyed`; every other action
+  → `Ignored`. GitHub delivers the event only after the owner subscribes the App to "Merge group" (repository
+  permission Merge queues: Read).
 - `installation`: `created` → `InstallationAdded`; `deleted` → `InstallationRemoved`; `suspend`, `unsuspend`,
   `new_permissions_accepted` → `Ignored` **[default]**.
 - `installation_repositories`: `added` → `InstallationAdded`; `removed` → `ReposRemoved`.
@@ -65,6 +68,11 @@ delivery ID header are not covered by the signature; only the body is.
   and `ChangedPaths` is `nil`. `Pusher` is the actor GitHub names for the push; it is never a git author or
   committer, which a pusher can set freely. A missing `sender` leaves `Pusher` empty. `PusherType` is the payload's
   top-level `pusher_type` verbatim, `""` when absent; this package does not judge it.
+- `MergeGroupRequested`, `MergeGroupDestroyed`: `HeadSHA` = `merge_group.head_sha` (the group commit), `HeadRepo` =
+  `Repo`, `BaseRef` = `merge_group.base_ref` without `refs/heads/`, `PullRequest` 0, `GroupReason` = the payload's
+  `reason` verbatim (`MergeGroupDestroyed` only: `merged`, `dequeued`, `invalidated`; `""` when absent).
+  `DefaultBranch` comes from the repository object. The payload's member list, `head_ref` and `base_sha` are not read:
+  membership comes from GitHub's merge queue API, never from a webhook.
 - `PullCommented`: `PullRequest` = `issue.number`, `CommentID` = `comment.id`, `Author` = `comment.user.login`,
   `AuthorType` = `comment.user.type` verbatim (`"User"`, `"Bot"`; `""` when absent), `Body` = `comment.body`. It has no
   head SHA, head repository or base: the payload does not carry them, and the consumer reads the pull request.
@@ -103,6 +111,8 @@ const (
     InstallationAdded  EventKind = "installation_added"  // created, or repositories added
     InstallationRemoved EventKind = "installation_removed" // deleted
     ReposRemoved       EventKind = "repos_removed"
+    MergeGroupRequested EventKind = "merge_group_requested" // checks_requested: GitHub built a merge group commit
+    MergeGroupDestroyed EventKind = "merge_group_destroyed" // destroyed: merged, dequeued or invalidated
     Ignored            EventKind = "ignored"
 )
 
@@ -118,6 +128,7 @@ type Event struct {
     HeadSHA        string
     HeadRepo       string // differs from Repo for forks
     BaseRef        string
+    DefaultBranch  string   // the repository's default branch; "" when the payload does not name one
     Branch         string   // push kinds only: the branch, without "refs/heads/"
     Pusher         string   // push kinds only: the login that moved the branch; never a git author or committer
     PusherType     string   // push kinds only: the payload's pusher_type ("user", or a deploy key); "" when absent
@@ -126,6 +137,7 @@ type Event struct {
     Author         string   // pull_commented only: the comment's author login
     AuthorType     string   // pull_commented only: "User" or "Bot"; "" when absent
     Body           string   // pull_commented only: the comment text
+    GroupReason    string   // merge_group_destroyed only: "merged", "dequeued", "invalidated" or what GitHub sends
 }
 ```
 
@@ -153,7 +165,9 @@ const (
 head SHA. `PullClosed` is the kind for a closed or merged pull request. `ReviewChanged` is the kind for any
 review change. `PullCommented` is the kind for a new comment on a pull request. `DefaultBranchPush` is the kind for a push to the default branch. `InstallationAdded` is the
 kind for a new installation or added repositories. `InstallationRemoved` is the kind for an uninstall.
-`ReposRemoved` is the kind for repositories taken out of an installation.
+`ReposRemoved` is the kind for repositories taken out of an installation. `MergeGroupRequested` is the kind for a
+merge group commit GitHub built and wants checked. `MergeGroupDestroyed` is the kind for a merge group that was merged,
+dequeued or invalidated.
 
 `HeaderEvent` names the header whose value is `Parse`'s `eventType`. `HeaderDelivery` names the header whose
 value is `Parse`'s `deliveryID`. `HeaderSignature` names the header whose value is `VerifyAny`'s `signatureHeader`.
@@ -169,7 +183,7 @@ the `http.Request`, this package owns what the headers are called.
 - `Parse` must be called only after `VerifyAny` succeeded on the same `body`. It is pure: no I/O, no clock, no state.
 - `Parse` errors on: empty `deliveryID`; malformed JSON for a known event type; a mapped kind whose identity is
   incomplete (`installation.id` ≤ 0; empty or slash-less `repository.full_name` for repository kinds;
-  `pull_request.number` ≤ 0; a head SHA that is not 40 lowercase hex; for `PullCommented`: `issue.number` ≤ 0, `comment.id` ≤ 0 or an empty `comment.user.login`; no head SHA is read). An error means "answer `400`, do nothing".
+  `pull_request.number` ≤ 0; a head SHA that is not 40 lowercase hex; for `PullCommented`: `issue.number` ≤ 0, `comment.id` ≤ 0 or an empty `comment.user.login`; no head SHA is read; for the merge group kinds, a `merge_group.head_sha` that is not 40 lowercase hex). An error means "answer `400`, do nothing".
 - A `push` needs `repository.full_name` with a slash before it is classified: the repository object names the
   default branch. Without it `Parse` errors, even for a push that would map to `Ignored` (a tag, a deletion). This
   is the one case where an ignorable delivery of a known type is an error.
@@ -206,7 +220,7 @@ home of `Event`, so nothing is restated for the consumers below.
 - **Balanced?**: Yes
 - **Shared knowledge**: `Event`, `EventKind`. `gate` reacts to `PullOpened`, `PullSynchronized` (pending check or
   fork refusal, fork = `HeadRepo != Repo`; pending decision requests of the pull request go stale), `PullClosed` (the same),
-  `PullCommented` (a decision request in the comment), `ReviewChanged` (re-run), `BranchPush` and `DefaultBranchPush` (record `Pusher` as
+  `PullCommented` (a decision request in the comment), `ReviewChanged` (re-run, and a re-check of the queued merge groups at and behind the pull request), `MergeGroupRequested` (pending `archfit/gate` on the group commit, required mode only), `MergeGroupDestroyed` (a reason other than `merged`: correct a pending or decided group check), `BranchPush` and `DefaultBranchPush` (record `Pusher` as
   the pusher of `HeadSHA`, then re-evaluate the open pull request on that head). It builds its repository reference from
   `InstallationID` and `Repo`, which is why both must come from the signed body.
 
@@ -231,7 +245,7 @@ home of `Event`, so nothing is restated for the consumers below.
 - **Balanced?**: Yes: contract strength tolerates the distance
 - **Shared knowledge**: headers `X-Hub-Signature-256`, `X-GitHub-Event`, `X-GitHub-Delivery`; the event types,
   actions and JSON fields listed under Encapsulated Knowledge. The App subscribes to `pull_request`,
-  `pull_request_review`, `push`, `installation`, `installation_repositories`, and, from the release that brings decision
+  `pull_request_review`, `push`, `merge_group`, `installation`, `installation_repositories`, and, from the release that brings decision
   requests, `issue_comment`. GitHub may redeliver, reorder,
   or drop deliveries; nothing here assumes otherwise.
 
@@ -286,6 +300,9 @@ Payload fixtures are trimmed copies of real GitHub deliveries under `testdata/`,
 - **Test name**: `TestBranchPushCarriesPusherType`
   **Scenario**: a push to a feature branch with `pusher_type` absent, `"user"` and `"deploy_key"`.
   **Expected behavior**: `PusherType` is `""`, `"user"`, `"deploy_key"`; `Pusher` is the sender in all three.
+- **Test name**: `TestParseFields` (merge group rows)
+  **Scenario**: the fixtures `merge_group_checks_requested.json` and `merge_group_destroyed.json` (reason `dequeued`).
+  **Expected behavior**: `MergeGroupRequested` and `MergeGroupDestroyed`; `HeadSHA` the group commit, `HeadRepo == Repo`, `BaseRef` without `refs/heads/`, `DefaultBranch` set, `PullRequest` 0; `GroupReason` `"dequeued"` for the destroyed one, `""` for the requested one.
 - **Test name**: `TestChangedPaths`
   **Scenario**: table: three commits with overlapping files; a file added then removed; `forced: true`; 2 048 commits;
   3 001 distinct paths; exactly 3 000 paths; no `commits` key; `"commits": []`; `"commits": null`.

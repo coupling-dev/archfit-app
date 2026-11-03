@@ -47,16 +47,19 @@ high; event support, binding rules and rejection codes will move with the Action
 // Binding is the authoritative identity of an upload, resolved from OIDC claims and the GitHub API.
 type Binding struct {
     Repo         Repo   // resolved by the App, never from the envelope
-    Event        string // "pull_request" | "push"; discovery and baseline uploads also "workflow_dispatch"
+    Event        string // "pull_request" | "push" | "merge_group"; discovery and baseline uploads also "workflow_dispatch"
     PullRequest  int    // 0 unless pull_request
-    HeadSHA      string
-    BaseRef      string // PR base branch; for other events the branch the run executed on
+    HeadSHA      string // for merge_group the group commit
+    BaseRef      string // PR base branch; the default branch for a merge group; for other events the branch the run executed on
     BaseSHA      string
     MergeBaseSHA string
     Fork         bool
     RunID        int64
     RunAttempt   int
     WorkflowPath string
+    // MergeGroup is true for a merge_group report whose head the default branch's merge queue lists as an entry's
+    // commit when the upload arrived. Members and approvals are read by gate/inputs, never from here.
+    MergeGroup bool
 }
 
 // Problem is an eligibility defect found after the tenant was authenticated.
@@ -95,7 +98,8 @@ func (r *Rejection) Error() string
 
 type Receiver interface {
     // Receive authenticates and binds one upload of the given kind. A stale upload
-    // (head is no longer the PR head, or an older attempt of the same run) is a 409 Rejection.
+    // (head is no longer the PR head, an older attempt of the same run, or a merge group the queue no longer lists)
+    // is a 409 Rejection.
     Receive(ctx context.Context, req *http.Request, kind Kind) (Upload, error)
 }
 ```
@@ -107,7 +111,7 @@ type Admitter interface {
     Admitted(ctx context.Context, installationID int64, owner string) (bool, error)
 }
 
-func New(repos Repos, pulls Pulls, actions Actions, v Verifier, audience string, admit Admitter) Receiver
+func New(repos Repos, pulls Pulls, actions Actions, queues MergeQueues, v Verifier, audience string, admit Admitter) Receiver
 ```
 
 ### Receive, step by step
@@ -128,27 +132,30 @@ Steps run in this order. The first failing `Rejection` step ends the call with `
 | 9   | `Repo.ID == Claims.RepositoryID` (a renamed or re-created repository is not the same tenant) | 403 `repository_mismatch`                                  |
 | 9a  | `Admitter.Admitted(Repo.InstallationID, owner of Repo.FullName)`; false is a refusal, an error means the approval cannot be read | 403 `installation_not_approved`; 503 `admission_unavailable` |
 | 10  | `Actions.Run(repo, Claims.RunID)`; `api.ErrNotFound`                                         | 403 `run_not_found`                                        |
-| 11  | `run.Event == Claims.EventName`; for `push`, `run.HeadSHA == Claims.SHA`                     | 403 `run_mismatch`                                         |
+| 11  | `run.Event == Claims.EventName`; for `push` and `merge_group`, `run.HeadSHA == Claims.SHA`   | 403 `run_mismatch`                                         |
 | 12  | `run.Attempt == Claims.RunAttempt` (the API returns the latest attempt)                      | 409 `stale_attempt`                                        |
 | 13  | Event eligibility (below)                                                                    | `ProblemUnsupportedEvent`                                  |
+| 13a | Merge group binding (below), only for a `merge_group` run of a `report`                      | 409 `stale_group`                                          |
 | 14  | Pull request resolution (below), only for `pull_request` runs                                | 409 `stale_head`, `ProblemEnvelopeMismatch`, `ProblemFork` |
 | 15  | Envelope fields equal authoritative values (below)                                           | `ProblemEnvelopeMismatch`                                  |
 | 16  | `envelope.PayloadDigest(body) == Envelope.PayloadDigest`                                     | 400 `digest_mismatch`                                      |
 | 17  | `kind == KindReport`: `report.Decode(body, Envelope.EngineVersion)`                          | `ProblemReportInvalid`, `Report` nil                       |
 | 18  | `Envelope.PolicyChange` present: `report.DecodePolicyChange`                                 | none: `PolicyChange` stays nil, logged, never a `Problem`  |
 
-Any step: `api.ErrRateLimited` → 429 `rate_limited`. Any other GitHub API error → a plain error (not a
+Any step: `api.ErrRateLimited` → 429 `rate_limited` (also from the merge queue read). Any other GitHub API error, including
+`api.ErrQueueForbidden` and `api.ErrQueueTooLong` from the queue → a plain error (not a
 `Rejection`); the caller answers 503 and publishes nothing. A `Verifier` error matching `oidc.ErrUnavailable`
 (`errors.Is`) is the 503 `oidc_unavailable` rejection, so the Action retries; every other `Verifier` error is 401.
 
-Step 9a is numbered so that the later step numbers stay put. The tenant is authenticated after step 12. Steps 13 to 17 never reject, except the two cases where nothing
-could be published truthfully: the head moved (step 14) and the bytes are not what the producer stated (step 16).
+Steps 9a and 13a are numbered so that the later step numbers stay put. The tenant is authenticated after step 12. Steps 13 to 17 never reject, except the three cases where
+nothing could be published truthfully: the merge queue lists no group with this commit (step 13a, 409 `stale_group`),
+the head moved (step 14) and the bytes are not what the producer stated (step 16).
 
 ### Event eligibility (step 13)
 
 | Kind        | Eligible `run.Event`                                                                |
 | ----------- | ----------------------------------------------------------------------------------- |
-| `report`    | `pull_request`; `push` when `Claims.Ref == "refs/heads/" + Repo.DefaultBranch`      |
+| `report`    | `pull_request`; `merge_group`; `push` when `Claims.Ref == "refs/heads/" + Repo.DefaultBranch` |
 | `discovery` | `workflow_dispatch`; `push` when `Claims.Ref == "refs/heads/" + Repo.DefaultBranch` |
 | `baseline`  | `workflow_dispatch`; `push` when `Claims.Ref == "refs/heads/" + Repo.DefaultBranch` |
 | `reanchor`  | `workflow_dispatch` only; never `push`                                              |
@@ -157,6 +164,14 @@ Everything else, including `workflow_run`, `pull_request_target`, `schedule` and
 adds `ProblemUnsupportedEvent`. `Binding.Event` is `run.Event` verbatim; for a discovery or baseline upload it
 can be `workflow_dispatch`. A `workflow_dispatch` run on another branch is eligible here: `Binding.BaseRef` names
 that branch, and the consuming route (`control/onboarding`) refuses it with `not_default_branch`.
+
+### Merge group binding (step 13a)
+
+For a `merge_group` run of kind `report`, `MergeQueues.MergeQueue(repo, Repo.DefaultBranch)` is read. An entry whose
+`HeadSHA` equals `run.HeadSHA` binds the group: `Binding.MergeGroup` is true. No such entry (a destroyed, rebuilt or
+merged group, an empty queue, a queue of another branch) is 409 `stale_group`. The queue branch name of the run
+(`Claims.Ref`) is never read, and nothing the envelope states selects members. The run head must equal `Claims.SHA`
+(step 11). Other kinds of a `merge_group` run read no queue and carry `ProblemUnsupportedEvent`.
 
 ### Pull request resolution (step 14)
 
@@ -185,11 +200,12 @@ Body read (step 2): only the size cap is a rejection. When `http.MaxBytesReader`
 | Field                                    | Source                                                                       |
 | ---------------------------------------- | ---------------------------------------------------------------------------- |
 | `Repo`                                   | `Repos.ResolveRepo` (carries the authoritative installation ID)              |
-| `Event`, `HeadSHA`                       | the workflow run                                                             |
+| `Event`, `HeadSHA`                       | the workflow run (for `merge_group`, the group commit)                       |
 | `RunID`, `RunAttempt`                    | verified claims (equal to the run by steps 10 and 12)                        |
-| `PullRequest`, `BaseSHA`, `MergeBaseSHA` | the resolved pull; zero values when there is none                            |
-| `AnalyzedSHA`, `Integration`             | from GitHub, never from the envelope: the head and `conflicts` when `pull.Mergeable` is false, else `pull.MergeCommitSHA` and `merged`; both `""` while GitHub has not computed the merge (no envelope matches); the head and `""` for every other event |
-| `BaseRef`                                | `pull.BaseRef`; without a pull, the branch of `Claims.Ref` (see below). The gate resolves every upload against the default branch and refuses a pull request whose base is another branch |
+| `PullRequest`, `BaseSHA`, `MergeBaseSHA` | the resolved pull; zero values when there is none, and for a merge group     |
+| `MergeGroup`                             | step 13a                                                                     |
+| `AnalyzedSHA`, `Integration`             | from GitHub, never from the envelope: the head and `conflicts` when `pull.Mergeable` is false, else `pull.MergeCommitSHA` and `merged`; both `""` while GitHub has not computed the merge (no envelope matches); the head and `""` for every other event, a merge group included (its analyzed commit is the group commit) |
+| `BaseRef`                                | `pull.BaseRef`; for a merge group, the default branch; without a pull, the branch of `Claims.Ref` (see below). The gate resolves every upload against the default branch and refuses a pull request whose base is another branch |
 | `Fork`                                   | step 14                                                                      |
 | `WorkflowPath`                           | `oidc.WorkflowPath(Claims.JobWorkflowRef, Repo.FullName)`; `""` if elsewhere |
 
@@ -368,7 +384,7 @@ func Current() Entry
 - **Volatility**: high (ingest side); OIDC verification is low
 - **Balanced?**: yes
 - **Shared knowledge**: a verified token authenticates the producer and nothing more. `Claims.SHA` is the
-  merge commit for `pull_request` runs, so it is compared only for `push`. Self-hosted runners are accepted
+  merge commit for `pull_request` runs, so it is compared only for `push` and `merge_group`, where it is the commit the run checked out. Self-hosted runners are accepted
   **[default]**; `RunnerEnvironment` appears only in logs. `ErrUnavailable` is the sentinel of `github/oidc` for a
   signing-key outage; ingest maps it to 503 so the producer retries. The `New` of `github/oidc` is called by the composition root, not here.
 
@@ -408,7 +424,7 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
 ### github/api
 
 - **Counterpart**: internal/github/api
-- **Direction**: ingest depends on github/api (role interfaces `Repos`, `Pulls`, `Actions`)
+- **Direction**: ingest depends on github/api (role interfaces `Repos`, `Pulls`, `Actions`, `MergeQueues`)
 - **Strength**: contract
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high (ingest side); the client is low
@@ -416,7 +432,7 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
 - **Shared knowledge**: `ResolveRepo` uses the App JWT and returns the installation that covers the repository.
   `Run` returns the latest attempt of a run. `WorkflowRun.PullRequests` is empty for fork runs.
   `ErrNotFound` and `ErrRateLimited` are the sentinels of `github/api`. Used methods: `Repos.ResolveRepo`,
-  `Actions.Run`, `Pulls.Pull`. `Installation` and `Review` are not used here.
+  `Actions.Run`, `Pulls.Pull`, `MergeQueues.MergeQueue` (merge group reports only). `Installation` and `Review` are not used here.
 
 <!-- contract: RepoRef, Repo, ErrNotFound, ErrRateLimited — restated from internal/github/api/module.md -->
 ```go
@@ -534,6 +550,23 @@ type Actions interface {
 }
 ```
 
+<!-- contract: MergeQueues, QueueEntry, ErrQueueForbidden, ErrQueueTooLong — restated from internal/github/api/module.md -->
+```go
+type QueueEntry struct {
+    Position    int    // 1 is the front of the queue
+    HeadSHA     string // the entry's merge group commit
+    BaseSHA     string
+    PullRequest int
+    PullHeadSHA string // the pull request head the entry was built from
+    CrossRepo   bool   // the pull request comes from a fork
+}
+
+// MergeQueues reads a branch's merge queue; none when the branch has no queue. A GraphQL error is an error, never an empty queue.
+type MergeQueues interface {
+    MergeQueue(ctx context.Context, r RepoRef, branch string) ([]QueueEntry, error)
+}
+```
+
 ### Consumers (inbound)
 
 - **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Constructs the receiver, passes it the
@@ -578,7 +611,7 @@ type Actions interface {
 - No retries inside `Receive`; the API client owns backoff. The Action retries on 429, 503 and other 5xx.
 - Stateless and safe for concurrent use.
 - Declared knowledge of GitHub formats: the ref prefix `refs/heads/` (the form of `Claims.Ref` for a branch) and the
-  event names `pull_request`, `push` and `workflow_dispatch` (the values of `WorkflowRun.Event` and
+  event names `pull_request`, `push`, `merge_group` and `workflow_dispatch` (the values of `WorkflowRun.Event` and
   `Envelope.Event`) are literals here. Their owners are `github/oidc` and `github/api`, whose documents state the
   formats and export no constants for them. If GitHub changed a format, the owners' documents and these literals
   change together; until then a drift shows as `ProblemUnsupportedEvent` on every upload, which fails closed.
@@ -588,7 +621,7 @@ type Actions interface {
 
 ## Test Specification
 
-Fakes: a `Verifier` stub returning fixed claims or an error; in-memory `Repos`, `Pulls`, `Actions`;
+Fakes: a `Verifier` stub returning fixed claims or an error; in-memory `Repos`, `Pulls`, `Actions`, `MergeQueues`;
 requests built with `httptest.NewRequest`. No network.
 
 ### Unit Tests
@@ -623,6 +656,15 @@ requests built with `httptest.NewRequest`. No network.
 - **Test name**: `TestReceiveDefaultBranchPush`
   **Scenario**: `push` run on the default branch.
   **Expected behavior**: `PullRequest` 0, `BaseRef` = default branch, no `Pulls` call, no problems. A push to `feature/x` gives `BaseRef` `feature/x` plus `ProblemUnsupportedEvent`; an unbound `pull_request` run (`refs/pull/7/merge`) gives the default branch.
+- **Test name**: `TestMergeGroupUploadBindsTheQueuedGroupCommit`
+  **Scenario**: `merge_group` report whose run head is the commit of a queue entry.
+  **Expected behavior**: `Binding.MergeGroup`, `Event` `merge_group`, `HeadSHA` and `AnalyzedSHA` the group commit, `BaseRef` the default branch, `PullRequest` 0; the queue was read for the default branch only.
+- **Test name**: `TestMergeGroupUploadRefusals`
+  **Scenario**: group no longer queued; empty queue; the head is a member's pull request head; queue rate limited; run head differs from the token's commit; older attempt; envelope with a base or a pull request; analyzed commit that is not the group commit; run in a fork.
+  **Expected behavior**: 409 `stale_group` for the first three; 429 `rate_limited`; 403 `run_mismatch`; 409 `stale_attempt`; 400 `envelope_invalid` for the envelope with a base or a pull request; `ProblemEnvelopeMismatch`; `ProblemFork`.
+- **Test name**: `TestMergeGroupQueueFailureIsNeverABinding`, `TestOnlyAMergeGroupReportReadsTheQueue`
+  **Scenario**: a queue error that is not a rate limit; pull request and push uploads; a `merge_group` discovery.
+  **Expected behavior**: a plain error (503), not a `*Rejection`; none of the others reads the queue.
 - **Test name**: `TestReceiveDiscovery`
   **Scenario**: kind `discovery` from a `workflow_dispatch` run with a YAML payload; the same from a `pull_request` run.
   **Expected behavior**: `Report` nil, `Payload` equals the body, `Binding.Event` `workflow_dispatch`; the second carries `ProblemUnsupportedEvent`. `report.Decode` was not called.
