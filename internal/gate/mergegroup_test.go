@@ -377,3 +377,23 @@ func TestPullIntoAnotherBaseOnAMergedGroupCommitWithdrawsItsSuccess(t *testing.T
 		t.Errorf("summary does not name shared_head:\n%s", c.Summary)
 	}
 }
+
+func TestSharedHeadWithdrawsAMergedGroupAfterTheProtectedFilesMoved(t *testing.T) {
+	w := newWorld(t)
+	one := w.openPull(w.shop, 1)
+	groups := w.enqueue(one)
+	w.wantAnswer(w.uploadGroup(groups[0], fixtureHealthy), http.StatusOK, "success", "healthy")
+	w.dequeueAll(w.shop)
+	w.editPull(one, func(p *api.Pull) { p.State, p.Merged = "closed", true })
+	// A later push changes the policy: the default branch head is past the group commit.
+	later := w.sha()
+	w.gh.heads[branchKey(w.shop.FullName, testBranch)] = later
+	for _, path := range []string{".archfit-app.yaml", policy.PolicyPath} {
+		w.setFile(w.shop, later, path, w.gh.files[fileKey(w.shop.FullName, groups[0].sha, path)])
+	}
+	w.setFile(w.shop, later, policy.PolicyPath, []byte(loosenedPolicy))
+
+	release := w.pullOnGroupHead(groups[0], 9)
+	w.handle(w.event(webhook.PullOpened, release))
+	w.wantGroupGate(groups[0], "action_required")
+}

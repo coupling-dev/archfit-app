@@ -274,7 +274,9 @@ base is also answered at once, not by this pass but by `gate`, which calls the s
 pulls, resolver, now, target, current)`, inside the lease of each default-branch pull request on that head. The pass runs
 it for a success only (a pending check is the upload's to refuse, and the upload lists again inside its lease); the
 event also runs it for a pending check, publishing `shared_head` over it with the zero receipt, which a later upload
-replaces as it replaces the refusal of a fork.
+replaces as it replaces the refusal of a fork. For a merge-group target (`gate` calls it for a head that no open
+default-branch pull request has) a withdrawn or stale success is not skipped: no pass visits a merge group, so it
+becomes `shared_head` too.
 
 ### Rule 5c: target moved
 

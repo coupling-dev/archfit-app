@@ -330,7 +330,9 @@ func SharedHeadPublication(ctx context.Context, pulls api.Pulls, res inputs.Reso
 	if err != nil {
 		return nil, err
 	}
-	if tr.Settings.Gate != settings.GateRequired || (!current.Pending && (Withdrawn(rc, tr) || stale(rc, tr))) {
+	// A pull request's withdrawn or stale success is left to rules 5a and 5b. The sweep never visits a merge group, so
+	// its success becomes shared_head whatever else is wrong with it.
+	if tr.Settings.Gate != settings.GateRequired || (!current.Pending && !t.MergeGroup && (Withdrawn(rc, tr) || stale(rc, tr))) {
 		return nil, nil
 	}
 	open, err := pulls.OpenPulls(ctx, t.Repo.RepoRef)
