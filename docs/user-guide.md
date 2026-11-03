@@ -936,7 +936,10 @@ alone can fail together.
 
 **Set it up.**
 
-1. The App needs the **Merge queues: Read** permission. Accept it when GitHub asks
+1. The App needs the **Merge queues: Read** permission and the **Merge group** event. When the App asks for them,
+   an owner of your account accepts them on the installation page (`https://github.com/organizations/<org>/settings/installations`,
+   or `https://github.com/settings/installations` for a user account): **Configure** on Archfit Review, then the
+   review request for the new permissions
    (see [GitHub App permissions](#github-app-permissions)).
 2. The workflow must run on `merge_group`. A workflow the App generates has the trigger:
 

@@ -271,12 +271,12 @@ Register the App with these settings. Keep the webhook inactive, and install it 
 - Issues read and write: needed from the release that adds the repair issue on the default branch. Grant it on that
   release day under **Permissions & events**; each installation then accepts the new permission. Until then the App
   logs every refused issue call and publishes checks and comments as before.
-- Merge queues read: needed from the release that adds merge queue support. Grant it on that release day under
-  **Permissions & events** and subscribe the **Merge group** event; each installation then accepts the new permission.
+- Merge queues read: needed from the release that adds merge queue support. Grant it and subscribe the **Merge group**
+  event as [Routine changes](#routine-changes) says; each installation then accepts the new permission.
   Until then a merge-group upload answers `503` and the group fails by GitHub's timeout, never passes; pull requests
   work as before.
 - Organization permissions: Members read
-- Events: Pull request, Pull request review, Push
+- Events: Pull request, Pull request review, Push, and Merge group with the Merge queues permission
 - Issue comment event: the release that brings [decision requests](../docs/user-guide.md#decision-requests-from-unattended-agents)
   subscribes the App to it under **Permissions & events**. The code ignores the event until then; the subscription is
   part of that release's checklist and is not done yet.
@@ -474,6 +474,21 @@ The deploy workflow [`.github/workflows/deploy.yaml`](../.github/workflows/deplo
   `webhook_secret_previous_version`. Apply `runtime`, then release through CI so both serving roles accept both values.
   Change GitHub's secret, wait for old signed tasks to drain, then set the previous version to `null`, apply and release
   again before disabling it. See the [rotation rules](../docs/design/cloud/security.md#secrets).
+- **Grant merge queue access** (once, for the release that adds merge queue support). Deploy that release first: the
+  App works without the grant and never passes a merge group without it.
+  1. Open the App's settings, **Permissions & events**:
+     `https://github.com/organizations/coupling-dev/settings/apps/archfit-review/permissions`.
+  2. Under **Repository permissions**, set **Merge queues** to **Read-only**.
+  3. Under **Subscribe to events**, tick **Merge group**. Save.
+  4. Each installation accepts: an owner of the account opens
+     `https://github.com/organizations/<account>/settings/installations` (a user account:
+     `https://github.com/settings/installations`), **Configure** on Archfit Review, and **Review request**, **Accept new
+     permissions**. Until then that account's merge groups answer `503` and fail by GitHub's timeout.
+  5. Check it: `gh api /orgs/coupling-dev/installations --jq '.installations[] | select(.app_slug=="archfit-review") | {permissions, events}'`
+     must show `"merge_queues": "read"` and `"merge_group"` in `events`.
+  6. In each repository that uses the queue: the Archfit workflow has the `merge_group` trigger and the Action pin of
+     the release ([user guide](../docs/user-guide.md#merge-queue)), and the default branch's ruleset requires
+     `archfit/gate` and turns on **Require merge queue**.
 - **Pause processing** for an incident: `gcloud tasks queues pause archfit-webhooks --location=europe-west1`. The next
   `runtime` plan shows the queue as changed until `paused` matches.
 
