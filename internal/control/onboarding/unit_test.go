@@ -256,6 +256,7 @@ func TestWorkflowTemplate(t *testing.T) {
 		"endpoint":             `(?m)^\s+endpoint: "https://archfit\.example"$`,
 		"audience":             `(?m)^\s+audience: "https://archfit\.example"$`,
 		"pull_request trigger": `(?m)^  pull_request:\s*$`,
+		"merge queue trigger":  `(?m)^  merge_group:\n    types: \[checks_requested\]$`,
 		"push to trunk":        `(?m)^  push:\n    branches:\n      - "trunk"$`,
 		"mode choice input": `(?m)^  workflow_dispatch:\n    inputs:\n      mode:\n(.+\n)*?\s+type: choice\n\s+options:\n` +
 			`\s+- report\n\s+- discovery\n\s+- baseline\n\s+- reanchor\n\s+default: report$`,
@@ -283,7 +284,7 @@ func TestWorkflowTemplate(t *testing.T) {
 	for _, m := range regexp.MustCompile(`(?m)^  ([a-z_]+):`).FindAllStringSubmatch(on[1], -1) {
 		triggers = append(triggers, m[1])
 	}
-	if want := []string{"pull_request", "push", "workflow_dispatch"}; !slices.Equal(triggers, want) {
+	if want := []string{"pull_request", "merge_group", "push", "workflow_dispatch"}; !slices.Equal(triggers, want) {
 		t.Errorf("triggers = %q, want exactly %q", triggers, want)
 	}
 
@@ -306,7 +307,7 @@ func TestWorkflowTemplate(t *testing.T) {
 		}
 	}
 
-	for _, banned := range []string{"secrets.", "workflow_run", "pull_request_target", "merge_group", "write-all"} {
+	for _, banned := range []string{"secrets.", "workflow_run", "pull_request_target", "write-all"} {
 		if strings.Contains(got, banned) {
 			t.Errorf("workflow contains %q", banned)
 		}

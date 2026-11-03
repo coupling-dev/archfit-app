@@ -271,6 +271,10 @@ Register the App with these settings. Keep the webhook inactive, and install it 
 - Issues read and write: needed from the release that adds the repair issue on the default branch. Grant it on that
   release day under **Permissions & events**; each installation then accepts the new permission. Until then the App
   logs every refused issue call and publishes checks and comments as before.
+- Merge queues read: needed from the release that adds merge queue support. Grant it on that release day under
+  **Permissions & events** and subscribe the **Merge group** event; each installation then accepts the new permission.
+  Until then a merge-group upload answers `503` and the group fails by GitHub's timeout, never passes; pull requests
+  work as before.
 - Organization permissions: Members read
 - Events: Pull request, Pull request review, Push
 - Issue comment event: the release that brings [decision requests](../docs/user-guide.md#decision-requests-from-unattended-agents)

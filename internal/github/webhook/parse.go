@@ -182,14 +182,15 @@ func Parse(eventType, deliveryID string, body []byte) (Event, error) {
 		ev.CommentID, ev.Author, ev.AuthorType, ev.Body = p.Comment.ID, p.Comment.User.Login, p.Comment.User.Type, p.Comment.Body
 		return ev, nil
 	}
-	if kind == MergeGroupRequested || kind == MergeGroupDestroyed {
+	switch kind {
+	case MergeGroupRequested, MergeGroupDestroyed:
 		// The group commit is a commit of this repository; base_ref names the queue's branch. Membership is read from
 		// GitHub's API by the gate, never from this payload.
 		ev.HeadSHA = p.MergeGroup.HeadSHA
 		ev.HeadRepo = ev.Repo
 		ev.BaseRef = strings.TrimPrefix(p.MergeGroup.BaseRef, branchRefPrefix)
 		ev.GroupReason = p.Reason
-	} else if kind == DefaultBranchPush || kind == BranchPush {
+	case DefaultBranchPush, BranchPush:
 		ev.HeadSHA = p.After
 		ev.HeadRepo = ev.Repo
 		ev.Branch = strings.TrimPrefix(p.Ref, branchRefPrefix)
@@ -199,7 +200,7 @@ func Parse(eventType, deliveryID string, body []byte) (Event, error) {
 			ev.BaseRef = p.Repository.DefaultBranch
 			ev.ChangedPaths = p.changedPaths()
 		}
-	} else {
+	default:
 		if p.PullRequest.Number <= 0 {
 			return Event{}, errNoPullRequest
 		}
