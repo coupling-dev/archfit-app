@@ -106,8 +106,8 @@ func newEnv(t *testing.T) *env {
 	}
 	e.handler = newHandler(Deps{
 		Account: e.acct, Consents: e.consents, Onboarding: e.onb, Assist: e.assist, Proposals: e.props,
-		Admissions: e.admit, Approvals: e.approvals, Decisions: e.decisions, DecisionQueue: e.queue, Operators: []int64{operatorID}, Now: clock,
-	}, github{files: gh, checks: gh, actions: gh, pulls: gh, users: gh, installs: gh}, sessions, testWeb)
+		Admissions: e.admit, Approvals: e.approvals, Decisions: e.decisions, DecisionQueue: e.queue, Operators: []int64{operatorID}, BaseURL: baseURL, Now: clock,
+	}, github{files: gh, heads: gh, checks: gh, actions: gh, pulls: gh, users: gh, installs: gh}, sessions, testWeb)
 
 	e.addRepo(repoName, installA, 10)
 	e.addRepo(otherRepo, installB, 20)
@@ -122,7 +122,7 @@ func (e *env) addRepo(fullName string, installationID, id int64) {
 	e.gh.heads[fullName+"@"+mainBranch] = sha(int(id))
 	e.gh.pulls[fullName+"#4"] = api.Pull{
 		Number: 4, Title: "feat: read options", Author: "alexei", State: "open", URL: "https://github.com/" + fullName + "/pull/4",
-		HeadSHA: sha(4), HeadRef: "feature", BaseRef: mainBranch,
+		HeadSHA: sha(4), HeadRef: "feature", BaseRef: mainBranch, BaseSHA: sha(int(id)),
 	}
 	e.gh.setFile(fullName, mainBranch, policy.PolicyPath, policyText)
 	e.gh.setFile(fullName, mainBranch, settings.Path, settingsText)

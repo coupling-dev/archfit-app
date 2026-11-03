@@ -397,31 +397,18 @@ The sweep inspects open pull requests for these conditions:
 
 - A pending required check is missing.
 - No report arrived within 60 minutes.
-- An owner approval that a `success` or `failure` check relied on is gone.
+- An owner grant is gone or an unoverridden owner objection now blocks the candidate.
 - The policy, baseline, or labels changed on the protected ref.
 - A waiver expires within seven days or has expired.
 - The subscription changed.
 - The default branch moved after a `success` check, and the report of its new tip and the report of the pull request
   together close a module cycle that neither holds alone (`target_moved`; see [Merge safety](user-guide.md#merge-safety-when-the-target-moves)).
 
-An owner approval can end without a new commit: the owner dismisses the review or requests changes, the owner leaves
-the settings file on the protected ref, or the pull request starts to change a protected path. Edits to the settings
-file and the workflow file change no digest in the receipt, so the receipt digests cannot show this. The review event,
-or the sweep when the event is lost, then sets the required check to `action_required` with `owner_approval_missing`.
-It requests no rerun: no run can pass until an owner approves the head again, and that approval triggers the rerun.
-The rerun also follows when no approval is needed any more, for example after a base retarget.
-A push never approves: a local coding agent pushes with its owner's credentials. GitHub does not let an author approve
-their own pull request, so an owner approves the exact head in the App instead (Approve on the pull request page,
-behind the browser session). The App stores that approval under the commit SHA with the digests of the protected files
-the owner was shown; it counts while the approver is still an owner and the pull request still changes exactly those
-files, and a later commit needs a new one. An account listed under `agents` in the protected settings never approves,
-on GitHub or in the App. A pull request from a fork cannot be approved in the App.
-The review event and the sweep read the check, read the inputs, decide, and write all inside the head's publication
-lease. So a newer run that turned green while they waited is the result they downgrade, and an approval that
-arrives meanwhile is handled by its own review event after the write. An upload decided before the withdrawal reads
-its inputs again inside the lease, writes nothing, and answers `503`. Without the Store nothing is written, and the
-check keeps its current conclusion until the Store is back and the next review event or sweep pass runs. In
-advisory mode there is no required check, and neither path changes the advisory `archfit/state` check.
+An owner grant can end without a new commit when the approver leaves the protected owner set or agent rules change. A current owner request for changes creates an objection that blocks ordinary approval. An explicit, reasoned App override can cover exact App or native GitHub objection IDs for the exact head, protected settings SHA and digests. The App never dismisses the native review; GitHub may still block merge under its own review and branch-protection rules. A new head or protected-settings snapshot cannot reuse the old grant or override, and prior objections remain visible across a push.
+
+App decisions live in a bounded per-installation, per-PR CAS ledger. Request-changes, withdrawal and override reasons are mirrored as App-authored PR comments; comments are audit/display only and never input authority. Legacy unchanged-head `approval/` grants remain readable; current-candidate withdrawal also suppresses the native approval version(s) then present for that owner in Archfit only, without changing the GitHub review. An older App image does not understand the new decision ledger, so rollback requires a merge pause on protected-path PRs until a decision-aware version is restored or forward-fixed.
+
+Review events and App decisions read the check and inputs, decide, and write inside the head's publication lease. They re-evaluate affected merge groups, including groups that already have a successful check. A saved approval/override never turns a check green; a new workflow report is still required. Required and advisory `archfit/state` feedback are refreshed. Without the Store nothing is written; a mirror/check refresh failure leaves the authenticated decision saved and offers a separate retry instead of asking for duplicate approval.
 
 The sweep reruns the customer workflow after stale inputs, an expired waiver, late owner approval, or restored
 subscription, unless the default branch moved since the result was measured: a re-run measures the old merge

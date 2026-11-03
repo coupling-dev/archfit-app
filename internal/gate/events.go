@@ -85,14 +85,7 @@ func (g *Gate) react(ctx context.Context, e webhook.Event) (string, error) {
 		if otherBase(e.DefaultBranch, e.BaseRef) {
 			return reactionOtherBase, nil
 		}
-		reaction, err := g.approvalChanged(ctx, eventTarget(e))
-		if err != nil {
-			return reaction, err
-		}
-		if err := g.groupsOf(ctx, eventTarget(e)); err != nil {
-			return reactionGroupChecked, err
-		}
-		return reaction, nil
+		return g.refreshOwnerDecision(ctx, eventTarget(e))
 	case webhook.MergeGroupRequested:
 		if otherBase(e.DefaultBranch, e.BaseRef) || e.DefaultBranch == "" {
 			return reactionOtherBase, nil
@@ -327,7 +320,44 @@ func (g *Gate) groupsOf(ctx context.Context, t inputs.Target) error {
 	return errs
 }
 
+func (g *Gate) pinProtectedRef(ctx context.Context, t inputs.Target) (inputs.Target, error) {
+	if t.PullRequest == 0 || t.BaseRef == "" || t.BaseSHA != "" {
+		return t, nil
+	}
+	sha, err := g.repos.BranchHead(ctx, t.Repo.RepoRef, t.BaseRef)
+	if errors.Is(err, api.ErrNotFound) {
+		return t, nil // Resolve will fail closed on the missing protected settings/ref.
+	}
+	if err != nil {
+		return inputs.Target{}, fmt.Errorf("gate: protected branch head: %w", err)
+	}
+	if sha == "" {
+		return inputs.Target{}, errors.New("gate: protected branch has no head commit")
+	}
+	t.BaseSHA = sha
+	return t, nil
+}
+
+func (g *Gate) checkProtectedRef(ctx context.Context, t inputs.Target) error {
+	if t.PullRequest == 0 || t.BaseRef == "" || t.BaseSHA == "" {
+		return nil
+	}
+	sha, err := g.repos.BranchHead(ctx, t.Repo.RepoRef, t.BaseRef)
+	if err != nil {
+		return fmt.Errorf("gate: protected branch head: %w", err)
+	}
+	if sha != t.BaseSHA {
+		return fmt.Errorf("gate: protected branch moved: %w", feedback.ErrStaleInputs)
+	}
+	return nil
+}
+
 func (g *Gate) newHead(ctx context.Context, t inputs.Target) (string, error) {
+	var err error
+	t, err = g.pinProtectedRef(ctx, t)
+	if err != nil {
+		return reactionNone, fmt.Errorf("gate: read protected ref head: %w", err)
+	}
 	trusted, err := g.resolver.Resolve(ctx, t, g.now())
 	if err != nil {
 		return reactionNone, fmt.Errorf("gate: resolve inputs: %w", err)
@@ -341,13 +371,49 @@ func (g *Gate) newHead(ctx context.Context, t inputs.Target) (string, error) {
 			return reactionForkRefused, fmt.Errorf("gate: publish fork refusal: %w", err)
 		}
 		return reactionForkRefused, nil
-	case trusted.Settings.Gate == settings.GateRequired:
+	}
+	if len(trusted.ProtectedPaths) > 0 {
+		if err := g.publisher.DecisionBanner(ctx, t, trusted); err != nil {
+			return reactionNone, fmt.Errorf("gate: publish owner decision banner: %w", err)
+		}
+		if trusted.Approval != inputs.ApprovalGranted {
+			g.requestReviewers(ctx, t)
+		}
+	}
+	switch trusted.Settings.Gate {
+	case settings.GateRequired:
 		if err := g.publisher.Pending(ctx, t); err != nil {
 			return reactionPending, fmt.Errorf("gate: pending check: %w", err)
 		}
 		return reactionPending, nil
 	}
 	return reactionNone, nil
+}
+
+// requestReviewers best-effort requests eligible configured principals on a new protected-path head. It never changes
+// authority or event success; the stored per-head/protected-settings-snapshot state prevents repeated requests.
+func (g *Gate) requestReviewers(ctx context.Context, t inputs.Target) {
+	var pull api.Pull
+	var err error
+	if summary, ok := g.pulls.(interface {
+		PullSummary(context.Context, api.RepoRef, int) (api.Pull, error)
+	}); ok {
+		pull, err = summary.PullSummary(ctx, t.Repo.RepoRef, t.PullRequest)
+	} else {
+		pull, err = g.pulls.Pull(ctx, t.Repo.RepoRef, t.PullRequest)
+	}
+	if err != nil {
+		slog.Default().WarnContext(ctx, "gate reviewer request unavailable", "installation_id", t.Repo.InstallationID,
+			"repository_id", t.Repo.ID, "pr", t.PullRequest, "outcome", "pull_read_failed")
+		return
+	}
+	if pull.HeadSHA != t.HeadSHA || pull.State != "open" {
+		return // a late webhook must not request reviewers for a moved or closed candidate
+	}
+	if g.resolver.RequestEligibleReviewers(ctx, t, pull.Author, g.now()) {
+		slog.Default().WarnContext(ctx, "gate reviewer request unavailable", "installation_id", t.Repo.InstallationID,
+			"repository_id", t.Repo.ID, "pr", t.PullRequest, "head_sha", t.HeadSHA, "outcome", "notification_problem")
+	}
 }
 
 // approvalChanged reacts to an event that may withdraw or grant an owner approval: a review, an approval recorded in
@@ -358,14 +424,28 @@ func (g *Gate) newHead(ctx context.Context, t inputs.Target) (string, error) {
 // the new upload, so nothing here can turn it green.
 func (g *Gate) approvalChanged(ctx context.Context, t inputs.Target) (string, error) {
 	reaction := reactionNone
-	err := g.publisher.Reconcile(ctx, t, func(ctx context.Context, current feedback.CheckState) (*feedback.Publication, error) {
-		rc := current.Receipt
-		if !sweep.Decided(rc) && rc.Reason != verdict.ReasonOwnerApprovalMissing {
-			return nil, nil // the check already asks for action, or there is none yet
+	var err error
+	t, err = g.pinProtectedRef(ctx, t)
+	if err != nil {
+		return reaction, fmt.Errorf("gate: read protected ref head: %w", err)
+	}
+	err = g.publisher.Reconcile(ctx, t, func(ctx context.Context, current feedback.CheckState) (*feedback.Publication, error) {
+		if err := g.checkProtectedRef(ctx, t); err != nil {
+			return nil, err
 		}
 		trusted, err := g.resolver.Resolve(ctx, t, g.now())
 		if err != nil {
 			return nil, fmt.Errorf("gate: resolve inputs: %w", err)
+		}
+		if t.PullRequest != 0 && trusted.SettingsFound && trusted.Settings.Gate != settings.GateRequired {
+			current, err = g.publisher.AdvisoryState(ctx, t)
+			if err != nil {
+				return nil, fmt.Errorf("gate: read advisory state: %w", err)
+			}
+		}
+		rc := current.Receipt
+		if !sweep.Decided(rc) && rc.Reason != verdict.ReasonOwnerApprovalMissing {
+			return nil, nil // the check already asks for action, or there is none yet
 		}
 		if pub := sweep.Withdrawal(t, current, trusted); pub != nil {
 			reaction = reactionApprovalWithdrawn
@@ -402,4 +482,14 @@ func protectedPush(paths []string) bool {
 // Sweep runs one reconciliation pass.
 func (g *Gate) Sweep(ctx context.Context) (Summary, error) {
 	return g.sweeper.Run(ctx, g.now())
+}
+
+// refreshOwnerDecision refreshes authorization on the PR and its queued groups before attempting reason comments.
+func (g *Gate) refreshOwnerDecision(ctx context.Context, t inputs.Target) (string, error) {
+	reaction, err := g.approvalChanged(ctx, t)
+	err = errors.Join(err, g.groupsOf(ctx, t))
+	if mirrorErr := g.resolver.MirrorDecisions(ctx, t, g.comments); mirrorErr != nil {
+		err = errors.Join(err, fmt.Errorf("gate: mirror owner decisions: %w", mirrorErr))
+	}
+	return reaction, err
 }

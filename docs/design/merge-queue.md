@@ -24,18 +24,18 @@ The envelope schema is unchanged: `archfit.report-envelope.v1`,
 [`internal/wire/envelope/envelope.v1.schema.json`](../../internal/wire/envelope/envelope.v1.schema.json). A merge
 group report uses these values:
 
-| Field | Value |
-| --- | --- |
-| `kind` | `report` |
-| `event` | `merge_group` |
-| `pull_request` | `0` |
-| `head_sha` | `merge_group.head_sha` of the event, which is `GITHUB_SHA` of the run |
-| `analyzed_sha` | the same as `head_sha`: the group commit is the integrated tree |
-| `base_sha`, `merge_base_sha`, `integration` | `""` |
-| `policy_change` | absent (the schema refuses it for every event except `pull_request`) |
-| `run_id`, `run_attempt` | the run, as for every event |
-| `baseline_digest`, `labels_digest` | bare hex SHA-256 of the blobs the engine read, or `""` without a file |
-| engine identity, `payload_digest` | as for every report |
+| Field                                       | Value                                                                 |
+| ------------------------------------------- | --------------------------------------------------------------------- |
+| `kind`                                      | `report`                                                              |
+| `event`                                     | `merge_group`                                                         |
+| `pull_request`                              | `0`                                                                   |
+| `head_sha`                                  | `merge_group.head_sha` of the event, which is `GITHUB_SHA` of the run |
+| `analyzed_sha`                              | the same as `head_sha`: the group commit is the integrated tree       |
+| `base_sha`, `merge_base_sha`, `integration` | `""`                                                                  |
+| `policy_change`                             | absent (the schema refuses it for every event except `pull_request`)  |
+| `run_id`, `run_attempt`                     | the run, as for every event                                           |
+| `baseline_digest`, `labels_digest`          | bare hex SHA-256 of the blobs the engine read, or `""` without a file |
+| engine identity, `payload_digest`           | as for every report                                                   |
 
 Fixtures: [`merge-group-report.json`](../../internal/wire/testdata/envelope/merge-group-report.json) (valid) and
 [`invalid-merge-group-with-base.json`](../../internal/wire/testdata/envelope/invalid-merge-group-with-base.json)
@@ -55,12 +55,12 @@ The Action must:
 
 Answers that are specific to a merge group:
 
-| Status | Body | Meaning for the Action |
-| --- | --- | --- |
-| 200 | `{"conclusion": "...", "reason": "..."}` | Accepted and published on the group commit. Not "passed" |
-| 409 | `{"error": "stale_group"}` | The queue has no entry with this head commit: the group was destroyed, rebuilt or merged. Final: do not retry |
-| 409 | `{"error": "stale_attempt"}` | A newer attempt of the run exists. Final |
-| 503 | `{"error": "unavailable"}` | The App could not read the queue, the inputs, or wrote nothing because they changed. Retry |
+| Status | Body                                     | Meaning for the Action                                                                                        |
+| ------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| 200    | `{"conclusion": "...", "reason": "..."}` | Accepted and published on the group commit. Not "passed"                                                      |
+| 409    | `{"error": "stale_group"}`               | The queue has no entry with this head commit: the group was destroyed, rebuilt or merged. Final: do not retry |
+| 409    | `{"error": "stale_attempt"}`             | A newer attempt of the run exists. Final                                                                      |
+| 503    | `{"error": "unavailable"}`               | The App could not read the queue, the inputs, or wrote nothing because they changed. Retry                    |
 
 All other answers are those of every report upload.
 
@@ -90,12 +90,12 @@ For each protected path:
 
 - Same blob at `S` and `X`: unchanged.
 - Different blob: exactly one member must change the path in its own pull request, that member must have a current
-  owner approval of its own head (the [pull request approval rules](../user-guide.md#owner-approval), unchanged), and
+  owner authorization of its own head (the [pull request decision rules](../user-guide.md#architecture-decisions)), and
   the blob at that member's head must equal the blob at `X`. No member, two members, or a different blob ends
   `merge_group_conflict`.
 
 Separately, every member whose pull request changes a protected path needs its own current owner approval, also when
-the group's combined file equals the default branch's. A missing one ends `owner_approval_missing`.
+the group's combined file equals the default branch's. An active owner objection without an exact-candidate override ends `owner_approval_missing`. An Archfit override may authorize the group member for Archfit, but native GitHub reviews and branch protections remain independent.
 
 The accepted digest of each file is its blob at `X`, once the change is justified. The group commit itself is never
 approved: GitHub created it, and queue membership, a push or an `approved_by` text approve nothing.
@@ -113,15 +113,15 @@ approved: GitHub created it, and queue membership, a push or an `approved_by` te
   `action_required` `merge_group_unverified`. A later upload for the group gets `409 stale_group`.
 - Inside the publication lease the upload reads the queue and the inputs again. A group destroyed, a member
   approval withdrawn, or a protected file changed since the decision writes nothing and answers `503`.
-- A review event that withdraws an owner approval on a queued pull request re-evaluates the groups that hold it.
+- Native review changes and App approve/request-changes/withdraw/override decisions re-evaluate every queued group that holds the pull request, including a group check that was already successful.
 
 ## Recovery
 
-| Reason | What to do |
-| --- | --- |
-| `merge_group_conflict` | Two queued pull requests change the same protected file, or the queued file is not the one an owner approved. Remove all but one from the queue and queue the others again after it merges. Or update the branch and have an owner approve the new head. |
-| `merge_group_unverified` | The App could not confirm the group from GitHub: it was destroyed or rebuilt, or a member changed. Queue the pull request again. (A missing Merge queues permission is not this reason: the upload answers `503`, see Limits.) |
-| `owner_approval_missing` | An owner approves the named pull request's head; then queue it again. |
+| Reason                   | What to do                                                                                                                                                                                                                                               |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `merge_group_conflict`   | Two queued pull requests change the same protected file, or the queued file is not the one an owner approved. Remove all but one from the queue and queue the others again after it merges. Or update the branch and have an owner approve the new head. |
+| `merge_group_unverified` | The App could not confirm the group from GitHub: it was destroyed or rebuilt, or a member changed. Queue the pull request again. (A missing Merge queues permission is not this reason: the upload answers `503`, see Limits.)                           |
+| `owner_approval_missing` | Resolve or explicitly override the active objection on the named pull request's exact candidate. Native GitHub reviews may still require resolution on GitHub; rebuild/requeue the group to obtain a fresh group report.                                 |
 
 ## Limits
 

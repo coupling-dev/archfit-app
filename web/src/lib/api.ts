@@ -240,16 +240,50 @@ export interface Findings {
   task_count: number;
 }
 
-// Approval is the owner approval of a pull request head that changes a protected file; absent when it changes none.
+export interface OwnerObjection {
+  id: string; // GitHub review ID or App decision version; sent back only for explicit override
+  login: string;
+  source: 'github' | 'app';
+  reason: string; // imported review body or authenticated App reason; text only
+  head_sha: string;
+  at: string;
+  overridden: boolean; // Archfit authorization only; a native review remains on GitHub
+}
+
+export interface OwnerDecisionHistory {
+  id: string;
+  login: string;
+  action: 'approve' | 'request_changes' | 'withdraw' | 'override';
+  reason?: string;
+  head_sha: string;
+  base_sha: string;
+  at: string;
+  overrode?: string[];
+  overrode_objections?: OwnerObjection[];
+}
+
+// Approval is the trusted owner-decision context for a protected-path change; no report is needed to resolve it.
 export interface Approval {
-  head_sha: string; // the full head it is for; Approve sends it back
+  head_sha: string;
+  base_sha: string; // exact protected-ref commit the page showed
   paths: string[];
-  digests: Record<string, string> | null; // each path at the head, '' when deleted; null for a fork; Approve sends it back
+  digests: Record<string, string> | null; // each path at the head; null for a fork, whose head is not read
   short_digests: Record<string, string> | null;
   state: 'granted' | 'missing';
   by?: string;
+  can_decide: boolean; // current owner with the repository access required for App decisions
   can_approve: boolean;
-  reason?: string; // why the signed-in user cannot approve, while missing
+  can_withdraw: boolean; // this user has an App or native grant they can withdraw for this candidate
+  notification_problem: boolean; // reviewer request failed; never changes authority
+  owners: string[]; // principals from protected settings; one eligible owner is sufficient
+  settings_ref: string;
+  settings_url: string;
+  gate_mode: 'required' | 'advisory' | '';
+  required: boolean;
+  decision_url: string;
+  objections: OwnerObjection[];
+  history: OwnerDecisionHistory[];
+  reason?: string;
   author_is_agent: boolean;
 }
 
@@ -277,7 +311,8 @@ export interface DecisionRequest {
   can_decide: boolean; // the signed-in user is an owner who did not file it, and it is pending
 }
 
-export type Pull = PullHead & Findings & { approval?: Approval; decisions?: DecisionRequest[]; first_screen?: ScreenLine[] };
+export type Pull = PullHead &
+  Findings & { approval?: Approval; decisions?: DecisionRequest[]; first_screen?: ScreenLine[] };
 
 // Decided answers the Approve and Decline buttons of a decision request: the requests as they stand now.
 export interface Decided {

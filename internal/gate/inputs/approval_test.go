@@ -39,18 +39,22 @@ func (f *fixture) approve(t Target, login string, seen map[string]string) error 
 
 func (f *fixture) record(tb testing.TB, t Target) (approvalRecord, bool) {
 	tb.Helper()
-	raw, err := f.store.Get(context.Background(), store.Tenant(installation), approvalKey(t))
+	raw, err := f.store.Get(context.Background(), store.Tenant(installation), decisionKey(t))
 	if errors.Is(err, store.ErrNotFound) {
 		return approvalRecord{}, false
 	}
 	if err != nil {
 		tb.Fatal(err)
 	}
-	var rec approvalRecord
+	var rec decisionRecord
 	if err := json.Unmarshal(raw, &rec); err != nil {
 		tb.Fatal(err)
 	}
-	return rec, true
+	if len(rec.History) == 0 {
+		return approvalRecord{}, false
+	}
+	last := rec.History[len(rec.History)-1]
+	return approvalRecord{Login: last.Login, HeadSHA: last.HeadSHA, Digests: last.Digests, At: last.At}, true
 }
 
 func TestCandidate(t *testing.T) {
@@ -290,9 +294,6 @@ func TestAppApprovalVoidedByTheProtectedRef(t *testing.T) {
 		{"the approver left the owners", func(f *fixture) { f.setBaseSettings([]string{"bob"}) }, "bob"},
 		{"the approver is now an agent", func(f *fixture) { f.setBaseSettings([]string{"alice", teamOwner}, "carol") }, "alice"},
 		{"the approver left the owner team", func(f *fixture) { f.pulls.teams[teamOwner] = nil }, "alice"},
-		{"the approver requested changes afterwards", func(f *fixture) {
-			f.pulls.reviews = []api.Review{{Reviewer: "carol", State: "CHANGES_REQUESTED", CommitSHA: headSHA, SubmittedAt: now.Add(time.Minute)}}
-		}, "alice"},
 		{"the base moved: the pull request changes another protected path", func(f *fixture) {
 			f.pulls.changed = []string{policy.BaselinePath, policy.PolicyPath}
 		}, "alice"},
@@ -323,8 +324,8 @@ func TestAppApprovalVoidedByTheProtectedRef(t *testing.T) {
 	}
 }
 
-// TestAppApprovalWithdrawnByTheApproversReview: an owner who can review ends the approval as on GitHub, by requesting
-// changes or by a review that was dismissed, after approving in the App.
+// TestAppApprovalWithdrawnByTheApproversReview: a native request for changes blocks App approval until GitHub resolves
+// that review; dismissal invalidates that review grant but does not revoke an independent App approval.
 func TestAppApprovalWithdrawnByTheApproversReview(t *testing.T) {
 	review := func(login, state string, at time.Duration) api.Review {
 		return api.Review{Reviewer: login, State: state, CommitSHA: headSHA, SubmittedAt: now.Add(at)}
@@ -338,11 +339,11 @@ func TestAppApprovalWithdrawnByTheApproversReview(t *testing.T) {
 		{"changes requested later", []api.Review{review("alice", "CHANGES_REQUESTED", time.Minute)}, ApprovalMissing},
 		{"changes requested later, login in other case", []api.Review{review("ALICE", "CHANGES_REQUESTED", time.Minute)}, ApprovalMissing},
 		{"changes requested in the same second", []api.Review{review("alice", "CHANGES_REQUESTED", 0)}, ApprovalMissing},
-		{"a review dismissed later", []api.Review{review("alice", "DISMISSED", time.Minute)}, ApprovalMissing},
-		{"changes requested earlier", []api.Review{review("alice", "CHANGES_REQUESTED", -time.Minute)}, ApprovalGranted},
+		{"a review dismissed later", []api.Review{review("alice", "DISMISSED", time.Minute)}, ApprovalGranted},
+		{"changes requested earlier", []api.Review{review("alice", "CHANGES_REQUESTED", -time.Minute)}, ApprovalMissing},
 		{"changes requested by someone else", []api.Review{review("bob", "CHANGES_REQUESTED", time.Minute)}, ApprovalGranted},
 		{"a comment later", []api.Review{review("alice", "COMMENTED", time.Minute)}, ApprovalGranted},
-		{"no submission time", []api.Review{{Reviewer: "alice", State: "CHANGES_REQUESTED", CommitSHA: headSHA}}, ApprovalGranted},
+		{"no submission time still blocks", []api.Review{{Reviewer: "alice", State: "CHANGES_REQUESTED", CommitSHA: headSHA}}, ApprovalMissing},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -361,22 +362,25 @@ func TestAppApprovalWithdrawnByTheApproversReview(t *testing.T) {
 	}
 }
 
-func TestAppApprovalIsCreateOnly(t *testing.T) {
+func TestAppApprovalHistoryRecordsEveryOwnerDecision(t *testing.T) {
 	f := newFixture()
 	f.pulls.changed = []string{policy.BaselinePath}
 	seen := f.shown(t, pullTarget())
-	if err := f.approve(pullTarget(), "alice", seen); err != nil {
-		t.Fatalf("Approve: %v", err)
-	}
-	first, _ := f.record(t, pullTarget())
-
-	for _, login := range []string{"alice", "carol"} {
-		if err := f.resolver().Approve(context.Background(), pullTarget(), login, seen, now.Add(time.Hour)); err != nil {
-			t.Errorf("a second Approve by %s = %v, want success", login, err)
+	for i, login := range []string{"alice", "alice", "carol"} {
+		if err := f.resolver().Approve(context.Background(), pullTarget(), login, seen, now.Add(time.Duration(i)*time.Hour)); err != nil {
+			t.Errorf("Approve by %s = %v, want success", login, err)
 		}
 	}
-	if got, _ := f.record(t, pullTarget()); got.Login != first.Login || !got.At.Equal(first.At) {
-		t.Errorf("record = %+v, want the first one %+v", got, first)
+	raw, err := f.store.Get(context.Background(), store.Tenant(installation), decisionKey(pullTarget()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record decisionRecord
+	if err := json.Unmarshal(raw, &record); err != nil {
+		t.Fatal(err)
+	}
+	if len(record.History) != 2 || record.History[0].Login != "alice" || record.History[1].Login != "carol" {
+		t.Errorf("decision history = %+v, want each owner grant once", record.History)
 	}
 	wantApproval(t, f.mustResolve(t, pullTarget()), ApprovalGranted, "alice")
 }
@@ -426,48 +430,59 @@ func (failingWrites) CompareAndSwap(context.Context, store.Tenant, string, []byt
 	return false, errBoom
 }
 
-// TestReplacingAVoidRecordNeverOverwritesALaterApproval: bob's approval lands between alice reading the void record
-// and alice replacing it. alice's replacement is against the bytes she judged void, so it loses and bob's stays.
-func TestReplacingAVoidRecordNeverOverwritesALaterApproval(t *testing.T) {
+// TestDecisionCASKeepsAConcurrentApproval: bob's approval lands between alice's read and CAS. The retry must
+// preserve both authenticated actions, not overwrite bob or approve through a stale read.
+func TestDecisionCASKeepsAConcurrentApproval(t *testing.T) {
 	f := newFixture()
 	f.pulls.changed = []string{policy.BaselinePath}
 	f.setBaseSettings([]string{"alice", "bob"})
-	seen := f.shown(t, pullTarget())
-	void, err := json.Marshal(approvalRecord{Login: "gone", HeadSHA: headSHA, Digests: seen, At: now})
+	target := pullTarget()
+	seen := f.shown(t, target)
+	protected, err := settings.Parse(f.repos.files[fileCall{baseRef, settings.Path}])
 	if err != nil {
 		t.Fatal(err)
 	}
-	tenant, key := store.Tenant(installation), approvalKey(pullTarget())
-	if err := f.store.Put(context.Background(), tenant, key, void); err != nil {
-		t.Fatal(err)
-	}
-	bob, err := json.Marshal(approvalRecord{Login: "bob", HeadSHA: headSHA, Digests: seen, At: now})
+	settingsJSON, err := json.Marshal(protected)
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.store = &approvesBetween{Store: f.store, key: key, bob: bob}
-
-	if err := f.approve(pullTarget(), "alice", seen); err != nil {
+	bob, err := json.Marshal(decisionRecord{Version: decisionVersion, NextID: 2, History: []decisionEntry{{
+		ID: "app:1", Login: "bob", Action: DecisionApprove, HeadSHA: headSHA, BaseSHA: baseRef, SettingsDigest: policy.Digest(settingsJSON), Digests: seen, At: now,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.store = &decisionLandsBeforeCAS{Store: f.store, key: decisionKey(target), value: bob}
+	if err := f.approve(target, "alice", seen); err != nil {
 		t.Fatalf("Approve: %v", err)
 	}
-	if rec, _ := f.record(t, pullTarget()); rec.Login != "bob" {
-		t.Errorf("record = %+v, want bob's, which landed after alice read the void record", rec)
+	raw, err := f.store.Get(context.Background(), store.Tenant(installation), decisionKey(target))
+	if err != nil {
+		t.Fatal(err)
 	}
+	var record decisionRecord
+	if err := json.Unmarshal(raw, &record); err != nil {
+		t.Fatal(err)
+	}
+	if len(record.History) != 2 || record.History[0].Login != "bob" || record.History[1].Login != "alice" {
+		t.Errorf("decision history = %+v, want bob then alice", record.History)
+	}
+	wantApproval(t, f.mustResolve(t, target), ApprovalGranted, "alice")
 }
 
-// approvesBetween makes bob approve right after the first read of key, as a concurrent request would.
-type approvesBetween struct {
+type decisionLandsBeforeCAS struct {
 	store.Store
-	key  string
-	bob  []byte
-	done bool
+	key   string
+	value []byte
+	done  bool
 }
 
-func (s *approvesBetween) Get(ctx context.Context, tn store.Tenant, key string) ([]byte, error) {
-	raw, err := s.Store.Get(ctx, tn, key)
-	if key == s.key && err == nil && !s.done {
+func (s *decisionLandsBeforeCAS) CompareAndSwap(ctx context.Context, tenant store.Tenant, key string, old, value []byte) (bool, error) {
+	if key == s.key && old == nil && !s.done {
 		s.done = true
-		_ = s.Put(ctx, tn, key, s.bob)
+		if _, err := s.Store.CompareAndSwap(ctx, tenant, key, nil, s.value); err != nil {
+			return false, err
+		}
 	}
-	return raw, err
+	return s.Store.CompareAndSwap(ctx, tenant, key, old, value)
 }

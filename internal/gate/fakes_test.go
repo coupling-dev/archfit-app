@@ -152,6 +152,17 @@ func (f *fakeGitHub) File(_ context.Context, r api.RepoRef, ref, path string) ([
 	}
 	raw, ok := f.files[fileKey(r.FullName, ref, path)]
 	if !ok {
+		for branchKey, head := range f.heads {
+			if head == ref && strings.HasPrefix(branchKey, r.FullName+"|") {
+				branch := strings.TrimPrefix(branchKey, r.FullName+"|")
+				raw, ok = f.files[fileKey(r.FullName, branch, path)]
+				if ok {
+					break
+				}
+			}
+		}
+	}
+	if !ok {
 		return nil, "", api.ErrNotFound
 	}
 	return slices.Clone(raw), "blob", nil
@@ -164,10 +175,16 @@ func (f *fakeGitHub) BranchHead(_ context.Context, r api.RepoRef, branch string)
 		return "", err
 	}
 	head, ok := f.heads[branchKey(r.FullName, branch)]
-	if !ok {
-		return "", api.ErrNotFound
+	if ok {
+		return head, nil
 	}
-	return head, nil
+	prefix := fileKey(r.FullName, branch, "")
+	for key := range f.files {
+		if strings.HasPrefix(key, prefix) {
+			return branch, nil // a test branch with seeded files but no explicit commit identity
+		}
+	}
+	return "", api.ErrNotFound
 }
 
 func cmpErr(first, second error) error {
@@ -516,14 +533,18 @@ const leaseKeyPrefix = "feedback/lease/"
 // pusherKeyPrefix and approvalKeyPrefix are gate/inputs' unexported prefixes of the record of who pushed a head and of
 // an owner approval recorded in the App, restated for the same reason.
 const (
-	pusherKeyPrefix   = "pusher/"
-	approvalKeyPrefix = "approval/"
-	decisionKeyPrefix = "decision/" // gate/decisions' request records
+	pusherKeyPrefix          = "pusher/"
+	approvalKeyPrefix        = "approval/"
+	ownerDecisionKeyPrefix   = "owner-decision/"
+	reviewerRequestKeyPrefix = "review-request/"
+	decisionKeyPrefix        = "decision/" // gate/decisions' request records
 )
 
 // isRecord reports whether key is a pusher or an approval record of gate/inputs, or a request record of gate/decisions.
 func isRecord(key string) bool {
-	return strings.HasPrefix(key, pusherKeyPrefix) || strings.HasPrefix(key, approvalKeyPrefix) || strings.HasPrefix(key, decisionKeyPrefix)
+	return strings.HasPrefix(key, pusherKeyPrefix) || strings.HasPrefix(key, approvalKeyPrefix) ||
+		strings.HasPrefix(key, ownerDecisionKeyPrefix) || strings.HasPrefix(key, reviewerRequestKeyPrefix) ||
+		strings.HasPrefix(key, decisionKeyPrefix)
 }
 
 // guardStore proves the gate path writes nothing but publication leases and the records of gate/inputs: every other
@@ -676,6 +697,22 @@ func (r *fakeResolver) CanDecide(context.Context, inputs.Target, string) error {
 	panic("fakeResolver: CanDecide")
 }
 
+func (r *fakeResolver) CanWithdraw(context.Context, inputs.Target, string) (bool, error) {
+	panic("fakeResolver: CanWithdraw")
+}
+
+func (r *fakeResolver) Decide(context.Context, inputs.Target, string, map[string]string, inputs.DecisionAction, string, []string, time.Time) error {
+	panic("fakeResolver: Decide")
+}
+
+func (r *fakeResolver) MirrorDecisions(context.Context, inputs.Target, api.Comments) error {
+	return nil
+}
+
+func (r *fakeResolver) RequestEligibleReviewers(context.Context, inputs.Target, string, time.Time) bool {
+	return false
+}
+
 func (r *fakeResolver) Approve(context.Context, inputs.Target, string, map[string]string, time.Time) error {
 	panic("fakeResolver: Approve")
 }
@@ -686,6 +723,7 @@ type fakePublisher struct {
 	publishErr error
 	pendingErr error
 	published  []feedback.Publication
+	banners    []inputs.Target
 	pended     []inputs.Target
 	states     []inputs.Target
 }
@@ -695,6 +733,11 @@ func (p *fakePublisher) Publish(_ context.Context, pub feedback.Publication) err
 		return p.publishErr
 	}
 	p.published = append(p.published, pub)
+	return nil
+}
+
+func (p *fakePublisher) DecisionBanner(_ context.Context, t inputs.Target, _ inputs.Trusted) error {
+	p.banners = append(p.banners, t)
 	return nil
 }
 
@@ -795,3 +838,5 @@ func (a *fakeActions) Rerun(_ context.Context, r api.RepoRef, runID int64) error
 	a.refs = append(a.refs, r)
 	return nil
 }
+
+func (r *fakeResolver) ReviewerNotificationProblem(context.Context, inputs.Target) bool { return false }

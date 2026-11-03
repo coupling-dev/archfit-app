@@ -77,6 +77,7 @@ func (s *publisher) Publish(ctx context.Context, p Publication) (err error) {
 		Status:     statusCompleted,
 		StartedAt:  now,
 	}
+	p.ownerBanner = renderDecisionBanner(p.Target, p.Trusted, s.pullLink(p.Target))
 	if required(p) { // the same predicate the headline reads, so a title never names a gate that was not written
 		run.Name, run.Conclusion = gateCheck, string(p.Outcome.Conclusion)
 		run.Title, run.Summary = gateTitle(p), renderGate(p)
@@ -224,11 +225,11 @@ func (s *publisher) changedFiles(ctx context.Context, p Publication) (func(strin
 	return func(path string) bool { return set[path] }, nil
 }
 
-// findComment returns the lowest-ID App comment that starts with the comment marker.
-func (s *publisher) findComment(ctx context.Context, t inputs.Target) (api.Comment, bool, error) {
+// findComment returns the App comments and the lowest-ID feedback comment that starts with the comment marker.
+func (s *publisher) findComment(ctx context.Context, t inputs.Target) ([]api.Comment, api.Comment, bool, error) {
 	all, err := s.comments.AppComments(ctx, t.Repo.RepoRef, t.PullRequest)
 	if err != nil {
-		return api.Comment{}, false, err
+		return nil, api.Comment{}, false, err
 	}
 	var found api.Comment
 	for _, c := range all {
@@ -236,7 +237,7 @@ func (s *publisher) findComment(ctx context.Context, t inputs.Target) (api.Comme
 			found = c
 		}
 	}
-	return found, found.ID != 0, nil
+	return all, found, found.ID != 0, nil
 }
 
 func (s *publisher) writeComment(ctx context.Context, p Publication, now time.Time) (string, error) {
@@ -248,12 +249,20 @@ func (s *publisher) writeComment(ctx context.Context, p Publication, now time.Ti
 	if pull.HeadSHA != t.HeadSHA {
 		return actionSkippedOldHead, nil
 	}
-	existing, found, err := s.findComment(ctx, t)
+	comments, existing, found, err := s.findComment(ctx, t)
 	if err != nil {
 		return actionNone, err
 	}
 	if !found {
-		_, err := s.comments.CreateComment(ctx, t.Repo.RepoRef, t.PullRequest, renderComment(p, now, "", s.pullLink(t)))
+		body := renderComment(p, now, "", s.pullLink(t))
+		if p.ownerBanner != "" {
+			for _, comment := range comments {
+				if strings.Contains(comment.Body, decisionBannerMarker) {
+					return actionUpdated, s.comments.UpdateComment(ctx, t.Repo.RepoRef, comment.ID, body)
+				}
+			}
+		}
+		_, err = s.comments.CreateComment(ctx, t.Repo.RepoRef, t.PullRequest, body)
 		return actionCreated, err
 	}
 	if head, runID, attempt, ok := parseHead(existing.Body); ok && head == t.HeadSHA && newerRun(runID, attempt, p.Receipt) {
@@ -322,7 +331,7 @@ func (s *publisher) Warn(ctx context.Context, t inputs.Target, expiry time.Time)
 	}()
 
 	date := waiverDate(expiry)
-	existing, found, err := s.findComment(ctx, t)
+	_, existing, found, err := s.findComment(ctx, t)
 	if err != nil {
 		return err
 	}

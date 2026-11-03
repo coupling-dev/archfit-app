@@ -17,10 +17,7 @@ separate, testable steps. Without this module a report is a self-reported file a
   identity against the locked manifest and the workflow path against settings, decide, publish, answer. After a
   published push to the default branch, keep the branch's repair issue (`gate/feedback`'s `Repairer`): a notification
   that never changes the answer.
-- React to verified webhook events: pending gate check on a new head (required mode), fork refusal,
-  `owner_approval_missing` when a review withdraws the approval a `success` or `failure` check relied on,
-  workflow re-run on a review after `owner_approval_missing` once no approval is missing, and a one-repository sweep
-  when a default-branch push changes a protected path.
+- React to verified webhook events: publish a protected-path decision banner/check and best-effort reviewer requests on a new head, then refresh required or advisory state when an owner decision or native review changes. A lost approval/objection may withdraw a prior result; a new report is still required before a fresh success. Reconcile queued groups that use the changed PR.
 - Gate the merge queue of the default branch: serve the upload of a merge group report on the group commit, create its
   pending required check on `merge_group` `checks_requested`, correct that check when the group is destroyed or a queued
   pull request loses its owner approval. The members are read from GitHub's queue (`gate/inputs`), never from the
@@ -28,8 +25,7 @@ separate, testable steps. Without this module a report is a self-reported file a
 - Take in decision requests of unattended agents (a comment on a pull request carrying the `wire/decision` block):
   check them against GitHub and the protected ref, keep a record and one status comment through `gate/decisions`, and
   mark pending requests stale when the head moves or the pull request closes. Nothing is granted; an owner decides.
-- For the App's pull request page only (`Approvals`): read the owner approval of a head, record an architecture
-  owner's approval of the exact head, and re-decide the pull request after it, as a review event does.
+- For the App's pull-request page only (`Approvals`): read protected owners, source snapshot, active native/App objections, audit history and reviewer-notification status; record approval, request changes, withdrawal or reasoned override; mirror reasons, then re-evaluate state and affected merge groups. A native review remains unchanged by an App override.
 - For the App's pages only (`DecisionQueue`): count the decision requests that wait for an owner and return the records
   of the first few, from the Store alone, for the overview's counters and the decisions page. It grants nothing.
 - For the App's pull request page only (`FirstScreen`, `RecoveryStep`): word a published result with the code that
@@ -61,9 +57,8 @@ feedback are tuned with every pilot. The façade contract is kept small and stab
 ## Public Contract
 
 ```go
-// Deps are the only things the gate path may touch: GitHub, OIDC, the Store and a clock. On the Store the gate
-// path reads the entitlement and the admission, reads and writes the pusher and approval records of gate/inputs and the
-// request records of gate/decisions; its only other write is gate/feedback's publication leases.
+// Deps are the only things the gate path may touch: GitHub, OIDC, the Store and a clock. The Store holds entitlements,
+// admissions, pusher attribution, the owner-decision ledger/reviewer-request dedupe and publication leases.
 type Deps struct {
     GitHub     *Client
     OIDC       Verifier
@@ -98,22 +93,41 @@ func (g *Gate) Sweep(ctx context.Context) (Summary, error)
 ```
 
 ```go
-// Approvals is what the App's pull request page may do about an owner approval of a head: read it, record one and
-// re-decide the pull request. *Gate implements it; no other part of the gate path is reachable through it.
+// Approvals is the authenticated architecture-decision façade for a PR page. *Gate implements it; the upload/OIDC path
+// cannot reach these App decision writes.
 type Approvals interface {
     PullApproval(ctx context.Context, t Target, login, author string) (PullApproval, error)
-    Approve(ctx context.Context, t Target, login string, seen map[string]string) error
+    Approve(ctx context.Context, t Target, login string, seen map[string]string) error // compatibility alias for Decide(approve)
+    Decide(ctx context.Context, t Target, login string, seen map[string]string, action DecisionAction, reason string, objectionIDs []string) error
     Reevaluate(ctx context.Context, t Target) error
 }
 
-// PullApproval is the owner approval of a pull request head as the App's pull request page shows it.
+// PullApproval is the protected candidate and current owner-decision context shown on the PR page, even without a report.
 type PullApproval struct {
-    Candidate            // no Paths: the pull request needs no owner approval, and nothing below is set
-    Granted       bool   // an owner approved this exact head, on GitHub or in the App
-    ApprovedBy    string // the approving login when Granted
-    Refusal       error  // while not Granted: why login may not approve in the App (an Err* refusal); nil when it may
-    AuthorIsAgent bool   // the pull request was opened by an agent identity of the protected settings
+    Candidate
+    SettingsFound bool
+    Owners []string // protected .archfit-app.yaml, not CODEOWNERS or head settings
+    SettingsRef string // exact protected settings commit
+    GateMode string // required or advisory
+    Granted bool
+    ApprovedBy string
+    Refusal error
+    CanWithdraw bool // this login's own active App grant
+    NotificationProblem bool // reviewer request failure; never authority
+    AuthorIsAgent bool
+    Objections []Objection // includes native objections overridden for Archfit, which remain on GitHub
+    History []DecisionHistory
 }
+
+type DecisionAction string
+const (
+    DecisionApprove DecisionAction = "approve"
+    DecisionRequestChanges DecisionAction = "request_changes"
+    DecisionWithdraw DecisionAction = "withdraw"
+    DecisionOverride DecisionAction = "override"
+)
+type Objection struct { ID, Login, Source, Reason, HeadSHA string; At time.Time; Overridden bool }
+type DecisionHistory struct { ID, Login string; Action DecisionAction; Reason, HeadSHA, BaseSHA string; At time.Time; Overrode []string; OverrodeObjections []Objection }
 
 // PullApproval reads the owner approval of t's head for the signed-in login; author is the pull request's.
 func (g *Gate) PullApproval(ctx context.Context, t Target, login, author string) (PullApproval, error)
@@ -123,9 +137,8 @@ func (g *Gate) PullApproval(ctx context.Context, t Target, login, author string)
 // the pull request; Reevaluate does.
 func (g *Gate) Approve(ctx context.Context, t Target, login string, seen map[string]string) error
 
-// Reevaluate re-decides the pull request t after its owner approval changed, as a review event does: an
-// owner_approval_missing check whose approval is now granted re-runs the workflow, and a result whose approval is gone
-// is withdrawn. Nothing here turns a check green; the re-run's upload does.
+// Reevaluate mirrors persisted decision reasons, refreshes required/advisory state and reconciles queued groups after
+// an App decision. It can withdraw a prior result or request a workflow rerun, but never turns a check green itself.
 func (g *Gate) Reevaluate(ctx context.Context, t Target) error
 ```
 
@@ -229,7 +242,7 @@ func (a *Admissions) Admitted(ctx context.Context, installationID int64, owner s
 
 `Admissions` also has `Auto(account)` and `Record(ctx, installationID)`, which `control` uses.
 
-<!-- contract: Candidate, ErrNothingToApprove, ErrForkPull, ErrAgentIdentity, ErrNotOwner, ErrDigestsChanged — restated from internal/gate/inputs/module.md -->
+<!-- contract: Candidate and App decision actions/refusals — restated from internal/gate/inputs/module.md -->
 ```go
 // Candidate is what an owner approves in the App: the protected paths a pull request changes and what each holds at
 // its head.
@@ -240,13 +253,28 @@ type Candidate struct {
     Digests map[string]string
 }
 
-// The refusals of Approve and CanApprove. Any other error is a failed read or write.
+type DecisionAction string
+const (
+    DecisionApprove DecisionAction = "approve"
+    DecisionRequestChanges DecisionAction = "request_changes"
+    DecisionWithdraw DecisionAction = "withdraw"
+    DecisionOverride DecisionAction = "override"
+)
+type Objection struct { ID, Login, Source, Reason, HeadSHA string; At time.Time; Overridden bool }
+type DecisionHistory struct { ID, Login string; Action DecisionAction; Reason, HeadSHA, BaseSHA string; At time.Time; Overrode []string; OverrodeObjections []Objection }
+
 var (
     ErrNothingToApprove = errors.New("inputs: approve: the pull request changes no protected path")
-    ErrForkPull         = errors.New("inputs: approve: the pull request comes from a fork")
-    ErrAgentIdentity    = errors.New("inputs: approve: an agent identity never approves")
-    ErrNotOwner         = errors.New("inputs: approve: not an architecture owner of the protected settings")
-    ErrDigestsChanged   = errors.New("inputs: approve: the protected files at the head are not the ones shown")
+    ErrForkPull = errors.New("inputs: approve: the pull request comes from a fork")
+    ErrAgentIdentity = errors.New("inputs: approve: an agent identity never approves")
+    ErrNotOwner = errors.New("inputs: approve: not an architecture owner of the protected settings")
+    ErrDigestsChanged = errors.New("inputs: approve: the protected files at the head are not the ones shown")
+    ErrActiveObjections = errors.New("inputs: active owner objections require an explicit override")
+    ErrOwnerDecisionStale = errors.New("inputs: decision candidate or objection set changed")
+    ErrDecisionReason = errors.New("inputs: this architecture decision requires a reason")
+    ErrNoApprovalToWithdraw = errors.New("inputs: no active architecture approval by this owner to withdraw")
+    ErrDecisionInvalid = errors.New("inputs: unknown or malformed architecture decision")
+    ErrDecisionHistoryFull = errors.New("inputs: architecture decision history is full")
 )
 ```
 
@@ -434,8 +462,7 @@ An approval that cannot be read is the 503 `admission_unavailable` rejection, wh
 - **Balanced?**: yes
 - **Shared knowledge**: `Resolve` reads only the protected ref (plus an owner-approved head digest), returns an
   error on GitHub failures and on a failed read of an approval record (fail closed), never on a failed read of the
-  entitlement. A push never approves; `RecordPusher` is attribution only. `Candidate`, `CanApprove` and `Approve` are
-  called only from `PullApproval` and `Approve`, for `control/ui`. `SettingsFound == false` means "not onboarded". `Admissions` is built by `app` and passed in
+  entitlement. A push never approves; `RecordPusher` is attribution only. Candidate and decision methods are called only through the authenticated `control/ui` façade. `SettingsFound == false` means "not onboarded". `Admissions` is built by `app` and passed in
   `Deps.Admissions`; the façade, `ingest` and `sweep` ask it `Admitted`, `Resolve` does not.
   `PolicyDigests[0]` and `BaselineDigests[0]` are the first accepted digests: the base digest when the file exists on
   the protected ref, otherwise the owner-approved head digest; the lists are empty when neither exists. The inputs constructor is `New(repos Repos, pulls Pulls, queues MergeQueues, s Store) Resolver`. A `Target` with `MergeGroup` takes the merge group path of `inputs`, and `Trusted.Group` carries what the queue said.
@@ -452,6 +479,7 @@ type Target struct {
     PullRequest int // 0 for a default-branch push and a merge group
     HeadSHA     string
     BaseRef     string // protected ref; the default branch for every upload. Events and the sweep still set the pull request's base
+    BaseSHA     string // exact protected-settings snapshot; Resolve pins BranchHead when empty
     Fork        bool
     MergeGroup  bool // HeadSHA is a merge group commit of BaseRef's merge queue
 }
@@ -468,12 +496,15 @@ const (
 type Trusted struct {
     Settings             Settings
     SettingsFound        bool
+    SettingsSHA          string // exact protected-settings commit
     PolicyDigests        []string // base digest, plus the head digest when Approval == ApprovalGranted
     BaselineDigests      []string // same rule; empty = no baseline on the protected ref
     LabelsDigests        []string // same rule; empty = no labels file on the protected ref
     ProtectedPaths       []string // protected paths this PR changes
     Approval             Approval
     ApprovedBy           string
+    Objections           []Objection // includes objects explicitly overridden for Archfit
+    DecisionHistory      []DecisionHistory
     EarliestWaiverExpiry time.Time // zero = no waivers
     Suspended            bool
     Entitlement          Entitlement
@@ -1489,15 +1520,8 @@ event left undone.
   record that does not decode) does nothing and is retried: `HandleEvent` returns the error, the upload answers 503
   `admission_unavailable`, the sweep counts the installation in `Summary.Errors`. It is never a refusal and never
   "admitted", unlike the entitlement. The gate only reads the admission; `control/account` writes it.
-- The gate path reads the `Entitlement`, the `Admission` and the pusher and approval records, and writes only the pusher
-  and approval records of `gate/inputs` and `gate/feedback`'s publication leases. A pusher record is
-  `pusher/<repo>/<head_sha>` = the logins that pushed the head, written only from a signed `push` delivery, only ever
-  added to, and read by nothing that decides. An approval record is `approval/<repo>/<pull_request>/<head_sha>`, written once (or replaced once it no longer counts), only by
-  `Approve` for `control/ui`'s browser session. Both are kept until the installation is deleted; one small key per
-  pushed or approved head is the accepted growth **[default]**, to be pruned by the sweep if tenants grow large.
-- No push approves, and no agent identity approves: an approval is an owner's review on GitHub or an owner's Approve
-  in the App, for the exact head SHA. No approval API or credential is reachable from the upload (OIDC) routes or the
-  CLI (`TestOwnerApprovalIsReachableOnlyFromTheBrowserSession` in `internal/app`).
+- The gate path reads the `Entitlement`, the `Admission`, pusher attribution, legacy approvals and owner-decision records. It writes only publication leases, pusher records, bounded owner-decision records and per-head/protected-settings-snapshot reviewer-request state. App decisions are reachable only through the authenticated browser façade, never from upload/OIDC. Reviewer requests are notification-only. The older `approval/<repo>/<pull>/<head>` record remains read-only compatibility data; the versioned `owner-decision/<repo>/<pull>` ledger stores authenticated grants, objections, withdrawals, overrides, bounded history and mirror acknowledgements. `review-request/<repo>/<pull>/<head>/<settings SHA>` stores bounded notification attempts only.
+- No push approves, and no agent identity decides. A current eligible owner may approve, request changes, withdraw their prior Archfit grant sources for the exact candidate, or explicitly override the exact active App/GitHub objection versions shown. Withdrawal suppresses prior native approval versions for Archfit without changing GitHub review state. A native GitHub objection overridden for Archfit remains a native review; the App never dismisses it or asserts branch mergeability. Every action is bound to head, protected-settings SHA, candidate digests and the objection ID set; CAS races re-read and revalidate. No decision API or credential is reachable from upload/OIDC (`TestOwnerApprovalIsReachableOnlyFromTheBrowserSession` in `internal/app`).
   A missing or unreadable `Entitlement` means "not suspended" **[default]**; it never establishes non-payment and
   never blocks a merge by itself (2 second read timeout in `inputs` **[default]**). Recovery of a missing record is
   not the gate's job: `control`'s sweep backfills it (Observe + Refresh for every installation), so a missed
@@ -1513,9 +1537,7 @@ event left undone.
   7), so it never replaces a sweep correction computed from newer inputs.
 - Suspension is `action_required` in category `subscription`: never an architecture failure, never a success.
   A restored entitlement re-runs the workflow; an old receipt is never promoted to `success`.
-- Nothing is persisted by the gate but the publication leases, which hold a token and an expiry only and are
-  deleted when the writes end, and the pusher and approval records of `gate/inputs`, which hold logins, a head SHA,
-  digests and a time. Reports and payloads live in memory for one request and are dropped.
+- Persisted gate state is limited to publication leases, bounded pusher attribution, the bounded owner-decision ledger, legacy approval reads and reviewer-request dedupe/leases. Decision records contain no report payloads. Publication leases hold only a token and expiry and are deleted after writes. The owner ledger retains at most 64 actions per PR and refuses new actions at the cap rather than dropping history. Reports and payloads live in memory for one request and are dropped.
 - Handlers do their work in the request and are idempotent; GitHub holds the dedup keys (`external_id`, comment marker,
   repair issue marker).
 - The repair issue never gates: no `Repair` outcome changes an upload answer or a check, and the sweep never calls it.
@@ -1629,8 +1651,8 @@ are driven only as far as they go without GitHub. Child internals are tested in 
   **Expected behavior**: IDs, digests, outcomes, timings only.
 
 - **Test name**: `TestStoreWritesOnlyLeasesAndInputsRecords`
-  **Scenario**: a Store wrapper that panics on `Put`, `Delete`, `Add`, `DeleteTenant`, `Tenants` and on a `CompareAndSwap` outside `feedback/lease/`, `pusher/` and `approval/`; a private repository with an entitlement; drive every façade entry point over it: `HandleEvent` (`PullOpened`, `ReviewChanged`, `DefaultBranchPush`, `BranchPush`), an upload, `Sweep`, `PullApproval`, `Approve` and `Reevaluate`.
-  **Expected behavior**: no panic; the Store was read at least once; every read outside the leases and the records is `Get` of `EntitlementKey` under the installation's tenant, never `SystemTenant`; every lease operation and every record is under the installation's tenant; a pusher and an approval record were written; the pull's lease is gone afterwards.
+  **Scenario**: a Store wrapper that panics on `Put`, `Delete`, `Add`, `DeleteTenant`, `Tenants` and on a `CompareAndSwap` outside feedback leases, pusher, legacy approval, owner-decision and reviewer-request state; exercise event, upload, sweep and browser decision flows.
+  **Expected behavior**: no panic; every record/lease uses the installation tenant; decision writes occur only through the browser façade; reviewer-request records never grant authority; the publication lease is released after success.
 - **Test name**: `TestUnadmittedInstallationGetsNothing`
   **Scenario**: the installation is refused by the admission fake; a `PullOpened` event, then an upload; then the refusal is lifted and a `PullSynchronized` event and an upload follow.
   **Expected behavior**: no pending check and no state check while refused; the upload answers 403 `installation_not_approved`; after the lift the upload answers 200 `success`/`healthy`.

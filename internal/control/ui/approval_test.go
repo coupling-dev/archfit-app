@@ -83,7 +83,7 @@ func TestPullJSONCarriesTheApproval(t *testing.T) {
 			e := newEnv(t)
 			e.sameRepoHead()
 			e.approvals.approval = tt.approval
-			res := e.as("alice", permRead).get(pullAPI)
+			res := e.as("alice", permWrite).get(pullAPI)
 			wantStatus(t, res, http.StatusOK)
 
 			got := decodeAs[pullJSON](t, res).Approval
@@ -103,7 +103,7 @@ func TestPullJSONCarriesTheApproval(t *testing.T) {
 				t.Errorf("approval =\n%+v\nwant\n%+v", *got, *tt.want)
 			}
 			read := e.approvals.reads[0]
-			want := gate.Target{Repo: e.gh.repos[repoName], PullRequest: 4, HeadSHA: sha(4), BaseRef: mainBranch}
+			want := gate.Target{Repo: e.gh.repos[repoName], PullRequest: 4, HeadSHA: sha(4), BaseRef: mainBranch, BaseSHA: sha(10)}
 			if read.target != want || read.login != "alice" || read.author != "alexei" {
 				t.Errorf("PullApproval(%+v, %q, %q), want the authorized repository, alice and the author", read.target, read.login, read.author)
 			}
@@ -138,25 +138,25 @@ func TestApprovePull(t *testing.T) {
 		approved   bool // Approve reached the gate and recorded
 		reran      bool
 	}{
-		{name: "an owner approves the head shown", permission: permWrite, body: approveJSON{HeadSHA: sha(4), Digests: seen},
+		{name: "an owner approves the head shown", permission: permWrite, body: approveJSON{HeadSHA: sha(4), BaseSHA: sha(10), Digests: seen},
 			status: http.StatusOK, sentence: notices["approved"], approved: true, reran: true},
-		{name: "a new commit since the page loaded", permission: permWrite, body: approveJSON{HeadSHA: sha(3), Digests: seen},
-			status: http.StatusConflict, sentence: "The pull request has a new commit since this page was loaded."},
-		{name: "the short head of the page", permission: permWrite, body: approveJSON{HeadSHA: sha(4)[:7], Digests: seen},
-			status: http.StatusConflict, sentence: "Nothing was approved."},
-		{name: "not an owner", permission: permWrite, body: approveJSON{HeadSHA: sha(4), Digests: seen}, approveErr: gate.ErrNotOwner,
+		{name: "a new commit since the page loaded", permission: permWrite, body: approveJSON{HeadSHA: sha(3), BaseSHA: sha(10), Digests: seen},
+			status: http.StatusConflict, sentence: "protected settings commit changed"},
+		{name: "the short head of the page", permission: permWrite, body: approveJSON{HeadSHA: sha(4)[:7], BaseSHA: sha(10), Digests: seen},
+			status: http.StatusConflict, sentence: "protected settings commit changed"},
+		{name: "not an owner", permission: permWrite, body: approveJSON{HeadSHA: sha(4), BaseSHA: sha(10), Digests: seen}, approveErr: gate.ErrNotOwner,
 			status: http.StatusForbidden, sentence: "Only an architecture owner named in .archfit-app.yaml on the base branch can approve."},
-		{name: "an owner listed as an agent", permission: permAdmin, body: approveJSON{HeadSHA: sha(4), Digests: seen}, approveErr: gate.ErrAgentIdentity,
+		{name: "an owner listed as an agent", permission: permAdmin, body: approveJSON{HeadSHA: sha(4), BaseSHA: sha(10), Digests: seen}, approveErr: gate.ErrAgentIdentity,
 			status: http.StatusForbidden, sentence: "An agent identity cannot approve."},
-		{name: "the files changed since the page loaded", permission: permWrite, body: approveJSON{HeadSHA: sha(4)}, approveErr: gate.ErrDigestsChanged,
+		{name: "the files changed since the page loaded", permission: permWrite, body: approveJSON{HeadSHA: sha(4), BaseSHA: sha(10)}, approveErr: gate.ErrDigestsChanged,
 			status: http.StatusConflict, sentence: "The protected files changed since this page was loaded. Nothing was approved."},
-		{name: "nothing to approve", permission: permWrite, body: approveJSON{HeadSHA: sha(4)}, approveErr: gate.ErrNothingToApprove,
+		{name: "nothing to approve", permission: permWrite, body: approveJSON{HeadSHA: sha(4), BaseSHA: sha(10)}, approveErr: gate.ErrNothingToApprove,
 			status: http.StatusConflict, sentence: "nothing to approve"},
-		{name: "a fork", permission: permWrite, body: approveJSON{HeadSHA: sha(4)}, approveErr: gate.ErrForkPull,
+		{name: "a fork", permission: permWrite, body: approveJSON{HeadSHA: sha(4), BaseSHA: sha(10)}, approveErr: gate.ErrForkPull,
 			status: http.StatusConflict, sentence: "A pull request from a fork cannot be approved."},
-		{name: "recorded, but the re-run failed", permission: permWrite, body: approveJSON{HeadSHA: sha(4), Digests: seen}, reevalErr: api.ErrRateLimited,
-			status: http.StatusBadGateway, sentence: "The approval was recorded, but the workflow could not be re-run now.", approved: true, reran: true},
-		{name: "a read-only user", permission: permRead, body: approveJSON{HeadSHA: sha(4), Digests: seen},
+		{name: "recorded, but the re-run failed", permission: permWrite, body: approveJSON{HeadSHA: sha(4), BaseSHA: sha(10), Digests: seen}, reevalErr: api.ErrRateLimited,
+			status: http.StatusBadGateway, sentence: "The decision was saved, but its reason or check could not be refreshed.", approved: true, reran: true},
+		{name: "a read-only user", permission: permRead, body: approveJSON{HeadSHA: sha(4), BaseSHA: sha(10), Digests: seen},
 			status: http.StatusNotFound, sentence: "Not found."},
 		{name: "a body naming a repository", permission: permWrite, body: map[string]any{"head_sha": sha(4), "repository": otherRepo},
 			status: http.StatusUnprocessableEntity, sentence: "The request could not be read."},
@@ -181,7 +181,7 @@ func TestApprovePull(t *testing.T) {
 				return
 			}
 			call := e.approvals.approved[0]
-			want := gate.Target{Repo: e.gh.repos[repoName], PullRequest: 4, HeadSHA: sha(4), BaseRef: mainBranch}
+			want := gate.Target{Repo: e.gh.repos[repoName], PullRequest: 4, HeadSHA: sha(4), BaseRef: mainBranch, BaseSHA: sha(10)}
 			if call.target != want || call.login != "alice" || !maps.Equal(call.seen, seen) {
 				t.Errorf("Approve(%+v, %q, %v), want the authorized pull request, the session's login and the digests shown", call.target, call.login, call.seen)
 			}
@@ -204,7 +204,7 @@ func TestApprovePull(t *testing.T) {
 		e.approvals.approval = gate.PullApproval{Candidate: shownBaseline}
 		c := e.as("alice", permWrite)
 		e.approvals.readErr = errors.New("github down")
-		res := c.postJSON(approveAPI, approveJSON{HeadSHA: sha(4), Digests: seen})
+		res := c.postJSON(approveAPI, approveJSON{HeadSHA: sha(4), BaseSHA: sha(10), Digests: seen})
 		wantStatus(t, res, http.StatusBadGateway)
 		wantContains(t, res.Body.String(), "The change was saved, but it could not be read back.")
 		if len(e.approvals.approved) != 1 || len(e.approvals.reevaluated) != 1 {
@@ -213,7 +213,7 @@ func TestApprovePull(t *testing.T) {
 	})
 	t.Run("signed out", func(t *testing.T) {
 		e := newEnv(t)
-		res := e.anonymous().postJSONWith(approveAPI, approveJSON{HeadSHA: sha(4), Digests: seen}, "")
+		res := e.anonymous().postJSONWith(approveAPI, approveJSON{HeadSHA: sha(4), BaseSHA: sha(10), Digests: seen}, "")
 		wantStatus(t, res, http.StatusUnauthorized)
 		e.noWrites(t)
 	})
@@ -229,13 +229,13 @@ func TestApprovePull(t *testing.T) {
 	})
 	t.Run("without the CSRF token", func(t *testing.T) {
 		e := newEnv(t)
-		res := e.as("alice", permWrite).postJSONWith(approveAPI, approveJSON{HeadSHA: sha(4), Digests: seen}, "")
+		res := e.as("alice", permWrite).postJSONWith(approveAPI, approveJSON{HeadSHA: sha(4), BaseSHA: sha(10), Digests: seen}, "")
 		wantStatus(t, res, http.StatusForbidden)
 		e.noWrites(t)
 	})
 	t.Run("not a pull request number", func(t *testing.T) {
 		e := newEnv(t)
-		res := e.as("alice", permWrite).postJSON("/api/repos/"+repoName+"/pulls/x/approve", approveJSON{HeadSHA: sha(4)})
+		res := e.as("alice", permWrite).postJSON("/api/repos/"+repoName+"/pulls/x/approve", approveJSON{HeadSHA: sha(4), BaseSHA: sha(10)})
 		wantStatus(t, res, http.StatusNotFound)
 		e.noWrites(t)
 	})

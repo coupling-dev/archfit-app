@@ -156,6 +156,22 @@ func (f *fakeResolver) CanDecide(context.Context, inputs.Target, string) error {
 	panic("the sweep never asks who may decide")
 }
 
+func (f *fakeResolver) CanWithdraw(context.Context, inputs.Target, string) (bool, error) {
+	panic("the sweep never asks who may withdraw")
+}
+
+func (f *fakeResolver) Decide(context.Context, inputs.Target, string, map[string]string, inputs.DecisionAction, string, []string, time.Time) error {
+	panic("the sweep never records a decision")
+}
+
+func (f *fakeResolver) MirrorDecisions(context.Context, inputs.Target, api.Comments) error {
+	panic("the sweep never mirrors a decision")
+}
+
+func (f *fakeResolver) RequestEligibleReviewers(context.Context, inputs.Target, string, time.Time) bool {
+	panic("the sweep never requests reviewers")
+}
+
 func (f *fakeResolver) Approve(context.Context, inputs.Target, string, map[string]string, time.Time) error {
 	panic("the sweep never approves")
 }
@@ -200,6 +216,10 @@ func (f *fakePublisher) Publish(_ context.Context, p feedback.Publication) error
 	}
 	f.published = append(f.published, p)
 	f.states[checkKey(p.Target)] = feedback.CheckState{Exists: true, StartedAt: f.now, Receipt: p.Receipt}
+	return nil
+}
+
+func (f *fakePublisher) DecisionBanner(context.Context, inputs.Target, inputs.Trusted) error {
 	return nil
 }
 
@@ -436,3 +456,5 @@ func captureLogs(t *testing.T) *bytes.Buffer {
 	t.Cleanup(func() { slog.SetDefault(prev) })
 	return &buf
 }
+
+func (f *fakeResolver) ReviewerNotificationProblem(context.Context, inputs.Target) bool { return false }

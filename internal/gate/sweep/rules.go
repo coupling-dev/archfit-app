@@ -236,11 +236,11 @@ func withOutcome(out verdict.Outcome, code verdict.ReasonCode, t inputs.Target, 
 
 // Withdrawal is rule 5a, decided inside the head's publication lease (feedback.Publisher.Reconcile) from the gate
 // check current there and inputs tr resolved there: Without(ReasonOwnerApprovalMissing) over the current receipt
-// when the repository is in required mode and that receipt is Withdrawn, else nil. Deciding inside the lease is what
+// when a check exists and its receipt is Withdrawn, in either gate mode, else nil. Deciding inside the lease is what
 // makes it safe: a newer run that turned green while the caller waited is the receipt it replaces, and an owner who
 // approved again meanwhile leaves the check as it is.
 func Withdrawal(t inputs.Target, current feedback.CheckState, tr inputs.Trusted) *feedback.Publication {
-	if tr.Settings.Gate != settings.GateRequired || !Withdrawn(current.Receipt, tr) {
+	if !current.Exists || !Withdrawn(current.Receipt, tr) {
 		return nil
 	}
 	pub := Without(verdict.ReasonOwnerApprovalMissing, t, tr, current.Receipt)

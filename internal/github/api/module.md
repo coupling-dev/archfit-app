@@ -14,7 +14,7 @@ GitHub, and "never a false green on rate-limit exhaustion" would depend on each 
 ## Functional Responsibilities
 
 - Authenticate each call with the right credential: App JWT, installation token, or a user's OAuth token.
-- Read installations, repositories, files at a ref, pull requests, changed files, reviews, team membership.
+- Read installations, repositories, files at a ref, pull requests, changed files, review IDs/states/bodies, requested reviewers and team membership; narrowly add missing configured reviewer requests.
 - Read a branch's merge queue: the entries and their merge group commits (`MergeQueue`, GraphQL).
 - Create and update check runs; list, create and update the App's own PR comments.
 - List, open, edit and close the App's own issues; never a pull request through the issues endpoints.
@@ -131,8 +131,8 @@ a `truncated` result: it returns the paths read so far with `truncated` true.
   deduplicated: renaming a protected file away is a change to it. `truncated` is true when the pagination cap
   was hit, or when the pull's `changed_files` count (one extra `GET /repos/{r}/pulls/{n}`) exceeds the number of
   file entries read: GitHub silently stops this list at 3 000 files. An error still returns no paths.
-- `Reviews`: `GET /repos/{r}/pulls/{n}/reviews`, ascending by submission as GitHub returns them; `PENDING`
-  reviews are dropped; `CommitSHA` = `commit_id`.
+- `Reviews`: `GET /repos/{r}/pulls/{n}/reviews`, ascending by submission as GitHub returns them; `PENDING` reviews are dropped; `ID`, `Body`, `State`, `CommitSHA` (`commit_id`) and `SubmittedAt` are mapped from GitHub.
+- `ReviewerRequests` is the narrow notification capability: `RequestedReviewers` reads current requested users/teams, including CODEOWNERS requests; `RequestReviewers` POSTs only missing principals supplied by its caller. It never removes reviewer requests. Team principals are represented as `org/slug`; request writes validate the repository organization and send the team slug.
 - `TeamMember`: `GET /orgs/{org}/teams/{slug}/memberships/{login}`; `state: active` → true; `pending` or `404` →
   false with `nil` error; a team string without exactly one `/` → error.
 - `CheckRuns`: `GET /repos/{r}/commits/{sha}/check-runs?check_name=&app_id=<own>&filter=latest`: only this
@@ -277,9 +277,12 @@ type Pull struct {
 }
 
 type Review struct {
-    Reviewer  string // login
-    State     string // "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED"
-    CommitSHA string // the head SHA the review was submitted on
+    ID          int64     // GitHub review ID; version identity for a native decision
+    Reviewer    string    // GitHub login
+    State       string    // "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED"
+    CommitSHA   string    // head SHA submitted on
+    Body        string    // GitHub review body; untrusted display data
+    SubmittedAt time.Time // original submission time; dismissal time is not inferred from it
 }
 
 type Pulls interface {
@@ -293,6 +296,12 @@ type Pulls interface {
     Reviews(ctx context.Context, r RepoRef, number int) ([]Review, error)
     // TeamMember reports whether login belongs to "org/team-slug".
     TeamMember(ctx context.Context, r RepoRef, team, login string) (bool, error)
+}
+
+// ReviewerRequests is a narrow notification capability. It never changes decision authority or removes requests.
+type ReviewerRequests interface {
+    RequestedReviewers(ctx context.Context, r RepoRef, number int) (users, teams []string, err error)
+    RequestReviewers(ctx context.Context, r RepoRef, number int, users, teams []string) error
 }
 ```
 

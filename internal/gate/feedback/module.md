@@ -6,16 +6,12 @@
 
 ## Purpose
 
-`feedback` is the only writer of what a developer sees: the `archfit/gate` and `archfit/state` check runs,
-the single PR comment, and the default branch's repair issue. It also makes the gate check its own receipt, so that GitHub holds the
-idempotency key and the facts a later sweep compares. Without it, retries would spam comments, an old run
-could paint over a newer head, and the App would need a database to remember what it said. The only thing it
-keeps in the Store is a short-lived lease per head SHA, because GitHub has no conditional check-run write.
+`feedback` is the writer of the gate/state assessments, their result comment, pending checks, the pre-report architecture-decision banner and the default-branch repair issue. Authenticated decision-reason comments are mirrored by `gate/inputs` from its durable ledger. Feedback also makes each check its own receipt, so GitHub holds the idempotency key and facts a later sweep compares. The Store contains short-lived per-head publication leases only.
 
 ## Functional Responsibilities
 
-- Publish one `Publication`: `archfit/state` always, `archfit/gate` only in required mode, the comment for pull requests.
-- Create the pending (`in_progress`) gate check for a new head.
+- Publish one `Publication`: `archfit/state` always, `archfit/gate` only in required mode, and the result comment for pull requests. Include the protected-path decision banner within the byte budget of check summaries and the result comment, without treating report claims as authority. Keep the comment marker and receipt first for ordering and waiver updates.
+- Create the pre-report App-authored decision comment for a protected-path PR and, in required mode, the pending (`in_progress`) gate check with the same banner. Update the banner idempotently as the candidate changes.
 - Read back the gate check of a head SHA as `CheckState`, including the parsed `Receipt`.
 - Add or refresh the waiver-expiry notice in the comment.
 - Render the comment's first screen for a person: the assessment with what the App checked it with (the approved
@@ -121,11 +117,12 @@ type CheckState struct {
 }
 
 type Publisher interface {
-    // Publish writes archfit/state, archfit/gate (only when Settings.Gate is required) and the
-    // single PR comment. It is idempotent per Receipt and never overwrites feedback of a newer head or run. A
-    // re-run on unchanged inputs updates the checks and the one comment in place; Receipt.IdentityKey never suppresses
-    // a publication (the identity is a claim inside a customer-attested report).
+    // Publish writes archfit/state, archfit/gate (only when Settings.Gate is required) and the PR result comment. A
+    // decision banner is prepended when protected paths change. It is idempotent per Receipt and never overwrites newer feedback.
     Publish(ctx context.Context, p Publication) error
+    // DecisionBanner writes the protected-path/owner/source/mode banner before a report exists. In required mode it
+    // creates or updates the pending gate check; otherwise it writes the App-authored PR banner comment.
+    DecisionBanner(ctx context.Context, t Target, tr Trusted) error
     // Pending creates the in_progress gate check if none exists on the head SHA.
     Pending(ctx context.Context, t Target) error
     State(ctx context.Context, t Target) (CheckState, error)
@@ -146,8 +143,8 @@ type Decision func(ctx context.Context, current CheckState) (*Publication, error
 ```
 
 ```go
-// New returns a Publisher that is safe for concurrent use, also across instances that share s: Publish, Pending,
-// Warn and Reconcile hold a per-head publication lease in s, so that two publishers for one head SHA never interleave
+// New returns a Publisher that is safe for concurrent use, also across instances that share s: Publish, DecisionBanner,
+// Pending, Warn and Reconcile hold a per-head publication lease in s, so that two publishers for one head SHA never interleave
 // their reads and writes. It keeps no other state between calls; GitHub holds the receipts.
 // appURL is the App's base URL without a trailing slash (ARCHFIT_BASE_URL); the PR comment links to the App's pull
 // request page under it. "" writes no link.
@@ -194,7 +191,8 @@ decided here; it restates what the check recorded.
 | State check name      | `archfit/state`                                                                 |
 | `external_id`         | `v1:<run_id>:<attempt>:<report_digest>`; empty for a pending check              |
 | Receipt marker        | `<!-- archfit:receipt {compact JSON of Receipt} -->`, last line of each summary |
-| Comment marker        | `<!-- archfit:comment -->`, first line of the comment                           |
+| Owner decision banner marker | `<!-- archfit-owner-decision-banner:v1 -->`, first line until a result is written; it is retained above the result section |
+| Comment marker        | `<!-- archfit:comment -->`, first line of the result comment (after the banner when present) |
 | Comment head marker   | `<!-- archfit:head <sha> run <id>.<attempt> -->`, second line                   |
 | Waiver notice section | `<!-- archfit:waiver <YYYY-MM-DD> -->` … `<!-- /archfit:waiver -->`             |
 | Agent task block      | `<!-- archfit:agent-tasks -->`, a `json` fence, `<!-- /archfit:agent-tasks -->` |
@@ -212,10 +210,12 @@ marker and an `external_id` with run ID, attempt and report digest exist.
 | --------------------------------------------- | --------------- | ---------------------------------------------- | ------- |
 | Pull request, `Settings.Gate == GateRequired` | yes             | yes, `Conclusion = string(Outcome.Conclusion)` | yes     |
 | Pull request, advisory                        | yes             | no                                             | yes     |
-| Pull request, `!Trusted.SettingsFound`        | yes             | no                                             | no      |
+| Pull request, `!Trusted.SettingsFound`        | yes             | no                                             | no result comment; an event cannot publish owners without settings |
 | Push (`Target.PullRequest == 0`)              | yes             | no                                             | no      |
 | Merge group (`Target.MergeGroup`), `GateRequired` | yes         | yes, `Conclusion = string(Outcome.Conclusion)`, on the group commit | no |
 | Merge group, advisory                         | yes             | no                                             | no      |
+
+`DecisionBanner` separately runs for a new protected-path PR before a report exists: it writes one marked App PR comment and, in required mode, a pending `archfit/gate` check. The first result publication reuses the marked comment rather than creating a second result comment.
 
 `archfit/state` conclusion:
 

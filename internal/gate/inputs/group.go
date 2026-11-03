@@ -50,6 +50,8 @@ func (r *resolver) resolveGroup(ctx context.Context, t Target, now time.Time) (T
 	if err != nil {
 		return Trusted{}, fmt.Errorf("inputs: default branch head: %w", err)
 	}
+	t.BaseSHA = snapshot
+	out.SettingsSHA = snapshot
 	raw, err := r.file(ctx, t, snapshot, settings.Path)
 	if err != nil {
 		return Trusted{}, err
@@ -175,7 +177,7 @@ func (r *resolver) members(ctx context.Context, t Target, entries []api.QueueEnt
 // approved m's head under the existing pull request rules (a GitHub review of the head, else the App record) and the
 // digests of those paths at its head.
 func (r *resolver) approveMember(ctx context.Context, t Target, s settings.Settings, m *member) error {
-	mt := Target{Repo: t.Repo, PullRequest: m.number, HeadSHA: m.head, BaseRef: t.BaseRef}
+	mt := Target{Repo: t.Repo, PullRequest: m.number, HeadSHA: m.head, BaseRef: t.BaseRef, BaseSHA: t.BaseSHA}
 	paths, err := r.changedProtected(ctx, mt, s)
 	if err != nil || len(paths) == 0 {
 		return err
@@ -185,14 +187,9 @@ func (r *resolver) approveMember(ctx context.Context, t Target, s settings.Setti
 	if err != nil {
 		return fmt.Errorf("inputs: reviews: %w", err)
 	}
-	by, err := approver(reviews, s, m.head, r.member(ctx, mt))
+	by, _, _, err := r.approvalDecision(ctx, mt, s, paths, reviews)
 	if err != nil {
-		return fmt.Errorf("inputs: team membership: %w", err)
-	}
-	if by == "" {
-		if by, err = r.recorded(ctx, mt, s, paths, reviews); err != nil {
-			return err
-		}
+		return err
 	}
 	if by == "" {
 		return nil

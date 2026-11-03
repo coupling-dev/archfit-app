@@ -1,10 +1,26 @@
-// The words of the owner approval on the pull request page. The server decides who may approve; the page only shows
-// the button it offers, and only while the approval is missing.
+// The words of the architecture-decision banner. The server decides who may act; these helpers only hide actions
+// that the server will refuse because another owner or a native review has an active objection.
 
 import type { Approval } from './api';
 
-export function offersApprove(a: Approval): boolean {
-  return a.state === 'missing' && a.can_approve && a.digests !== null;
+export function offersApprove(a: Approval, login = ''): boolean {
+  const blocked = a.objections.some(
+    (objection) => !objection.overridden && (objection.source === 'github' || !sameLogin(objection.login, login)),
+  );
+  return a.state === 'missing' && a.can_approve && a.digests !== null && !blocked;
+}
+
+export function offersOverride(a: Approval): boolean {
+  return (
+    a.state === 'missing' &&
+    a.can_approve &&
+    a.digests !== null &&
+    a.objections.some((objection) => !objection.overridden)
+  );
+}
+
+function sameLogin(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase();
 }
 
 // digestWord is what the page says a protected file holds at the head.
@@ -14,7 +30,9 @@ export function digestWord(a: Approval, path: string): string {
 }
 
 export function stateLine(a: Approval, head: string): string {
+  if (a.objections.some((objection) => !objection.overridden))
+    return `An owner requested changes on candidate ${head}. Review the objections below.`;
   return a.state === 'granted'
-    ? `Approved by @${a.by} for commit ${head}.`
-    : `An architecture owner must approve commit ${head} before the gate accepts these files.`;
+    ? `An eligible owner approved candidate ${head}. This does not mean the check passed or the pull request merged.`
+    : `An architecture owner must decide on candidate ${head}; a new push needs a new decision.`;
 }
