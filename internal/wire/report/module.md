@@ -975,3 +975,16 @@ the tests decode each one as the release that produced it (synthetic ones as v3.
 - **Test name**: `TestWaiverStatusesSurvive`
   **Scenario**: the waiver fixture with one `waived` and one `expired_waiver` finding.
   **Expected behavior**: both decode with their status; the expired one is not hidden or re-labelled.
+
+### Additive ratchet inventory candidate
+
+The decoder also reads the optional `metric_ratchets` inventory from the unreleased engine candidate.
+The published v3.4.0 schema and source note remain unchanged under `testdata/schema/`.
+The additive candidate contract lives under `testdata/schema-candidate/` with separate provenance.
+A contract test retains every published constraint and checks the candidate's complete key set.
+This does not approve a new engine image, version, or manifest entry.
+
+Absent inventory means an older producer did not report it. An explicit empty array means no implicit comparisons apply.
+Each evaluated row carries baseline, current, delta and threshold evidence; unmeasured rows carry reasons without comparison numbers.
+The decoder rejects duplicate metrics, incomplete comparisons, and inventories that conceal an existing required metric gap.
+The feedback renders measurement counts and rows separately from declared rules and finding acceptance.

@@ -13,19 +13,20 @@ type optInt int
 type optBool bool
 
 type shadowReport struct {
-	SchemaVersion *string                    `json:"schema_version"`
-	Verdict       *string                    `json:"verdict"`
-	Identity      *shadowIdentity            `json:"identity"`     // required from identityFrom
-	GateReasons   []string                   `json:"gate_reasons"` // v3.3.0: the coupling gate's reasons, when there are any
-	Decision      *shadowDecision            `json:"decision"`
-	Comparison    *shadowComparison          `json:"comparison"`
-	GateReference *shadowComparison          `json:"gate_reference"`
-	Measurement   shadowMeasurement          `json:"measurement"` // dropped
-	Dimensions    map[string]shadowDimension `json:"dimensions"`
-	Coverage      *shadowCoverage            `json:"coverage"`
-	Findings      []shadowFinding            `json:"findings"`
-	AgentTasks    []shadowTask               `json:"agent_tasks"`
-	Seams         []shadowSeam               `json:"seams"`
+	MetricRatchets []shadowMetricRatchetCheck `json:"metric_ratchets"`
+	SchemaVersion  *string                    `json:"schema_version"`
+	Verdict        *string                    `json:"verdict"`
+	Identity       *shadowIdentity            `json:"identity"`     // required from identityFrom
+	GateReasons    []string                   `json:"gate_reasons"` // v3.3.0: the coupling gate's reasons, when there are any
+	Decision       *shadowDecision            `json:"decision"`
+	Comparison     *shadowComparison          `json:"comparison"`
+	GateReference  *shadowComparison          `json:"gate_reference"`
+	Measurement    shadowMeasurement          `json:"measurement"` // dropped
+	Dimensions     map[string]shadowDimension `json:"dimensions"`
+	Coverage       *shadowCoverage            `json:"coverage"`
+	Findings       []shadowFinding            `json:"findings"`
+	AgentTasks     []shadowTask               `json:"agent_tasks"`
+	Seams          []shadowSeam               `json:"seams"`
 }
 
 type shadowIdentity struct {

@@ -77,6 +77,7 @@ func (c *checker) report(s *shadowReport) Report {
 	r.Decision = object(c, "decision", s.Decision, c.decision)
 	r.Comparison = object(c, "comparison", s.Comparison, c.comparison)
 	r.GateReference = optional(c, "gate_reference", s.GateReference, c.reference)
+	r.MetricRatchets = c.metricRatchets(s.MetricRatchets, r.GateReference, r.Decision)
 	r.Dimensions = c.dimensions(s.Dimensions)
 	r.Coverage = object(c, "coverage", s.Coverage, c.coverage)
 	r.Findings = list(c, "findings", s.Findings, maxFindings, true, c.finding)

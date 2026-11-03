@@ -43,13 +43,7 @@ func EvidenceSummary(r Report) string {
 	if d, ok := r.Dimensions["intent"]; ok && d.Coverage.Basis == "declared rules evaluated" {
 		declared = fmt.Sprintf("Declared rule checks: %d/%d evaluated.", d.Coverage.Observed, d.Coverage.Total)
 	}
-	metric := "Implicit accepted-reference metric checks: inventory not reported."
-	for _, u := range r.Decision.UnevaluatedRequiredRules {
-		if u.RuleID == "metric_ratchets" {
-			metric = "Implicit accepted-reference metric checks: unavailable — " + u.Reason + "."
-			break
-		}
-	}
+	metric := metricRatchetEvidence(r)
 	ref := "Accepted reference: not reported."
 	if r.GateReference != nil {
 		ref = "Accepted reference: " + strings.ReplaceAll(r.GateReference.Status, "_", " ") + "."

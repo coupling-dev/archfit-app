@@ -94,6 +94,7 @@ func recoveryRole(code verdict.ReasonCode) string {
 
 func compactEvidence(p Publication) string {
 	lines := []string{headGaps, "", text(report.EvidenceSummary(*p.Report))}
+	lines = append(lines, metricRatchetLines(p.Report, commentFindingCap)...)
 	var rules []report.UnevaluatedRule
 	for _, u := range p.Report.Decision.UnevaluatedRequiredRules {
 		if u.RuleID != "metric_ratchets" {
