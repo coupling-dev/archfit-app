@@ -102,6 +102,12 @@ func pushTarget(head string) inputs.Target {
 	return t
 }
 
+func groupTarget(head string) inputs.Target {
+	t := pushTarget(head)
+	t.MergeGroup = true
+	return t
+}
+
 func trusted(gate settings.GateMode) inputs.Trusted {
 	return inputs.Trusted{
 		Settings:        settings.Settings{Version: 1, Owners: []string{"alice"}, Gate: gate},

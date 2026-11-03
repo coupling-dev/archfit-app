@@ -30,6 +30,8 @@ func TestPublishMatrix(t *testing.T) {
 		{"pull request, advisory", prTarget(headB), trusted(settings.GateAdvisory), 0, 1},
 		{"pull request, settings missing", prTarget(headB), noSettings, 0, 0},
 		{"push", pushTarget(headB), trusted(settings.GateRequired), 0, 0},
+		{"merge group, required", groupTarget(headB), trusted(settings.GateRequired), 1, 0},
+		{"merge group, advisory", groupTarget(headB), trusted(settings.GateAdvisory), 0, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -49,6 +49,15 @@ var fixtureCases = []fixtureCase{
 		Branch: "trunk", Pusher: "octocat",
 		ChangedPaths: []string{".archfit.yaml", "go.mod", "internal/api/handler.go", "legacy/old.go"},
 	}},
+	{"merge_group_checks_requested.json", "merge_group", Event{
+		Kind: MergeGroupRequested, InstallationID: 42, Repo: "acme/app", RepoPrivate: true,
+		HeadSHA: "2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a", HeadRepo: "acme/app", BaseRef: "main", DefaultBranch: "main",
+	}},
+	{"merge_group_destroyed.json", "merge_group", Event{
+		Kind: MergeGroupDestroyed, InstallationID: 42, Repo: "acme/app", RepoPrivate: true,
+		HeadSHA: "2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a", HeadRepo: "acme/app", BaseRef: "main", DefaultBranch: "main",
+		GroupReason: "dequeued",
+	}},
 	{"installation_created.json", "installation", Event{Kind: InstallationAdded, InstallationID: 6001, Account: "acme"}},
 	{"installation_deleted.json", "installation", Event{Kind: InstallationRemoved, InstallationID: 6001, Account: "acme"}},
 	{"installation_repositories_added.json", "installation_repositories", Event{

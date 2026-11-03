@@ -41,6 +41,7 @@ type Gate struct {
 	sweeper    sweep.Sweeper
 	actions    api.Actions
 	pulls      api.Pulls
+	queues     api.MergeQueues
 	comments   api.Comments
 	admissions admitter
 	now        func() time.Time
@@ -60,6 +61,7 @@ type github interface {
 	api.Checks
 	api.Comments
 	api.Issues
+	api.MergeQueues
 }
 
 func New(d Deps) *Gate {
@@ -71,15 +73,15 @@ func compose(gh github, v oidc.Verifier, s store.Store, adm admitter, audience s
 	if now == nil {
 		now = time.Now
 	}
-	resolver := inputs.New(gh, gh, s)
+	resolver := inputs.New(gh, gh, gh, s)
 	reqs := decisions.New(s, gh, gh, now)
 	publisher := feedback.New(gh, gh, gh, s, audience, now) // the audience is the App's base URL
 	return newGate(newReceiver(gh, v, audience, adm), resolver, reqs, publisher, feedback.NewRepairer(gh, gh, gh, gh, s, now),
-		sweep.New(gh, gh, gh, resolver, publisher, adm, reqs, c), gh, gh, gh, adm, now)
+		sweep.New(gh, gh, gh, resolver, publisher, adm, reqs, c), gh, gh, gh, gh, adm, now)
 }
 
-func newGate(rc ingest.Receiver, rs inputs.Resolver, rq requests, p feedback.Publisher, rp feedback.Repairer, sw sweep.Sweeper, a api.Actions, pl api.Pulls, cm api.Comments, adm admitter, now func() time.Time) *Gate {
-	return &Gate{receiver: rc, resolver: rs, requests: rq, publisher: p, repairer: rp, sweeper: sw, actions: a, pulls: pl, comments: cm, admissions: adm, now: now}
+func newGate(rc ingest.Receiver, rs inputs.Resolver, rq requests, p feedback.Publisher, rp feedback.Repairer, sw sweep.Sweeper, a api.Actions, pl api.Pulls, q api.MergeQueues, cm api.Comments, adm admitter, now func() time.Time) *Gate {
+	return &Gate{receiver: rc, resolver: rs, requests: rq, publisher: p, repairer: rp, sweeper: sw, actions: a, pulls: pl, queues: q, comments: cm, admissions: adm, now: now}
 }
 
 // UploadHandler serves POST /v1/reports.
@@ -94,7 +96,7 @@ func NewReceiver(gh *api.Client, v oidc.Verifier, audience string, adm *Admissio
 }
 
 func newReceiver(gh github, v oidc.Verifier, audience string, adm admitter) Receiver {
-	return ingest.New(gh, gh, gh, v, audience, adm)
+	return ingest.New(gh, gh, gh, gh, v, audience, adm)
 }
 
 // ClassifyDisplayReason republishes verdict's pure display-metadata classification through the gate facade.

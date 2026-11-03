@@ -39,6 +39,7 @@ const (
 	codeRunMismatch        = "run_mismatch"
 	codeStaleAttempt       = "stale_attempt"
 	codeStaleHead          = "stale_head"
+	codeStaleGroup         = "stale_group"
 	codeDigestMismatch     = "digest_mismatch"
 	codeRateLimited        = "rate_limited"
 )
@@ -47,6 +48,7 @@ type receiver struct {
 	repos    api.Repos
 	pulls    api.Pulls
 	actions  api.Actions
+	queues   api.MergeQueues
 	verifier oidc.Verifier
 	audience string
 	admit    Admitter
@@ -212,8 +214,9 @@ func (r *receiver) tenant(ctx context.Context, env envelope.Envelope, claims oid
 	if err != nil {
 		return fail(apiFailure(err, codeRunNotFound))
 	}
-	// Claims.SHA is the merge commit for pull_request runs, so it is compared for push only.
-	if run.Event != claims.EventName || (run.Event == eventPush && run.HeadSHA != claims.SHA) {
+	// Claims.SHA is the merge commit for pull_request runs, so it is compared for push and merge_group only: there it is
+	// the commit the run checked out.
+	if run.Event != claims.EventName || ((run.Event == eventPush || run.Event == eventMergeGroup) && run.HeadSHA != claims.SHA) {
 		return fail(reject(http.StatusForbidden, codeRunMismatch))
 	}
 	if run.Attempt != claims.RunAttempt {

@@ -89,6 +89,8 @@ func (g *Gate) decideAndPublish(ctx context.Context, u Upload) (verdict.Outcome,
 		HeadSHA:     u.Binding.HeadSHA,
 		BaseRef:     u.Binding.Repo.DefaultBranch,
 		Fork:        u.Binding.Fork,
+		// A merge group's members and inputs are read by gate/inputs from the queue, again inside the lease.
+		MergeGroup: u.Binding.MergeGroup,
 	}
 	problems := u.Problems
 	var shared []verdict.SharedPull

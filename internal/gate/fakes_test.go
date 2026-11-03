@@ -31,18 +31,19 @@ type fakeGitHub struct {
 	mu sync.Mutex
 
 	installations []api.Installation
-	repos         map[string]api.Repo       // by full name
-	files         map[string][]byte         // fileKey
-	pulls         map[string]api.Pull       // pullKey
-	changed       map[string][]string       // pullKey
-	reviews       map[string][]api.Review   // pullKey
-	teams         map[string]bool           // "team|login"
-	runs          map[int64]api.WorkflowRun // run IDs are unique across the fake
-	checks        map[string][]api.CheckRun // by full name
-	comments      map[string][]api.Comment  // pullKey; an issue's comments under its number
-	heads         map[string]string         // branchKey → head commit
-	issues        map[string][]fakeIssue    // by full name, the App's issues
-	unassignable  map[string]bool           // logins GitHub refuses to assign
+	repos         map[string]api.Repo         // by full name
+	files         map[string][]byte           // fileKey
+	pulls         map[string]api.Pull         // pullKey
+	changed       map[string][]string         // pullKey
+	reviews       map[string][]api.Review     // pullKey
+	teams         map[string]bool             // "team|login"
+	runs          map[int64]api.WorkflowRun   // run IDs are unique across the fake
+	checks        map[string][]api.CheckRun   // by full name
+	comments      map[string][]api.Comment    // pullKey; an issue's comments under its number
+	heads         map[string]string           // branchKey → head commit
+	issues        map[string][]fakeIssue      // by full name, the App's issues
+	unassignable  map[string]bool             // logins GitHub refuses to assign
+	queue         map[string][]api.QueueEntry // branchKey → merge queue entries
 	nextID        int64
 
 	fail        map[string]error // method name → injected error

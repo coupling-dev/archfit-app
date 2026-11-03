@@ -22,6 +22,8 @@ const (
 	InstallationAdded   EventKind = "installation_added"   // created, or repositories added
 	InstallationRemoved EventKind = "installation_removed" // deleted
 	ReposRemoved        EventKind = "repos_removed"
+	MergeGroupRequested EventKind = "merge_group_requested" // checks_requested: GitHub built a merge group commit
+	MergeGroupDestroyed EventKind = "merge_group_destroyed" // destroyed: merged, dequeued or invalidated
 	Ignored             EventKind = "ignored"
 )
 
@@ -46,6 +48,7 @@ type Event struct {
 	Author         string   // pull_commented only: the login that wrote the comment
 	AuthorType     string   // pull_commented only: the account type, "User" or "Bot"; "" when absent
 	Body           string   // pull_commented only: the comment text
+	GroupReason    string   // merge_group_destroyed only: "merged", "dequeued", "invalidated" or what GitHub sends
 }
 
 // Header names of a GitHub webhook delivery. Callers read these headers and pass their values to VerifyAny and Parse.

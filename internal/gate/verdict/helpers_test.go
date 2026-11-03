@@ -212,6 +212,9 @@ func successAllowed(f Facts) bool {
 	if f.Trusted.Approval != inputs.ApprovalNotRequired && f.Trusted.Approval != inputs.ApprovalGranted {
 		return false
 	}
+	if g := f.Trusted.Group; g != nil && (g.Problem != "" || g.Unapproved != "") {
+		return false
+	}
 	in := func(list []string, d string) bool { return d != "" && slices.Contains(list, d) }
 	if !in(f.Trusted.PolicyDigests, r.Comparison.ConfigHash) {
 		return false
@@ -285,6 +288,12 @@ func fuzzFacts(rng *rand.Rand) Facts {
 	if hit() {
 		f.Trusted.Approval = pick(rng, inputs.ApprovalGranted, inputs.ApprovalMissing, inputs.Approval(""), inputs.Approval("skipped"))
 		f.Trusted.ProtectedPaths = []string{".archfit.yaml", ".archfit-app.yaml"}
+	}
+	if hit() {
+		f.Trusted.Group = &inputs.Group{
+			Problem:    pick(rng, inputs.GroupProblem(""), inputs.GroupFork, inputs.GroupUnverified, inputs.GroupConflict, inputs.GroupProblem("ok")),
+			Unapproved: pick(rng, "", "#3 .archfit.yaml"),
+		}
 	}
 	if hit() {
 		f.Report = nil

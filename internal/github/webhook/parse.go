@@ -15,6 +15,7 @@ const (
 	typePush              = "push"
 	typeInstallation      = "installation"
 	typeInstallationRepos = "installation_repositories"
+	typeMergeGroup        = "merge_group"
 
 	branchRefPrefix = "refs/heads/"
 	shaLen          = 40
@@ -51,6 +52,10 @@ var actionKinds = map[string]map[string]EventKind{
 	},
 	typeIssueComment: {
 		"created": PullCommented, // only on a pull request: payload.kind checks issue.pull_request
+	},
+	typeMergeGroup: {
+		"checks_requested": MergeGroupRequested,
+		"destroyed":        MergeGroupDestroyed,
 	},
 	typeInstallation: {
 		"created": InstallationAdded,
@@ -103,6 +108,11 @@ type payload struct {
 	Sender struct {
 		Login string `json:"login"`
 	} `json:"sender"`
+	MergeGroup struct {
+		HeadSHA string `json:"head_sha"`
+		BaseRef string `json:"base_ref"` // "refs/heads/<branch>"
+	} `json:"merge_group"`
+	Reason     string `json:"reason"`
 	PusherType string `json:"pusher_type"`
 	Ref        string `json:"ref"`
 	After      string `json:"after"`
@@ -172,7 +182,14 @@ func Parse(eventType, deliveryID string, body []byte) (Event, error) {
 		ev.CommentID, ev.Author, ev.AuthorType, ev.Body = p.Comment.ID, p.Comment.User.Login, p.Comment.User.Type, p.Comment.Body
 		return ev, nil
 	}
-	if kind == DefaultBranchPush || kind == BranchPush {
+	if kind == MergeGroupRequested || kind == MergeGroupDestroyed {
+		// The group commit is a commit of this repository; base_ref names the queue's branch. Membership is read from
+		// GitHub's API by the gate, never from this payload.
+		ev.HeadSHA = p.MergeGroup.HeadSHA
+		ev.HeadRepo = ev.Repo
+		ev.BaseRef = strings.TrimPrefix(p.MergeGroup.BaseRef, branchRefPrefix)
+		ev.GroupReason = p.Reason
+	} else if kind == DefaultBranchPush || kind == BranchPush {
 		ev.HeadSHA = p.After
 		ev.HeadRepo = ev.Repo
 		ev.Branch = strings.TrimPrefix(p.Ref, branchRefPrefix)

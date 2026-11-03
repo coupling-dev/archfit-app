@@ -15,6 +15,7 @@ const (
 	eventPullRequest = "pull_request"
 	eventPush        = "push"
 	eventDispatch    = "workflow_dispatch"
+	eventMergeGroup  = "merge_group"
 
 	branchRefPrefix   = "refs/heads/"
 	pullStateOpen     = "open"
@@ -41,7 +42,7 @@ func eligible(kind envelope.Kind, event string, onDefaultBranch bool) bool {
 	case eventPush:
 		// A re-anchor is a dispatched run only: it rewrites a protected baseline on purpose, never from a push.
 		return onDefaultBranch && kind != envelope.KindReanchor
-	case eventPullRequest:
+	case eventPullRequest, eventMergeGroup:
 		return kind == envelope.KindReport
 	case eventDispatch:
 		return kind == envelope.KindDiscovery || kind == envelope.KindBaseline || kind == envelope.KindReanchor
@@ -71,8 +72,14 @@ func (r *receiver) bind(ctx context.Context, kind envelope.Kind, env envelope.En
 		RunAttempt:   claims.RunAttempt,
 		WorkflowPath: oidc.WorkflowPath(claims.JobWorkflowRef, repo.FullName),
 	}
-	if onBranch {
+	if onBranch && run.Event != eventMergeGroup {
 		b.BaseRef = branch
+	}
+	if run.Event == eventMergeGroup && kind == envelope.KindReport {
+		if err := r.queued(ctx, repo, run.HeadSHA); err != nil {
+			return Binding{}, nil, err
+		}
+		b.MergeGroup = true
 	}
 
 	if run.Event == eventPullRequest {
@@ -99,6 +106,22 @@ func (r *receiver) bind(ctx context.Context, kind envelope.Kind, env envelope.En
 		problems.add(ProblemEnvelopeMismatch)
 	}
 	return b, problems, nil
+}
+
+// queued requires a merge group of the default branch's queue to have head as its commit, by GitHub's GraphQL entries.
+// The run's queue branch name is never read: only an entry GitHub lists binds the group. None is 409 stale_group: the
+// group was destroyed, rebuilt or merged, or belongs to another branch's queue, which the App does not gate.
+func (r *receiver) queued(ctx context.Context, repo api.Repo, head string) error {
+	entries, err := r.queues.MergeQueue(ctx, repo.RepoRef, repo.DefaultBranch)
+	if err != nil {
+		return apiFailure(err, "")
+	}
+	for _, e := range entries {
+		if e.HeadSHA == head {
+			return nil
+		}
+	}
+	return reject(http.StatusConflict, codeStaleGroup)
 }
 
 // resolvePull finds the one pull request whose head is the run's head. nil means the

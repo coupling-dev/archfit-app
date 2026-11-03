@@ -32,8 +32,11 @@ type Target struct {
 	Repo        api.Repo
 	PullRequest int // 0 for a default-branch push
 	HeadSHA     string
-	BaseRef     string // protected ref; the default branch for a push
+	BaseRef     string // protected ref; the default branch for a push and a merge group
 	Fork        bool
+	// MergeGroup marks HeadSHA as a merge group commit of BaseRef's merge queue; PullRequest is 0. Its inputs are read
+	// at immutable commit SHAs and its members' approvals are their own pull requests' (resolveGroup).
+	MergeGroup bool
 }
 
 type Approval string
@@ -57,6 +60,26 @@ type Trusted struct {
 	EarliestWaiverExpiry time.Time // zero = no waivers
 	Suspended            bool
 	Entitlement          Entitlement
+	// Group is set for a merge-group Target only: what the queue says about the group's members. nil otherwise.
+	Group *Group
+}
+
+// GroupProblem is why a merge group's inputs cannot be trusted as a whole; "" when they can.
+type GroupProblem string
+
+const (
+	GroupFork       GroupProblem = "fork"       // a member comes from a fork
+	GroupUnverified GroupProblem = "unverified" // the queue, a member or the group commit is not what GitHub says now
+	GroupConflict   GroupProblem = "conflict"   // a changed protected file is not exactly one approved member's file
+)
+
+// Group is the merge-group part of Trusted. Detail names members and paths ("#12 .archfit.yaml"), never content.
+type Group struct {
+	Problem GroupProblem
+	Detail  string
+	// Unapproved names each member that changes a protected path without a current owner approval of its own head,
+	// as "#<n> <path>, <path>"; "" when there is none. Approval is then ApprovalMissing.
+	Unapproved string
 }
 
 type Resolver interface {
