@@ -24,6 +24,9 @@ PR that violates it.
   files the owner was shown (`Candidate`), and say who may make one (`CanApprove`).
   `CanDecide` is the same owner rule without a pull request's protected paths: who may decide a decision request.
 - Record who pushed a head (`RecordPusher`), from a signed `push` delivery, for attribution only.
+- Resolve the trusted inputs of a merge group commit (`Target.MergeGroup`): read the default branch's merge queue,
+  take the queued pull requests ahead of and at the group as its members, read every protected file at two commit SHAs,
+  and accept a changed file only when one owner-approved member made exactly it.
 - When approved, also accept the head digest of a changed policy, baseline or labels file, for this PR only.
 - Report the earliest upcoming waiver expiry.
 - Read the cached `Entitlement` from the Store and derive `Suspended`.
@@ -44,6 +47,8 @@ rules and the protected path set will change with pilots.
 - The approval algorithm: which reviews count, how owners and teams are matched, latest-review-wins, that an agent
   identity of the settings (`Settings.IsAgent`) never approves, and when an approval recorded in the App holds.
 - The exception rule for owner-approved head policy, baseline and labels digests.
+- The merge group rules: who the members are, the snapshot commit `S`, per-file attribution of a change to exactly one
+  owner-approved member, and that the group commit itself is never approved.
 - Bootstrap behavior when no settings file exists.
 - How a Store failure, a missing record, or a malformed record maps to "not suspended".
 - The suspension formula and the rule that public repositories are never suspended.
@@ -103,13 +108,16 @@ func Owner(fullName string) string
 ```
 
 ```go
-// Target is the pull request (or default-branch push) whose trusted inputs are resolved.
+// Target is the pull request (or default-branch push, or merge group) whose trusted inputs are resolved.
 type Target struct {
     Repo        Repo
-    PullRequest int // 0 for a default-branch push
+    PullRequest int // 0 for a default-branch push and a merge group
     HeadSHA     string
-    BaseRef     string // protected ref; the default branch for a push
+    BaseRef     string // protected ref; the default branch for a push and a merge group
     Fork        bool
+    // MergeGroup marks HeadSHA as a merge group commit of BaseRef's merge queue; PullRequest is 0. Its inputs are read
+    // at immutable commit SHAs and its members' approvals are their own pull requests' (resolveGroup).
+    MergeGroup bool
 }
 
 type Approval string
@@ -133,13 +141,34 @@ type Trusted struct {
     EarliestWaiverExpiry time.Time // zero = no waivers
     Suspended            bool
     Entitlement          Entitlement
+    // Group is set for a merge-group Target only: what the queue says about the group's members. nil otherwise.
+    Group *Group
+}
+
+// GroupProblem is why a merge group's inputs cannot be trusted as a whole; "" when they can.
+type GroupProblem string
+
+const (
+    GroupFork       GroupProblem = "fork"       // a member comes from a fork
+    GroupUnverified GroupProblem = "unverified" // the queue, a member or the group commit is not what GitHub says now
+    GroupConflict   GroupProblem = "conflict"   // a changed protected file is not exactly one approved member's file
+)
+
+// Group is the merge-group part of Trusted. Detail names members and paths ("#12 .archfit.yaml"), never content.
+type Group struct {
+    Problem GroupProblem
+    Detail  string
+    // Unapproved names each member that changes a protected path without a current owner approval of its own head,
+    // as "#<n> <path>, <path>"; "" when there is none. Approval is then ApprovalMissing.
+    Unapproved string
 }
 ```
 
 ```go
 type Resolver interface {
     // Resolve reads the protected ref and reviews. It never reads policy, settings, baseline,
-    // owners, or CODEOWNERS from the head tree, except to hash an owner-approved candidate.
+    // owners, or CODEOWNERS from the head tree, except to hash an owner-approved candidate. A merge-group
+    // Target takes the separate path of "Merge group resolution" below.
     Resolve(ctx context.Context, t Target, now time.Time) (Trusted, error)
     // RecordPusher adds the login that pushed t's head, from a signed push delivery, to the record of who pushed it.
     // The record is attribution only: no push approves anything. "" records nothing. Opening a pull request records
@@ -180,7 +209,8 @@ var (
 ```
 
 ```go
-func New(repos Repos, pulls Pulls, s Store) Resolver
+// New returns the Resolver. queues is read only for a merge-group Target.
+func New(repos Repos, pulls Pulls, queues MergeQueues, s Store) Resolver
 ```
 
 ```go
@@ -267,6 +297,34 @@ superset stated in `MayBeProtected`.
 13. `EarliestWaiverExpiry` = the earliest `Waiver.Expires` that is not before `now`, over the base policy
     and the approved head policy; zero when there is none **[default: expired waivers are skipped so that
     an old expiry does not hide the next one]**.
+
+### Merge group resolution
+
+`Resolve` with `t.MergeGroup` runs steps 1 and 2, then this path; steps 3 to 13 do not run. `t.HeadSHA` is the group
+commit `X`, `t.BaseRef` the default branch, `t.PullRequest` 0. `Trusted.Group` is always set.
+
+1. Queue: `MergeQueues.MergeQueue(t.BaseRef)`, read before the snapshot so that a member merged in between is still a
+   member and its change is in `S`. Snapshot: `Repos.BranchHead(t.BaseRef)` once, `S`. A failure of either is an error.
+2. Settings at `S` (`Repos.File(ref = S, settings.Path)`). Absent or unparsable → `Trusted{SettingsFound: false}`,
+   `Group` empty, `Approval` `ApprovalNotRequired`. Every protected file is read by commit SHA, `S` or `X`, never by
+   branch name. Policy, baseline and labels digests of `S` and the waivers of the policy at `S` are the starting result.
+3. Members: the queue entries from position 1 up to the entry whose `HeadSHA` is `X`. None → `GroupUnverified`. Per
+   entry: `CrossRepo` → `GroupFork`; `Pulls.Pull` by number (`api.ErrNotFound` → `GroupUnverified`, other errors are
+   errors); `pull.HeadRepo` not this repository → `GroupFork`; not open, `BaseRef` not `t.BaseRef`, or head not the
+   entry's `PullHeadSHA` (or that is empty) → `GroupUnverified`. A problem stops the resolution with the `S` digests.
+4. Per member: the protected paths its own pull request changes (the rule of step 8, by the settings at `S`), and when
+   there are any, its owner approval of its own head by the rules of the pull request (reviews of the head, else the
+   App record) and the digests of those paths at its head. A member that changes a protected path without an approval
+   → `Group.Unapproved` (`"#<n> <path>, <path>; ..."`), `Approval` `ApprovalMissing`; this is so also when the group's
+   file equals `S`'s. Stop with the `S` digests.
+5. Per protected path, compare the blob at `S` with the blob at `X` (both absent, or equal bytes, is the same; an empty
+   file is present). `Trusted.ProtectedPaths` lists each path that differs or that a member changes. A differing path
+   is accepted only when exactly one member changes it and the digest of its head's blob equals that of `X`'s (both
+   absent when it deletes the file). No member, several, or another blob → `GroupConflict` (`Detail` lists
+   `"<path> <why>"`), `Approval` `ApprovalMissing`; stop with the `S` digests.
+6. Otherwise: when any member holds an approval, `Approval` `ApprovalGranted` and `ApprovedBy` is
+   `"<login> (#<n>), ..."`; else `ApprovalNotRequired`. The accepted digests, and the waivers, are those of the blobs at
+   `X` (equal to `S`'s for a path no member changed). The group commit is never an approval subject.
 
 ### Approval algorithm
 
@@ -510,7 +568,7 @@ func Waivers(policy []byte) ([]Waiver, error)
 ### github/api
 
 - **Counterpart**: internal/github/api
-- **Direction**: inputs depends on github/api (role interfaces `Repos`, `Pulls`)
+- **Direction**: inputs depends on github/api (role interfaces `Repos`, `Pulls`, `MergeQueues`)
 - **Strength**: contract
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: high (inputs side); the client is low
@@ -518,9 +576,12 @@ func Waivers(policy []byte) ([]Waiver, error)
 - **Shared knowledge**: `File` takes any ref (branch name or SHA) and returns `api.ErrNotFound` for an
   absent file. `ErrRateLimited` is the sentinel returned after bounded backoff. `Review.CommitSHA` is the
   head SHA the review was submitted on. `ChangedFiles` lists both the old and the new path of a rename, and
-  sets `truncated` when GitHub cut the list off. `BranchHead`, `PullByHead`, `OpenPulls` and `Pull` are not
-  called here. Used methods: `Repos.File`, `Pulls.ChangedFiles`, `Pulls.Reviews`,
-  `Pulls.TeamMember`. `Installation` is not used here.
+  sets `truncated` when GitHub cut the list off. `PullByHead` and `OpenPulls` are not
+  called here; `BranchHead` and `Pull` only for a merge group. `MergeQueue` returns the entries of a branch's queue in
+  position order, none when it has no queue; a missing Merge queues permission (`api.ErrQueueForbidden`) and a queue
+  over the read bound (`api.ErrQueueTooLong`) are errors, never an empty queue. Used methods: `Repos.File`,
+  `Pulls.ChangedFiles`, `Pulls.Reviews`, `Pulls.TeamMember`, and for a merge group `Repos.BranchHead`, `Pulls.Pull`,
+  `MergeQueues.MergeQueue`. `Installation` is not used here.
 
 <!-- contract: RepoRef, Repo, ErrNotFound, ErrRateLimited — restated from internal/github/api/module.md -->
 ```go
@@ -606,6 +667,22 @@ type Pulls interface {
 }
 ```
 
+<!-- contract: MergeQueues, QueueEntry — restated from internal/github/api/module.md -->
+```go
+type QueueEntry struct {
+    Position    int    // 1 is the front of the queue
+    HeadSHA     string // the entry's merge group commit
+    BaseSHA     string
+    PullRequest int
+    PullHeadSHA string // the pull request head the entry was built from
+    CrossRepo   bool   // the pull request comes from a fork
+}
+
+type MergeQueues interface {
+    MergeQueue(ctx context.Context, r RepoRef, branch string) ([]QueueEntry, error)
+}
+```
+
 ### Consumers (inbound)
 
 - **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Constructs the resolver, calls `Resolve`
@@ -613,7 +690,7 @@ type Pulls interface {
   with `MayBeProtected`, re-publishes `Entitlement` and `EntitlementKey` to `control/account`, and `Target`,
   `Candidate` and the refusals of an approval to `control/ui`, whose pull request page reaches `Candidate`,
   `CanApprove` and `Approve` only through the façade.
-- **internal/gate/verdict**: model, gate / 1 / 1, high, balanced. Reads `Trusted`; calls `Accepts` for the digest checks.
+- **internal/gate/verdict**: model, gate / 1 / 1, high, balanced. Reads `Trusted` (`Group` included); calls `Accepts` for the digest checks.
 - **internal/gate/feedback**: model, gate / 1 / 1, high, balanced. Reads `Target` and `Trusted`.
 - **internal/gate/ingest** and **internal/gate/sweep** (through the gate façade): contract, gate / 1 / 1, high,
   balanced. Ask `Admitted` for the resolved installation and owner, and treat an error as "retry".
@@ -630,6 +707,7 @@ type Pulls interface {
 - A changed suspension formula or entitlement field.
 - Another way to approve an installation (a different configured list, a self-service flow).
 - Caching of protected-ref reads inside one process, if rate limits demand it.
+- A queue on another branch, or a queue over 1,000 entries (`api.ErrQueueTooLong` today).
 
 ## Constraints and Invariants
 
@@ -637,7 +715,11 @@ type Pulls interface {
   `BaseRef` only. The single exception: the digest of a head policy, baseline or labels file for a PR whose exact head
   SHA a base-version owner approved. `Candidate` hashes the changed protected files at the head to show and bind what
   an owner approves; nothing in them is believed. CODEOWNERS is never read.
-- For a fork, no head file is read and approval is never granted.
+- For a fork, no head file is read and approval is never granted. A merge group with a fork member is `GroupFork`.
+- A merge group's membership comes from GitHub's queue and the pull requests read again by number; nothing the uploader
+  states selects a member, and the `gh-readonly-queue/...` branch name is never read. A merge group commit is never an
+  approval subject: only a member's own head is. An accepted group digest is the blob at `X`, once exactly one
+  approved member's head holds it.
 - Approval is bound to `t.HeadSHA`. Any new commit invalidates it.
 - One digest predicate and one protected path list. No other gate module compares a digest with a trusted list or
   names a protected path; they call `Accepts`, `First`, `ProtectedPaths` and `MayBeProtected`. The literal
@@ -666,7 +748,7 @@ type Pulls interface {
 
 ## Test Specification
 
-Fakes: in-memory `Repos` and `Pulls` with per-ref file maps and call recording; `store.NewMemory` plus a
+Fakes: in-memory `Repos`, `Pulls` and `MergeQueues` with per-ref file maps and call recording; `store.NewMemory` plus a
 failing `Store` stub. `NewMemory` is the in-process Store constructor of `internal/store`.
 
 ### Unit Tests
@@ -783,6 +865,12 @@ failing `Store` stub. `NewMemory` is the in-process Store constructor of `intern
 
 ### Behavior Tests
 
+- **Test name**: `TestMergeGroupInputs`
+  **Scenario**: table over a two-entry queue: a group that changes no protected file; an approved policy change that is the combined blob (also approved by a team member); an unapproved member change, also one the group reverts; an agent's approval, an approval of an older head, a withdrawn approval; two approved members changing one file; a combined file that is not the approved head's; a protected change no member makes; an approved deletion of the baseline; a member behind the group; a fork member (flagged by the queue, or only by the pull request); a member whose head moved, into another base, or closed; a group commit the queue no longer lists.
+  **Expected behavior**: `S`'s digests and `ApprovalNotRequired`; `X`'s digests, `ApprovalGranted`, `ApprovedBy` naming the member; `Group.Unapproved` and `ApprovalMissing`; same, with no approval counted; `GroupConflict`; `GroupConflict`; `GroupConflict`; the deletion accepted; the member behind does not count; `GroupFork`; `GroupUnverified`; `GroupUnverified`.
+- **Test name**: `TestMergeGroupWaiversComeFromTheAcceptedPolicy`, `TestMergeGroupSoleOwnerApprovesInTheApp`, `TestMergeGroupReadFailuresAreErrors`, `TestMergeGroupWithoutSettingsIsNotOnboarded`
+  **Scenario**: a waiver in the policy at `X`; an owner approval recorded in the App; a failing queue, snapshot, file or pull request read; no settings file at `S`.
+  **Expected behavior**: the expiry of the accepted policy; the member counts as approved; an error and the zero `Trusted`; `SettingsFound` false.
 - **Test name**: `TestHeadEditsCannotWeakenInputs` (T12)
   **Scenario**: the PR edits policy, baseline, settings (adds the author as owner, switches to advisory) and the workflow, with no owner approval.
   **Expected behavior**: digests, owners, gate mode and workflow path are the base values; `ApprovalMissing`; all changed protected paths listed; the head baseline and labels digests are never accepted (no blanket re-baseline, no head-edited labels).

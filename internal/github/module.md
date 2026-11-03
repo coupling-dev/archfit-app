@@ -16,7 +16,7 @@ URL shapes, headers, pagination and rate-limit rules would leak into the core.
 Delivered entirely by the children; the parent has no code beyond `doc.go`.
 
 - `auth`: App JWT, cached installation tokens, OAuth web flow.
-- `api`: REST client by role: repositories, pulls, checks, comments, Actions, changes, users.
+- `api`: REST client by role (and one GraphQL read for the merge queue): repositories, pulls, merge queues, checks, comments, Actions, changes, users.
 - `webhook`: signature verification and normalized events.
 - `oidc`: Actions OIDC token verification and workflow path extraction.
 
@@ -51,9 +51,9 @@ owner of what they restate. The parent package exports no identifier.
 ### Published children
 
 - `internal/github/auth`: `Credentials`, `TokenSource`, `OAuth`, `UserToken`, `New`.
-- `internal/github/api`: `RepoRef`, `Repo`, `Installation`, the role interfaces `Repos`, `Pulls`, `Checks`,
+- `internal/github/api`: `RepoRef`, `Repo`, `Installation`, the role interfaces `Repos`, `Pulls`, `MergeQueues`, `Checks`,
   `Comments`, `Actions`, `Changes`, `Users` with their data types, `Client`, `New`, and the sentinels
-  `ErrNotFound`, `ErrRateLimited`.
+  `ErrNotFound`, `ErrRateLimited`, `ErrQueueForbidden`, `ErrQueueTooLong`.
 - `internal/github/webhook`: `Event`, `EventKind` and its constants, `Verify`, `VerifyAny`, `Parse`, and the header name
   constants `HeaderEvent`, `HeaderDelivery`, `HeaderSignature`.
 - `internal/github/oidc`: `Claims`, `Verifier`, `New`, `WorkflowPath`, and the sentinel `ErrUnavailable`.
@@ -129,8 +129,8 @@ deeper module.
 - **Volatility**: Low
 - **Balanced?**: Yes: contract strength tolerates the distance
 - **Shared knowledge**: held by the children. App registration the branch assumes: permissions `checks: write`,
-  `pull_requests: write`, `contents: write`, `actions: write`, `metadata: read`, `members: read`, and no `workflows`
-  (no child writes `.github/workflows/`); events `pull_request`, `pull_request_review`, `push`, `installation`,
+  `pull_requests: write`, `contents: write`, `actions: write`, `metadata: read`, `members: read`, `merge_queues: read` (Merge queues: Read), and no `workflows`
+  (no child writes `.github/workflows/`); events `pull_request`, `pull_request_review`, `push`, `merge_group`, `installation`,
   `installation_repositories`; user authorization (OAuth) enabled.
 
 ## Internal Design

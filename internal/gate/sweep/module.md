@@ -130,6 +130,14 @@ func Withdrawn(rc Receipt, tr Trusted) bool
 // current there and inputs tr resolved there: Without(ReasonOwnerApprovalMissing) over the current receipt when the
 // repository is in required mode and that receipt is Withdrawn, else nil.
 func Withdrawal(t Target, current CheckState, tr Trusted) *Publication
+
+// GroupWithdrawal corrects a merge group's required check, decided inside the group commit's publication lease from
+// the check current there and the inputs tr resolved there. It is nil unless tr.Settings.Gate is required and the
+// check exists and is pending or decided (`Decided`); a check that already asks for action stays. Otherwise, when
+// verdict.GroupBlocked(tr) holds (a fork member, an unverified or destroyed group, conflicting protected files, a
+// member without its owner approval), it is that outcome over the current receipt. It never writes a success. The
+// hourly pass does not scan merge groups; only the gate's merge_group and review events call this.
+func GroupWithdrawal(t Target, current CheckState, tr Trusted) *Publication
 ```
 
 ### Traversal
@@ -462,13 +470,14 @@ Its one repository is the whole pass, so a stop leaves the work undone, and the 
 
 <!-- contract: Target, Trusted, Approval — restated from internal/gate/inputs/module.md -->
 ```go
-// Target is the pull request (or default-branch push) whose trusted inputs are resolved.
+// Target is the pull request (or default-branch push, or merge group) whose trusted inputs are resolved.
 type Target struct {
     Repo        Repo
-    PullRequest int // 0 for a default-branch push
+    PullRequest int // 0 for a default-branch push and a merge group
     HeadSHA     string
-    BaseRef     string // protected ref; the default branch for a push
+    BaseRef     string // protected ref; the default branch for a push and a merge group
     Fork        bool
+    MergeGroup  bool // HeadSHA is a merge group commit of BaseRef's merge queue
 }
 
 type Approval string
@@ -492,6 +501,7 @@ type Trusted struct {
     EarliestWaiverExpiry time.Time // zero = no waivers
     Suspended            bool
     Entitlement          Entitlement
+    Group                *Group // set for a merge-group Target only; Problem is "fork", "unverified" or "conflict"
 }
 ```
 
@@ -719,8 +729,12 @@ func Decide(f Facts) Outcome
 
 // Without returns the fixed outcome for a target that has no report: code is one of ReasonMissingUpload,
 // ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended, ReasonOwnerApprovalMissing,
-// ReasonTargetMoved.
+// ReasonTargetMoved, ReasonSharedHead, ReasonMergeGroupUnverified.
 func Without(code ReasonCode) Outcome
+
+// GroupBlocked is the outcome of a merge group whose trusted inputs no longer allow any result but action_required;
+// ok is false when they are no merge group's or allow a decision.
+func GroupBlocked(t Trusted) (out Outcome, ok bool)
 
 // TargetMoved is Without(ReasonTargetMoved) for a caller that knows what moved: cycle names the modules of the module
 // cycle the target and the pull request close together (none when the pull request could not be compared), base and
@@ -951,7 +965,7 @@ type Actions interface {
 - **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Constructs the sweeper with `Deps.Sweep` and the `Admissions` as the `Admitter`,
   calls `Run(ctx, Deps.Now())` from `Gate.Sweep` and `RunRepo` from `HandleEvent` on a protected default-branch push,
   calls `Recheck` from `HandleEvent` on a default-branch push that changes no protected path,
-  calls `Rerun` for `ReviewChanged` and `Without` for the fork refusal of a new head, re-publishes `Sweeper`, `Summary` and `Config` to `app`.
+  calls `Rerun` for `ReviewChanged`, `Without` for the fork refusal of a new head, and `GroupWithdrawal` inside a merge group's lease on `merge_group` `destroyed` and on a review of a queued pull request, re-publishes `Sweeper`, `Summary` and `Config` to `app`.
 
 ## Change Vectors
 
@@ -1137,6 +1151,9 @@ calls and serves `State` from what was published; injectable errors. Time is the
   9.2 turns green, the owner approves again, or the inputs become unreadable; separately, the lease is unavailable.
   **Expected behavior**: `owner_approval_missing` over 9.1, then over 9.2; nothing for the new approval; nothing
   and one counted error for the unreadable inputs and for the missing lease.
+- **Test name**: `GroupWithdrawal`, covered through the gate façade by `TestMergeGroupDestroyedInvalidatesItsResult`, `TestMergeGroupMergedKeepsItsResult` and `TestOwnerWithdrawalOnAQueuedPullDowngradesItsGroups`
+  **Scenario**: a pending or decided group check whose queue entry is gone, whose member changed, or whose member lost its owner approval; a check that already asks for action; advisory mode; no check; a merged group.
+  **Expected behavior**: `merge_group_unverified`, or `owner_approval_missing`, published over the current receipt; nothing for the others; a merged group's result stands.
 - **Test name**: `TestStoreOutageDoesNotSuspend` (T21)
   **Scenario**: the resolver reports `Suspended` false because the Store failed, for a pull with a `success` receipt.
   **Expected behavior**: no publication; the receipt stands.

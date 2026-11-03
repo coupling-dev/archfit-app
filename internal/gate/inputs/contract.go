@@ -51,7 +51,7 @@ const (
 type Trusted struct {
 	Settings             settings.Settings
 	SettingsFound        bool
-	PolicyDigests        []string // base digest, plus the head digest when Approval == ApprovalGranted
+	PolicyDigests        []string // base digest, plus the head digest when Approval == ApprovalGranted; a merge group: the one governing digest
 	BaselineDigests      []string // same rule; empty = no baseline on the protected ref
 	LabelsDigests        []string // same rule; empty = no labels file on the protected ref
 	ProtectedPaths       []string // protected paths this PR changes

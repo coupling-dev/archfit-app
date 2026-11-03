@@ -92,6 +92,10 @@ const (
     ReasonTargetMoved         ReasonCode = "target_moved" // the default branch moved and, with this change, closes a module cycle
     ReasonSharedHead          ReasonCode = "shared_head"  // another open pull request into a non-default branch has this head commit
     ReasonSuspended           ReasonCode = "subscription_suspended"
+    // ReasonMergeGroupConflict: a protected file a merge group changes is not exactly one owner-approved member's file.
+    ReasonMergeGroupConflict  ReasonCode = "merge_group_conflict"
+    // ReasonMergeGroupUnverified: GitHub does not confirm the merge group: it is gone, or a member is not the queued pull request.
+    ReasonMergeGroupUnverified ReasonCode = "merge_group_unverified"
 )
 
 // ClassifyDisplayReason checks the owned reason/category vocabulary for presentation, not gate policy.
@@ -142,8 +146,13 @@ func Decide(f Facts) Outcome
 
 // Without returns the fixed outcome for a target that has no report: code is one of ReasonMissingUpload,
 // ReasonStaleInputs, ReasonWaiverExpired, ReasonForkUnsupported, ReasonSuspended, ReasonOwnerApprovalMissing,
-// ReasonTargetMoved, ReasonSharedHead.
+// ReasonTargetMoved, ReasonSharedHead, ReasonMergeGroupUnverified.
 func Without(code ReasonCode) Outcome
+
+// GroupBlocked is the outcome of a merge group whose trusted inputs t no longer allow any result but action_required:
+// a fork member (fork_unsupported), an unverified group, conflicting protected files, or a member change without its
+// owner approval, in that order of checking. ok is false when t is no merge group's or allows a decision.
+func GroupBlocked(t Trusted) (out Outcome, ok bool)
 
 // SharedHead is Without(ReasonSharedHead) for a caller that knows the other pull requests. Detail lists the first five
 // as "#<number> into <base>" (then "and N more"); a base loses backticks and control characters and is cut to 80
@@ -193,7 +202,8 @@ never empty.
 | ---- | --------------------------------------------------------------------------------------------------------------- | ----------------------------- | -------------- |
 | 1    | `Trusted.Suspended`                                                                                             | `subscription_suspended`      | no             |
 | 2    | `!Trusted.SettingsFound`                                                                                        | `settings_missing`            | no             |
-| 3a   | `Problems` contains `fork`                                                                                      | `fork_unsupported`            | no             |
+| 3a0  | `Trusted.Group` is set and its `Problem` is neither empty, `conflict` nor `fork` (an unknown value too)          | `merge_group_unverified`      | no             |
+| 3a   | `Problems` contains `fork`, or `Trusted.Group.Problem` is `fork`                                                | `fork_unsupported`            | no             |
 | 3b   | `Problems` contains `unsupported_event`                                                                         | `unsupported_event`           | no             |
 | 3c   | `Problems` contains `envelope_mismatch`                                                                         | `envelope_mismatch`           | no             |
 | 3d   | `Problems` contains `report_invalid`, or `Report == nil` **[default]**                                          | `report_invalid`              | no             |
@@ -201,7 +211,9 @@ never empty.
 | 4a   | `!WorkflowApproved`                                                                                             | `workflow_not_approved`       | no             |
 | 4b   | `!IdentityApproved` and `Comparison.MeasurementProfile == nil`                                                  | `measurement_profile_missing` | yes            |
 | 4c   | `!IdentityApproved` and the profile is present                                                                  | `unknown_engine_identity`     | yes            |
-| 5    | `Trusted.Approval` is neither `ApprovalNotRequired` nor `ApprovalGranted`                                       | `owner_approval_missing`      | no             |
+| 5a   | `Trusted.Group.Problem == conflict`                                                                             | `merge_group_conflict`        | no             |
+| 5b   | no 5a, and `Trusted.Group.Unapproved != ""`                                                                     | `owner_approval_missing`      | no             |
+| 5    | no 5a or 5b, and `Trusted.Approval` is neither `ApprovalNotRequired` nor `ApprovalGranted`                      | `owner_approval_missing`      | no             |
 | 6a   | `len(Trusted.PolicyDigests) == 0` (settings merged, no policy on the protected ref yet)                         | `policy_missing`              | no             |
 | 6b   | `PolicyDigests` not empty and `!Accepts(PolicyDigests, Comparison.ConfigHash)`                                  | `policy_mismatch`             | yes            |
 | 6c   | `!Accepts(Trusted.BaselineDigests, Facts.BaselineDigest)` (digest predicate, below)                             | `baseline_mismatch`           | no             |
@@ -221,6 +233,13 @@ Rules of the table:
 - Steps marked "yes" are skipped when `Report == nil`.
 - When step 2 hits, steps 4 to 8 are skipped **[default]**: there are no trusted inputs to compare with.
 - Problems are read as a set; order and duplicates in `Facts.Problems` do not matter. An unknown `Problem` value counts as `envelope_mismatch` **[default]**.
+- Step 3a0 is appended before 3a: it is the first of the eligibility reasons. A merge group's trust problems are
+  eligibility, which no approval cures; `conflict` is governance (5a) and `fork` joins 3a. Step 5a and 5b read
+  `Trusted.Group` before `Approval`, so a conflict or an unapproved member stays a reason even when `Approval` says
+  granted. Their `Detail` is `Group.Detail` and `Group.Unapproved`, not the changed paths.
+- `GroupBlocked` repeats these checks without a report, for a caller that corrects a merge group's check
+  (`gate/sweep.GroupWithdrawal`): `fork` → `fork_unsupported`, `conflict` → `merge_group_conflict`, any other problem →
+  `merge_group_unverified`, `Unapproved` → `owner_approval_missing`, else step 5's `Unapproved(t)`; otherwise ok is false.
 - Step 5 fails closed: only the two known passing values of `Approval` clear it. `ApprovalMissing`, the zero value
   and any value a later version of `gate/inputs` adds all give `owner_approval_missing`.
 - Digest predicate: `gate/inputs` owns it as `Accepts(trusted, claim)`; verdict has no comparison of its own. A
@@ -350,12 +369,14 @@ Categories of integrity, comparability and `Without` codes are **[default]**. `N
 | `waiver_expired`              | governance   | `action_required`     | empty                                                                                                 | "A waiver expired. A re-run was requested; renew the waiver by owner-approved PR or fix the finding."                 |
 | `target_moved`                | evidence     | `action_required`     | the modules of the new cycle and `<base12>..<tip12>` (`TargetMoved`; empty in the catalog)            | "The target branch moved and this pull request cannot be compared with it. Update the branch (Update branch on GitHub, `gh pr update-branch`, or merge the target) to measure it again." `TargetMoved` with a cycle says instead "The target branch moved, and with it this pull request closes a module cycle: <modules>. " and the same recovery. |
 | `shared_head`                 | evidence     | `action_required`     | the other pull requests as `#<n> into <base>`, at most five, then "and N more" (`SharedHead`; empty in the catalog) | "Another open pull request into `<base>` has this head commit, so its checks would show this result. Close that pull request or change its base to the default branch, then run the Archfit workflow again." Recovery owner: the pull request author. |
+| `merge_group_conflict`        | governance   | `action_required`     | `<path> <why>` per file, `; `-separated: `changed by no queued pull request`, `changed by #<n> and #<m>`, `is not the file an owner approved on #<n>` (`Group.Detail`; empty in the catalog) | "Queued pull requests change the same protected file, or the queued file is not the one an owner approved. Remove all but one from the merge queue and queue the others again after it merges, or update the branch and have an owner approve the new head." |
+| `merge_group_unverified`      | evidence     | `action_required`     | `Group.Detail`: `#<n> not found`, `#<n> is not the queued pull request`, or `the merge queue holds no entry with this commit` (empty in the catalog) | "GitHub does not confirm this merge group: it was destroyed or rebuilt, or a queued pull request changed. Queue the pull request again." |
 | `subscription_suspended`      | subscription | `action_required`     | empty                                                                                                 | `Entitlement.Reason` in `Decide` and `Suspended` when not empty; else "Archfit subscription inactive."                |
 
-`Detail` carries protected path names for `owner_approval_missing`; these are the five fixed protected
+`Detail` carries protected path names for `owner_approval_missing` (for a merge group, `#<n> <path>, <path>` per member without an approval); these are the five fixed protected
 paths, not customer source paths. The one engine-authored text in a `Detail` is the capped reason list of
 `baseline_not_comparable` (single-line, length-capped by the decoder, no source). No `Detail` carries a finding,
-a file path from the report, or a module name, with two exceptions: `shared_head` names the numbers and base branch names of the other pull requests (a base is chosen by
+a file path from the report, or a module name, with these exceptions: `merge_group_conflict`, `merge_group_unverified` and a merge group's `owner_approval_missing` name queued pull request numbers and the fixed protected paths, never content; `shared_head` names the numbers and base branch names of the other pull requests (a base is chosen by
 whoever opened the pull request: backticks and control characters are dropped, each is cut to 80 runes, at most five are
 listed), and `target_moved` names the modules of the cycle the
 sweep found (identifiers from a decoded report, single-line and length-capped by the decoder, at most five, each cut to
@@ -442,7 +463,7 @@ type Upload struct {
 - **Volatility**: high
 - **Balanced?**: yes
 - **Shared knowledge**: `Trusted` fields `Suspended`, `SettingsFound`, `PolicyDigests`, `BaselineDigests`, `LabelsDigests`,
-  `ProtectedPaths`, `Approval`, and `Entitlement.Reason`. `Target` is not used here. `Settings` is an
+  `ProtectedPaths`, `Approval`, `Group` and `Entitlement.Reason`. `Target` is not used here. `Settings` is an
   opaque part of `Trusted` for this module. Steps 6b to 6d call `Accepts`; `First`, `ProtectedPaths` and
   `MayBeProtected` are not used here.
 
@@ -475,13 +496,14 @@ type Entitlement struct {
 
 <!-- contract: Target, Trusted, Approval — restated from internal/gate/inputs/module.md -->
 ```go
-// Target is the pull request (or default-branch push) whose trusted inputs are resolved.
+// Target is the pull request (or default-branch push, or merge group) whose trusted inputs are resolved.
 type Target struct {
     Repo        Repo
-    PullRequest int // 0 for a default-branch push
+    PullRequest int // 0 for a default-branch push and a merge group
     HeadSHA     string
-    BaseRef     string // protected ref; the default branch for a push
+    BaseRef     string // protected ref; the default branch for a push and a merge group
     Fork        bool
+    MergeGroup  bool // HeadSHA is a merge group commit of BaseRef's merge queue
 }
 
 type Approval string
@@ -505,6 +527,22 @@ type Trusted struct {
     EarliestWaiverExpiry time.Time // zero = no waivers
     Suspended            bool
     Entitlement          Entitlement
+    Group                *Group // set for a merge-group Target only
+}
+
+type GroupProblem string
+
+const (
+    GroupFork       GroupProblem = "fork"       // a member comes from a fork
+    GroupUnverified GroupProblem = "unverified" // the queue, a member or the group commit is not what GitHub says now
+    GroupConflict   GroupProblem = "conflict"   // a changed protected file is not exactly one approved member's file
+)
+
+// Group names members and paths ("#12 .archfit.yaml"), never content.
+type Group struct {
+    Problem    GroupProblem
+    Detail     string
+    Unapproved string // each member that changes a protected path without its own owner approval; "" when none
 }
 ```
 
@@ -849,8 +887,11 @@ type Seam struct {
   **Scenario**: `IdentityApproved` false with profile nil, with profile present, and with `Report` nil.
   **Expected behavior**: `measurement_profile_missing`, `unknown_engine_identity`, and only `report_invalid` respectively.
 - **Test name**: `TestReasonCatalogComplete`
-  **Scenario**: iterate every `ReasonCode` constant of the contract (twenty-six).
+  **Scenario**: iterate every `ReasonCode` constant of the contract (twenty-eight).
   **Expected behavior**: each has the catalog category and conclusion (`success` for `healthy` and `attention_only`); every code except `healthy` has a non-empty `Next`; the `Next` texts of `workflow_not_approved` and `settings_missing` name `settings.Path`; those of `unknown_engine_identity` and `measurement_profile_missing` name the user-guide section "Move an installed workflow to a new engine" and never the onboarding workflow, which keeps the pin it was written with.
+- **Test name**: `TestMergeGroupFacts`
+  **Scenario**: `Trusted.Group` empty; an approved policy change; `conflict`, also with `Approval` granted; an unapproved member, also with `Approval` granted; `fork`; `unverified`; an unknown problem; `unverified` without settings; `Without(merge_group_unverified)`.
+  **Expected behavior**: `success`; `success`; `merge_group_conflict` first; `owner_approval_missing` with the member as `Detail`; `fork_unsupported`; `merge_group_unverified` with the group's `Detail`; `merge_group_unverified`; `settings_missing` first; `action_required` with that one reason.
 - **Test name**: `TestTargetMoved`
   **Scenario**: a cycle of two modules; five; seven; a module name over 80 runes; no cycle with a base; no cycle and no base; nothing known.
   **Expected behavior**: `action_required`, evidence; `Detail` lists the first five modules, then "and N more", each cut to 80 runes, then `; <base12>..<tip12>`; `Next` names the cycle and the update-branch recovery, and without a cycle it is the catalog text, which claims none; `target_moved` is not report-derived (`ReportDerivedAction`, `ClassifyDisplayReason`).

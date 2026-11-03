@@ -7,7 +7,7 @@
 ## Purpose
 
 `api` is the App's only GitHub REST client. It offers small role interfaces (repositories, pull requests,
-checks, comments, issues, Actions, changes, users) over one `Client`, and hides URL shapes, headers, pagination,
+merge queues, checks, comments, issues, Actions, changes, users) over one `Client`, and hides URL shapes, headers, pagination,
 conditional requests and rate-limit handling. Without it, every gate and control module would speak HTTP to
 GitHub, and "never a false green on rate-limit exhaustion" would depend on each caller.
 
@@ -15,6 +15,7 @@ GitHub, and "never a false green on rate-limit exhaustion" would depend on each 
 
 - Authenticate each call with the right credential: App JWT, installation token, or a user's OAuth token.
 - Read installations, repositories, files at a ref, pull requests, changed files, reviews, team membership.
+- Read a branch's merge queue: the entries and their merge group commits (`MergeQueue`, GraphQL).
 - Create and update check runs; list, create and update the App's own PR comments.
 - List, open, edit and close the App's own issues; never a pull request through the issues endpoints.
 - Read workflow runs, re-run and dispatch workflows, download one artifact file under a size cap.
@@ -86,7 +87,7 @@ needs one. It is a wide leaf on purpose: role interfaces keep each consumer's kn
 - `ctx` cancellation ends any wait immediately with `ctx.Err()`.
 - GraphQL reports a rate limit inside a `200` body, as an error of type `RATE_LIMITED`, with no `Retry-After`
   and no usable reset header. `MarkReady` maps it to `ErrRateLimited` at once: no backoff, no retry, no sleep.
-  The caller's retry is safe because an already ready pull is success.
+  The caller's retry is safe because an already ready pull is success. `MergeQueue` does the same.
 
 ### Conditional requests
 
@@ -178,6 +179,14 @@ beyond the 1 000-item cap the call fails, so such a repository gets no repair is
   `markPullRequestReadyForReview` on the pull's `node_id`; an already ready pull is success. An `errors` entry
   of type `RATE_LIMITED` → `ErrRateLimited` at once, without backoff; any other entry → an error that names the
   route only, never the GraphQL message (it can quote content).
+- `MergeQueue` (role `MergeQueues`): one GraphQL query, `repository(owner, name).mergeQueue(branch).entries(first: 100)`,
+  paged by `endCursor` up to 10 pages (1 000 entries) **[default]**. Each node maps to a `QueueEntry`: `position`,
+  `headCommit.oid` (the merge group commit), `baseCommit.oid`, `pullRequest.number`, `.headRefOid` and
+  `.isCrossRepository`. Entries are sorted by position. `mergeQueue: null` (no queue on the branch) → no entries and
+  no error. An `errors` entry of type `RATE_LIMITED` → `ErrRateLimited` at once, without backoff; `FORBIDDEN` (the App
+  lacks the Merge queues permission) → `ErrQueueForbidden`; any other entry → an error that names the route only,
+  never the GraphQL message; `repository: null` → `ErrNotFound`; a node without a head commit, base commit or pull
+  request → an error; more than 10 pages → `ErrQueueTooLong`. Never a partial or guessed membership.
 - `Permission`: `GET /repos/{fullName}` with the user token; `permissions.admin` → `admin`, `.push` → `write`,
   `.pull` → `read`; `404` → `none` with `nil` error.
 - `UserRepos`: `GET /user/installations`, then `GET /user/installations/{id}/repositories` for each; the cap
@@ -203,6 +212,12 @@ type Repo struct {
 var (
     ErrNotFound    = errors.New("github: not found")
     ErrRateLimited = errors.New("github: rate limit exhausted") // returned after bounded backoff
+
+    // ErrQueueForbidden is GraphQL's FORBIDDEN on the merge queue: the installation lacks the Merge queues permission.
+    ErrQueueForbidden = errors.New("github: merge queue not readable: Merge queues permission missing")
+
+    // ErrQueueTooLong is returned when a merge queue holds more entries than one read takes.
+    ErrQueueTooLong = errors.New("api: merge queue too long to read")
 
     // ErrUserTokenRejected is GitHub's 401 on a user's OAuth token: it expired or was revoked. The token cannot
     // recover, so the call is not repeated and the user must sign in again.
@@ -278,6 +293,25 @@ type Pulls interface {
     Reviews(ctx context.Context, r RepoRef, number int) ([]Review, error)
     // TeamMember reports whether login belongs to "org/team-slug".
     TeamMember(ctx context.Context, r RepoRef, team, login string) (bool, error)
+}
+```
+
+```go
+// QueueEntry is one entry of a merge queue as GitHub's GraphQL API states it.
+type QueueEntry struct {
+    Position    int    // 1 is the front of the queue
+    HeadSHA     string // the entry's merge group commit: the base plus every entry ahead of it plus this pull request
+    BaseSHA     string
+    PullRequest int
+    PullHeadSHA string // the pull request head the entry was built from
+    CrossRepo   bool   // the pull request comes from a fork
+}
+
+// MergeQueues reads a branch's merge queue: the authoritative membership of its merge groups.
+type MergeQueues interface {
+    // MergeQueue returns the entries in position order; none when the branch has no queue. A GraphQL error, such as
+    // a missing Merge queues permission, is an error, never an empty queue.
+    MergeQueue(ctx context.Context, r RepoRef, branch string) ([]QueueEntry, error)
 }
 ```
 
@@ -440,14 +474,14 @@ func (s *CallStats) Calls() int64
 func (s *CallStats) Duration() time.Duration
 ```
 
-`WorkflowRun.Event` is GitHub's event name for the run (`pull_request`, `push`, `workflow_dispatch`,
+`WorkflowRun.Event` is GitHub's event name for the run (`pull_request`, `push`, `merge_group`, `workflow_dispatch`,
 `workflow_run`, `schedule`, …), the run's `event` field passed through unchanged: not mapped, not lowercased,
 not checked against a list. Consumers compare it with GitHub's literal names; it is the same vocabulary as the
 `event_name` claim of an Actions OIDC token.
 
 `ErrNotFound` is the sentinel for "absent, or not accessible to this credential". `ErrRateLimited` is the
 sentinel returned when the 30 s **[default]** backoff budget cannot cover the wait GitHub asks for, and at once when the
-GraphQL mutation of `MarkReady` answers `RATE_LIMITED`. Both are tested with
+GraphQL mutation of `MarkReady` or the GraphQL query of `MergeQueue` answers `RATE_LIMITED`. Both are tested with
 `errors.Is`. `TokenSource` is restated under Integrations, from `github/auth`. `OAuth` is the user login flow
 of `github/auth`; `api` only receives its result, a user token string, in the `Users` methods.
 
@@ -507,7 +541,7 @@ type TokenSource interface {
 - **LCA / Rank / Distance**: root / 2 / 2
 - **Volatility**: High (the gate side)
 - **Balanced?**: Yes
-- **Shared knowledge**: role interfaces only. `ingest`: `Repos`, `Pulls`, `Actions`. `inputs`: `Repos`, `Pulls`.
+- **Shared knowledge**: role interfaces only. `ingest`: `Repos`, `Pulls`, `Actions`, `MergeQueues`. `inputs`: `Repos` (`BranchHead` too, for a merge group), `Pulls`, `MergeQueues`.
   `feedback`: `Checks`, `Comments`, `Pulls`, `Issues`, `Repos` (`BranchHead`). `sweep`: `Repos`, `Pulls`, `Actions`.
   They rely on: `ErrRateLimited`
   is returned after bounded backoff, so the caller can stop before it writes and leave checks pending for the sweep;
@@ -545,7 +579,7 @@ type TokenSource interface {
 
 ### GitHub REST API (external)
 
-- **Counterpart**: `https://api.github.com`, REST version `2022-11-28`, plus one GraphQL mutation
+- **Counterpart**: `https://api.github.com`, REST version `2022-11-28`, plus one GraphQL mutation and one GraphQL query
 - **Direction**: `api` depends on GitHub
 - **Strength**: Contract (public, versioned API)
 - **LCA / Rank / Distance**: outside the tree; the highest distance the system has
@@ -556,6 +590,8 @@ type TokenSource interface {
   `members: read` (`TeamMember`), and `workflows: write`, which GitHub demands for any commit that touches
   `.github/workflows/` (the onboarding PR). `issues: write` (the `Issues` role, for the repair issue) is added with
   the release that brings that issue; until the owner grants it, every `Issues` call is GitHub's `403`.
+  `merge_queues: read` (repository permission **Merge queues: Read**, for `MergeQueue`); without it GraphQL answers
+  `FORBIDDEN`, which is `ErrQueueForbidden`.
 
 ## Change Vectors
 
@@ -644,6 +680,9 @@ One test per role interface; each asserts method, route, credential, request bod
   a directory, a 2 MiB file; `BranchHead` for a branch and a missing branch.
   **Expected behavior**: JWT for App routes, installation token elsewhere; suspended skipped; `Repo` fully
   mapped with the installation ID; file bytes and blob SHA; `ErrNotFound`; error; error; the ref's commit SHA; `ErrNotFound`.
+- **Test name**: `TestMergeQueueReadsEveryPageInPositionOrder`, `TestMergeQueueNeverGuessesMembership`
+  **Scenario**: a two-page queue returned out of order; no queue on the branch; `FORBIDDEN`; another GraphQL error; `RATE_LIMITED`; a missing repository; an entry without a head commit; an endless queue.
+  **Expected behavior**: all entries in position order, the branch sent in the query; no entries and no error; `ErrQueueForbidden`; an error; `ErrRateLimited`; `ErrNotFound`; an error; `ErrQueueTooLong`.
 - **Test name**: `TestPullsContract`
   **Scenario**: `Pull` (same-repo, fork, merged); `OpenPulls` with a draft; `PullByHead` with an open, a merged-only,
   a fork-only and no pull for the branch; `ChangedFiles` with a rename; `Reviews` with a `PENDING` one and two by

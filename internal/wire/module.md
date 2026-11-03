@@ -118,6 +118,13 @@ Every fixture `<name>.<ext>` has a sibling `<name>.expect.json` with these keys 
 | `gate`     | report fixtures only: object with `conclusion` and `reasons`, the ordered list of reason codes         |
 | `facts`    | optional, report fixtures only: object of overrides to the clean facts; absent means all clean         |
 
+`envelope/` holds these named envelope fixtures: valid `pr-report`, `pr-report-with-inputs`, `push-report`,
+`merge-group-report`, `discovery-dispatch`, `baseline-dispatch`; refused `invalid-*`, among them
+`invalid-merge-group-with-base`. `merge-group-report` is a `merge_group` report with `pull_request` 0, no `base_sha`,
+`merge_base_sha` or `integration`, and `analyzed_sha` equal to `head_sha` (the merge group commit);
+`invalid-merge-group-with-base` is the same with `base_sha` set. Both are hand-written against the schema for the
+merge group binding of `docs/design/merge-queue.md`, which the schema does not change.
+
 A synthetic `producer` is one string, `"synthetic: <reason>"`; for a hand-edited report the reason records the
 source capture and the exact `jq` edit **[default]**. `fields` by folder: `envelope/` holds the whole decoded
 envelope; `report/` and `leakage/` hold `verdict`, `hard_gates`, `unevaluated_rule_ids`, `has_profile`,
