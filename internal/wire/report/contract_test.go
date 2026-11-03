@@ -305,7 +305,7 @@ func TestEngineSchemaKeySetIsCovered(t *testing.T) {
 	mustDecode(t, loadFixture(t, baseFixture))
 	mustDecodeFixture(t, "report/real-seam-policy.json")
 
-	w := schemaWalker{t: t, root: parseDoc(t, loadFixture(t, "schema/archfit.state.schema.json"))}
+	w := schemaWalker{t: t, root: parseDoc(t, loadFixture(t, "schema-candidate/archfit.state.schema.json"))}
 	w.check("report", w.root, reflect.TypeFor[shadowReport]())
 	checkKeptInShadow(t, "report.identity", reflect.TypeFor[ResultIdentity](), reflect.TypeFor[shadowIdentity]())
 }

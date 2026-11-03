@@ -632,6 +632,7 @@ func gapsBlock(p Publication) string {
 	if len(lines) == 0 {
 		lines = []string{"- None reported"}
 	}
+	lines = append(lines, metricRatchetLines(r, 0)...)
 	return headGaps + "\n\n" + text(report.EvidenceSummary(*r)) + "\n\n" + strings.Join(lines, "\n")
 }
 

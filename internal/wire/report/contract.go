@@ -27,8 +27,10 @@ func EngineVersions() []string {
 // findings[].matched_by except MatchedByKeys, agent_tasks[].declarations, metric provenance, seam scores), and any key
 // the schema does not define is a decode error.
 type Report struct {
-	SchemaVersion string `json:"schema_version"` // must equal StateSchemaV1
-	Verdict       string `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
+	// MetricRatchets is absent in legacy reports; an explicit empty array means no checks apply.
+	MetricRatchets *[]MetricRatchetCheck `json:"metric_ratchets,omitempty"`
+	SchemaVersion  string                `json:"schema_version"` // must equal StateSchemaV1
+	Verdict        string                `json:"verdict"`        // "healthy" | "needs_attention" | "blocked"
 	// Identity is what the engine measured and under which inputs (engine v3.3.0 and later); nil only for a report
 	// of a release before identityFrom. It is the engine's own statement, kept for display and for the receipt key. It decides nothing:
 	// trust in inputs comes from the protected ref, never from a digest the report names.
