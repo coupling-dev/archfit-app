@@ -8,7 +8,8 @@
 - Two checks: `archfit/state` (advisory) and `archfit/gate` (required when enabled).
   Gate conclusions are only `success`, `failure` or `action_required`.
 - Rules are in `AGENTS.md`; behaviour in `docs/architecture.md`, `docs/user-guide.md`,
-  `docs/design/{decisions,trust-and-reporting}.md`; every package has a `module.md`.
+  `docs/archive/design/{decisions,trust-and-reporting}.md`; every package has a
+  `module.md`.
 
 ## What a real defect looks like here
 
