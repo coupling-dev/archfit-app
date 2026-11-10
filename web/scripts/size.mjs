@@ -1,5 +1,5 @@
-// Fails the build when a load is over budget (docs/design/ui-redesign.md, Bundle budget). First load is every script
-// and stylesheet index.html references; each lazy chunk has a budget of its own: the graph pages' (Graph-*), the
+// Fails the build when a load is over budget (docs/archive/design/ui-redesign.md, Bundle budget). First load is every
+// script and stylesheet index.html references; each lazy chunk has a budget of its own: the graph pages' (Graph-*), the
 // graph's layout worker (layout.worker-*), which holds ELK, and the policy page's (Policy-*), which holds CodeMirror.
 import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';

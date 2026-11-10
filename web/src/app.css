@@ -1,6 +1,7 @@
-/* Archfit web app styles: the tokens and components of docs/design/prototypes/archfit.css without its prototype-only
-   parts. One external stylesheet, so the CSP needs no 'unsafe-inline'. Tokens first; components only read tokens.
-   Solid fills under white text read the -emphasis tokens: the dark set's foreground colours are too light for white. */
+/* Archfit web app styles: the tokens and components of docs/archive/design/prototypes/archfit.css without its
+   prototype-only parts. One external stylesheet, so the CSP needs no 'unsafe-inline'. Tokens first; components only
+   read tokens. Solid fills under white text read the -emphasis tokens: the dark set's foreground colours are too light
+   for white. */
 
 :root {
   --bg: #ffffff;
