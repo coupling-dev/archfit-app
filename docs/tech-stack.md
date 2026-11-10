@@ -55,7 +55,7 @@ The tests use the standard `testing` package and table-driven cases with `t.Run`
 | Item      | Choice                                                                                                                                                         |
 | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Rendering | Svelte 5 and TypeScript, built by Vite into `internal/control/ui/spa` and embedded in the binary; an error page is the same shell                              |
-| Styles    | One stylesheet, the tokens and components of `docs/design/prototypes/archfit.css`, light and dark                                                              |
+| Styles    | One stylesheet, the tokens and components of `docs/archive/design/prototypes/archfit.css`, light and dark                                                              |
 | Editor    | CodeMirror 6 (MIT), a lazy chunk of the policy page. The server checks syntax and schema on load, on Check and on save                                         |
 | Graph     | Svelte Flow (`@xyflow/svelte`, MIT) with the ELK layered layout (`elkjs`, EPL-2.0), lazy on the graph pages; ELK runs in a worker                               |
 | Licences  | The build writes the licence of every bundled npm package to `assets/licenses-<hash>.txt`, linked as `/licenses.txt`                                           |
@@ -66,7 +66,7 @@ Node is needed only to build and check the web app (`make web`, `make web-check`
 serves the build on `E2E_PORT`, or on a free port when it is unset, so checks in two worktrees can run at once. The CSP allows no
 inline style, no inline script, no eval, no worker but a same-origin file (`worker-src 'self'`, the graph's layout) and
 no other origin. The one exception is the shell's per-response nonce in `style-src`, for CodeMirror's style element. See
-[UI redesign](design/ui-redesign.md#frontend-stack-for-phases-b-to-f-plan-2-for-the-owner) for the migration.
+[UI redesign](archive/design/ui-redesign.md#frontend-stack-for-phases-b-to-f-plan-2-for-the-owner) for the migration.
 
 ## Platform seams
 

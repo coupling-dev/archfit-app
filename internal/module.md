@@ -13,9 +13,11 @@ onboarding, policy editing, AI assistance on request, and entitlements. Without 
 engine report is only a self-reported file: nothing binds it to the approved policy on the
 protected ref, to an architecture owner's approval, or to the revision it claims to describe.
 
-This file is also the architecture overview. Requirements: `docs/design/decisions.md`
-(wins on conflict), `docs/design/product.md` §2 Required, `docs/design/trust-and-reporting.md`,
-and the invariants in `AGENTS.md`. Choices made without an owner answer are marked **[default]**.
+This file is also the architecture overview. Requirements of the behavior shipped today:
+`docs/archive/design/decisions.md` (wins on conflict), `docs/archive/design/product.md` §2 Required,
+`docs/archive/design/trust-and-reporting.md`, and the invariants in `AGENTS.md`. New work follows the
+Archfit 4 design (`docs/plans/20261110-archfit-4-architecture-change-control.md` in the `archfit`
+repository), which replaces those three records. Choices made without an owner answer are marked **[default]**.
 
 ## Functional Responsibilities
 
