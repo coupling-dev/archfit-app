@@ -7,6 +7,7 @@ They preserve decisions and evidence. They do not describe current status or ope
 
 | Directory             | Contents                                     |
 | --------------------- | -------------------------------------------- |
+| [Design](design/)     | First-version design records and prototypes  |
 | [Plans](plans/)       | Implemented and historical execution plans   |
 | [Research](research/) | Dated hosting research and cost assumptions  |
 | [Reviews](reviews/)   | Dated design-to-code reviews and resolutions |

@@ -1173,7 +1173,7 @@ type OAuth interface {
   `//go:embed all:spa`. The build is not committed: `spa/` holds only its `.gitignore`, and then the shell answers a
   page that says to run `make web`, so `go build` and `go test` need no Node. The release image builds it
   (`Dockerfile`, stage `web`). Styles are one stylesheet, `web/src/app.css`, the tokens and components of
-  `docs/design/prototypes/archfit.css`; no CSS framework and no runtime style injection (no Svelte transitions), with
+  `docs/archive/design/prototypes/archfit.css`; no CSS framework and no runtime style injection (no Svelte transitions), with
   one exception: the policy editor.
 - The policy editor is CodeMirror 6 (`@codemirror/*`, MIT, pinned exactly in `web/package-lock.json`), the owner's
   decision of 19 October 2026 over a home-made highlighter: YAML, folding, history, search and lint marks are its
