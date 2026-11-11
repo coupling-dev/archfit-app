@@ -1,0 +1,14 @@
+version: 3
+owners: [alexei-led]
+modules:
+  app:
+    paths: [cmd/**]
+exceptions:
+- rule: graph
+  from: app
+  to: app
+  why: Migration in progress.
+- rule: unowned
+  from: scripts/**
+  why: 'Request #7 is open.'
+# The list ends here.

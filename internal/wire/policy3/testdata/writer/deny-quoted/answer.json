@@ -1,0 +1,11 @@
+{
+  "kind": "reject",
+  "loosens": false,
+  "rule": {
+    "id": "no-tc-to-util",
+    "from": "pkg_tc",
+    "to": "pkg_util",
+    "why": "Don't: it's the #1 risk, see ADR-7 \u2014 \"never\" import it",
+    "instead": "*Ask* for a port: see #12"
+  }
+}

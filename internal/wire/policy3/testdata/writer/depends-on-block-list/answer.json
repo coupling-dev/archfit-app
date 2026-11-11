@@ -1,0 +1,6 @@
+{
+  "kind": "approve",
+  "loosens": true,
+  "module": "app",
+  "dependency": "store"
+}
