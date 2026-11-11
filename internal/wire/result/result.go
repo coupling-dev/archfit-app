@@ -27,55 +27,55 @@ const (
 )
 
 // The json tags name the keys; a key without omitempty is required. A rule tag names the schema's value rule for the
-// key (see rules).
+// key (see rules): an enum, a pattern, a non-empty string (text) or an integer up to 10 (scale).
 
 // Result is the verdict of `archfit check` for one change.
 type Result struct {
 	Schema  string    `json:"schema" rule:"schema"`
 	Status  Status    `json:"status" rule:"status"`
-	Summary string    `json:"summary"` // the status line, such as "archfit: fail, 1 error"
-	Errors  []Error   `json:"errors"`  // in record order
-	Unknown []Unknown `json:"unknown"` // the reasons for an unknown status, in record order
+	Summary string    `json:"summary" rule:"text"` // the status line, such as "archfit: fail, 1 error"
+	Errors  []Error   `json:"errors"`              // in record order
+	Unknown []Unknown `json:"unknown"`             // the reasons for an unknown status, in record order
 	Policy  Policy    `json:"policy"`
 	Base    string    `json:"base,omitempty" rule:"commit"` // the merge base; absent without one
 	Head    string    `json:"head,omitempty" rule:"commit"`
 	Date    string    `json:"date" rule:"date"` // the date exceptions were judged on
-	Engine  string    `json:"engine"`
+	Engine  string    `json:"engine" rule:"text"`
 }
 
 // Error is one place where the change breaks a rule.
 type Error struct {
-	Path       string     `json:"path"`           // .archfit.yaml for an error of the policy itself
-	Line       int        `json:"line,omitempty"` // absent for an error of the policy file
-	Rule       string     `json:"rule"`
-	What       string     `json:"what"`
+	Path       string     `json:"path" rule:"text"` // .archfit.yaml for an error of the policy itself
+	Line       int        `json:"line,omitempty"`   // absent for an error of the policy file
+	Rule       string     `json:"rule" rule:"text"`
+	What       string     `json:"what" rule:"text"`
 	Why        string     `json:"why,omitempty"`
 	Instead    string     `json:"instead,omitempty"`
 	Balance    *Balance   `json:"balance,omitempty"`
 	Next       Next       `json:"next"`
 	From       string     `json:"from,omitempty"`
 	To         string     `json:"to,omitempty"`
-	Key        string     `json:"key"` // compared, never parsed
+	Key        string     `json:"key" rule:"text"` // compared, never parsed
 	FromChange bool       `json:"from_change"`
 	Exception  *Exception `json:"exception,omitempty"` // set only when Rule is "exception"
 }
 
 // Balance is the coupling number of a dependency, printed as "Value/10 (min Min)".
 type Balance struct {
-	Value int `json:"value"`
-	Min   int `json:"min"`
+	Value int `json:"value" rule:"scale"`
+	Min   int `json:"min" rule:"scale"`
 }
 
 // Next is the one step a record names.
 type Next struct {
 	Kind string `json:"kind" rule:"kind"` // fix, command, wait or restore
-	Text string `json:"text"`             // "fix the code", a command, or "wait for an owner: #431"
+	Text string `json:"text" rule:"text"` // "fix the code", a command, or "wait for an owner: #431"
 	Note string `json:"note,omitempty"`   // printed in parentheses after Text
 }
 
 // Exception names a policy exception past its date; the error's From and To hold its modules.
 type Exception struct {
-	Rule    string `json:"rule"`
+	Rule    string `json:"rule" rule:"text"`
 	Expires string `json:"expires" rule:"date"`
 }
 
@@ -84,14 +84,14 @@ type Unknown struct {
 	Path  string `json:"path,omitempty"`
 	Line  int    `json:"line,omitempty"`
 	Cause string `json:"cause" rule:"cause"` // policy, base, tool or import
-	What  string `json:"what"`
+	What  string `json:"what" rule:"text"`
 	Why   string `json:"why,omitempty"`
 	Next  Next   `json:"next"`
 }
 
 // Policy names the policy that judged the change.
 type Policy struct {
-	Path      string `json:"path"`
+	Path      string `json:"path" rule:"text"`
 	Digest    string `json:"digest" rule:"digest"` // "sha256:<64 hex>" of the file bytes
 	Protected bool   `json:"protected"`
 	Differs   bool   `json:"differs"`

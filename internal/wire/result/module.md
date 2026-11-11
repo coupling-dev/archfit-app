@@ -41,7 +41,7 @@ engine release, and old and new contracts are never accepted side by side (desig
   `waiting`, so the App owns its record. It is rendered from the vendored `waiting.json`.
 - Hand-written strict decoder, as in `wire/report` **[default]**: a token pre-pass walks the input beside the Go types
   (keys exactly as the `json` tags, each once; a key without `omitempty` required; no `null`; each value of its JSON
-  type; integers whole and >= 1, the schema's minimum for every integer; the enum or pattern a `rule` tag names; nothing
+  type; integers whole and >= 1, the schema's minimum for every integer; the enum, pattern, `minLength` or `maximum` a `rule` tag names; nothing
   after the object), then `DisallowUnknownFields`. The patterns are the schema's, verbatim. The caller bounds the size
   (ingest, 5 MiB).
 - The grammar, from the engine's `internal/output/record` package doc. `Record` prints the producer's text as given:

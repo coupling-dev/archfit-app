@@ -12,12 +12,14 @@ import (
 
 // property is what the schema says of one key.
 type property struct {
-	Type    string   `json:"type"`
-	Enum    []string `json:"enum"`
-	Pattern string   `json:"pattern"`
-	Ref     string   `json:"$ref"`
-	Minimum *int     `json:"minimum"`
-	Items   *struct {
+	Type      string   `json:"type"`
+	Enum      []string `json:"enum"`
+	Pattern   string   `json:"pattern"`
+	Ref       string   `json:"$ref"`
+	Minimum   *int     `json:"minimum"`
+	Maximum   int      `json:"maximum"`
+	MinLength int      `json:"minLength"`
+	Items     *struct {
 		Ref string `json:"$ref"`
 	} `json:"items"`
 }
@@ -31,8 +33,8 @@ type definition struct {
 const defsPrefix = "#/$defs/"
 
 // TestTypesFollowTheVendoredSchema ties the Go types and the decoder's rules to the vendored schema: for every
-// object Result reaches, the same keys, the same required keys, the same JSON types, the same enums and patterns,
-// and minimum 1 on every integer. A re-vendored schema that changes the result fails here until the types follow.
+// object Result reaches, the same keys, the same required keys, the same JSON types, the same enums, patterns,
+// minLength and maximum, and minimum 1 on every integer. A re-vendored schema that changes the result fails here until the types follow.
 func TestTypesFollowTheVendoredSchema(t *testing.T) {
 	raw, err := os.ReadFile("archfit.result.schema.json")
 	if err != nil {
@@ -105,6 +107,10 @@ func TestTypesFollowTheVendoredSchema(t *testing.T) {
 func checkRule(t *testing.T, at, tag string, p property) {
 	t.Helper()
 	r, tagged := rules[tag]
+	if r.minLength != p.MinLength || r.maximum != p.Maximum {
+		t.Errorf("%s: rule %q has minLength %d and maximum %d, schema %d and %d", at, tag, r.minLength, r.maximum, p.MinLength, p.Maximum)
+		return
+	}
 	switch {
 	case tag != "" && !tagged:
 		t.Errorf("%s: rule tag %q names no rule", at, tag)
@@ -116,7 +122,7 @@ func checkRule(t *testing.T, at, tag string, p property) {
 		if r.pattern == nil || r.pattern.String() != p.Pattern {
 			t.Errorf("%s: rule %q, schema pattern %q", at, tag, p.Pattern)
 		}
-	case tagged:
+	case tagged && r.minLength == 0 && r.maximum == 0:
 		t.Errorf("%s: rule tag %q, the schema has no rule", at, tag)
 	}
 }

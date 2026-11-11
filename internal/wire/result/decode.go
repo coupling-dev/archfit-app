@@ -13,10 +13,12 @@ import (
 	"unicode/utf8"
 )
 
-// rule is a value rule of the schema: an enum or a pattern.
+// rule is a value rule of the schema: an enum, a pattern, a minimum string length, or an integer maximum.
 type rule struct {
-	enum    []string
-	pattern *regexp.Regexp
+	enum      []string
+	pattern   *regexp.Regexp
+	minLength int
+	maximum   int
 }
 
 // rules holds the schema's value rules by the name a rule tag gives. The patterns are the schema's, verbatim.
@@ -28,10 +30,18 @@ var rules = map[string]rule{
 	"digest": {pattern: regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)},
 	"commit": {pattern: regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)},
 	"date":   {pattern: regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)},
+	"text":   {minLength: 1},
+	"scale":  {maximum: 10},
 }
 
 // violation is the rule's message for value, or "" when value conforms. It never quotes value.
 func (r rule) violation(value string) string {
+	if r.minLength > 0 {
+		if len(value) >= r.minLength {
+			return ""
+		}
+		return "must not be empty"
+	}
 	if r.pattern != nil {
 		if r.pattern.MatchString(value) {
 			return ""
@@ -58,7 +68,7 @@ func locError(loc, violated string) error {
 // keys case-insensitively, keeps the last of duplicate keys, turns null into a zero value and ignores absent keys,
 // so a token pre-pass walks the input beside the Go types first: keys exactly as tagged, each once, a key without
 // omitempty required, no null, each value of its JSON type, integers whole and >= 1 (the schema's minimum for every
-// integer), the value rules of the rule tags, and nothing after the object. The caller bounds the size.
+// integer), the value rules of the rule tags (enums, patterns, minLength, maximum), and nothing after the object. The caller bounds the size.
 func Decode(raw []byte) (Result, error) {
 	// encoding/json replaces invalid UTF-8 silently.
 	if !utf8.Valid(raw) {
@@ -137,8 +147,12 @@ func (w *walker) value(t reflect.Type, loc, ruleName string) error {
 		if !ok {
 			return locError(loc, "must be an integer")
 		}
-		if i, err := strconv.Atoi(n.String()); err != nil || i < 1 {
+		i, err := strconv.Atoi(n.String())
+		if err != nil || i < 1 {
 			return locError(loc, "must be an integer >= 1")
+		}
+		if r, ok := rules[ruleName]; ok && r.maximum > 0 && i > r.maximum {
+			return locError(loc, "must be <= "+strconv.Itoa(r.maximum))
 		}
 	}
 	return nil
