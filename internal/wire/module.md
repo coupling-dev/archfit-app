@@ -51,6 +51,7 @@ child is normative in the child's own `module.md`; it is not restated here.
 | `internal/wire/report`   | engine state v1 as no-source transport: `Report` and its parts, `Decode`, `EngineVersions`, size cap |
 | `internal/wire/settings` | `.archfit-app.yaml`: `Settings`, modes, `Parse`, `Render`, file location                             |
 | `internal/wire/policy`   | engine file locations, bare-hex `Digest`, `Waivers`, `Modules`, `ReadBaseline` readers, config `Schema` |
+| `internal/wire/policy3`  | Archfit 4 policy schema 3: `Decode`, `Digest` (`sha256:` form), `AddDependsOn`, `AddException`, `AddDenyRule`, `Loosens` |
 | `internal/wire/manifest` | locked approved identities: `Identity`, `Entry`, `Lookup`, `Current`, `EngineVersions`               |
 
 ### Versioning rule
@@ -58,7 +59,7 @@ child is normative in the child's own `module.md`; it is not restated here.
 - Every contract carries a version identifier: envelope `archfit.report-envelope.v1`, and `archfit.upload-envelope.v2` for
   Archfit 4 (beside v1 only on the `archfit-4` branch, never at a release); decision request `archfit.decision-request.v1`; report
   `archfit.architecture-state.v1`; settings file `version: 1`; manifest data `version: 1`; policy follows the
-  engine release of the manifest's `current` row, v3.4.0 today; the engine baseline file `archfit.baseline.v3`.
+  engine release of the manifest's `current` row, v3.4.0 today; policy schema 3 (`policy3`) follows the engine commit in its `SCHEMA_SOURCE`, a tag at the release; the engine baseline file `archfit.baseline.v3`.
 - Unknown fields are rejected by every decoder here. Three deliberate nuances: the policy readers ignore
   engine-owned keys they do not read; the report decoder knows every key of the pinned engine v3.4.0 state schema and
   drops the known keys that are not allowlisted, while a key that schema does not define is still an error;

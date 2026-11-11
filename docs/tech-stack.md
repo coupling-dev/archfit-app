@@ -28,7 +28,7 @@ The only third-party module is:
 
 | Module                      | Used in                        | Purpose                                 |
 | --------------------------- | ------------------------------ | --------------------------------------- |
-| `go.yaml.in/yaml/v3` v3.0.x | `wire/settings`, `wire/policy` | Strict YAML decoding with `KnownFields` |
+| `go.yaml.in/yaml/v3` v3.0.x | `wire/settings`, `wire/policy`, `wire/policy3` | Strict YAML decoding with `KnownFields`; `wire/policy3` also inserts answers into a policy by node position |
 
 The App has no GitHub SDK, JWT library, JSON Schema library, assertion library, or LLM SDK.
 GitHub, OIDC, Anthropic, Firestore, and metadata-server clients use `net/http`.

@@ -210,7 +210,7 @@ Root fan-out is eight, three above the 4±1 guidance; see Minor issues below.
 
 | Package group          | May import                                                                  |
 | ---------------------- | --------------------------------------------------------------------------- |
-| `wire/*`               | standard library, one YAML library (in `wire/settings`, `wire/policy` only) |
+| `wire/*`               | standard library, one YAML library (in `wire/settings`, `wire/policy`, `wire/policy3` only) |
 | `store`                | standard library                                                            |
 | `store/<driver>`       | standard library, `store`                                                   |
 | `gcptoken`             | standard library                                                            |
@@ -441,7 +441,7 @@ draft are gone. What the real engine changed in this design:
   **Expected behavior**: every import is within the group's allowed set; `wire/*` and `store` import no other internal package.
 - **Test name**: `TestOnlyPlatformSeamsTouchPlatformSDKs`
   **Scenario**: list third-party imports per package.
-  **Expected behavior**: only `wire/settings` and `wire/policy` import YAML; cloud, KV, or LLM SDKs appear only in `Store`, `Sandbox`, or `Provider` implementation packages.
+  **Expected behavior**: only `wire/settings`, `wire/policy` and `wire/policy3` import YAML; cloud, KV, or LLM SDKs appear only in `Store`, `Sandbox`, or `Provider` implementation packages.
 
 ### Integration Contract Tests
 
