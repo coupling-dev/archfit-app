@@ -15,6 +15,9 @@ const maxCompareFiles = 300
 var (
 	errNotCommitSHA = errors.New("github: not a 40-hex commit SHA")
 	errPullNumber   = errors.New("github: invalid pull request or issue number")
+
+	// compareStatuses are the values GitHub documents; any other is not read as one of them.
+	compareStatuses = map[string]bool{"ahead": true, "behind": true, "identical": true, "diverged": true}
 )
 
 // pullTarget guards a write on pull request number at the expected head SHA, so no empty SHA lets GitHub act on
@@ -94,8 +97,9 @@ func (c *Client) Compare(ctx context.Context, r RepoRef, base, head string) (Com
 	if err := c.send(ctx, k, &j); err != nil {
 		return Comparison{}, err
 	}
-	// Without a file list nothing says what changed: an empty list would read as "nothing changed".
-	if j.Status == "" || j.Files == nil {
+	// Without a file list nothing says what changed: an empty list would read as "nothing changed". An unknown status
+	// would read as a known one to a caller that tests for one value.
+	if !compareStatuses[j.Status] || j.Files == nil {
 		return Comparison{}, k.errorf("invalid response")
 	}
 	return Comparison{Status: j.Status, Paths: uniquePaths(*j.Files), Truncated: len(*j.Files) >= maxCompareFiles}, nil

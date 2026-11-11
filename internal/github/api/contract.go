@@ -268,6 +268,7 @@ type Actions interface {
 // WorkflowRuns lists a workflow's runs for one head commit.
 type WorkflowRuns interface {
 	// HeadRuns returns every run of the workflow whose head is headSHA, a 40-hex commit SHA; none is an empty list.
+	// 1 000 runs or more is an error: GitHub's search stops there, so the list could be cut.
 	HeadRuns(ctx context.Context, r RepoRef, workflowPath, headSHA string) ([]WorkflowRun, error)
 }
 
@@ -281,7 +282,7 @@ type IssueTriage interface {
 
 // Comparison is what changed from one commit to another, as GitHub's compare states it.
 type Comparison struct {
-	Status string   // "ahead" | "behind" | "identical" | "diverged": head relative to base, as GitHub gives it
+	Status string   // "ahead" | "behind" | "identical" | "diverged": head relative to base; any other is an error
 	Paths  []string // changed paths; a rename lists both the old and the new path
 	// Truncated is true when GitHub's file list may be cut off (it lists at most 300 files): callers must assume any
 	// path changed.

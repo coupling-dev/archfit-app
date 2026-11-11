@@ -143,6 +143,10 @@ func (c *Client) HeadRuns(ctx context.Context, r RepoRef, workflowPath, headSHA 
 	if err != nil {
 		return nil, err
 	}
+	// GitHub stops a filtered run search at 1 000 results without a next page, so a full cap may be a cut list.
+	if len(all) >= maxItems {
+		return nil, k.errorf("%d runs or more", maxItems)
+	}
 	out := make([]WorkflowRun, len(all))
 	for i, j := range all {
 		out[i] = j.run()

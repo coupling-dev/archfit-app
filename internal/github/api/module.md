@@ -155,7 +155,9 @@ on one answer, at most 300: 300 files set `Truncated`.
   one request takes at most 50, and a caller with more sends them in further updates of the same run, each with the
   title and summary (`gate/feedback` does this). The status is `in_progress` or `completed`; a conclusion is
   `success`, `failure`, `neutral` or `action_required`. Anything else, `queued` and `skipped` included, is an error
-  before any request: GitHub counts a required check that ends `skipped` as passing.
+  before any request: GitHub counts a required check that ends `skipped` as passing, and the App never sets it.
+  `neutral` passes a required check too; it stays allowed for checks that are not required and for advisory mode,
+  and only the caller knows which a run is.
 - `AppComments`: `GET /repos/{r}/issues/{n}/comments`, kept when `user.login` is the bot login.
   `CreateComment`: `POST` there; `UpdateComment`: `PATCH /repos/{r}/issues/comments/{id}`. A comment on an issue is
   the same call with the issue number.
@@ -178,7 +180,8 @@ beyond the 1 000-item cap the call fails, so such a repository gets no repair is
   `pull_requests[].number` (GitHub leaves it empty for fork PRs); `CreatedAt` = `created_at`, which a re-run keeps.
   `Rerun`: `POST .../runs/{id}/rerun`.
 - `HeadRuns` (role `WorkflowRuns`): `GET .../workflows/{file name}/runs?head_sha=` (paged); every run of that head,
-  newest first as GitHub lists them, mapped as `Run`. No run → an empty list.
+  newest first as GitHub lists them, mapped as `Run`. No run → an empty list. 1 000 runs or more → an error: GitHub
+  stops a filtered run search at 1 000 results without a next page, so a full cap may be a cut list.
 - `Dispatch`: `POST /repos/{r}/actions/workflows/{file name}/dispatches` with `ref` and `inputs`.
 - `LatestRun`: `GET .../workflows/{file name}/runs?per_page=1`, plus `branch`, `event` and `status` for each non-empty
   `RunFilter` field (GitHub's `status` takes a run status or a conclusion); none → `ErrNotFound`.
@@ -203,8 +206,8 @@ beyond the 1 000-item cap the call fails, so such a repository gets no repair is
   `PUT .../pulls/{n}/update-branch` with `expected_head_sha`; `202` → success. GitHub makes the update after the
   answer, so the new head may not exist yet. Neither is repeated after a `5xx`.
 - `Compare` (role `Commits`): `GET /repos/{r}/compare/{base}...{head}?per_page=1`, from the merge base to `head`;
-  `Status` = `status` (`ahead`, `behind`, `identical`, `diverged`); `Paths` as `ChangedFiles` (a rename lists both
-  names); an answer without `status` or `files` is an error, never "nothing changed".
+  `Status` = `status` (`ahead`, `behind`, `identical`, `diverged`; any other value is an error); `Paths` as
+  `ChangedFiles` (a rename lists both names); an answer without `files` is an error, never "nothing changed".
 - `UpdatePullBody`: `PATCH .../pulls/{n}`. `MarkReady`: REST cannot leave draft state, so one GraphQL mutation
   `markPullRequestReadyForReview` on the pull's `node_id`; an already ready pull is success. An `errors` entry
   of type `RATE_LIMITED` → `ErrRateLimited` at once, without backoff; any other entry → an error that names the
@@ -520,7 +523,7 @@ type Merges interface {
 
 // Comparison is what changed from one commit to another, as GitHub's compare states it.
 type Comparison struct {
-    Status    string   // "ahead" | "behind" | "identical" | "diverged": head relative to base, as GitHub gives it
+    Status    string   // "ahead" | "behind" | "identical" | "diverged": head relative to base; any other is an error
     Paths     []string // changed paths; a rename lists both the old and the new path
     Truncated bool     // GitHub lists at most 300 files: true at 300, and callers must assume any path changed
 }
@@ -834,13 +837,14 @@ One test per role interface; each asserts method, route, credential, request bod
   with its `Status` and after exactly one request; errors for the malformed `200`s.
 - **Test name**: `TestCompareContract`
   **Scenario**: a modification, a rename and an addition; 300 files; identical commits; an answer without `files`;
-  an unknown commit; non-SHA bases and heads.
-  **Expected behavior**: status and both rename names, `per_page=1`; `Truncated`; an empty list; an error; `ErrNotFound`;
-  no request.
+  an unknown status; an unknown commit; non-SHA bases and heads.
+  **Expected behavior**: status and both rename names, `per_page=1`; `Truncated`; an empty list; an error; an error;
+  `ErrNotFound`; no request.
 - **Test name**: `TestHeadRunsContract`
-  **Scenario**: three runs on two pages; a head without runs; 1 001 runs; an unknown workflow; non-SHA heads.
+  **Scenario**: three runs on two pages; a head without runs; 1 001 runs; exactly 1 000 runs, the last page without a
+  next link (GitHub's search cap); an unknown workflow; non-SHA heads.
   **Expected behavior**: all three with `CreatedAt`, `head_sha` and `per_page=100` on every page; an empty list; an
-  error; `ErrNotFound`; no request.
+  error; an error; `ErrNotFound`; no request.
 - **Test name**: `TestIssueTriageContract`
   **Scenario**: set two assignees, one of which GitHub drops, and a label; set `nil` sets; a pull request; `PATCH`
   answered `422`, `403`; a missing issue; number 0.

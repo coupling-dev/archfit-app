@@ -16,7 +16,8 @@ const (
 )
 
 // conclusions are the only ones the App sets. Others are refused: GitHub counts a required check that ends "skipped"
-// as passing, so a false green never leaves this package.
+// as passing, and the App never sets it. "neutral" passes a required check too; it stays allowed for checks that are
+// not required and for advisory mode, and only the caller knows which a run is.
 var conclusions = map[string]bool{"success": true, "failure": true, "neutral": true, "action_required": true}
 
 type annotationJSON struct {
