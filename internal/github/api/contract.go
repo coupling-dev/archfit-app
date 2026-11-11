@@ -30,9 +30,16 @@ var (
 	// regular file, or too large. Downloading it again gives the same bytes, unlike a failed read.
 	ErrArtifactInvalid = errors.New("github: artifact is not a single file")
 
-	// ErrUnprocessable is GitHub's 422 on creating an issue with an assignee: the request was refused as a whole and
-	// nothing was created, so the same request without the assignee is safe to send.
+	// ErrUnprocessable is GitHub's 422 on a write that maps it: the request was refused as a whole and nothing changed.
+	// On creating an issue with an assignee, the same request without the assignee is safe to send.
 	ErrUnprocessable = errors.New("github: request refused")
+
+	// ErrNotMergeable is GitHub's 405 on a merge: GitHub cannot merge the pull request now, for example because a
+	// required check is absent, pending, failed or set by another app, or a required review is missing.
+	ErrNotMergeable = errors.New("github: pull request not mergeable")
+
+	// ErrHeadChanged is GitHub's 409 on a merge: the pull request head is not the expected SHA.
+	ErrHeadChanged = errors.New("github: pull request head changed")
 
 	// ErrUserTokenRejected is GitHub's 401 on a user's OAuth token: it expired or was revoked. The token cannot
 	// recover, so the call is not repeated and the user must sign in again.
@@ -170,15 +177,17 @@ type Annotation struct {
 }
 
 type CheckRun struct {
-	ID          int64 // 0 on create
-	Name        string
-	HeadSHA     string
-	ExternalID  string
-	DetailsURL  string // the "Details" link GitHub shows on the check; "" = GitHub's default
-	Status      string // "in_progress" | "completed"
-	Conclusion  string // "" unless completed
-	Title       string
-	Summary     string // markdown, max 65535 bytes
+	ID         int64 // 0 on create
+	Name       string
+	HeadSHA    string
+	ExternalID string
+	DetailsURL string // the "Details" link GitHub shows on the check; "" = GitHub's default
+	Status     string // "in_progress" | "completed"; nothing else is sent
+	Conclusion string // "" unless completed; then "success" | "failure" | "neutral" | "action_required"
+	Title      string
+	Summary    string // markdown, max 65535 bytes
+	// Annotations go in one request: at most 50, and only with a Title and a Summary. GitHub appends the annotations
+	// of each request, so more go in further updates of the same run.
 	Annotations []Annotation
 	StartedAt   time.Time
 	// AnnotationCount is read-only: the annotations GitHub holds for the run, set by CheckRuns.
@@ -235,7 +244,8 @@ type WorkflowRun struct {
 	WorkflowPath string // e.g. ".github/workflows/archfit.yaml"
 	Status       string
 	Conclusion   string
-	PullRequests []int // PR numbers GitHub associates with the run
+	PullRequests []int     // PR numbers GitHub associates with the run
+	CreatedAt    time.Time // when the run was created; a re-run keeps it
 }
 
 // RunFilter narrows LatestRun. Each non-empty field is sent as the GitHub query parameter of the same name.
@@ -253,6 +263,48 @@ type Actions interface {
 	LatestRun(ctx context.Context, r RepoRef, workflowPath string, f RunFilter) (WorkflowRun, error)
 	// Artifact downloads the named artifact of a run, capped at maxBytes.
 	Artifact(ctx context.Context, r RepoRef, runID int64, name string, maxBytes int64) ([]byte, error)
+}
+
+// WorkflowRuns lists a workflow's runs for one head commit.
+type WorkflowRuns interface {
+	// HeadRuns returns every run of the workflow whose head is headSHA, a 40-hex commit SHA; none is an empty list.
+	HeadRuns(ctx context.Context, r RepoRef, workflowPath, headSHA string) ([]WorkflowRun, error)
+}
+
+// IssueTriage sets the assignees and labels of any issue in the repository, not only of the App's own.
+type IssueTriage interface {
+	// SetAssigneesAndLabels replaces the issue's assignees and labels with exactly these; nil clears a set. It returns
+	// the sets GitHub holds after the call: GitHub drops a change it does not allow without an error. A number that
+	// names a pull request is an error, and nothing is changed.
+	SetAssigneesAndLabels(ctx context.Context, r RepoRef, number int, assignees, labels []string) (gotAssignees, gotLabels []string, err error)
+}
+
+// Comparison is what changed from one commit to another, as GitHub's compare states it.
+type Comparison struct {
+	Status string   // "ahead" | "behind" | "identical" | "diverged": head relative to base, as GitHub gives it
+	Paths  []string // changed paths; a rename lists both the old and the new path
+	// Truncated is true when GitHub's file list may be cut off (it lists at most 300 files): callers must assume any
+	// path changed.
+	Truncated bool
+}
+
+// Commits compares commits.
+type Commits interface {
+	// Compare compares base and head, both 40-hex commit SHAs, with GitHub's three-dot compare: from their merge base
+	// to head.
+	Compare(ctx context.Context, r RepoRef, base, head string) (Comparison, error)
+}
+
+// Merges merges a pull request and updates its branch as the App. Each call names the head SHA it expects, a 40-hex
+// commit SHA, so it never acts on a head its caller has not seen.
+type Merges interface {
+	// MergePull squash-merges the pull request when its head is headSHA and returns the merge commit SHA.
+	// ErrNotMergeable (405), ErrHeadChanged (409) and ErrUnprocessable (422) wrap GitHub's refusal.
+	MergePull(ctx context.Context, r RepoRef, number int, headSHA string) (mergeSHA string, err error)
+	// UpdateBranch merges the base branch into the pull request's branch when its head is headSHA. GitHub accepts the
+	// update (202) and makes it after the answer, so the new head may not exist yet on return. ErrUnprocessable (422):
+	// the head is not headSHA, or GitHub refused the update.
+	UpdateBranch(ctx context.Context, r RepoRef, number int, headSHA string) error
 }
 
 type FileChange struct {
@@ -295,4 +347,9 @@ var (
 	_ Actions  = (*Client)(nil)
 	_ Changes  = (*Client)(nil)
 	_ Users    = (*Client)(nil)
+
+	_ WorkflowRuns = (*Client)(nil)
+	_ IssueTriage  = (*Client)(nil)
+	_ Commits      = (*Client)(nil)
+	_ Merges       = (*Client)(nil)
 )

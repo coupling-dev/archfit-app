@@ -29,12 +29,13 @@ type workflowRunJSON struct {
 	PullRequests []struct {
 		Number int `json:"number"`
 	} `json:"pull_requests"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func (j workflowRunJSON) run() WorkflowRun {
 	run := WorkflowRun{
 		ID: j.ID, Attempt: j.RunAttempt, Event: j.Event, HeadSHA: j.HeadSHA, WorkflowPath: j.Path,
-		Status: j.Status, Conclusion: j.Conclusion,
+		Status: j.Status, Conclusion: j.Conclusion, CreatedAt: j.CreatedAt,
 	}
 	if j.HeadRepository != nil {
 		run.HeadRepo = j.HeadRepository.FullName
@@ -122,6 +123,31 @@ func (c *Client) LatestRun(ctx context.Context, r RepoRef, workflowPath string, 
 		return WorkflowRun{}, k.errorf("%w", ErrNotFound)
 	}
 	return j.Runs[0].run(), nil
+}
+
+func (c *Client) HeadRuns(ctx context.Context, r RepoRef, workflowPath, headSHA string) ([]WorkflowRun, error) {
+	if !commitSHARE.MatchString(headSHA) {
+		return nil, errNotCommitSHA
+	}
+	cr, base, err := r.target()
+	if err != nil {
+		return nil, err
+	}
+	file, err := workflowFile(workflowPath)
+	if err != nil {
+		return nil, err
+	}
+	k := call{cred: cr, method: http.MethodGet, route: "/repos/{r}/actions/workflows/{file}/runs",
+		url: pagedURL(base+"/actions/workflows/"+file+"/runs", url.Values{"head_sha": {headSHA}})}
+	all, err := listAll[workflowRunJSON](ctx, c, k, "workflow_runs")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]WorkflowRun, len(all))
+	for i, j := range all {
+		out[i] = j.run()
+	}
+	return out, nil
 }
 
 func (c *Client) Artifact(ctx context.Context, r RepoRef, runID int64, name string, maxBytes int64) ([]byte, error) {

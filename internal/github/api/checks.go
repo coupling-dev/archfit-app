@@ -9,10 +9,15 @@ import (
 )
 
 const (
-	maxSummaryBytes = 65535
-	maxAnnotations  = 50
-	statusCompleted = "completed"
+	maxSummaryBytes  = 65535
+	maxAnnotations   = 50
+	statusCompleted  = "completed"
+	statusInProgress = "in_progress"
 )
+
+// conclusions are the only ones the App sets. Others are refused: GitHub counts a required check that ends "skipped"
+// as passing, so a false green never leaves this package.
+var conclusions = map[string]bool{"success": true, "failure": true, "neutral": true, "action_required": true}
 
 type annotationJSON struct {
 	Path      string `json:"path"`
@@ -65,8 +70,13 @@ func checkRunBody(c CheckRun) (checkRunJSON, error) {
 		return checkRunJSON{}, errors.New("github: check run summary over 65535 bytes")
 	case len(c.Annotations) > maxAnnotations:
 		return checkRunJSON{}, errors.New("github: check run with more than 50 annotations")
-	case c.Status == statusCompleted && c.Conclusion == "":
-		return checkRunJSON{}, errors.New("github: completed check run without a conclusion")
+	case len(c.Annotations) > 0 && (c.Title == "" || c.Summary == ""):
+		// GitHub requires both in an output, so each batch of annotations repeats them.
+		return checkRunJSON{}, errors.New("github: check run annotations without a title and a summary")
+	case c.Status != statusInProgress && c.Status != statusCompleted:
+		return checkRunJSON{}, errors.New("github: check run status is not in_progress or completed")
+	case c.Status == statusCompleted && !conclusions[c.Conclusion]:
+		return checkRunJSON{}, errors.New("github: completed check run without success, failure, neutral or action_required")
 	case c.Status != statusCompleted && c.Conclusion != "":
 		return checkRunJSON{}, errors.New("github: conclusion on a check run that is not completed")
 	}
