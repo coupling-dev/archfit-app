@@ -1,12 +1,13 @@
 // Package wire groups the versioned wire contracts shared with the archfit engine, archfit-action and the files
 // customers keep on their protected ref. It exports nothing: consumers import the child packages envelope, decision,
-// report, result, settings, policy and manifest.
+// report, result, request, settings, policy and manifest.
 //
 // Placement rule: a wire package holds transport types, schemas, strict decoding and digests. It holds no domain
 // decision and does no I/O; nothing here is persisted. Children never import each other or any other internal
 // package; shared meaning travels as plain strings and the consumer does the mapping.
 //
 // Versioning rule: every contract carries a version identifier, and a wrong or unknown one is a decode error.
+// The request line is the exception: a command people type, it changes only with an engine release (design 11.7).
 // Decoders reject unknown fields, so a producer may send a new optional field only after an App release allows it.
 // The report decoder reads each engine release it lists with that release's own key set, and the manifest may
 // approve several releases, so an engine upgrade needs no flag day.
