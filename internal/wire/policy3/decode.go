@@ -50,12 +50,12 @@ func Decode(data []byte) (File, error) {
 	if err := dec.Decode(&f); err != nil {
 		return File{}, err
 	}
-	var raw any
-	if err := yaml.Unmarshal(data, &raw); err != nil {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return File{}, err
 	}
 	var kinds problems
-	checkKinds(&kinds, raw, reflect.TypeFor[File](), "")
+	checkKinds(&kinds, toAny(doc.Content[0]), reflect.TypeFor[File](), "")
 	if err := kinds.err(); err != nil {
 		return File{}, err
 	}

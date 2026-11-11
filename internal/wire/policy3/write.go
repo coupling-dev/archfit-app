@@ -55,7 +55,7 @@ func AddDependsOn(file []byte, module, dependency string) ([]byte, error) {
 	}
 	_, modules := entry(d.root, "modules")
 	modKey, node := entry(modules, module)
-	if modules.Style&yaml.FlowStyle != 0 || node == nil || node.Kind != yaml.MappingNode || node.Style&yaml.FlowStyle != 0 ||
+	if modules == nil || modules.Style&yaml.FlowStyle != 0 || node == nil || node.Kind != yaml.MappingNode || node.Style&yaml.FlowStyle != 0 ||
 		len(node.Content) == 0 || !d.startsLine(modKey) || !d.startsLine(node.Content[0]) {
 		return nil, fmt.Errorf("%w: module %q is not a block mapping", ErrLayout, module)
 	}
@@ -236,6 +236,9 @@ func newDoc(data []byte) (*doc, error) {
 	if node.Kind != yaml.DocumentNode || len(node.Content) != 1 || node.Content[0].Kind != yaml.MappingNode {
 		return nil, fmt.Errorf("%w: the policy is not one block mapping", ErrLayout)
 	}
+	if err := checkLayout(data, node.Content[0]); err != nil {
+		return nil, err
+	}
 	d := &doc{data: data, root: node.Content[0], eol: "\n", starts: []int{0}}
 	for i, b := range data {
 		if b == '\n' && i+1 < len(data) {
@@ -246,6 +249,42 @@ func newDoc(data []byte) (*doc, error) {
 		d.eol = "\r\n"
 	}
 	return d, nil
+}
+
+// checkLayout refuses what node positions cannot place an edit in. A line break other than
+// LF or CRLF moves the node lines away from the lines the writer counts. A document end
+// marker or a second document leaves the end of the file outside the policy. An anchor, an
+// alias or a merge key puts a key's value somewhere other than under the key.
+func checkLayout(data []byte, root *yaml.Node) error {
+	for i, b := range data {
+		if b == '\r' && (i+1 == len(data) || data[i+1] != '\n') {
+			return fmt.Errorf("%w: a CR line break without LF", ErrLayout)
+		}
+	}
+	if strings.ContainsAny(string(data), "\u0085\u2028\u2029") {
+		return fmt.Errorf("%w: a NEL, LS or PS line break", ErrLayout)
+	}
+	seenContent := false
+	for line := range strings.Lines(string(data)) {
+		text := strings.TrimRight(line, " \t\r\n")
+		switch {
+		case text == "...":
+			return fmt.Errorf("%w: a document end marker", ErrLayout)
+		case (text == "---" || strings.HasPrefix(text, "--- ")) && seenContent:
+			return fmt.Errorf("%w: a second document", ErrLayout)
+		}
+		if trimmed := strings.TrimSpace(text); trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+			seenContent = true
+		}
+	}
+	var special func(*yaml.Node) bool
+	special = func(n *yaml.Node) bool {
+		return n.Anchor != "" || n.Kind == yaml.AliasNode || n.ShortTag() == "!!merge" || slices.ContainsFunc(n.Content, special)
+	}
+	if special(root) {
+		return fmt.Errorf("%w: an anchor, an alias or a merge key", ErrLayout)
+	}
+	return nil
 }
 
 // text returns line n (counted from 1) without its line end.

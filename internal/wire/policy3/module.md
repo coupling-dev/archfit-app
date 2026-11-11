@@ -39,13 +39,19 @@ the pin to a tag; moderate after.
 - The decode rules of the engine's `internal/config/policyfile`: the version message, the closed values, the one form
   of a rule, `to` required except for `unowned`, `expires` as `YYYY-MM-DD`. The unknown-key and duplicate-key messages
   are those of `go.yaml.in/yaml/v3`; every other message is the engine's. A date written without quotes is a string.
+  The kind checks follow `yaml.v3`'s scalars with two rules of the engine's library added: a mapping key is its text
+  whatever its kind (a module may be named `123`), and a bare number with an exponent and no decimal point (`1e3`) is
+  a string, so a login of that form is a name. A merge key adds the keys the mapping does not set. Other scalar forms the
+  two libraries may resolve differently have no engine fixture and are not aligned.
 - Why the writer inserts text instead of encoding the document: a YAML encoder rewrites indentation, quoting and blank
   lines, so the digest would change with bytes the answer did not touch. The node tree gives the line and column of
   each key; the inserted lines copy the indentation of their neighbours.
 - The layouts the writer edits: a module that is a block mapping; `depends_on` absent, a flow list on one line, or a
   block list; `exceptions` and `rules` absent (appended at the end of the file) or a block list, with its dashes
   indented or at the key's indent. Line ends (LF or CRLF) and a missing final newline stay as they are. Any other layout
-  is `ErrLayout`: the owner edits the file by hand.
+  is `ErrLayout`: the owner edits the file by hand. That includes a line break other than LF or CRLF, a document end
+  marker or a second document (a `---` on the first line is fine), and an anchor, an alias or a merge key. `Decode`
+  still reads those files.
 
 ## Public Contract
 
@@ -99,11 +105,13 @@ Contract strength, root / 2 / 2: balanced.
   fixtures, each with the messages its error must contain.
 - `TestDecodeReportsEveryProblem`, `TestDecodeVersionNumbers`, `TestDecodeSwitchForms`, `TestDecodeNamesForms`,
   `TestDecodeRejectsConvertedKinds`, `TestDecodeEmptyInput`: forms the fixtures do not reach.
+- `TestDecodeFollowsTheEngineScalarRules`: `1e3` as a login, `7e0` as a balance, a module named `123`, merge keys.
 - `TestDigestEqualsTheEngineDigest`: the digest of each valid fixture equals the value `shasum -a 256` gave once.
 - `TestDigestChangesOnlyWhenBytesChange`, `TestWriterNoChangeKeepsTheDigest`.
 - `TestWriterGoldens`: each directory under `testdata/writer` holds `in.yaml`, `answer.json` and `out.yaml`. The output
   equals the golden, decodes, is an insertion of the input, and the kind in `answer.json` has the stated `Loosens`.
   Run `go test ./internal/wire/policy3 -run TestWriterGoldens -update` only after reading the diff.
-- `TestWriterKeepsLineEndingsAndFinalNewline`, `TestWriterRefuses` (unknown module, a layout it does not edit, a value a
-  flow list would split, a bad date, a reason on two lines, an invalid result).
+- `TestWriterKeepsLineEndingsAndFinalNewline`, `TestWriterAcceptsALeadingDocumentStart`, `TestWriterRefuses` (unknown
+  module, a layout it does not edit, including a bare CR or NEL break, a merge key, an alias, a document end marker and a
+  second document; a value a flow list would split, a bad date, a reason on two lines, an invalid result).
 - `TestLoosens`, `TestSourcePinsEveryVendoredFile`, `TestTypesHaveTheKeysOfTheSchema`.

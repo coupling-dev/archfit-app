@@ -239,6 +239,48 @@ func TestWriterRefuses(t *testing.T) {
 			wantErr: `expires "19-11-2026" is not a date`,
 		},
 		{
+			name: "a CR line break without LF, which the YAML reader counts and the writer does not",
+			do: func() ([]byte, error) {
+				return policy3.AddDependsOn([]byte(strings.ReplaceAll(base, "\n", "\r")), "app", "lib")
+			},
+			wantErr: "CR line break", layout: true,
+		},
+		{
+			name: "a NEL line break",
+			do: func() ([]byte, error) {
+				return policy3.AddDependsOn([]byte(strings.ReplaceAll(base, "\n", "\u0085")), "app", "lib")
+			},
+			wantErr: "NEL, LS or PS", layout: true,
+		},
+		{
+			name: "a merge key at the root, so modules is not under its own key",
+			do: func() ([]byte, error) {
+				return policy3.AddDependsOn([]byte("version: 3\nowners: [o]\n<<: {modules: {app: {paths: [app/**]}, lib: {paths: [lib/**]}}}\n"), "app", "lib")
+			},
+			wantErr: "merge key", layout: true,
+		},
+		{
+			name: "an alias",
+			do: func() ([]byte, error) {
+				return policy3.AddDependsOn([]byte("version: 3\nowners: [o]\nmodules:\n  app:\n    paths: &p [cmd/**]\n  lib:\n    paths: *p\n"), "app", "lib")
+			},
+			wantErr: "alias", layout: true,
+		},
+		{
+			name: "a document end marker, after which an appended key would not be the policy's",
+			do: func() ([]byte, error) {
+				return policy3.AddException([]byte(base+"...\n"), policy3.Exception{Rule: "graph", From: "app", To: "lib", Why: "w"})
+			},
+			wantErr: "document end marker", layout: true,
+		},
+		{
+			name: "a second document",
+			do: func() ([]byte, error) {
+				return policy3.AddDenyRule([]byte(base+"---\nother: 1\n"), "no-app-to-lib", "app", "lib", "w", "i")
+			},
+			wantErr: "second document", layout: true,
+		},
+		{
 			name: "a reason on two lines",
 			do: func() ([]byte, error) {
 				return policy3.AddException([]byte(base), policy3.Exception{Rule: "graph", From: "app", To: "lib", Why: "one\ntwo"})
@@ -280,5 +322,17 @@ func TestWriterRefuses(t *testing.T) {
 				t.Errorf("errors.Is(err, ErrLayout) = %v, want %v", !tt.layout, tt.layout)
 			}
 		})
+	}
+}
+
+// A document start marker on the first line is not a second document.
+func TestWriterAcceptsALeadingDocumentStart(t *testing.T) {
+	in := "---\nversion: 3\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n  lib:\n    paths: [lib/**]\n"
+	got, err := policy3.AddDependsOn([]byte(in), "app", "lib")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := strings.Replace(in, "    paths: [cmd/**]\n", "    paths: [cmd/**]\n    depends_on: [lib]\n", 1); string(got) != want {
+		t.Errorf("got\n%s\nwant\n%s", got, want)
 	}
 }

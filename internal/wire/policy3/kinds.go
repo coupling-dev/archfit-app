@@ -5,15 +5,85 @@ import (
 	"maps"
 	"math"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
+
+	"go.yaml.in/yaml/v3"
 )
 
 var (
 	namesType  = reflect.TypeFor[Names]()
 	switchType = reflect.TypeFor[Switch]()
 )
+
+// exponentOnly matches a number with an exponent and no decimal point. The engine's YAML
+// library reads it as a string and yaml.v3 as a float, and a GitHub login such as 1e3 must
+// stay a name, so it is a string here too.
+var exponentOnly = regexp.MustCompile(`^[-+]?[0-9]+[eE][-+]?[0-9]+$`)
+
+// toAny converts a YAML node into the plain tree that checkKinds walks, with the engine's
+// rules: a mapping key is its text whatever its kind (a module may be named 123), and a
+// bare number with an exponent and no decimal point is a string. An alias is its target
+// and a merge key adds the keys the mapping does not set itself.
+func toAny(n *yaml.Node) any {
+	switch n.Kind {
+	case yaml.AliasNode:
+		return toAny(n.Alias)
+	case yaml.SequenceNode:
+		list := make([]any, len(n.Content))
+		for i, item := range n.Content {
+			list[i] = toAny(item)
+		}
+		return list
+	case yaml.MappingNode:
+		return toMap(n)
+	case yaml.ScalarNode:
+		var v any
+		if err := n.Decode(&v); err != nil {
+			return n.Value
+		}
+		if _, isFloat := v.(float64); isFloat && exponentOnly.MatchString(n.Value) {
+			return n.Value
+		}
+		return v
+	}
+	return nil
+}
+
+func toMap(n *yaml.Node) map[string]any {
+	m := map[string]any{}
+	var merges []*yaml.Node
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		key, value := n.Content[i], n.Content[i+1]
+		if key.ShortTag() == "!!merge" {
+			merges = append(merges, value)
+			continue
+		}
+		m[key.Value] = toAny(value)
+	}
+	for _, merge := range merges {
+		sources := []*yaml.Node{merge}
+		if merge.Kind == yaml.SequenceNode {
+			sources = merge.Content
+		}
+		for _, source := range sources {
+			if source.Kind == yaml.AliasNode {
+				source = source.Alias
+			}
+			if source.Kind != yaml.MappingNode {
+				continue
+			}
+			for key, value := range toMap(source) {
+				if _, set := m[key]; !set {
+					m[key] = value
+				}
+			}
+		}
+	}
+	return m
+}
 
 // checkKinds walks the raw YAML tree beside the File type and reports a value of the
 // wrong kind. The YAML decoder converts scalars silently (12 into a string field, "7"

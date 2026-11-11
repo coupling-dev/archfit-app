@@ -408,3 +408,70 @@ func TestDecodeEmptyInput(t *testing.T) {
 		}
 	}
 }
+
+// Where the engine's YAML library and yaml.v3 read a scalar differently, the App follows the
+// engine, so a file the engine accepts is not refused here, and the reverse.
+func TestDecodeFollowsTheEngineScalarRules(t *testing.T) {
+	tests := []struct {
+		name, yaml, wantErr string
+		check               func(*testing.T, policy3.File)
+	}{
+		{
+			name: "a login that looks like a number with an exponent is a name",
+			yaml: "owners: [1e3]\nmodules:\n  app:\n    paths: [cmd/**]\n",
+			check: func(t *testing.T, f policy3.File) {
+				if !reflect.DeepEqual(f.Owners, []string{"1e3"}) {
+					t.Errorf("Owners = %v", f.Owners)
+				}
+			},
+		},
+		{
+			name:    "a number with an exponent is not a whole number",
+			yaml:    header + "builtin:\n  min_balance: 7e0\n",
+			wantErr: `builtin.min_balance: "7e0" is not a whole number`,
+		},
+		{
+			name:    "a fraction with an exponent is a number, so not a name",
+			yaml:    "owners: [1.5e3]\nmodules:\n  app:\n    paths: [cmd/**]\n",
+			wantErr: "owners[0]: 1500 is not a string",
+		},
+		{
+			name: "a module named by a number",
+			yaml: "owners: [o]\nmodules:\n  123:\n    paths: [cmd/**]\n",
+			check: func(t *testing.T, f policy3.File) {
+				if _, ok := f.Modules["123"]; !ok {
+					t.Errorf("Modules = %v", f.Modules)
+				}
+			},
+		},
+		{
+			name: "a merge key supplies keys the mapping does not set",
+			yaml: "owners: [o]\n<<: {modules: {app: {paths: [cmd/**]}}}\n",
+			check: func(t *testing.T, f policy3.File) {
+				if _, ok := f.Modules[modApp]; !ok {
+					t.Errorf("Modules = %v", f.Modules)
+				}
+			},
+		},
+		{
+			name:    "a merged value is checked like any other",
+			yaml:    "owners: [o]\n<<: {modules: {app: {paths: [12]}}}\n",
+			wantErr: "modules.app.paths[0]: 12 is not a string",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := policy3.Decode([]byte("version: 3\n" + tt.yaml))
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Decode: %v", err)
+			}
+			tt.check(t, got)
+		})
+	}
+}
