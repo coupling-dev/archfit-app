@@ -2,7 +2,7 @@
 
 **Path**: internal/gate/
 **Parent**: internal/ (Archfit App root)
-**Submodules**: ingest, inputs, verdict, feedback, sweep, decisions
+**Submodules**: ingest, inputs, verdict, feedback, sweep, decisions, records
 
 ## Purpose
 
