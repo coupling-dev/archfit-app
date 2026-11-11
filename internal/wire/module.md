@@ -2,7 +2,7 @@
 
 **Path**: internal/wire/
 **Parent**: internal/ (Archfit App)
-**Submodules**: envelope, decision, report, settings, policy, manifest
+**Submodules**: envelope, decision, report, result, settings, policy, manifest
 
 ## Purpose
 
@@ -13,10 +13,10 @@ and the control plane, a version bump would touch domain logic, and nobody could
 
 ## Functional Responsibilities
 
-- Publish six child packages, each owning one contract: the upload envelope, the decision request an unattended agent
-  files, the no-source state report, the App settings file, the App's view of the engine policy files, and the approved
-  identity manifest.
-- State the versioning rule all six follow.
+- Publish seven child packages, each owning one contract: the upload envelope, the decision request an unattended agent
+  files, the no-source state report, the engine's result JSON and text record, the App settings file, the App's view of
+  the engine policy files, and the approved identity manifest.
+- State the versioning rule all seven follow.
 - Hold the shared conformance fixtures in `wire/testdata/` (a transparent folder, not a module) used by the
   children's tests and by consumer tests such as the gate verdict table.
 - The parent package itself has no code except `doc.go`.
@@ -34,6 +34,9 @@ core modules, which is why everything here is contract-strength and strictly ver
 - Current engine schemas are pinned to v3.4.0 at `2692cd6b8aab23e559d0aa76712a192d69b4229f` (state sha256 `1d37f7d8…`, config sha256 `edffa7db…`).
   The state schema adds to v3.0.0/v3.0.1 the keys v3.3.0 and v3.4.0 emit and requires `identity`; the config schema adds `target_branch` and `module_review.change_gate`.
   New workflows pin Action v3.1.1 at commit `2221f4bfece0725a657414fed751cdc090ba1bd4`, the only Action in the manifest. The App still owns the unchanged envelope schema.
+- The Archfit 4 result schema and the engine's result and record goldens are vendored in `wire/result` from engine commit
+  `d86c2eda5cfd103835c54b145c1db4289f868f4a`, pinned in its `SCHEMA_SOURCE`; they live in that child's own `testdata/`,
+  outside the corpus below, because they have no `.expect.json` and only that child reads them.
 - Each child's internals (decoder technique, caps, file formats) stay in that child.
 
 ## Public Contract
@@ -49,6 +52,7 @@ child is normative in the child's own `module.md`; it is not restated here.
 | `internal/wire/envelope` | report-envelope v1: `Envelope`, `Kind`, `Decode`, `PayloadDigest`, `Schema`; upload envelope 2: `EnvelopeV2`, `DecodeV2`, `SchemaV2Document` |
 | `internal/wire/decision` | decision-request v1: `Request`, `Extract`, `Decode`, `Identify`, `Schema`, `StatusMarker`, `StatusLine`  |
 | `internal/wire/report`   | engine state v1 as no-source transport: `Report` and its parts, `Decode`, `EngineVersions`, size cap |
+| `internal/wire/result`   | engine result v1 (Archfit 4): `Result` and its parts, `Status`, `Decode`, `Record`, vendored goldens   |
 | `internal/wire/settings` | `.archfit-app.yaml`: `Settings`, modes, `Parse`, `Render`, file location                             |
 | `internal/wire/policy`   | engine file locations, bare-hex `Digest`, `Waivers`, `Modules`, `ReadBaseline` readers, config `Schema` |
 | `internal/wire/policy3`  | Archfit 4 policy schema 3: `Decode`, `Digest` (`sha256:` form), `AddDependsOn`, `AddException`, `AddDenyRule`, `Loosens` |
@@ -58,7 +62,7 @@ child is normative in the child's own `module.md`; it is not restated here.
 
 - Every contract carries a version identifier: envelope `archfit.report-envelope.v1`, and `archfit.upload-envelope.v2` for
   Archfit 4 (beside v1 only on the `archfit-4` branch, never at a release); decision request `archfit.decision-request.v1`; report
-  `archfit.architecture-state.v1`; settings file `version: 1`; manifest data `version: 1`; policy follows the
+  `archfit.architecture-state.v1`; result `archfit.result.v1` (Archfit 4); settings file `version: 1`; manifest data `version: 1`; policy follows the
   engine release of the manifest's `current` row, v3.4.0 today; policy schema 3 (`policy3`) follows the engine commit in its `SCHEMA_SOURCE`, a tag at the release; the engine baseline file `archfit.baseline.v3`.
 - Unknown fields are rejected by every decoder here. Three deliberate nuances: the policy readers ignore
   engine-owned keys they do not read; the report decoder knows every key of the pinned engine v3.4.0 state schema and

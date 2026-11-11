@@ -2,7 +2,7 @@
 
 **Path**: internal/gate/
 **Parent**: internal/ (Archfit App root)
-**Submodules**: ingest, inputs, verdict, feedback, sweep, decisions
+**Submodules**: ingest, inputs, verdict, feedback, sweep, decisions, records
 
 ## Purpose
 
@@ -846,6 +846,19 @@ func Withdrawal(t Target, current CheckState, tr Trusted) *Publication
   decides what a comment may file (the checks of the intake above); the child keeps the record, the status comment and
   the stale transitions. `gate/sweep` reaches it through its own `Decisions` interface (rule 8).
 
+### gate/records (child)
+
+- **Counterpart**: internal/gate/records
+- **Direction**: gate depends on records (no caller yet: milestone 2 tasks 14, 16, 19, 20 and 22 add them)
+- **Strength**: contract
+- **LCA / Rank / Distance**: gate / 1 / 1
+- **Volatility**: high
+- **Balanced?**: yes
+- **Shared knowledge**: the `v4/` keys and their values (`Repo`, `Request`, `Approval`, `Proposal`, `Pull`, `Index`),
+  `Encode`, `Decode`, `Load`, `Indexed`, `Join`, `Consume`, and the errors `ErrNoRecord`, `ErrMoved`, `ErrJoined`,
+  `ErrFull`, `ErrExists`, `ErrTooLarge`. The child owns the Archfit 4 state and its swap rules; the façade will decide
+  when a record changes. It reads and writes no Archfit 3 key.
+
 ### wire/manifest
 
 - **Counterpart**: internal/wire/manifest
@@ -1246,8 +1259,9 @@ type Verifier interface {
   and `CompareAndSwap` on `pusher/<repo>/<head_sha>` and `approval/<repo>/<pull_request>/<head_sha>` under the same tenant inside
   `gate/inputs`, `Get`, `CompareAndSwap` and `CompareAndSwapAll` on `decision/...` keys under the same tenant inside
   `gate/decisions`, and `Get` and
-  `CompareAndSwap` on `feedback/lease/<head_sha>` under the same tenant inside `gate/feedback`. It calls no
-  other Store operation. `ErrNotFound` is the store sentinel for a missing key; for the entitlement it means "not
+  `CompareAndSwap` on `feedback/lease/<head_sha>` under the same tenant inside `gate/feedback`, and `Get` and
+  `CompareAndSwapAll` (through `store.Update`) on `v4/...` keys under the same tenant inside `gate/records`. It calls
+  no other Store operation. `ErrNotFound` is the store sentinel for a missing key; for the entitlement it means "not
   suspended", for a lease that the lease is free. `SystemTenant` is never used by the gate, and the gate never
   calls `Tenants`.
 

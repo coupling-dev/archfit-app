@@ -1,6 +1,6 @@
 // Package wire groups the versioned wire contracts shared with the archfit engine, archfit-action and the files
-// customers keep on their protected ref. It exports nothing: consumers import the child packages envelope, report,
-// settings, policy and manifest.
+// customers keep on their protected ref. It exports nothing: consumers import the child packages envelope, decision,
+// report, result, settings, policy and manifest.
 //
 // Placement rule: a wire package holds transport types, schemas, strict decoding and digests. It holds no domain
 // decision and does no I/O; nothing here is persisted. Children never import each other or any other internal
