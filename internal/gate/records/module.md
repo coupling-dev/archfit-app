@@ -23,7 +23,7 @@ its index could drift apart.
 - Keep the indexes: one `Index` type, one schema per index, entries sorted and unique by key. Every lookup of a
   record goes through an index key, never a scan.
 - Change a record and its index together in one `CompareAndSwapAll` (`Indexed`, over `store.Update`).
-- Let an approval join one proposal, once (`Join`).
+- Let an approval join one proposal, once, and pin the proposal to the head and digest that carry it (`Join`).
 - Consume a proposal once (`Consume`): open to merged with the merge commit, its index entry removed and the
   repository's approved digest set, in one swap; the same commit again is a no-op success.
 
@@ -80,12 +80,15 @@ Functions, all under one installation tenant:
 - `Indexed(ctx, s, t, recordKey, indexKey, indexSchema, edit) error`: `edit` gets the record bytes (`nil` when
   missing) and the index (empty when missing), changes the index in place, and returns the next record bytes (`nil`
   deletes). Both keys change in one swap; a lost swap calls `edit` again; an `edit` error writes nothing.
-- `Join(ctx, s, t, repo, approvalID, proposalID) error`: an open approval joins an open proposal. The same join again
-  is `nil`; an approval of another proposal is `ErrJoined`; a void approval or a proposal that is not open is
-  `ErrMoved`; a full proposal is `ErrFull`; a missing record is `ErrNoRecord`.
-- `Consume(ctx, s, t, repo, proposalID, commit, digest) error`: see Functional Responsibilities. A proposal that is
-  void, merged by another commit, without a pull request, or expecting another digest is `ErrMoved`; a missing one is
-  `ErrNoRecord`. The rule is decided again after every lost swap, so of concurrent callers with different commits
+- `Join(ctx, s, t, repo, approvalID, proposalID, headSHA, digest) error`: an open approval joins an open proposal,
+  and the proposal's `HeadSHA` and `ExpectedDigest` become the head that carries all its approvals and that head's
+  digest, in the same swap. So a merge of an older head never consumes the approval that just joined: its digest no
+  longer matches. The same join again only pins again (after a branch rewrite); an approval of another proposal is
+  `ErrJoined`; a void approval or a proposal that is not open is `ErrMoved`; a full proposal is `ErrFull`; a missing
+  record is `ErrNoRecord`.
+- `Consume(ctx, s, t, repo, proposalID, commit, digest) error`: see Functional Responsibilities. The same commit with
+  the same digest again is `nil`. A proposal that is void, merged by another commit, without a pull request, or
+  expecting another digest (also once merged) is `ErrMoved`; a missing one is `ErrNoRecord`. The rule is decided again after every lost swap, so of concurrent callers with different commits
   exactly one wins, and callers with the same commit all succeed.
 
 Every write goes through `store.Update`; after 5 lost swaps it returns `store.ErrConflict`, and the caller may read
@@ -126,15 +129,17 @@ Later milestone 2 modules (ingest, requests, answers, approvals, the sweep) read
 - `TestEncodeRefuses`: a 64 KiB reason (`ErrTooLarge`), an index without a schema, a proposal over `MaxApprovals`.
 - `TestIndexAddRemoveLookup`: sorted insert, the same entry again, `ErrExists`, lookup, remove, remove of a missing key.
 - `TestIndexedMovesARecordAndItsEntryTogether`, `TestIndexedLeavesAnUntouchedIndexMissing`.
-- `TestJoin`: a join, the same join again, an approval of another proposal, a void approval, a merged proposal, a full
-  proposal; a refused join changes nothing.
+- `TestJoin`: a join pins the head and digest, the same join again pins again without a second entry, an approval of
+  another proposal, a void approval, a merged proposal, a full proposal; a refused join changes nothing.
+- `TestAMergeOfAnOlderHeadCannotConsumeAJoinedApproval`: after a join, the digest before it is `ErrMoved` and the
+  pinned digest consumes.
 - `TestConsume`, `TestConsumeRefuses`: success with the index entry removed and the repository kept otherwise; another
-  digest; the same commit again changes no byte; another commit; a void proposal; no pull request; no proposal; an
-  empty commit.
+  digest; the same commit again changes no byte; another commit; the same commit with another digest; a void
+  proposal; no pull request; no proposal; an empty commit.
 - On the memory store and on the Firestore emulator (`FIRESTORE_EMULATOR_HOST`, run by the CI emulator job):
   `TestAConsumeWinsOnce` (two commits, one wins, the other `ErrMoved`),
   `TestTheSameCommitConsumesConcurrentlyWithoutError`, `TestAnApprovalJoinsOneProposalOnly` (two proposals race for
   one approval), `TestAnIndexStaysInStepUnderConcurrentWriters` (20 writers open requests and answer half; the index
   equals the open records).
-- `TestArchfit3KeysAreNeitherReadNorWritten`: Archfit 3 keys seeded; every helper runs; only `v4/` keys are touched
-  and the Archfit 3 bytes are unchanged.
+- `TestArchfit3KeysAreNeitherReadNorWritten`: every Archfit 3 key of `store/module.md` seeded; every helper runs;
+  only `v4/` keys are touched and the Archfit 3 bytes are unchanged.

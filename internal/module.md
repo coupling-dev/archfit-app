@@ -180,6 +180,7 @@ internal/                         Archfit App (root)
 │   ├── verdict/                  pure decision: facts → conclusion and reasons
 │   ├── feedback/                 check runs, the PR comment, receipts, idempotency
 │   ├── decisions/                decision requests of unattended agents: records, status comments, stale rules
+│   ├── records/                  Archfit 4 state under v4/: keys, values, indexes, join and consume
 │   └── sweep/                    reconciliation of open PRs
 └── control/                      control plane (never on the gate path)
     ├── account/                  entitlements, consent records, LLM budget (all KV state)
@@ -277,6 +278,7 @@ Distance scale and thresholds are those of the Fractal Design skill. Depths: roo
 | gate → gate/{ingest,inputs,verdict,feedback,sweep,decisions}                | Functional (composition)          | gate           | 1    | 1        | High       | Yes       | —                                                |
 | gate/sweep → gate/decisions (`Revalidate`); gate/decisions → gate/inputs    | Contract                          | gate           | 1    | 1        | High       | Yes       | —                                                |
 | gate/decisions → wire/decision, wire/policy, github/api, store              | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
+| gate/records → store (`Get`, `Update`)                                      | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
 | gate/verdict → gate/ingest (`Problem`), gate/inputs (`Trusted`)             | Model                             | gate           | 1    | 1        | High       | Yes       | —                                                |
 | gate/feedback → gate/verdict (`Outcome`), gate/inputs (`Target`, `Trusted`) | Model                             | gate           | 1    | 1        | High       | Yes       | —                                                |
 | gate/sweep → gate/inputs, gate/feedback, gate/verdict                       | Contract                          | gate           | 1    | 1        | High       | Yes       | —                                                |

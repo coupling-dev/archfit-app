@@ -54,17 +54,25 @@ interface absorbs that choice; consumers never see it.
 - Input limits **[default]**: key is non-empty, at most 512 bytes, has no NUL byte; value at most 64 KiB;
   tenant is never negative; `CompareAndSwapAll` takes 1 to 10 swaps, each key at most once.
 
-Known keys are informative only; their owners define them. Under the installation tenant: `entitlement` (owned by
-`gate/inputs`, written by `control/account`), `account` and `consent/<kind>` (private to `control/account`),
-`feedback/lease/<head_sha>` (private to `gate/feedback`, written only by `CompareAndSwap`),
-`decision/<repo>/<pr>/<finding_id>/<policy_digest>` with its `/policy` text and `decision/<repo>/pending` and
-`decision/<repo>/lease/<pr>` (private to `gate/decisions`: a decision request, the proposed policy kept apart because a
-value is at most 64 KiB, the list of requests to walk because the Store cannot list keys, written with
-`CompareAndSwapAll`, and the status lease of a pull request, written only by `CompareAndSwap`), and every key under
-`v4/` (owned by `gate/records`: the Archfit 4 state, JSON values with a `schema`, written with `Update`). These are the
-Archfit 3 keys and the Archfit 4 keys: neither set reads or writes the other, so the previous revision stays deployable.
-Under `SystemTenant`: `llm-budget/<YYYY-MM>` (`control/account`). `store` never parses a key or a value except a
-counter in `Add`.
+Known keys are informative only; their owners define them.
+
+- Archfit 3, under the installation tenant: `entitlement` (owned by `gate/inputs`, written by `control/account`);
+  `admission`, `pusher/<repo>/<head_sha>`, `approval/<repo>/<pr>/<head_sha>`, `owner-decision/<repo>/<pr>` and
+  `review-request/<repo>/<pr>/<head_sha>/<base_sha>` (private to `gate/inputs`); `account` and `consent/<kind>`
+  (private to `control/account`); `feedback/lease/<head_sha>` (private to `gate/feedback`, written only by
+  `CompareAndSwap`); `decision/<repo>/<pr>/<finding_id>/<policy_digest>` with its `/policy` text,
+  `decision/<repo>/pending` and `decision/<repo>/lease/<pr>` (private to `gate/decisions`: a decision request, the
+  proposed policy kept apart because a value is at most 64 KiB, the list of requests to walk because the Store cannot
+  list keys, written with `CompareAndSwapAll`, and the status lease of a pull request, written only by
+  `CompareAndSwap`).
+- Archfit 3, under `SystemTenant`: `llm-budget/<YYYY-MM>` (`control/account`) and `app/readiness` (read by the
+  readiness probe of `app`, never written).
+- Archfit 4, under the installation tenant: every key under `v4/` (JSON values with a `schema`). `gate/records` owns
+  all of them except `v4/passkey/<github-user-id>` and `v4/challenge/<id>`, which `control/passkey` owns (M2 task 18),
+  because `control` cannot import `gate/*`.
+
+The Archfit 3 and Archfit 4 sets never read or write each other's keys, so the previous revision stays deployable.
+`store` never parses a key or a value except a counter in `Add`.
 
 ## Public Contract
 
@@ -166,7 +174,8 @@ with `errors.Is`. `NewMemory` is the only constructor in this package.
   `change` returns one value per key: `nil` deletes, the current bytes only check. A `false` swap reads again and calls
   `change` again, at most 5 times **[default]**, then returns `ErrConflict`. An error from `change` or from the Store
   ends `Update` with that error. A wrong number of values, more than 10 keys or a key twice is an error and changes
-  nothing. `change` sees keys read one by one, not a snapshot; it decides again on every attempt.
+  nothing. `change` gets copies of the bytes read, so editing them never changes what the swap compares against.
+  `change` sees keys read one by one, not a snapshot; it decides again on every attempt.
 - `DeleteTenant`: removes every key of `t` and nothing of any other tenant. A second call → `nil`.
   `DeleteTenant(SystemTenant)` → error **[default]**: no uninstall can remove the App-wide budget counter.
 
@@ -245,8 +254,8 @@ knowledge of every entry below; nothing is restated because this file is the nor
 - **Volatility**: High (the gate side)
 - **Balanced?**: Yes
 - **Shared knowledge**: `Tenant`, `Get`, `ErrNotFound`, `Update`, `ErrConflict` and the `CompareAndSwapAll` limits
-  (10 keys, 64 KiB values). It owns every key under `v4/` under `Tenant(installationID)`, never touches another key,
-  and writes a record with its index in one `Update`. `store` knows nothing about its records or indexes.
+  (10 keys, 64 KiB values). It owns every key under `v4/` under `Tenant(installationID)` except the passkey and
+  challenge keys of `control/passkey`, never touches another key, and writes a record with its index in one `Update`. `store` knows nothing about its records or indexes.
 
 ### app
 
@@ -403,14 +412,16 @@ All cases live in `storetest.Run` and run against `NewMemory` and every driver.
   **Expected behavior**: no error text contains the marker.
 
 - **Test name**: `TestUpdateWritesEveryKeyFromTheBytesItRead`, `TestUpdateRetriesFromFreshBytesAfterALostSwap`,
-  `TestUpdateGivesUpWithErrConflict`, `TestUpdateChangeErrorWritesNothing`,
+  `TestUpdateGivesUpWithErrConflict`, `TestUpdateComparesAgainstWhatItReadNotWhatChangeEdited`,
+  `TestUpdateChangeErrorWritesNothing`,
   `TestUpdateRefusesInvalidKeySetsAndWritesNothing`, `TestUpdateRefusesAWrongNumberOfValues`,
   `TestUpdateHonorsACancelledContext`
   **Scenario**: a create, a check, a delete and an edit in one call; a writer between the read and the swap twice;
-  a writer before every swap; a `change` error; 11 keys, a key twice, an empty key; one value for two keys; a
+  a writer before every swap; a `change` that edits its input in place and returns it; a `change` error; 11 keys, a key twice, an empty key; one value for two keys; a
   cancelled context.
   **Expected behavior**: `change` sees `nil` for the missing key and every key is written; `change` runs three times
-  and both other writes are kept; `ErrConflict` after 5 calls and the lost value is not written; the `change` error and
+  and both other writes are kept; `ErrConflict` after 5 calls and the lost value is not written; the edited value
+  written on the first attempt; the `change` error and
   nothing written; an error and no tenant created; an error that is not `ErrConflict`; `context.Canceled` before
   `change` runs.
 
