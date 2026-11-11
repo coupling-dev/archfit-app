@@ -21,6 +21,8 @@ and "the bytes are what the producer stated" could not be checked.
   `labels_digest`), because the engine report itself contains no digest of those files.
 - Carry the engine's classification of the pull request's policy change (`policy_change`) as raw bytes, checked for shape
   only; `wire/report` reads what is inside.
+- Publish the `archfit.upload-envelope.v2` JSON Schema (`SchemaV2Document`) and decode envelope 2 together with its
+  payload (`DecodeV2`). See [Upload envelope 2](#upload-envelope-2).
 - Nothing else. It does not read HTTP requests, compare fields with GitHub data, or decide eligibility.
 
 ## Subdomain Classification
@@ -206,7 +208,9 @@ Shared knowledge, per counterpart:
 
 ## Change Vectors
 
-- A new envelope version: add `SchemaV2`, a second schema file, and a `DecodeV2`; v1 stays until producers migrate.
+- A new envelope version replaces the old one at a release: old and new are never accepted side by side (design 11.7).
+  Envelope 2 (`SchemaV2`, `envelope.v2.schema.json`, `DecodeV2`) sits beside v1 only on the `archfit-4` integration
+  branch; M2 task 25 deletes v1 before the release.
 - Tightening or loosening a field format within v1 when GitHub changes an identifier shape (for example SHA-256 object IDs).
 - Replacing the hand-written checks with a JSON Schema library, once `docs/tech-stack.md` allows one.
 - Changing the raw size limit.
@@ -314,3 +318,96 @@ so `TestSchemaAndDecoderAgree` states that field per fixture name in the test.
   **Scenario**: the upload fixture of the real engine capture (no baseline, no labels) and a fixture with both files.
   **Expected behavior**: the first decodes with both digests `""`; the second with two bare-hex digests, unchanged, for the gate to
   compare with the protected ref. A run that used a head-edited baseline states a digest the protected ref does not have.
+
+## Upload envelope 2
+
+Envelope 2 (`archfit.upload-envelope.v2`) is the Archfit 4 upload: what Action 4 states about one result of
+`archfit check`. The upload body is the engine's result JSON v1 (`archfit.result.v1`). This module reads that body as
+bytes and never parses it; its contract belongs to `wire/result` (M2 task 4). The App owns this contract and Action 4 vendors
+`envelope.v2.schema.json` byte for byte with a `SCHEMA_SOURCE` (M2 plan D4, task 10). Envelope 2 lives in its own files
+(`contract_v2.go`, `decode_v2.go`, `envelope.v2.schema.json`) and reuses the unexported format helpers and the token
+pre-pass of `decode.go`; task 25 keeps those helpers when it deletes v1.
+
+### Field rules (v2)
+
+All 15 keys are required, each once, none `null`. The length limits are **[default]**, as in v1.
+
+| JSON key         | Rule                                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------------------- |
+| `schema_version` | equals `SchemaV2`                                                                                       |
+| `repository`     | `owner/name`, as v1                                                                                     |
+| `event`          | `pull_request`, `push` or `merge_group`; Action 4 refuses every other event before it uploads           |
+| `pull_request`   | integer ≥ 0; > 0 if and only if `event` is `pull_request`                                               |
+| `head_sha`       | `^[0-9a-f]{40}$`: the commit the engine checked (the merge group commit for `merge_group`)              |
+| `merge_base_sha` | `^[0-9a-f]{40}$` for every event: `merge-base(head_sha, target_sha)`; on a push to the target it is the head |
+| `target_ref`     | `refs/heads/` and 1 to 244 printable ASCII characters without a space **[default]**: the branch the policy was read from; format only, ingest compares it with GitHub |
+| `target_sha`     | `^[0-9a-f]{40}$`: the target tip the Action fetched and read the policy from                            |
+| `policy_digest`  | `^sha256:[0-9a-f]{64}$`: the policy file bytes the engine judged with, the form of the result's `policy.digest` |
+| `run_id`         | integer > 0, 64 bits                                                                                    |
+| `run_attempt`    | integer ≥ 1                                                                                             |
+| `engine_version`, `image_digest`, `platform` | as v1, format only                                                          |
+| `payload_digest` | `^sha256:[0-9a-f]{64}$`, and equal to `PayloadDigest(payload)`                                         |
+
+The v1-only keys `kind`, `base_sha`, `analyzed_sha`, `integration`, `baseline_digest`, `labels_digest` and
+`policy_change` are unknown keys. Every digest of envelope 2 has the `sha256:` prefix. `DecodeV2` checks, in order: the
+8 192-byte limit, UTF-8, the token pre-pass of v1 (exact keys, once, non-null, typed, no trailing data),
+`DisallowUnknownFields`, the field rules in the table order, and last the payload digest. The caller bounds the payload
+size (ingest, 5 MiB). Errors name the field and the rule, never a value.
+
+### Public contract (v2)
+
+```go
+const SchemaV2 = "archfit.upload-envelope.v2"
+
+const (
+    EventPullRequest = "pull_request"
+    EventPush        = "push"
+    EventMergeGroup  = "merge_group"
+)
+
+type EnvelopeV2 struct {
+    SchemaVersion string `json:"schema_version"`
+    Repository    string `json:"repository"`
+    Event         string `json:"event"`
+    PullRequest   int    `json:"pull_request"`
+    HeadSHA       string `json:"head_sha"`
+    MergeBaseSHA  string `json:"merge_base_sha"`
+    TargetRef     string `json:"target_ref"`
+    TargetSHA     string `json:"target_sha"`
+    PolicyDigest  string `json:"policy_digest"`
+    RunID         int64  `json:"run_id"`
+    RunAttempt    int    `json:"run_attempt"`
+    EngineVersion string `json:"engine_version"`
+    ImageDigest   string `json:"image_digest"`
+    Platform      string `json:"platform"`
+    PayloadDigest string `json:"payload_digest"`
+}
+
+// DecodeV2 decodes raw strictly and checks that payload is the bytes payload_digest names.
+func DecodeV2(raw, payload []byte) (EnvelopeV2, error)
+
+// SchemaV2Document returns a copy of the published JSON Schema document for SchemaV2.
+func SchemaV2Document() []byte
+```
+
+`DecodeV2` returns a zero `EnvelopeV2` with every error. Decoding proves shape and the payload binding, never truth:
+`gate/ingest` (M2 task 14) holds every field to GitHub, the manifest and the target branch.
+
+### Goldens and tests (v2)
+
+Goldens live in `internal/wire/testdata/envelope-v2/` in the shared expectation format. They are synthetic, uploaded
+with one opaque `stand-in.payload`, and are not part of the wire corpus scan, which decodes v1. Valid: `pull-request`,
+`push`, `merge-group`, `rerun` (attempt 2 of the same run, a moved target). Invalid, one rule each: an unknown key, the
+v1 schema version, a payload digest of other bytes, a missing `target_sha`, a `kind` key, a `baseline_digest` key, a
+bare-hex `policy_digest`, the event `workflow_dispatch`, a push with a pull request number, and `target_ref` `main`.
+
+- `TestDecodeV2Goldens`: every golden decodes as recorded; an invalid one names the field the test records; the schema
+  agrees on every golden except the payload mismatch, which a schema cannot see.
+- `TestGoldensV2Layout`, `TestReRunGoldenIsTheSameRun`: the folder holds goldens, expectations and the payload only;
+  the re-run golden is attempt 2 of the same run with a moved target.
+- `TestSchemaV2MatchesGoType`: the schema properties and `required` equal the `json` tags of `EnvelopeV2`;
+  `additionalProperties` is false; `schema_version` and the `event` enum equal the constants; copies are independent.
+- `TestDecodeV2BindsThePayload`: one changed byte, no payload, and CRLF for LF fail on `payload_digest`; the empty
+  payload with the empty digest decodes.
+- `TestDecodeV2FieldRules`, `TestDecodeV2RejectsTheV1OnlyKeys`: one row per rule, and the schema agrees on each.
+- `TestDecodeV2RejectsNonStrictJSON`, `TestDecodeV2ErrorsNeverEchoValues`, `FuzzDecodeV2`: as their v1 twins.

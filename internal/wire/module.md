@@ -46,7 +46,7 @@ child is normative in the child's own `module.md`; it is not restated here.
 
 | Package                  | Owns                                                                                                 |
 | ------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `internal/wire/envelope` | report-envelope v1: `Envelope`, `Kind`, `Decode`, `PayloadDigest`, `Schema`                          |
+| `internal/wire/envelope` | report-envelope v1: `Envelope`, `Kind`, `Decode`, `PayloadDigest`, `Schema`; upload envelope 2: `EnvelopeV2`, `DecodeV2`, `SchemaV2Document` |
 | `internal/wire/decision` | decision-request v1: `Request`, `Extract`, `Decode`, `Identify`, `Schema`, `StatusMarker`, `StatusLine`  |
 | `internal/wire/report`   | engine state v1 as no-source transport: `Report` and its parts, `Decode`, `EngineVersions`, size cap |
 | `internal/wire/settings` | `.archfit-app.yaml`: `Settings`, modes, `Parse`, `Render`, file location                             |
@@ -55,7 +55,8 @@ child is normative in the child's own `module.md`; it is not restated here.
 
 ### Versioning rule
 
-- Every contract carries a version identifier: envelope `archfit.report-envelope.v1`; decision request `archfit.decision-request.v1`; report
+- Every contract carries a version identifier: envelope `archfit.report-envelope.v1`, and `archfit.upload-envelope.v2` for
+  Archfit 4 (beside v1 only on the `archfit-4` branch, never at a release); decision request `archfit.decision-request.v1`; report
   `archfit.architecture-state.v1`; settings file `version: 1`; manifest data `version: 1`; policy follows the
   engine release of the manifest's `current` row, v3.4.0 today; the engine baseline file `archfit.baseline.v3`.
 - Unknown fields are rejected by every decoder here. Three deliberate nuances: the policy readers ignore
@@ -86,6 +87,7 @@ child is normative in the child's own `module.md`; it is not restated here.
 | Folder      | Content                                                                             |
 | ----------- | ----------------------------------------------------------------------------------- |
 | `envelope/` | envelope JSON documents, valid and invalid                                          |
+| `envelope-v2/` | envelope 2 goldens, valid and invalid, with one `stand-in.payload`; read by `wire/envelope`, not by the corpus scan |
 | `report/`   | state report payloads; optional sibling policy, baseline, labels and envelope files |
 | `policy/`   | engine policy files, including waiver expiry and order cases                        |
 | `leakage/`  | seeded source-bearing payloads; each contains the marker `LEAK-7f3a`                |
