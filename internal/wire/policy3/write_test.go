@@ -274,6 +274,20 @@ func TestWriterRefuses(t *testing.T) {
 			wantErr: "document end marker", layout: true,
 		},
 		{
+			name: "a document end marker with a comment",
+			do: func() ([]byte, error) {
+				return policy3.AddException([]byte(base+"... # end\n"), policy3.Exception{Rule: "graph", From: "app", To: "lib", Why: "w"})
+			},
+			wantErr: "document end marker", layout: true,
+		},
+		{
+			name: "a second document that starts with a comment",
+			do: func() ([]byte, error) {
+				return policy3.AddDenyRule([]byte(base+"--- # next\nother: 1\n"), "no-app-to-lib", "app", "lib", "w", "i")
+			},
+			wantErr: "second document", layout: true,
+		},
+		{
 			name: "a second document",
 			do: func() ([]byte, error) {
 				return policy3.AddDenyRule([]byte(base+"---\nother: 1\n"), "no-app-to-lib", "app", "lib", "w", "i")

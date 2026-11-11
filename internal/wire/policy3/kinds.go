@@ -24,13 +24,13 @@ var (
 var exponentOnly = regexp.MustCompile(`^[-+]?[0-9]+[eE][-+]?[0-9]+$`)
 
 // toAny converts a YAML node into the plain tree that checkKinds walks, with the engine's
-// rules: a mapping key is its text whatever its kind (a module may be named 123), and a
-// bare number with an exponent and no decimal point is a string. An alias is its target
-// and a merge key adds the keys the mapping does not set itself.
+// two scalar rules: a mapping key is its text whatever its kind (a module may be named
+// 123), and a bare number with an exponent and no decimal point is a string. An alias, a
+// merge key and a mapping whose key is an alias are resolved by yaml.v3 itself, which
+// detects a cycle and bounds the expansion, so a crafted file cannot exhaust the stack;
+// the two rules do not reach inside what an alias or a merge brings.
 func toAny(n *yaml.Node) any {
 	switch n.Kind {
-	case yaml.AliasNode:
-		return toAny(n.Alias)
 	case yaml.SequenceNode:
 		list := make([]any, len(n.Content))
 		for i, item := range n.Content {
@@ -38,7 +38,15 @@ func toAny(n *yaml.Node) any {
 		}
 		return list
 	case yaml.MappingNode:
-		return toMap(n)
+		m := make(map[string]any, len(n.Content)/2)
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			key := n.Content[i]
+			if key.Kind == yaml.AliasNode || key.ShortTag() == "!!merge" {
+				return resolved(n)
+			}
+			m[key.Value] = toAny(n.Content[i+1])
+		}
+		return m
 	case yaml.ScalarNode:
 		var v any
 		if err := n.Decode(&v); err != nil {
@@ -48,41 +56,43 @@ func toAny(n *yaml.Node) any {
 			return n.Value
 		}
 		return v
+	case yaml.AliasNode:
+		return resolved(n)
 	}
 	return nil
 }
 
-func toMap(n *yaml.Node) map[string]any {
-	m := map[string]any{}
-	var merges []*yaml.Node
-	for i := 0; i+1 < len(n.Content); i += 2 {
-		key, value := n.Content[i], n.Content[i+1]
-		if key.ShortTag() == "!!merge" {
-			merges = append(merges, value)
-			continue
-		}
-		m[key.Value] = toAny(value)
+// resolved lets yaml.v3 decode a node and gives the mappings string keys. A node that
+// cannot be decoded reads as an empty value: the strict decode that came first would have
+// refused any file whose aliases it followed.
+func resolved(n *yaml.Node) any {
+	var v any
+	if err := n.Decode(&v); err != nil {
+		return nil
 	}
-	for _, merge := range merges {
-		sources := []*yaml.Node{merge}
-		if merge.Kind == yaml.SequenceNode {
-			sources = merge.Content
+	return stringKeys(v)
+}
+
+func stringKeys(v any) any {
+	switch v := v.(type) {
+	case map[string]any:
+		for k, e := range v {
+			v[k] = stringKeys(e)
 		}
-		for _, source := range sources {
-			if source.Kind == yaml.AliasNode {
-				source = source.Alias
-			}
-			if source.Kind != yaml.MappingNode {
-				continue
-			}
-			for key, value := range toMap(source) {
-				if _, set := m[key]; !set {
-					m[key] = value
-				}
-			}
+		return v
+	case map[any]any:
+		m := make(map[string]any, len(v))
+		for k, e := range v {
+			m[fmt.Sprint(k)] = stringKeys(e)
 		}
+		return m
+	case []any:
+		for i, e := range v {
+			v[i] = stringKeys(e)
+		}
+		return v
 	}
-	return m
+	return v
 }
 
 // checkKinds walks the raw YAML tree beside the File type and reports a value of the

@@ -458,6 +458,26 @@ func TestDecodeFollowsTheEngineScalarRules(t *testing.T) {
 			yaml:    "owners: [o]\n<<: {modules: {app: {paths: [12]}}}\n",
 			wantErr: "modules.app.paths[0]: 12 is not a string",
 		},
+		{
+			// The mapping sets owners itself, so the merged list that contains itself is never read.
+			name: "a merged value that contains itself and is overridden",
+			yaml: "owners: [o]\nmodules: {app: {paths: [cmd/**]}}\n<<: {owners: &loop [*loop]}\n",
+			check: func(t *testing.T, f policy3.File) {
+				if !reflect.DeepEqual(f.Owners, []string{"o"}) {
+					t.Errorf("Owners = %v", f.Owners)
+				}
+			},
+		},
+		{
+			name:    "a list that contains itself",
+			yaml:    "owners: &o [a, *o]\nmodules: {app: {paths: [app/**]}}\n",
+			wantErr: "cannot unmarshal",
+		},
+		{
+			name:    "a key that is an alias is checked as the key it stands for",
+			yaml:    "owners: [&k generated]\nmodules: {app: {paths: [app/**]}}\n*k : [12]\n",
+			wantErr: "generated[0]: 12 is not a string",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

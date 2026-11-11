@@ -266,11 +266,11 @@ func checkLayout(data []byte, root *yaml.Node) error {
 	}
 	seenContent := false
 	for line := range strings.Lines(string(data)) {
-		text := strings.TrimRight(line, " \t\r\n")
+		text := strings.TrimRight(line, "\r\n")
 		switch {
-		case text == "...":
+		case isMarker(text, "..."):
 			return fmt.Errorf("%w: a document end marker", ErrLayout)
-		case (text == "---" || strings.HasPrefix(text, "--- ")) && seenContent:
+		case isMarker(text, "---") && seenContent:
 			return fmt.Errorf("%w: a second document", ErrLayout)
 		}
 		if trimmed := strings.TrimSpace(text); trimmed != "" && !strings.HasPrefix(trimmed, "#") {
@@ -285,6 +285,13 @@ func checkLayout(data []byte, root *yaml.Node) error {
 		return fmt.Errorf("%w: an anchor, an alias or a merge key", ErrLayout)
 	}
 	return nil
+}
+
+// isMarker reports whether a line is a YAML document marker: three characters at the start
+// of the line, then the end of the line or a space or a tab, so "... # end" counts.
+func isMarker(line, marker string) bool {
+	rest, ok := strings.CutPrefix(line, marker)
+	return ok && (rest == "" || rest[0] == ' ' || rest[0] == '\t')
 }
 
 // text returns line n (counted from 1) without its line end.
