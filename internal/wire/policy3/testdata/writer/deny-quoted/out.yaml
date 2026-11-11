@@ -1,0 +1,15 @@
+version: 3
+owners: [alexei-led]
+modules:
+  pkg_tc:
+    paths: [pkg/tc/**]
+  pkg_util:
+    paths: [pkg/util/**]
+# Nothing is excepted yet.
+rules:
+  - id: no-tc-to-util
+    deny:
+      from: pkg_tc
+      to: pkg_util
+    why: 'Don''t: it''s the #1 risk, see ADR-7 — "never" import it'
+    instead: '*Ask* for a port: see #12'

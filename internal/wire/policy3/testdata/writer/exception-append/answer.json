@@ -1,0 +1,11 @@
+{
+  "kind": "approve-until",
+  "loosens": true,
+  "exception": {
+    "rule": "duplication",
+    "from": "pkg_tc",
+    "to": "pkg_util",
+    "expires": "2026-11-19",
+    "why": "Request #431 is open."
+  }
+}

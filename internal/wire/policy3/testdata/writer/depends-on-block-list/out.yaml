@@ -1,0 +1,17 @@
+version: 3
+owners:
+    - alexei-led
+modules:
+    app:
+        paths:
+            - cmd/**
+        depends_on:
+            - lib
+            - store
+        # The store came later.
+    lib:
+        paths:
+            - lib/**
+    store:
+        paths:
+            - store/**

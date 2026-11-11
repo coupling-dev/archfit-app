@@ -1,0 +1,17 @@
+# Policy of the chaos tool. Owners answer requests in the App.
+version: 3
+owners: [alexei-led]   # the people who answer requests
+gate: required
+
+modules:
+  # The chaos actions.
+  pkg_chaos:
+    paths: [pkg/chaos/**]
+    public: [pkg/chaos]
+    volatility: high   # changes every release
+    depends_on: [pkg_util]
+
+  # Shared helpers.
+  pkg_util:
+    paths: [pkg/util/**]
+    volatility: low

@@ -31,7 +31,7 @@ func TestChildrenDoNotImportEachOther(t *testing.T) {
 }
 
 func TestWireImportsNoIO(t *testing.T) {
-	yamlAllowed := map[string]bool{"settings": true, "policy": true}
+	yamlAllowed := map[string]bool{"settings": true, "policy": true, "policy3": true}
 	bannedAnywhere := map[string]bool{"net": true, "net/http": true, "database/sql": true, "log": true, "log/slog": true}
 	// `os` is reachable through fmt and the YAML library, so `os` and `os/exec` are banned as direct imports.
 	bannedDirect := map[string]bool{"os": true, "os/exec": true}

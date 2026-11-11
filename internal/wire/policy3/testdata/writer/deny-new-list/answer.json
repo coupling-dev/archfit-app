@@ -1,0 +1,11 @@
+{
+  "kind": "reject",
+  "loosens": false,
+  "rule": {
+    "id": "no-tc-to-util",
+    "from": "pkg_tc",
+    "to": "pkg_util",
+    "why": "A direct import ties the tc code to one helper.",
+    "instead": "Add a method to the tc client."
+  }
+}
