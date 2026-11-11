@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -18,8 +19,9 @@ var ErrConflict = errors.New("store: update still in conflict")
 // the same order: nil deletes the key, bytes equal to the current ones only check it. When a key changed between
 // the read and the swap, Update reads again and calls change again, at most updateAttempts times, then returns
 // ErrConflict. An error from change stops Update and is returned as is; nothing is written. The keys follow the
-// limits of CompareAndSwapAll. Update is a caller-side loop over the Store, not a transaction inside it: change sees
-// keys read one by one, and only the swap is atomic.
+// limits of CompareAndSwapAll. change gets copies: what it does to them never changes what the swap compares against.
+// Update is a caller-side loop over the Store, not a transaction inside it: change sees keys read one by one, and only
+// the swap is atomic.
 func Update(ctx context.Context, s Store, t Tenant, keys []string, change func(cur [][]byte) ([][]byte, error)) error {
 	for range updateAttempts {
 		cur := make([][]byte, len(keys))
@@ -33,7 +35,11 @@ func Update(ctx context.Context, s Store, t Tenant, keys []string, change func(c
 				cur[i] = v
 			}
 		}
-		next, err := change(cur)
+		view := make([][]byte, len(cur))
+		for i, v := range cur {
+			view[i] = bytes.Clone(v)
+		}
+		next, err := change(view)
 		if err != nil {
 			return err
 		}

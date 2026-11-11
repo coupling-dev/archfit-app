@@ -18,11 +18,14 @@ var (
 	ErrFull = errors.New("records: the proposal is full")
 )
 
-// Join adds an open approval to an open proposal, in one CompareAndSwapAll of both keys. The approval records the
-// proposal once: joining the same proposal again changes nothing, and any other proposal is ErrJoined.
-func Join(ctx context.Context, s store.Store, t store.Tenant, fullName, approvalID, proposalID string) error {
-	if approvalID == "" || proposalID == "" {
-		return errors.New("records: join: an empty id")
+// Join adds an open approval to an open proposal, in one CompareAndSwapAll of both keys, and pins the proposal to
+// headSHA and digest: the head that carries every approval of the proposal, and its policy digest. Pinning in the
+// same swap means a merge of an older head can never consume the approval that just joined: its digest no longer
+// matches (Consume refuses it). The approval records the proposal once: joining the same proposal again only pins it
+// again, and any other proposal is ErrJoined.
+func Join(ctx context.Context, s store.Store, t store.Tenant, fullName, approvalID, proposalID, headSHA, digest string) error {
+	if approvalID == "" || proposalID == "" || digest == "" {
+		return errors.New("records: join: an empty id or digest")
 	}
 	keys := []string{ApprovalKey(fullName, approvalID), ProposalKey(fullName, proposalID)}
 	return store.Update(ctx, s, t, keys, func(cur [][]byte) ([][]byte, error) {
@@ -37,9 +40,17 @@ func Join(ctx context.Context, s store.Store, t store.Tenant, fullName, approval
 		if err := Decode(cur[1], &p); err != nil {
 			return nil, err
 		}
+		again := a.Proposal == proposalID && slices.Contains(p.Approvals, approvalID)
 		switch {
-		case a.Proposal == proposalID && slices.Contains(p.Approvals, approvalID):
-			return cur, nil
+		case again && p.State != StateOpen:
+			return nil, ErrMoved
+		case again:
+			p.HeadSHA, p.ExpectedDigest = headSHA, digest
+			raw, err := Encode(&p)
+			if err != nil {
+				return nil, err
+			}
+			return [][]byte{cur[0], raw}, nil
 		case a.Proposal != "":
 			return nil, ErrJoined
 		case a.State != StateOpen || p.State != StateOpen:
@@ -49,6 +60,7 @@ func Join(ctx context.Context, s store.Store, t store.Tenant, fullName, approval
 		}
 		a.Proposal = proposalID
 		p.Approvals = append(p.Approvals, approvalID)
+		p.HeadSHA, p.ExpectedDigest = headSHA, digest
 		return encodeAll(&a, &p)
 	})
 }
@@ -58,8 +70,9 @@ func Join(ctx context.Context, s store.Store, t store.Tenant, fullName, approval
 // proposal from the proposal index, and makes digest the repository's approved digest. The approvals of the
 // proposal count as consumed from then on (each records the proposal it joined, once).
 //
-// The same commit again is a no-op success: it only checks the keys. A proposal that is void, merged by another
-// commit, without a pull request, or expecting another digest is ErrMoved; a missing one is ErrNoRecord. The state
+// The same commit with the same digest again is a no-op success: it only checks the keys. A proposal that is void,
+// merged by another commit, without a pull request, or expecting another digest (also after it was merged) is
+// ErrMoved; a missing one is ErrNoRecord. The state
 // is decided again after every lost swap, so of concurrent callers with different commits exactly one wins.
 func Consume(ctx context.Context, s store.Store, t store.Tenant, fullName, proposalID, commit, digest string) error {
 	if proposalID == "" || commit == "" || digest == "" {
@@ -75,7 +88,7 @@ func Consume(ctx context.Context, s store.Store, t store.Tenant, fullName, propo
 			return nil, err
 		}
 		switch {
-		case p.State == StateMerged && p.Commit == commit:
+		case p.State == StateMerged && p.Commit == commit && p.ExpectedDigest == digest:
 			return cur, nil
 		case p.State != StateOpen || p.PullRequest == 0 || p.ExpectedDigest != digest:
 			return nil, ErrMoved

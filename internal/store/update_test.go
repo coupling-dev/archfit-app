@@ -69,6 +69,24 @@ func TestUpdateWritesEveryKeyFromTheBytesItRead(t *testing.T) {
 	}
 }
 
+func TestUpdateComparesAgainstWhatItReadNotWhatChangeEdited(t *testing.T) {
+	ctx := context.Background()
+	s := store.NewMemory()
+	if err := s.Put(ctx, 7, "a", []byte("old")); err != nil {
+		t.Fatal(err)
+	}
+	err := store.Update(ctx, s, 7, []string{"a"}, func(cur [][]byte) ([][]byte, error) {
+		copy(cur[0], "new")
+		return cur, nil
+	})
+	if err != nil {
+		t.Fatalf("Update with a change that edits its input = %v, want nil", err)
+	}
+	if got := get(t, s, 7, "a"); string(got) != "new" {
+		t.Errorf("a = %q, want new", got)
+	}
+}
+
 func TestUpdateChangeErrorWritesNothing(t *testing.T) {
 	ctx := context.Background()
 	s := store.NewMemory()
