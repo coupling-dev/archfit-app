@@ -402,7 +402,7 @@ draft are gone. What the real engine changed in this design:
 
 - Adding a module under `gate` or `control` without touching the other branch.
 - Replacing the KV, queue, sandbox, or LLM platform: a new implementation package plus one line in `app`.
-- A new engine version: `wire/report`, `wire/policy`, `wire/manifest` and their fixtures.
+- A new engine version: `wire/report`, `wire/policy`, `wire/manifest`, `wire/result` and their fixtures.
 - Splitting `gate` into its own deployment later: the import rule already guarantees it builds alone.
 - A billing provider: inside `control/account`; the `Entitlement` record stays.
 

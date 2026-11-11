@@ -120,16 +120,16 @@ flowchart TB
 Arrows show permitted import groups. The `gate` arrow from `control` is a facade call.
 The shared group contains `wire`, `github`, and `store`.
 
-| Package    | Main responsibility                                                            | Child packages                                         |
-| ---------- | ------------------------------------------------------------------------------ | ------------------------------------------------------ |
-| `app`      | Loads environment settings, builds packages, and registers routes              | none                                                   |
-| `gate`     | Verifies uploads, decides outcomes, publishes feedback, and runs the sweep     | `ingest`, `inputs`, `verdict`, `feedback`, `sweep`     |
-| `control`  | Serves the UI and manages onboarding, proposals, AI requests, and entitlements | `account`, `assist`, `onboarding`, `proposal`, `ui`    |
-| `wire`     | Defines versioned file and message formats                                     | `envelope`, `manifest`, `policy`, `report`, `settings` |
-| `github`   | Holds GitHub API, authentication, webhook, and OIDC knowledge                  | `api`, `auth`, `oidc`, `webhook`                       |
-| `store`    | Defines the tenant key-value interface and the memory driver                   | `firestore`                                            |
-| `gcptoken` | Reads the service-account access token from the Cloud Run metadata server      | none                                                   |
-| `queue`    | Defines the webhook hand-off interface and the inline driver                   | `cloudtasks`                                           |
+| Package    | Main responsibility                                                            | Child packages                                                               |
+| ---------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| `app`      | Loads environment settings, builds packages, and registers routes              | none                                                                         |
+| `gate`     | Verifies uploads, decides outcomes, publishes feedback, and runs the sweep     | `ingest`, `inputs`, `verdict`, `feedback`, `sweep`                           |
+| `control`  | Serves the UI and manages onboarding, proposals, AI requests, and entitlements | `account`, `assist`, `onboarding`, `proposal`, `ui`                          |
+| `wire`     | Defines versioned file and message formats                                     | `decision`, `envelope`, `manifest`, `policy`, `report`, `result`, `settings` |
+| `github`   | Holds GitHub API, authentication, webhook, and OIDC knowledge                  | `api`, `auth`, `oidc`, `webhook`                                             |
+| `store`    | Defines the tenant key-value interface and the memory driver                   | `firestore`                                                                  |
+| `gcptoken` | Reads the service-account access token from the Cloud Run metadata server      | none                                                                         |
+| `queue`    | Defines the webhook hand-off interface and the inline driver                   | `cloudtasks`                                                                 |
 
 The import rules keep the gate independent:
 
