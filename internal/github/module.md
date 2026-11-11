@@ -16,7 +16,7 @@ URL shapes, headers, pagination and rate-limit rules would leak into the core.
 Delivered entirely by the children; the parent has no code beyond `doc.go`.
 
 - `auth`: App JWT, cached installation tokens, OAuth web flow.
-- `api`: REST client by role (and one GraphQL read for the merge queue): repositories, pulls, merge queues, checks, comments, Actions, changes, users.
+- `api`: REST client by role (and one GraphQL read for the merge queue): repositories, pulls, merge queues, checks, comments, issues, issue triage, Actions, workflow runs, changes, merges, commits, users.
 - `webhook`: signature verification and normalized events.
 - `oidc`: Actions OIDC token verification and workflow path extraction.
 
@@ -52,8 +52,9 @@ owner of what they restate. The parent package exports no identifier.
 
 - `internal/github/auth`: `Credentials`, `TokenSource`, `OAuth`, `UserToken`, `New`.
 - `internal/github/api`: `RepoRef`, `Repo`, `Installation`, the role interfaces `Repos`, `Pulls`, `MergeQueues`, `Checks`,
-  `Comments`, `Actions`, `Changes`, `Users` with their data types, `Client`, `New`, and the sentinels
-  `ErrNotFound`, `ErrRateLimited`, `ErrQueueForbidden`, `ErrQueueTooLong`.
+  `Comments`, `Issues`, `IssueTriage`, `Actions`, `WorkflowRuns`, `Changes`, `Merges`, `Commits`, `Users` with their
+  data types, `Client`, `New`, and the sentinels `ErrNotFound`, `ErrRateLimited`, `ErrQueueForbidden`,
+  `ErrQueueTooLong`, `ErrUnprocessable`, `ErrNotMergeable`, `ErrHeadChanged`.
 - `internal/github/webhook`: `Event`, `EventKind` and its constants, `Verify`, `VerifyAny`, `Parse`, and the header name
   constants `HeaderEvent`, `HeaderDelivery`, `HeaderSignature`.
 - `internal/github/oidc`: `Claims`, `Verifier`, `New`, `WorkflowPath`, and the sentinel `ErrUnavailable`.

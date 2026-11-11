@@ -7,7 +7,7 @@
 ## Purpose
 
 `api` is the App's only GitHub REST client. It offers small role interfaces (repositories, pull requests,
-merge queues, checks, comments, issues, Actions, changes, users) over one `Client`, and hides URL shapes, headers, pagination,
+merge queues, checks, comments, issues, issue triage, Actions, workflow runs, changes, merges, commits, users) over one `Client`, and hides URL shapes, headers, pagination,
 conditional requests and rate-limit handling. Without it, every gate and control module would speak HTTP to
 GitHub, and "never a false green on rate-limit exhaustion" would depend on each caller.
 
@@ -16,10 +16,15 @@ GitHub, and "never a false green on rate-limit exhaustion" would depend on each 
 - Authenticate each call with the right credential: App JWT, installation token, or a user's OAuth token.
 - Read installations, repositories, files at a ref, pull requests, changed files, review IDs/states/bodies, requested reviewers and team membership; narrowly add missing configured reviewer requests.
 - Read a branch's merge queue: the entries and their merge group commits (`MergeQueue`, GraphQL).
-- Create and update check runs; list, create and update the App's own PR comments.
-- List, open, edit and close the App's own issues; never a pull request through the issues endpoints.
-- Read workflow runs, re-run and dispatch workflows, download one artifact file under a size cap.
+- Create and update check runs, only `in_progress` or `completed` with `success`, `failure`, `neutral` or
+  `action_required`; list, create and update the App's own PR comments.
+- List, open, edit and close the App's own issues; set the assignees and labels of any issue; never a pull request
+  through the issues endpoints.
+- Read workflow runs, also every run of a workflow for one head commit with its creation time; re-run and dispatch
+  workflows, download one artifact file under a size cap.
 - Write branches, commits and pull requests idempotently (`EnsureBranch`, `EnsurePull`).
+- Squash-merge a pull request and update its branch, each only at the head SHA the caller expects.
+- Compare two commits: the changed paths and how the head relates to the base.
 - Follow pagination to a cap and fail, not truncate, beyond it.
 - Use conditional requests; back off within a bound on rate limits; then return `ErrRateLimited`.
 - Map "gone or no access" to `ErrNotFound`.
@@ -66,6 +71,11 @@ needs one. It is a wide leaf on purpose: role interfaces keep each consumer's kn
 - `401` on a call made with a user token → `ErrUserTokenRejected` at once, no retry: GitHub user tokens expire after
   8 hours or can be revoked, and a repeat would send the same token. Only `Users` calls and pages of their lists can
   return it. The caller ends the session and asks for a new sign-in.
+- On `MergePull` and `UpdateBranch`: `405` → `ErrNotMergeable`, `409` → `ErrHeadChanged`, `422` →
+  `ErrUnprocessable`; on `SetAssigneesAndLabels` and on `CreateIssue` with an assignee: `422` → `ErrUnprocessable`. Each
+  wraps the status error, so `Status` still gives the code. The `405` answers measured on the test repository
+  (design D.2): a required check absent, `in_progress`, `queued`, `action_required` or set by another app, and a
+  required review missing.
 - Other `403` (missing App permission), `409`, `422` → error with method, route template, status and
   `x-github-request-id`. Never the URL's variable parts, the body, or a token.
 - A `TokenSource` error is returned wrapped and treated as opaque.
@@ -102,8 +112,9 @@ needs one. It is a wide leaf on purpose: role interfaces keep each consumer's kn
 
 `per_page=100`, follow `Link: rel="next"`. Cap: 1 000 items per call **[default]**. Beyond the cap the call
 returns an error, never a silent partial list. This holds for `ListInstallations`, `ListRepos`, `UserRepos`,
-`OpenPulls`, `Reviews`, `AppComments`, `AppIssues` and `CheckRuns`. The one exception is `ChangedFiles`, whose contract has
-a `truncated` result: it returns the paths read so far with `truncated` true.
+`OpenPulls`, `Reviews`, `AppComments`, `AppIssues`, `CheckRuns` and `HeadRuns`. The exceptions are `ChangedFiles`, whose contract has
+a `truncated` result: it returns the paths read so far with `truncated` true; and `Compare`, whose files GitHub lists
+on one answer, at most 300: 300 files set `Truncated`.
 
 ### Endpoints
 
@@ -140,7 +151,13 @@ a `truncated` result: it returns the paths read so far with `truncated` true.
   App's is dropped as well); latest per name is GitHub's `filter=latest`; annotations are not read back, only
   their number: `AnnotationCount` = `output.annotations_count`. Create and update never send that field.
 - `CreateCheckRun`: `POST /repos/{r}/check-runs`; `UpdateCheckRun`: `PATCH /repos/{r}/check-runs/{id}`. An
-  annotation maps to `start_line = end_line = Line`, and `Line` 0 to line 1. GitHub appends annotations on update.
+  annotation maps to `start_line = end_line = Line`, and `Line` 0 to line 1. GitHub appends annotations on update:
+  one request takes at most 50, and a caller with more sends them in further updates of the same run, each with the
+  title and summary (`gate/feedback` does this). The status is `in_progress` or `completed`; a conclusion is
+  `success`, `failure`, `neutral` or `action_required`. Anything else, `queued` and `skipped` included, is an error
+  before any request: GitHub counts a required check that ends `skipped` as passing, and the App never sets it.
+  `neutral` passes a required check too; it stays allowed for checks that are not required and for advisory mode,
+  and only the caller knows which a run is.
 - `AppComments`: `GET /repos/{r}/issues/{n}/comments`, kept when `user.login` is the bot login.
   `CreateComment`: `POST` there; `UpdateComment`: `PATCH /repos/{r}/issues/comments/{id}`. A comment on an issue is
   the same call with the issue number.
@@ -153,9 +170,18 @@ beyond the 1 000-item cap the call fails, so such a repository gets no repair is
   number from the answer. `UpdateIssueBody`: `PATCH /repos/{r}/issues/{n}` with `body`. `CloseIssue`:
   `GET /repos/{r}/issues/{n}` first; an answer with a `pull_request` key is an error and nothing is sent; else
   `PATCH` there with `state: closed`. All need the App's Issues permission; without it GitHub answers `403`.
+- `SetAssigneesAndLabels` (role `IssueTriage`): `GET /repos/{r}/issues/{n}` first, as `CloseIssue` does; a pull
+  request is an error and nothing is sent. Then `PATCH` there with `assignees` and `labels`, which replace both sets;
+  `nil` is sent as `[]` and clears a set. The issue may be anyone's, not only the App's. The result is the sets GitHub
+  holds in its answer: GitHub drops a change it does not allow without an error, so the caller compares. Needs the
+  Issues permission.
 - `Run`: `GET /repos/{r}/actions/runs/{id}`; `WorkflowPath` = `path` unchanged; `Event` = `event` unchanged;
   `PullRequests` =
-  `pull_requests[].number` (GitHub leaves it empty for fork PRs). `Rerun`: `POST .../runs/{id}/rerun`.
+  `pull_requests[].number` (GitHub leaves it empty for fork PRs); `CreatedAt` = `created_at`, which a re-run keeps.
+  `Rerun`: `POST .../runs/{id}/rerun`.
+- `HeadRuns` (role `WorkflowRuns`): `GET .../workflows/{file name}/runs?head_sha=` (paged); every run of that head,
+  newest first as GitHub lists them, mapped as `Run`. No run → an empty list. 1 000 runs or more → an error: GitHub
+  stops a filtered run search at 1 000 results without a next page, so a full cap may be a cut list.
 - `Dispatch`: `POST /repos/{r}/actions/workflows/{file name}/dispatches` with `ref` and `inputs`.
 - `LatestRun`: `GET .../workflows/{file name}/runs?per_page=1`, plus `branch`, `event` and `status` for each non-empty
   `RunFilter` field (GitHub's `status` takes a run status or a conclusion); none → `ErrNotFound`.
@@ -175,6 +201,13 @@ beyond the 1 000-item cap the call fails, so such a repository gets no repair is
   **[default]**. A non-fast-forward is an error; the caller reloads.
 - `EnsurePull`: `GET .../pulls?state=open&head={owner}:{Head}&base={Base}`; first hit wins; else `POST .../pulls`;
   a `422` "already exists" race → list again; the `422` stands if the list is still empty.
+- `MergePull` (role `Merges`): `PUT .../pulls/{n}/merge` with `merge_method: squash` and `sha` = the expected head;
+  `200` → the merge commit SHA (an answer without `merged: true` and a 40-hex `sha` is an error). `UpdateBranch`:
+  `PUT .../pulls/{n}/update-branch` with `expected_head_sha`; `202` → success. GitHub makes the update after the
+  answer, so the new head may not exist yet. Neither is repeated after a `5xx`.
+- `Compare` (role `Commits`): `GET /repos/{r}/compare/{base}...{head}?per_page=1`, from the merge base to `head`;
+  `Status` = `status` (`ahead`, `behind`, `identical`, `diverged`; any other value is an error); `Paths` as
+  `ChangedFiles` (a rename lists both names); an answer without `files` is an error, never "nothing changed".
 - `UpdatePullBody`: `PATCH .../pulls/{n}`. `MarkReady`: REST cannot leave draft state, so one GraphQL mutation
   `markPullRequestReadyForReview` on the pull's `node_id`; an already ready pull is success. An `errors` entry
   of type `RATE_LIMITED` → `ErrRateLimited` at once, without backoff; any other entry → an error that names the
@@ -222,6 +255,17 @@ var (
     // ErrUserTokenRejected is GitHub's 401 on a user's OAuth token: it expired or was revoked. The token cannot
     // recover, so the call is not repeated and the user must sign in again.
     ErrUserTokenRejected = errors.New("github: user token rejected")
+
+    // ErrUnprocessable is GitHub's 422 on a write that maps it: the request was refused as a whole and nothing changed.
+    // On creating an issue with an assignee, the same request without the assignee is safe to send.
+    ErrUnprocessable = errors.New("github: request refused")
+
+    // ErrNotMergeable is GitHub's 405 on a merge: GitHub cannot merge the pull request now, for example because a
+    // required check is absent, pending, failed or set by another app, or a required review is missing.
+    ErrNotMergeable = errors.New("github: pull request not mergeable")
+
+    // ErrHeadChanged is GitHub's 409 on a merge: the pull request head is not the expected SHA.
+    ErrHeadChanged = errors.New("github: pull request head changed")
 )
 
 // Status returns the HTTP status of a GitHub answer that mapped to no sentinel, or 0 for any other error.
@@ -338,10 +382,12 @@ type CheckRun struct {
     HeadSHA     string
     ExternalID  string
     DetailsURL  string // the "Details" link GitHub shows on the check; "" = GitHub's default
-    Status      string // "in_progress" | "completed"
-    Conclusion  string // "" unless completed
+    Status      string // "in_progress" | "completed"; nothing else is sent
+    Conclusion  string // "" unless completed; then "success" | "failure" | "neutral" | "action_required"
     Title       string
     Summary     string // markdown, max 65535 bytes
+    // Annotations go in one request: at most 50, and only with a Title and a Summary. GitHub appends the annotations
+    // of each request, so more go in further updates of the same run.
     Annotations []Annotation
     StartedAt   time.Time
     // AnnotationCount is read-only: the annotations GitHub holds for the run, set by CheckRuns.
@@ -392,6 +438,14 @@ type Issues interface {
     // CloseIssue closes the issue number. A number that names a pull request is an error, and nothing is closed.
     CloseIssue(ctx context.Context, r RepoRef, number int) error
 }
+
+// IssueTriage sets the assignees and labels of any issue in the repository, not only of the App's own.
+type IssueTriage interface {
+    // SetAssigneesAndLabels replaces the issue's assignees and labels with exactly these; nil clears a set. It returns
+    // the sets GitHub holds after the call: GitHub drops a change it does not allow without an error. A number that
+    // names a pull request is an error, and nothing is changed.
+    SetAssigneesAndLabels(ctx context.Context, r RepoRef, number int, assignees, labels []string) (gotAssignees, gotLabels []string, err error)
+}
 ```
 
 ```go
@@ -404,7 +458,8 @@ type WorkflowRun struct {
     WorkflowPath string // e.g. ".github/workflows/archfit.yaml"
     Status       string
     Conclusion   string
-    PullRequests []int // PR numbers GitHub associates with the run
+    PullRequests []int     // PR numbers GitHub associates with the run
+    CreatedAt    time.Time // when the run was created; a re-run keeps it
 }
 
 // RunFilter narrows LatestRun. Each non-empty field is sent as the GitHub query parameter of the same name.
@@ -422,6 +477,12 @@ type Actions interface {
     LatestRun(ctx context.Context, r RepoRef, workflowPath string, f RunFilter) (WorkflowRun, error)
     // Artifact downloads the named artifact of a run, capped at maxBytes.
     Artifact(ctx context.Context, r RepoRef, runID int64, name string, maxBytes int64) ([]byte, error)
+}
+
+// WorkflowRuns lists a workflow's runs for one head commit.
+type WorkflowRuns interface {
+    // HeadRuns returns every run of the workflow whose head is headSHA, a 40-hex commit SHA; none is an empty list.
+    HeadRuns(ctx context.Context, r RepoRef, workflowPath, headSHA string) ([]WorkflowRun, error)
 }
 ```
 
@@ -446,6 +507,32 @@ type Changes interface {
     EnsurePull(ctx context.Context, r RepoRef, p NewPull) (Pull, error)
     UpdatePullBody(ctx context.Context, r RepoRef, number int, body string) error
     MarkReady(ctx context.Context, r RepoRef, number int) error
+}
+
+// Merges merges a pull request and updates its branch as the App. Each call names the head SHA it expects, a 40-hex
+// commit SHA, so it never acts on a head its caller has not seen.
+type Merges interface {
+    // MergePull squash-merges the pull request when its head is headSHA and returns the merge commit SHA.
+    // ErrNotMergeable (405), ErrHeadChanged (409) and ErrUnprocessable (422) wrap GitHub's refusal.
+    MergePull(ctx context.Context, r RepoRef, number int, headSHA string) (mergeSHA string, err error)
+    // UpdateBranch merges the base branch into the pull request's branch when its head is headSHA. GitHub accepts the
+    // update (202) and makes it after the answer, so the new head may not exist yet on return. ErrUnprocessable (422):
+    // the head is not headSHA, or GitHub refused the update.
+    UpdateBranch(ctx context.Context, r RepoRef, number int, headSHA string) error
+}
+
+// Comparison is what changed from one commit to another, as GitHub's compare states it.
+type Comparison struct {
+    Status    string   // "ahead" | "behind" | "identical" | "diverged": head relative to base; any other is an error
+    Paths     []string // changed paths; a rename lists both the old and the new path
+    Truncated bool     // GitHub lists at most 300 files: true at 300, and callers must assume any path changed
+}
+
+// Commits compares commits.
+type Commits interface {
+    // Compare compares base and head, both 40-hex commit SHAs, with GitHub's three-dot compare: from their merge base
+    // to head.
+    Compare(ctx context.Context, r RepoRef, base, head string) (Comparison, error)
 }
 ```
 
@@ -496,8 +583,13 @@ of `github/auth`; `api` only receives its result, a user token string, in the `U
 
 ### Caller contract
 
-- `CreateCheckRun`, `UpdateCheckRun`: `Summary` over 65 535 bytes or more than 50 annotations (GitHub's limits), `completed` without
-  `Conclusion`, `in_progress` with one, or `UpdateCheckRun` with `ID` 0 → error before any request. `api`
+- `CreateCheckRun`, `UpdateCheckRun`: `Summary` over 65 535 bytes or more than 50 annotations (GitHub's limits),
+  annotations without a `Title` and a `Summary`, a status other than `in_progress` or `completed`, `completed`
+  without `success`, `failure`, `neutral` or `action_required`, `in_progress` with a conclusion, or
+  `UpdateCheckRun` with `ID` 0 → error before any request.
+- `MergePull`, `UpdateBranch`, `Compare`, `HeadRuns`: a head or base that is not a 40-hex commit SHA → error before
+  any request; an empty one would let GitHub act on whatever head it has. `MergePull`, `UpdateBranch`,
+  `SetAssigneesAndLabels`: a number ≤ 0 → error. `api`
   never truncates.
 - `CreateComment`, `UpdateComment`, `CreateIssue`, `UpdateIssueBody`: a body over 65 536 characters (GitHub's
   limit) → error before any request.
@@ -597,8 +689,9 @@ type TokenSource interface {
 - **Shared knowledge**: the Endpoints list; rate-limit and ETag semantics above. App permissions needed:
   `checks: write`, `pull_requests: write`, `contents: write`, `actions: write`, `metadata: read`,
   `members: read` (`TeamMember`), and `workflows: write`, which GitHub demands for any commit that touches
-  `.github/workflows/` (the onboarding PR). `issues: write` (the `Issues` role, for the repair issue) is added with
-  the release that brings that issue; until the owner grants it, every `Issues` call is GitHub's `403`.
+  `.github/workflows/` (the onboarding PR). `issues: write` (the `Issues` role, for the repair issue, and
+  `IssueTriage`) is added with the release that brings that issue; until the owner grants it, every `Issues` and
+  `IssueTriage` call is GitHub's `403`.
   `merge_queues: read` (repository permission **Merge queues: Read**, for `MergeQueue`); without it GraphQL answers
   `FORBIDDEN`, which is `ErrQueueForbidden`.
 
@@ -615,13 +708,15 @@ type TokenSource interface {
   forks, or gate state.
 - Rate-limit exhaustion is always `ErrRateLimited`, never an empty or partial result. Consumers leave checks
   pending and the sweep retries: never a false green.
-- Lists are complete or an error. `ChangedFiles` alone may be partial, and then says so with `truncated`.
+- Lists are complete or an error. `ChangedFiles` and `Compare` alone may be partial, and then say so with
+  `truncated`.
 - Access is re-proved on every call: the cache is used only after a `304` from GitHub for the same credential.
   Revoked access, a removed repository and a cross-installation `RepoRef` all end as `ErrNotFound` or an error,
   never as data (T07).
 - User-token calls never use App credentials; App calls never use a user token.
-- Writes are never force-pushes; `api` has no method that deletes a branch, merges, or closes a pull request:
-  `CloseIssue` reads the issue first and refuses a pull request.
+- Writes are never force-pushes; `api` has no method that deletes a branch or closes a pull request: `CloseIssue`
+  and `SetAssigneesAndLabels` read the issue first and refuse a pull request. `api` merges only by squash, and merges
+  or updates a pull request's branch only at the head SHA its caller names.
 - Wire contracts stay separate: `api` imports no `wire/*` package; its structs are not serialized by anyone.
 - No logging. Errors hold method, route template, status and request ID: no tokens, bodies, paths, or messages.
 - Standard library and `github/auth` only. No GitHub SDK.
@@ -733,6 +828,32 @@ One test per role interface; each asserts method, route, credential, request bod
   content; non-fast-forward; `EnsurePull` new, existing, lost race; `UpdatePullBody`; `MarkReady` draft and ready.
   **Expected behavior**: one ref created or none; one commit with both files and `force: false`; head SHA and no
   commit; error; exactly one pull in every case; GraphQL mutation sent once, none for the ready pull.
+- **Test name**: `TestMergesContract`, `TestMergeRefusalsAreTold`, `TestUpdateBranchRefusalsAreTold`
+  **Scenario**: `MergePull` and `UpdateBranch` answered `200` and `202`; heads that are empty, short, a branch name,
+  upper case or too long; numbers 0 and -1. Merge answers: `405` (three D.2 messages), `409`, `422`, `404`, `403`,
+  `502`, and `200` not merged, without a SHA, with a non-SHA. Update answers: `422`, `404`, `403`, `502`.
+  **Expected behavior**: squash with `sha` and `expected_head_sha` sent, the installation token, the merge commit SHA;
+  no request for a guard; `ErrNotMergeable`, `ErrHeadChanged`, `ErrUnprocessable`, `ErrNotFound`, plain errors, each
+  with its `Status` and after exactly one request; errors for the malformed `200`s.
+- **Test name**: `TestCompareContract`
+  **Scenario**: a modification, a rename and an addition; 300 files; identical commits; an answer without `files`;
+  an unknown status; an unknown commit; non-SHA bases and heads.
+  **Expected behavior**: status and both rename names, `per_page=1`; `Truncated`; an empty list; an error; an error;
+  `ErrNotFound`; no request.
+- **Test name**: `TestHeadRunsContract`
+  **Scenario**: three runs on two pages; a head without runs; 1 001 runs; exactly 1 000 runs, the last page without a
+  next link (GitHub's search cap); an unknown workflow; non-SHA heads.
+  **Expected behavior**: all three with `CreatedAt`, `head_sha` and `per_page=100` on every page; an empty list; an
+  error; an error; `ErrNotFound`; no request.
+- **Test name**: `TestIssueTriageContract`
+  **Scenario**: set two assignees, one of which GitHub drops, and a label; set `nil` sets; a pull request; `PATCH`
+  answered `422`, `403`; a missing issue; number 0.
+  **Expected behavior**: both sets sent, the sets GitHub holds returned; `[]` sent and empty sets returned; an error
+  and no `PATCH`; `ErrUnprocessable`, a plain `403`; `ErrNotFound`; no request.
+- **Test name**: `TestCheckRunAnnotationBatches`
+  **Scenario**: 120 annotations sent as a create of 50 and updates of 50 and 20; then 51 in one create.
+  **Expected behavior**: three requests in order, none dropped, each with the title and summary; an error and no
+  request.
 - **Test name**: `TestUsersContract`
   **Scenario**: `Permission` for admin, push-only, pull-only, `404`, `401`; `UserRepos` over two installations.
   **Expected behavior**: `admin`, `write`, `read`, `none`, `ErrUserTokenRejected`; repos carry their installation ID; only the
@@ -741,9 +862,11 @@ One test per role interface; each asserts method, route, credential, request bod
 ### Boundary Tests
 
 - **Test name**: `TestCheckRunCallerContract`
-  **Scenario**: table: summary of 65 535 and 65 536 bytes; 50 and 51 annotations; `completed` without conclusion;
-  `in_progress` with one; update with `ID` 0.
-  **Expected behavior**: ok, error; ok, error; error; error; error. No request for an error row; nothing truncated.
+  **Scenario**: table: summary of 65 535 and 65 536 bytes; 50 and 51 annotations; annotations without a title, without
+  a summary; `completed` with each allowed conclusion, without one, and with `skipped`, `cancelled`, `stale`,
+  `timed_out`; `queued`; no status; `in_progress` with a conclusion; update with `ID` 0.
+  **Expected behavior**: ok, error; ok, error; error, error; ok ×4, error ×5; error; error; error; error. No request
+  for an error row; nothing truncated.
 - **Test name**: `TestRevokedAccessAndRemovedRepository` (T07)
   **Scenario**: a repository read and cached; then GitHub answers `404` (removed from the installation); then the
   token mint fails (uninstalled).

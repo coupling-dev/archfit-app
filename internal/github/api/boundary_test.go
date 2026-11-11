@@ -14,7 +14,7 @@ func TestCheckRunCallerContract(t *testing.T) {
 	annotations := func(n int) []Annotation {
 		return make([]Annotation, n)
 	}
-	base := CheckRun{ID: 5, Name: "archfit", HeadSHA: "abc", Status: "in_progress"}
+	base := CheckRun{ID: 5, Name: "archfit", HeadSHA: "abc", Status: "in_progress", Title: "t", Summary: "s"}
 	with := func(edit func(*CheckRun)) CheckRun {
 		c := base
 		edit(&c)
@@ -31,8 +31,20 @@ func TestCheckRunCallerContract(t *testing.T) {
 		{name: "multi-byte summary over 65535 bytes", run: with(func(c *CheckRun) { c.Summary = strings.Repeat("é", 40000) }), wantErr: true},
 		{name: "50 annotations", run: with(func(c *CheckRun) { c.Annotations = annotations(50) })},
 		{name: "51 annotations", run: with(func(c *CheckRun) { c.Annotations = annotations(51) }), wantErr: true},
+		{name: "annotations without a title", run: with(func(c *CheckRun) { c.Annotations, c.Title = annotations(1), "" }), wantErr: true},
+		{name: "annotations without a summary", run: with(func(c *CheckRun) { c.Annotations, c.Summary = annotations(1), "" }), wantErr: true},
+		{name: "title and summary without annotations", run: with(func(c *CheckRun) {})},
 		{name: "completed without conclusion", run: with(func(c *CheckRun) { c.Status = "completed" }), wantErr: true},
-		{name: "completed with conclusion", run: with(func(c *CheckRun) { c.Status, c.Conclusion = "completed", "success" })},
+		{name: "completed success", run: with(func(c *CheckRun) { c.Status, c.Conclusion = "completed", "success" })},
+		{name: "completed failure", run: with(func(c *CheckRun) { c.Status, c.Conclusion = "completed", "failure" })},
+		{name: "completed neutral", run: with(func(c *CheckRun) { c.Status, c.Conclusion = "completed", "neutral" })},
+		{name: "completed action_required", run: with(func(c *CheckRun) { c.Status, c.Conclusion = "completed", "action_required" })},
+		{name: "completed skipped", run: with(func(c *CheckRun) { c.Status, c.Conclusion = "completed", "skipped" }), wantErr: true},
+		{name: "completed cancelled", run: with(func(c *CheckRun) { c.Status, c.Conclusion = "completed", "cancelled" }), wantErr: true},
+		{name: "completed stale", run: with(func(c *CheckRun) { c.Status, c.Conclusion = "completed", "stale" }), wantErr: true},
+		{name: "completed timed_out", run: with(func(c *CheckRun) { c.Status, c.Conclusion = "completed", "timed_out" }), wantErr: true},
+		{name: "queued", run: with(func(c *CheckRun) { c.Status = "queued" }), wantErr: true},
+		{name: "no status", run: with(func(c *CheckRun) { c.Status = "" }), wantErr: true},
 		{name: "in_progress with conclusion", run: with(func(c *CheckRun) { c.Conclusion = "success" }), wantErr: true},
 		{name: "update with ID 0", run: with(func(c *CheckRun) { c.ID = 0 }), updateOnly: true, wantErr: true},
 	}
@@ -226,6 +238,25 @@ func repoRefCalls(c *Client, r RepoRef) map[string]func(context.Context) (bool, 
 		"Changes.MarkReady": func(ctx context.Context) (bool, error) {
 			return false, c.MarkReady(ctx, r, 1)
 		},
+		"Merges.MergePull": func(ctx context.Context) (bool, error) {
+			sha, err := c.MergePull(ctx, r, 1, testSHA1)
+			return sha != "", err
+		},
+		"Merges.UpdateBranch": func(ctx context.Context) (bool, error) {
+			return false, c.UpdateBranch(ctx, r, 1, testSHA1)
+		},
+		"Commits.Compare": func(ctx context.Context) (bool, error) {
+			cmp, err := c.Compare(ctx, r, testSHA1, testSHA2)
+			return cmp.Paths != nil || cmp.Status != "", err
+		},
+		"IssueTriage.SetAssigneesAndLabels": func(ctx context.Context) (bool, error) {
+			users, labels, err := c.SetAssigneesAndLabels(ctx, r, 9, []string{"alice"}, []string{"archfit-request"})
+			return users != nil || labels != nil, err
+		},
+		"WorkflowRuns.HeadRuns": func(ctx context.Context) (bool, error) {
+			runs, err := c.HeadRuns(ctx, r, ".github/workflows/archfit.yaml", testSHA1)
+			return runs != nil, err
+		},
 	}
 }
 
@@ -312,7 +343,18 @@ func TestErrorsCarryNoSecretsOrContent(t *testing.T) {
 				_, err := c.EnsurePull(ctx, ref, NewPull{Title: bodyMark, Body: bodyMark, Head: branchMark, Base: "main"})
 				return err
 			},
-			"MarkReady":  func(ctx context.Context) error { return c.MarkReady(ctx, ref, 1) },
+			"MarkReady":    func(ctx context.Context) error { return c.MarkReady(ctx, ref, 1) },
+			"MergePull":    func(ctx context.Context) error { _, err := c.MergePull(ctx, ref, 1, testSHA1); return err },
+			"UpdateBranch": func(ctx context.Context) error { return c.UpdateBranch(ctx, ref, 1, testSHA1) },
+			"Compare":      func(ctx context.Context) error { _, err := c.Compare(ctx, ref, testSHA1, testSHA2); return err },
+			"SetAssigneesAndLabels": func(ctx context.Context) error {
+				_, _, err := c.SetAssigneesAndLabels(ctx, ref, 9, []string{userMark}, []string{bodyMark})
+				return err
+			},
+			"HeadRuns": func(ctx context.Context) error {
+				_, err := c.HeadRuns(ctx, ref, ".github/workflows/"+pathMark+".yaml", testSHA1)
+				return err
+			},
 			"Permission": func(ctx context.Context) error { _, err := c.Permission(ctx, userMark, ref.FullName); return err },
 			"UserRepos":  func(ctx context.Context) error { _, err := c.UserRepos(ctx, userMark); return err },
 		}

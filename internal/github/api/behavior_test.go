@@ -40,6 +40,8 @@ func pagedAny(w http.ResponseWriter, r *http.Request, total int) {
 		writeJSON(w, http.StatusOK, map[string]any{"repositories": items})
 	case strings.HasSuffix(r.URL.Path, "/check-runs"):
 		writeJSON(w, http.StatusOK, map[string]any{"check_runs": items})
+	case strings.HasSuffix(r.URL.Path, "/runs"):
+		writeJSON(w, http.StatusOK, map[string]any{"workflow_runs": items})
 	case r.URL.Path == "/user/installations":
 		writeJSON(w, http.StatusOK, map[string]any{"installations": items[:min(len(items), 1)]})
 	default:
