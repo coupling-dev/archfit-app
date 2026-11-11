@@ -1,0 +1,4 @@
+repository: github.com/alexei-led/archfit
+commit: d86c2eda5cfd103835c54b145c1db4289f868f4a
+from: testdata/wording.go.txt <- internal/testutil/wording.go
+47d93bb32d523cf15a7be6dc86e5bd7bd44b340c8ab366c5e11e135df081d973  testdata/wording.go.txt
