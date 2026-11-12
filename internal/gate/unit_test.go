@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alexei-led/archfit-app/internal/gate/approvals"
 	"github.com/alexei-led/archfit-app/internal/gate/decisions"
 	"github.com/alexei-led/archfit-app/internal/gate/feedback"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
@@ -325,6 +326,7 @@ func newPipelineFakes() *pipelineFakes {
 	}
 	gh := newFakeGitHub()
 	f.gate = newGate(f.receiver, f.resolver, decisions.New(store.NewMemory(), gh, gh, func() time.Time { return testStart }), f.publisher, f.repairer, f.sweeper, f.actions, gh, gh, gh, gh, &fakeAdmitter{refused: map[int64]bool{}}, func() time.Time { return testStart })
+	f.gate.approvals = approvals.New(gh, store.NewMemory())
 	return f
 }
 

@@ -55,8 +55,8 @@ notes the answer on the request issue. Without it an answer is a record nobody a
   422) read the pull request: merged anyway (an owner, an earlier attempt; unmeasured) is `merged`, else it stays open
   for the sweep (task 22) or an owner's merge on GitHub. A failed check is never followed by a merge.
 
-Not provided: the consume on the merge push (task 20), the re-check of waiting pull requests (task 21), the sweep's
-merge retry and the 24-hour void of an approval without a pull request (task 22), the pages (task 24).
+Not provided: the consume on the merge push (`gate/approvals`, task 20), the re-check of waiting pull requests (task
+21), the sweep's merge retry and the 24-hour void of an approval without a pull request (task 22), the pages (task 24).
 
 ## Subdomain Classification
 
@@ -133,14 +133,16 @@ void. The digest is
   Its pinned head and digest change only in one swap: with an approval joining (`records.Answer`), or, after a rewrite
   that adds no answer, pinned again through an approval it keeps (`records.Join`).
 - No log line holds a token, a passkey id or owner text; errors carry GitHub's method, route and status.
-- **Release-blocking follow-up for tasks 20 and 21** (manager, 2026-11-12): an answered request leaves the request
-  index at once, so while a proposal waits ("merge later", or a refused merge) a pull request that fails on the same
-  key does not wait on it, and a new request line opens a second issue. During "merge later" an answered request must
-  still cover its key (`waiting`, no duplicate issue) until its proposal is consumed.
+- An answer that joins a proposal keeps its request in the request index until the proposal is consumed
+  (`gate/records` `Answer`, M2 task 20): while the proposal waits ("merge later", or a refused merge) a pull request
+  that fails on the same key waits on it, and a new request line for the key opens no second issue. So the same key is
+  never asked twice while an answer waits; an answer joins the open proposal without a new line only when another key
+  wrote the same line.
 - **Stated limit**: a head keeps its `archfit/gate` success after the default branch moves. A ruleset that does not
   require an up-to-date branch lets an owner merge it on GitHub before the next answer rewrites it. When only other
   files moved, that merge is the approved policy. When the default branch's policy changed, the merged policy is not
   the expected digest, so the push is "policy changed outside the flow" (task 20): fail closed, not a silent approval.
+  The proposal can then never be consumed: `gate/approvals` voids it and its requests open again.
 - The voids an answer records stand whatever becomes of it, so their notes and reopened issues are sent at once, on a
   context that ignores the caller leaving but keeps its deadline.
 - **Stated limit, unmeasured**: the App has no `workflows` permission. A rewrite after the default branch's policy

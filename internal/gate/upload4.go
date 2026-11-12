@@ -45,6 +45,8 @@ const (
 	reasonResultInvalid    = "result_invalid"
 	reasonUnknownEngine    = "unknown_engine"
 	reasonFirstPolicy      = "first_policy"
+	reasonFirstApproval    = "first_approval" // a schema 3 policy no owner approved yet: no change control yet
+	reasonOutsideFlow      = "outside_flow"   // the policy on the default branch changed with no recorded approval
 	reasonTargetOffBranch  = "target_not_on_branch"
 	reasonPolicyNotTarget  = "policy_not_target"
 	reasonPolicyChanged    = "policy_changed"
@@ -205,8 +207,13 @@ func (v *upload4) decide(ctx context.Context, u ingest.Upload4) (decision4, erro
 			What: branch + " has no policy of version 3 yet",
 			Why:  "an administrator approves the first policy",
 			Next: result.Next{Kind: "wait", Text: "an administrator approves the first policy in the App"}})
-	} else if err := v.checkPolicy(ctx, ref, branch, tip, tipPolicy, env, add); err != nil {
-		return decision4{}, err
+	} else {
+		if err := v.checkState(ctx, b.Repo, add); err != nil {
+			return decision4{}, err
+		}
+		if err := v.checkPolicy(ctx, ref, branch, tip, tipPolicy, env, add); err != nil {
+			return decision4{}, err
+		}
 	}
 	if err := v.checkWorkflow(ctx, ref, branch, tip, b.RunSHA, add); err != nil {
 		return decision4{}, err
@@ -246,6 +253,34 @@ func (v *upload4) covered(ctx context.Context, u ingest.Upload4) ([]int, result.
 	}
 	shown, ids := asks.Cover(*u.Result, open)
 	return ids, shown, nil
+}
+
+// checkState reads the repository's record (M2 task 20): a policy no owner approved yet, or one changed outside the
+// flow, gives no verdict. Change control starts with the first approval (task 23), and a policy changed outside the
+// flow stays unknown until an owner confirms or reverts it.
+func (v *upload4) checkState(ctx context.Context, r api.Repo, add func(string, result.Unknown)) error {
+	var state records.Repo
+	err := records.Load(ctx, v.store, store.Tenant(r.InstallationID), records.RepoKey(r.FullName), &state)
+	if err != nil && !errors.Is(err, records.ErrNoRecord) {
+		return fmt.Errorf("gate: read the repository record: %w", err)
+	}
+	switch {
+	case state.OutsideFlow != nil:
+		next := "an owner confirms or reverts it in the App"
+		if state.OutsideFlow.Issue != 0 {
+			next += ": #" + strconv.Itoa(state.OutsideFlow.Issue)
+		}
+		add(reasonOutsideFlow, result.Unknown{Path: policyPath, Cause: "policy",
+			What: "changed on " + r.DefaultBranch + " with no recorded approval",
+			Why:  "only owners change the policy",
+			Next: result.Next{Kind: "wait", Text: next}})
+	case state.ApprovedDigest == "":
+		add(reasonFirstApproval, result.Unknown{Path: policyPath, Cause: "policy",
+			What: "has no recorded approval on " + r.DefaultBranch,
+			Why:  "an administrator approves the first policy",
+			Next: result.Next{Kind: "wait", Text: "an administrator approves the policy in the App"}})
+	}
+	return nil
 }
 
 // checkPolicy requires target_sha on the default branch and the policy digest of the run to be the digest at
