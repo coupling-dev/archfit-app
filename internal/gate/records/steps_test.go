@@ -422,6 +422,11 @@ func TestArchfit3KeysAreNeitherReadNorWritten(t *testing.T) {
 		records.Consume(ctx, s, tenant, repoName, "p1", "c1", "d2"),
 		records.Consume(ctx, s, tenant, repoName, "p1", "c1", "d2"),
 		records.Load(ctx, s, tenant, records.PullKey(repoName, 5), &records.Pull{}),
+		openRequest(ctx, s, 432, "graph c d"),
+		records.Answer(ctx, s, tenant, repoName, "a2", records.Approval{Kind: records.KindApprove, Request: 432},
+			&records.Pin{Proposal: "p2", PullRequest: 51, HeadSHA: "h3", Digest: "d3"}),
+		func() error { _, _, err := records.Void(ctx, s, tenant, repoName, "a2"); return err }(),
+		records.VoidProposal(ctx, s, tenant, repoName, "p2"),
 	}
 	for i, err := range steps {
 		if err != nil && !errors.Is(err, records.ErrNoRecord) {
