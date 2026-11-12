@@ -37,7 +37,8 @@ the pin to a tag; moderate after.
 ## Encapsulated Knowledge
 
 - The decode rules of the engine's `internal/config/policyfile`: the version message, the closed values, the one form
-  of a rule, `to` required except for `unowned`, `expires` as `YYYY-MM-DD`. The unknown-key and duplicate-key messages
+  of a rule, `to` required except for `unowned` and a custom `only` rule (which names its library itself, so a `to`
+  there is an error), `expires` as `YYYY-MM-DD`. The unknown-key and duplicate-key messages
   are those of `go.yaml.in/yaml/v3`; every other message is the engine's. A date written without quotes is a string.
   The kind checks follow `yaml.v3`'s scalars with two rules of the engine's library added: a mapping key is its text
   whatever its kind (a module may be named `123`), and a bare number with an exponent and no decimal point (`1e3`) is
@@ -71,7 +72,7 @@ var ErrLayout error
 - `AddDependsOn` needs both modules in the policy. A dependency the policy already allows returns the file unchanged,
   so its digest does not change.
 - `AddException` takes `Why`; the caller words it so that it names the request, as `Request #431 is open.` does. `Expires` is
-  a date or empty. The rule `unowned` has no `To`.
+  a date or empty. The rule `unowned` and a custom `only` rule have no `To`; a `To` there is an error.
 - `AddDenyRule` writes `deny` with one `from` and one `to`, a `why` and an `instead`.
 - Each edit decodes its own output and compares it with the old policy plus the answer. A value that would not read
   back as written, or an answer the policy does not allow, is an error, never a different policy.
@@ -115,5 +116,6 @@ Contract strength, root / 2 / 2: balanced.
   Run `go test ./internal/wire/policy3 -run TestWriterGoldens -update` only after reading the diff.
 - `TestWriterKeepsLineEndingsAndFinalNewline`, `TestWriterAcceptsALeadingDocumentStart`, `TestWriterRefuses` (unknown
   module, a layout it does not edit, including a bare CR or NEL break, a merge key, an alias, a document end marker and a
-  second document; a value a flow list would split, a bad date, a reason on two lines, an invalid result).
+  second document; a value a flow list would split, a bad date, a reason on two lines, an invalid result, a `to` on an
+  exception of an only rule).
 - `TestLoosens`, `TestSourcePinsEveryVendoredFile`, `TestTypesHaveTheKeysOfTheSchema`.

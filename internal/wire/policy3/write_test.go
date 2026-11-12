@@ -316,6 +316,14 @@ func TestWriterRefuses(t *testing.T) {
 			wantErr: "unowned has no target module",
 		},
 		{
+			name: "an exception of an only rule with a target",
+			do: func() ([]byte, error) {
+				return policy3.AddException([]byte(base+"rules:\n  - id: no-docker\n    only: {use: github.com/docker/docker, in: [lib]}\n    why: w\n"),
+					policy3.Exception{Rule: "no-docker", From: "app", To: "lib", Why: "w"})
+			},
+			wantErr: "no-docker is an only rule, which names its library itself: remove to",
+		},
+		{
 			name: "a deny rule with no reason",
 			do: func() ([]byte, error) {
 				return policy3.AddDenyRule([]byte(base), "no-app-to-lib", "app", "lib", "", "Use a port.")

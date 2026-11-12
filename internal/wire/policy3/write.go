@@ -83,8 +83,9 @@ func AddDependsOn(file []byte, module, dependency string) ([]byte, error) {
 }
 
 // AddException adds an exception to the policy. The reason (why) is the caller's and names
-// the request, as "Request #431 is open." does. An exception for the rule unowned has no
-// to. expires is a date, YYYY-MM-DD, or empty for an exception with no date.
+// the request, as "Request #431 is open." does. An exception for the rule unowned or for a
+// custom only rule has no to: an only rule names its library itself. A to there is an error,
+// never dropped. expires is a date, YYYY-MM-DD, or empty for an exception with no date.
 func AddException(file []byte, e Exception) ([]byte, error) {
 	if e.Expires != "" {
 		if _, err := time.Parse(dateLayout, e.Expires); err != nil {

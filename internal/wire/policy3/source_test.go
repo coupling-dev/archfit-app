@@ -19,7 +19,7 @@ const (
 	schemaFile   = "archfit.schema.json"
 	sourceFile   = "SCHEMA_SOURCE"
 	sourceRepo   = "alexei-led/archfit"
-	sourceCommit = "e77ab1a43ca70be56db8d0cd696c605fbb05d135"
+	sourceCommit = "a287c5f1dd6c5c01a17fd8071074271ce240375f"
 )
 
 // readSource reads SCHEMA_SOURCE: key: value lines, then one "sha256  path" line per vendored file.
