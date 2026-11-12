@@ -147,8 +147,9 @@ func (s *publisher) writeCheck(ctx context.Context, r api.RepoRef, run api.Check
 	if err != nil {
 		return actionNone, 0, err
 	}
+	superseded := func(c api.CheckRun) bool { return supersedes(c, receipt) }
 	switch {
-	case found && supersedes(existing, receipt):
+	case found && superseded(existing):
 		return actionSkippedNewer, 0, nil
 	case found && reusable(existing, run):
 		run.ID, run.Annotations = existing.ID, nil
@@ -157,7 +158,7 @@ func (s *publisher) writeCheck(ctx context.Context, r api.RepoRef, run api.Check
 		}
 		return actionUpdated, existing.ID, nil
 	}
-	id, err := s.createRun(ctx, r, run, receipt)
+	id, err := s.createRun(ctx, r, run, superseded)
 	return actionCreated, id, err
 }
 
@@ -176,9 +177,9 @@ func reusable(existing, run api.CheckRun) bool {
 
 // createRun creates the run with the first annotationsPerRequest annotations and sends the rest in updates of the
 // same run: GitHub takes 50 per request and appends each batch. Before each further batch it reads the latest run
-// again and stops when another run took its place or a newer publication superseded it, so an older publication
-// never overwrites a newer summary.
-func (s *publisher) createRun(ctx context.Context, r api.RepoRef, run api.CheckRun, receipt Receipt) (int64, error) {
+// again and stops when another run took its place or superseded says a newer publication holds it, so an older
+// publication never overwrites a newer summary.
+func (s *publisher) createRun(ctx context.Context, r api.RepoRef, run api.CheckRun, superseded func(api.CheckRun) bool) (int64, error) {
 	var rest []api.Annotation
 	run.Annotations, rest = batch(run.Annotations)
 	created, err := s.checks.CreateCheckRun(ctx, r, run)
@@ -191,7 +192,7 @@ func (s *publisher) createRun(ctx context.Context, r api.RepoRef, run api.CheckR
 		if err != nil {
 			return 0, err
 		}
-		if !found || latest.ID != run.ID || supersedes(latest, receipt) {
+		if !found || latest.ID != run.ID || superseded(latest) {
 			return 0, nil
 		}
 		run.Annotations, rest = batch(rest)

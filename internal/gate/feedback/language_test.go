@@ -197,7 +197,7 @@ func TestAnnotationRaceNeverSuppliesAnExactCheckID(t *testing.T) {
 		checks.runs[0].Summary = receiptMarker(Receipt{RunID: 8, RunAttempt: 1})
 	}
 	p := publisher{checks: checks}
-	id, err := p.createRun(context.Background(), api.RepoRef{}, run, receipt)
+	id, err := p.createRun(context.Background(), api.RepoRef{}, run, func(c api.CheckRun) bool { return supersedes(c, receipt) })
 	if err != nil || id != 0 {
 		t.Fatalf("raced check id=%d err=%v", id, err)
 	}
