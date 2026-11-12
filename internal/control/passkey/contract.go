@@ -110,4 +110,7 @@ var (
 	ErrUnknown = errors.New("passkey: no such passkey")
 	// ErrInvalid is a Purpose that is not well formed.
 	ErrInvalid = errors.New("passkey: invalid purpose")
+	// ErrPolicy is a policy on the default branch that is neither schema 3 nor an Archfit 3 policy: who registers
+	// cannot be known, so nobody does.
+	ErrPolicy = errors.New("passkey: the policy on the default branch does not decode")
 )

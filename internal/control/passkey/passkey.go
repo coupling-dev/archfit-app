@@ -548,7 +548,7 @@ func logOutcome(ctx context.Context, step string, r api.Repo, userID int64, err 
 	}{
 		{ErrNotOwner, "not_owner"}, {ErrNeedsPasskey, "needs_passkey"}, {ErrNoPasskey, "no_passkey"},
 		{ErrCeremony, "ceremony"}, {ErrCounter, "counter"}, {ErrToken, "token"}, {ErrTooMany, "too_many"},
-		{ErrUnknown, "unknown"}, {ErrInvalid, "invalid"},
+		{ErrUnknown, "unknown"}, {ErrInvalid, "invalid"}, {ErrPolicy, "policy"},
 	} {
 		if errors.Is(err, o.err) {
 			outcome = o.name
