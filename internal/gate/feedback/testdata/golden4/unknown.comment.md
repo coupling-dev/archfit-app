@@ -1,0 +1,7 @@
+## Archfit: unknown, no verdict
+
+`.archfit.yaml` **policy** differs from origin/main
+- why: only owners change the policy
+- next: `git checkout origin/main -- .archfit.yaml`
+
+**Author:** do the `next` step of each record.

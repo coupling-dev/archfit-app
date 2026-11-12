@@ -147,8 +147,9 @@ func (s *publisher) writeCheck(ctx context.Context, r api.RepoRef, run api.Check
 	if err != nil {
 		return actionNone, 0, err
 	}
+	superseded := func(c api.CheckRun) bool { return supersedes(c, receipt) }
 	switch {
-	case found && supersedes(existing, receipt):
+	case found && superseded(existing):
 		return actionSkippedNewer, 0, nil
 	case found && reusable(existing, run):
 		run.ID, run.Annotations = existing.ID, nil
@@ -157,28 +158,29 @@ func (s *publisher) writeCheck(ctx context.Context, r api.RepoRef, run api.Check
 		}
 		return actionUpdated, existing.ID, nil
 	}
-	id, err := s.createRun(ctx, r, run, receipt)
+	id, err := s.createRun(ctx, r, run, superseded)
 	return actionCreated, id, err
 }
 
 // reusable reports whether an update in place leaves the run showing exactly run. GitHub appends the annotations of
-// every request and never removes one, so annotations go only on a new run. archfit/gate carries none, so its latest
-// run, the pending one included, is always updated. An archfit/state run is updated only when it already holds this
+// every request and never removes one, so annotations go only on a new run. A v1 archfit/gate carries none, so its
+// latest run, the pending one included, is updated unless it holds annotations: an Archfit 4 run, which a newer v1
+// run replaces with a new run rather than keep its annotations. An archfit/state run is updated only when it already holds this
 // publication's annotations: the same external_id and as many annotations as run would send. An equal count stands
 // in for equal annotations, because one external_id names one report and annotations are rendered
 // deterministically from it.
 func reusable(existing, run api.CheckRun) bool {
 	if run.Name == gateCheck {
-		return true
+		return existing.AnnotationCount == 0
 	}
 	return existing.ExternalID == run.ExternalID && existing.AnnotationCount == len(run.Annotations)
 }
 
 // createRun creates the run with the first annotationsPerRequest annotations and sends the rest in updates of the
 // same run: GitHub takes 50 per request and appends each batch. Before each further batch it reads the latest run
-// again and stops when another run took its place or a newer publication superseded it, so an older publication
-// never overwrites a newer summary.
-func (s *publisher) createRun(ctx context.Context, r api.RepoRef, run api.CheckRun, receipt Receipt) (int64, error) {
+// again and stops when another run took its place or superseded says a newer publication holds it, so an older
+// publication never overwrites a newer summary.
+func (s *publisher) createRun(ctx context.Context, r api.RepoRef, run api.CheckRun, superseded func(api.CheckRun) bool) (int64, error) {
 	var rest []api.Annotation
 	run.Annotations, rest = batch(run.Annotations)
 	created, err := s.checks.CreateCheckRun(ctx, r, run)
@@ -191,7 +193,7 @@ func (s *publisher) createRun(ctx context.Context, r api.RepoRef, run api.CheckR
 		if err != nil {
 			return 0, err
 		}
-		if !found || latest.ID != run.ID || supersedes(latest, receipt) {
+		if !found || latest.ID != run.ID || superseded(latest) {
 			return 0, nil
 		}
 		run.Annotations, rest = batch(rest)

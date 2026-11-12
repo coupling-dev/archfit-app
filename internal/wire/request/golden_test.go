@@ -130,7 +130,7 @@ func TestIssueGoldens(t *testing.T) {
 
 // TestEveryGoldenHasItsCase: every file under testdata/ is read by a test above.
 func TestEveryGoldenHasItsCase(t *testing.T) {
-	read := map[string]bool{"testdata/wording.go.txt": true, "testdata/reject/nothing-to-ask.record": true}
+	read := map[string]bool{"testdata/reject/nothing-to-ask.record": true}
 	for _, pair := range []struct{ glob, other string }{
 		{"testdata/line/*.txt", ".json"}, {"testdata/form/*.md", ".json"}, {"testdata/comment/*.txt", ".json"},
 		{"testdata/reject/*.txt", ".md"}, {"testdata/issue/*.json", ".md"},
