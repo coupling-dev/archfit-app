@@ -28,8 +28,9 @@ direct push to the policy is the new rule with no owner's word.
      `MergeCommitSHA` is the pushed commit, or, when a merge queue landed several pull requests at once, on the
      history of the pushed commit and not of the commit before: `Compare`) and whose expected digest is the pushed
      policy's: `records.Consume` with the merge commit, `consumed`. The approved digest moves only when the policy at
-     the default branch's tip is that digest now and the merge commit comes after the repository's approved commit
-     (`records.Merge.AtTip`, judged over `Merge.Over`; a consume that lands in between is `records.ErrApprovedMoved`,
+     the default branch's tip is that digest now and the merge commit is not behind the repository's approved commit
+     (with no order between them, after a history rewrite, the tip decides) (`records.Merge.AtTip`, judged over
+     `Merge.Over`; a consume that lands in between is `records.ErrApprovedMoved`,
      and both are read again, at most 3 rounds). So a consume handled after a later policy push, or racing it, never
      puts an older digest back, and never approves a tip that holds a change no approval made. The outcome
      lists the requests of its approvals and the pull requests waiting on them, for the re-check after an answer
@@ -40,8 +41,8 @@ direct push to the policy is the new rule with no owner's word.
      (`records.ErrApprovalsLeft`) is read and voided too, at most 3 rounds. Without this its requests would cover their
      keys for ever.
   6. No approved digest and not outside the flow, or a push made before the first approval (the commit before it
-     strictly behind `Repo.GuardedSince` and the pushed commit on its history; a push that moves the branch back from a
-     later commit is not one): `unguarded`, recorded (`records.Unguarded`), so a delivery of it again after the first
+     strictly behind `Repo.GuardedSince` and the pushed commit on its history, or, for the push that created the
+     branch, the pushed commit strictly behind it; a push that moves the branch back from a later commit is not one): `unguarded`, recorded (`records.Unguarded`), so a delivery of it again after the first
      consume is not outside the flow. Change control starts with the first approval (task 23) or
      the first consume at the tip; the envelope 2 upload says `first_approval` until then (manager, 2026-11-12).
   7. Otherwise `outside`: `records.Outside` sets the state and records the push in one swap, then one issue is opened
@@ -159,7 +160,8 @@ Over a fake GitHub (the policy per commit, pull requests, issues) and the memory
   `TestAMergeQueueBatchIsConsumed` (the merge commit inside a batch; a batch whose last policy no approval made is
   outside the flow and voids the proposal), `TestAnAnswerThatJoinsDuringTheVoidIsVoidedToo`,
   `TestALatePushFromBeforeTheFirstApprovalIsNotOutsideTheFlow` (a push back to the first approval's commit is judged),
-  `TestAConsumeThatLosesARaceKeepsTheNewerApproval`.
+  `TestAConsumeThatLosesARaceKeepsTheNewerApproval`, `TestARewrittenHistoryDoesNotStopLaterApprovals`,
+  `TestALateBranchCreationFromBeforeTheFirstApprovalIsNotOutsideTheFlow`.
 
 In `internal/gate` (`approvals_test.go`), over the gate's fake GitHub: `TestADirectPushPutsEveryUploadOutsideTheFlow`
 (one issue, the upload `unknown` with `outside_flow` naming it), `TestAnAnsweredRequestCoversItsKeyUntilItsProposalIsConsumed`,

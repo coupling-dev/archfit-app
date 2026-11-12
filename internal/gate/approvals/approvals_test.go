@@ -730,3 +730,41 @@ func TestAConsumeThatLosesARaceKeepsTheNewerApproval(t *testing.T) {
 		t.Errorf("repository %+v, want p2's policy approved at c2", r)
 	}
 }
+
+// TestARewrittenHistoryDoesNotStopLaterApprovals: the branch's history is rewritten with the same policy, so the
+// approved commit is off it; the next proposal is still approved by the tip.
+func TestARewrittenHistoryDoesNotStopLaterApprovals(t *testing.T) {
+	w := newWorld(t)
+	w.gh.commit("c0", policyV(0))
+	w.answered(431, "graph a b", "p1", 21, digestV(1))
+	w.merge(21, "c1", 1)
+	w.push("c0", "c1")
+
+	w.gh.history = nil // a rewrite: new commits, the same policy
+	w.gh.commit("r0", policyV(0))
+	w.gh.commit("r1", policyV(1))
+	if out := w.push("c1", "r1"); out.Judged != JudgedNone {
+		t.Fatalf("the rewrite = %+v, want none: the policy did not change", out)
+	}
+	w.answered(432, "graph c d", "p2", 22, digestV(2))
+	w.merge(22, "r2", 2)
+	if out := w.push("r1", "r2"); out.Judged != JudgedConsumed {
+		t.Fatalf("the next merge = %+v", out)
+	}
+	if r := w.repo(); r.ApprovedDigest != digestV(2) || r.ApprovedCommit != "r2" {
+		t.Errorf("repository %+v, want the next policy approved at r2", r)
+	}
+}
+
+// TestALateBranchCreationFromBeforeTheFirstApprovalIsNotOutsideTheFlow: the push that created the branch, handled
+// after the first consume, has no commit before; its commit is behind the first approval's.
+func TestALateBranchCreationFromBeforeTheFirstApprovalIsNotOutsideTheFlow(t *testing.T) {
+	w := newWorld(t)
+	w.gh.commit("c0", policyV(0))
+	w.answered(431, "graph a b", "p1", 21, digestV(1))
+	w.merge(21, "c1", 1)
+	w.push("c0", "c1")
+	if out := w.push("", "c0"); out.Judged != JudgedUnguarded || w.repo().OutsideFlow != nil {
+		t.Errorf("the late creation push = %+v, repository %+v; want unguarded", out, w.repo())
+	}
+}

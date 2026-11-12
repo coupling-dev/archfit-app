@@ -174,8 +174,8 @@ sweep) read and write through this module;
   An answered request is in the request index while the proposal its approval joined is open.
 - An approval joins at most one proposal, and is consumed at most once, by that proposal's merge commit.
 - A proposal is merged by exactly one commit. Its digest becomes the repository's approved digest only when the
-  default branch's tip held it at the consume, its merge commit came after the approved commit, and the repository was
-  not outside the flow. The approved commit only moves forward.
+  default branch's tip held it at the consume, its merge commit was not behind the approved commit, and the repository
+  was not outside the flow. The approved commit never moves back along the branch's history.
 - No result bytes, report or source are stored (M2 D6). A request keeps the record its issue shows: check output of
   the asked errors, at most 30,000 bytes, never source.
 - Errors never quote a stored value.

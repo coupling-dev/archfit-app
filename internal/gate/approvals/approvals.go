@@ -27,6 +27,7 @@ const maxAssignees = 10
 const (
 	compareIdentical = "identical"
 	compareAhead     = "ahead"
+	compareBehind    = "behind"
 )
 
 // voidRounds is how often a void reads a proposal that keeps gaining an approval; approveRounds how often a consume
@@ -299,9 +300,15 @@ func (s *Service) landed(ctx context.Context, ref api.RepoRef, commit string, pu
 }
 
 // preceded reports whether push happened before commit: the commit before the push is strictly behind commit, and the
-// pushed commit is on commit's history. A push that moves the branch back from a later commit did not.
+// pushed commit is on commit's history. A push that moves the branch back from a later commit did not. A push that
+// created the branch has no commit before: its pushed commit strictly behind commit decides.
 func (s *Service) preceded(ctx context.Context, push Push, commit string) (bool, error) {
-	if push.Before == "" || push.Before == commit {
+	switch {
+	case push.Before == "" && push.After == commit:
+		return false, nil
+	case push.Before == "":
+		return s.onHistory(ctx, push.Repo.RepoRef, push.After, commit)
+	case push.Before == commit:
 		return false, nil
 	}
 	behind, err := s.onHistory(ctx, push.Repo.RepoRef, push.Before, commit)
@@ -352,7 +359,8 @@ func (s *Service) consume(ctx context.Context, r api.Repo, p *proposal, push rec
 }
 
 // approves reports whether the consume of commit approves digest: the default branch's tip holds digest now, and commit
-// comes after the approved commit (there is none yet, or it is on commit's history).
+// is not older than the approved commit. When the two have no order (a history rewrite left the approved commit off
+// the branch, or GitHub no longer knows it), the tip alone decides, so a rewrite never stops every later approval.
 func (s *Service) approves(ctx context.Context, r api.Repo, approved, commit, digest string) (bool, error) {
 	tip, err := s.tipDigest(ctx, r)
 	if err != nil || tip != digest {
@@ -361,7 +369,14 @@ func (s *Service) approves(ctx context.Context, r api.Repo, approved, commit, di
 	if approved == "" {
 		return true, nil
 	}
-	return s.onHistory(ctx, r.RepoRef, approved, commit)
+	c, err := s.gh.Compare(ctx, r.RepoRef, approved, commit)
+	switch {
+	case api.Permanent(err):
+		return true, nil
+	case err != nil:
+		return false, fmt.Errorf("approvals: compare %s with %s: %w", approved, commit, err)
+	}
+	return c.Status != compareBehind, nil
 }
 
 // tipDigest is the policy digest at the default branch's tip now; "" when it has none or the branch is not named.
