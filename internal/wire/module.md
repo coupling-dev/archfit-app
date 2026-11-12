@@ -2,7 +2,7 @@
 
 **Path**: internal/wire/
 **Parent**: internal/ (Archfit App)
-**Submodules**: envelope, decision, report, result, request, settings, policy, policy3, manifest
+**Submodules**: envelope, decision, report, result, request, settings, policy, policy3, manifest, wording
 
 ## Purpose
 
@@ -13,10 +13,11 @@ and the control plane, a version bump would touch domain logic, and nobody could
 
 ## Functional Responsibilities
 
-- Publish nine child packages, each owning one contract: the upload envelope, the decision request an unattended agent
+- Publish ten child packages, each owning one contract: the upload envelope, the decision request an unattended agent
   files, the no-source state report, the engine's result JSON and text record, the request line and the request issue
-  (Archfit 4), the App settings file, the App's view of the engine policy files, policy schema 3 (Archfit 4), and the approved identity manifest.
-- State the versioning rule all nine follow.
+  (Archfit 4), the App settings file, the App's view of the engine policy files, policy schema 3 (Archfit 4), the approved identity manifest,
+  and the words Archfit output never uses (design 5, for tests).
+- State the versioning rule all ten follow.
 - Hold the shared conformance fixtures in `wire/testdata/` (a transparent folder, not a module) used by the
   children's tests and by consumer tests such as the gate verdict table.
 - The parent package itself has no code except `doc.go`.
@@ -58,6 +59,7 @@ child is normative in the child's own `module.md`; it is not restated here.
 | `internal/wire/policy`   | engine file locations, bare-hex `Digest`, `Waivers`, `Modules`, `ReadBaseline` readers, config `Schema` |
 | `internal/wire/policy3`  | Archfit 4 policy schema 3: `Decode`, `Digest` (`sha256:` form), `AddDependsOn`, `AddException`, `AddDenyRule`, `Loosens` |
 | `internal/wire/manifest` | locked approved identities: `Identity`, `Entry`, `Lookup`, `Current`, `EngineVersions`               |
+| `internal/wire/wording`  | the "Not used" words of design section 5, vendored from the engine: `NotUsedIn`; for tests          |
 
 ### Versioning rule
 
@@ -289,7 +291,7 @@ what keeps it balanced.
 
 ## Internal Design
 
-Nine independent leaves. There is no flow between them and no composition in the parent.
+Ten independent leaves. There is no flow between them and no composition in the parent.
 
 | Child      | Contributes                                                  | Third-party imports |
 | ---------- | ------------------------------------------------------------ | ------------------- |
@@ -302,6 +304,7 @@ Nine independent leaves. There is no flow between them and no composition in the
 | `policy3`  | policy schema 3: decode, digest and the answers' writer      | one YAML library    |
 | `manifest` | approved engine, image, profile and Action identities        | none                |
 | `request`  | the request line, the request issue and the request key      | none                |
+| `wording`  | the engine's "Not used" words, which tests check output for  | none                |
 
 Rules between children:
 
@@ -313,7 +316,7 @@ Rules between children:
   `envelope` and `report`; SHA-256 hex formatting exists in `envelope` (prefixed) and `policy` (bare). Each is a few
   lines, and the two digests have different formats and meanings.
 - `doc.go` in the parent states the placement rule and the versioning rule for Go readers.
-- Fan-out is nine, over the 4±1 guidance: the leaves share nothing, so the count adds no coupling.
+- Fan-out is ten, over the 4±1 guidance: the leaves share nothing, so the count adds no coupling.
 
 ## Change Vectors
 

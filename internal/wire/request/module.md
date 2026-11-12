@@ -74,8 +74,7 @@ with an engine release that vendors its goldens.
   least three, so nothing in a reason or a reported record (a mention, a link, Markdown) takes effect.
 - Replies never repeat what the author wrote, and no line of a reply starts with `/archfit request`, so the App never
   reads its own reply as a request.
-- `testdata/wording.go.txt` is the engine's `internal/testutil/wording.go`, a byte copy pinned in `SCHEMA_SOURCE`
-  (repository, commit, SHA-256). The tests read the "Not used" words of design section 5 from it.
+- The tests check every golden for the "Not used" words of design section 5 with `wire/wording`.
 
 ## Public Contract
 
@@ -113,11 +112,6 @@ func NoPermission() *Rejection
 `Issue.Record` is the caller's text: the records of the asked errors as `wire/result` prints them, without the status
 line, or the reported `can` answer. A child of `wire` imports no other internal package, so the gate maps a
 `result.Error` to `Error` and builds the record with `wire/result`.
-
-## Re-vendor
-
-At a new engine commit: copy `internal/testutil/wording.go` to `testdata/wording.go.txt`, set `commit:` and its
-`sha256` line in `SCHEMA_SOURCE`, then run the tests.
 
 ## Constraints and Invariants
 
