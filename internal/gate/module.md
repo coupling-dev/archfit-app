@@ -49,9 +49,10 @@ separate, testable steps. Without this module a report is a self-reported file a
   `archfit/gate` set on that pull request when M2 D13 holds, and the merge unless the owner chose to merge later.
   `AnswerDigest` is the change digest the owner's passkey step-up is bound to.
 - Judge each default-branch push that changes the policy (M2 task 20, `gate/approvals`, façade file `approvals.go`): the
-  merge of a proposal with the policy its approvals wrote consumes them, once; any other change puts the repository
-  "outside the flow" (design 7.1): one issue opens to the owners, and every envelope 2 upload is `unknown` with a
-  record that names it until an owner confirms or reverts (task 23). The requests and pull requests of a consumed
+  merge of a proposal with the policy its approvals wrote consumes them, once; in a repository with an approved policy,
+  any other change puts it "outside the flow" (design 7.1): one issue opens to the owners, and every envelope 2 upload
+  is `unknown` with a record that names it until an owner confirms or reverts (task 23). A repository without an
+  approved policy is not under change control yet: the push is recorded, and its uploads say `first_approval`. The requests and pull requests of a consumed
   proposal are handed to the re-check (task 21; logged as `gate recheck handed` until it lands).
 - For the App's pull request page only (`FirstScreen`, `RecoveryStep`): word a published result with the code that
   words the comment, so the page's first screen is the comment's. Pure functions of what the check recorded.
@@ -510,14 +511,17 @@ Steps, in order:
 | `T` has a schema 3 policy (`.archfit.yaml` that `policy3.Decode` reads) | `first_policy` | an administrator approves the first policy in the App (task 23) |
 | the repository is not outside the flow (`records.Repo.OutsideFlow`, set by a policy push no approval made, M2 task 20) | `outside_flow` | an owner confirms or reverts it in the App: `#<issue>` |
 | the repository has an approved policy (`records.Repo.ApprovedDigest`, set by a consume or, in task 23, the first approval) | `first_approval` | an administrator approves the policy in the App |
+| the policy at `T` is the approved one (`policy3.Digest` of `T`'s policy equals `ApprovedDigest`; not checked outside the flow or without an approved policy): a policy push no judgement has reached yet gives no verdict | `policy_unapproved` | the check runs again |
 | `target_sha` is `T` or behind it (`Compare(target_sha, T)` is `identical` or `ahead`; a commit GitHub does not know is not) | `target_not_on_branch` | run the check again |
 | `policy_digest` is the digest of `.archfit.yaml` at `target_sha` (a policy from the head fails here) | `policy_not_target` | restore the policy from the default branch |
 | the digest at `target_sha` is the digest at `T` | `policy_changed` | the check runs again |
 | `.github/workflows/archfit.yaml` at the run's commit (`Binding4.RunSHA`, the test merge commit of a pull request) is `T`'s (same blob), or differs only in the ref and the version comment (` # v4.0.1`) of whole `uses: alexei-led/archfit-action@<ref>` lines (LF line ends, optional matching quotes), each new ref a commit manifest 4 lists (`manifest.ActionApproved`); any other text, a reference inside a script, a CR, NEL or U+2028 stays compared | `workflow_changed` | update the branch; if the pull request changes the workflow, an owner approves it in the App (task 23) |
 
 The policy rules are skipped on a first policy, and the `target_sha` digest rules after `target_not_on_branch`. The two
-state rules come first among the policy rules; `outside_flow` is checked before `first_approval`. Without an approved
-policy no upload passes: change control starts with the first approval (manager, 2026-11-12). The
+state rules come first among the policy rules; `outside_flow` is checked before `first_approval`, and
+`policy_unapproved` after the `target_sha` rules. Without an approved policy no upload passes: change control starts
+with the first approval (manager, 2026-11-12). A lost push event leaves `policy_unapproved` until the sweep (task 22)
+judges the tip. The
 workflow rule always runs: a pull request runs its own workflow file, so a changed one could upload a forged `pass`
 (design 9.2). A tag ref is never a pin bump here. A pull request whose test merge commit is older than a non-ref
 change of the workflow on `T` reads `unknown` until its branch is updated.
@@ -2045,6 +2049,9 @@ are driven only as far as they go without GitHub. Child internals are tested in 
 - **Test name**: `TestADirectPushPutsEveryUploadOutsideTheFlow`
   **Scenario**: a default-branch push that changes the policy with no recorded approval, delivered twice; then an upload of a `pass`.
   **Expected behavior**: one open issue, assigned to the owners, naming the commit; the upload `unknown` `outside_flow`, its record naming the issue. `gate/approvals` tests the judgement.
+- **Test name**: `TestAnUploadBeforeItsPushIsJudgedGivesNoVerdict`
+  **Scenario**: the default branch's policy changed and no push event was handled yet; then the push arrives.
+  **Expected behavior**: `unknown` `policy_unapproved`; after the push, `unknown` `outside_flow`.
 - **Test name**: `TestAnAnsweredRequestCoversItsKeyUntilItsProposalIsConsumed`
   **Scenario**: a request answered with "merge later"; a second pull request fails on the same key and asks again; the policy pull request merges and its push arrives; a third pull request fails on the key.
   **Expected behavior**: the second waits on the answered request, no second issue opens, both pull requests are in its `Waiting`; the push consumes the proposal; the third is `fail`: the key is free.

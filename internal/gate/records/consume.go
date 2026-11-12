@@ -66,30 +66,42 @@ func Join(ctx context.Context, s store.Store, t store.Tenant, fullName, approval
 	})
 }
 
+// Merge is a proposal's pull request landed on the default branch.
+type Merge struct {
+	Proposal string
+	Commit   string // the pull request's merge commit
+	Digest   string // the policy digest it landed
+	Push     Push   // the push that landed it; its After is a later commit when a merge queue landed several
+	// AtTip says the policy at the default branch's tip has Digest now. Only then does Digest become the approved
+	// digest: a consume handled after a later policy push never puts an older digest back, and never approves a tip
+	// that holds a change no approval made.
+	AtTip bool
+}
+
 // Consume is the one-use step of a proposal: its merge commit landed on the default branch with the expected
-// digest. In one CompareAndSwapAll of five keys it moves the proposal from open to merged and records commit, removes
-// the proposal from the proposal index, makes digest the repository's approved digest, removes the requests of its
-// approvals from the request index (an answered request covers its key until its proposal is consumed), and records
-// the push at PolicyPushKey. The approvals of the proposal count as consumed from then on (each records the proposal
-// it joined, once). While the repository is outside the flow the approved digest stays as it is: the merged policy
-// also carries the change no approval made.
+// digest. In one CompareAndSwapAll of five keys it moves the proposal from open to merged and records the merge
+// commit, removes the proposal from the proposal index, makes the digest the repository's approved digest (see
+// Merge.AtTip), removes the requests of its approvals from the request index (an answered request covers its key
+// until its proposal is consumed), and records the push at PolicyPushKey. The approvals of the proposal count as
+// consumed from then on (each records the proposal it joined, once). While the repository is outside the flow the
+// approved digest stays as it is: the merged policy also carries the change no approval made.
 //
 // The same commit with the same digest again is a no-op success: it only checks the keys. A proposal that is void,
 // merged by another commit, without a pull request, or expecting another digest (also after it was merged) is
 // ErrMoved, and so is a push recorded with another judgement; a missing proposal is ErrNoRecord. The state is decided
 // again after every lost swap, so of concurrent callers with different commits exactly one wins.
-func Consume(ctx context.Context, s store.Store, t store.Tenant, fullName, proposalID, commit, digest string) error {
-	if proposalID == "" || commit == "" || digest == "" {
-		return errors.New("records: consume: an empty proposal id, commit or digest")
+func Consume(ctx context.Context, s store.Store, t store.Tenant, fullName string, m Merge) error {
+	if m.Proposal == "" || m.Commit == "" || m.Digest == "" || m.Push.After == "" {
+		return errors.New("records: consume: an empty proposal id, commit, digest or push")
 	}
 	// The approvals cannot be in the swap (up to 9 keys more), so their requests are read first. An approval that
 	// joined in between (it may keep the digest) is read on the next round.
 	for range consumeReads {
-		requests, err := approvalRequests(ctx, s, t, fullName, proposalID)
+		requests, err := approvalRequests(ctx, s, t, fullName, m.Proposal)
 		if err != nil {
 			return err
 		}
-		err = consume(ctx, s, t, fullName, proposalID, commit, digest, requests)
+		err = consume(ctx, s, t, fullName, m, requests)
 		if !errors.Is(err, errApprovalsMoved) {
 			return err
 		}
@@ -120,10 +132,9 @@ func approvalRequests(ctx context.Context, s store.Store, t store.Tenant, fullNa
 	return out, nil
 }
 
-func consume(ctx context.Context, s store.Store, t store.Tenant, fullName, proposalID, commit, digest string,
-	requests map[string]int) error {
-	keys := []string{ProposalKey(fullName, proposalID), ProposalIndexKey(fullName), RepoKey(fullName),
-		RequestIndexKey(fullName), PolicyPushKey(fullName, commit)}
+func consume(ctx context.Context, s store.Store, t store.Tenant, fullName string, m Merge, requests map[string]int) error {
+	keys := []string{ProposalKey(fullName, m.Proposal), ProposalIndexKey(fullName), RepoKey(fullName),
+		RequestIndexKey(fullName), PolicyPushKey(fullName, m.Push)}
 	return store.Update(ctx, s, t, keys, func(cur [][]byte) ([][]byte, error) {
 		if cur[0] == nil {
 			return nil, ErrNoRecord
@@ -133,18 +144,18 @@ func consume(ctx context.Context, s store.Store, t store.Tenant, fullName, propo
 			return nil, err
 		}
 		switch {
-		case p.State == StateMerged && p.Commit == commit && p.ExpectedDigest == digest:
+		case p.State == StateMerged && p.Commit == m.Commit && p.ExpectedDigest == m.Digest:
 			return cur, nil
-		case p.State != StateOpen || p.PullRequest == 0 || p.ExpectedDigest != digest:
+		case p.State != StateOpen || p.PullRequest == 0 || p.ExpectedDigest != m.Digest:
 			return nil, ErrMoved
 		}
-		push := PolicyPush{Digest: digest, Proposal: proposalID}
+		push := PolicyPush{Digest: m.Digest, Proposal: m.Proposal}
 		if cur[4] != nil {
 			var was PolicyPush
 			if err := Decode(cur[4], &was); err != nil {
 				return nil, err
 			}
-			if was.Digest != digest || was.Proposal != proposalID {
+			if was != push {
 				return nil, ErrMoved
 			}
 		}
@@ -156,14 +167,14 @@ func consume(ctx context.Context, s store.Store, t store.Tenant, fullName, propo
 			}
 			answered[strconv.Itoa(request)] = true
 		}
-		p.State, p.Commit = StateMerged, commit
+		p.State, p.Commit = StateMerged, m.Commit
 
 		proposals, err := readIndex(cur[1], SchemaProposalIndex)
 		if err != nil {
 			return nil, err
 		}
 		before := slices.Clone(proposals.Entries)
-		if id, ok := proposals.Lookup(PullEntry(p.PullRequest)); ok && id == proposalID {
+		if id, ok := proposals.Lookup(PullEntry(p.PullRequest)); ok && id == m.Proposal {
 			proposals.Remove(PullEntry(p.PullRequest))
 		}
 		proposalIndex, err := writeIndex(cur[1], before, proposals)
@@ -188,8 +199,8 @@ func consume(ctx context.Context, s store.Store, t store.Tenant, fullName, propo
 				return nil, err
 			}
 		}
-		if r.OutsideFlow == nil {
-			r.ApprovedDigest = digest
+		if m.AtTip && r.OutsideFlow == nil {
+			r.ApprovedDigest = m.Digest
 		}
 
 		out, err := encodeAll(&p, &r, &push)
@@ -200,15 +211,15 @@ func consume(ctx context.Context, s store.Store, t store.Tenant, fullName, propo
 	})
 }
 
-// Outside records that the push of commit brought a policy of digest that no approval made: the repository is outside
-// the flow (design 7.1) until an owner confirms or reverts it (M2 task 23). One swap sets Repo.OutsideFlow to digest,
-// keeping an issue already opened for it, and records the push at PolicyPushKey. A push already recorded outside the
-// flow changes nothing and marked is false; one recorded as a consume is ErrMoved. r is the repository afterwards.
-func Outside(ctx context.Context, s store.Store, t store.Tenant, fullName, commit, digest string) (r Repo, marked bool, err error) {
-	if commit == "" {
+// Outside records that push brought a policy of digest that no approval made: the repository is outside the flow
+// (design 7.1) until an owner confirms or reverts it (M2 task 23). One swap sets Repo.OutsideFlow to digest, keeping
+// an issue already opened for it, and records the push at PolicyPushKey. A push already recorded outside the flow
+// changes nothing and marked is false; one recorded with another judgement is ErrMoved. r is the repository afterwards.
+func Outside(ctx context.Context, s store.Store, t store.Tenant, fullName string, push Push, digest string) (r Repo, marked bool, err error) {
+	if push.After == "" {
 		return Repo{}, false, errors.New("records: outside: an empty commit")
 	}
-	keys := []string{RepoKey(fullName), PolicyPushKey(fullName, commit)}
+	keys := []string{RepoKey(fullName), PolicyPushKey(fullName, push)}
 	err = store.Update(ctx, s, t, keys, func(cur [][]byte) ([][]byte, error) {
 		r, marked = Repo{}, false
 		if cur[0] != nil {
@@ -221,7 +232,7 @@ func Outside(ctx context.Context, s store.Store, t store.Tenant, fullName, commi
 			if err := Decode(cur[1], &was); err != nil {
 				return nil, err
 			}
-			if was.Proposal != "" {
+			if was.Proposal != "" || was.Unguarded {
 				return nil, ErrMoved
 			}
 			return cur, nil
@@ -233,6 +244,22 @@ func Outside(ctx context.Context, s store.Store, t store.Tenant, fullName, commi
 		return encodeAll(&r, &PolicyPush{Digest: digest})
 	})
 	return r, marked, err
+}
+
+// Unguarded records that push brought digest to a repository with no approved policy yet: change control had not
+// started (M2 task 23 starts it), so the push is not outside the flow, and a delivery of it again after the first
+// consume is not either. A push already recorded changes nothing.
+func Unguarded(ctx context.Context, s store.Store, t store.Tenant, fullName string, push Push, digest string) error {
+	if push.After == "" {
+		return errors.New("records: unguarded: an empty commit")
+	}
+	return store.Update(ctx, s, t, []string{PolicyPushKey(fullName, push)}, func(cur [][]byte) ([][]byte, error) {
+		if cur[0] != nil {
+			return cur, nil
+		}
+		raw, err := Encode(&PolicyPush{Digest: digest, Unguarded: true})
+		return [][]byte{raw}, err
+	})
 }
 
 // OutsideIssue records issue as the issue of the policy changed outside the flow, when none is recorded yet, and

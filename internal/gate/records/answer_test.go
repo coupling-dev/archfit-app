@@ -250,3 +250,27 @@ func TestARequestIsAnsweredOnce(t *testing.T) {
 		}
 	})
 }
+
+// TestAProposalWithAnApprovalLeftIsNotVoided: an answer that joined after the caller voided the approvals it read is
+// voided too before the proposal, so no approval stays joined to a void proposal with its request covering its key.
+func TestAProposalWithAnApprovalLeftIsNotVoided(t *testing.T) {
+	ctx := context.Background()
+	s := store.NewMemory()
+	seedRequest(t, s)
+	pin := &records.Pin{Proposal: "p1", PullRequest: 12, HeadSHA: "h", Digest: "d"}
+	if err := records.Answer(ctx, s, tenant, repoName, "a1", *approval(""), pin); err != nil {
+		t.Fatal(err)
+	}
+	if err := records.VoidProposal(ctx, s, tenant, repoName, "p1"); !errors.Is(err, records.ErrApprovalsLeft) {
+		t.Fatalf("VoidProposal = %v, want ErrApprovalsLeft", err)
+	}
+	if p := load[records.Proposal](t, s, records.ProposalKey(repoName, "p1")); p.State != records.StateOpen {
+		t.Errorf("proposal %q, want still open", p.State)
+	}
+	if _, _, err := records.Void(ctx, s, tenant, repoName, "a1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := records.VoidProposal(ctx, s, tenant, repoName, "p1"); err != nil {
+		t.Errorf("VoidProposal after the void = %v", err)
+	}
+}

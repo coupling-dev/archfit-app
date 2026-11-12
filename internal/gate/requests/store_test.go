@@ -53,7 +53,8 @@ func TestWaitJoinsARequestWhileItCoversItsKey(t *testing.T) {
 		t.Errorf("request 432 (answered, no proposal) waiting = %v, want none", got)
 	}
 
-	if err := records.Consume(ctx, s, tenant(r), r.FullName, "p1", "c1", "d"); err != nil {
+	if err := records.Consume(ctx, s, tenant(r), r.FullName,
+		records.Merge{Proposal: "p1", Commit: "c1", Digest: "d", Push: records.Push{After: "c1"}, AtTip: true}); err != nil {
 		t.Fatal(err)
 	}
 	if err := Wait(ctx, s, r, 8, []int{431}); err != nil {

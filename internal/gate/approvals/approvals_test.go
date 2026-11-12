@@ -26,9 +26,11 @@ func policyV(n int) string {
 
 func digestV(n int) string { return policy3.Digest([]byte(policyV(n))) }
 
-// hub is a fake GitHub: the policy at each commit, pull requests, and the issues the App opens.
+// hub is a fake GitHub: a linear history of the default branch, the policy at each commit, pull requests, and the
+// issues the App opens.
 type hub struct {
 	mu        sync.Mutex
+	history   []string          // the default branch's commits, oldest first; the last is its tip
 	files     map[string]string // commit → policy; a missing commit has no policy
 	pulls     map[int]api.Pull
 	issues    map[int]bool // number → open
@@ -49,6 +51,41 @@ func (h *hub) File(_ context.Context, _ api.RepoRef, ref, path string) ([]byte, 
 		return nil, "", api.ErrNotFound
 	}
 	return []byte(text), "blob-" + ref, nil
+}
+
+func (h *hub) BranchHead(_ context.Context, _ api.RepoRef, branch string) (string, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if branch != testRepo.DefaultBranch || len(h.history) == 0 {
+		return "", api.ErrNotFound
+	}
+	return h.history[len(h.history)-1], nil
+}
+
+// Compare answers from the history: identical, ahead (base before head), behind; a commit off it is not found.
+func (h *hub) Compare(_ context.Context, _ api.RepoRef, base, head string) (api.Comparison, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	b, hd := slices.Index(h.history, base), slices.Index(h.history, head)
+	switch {
+	case b < 0 || hd < 0:
+		return api.Comparison{}, api.ErrNotFound
+	case b == hd:
+		return api.Comparison{Status: "identical"}, nil
+	case b < hd:
+		return api.Comparison{Status: "ahead"}, nil
+	}
+	return api.Comparison{Status: "behind"}, nil
+}
+
+// commit appends commit, whose policy is policy, to the default branch: it is the tip now.
+func (h *hub) commit(commit, policy string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.files[commit] = policy
+	if !slices.Contains(h.history, commit) {
+		h.history = append(h.history, commit)
+	}
 }
 
 func (h *hub) Pull(_ context.Context, _ api.RepoRef, number int) (api.Pull, error) {
@@ -178,9 +215,9 @@ func (w *world) answered(number int, key, proposal string, pr int, digest string
 	return id
 }
 
-// merge merges pull request pr as commit, whose policy is policyV(n).
+// merge merges pull request pr as commit, whose policy is policyV(n): the default branch's tip now.
 func (w *world) merge(pr int, commit string, n int) {
-	w.gh.files[commit] = policyV(n)
+	w.gh.commit(commit, policyV(n))
 	w.gh.pulls[pr] = api.Pull{Number: pr, State: "closed", Merged: true, MergeCommitSHA: commit}
 }
 
@@ -226,7 +263,7 @@ func (w *world) wantOutside(out Outcome, digest string) {
 func TestTwoJoinedAnswersAreConsumedByOnePush(t *testing.T) {
 	w := newWorld(t)
 	w.approved(digestV(0))
-	w.gh.files["c0"] = policyV(0)
+	w.gh.commit("c0", policyV(0))
 	w.answered(431, "graph a b", "p1", 21, digestV(1), 5)
 	w.answered(432, "graph c d", "p1", 21, digestV(2), 5, 6)
 	w.merge(21, "c1", 2)
@@ -255,7 +292,7 @@ func TestTwoJoinedAnswersAreConsumedByOnePush(t *testing.T) {
 func TestARewrittenProposalIsConsumed(t *testing.T) {
 	w := newWorld(t)
 	w.approved(digestV(0))
-	w.gh.files["c0"] = policyV(0)
+	w.gh.commit("c0", policyV(0))
 	a := w.answered(431, "graph a b", "p1", 21, digestV(1))
 	if err := records.Join(context.Background(), w.mem, w.tenant(), testRepo.FullName, a, "p1", "head-rewritten", digestV(3)); err != nil {
 		t.Fatal(err)
@@ -271,7 +308,7 @@ func TestARewrittenProposalIsConsumed(t *testing.T) {
 func TestTheSamePushTwice(t *testing.T) {
 	w := newWorld(t)
 	w.approved(digestV(0))
-	w.gh.files["c0"] = policyV(0)
+	w.gh.commit("c0", policyV(0))
 	w.answered(431, "graph a b", "p1", 21, digestV(1), 5)
 	w.merge(21, "c1", 1)
 	first := w.push("c0", "c1")
@@ -291,7 +328,7 @@ func TestTheSamePushTwice(t *testing.T) {
 		t.Errorf("repository %+v after a late delivery, want p2's policy approved and inside the flow", r)
 	}
 
-	w.gh.files["c3"] = policyV(9)
+	w.gh.commit("c3", policyV(9))
 	out := w.push("c2", "c3")
 	w.wantOutside(out, digestV(9))
 	notes := len(w.gh.comments[out.Issue])
@@ -313,8 +350,8 @@ func equalOutcome(a, b Outcome) bool {
 func TestADirectPushIsOutsideTheFlow(t *testing.T) {
 	w := newWorld(t)
 	w.approved(digestV(0))
-	w.gh.files["c0"] = policyV(0)
-	w.gh.files["c1"] = strings.Replace(policyV(1), "owners: [olivia, \"@oscar\", acme/arch]", "owners: [mallory]", 1)
+	w.gh.commit("c0", policyV(0))
+	w.gh.commit("c1", strings.Replace(policyV(1), "owners: [olivia, \"@oscar\", acme/arch]", "owners: [mallory]", 1))
 
 	out := w.push("c0", "c1", "README.md", PolicyPath)
 	w.wantOutside(out, policy3.Digest([]byte(w.gh.files["c1"])))
@@ -329,7 +366,7 @@ func TestADirectPushIsOutsideTheFlow(t *testing.T) {
 		t.Errorf("approved digest %q, want the one before", r.ApprovedDigest)
 	}
 
-	w.gh.files["c2"] = policyV(2)
+	w.gh.commit("c2", policyV(2))
 	again := w.push("c1", "c2")
 	w.wantOutside(again, digestV(2))
 	if again.Issue != out.Issue || len(w.gh.openIssues()) != 1 {
@@ -344,12 +381,12 @@ func TestADirectPushIsOutsideTheFlow(t *testing.T) {
 func TestAnOlderApprovedPolicyPushedAgainIsOutsideTheFlow(t *testing.T) {
 	w := newWorld(t)
 	w.approved(digestV(0))
-	w.gh.files["c0"] = policyV(0)
+	w.gh.commit("c0", policyV(0))
 	w.answered(431, "graph a b", "p1", 21, digestV(1))
 	w.merge(21, "c1", 1)
 	w.push("c0", "c1")
 
-	w.gh.files["c2"] = policyV(0) // the policy before the answer, approved once
+	w.gh.commit("c2", policyV(0)) // the policy before the answer, approved once
 	w.wantOutside(w.push("c1", "c2"), digestV(0))
 }
 
@@ -358,14 +395,14 @@ func TestAnOlderApprovedPolicyPushedAgainIsOutsideTheFlow(t *testing.T) {
 func TestAnApprovalIsUsedOnce(t *testing.T) {
 	w := newWorld(t)
 	w.approved(digestV(0))
-	w.gh.files["c0"] = policyV(0)
+	w.gh.commit("c0", policyV(0))
 	a := w.answered(431, "graph a b", "p1", 21, digestV(1))
 	w.merge(21, "c1", 1)
 	w.push("c0", "c1")
 
-	w.gh.files["c2"] = policyV(0)
+	w.gh.commit("c2", policyV(0))
 	w.push("c1", "c2") // reverted by hand: outside the flow
-	w.gh.files["c3"] = policyV(1)
+	w.gh.commit("c3", policyV(1))
 	w.wantOutside(w.push("c2", "c3"), digestV(1))
 	if p := w.proposal("p1"); p.Commit != "c1" {
 		t.Errorf("proposal consumed by %q, want c1 only", p.Commit)
@@ -387,7 +424,7 @@ func TestAnApprovalIsUsedOnce(t *testing.T) {
 func TestAMergeOfAnotherPolicyVoidsItsProposal(t *testing.T) {
 	w := newWorld(t)
 	w.approved(digestV(0))
-	w.gh.files["c0"] = policyV(0)
+	w.gh.commit("c0", policyV(0))
 	w.answered(431, "graph a b", "p1", 21, digestV(1))
 	w.answered(432, "graph c d", "p1", 21, digestV(2))
 	w.merge(21, "c1", 1) // the head before the second answer joined
@@ -420,7 +457,8 @@ func TestAPushIsJudgedOnlyWhenItChangesThePolicy(t *testing.T) {
 		t.Errorf("a push of other files = %+v", out)
 	}
 	delete(w.gh.fail, "File")
-	w.gh.files["c0"], w.gh.files["c1"] = policyV(0), policyV(0)
+	w.gh.commit("c0", policyV(0))
+	w.gh.commit("c1", policyV(0))
 	if out := w.push("c0", "c1"); out.Judged != JudgedNone {
 		t.Errorf("unknown paths, the same policy = %+v", out)
 	}
@@ -437,7 +475,8 @@ func TestAPushIsJudgedOnlyWhenItChangesThePolicy(t *testing.T) {
 // then no state is set and no issue opened, but a proposal's merge is consumed and starts it.
 func TestARepositoryWithoutAnApprovedPolicyIsNotJudged(t *testing.T) {
 	w := newWorld(t)
-	w.gh.files["c0"], w.gh.files["c1"] = policyV(0), policyV(1)
+	w.gh.commit("c0", policyV(0))
+	w.gh.commit("c1", policyV(1))
 	if out := w.push("c0", "c1"); out.Judged != JudgedUnguarded || len(w.gh.openIssues()) != 0 || w.repo().OutsideFlow != nil {
 		t.Errorf("outcome %+v, issues %v, repository %+v", out, w.gh.openIssues(), w.repo())
 	}
@@ -452,7 +491,8 @@ func TestARepositoryWithoutAnApprovedPolicyIsNotJudged(t *testing.T) {
 func TestAConsumeOutsideTheFlowKeepsTheState(t *testing.T) {
 	w := newWorld(t)
 	w.approved(digestV(0))
-	w.gh.files["c0"], w.gh.files["c1"] = policyV(0), policyV(1)
+	w.gh.commit("c0", policyV(0))
+	w.gh.commit("c1", policyV(1))
 	outside := w.push("c0", "c1")
 	w.answered(431, "graph a b", "p1", 21, digestV(2))
 	w.merge(21, "c2", 2)
@@ -469,7 +509,8 @@ func TestAConsumeOutsideTheFlowKeepsTheState(t *testing.T) {
 func TestAFailedIssueIsOpenedOnTheRetry(t *testing.T) {
 	w := newWorld(t)
 	w.approved(digestV(0))
-	w.gh.files["c0"], w.gh.files["c1"] = policyV(0), policyV(1)
+	w.gh.commit("c0", policyV(0))
+	w.gh.commit("c1", policyV(1))
 	w.gh.fail["CreateIssue"] = api.ErrRateLimited
 	if _, err := w.svc.Pushed(context.Background(), Push{Repo: testRepo, Before: "c0", After: "c1"}); !errors.Is(err, api.ErrRateLimited) {
 		t.Fatalf("Pushed = %v, want the rate limit", err)
@@ -492,5 +533,137 @@ func TestTextsUseNoNotUsedWord(t *testing.T) {
 		if words := wording.NotUsedIn(text); len(words) > 0 {
 			t.Errorf("%s uses %v:\n%s", name, words, text)
 		}
+	}
+}
+
+// TestAConsumeHandledLateKeepsTheNewerApproval: two merges handled out of order; the older one uses its approvals but
+// never puts its digest back.
+func TestAConsumeHandledLateKeepsTheNewerApproval(t *testing.T) {
+	w := newWorld(t)
+	w.approved(digestV(0))
+	w.gh.commit("c0", policyV(0))
+	w.answered(431, "graph a b", "p1", 21, digestV(1))
+	w.merge(21, "c1", 1)
+	w.answered(432, "graph c d", "p2", 22, digestV(2))
+	w.merge(22, "c2", 2)
+
+	if out := w.push("c1", "c2"); out.Judged != JudgedConsumed || out.Proposal != "p2" {
+		t.Fatalf("the later push = %+v", out)
+	}
+	if out := w.push("c0", "c1"); out.Judged != JudgedConsumed || out.Proposal != "p1" {
+		t.Fatalf("the earlier push = %+v", out)
+	}
+	if r := w.repo(); r.ApprovedDigest != digestV(2) {
+		t.Errorf("approved digest is the older policy's, want the tip's")
+	}
+	if idx := w.requestIndex(); len(idx) != 0 {
+		t.Errorf("request index %v, want both consumed requests out", idx)
+	}
+}
+
+// TestAFirstConsumeAfterAnUnjudgedDirectPushApprovesNothing: the direct push is handled first, while the repository
+// has no approved policy; the first consume then finds a tip no approval made and approves nothing, and the direct
+// push delivered again is still not outside the flow.
+func TestAFirstConsumeAfterAnUnjudgedDirectPushApprovesNothing(t *testing.T) {
+	w := newWorld(t)
+	w.gh.commit("c0", policyV(0))
+	w.answered(431, "graph a b", "p1", 21, digestV(1))
+	w.merge(21, "c1", 1)
+	w.gh.commit("c2", policyV(9))
+
+	if out := w.push("c1", "c2"); out.Judged != JudgedUnguarded {
+		t.Fatalf("the direct push = %+v, want unguarded", out)
+	}
+	if out := w.push("c0", "c1"); out.Judged != JudgedConsumed {
+		t.Fatalf("the merge = %+v, want consumed", out)
+	}
+	if r := w.repo(); r.ApprovedDigest != "" || r.OutsideFlow != nil {
+		t.Errorf("repository %+v, want no approved policy: the tip holds a change no approval made", r)
+	}
+	if out := w.push("c1", "c2"); out.Judged != JudgedUnguarded || len(w.gh.openIssues()) != 0 {
+		t.Errorf("the direct push again = %+v, issues %v; want unguarded, no issue", out, w.gh.openIssues())
+	}
+}
+
+// TestAPushBackToAConsumedCommitIsOutsideTheFlow: a force-push of the branch back to an earlier proposal's merge
+// commit brings an older approved policy; that push was never judged and is outside the flow.
+func TestAPushBackToAConsumedCommitIsOutsideTheFlow(t *testing.T) {
+	w := newWorld(t)
+	w.approved(digestV(0))
+	w.gh.commit("c0", policyV(0))
+	w.answered(431, "graph a b", "p1", 21, digestV(1))
+	w.merge(21, "c1", 1)
+	w.push("c0", "c1")
+	w.answered(432, "graph c d", "p2", 22, digestV(2))
+	w.merge(22, "c2", 2)
+	w.push("c1", "c2")
+
+	w.wantOutside(w.push("c2", "c1"), digestV(1))
+}
+
+// TestAMergeQueueBatchIsConsumed: the queue lands the proposal's merge commit and a code change in one push, so the
+// pushed commit is not the merge commit.
+func TestAMergeQueueBatchIsConsumed(t *testing.T) {
+	w := newWorld(t)
+	w.approved(digestV(0))
+	w.gh.commit("c0", policyV(0))
+	w.answered(431, "graph a b", "p1", 21, digestV(1))
+	w.merge(21, "c1", 1)
+	w.gh.commit("c2", policyV(1)) // a code pull request of the same batch
+
+	out := w.push("c0", "c2")
+	if out.Judged != JudgedConsumed || out.Proposal != "p1" {
+		t.Fatalf("outcome %+v, want p1 consumed", out)
+	}
+	if p := w.proposal("p1"); p.Commit != "c1" {
+		t.Errorf("proposal consumed by %q, want its merge commit c1", p.Commit)
+	}
+	if r := w.repo(); r.ApprovedDigest != digestV(1) {
+		t.Errorf("approved digest is not the batch's policy")
+	}
+
+	w.answered(432, "graph c d", "p2", 22, digestV(2))
+	w.merge(22, "c3", 2)
+	w.gh.commit("c4", policyV(9)) // a direct change after it, in the same push
+	if out := w.push("c2", "c4"); out.Judged != JudgedOutside || out.Voided != "p2" {
+		t.Errorf("a batch whose last policy no approval made = %+v, want outside the flow and p2 void", out)
+	}
+}
+
+// joinOnVoid is a Store double whose first void of proposal p1 is preceded by an answer joining it: the approvals the
+// void read are then not all of the proposal's.
+type joinOnVoid struct {
+	store.Store
+	w      *world
+	joined bool
+}
+
+func (j *joinOnVoid) CompareAndSwapAll(ctx context.Context, t store.Tenant, swaps []store.Swap) (bool, error) {
+	if !j.joined && len(swaps) == 2 && swaps[0].Key == records.ProposalKey(testRepo.FullName, "p1") {
+		j.joined = true
+		j.w.answered(433, "graph e f", "p1", 21, digestV(3))
+	}
+	return j.Store.CompareAndSwapAll(ctx, t, swaps)
+}
+
+// TestAnAnswerThatJoinsDuringTheVoidIsVoidedToo: no approval stays joined to a void proposal with its request covering
+// its key for ever.
+func TestAnAnswerThatJoinsDuringTheVoidIsVoidedToo(t *testing.T) {
+	w := newWorld(t)
+	w.approved(digestV(0))
+	w.gh.commit("c0", policyV(0))
+	w.answered(431, "graph a b", "p1", 21, digestV(1))
+	w.merge(21, "c1", 9) // merged another policy
+	w.svc = New(w.gh, &joinOnVoid{Store: w.mem, w: w})
+
+	out := w.push("c0", "c1")
+	if out.Voided != "p1" || w.proposal("p1").State != records.StateVoid {
+		t.Fatalf("outcome %+v, proposal %+v; want p1 void", out, w.proposal("p1"))
+	}
+	if idx := w.requestIndex(); len(idx) != 2 {
+		t.Errorf("request index %v, want both requests open again", idx)
+	}
+	if !w.gh.issues[433] {
+		t.Error("the request that joined during the void was not reopened")
 	}
 }

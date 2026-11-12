@@ -33,6 +33,7 @@ func newAskWorld(t *testing.T) *world4 {
 	t.Helper()
 	w := newWorld4(t)
 	w.setFile(w.shop, testBranch, policyPath, []byte(policyAsk))
+	w.approved(w.shop, policyAsk)
 	return w
 }
 
@@ -190,7 +191,7 @@ func TestASecondPullRequestJoinsTheOpenRequest(t *testing.T) {
 	if r := w.storedRequest(firstRequest); !slices.Equal(r.Waiting, []int{7, 8}) || r.Reason != "tc needs the retry helper" {
 		t.Errorf("request = %+v", r)
 	}
-	if !strings.Contains(w.lastReply(8), "- #1000: the same request is open; this pull request joins it.") {
+	if !strings.Contains(w.lastReply(8), "- #1000: the same request was asked; this pull request joins it.") {
 		t.Errorf("reply:\n%s", w.lastReply(8))
 	}
 	// The upload joined #8 in the store alone; its own request line puts it on the issue.
@@ -491,12 +492,12 @@ func TestACLIIssueIsClosedOrRefused(t *testing.T) {
 		}
 		clean(t, w.lastReply(n))
 	})
-	t.Run("the same request is open", func(t *testing.T) {
+	t.Run("the same request was asked", func(t *testing.T) {
 		w := newAskWorld(t)
 		w.gh.permissions[shopName+"|"+workerLogin] = "write"
 		first := w.cliIssue(asked)
 		second := w.cliIssue(asked)
-		if w.issue(second).Open || !w.issue(first).Open || w.lastReply(second) != fmt.Sprintf("archfit: the same request is open: #%d. This issue is closed; follow #%d.\n", first, first) {
+		if w.issue(second).Open || !w.issue(first).Open || w.lastReply(second) != fmt.Sprintf("archfit: the same request was asked in #%d. This issue is closed; follow #%d.\n", first, first) {
 			t.Errorf("reply:\n%s", w.lastReply(second))
 		}
 	})

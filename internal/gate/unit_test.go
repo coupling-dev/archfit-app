@@ -381,7 +381,8 @@ func TestProtectedPushFollowsInputs(t *testing.T) {
 	push := func(paths ...string) int {
 		t.Helper()
 		f := newPipelineFakes()
-		e := webhook.Event{Kind: webhook.DefaultBranchPush, InstallationID: 11, Repo: shopName, ChangedPaths: paths}
+		e := webhook.Event{Kind: webhook.DefaultBranchPush, InstallationID: 11, Repo: shopName, HeadSHA: strings.Repeat("a", 40),
+			ChangedPaths: paths}
 		if err := f.gate.HandleEvent(context.Background(), e); err != nil {
 			t.Fatal(err)
 		}

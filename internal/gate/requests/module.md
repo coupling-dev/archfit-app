@@ -26,7 +26,8 @@ who asked still sees `fail`.
   5. The errors that ask an owner are those whose next step is the `archfit request` command. None: one reply,
      `NothingToAsk` with the records of the other errors.
   6. Per request key, in record order: a deny rule of the default branch's policy that lists both modules answers it
-     (design 6.3): the reply quotes its `instead`, no issue. An open request with the key: the pull request joins it.
+     (design 6.3): the reply quotes its `instead`, no issue. A request in the index with the key (open, or answered and
+     waiting for its proposal to merge): the pull request joins it.
      Else the App opens the issue (`wire/request`'s title and body, the pull request linked), labels it
      `archfit-request`, assigns the policy's owners, and stores the request with its index entry. One line opens at
      most `MaxNewPerComment` (10) requests; the reply says to ask again for the rest.
@@ -36,8 +37,8 @@ who asked still sees `fail`.
   the request's `Listed` holds it. An upload joins in the store alone (`Wait`), so its pull request reaches the issue
   with its own request line, and a failed edit is done again on a retry.
 - Take in an issue the CLI opened from a `can` answer (`Service.Filed`): parse it, require `write` or `admin`
-  permission, take the key from the reported answer. A deny rule that answers it, or an open request with the key:
-  one note and the issue is closed. Else the issue is the request, stored "as reported" (numbers unverified), labeled
+  permission, take the key from the reported answer. A deny rule that answers it, or a request in the index with the
+  key: one note and the issue is closed. Else the issue is the request, stored "as reported" (numbers unverified), labeled
   and assigned. Any other refusal: one reply, the issue stays.
 - Derive `waiting` (`Cover`): a `fail` whose errors all ask an owner and whose keys are all in the request index is
   `waiting`; the status line names the requests (`archfit: waiting, request #431`) and each error's next step is

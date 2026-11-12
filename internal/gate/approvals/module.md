@@ -18,25 +18,35 @@ direct push to the policy is the new rule with no owner's word.
 - `Pushed` judges one push to the default branch, by its own change, not against a stored digest, so deliveries late or
   out of order are judged the same way:
   1. Known changed paths without `.archfit.yaml`: `none`, nothing read.
-  2. A push already judged (`records.PolicyPushKey` of its commit): only what the judgement left is finished, the
-     issue of the state when none is recorded, and the hand-off of a consume. Nothing is judged twice.
+  2. A push already judged (`records.PolicyPushKey` of its two commits, before and after): only what the judgement
+     left is finished, the issue of the state when none is recorded, and the hand-off of a consume. Nothing is judged
+     twice. A push that moves the branch back to a commit judged before (a force-push to an older merge) is another
+     push, judged again: an older approved policy is outside the flow.
   3. The policy at the pushed commit and at the commit before (`Before`; a missing file has no digest). The same digest:
      `none`. No commit before (a created branch, a payload without one): judged.
-  4. An open proposal (`records.ProposalIndexKey`) whose pull request is merged with the pushed commit as its merge
-     commit (`api.Pull.Merged`, `MergeCommitSHA`) and whose expected digest is the pushed policy's: `records.Consume`,
-     `consumed`. The outcome lists the requests of its approvals and the pull requests waiting on them, for the re-check
-     after an answer (task 21).
+  4. An open proposal (`records.ProposalIndexKey`) whose pull request merged in this push (`api.Pull.Merged`; its
+     `MergeCommitSHA` is the pushed commit, or, when a merge queue landed several pull requests at once, on the
+     history of the pushed commit and not of the commit before: `Compare`) and whose expected digest is the pushed
+     policy's: `records.Consume` with the merge commit, `consumed`. The approved digest moves only when the policy at
+     the default branch's tip is that digest now (`records.Merge.AtTip`), so a consume handled after a later policy
+     push never puts an older digest back, and never approves a tip that holds a change no approval made. The outcome
+     lists the requests of its approvals and the pull requests waiting on them, for the re-check after an answer
+     (task 21).
   5. Such a proposal with another digest (an owner merged a head from before the last answer joined, or the default
      branch's policy changed under it) can never be consumed: a merge commit is one commit. Its approvals are voided
-     (their requests open again: note, issue reopened), then the proposal. Without this its requests would cover their
+     (their requests open again: note, issue reopened), then the proposal. An answer that joined it meanwhile
+     (`records.ErrApprovalsLeft`) is read and voided too, at most 3 rounds. Without this its requests would cover their
      keys for ever.
-  6. No approved digest and not outside the flow: `unguarded`. Change control starts with the first approval (task 23)
-     or the first consume; the envelope 2 upload says `first_approval` until then (manager, 2026-11-12).
+  6. No approved digest and not outside the flow: `unguarded`, recorded (`records.Unguarded`), so a delivery of it
+     again after the first consume is not outside the flow. Change control starts with the first approval (task 23) or
+     the first consume at the tip; the envelope 2 upload says `first_approval` until then (manager, 2026-11-12).
   7. Otherwise `outside`: `records.Outside` sets the state and records the push in one swap, then one issue is opened
      to the owners of the policy before the push (the one owners stood behind; the pushed one when there is none), and
      its number recorded (`records.OutsideIssue`). Already outside the flow with an issue: a note names the new commit.
 - Fail closed: the state is recorded before the issue is opened, so every upload is `unknown` at once. A failed read or
-  write is returned and the delivery retried; the retry finds the judgement and finishes the issue.
+  write is returned and the delivery retried; the retry finds the judgement and finishes the issue. Until a push is
+  judged, the upload compares the tip's policy with the approved digest (`policy_unapproved`), so a late judgement
+  never lets a check pass.
 
 Not provided: the re-check of the waiting pull requests (task 21; the gate logs the hand-off), confirm and revert (task
 23), the sweep's comparison of the tip with the approved digest when a push event is lost (task 22).
@@ -62,7 +72,8 @@ end of the state and the first approval's proposal (the onboarding pull request)
 const PolicyPath = ".archfit.yaml"
 const JudgedNone, JudgedUnguarded, JudgedConsumed, JudgedOutside = "none", "unguarded", "consumed", "outside"
 
-type GitHub interface { /* File, Pull, CreateIssue, CreateComment, CloseIssue, ReopenIssue, SetAssigneesAndLabels */ }
+type GitHub interface { /* File, BranchHead, Pull, Compare, CreateIssue, CreateComment, CloseIssue, ReopenIssue,
+    SetAssigneesAndLabels */ }
 type Service struct{ /* unexported */ }
 func New(gh GitHub, s store.Store) *Service
 
@@ -83,7 +94,8 @@ func (s *Service) Pushed(ctx context.Context, p Push) (Outcome, error)
 - **gate** (parent): builds the `Service` with the gate's GitHub client and Store; `events.go` calls it through the
   façade file `approvals.go` on every `DefaultBranchPush`, before the repository sweep, and logs the hand-off of a
   consume (`gate recheck handed`). `upload4.go` reads the state it sets (`Repo.OutsideFlow`, `ApprovedDigest`).
-- **gate/records**: `Consume`, `Outside`, `OutsideIssue`, `Void`, `VoidProposal`, the keys and values.
+- **gate/records**: `Consume` (`Merge`), `Outside`, `Unguarded`, `OutsideIssue`, `Void`, `VoidProposal`, `Push`, the keys
+  and values.
 - **wire/policy3**: `Digest`, `Decode` (owners). **github/api**: the roles of `GitHub`.
 - Contract strength; LCA gate / rank 1 / distance 1; balanced.
 
@@ -95,7 +107,8 @@ func (s *Service) Pushed(ctx context.Context, p Push) (Outcome, error)
 
 ## Constraints and Invariants
 
-- A push is judged once (`records.PolicyPush`); a proposal is consumed by exactly one commit.
+- A push is judged once (`records.PolicyPush`, under its commits before and after); a proposal is consumed by exactly
+  one merge commit.
 - The repository's state is set before its issue exists; at most one issue per state (a second one opened by a
   concurrent delivery is closed with a note naming the first).
 - A consume while outside the flow keeps the state and the approved digest (`records.Consume`).
@@ -104,8 +117,12 @@ func (s *Service) Pushed(ctx context.Context, p Push) (Outcome, error)
   requests).
 - **Stated limit**: when an owner merges a pinned head on GitHub while another answer joins the proposal, the push's
   digest is not the expected one: the push is outside the flow and the proposal void (fail closed).
+- **Stated limit**: two consumes handled out of order use both proposals' approvals; the approved digest is the one
+  the tip held when the later-handled consume read it. A first consume after an unjudged direct push approves
+  nothing: the repository stays without an approved policy (`first_approval`) until task 23's first approval.
 - **Stated limit**: a policy push whose event is lost is not judged until the sweep compares the tip with the approved
-  digest (task 22).
+  digest (task 22); meanwhile every upload is `unknown` (`policy_unapproved`). A proposal whose merge push is lost
+  stays open and its requests cover their keys until then.
 
 ## Test Specification
 
@@ -127,7 +144,12 @@ Over a fake GitHub (the policy per commit, pull requests, issues) and the memory
   commit before; the policy removed.
 - `TestARepositoryWithoutAnApprovedPolicyIsNotJudged`, `TestAConsumeOutsideTheFlowKeepsTheState`,
   `TestAFailedIssueIsOpenedOnTheRetry`, `TestTextsUseNoNotUsedWord`.
+- `TestAConsumeHandledLateKeepsTheNewerApproval`, `TestAFirstConsumeAfterAnUnjudgedDirectPushApprovesNothing` (the
+  direct push again is still unguarded), `TestAPushBackToAConsumedCommitIsOutsideTheFlow`,
+  `TestAMergeQueueBatchIsConsumed` (the merge commit inside a batch; a batch whose last policy no approval made is
+  outside the flow and voids the proposal), `TestAnAnswerThatJoinsDuringTheVoidIsVoidedToo`.
 
 In `internal/gate` (`approvals_test.go`), over the gate's fake GitHub: `TestADirectPushPutsEveryUploadOutsideTheFlow`
 (one issue, the upload `unknown` with `outside_flow` naming it), `TestAnAnsweredRequestCoversItsKeyUntilItsProposalIsConsumed`,
-`TestAPolicyNoOwnerApprovedGivesNoVerdict`, `TestACodePullRequestThatEditsThePolicyIsUnknown`.
+`TestAPolicyNoOwnerApprovedGivesNoVerdict`, `TestACodePullRequestThatEditsThePolicyIsUnknown`,
+`TestAnUploadBeforeItsPushIsJudgedGivesNoVerdict`.

@@ -138,12 +138,14 @@ type Proposal struct {
 }
 
 // PolicyPush is the judgement of one default-branch push that changed the policy, at PolicyPushKey: the policy digest
-// it brought and the proposal it consumed, "" when it was outside the flow. It is written once, in the swap that
-// records the judgement, so a delivery of the same push again, even after later pushes, is judged the same way.
+// it brought and the proposal it consumed; Unguarded when the repository had no approved policy yet; neither when it
+// was outside the flow. It is written once, in the swap that records the judgement, so a delivery of the same push
+// again, even after later pushes, is judged the same way.
 type PolicyPush struct {
-	Schema   string `json:"schema"`
-	Digest   string `json:"digest"`
-	Proposal string `json:"proposal,omitempty"`
+	Schema    string `json:"schema"`
+	Digest    string `json:"digest"`
+	Proposal  string `json:"proposal,omitempty"`
+	Unguarded bool   `json:"unguarded,omitempty"`
 }
 
 // Pull is the pull record of M2 D6 at PullKey: the latest verified upload of the pull request's head. No result

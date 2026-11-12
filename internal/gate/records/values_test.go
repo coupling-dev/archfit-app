@@ -19,7 +19,8 @@ func TestKeyLayout(t *testing.T) {
 		{records.ProposalKey(repoName, "cd34"), "v4/proposal/acme/shop/cd34"},
 		{records.ProposalIndexKey(repoName), "v4/proposal-index/acme/shop"},
 		{records.ProposalLeaseKey(repoName), "v4/proposal-lease/acme/shop"},
-		{records.PolicyPushKey(repoName, "c0ffee"), "v4/policy-push/acme/shop/c0ffee"},
+		{records.PolicyPushKey(repoName, records.Push{Before: "be", After: "af"}), "v4/policy-push/acme/shop/be..af"},
+		{records.PolicyPushKey(repoName, records.Push{After: "af"}), "v4/policy-push/acme/shop/" + strings.Repeat("0", 40) + "..af"},
 		{records.PullKey(repoName, 7), "v4/pull/acme/shop/7"},
 		{records.PullIndexKey(repoName), "v4/pull-index/acme/shop"},
 		{records.ReposKey, "v4/repos"},
@@ -61,7 +62,7 @@ func TestValuesRoundTrip(t *testing.T) {
 			ExpectedDigest: "sha256:cc", State: records.StateMerged, Commit: "def"}, &records.Proposal{}, records.SchemaProposal},
 		{"pull", &records.Pull{HeadSHA: "abc", RunID: 123456789012, RunAttempt: 2, PayloadDigest: "sha256:dd",
 			Status: "waiting", Errors: []string{"graph a b"}}, &records.Pull{}, records.SchemaPull},
-		{"policy push", &records.PolicyPush{Digest: "sha256:ee", Proposal: "p1"}, &records.PolicyPush{}, records.SchemaPolicyPush},
+		{"policy push", &records.PolicyPush{Digest: "sha256:ee", Proposal: "p1", Unguarded: true}, &records.PolicyPush{}, records.SchemaPolicyPush},
 		{"index", &records.Index{Schema: records.SchemaRequestIndex, Entries: []records.Entry{{Key: "a", ID: "1"}, {Key: "b", ID: "2"}}},
 			&records.Index{Schema: records.SchemaRequestIndex}, records.SchemaRequestIndex},
 	}

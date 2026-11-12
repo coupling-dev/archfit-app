@@ -45,8 +45,9 @@ const (
 	reasonResultInvalid    = "result_invalid"
 	reasonUnknownEngine    = "unknown_engine"
 	reasonFirstPolicy      = "first_policy"
-	reasonFirstApproval    = "first_approval" // a schema 3 policy no owner approved yet: no change control yet
-	reasonOutsideFlow      = "outside_flow"   // the policy on the default branch changed with no recorded approval
+	reasonFirstApproval    = "first_approval"    // a schema 3 policy no owner approved yet: no change control yet
+	reasonOutsideFlow      = "outside_flow"      // the policy on the default branch changed with no recorded approval
+	reasonPolicyUnapproved = "policy_unapproved" // the tip's policy is not the approved one, and no judgement says why
 	reasonTargetOffBranch  = "target_not_on_branch"
 	reasonPolicyNotTarget  = "policy_not_target"
 	reasonPolicyChanged    = "policy_changed"
@@ -208,11 +209,20 @@ func (v *upload4) decide(ctx context.Context, u ingest.Upload4) (decision4, erro
 			Why:  "an administrator approves the first policy",
 			Next: result.Next{Kind: "wait", Text: "an administrator approves the first policy in the App"}})
 	} else {
-		if err := v.checkState(ctx, b.Repo, add); err != nil {
+		state, err := v.checkState(ctx, b.Repo, add)
+		if err != nil {
 			return decision4{}, err
 		}
 		if err := v.checkPolicy(ctx, ref, branch, tip, tipPolicy, env, add); err != nil {
 			return decision4{}, err
+		}
+		// The tip's policy is the approved one: a push no judgement has reached yet (late, or lost until the sweep of
+		// task 22) gives no verdict either.
+		if state.OutsideFlow == nil && state.ApprovedDigest != "" && policy3.Digest(tipPolicy) != state.ApprovedDigest {
+			add(reasonPolicyUnapproved, result.Unknown{Path: policyPath, Cause: "policy",
+				What: "changed on " + branch + " and has no recorded approval yet",
+				Why:  "only owners change the policy",
+				Next: result.Next{Kind: "wait", Text: "the check runs again"}})
 		}
 	}
 	if err := v.checkWorkflow(ctx, ref, branch, tip, b.RunSHA, add); err != nil {
@@ -245,7 +255,7 @@ func (v *upload4) cover(ctx context.Context, u ingest.Upload4, d decision4) (dec
 	return d, nil
 }
 
-// covered reads the open requests and derives the result's status from them.
+// covered reads the requests that cover their key (gate/requests' OpenIndex) and derives the result's status from them.
 func (v *upload4) covered(ctx context.Context, u ingest.Upload4) ([]int, result.Result, error) {
 	open, err := asks.OpenIndex(ctx, v.store, u.Binding.Repo)
 	if err != nil {
@@ -255,14 +265,14 @@ func (v *upload4) covered(ctx context.Context, u ingest.Upload4) ([]int, result.
 	return ids, shown, nil
 }
 
-// checkState reads the repository's record (M2 task 20): a policy no owner approved yet, or one changed outside the
-// flow, gives no verdict. Change control starts with the first approval (task 23), and a policy changed outside the
-// flow stays unknown until an owner confirms or reverts it.
-func (v *upload4) checkState(ctx context.Context, r api.Repo, add func(string, result.Unknown)) error {
+// checkState reads the repository's record (M2 task 20) and returns it: a policy no owner approved yet, or one changed
+// outside the flow, gives no verdict. Change control starts with the first approval (task 23), and a policy changed
+// outside the flow stays unknown until an owner confirms or reverts it.
+func (v *upload4) checkState(ctx context.Context, r api.Repo, add func(string, result.Unknown)) (records.Repo, error) {
 	var state records.Repo
 	err := records.Load(ctx, v.store, store.Tenant(r.InstallationID), records.RepoKey(r.FullName), &state)
 	if err != nil && !errors.Is(err, records.ErrNoRecord) {
-		return fmt.Errorf("gate: read the repository record: %w", err)
+		return records.Repo{}, fmt.Errorf("gate: read the repository record: %w", err)
 	}
 	switch {
 	case state.OutsideFlow != nil:
@@ -280,7 +290,7 @@ func (v *upload4) checkState(ctx context.Context, r api.Repo, add func(string, r
 			Why:  "an administrator approves the first policy",
 			Next: result.Next{Kind: "wait", Text: "an administrator approves the policy in the App"}})
 	}
-	return nil
+	return state, nil
 }
 
 // checkPolicy requires target_sha on the default branch and the policy digest of the run to be the digest at

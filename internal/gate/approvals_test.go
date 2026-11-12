@@ -131,3 +131,27 @@ func TestAnAnsweredRequestCoversItsKeyUntilItsProposalIsConsumed(t *testing.T) {
 	third := w.pullBy(9)
 	w.uploadAsk(third, "graph", "fail") // the key is free: no answered request covers it now
 }
+
+// TestAnUploadBeforeItsPushIsJudgedGivesNoVerdict: the policy on the default branch changed and no judgement reached
+// it yet (the push is late or lost): the upload is unknown, not a verdict under a policy no owner approved; once the
+// push is judged outside the flow, the record names the issue.
+func TestAnUploadBeforeItsPushIsJudgedGivesNoVerdict(t *testing.T) {
+	w := newWorld4(t)
+	byHand := policy4 + "# edited by hand\n"
+	w.setFile(w.shop, testBranch, policyPath, []byte(byHand))
+	p := w.openPull(w.shop, 7)
+	s := w.spec4(p, "pass")
+	s.env.PolicyDigest = policy3.Digest([]byte(byHand))
+	s.result["policy"].(map[string]any)["digest"] = s.env.PolicyDigest
+	w.wantStatus(w.send4(s), "unknown", reasonPolicyUnapproved)
+
+	after := w.sha()
+	w.setFile(w.shop, after, policyPath, []byte(byHand))
+	w.setFile(w.shop, w.tip+"-before", policyPath, []byte(policy4))
+	w.handle(w.policyPush(w.tip+"-before", after))
+	w.push(p)
+	s = w.spec4(p, "pass")
+	s.env.PolicyDigest = policy3.Digest([]byte(byHand))
+	s.result["policy"].(map[string]any)["digest"] = s.env.PolicyDigest
+	w.wantStatus(w.send4(s), "unknown", reasonOutsideFlow)
+}

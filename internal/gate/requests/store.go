@@ -18,7 +18,8 @@ var errNotOpen = errors.New("requests: the request is not open")
 
 func tenant(r api.Repo) store.Tenant { return store.Tenant(r.InstallationID) }
 
-// OpenIndex reads the open requests of a repository by request key; a missing index is empty.
+// OpenIndex reads the requests of a repository that cover their key (open, or answered and waiting for their
+// proposal to merge), by request key; a missing index is empty.
 func OpenIndex(ctx context.Context, s store.Store, r api.Repo) (*records.Index, error) {
 	x := &records.Index{Schema: records.SchemaRequestIndex}
 	err := records.Load(ctx, s, tenant(r), records.RequestIndexKey(r.FullName), x)

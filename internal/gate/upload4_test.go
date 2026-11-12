@@ -427,6 +427,7 @@ const policy4Required = "version: 3\ngate: required\nowners: [olivia]\nmodules:\
 // require makes the default branch's policy required and s a run of it.
 func (w *world4) require(s *spec4) {
 	w.setFile(w.shop, testBranch, policyPath, []byte(policy4Required))
+	w.approved(w.shop, policy4Required)
 	s.env.PolicyDigest = policy3.Digest([]byte(policy4Required))
 	s.result["policy"].(map[string]any)["digest"] = s.env.PolicyDigest
 }
