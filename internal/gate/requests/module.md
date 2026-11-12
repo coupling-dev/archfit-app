@@ -53,13 +53,17 @@ who asked still sees `fail`.
 - Preview one answer to an open request (`Service.Preview`): the policy change as a unified diff of `Edit` against the
   tip's bytes, the tip's digest, whether the answer needs the passkey (`policy3.Loosens`), and the open pull requests
   (pull index) it touches: those waiting on the request, and, for approve and approve-until, those whose stored request
-  keys hold the request's key, with the count of errors it clears and leaves. Approve-until takes the worker's date
-  when the owner gives none. The App runs no analysis.
+  keys it clears, with the count of errors it clears and leaves. An approve clears the request's key; an exception
+  covers its rule and modules, so it also clears every other copy between the two modules and every other library of
+  an `only` rule from the module. Approve-until needs a date after the App's date and at most 365 days ahead, the range
+  of `--expires`; it takes the worker's date when the owner gives none and that date is still ahead. The diff carries
+  the request comment the answer writes (`RequestComment`). The App runs no analysis.
 - Map an answer to its policy edit, once (`ChangeOf`, `Edit`), for the preview and for the answer (task 19): approve on
   `graph` adds the dependency to `depends_on`; approve on any other rule adds an exception without a date;
   approve-until adds an exception with `expires` (`unowned`: from the path; an `only` rule: no `to`); reject adds a
   `deny` rule `request-<N>` with the owner's `instead`; a reject of a copy, of unowned code or of an `only` rule writes
-  no line. A comment, such as `request #431`, ends each line the edit writes.
+  no line. A comment, `RequestComment(431)` = `request #431`, ends each line the edit writes; a line the writer only
+  ends with a newline (a policy without a final newline) is not one of them.
 
 Not provided: the answers (task 19), the pages (task 24).
 
@@ -115,9 +119,10 @@ type Preview struct { Answer Answer; Change Change; Diff, PolicyDigest string; L
 type PullEffect struct { Number int; Status string; Waits bool; Clears, Left int }
 var ErrNoRequest, ErrClosedRequest, ErrAnswer, ErrNoPolicy, ErrByHand error
 func (s *Service) View(ctx context.Context, r api.Repo, number int) (View, error)
-func (s *Service) Preview(ctx context.Context, r api.Repo, number int, a Answer) (Preview, error)
-func ChangeOf(number int, req records.Request, a Answer) (Change, error)
+func (s *Service) Preview(ctx context.Context, r api.Repo, number int, a Answer, today time.Time) (Preview, error)
+func ChangeOf(number int, req records.Request, a Answer, today time.Time) (Change, error)
 func Edit(file []byte, c Change, comment string) ([]byte, error)
+func RequestComment(number int) string
 func Diff(path string, old, edited []byte) string
 ```
 
@@ -168,7 +173,9 @@ without a second note; a reply may be posted again.
   a CLI issue closed or refused; a closed pull request leaves the pull index.
 - In `preview_test.go`, over a fake GitHub and the memory Store: a verified and an "as reported" request; a request with
   earlier answers, one already allowed, and none without a policy; the diff of approve, approve until the worker's date
-  and another, and reject with `instead`; each refusal; the pull requests an approve and a reject touch; `Edit` for
-  each answer of each rule; the comment on each written line (LF and CRLF); `Diff` cases. In `internal/gate`
+  and another, and reject with `instead`; each refusal, including a date not ahead or too far and a worker's date now
+  past; the pull requests an approve and a reject touch, and what an exception for a copy, an `only` rule and another
+  rule clears; `Edit` for each answer of each rule; the comment on each written line (LF, CRLF, no final newline);
+  `Diff` cases. In `internal/gate`
   (`preview_test.go`): the view and the preview after a real request line and two uploads, and an installation not
   admitted.

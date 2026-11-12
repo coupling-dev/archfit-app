@@ -220,10 +220,12 @@ type RequestNumbers = records.Numbers; type RequestBalance = records.Balance; ty
 const EarlierDeny, EarlierException
 var ErrNoRequest, ErrClosedRequest, ErrAnswer, ErrNoPolicy, ErrByHand // gate/requests' errors
 func PolicyEdit(file []byte, c AnswerChange, comment string) ([]byte, error)
+func RequestComment(number int) string // "request #431": with it, PolicyEdit writes the edit the preview shows
 ```
 
 `RequestView` and `RequestPreview` ask `Admitted` first, then read the request and pull records from the Store and the
-policy at the default branch's tip from GitHub (`t.Repo` names the repository). The façade file is `preview.go`.
+policy at the default branch's tip from GitHub (`t.Repo` names the repository). `RequestPreview` judges an
+approve-until date on the gate's clock. The façade file is `preview.go`.
 
 `PendingDecisions` asks `Admitted` first and then `decisions.PendingQueue(t, limit)`: `t.Repo` names the repository, the
 pull request is not read. It is a read of the Store: no GitHub call, no lease, and an unreadable list or record is the

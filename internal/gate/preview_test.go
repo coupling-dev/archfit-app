@@ -31,7 +31,7 @@ func TestTheRequestPageReadsARequestAndPreviewsAnAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(p.Diff, "+    expires: 2026-12-01\n") || !p.Loosens {
+	if !strings.Contains(p.Diff, "+    expires: 2026-12-01 # request #1000\n") || !p.Loosens {
 		t.Errorf("diff:\n%s", p.Diff)
 	}
 	want := []RequestPullEffect{
@@ -43,7 +43,7 @@ func TestTheRequestPageReadsARequestAndPreviewsAnAnswer(t *testing.T) {
 	}
 	clean(t, p.Diff)
 
-	edited, err := PolicyEdit([]byte(policyAsk), p.Change, "request #1000")
+	edited, err := PolicyEdit([]byte(policyAsk), p.Change, RequestComment(firstRequest))
 	if err != nil || !strings.Contains(string(edited), "    expires: 2026-12-01 # request #1000\n") {
 		t.Errorf("PolicyEdit = %v:\n%s", err, edited)
 	}

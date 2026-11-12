@@ -13,6 +13,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/gate/records"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/policy3"
+	"github.com/alexei-led/archfit-app/internal/wire/request"
 )
 
 // The request data and the preview of each answer (design 10.4, 12.3, 19; M2 task 17). The owner decides on more
@@ -66,15 +67,17 @@ type Change struct {
 	Instead string         `json:"instead,omitempty"`
 }
 
-// ChangeOf is the change an answer makes for request number. It checks the answer alone; whether the policy can take
-// it is Edit's.
-func ChangeOf(number int, req records.Request, a Answer) (Change, error) {
+// ChangeOf is the change an answer makes for request number on the App's date today. It checks the answer alone;
+// whether the policy can take it is Edit's. Approve until needs a date after today and at most request.MaxDaysAhead
+// days ahead, the range of a worker's --expires: an exception already past its date would clear nothing.
+func ChangeOf(number int, req records.Request, a Answer, today time.Time) (Change, error) {
 	c := Change{Request: number, Kind: a.Kind, Rule: req.Rule, Path: req.Path, From: req.From, To: req.To}
 	switch a.Kind {
 	case policy3.Approve:
 	case policy3.ApproveUntil:
-		if _, err := time.Parse(dateLayout, a.Until); err != nil {
-			return Change{}, fmt.Errorf("%w: approve until needs a date, YYYY-MM-DD", ErrAnswer)
+		if !ahead(a.Until, today) {
+			return Change{}, fmt.Errorf("%w: approve until needs a date after today, at most %d days ahead, YYYY-MM-DD",
+				ErrAnswer, request.MaxDaysAhead)
 		}
 		c.Until = a.Until
 	case policy3.Reject:
@@ -141,6 +144,19 @@ func Edit(file []byte, c Change, comment string) ([]byte, error) {
 	return annotate(file, out, comment)
 }
 
+// ahead reports whether date is a day after today and at most request.MaxDaysAhead days after it.
+func ahead(date string, today time.Time) bool {
+	day, err := time.Parse(dateLayout, date)
+	if err != nil {
+		return false
+	}
+	from := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.UTC)
+	return day.After(from) && !day.After(from.AddDate(0, 0, request.MaxDaysAhead))
+}
+
+// RequestComment is the line comment an answer to request number writes on each line it adds (milestone 3 D8).
+func RequestComment(number int) string { return "request #" + strconv.Itoa(number) }
+
 func onlyRule(pol policy3.File, id string) bool {
 	return slices.ContainsFunc(pol.Rules, func(r policy3.Rule) bool { return r.ID == id && r.Only != nil })
 }
@@ -183,19 +199,26 @@ func cutEOL(line string) (body, eol string) {
 	return line, ""
 }
 
-// common counts the equal lines at the start and at the end of a and b, the end not overlapping the start.
+// common counts the equal lines at the start and at the end of a and b, the end not overlapping the start. Lines
+// compare without their line ends: a last line the writer ends with a newline, because it adds lines after it, is not
+// a line the edit wrote.
 func common(a, b []string) (head, tail int) {
-	for head < len(a) && head < len(b) && a[head] == b[head] {
+	same := func(x, y string) bool {
+		x, _ = cutEOL(x)
+		y, _ = cutEOL(y)
+		return x == y
+	}
+	for head < len(a) && head < len(b) && same(a[head], b[head]) {
 		head++
 	}
-	for tail < len(a)-head && tail < len(b)-head && a[len(a)-1-tail] == b[len(b)-1-tail] {
+	for tail < len(a)-head && tail < len(b)-head && same(a[len(a)-1-tail], b[len(b)-1-tail]) {
 		tail++
 	}
 	return head, tail
 }
 
 // Diff is the change from old to edited of the file at path as a unified diff of one hunk, the edit of one answer
-// being one insertion; "" when the two are the same.
+// being one contiguous change; "" when the two are the same. Lines are shown without their line ends.
 func Diff(path string, old, edited []byte) string {
 	if string(old) == string(edited) {
 		return ""
@@ -347,9 +370,10 @@ func earlier(pol policy3.File, a, b string) []Earlier {
 	return out
 }
 
-// Preview is what answer a to the open request number would write into the policy at the default branch's tip, and
-// which open pull requests it touches. Approve until takes the date the worker asked for when a gives none.
-func (s *Service) Preview(ctx context.Context, r api.Repo, number int, a Answer) (Preview, error) {
+// Preview is what answer a to the open request number would write into the policy at the default branch's tip, on
+// the App's date today, and which open pull requests it touches. Approve until takes the date the worker asked for
+// when a gives none. The diff carries the request comment, as the answer writes it.
+func (s *Service) Preview(ctx context.Context, r api.Repo, number int, a Answer, today time.Time) (Preview, error) {
 	req, err := load(ctx, s, r, number)
 	if err != nil {
 		return Preview{}, err
@@ -360,7 +384,7 @@ func (s *Service) Preview(ctx context.Context, r api.Repo, number int, a Answer)
 	if a.Kind == policy3.ApproveUntil && a.Until == "" {
 		a.Until = req.Expires
 	}
-	c, err := ChangeOf(number, req, a)
+	c, err := ChangeOf(number, req, a, today)
 	if err != nil {
 		return Preview{}, err
 	}
@@ -368,18 +392,18 @@ func (s *Service) Preview(ctx context.Context, r api.Repo, number int, a Answer)
 	if err != nil {
 		return Preview{}, fmt.Errorf("%w: %w", ErrAnswer, err)
 	}
-	_, raw, found, err := s.policyAt(ctx, r)
+	pol, raw, found, err := s.policyAt(ctx, r)
 	if err != nil {
 		return Preview{}, err
 	}
 	if !found {
 		return Preview{}, ErrNoPolicy
 	}
-	edited, err := Edit(raw, c, "")
+	edited, err := Edit(raw, c, RequestComment(number))
 	if err != nil {
 		return Preview{}, err
 	}
-	pulls, err := effects(ctx, s, r, number, req, a.Kind != policy3.Reject)
+	pulls, err := effects(ctx, s, r, req, c, onlyRule(pol, c.Rule))
 	if err != nil {
 		return Preview{}, err
 	}
@@ -387,9 +411,9 @@ func (s *Service) Preview(ctx context.Context, r api.Repo, number int, a Answer)
 		Loosens: loosens, Pulls: pulls}, nil
 }
 
-// effects lists the open pull requests of the pull index that wait on the request or, when clears, hold an error with
-// its key, by number.
-func effects(ctx context.Context, s *Service, r api.Repo, number int, req records.Request, clears bool) ([]PullEffect, error) {
+// effects lists the open pull requests of the pull index that wait on the request or hold an error the change clears,
+// by number.
+func effects(ctx context.Context, s *Service, r api.Repo, req records.Request, c Change, only bool) ([]PullEffect, error) {
 	x := &records.Index{Schema: records.SchemaPullIndex}
 	err := records.Load(ctx, s.store, tenant(r), records.PullIndexKey(r.FullName), x)
 	if err != nil && !errors.Is(err, records.ErrNoRecord) {
@@ -410,11 +434,9 @@ func effects(ctx context.Context, s *Service, r api.Repo, number int, req record
 			return nil, fmt.Errorf("requests: read the pull record: %w", err)
 		}
 		e := PullEffect{Number: pull, Status: rec.Status, Waits: slices.Contains(req.Waiting, pull)}
-		if clears {
-			for _, k := range rec.RequestKeys {
-				if k == req.Key {
-					e.Clears++
-				}
+		for _, k := range rec.RequestKeys {
+			if clears(c, req.Key, k, only) {
+				e.Clears++
 			}
 		}
 		e.Left = len(rec.Errors) - e.Clears
@@ -424,6 +446,27 @@ func effects(ctx context.Context, s *Service, r api.Repo, number int, req record
 	}
 	slices.SortFunc(out, func(a, b PullEffect) int { return a.Number - b.Number })
 	return out, nil
+}
+
+// clears reports whether change c clears an error whose request key is key; reqKey is the request's own and only says
+// whether c's rule is an only rule of the policy. A reject clears nothing. An approve or approve-until clears the
+// request's key, and an exception covers its rule and modules whatever else a key holds: every copy between the two
+// modules (wire/request's key of a copy: the rule, the two modules in sorted order, the literal's digest) and every
+// library key of an only rule from the module (its key: the rule, the module, the library).
+func clears(c Change, reqKey, key string, only bool) bool {
+	switch {
+	case c.Kind == policy3.Reject:
+		return false
+	case key == reqKey:
+		return true
+	case c.Kind == policy3.Approve && c.Rule == ruleGraph:
+		return false // a depends_on entry clears exactly its dependency, the request's key
+	case c.Rule == ruleDuplication:
+		return strings.HasPrefix(key, ruleDuplication+" "+min(c.From, c.To)+" "+max(c.From, c.To)+" ")
+	case only:
+		return strings.HasPrefix(key, c.Rule+" "+c.From+" ")
+	}
+	return false
 }
 
 // load reads request number; a missing one is ErrNoRequest.

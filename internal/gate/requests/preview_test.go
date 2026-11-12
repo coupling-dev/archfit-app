@@ -244,7 +244,7 @@ func TestPreviewOfEachAnswer(t *testing.T) {
      layer: adapters
      volatility: high
 -    depends_on: [pkg_net]
-+    depends_on: [pkg_net, pkg_util]
++    depends_on: [pkg_net, pkg_util] # request #431
    pkg_util:
      paths: [pkg/util/**]
      subdomain: generic
@@ -256,11 +256,11 @@ func TestPreviewOfEachAnswer(t *testing.T) {
      from: pkg_net
      to: pkg_util
      why: Migration in progress.
-+  - rule: graph
-+    from: pkg_tc
-+    to: pkg_util
-+    expires: 2026-12-10
-+    why: 'Approved in request #431.'
++  - rule: graph # request #431
++    from: pkg_tc # request #431
++    to: pkg_util # request #431
++    expires: 2026-12-10 # request #431
++    why: 'Approved in request #431.' # request #431
 `},
 		{name: "approve until another date", answer: Answer{Kind: policy3.ApproveUntil, Until: "2026-11-30"}, loosens: true,
 			until: "2026-11-30", diff: `--- a/.archfit.yaml
@@ -269,11 +269,11 @@ func TestPreviewOfEachAnswer(t *testing.T) {
      from: pkg_net
      to: pkg_util
      why: Migration in progress.
-+  - rule: graph
-+    from: pkg_tc
-+    to: pkg_util
-+    expires: 2026-11-30
-+    why: 'Approved in request #431.'
++  - rule: graph # request #431
++    from: pkg_tc # request #431
++    to: pkg_util # request #431
++    expires: 2026-11-30 # request #431
++    why: 'Approved in request #431.' # request #431
 `},
 		{name: "reject with instead", answer: Answer{Kind: policy3.Reject, Instead: "Copy the two lines with a test."}, diff: `--- a/.archfit.yaml
 +++ b/.archfit.yaml
@@ -281,12 +281,12 @@ func TestPreviewOfEachAnswer(t *testing.T) {
        use: github.com/docker/docker
        in: [pkg_net]
      why: One adapter owns the Docker API.
-+  - id: request-431
-+    deny:
-+      from: pkg_tc
-+      to: pkg_util
-+    why: 'Rejected in request #431.'
-+    instead: Copy the two lines with a test.
++  - id: request-431 # request #431
++    deny: # request #431
++      from: pkg_tc # request #431
++      to: pkg_util # request #431
++    why: 'Rejected in request #431.' # request #431
++    instead: Copy the two lines with a test. # request #431
  exceptions:
    - rule: coupling
      from: pkg_tc
@@ -296,7 +296,7 @@ func TestPreviewOfEachAnswer(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			w := newPreviewWorld(t)
 			w.verifiedRequest()
-			p, err := w.svc.Preview(context.Background(), previewRepo, 431, tt.answer)
+			p, err := w.svc.Preview(context.Background(), previewRepo, 431, tt.answer, testToday)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -325,6 +325,10 @@ func TestPreviewRefuses(t *testing.T) {
 		{name: "reject without instead", number: 431, answer: Answer{Kind: policy3.Reject, Instead: "  "}, want: ErrAnswer},
 		{name: "approve until without a date", number: 8, answer: Answer{Kind: policy3.ApproveUntil}, want: ErrAnswer},
 		{name: "approve until a bad date", number: 431, answer: Answer{Kind: policy3.ApproveUntil, Until: "10-12-2026"}, want: ErrAnswer},
+		{name: "approve until today", number: 431, answer: Answer{Kind: policy3.ApproveUntil, Until: "2026-11-12"}, want: ErrAnswer},
+		{name: "approve until a past date", number: 431, answer: Answer{Kind: policy3.ApproveUntil, Until: "2020-01-01"}, want: ErrAnswer},
+		{name: "approve until more than a year ahead", number: 431, answer: Answer{Kind: policy3.ApproveUntil, Until: "2027-11-13"}, want: ErrAnswer},
+		{name: "approve until the asked date, now past", number: 10, answer: Answer{Kind: policy3.ApproveUntil}, want: ErrAnswer},
 		{name: "an unknown answer", number: 431, answer: Answer{Kind: "confirm"}, want: ErrAnswer},
 		{name: "no such request", number: 999, answer: Answer{Kind: policy3.Approve}, want: ErrNoRequest},
 		{name: "an answered request", number: 9, answer: Answer{Kind: policy3.Approve}, want: ErrClosedRequest},
@@ -340,6 +344,7 @@ func TestPreviewRefuses(t *testing.T) {
 			w := newPreviewWorld(t)
 			w.verifiedRequest()
 			w.put(8, records.Request{Key: "graph pkg_net pkg_tc", Rule: "graph", From: "pkg_net", To: "pkg_tc"})
+			w.put(10, records.Request{Key: "graph pkg_net pkg_util", Rule: "graph", From: "pkg_net", To: "pkg_util", Expires: "2026-11-01"})
 			answered := w.put(9, records.Request{Key: "graph pkg_util pkg_net", Rule: "graph", From: "pkg_util", To: "pkg_net"})
 			answered.State = records.StateAnswered
 			raw, err := records.Encode(&answered)
@@ -352,7 +357,7 @@ func TestPreviewRefuses(t *testing.T) {
 			if tt.setup != nil {
 				tt.setup(w)
 			}
-			if _, err := w.svc.Preview(context.Background(), previewRepo, tt.number, tt.answer); !errors.Is(err, tt.want) {
+			if _, err := w.svc.Preview(context.Background(), previewRepo, tt.number, tt.answer, testToday); !errors.Is(err, tt.want) {
 				t.Errorf("err = %v, want %v", err, tt.want)
 			}
 		})
@@ -368,7 +373,7 @@ func TestPreviewListsThePullRequestsTheAnswerTouches(t *testing.T) {
 	w.pull(7, "pass")                                       // no errors
 	// Pull request 9 waits on the request but is closed: it is not in the pull index.
 
-	approve, err := w.svc.Preview(context.Background(), previewRepo, 431, Answer{Kind: policy3.Approve})
+	approve, err := w.svc.Preview(context.Background(), previewRepo, 431, Answer{Kind: policy3.Approve}, testToday)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,7 +385,7 @@ func TestPreviewListsThePullRequestsTheAnswerTouches(t *testing.T) {
 		t.Errorf("approve touches %+v, want %+v", approve.Pulls, want)
 	}
 
-	reject, err := w.svc.Preview(context.Background(), previewRepo, 431, Answer{Kind: policy3.Reject, Instead: "Keep tc apart."})
+	reject, err := w.svc.Preview(context.Background(), previewRepo, 431, Answer{Kind: policy3.Reject, Instead: "Keep tc apart."}, testToday)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -470,7 +475,7 @@ func TestDiff(t *testing.T) {
 		{name: "a changed line with context", old: "1\n2\n3\n4\n5\n6\n7\n8\n9\n", edited: "1\n2\n3\n4\n5x\n6\n7\n8\n9\n",
 			want: "--- a/p\n+++ b/p\n@@ -2,7 +2,7 @@\n 2\n 3\n 4\n-5\n+5x\n 6\n 7\n 8\n"},
 		{name: "no final newline", old: "a\nb", edited: "a\nb\nc",
-			want: "--- a/p\n+++ b/p\n@@ -1,2 +1,3 @@\n a\n-b\n+b\n+c\n"},
+			want: "--- a/p\n+++ b/p\n@@ -1,2 +1,3 @@\n a\n b\n+c\n"},
 		{name: "CRLF line ends", old: "a\r\nb\r\n", edited: "a\r\nx\r\nb\r\n",
 			want: "--- a/p\n+++ b/p\n@@ -1,2 +1,3 @@\n a\n+x\n b\n"},
 	}
@@ -478,6 +483,57 @@ func TestDiff(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := Diff("p", []byte(tt.old), []byte(tt.edited)); got != tt.want {
 				t.Errorf("diff =\n%q\nwant\n%q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEditAtTheEndOfAPolicyWithoutAFinalNewline(t *testing.T) {
+	file := strings.TrimSuffix(previewPolicy, "\n")
+	c := Change{Request: 5, Kind: policy3.ApproveUntil, Rule: "graph", From: "pkg_tc", To: "pkg_util", Until: "2026-12-01"}
+	out, err := Edit([]byte(file), c, RequestComment(5))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "    why: Migration in progress.\n  - rule: graph # request #5\n") {
+		t.Errorf("an old line took the comment, or the new one lacks it:\n%s", out)
+	}
+	if got := Diff(policyPath, []byte(file), out); strings.Contains(got, "-    why: Migration in progress.") {
+		t.Errorf("the diff shows the old last line as changed:\n%s", got)
+	}
+}
+
+func TestAnExceptionClearsWhatItCovers(t *testing.T) {
+	tests := []struct {
+		name  string
+		req   records.Request
+		keys  []string // the stored request keys of an open pull request that does not wait
+		clear int
+	}{
+		{name: "a copy: every copy between the two modules",
+			req:  records.Request{Key: "duplication pkg_tc pkg_util sha256:aa", Rule: "duplication", From: "pkg_util", To: "pkg_tc"},
+			keys: []string{"duplication pkg_tc pkg_util sha256:bb", "duplication pkg_tc pkg_net sha256:aa", "graph pkg_tc pkg_util"}, clear: 1},
+		{name: "an only rule: every library of the rule from the module",
+			req:  records.Request{Key: "no-docker pkg_tc github.com/docker/docker", Rule: "no-docker", From: "pkg_tc", To: "github.com/docker/docker"},
+			keys: []string{"no-docker pkg_tc github.com/docker/docker/client", "no-docker pkg_util github.com/docker/docker"}, clear: 1},
+		{name: "another rule: its own key only",
+			req:  records.Request{Key: "layers pkg_util pkg_net", Rule: "layers", From: "pkg_util", To: "pkg_net"},
+			keys: []string{"layers pkg_util pkg_net", "layers pkg_util pkg_tc"}, clear: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := newPreviewWorld(t)
+			w.put(20, tt.req)
+			w.pull(6, "fail", tt.keys...)
+			for _, a := range []Answer{{Kind: policy3.Approve}, {Kind: policy3.ApproveUntil, Until: "2026-12-01"}} {
+				p, err := w.svc.Preview(context.Background(), previewRepo, 20, a, testToday)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := []PullEffect{{Number: 6, Status: "fail", Clears: tt.clear, Left: len(tt.keys) - tt.clear}}
+				if !slices.Equal(p.Pulls, want) {
+					t.Errorf("%s touches %+v, want %+v", a.Kind, p.Pulls, want)
+				}
 			}
 		})
 	}
