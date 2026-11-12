@@ -1,6 +1,6 @@
 // Fails the build when a load is over budget (docs/archive/design/ui-redesign.md, Bundle budget). First load is every
-// script and stylesheet index.html references; each lazy chunk has a budget of its own: the graph pages' (Graph-*), the
-// graph's layout worker (layout.worker-*), which holds ELK, and the policy page's (Policy-*), which holds CodeMirror.
+// script and stylesheet index.html references; each lazy chunk has a budget of its own: the graph pages' (Graph-*) and
+// the graph's layout worker (layout.worker-*), which holds ELK.
 import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 
@@ -27,12 +27,6 @@ const lazy = [
     prefix: 'layout.worker',
     files: chunk('layout.worker'),
     budget: { js: 480 * KB, css: 0 },
-  },
-  {
-    name: 'editor chunk',
-    prefix: 'Policy',
-    files: chunk('Policy'),
-    budget: { js: 200 * KB, css: 20 * KB },
   },
 ];
 const loads = [{ name: 'first load', files: first, budget: { js: 120 * KB, css: 20 * KB } }, ...lazy];
