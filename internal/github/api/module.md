@@ -175,6 +175,10 @@ beyond the 1 000-item cap the call fails, so such a repository gets no repair is
   `nil` is sent as `[]` and clears a set. The issue may be anyone's, not only the App's. The result is the sets GitHub
   holds in its answer: GitHub drops a change it does not allow without an error, so the caller compares. Needs the
   Issues permission.
+- `CollaboratorPermission` (role `Collaborators`): `GET /repos/{r}/collaborators/{login}/permission` with the
+  installation token; `permission` as GitHub gives it (`admin`, `write`, `read`, `none`; GitHub folds `maintain` into
+  `write` and `triage` into `read`); any other value and a `404` are `none`. Needs `metadata: read`. It answers
+  whether a request counts (M2 D21).
 - `Run`: `GET /repos/{r}/actions/runs/{id}`; `WorkflowPath` = `path` unchanged; `Event` = `event` unchanged;
   `PullRequests` =
   `pull_requests[].number` (GitHub leaves it empty for fork PRs); `CreatedAt` = `created_at`, which a re-run keeps.
@@ -445,6 +449,13 @@ type IssueTriage interface {
     // the sets GitHub holds after the call: GitHub drops a change it does not allow without an error. A number that
     // names a pull request is an error, and nothing is changed.
     SetAssigneesAndLabels(ctx context.Context, r RepoRef, number int, assignees, labels []string) (gotAssignees, gotLabels []string, err error)
+}
+
+// Collaborators reads what a person may do in a repository, with the installation token.
+type Collaborators interface {
+    // CollaboratorPermission returns "admin", "write", "read" or "none" for login on the repository; a login GitHub
+    // does not know is "none".
+    CollaboratorPermission(ctx context.Context, r RepoRef, login string) (string, error)
 }
 ```
 
@@ -850,6 +861,11 @@ One test per role interface; each asserts method, route, credential, request bod
   answered `422`, `403`; a missing issue; number 0.
   **Expected behavior**: both sets sent, the sets GitHub holds returned; `[]` sent and empty sets returned; an error
   and no `PATCH`; `ErrUnprocessable`, a plain `403`; `ErrNotFound`; no request.
+- **Test name**: `TestCollaboratorPermission`
+  **Scenario**: `admin`, `write`, `read`, `none`, a `404`, an unknown value (`maintain` in `permission`), a `403`, an
+  empty login.
+  **Expected behavior**: the same four words, `none`, `none`, the error with status `403`, an error and no request;
+  the installation token is sent.
 - **Test name**: `TestCheckRunAnnotationBatches`
   **Scenario**: 120 annotations sent as a create of 50 and updates of 50 and 20; then 51 in one create.
   **Expected behavior**: three requests in order, none dropped, each with the title and summary; an error and no

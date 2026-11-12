@@ -52,7 +52,7 @@ owner of what they restate. The parent package exports no identifier.
 
 - `internal/github/auth`: `Credentials`, `TokenSource`, `OAuth`, `UserToken`, `New`.
 - `internal/github/api`: `RepoRef`, `Repo`, `Installation`, the role interfaces `Repos`, `Pulls`, `MergeQueues`, `Checks`,
-  `Comments`, `Issues`, `IssueTriage`, `Actions`, `WorkflowRuns`, `Changes`, `Merges`, `Commits`, `Users` with their
+  `Comments`, `Issues`, `IssueTriage`, `Collaborators`, `Actions`, `WorkflowRuns`, `Changes`, `Merges`, `Commits`, `Users` with their
   data types, `Client`, `New`, and the sentinels `ErrNotFound`, `ErrRateLimited`, `ErrQueueForbidden`,
   `ErrQueueTooLong`, `ErrUnprocessable`, `ErrNotMergeable`, `ErrHeadChanged`.
 - `internal/github/webhook`: `Event`, `EventKind` and its constants, `Verify`, `VerifyAny`, `Parse`, and the header name
@@ -132,7 +132,8 @@ deeper module.
 - **Shared knowledge**: held by the children. App registration the branch assumes: permissions `checks: write`,
   `pull_requests: write`, `contents: write`, `actions: write`, `metadata: read`, `members: read`, `merge_queues: read` (Merge queues: Read), and no `workflows`
   (no child writes `.github/workflows/`); events `pull_request`, `pull_request_review`, `push`, `merge_group`, `installation`,
-  `installation_repositories`; user authorization (OAuth) enabled.
+  `installation_repositories`; user authorization (OAuth) enabled. Requests as issues (M2 task 16) also need `issues: write`
+  and the events `issue_comment` and `issues`; the owner adds them to the App registration before the release.
 
 ## Internal Design
 
