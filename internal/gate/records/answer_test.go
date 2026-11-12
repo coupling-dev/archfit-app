@@ -160,6 +160,9 @@ func TestVoidReopensTheRequest(t *testing.T) {
 	if a := load[records.Approval](t, s, records.ApprovalKey(repoName, "a1")); a.State != records.StateVoid || a.Proposal != "p1" {
 		t.Errorf("approval = %+v", a)
 	}
+	if p := load[records.Proposal](t, s, records.ProposalKey(repoName, "p1")); len(p.Approvals) != 0 || p.State != records.StateOpen {
+		t.Errorf("proposal = %+v; a void approval leaves its list and frees its place", p)
+	}
 	if req := load[records.Request](t, s, records.RequestKey(repoName, 431)); req.State != records.StateOpen {
 		t.Errorf("request state = %q, want open", req.State)
 	}

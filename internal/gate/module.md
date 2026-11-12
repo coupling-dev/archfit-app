@@ -236,13 +236,13 @@ type Answers interface {
 }
 // Owned by gate/proposals.
 type AnswerInput = proposals.Input; type AnswerOwner = proposals.Owner; type AnswerOutcome = proposals.Outcome
-const ProposalBranch = proposals.Branch // "archfit/policy"
 var ErrNotPolicyOwner, ErrNeedsPasskey, ErrAnswerBusy, ErrProposalFull // gate/proposals' errors
 ```
 
 `AnswerDigest` and `Answer` ask `Admitted` first, then run `gate/proposals` (`t.Repo` names the repository); the façade
 file is `answers.go`. `Answer` takes the passkey as `AnswerInput.Redeem`, which `control/answers` sets, so the gate
-never imports `control`. An error from `Answer` means no record changed.
+never imports `control`. An error from `Answer` means the answer was not recorded; what it found on its way (a
+policy pull request closed without a merge, an approval that no longer applies) may have been recorded void.
 
 `RequestView` and `RequestPreview` ask `Admitted` first, then read the request and pull records from the Store and the
 policy at the default branch's tip from GitHub (`t.Repo` names the repository). `RequestPreview` judges an

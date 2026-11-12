@@ -18,8 +18,8 @@ passkey or reach into the gate's records.
 - `Digest`: the change digest of an answer, from `gate.Answers.AnswerDigest`. The page binds the passkey step-up to it.
 - `Answer`: the answer of the signed-in user, with `Redeem` = `passkey.Redeem(repo, user, token, Purpose{Action: the
   answer kind, Request: the number, Digest})`, to `gate.Answers.Answer`. The gate calls `Redeem` only for an answer that
-  loosens the policy, after the owner, request and answer checks, so a refused answer leaves the token unused; a reject
-  redeems nothing.
+  loosens the policy, after the owner, request and answer checks: a refusal before it leaves the token unused, one
+  after it (a failed branch write or record) leaves it used, and the owner confirms again. A reject redeems nothing.
 
 Not provided: the owner rule, the records, the policy pull request (the gate), the passkey ceremonies (`passkey`), the
 pages (M2 task 24). Owner actions outside requests (M2 task 23) and the YAML edit (M3 task 10) come here later.
@@ -52,8 +52,9 @@ type Answers interface {
 func New(g gate.Answers, p passkey.Passkeys) Answers
 ```
 
-Errors are the gate's (`gate.ErrNotPolicyOwner`, `gate.ErrNeedsPasskey`, `gate.ErrAnswerBusy`, the request page's) and
-the passkey's (`passkey.ErrToken`), returned as they are. An error means no record changed.
+Errors are the gate's (`gate.ErrNotPolicyOwner`, `gate.ErrNeedsPasskey`, `gate.ErrAnswerBusy`, `gate.ErrProposalFull`,
+the request page's) and the passkey's (`passkey.ErrToken`), returned as they are. An error means the answer was not
+recorded.
 
 ## Integrations
 

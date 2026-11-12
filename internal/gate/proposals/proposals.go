@@ -30,8 +30,12 @@ const Branch = "archfit/policy"
 const (
 	policyPath = ".archfit.yaml"
 	gateCheck  = "archfit/gate"
-	// workTimeout bounds one answer once it holds the lease, so it ends before the lease can be taken over.
-	workTimeout = leaseTTL - 15*time.Second
+	// One answer, lease wait included, ends within 50 s: inside the App's 55 s deadline of a UI request, and well
+	// before its lease (60 s) can be taken over. recordTimeout bounds the reads, the step-up, the branch write and the
+	// record, on the caller's context. afterTimeout bounds what follows the record, on a context the caller cannot
+	// cancel: the answer stands, so a closed tab or a deadline must not leave its check, merge or issue half done.
+	recordTimeout = 15 * time.Second
+	afterTimeout  = 25 * time.Second
 	// headWait is how long a merge waits for the pull request to show the head the App just wrote: GitHub moves a pull
 	// request's head after the ref moved, not with it.
 	headWait = 10 * time.Second
@@ -104,7 +108,7 @@ type Input struct {
 // Outcome is what an answer did.
 type Outcome struct {
 	Approval    string // the approval id
-	PullRequest int    // the policy pull request; 0 when the answer writes no line
+	PullRequest int    // the policy pull request; 0 when the default branch already says it, or it writes no line
 	State       string // requests.PullMerged, PullLater or PullRefused when PullRequest is set
 	Merge       string // the merge commit, when merged
 }
@@ -122,17 +126,19 @@ func (s *Service) Digest(ctx context.Context, r api.Repo, number int, a requests
 	return changeDigest(c), nil
 }
 
-// Answer records an owner's answer and carries it to the default branch. An error before the approval is recorded
-// writes no record; GitHub may hold a branch commit no record names, which the D13 check never accepts. Once the
-// approval is recorded the answer stands: the check, the merge and the issue are done as far as GitHub allows, and the
-// Outcome says how far.
+// Answer records an owner's answer and carries it to the default branch. An error means the answer was not recorded
+// (a token Redeem used stays used). On its way an answer may record what it finds, whatever becomes of it: a proposal
+// whose pull request was closed without a merge is void, and an approval that no longer applies is void, their
+// requests open again. GitHub may hold a branch commit no record names, which the D13 check never accepts. Once the
+// approval is recorded the answer stands: the check, the merge and the issue are done as far as GitHub allows, on a
+// context the caller cannot cancel, and the Outcome says how far.
 func (s *Service) Answer(ctx context.Context, r api.Repo, in Input) (Outcome, error) {
 	release, err := s.hold(ctx, r)
 	if err != nil {
 		return Outcome{}, err
 	}
 	defer release()
-	ctx, cancel := context.WithTimeout(ctx, workTimeout)
+	ctx, cancel := context.WithTimeout(ctx, recordTimeout)
 	defer cancel()
 	return s.answer(ctx, r, in)
 }
@@ -180,21 +186,36 @@ func (s *Service) answer(ctx context.Context, r api.Repo, in Input) (Outcome, er
 	if err != nil {
 		return Outcome{}, err
 	}
-	want, err := requests.Edit(file, change, requests.RequestComment(in.Request))
+	// The answer joins the proposal when the default branch does not say it yet, even when an open answer already
+	// writes the same line: it travels, and is voided, with that proposal.
+	comment := requests.RequestComment(in.Request)
+	alone, err := requests.Edit(tipFile, change, comment)
 	if err != nil {
 		return Outcome{}, err
 	}
-	id := records.NewID()
-	out := Outcome{Approval: id}
-	joins := !bytes.Equal(want, file)
-	if joins && cur != nil && len(cur.rec.Approvals) >= records.MaxApprovals {
-		// Refused before the step-up and the branch write: a full proposal must merge before it takes another answer.
-		return Outcome{}, ErrFull
+	joins, want := !bytes.Equal(alone, tipFile), file
+	if joins {
+		if want, err = requests.Edit(file, change, comment); err != nil {
+			return Outcome{}, err
+		}
+		if cur != nil && len(kept) >= records.MaxApprovals {
+			// Refused before the step-up and the branch write: a full proposal merges before it takes another answer.
+			return Outcome{}, ErrFull
+		}
 	}
 	approval, err := s.approval(ctx, in, change)
 	if err != nil {
 		return Outcome{}, err
 	}
+	// Approvals that no longer apply leave the proposal before the answer joins it, so its capacity and its pin count
+	// only the answers its branch holds.
+	reopened, err := s.voidRecords(ctx, r, voided)
+	if err != nil {
+		return Outcome{}, err
+	}
+
+	id := records.NewID()
+	out := Outcome{Approval: id}
 	var pin *records.Pin
 	if joins {
 		if pin, err = s.write(ctx, r, cur, tip, want, append(kept, approved{id: id, rec: approval, change: change})); err != nil {
@@ -208,12 +229,14 @@ func (s *Service) answer(ctx context.Context, r api.Repo, in Input) (Outcome, er
 		return Outcome{}, fmt.Errorf("proposals: record the answer: %w", err)
 	}
 
-	// The answer stands from here on. What follows is done as far as GitHub allows.
+	// The answer stands from here on. What follows is done as far as GitHub allows, whatever becomes of the caller.
+	after, cancel := context.WithTimeout(context.WithoutCancel(ctx), afterTimeout)
+	defer cancel()
 	if !joins && cur != nil && len(voided) > 0 {
-		pin = s.resync(ctx, r, cur, tip, file, kept)
+		pin = s.resync(after, r, cur, tip, file, kept)
 	}
 	if cur != nil {
-		s.void(ctx, r, cur.rec.PullRequest, voided, false)
+		s.noteReopened(after, r, cur.rec.PullRequest, reopened, false)
 	}
 	if pin != nil {
 		listed := kept
@@ -221,13 +244,13 @@ func (s *Service) answer(ctx context.Context, r api.Repo, in Input) (Outcome, er
 			listed = append(listed, approved{id: id, rec: approval, change: change})
 		}
 		// An answer that joins nothing never merges the proposal: its other answers chose when to merge.
-		state, merge := s.publish(ctx, r, tip, *pin, listed, in.Later || !joins)
+		state, merge := s.publish(after, r, tip, *pin, listed, in.Later || !joins)
 		if joins {
 			out.PullRequest, out.State, out.Merge = pin.PullRequest, state, merge
 		}
 	}
-	s.close(ctx, r, in, change, approval.Credential, out)
-	slog.Default().InfoContext(ctx, "proposals answer", "installation_id", r.InstallationID, "repository_id", r.ID,
+	s.close(after, r, in, change, approval.Credential, out)
+	slog.Default().InfoContext(after, "proposals answer", "installation_id", r.InstallationID, "repository_id", r.ID,
 		"request", in.Request, "approval", id, "kind", string(change.Kind), "pull", out.PullRequest, "state", out.State,
 		"voided", len(voided))
 	return out, nil
@@ -315,10 +338,15 @@ func (s *Service) current(ctx context.Context, r api.Repo) (*proposal, error) {
 		case pull.Merged:
 			continue
 		case pull.State != "open":
+			// The approvals first: while the proposal is in the index, a later answer repeats a cleanup that stopped.
+			reopened, err := s.voidRecords(ctx, r, p.approvals)
+			if err != nil {
+				return nil, err
+			}
 			if err := records.VoidProposal(ctx, s.store, t, r.FullName, p.id); err != nil {
 				return nil, fmt.Errorf("proposals: void proposal %s: %w", p.id, err)
 			}
-			s.void(ctx, r, p.rec.PullRequest, p.approvals, true)
+			s.noteReopened(ctx, r, p.rec.PullRequest, reopened, true)
 			continue
 		case open != nil:
 			return nil, fmt.Errorf("proposals: two open proposals, %s and %s", open.id, p.id)
@@ -446,18 +474,27 @@ func (s *Service) resync(ctx context.Context, r api.Repo, cur *proposal, tip str
 	return &pin
 }
 
-// void marks each approval void and opens its request again, with a note on its issue. closed says the pull request
-// was closed without a merge; else the default branch's policy changed under it.
-func (s *Service) void(ctx context.Context, r api.Repo, pull int, approvals []approved, closed bool) {
+// voidRecords marks each approval void (records.Void, which takes it out of its proposal and opens its request again)
+// and returns the requests that opened again. It stops at the first failure; what is left is done by a later answer,
+// which finds the same approvals open.
+func (s *Service) voidRecords(ctx context.Context, r api.Repo, approvals []approved) ([]int, error) {
+	var reopened []int
 	for _, a := range approvals {
-		request, reopened, err := records.Void(ctx, s.store, tenant(r), r.FullName, a.id)
+		request, opened, err := records.Void(ctx, s.store, tenant(r), r.FullName, a.id)
 		if err != nil {
-			logFailure(ctx, r, "void an approval", err)
-			continue
+			return nil, fmt.Errorf("proposals: void approval %s: %w", a.id, err)
 		}
-		if !reopened {
-			continue
+		if opened {
+			reopened = append(reopened, request)
 		}
+	}
+	return reopened, nil
+}
+
+// noteReopened posts the note on each request that opened again and reopens its issue. closed says pull was closed
+// without a merge; else the default branch's policy changed under it.
+func (s *Service) noteReopened(ctx context.Context, r api.Repo, pull int, reopened []int, closed bool) {
+	for _, request := range reopened {
 		if _, err := s.gh.CreateComment(ctx, r.RepoRef, request, requests.ReopenNote(pull, closed)); err != nil {
 			logFailure(ctx, r, "note a reopened request", err)
 		}

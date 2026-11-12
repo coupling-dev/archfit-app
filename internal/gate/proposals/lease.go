@@ -18,8 +18,8 @@ import (
 const (
 	leaseSchema = "archfit-app.proposal-lease.v1"
 	leaseTTL    = 60 * time.Second
-	// leaseWait is how long an answer waits for the lease another answer holds.
-	leaseWait  = 15 * time.Second
+	// leaseWait is how long an answer waits for the lease another answer holds (see recordTimeout).
+	leaseWait  = 10 * time.Second
 	leasePoll  = 250 * time.Millisecond
 	releaseTTL = 5 * time.Second
 )
@@ -54,7 +54,7 @@ func (s *Service) hold(ctx context.Context, r api.Repo) (release func(), err err
 		})
 		switch {
 		case err == nil:
-			return func() { s.release(ctx, key, t, token) }, nil
+			return func() { s.release(ctx, r, key, t, token) }, nil
 		case !errors.Is(err, errHeld) && wait.Err() == nil:
 			return nil, err
 		}
@@ -65,7 +65,7 @@ func (s *Service) hold(ctx context.Context, r api.Repo) (release func(), err err
 }
 
 // release deletes the lease when it is still this holder's. It runs even when the answer's context ended.
-func (s *Service) release(ctx context.Context, key string, t store.Tenant, token string) {
+func (s *Service) release(ctx context.Context, r api.Repo, key string, t store.Tenant, token string) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTTL)
 	defer cancel()
 	err := store.Update(ctx, s.store, t, []string{key}, func(cur [][]byte) ([][]byte, error) {
@@ -76,6 +76,6 @@ func (s *Service) release(ctx context.Context, key string, t store.Tenant, token
 		return cur, nil
 	})
 	if err != nil {
-		logFailure(ctx, api.Repo{InstallationID: int64(t)}, "release the proposal lease", err)
+		logFailure(ctx, r, "release the proposal lease", err)
 	}
 }

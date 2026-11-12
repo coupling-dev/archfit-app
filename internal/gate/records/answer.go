@@ -111,8 +111,9 @@ func Answer(ctx context.Context, s store.Store, t store.Tenant, fullName, approv
 	})
 }
 
-// Void marks an open approval void because its change no longer applies to the default branch, and opens its request
-// again with its request index entry, in one swap. When another open request now holds the key, the request stays
+// Void marks an open approval void because its change no longer applies to the default branch, takes it out of its
+// proposal's list (so the proposal's capacity counts only approvals that still apply), and opens its request again
+// with its request index entry, all in one swap. When another open request now holds the key, the request stays
 // answered and reopened is false. A void approval again is no change.
 func Void(ctx context.Context, s store.Store, t store.Tenant, fullName, approvalID string) (request int, reopened bool, err error) {
 	var a Approval
@@ -120,15 +121,19 @@ func Void(ctx context.Context, s store.Store, t store.Tenant, fullName, approval
 		return 0, false, err
 	}
 	keys := []string{ApprovalKey(fullName, approvalID), RequestKey(fullName, a.Request), RequestIndexKey(fullName)}
+	if a.Proposal != "" {
+		keys = append(keys, ProposalKey(fullName, a.Proposal))
+	}
 	err = store.Update(ctx, s, t, keys, func(cur [][]byte) ([][]byte, error) {
 		reopened = false
-		return voidApproval(cur, a.Request, &reopened)
+		return voidApproval(cur, approvalID, a.Request, &reopened)
 	})
 	return a.Request, reopened, err
 }
 
-// voidApproval is the change of Void: the approval, its request and the request index, in that order.
-func voidApproval(cur [][]byte, request int, reopened *bool) ([][]byte, error) {
+// voidApproval is the change of Void: the approval, its request, the request index and, when it joined one, its
+// proposal, in that order.
+func voidApproval(cur [][]byte, approvalID string, request int, reopened *bool) ([][]byte, error) {
 	var a Approval
 	if cur[0] == nil {
 		return nil, ErrNoRecord
@@ -140,11 +145,23 @@ func voidApproval(cur [][]byte, request int, reopened *bool) ([][]byte, error) {
 		return cur, nil
 	}
 	a.State = StateVoid
-	approval, err := Encode(&a)
-	if err != nil {
+	next := slices.Clone(cur)
+	var err error
+	if next[0], err = Encode(&a); err != nil {
 		return nil, err
 	}
-	next := [][]byte{approval, cur[1], cur[2]}
+	if len(cur) > 3 && cur[3] != nil {
+		var p Proposal
+		if err := Decode(cur[3], &p); err != nil {
+			return nil, err
+		}
+		if i := slices.Index(p.Approvals, approvalID); i >= 0 {
+			p.Approvals = slices.Delete(p.Approvals, i, i+1)
+			if next[3], err = Encode(&p); err != nil {
+				return nil, err
+			}
+		}
+	}
 	var req Request
 	if cur[1] == nil {
 		return next, nil
@@ -172,8 +189,9 @@ func voidApproval(cur [][]byte, request int, reopened *bool) ([][]byte, error) {
 }
 
 // VoidProposal marks an open proposal void and removes it from the proposal index, in one swap: its pull request was
-// closed without a merge, or no approval in it applies any more. Its approvals are voided one by one (Void). A void
-// proposal again is no change; a merged one is ErrMoved.
+// closed without a merge, or no approval in it applies any more. Void its approvals first, one by one (Void): while the
+// proposal is in the index, a later answer finds it and finishes a cleanup that stopped half way. A void proposal again
+// is no change; a merged one is ErrMoved.
 func VoidProposal(ctx context.Context, s store.Store, t store.Tenant, fullName, proposalID string) error {
 	keys := []string{ProposalKey(fullName, proposalID), ProposalIndexKey(fullName)}
 	return store.Update(ctx, s, t, keys, func(cur [][]byte) ([][]byte, error) {

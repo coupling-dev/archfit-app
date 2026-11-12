@@ -237,7 +237,7 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   `403 not_policy_owner`; a loosening answer without a step-up `403 needs_step_up`; a token used, expired or for another
   change `403 token`; another answer of the repository being written `409 answer_busy`; a policy pull request
   that holds 9 answers `409 proposal_full`; and the request page's (`404`,
-  `409 request_closed`, `422 answer`, `409 by_hand`, `409 no_policy`). After any refusal nothing was recorded.
+  `409 request_closed`, `422 answer`, `409 by_hand`, `409 no_policy`). After any refusal the answer was not recorded.
 - `GET /api/repos/{o}/{n}/overview` [read] — default-branch state, open pull requests with their result, setup steps,
   onboarding progress, entitlement banner, history links, and whether the user may start onboarding or discovery.
   After a report: `main_sha` (short) and `main_at` (RFC 3339) of the check the state is read from, `pulls_to_update`

@@ -448,3 +448,153 @@ func TestAnExceptionOfAnOnlyRuleHasNoTo(t *testing.T) {
 		t.Errorf("outcome %+v, policy on main:\n%s", out, got)
 	}
 }
+
+// TestARefusedAnswerStillRecordsWhatItFound: an answer refused after it voided a proposal whose pull request was closed
+// keeps that cleanup, and records nothing of itself.
+func TestARefusedAnswerStillRecordsWhatItFound(t *testing.T) {
+	w := newWorld(t)
+	w.request(431, "graph", "pkg_tc", "pkg_util")
+	w.request(432, "graph", "pkg_tc", "pkg_db")
+	first := w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, true)
+	w.hub.pulls[first.PullRequest].State = "closed"
+
+	approve := requests.Answer{Kind: policy3.Approve}
+	_, err := w.svc.Answer(context.Background(), testRepo, Input{Request: 432, Answer: approve, Owner: olivia,
+		Redeem: w.redeem("an expired token")})
+	if !errors.Is(err, errToken) {
+		t.Fatalf("err = %v, want the token's refusal", err)
+	}
+	if got := w.requestState(431); got != records.StateOpen || !w.hub.issues[431] {
+		t.Errorf("the closed proposal's request is %q, issue open %v; its cleanup must stand", got, w.hub.issues[431])
+	}
+	if got := w.requestState(432); got != records.StateOpen {
+		t.Errorf("the refused answer's request is %q, want still open", got)
+	}
+	if ok, _ := IsProposalPull(context.Background(), w.store, testRepo, first.PullRequest); ok {
+		t.Error("the closed proposal is still in the index")
+	}
+}
+
+// TestAnAnswerKeepsGoingAfterItsCallerLeaves: once recorded, the check, the merge and the issue are done although the
+// caller's context ended (a closed tab, the UI deadline).
+func TestAnAnswerKeepsGoingAfterItsCallerLeaves(t *testing.T) {
+	w := newWorld(t)
+	w.request(431, "graph", "pkg_tc", "pkg_util")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	w.hub.hooks["UpdatePullBody"] = cancel // the first call after the record
+	a := requests.Answer{Kind: policy3.Approve}
+	out, err := w.svc.Answer(ctx, testRepo, Input{Request: 431, Answer: a, Owner: olivia, Redeem: w.redeem(w.stepUp(431, a))})
+	if err != nil || out.State != requests.PullMerged {
+		t.Fatalf("outcome %+v, %v; want merged", out, err)
+	}
+	if w.hub.issues[431] || !strings.Contains(w.hub.lastComment(431), "merged in #") {
+		t.Errorf("issue open %v, note:\n%s", w.hub.issues[431], w.hub.lastComment(431))
+	}
+}
+
+// TestAnAnswerJoinsWhenOnlyTheOpenProposalSaysIt: the default branch does not allow the dependency yet, an earlier
+// answer waiting to merge does. The new answer travels with that proposal, and is voided with it.
+func TestAnAnswerJoinsWhenOnlyTheOpenProposalSaysIt(t *testing.T) {
+	w := newWorld(t)
+	w.request(431, "graph", "pkg_tc", "pkg_util")
+	first := w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, true)
+	w.request(433, "graph", "pkg_tc", "pkg_util") // the same key, asked again while the first waits to merge
+	second := w.mustAnswer(oscar, 433, requests.Answer{Kind: policy3.Approve}, true)
+	if second.PullRequest != first.PullRequest || second.State != requests.PullLater {
+		t.Fatalf("second = %+v, want it in #%d", second, first.PullRequest)
+	}
+	if p := w.proposalOf(second); !slices.Equal(p.Approvals, []string{first.Approval, second.Approval}) {
+		t.Errorf("approvals = %v", p.Approvals)
+	}
+
+	w.hub.pulls[first.PullRequest].State = "closed"
+	w.request(434, "graph", "pkg_tc", "pkg_db")
+	w.mustAnswer(olivia, 434, requests.Answer{Kind: policy3.Approve}, true)
+	for _, n := range []int{431, 433} {
+		if got := w.requestState(n); got != records.StateAnswered && got != records.StateOpen {
+			t.Errorf("request %d = %q", n, got)
+		}
+		if a := load[records.Approval](t, w.store, records.ApprovalKey(testRepo.FullName,
+			map[int]string{431: first.Approval, 433: second.Approval}[n])); a.State != records.StateVoid {
+			t.Errorf("the approval of request %d is %q, want void with its closed proposal", n, a.State)
+		}
+	}
+}
+
+// TestAVoidedApprovalFreesItsPlace: the capacity counts the answers the branch holds, not the ones voided.
+func TestAVoidedApprovalFreesItsPlace(t *testing.T) {
+	w := newWorld(t)
+	extra := ""
+	for i := range records.MaxApprovals {
+		extra += "  m" + strconv.Itoa(i) + ":\n    paths: [m" + strconv.Itoa(i) + "/**]\n"
+	}
+	full := strings.Replace(testPolicy, "rules:\n", extra+"rules:\n", 1)
+	w.hub.push(fakeBase, policyPath, full)
+	for i := range records.MaxApprovals {
+		w.request(500+i, "graph", "pkg_tc", "m"+strconv.Itoa(i))
+		w.mustAnswer(olivia, 500+i, requests.Answer{Kind: policy3.Approve}, true)
+	}
+	w.request(431, "graph", "pkg_tc", "pkg_util")
+	if _, err := w.answer(olivia, 431, requests.Answer{Kind: policy3.Approve}, true); !errors.Is(err, ErrFull) {
+		t.Fatalf("a tenth answer = %v, want ErrFull", err)
+	}
+	w.hub.push(fakeBase, policyPath, strings.Replace(full, "  m0:\n    paths: [m0/**]\n", "", 1))
+	out, err := w.answer(olivia, 431, requests.Answer{Kind: policy3.Approve}, true)
+	if err != nil {
+		t.Fatalf("an answer after one approval was voided = %v", err)
+	}
+	if p := w.proposalOf(out); len(p.Approvals) != records.MaxApprovals {
+		t.Errorf("approvals = %d, want %d: the voided one left, the new one joined", len(p.Approvals), records.MaxApprovals)
+	}
+}
+
+// TestAnAnswerThatWritesNoLineResyncsWithoutMerging: earlier answers that no longer apply are voided and the branch
+// rewritten and pinned again, but an answer that joins nothing never merges the proposal.
+func TestAnAnswerThatWritesNoLineResyncsWithoutMerging(t *testing.T) {
+	t.Run("answers kept: re-pinned and checked, not merged", func(t *testing.T) {
+		w := newWorld(t)
+		w.request(431, "graph", "pkg_tc", "pkg_util")
+		w.request(432, "graph", "pkg_tc", "pkg_db")
+		w.request(433, "duplication", "pkg_tc", "pkg_net")
+		w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, true)
+		kept := w.mustAnswer(olivia, 432, requests.Answer{Kind: policy3.Approve}, true)
+		w.hub.push(fakeBase, policyPath, strings.Replace(testPolicy, "  pkg_util:\n    paths: [pkg/util/**]\n", "", 1))
+		checks := len(w.hub.checks)
+
+		out := w.mustAnswer(oscar, 433, requests.Answer{Kind: policy3.Reject, Instead: "Call pkg_net."}, false)
+		if out.PullRequest != 0 || len(w.hub.merges) != 0 {
+			t.Errorf("outcome %+v, merges %v: an answer that joins nothing must not merge", out, w.hub.merges)
+		}
+		p := w.proposalOf(kept)
+		branch := w.hub.file(Branch, policyPath)
+		if p.HeadSHA != w.hub.branches[Branch] || p.ExpectedDigest != policy3.Digest([]byte(branch)) ||
+			strings.Contains(branch, "request #431") || !strings.Contains(branch, "request #432") {
+			t.Errorf("proposal %+v, branch:\n%s", p, branch)
+		}
+		if len(w.hub.checks) != checks+1 || w.hub.checks[len(w.hub.checks)-1].HeadSHA != p.HeadSHA {
+			t.Errorf("checks %+v; want one on the new head", w.hub.checks[checks:])
+		}
+		if got := w.requestState(431); got != records.StateOpen {
+			t.Errorf("request 431 = %q, want open again", got)
+		}
+	})
+	t.Run("no answer kept: the proposal is void and leaves the index", func(t *testing.T) {
+		w := newWorld(t)
+		w.request(431, "graph", "pkg_tc", "pkg_util")
+		w.request(433, "duplication", "pkg_tc", "pkg_net")
+		first := w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, true)
+		w.hub.push(fakeBase, policyPath, strings.Replace(testPolicy, "  pkg_util:\n    paths: [pkg/util/**]\n", "", 1))
+
+		w.mustAnswer(oscar, 433, requests.Answer{Kind: policy3.Reject, Instead: "Call pkg_net."}, false)
+		if p := w.proposalOf(first); p.State != records.StateVoid {
+			t.Errorf("proposal = %q, want void", p.State)
+		}
+		if ok, _ := IsProposalPull(context.Background(), w.store, testRepo, first.PullRequest); ok {
+			t.Error("the void proposal's pull request is still in the index")
+		}
+		if w.hub.branches[Branch] != w.hub.branches[fakeBase] || len(w.hub.merges) != 0 {
+			t.Errorf("branch %s, main %s, merges %v", w.hub.branches[Branch], w.hub.branches[fakeBase], w.hub.merges)
+		}
+	})
+}

@@ -124,7 +124,7 @@ func TestTheLease(t *testing.T) {
 	t.Run("a release never deletes another holder's lease", func(t *testing.T) {
 		w := newWorld(t)
 		held(w, testNow.Add(time.Minute))
-		w.svc.release(ctx, key, ten, "mine")
+		w.svc.release(ctx, testRepo, key, ten, "mine")
 		if _, err := w.store.Get(ctx, ten, key); err != nil {
 			t.Errorf("the other holder's lease was deleted: %v", err)
 		}

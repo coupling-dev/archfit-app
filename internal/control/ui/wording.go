@@ -64,7 +64,7 @@ var sentinels = []struct {
 	{gate.ErrAnswerBusy, http.StatusConflict, "answer_busy",
 		"Another answer for this repository is being written. Nothing was changed. Try again in a minute."},
 	{gate.ErrProposalFull, http.StatusConflict, "proposal_full",
-		"The policy pull request holds the most answers it can. Merge it first, then answer. Nothing was changed."},
+		"The policy pull request holds the most answers it can. Merge it first, then answer. Your answer was not recorded."},
 	{proposal.ErrStale, http.StatusConflict, "stale",
 		"The draft changed on GitHub after this page was loaded. Nothing was saved. Reload the draft and apply your edit again."},
 	{assist.ErrInvalidRequest, http.StatusUnprocessableEntity, "invalid", "The request is not valid: write a short instruction and try again."},

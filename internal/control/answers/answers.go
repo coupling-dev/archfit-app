@@ -26,8 +26,8 @@ type Answers interface {
 	// Digest is the change digest of answer a to request number: the passkey step-up of the answer is bound to it,
 	// with the answer kind as its action and the request number.
 	Digest(ctx context.Context, r api.Repo, number int, a Answer) (string, error)
-	// Answer records answer a of user u to request number and carries it to the default branch. An error means no
-	// record changed; a token Redeem already used stays used.
+	// Answer records answer a of user u to request number and carries it to the default branch. An error means the
+	// answer was not recorded; a token Redeem already used stays used.
 	Answer(ctx context.Context, r api.Repo, u passkey.User, number int, a Answer) (gate.AnswerOutcome, error)
 }
 
@@ -44,8 +44,9 @@ func (s *service) Digest(ctx context.Context, r api.Repo, number int, a Answer) 
 }
 
 // Answer hands the gate a Redeem that consumes the owner's token for this request, this answer kind and the change
-// digest the gate computes. The gate calls it only for an answer that loosens the policy, after every other check, so a
-// refused answer leaves the token unused.
+// digest the gate computes. The gate calls it only for an answer that loosens the policy, after the owner, request and
+// answer checks: a refusal before it leaves the token unused, one after it (a failed branch write or record) leaves it
+// used, and the owner confirms again.
 func (s *service) Answer(ctx context.Context, r api.Repo, u passkey.User, number int, a Answer) (gate.AnswerOutcome, error) {
 	in := gate.AnswerInput{Request: number, Answer: requestAnswer(a), Owner: gate.AnswerOwner{ID: u.ID, Login: u.Login},
 		Later: a.Later,

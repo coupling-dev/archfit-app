@@ -102,11 +102,13 @@ Functions, all under one installation tenant:
   `PullRequest` with its proposal index entry (`ErrExists` when another proposal holds that pull request). A merged or
   void proposal is `ErrMoved`, a full one `ErrFull`. So no answer is written without its request and its proposal: a
   merge of a head the App wrote before the swap cannot match an expected digest that names an unrecorded answer.
-- `Void(ctx, s, t, repo, approvalID) (request int, reopened bool, err error)`: the approval becomes `void` and its
-  `answered` request `open` again with its index entry, in one swap; when another open request holds the key now,
-  the request stays `answered` (`reopened` false). Again is no change.
+- `Void(ctx, s, t, repo, approvalID) (request int, reopened bool, err error)`: the approval becomes `void`, leaves its
+  proposal's list (so a proposal's capacity counts only approvals that still apply), and its `answered` request is
+  `open` again with its index entry, in one swap of up to 4 keys; when another open request holds the key now, the
+  request stays `answered` (`reopened` false). Again is no change.
 - `VoidProposal(ctx, s, t, repo, proposalID) error`: `open` to `void` and out of the proposal index; again is no
-  change; a merged proposal is `ErrMoved`.
+  change; a merged proposal is `ErrMoved`. Its approvals are voided first: while it is indexed, a later reader finds it
+  and finishes a cleanup that stopped half way.
 
 Every write goes through `store.Update`; after 5 lost swaps it returns `store.ErrConflict`, and the caller may read
 again and retry.

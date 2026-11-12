@@ -25,13 +25,14 @@ type fakeHub struct {
 	seq      int
 	nextPull int
 
-	errs      map[string]error // method → the error it returns instead of acting
-	mergeErr  error            // MergePull refuses with it
-	mergedBy  string           // when set, a refused MergePull still merged: someone else's merge commit
-	headLag   int              // Pull shows the previous head this many times after a branch moved
-	lagging   map[int]string   // pull → the head it still shows
-	onCommit  func()           // runs inside CommitOn before the branch moves: someone else acts in between
-	moveOnPut bool             // someone else pushes to archfit/policy right before the App's next CommitOn
+	errs      map[string]error  // method → the error it returns instead of acting
+	hooks     map[string]func() // method → what runs when it is called, before it acts (under the lock)
+	mergeErr  error             // MergePull refuses with it
+	mergedBy  string            // when set, a refused MergePull still merged: someone else's merge commit
+	headLag   int               // Pull shows the previous head this many times after a branch moved
+	lagging   map[int]string    // pull → the head it still shows
+	onCommit  func()            // runs inside CommitOn before the branch moves: someone else acts in between
+	moveOnPut bool              // someone else pushes to archfit/policy right before the App's next CommitOn
 }
 
 type fakeCommit struct {
@@ -44,7 +45,8 @@ const fakeBase = "main"
 
 func newFakeHub(policy string) *fakeHub {
 	h := &fakeHub{commits: map[string]fakeCommit{}, branches: map[string]string{}, pulls: map[int]*api.Pull{},
-		issues: map[int]bool{}, comments: map[int][]string{}, errs: map[string]error{}, lagging: map[int]string{},
+		issues: map[int]bool{}, comments: map[int][]string{}, errs: map[string]error{}, hooks: map[string]func(){},
+		lagging:  map[int]string{},
 		nextPull: 20}
 	h.branches[fakeBase] = h.put("", "start", map[string][]byte{policyPath: []byte(policy), "README.md": []byte("readme")})
 	return h
@@ -82,8 +84,15 @@ func (h *fakeHub) follow(branch string) {
 	}
 }
 
-func (h *fakeHub) enter(method string) error {
+// enter records the call, runs its hook, and refuses it on an ended context, as a real client does.
+func (h *fakeHub) enter(ctx context.Context, method string) error {
 	h.calls = append(h.calls, method)
+	if hook := h.hooks[method]; hook != nil {
+		hook()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return h.errs[method]
 }
 
@@ -95,10 +104,10 @@ func (h *fakeHub) resolve(ref string) (string, bool) {
 	return ref, ok
 }
 
-func (h *fakeHub) File(_ context.Context, _ api.RepoRef, ref, path string) ([]byte, string, error) {
+func (h *fakeHub) File(ctx context.Context, _ api.RepoRef, ref, path string) ([]byte, string, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if err := h.enter("File"); err != nil {
+	if err := h.enter(ctx, "File"); err != nil {
 		return nil, "", err
 	}
 	sha, ok := h.resolve(ref)
@@ -109,10 +118,10 @@ func (h *fakeHub) File(_ context.Context, _ api.RepoRef, ref, path string) ([]by
 	return slices.Clone(content), "blob", nil
 }
 
-func (h *fakeHub) BranchHead(_ context.Context, _ api.RepoRef, branch string) (string, error) {
+func (h *fakeHub) BranchHead(ctx context.Context, _ api.RepoRef, branch string) (string, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if err := h.enter("BranchHead"); err != nil {
+	if err := h.enter(ctx, "BranchHead"); err != nil {
 		return "", err
 	}
 	sha, ok := h.branches[branch]
@@ -122,10 +131,10 @@ func (h *fakeHub) BranchHead(_ context.Context, _ api.RepoRef, branch string) (s
 	return sha, nil
 }
 
-func (h *fakeHub) Pull(_ context.Context, _ api.RepoRef, number int) (api.Pull, error) {
+func (h *fakeHub) Pull(ctx context.Context, _ api.RepoRef, number int) (api.Pull, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if err := h.enter("Pull"); err != nil {
+	if err := h.enter(ctx, "Pull"); err != nil {
 		return api.Pull{}, err
 	}
 	p, ok := h.pulls[number]
@@ -153,10 +162,10 @@ func (h *fakeHub) ancestors(sha string) []string {
 }
 
 // Compare is GitHub's three-dot compare: the paths changed from the merge base of base and head to head.
-func (h *fakeHub) Compare(_ context.Context, _ api.RepoRef, base, head string) (api.Comparison, error) {
+func (h *fakeHub) Compare(ctx context.Context, _ api.RepoRef, base, head string) (api.Comparison, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if err := h.enter("Compare"); err != nil {
+	if err := h.enter(ctx, "Compare"); err != nil {
 		return api.Comparison{}, err
 	}
 	if _, ok := h.commits[base]; !ok {
@@ -198,10 +207,10 @@ func (h *fakeHub) Compare(_ context.Context, _ api.RepoRef, base, head string) (
 	return api.Comparison{Status: status, Paths: paths}, nil
 }
 
-func (h *fakeHub) CommitOn(_ context.Context, _ api.RepoRef, branch, parent, message string, files []api.FileChange, force bool) (string, error) {
+func (h *fakeHub) CommitOn(ctx context.Context, _ api.RepoRef, branch, parent, message string, files []api.FileChange, force bool) (string, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if err := h.enter("CommitOn"); err != nil {
+	if err := h.enter(ctx, "CommitOn"); err != nil {
 		return "", err
 	}
 	if h.moveOnPut {
@@ -235,10 +244,10 @@ func (h *fakeHub) CommitOn(_ context.Context, _ api.RepoRef, branch, parent, mes
 	return sha, nil
 }
 
-func (h *fakeHub) EnsurePull(_ context.Context, _ api.RepoRef, np api.NewPull) (api.Pull, error) {
+func (h *fakeHub) EnsurePull(ctx context.Context, _ api.RepoRef, np api.NewPull) (api.Pull, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if err := h.enter("EnsurePull"); err != nil {
+	if err := h.enter(ctx, "EnsurePull"); err != nil {
 		return api.Pull{}, err
 	}
 	for _, p := range h.pulls {
@@ -253,20 +262,20 @@ func (h *fakeHub) EnsurePull(_ context.Context, _ api.RepoRef, np api.NewPull) (
 	return *p, nil
 }
 
-func (h *fakeHub) UpdatePullBody(_ context.Context, _ api.RepoRef, number int, body string) error {
+func (h *fakeHub) UpdatePullBody(ctx context.Context, _ api.RepoRef, number int, body string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if err := h.enter("UpdatePullBody"); err != nil {
+	if err := h.enter(ctx, "UpdatePullBody"); err != nil {
 		return err
 	}
 	h.pulls[number].Body = body
 	return nil
 }
 
-func (h *fakeHub) MarkReady(_ context.Context, _ api.RepoRef, number int) error {
+func (h *fakeHub) MarkReady(ctx context.Context, _ api.RepoRef, number int) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if err := h.enter("MarkReady"); err != nil {
+	if err := h.enter(ctx, "MarkReady"); err != nil {
 		return err
 	}
 	h.pulls[number].Draft = false
@@ -275,10 +284,10 @@ func (h *fakeHub) MarkReady(_ context.Context, _ api.RepoRef, number int) error 
 
 // MergePull squash-merges as GitHub does under a ruleset that requires archfit/gate from the App with no bypass actor
 // (design appendix D.2): the latest archfit/gate run on the head must be a success.
-func (h *fakeHub) MergePull(_ context.Context, _ api.RepoRef, number int, headSHA string) (string, error) {
+func (h *fakeHub) MergePull(ctx context.Context, _ api.RepoRef, number int, headSHA string) (string, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if err := h.enter("MergePull"); err != nil {
+	if err := h.enter(ctx, "MergePull"); err != nil {
 		return "", err
 	}
 	h.merges = append(h.merges, fmt.Sprintf("%d@%s", number, headSHA))
@@ -314,10 +323,10 @@ func (h *fakeHub) passed(head string) bool {
 	return false
 }
 
-func (h *fakeHub) CreateCheckRun(_ context.Context, _ api.RepoRef, c api.CheckRun) (api.CheckRun, error) {
+func (h *fakeHub) CreateCheckRun(ctx context.Context, _ api.RepoRef, c api.CheckRun) (api.CheckRun, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if err := h.enter("CreateCheckRun"); err != nil {
+	if err := h.enter(ctx, "CreateCheckRun"); err != nil {
 		return api.CheckRun{}, err
 	}
 	c.ID = int64(len(h.checks) + 1)
@@ -325,30 +334,30 @@ func (h *fakeHub) CreateCheckRun(_ context.Context, _ api.RepoRef, c api.CheckRu
 	return c, nil
 }
 
-func (h *fakeHub) CreateComment(_ context.Context, _ api.RepoRef, number int, body string) (api.Comment, error) {
+func (h *fakeHub) CreateComment(ctx context.Context, _ api.RepoRef, number int, body string) (api.Comment, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if err := h.enter("CreateComment"); err != nil {
+	if err := h.enter(ctx, "CreateComment"); err != nil {
 		return api.Comment{}, err
 	}
 	h.comments[number] = append(h.comments[number], body)
 	return api.Comment{ID: int64(len(h.comments[number])), Body: body}, nil
 }
 
-func (h *fakeHub) CloseIssue(_ context.Context, _ api.RepoRef, number int) error {
+func (h *fakeHub) CloseIssue(ctx context.Context, _ api.RepoRef, number int) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if err := h.enter("CloseIssue"); err != nil {
+	if err := h.enter(ctx, "CloseIssue"); err != nil {
 		return err
 	}
 	h.issues[number] = false
 	return nil
 }
 
-func (h *fakeHub) ReopenIssue(_ context.Context, _ api.RepoRef, number int) error {
+func (h *fakeHub) ReopenIssue(ctx context.Context, _ api.RepoRef, number int) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if err := h.enter("ReopenIssue"); err != nil {
+	if err := h.enter(ctx, "ReopenIssue"); err != nil {
 		return err
 	}
 	h.issues[number] = true
