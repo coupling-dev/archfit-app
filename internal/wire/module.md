@@ -2,7 +2,7 @@
 
 **Path**: internal/wire/
 **Parent**: internal/ (Archfit App)
-**Submodules**: envelope, decision, report, result, settings, policy, manifest
+**Submodules**: envelope, decision, report, result, request, settings, policy, policy3, manifest
 
 ## Purpose
 
@@ -13,10 +13,10 @@ and the control plane, a version bump would touch domain logic, and nobody could
 
 ## Functional Responsibilities
 
-- Publish seven child packages, each owning one contract: the upload envelope, the decision request an unattended agent
-  files, the no-source state report, the engine's result JSON and text record, the App settings file, the App's view of
-  the engine policy files, and the approved identity manifest.
-- State the versioning rule all seven follow.
+- Publish nine child packages, each owning one contract: the upload envelope, the decision request an unattended agent
+  files, the no-source state report, the engine's result JSON and text record, the request line and the request issue
+  (Archfit 4), the App settings file, the App's view of the engine policy files, policy schema 3 (Archfit 4), and the approved identity manifest.
+- State the versioning rule all nine follow.
 - Hold the shared conformance fixtures in `wire/testdata/` (a transparent folder, not a module) used by the
   children's tests and by consumer tests such as the gate verdict table.
 - The parent package itself has no code except `doc.go`.
@@ -53,6 +53,7 @@ child is normative in the child's own `module.md`; it is not restated here.
 | `internal/wire/decision` | decision-request v1: `Request`, `Extract`, `Decode`, `Identify`, `Schema`, `StatusMarker`, `StatusLine`  |
 | `internal/wire/report`   | engine state v1 as no-source transport: `Report` and its parts, `Decode`, `EngineVersions`, size cap |
 | `internal/wire/result`   | engine result v1 (Archfit 4): `Result` and its parts, `Status`, `Decode`, `Record`, vendored goldens   |
+| `internal/wire/request`  | the request line and issue (Archfit 4, App-owned): `ParseComment`, `ParseIssue`, `Error.RequestKey`, `Answer.Key`, `Issue`, `Rejection`; goldens the engine vendors |
 | `internal/wire/settings` | `.archfit-app.yaml`: `Settings`, modes, `Parse`, `Render`, file location                             |
 | `internal/wire/policy`   | engine file locations, bare-hex `Digest`, `Waivers`, `Modules`, `ReadBaseline` readers, config `Schema` |
 | `internal/wire/policy3`  | Archfit 4 policy schema 3: `Decode`, `Digest` (`sha256:` form), `AddDependsOn`, `AddException`, `AddDenyRule`, `Loosens` |
@@ -63,7 +64,8 @@ child is normative in the child's own `module.md`; it is not restated here.
 - Every contract carries a version identifier: envelope `archfit.report-envelope.v1`, and `archfit.upload-envelope.v2` for
   Archfit 4 (beside v1 only on the `archfit-4` branch, never at a release); decision request `archfit.decision-request.v1`; report
   `archfit.architecture-state.v1`; result `archfit.result.v1` (Archfit 4); settings file `version: 1`; manifest data `version: 1`; policy follows the
-  engine release of the manifest's `current` row, v3.4.0 today; policy schema 3 (`policy3`) follows the engine commit in its `SCHEMA_SOURCE`, a tag at the release; the engine baseline file `archfit.baseline.v3`.
+  engine release of the manifest's `current` row, v3.4.0 today; policy schema 3 (`policy3`) follows the engine commit in its `SCHEMA_SOURCE`, a tag at the release; the engine baseline file `archfit.baseline.v3`. The request line has none: it is a command people type. It changes only
+  with an engine release that vendors its new goldens, and old and new lines are never accepted side by side (design 11.7).
 - Unknown fields are rejected by every decoder here. Three deliberate nuances: the policy readers ignore
   engine-owned keys they do not read; the report decoder knows every key of the pinned engine v3.4.0 state schema and
   drops the known keys that are not allowlisted, while a key that schema does not define is still an error;
@@ -267,7 +269,7 @@ key, multi-line text, oversized text. One surviving fixture (`decode: "ok"`): a 
 ## Integrations
 
 `wire` has no code, so it has no code-level integration of its own. Its children import only the standard library,
-and `settings` and `policy` one YAML library. Internal consumers integrate with a child, not with this parent;
+and `settings`, `policy` and `policy3` one YAML library. Internal consumers integrate with a child, not with this parent;
 each child document lists them with LCA, rank and distance. All of them are contract-strength across the root
 (rank 2, distance 2; rank 3, distance 3 for `control/ui/graph`), balanced at any volatility.
 
@@ -287,15 +289,19 @@ what keeps it balanced.
 
 ## Internal Design
 
-Six independent leaves. There is no flow between them and no composition in the parent.
+Nine independent leaves. There is no flow between them and no composition in the parent.
 
 | Child      | Contributes                                                  | Third-party imports |
 | ---------- | ------------------------------------------------------------ | ------------------- |
 | `envelope` | what the producer states about an upload; the payload digest | none                |
+| `decision` | the decision request an unattended agent files (Archfit 3)   | none                |
 | `report`   | the no-source payload boundary                               | none                |
+| `result`   | the engine's result JSON and text record (Archfit 4)         | none                |
 | `settings` | the App-owned file on the protected ref                      | one YAML library    |
 | `policy`   | the App's read-only view of engine-owned files               | one YAML library    |
+| `policy3`  | policy schema 3: decode, digest and the answers' writer      | one YAML library    |
 | `manifest` | approved engine, image, profile and Action identities        | none                |
+| `request`  | the request line, the request issue and the request key      | none                |
 
 Rules between children:
 
@@ -307,7 +313,7 @@ Rules between children:
   `envelope` and `report`; SHA-256 hex formatting exists in `envelope` (prefixed) and `policy` (bare). Each is a few
   lines, and the two digests have different formats and meanings.
 - `doc.go` in the parent states the placement rule and the versioning rule for Go readers.
-- Fan-out is six, one over the 4±1 guidance: the leaves share nothing, so the count adds no coupling.
+- Fan-out is nine, over the 4±1 guidance: the leaves share nothing, so the count adds no coupling.
 
 ## Change Vectors
 
@@ -315,7 +321,7 @@ Rules between children:
   unless a version constant is added.
 - A new envelope version for the Action: `envelope` only.
 - A new settings field: `settings` only.
-- A sixth contract (for example a versioned discovery result or an AI-request transport, plan T04): a new child here.
+- A new contract (for example a versioned discovery result or an AI-request transport, plan T04): a new child here.
 - Generating transport types from schemas instead of writing them by hand: inside each child.
 
 ## Constraints and Invariants
@@ -323,7 +329,7 @@ Rules between children:
 - Wire packages contain transport types, schemas, strict decoding and digests. No domain decisions, no I/O, no
   clock, no logging, no network, no Store access.
 - Versioned wire contracts stay separate from domain and storage types (AGENTS.md). Nothing here is persisted.
-- Imports: standard library only, plus one YAML library in `settings` and `policy`. No other internal package.
+- Imports: standard library only, plus one YAML library in `settings`, `policy` and `policy3`. No other internal package.
   Enforced by Archfit on this repository and by the tests below.
 - Decoding proves shape, never truth. Provenance is necessary, not sufficient: everything decoded here is
   customer-attested until the gate binds it to authoritative GitHub data and protected-ref digests.
@@ -368,7 +374,7 @@ Parent tests live in package `wire_test` and exercise the children together and 
   are `introduced`, `no_direct_b_dependency` and the other are `pre_existing`; each task carries its finding's origin.
 - **Test name**: `TestPublishedPackagesExist`
   **Scenario**: `go list ./internal/wire/...`.
-  **Expected behavior**: exactly the parent and the six published packages; the parent exports no identifiers.
+  **Expected behavior**: exactly the parent and the published packages of `wireChildren`; the parent exports no identifiers.
 - **Test name**: `TestUnknownVersionRejectedEverywhere`
   **Scenario**: an envelope with `archfit.report-envelope.v2`, a report with `archfit.architecture-state.v2` as a document of each readable release,
   the real capture as a document of engine `v2.6.0`, a settings file with `version: 2`.
@@ -390,7 +396,7 @@ Parent tests live in package `wire_test` and exercise the children together and 
   **Expected behavior**: no child lists another `internal/wire/` package or any other internal package.
 - **Test name**: `TestWireImportsNoIO`
   **Scenario**: `go list -deps` for all wire packages.
-  **Expected behavior**: no `net`, `net/http`, `os`, `os/exec`, `database/sql`, `log`, or `log/slog`; third-party imports are the one YAML library, in `settings` and `policy` only.
+  **Expected behavior**: no `net`, `net/http`, `os`, `os/exec`, `database/sql`, `log`, or `log/slog`; third-party imports are the one YAML library, in `settings`, `policy` and `policy3` only.
 - **Test name**: `TestDecodersNeverEchoSeededValues`
   **Scenario**: feed every `leakage/` fixture and every invalid fixture to its decoder and collect the error strings.
   **Expected behavior**: no error string contains `LEAK-7f3a`.

@@ -1,0 +1,8 @@
+archfit: nothing to ask: each error says what to do.
+
+```text
+pkg/chaos/netem/netem.go:8: no-chaos-to-runtime: pkg_chaos must not depend on pkg_runtime
+  why: A direct import ties a chaos action to one runtime.
+  instead: Add a method to container.Client.
+  next: fix the code
+```
