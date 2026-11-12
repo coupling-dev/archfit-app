@@ -18,11 +18,12 @@ GitHub, and "never a false green on rate-limit exhaustion" would depend on each 
 - Read a branch's merge queue: the entries and their merge group commits (`MergeQueue`, GraphQL).
 - Create and update check runs, only `in_progress` or `completed` with `success`, `failure`, `neutral` or
   `action_required`; list, create and update the App's own PR comments.
-- List, open, edit and close the App's own issues; set the assignees and labels of any issue; never a pull request
-  through the issues endpoints.
+- List, open, edit, close and reopen the App's own issues; set the assignees and labels of any issue; never a pull
+  request through the issues endpoints.
 - Read workflow runs, also every run of a workflow for one head commit with its creation time; re-run and dispatch
   workflows, download one artifact file under a size cap.
-- Write branches, commits and pull requests idempotently (`EnsureBranch`, `EnsurePull`).
+- Write branches, commits and pull requests idempotently (`EnsureBranch`, `EnsurePull`), and one commit on a parent
+  the caller names, the branch moved to it with or without force (`CommitOn`, the App's `archfit/policy` branch).
 - Squash-merge a pull request and update its branch, each only at the head SHA the caller expects.
 - Compare two commits: the changed paths and how the head relates to the base.
 - Follow pagination to a cap and fail, not truncate, beyond it.
@@ -167,9 +168,9 @@ on one answer, at most 300: 300 files set `Truncated`.
   matched nothing would make the caller open a second issue. The cost is a list of every open issue and pull request:
 beyond the 1 000-item cap the call fails, so such a repository gets no repair issue, never a second one.
   `CreateIssue`: `POST /repos/{r}/issues` with `title`, `body` and, when `Assignee` is set, `assignees: [login]`; the
-  number from the answer. `UpdateIssueBody`: `PATCH /repos/{r}/issues/{n}` with `body`. `CloseIssue`:
-  `GET /repos/{r}/issues/{n}` first; an answer with a `pull_request` key is an error and nothing is sent; else
-  `PATCH` there with `state: closed`. All need the App's Issues permission; without it GitHub answers `403`.
+  number from the answer. `UpdateIssueBody`: `PATCH /repos/{r}/issues/{n}` with `body`. `CloseIssue` and
+  `ReopenIssue`: `GET /repos/{r}/issues/{n}` first; an answer with a `pull_request` key is an error and nothing is
+  sent; else `PATCH` there with `state: closed` or `state: open`. All need the App's Issues permission; without it GitHub answers `403`.
 - `SetAssigneesAndLabels` (role `IssueTriage`): `GET /repos/{r}/issues/{n}` first, as `CloseIssue` does; a pull
   request is an error and nothing is sent. Then `PATCH` there with `assignees` and `labels`, which replace both sets;
   `nil` is sent as `[]` and clears a set. The issue may be anyone's, not only the App's. The result is the sets GitHub
@@ -203,6 +204,11 @@ beyond the 1 000-item cap the call fails, so such a repository gets no repair is
 - `Commit`: Git Data API: blobs → tree with `base_tree` → commit with the branch head as parent → `PATCH` the ref
   with `force: false`. No files → error. A tree equal to the parent's → the current head SHA, no new commit
   **[default]**. A non-fast-forward is an error; the caller reloads.
+- `CommitOn`: the same commit, on the 40-hex `parent` the caller names (anything else is an error before any request);
+  then `GET .../git/ref/heads/{branch}`: missing → `POST .../git/refs`; at the new commit already → nothing; else
+  `PATCH` the ref with the caller's `force`. Without force a branch that moved away from `parent` is GitHub's `422`
+  and stays. A forced move whose new commits change `.github/workflows/` may be refused by GitHub, because the App has
+  no `workflows` permission; this is not measured (M2 task 19).
 - `EnsurePull`: `GET .../pulls?state=open&head={owner}:{Head}&base={Base}`; first hit wins; else `POST .../pulls`;
   a `422` "already exists" race → list again; the `422` stands if the list is still empty.
 - `MergePull` (role `Merges`): `PUT .../pulls/{n}/merge` with `merge_method: squash` and `sha` = the expected head;
@@ -441,6 +447,8 @@ type Issues interface {
     UpdateIssueBody(ctx context.Context, r RepoRef, number int, body string) error
     // CloseIssue closes the issue number. A number that names a pull request is an error, and nothing is closed.
     CloseIssue(ctx context.Context, r RepoRef, number int) error
+    // ReopenIssue reopens the issue number, as CloseIssue closes it.
+    ReopenIssue(ctx context.Context, r RepoRef, number int) error
 }
 
 // IssueTriage sets the assignees and labels of any issue in the repository, not only of the App's own.
@@ -514,6 +522,9 @@ type Changes interface {
     // EnsureBranch creates branch from fromRef if it does not exist.
     EnsureBranch(ctx context.Context, r RepoRef, branch, fromRef string) error
     Commit(ctx context.Context, r RepoRef, branch, message string, files []FileChange) (sha string, err error)
+    // CommitOn makes one commit of files on parent (parent's tree with the files) and points branch at it: created when
+    // missing, else moved with force or only as a fast-forward.
+    CommitOn(ctx context.Context, r RepoRef, branch, parent, message string, files []FileChange, force bool) (sha string, err error)
     // EnsurePull returns the open PR for Head, creating it if needed.
     EnsurePull(ctx context.Context, r RepoRef, p NewPull) (Pull, error)
     UpdatePullBody(ctx context.Context, r RepoRef, number int, body string) error
@@ -699,8 +710,8 @@ type TokenSource interface {
 - **Balanced?**: Yes: contract strength tolerates the distance
 - **Shared knowledge**: the Endpoints list; rate-limit and ETag semantics above. App permissions needed:
   `checks: write`, `pull_requests: write`, `contents: write`, `actions: write`, `metadata: read`,
-  `members: read` (`TeamMember`), and `workflows: write`, which GitHub demands for any commit that touches
-  `.github/workflows/` (the onboarding PR). `issues: write` (the `Issues` role, for the repair issue, and
+  `members: read` (`TeamMember`). No `workflows` permission **[decided]** (`internal/module.md`): no method writes
+  `.github/workflows/`, and GitHub refuses an App's commit that does. `issues: write` (the `Issues` role, for the repair issue, and
   `IssueTriage`) is added with the release that brings that issue; until the owner grants it, every `Issues` and
   `IssueTriage` call is GitHub's `403`.
   `merge_queues: read` (repository permission **Merge queues: Read**, for `MergeQueue`); without it GraphQL answers
@@ -725,8 +736,9 @@ type TokenSource interface {
   Revoked access, a removed repository and a cross-installation `RepoRef` all end as `ErrNotFound` or an error,
   never as data (T07).
 - User-token calls never use App credentials; App calls never use a user token.
-- Writes are never force-pushes; `api` has no method that deletes a branch or closes a pull request: `CloseIssue`
-  and `SetAssigneesAndLabels` read the issue first and refuse a pull request. `api` merges only by squash, and merges
+- The only forced ref move is `CommitOn` with `force`, which the answers use on the App's own `archfit/policy`
+  branch; `api` has no method that deletes a branch or closes a pull request: `CloseIssue`, `ReopenIssue` and
+  `SetAssigneesAndLabels` read the issue first and refuse a pull request. `api` merges only by squash, and merges
   or updates a pull request's branch only at the head SHA its caller names.
 - Wire contracts stay separate: `api` imports no `wire/*` package; its structs are not serialized by anyone.
 - No logging. Errors hold method, route template, status and request ID: no tokens, bodies, paths, or messages.
@@ -816,11 +828,11 @@ One test per role interface; each asserts method, route, credential, request bod
   **Expected behavior**: only the App's two returned; `GET /app` called once across calls.
 - **Test name**: `TestIssuesContract`
   **Scenario**: an issue list with a user's issue, another bot's, two of the App's (one with a `null` body), the App's
-  own pull request, an impostor login and a ghost user; create with and without an assignee; update; close an issue and
-  a pull request; bodies of 65 536 and 65 537 characters.
+  own pull request, an impostor login and a ghost user; create with and without an assignee; update; close and reopen an
+  issue and a pull request; bodies of 65 536 and 65 537 characters.
   **Expected behavior**: only the App's two issues, the `null` body as `""`; the list query is `state=open` and
-  `per_page=100` without `creator`; `assignees` sent only when set; `body` patched; `state: closed` patched for the
-  issue, nothing patched and an error for the pull request; the oversized bodies error without a request.
+  `per_page=100` without `creator`; `assignees` sent only when set; `body` patched; `state: closed` and `state: open`
+  patched for the issue, nothing patched and an error for the pull request; the oversized bodies error without a request.
 - **Test name**: `TestIssuesFailuresAreErrors`
   **Scenario**: `CreateIssue` answered `403` without rate-limit headers (no Issues permission), `403` with an exhausted
   rate limit, `404`, `422` (an assignee GitHub refuses).
@@ -836,9 +848,13 @@ One test per role interface; each asserts method, route, credential, request bod
   **Expected behavior**: the query is `per_page=1` plus exactly the set fields under their GitHub names.
 - **Test name**: `TestChangesContract`
   **Scenario**: `EnsureBranch` new, existing, and lost race; `Commit` of two files; `Commit` with identical
-  content; non-fast-forward; `EnsurePull` new, existing, lost race; `UpdatePullBody`; `MarkReady` draft and ready.
+  content; non-fast-forward; `CommitOn` on a missing branch, as a fast-forward, a fast-forward from a parent the
+  branch left, forced, with content the parent holds, with a parent that is not a commit SHA and with no files;
+  `EnsurePull` new, existing, lost race; `UpdatePullBody`; `MarkReady` draft and ready.
   **Expected behavior**: one ref created or none; one commit with both files and `force: false`; head SHA and no
-  commit; error; exactly one pull in every case; GraphQL mutation sent once, none for the ready pull.
+  commit; error; `CommitOn` creates the branch at a commit on the parent, fast-forwards, answers `422` and leaves the
+  branch, moves it with `force: true`, returns the parent without a commit, and refuses the rest without a request;
+  exactly one pull in every case; GraphQL mutation sent once, none for the ready pull.
 - **Test name**: `TestMergesContract`, `TestMergeRefusalsAreTold`, `TestUpdateBranchRefusalsAreTold`
   **Scenario**: `MergePull` and `UpdateBranch` answered `200` and `202`; heads that are empty, short, a branch name,
   upper case or too long; numbers 0 and -1. Merge answers: `405` (three D.2 messages), `409`, `422`, `404`, `403`,

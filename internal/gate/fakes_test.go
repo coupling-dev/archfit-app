@@ -555,6 +555,15 @@ func (f *fakeGitHub) CloseIssue(_ context.Context, r api.RepoRef, number int) er
 	return f.editIssue(r.FullName, number, func(i *fakeIssue) { i.Open = false })
 }
 
+func (f *fakeGitHub) ReopenIssue(_ context.Context, r api.RepoRef, number int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter("ReopenIssue", r); err != nil {
+		return err
+	}
+	return f.editIssue(r.FullName, number, func(i *fakeIssue) { i.Open = true })
+}
+
 // nextIssue is the next issue number of fullName. The caller holds the lock.
 func (f *fakeGitHub) nextIssue(fullName string) int {
 	return firstIssue + len(f.issues[fullName])

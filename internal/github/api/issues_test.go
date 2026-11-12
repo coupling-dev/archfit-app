@@ -93,6 +93,26 @@ func TestIssuesContract(t *testing.T) {
 		}
 	})
 
+	t.Run("reopen an issue", func(t *testing.T) {
+		env.gh.reset()
+		if err := env.c.ReopenIssue(ctx, repoA, 41); err != nil {
+			t.Fatal(err)
+		}
+		patch := findRequest(t, env.gh.requests(), "PATCH", "/repos/o/r/issues/41")
+		if got := decodeBody(t, patch); !reflect.DeepEqual(got, map[string]any{"state": "open"}) {
+			t.Errorf("reopen body = %s", patch.Body)
+		}
+	})
+
+	t.Run("a pull request is never reopened", func(t *testing.T) {
+		env.gh.reset()
+		err := env.c.ReopenIssue(ctx, repoA, 4)
+		wantPlainErr(t, "ReopenIssue of a pull request", err)
+		if n := env.gh.count("PATCH", "/repos/o/r/issues/4"); n != 0 {
+			t.Errorf("PATCH sent %d times, want none", n)
+		}
+	})
+
 	t.Run("a pull request is never closed", func(t *testing.T) {
 		env.gh.reset()
 		err := env.c.CloseIssue(ctx, repoA, 4)

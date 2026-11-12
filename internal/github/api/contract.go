@@ -233,6 +233,8 @@ type Issues interface {
 	UpdateIssueBody(ctx context.Context, r RepoRef, number int, body string) error
 	// CloseIssue closes the issue number. A number that names a pull request is an error, and nothing is closed.
 	CloseIssue(ctx context.Context, r RepoRef, number int) error
+	// ReopenIssue reopens the issue number, as CloseIssue closes it.
+	ReopenIssue(ctx context.Context, r RepoRef, number int) error
 }
 
 type WorkflowRun struct {
@@ -331,6 +333,10 @@ type Changes interface {
 	// EnsureBranch creates branch from fromRef if it does not exist.
 	EnsureBranch(ctx context.Context, r RepoRef, branch, fromRef string) error
 	Commit(ctx context.Context, r RepoRef, branch, message string, files []FileChange) (sha string, err error)
+	// CommitOn makes one commit of files on parent (parent's tree with the files) and points branch at it: created when
+	// missing, else moved with force or only as a fast-forward. The caller names the parent, so a commit someone else
+	// pushed to the branch is never built on.
+	CommitOn(ctx context.Context, r RepoRef, branch, parent, message string, files []FileChange, force bool) (sha string, err error)
 	// EnsurePull returns the open PR for Head, creating it if needed.
 	EnsurePull(ctx context.Context, r RepoRef, p NewPull) (Pull, error)
 	UpdatePullBody(ctx context.Context, r RepoRef, number int, body string) error
