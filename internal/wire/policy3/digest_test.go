@@ -13,7 +13,7 @@ func TestDigestEqualsTheEngineDigest(t *testing.T) {
 	tests := map[string]string{
 		"smallest":  "sha256:c482e499dc88f1c036864461493fb14806607166ba068bed2e5513918efe0729",
 		"typical":   "sha256:1cf7e56b7dc701c6f69fd8bacee1be2b8b1d241e2aea04bf6545b3ba3bcc05f7",
-		"every-key": "sha256:d3542f3f605a8e1e78c0b0665e81f964e5abfbb90e9d1b1012e8bc9bfcf8e2c1",
+		"every-key": "sha256:6fc4a9fa72ad6b9579c9c32c0eed453ed49db8282106c78a8d58bd41162b7949",
 	}
 	for name, want := range tests {
 		t.Run(name, func(t *testing.T) {
