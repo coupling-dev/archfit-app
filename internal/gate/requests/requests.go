@@ -360,22 +360,29 @@ func (s *Service) writer(ctx context.Context, ref api.RepoRef, login string) (bo
 
 // policy reads the policy at the default branch's tip; found is false when there is none of version 3.
 func (s *Service) policy(ctx context.Context, r api.Repo) (policy3.File, bool, error) {
+	pol, _, found, err := s.policyAt(ctx, r)
+	return pol, found, err
+}
+
+// policyAt reads the policy at the default branch's tip, decoded and as bytes; found is false when there is none of
+// version 3.
+func (s *Service) policyAt(ctx context.Context, r api.Repo) (pol policy3.File, raw []byte, found bool, err error) {
 	tip, err := s.gh.BranchHead(ctx, r.RepoRef, r.DefaultBranch)
 	if err != nil {
-		return policy3.File{}, false, fmt.Errorf("requests: read the default branch head: %w", err)
+		return policy3.File{}, nil, false, fmt.Errorf("requests: read the default branch head: %w", err)
 	}
-	raw, _, err := s.gh.File(ctx, r.RepoRef, tip, policyPath)
+	raw, _, err = s.gh.File(ctx, r.RepoRef, tip, policyPath)
 	if errors.Is(err, api.ErrNotFound) {
-		return policy3.File{}, false, nil
+		return policy3.File{}, nil, false, nil
 	}
 	if err != nil {
-		return policy3.File{}, false, fmt.Errorf("requests: read the policy: %w", err)
+		return policy3.File{}, nil, false, fmt.Errorf("requests: read the policy: %w", err)
 	}
-	pol, err := policy3.Decode(raw)
+	pol, err = policy3.Decode(raw)
 	if err != nil {
-		return policy3.File{}, false, nil
+		return policy3.File{}, nil, false, nil
 	}
-	return pol, true, nil
+	return pol, raw, true, nil
 }
 
 // errNoResult means the pull request has no verified result the App can read back: no record, a status without

@@ -209,6 +209,21 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   `granted`, `missing`, `not_needed` (the pull request changes no protected file) or `unknown` (the read failed). A list
   that cannot be read sets its `*_error` and is empty: never shown as none. Every text of a row (rule, edge, requester,
   titles) is data, cut to 80 runes for what an agent wrote. It reads and decides nothing.
+- `GET /api/repos/{o}/{n}/requests/{number}` [read] — the request page (design 12.3, M2 task 17), from
+  `RequestViews.RequestView`: `{number, state, reason, rule, path?, from?, to?, expires?, record, verified, balance?:
+  {value, max, min}, policy, modules: [{name, layer?, volatility?, subdomain?, depends_on}], allowed, earlier: [{kind,
+  rule, from, to?, why?, instead?, expires?}]}`. `record` is the record the request issue shows, as the check prints it
+  or as the CLI reported it (`verified` false: "as reported"). `modules` and `earlier` come from the policy at the
+  default branch's tip (`policy` false when it has none of version 3): the two modules and what the policy already says
+  about them (`deny` rules and exceptions, either way). Reason, record and policy texts are data. A missing request is
+  `404`.
+- `GET /api/repos/{o}/{n}/requests/{number}/preview?answer=approve|approve-until|reject&until=YYYY-MM-DD&instead=…`
+  [read] — what one answer to an open request would write and change, from `RequestViews.RequestPreview`: `{answer,
+  until?, diff, policy_digest, loosens, pulls: [{number, status, waits, clears, left}]}`. `diff` is the policy change as
+  a unified diff against the policy at `policy_digest`, `""` when the answer writes no line; `loosens` says the answer
+  needs the passkey; `pulls` are the open pull requests waiting on the request or holding an error it clears (`left` 0:
+  the answer leaves none). `until` defaults to the date the worker asked for. An incomplete answer is `422`, a request
+  that is not open, no policy, or an answer the writer cannot place is `409`.
 - `GET /api/repos/{o}/{n}/overview` [read] — default-branch state, open pull requests with their result, setup steps,
   onboarding progress, entitlement banner, history links, and whether the user may start onboarding or discovery.
   After a report: `main_sha` (short) and `main_at` (RFC 3339) of the check the state is read from, `pulls_to_update`

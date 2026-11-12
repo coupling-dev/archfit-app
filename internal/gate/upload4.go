@@ -380,7 +380,11 @@ func (v *upload4) storePull(ctx context.Context, u ingest.Upload4, d decision4) 
 		PayloadDigest: u.Envelope.PayloadDigest, Status: string(d.Status)}
 	if len(d.Reasons) == 0 && u.Result != nil {
 		for _, e := range u.Result.Errors {
-			rec.Errors = append(rec.Errors, e.Key)
+			key, err := asks.Key(e)
+			if err != nil {
+				key = ""
+			}
+			rec.Errors, rec.RequestKeys = append(rec.Errors, e.Key), append(rec.RequestKeys, key)
 		}
 	}
 	name, entry := b.Repo.FullName, records.PullEntry(b.PullRequest)
