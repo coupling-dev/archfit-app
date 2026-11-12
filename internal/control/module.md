@@ -2,7 +2,7 @@
 
 **Path**: internal/control/
 **Parent**: internal/ (Archfit App root)
-**Submodules**: account, proposal, onboarding, assist, ui
+**Submodules**: account, proposal, onboarding, assist, passkey, ui
 
 ## Purpose
 
@@ -26,6 +26,8 @@ the gate would still verify reports, but nobody could onboard, edit a policy, st
   the decision requests of unattended agents and lets an owner decline or approve one.
 - Pass the gate's decision queue seam (`DecisionQueue`) to `ui`, whose overview and decisions page list the decision
   requests that wait for an owner. It reads only.
+- Build `passkey` with its two GitHub ports (the owners of the target policy, the registration issue) and pass it to
+  `ui`. The worker role does not build it.
 - Re-publish the two platform seams, `Sandbox` and `Provider`, so `app` and platform packages cite one place.
 
 ## Subdomain Classification
@@ -193,6 +195,7 @@ type Completion struct {
 | `internal/control/proposal/`   | `control` constructs         | Functional | control / 1 / 1       | High       | Yes       |
 | `internal/control/onboarding/` | `control` constructs, mounts | Functional | control / 1 / 1       | High       | Yes       |
 | `internal/control/assist/`     | `control` constructs         | Functional | control / 1 / 1       | High       | Yes       |
+| `internal/control/passkey/`    | `control` constructs         | Functional | control / 1 / 1       | Low        | Yes       |
 | `internal/control/ui/`         | `control` constructs, mounts | Functional | control / 1 / 1       | High       | Yes       |
 
 Shared knowledge: the constructors and the few methods the façade calls.
@@ -556,7 +559,9 @@ func New(ts TokenSource, hc *http.Client) *Client
 2. `proposal.New(d.GitHub, d.GitHub)` → `Proposals`.
 3. `onboarding.New(Deps{GitHub, Tokens, Receiver, Proposals, Consents, Sandbox, BaseURL, Now})` → `Onboarding`.
 4. `assist.New(Deps{GitHub, Provider, Consents, Budget, Proposals, Now})` → `Assist`.
-5. `ui.New(Deps{OAuth, CookieKey, BaseURL, GitHub, Account, Consents, Onboarding, Assist, Proposals, Admissions, Approvals, Decisions, DecisionQueue, Operators, Now})` → the UI handler, or an error that `New` returns.
+5. `passkey.New(Config{BaseURL}, d.Store, passkey.NewOwners(d.GitHub), passkey.NewIssues(d.GitHub, d.GitHub), d.Now)` →
+   `Passkeys`, or an error that `New` returns.
+6. `ui.New(Deps{OAuth, CookieKey, BaseURL, GitHub, Account, Consents, Onboarding, Assist, Proposals, Admissions, Approvals, Decisions, DecisionQueue, Passkeys, Operators, Now})` → the UI handler, or an error that `New` returns.
 
 | Child        | Contributes                                                        | Depends on siblings                          |
 | ------------ | ------------------------------------------------------------------ | -------------------------------------------- |
@@ -564,14 +569,15 @@ func New(ts TokenSource, hc *http.Client) *Client
 | `proposal`   | a change as branch + draft PR, idempotent, stale-safe              | none                                         |
 | `onboarding` | stages, PR 1, discovery upload → PR 2, managed job, `Sandbox` seam | `proposal`, `account` (`Consents`)           |
 | `assist`     | explicit AI proposals, `Provider` seam, budget use                 | `proposal`, `account` (`Consents`, `Budget`) |
-| `ui`         | pages, editor, graph, consent screens; owns `session` and `graph`  | all four                                     |
+| `passkey`    | WebAuthn passkeys of owners, the one-use step-up token of an answer | none                                        |
+| `ui`         | pages, editor, graph, consent screens; owns `session` and `graph`  | all five                                     |
 
 `Control` also keeps four unexported fields that the façade itself never calls: `consents`, `budget`, `onboarding` and
 `assist`, the values built in steps 1, 3 and 4. They exist only so that the package's own composition tests can reach
 the wired children (record a consent, exhaust the budget, start onboarding, ask assist) without a second wiring in the
 test harness. They are not part of the Public Contract and no code outside the tests reads them.
 
-Sibling dependencies form a DAG: `account`, `proposal` ← `onboarding`, `assist` ← `ui`. All sibling links are contract
+Sibling dependencies form a DAG: `account`, `proposal` ← `onboarding`, `assist` ← `ui`; `passkey` ← `ui`. All sibling links are contract
 strength through interfaces, so each child is tested with fakes of the others.
 
 Key flows through the façade:

@@ -68,8 +68,8 @@ Known keys are informative only; their owners define them.
 - Archfit 3, under `SystemTenant`: `llm-budget/<YYYY-MM>` (`control/account`) and `app/readiness` (read by the
   readiness probe of `app`, never written).
 - Archfit 4, under the installation tenant: every key under `v4/` (JSON values with a `schema`). `gate/records` owns
-  all of them except `v4/passkey/<github-user-id>` and `v4/challenge/<id>`, which `control/passkey` owns (M2 task 18),
-  because `control` cannot import `gate/*`.
+  all of them except `v4/passkey/<github-user-id>` and `v4/challenge/<github-user-id>` (one open ceremony per user),
+  which `control/passkey` owns (M2 task 18), because `control` cannot import `gate/*`.
 
 The Archfit 3 and Archfit 4 sets never read or write each other's keys, so the previous revision stays deployable.
 `store` never parses a key or a value except a counter in `Add`.

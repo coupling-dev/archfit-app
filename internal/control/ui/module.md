@@ -105,6 +105,7 @@ type Deps struct {
     Approvals  Approvals   // protected owner-decision context and explicit approve/request/withdraw/override actions
     Decisions  Decisions   // decision requests of unattended agents: listed, declined, approved by an owner
     DecisionQueue DecisionQueue // decision requests that wait for an owner: read only
+    Passkeys   Passkeys    // the signed-in user's passkeys and the step-up of an answer (control/passkey)
     Operators  []int64     // GitHub user IDs that approve installations on /admin
     Now        func() time.Time
 }
@@ -251,6 +252,25 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   Answers like a save.
 - `POST /api/repos/{o}/{n}/assist` [write] — body `{branch, head_sha, content, instruction, mode}`. Answers like a save;
   a customer-mode answer adds `since` and `run`.
+- `GET /r/{o}/{n}/passkeys` [session] — the shell, for the passkey page (M2 task 24).
+- The passkey routes (M2 task 18) [read] act on the signed-in user's own passkeys in the repository's installation.
+  Who may register is `control/passkey`'s rule (an owner named in the policy, or a repository administrator before
+  the first policy); ui hands it the user's id, login and administrator bit (`Authorize` at admin, answered from the
+  permission the read authorization cached). A body never names a user or a repository; an unknown field is `422`.
+  - `GET /api/repos/{o}/{n}/passkeys` — `{passkeys: [{id, created, last_used?}]}`, oldest first.
+  - `POST /api/repos/{o}/{n}/passkeys/register` — body `{token?}` (a step-up token for `register` when the user has a
+    passkey); `{options}`, the JSON for `navigator.credentials.create`.
+  - `POST /api/repos/{o}/{n}/passkeys/register/finish` — body `{credential}`, the browser's `PublicKeyCredential`;
+    `{passkey, notice}`. The registration issue is opened before the passkey is stored.
+  - `POST /api/repos/{o}/{n}/passkeys/step-up` — body `{action, request?, digest?, passkey?}`; `{options}` for
+    `navigator.credentials.get`.
+  - `POST /api/repos/{o}/{n}/passkeys/step-up/finish` — body `{credential}`; `{token}`, usable once within 5 minutes
+    for that purpose.
+  - `POST /api/repos/{o}/{n}/passkeys/{id}/remove` — body `{token}` (a step-up token for `remove` and that passkey);
+    `{notice}`.
+  - Errors: not an owner `403`; a second passkey without a token, no passkey, too many, or a policy that does not
+    decode `409`; a failed or expired ceremony `400`; a counter that went back or a token not valid `403`; an unknown
+    passkey `404`; a malformed purpose `422`.
 - Any other `/api/…` path, or a method an API path does not take: `404` JSON, outcome `not_found`. A panic on an
   `/api/` path answers `500` JSON.
 
@@ -651,6 +671,18 @@ type Assist interface {
     Propose(ctx context.Context, mode Mode, r Request) (Result, error)
 }
 ```
+
+### internal/control/passkey
+
+- **Counterpart**: `internal/control/passkey/module.md`
+- **Direction**: ui depends on passkey
+- **Strength**: contract
+- **LCA / Rank / Distance**: control / 1 / 1
+- **Volatility**: high (this side), low (passkey)
+- **Balanced?**: yes
+- **Shared knowledge**: `Passkeys` and its sentinels, `User`, `Purpose`. ui supplies the user from the session and the
+  repository from `Authorize`; passkey supplies the browser's options as JSON and never sees a request or a cookie.
+  The answers of M2 task 19 redeem the token; ui never calls `Redeem`.
 
 ### internal/control/proposal
 
@@ -1812,6 +1844,20 @@ gate's and tested there. The clock is injected.
   **Expected behavior**: `409` for the configured account, `404` for the others, `403` without the token; the installation is not admitted afterwards.
 
 ### Boundary Tests
+
+- **Test name**: `TestPasskeyBodiesNameNoUserAndNoRepository`
+  **Scenario**: every passkey write with a body that names a user id and another repository.
+  **Expected behavior**: `422` for each; nothing reaches `control/passkey`.
+- **Test name**: `TestPasskeyRegistrationGetsTheUserAndWhetherTheyAreAnAdministrator`
+  **Scenario**: registration begin and finish at read, write and admin.
+  **Expected behavior**: passkey gets the session's user id and login, the authorized repository and installation, and
+  `Admin` true only at admin.
+- **Test name**: `TestPasskeyAnswersCarryTheOptionsTokenAndList`, `TestPasskeyErrorsAreWorded`
+  **Scenario**: step-up, token, list and remove; every passkey sentinel and an upstream error.
+  **Expected behavior**: the purpose of the body reaches passkey without a repository; each sentinel answers its
+  status and sentence; no error's own text reaches the answer.
+- The passkey routes are rows of the route table, so `TestRoutesAndMinimumPermissions`, `TestCSRFRequiredOnEveryPost`
+  and the cross-installation tests cover them.
 
 - **Test name**: `TestAdminIsNotFoundForNonOperators`
   **Scenario**: a signed-in user who is not an operator calls `/admin`, the list API, approve and revoke, and reads `/api/session`.

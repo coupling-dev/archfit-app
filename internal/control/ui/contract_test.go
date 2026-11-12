@@ -68,6 +68,13 @@ func repoRoutes(fullName string) []route {
 		{http.MethodGet, base + "/data-sharing", signedInOnly, nil, nil},
 		{http.MethodGet, api + "/data-sharing", permAdmin, nil, nil},
 		{http.MethodPost, api + "/data-sharing", permAdmin, nil, dataSharingJSON{Kind: "managed_llm", Action: actionAllow}},
+		{http.MethodGet, base + "/passkeys", signedInOnly, nil, nil},
+		{http.MethodGet, api + "/passkeys", permRead, nil, nil},
+		{http.MethodPost, api + "/passkeys/register", permRead, nil, passkeyTokenJSON{}},
+		{http.MethodPost, api + "/passkeys/register/finish", permRead, nil, passkeyCredentialJSON{Credential: json.RawMessage(`{"id":"x"}`)}},
+		{http.MethodPost, api + "/passkeys/step-up", permRead, nil, stepUpJSON{Action: "approve", Request: 431}},
+		{http.MethodPost, api + "/passkeys/step-up/finish", permRead, nil, passkeyCredentialJSON{Credential: json.RawMessage(`{"id":"x"}`)}},
+		{http.MethodPost, api + "/passkeys/" + fakePasskeyID + "/remove", permRead, nil, passkeyTokenJSON{Token: fakeToken}},
 	}
 }
 

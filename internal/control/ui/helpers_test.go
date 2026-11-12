@@ -76,6 +76,7 @@ type env struct {
 	approvals *fakeApprovals
 	decisions *fakeDecisions
 	queue     *fakeDecisionQueue
+	passkeys  *fakePasskeys
 	oauth     *fakeOAuth
 	store     store.Store
 	admit     *gate.Admissions // acme is approved by configuration; any other account by a Store record
@@ -96,7 +97,7 @@ func newEnv(t *testing.T) *env {
 		admit:    gate.NewAdmissions(reads, []string{"acme", "rival"}),
 		acct:     &fakeAccount{Account: realAccount, status: account.Status{Plan: account.PlanPublic}},
 		consents: newFakeConsents(), onb: &fakeOnboarding{progress: onboarding.Progress{Stage: onboarding.StagePolicyMerged}},
-		assist: &fakeAssist{}, approvals: &fakeApprovals{}, decisions: &fakeDecisions{}, queue: &fakeDecisionQueue{}, oauth: &fakeOAuth{tokens: map[string]auth.UserToken{}},
+		assist: &fakeAssist{}, approvals: &fakeApprovals{}, decisions: &fakeDecisions{}, queue: &fakeDecisionQueue{}, passkeys: &fakePasskeys{}, oauth: &fakeOAuth{tokens: map[string]auth.UserToken{}},
 		now: time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC),
 	}
 	clock := func() time.Time { return e.now }
@@ -106,7 +107,7 @@ func newEnv(t *testing.T) *env {
 	}
 	e.handler = newHandler(Deps{
 		Account: e.acct, Consents: e.consents, Onboarding: e.onb, Assist: e.assist, Proposals: e.props,
-		Admissions: e.admit, Approvals: e.approvals, Decisions: e.decisions, DecisionQueue: e.queue, Operators: []int64{operatorID}, BaseURL: baseURL, Now: clock,
+		Admissions: e.admit, Approvals: e.approvals, Decisions: e.decisions, DecisionQueue: e.queue, Passkeys: e.passkeys, Operators: []int64{operatorID}, BaseURL: baseURL, Now: clock,
 	}, github{files: gh, heads: gh, checks: gh, actions: gh, pulls: gh, users: gh, installs: gh}, sessions, testWeb)
 
 	e.addRepo(repoName, installA, 10)

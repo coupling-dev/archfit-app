@@ -13,6 +13,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/control/account"
 	"github.com/alexei-led/archfit-app/internal/control/assist"
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
+	"github.com/alexei-led/archfit-app/internal/control/passkey"
 	"github.com/alexei-led/archfit-app/internal/control/proposal"
 	"github.com/alexei-led/archfit-app/internal/control/ui"
 	"github.com/alexei-led/archfit-app/internal/gate"
@@ -87,10 +88,15 @@ func New(d Deps) (*Control, error) {
 		GitHub: d.GitHub, Provider: d.Provider, Consents: consents, Budget: budget,
 		Proposals: proposals, Now: d.Now,
 	})
+	passkeys, err := passkey.New(passkey.Config{BaseURL: d.BaseURL}, d.Store,
+		passkey.NewOwners(d.GitHub), passkey.NewIssues(d.GitHub, d.GitHub), d.Now)
+	if err != nil {
+		return nil, fmt.Errorf("control: passkey: %w", err)
+	}
 	page, err := ui.New(ui.Deps{
 		OAuth: d.OAuth, CookieKey: d.CookieKey, BaseURL: d.BaseURL, GitHub: d.GitHub,
 		Account: acct, Consents: consents, Onboarding: onb, Assist: asst, Proposals: proposals,
-		Admissions: d.Admissions, Approvals: d.Approvals, Decisions: d.Decisions, DecisionQueue: d.DecisionQueue, Operators: d.Operators, Now: d.Now,
+		Admissions: d.Admissions, Approvals: d.Approvals, Decisions: d.Decisions, DecisionQueue: d.DecisionQueue, Passkeys: passkeys, Operators: d.Operators, Now: d.Now,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("control: ui: %w", err)

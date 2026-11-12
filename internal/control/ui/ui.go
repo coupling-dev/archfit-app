@@ -10,6 +10,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/control/account"
 	"github.com/alexei-led/archfit-app/internal/control/assist"
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
+	"github.com/alexei-led/archfit-app/internal/control/passkey"
 	"github.com/alexei-led/archfit-app/internal/control/proposal"
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
 	"github.com/alexei-led/archfit-app/internal/gate"
@@ -32,6 +33,7 @@ type Deps struct {
 	Approvals     gate.Approvals     // owner approvals of pull request heads: read, and recorded by the Approve button
 	Decisions     gate.Decisions     // decision requests of unattended agents: listed, declined, approved by an owner
 	DecisionQueue gate.DecisionQueue // decision requests of unattended agents that wait for an owner: read only
+	Passkeys      passkey.Passkeys   // the signed-in user's passkeys and the step-up of an answer
 	Operators     []int64            // GitHub user IDs that approve installations on /admin
 	Now           func() time.Time
 }
@@ -88,6 +90,7 @@ type server struct {
 	approvals     gate.Approvals
 	decisions     gate.Decisions
 	decisionQueue gate.DecisionQueue
+	passkeys      passkey.Passkeys
 	operators     []int64
 	now           func() time.Time
 	baseURL       string
@@ -120,6 +123,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 		approvals:     d.Approvals,
 		decisions:     d.Decisions,
 		decisionQueue: d.DecisionQueue,
+		passkeys:      d.Passkeys,
 		operators:     d.Operators,
 		now:           d.Now,
 		baseURL:       d.BaseURL,
@@ -161,6 +165,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("GET /r/{o}/{n}/data-sharing", page)
 	mux.Handle("GET /r/{o}/{n}/policy", page)
 	mux.Handle("GET /r/{o}/{n}/decisions", page)
+	mux.Handle("GET /r/{o}/{n}/passkeys", page)
 	mux.Handle("GET /r/{o}/{n}/consent", s.signedIn(consentMoved))
 	mux.Handle("GET /admin", s.signedIn(func(w http.ResponseWriter, r *http.Request, u session.User) {
 		if !s.isOperator(u) {
@@ -197,6 +202,14 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("POST /api/repos/{o}/{n}/policy/check", s.apiRepo(permRead, s.apiCheckPolicy))
 	mux.Handle("POST /api/repos/{o}/{n}/policy/ready", s.apiRepo(permWrite, s.apiReady))
 	mux.Handle("POST /api/repos/{o}/{n}/assist", s.apiRepo(permWrite, s.apiAssist))
+	// The passkey routes need read: who registers is the passkey rule (an owner, or an administrator before the first
+	// policy), and a step-up or a removal is the user's own passkey.
+	mux.Handle("GET /api/repos/{o}/{n}/passkeys", s.apiRepo(permRead, s.apiPasskeys))
+	mux.Handle("POST /api/repos/{o}/{n}/passkeys/register", s.apiRepo(permRead, s.apiPasskeyRegister))
+	mux.Handle("POST /api/repos/{o}/{n}/passkeys/register/finish", s.apiRepo(permRead, s.apiPasskeyRegisterFinish))
+	mux.Handle("POST /api/repos/{o}/{n}/passkeys/step-up", s.apiRepo(permRead, s.apiPasskeyStepUp))
+	mux.Handle("POST /api/repos/{o}/{n}/passkeys/step-up/finish", s.apiRepo(permRead, s.apiPasskeyStepUpFinish))
+	mux.Handle("POST /api/repos/{o}/{n}/passkeys/{id}/remove", s.apiRepo(permRead, s.apiPasskeyRemove))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		s.failJSON(w, r, api.ErrNotFound)
 	})
