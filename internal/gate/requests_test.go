@@ -193,6 +193,13 @@ func TestASecondPullRequestJoinsTheOpenRequest(t *testing.T) {
 	if !strings.Contains(w.lastReply(8), "- #1000: the same request is open; this pull request joins it.") {
 		t.Errorf("reply:\n%s", w.lastReply(8))
 	}
+	// The upload joined #8 in the store alone; its own request line puts it on the issue.
+	if body := w.issue(firstRequest).Body; !strings.Contains(body, "- Pull requests: #7, #8\n") {
+		t.Errorf("issue body:\n%s", body)
+	}
+	if note := w.lastReply(firstRequest); note != "archfit: #8 waits on this request.\n" {
+		t.Errorf("note on the issue = %q", note)
+	}
 	w.wantWaiting(second, "waiting, request #1000")
 
 	edits := w.gh.issueEdits
@@ -259,6 +266,76 @@ func TestARequestLineIsRefusedWithOneReply(t *testing.T) {
 				t.Errorf("%d issues opened", n)
 			}
 		})
+	}
+}
+
+func TestARequestLineNeedsTheVerifiedResultOfTheHead(t *testing.T) {
+	tests := map[string]func(w *world4, p *pull){
+		"an artifact that is not the uploaded bytes": func(w *world4, p *pull) {
+			raw := w.gh.artifacts[p.runID]
+			w.gh.artifacts[p.runID] = append(slices.Clone(raw), ' ')
+		},
+		"an artifact that is gone":  func(w *world4, p *pull) { delete(w.gh.artifacts, p.runID) },
+		"a result of an older head": func(w *world4, p *pull) { w.push(p) },
+	}
+	for name, breakIt := range tests {
+		t.Run(name, func(t *testing.T) {
+			w := newAskWorld(t)
+			p := w.pullBy(7)
+			w.uploadAsk(p, "graph", "fail")
+			breakIt(w, p)
+			w.ask(p, workerLogin, "/archfit request tc needs it")
+			if reply := w.lastReply(7); !strings.Contains(reply, "no checked result for its head") {
+				t.Errorf("reply:\n%s", reply)
+			}
+			if n := len(w.gh.issues[shopName]); n != 0 {
+				t.Errorf("%d issues opened", n)
+			}
+		})
+	}
+}
+
+func TestWaitingIsNotPublishedOverARecordDecidedAgain(t *testing.T) {
+	w := newAskWorld(t)
+	p := w.pullBy(7)
+	w.uploadAsk(p, "graph", "fail")
+	failure, _ := w.latestGate(p.head)
+	// The Action's retry of the same run is decided again, unknown, after the request line read the record and
+	// before it publishes.
+	w.store.beforeLease = func() {
+		ctx, tenant := context.Background(), store.Tenant(shopInstallation)
+		var rec records.Pull
+		if err := records.Load(ctx, w.mem, tenant, records.PullKey(shopName, 7), &rec); err != nil {
+			t.Error(err)
+			return
+		}
+		old, _ := records.Encode(&rec)
+		rec.Status = "unknown"
+		raw, _ := records.Encode(&rec)
+		if ok, err := w.mem.CompareAndSwap(ctx, tenant, records.PullKey(shopName, 7), old, raw); !ok || err != nil {
+			t.Errorf("swap: %v %v", ok, err)
+		}
+	}
+	w.ask(p, workerLogin, "/archfit request tc needs it")
+	if c, _ := w.latestGate(p.head); c.ID != failure.ID || c.Status != runCompleted {
+		t.Errorf("latest gate = %+v, want the earlier check untouched", c)
+	}
+	if rec, _ := w.pullRecord(p); rec.Status != "unknown" {
+		t.Errorf("pull record status = %s, want unknown", rec.Status)
+	}
+}
+
+func TestAFailedTriageIsLoggedAndTheRequestStillCounts(t *testing.T) {
+	logs := captureLogs(t)
+	w := newAskWorld(t)
+	p := w.pullBy(7)
+	w.uploadAsk(p, "graph", "fail")
+	w.gh.fail["SetAssigneesAndLabels"] = errors.New("github: 503")
+	w.ask(p, workerLogin, "/archfit request tc needs it")
+	w.wantWaiting(p, "waiting, request #1000")
+	if out := logs.String(); !strings.Contains(out, `"msg":"requests triage failed"`) || !strings.Contains(out, `"issue":1000`) ||
+		strings.Contains(out, "tc needs it") {
+		t.Errorf("logs:\n%s", out)
 	}
 }
 
@@ -332,6 +409,9 @@ func TestAnAdvisoryPolicyNeverWaits(t *testing.T) {
 	w.ask(p, workerLogin, "/archfit request tc needs it")
 	if n := len(w.gh.issues[shopName]); n != 1 {
 		t.Fatalf("%d issues, want 1", n)
+	}
+	if reply := w.lastReply(7); strings.Contains(reply, "waiting") {
+		t.Errorf("an advisory reply says the check waits:\n%s", reply)
 	}
 	w.push(p)
 	s = w.spec4(p, "graph")

@@ -30,7 +30,11 @@ who asked still sees `fail`.
      Else the App opens the issue (`wire/request`'s title and body, the pull request linked), labels it
      `archfit-request`, assigns the policy's owners, and stores the request with its index entry. One line opens at
      most `MaxNewPerComment` (10) requests; the reply says to ask again for the rest.
-  7. Derive the status again and publish `waiting` when it now holds; then post one reply.
+  7. Derive the status again and publish `waiting` when it now holds (required mode only); then post one reply. The
+     reply says the check shows `waiting` only in required mode.
+  A pull request that joins is shown on the issue once: the body is rendered again and the issue gets one note until
+  the request's `Listed` holds it. An upload joins in the store alone (`Wait`), so its pull request reaches the issue
+  with its own request line, and a failed edit is done again on a retry.
 - Take in an issue the CLI opened from a `can` answer (`Service.Filed`): parse it, require `write` or `admin`
   permission, take the key from the reported answer. A deny rule that answers it, or an open request with the key:
   one note and the issue is closed. Else the issue is the request, stored "as reported" (numbers unverified), labeled
@@ -54,8 +58,9 @@ Core: the request is how a worker asks instead of copying code. Volatility: high
 - When a request joins, when it opens an issue, when a deny rule answers it. A deny rule is matched by module name;
   **stated limit**: a rule written with path globs is not matched, and the request opens normally.
 - The texts of the replies and notes. None repeats a worker's text outside a fence; owner text (`instead`) is in a
-  `text` block, module and rule names are in code spans, so no `@name` or link in them notifies or links. No line
-  starts with `/archfit request`, so the App never reads its own text as a request.
+  `text` block, module and rule names are in code spans, so no `@name` or link in them notifies or links. Every
+  comment goes through `inert`: line ends become LF and a line that would start with `/archfit request` starts with a
+  space, so the App never reads its own comment as a request, whatever engine or owner text it quotes.
 - The caps: a record at most 30,000 bytes (the issue body stays below GitHub's 65,536 characters and the stored
   request below 64 KiB), at most 10 assignees, at most 10 new requests per line.
 - The artifact name `archfit-result` (M2 D6), which the Action uploads (archfit-action task 10).
@@ -106,10 +111,13 @@ without a second note; a reply may be posted again.
 - A request and its index entry change in one swap; a pull request joins with another. An open request is in the
   index under its key, once.
 - The App publishes `waiting` only from a result whose digest matches the pull record, and only while the pull record
-  still names that run (`Publication4.Current`); a newer upload makes it stale and the newest record is read again.
+  is still the one read: head, run, attempt, payload digest and status (`Publication4.Current`). A newer upload, or
+  the same run decided again (say `unknown` after a policy changed), makes it stale and the newest record is read
+  again.
   The upload path in turn re-reads the open requests inside the head's lease, so a `fail` decided before a request
   opened is stale and the Action's retry decides again.
-- Assignment and labels are notifications, never authority: a failure there does not stop the request.
+- Assignment and labels are notifications, never authority: a failure there does not stop the request and is logged
+  as `requests triage failed` with identifiers only.
 - **Stated limit**: when storing a new request fails after its issue was opened, a retried delivery opens a second
   issue for the key.
 
@@ -117,11 +125,15 @@ without a second note; a reply may be posted again.
 
 - `TestCover`, `TestCoverMatchesTheWaitingGolden`, `TestRequestNames`: every status, partial coverage, a fix-the-code
   error whose key is open, two requests, the status line and record of `wire/result`'s `waiting.txt`.
+- `TestNoCommentOfTheAppIsARequest` (owner and engine text with LF, CRLF and a bare CR before the command),
+  `TestTheReplySaysWaitingOnlyWhenTheCheckCanWait`, `TestSameRecordComparesTheStatus`.
 - `TestEveryTextUsesNoNotUsedWordAndIsNoRequest`, `TestOwnerAndWorkerTextCannotMentionOrLink`,
   `TestTheIssueBodyStaysUnderGitHubsLimit`, `TestDeniedMatchesModulesOnly`, `TestGroupsKeepRecordOrderAndSkipErrorsWithoutAKey`.
 - In `internal/gate` (`requests_test.go`), over the fake GitHub and the memory Store: a line opens an issue and sets
   waiting; a second pull request joins; a deny rule already answers; each refusal (no permission, a deny-mode error, no
-  result yet, no reason, a past date) gets one reply; a writer who did not write the pull request may ask; a comment
+  result yet, no reason, a past date) gets one reply; an artifact that is not the uploaded bytes, one that is gone and
+  a result of an older head are no verified result; waiting is not published over a record decided again; a failed
+  triage is logged and the request still counts; a writer who did not write the pull request may ask; a comment
   without a line writes nothing; ten requests per line; a new push stays waiting and a new error fails; advisory
   never waits; an upload decided before a request is stale; a CLI issue as reported, then confirmed by a pull request;
   a CLI issue closed or refused; a closed pull request leaves the pull index.

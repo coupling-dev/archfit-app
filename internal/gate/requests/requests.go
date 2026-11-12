@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strconv"
 	"strings"
@@ -145,7 +146,7 @@ func (s *Service) Comment(ctx context.Context, c Comment) (string, error) {
 		}
 	}
 	if len(asks) == 0 {
-		return s.refuse(ctx, ref, c.Pull, request.NothingToAsk(recordsOfAll(others)).Reply())
+		return s.refuse(ctx, ref, c.Pull, request.NothingToAsk(recordsOf(others)).Reply())
 	}
 	pol, found, err := s.policy(ctx, c.Repo)
 	if err != nil {
@@ -191,7 +192,7 @@ func (s *Service) Comment(ctx context.Context, c Comment) (string, error) {
 			return ReactionNone, err
 		}
 	}
-	if _, err := s.gh.CreateComment(ctx, ref, c.Pull, o.reply()); err != nil {
+	if err := s.post(ctx, ref, c.Pull, o.reply(pol.Gate == gateRequired)); err != nil {
 		return ReactionNone, fmt.Errorf("requests: reply: %w", err)
 	}
 	if len(o.opened)+len(o.joined) == 0 {
@@ -258,7 +259,7 @@ func deniedPair(pol policy3.File, from, to string) (answered, bool) {
 func (s *Service) open(ctx context.Context, r api.Repo, pol policy3.File, g group, line request.Line, pull int) (id int, joined bool, err error) {
 	e := g.errs[0]
 	req := records.Request{Key: g.key, Reason: line.Reason, Expires: line.Expires, Rule: e.Rule, Path: e.Path,
-		From: e.From, To: e.To, Record: recordsOf(g.errs), Waiting: []int{pull},
+		From: e.From, To: e.To, Record: recordsOf(g.errs), Waiting: []int{pull}, Listed: []int{pull},
 		Numbers: records.Numbers{Verified: true, Balance: balance(e.Balance)}}
 	issue := issueOf(req)
 	created, err := s.gh.CreateIssue(ctx, r.RepoRef, api.NewIssue{Title: issue.Title(), Body: issue.Body()})
@@ -278,7 +279,7 @@ func (s *Service) open(ctx context.Context, r api.Repo, pol policy3.File, g grou
 
 // duplicate closes issue, opened for a key another request holds, and lets pull join the other.
 func (s *Service) duplicate(ctx context.Context, r api.Repo, issue, other, pull int, g group) error {
-	if _, err := s.gh.CreateComment(ctx, r.RepoRef, issue, duplicateReply(other)); err != nil {
+	if err := s.post(ctx, r.RepoRef, issue, duplicateReply(other)); err != nil {
 		return fmt.Errorf("requests: note a duplicate request: %w", err)
 	}
 	if err := s.gh.CloseIssue(ctx, r.RepoRef, issue); err != nil {
@@ -288,28 +289,30 @@ func (s *Service) duplicate(ctx context.Context, r api.Repo, issue, other, pull 
 }
 
 // joinPull lets pull join the open request id: it waits on it, and its verified numbers replace numbers "as
-// reported". The issue body is rendered again and the issue gets one note when something changed.
+// reported". Until the issue body lists pull, the body is rendered again and the issue gets one note; then the request
+// records what the body lists. An upload may have joined pull in the store alone (Wait), and a failed edit is done
+// again on a retry, because only a done edit records the list.
 func (s *Service) joinPull(ctx context.Context, r api.Repo, id, pull int, g group) error {
-	req, joined, changed, err := join(ctx, s.store, r, id, pull, &confirmation{record: recordsOf(g.errs), balance: balance(g.errs[0].Balance)})
+	req, _, _, err := join(ctx, s.store, r, id, pull, &confirmation{record: recordsOf(g.errs), balance: balance(g.errs[0].Balance)})
 	if errors.Is(err, errNotOpen) {
 		return nil
 	}
-	if err != nil || !changed {
+	if err != nil || slices.Contains(req.Listed, pull) {
 		return err
 	}
-	if err := s.gh.UpdateIssueBody(ctx, r.RepoRef, id, issueOf(req).Body()); err != nil {
+	issue := issueOf(req)
+	if err := s.gh.UpdateIssueBody(ctx, r.RepoRef, id, issue.Body()); err != nil {
 		return fmt.Errorf("requests: edit request %d: %w", id, err)
 	}
-	if joined {
-		if _, err := s.gh.CreateComment(ctx, r.RepoRef, id, joinedNote(pull)); err != nil {
-			return fmt.Errorf("requests: note on request %d: %w", id, err)
-		}
+	if err := s.post(ctx, r.RepoRef, id, joinedNote(pull)); err != nil {
+		return fmt.Errorf("requests: note on request %d: %w", id, err)
 	}
-	return nil
+	return listed(ctx, s.store, r, id, issue.Pulls)
 }
 
-// triage assigns the policy's owners to an issue and labels it. It is a notification, never authority, so a failure
-// is logged by the caller's reaction only and the request still counts.
+// triage assigns the policy's owners to an issue and labels it. It is a notification, never authority: a failure is
+// logged with identifiers only, and the request still counts. A 422 (an owner GitHub cannot assign) is tried again
+// with the label alone.
 func (s *Service) triage(ctx context.Context, ref api.RepoRef, issue int, owners []string) {
 	var logins []string
 	for _, o := range owners {
@@ -318,17 +321,29 @@ func (s *Service) triage(ctx context.Context, ref api.RepoRef, issue int, owners
 			logins = append(logins, login)
 		}
 	}
-	if _, _, err := s.gh.SetAssigneesAndLabels(ctx, ref, issue, logins, []string{request.Label}); errors.Is(err, api.ErrUnprocessable) {
-		_, _, _ = s.gh.SetAssigneesAndLabels(ctx, ref, issue, nil, []string{request.Label})
+	_, _, err := s.gh.SetAssigneesAndLabels(ctx, ref, issue, logins, []string{request.Label})
+	if errors.Is(err, api.ErrUnprocessable) {
+		_, _, err = s.gh.SetAssigneesAndLabels(ctx, ref, issue, nil, []string{request.Label})
+	}
+	if err != nil {
+		slog.Default().WarnContext(ctx, "requests triage failed", "installation_id", ref.InstallationID,
+			"repository", ref.FullName, "issue", issue, "status", api.Status(err), "rate_limited", errors.Is(err, api.ErrRateLimited))
 	}
 }
 
 // refuse posts the one reply of a request that is not taken.
 func (s *Service) refuse(ctx context.Context, ref api.RepoRef, number int, reply string) (string, error) {
-	if _, err := s.gh.CreateComment(ctx, ref, number, reply); err != nil {
+	if err := s.post(ctx, ref, number, reply); err != nil {
 		return ReactionRefused, fmt.Errorf("requests: reply: %w", err)
 	}
 	return ReactionRefused, nil
+}
+
+// post writes a comment of the App on a pull request or an issue. Every comment goes through inert, so no line of it
+// is a request line, whatever engine or owner text it quotes.
+func (s *Service) post(ctx context.Context, ref api.RepoRef, number int, body string) error {
+	_, err := s.gh.CreateComment(ctx, ref, number, inert(body))
+	return err
 }
 
 // writer reports whether login has write permission on the repository (M2 D21).
@@ -444,13 +459,20 @@ func (s *Service) republish(ctx context.Context, r api.Repo, pull int) error {
 	return errors.New("requests: the pull record kept moving")
 }
 
-// same reports whether the pull record still names the run of rec.
+// same reports whether the pull record is still rec: the same run, attempt and payload, and the same status. An upload
+// of the same run that the App decided again (unknown after a policy changed, say) changes the status, so a waiting
+// read from the earlier decision never replaces it.
 func (s *Service) same(ctx context.Context, r api.Repo, pull int, rec records.Pull) (bool, error) {
 	var now records.Pull
 	if err := records.Load(ctx, s.store, tenant(r), records.PullKey(r.FullName, pull), &now); err != nil {
 		return false, err
 	}
-	return now.RunID == rec.RunID && now.RunAttempt == rec.RunAttempt && now.PayloadDigest == rec.PayloadDigest, nil
+	return sameRecord(now, rec), nil
+}
+
+func sameRecord(a, b records.Pull) bool {
+	return a.HeadSHA == b.HeadSHA && a.RunID == b.RunID && a.RunAttempt == b.RunAttempt &&
+		a.PayloadDigest == b.PayloadDigest && a.Status == b.Status
 }
 
 // setStatus records status in the pull record while it still names the run of rec.
@@ -464,7 +486,7 @@ func (s *Service) setStatus(ctx context.Context, r api.Repo, pull int, rec recor
 		if err := records.Decode(cur[0], &now); err != nil {
 			return nil, err
 		}
-		if now.RunID != rec.RunID || now.RunAttempt != rec.RunAttempt || now.Status == string(status) {
+		if !sameRecord(now, rec) || now.Status == string(status) {
 			return cur, nil
 		}
 		now.Status = string(status)
@@ -482,12 +504,4 @@ func balance(b *result.Balance) *records.Balance {
 		return nil
 	}
 	return &records.Balance{Score: b.Value, Max: 10, Min: b.Min}
-}
-
-// recordsOfAll is the records of errs for a "nothing to ask" reply; empty when there is none.
-func recordsOfAll(errs []result.Error) string {
-	if len(errs) == 0 {
-		return ""
-	}
-	return recordsOf(errs)
 }

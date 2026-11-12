@@ -77,7 +77,7 @@ func (s *Service) Filed(ctx context.Context, i Issue) (string, error) {
 
 // closeWith posts note on an issue, then closes it.
 func (s *Service) closeWith(ctx context.Context, ref api.RepoRef, issue int, note string) error {
-	if _, err := s.gh.CreateComment(ctx, ref, issue, note); err != nil {
+	if err := s.post(ctx, ref, issue, note); err != nil {
 		return fmt.Errorf("requests: note on issue %d: %w", issue, err)
 	}
 	if err := s.gh.CloseIssue(ctx, ref, issue); err != nil {

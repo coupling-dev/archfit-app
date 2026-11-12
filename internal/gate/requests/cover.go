@@ -49,9 +49,8 @@ func Cover(r result.Result, open *records.Index) (shown result.Result, ids []int
 		if err != nil {
 			return r, nil
 		}
-		id, found := open.Lookup(key)
-		n, err := strconv.Atoi(id)
-		if !found || err != nil || n <= 0 {
+		n, found := openIssue(open, key)
+		if !found {
 			return r, nil
 		}
 		errs[i].Next = result.Next{Kind: nextWait, Text: waitPrefix + strconv.Itoa(n)}

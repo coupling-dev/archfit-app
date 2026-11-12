@@ -81,6 +81,35 @@ func join(ctx context.Context, s store.Store, r api.Repo, id, pull int, c *confi
 	return req, joined, changed, err
 }
 
+// listed records that the issue body of request id lists pulls.
+func listed(ctx context.Context, s store.Store, r api.Repo, id int, pulls []int) error {
+	key := records.RequestKey(r.FullName, id)
+	err := store.Update(ctx, s, tenant(r), []string{key}, func(cur [][]byte) ([][]byte, error) {
+		var req records.Request
+		if cur[0] == nil {
+			return cur, nil
+		}
+		if err := records.Decode(cur[0], &req); err != nil {
+			return nil, err
+		}
+		changed := false
+		for _, p := range pulls {
+			if !slices.Contains(req.Listed, p) {
+				req.Listed, changed = append(req.Listed, p), true
+			}
+		}
+		if !changed {
+			return cur, nil
+		}
+		raw, err := records.Encode(&req)
+		return [][]byte{raw}, err
+	})
+	if err != nil {
+		return fmt.Errorf("requests: record the pull requests request %d lists: %w", id, err)
+	}
+	return nil
+}
+
 // put keeps a new open request at the issue's number with its index entry, in one swap. The key held by another
 // request is records.ErrExists, and the other's number is returned; the same request again is no change.
 func put(ctx context.Context, s store.Store, r api.Repo, issue int, req records.Request) (other int, err error) {

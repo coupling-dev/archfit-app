@@ -65,8 +65,9 @@ type answered struct {
 	instead string
 }
 
-// reply is the comment on the pull request after a request line.
-func (o outcome) reply() string {
+// reply is the comment on the pull request after a request line. waits is whether the policy is required, so the
+// check can show waiting; an advisory policy never does.
+func (o outcome) reply(waits bool) string {
 	var b strings.Builder
 	b.WriteString("archfit: request received.\n\n")
 	for _, n := range o.opened {
@@ -83,7 +84,7 @@ func (o outcome) reply() string {
 		b.WriteString("- " + strconv.Itoa(o.left) + " more " + plural(o.left, "error asks", "errors ask") +
 			" for an owner: one line opens at most " + strconv.Itoa(MaxNewPerComment) + " requests. Reply again with the same line.\n")
 	}
-	if len(o.opened)+len(o.joined) > 0 {
+	if waits && len(o.opened)+len(o.joined) > 0 {
 		b.WriteString("\nThe check shows `waiting` while open requests cover every error.\n")
 	}
 	return b.String()
@@ -103,6 +104,20 @@ func duplicateReply(open int) string {
 // joinedNote is the comment on a request issue when a pull request joins it.
 func joinedNote(pull int) string {
 	return "archfit: #" + strconv.Itoa(pull) + " waits on this request.\n"
+}
+
+// inert makes a comment safe to post: line ends become LF, and a line that would start with the request command
+// starts with a space, so the App never reads its own comment as a request, whatever engine or owner text it
+// quotes. A space before a line changes nothing GitHub shows outside a fence and one column inside it.
+func inert(s string) string {
+	s = strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(line, request.Command) {
+			lines[i] = " " + line
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func plural(n int, one, many string) string {
