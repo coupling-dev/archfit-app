@@ -465,7 +465,7 @@ reason applies. The detail lists the dimensions that are not fully measured and 
 
 | Reason                   | Recovery                                                                                                               |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `owner_approval_missing` | An eligible architecture owner decides on the exact candidate in GitHub or the App. Resolve active objections first, or use a reasoned App override; native GitHub reviews and branch protection remain independent. |
+| `owner_approval_missing` | An eligible architecture owner approves the exact candidate on GitHub. Resolve active objections first; native GitHub reviews and branch protection remain independent. |
 | `settings_missing`       | Merge the onboarding pull request to add `.archfit-app.yaml`.                                                          |
 | `policy_missing`         | Merge the Archfit policy pull request.                                                                                 |
 | `policy_defect`          | Fix the selectors of the listed rules by owner-approved pull request, or mark an intentional guard rule `guard: true`. |
@@ -614,22 +614,12 @@ change": read the diff of `.archfit.yaml` yourself.
 
 A pull request that changes a protected path shows an **Architecture decision** banner on its App page. The App-authored pull-request comment and, in required mode, the pending `archfit/gate` check show the same authority information even when no usable report exists. The App derives the changed paths from GitHub and the protected path set from `.archfit-app.yaml` at the current protected-settings commit. It does not use report claims to name the paths or owners.
 
-The banner links to the exact protected settings commit and lists the configured owners and teams. Any one current eligible owner may decide; the list is not a quorum. A repository writer or administrator is not an architecture owner unless the protected settings name that login or team. Agents never decide. An approving GitHub review and an App decision can both grant Archfit authorization for the exact candidate. GitHub does not accept a pull-request author's own review; an eligible sole owner who opened the PR can use the App.
+The banner links to the exact protected settings commit and lists the configured owners and teams. Any one current eligible owner may decide; the list is not a quorum. A repository writer or administrator is not an architecture owner unless the protected settings name that login or team. Agents never decide. An approving GitHub review grants Archfit authorization for the exact candidate; an App decision saved before M2 still counts. GitHub does not accept a pull-request author's own review, and the App no longer records one, so a sole owner who opened the PR cannot approve it.
 
-The banner is read only. Owners answer requests on the request page instead (see
-[Change the policy](#change-the-policy)).
+The banner is read only: the App records no owner decision on a pull request. An owner approves the exact candidate
+with a GitHub review. A policy change goes through a request instead (see [Change the policy](#change-the-policy)).
 
-Review requests are notifications, not authority. For an unchanged head and protected-settings snapshot Archfit requests only configured direct owners or teams that are not already requested, and it does not remove unrelated requests. It skips the pull-request author, known agent logins, and a team that contains the pull-request author. An eligible sole owner who opened the PR is told to use Archfit App rather than receiving an impossible self-review request. Reviewer-request API or permission failures are shown as notification problems only; they never change who may decide. Requests are deduplicated per pull-request head and protected-settings snapshot with bounded retries. If owners change while the head stays the same, Archfit checks GitHub's current reviewer list and requests only newly missing configured principals. You can also request a reviewer on GitHub.
-
-![Architecture decision banner on a protected-path pull request](images/owner-decision-light.png#gh-light-mode-only)
-![Architecture decision banner on a protected-path pull request](images/owner-decision-dark.png#gh-dark-mode-only)
-
-_The banner lists protected paths, owners, the exact settings commit and gate mode. Sample data._
-
-![Architecture decision banner when an agent opened the pull request](images/owner-decision-agent-pr-light.png#gh-light-mode-only)
-![Architecture decision banner when an agent opened the pull request](images/owner-decision-agent-pr-dark.png#gh-dark-mode-only)
-
-_The page names an agent author and explains why GitHub self-review is not available. Sample data._
+Review requests are notifications, not authority. For an unchanged head and protected-settings snapshot Archfit requests only configured direct owners or teams that are not already requested, and it does not remove unrelated requests. It skips the pull-request author, known agent logins, and a team that contains the pull-request author. An eligible sole owner who opened the PR receives no self-review request. Reviewer-request API or permission failures are shown as notification problems only; they never change who may decide. Requests are deduplicated per pull-request head and protected-settings snapshot with bounded retries. If owners change while the head stays the same, Archfit checks GitHub's current reviewer list and requests only newly missing configured principals. You can also request a reviewer on GitHub.
 
 Required mode says the protected settings require `archfit/gate`; GitHub branch rules determine whether that check blocks merge. Do not assume a branch rule that names only a check is unbypassable. Advisory mode does not prevent merging. In either mode, an App decision is not a successful architecture check, merge, or policy publication. The page shows the latest check separately; a saved decision may be waiting for a workflow report, evidence, or other required checks.
 
@@ -701,8 +691,8 @@ Ignore a status line from any other author: it grants nothing and means nothing.
 | `stale (base branch changed)`                      | The pull request no longer targets the default branch; an owner's decision is refused for it.   |
 | `stale (pull request closed)`                      | The pull request closed.                                                                            |
 
-**Decide (architecture owners).** The App no longer shows these requests or their buttons. An owner answers a
-request on its request page (see [Change the policy](#change-the-policy)).
+**Decide (architecture owners).** The App no longer shows these requests or their buttons, and they have no request
+page. A worker who needs a policy change asks with a request instead (see [Change the policy](#change-the-policy)).
 
 Posting the same request for the same head again changes nothing. Posting it for a new head replaces the record and
 sets it back to `pending`; a declined request is not reopened that way.
@@ -941,8 +931,8 @@ onboarding or discovery, only when that is the step's action. After the first re
   wait for an owner. Each reads "could not be read" rather than zero when the App could not read it. The pending
   requests of a repository are read from the App's own records, only when the repository has an open pull request;
 - under **Needs you**, the first pending decision requests with the pull request, the rule, the dependency, who asked
-  and how long ago, each linking to the pull request page where an owner decides. An agent cannot approve its own
-  request, so nothing on the overview approves or declines;
+  and how long ago, each linking to its pull request page. An agent cannot approve its own request, and nothing on
+  the overview approves or declines;
 - the open pull requests, newest first, each with its result and a link to its page (up to 20). A pull request that
   waits for an update says so under its row and names the modules the pull request and the default branch close a
   cycle through, in the words of the comment;

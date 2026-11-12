@@ -40,7 +40,7 @@ could still work GitHub-first, but onboarding, answers to requests and consent w
   evidence; it does not establish newly added pairs or source sites.
 - Repository findings: the latest default-branch report's findings in the groups and words of the PR comment, for the
   overview's counters and list.
-- Pull request page: the result/report of one head, plus an architecture-decision banner based on the current protected settings and changed paths even when the report is absent. It shows the exact settings source, owners/teams, one-any authority, advisory/required mode, signed-in user's ability/refusal, objections, history and exact-head actions. Request changes, withdrawal and override require reasons that are mirrored on the PR; a GitHub-origin override authorizes Archfit only and leaves native GitHub review/branch requirements independent. The unattended-agent decision-request flow remains separate.
+- Pull request page: the result/report of one head, plus an architecture-decision banner based on the current protected settings and changed paths even when the report is absent. It shows, read only, the exact settings source, owners/teams, one-any authority, advisory/required mode, objections and history. The page has no owner action since M2 task 24; the action APIs stay until M2 task 26.
 - Data sharing: per managed feature, what leaves the customer's environment, who allowed it and when, and the
   preconditions it still needs; allow and revoke `source_processing` and `managed_llm` consent (repository administrators
   only).
@@ -1237,15 +1237,9 @@ type OAuth interface {
   `//go:embed all:spa`. The build is not committed: `spa/` holds only its `.gitignore`, and then the shell answers a
   page that says to run `make web`, so `go build` and `go test` need no Node. The release image builds it
   (`Dockerfile`, stage `web`). Styles are one stylesheet, `web/src/app.css`, the tokens and components of
-  `docs/archive/design/prototypes/archfit.css`; no CSS framework and no runtime style injection (no Svelte transitions), with
-  one exception: the policy editor.
-- The policy editor is CodeMirror 6 (`@codemirror/*`, MIT, pinned exactly in `web/package-lock.json`), the owner's
-  decision of 19 October 2026 over a home-made highlighter: YAML, folding, history, search and lint marks are its
-  stock extensions, and an accessible editor is not small code to keep. It ships in the policy page's lazy chunk
-  (at most 200 KB gzip, `web/scripts/size.mjs`), never on first load. CodeMirror mounts its styles as a `<style>`
-  element; `EditorView.cspNonce` gives it the shell's nonce, and nothing else in the app uses it. Its theme reads the
-  app's tokens, so light and dark need no second set. Tab is not bound: YAML takes no tabs, and Tab must leave the
-  editor for keyboard users.
+  `docs/archive/design/prototypes/archfit.css`; no CSS framework and no runtime style injection (no Svelte transitions).
+- The policy editor (CodeMirror 6) left with M2 task 24. Its `@codemirror/*` packages stay in `web/package.json` for
+  the YAML edit of M3 task 10, and the shell keeps its style nonce for it; nothing in the app reads either today.
 
 ### Handler chain
 
@@ -1611,8 +1605,7 @@ changed; no private gate child or duplicate TypeScript policy is imported.
 - Inherited: control-plane code. The gate never calls ui; a panic or outage here changes no check. Standard library only
   on the Go side. Browser code comes only from `web/`, built at build time from the npm lockfile and served by the App:
   no runtime CDN, which the CSP would block anyway. First load of a page: at most 120 KB gzip of JavaScript and 20 KB
-  of CSS; the graph chunk at most 120 KB gzip, its layout worker at most 480 KB and the editor chunk at most 200 KB
-  **[default]**, checked in CI (`web/scripts/size.mjs`).
+  of CSS; the graph chunk at most 120 KB gzip, and its layout worker at most 480 KB **[default]**, checked in CI (`web/scripts/size.mjs`).
 - Declared restatement: three kinds of link are built from the literal host `https://github.com/`: the assist
   workflow's runs page, the pull-request search and the default-branch commits page. `internal/github` owns the
   knowledge of GitHub hosts and publishes no URL builder; `control/assist` (`RunURL`) and `control/onboarding`
@@ -2058,22 +2051,21 @@ gate's and tested there. The clock is injected.
   names them (a distributed monolith only in a flagged deploy-unit dependency's reason, never in where the distance
   was measured), the flagged dependency's reason and the count line, the decision sentences for `fail` with and
   without blockers, `unmeasured`, `pass` and an unknown value; the age words (`lib/age.ts`: just now, minutes, hours,
-  days, a time that cannot be read, a time ahead of now); the decisions route; the architecture-decision words (`lib/approval.ts`): normal approval is hidden for another active objection, override is offered for exact App/GitHub objections, and saved approval text never implies merge success.
-- `web/src/lib/decisions.ts` (vitest): which requests offer Approve and Decline (only a pending one the server marks
-  decidable), the status word with its reason, the write's path.
-- `web/scripts/size.mjs`: the first-load, graph chunk, layout worker and editor chunk budgets above; no lazy chunk in
-  the first load.
+  days, a time that cannot be read, a time ahead of now); the request and passkey routes; the digest words of the read-only architecture-decision box (`lib/approval.ts`).
+- `web/src/lib/request.ts` and `web/src/lib/webauthn.ts` (vitest): which answers need a passkey, the date and
+  `instead` rules, the status line, balance and preview words; base64url, the passkey options and the credential JSON.
+- `web/scripts/size.mjs`: the first-load, graph chunk and layout worker budgets above; no lazy chunk in the first load.
+- Playwright `web/e2e/request.spec.ts` and `web/e2e/passkey.spec.ts`: the request page and the passkey page with the
+  API mocked and a Chromium virtual authenticator; each answer's writes (digest, step-up, answer with its token; a
+  reject with none), registration with and without a step-up, removal, refusals, axe, phone width and the "Not used"
+  words of `web/e2e/not-used.json`, which must equal `internal/wire/wording/wording.go.txt`.
 - Playwright smoke (`web/e2e/smoke.spec.ts`): the production build behind `vite preview` with `web/csp.txt` as its
   header and `/api` mocked in the browser. Landing, repositories, overview, starting onboarding and discovery, and the
   theme toggle; the overview's watch line, its two counts (a count that could not be read shown as "–" with its reason),
-  the decision requests under Needs you with a link to the decisions page and the pull request that waits for an update
-  with the modules named; the Decisions tab (pending first, policy-change status, no button, empty/failed states, agent text, no foreign links); the pull request page (first screen, cycle and evidence, no report; protected-path banner with exact settings source and links; owner/contributor eligibility; required/advisory mode; exact head/settings/digest actions; required reasons; App/GitHub override with native review retained; saved-but-refresh-failed retry; no controls on closed PRs; bounded audit history; the separate unattended-agent decision request flow); the policy page: CodeMirror's `<style>` element with the
-  nonce, the problems as a list and as marks, a `#L<n>` hash and a problem selecting their line, Check and Save sending
-  the text, the base head and the CSRF header, a refused save keeping the text, a reader offered no write, managed mode
-  off with its reason and the inline Allow, and a customer-mode request following its run; the graph pages, laid out by
+  the decision requests under Needs you and the pull request that waits for an update
+  with the modules named; the pull request page (first screen, cycle and evidence, no report); the graph pages, laid out by
   the worker, the inspector's balance reading of a flagged dependency and the count line, and a worker that fails to load reported instead of a layout that never ends; a server error page (its sentence, no repository tabs) and the footer's licences link; a repository the user cannot see and one
   that does not exist shown the same, as the API's "Not found." with no repository tabs; a page asking its data beside
-  `/api/session`, its skeleton up until both answer; a save's `404` shown on the policy page with the editor's text kept;
-  a long policy scrolls inside the editor (at most 60% of the viewport) and a line link scrolls to its line; every page keeps its content and footer at most 1280px wide and centred, and has no sideways scroll at 390px; on a phone a two-module cycle stacks its modules in a column and its labels render at 11px or more (a longer cycle keeps its size and scrolls in its box); at 390px the findings and evidence tables show one block per row, every cell labelled, with no table scrolling sideways and no row taller than its cells; a graph page with no banner renders no empty block in the page's flow; the agents fold draws no rule when it is first in its box; a dimension that warns or fails stands out; the pull request page states the engine verdict, the known issues accepted earlier with their coupling and no suggested move, and the known issues fixed; policy edits are entered with one input event per string, so key order cannot race CodeMirror's DOM reading; every page has no
+  `/api/session`, its skeleton up until both answer; every page keeps its content and footer at most 1280px wide and centred, and has no sideways scroll at 390px; on a phone a two-module cycle stacks its modules in a column and its labels render at 11px or more (a longer cycle keeps its size and scrolls in its box); at 390px the findings and evidence tables show one block per row, every cell labelled, with no table scrolling sideways and no row taller than its cells; a graph page with no banner renders no empty block in the page's flow; the agents fold draws no rule when it is first in its box; a dimension that warns or fails stands out; the pull request page states the engine verdict, the known issues accepted earlier with their coupling and no suggested move, and the known issues fixed; every page has no
   `securitypolicyviolation` event and no axe violation in light and in dark; the onboarding write carries the CSRF
   header and a JSON body.

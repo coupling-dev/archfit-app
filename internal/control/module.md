@@ -24,7 +24,7 @@ the gate would still verify reports, but nobody could onboard, edit a policy, st
 - Pass the gate's owner approval seam (`Approvals`) to `ui`, whose pull request page shows an owner approval and
   records one with its Approve button, and the decision seam (`Decisions`), through which its pull request page lists
   the decision requests of unattended agents and lets an owner decline or approve one.
-- Pass the gate's decision queue seam (`DecisionQueue`) to `ui`, whose overview and decisions page list the decision
+- Pass the gate's decision queue seam (`DecisionQueue`) to `ui`, whose overview lists the decision
   requests that wait for an owner. It reads only.
 - Pass the gate's request page seam (`RequestViews`) to `ui`: a request and the preview of each answer. It reads only.
 - Build `answers` from the gate's answer seam (`Answers`) and `passkey`, and pass it to `ui`: an owner's answer to a
@@ -64,7 +64,7 @@ type Deps struct {
     Approvals Approvals
     // Decisions lists, declines and approves the decision requests of unattended agents for the pull request page.
     Decisions Decisions
-    // DecisionQueue lists the decision requests that wait for an owner, for the overview and the decisions page: the gate façade.
+    // DecisionQueue lists the decision requests that wait for an owner, for the overview: the gate façade.
     DecisionQueue DecisionQueue
     // RequestViews reads a request and the preview of each answer for the request page: the gate façade. It reads only.
     RequestViews RequestViews
