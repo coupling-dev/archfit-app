@@ -44,7 +44,7 @@ func (n AnswerNote) Text() string {
 	}
 	b.WriteString(" by " + codeSpan(n.Owner))
 	if n.Passkey != "" {
-		b.WriteString(" with the passkey " + codeSpan(n.Passkey[:min(len(n.Passkey), passkeyShown)]))
+		b.WriteString(" with the passkey " + codeSpan(PasskeyShown(n.Passkey)))
 	}
 	b.WriteString(".")
 	if n.Kind == policy3.Reject {
@@ -67,6 +67,9 @@ func (n AnswerNote) Text() string {
 	}
 	return inert(b.String())
 }
+
+// PasskeyShown is the start of a passkey id that the App's texts show: enough to tell an owner's passkeys apart.
+func PasskeyShown(id string) string { return id[:min(len(id), passkeyShown)] }
 
 // ReopenNote is the comment on a request issue the App reopens because its answer no longer fits the policy on the
 // default branch: it changed before pull, which carried the answer, merged. closed says pull was closed without a merge.

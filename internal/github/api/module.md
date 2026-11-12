@@ -206,8 +206,8 @@ beyond the 1 000-item cap the call fails, so such a repository gets no repair is
   **[default]**. A non-fast-forward is an error; the caller reloads.
 - `CommitOn`: the same commit, on the 40-hex `parent` the caller names (anything else is an error before any request);
   then `GET .../git/ref/heads/{branch}`: missing → `POST .../git/refs`; at the new commit already → nothing; else
-  `PATCH` the ref with the caller's `force`. Without force a branch that moved away from `parent` is GitHub's `422`
-  and stays. A forced move whose new commits change `.github/workflows/` may be refused by GitHub, because the App has
+  `PATCH` the ref with the caller's `force`. Without force a branch that moved away from `parent` is GitHub's `422`,
+  `ErrUnprocessable`, and stays. A forced move whose new commits change `.github/workflows/` may be refused by GitHub, because the App has
   no `workflows` permission; this is not measured (M2 task 19).
 - `EnsurePull`: `GET .../pulls?state=open&head={owner}:{Head}&base={Base}`; first hit wins; else `POST .../pulls`;
   a `422` "already exists" race → list again; the `422` stands if the list is still empty.

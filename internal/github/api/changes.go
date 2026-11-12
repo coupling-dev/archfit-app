@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -78,7 +79,7 @@ func (c *Client) Commit(ctx context.Context, r RepoRef, branch, message string, 
 // CommitOn makes one commit of files on parent, a 40-hex commit SHA: parent's tree with the files, with parent as its
 // only parent (no commit when the files change nothing: parent itself). It then points branch at it: a missing branch
 // is created; an existing one moves with force, or only as a fast-forward when force is false, so a branch that moved
-// away from parent is GitHub's 422 and stays where it is. Unlike Commit, the caller names the parent, so a commit
+// away from parent is GitHub's 422, ErrUnprocessable, and stays where it is. Unlike Commit, the caller names the parent, so a commit
 // someone else pushed to the branch is never built on.
 func (c *Client) CommitOn(ctx context.Context, r RepoRef, branch, parent, message string, files []FileChange, force bool) (string, error) {
 	if len(files) == 0 {
@@ -107,7 +108,9 @@ func (c *Client) CommitOn(ctx context.Context, r RepoRef, branch, parent, messag
 			body: map[string]string{"ref": "refs/heads/" + branch, "sha": sha}}
 		err = c.send(ctx, k, nil)
 	case err == nil:
-		err = c.moveRef(ctx, cr, base, escapedBranch, sha, force)
+		if err = c.moveRef(ctx, cr, base, escapedBranch, sha, force); isStatus(err, http.StatusUnprocessableEntity) {
+			err = fmt.Errorf("%w: %w", ErrUnprocessable, err)
+		}
 	}
 	if err != nil {
 		return "", err

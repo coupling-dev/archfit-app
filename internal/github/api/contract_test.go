@@ -760,8 +760,8 @@ func TestChangesContract(t *testing.T) {
 		}
 
 		_, err = env.c.CommitOn(ctx, repoA, "archfit/policy", created, "stale", policy, false)
-		if Status(err) != http.StatusUnprocessableEntity {
-			t.Errorf("a fast-forward from a parent the branch left: err = %v, want GitHub's 422", err)
+		if Status(err) != http.StatusUnprocessableEntity || !errors.Is(err, ErrUnprocessable) {
+			t.Errorf("a fast-forward from a parent the branch left: err = %v, want GitHub's 422 as ErrUnprocessable", err)
 		}
 		if repo.refs["archfit/policy"] != forward {
 			t.Error("a refused fast-forward moved the branch")
