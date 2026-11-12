@@ -165,6 +165,13 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 		}
 		index(w, r)
 	})
+	requestPage := s.signedIn(func(w http.ResponseWriter, r *http.Request, _ session.User) {
+		if _, ok := requestNumber(r); !ok {
+			s.fail(w, r, api.ErrNotFound)
+			return
+		}
+		index(w, r)
+	})
 	mux.Handle("GET /r/{o}/{n}", page)
 	mux.Handle("GET /r/{o}/{n}/graph", page)
 	mux.Handle("GET /r/{o}/{n}/pull/{number}", pullPage)
@@ -173,6 +180,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("GET /r/{o}/{n}/policy", page)
 	mux.Handle("GET /r/{o}/{n}/decisions", page)
 	mux.Handle("GET /r/{o}/{n}/passkeys", page)
+	mux.Handle("GET /r/{o}/{n}/requests/{number}", requestPage)
 	mux.Handle("GET /r/{o}/{n}/consent", s.signedIn(consentMoved))
 	mux.Handle("GET /admin", s.signedIn(func(w http.ResponseWriter, r *http.Request, u session.User) {
 		if !s.isOperator(u) {
