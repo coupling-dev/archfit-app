@@ -2,11 +2,13 @@ package feedback
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
+	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/result"
 )
@@ -70,17 +72,23 @@ func TestPublish4WritesNoCommentForAPushOrAMergeGroup(t *testing.T) {
 // A check or a comment of a newer run, or a newer attempt of the same run, is never overwritten, a waiting check
 // included.
 func TestPublish4NeverOverwritesANewerRun(t *testing.T) {
-	for name, newer := range map[string]api.CheckRun{
-		"a newer run":                       {Status: statusCompleted, Conclusion: conclusionSuccess, ExternalID: "v2:8:1:" + digest4},
-		"a newer attempt":                   {Status: statusCompleted, Conclusion: conclusionSuccess, ExternalID: "v2:7:2:" + digest4},
-		"a newer run that waits":            {Status: statusInProgress, ExternalID: "v2:8:1:" + digest4},
-		"a newer run with many annotations": {Status: statusCompleted, Conclusion: conclusionFailure, ExternalID: "v2:8:1:" + digest4, Annotations: make([]api.Annotation, 3)},
+	for name, tc := range map[string]struct {
+		check   api.CheckRun
+		comment Receipt
+	}{
+		"a newer run":            {api.CheckRun{Status: statusCompleted, Conclusion: conclusionSuccess, ExternalID: "v2:8:1:" + digest4}, Receipt{RunID: 8, RunAttempt: 1}},
+		"a newer attempt":        {api.CheckRun{Status: statusCompleted, Conclusion: conclusionSuccess, ExternalID: "v2:7:2:" + digest4}, Receipt{RunID: 7, RunAttempt: 2}},
+		"a newer run that waits": {api.CheckRun{Status: statusInProgress, ExternalID: "v2:8:1:" + digest4}, Receipt{RunID: 8, RunAttempt: 1}},
+		"a newer run with many annotations": {api.CheckRun{Status: statusCompleted, Conclusion: conclusionFailure, ExternalID: "v2:8:1:" + digest4,
+			Annotations: make([]api.Annotation, 3)}, Receipt{RunID: 8, RunAttempt: 1}},
+		"a newer run of the v1 path": {api.CheckRun{Status: statusCompleted, Conclusion: conclusionSuccess, ExternalID: "v1:8:1:" + reportDigest}, Receipt{RunID: 8, RunAttempt: 1}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			h := newHarness(headB)
+			newer := tc.check
 			newer.Name, newer.HeadSHA, newer.Title = gateCheck, headB, "newer"
 			h.checks.add(newer)
-			newerBody := commentMarker + "\n" + headMarker(headB, Receipt{RunID: 8, RunAttempt: 1}) + "\nnewer"
+			newerBody := commentMarker + "\n" + headMarker(headB, tc.comment) + "\nnewer"
 			if _, err := h.comments.CreateComment(context.Background(), api.RepoRef{}, 7, newerBody); err != nil {
 				t.Fatal(err)
 			}
@@ -212,4 +220,83 @@ func manyErrors(n int) result.Result {
 			Next: result.Next{Kind: "fix", Text: "fix the code"}})
 	}
 	return r
+}
+
+// An upload decided before its inputs moved writes nothing: the retry of the same run and attempt decides again.
+func TestPublish4WritesNothingFromInputsThatMoved(t *testing.T) {
+	for name, tc := range map[string]struct {
+		current func(context.Context) (bool, error)
+		stale   bool
+	}{
+		"inputs that moved":          {func(context.Context) (bool, error) { return false, nil }, true},
+		"inputs that cannot be read": {func(context.Context) (bool, error) { return false, api.ErrRateLimited }, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(headB)
+			p := pub4(prTarget(headB), 7, 1, engineResult(t, "pass"))
+			p.Current = tc.current
+			err := h.pub4().Publish4(context.Background(), p)
+			if err == nil || errors.Is(err, ErrStaleInputs) != tc.stale {
+				t.Fatalf("Publish4 = %v", err)
+			}
+			if !tc.stale && !errors.Is(err, api.ErrRateLimited) {
+				t.Errorf("the read error is lost: %v", err)
+			}
+			if n := len(h.checks.named(headB, gateCheck)) + len(h.comments.all()); n != 0 {
+				t.Errorf("%d writes from a decision that is not current", n)
+			}
+		})
+	}
+	t.Run("current inputs", func(t *testing.T) {
+		h := newHarness(headB)
+		p := pub4(prTarget(headB), 7, 1, engineResult(t, "pass"))
+		p.Current = func(context.Context) (bool, error) { return true, nil }
+		h.publish4(t, p)
+		if run := h.checks.latest(t, headB, gateCheck); run.Conclusion != conclusionSuccess {
+			t.Errorf("check %+v", run)
+		}
+	})
+}
+
+// The v1 path and the Archfit 4 path share archfit/gate on a head. Each reads the other's run from external_id, so
+// neither writes over a newer run of the other, and v1 never keeps Archfit 4 annotations under its own conclusion.
+func TestV1AndArchfit4ShareTheGateCheck(t *testing.T) {
+	t.Run("v1 leaves a newer Archfit 4 check", func(t *testing.T) {
+		h := newHarness(headB)
+		h.publish4(t, pub4(prTarget(headB), 9, 1, engineResult(t, "graph")))
+		if err := h.pub.Publish(context.Background(), blockedPublication(t, headB, 7, 1)); err != nil {
+			t.Fatal(err)
+		}
+		if run := h.checks.latest(t, headB, gateCheck); run.ExternalID != "v2:9:1:"+digest4 || run.Title != "fail, 1 error" {
+			t.Errorf("v1 wrote over the newer Archfit 4 check: %+v", run)
+		}
+	})
+	t.Run("a sweep correction leaves a waiting Archfit 4 check", func(t *testing.T) {
+		h := newHarness(headB)
+		h.publish4(t, pub4(prTarget(headB), 9, 1, engineResult(t, "waiting")))
+		err := h.pub.Reconcile(context.Background(), prTarget(headB), func(_ context.Context, current CheckState) (*Publication, error) {
+			p := blockedPublication(t, headB, 0, 0)
+			p.Outcome = outcome(verdict.ActionRequired, reasonInvalid)
+			p.Receipt = current.Receipt // the zero receipt v1 reads from an Archfit 4 run
+			return &p, nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if run := h.checks.latest(t, headB, gateCheck); run.Status != statusInProgress || run.ExternalID != "v2:9:1:"+digest4 {
+			t.Errorf("the sweep replaced the waiting check: %+v", run)
+		}
+	})
+	t.Run("a newer v1 run makes a new run, without the Archfit 4 annotations", func(t *testing.T) {
+		h := newHarness(headB)
+		h.publish4(t, pub4(prTarget(headB), 7, 1, engineResult(t, "graph")))
+		if err := h.pub.Publish(context.Background(), blockedPublication(t, headB, 9, 1)); err != nil {
+			t.Fatal(err)
+		}
+		runs := h.checks.named(headB, gateCheck)
+		latest := h.checks.latest(t, headB, gateCheck)
+		if len(runs) != 2 || len(latest.Annotations) != 0 || !strings.HasPrefix(latest.ExternalID, "v1:9:1:") {
+			t.Errorf("runs %d, latest %s with %d annotations", len(runs), latest.ExternalID, len(latest.Annotations))
+		}
+	})
 }

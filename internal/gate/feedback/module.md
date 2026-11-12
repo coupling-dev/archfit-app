@@ -71,7 +71,7 @@ wording, layout and limits will be tuned with every pilot.
 - The comment and summary layout, truncation order and size budgets.
 - The idempotency and ordering rules (run ordering, head ordering).
 - The publication lease: its key, value, lifetime, work deadline and polling.
-- The mapping of `Outcome` to the `archfit/state` conclusion, including the only use of `neutral`.
+- The mapping of `Outcome` to the `archfit/state` conclusion, including the only use of `neutral` on the v1 path.
 - Sanitizing of engine-authored strings before they enter Markdown.
 - Annotation selection (live findings, files the PR changed), the caps and the batching.
 - Which coverage and producer rows are evidence gaps, which are folded into one line, and which repeat each other.
@@ -268,8 +268,9 @@ ineligible evidence, governance, subscription) is `action_required` there too, n
 ruleset that requires the state check by mistake cannot be passed by bad evidence. A `needs_attention` report that
 passes the gate is `success` on `archfit/gate` and `neutral` on `archfit/state`, which keeps the attention visible;
 architecture findings are `neutral` there because this check never enforces them. The state check is never
-required, so `neutral` is allowed here and only here. It is a string literal in this package and never a
-`Conclusion` value.
+required, so on the v1 path `neutral` is allowed here and only here. It is a string literal in this package and never
+a `Conclusion` value. The Archfit 4 `archfit/gate` is `neutral` for a `fail` in an advisory policy (design 11.6); see
+[Archfit 4 publication](#archfit-4-publication).
 
 ### Publish algorithm
 
@@ -285,8 +286,11 @@ For each check to write:
 1. `Checks.CheckRuns(repo, Target.HeadSHA, name)`; take the run with the highest ID **[default]**.
 2. None → create a run (below).
 3. Existing receipt has a higher `(RunID, RunAttempt)` pair than `p.Receipt` → write nothing for this check. An
-   `in_progress` run, or one whose receipt marker is absent or unreadable, is never newer.
-4. `archfit/gate` → `UpdateCheckRun` in place, the pending run included. The gate check carries no annotation.
+   `in_progress` run, or one whose receipt marker is absent or unreadable, is never newer, except an Archfit 4 run:
+   its `v2:` `external_id` is its receipt, also while it waits, so the sweep's zero receipt never writes over it.
+4. `archfit/gate` → `UpdateCheckRun` in place, the pending run included, unless the run holds annotations (an
+   Archfit 4 run): then a new run, so no Archfit 4 annotation stays under a v1 conclusion. A v1 gate check carries no
+   annotation.
 5. `archfit/state` with the same `external_id` and `AnnotationCount` equal to the number of annotations this
    publication would send → `UpdateCheckRun` in place without annotations: the run already holds them.
 6. Otherwise → create a new `archfit/state` run. GitHub appends the annotations of every request and never removes
@@ -512,6 +516,9 @@ the author line and the owner line; the comment, the check title, the summary an
 - Annotations: one `failure` annotation per error with a line, on that line, whose message is the error's text
   record; at most 150, in requests of 50. No changed-file filter: a result lists only what the change added, and an
   error of the policy file has no line. Unknown reasons get none.
+- Every producer text the view shows (the status line, each field of a record) is cut to 1,000 runes with `…`, and an
+  author or owner line names at most ten requests, then counts the rest, so a title, a summary, a comment and an
+  annotation message always fit GitHub's limits **[default]**. The engine writes each field as one short line.
 - Comment: the comment marker, the head marker, then `## Archfit: <status line>`, one Markdown record per error and
   unknown reason (`` `path:line` **rule** what ``, then `- why:`, `- instead:`, `- balance:`, `- next:`), then the
   author and owner lines. Producer text is one line with `<` escaped; paths and commands are code spans no backtick
@@ -534,7 +541,10 @@ Several requests read `#431 and #432`, or `#431, #432 and #433`, in record order
 
 Writing, inside the head's publication lease:
 
-1. Read the newest `archfit/gate` run of the head. When its `external_id` is a `v2:` receipt of a newer run, or a newer
+0. When `Publication4.Current` is set, call it. `false` writes nothing and returns `ErrStaleInputs`; an error writes
+   nothing and is returned. The gate sets it to "the default branch's head is still the one the decision read", so an
+   upload of the same run and attempt decided earlier never replaces one decided later.
+1. Read the newest `archfit/gate` run of the head. When its `external_id` is a `v1:` or `v2:` receipt of a newer run, or a newer
    attempt of the same run, write nothing (a waiting `in_progress` run counts too).
 2. Update that run in place when the update appends nothing wrong: both have no annotations, or it holds the same
    receipt and as many annotations. A completed run is never set back to `in_progress`; a waiting result gets a new
@@ -560,6 +570,8 @@ the status, the conclusion and the actions taken.
 - **Volatility**: high
 - **Balanced?**: yes (model strength at distance 1)
 - **Shared knowledge**: `Reasons[0]` determines the conclusion; `Detail` holds IDs and digests; `Next` is the recovery action.
+  The v1 path only: `Publish4` does not use `Conclusion`; its conclusions, `neutral` included, are constants of this
+  package (see [Archfit 4 publication](#archfit-4-publication)).
 
 <!-- contract: Conclusion, Category, ReasonCode, Reason, Outcome — restated from internal/gate/verdict/module.md -->
 ```go
@@ -1289,10 +1301,16 @@ type Swap struct {
 
 ## Constraints and Invariants
 
-- The gate check conclusion is always `string(Outcome.Conclusion)`: `success`, `failure` or `action_required`.
-  feedback never downgrades, upgrades or skips it. `neutral` is written only to `archfit/state`, and never for an
-  outcome that asks for action: that is `action_required` on both checks.
-- In advisory mode no `archfit/gate` check is written. A ruleset that requires it then stays blocked: closed, never green.
+- v1 path: the gate check conclusion is always `string(Outcome.Conclusion)`: `success`, `failure` or
+  `action_required`. feedback never downgrades, upgrades or skips it. `neutral` is written only to `archfit/state`,
+  and never for an outcome that asks for action: that is `action_required` on both checks.
+- v1 path: in advisory mode no `archfit/gate` check is written. A ruleset that requires it then stays blocked: closed,
+  never green.
+- Archfit 4 path: `archfit/gate` is always written, `success` only for a `pass`, `neutral` only for a `fail` in an
+  advisory policy (GitHub counts it as passing: advisory means the check does not block, design 6.1 and 11.6),
+  `in_progress` for `waiting`, and `action_required` for `unknown` and any other status. No `archfit/state`.
+- Both paths share `archfit/gate` and the publication lease, and each reads the other's run from `external_id`, so
+  neither writes over a newer run of the other.
 - An older `(RunID, RunAttempt)` never overwrites a newer one on the same head; a publication for an old
   head never touches the comment. Check runs are per SHA, so an old head's checks cannot affect the new head.
 - Every write to one head SHA holds that head's publication lease, so writers of one head never interleave, also

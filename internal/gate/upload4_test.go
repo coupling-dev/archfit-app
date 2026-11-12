@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alexei-led/archfit-app/internal/gate/feedback"
 	"github.com/alexei-led/archfit-app/internal/gate/ingest"
 	"github.com/alexei-led/archfit-app/internal/gate/records"
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -502,6 +503,30 @@ func TestUpload4PublishesTheResult(t *testing.T) {
 		}
 		if w.gh.commentOps != 0 {
 			t.Errorf("%d comment writes for a merge group", w.gh.commentOps)
+		}
+	})
+	t.Run("a decision from a default branch head that moved writes nothing", func(t *testing.T) {
+		w := newWorld4(t)
+		p := w.openPull(w.shop, 7)
+		s := w.spec4(p, "pass")
+		body, _ := json.Marshal(s.result)
+		s.body = body
+		s.env.PayloadDigest = envelope.PayloadDigest(body)
+		s.rawEnvelope, _ = json.Marshal(s.env)
+		u, err := w.gate.v4.receiver.ReceiveV2(context.Background(), w.request(s.uploadSpec))
+		if err != nil {
+			t.Fatal(err)
+		}
+		d, err := w.gate.v4.decide(context.Background(), u)
+		if err != nil || d.Status != result.StatusPass {
+			t.Fatalf("decide = %+v, %v", d, err)
+		}
+		w.gh.heads[branchKey(shopName, testBranch)] = w.sha() // the policy merged after the decision
+		if err := w.gate.v4.publish(context.Background(), u, d); !errors.Is(err, feedback.ErrStaleInputs) {
+			t.Errorf("publish = %v, want ErrStaleInputs", err)
+		}
+		if n := w.gh.writes(); n != 0 {
+			t.Errorf("%d writes from a stale decision", n)
 		}
 	})
 	t.Run("a failed write answers a retry", func(t *testing.T) {

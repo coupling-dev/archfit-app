@@ -27,8 +27,11 @@ const (
 	tasksClose    = "<!-- /archfit:agent-tasks -->"
 )
 
+// receiptV1 starts the external_id of a v1 check run.
+const receiptV1 = "v1"
+
 func externalID(r Receipt) string {
-	return fmt.Sprintf("v1:%d:%d:%s", r.RunID, r.RunAttempt, r.ReportDigest)
+	return fmt.Sprintf("%s:%d:%d:%s", receiptV1, r.RunID, r.RunAttempt, r.ReportDigest)
 }
 
 // receiptMarker relies on encoding/json escaping "<" and ">": no field value can close the marker.
@@ -57,8 +60,13 @@ func parseReceipt(summary string) (Receipt, bool) {
 	return r, true
 }
 
-// supersedes reports whether the existing check run holds a newer run than r and must be left alone.
+// supersedes reports whether the existing check run holds a newer run than r and must be left alone. An Archfit 4 run
+// keeps its receipt in external_id only, also while it waits (in_progress), so v1 reads it there: the sweep's zero
+// receipt and an older v1 run never write over it.
 func supersedes(existing api.CheckRun, r Receipt) bool {
+	if version, runID, attempt, ok := externalRun(existing.ExternalID); ok && version == receiptV2 {
+		return newerRun(runID, attempt, r)
+	}
 	if existing.Status != statusCompleted {
 		return false
 	}
@@ -67,6 +75,18 @@ func supersedes(existing api.CheckRun, r Receipt) bool {
 		return false
 	}
 	return newerRun(old.RunID, old.RunAttempt, r)
+}
+
+// externalRun reads the version, run and attempt of the external_id of a v1 or an Archfit 4 publication,
+// "<version>:<run_id>:<attempt>:<digest>".
+func externalRun(id string) (version string, runID int64, attempt int, ok bool) {
+	parts := strings.SplitN(id, ":", 4)
+	if len(parts) != 4 || parts[0] != receiptV1 && parts[0] != receiptV2 {
+		return "", 0, 0, false
+	}
+	runID, errRun := strconv.ParseInt(parts[1], 10, 64)
+	attempt, errAttempt := strconv.Atoi(parts[2])
+	return parts[0], runID, attempt, errRun == nil && errAttempt == nil
 }
 
 func newerRun(runID int64, attempt int, r Receipt) bool {

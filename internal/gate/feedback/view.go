@@ -3,8 +3,10 @@ package feedback
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/result"
@@ -31,6 +33,13 @@ const (
 // waitStep is the engine's wait step, which names the request an owner answers.
 var waitStep = regexp.MustCompile(`^wait for an owner: #([1-9][0-9]*)$`)
 
+// fieldCap bounds each producer text the view shows, in runes. The engine writes each field as one short line; a
+// longer one is cut with "…", so a record, a fence, a heading and an annotation message always fit GitHub's limits.
+const fieldCap = 1000
+
+// requestCap is the number of requests an author or owner line names before it counts the rest.
+const requestCap = 10
+
 // view is what every surface shows about one Archfit 4 result (design 8.2, 12.5): the status line, the records, one
 // line for the author and one for the owner. The comment, the check title, the check summary and the annotations
 // render from it, so they cannot say different things.
@@ -44,12 +53,13 @@ type view struct {
 
 // newView builds the view of r, whose Status is the status the App gave it.
 func newView(r result.Result) view {
+	r = bounded(r)
 	v := view{result: r}
 	var asks, fixes bool
 	for _, e := range r.Errors {
 		asks = asks || asking(e.Next)
 		fixes = fixes || e.Next.Kind == nextFix
-		if n := request(e.Next); n > 0 && !containsInt(v.requests, n) {
+		if n := request(e.Next); n > 0 && !slices.Contains(v.requests, n) {
 			v.requests = append(v.requests, n)
 		}
 	}
@@ -113,25 +123,45 @@ func (v view) says(n result.Next) bool {
 	return true
 }
 
-func containsInt(list []int, n int) bool {
-	for _, x := range list {
-		if x == n {
-			return true
-		}
-	}
-	return false
-}
-
-// requestList is "#431", "#431 and #432", or "#431, #432 and #433".
+// requestList is "#431", "#431 and #432", or "#431, #432 and #433"; after requestCap requests, "#1, …, #10 and 5
+// more".
 func requestList(ids []int) string {
-	names := make([]string, len(ids))
-	for i, id := range ids {
-		names[i] = "#" + strconv.Itoa(id)
+	names := make([]string, min(len(ids), requestCap))
+	for i := range names {
+		names[i] = "#" + strconv.Itoa(ids[i])
+	}
+	if len(ids) > requestCap {
+		return strings.Join(names, ", ") + " and " + strconv.Itoa(len(ids)-requestCap) + " more"
 	}
 	if len(names) == 1 {
 		return names[0]
 	}
 	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+}
+
+// bounded is r with every text the view shows cut to fieldCap runes.
+func bounded(r result.Result) result.Result {
+	r.Summary = cut(r.Summary)
+	r.Errors = slices.Clone(r.Errors)
+	for i := range r.Errors {
+		e := &r.Errors[i]
+		e.Path, e.Rule, e.What, e.Why, e.Instead = cut(e.Path), cut(e.Rule), cut(e.What), cut(e.Why), cut(e.Instead)
+		e.Next.Text, e.Next.Note = cut(e.Next.Text), cut(e.Next.Note)
+	}
+	r.Unknown = slices.Clone(r.Unknown)
+	for i := range r.Unknown {
+		u := &r.Unknown[i]
+		u.Path, u.Cause, u.What, u.Why = cut(u.Path), cut(u.Cause), cut(u.What), cut(u.Why)
+		u.Next.Text, u.Next.Note = cut(u.Next.Text), cut(u.Next.Note)
+	}
+	return r
+}
+
+func cut(s string) string {
+	if utf8.RuneCountInString(s) <= fieldCap {
+		return s
+	}
+	return string([]rune(s)[:fieldCap]) + "…"
 }
 
 // title is the check title: the status line without "archfit: ", because the check's name already says archfit
@@ -165,7 +195,7 @@ func textRecords(r result.Result) []string {
 }
 
 // annotations is one failure annotation per error that has a line, on that line, with the error's text record; at
-// most annotationCap. The check summary holds every record.
+// most annotationCap. The check summary holds every record that fits in it.
 func (v view) annotations() []api.Annotation {
 	var out []api.Annotation
 	for _, e := range v.result.Errors {

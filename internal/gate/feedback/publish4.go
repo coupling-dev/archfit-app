@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strconv"
-	"strings"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/result"
@@ -46,15 +44,10 @@ func externalID4(p Publication4) string {
 }
 
 // newer4 reports whether a check run holds the publication of a newer run, or a newer attempt of the same run, than
-// p. A waiting run is in_progress and still counts: its external_id is its receipt.
+// p, an Archfit 4 or a v1 one. A waiting run is in_progress and still counts: its external_id is its receipt.
 func newer4(c api.CheckRun, p Publication4) bool {
-	parts := strings.SplitN(c.ExternalID, ":", 4)
-	if len(parts) != 4 || parts[0] != receiptV2 {
-		return false
-	}
-	runID, errRun := strconv.ParseInt(parts[1], 10, 64)
-	attempt, errAttempt := strconv.Atoi(parts[2])
-	return errRun == nil && errAttempt == nil && newerRun(runID, attempt, Receipt{RunID: p.RunID, RunAttempt: p.RunAttempt})
+	_, runID, attempt, ok := externalRun(c.ExternalID)
+	return ok && newerRun(runID, attempt, Receipt{RunID: p.RunID, RunAttempt: p.RunAttempt})
 }
 
 // reusable4 reports whether an update in place leaves the run showing exactly run. GitHub appends the annotations of
@@ -71,8 +64,21 @@ func reusable4(existing, run api.CheckRun) bool {
 	return existing.ExternalID == run.ExternalID && existing.AnnotationCount == len(run.Annotations)
 }
 
+// Publish4 writes p inside the head's lease, unless p.Current says its status was decided from inputs that are no
+// longer current.
 func (s *serialized) Publish4(ctx context.Context, p Publication4) error {
-	return s.hold(ctx, p.Target, func(ctx context.Context) error { return s.next.publish4(ctx, p) })
+	return s.hold(ctx, p.Target, func(ctx context.Context) error {
+		if p.Current != nil {
+			current, err := p.Current(ctx)
+			if err != nil {
+				return fmt.Errorf("feedback: read the inputs again: %w: %w", errUnwritten, err)
+			}
+			if !current {
+				return ErrStaleInputs
+			}
+		}
+		return s.next.publish4(ctx, p)
+	})
 }
 
 func (s *publisher) publish4(ctx context.Context, p Publication4) (err error) {

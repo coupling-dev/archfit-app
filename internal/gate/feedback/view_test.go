@@ -270,3 +270,30 @@ func TestAnnotationsOnlyForErrorsWithALine(t *testing.T) {
 		t.Errorf("annotations = %+v, want %+v", got, want)
 	}
 }
+
+// Producer text of any size, and any number of requests, still fits GitHub's limits: each field is cut, never the
+// status line's place.
+func TestHugeProducerTextFitsGitHubLimits(t *testing.T) {
+	huge := strings.Repeat("x", 100_000)
+	ticks := strings.Repeat("`", 40_000)
+	r := result.Result{Status: "waiting", Summary: "archfit: waiting, " + huge}
+	for i := range 50 {
+		r.Errors = append(r.Errors, result.Error{Path: ticks + "a.go", Line: i + 1, Rule: huge, What: ticks, Why: huge, Instead: huge,
+			Next: result.Next{Kind: "wait", Text: fmt.Sprintf("wait for an owner: #%d", 100+i), Note: huge}})
+	}
+	v := newView(r)
+	for name, out := range map[string]string{"title": v.title(), "summary": v.summary(), "comment": v.comment(maxBody)} {
+		if len(out) > maxBody {
+			t.Errorf("%s is %d bytes, over %d", name, len(out), maxBody)
+		}
+	}
+	for _, a := range v.annotations() {
+		if len(a.Message) > maxBody {
+			t.Fatalf("an annotation message is %d bytes", len(a.Message))
+		}
+	}
+	mustContain(t, v.comment(maxBody), "answer #100, #101, #102, #103, #104, #105, #106, #107, #108, #109 and 40 more.\n")
+	if !strings.Contains(v.summary(), "…\n```") {
+		t.Error("the cut status line does not close the summary")
+	}
+}

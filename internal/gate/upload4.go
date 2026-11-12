@@ -87,6 +87,7 @@ type decision4 struct {
 	Status   result.Status
 	Reasons  []reason4 // in rule order
 	Advisory bool      // the default branch's policy has no gate: required, so a fail does not block
+	Tip      string    // the default branch's head every rule read; the decision holds while it is the head
 }
 
 // reason4 is one record the App adds, with its stable code.
@@ -197,9 +198,9 @@ func (v *upload4) decide(ctx context.Context, u ingest.Upload4) (decision4, erro
 	}
 
 	if len(reasons) > 0 || u.Result == nil {
-		return decision4{Status: result.StatusUnknown, Reasons: reasons, Advisory: advisory}, nil
+		return decision4{Status: result.StatusUnknown, Reasons: reasons, Advisory: advisory, Tip: tip}, nil
 	}
-	return decision4{Status: u.Result.Status, Advisory: advisory}, nil
+	return decision4{Status: u.Result.Status, Advisory: advisory, Tip: tip}, nil
 }
 
 // checkPolicy requires target_sha on the default branch and the policy digest of the run to be the digest at
@@ -392,7 +393,10 @@ func (d decision4) shown(r *result.Result) result.Result {
 	return s
 }
 
-// publish writes the check of the upload's head and, for a pull request, its comment.
+// publish writes the check of the upload's head and, for a pull request, its comment. Inside the head's lease it reads
+// the default branch's head again: when it moved, the decision may be stale, nothing is written and the upload answers
+// 503, so the Action's retry decides from the new head. An upload of the same run decided earlier then never replaces
+// one decided later.
 func (v *upload4) publish(ctx context.Context, u ingest.Upload4, d decision4) error {
 	b := u.Binding
 	return v.publisher.Publish4(ctx, feedback.Publication4{
@@ -402,6 +406,13 @@ func (v *upload4) publish(ctx context.Context, u ingest.Upload4, d decision4) er
 		Digest:     u.Envelope.PayloadDigest,
 		Advisory:   d.Advisory,
 		Result:     d.shown(u.Result),
+		Current: func(ctx context.Context) (bool, error) {
+			tip, err := v.repos.BranchHead(ctx, b.Repo.RepoRef, b.Repo.DefaultBranch)
+			if err != nil {
+				return false, fmt.Errorf("gate: read the default branch head: %w", err)
+			}
+			return tip == d.Tip, nil
+		},
 	})
 }
 

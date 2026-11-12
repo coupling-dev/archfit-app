@@ -163,14 +163,15 @@ func (s *publisher) writeCheck(ctx context.Context, r api.RepoRef, run api.Check
 }
 
 // reusable reports whether an update in place leaves the run showing exactly run. GitHub appends the annotations of
-// every request and never removes one, so annotations go only on a new run. archfit/gate carries none, so its latest
-// run, the pending one included, is always updated. An archfit/state run is updated only when it already holds this
+// every request and never removes one, so annotations go only on a new run. A v1 archfit/gate carries none, so its
+// latest run, the pending one included, is updated unless it holds annotations: an Archfit 4 run, which a newer v1
+// run replaces with a new run rather than keep its annotations. An archfit/state run is updated only when it already holds this
 // publication's annotations: the same external_id and as many annotations as run would send. An equal count stands
 // in for equal annotations, because one external_id names one report and annotations are rendered
 // deterministically from it.
 func reusable(existing, run api.CheckRun) bool {
 	if run.Name == gateCheck {
-		return true
+		return existing.AnnotationCount == 0
 	}
 	return existing.ExternalID == run.ExternalID && existing.AnnotationCount == len(run.Annotations)
 }

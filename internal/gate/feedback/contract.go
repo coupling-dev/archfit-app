@@ -120,6 +120,10 @@ type Publication4 struct {
 	Digest     string        // the payload digest of the upload
 	Advisory   bool          // the policy's gate is advisory: a fail shows as neutral, with the same records
 	Result     result.Result // Status is the status the App gave; the status line and the records are shown as given
+	// Current, when set, is called inside the head's publication lease before anything is written. false means the
+	// status was decided from inputs that are no longer current: Publish4 writes nothing and returns ErrStaleInputs, so
+	// an upload decided earlier never replaces one of the same run and attempt decided later.
+	Current func(context.Context) (bool, error)
 }
 
 // Publisher4 publishes Archfit 4 results. It writes no archfit/state check.
@@ -131,7 +135,8 @@ type Publisher4 interface {
 }
 
 // New4 returns a Publisher4 that is safe for concurrent use: it holds the same per-head lease in s as New's Publisher,
-// so a v1 publication and an Archfit 4 one never interleave on one head. appURL is as for New.
+// so a v1 publication and an Archfit 4 one never interleave on one head, and each reads the other's run from the
+// external_id, so neither writes over a newer run of the other. appURL is as for New.
 func New4(checks api.Checks, comments api.Comments, pulls api.Pulls, s store.Store, appURL string, now func() time.Time) Publisher4 {
 	return &serialized{
 		next:  &publisher{checks: checks, comments: comments, pulls: pulls, appURL: appURL, now: now},

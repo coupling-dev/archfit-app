@@ -472,8 +472,9 @@ change of the workflow on `T` reads `unknown` until its branch is updated.
    `pass` is never shown. `gate: required` in the default branch's policy makes a `fail` a failure; without it the
    `fail` is neutral. An upload with `unsupported_event` or `envelope_mismatch` publishes nothing: the App does not
    judge it for the default branch, and a run of another base has a higher run id than the pull request into the
-   default branch on the same commit, which a re-run of that pull request keeps below. The commit keeps the check it
-   had:
+   default branch on the same commit, which a re-run of that pull request keeps below. Inside the head's lease the
+   default branch's head is read again; when it moved, nothing is written and the upload answers 503, so the Action's
+   retry decides again. The commit keeps the check it had when nothing is published:
 
    | Before, on the commit | After a pull request into another base, or an upload that does not match its run |
    | --- | --- |
@@ -640,6 +641,7 @@ func MayBeProtected(path string) bool
 - **Balanced?**: yes
 - **Shared knowledge**: `Decide` is pure and total; `Reasons[0]` sets the conclusion; `Without` always returns `ActionRequired` (the façade does not call it: the fork
   refusal goes through `sweep.Without`). `Decide` never returns an empty `Reasons`; the façade still checks it, see "Report upload flow" step 6.
+  The envelope 2 path does not call `Decide`: its status is the result's or `unknown` (see "Envelope 2 upload").
   A `ReasonCode` appears at most once. `owner_approval_missing` precedes `policy_mismatch` and `baseline_mismatch`, so an
   unapproved code-and-policy PR carries the receipt reason `owner_approval_missing`, which is what `HandleEvent` and the
   sweep key their re-run on. `engine_error` precedes `missing_required_coverage`.
@@ -754,8 +756,9 @@ func TargetMoved(cycle []string, base, tip string) Outcome
   the PR head is no longer `Target.HeadSHA` (old-head skip; the old head's own checks are still written). Both
   return nil, so the upload still answers 200. `Pending` is idempotent. `State` reads the `archfit/gate` check of a head SHA.
   `Publish4` (constructor `New4`) writes the Archfit 4 check and comment of an envelope 2 upload, under the same
-  per-head lease, never over a newer run or attempt, and writes no `archfit/state`.
-  The feedback constructor is `New(checks Checks, comments Comments, pulls Pulls, now func() time.Time) Publisher`;
+  per-head lease, never over a newer run or attempt of either path, and writes no `archfit/state`; with
+  `Publication4.Current` set it writes nothing (`ErrStaleInputs`) when the default branch's head moved after the decision.
+  The feedback constructor is `New(checks Checks, comments Comments, pulls Pulls, s Store, appURL string, now func() time.Time) Publisher`;
   `Checks` and `Comments` are role interfaces of `github/api` that `*Client` implements. `NewRepairer(checks, comments,
   issues, repos, s, now) Repairer` keeps the default branch's repair issue; `Repair` returns nothing, so no issue
   failure can reach the upload answer.
@@ -1621,7 +1624,10 @@ event left undone.
   billing, LLM or UI code either. A test enforces it.
 - Nothing outside `gate` imports `gate/*`. Children never import the parent.
 - Fail closed: every path ends in `success`, `failure`, `action_required`, a rejection status, or a 503 that leaves
-  the check pending. Never `neutral` or `skipped` on `archfit/gate`. `success` comes only from `verdict.Decide`.
+  the check pending. On the envelope 1 path, never `neutral` or `skipped` on `archfit/gate`, and `success` comes only
+  from `verdict.Decide`. On the envelope 2 path, `success` comes only from a `pass` result with no failed App rule,
+  `neutral` only from a `fail` in an advisory policy (design 11.6), and an upload the App does not judge for the
+  default branch writes nothing.
 - Never trust head-tree config, labels, baselines, owners or CODEOWNERS. Trusted inputs come from the protected ref
   and are verified by digest; the only exception is an owner-approved head policy or baseline digest for that exact head SHA.
 - Provenance is necessary, not sufficient. Feedback says "customer-attested"; nothing says "verified". The
