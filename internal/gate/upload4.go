@@ -12,7 +12,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/alexei-led/archfit-app/internal/gate/feedback"
 	"github.com/alexei-led/archfit-app/internal/gate/ingest"
+	"github.com/alexei-led/archfit-app/internal/gate/inputs"
 	"github.com/alexei-led/archfit-app/internal/gate/records"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/store"
@@ -24,6 +26,12 @@ import (
 
 // policyPath is the policy file; the one on the default branch is the approved policy (design 9.1).
 const policyPath = ".archfit.yaml"
+
+// gateRequired is the policy's gate value that makes a fail block; absent or "advisory" shows a fail as neutral.
+const gateRequired = "required"
+
+// summaryUnknown is the engine's status line of an unknown result, used for the App's own records.
+const summaryUnknown = "archfit: unknown, no verdict"
 
 // The reason codes of the records the App adds to an envelope 2 upload. Each makes the status unknown. The first
 // one is the reason of the upload's answer.
@@ -55,28 +63,30 @@ var commitSHA = regexp.MustCompile(`^[0-9a-f]{40}$`)
 var actionUse = regexp.MustCompile(`(?m)^([ \t]*(?:-[ \t]+)?uses:[ \t]*(["']?)` + regexp.QuoteMeta(manifest.ActionRepository+"@") +
 	`)([0-9A-Za-z._/-]+)(["']?)(?:[ \t]+#[ \t]*[0-9A-Za-z._+-]*)?[ \t]*$`)
 
-// upload4 is the envelope 2 path of POST /v1/reports: the trusted inputs, the status the App gives the result, and
-// the pull record of M2 D6. It publishes nothing; the check is published from its decision (M2 task 15).
+// upload4 is the envelope 2 path of POST /v1/reports: the trusted inputs, the status the App gives the result, the
+// pull record of M2 D6, and the check and comment that show it (M2 task 15).
 type upload4 struct {
-	receiver ingest.Receiver4
-	repos    api.Repos
-	commits  api.Commits
-	store    store.Store
+	receiver  ingest.Receiver4
+	repos     api.Repos
+	commits   api.Commits
+	store     store.Store
+	publisher feedback.Publisher4
 	// The manifest 4 approvals; tests replace them, because the shipped manifest approves nothing yet.
 	engineApproved func(manifest.Identity) bool
 	actionApproved func(commit string) bool
 }
 
-func newUpload4(rc ingest.Receiver4, repos api.Repos, commits api.Commits, s store.Store) *upload4 {
-	return &upload4{receiver: rc, repos: repos, commits: commits, store: s,
+func newUpload4(rc ingest.Receiver4, repos api.Repos, commits api.Commits, s store.Store, p feedback.Publisher4) *upload4 {
+	return &upload4{receiver: rc, repos: repos, commits: commits, store: s, publisher: p,
 		engineApproved: manifest.EngineApproved, actionApproved: manifest.ActionApproved}
 }
 
 // decision4 is the status the App gives one envelope 2 upload: the result's own status, or unknown with the App's
 // records when any rule failed.
 type decision4 struct {
-	Status  result.Status
-	Reasons []reason4 // in rule order
+	Status   result.Status
+	Reasons  []reason4 // in rule order
+	Advisory bool      // the default branch's policy has no gate: required, so a fail does not block
 }
 
 // reason4 is one record the App adds, with its stable code.
@@ -116,6 +126,9 @@ func (g *Gate) serveUpload4(w http.ResponseWriter, req *http.Request) {
 	}
 	if err == nil {
 		err = g.v4.storePull(ctx, u, d)
+	}
+	if err == nil && d.publishes() {
+		err = g.v4.publish(ctx, u, d)
 	}
 
 	status, body := http.StatusOK, any(nil)
@@ -168,7 +181,9 @@ func (v *upload4) decide(ctx context.Context, u ingest.Upload4) (decision4, erro
 	if err != nil {
 		return decision4{}, err
 	}
-	if _, err := policy3.Decode(tipPolicy); !found || err != nil {
+	policy, err := policy3.Decode(tipPolicy)
+	advisory := policy.Gate != gateRequired
+	if !found || err != nil {
 		// No approved policy yet: this pull request brings the first one, which an administrator approves (task 23).
 		add(reasonFirstPolicy, result.Unknown{Path: policyPath, Cause: "policy",
 			What: branch + " has no policy of version 3 yet",
@@ -182,9 +197,9 @@ func (v *upload4) decide(ctx context.Context, u ingest.Upload4) (decision4, erro
 	}
 
 	if len(reasons) > 0 || u.Result == nil {
-		return decision4{Status: result.StatusUnknown, Reasons: reasons}, nil
+		return decision4{Status: result.StatusUnknown, Reasons: reasons, Advisory: advisory}, nil
 	}
-	return decision4{Status: u.Result.Status}, nil
+	return decision4{Status: u.Result.Status, Advisory: advisory}, nil
 }
 
 // checkPolicy requires target_sha on the default branch and the policy digest of the run to be the digest at
@@ -345,6 +360,49 @@ func (v *upload4) storePull(ctx context.Context, u ingest.Upload4, d decision4) 
 			}
 			return records.Encode(&rec)
 		})
+}
+
+// publishes reports whether the upload writes the head's check and comment. Only an upload bound to the default
+// branch does: an open pull request into it, a push to it, or its merge group. A pull request into another base, a
+// push to another branch, or a run the App cannot tie to its pull request writes nothing, so the head keeps the check
+// it has: none or a pending one, which blocks a merge, or the result of the newest judged run of the same commit. A
+// run of another base has a higher run id than the pull request into the default branch on the same commit, and a
+// re-run keeps the lower id: were it to write, that pull request could not get its own result back until a new push.
+func (d decision4) publishes() bool {
+	for _, r := range d.Reasons {
+		if r.Code == reasonUnsupportedEvent || r.Code == reasonEnvelopeMismatch {
+			return false
+		}
+	}
+	return true
+}
+
+// shown is the result the check and the comment show: the App's own records when a rule failed, so nothing of a result
+// the App did not accept is shown; else the engine's result with the status the App gave it.
+func (d decision4) shown(r *result.Result) result.Result {
+	if len(d.Reasons) > 0 || r == nil {
+		s := result.Result{Status: result.StatusUnknown, Summary: summaryUnknown}
+		for _, x := range d.Reasons {
+			s.Unknown = append(s.Unknown, x.Record)
+		}
+		return s
+	}
+	s := *r
+	s.Status = d.Status
+	return s
+}
+
+// publish writes the check of the upload's head and, for a pull request, its comment.
+func (v *upload4) publish(ctx context.Context, u ingest.Upload4, d decision4) error {
+	b := u.Binding
+	return v.publisher.Publish4(ctx, feedback.Publication4{
+		Target:     inputs.Target{Repo: b.Repo, PullRequest: b.PullRequest, HeadSHA: b.HeadSHA, BaseRef: b.Repo.DefaultBranch},
+		RunID:      b.RunID,
+		RunAttempt: b.RunAttempt,
+		Digest:     u.Envelope.PayloadDigest,
+		Advisory:   d.Advisory,
+		Result:     d.shown(u.Result),
+	})
 }
 
 func logUpload4(ctx context.Context, u ingest.Upload4, d decision4, status int, elapsed time.Duration) {

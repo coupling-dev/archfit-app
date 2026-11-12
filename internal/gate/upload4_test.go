@@ -2,6 +2,7 @@ package gate
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -142,11 +143,12 @@ func (w *world4) pullRecord(p *pull) (records.Pull, string) {
 
 func TestUpload4AcceptsAPullRequest(t *testing.T) {
 	for _, tc := range []struct {
-		golden, status string
-		errors         []string
+		golden, status, conclusion string
+		errors                     []string
 	}{
-		{"pass", "pass", nil},
-		{"deny", "fail", []string{"no-chaos-to-runtime pkg_chaos pkg_runtime github.com/alexei-led/pumba/pkg/runtime/docker"}},
+		{"pass", "pass", "success", nil},
+		// The policy has no gate: required, so a fail shows as neutral.
+		{"deny", "fail", "neutral", []string{"no-chaos-to-runtime pkg_chaos pkg_runtime github.com/alexei-led/pumba/pkg/runtime/docker"}},
 	} {
 		t.Run(tc.golden, func(t *testing.T) {
 			w := newWorld4(t)
@@ -160,9 +162,14 @@ func TestUpload4AcceptsAPullRequest(t *testing.T) {
 			if fmt.Sprint(rec) != fmt.Sprint(want) || head != p.head {
 				t.Errorf("pull record = %+v, index head %q; want %+v, %q", rec, head, want, p.head)
 			}
-			if n := w.gh.writes(); n != 0 {
-				t.Errorf("%d check or comment writes; task 15 publishes", n)
+			c := w.wantGate(p, "completed", tc.conclusion)
+			if c.ExternalID != fmt.Sprintf("v2:%d:1:%s", p.runID, s.env.PayloadDigest) {
+				t.Errorf("external_id %q", c.ExternalID)
 			}
+			if comments := w.comments(p); len(comments) != 1 || !strings.Contains(comments[0].Body, "\n## Archfit: "+tc.status) {
+				t.Errorf("comments = %+v", comments)
+			}
+			w.noStateCheck()
 		})
 	}
 }
@@ -255,6 +262,16 @@ func TestUpload4GivesUnknown(t *testing.T) {
 			w.wantStatus(w.send4(s), "unknown", tt.reason)
 			if rec, _ := w.pullRecord(p); rec.Status != "unknown" || rec.Errors != nil {
 				t.Errorf("pull record = %+v, want status unknown and no error keys", rec)
+			}
+			if tt.reason == reasonEnvelopeMismatch || tt.reason == reasonUnsupportedEvent {
+				if n := w.gh.writes(); n != 0 {
+					t.Errorf("%d check or comment writes for a run the App does not judge for the default branch", n)
+				}
+				return
+			}
+			c := w.wantGate(p, "completed", "action_required")
+			if c.Title != "unknown, no verdict" || strings.Contains(w.feedbackText(p), "archfit: pass") {
+				t.Errorf("check %q shows what the App did not accept:\n%s", c.Title, w.feedbackText(p))
 			}
 		})
 	}
@@ -384,6 +401,218 @@ func TestUpload4WorkflowFile(t *testing.T) {
 		}
 		if got := result.Record(result.Result{Unknown: []result.Unknown{rec}, Summary: "archfit: unknown, no verdict"}); !strings.HasPrefix(got, ingest.WorkflowPath+": tool: differs from main\n") {
 			t.Errorf("rendered record = %q", got)
+		}
+	})
+}
+
+// policy4Required is policy4 with a gate that blocks.
+const policy4Required = "version: 3\ngate: required\nowners: [olivia]\nmodules:\n  app:\n    paths: [cmd/**, pkg/**]\n"
+
+// require makes the default branch's policy required and s a run of it.
+func (w *world4) require(s *spec4) {
+	w.setFile(w.shop, testBranch, policyPath, []byte(policy4Required))
+	s.env.PolicyDigest = policy3.Digest([]byte(policy4Required))
+	s.result["policy"].(map[string]any)["digest"] = s.env.PolicyDigest
+}
+
+// noStateCheck fails when anything wrote archfit/state.
+func (w *world4) noStateCheck() {
+	w.t.Helper()
+	for _, c := range w.gh.checkWrites {
+		if c.Name == stateCheckName {
+			w.t.Fatalf("archfit/state written on %s", c.HeadSHA)
+		}
+	}
+}
+
+// latestGate is the newest archfit/gate run of a head, the one GitHub shows; ok is false without one.
+func (w *world4) latestGate(head string) (api.CheckRun, bool) {
+	runs := w.gh.checkRuns(shopName, head, gateCheckName)
+	if len(runs) == 0 {
+		return api.CheckRun{}, false
+	}
+	return slices.MaxFunc(runs, func(a, b api.CheckRun) int { return cmp.Compare(a.ID, b.ID) }), true
+}
+
+func TestUpload4PublishesTheResult(t *testing.T) {
+	t.Run("a fail in a required policy", func(t *testing.T) {
+		w := newWorld4(t)
+		p := w.openPull(w.shop, 7)
+		s := w.spec4(p, "deny")
+		w.require(s)
+		w.wantStatus(w.send4(s), "fail", "")
+		c := w.wantGate(p, "completed", "failure")
+		if c.Title != "fail, 1 error" || len(c.Annotations) != 1 || c.Annotations[0].Path != "pkg/chaos/netem/netem.go" || c.Annotations[0].Line != 8 {
+			t.Errorf("check %q with annotations %+v", c.Title, c.Annotations)
+		}
+		body := w.comments(p)[0].Body
+		if !strings.Contains(body, "\n## Archfit: fail, 1 error\n") || !strings.HasSuffix(body, "**Author:** fix the code and push.\n") {
+			t.Errorf("comment:\n%s", body)
+		}
+		w.noStateCheck()
+	})
+	t.Run("a forged pass over a changed workflow shows only the App's record", func(t *testing.T) {
+		w := newWorld4(t)
+		p := w.openPull(w.shop, 7)
+		s := w.spec4(p, "pass")
+		w.require(s)
+		w.setFile(w.shop, s.claims.SHA, ingest.WorkflowPath, workflow4(actionUnknown, ""))
+		w.wantStatus(w.send4(s), "unknown", reasonWorkflowChanged)
+		w.wantGate(p, "completed", "action_required")
+		text := w.feedbackText(p)
+		if !strings.Contains(text, ingest.WorkflowPath+": tool: differs from main") || strings.Contains(text, "archfit: pass") {
+			t.Errorf("feedback:\n%s", text)
+		}
+		w.noSuccess()
+	})
+	t.Run("a push writes the check and no comment", func(t *testing.T) {
+		w := newWorld4(t)
+		p := w.openPull(w.shop, 7)
+		w.editRun(p, func(r *api.WorkflowRun) { r.Event, r.PullRequests, r.HeadSHA = "push", nil, w.tip })
+		s := w.spec4(p, "pass")
+		s.claims.EventName, s.claims.Ref, s.claims.SHA = "push", "refs/heads/"+testBranch, w.tip
+		s.claims.JobWorkflowRef = shopName + "/" + testWorkflow + "@refs/heads/" + testBranch
+		s.env.Event, s.env.PullRequest, s.env.HeadSHA, s.env.MergeBaseSHA = "push", 0, w.tip, w.tip
+		s.result["head"] = w.tip
+		w.wantStatus(w.send4(s), "pass", "")
+		if c, ok := w.latestGate(w.tip); !ok || c.Conclusion != "success" {
+			t.Errorf("check on the pushed commit = %+v", c)
+		}
+		if w.gh.commentOps != 0 {
+			t.Errorf("%d comment writes for a push", w.gh.commentOps)
+		}
+	})
+	t.Run("a merge group writes the check on its commit", func(t *testing.T) {
+		w := newWorld4(t)
+		p := w.openPull(w.shop, 7)
+		group := w.sha()
+		w.gh.queue = map[string][]api.QueueEntry{branchKey(shopName, testBranch): {{Position: 1, HeadSHA: group, BaseSHA: w.tip, PullRequest: 7, PullHeadSHA: p.head}}}
+		w.editRun(p, func(r *api.WorkflowRun) { r.Event, r.PullRequests, r.HeadSHA = "merge_group", nil, group })
+		w.setFile(w.shop, group, ingest.WorkflowPath, w.gh.files[fileKey(shopName, testBranch, ingest.WorkflowPath)])
+		s := w.spec4(p, "deny")
+		w.require(s)
+		ref := "refs/heads/gh-readonly-queue/main/pr-7-" + w.tip
+		s.claims.EventName, s.claims.Ref, s.claims.SHA = "merge_group", ref, group
+		s.claims.JobWorkflowRef = shopName + "/" + testWorkflow + "@" + ref
+		s.env.Event, s.env.PullRequest, s.env.HeadSHA = "merge_group", 0, group
+		s.result["head"] = group
+		w.wantStatus(w.send4(s), "fail", "")
+		if c, ok := w.latestGate(group); !ok || c.Conclusion != "failure" {
+			t.Errorf("check on the group commit = %+v", c)
+		}
+		if w.gh.commentOps != 0 {
+			t.Errorf("%d comment writes for a merge group", w.gh.commentOps)
+		}
+	})
+	t.Run("a failed write answers a retry", func(t *testing.T) {
+		w := newWorld4(t)
+		p := w.openPull(w.shop, 7)
+		s := w.spec4(p, "pass")
+		w.gh.fail["CreateCheckRun"] = errors.New("fake: GitHub is down")
+		if a := w.send4(s); a.status != http.StatusServiceUnavailable || a.Error != codeUnavailable {
+			t.Errorf("answer = %d %s, want 503 unavailable", a.status, a.raw)
+		}
+	})
+}
+
+// sharePull4 opens pull request number into base on p's head, with its own workflow run of that head.
+func (w *world4) sharePull4(p *pull, number int, base string) *pull {
+	q := w.openPull(w.shop, number)
+	w.editPull(q, func(pl *api.Pull) { pl.HeadSHA, pl.BaseRef = p.head, base })
+	w.editRun(q, func(r *api.WorkflowRun) { r.HeadSHA = p.head })
+	q.head = p.head
+	return q
+}
+
+// A check is per commit. Only a run the App judges for the default branch writes it: a pull request into another
+// base, or an upload that does not match its run, writes nothing, so the commit keeps the check it had. That is no
+// check or a pending one, which blocks a merge, or the result of the pull request into the default branch.
+func TestUpload4SharedHead(t *testing.T) {
+	type before struct {
+		name       string
+		setup      func(*world4, *pull)
+		wantStatus string // "" = no archfit/gate on the commit, which a required check reads as missing
+		wantResult string
+	}
+	befores := []before{
+		{"no check", func(*world4, *pull) {}, "", ""},
+		{"a pending check", func(w *world4, p *pull) {
+			if err := w.gate.publisher.Pending(context.Background(), w.target(p)); err != nil {
+				w.t.Fatal(err)
+			}
+		}, "in_progress", ""},
+		{"a fail of the pull request into the default branch", func(w *world4, p *pull) {
+			s := w.spec4(p, "deny")
+			w.require(s)
+			w.wantStatus(w.send4(s), "fail", "")
+		}, "completed", "failure"},
+		{"a pass of the pull request into the default branch", func(w *world4, p *pull) {
+			w.wantStatus(w.send4(w.spec4(p, "pass")), "pass", "")
+		}, "completed", "success"},
+	}
+	for _, b := range befores {
+		for name, upload := range map[string]func(*world4, *pull){
+			"then a pull request into another base on the same commit": func(w *world4, p *pull) {
+				q := w.sharePull4(p, 8, "release")
+				w.wantStatus(w.send4(w.spec4(q, "pass")), "unknown", reasonUnsupportedEvent)
+				if n := len(w.comments(q)); n != 0 {
+					w.t.Errorf("%d comments on the pull request into another base", n)
+				}
+			},
+			"then an upload that does not match its run": func(w *world4, p *pull) {
+				s := w.spec4(p, "pass")
+				s.env.RunAttempt = 2
+				w.wantStatus(w.send4(s), "unknown", reasonEnvelopeMismatch)
+			},
+		} {
+			t.Run(b.name+", "+name, func(t *testing.T) {
+				w := newWorld4(t)
+				p := w.openPull(w.shop, 7)
+				b.setup(w, p)
+				before := w.gh.writes()
+				upload(w, p)
+				if n := w.gh.writes() - before; n != 0 {
+					t.Errorf("%d check or comment writes", n)
+				}
+				c, ok := w.latestGate(p.head)
+				switch {
+				case b.wantStatus == "" && ok:
+					t.Errorf("a check appeared: %+v", c)
+				case b.wantStatus != "" && (!ok || c.Status != b.wantStatus || c.Conclusion != b.wantResult):
+					t.Errorf("check = %+v, want %s %q", c, b.wantStatus, b.wantResult)
+				}
+			})
+		}
+	}
+
+	t.Run("two pull requests into the default branch: the newest run's check, a comment each", func(t *testing.T) {
+		w := newWorld4(t)
+		p := w.openPull(w.shop, 7)
+		q := w.sharePull4(p, 9, testBranch)
+		older := w.spec4(p, "deny")
+		w.require(older)
+		w.wantStatus(w.send4(older), "fail", "")
+		newer := w.spec4(q, "pass")
+		w.require(newer)
+		w.wantStatus(w.send4(newer), "pass", "")
+		if c, _ := w.latestGate(p.head); c.Conclusion != "success" || !strings.HasPrefix(c.ExternalID, fmt.Sprintf("v2:%d:1:", q.runID)) {
+			t.Errorf("check = %+v, want the newest run %d", c, q.runID)
+		}
+
+		// A re-run of the older run is still older than the newest run: its check stays, its own comment moves.
+		w.editRun(p, func(r *api.WorkflowRun) { r.Attempt = 2 })
+		rerun := w.spec4(p, "deny")
+		w.require(rerun)
+		rerun.claims.RunAttempt, rerun.env.RunAttempt = 2, 2
+		w.wantStatus(w.send4(rerun), "fail", "")
+		if c, _ := w.latestGate(p.head); c.Conclusion != "success" || !strings.HasPrefix(c.ExternalID, fmt.Sprintf("v2:%d:1:", q.runID)) {
+			t.Errorf("the older run overwrote the newer check: %+v", c)
+		}
+		if body := w.comments(p)[0].Body; !strings.Contains(body, fmt.Sprintf("run %d.2 -->", p.runID)) || !strings.Contains(body, "\n## Archfit: fail, 1 error\n") {
+			t.Errorf("comment of #7:\n%s", body)
+		}
+		if body := w.comments(q)[0].Body; !strings.HasSuffix(body, "\n## Archfit: pass\n") {
+			t.Errorf("comment of #9:\n%s", body)
 		}
 	})
 }
