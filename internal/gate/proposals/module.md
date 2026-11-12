@@ -137,6 +137,12 @@ void. The digest is
   index at once, so while a proposal waits ("merge later", or a refused merge) a pull request that fails on the same
   key does not wait on it, and a new request line opens a second issue. During "merge later" an answered request must
   still cover its key (`waiting`, no duplicate issue) until its proposal is consumed.
+- **Stated limit**: a head keeps its `archfit/gate` success after the default branch moves. A ruleset that does not
+  require an up-to-date branch lets an owner merge it on GitHub before the next answer rewrites it. When only other
+  files moved, that merge is the approved policy. When the default branch's policy changed, the merged policy is not
+  the expected digest, so the push is "policy changed outside the flow" (task 20): fail closed, not a silent approval.
+- The voids an answer records stand whatever becomes of it, so their notes and reopened issues are sent at once, on a
+  context that ignores the caller leaving but keeps its deadline.
 - **Stated limit, unmeasured**: the App has no `workflows` permission. A rewrite after the default branch's policy
   changed moves `archfit/policy` onto default-branch commits; if those changed `.github/workflows/`, GitHub may refuse
   the move. The answer then fails with that cause and nothing is recorded. The rehearsal (task 28) can measure it.
@@ -165,7 +171,7 @@ an `archfit/gate` success on the head (design appendix D.2), and the memory Stor
   `TestAnAnswerKeepsGoingAfterItsCallerLeaves` (the caller's context ends after the record),
   `TestAnAnswerJoinsWhenOnlyTheOpenProposalSaysIt`, `TestAVoidedApprovalFreesItsPlace`,
   `TestAnAnswerThatWritesNoLineResyncsWithoutMerging` (answers kept: re-pinned and checked, not merged; none kept: the
-  proposal void and out of the index).
+  proposal void and out of the index), `TestAVoidIsNotedEvenWhenTheAnswerFails`.
 - `TestTheCheckIsSetOnlyWhenEveryD13ConditionHolds`: the branch at another commit, another file, another digest, a
   pull request from another repository, into another branch, closed.
 - `TestTheLease`: a held lease is `ErrBusy` with no write; an expired one is taken over and released; a release never

@@ -208,10 +208,11 @@ func (s *Service) answer(ctx context.Context, r api.Repo, in Input) (Outcome, er
 		return Outcome{}, err
 	}
 	// Approvals that no longer apply leave the proposal before the answer joins it, so its capacity and its pin count
-	// only the answers its branch holds.
-	reopened, err := s.voidRecords(ctx, r, voided)
-	if err != nil {
-		return Outcome{}, err
+	// only the answers its branch holds. They are void whatever becomes of this answer.
+	if cur != nil {
+		if err := s.voidAndNote(ctx, r, cur.rec.PullRequest, voided, false); err != nil {
+			return Outcome{}, err
+		}
 	}
 
 	id := records.NewID()
@@ -234,9 +235,6 @@ func (s *Service) answer(ctx context.Context, r api.Repo, in Input) (Outcome, er
 	defer cancel()
 	if !joins && cur != nil && len(voided) > 0 {
 		pin = s.resync(after, r, cur, tip, file, kept)
-	}
-	if cur != nil {
-		s.noteReopened(after, r, cur.rec.PullRequest, reopened, false)
 	}
 	if pin != nil {
 		listed := kept
@@ -339,14 +337,12 @@ func (s *Service) current(ctx context.Context, r api.Repo) (*proposal, error) {
 			continue
 		case pull.State != "open":
 			// The approvals first: while the proposal is in the index, a later answer repeats a cleanup that stopped.
-			reopened, err := s.voidRecords(ctx, r, p.approvals)
-			if err != nil {
+			if err := s.voidAndNote(ctx, r, p.rec.PullRequest, p.approvals, true); err != nil {
 				return nil, err
 			}
 			if err := records.VoidProposal(ctx, s.store, t, r.FullName, p.id); err != nil {
 				return nil, fmt.Errorf("proposals: void proposal %s: %w", p.id, err)
 			}
-			s.noteReopened(ctx, r, p.rec.PullRequest, reopened, true)
 			continue
 		case open != nil:
 			return nil, fmt.Errorf("proposals: two open proposals, %s and %s", open.id, p.id)
@@ -472,6 +468,30 @@ func (s *Service) resync(ctx context.Context, r api.Repo, cur *proposal, tip str
 		return nil
 	}
 	return &pin
+}
+
+// voidAndNote voids the approvals and, at once, notes and reopens the issues of the requests that opened again: the
+// voids stand whatever becomes of the answer, so their notes never wait for it. The notes ignore the caller leaving
+// but keep its deadline, so the answer stays within its budget.
+func (s *Service) voidAndNote(ctx context.Context, r api.Repo, pull int, approvals []approved, closed bool) error {
+	reopened, err := s.voidRecords(ctx, r, approvals)
+	if err != nil {
+		return err
+	}
+	if len(reopened) > 0 {
+		notes, cancel := detached(ctx)
+		defer cancel()
+		s.noteReopened(notes, r, pull, reopened, closed)
+	}
+	return nil
+}
+
+// detached is ctx without its cancellation and with its deadline.
+func detached(ctx context.Context) (context.Context, context.CancelFunc) {
+	if deadline, ok := ctx.Deadline(); ok {
+		return context.WithDeadline(context.WithoutCancel(ctx), deadline)
+	}
+	return context.WithCancel(context.WithoutCancel(ctx))
 }
 
 // voidRecords marks each approval void (records.Void, which takes it out of its proposal and opens its request again)

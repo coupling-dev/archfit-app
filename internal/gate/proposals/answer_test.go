@@ -598,3 +598,25 @@ func TestAnAnswerThatWritesNoLineResyncsWithoutMerging(t *testing.T) {
 		}
 	})
 }
+
+// TestAVoidIsNotedEvenWhenTheAnswerFails: the voids stand whatever becomes of the answer, so their notes and reopened
+// issues do too.
+func TestAVoidIsNotedEvenWhenTheAnswerFails(t *testing.T) {
+	w := newWorld(t)
+	w.request(431, "graph", "pkg_tc", "pkg_util")
+	w.request(432, "graph", "pkg_tc", "pkg_db")
+	w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, true)
+	w.hub.push(fakeBase, policyPath, strings.Replace(testPolicy, "  pkg_util:\n    paths: [pkg/util/**]\n", "", 1))
+	w.hub.errs["CommitOn"] = errors.New("github: 502")
+
+	if _, err := w.answer(olivia, 432, requests.Answer{Kind: policy3.Approve}, false); err == nil {
+		t.Fatal("the answer passed although its branch write failed")
+	}
+	if got := w.requestState(431); got != records.StateOpen || !w.hub.issues[431] ||
+		!strings.Contains(w.hub.lastComment(431), "open again") {
+		t.Errorf("request 431: %q, issue open %v, note:\n%s", got, w.hub.issues[431], w.hub.lastComment(431))
+	}
+	if got := w.requestState(432); got != records.StateOpen {
+		t.Errorf("request 432 = %q, want still open", got)
+	}
+}
