@@ -262,6 +262,7 @@ type answer struct {
 	retryAfter string
 	raw        string
 	Conclusion string `json:"conclusion"`
+	Status     string `json:"status"` // envelope 2
 	Reason     string `json:"reason"`
 	Error      string `json:"error"`
 }

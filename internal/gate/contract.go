@@ -46,6 +46,7 @@ type Gate struct {
 	comments   api.Comments
 	admissions admitter
 	now        func() time.Time
+	v4         *upload4 // the envelope 2 upload path
 }
 
 // admitter is the one method of Admissions every gate path asks before it does anything for an installation.
@@ -63,6 +64,8 @@ type github interface {
 	api.Comments
 	api.Issues
 	api.MergeQueues
+	api.WorkflowRuns
+	api.Commits
 }
 
 func New(d Deps) *Gate {
@@ -77,17 +80,20 @@ func compose(gh github, v oidc.Verifier, s store.Store, adm admitter, audience s
 	resolver := inputs.New(gh, gh, gh, s)
 	reqs := decisions.New(s, gh, gh, now)
 	publisher := feedback.New(gh, gh, gh, s, audience, now) // the audience is the App's base URL
-	return newGate(newReceiver(gh, v, audience, adm), resolver, reqs, publisher, feedback.NewRepairer(gh, gh, gh, gh, s, now),
+	g := newGate(newReceiver(gh, v, audience, adm), resolver, reqs, publisher, feedback.NewRepairer(gh, gh, gh, gh, s, now),
 		sweep.New(gh, gh, gh, resolver, publisher, adm, reqs, c), gh, gh, gh, gh, gh, adm, now)
+	g.v4 = newUpload4(ingest.NewV2(gh, gh, gh, gh, gh, v, audience, adm), gh, gh, s)
+	return g
 }
 
 func newGate(rc ingest.Receiver, rs inputs.Resolver, rq requests, p feedback.Publisher, rp feedback.Repairer, sw sweep.Sweeper, a api.Actions, repos api.Repos, pl api.Pulls, q api.MergeQueues, cm api.Comments, adm admitter, now func() time.Time) *Gate {
 	return &Gate{receiver: rc, resolver: rs, requests: rq, publisher: p, repairer: rp, sweeper: sw, actions: a, repos: repos, pulls: pl, queues: q, comments: cm, admissions: adm, now: now}
 }
 
-// UploadHandler serves POST /v1/reports.
+// UploadHandler serves POST /v1/reports: envelope 2 uploads on the Archfit 4 path, every other upload on the
+// envelope 1 path.
 func (g *Gate) UploadHandler() http.Handler {
-	return http.HandlerFunc(g.serveUpload)
+	return http.HandlerFunc(g.serveReports)
 }
 
 // NewReceiver exposes the upload authentication and binding step so that the discovery
