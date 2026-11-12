@@ -50,6 +50,13 @@ var sentinels = []struct {
 }{
 	{session.ErrForbidden, http.StatusNotFound, "not_found", "Not found."},
 	{api.ErrNotFound, http.StatusNotFound, "not_found", "Not found."},
+	{gate.ErrNoRequest, http.StatusNotFound, "not_found", "Not found."},
+	{gate.ErrClosedRequest, http.StatusConflict, "request_closed", "This request is answered or closed. Reload the page."},
+	{gate.ErrAnswer, http.StatusUnprocessableEntity, "answer",
+		"Choose an answer: approve, approve until a date (YYYY-MM-DD), or reject with what to do instead."},
+	{gate.ErrNoPolicy, http.StatusConflict, "no_policy",
+		"The default branch has no policy of version 3, so no answer can be written. Add .archfit.yaml first."},
+	{gate.ErrByHand, http.StatusConflict, "by_hand", "Archfit cannot write this answer into .archfit.yaml. Edit the policy by hand."},
 	{proposal.ErrStale, http.StatusConflict, "stale",
 		"The draft changed on GitHub after this page was loaded. Nothing was saved. Reload the draft and apply your edit again."},
 	{assist.ErrInvalidRequest, http.StatusUnprocessableEntity, "invalid", "The request is not valid: write a short instruction and try again."},

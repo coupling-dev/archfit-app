@@ -26,6 +26,7 @@ the gate would still verify reports, but nobody could onboard, edit a policy, st
   the decision requests of unattended agents and lets an owner decline or approve one.
 - Pass the gate's decision queue seam (`DecisionQueue`) to `ui`, whose overview and decisions page list the decision
   requests that wait for an owner. It reads only.
+- Pass the gate's request page seam (`RequestViews`) to `ui`: a request and the preview of each answer. It reads only.
 - Build `passkey` with its two GitHub ports (the owners of the target policy, the registration issue) and pass it to
   `ui`. The worker role does not build it.
 - Re-publish the two platform seams, `Sandbox` and `Provider`, so `app` and platform packages cite one place.
@@ -63,6 +64,8 @@ type Deps struct {
     Decisions Decisions
     // DecisionQueue lists the decision requests that wait for an owner, for the overview and the decisions page: the gate façade.
     DecisionQueue DecisionQueue
+    // RequestViews reads a request and the preview of each answer for the request page: the gate façade. It reads only.
+    RequestViews RequestViews
     Operators []int64
     Sandbox    Sandbox
     Provider   Provider

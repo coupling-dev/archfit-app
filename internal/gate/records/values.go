@@ -145,6 +145,10 @@ type Pull struct {
 	PayloadDigest string   `json:"payload_digest"`
 	Status        string   `json:"status"`
 	Errors        []string `json:"errors,omitempty"` // the error keys of the result
+	// RequestKeys holds, for each error of Errors in the same order, its request key (wire/request), "" when it has
+	// none. The engine's keys are compared, never parsed, so the preview of an answer reads these to know which errors
+	// the answer clears.
+	RequestKeys []string `json:"request_keys,omitempty"`
 }
 
 // Value is a type of this package that Encode and Decode accept. stamp names the value's schema; for the record

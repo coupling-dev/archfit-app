@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
+	pathpkg "path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -53,19 +54,33 @@ func parsedFiles(t *testing.T) map[string]*ast.File {
 	return files
 }
 
-// selectorsNamed returns "<package dir>.<enclosing function>" for every use of a selector called name.
+// selectorsNamed returns "<package dir>.<enclosing function>" for every use of a selector called name: a method or a
+// field, not a name another package declares (policy3.Approve is an answer kind, not a call).
 func selectorsNamed(files map[string]*ast.File, name string) []string {
 	var out []string
 	for path, f := range files {
+		imported := map[string]bool{}
+		for _, spec := range f.Imports {
+			local := pathpkg.Base(strings.Trim(spec.Path.Value, `"`))
+			if spec.Name != nil {
+				local = spec.Name.Name
+			}
+			imported[local] = true
+		}
 		for _, decl := range f.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
 			if !ok || fn.Body == nil {
 				continue
 			}
 			ast.Inspect(fn.Body, func(n ast.Node) bool {
-				if sel, ok := n.(*ast.SelectorExpr); ok && sel.Sel.Name == name {
-					out = append(out, filepath.Dir(path)+"."+fn.Name.Name)
+				sel, ok := n.(*ast.SelectorExpr)
+				if !ok || sel.Sel.Name != name {
+					return true
 				}
+				if x, ok := sel.X.(*ast.Ident); ok && x.Obj == nil && imported[x.Name] {
+					return true
+				}
+				out = append(out, filepath.Dir(path)+"."+fn.Name.Name)
 				return true
 			})
 		}

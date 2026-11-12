@@ -38,6 +38,11 @@ separate, testable steps. Without this module a report is a self-reported file a
 - For the App's pull-request page only (`Approvals`): read protected owners, source snapshot, active native/App objections, audit history and reviewer-notification status; record approval, request changes, withdrawal or reasoned override; mirror reasons, then re-evaluate state and affected merge groups. A native review remains unchanged by an App override.
 - For the App's pages only (`DecisionQueue`): count the decision requests that wait for an owner and return the records
   of the first few, from the Store alone, for the overview's counters and the decisions page. It grants nothing.
+- For the App's request page only (`RequestViews`, M2 task 17): read a request (reason, record, balance verified or "as
+  reported", the two modules of the policy at the default branch's tip, earlier answers) and preview an answer (the
+  policy diff, whether it needs the passkey, the open pull requests it touches by their stored request keys). It writes
+  nothing and runs no analysis. `PolicyEdit` writes an answer's change (`AnswerChange`) into a policy: the edit the
+  preview shows is the edit the answer writes (task 19).
 - For the App's pull request page only (`FirstScreen`, `RecoveryStep`): word a published result with the code that
   words the comment, so the page's first screen is the comment's. Pure functions of what the check recorded.
 - For the App's pull request page only (`Decisions`): list the decision requests of a pull request, and let an
@@ -201,6 +206,26 @@ func RecoveryStep(code, next string) string
 
 type ScreenInput = feedback.ScreenInput; type ScreenReason = feedback.ScreenReason; type ScreenLine = feedback.Line
 ```
+
+```go
+// RequestViews is what the App's request page reads. *Gate implements it.
+type RequestViews interface {
+    RequestView(ctx context.Context, t Target, number int) (RequestView, error)
+    RequestPreview(ctx context.Context, t Target, number int, a RequestAnswer) (RequestPreview, error)
+}
+// Owned by gate/requests (gate/records for the numbers).
+type RequestView = asks.View; type RequestModule = asks.Module; type RequestEarlier = asks.Earlier
+type RequestPreview = asks.Preview; type RequestPullEffect = asks.PullEffect; type RequestAnswer = asks.Answer
+type RequestNumbers = records.Numbers; type RequestBalance = records.Balance; type AnswerChange = asks.Change
+const EarlierDeny, EarlierException
+var ErrNoRequest, ErrClosedRequest, ErrAnswer, ErrNoPolicy, ErrByHand // gate/requests' errors
+func PolicyEdit(file []byte, c AnswerChange, comment string) ([]byte, error)
+func RequestComment(number int) string // "request #431": with it, PolicyEdit writes the edit the preview shows
+```
+
+`RequestView` and `RequestPreview` ask `Admitted` first, then read the request and pull records from the Store and the
+policy at the default branch's tip from GitHub (`t.Repo` names the repository). `RequestPreview` judges an
+approve-until date on the gate's clock. The façade file is `preview.go`.
 
 `PendingDecisions` asks `Admitted` first and then `decisions.PendingQueue(t, limit)`: `t.Repo` names the repository, the
 pull request is not read. It is a read of the Store: no GitHub call, no lease, and an unreadable list or record is the
@@ -957,7 +982,8 @@ func Withdrawal(t Target, current CheckState, tr Trusted) *Publication
 - **Balanced?**: yes
 - **Shared knowledge**: `Service` (`Comment`, `Filed`), built with the same `Publisher4` as the envelope 2 upload so
   both take one head lease; `IsRequest`; `OpenIndex`, `Cover`, `Wait` for the upload's status step; `PullClosed`.
-  The façade file is `requests.go`; the package name is imported as `asks`, because the gate's `requests` type is the
+  `View`, `Preview`, `ChangeOf`, `Edit` and the request page's types for `RequestViews` and `PolicyEdit` (façade file
+  `preview.go`). The façade file of the intake is `requests.go`; the package name is imported as `asks`, because the gate's `requests` type is the
   Archfit 3 decision intake.
 
 ### wire/manifest
@@ -1438,7 +1464,7 @@ type Swap struct {
 - **internal/app**: contract (constructor, handlers), root / 1 / 1, low, balanced. Calls `New`, mounts
   `UploadHandler`, calls `HandleEvent` before `control.HandleEvent`, calls `Sweep` from `/internal/sweep`,
   passes `NewReceiver(...)` to `control`, builds the `Admissions` for `Deps.Admissions` and `NewReceiver`, and passes
-  the `*Gate` to `control` as its `Approvals` its `Decisions` and its `DecisionQueue`.
+  the `*Gate` to `control` as its `Approvals` its `Decisions`, its `DecisionQueue` and its `RequestViews`.
 - **internal/control/account**: contract, root / 2 / 2, moderate, balanced. Writes the JSON of `Entitlement`
   under `EntitlementKey`, and writes and deletes the JSON of `Admission` under `AdmissionKey`. The gate owns the
   records so that it never imports billing or operator code.
@@ -1449,8 +1475,9 @@ type Swap struct {
   button, behind the browser session, CSRF token and write access; maps the refusals to its wording. It calls
   `DecisionRequests`, `ApproveDecision`, `ApprovedDecision` and `DeclineDecision` for the decision requests of the page.
   Also (through `control.Deps.DecisionQueue`, the same `*Gate`) calls `PendingDecisions` for the overview and the decisions
-  page, and `FirstScreen` and `RecoveryStep` for the pull request page and the overview's re-run rows.
-  Nothing on the upload (OIDC) path holds `Approvals`, `Decisions` or `DecisionQueue`.
+  page, and `FirstScreen` and `RecoveryStep` for the pull request page and the overview's re-run rows. Through
+  `control.Deps.RequestViews` it calls `RequestView` and `RequestPreview` for the request page, read access only.
+  Nothing on the upload (OIDC) path holds `Approvals`, `Decisions`, `DecisionQueue` or `RequestViews`.
 
 ## Internal Design
 

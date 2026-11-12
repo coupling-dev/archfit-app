@@ -34,6 +34,7 @@ type Deps struct {
 	Decisions     gate.Decisions     // decision requests of unattended agents: listed, declined, approved by an owner
 	DecisionQueue gate.DecisionQueue // decision requests of unattended agents that wait for an owner: read only
 	Passkeys      passkey.Passkeys   // the signed-in user's passkeys and the step-up of an answer
+	RequestViews  gate.RequestViews  // the request page: a request and the preview of each answer, read only
 	Operators     []int64            // GitHub user IDs that approve installations on /admin
 	Now           func() time.Time
 }
@@ -91,6 +92,7 @@ type server struct {
 	decisions     gate.Decisions
 	decisionQueue gate.DecisionQueue
 	passkeys      passkey.Passkeys
+	requests      gate.RequestViews
 	operators     []int64
 	now           func() time.Time
 	baseURL       string
@@ -124,6 +126,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 		decisions:     d.Decisions,
 		decisionQueue: d.DecisionQueue,
 		passkeys:      d.Passkeys,
+		requests:      d.RequestViews,
 		operators:     d.Operators,
 		now:           d.Now,
 		baseURL:       d.BaseURL,
@@ -202,6 +205,8 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("POST /api/repos/{o}/{n}/policy/check", s.apiRepo(permRead, s.apiCheckPolicy))
 	mux.Handle("POST /api/repos/{o}/{n}/policy/ready", s.apiRepo(permWrite, s.apiReady))
 	mux.Handle("POST /api/repos/{o}/{n}/assist", s.apiRepo(permWrite, s.apiAssist))
+	mux.Handle("GET /api/repos/{o}/{n}/requests/{number}", s.apiRepo(permRead, s.apiRequest))
+	mux.Handle("GET /api/repos/{o}/{n}/requests/{number}/preview", s.apiRepo(permRead, s.apiRequestPreview))
 	// The passkey routes need read: who registers is the passkey rule (an owner, or an administrator before the first
 	// policy), and a step-up or a removal is the user's own passkey.
 	mux.Handle("GET /api/repos/{o}/{n}/passkeys", s.apiRepo(permRead, s.apiPasskeys))
