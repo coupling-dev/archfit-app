@@ -28,8 +28,10 @@ direct push to the policy is the new rule with no owner's word.
      `MergeCommitSHA` is the pushed commit, or, when a merge queue landed several pull requests at once, on the
      history of the pushed commit and not of the commit before: `Compare`) and whose expected digest is the pushed
      policy's: `records.Consume` with the merge commit, `consumed`. The approved digest moves only when the policy at
-     the default branch's tip is that digest now (`records.Merge.AtTip`), so a consume handled after a later policy
-     push never puts an older digest back, and never approves a tip that holds a change no approval made. The outcome
+     the default branch's tip is that digest now and the merge commit comes after the repository's approved commit
+     (`records.Merge.AtTip`, judged over `Merge.Over`; a consume that lands in between is `records.ErrApprovedMoved`,
+     and both are read again, at most 3 rounds). So a consume handled after a later policy push, or racing it, never
+     puts an older digest back, and never approves a tip that holds a change no approval made. The outcome
      lists the requests of its approvals and the pull requests waiting on them, for the re-check after an answer
      (task 21).
   5. Such a proposal with another digest (an owner merged a head from before the last answer joined, or the default
@@ -37,8 +39,10 @@ direct push to the policy is the new rule with no owner's word.
      (their requests open again: note, issue reopened), then the proposal. An answer that joined it meanwhile
      (`records.ErrApprovalsLeft`) is read and voided too, at most 3 rounds. Without this its requests would cover their
      keys for ever.
-  6. No approved digest and not outside the flow: `unguarded`, recorded (`records.Unguarded`), so a delivery of it
-     again after the first consume is not outside the flow. Change control starts with the first approval (task 23) or
+  6. No approved digest and not outside the flow, or a push made before the first approval (the commit before it
+     strictly behind `Repo.GuardedSince` and the pushed commit on its history; a push that moves the branch back from a
+     later commit is not one): `unguarded`, recorded (`records.Unguarded`), so a delivery of it again after the first
+     consume is not outside the flow. Change control starts with the first approval (task 23) or
      the first consume at the tip; the envelope 2 upload says `first_approval` until then (manager, 2026-11-12).
   7. Otherwise `outside`: `records.Outside` sets the state and records the push in one swap, then one issue is opened
      to the owners of the policy before the push (the one owners stood behind; the pushed one when there is none), and
@@ -102,7 +106,9 @@ func (s *Service) Pushed(ctx context.Context, p Push) (Outcome, error)
 ## Change Vectors
 
 - Task 23: confirm and revert end the state; the first approval and the workflow approval are proposals on their own
-  pull requests, consumed here unchanged.
+  pull requests, consumed here unchanged. An approval recorded there without a consume (the first approval of an
+  already-converted repository, a confirm) sets `Repo.ApprovedCommit`, and the first one `GuardedSince`, as `Consume`
+  does.
 - Task 21 replaces the logged hand-off with the re-check.
 
 ## Constraints and Invariants
@@ -117,9 +123,13 @@ func (s *Service) Pushed(ctx context.Context, p Push) (Outcome, error)
   requests).
 - **Stated limit**: when an owner merges a pinned head on GitHub while another answer joins the proposal, the push's
   digest is not the expected one: the push is outside the flow and the proposal void (fail closed).
-- **Stated limit**: two consumes handled out of order use both proposals' approvals; the approved digest is the one
-  the tip held when the later-handled consume read it. A first consume after an unjudged direct push approves
-  nothing: the repository stays without an approved policy (`first_approval`) until task 23's first approval.
+- **Stated limit**: two consumes handled out of order use both proposals' approvals; the approved digest is the newer
+  one. A first consume after an unjudged direct push approves nothing: the repository stays without an approved policy
+  (`first_approval`) until task 23's first approval.
+- **Stated limit**: a direct push that lands while the first consume of a repository is in flight (after it read the
+  tip, before its swap) is judged unguarded, and the consume approves: the tip then holds a policy no approval made,
+  with no state and no issue. Every upload is `unknown` (`policy_unapproved`, fail closed) until the sweep compares the
+  tip with the approved digest (task 22).
 - **Stated limit**: a policy push whose event is lost is not judged until the sweep compares the tip with the approved
   digest (task 22); meanwhile every upload is `unknown` (`policy_unapproved`). A proposal whose merge push is lost
   stays open and its requests cover their keys until then.
@@ -147,7 +157,9 @@ Over a fake GitHub (the policy per commit, pull requests, issues) and the memory
 - `TestAConsumeHandledLateKeepsTheNewerApproval`, `TestAFirstConsumeAfterAnUnjudgedDirectPushApprovesNothing` (the
   direct push again is still unguarded), `TestAPushBackToAConsumedCommitIsOutsideTheFlow`,
   `TestAMergeQueueBatchIsConsumed` (the merge commit inside a batch; a batch whose last policy no approval made is
-  outside the flow and voids the proposal), `TestAnAnswerThatJoinsDuringTheVoidIsVoidedToo`.
+  outside the flow and voids the proposal), `TestAnAnswerThatJoinsDuringTheVoidIsVoidedToo`,
+  `TestALatePushFromBeforeTheFirstApprovalIsNotOutsideTheFlow` (a push back to the first approval's commit is judged),
+  `TestAConsumeThatLosesARaceKeepsTheNewerApproval`.
 
 In `internal/gate` (`approvals_test.go`), over the gate's fake GitHub: `TestADirectPushPutsEveryUploadOutsideTheFlow`
 (one issue, the upload `unknown` with `outside_flow` naming it), `TestAnAnsweredRequestCoversItsKeyUntilItsProposalIsConsumed`,

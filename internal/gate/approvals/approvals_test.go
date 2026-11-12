@@ -667,3 +667,66 @@ func TestAnAnswerThatJoinsDuringTheVoidIsVoidedToo(t *testing.T) {
 		t.Error("the request that joined during the void was not reopened")
 	}
 }
+
+// TestALatePushFromBeforeTheFirstApprovalIsNotOutsideTheFlow: a direct push made before any approval, delivered after
+// the first consume, was made outside change control; a push back to the first approval's commit is judged.
+func TestALatePushFromBeforeTheFirstApprovalIsNotOutsideTheFlow(t *testing.T) {
+	w := newWorld(t)
+	w.gh.commit("c0", policyV(0))
+	w.gh.commit("c1", policyV(1)) // a direct push, its event delayed
+	w.answered(431, "graph a b", "p1", 21, digestV(2))
+	w.merge(21, "c2", 2)
+
+	if out := w.push("c1", "c2"); out.Judged != JudgedConsumed || w.repo().ApprovedDigest != digestV(2) {
+		t.Fatalf("the first consume = %+v, repository %+v", out, w.repo())
+	}
+	if out := w.push("c0", "c1"); out.Judged != JudgedUnguarded || w.repo().OutsideFlow != nil || len(w.gh.openIssues()) != 0 {
+		t.Errorf("the late push = %+v, repository %+v; want unguarded, no state, no issue", out, w.repo())
+	}
+
+	w.gh.commit("c3", policyV(3))
+	w.push("c2", "c3") // outside the flow
+	w.wantOutside(w.push("c3", "c1"), digestV(1))
+}
+
+// consumeRace is a Store double that lands another consume just before the first consume swap of p1, after p1's
+// handler judged the tip.
+type consumeRace struct {
+	store.Store
+	land func()
+	done bool
+}
+
+func (c *consumeRace) CompareAndSwapAll(ctx context.Context, t store.Tenant, swaps []store.Swap) (bool, error) {
+	if !c.done && len(swaps) == 5 && swaps[0].Key == records.ProposalKey(testRepo.FullName, "p1") {
+		c.done = true
+		c.land()
+	}
+	return c.Store.CompareAndSwapAll(ctx, t, swaps)
+}
+
+// TestAConsumeThatLosesARaceKeepsTheNewerApproval: p1's handler finds its digest at the tip, then p2 merges and is
+// consumed before p1's swap; p1 judges again and approves nothing, so the newer approval stays.
+func TestAConsumeThatLosesARaceKeepsTheNewerApproval(t *testing.T) {
+	w := newWorld(t)
+	w.approved(digestV(0))
+	w.gh.commit("c0", policyV(0))
+	w.answered(431, "graph a b", "p1", 21, digestV(1))
+	w.merge(21, "c1", 1)
+	w.answered(432, "graph c d", "p2", 22, digestV(2))
+	other := New(w.gh, w.mem)
+	w.svc = New(w.gh, &consumeRace{Store: w.mem, land: func() {
+		w.merge(22, "c2", 2)
+		if out, err := other.Pushed(context.Background(), Push{Repo: testRepo, Before: "c1", After: "c2"}); err != nil ||
+			out.Judged != JudgedConsumed {
+			t.Errorf("p2's push = %+v, %v", out, err)
+		}
+	}})
+
+	if out := w.push("c0", "c1"); out.Judged != JudgedConsumed || out.Proposal != "p1" {
+		t.Fatalf("p1's push = %+v", out)
+	}
+	if r := w.repo(); r.ApprovedDigest != digestV(2) || r.ApprovedCommit != "c2" {
+		t.Errorf("repository %+v, want p2's policy approved at c2", r)
+	}
+}

@@ -72,11 +72,17 @@ type Merge struct {
 	Commit   string // the pull request's merge commit
 	Digest   string // the policy digest it landed
 	Push     Push   // the push that landed it; its After is a later commit when a merge queue landed several
-	// AtTip says the policy at the default branch's tip has Digest now. Only then does Digest become the approved
-	// digest: a consume handled after a later policy push never puts an older digest back, and never approves a tip
-	// that holds a change no approval made.
+	// AtTip says the policy at the default branch's tip has Digest now, and Commit comes after Over. Only then does
+	// Digest become the approved digest: a consume handled after a later policy push never puts an older digest back,
+	// and never approves a tip that holds a change no approval made.
 	AtTip bool
+	// Over is the repository's ApprovedCommit the caller judged AtTip against. With AtTip, a repository that holds
+	// another one now (a consume landed in between) is ErrApprovedMoved: read it again and judge again.
+	Over string
 }
+
+// ErrApprovedMoved is returned by Consume when the repository's approved commit is not the Merge's Over any more.
+var ErrApprovedMoved = errors.New("records: the approved commit moved")
 
 // Consume is the one-use step of a proposal: its merge commit landed on the default branch with the expected
 // digest. In one CompareAndSwapAll of five keys it moves the proposal from open to merged and records the merge
@@ -200,7 +206,13 @@ func consume(ctx context.Context, s store.Store, t store.Tenant, fullName string
 			}
 		}
 		if m.AtTip && r.OutsideFlow == nil {
-			r.ApprovedDigest = m.Digest
+			if r.ApprovedCommit != m.Over {
+				return nil, ErrApprovedMoved
+			}
+			if r.ApprovedDigest == "" {
+				r.GuardedSince = m.Commit // the first approval: change control starts here
+			}
+			r.ApprovedDigest, r.ApprovedCommit = m.Digest, m.Commit
 		}
 
 		out, err := encodeAll(&p, &r, &push)

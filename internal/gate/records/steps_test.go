@@ -676,3 +676,37 @@ func TestAPushBackToAJudgedCommitIsAnotherPush(t *testing.T) {
 		t.Errorf("a push back to c1 = %+v, %v, %v; want judged outside the flow", r, marked, err)
 	}
 }
+
+// TestAConsumeApprovesOverTheApprovedCommitItRead: an approval judged against an approved commit that moved meanwhile
+// writes nothing; the first approval marks where change control started.
+func TestAConsumeApprovesOverTheApprovedCommitItRead(t *testing.T) {
+	ctx := context.Background()
+	s := store.NewMemory()
+	openProposal(t, s, "p1", 50, "d1")
+	first := merge("p1", "c1", "d1")
+	if err := records.Consume(ctx, s, tenant, repoName, first); err != nil {
+		t.Fatal(err)
+	}
+	if r := load[records.Repo](t, s, records.RepoKey(repoName)); r.ApprovedCommit != "c1" || r.GuardedSince != "c1" {
+		t.Errorf("repository %+v, want approved at c1 and guarded since c1", r)
+	}
+
+	openProposal(t, s, "p2", 51, "d2")
+	stale := merge("p2", "c2", "d2") // judged when nothing was approved yet
+	keys := []string{records.ProposalKey(repoName, "p2"), records.RepoKey(repoName), records.ProposalIndexKey(repoName)}
+	before := snapshot(t, s, keys...)
+	if err := records.Consume(ctx, s, tenant, repoName, stale); !errors.Is(err, records.ErrApprovedMoved) {
+		t.Fatalf("Consume over a moved approved commit = %v, want ErrApprovedMoved", err)
+	}
+	if !reflect.DeepEqual(before, snapshot(t, s, keys...)) {
+		t.Error("a refused consume changed a key")
+	}
+	stale.Over = "c1"
+	if err := records.Consume(ctx, s, tenant, repoName, stale); err != nil {
+		t.Fatal(err)
+	}
+	if r := load[records.Repo](t, s, records.RepoKey(repoName)); r.ApprovedDigest != "d2" || r.ApprovedCommit != "c2" ||
+		r.GuardedSince != "c1" {
+		t.Errorf("repository %+v, want d2 approved at c2, still guarded since c1", r)
+	}
+}

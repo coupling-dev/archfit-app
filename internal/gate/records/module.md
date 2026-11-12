@@ -86,7 +86,7 @@ writes the repository's proposal.
 
 | Key | Value | `schema` | Holds |
 | --- | --- | --- | --- |
-| `v4/repo/<repo>` | `Repo` | `archfit-app.repo.v1` | approved digest; outside the flow (digest, issue); drift issue; expiry issues (exception key → issue) |
+| `v4/repo/<repo>` | `Repo` | `archfit-app.repo.v1` | approved digest and the merge commit that brought it; the commit of the first approval (change control starts there); outside the flow (digest, issue); drift issue; expiry issues (exception key → issue) |
 | `v4/request/<repo>/<issue>` | `Request` | `archfit-app.request.v1` | key, reason, numbers (verified, balance), waiting pull requests, state `open`, `answered` or `closed`; rule, path, modules, expiry date and record, so the issue body can be rendered again; the pull requests the body lists |
 | `v4/approval/<repo>/<id>` | `Approval` | `archfit-app.approval.v1` | kind, request, change (raw JSON, owned by the policy writer), owner (user id and login), credential, time, proposal (set once), state `open` or `void` |
 | `v4/proposal/<repo>/<id>` | `Proposal` | `archfit-app.proposal.v1` | ordered approval ids (at most `MaxApprovals` = 9), pull request, head SHA, expected digest, state `open`, `merged` or `void`, consuming commit |
@@ -111,7 +111,9 @@ Functions, all under one installation tenant:
   the proposal `merged` with its merge commit `Commit`, its proposal index entry removed, the repository's
   `ApprovedDigest` set to `Digest`, the requests of its approvals removed from the request index, and
   `PolicyPush{Digest, Proposal}` at `PolicyPushKey(Push)` (a merge queue lands a merge commit inside a push to a later
-  commit). The approvals are read before the swap (they would add up to 9 keys); a proposal that gained one meanwhile
+  commit). With `AtTip` the repository must still hold `Over` as its `ApprovedCommit` (else `ErrApprovedMoved` and
+  nothing is written: a consume landed in between, judge again); then `ApprovedDigest` and `ApprovedCommit` become
+  `Digest` and `Commit`, and the first approval also sets `GuardedSince`. The approvals are read before the swap (they would add up to 9 keys); a proposal that gained one meanwhile
   is read again, at most 3 times, then `store.ErrConflict`. The approved digest moves only with `AtTip` (the default
   branch's tip holds `Digest` now): a consume handled after a later policy push never puts an older digest back, and
   never approves a tip that holds a change no approval made. While the repository is outside the flow it stays too:
@@ -172,7 +174,8 @@ sweep) read and write through this module;
   An answered request is in the request index while the proposal its approval joined is open.
 - An approval joins at most one proposal, and is consumed at most once, by that proposal's merge commit.
 - A proposal is merged by exactly one commit. Its digest becomes the repository's approved digest only when the
-  default branch's tip held it at the consume and the repository was not outside the flow.
+  default branch's tip held it at the consume, its merge commit came after the approved commit, and the repository was
+  not outside the flow. The approved commit only moves forward.
 - No result bytes, report or source are stored (M2 D6). A request keeps the record its issue shows: check output of
   the asked errors, at most 30,000 bytes, never source.
 - Errors never quote a stored value.
@@ -198,7 +201,9 @@ sweep) read and write through this module;
 - `TestAConsumeOutsideTheFlowKeepsTheApprovedDigest`, `TestAConsumeReadsAnApprovalThatJoinedMeanwhile` (an answer joins
   at the same digest between the read and the swap: both requests leave the index),
   `TestAConsumeApprovesOnlyWhatTheTipHolds`, `TestAConsumeRecordsTheMergeCommitAndThePush`, `TestUnguarded`,
-  `TestAPushBackToAJudgedCommitIsAnotherPush`, `TestAProposalWithAnApprovalLeftIsNotVoided`.
+  `TestAPushBackToAJudgedCommitIsAnotherPush`, `TestAProposalWithAnApprovalLeftIsNotVoided`,
+  `TestAConsumeApprovesOverTheApprovedCommitItRead` (a moved approved commit writes nothing; the first approval sets
+  `GuardedSince`).
 - `TestOutside`: the state and the push recorded; the issue recorded once, a second one returns the first; the same
   push again changes no byte; a later push keeps the issue; a consumed push is `ErrMoved`; `OutsideIssue` inside the
   flow is `ErrMoved`.

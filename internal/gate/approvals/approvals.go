@@ -29,8 +29,12 @@ const (
 	compareAhead     = "ahead"
 )
 
-// voidRounds is how often a void reads a proposal that keeps gaining an approval.
-const voidRounds = 3
+// voidRounds is how often a void reads a proposal that keeps gaining an approval; approveRounds how often a consume
+// reads an approved commit that keeps moving.
+const (
+	voidRounds    = 3
+	approveRounds = 3
+)
 
 // The judgements of a push.
 const (
@@ -125,13 +129,8 @@ func (s *Service) Pushed(ctx context.Context, p Push) (Outcome, error) {
 	voided := ""
 	if merged != nil {
 		if merged.rec.ExpectedDigest == digest {
-			tip, err := s.tipDigest(ctx, p.Repo)
-			if err != nil {
+			if err := s.consume(ctx, p.Repo, merged, push, digest); err != nil {
 				return Outcome{}, err
-			}
-			m := records.Merge{Proposal: merged.id, Commit: merged.commit, Digest: digest, Push: push, AtTip: tip == digest}
-			if err := records.Consume(ctx, s.store, t, name, m); err != nil {
-				return Outcome{}, fmt.Errorf("approvals: consume proposal %s: %w", merged.id, err)
 			}
 			return s.consumed(ctx, p.Repo, merged.id)
 		}
@@ -147,7 +146,14 @@ func (s *Service) Pushed(ctx context.Context, p Push) (Outcome, error) {
 	if err := records.Load(ctx, s.store, t, records.RepoKey(name), &r); err != nil && !errors.Is(err, records.ErrNoRecord) {
 		return Outcome{}, fmt.Errorf("approvals: read the repository: %w", err)
 	}
-	if r.ApprovedDigest == "" && r.OutsideFlow == nil {
+	unguarded := r.ApprovedDigest == "" && r.OutsideFlow == nil
+	if !unguarded && r.GuardedSince != "" {
+		// A push that happened before the first approval was made outside change control, whenever it is delivered.
+		if unguarded, err = s.preceded(ctx, p, r.GuardedSince); err != nil {
+			return Outcome{}, err
+		}
+	}
+	if unguarded {
 		// Recorded, so a delivery of this push again after the first consume is not judged outside the flow.
 		if err := records.Unguarded(ctx, s.store, t, name, push, digest); err != nil {
 			return Outcome{}, fmt.Errorf("approvals: record the push to a repository without an approved policy: %w", err)
@@ -292,6 +298,19 @@ func (s *Service) landed(ctx context.Context, ref api.RepoRef, commit string, pu
 	return !onBefore, err
 }
 
+// preceded reports whether push happened before commit: the commit before the push is strictly behind commit, and the
+// pushed commit is on commit's history. A push that moves the branch back from a later commit did not.
+func (s *Service) preceded(ctx context.Context, push Push, commit string) (bool, error) {
+	if push.Before == "" || push.Before == commit {
+		return false, nil
+	}
+	behind, err := s.onHistory(ctx, push.Repo.RepoRef, push.Before, commit)
+	if err != nil || !behind {
+		return false, err
+	}
+	return s.onHistory(ctx, push.Repo.RepoRef, push.After, commit)
+}
+
 // onHistory reports whether commit is head or behind it. A commit GitHub does not know, or one it cannot compare, is
 // not.
 func (s *Service) onHistory(ctx context.Context, ref api.RepoRef, commit, head string) (bool, error) {
@@ -303,6 +322,46 @@ func (s *Service) onHistory(ctx context.Context, ref api.RepoRef, commit, head s
 		return false, fmt.Errorf("approvals: compare %s with %s: %w", commit, head, err)
 	}
 	return c.Status == compareIdentical || c.Status == compareAhead, nil
+}
+
+// consume consumes the merged proposal p. It approves the digest only when the default branch's tip holds it now and
+// p's merge commit comes after the repository's approved commit; a consume that lands in between
+// (records.ErrApprovedMoved) makes it read both again.
+func (s *Service) consume(ctx context.Context, r api.Repo, p *proposal, push records.Push, digest string) error {
+	t := tenant(r)
+	for range approveRounds {
+		var repo records.Repo
+		if err := records.Load(ctx, s.store, t, records.RepoKey(r.FullName), &repo); err != nil &&
+			!errors.Is(err, records.ErrNoRecord) {
+			return fmt.Errorf("approvals: read the repository: %w", err)
+		}
+		approve, err := s.approves(ctx, r, repo.ApprovedCommit, p.commit, digest)
+		if err != nil {
+			return err
+		}
+		m := records.Merge{Proposal: p.id, Commit: p.commit, Digest: digest, Push: push, AtTip: approve, Over: repo.ApprovedCommit}
+		err = records.Consume(ctx, s.store, t, r.FullName, m)
+		if !errors.Is(err, records.ErrApprovedMoved) {
+			if err != nil {
+				return fmt.Errorf("approvals: consume proposal %s: %w", p.id, err)
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("approvals: consume proposal %s: %w", p.id, store.ErrConflict)
+}
+
+// approves reports whether the consume of commit approves digest: the default branch's tip holds digest now, and commit
+// comes after the approved commit (there is none yet, or it is on commit's history).
+func (s *Service) approves(ctx context.Context, r api.Repo, approved, commit, digest string) (bool, error) {
+	tip, err := s.tipDigest(ctx, r)
+	if err != nil || tip != digest {
+		return false, err
+	}
+	if approved == "" {
+		return true, nil
+	}
+	return s.onHistory(ctx, r.RepoRef, approved, commit)
 }
 
 // tipDigest is the policy digest at the default branch's tip now; "" when it has none or the branch is not named.

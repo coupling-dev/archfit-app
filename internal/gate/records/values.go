@@ -61,6 +61,11 @@ type Repo struct {
 	Schema string `json:"schema"`
 	// ApprovedDigest is the digest of the last policy the owners approved.
 	ApprovedDigest string `json:"approved_digest,omitempty"`
+	// ApprovedCommit is the merge commit that brought ApprovedDigest; a consume approves only a commit after it.
+	ApprovedCommit string `json:"approved_commit,omitempty"`
+	// GuardedSince is the commit of the first approval: change control started there, so a push that happened before
+	// it is not outside the flow, whenever it is delivered.
+	GuardedSince string `json:"guarded_since,omitempty"`
 	// OutsideFlow is set while the default branch has a policy that no approval made.
 	OutsideFlow *OutsideFlow `json:"outside_flow,omitempty"`
 	DriftIssue  int          `json:"drift_issue,omitempty"`
