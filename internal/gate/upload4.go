@@ -48,9 +48,12 @@ const (
 
 var commitSHA = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
-// actionUse finds each use of the Action in a workflow file: the ref, and a version comment on the same line, which
-// Dependabot rewrites with the ref.
-var actionUse = regexp.MustCompile(regexp.QuoteMeta(manifest.ActionRepository+"@") + `([^\s'"]+)([ \t]+#[^\r\n]*)?`)
+// actionUse is one whole `uses:` line of the Action: its ref (group 2) and a version comment such as `# v4.0.1`, which
+// Dependabot rewrites with the ref. Only these two parts are ignored when files are compared. A ref, a comment or a
+// line end outside these narrow forms (any other character, a quote that does not close, a CR, NEL or U+2028) does
+// not match, so its line stays in the comparison as written.
+var actionUse = regexp.MustCompile(`(?m)^([ \t]*(?:-[ \t]+)?uses:[ \t]*(["']?)` + regexp.QuoteMeta(manifest.ActionRepository+"@") +
+	`)([0-9A-Za-z._/-]+)(["']?)(?:[ \t]+#[ \t]*[0-9A-Za-z._+-]*)?[ \t]*$`)
 
 // upload4 is the envelope 2 path of POST /v1/reports: the trusted inputs, the status the App gives the result, and
 // the pull record of M2 D6. It publishes nothing; the check is published from its decision (M2 task 15).
@@ -266,11 +269,11 @@ func (v *upload4) refOnly(run, target []byte) bool {
 		return false
 	}
 	for _, m := range uses {
-		if !v.actionApproved(string(m[1])) {
+		if !bytes.Equal(m[2], m[4]) || !v.actionApproved(string(m[3])) {
 			return false
 		}
 	}
-	strip := func(b []byte) []byte { return actionUse.ReplaceAll(b, []byte(manifest.ActionRepository+"@")) }
+	strip := func(b []byte) []byte { return actionUse.ReplaceAll(b, []byte("${1}${4}")) }
 	return bytes.Equal(strip(run), strip(target))
 }
 
