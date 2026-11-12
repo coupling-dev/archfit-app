@@ -19,8 +19,8 @@ separate, testable steps. Without this module a report is a self-reported file a
   that never changes the answer.
 - Serve envelope 2 (Archfit 4) on the same route: `UploadHandler` sends an upload whose envelope header says
   `archfit.upload-envelope.v2` to the envelope 2 path (`upload4.go`), everything else to the path above. That path
-  decides the status, stores the pull record and answers; it publishes no check yet (M2 task 15). See
-  [Envelope 2 upload](#envelope-2-upload).
+  decides the status, stores the pull record, publishes `archfit/gate` and the pull request's comment through
+  `gate/feedback`'s `Publisher4` (M2 task 15), and answers. See [Envelope 2 upload](#envelope-2-upload).
 - React to verified webhook events: publish a protected-path decision banner/check and best-effort reviewer requests on a new head, then refresh required or advisory state when an owner decision or native review changes. A lost approval/objection may withdraw a prior result; a new report is still required before a fresh success. Reconcile queued groups that use the changed PR.
 - Gate the merge queue of the default branch: serve the upload of a merge group report on the group commit, create its
   pending required check on `merge_group` `checks_requested`, correct that check when the group is destroyed or a queued
@@ -466,14 +466,31 @@ change of the workflow on `T` reads `unknown` until its branch is updated.
    result's error keys only when no rule failed. A record of a newer run, or a newer attempt of the same run, is never
    replaced: run ids grow, so a late upload of an older head cannot win. Push and merge group uploads store nothing
    here (task 22 owns push results).
-4. The answer.
+4. The check and the comment (`feedback.Publisher4`, M2 task 15; see `gate/feedback`, "Archfit 4 publication"):
+   `archfit/gate` on the head and, for a pull request, its one comment. The result shown is the engine's with the
+   App's status, or, when a rule failed, only the App's records under `archfit: unknown, no verdict`, so a forged
+   `pass` is never shown. `gate: required` in the default branch's policy makes a `fail` a failure; without it the
+   `fail` is neutral. An upload with `unsupported_event` or `envelope_mismatch` publishes nothing: the App does not
+   judge it for the default branch, and a run of another base has a higher run id than the pull request into the
+   default branch on the same commit, which a re-run of that pull request keeps below. The commit keeps the check it
+   had:
+
+   | Before, on the commit | After a pull request into another base, or an upload that does not match its run |
+   | --- | --- |
+   | No `archfit/gate` | none: a ruleset that requires the check blocks the merge ("expected") |
+   | A pending check (`in_progress`) | the same pending check: it blocks |
+   | The result of the pull request into the default branch | the same result: it judged that commit |
+
+   Two pull requests into the default branch on one commit share the check: it shows the newest run, and each keeps
+   its own comment. No `archfit/state` check is written.
+5. The answer.
 
 | Situation | Status | Body |
 | --- | --- | --- |
-| Decided and stored | 200 | `{"status": "pass" \| "fail" \| "unknown", "reason": "<first reason code>"}`; no `reason` without a record |
+| Decided, stored and published | 200 | `{"status": "pass" \| "fail" \| "unknown", "reason": "<first reason code>"}`; no `reason` without a record |
 | `*Rejection` of `ReceiveV2` | `Rejection.Status` | `{"error": "<Rejection.Code>"}` |
 | `api.ErrRateLimited` after `ReceiveV2` | 503 with `Retry-After: 60` | `{"error": "rate_limited"}` |
-| Any other error (a GitHub read, the Store) | 503 | `{"error": "unavailable"}` |
+| Any other error (a GitHub read or write, the Store) | 503 | `{"error": "unavailable"}`; the pull record is kept per run and attempt, so the Action's retry stores and publishes again |
 
 A 200 means "decided", not "passed". Until the first engine 4 release is pinned in manifest 4, every envelope 2 upload
 is `unknown` with `unknown_engine`. The log line `gate upload` carries `envelope: 2`, identifiers, the status and the
@@ -736,6 +753,8 @@ func TargetMoved(cycle []string, base, tip string) Outcome
   of write: a check whose existing receipt has a higher `(RunID, RunAttempt)` (run-based skip), and the comment when
   the PR head is no longer `Target.HeadSHA` (old-head skip; the old head's own checks are still written). Both
   return nil, so the upload still answers 200. `Pending` is idempotent. `State` reads the `archfit/gate` check of a head SHA.
+  `Publish4` (constructor `New4`) writes the Archfit 4 check and comment of an envelope 2 upload, under the same
+  per-head lease, never over a newer run or attempt, and writes no `archfit/state`.
   The feedback constructor is `New(checks Checks, comments Comments, pulls Pulls, now func() time.Time) Publisher`;
   `Checks` and `Comments` are role interfaces of `github/api` that `*Client` implements. `NewRepairer(checks, comments,
   issues, repos, s, now) Repairer` keeps the default branch's repair issue; `Repair` returns nothing, so no issue

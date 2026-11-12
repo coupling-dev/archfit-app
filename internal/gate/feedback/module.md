@@ -8,8 +8,17 @@
 
 `feedback` is the writer of the gate/state assessments, their result comment, pending checks, the pre-report architecture-decision banner and the default-branch repair issue. Authenticated decision-reason comments are mirrored by `gate/inputs` from its durable ledger. Feedback also makes each check its own receipt, so GitHub holds the idempotency key and facts a later sweep compares. The Store contains short-lived per-head publication leases only.
 
+For Archfit 4 (envelope 2), `Publisher4` writes `archfit/gate` and the pull request's one comment from the status the
+App gave a result: the record of design 8, the same on the check and in the comment. It writes no `archfit/state`
+check. The v1 writers above stay, unchanged, until M2 task 25 removes the envelope 1 path. See
+[Archfit 4 publication](#archfit-4-publication).
+
 ## Functional Responsibilities
 
+- Publish one `Publication4` (Archfit 4): `archfit/gate` on the head from the status the App gave the result, with the
+  status line as the title, the text record as the summary and one annotation per error on its line; for a pull
+  request, the one comment, edited in place: the status line as the heading, the records, one line for the author and
+  one for the owner (design 8.2, 11.6, 12.5). No `archfit/state`, no JSON block.
 - Publish one `Publication`: `archfit/state` always, `archfit/gate` only in required mode, and the result comment for pull requests. Include the protected-path decision banner within the byte budget of check summaries and the result comment, without treating report claims as authority. Keep the comment marker and receipt first for ordering and waiver updates.
 - Create the pre-report App-authored decision comment for a protected-path PR and, in required mode, the pending (`in_progress`) gate check with the same banner. Update the banner idempotently as the candidate changes.
 - Read back the gate check of a head SHA as `CheckState`, including the parsed `Receipt`.
@@ -57,6 +66,8 @@ wording, layout and limits will be tuned with every pilot.
 ## Encapsulated Knowledge
 
 - Check names, titles, the `external_id` format, and the hidden marker formats.
+- The Archfit 4 mapping of a status to the check, the author and owner lines, and the receipt `v2:` (see
+  [Archfit 4 publication](#archfit-4-publication)).
 - The comment and summary layout, truncation order and size budgets.
 - The idempotency and ordering rules (run ordering, head ordering).
 - The publication lease: its key, value, lifetime, work deadline and polling.
@@ -152,6 +163,31 @@ func New(checks Checks, comments Comments, pulls Pulls, s Store, appURL string, 
 ```
 
 ```go
+// Publication4 is the feedback of one Archfit 4 (envelope 2) upload: archfit/gate on the head and, for a pull request,
+// its comment. The run, the attempt and the digest name it, as the receipt of the check.
+type Publication4 struct {
+    Target     Target        // Repo, PullRequest (0 for a push or a merge group) and HeadSHA
+    RunID      int64
+    RunAttempt int
+    Digest     string        // the payload digest of the upload
+    Advisory   bool          // the policy's gate is advisory: a fail shows as neutral, with the same records
+    Result     result.Result // Status is the status the App gave; the status line and the records are shown as given
+}
+
+// Publisher4 publishes Archfit 4 results. It writes no archfit/state check.
+type Publisher4 interface {
+    // Publish4 writes archfit/gate on p's head and, for a pull request, the one comment, in place, inside the head's
+    // publication lease. It never overwrites the check or the comment of a newer run or attempt, and skips the comment
+    // of a head that is no longer the pull request's.
+    Publish4(ctx context.Context, p Publication4) error
+}
+
+// New4 returns a Publisher4 that is safe for concurrent use: it holds the same per-head lease in s as New's Publisher,
+// so a v1 publication and an Archfit 4 one never interleave on one head. appURL is as for New.
+func New4(checks Checks, comments Comments, pulls Pulls, s Store, appURL string, now func() time.Time) Publisher4
+```
+
+```go
 // Repairer keeps the repair issue of the default branch: one open issue per branch that says what a push broke and
 // closes when a push passes. It is a notification and never a gate.
 type Repairer interface {
@@ -190,6 +226,7 @@ decided here; it restates what the check recorded.
 | Gate check name       | `archfit/gate`                                                                  |
 | State check name      | `archfit/state`                                                                 |
 | `external_id`         | `v1:<run_id>:<attempt>:<report_digest>`; empty for a pending check              |
+| `external_id`, Archfit 4 | `v2:<run_id>:<attempt>:<payload_digest>`; the whole receipt, no summary marker |
 | Receipt marker        | `<!-- archfit:receipt {compact JSON of Receipt} -->`, last line of each summary |
 | Owner decision banner marker | `<!-- archfit-owner-decision-banner:v1 -->`, first line until a result is written; it is retained above the result section |
 | Comment marker        | `<!-- archfit:comment -->`, first line of the result comment (after the banner when present) |
@@ -452,6 +489,65 @@ Annotations remain state-only, capped at 150 in batches of 50. Only source-admis
 positive line numbers and nonempty files qualify; accepted/fixed findings do not. File-only/nonpositive-line
 locations remain in textual detail but get no annotation. PR changed-file filtering, rate-limit behavior, leases
 and newer-head/run protection are unchanged.
+
+### Archfit 4 publication
+
+`Publish4` shows a `result.Result` whose `Status` is the App's. The gate builds it: the engine's result with the App's
+status, or, when an App rule failed, only the App's records under the status line `archfit: unknown, no verdict`, so
+nothing of a result the App did not accept is shown. One unexported model, `view`, holds the status line, the records,
+the author line and the owner line; the comment, the check title, the summary and the annotations all render from it
+(milestone 3 D4 adds the page form).
+
+| Status | `archfit/gate` |
+| --- | --- |
+| `pass` | `completed`, `success` |
+| `fail` | `completed`, `failure`; `neutral` when `Advisory`, with the same title, summary, annotations and comment |
+| `waiting` | `in_progress`, no conclusion: GitHub shows it as pending and it blocks a merge (design D.2) |
+| `unknown`, or any other value | `completed`, `action_required` |
+
+- Title: the status line without `archfit: ` (`fail, 1 error`, `waiting, request #431`); the check's name already says
+  archfit (design 11.6).
+- Summary: the text record of `wire/result` (`Record`) in a `text` fence one backtick longer than any run inside it
+  (at least three). Over 65,535 bytes: the whole records that fit, `(N more not shown)`, then the status line.
+- Annotations: one `failure` annotation per error with a line, on that line, whose message is the error's text
+  record; at most 150, in requests of 50. No changed-file filter: a result lists only what the change added, and an
+  error of the policy file has no line. Unknown reasons get none.
+- Comment: the comment marker, the head marker, then `## Archfit: <status line>`, one Markdown record per error and
+  unknown reason (`` `path:line` **rule** what ``, then `- why:`, `- instead:`, `- balance:`, `- next:`), then the
+  author and owner lines. Producer text is one line with `<` escaped; paths and commands are code spans no backtick
+  inside can close. A record shows `- next:` only when the author line does not already name its step, so the three
+  examples of design 12.5 render byte for byte. Over the budget: the whole records that fit, then
+  `(N more not shown)`; the lines stay.
+
+Author and owner lines **[default; milestone 3 task 2 sets them for every state]**, the first row that applies:
+
+| Records | Author | Owner | A record shows no `next` when |
+| --- | --- | --- | --- |
+| `pass` | none | none | — |
+| `unknown` | do the `next` step of each record. | none | never |
+| an error asks (a `command` with `archfit request`) | reply `` `/archfit request <why you need it>` ``. Do not copy the code. | answer #n. when an error waits on a request, else nothing to do until a request exists. | its step starts with `archfit request` |
+| a `fix` error | fix the code and push. | answer #n. when an error waits on a request, else none | its step is `fix` |
+| errors that wait on requests (`wait for an owner: #n`) | nothing to do. This check runs again when #n is answered. | answer #n. | its step names a request |
+| anything else | do the `next` step of each record. | none | never |
+
+Several requests read `#431 and #432`, or `#431, #432 and #433`, in record order, each once.
+
+Writing, inside the head's publication lease:
+
+1. Read the newest `archfit/gate` run of the head. When its `external_id` is a `v2:` receipt of a newer run, or a newer
+   attempt of the same run, write nothing (a waiting `in_progress` run counts too).
+2. Update that run in place when the update appends nothing wrong: both have no annotations, or it holds the same
+   receipt and as many annotations. A completed run is never set back to `in_progress`; a waiting result gets a new
+   run. Else create a run with the first 50 annotations and send the rest in updates, reading the newest run again
+   before each batch and stopping when another run took its place or holds a newer receipt.
+3. For a pull request: skip when the pull request's head moved; find the one comment (the lowest-ID App comment that
+   starts with the comment marker); skip when its head marker names this head and a newer run; write it unless the
+   body is unchanged. A push and a merge group get no comment.
+
+A check is per commit, so two pull requests into the default branch on one commit share it: it shows the newest run,
+and each pull request keeps its own comment. The gate writes nothing for a run it does not judge for the default
+branch (`gate/module.md`, "Envelope 2 upload"). The log line `feedback published` carries `envelope: 2`, identifiers,
+the status, the conclusion and the actions taken.
 
 ## Integrations
 
@@ -919,6 +1015,18 @@ type Seam struct {
 }
 ```
 
+### wire/result
+
+- **Counterpart**: internal/wire/result
+- **Direction**: feedback depends on wire/result
+- **Strength**: contract (renders `Result`; prints its text record with `Record`)
+- **LCA / Rank / Distance**: root / 2 / 2
+- **Volatility**: high (feedback side); the result is moderate, it changes with an engine release
+- **Balanced?**: yes (contract strength across the distance)
+- **Shared knowledge**: `Status` and its four values; `Summary` is the status line; `Next.Kind` is `fix`, `command`,
+  `wait` or `restore`, and the engine words a request step `archfit request …` and a wait step
+  `wait for an owner: #n`; `Record` prints one error or reason when given a result that holds only it.
+
 ### wire/manifest
 
 - **Counterpart**: internal/wire/manifest
@@ -1166,13 +1274,13 @@ type Swap struct {
 
 ### Consumers (inbound)
 
-- **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Builds `Publication` and `Receipt`; passes `Deps.Store` to `New` and `NewRepairer`; calls `Publish`, `Pending`, `State`, and `Repair` after a published default-branch push.
+- **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Builds `Publication4` from an envelope 2 upload and calls `Publish4` (`New4`). Builds `Publication` and `Receipt`; passes `Deps.Store` to `New` and `NewRepairer`; calls `Publish`, `Pending`, `State`, and `Repair` after a published default-branch push.
 - **internal/gate/sweep**: contract, gate / 1 / 1, high, balanced. Calls all four `Publisher` methods and compares `Receipt` fields.
 
 ## Change Vectors
 
 - Wording, layout, grouping, caps and truncation order.
-- A new marker version (`v2:` external IDs) when the receipt changes shape.
+- The comment layout of milestone 3 (D4): the page form of `view`, and the author and owner lines for every state.
 - SARIF-based annotations, or annotations on the gate check.
 - A different `archfit/state` conclusion mapping.
 - A change to the lease value. During a rollout two revisions run together, and an unreadable lease is taken over,
@@ -1230,8 +1338,8 @@ type Swap struct {
   ever edited or closed.
 - No LLM, no network other than the five role interfaces, the Store and the caller's `Publication.Resolve`. The Store holds only the publication
   leases: `Get` and `CompareAndSwap` on `feedback/lease/<head_sha>`, never a receipt, a report or a body. Imports:
-  standard library, `gate/verdict`, `gate/inputs`, `wire/report`, `wire/settings`, `wire/manifest`, `github/api`,
-  `store`. Never `control`, `app`, LLM or UI packages.
+  standard library, `gate/verdict`, `gate/inputs`, `wire/report`, `wire/result`, `wire/settings`, `wire/manifest`,
+  `github/api`, `store`. Never `control`, `app`, LLM or UI packages.
 - Rendering is deterministic: equal `Publication` and clock give byte-identical text.
 - `api.ErrRateLimited` and other API errors are returned unchanged, with one exception: a `ChangedFiles` error other
   than `ErrRateLimited` is logged and the call returns `nil`, because the file list only filters annotations. A
@@ -1379,6 +1487,30 @@ Golden files hold rendered bodies for the wire fixtures.
 - **Test name**: `TestAnnotationSelection`
   **Scenario**: findings with no, one and many locations, `Line == 0`, live `advisory` and `gate` findings, `baseline`, `waived` and `fixed` findings, and a finding in a file the PR did not change; published on a pull request whose file list names four files, with a truncated list, on a push, with 200 live locations, and with no live located finding. The fake rejects more than 50 annotations in one request, as the client does.
   **Expected behavior**: on the PR only reported positive lines of changed files: blockers first as `failure`, then advisories in report order as `warning`; no annotation for file-only/nonpositive lines, empty files, `locations: []`, accepted debt, fixed findings or unchanged files; requests of 50 then 20 on the state check (none on the gate check); one file-list call. The truncated list and the push annotate every file, and the push lists none. 200 locations give 150 annotations, blocking first, in requests of 50. Without a possible annotation the file list is not read.
+
+- **Test name**: `TestCommentsOfDesign12_5`
+  **Scenario**: the vendored `deny`, `graph` and `waiting` results; the graph examples without the engine's why, as
+  the design prints them.
+  **Expected behavior**: the three comments of design 12.5, byte for byte.
+- **Test name**: `TestViewGoldens`
+  **Scenario**: each state from the vendored results (pass, a fix, an advisory fail, an ask, a copy, an expired
+  exception, waiting, unknown).
+  **Expected behavior**: the comment and the check (state, title, summary, annotations) equal
+  `testdata/golden4/<case>.{comment,check}.md`; `TestGoldensOfArchfit4UseNoNotUsedWord` checks every one with
+  `wire/wording`.
+- **Test name**: `TestCheckStateOfEachStatus`, `TestAuthorAndOwnerLines`, `TestProducerTextStaysInert`,
+  `TestOverlongOutputKeepsTheStatusLine`, `TestAnnotationsOnlyForErrorsWithALine`
+  **Expected behavior**: the tables of [Archfit 4 publication](#archfit-4-publication); no producer text opens HTML,
+  a marker, a heading or a second line, or closes its code span or fence; output stays within 65,535 bytes and keeps
+  the status line and the lines; 150 annotations at most; none without a line.
+- **Test name**: `TestPublish4…` (`publish4_test.go`)
+  **Scenario**: a pull request, a push and a merge group; a newer run, a newer attempt and a newer waiting run already
+  on the head; 120 annotations; a newer run written between batches; the same publication twice; a waiting result
+  after a completed one; a pending check; advisory against required; an old head; a v1 comment.
+  **Expected behavior**: one `archfit/gate` and one comment, no `archfit/state`; nothing over a newer receipt;
+  requests of 50, 50, 20, and none after the newer run; an update in place without annotations; a new `in_progress`
+  run; the pending run completed in place; `neutral` with the same records; no comment for an old head; the one
+  comment edited.
 
 ### Integration Contract Tests
 
