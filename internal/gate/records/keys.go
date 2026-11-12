@@ -39,6 +39,10 @@ func ProposalKey(fullName, id string) string { return "v4/proposal/" + repo(full
 // ProposalIndexKey holds the open proposals of a repository by pull request.
 func ProposalIndexKey(fullName string) string { return "v4/proposal-index/" + repo(fullName) }
 
+// ProposalLeaseKey is held while an answer writes the repository's proposal: its branch, its pull request and its
+// records change together, and two answers must not interleave (gate/proposals).
+func ProposalLeaseKey(fullName string) string { return "v4/proposal-lease/" + repo(fullName) }
+
 // PullKey holds the pull record of a pull request (Pull).
 func PullKey(fullName string, pr int) string {
 	return "v4/pull/" + repo(fullName) + "/" + strconv.Itoa(pr)

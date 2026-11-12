@@ -62,13 +62,15 @@ add fields to the `v1` values before the release. After the release a field chan
 ## Public Contract
 
 Keys: `Prefix` (`v4/`), `RepoKey`, `RequestKey`, `RequestIndexKey`, `ApprovalKey`, `ProposalKey`, `ProposalIndexKey`,
-`PullKey`, `PullIndexKey`, `ReposKey`, `PullEntry`, `NewID`.
+`ProposalLeaseKey`, `PullKey`, `PullIndexKey`, `ReposKey`, `PullEntry`, `NewID`. `ProposalLeaseKey`
+(`v4/proposal-lease/<repo>`) holds a lease, not a record: `gate/proposals` owns its value and holds it while an answer
+writes the repository's proposal.
 
 | Key | Value | `schema` | Holds |
 | --- | --- | --- | --- |
 | `v4/repo/<repo>` | `Repo` | `archfit-app.repo.v1` | approved digest; outside the flow (digest, issue); drift issue; expiry issues (exception key → issue) |
 | `v4/request/<repo>/<issue>` | `Request` | `archfit-app.request.v1` | key, reason, numbers (verified, balance), waiting pull requests, state `open`, `answered` or `closed`; rule, path, modules, expiry date and record, so the issue body can be rendered again; the pull requests the body lists |
-| `v4/approval/<repo>/<id>` | `Approval` | `archfit-app.approval.v1` | kind, request, change (raw JSON, owned by the policy writer), owner, credential, time, proposal (set once), state `open` or `void` |
+| `v4/approval/<repo>/<id>` | `Approval` | `archfit-app.approval.v1` | kind, request, change (raw JSON, owned by the policy writer), owner (user id and login), credential, time, proposal (set once), state `open` or `void` |
 | `v4/proposal/<repo>/<id>` | `Proposal` | `archfit-app.proposal.v1` | ordered approval ids (at most `MaxApprovals` = 9), pull request, head SHA, expected digest, state `open`, `merged` or `void`, consuming commit |
 | `v4/pull/<repo>/<pr>` | `Pull` | `archfit-app.pull.v1` | head SHA, run id, run attempt, payload digest, status, error keys (M2 D6; no result bytes) |
 
