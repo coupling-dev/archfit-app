@@ -44,8 +44,10 @@ delivery ID header are not covered by the signature; only the body is.
   **[default]**: a pending check already exists on the head, and the sweep repairs stale inputs.
 - `pull_request_review`: `submitted`, `edited`, `dismissed` → `ReviewChanged`.
 - `issue_comment`: `created` on a pull request (`issue.pull_request` present) → `PullCommented`; every other action,
-  and a comment on a plain issue → `Ignored`. GitHub delivers the event only after the owner subscribes the App to
-  "Issue comment"; until then nothing arrives.
+  and a comment on a plain issue → `Ignored`. An edited comment is not read again (M2 plan, "The request line").
+  GitHub delivers the event only after the owner subscribes the App to "Issue comment"; until then nothing arrives.
+- `issues`: `opened` on an issue that is not a pull request → `IssueOpened`; every other action → `Ignored`. GitHub
+  delivers it only after the owner subscribes the App to "Issues" (Issues permission).
 - `push`: `ref` equals `refs/heads/` + `repository.default_branch` and `deleted` is false → `DefaultBranchPush`;
   any other branch ref with `deleted` false → `BranchPush`; a tag or a deletion → `Ignored`.
 - `merge_group`: `checks_requested` → `MergeGroupRequested`; `destroyed` → `MergeGroupDestroyed`; every other action
@@ -77,6 +79,8 @@ delivery ID header are not covered by the signature; only the body is.
   `AuthorType` = `comment.user.type` verbatim (`"User"`, `"Bot"`; `""` when absent), `Body` = `comment.body`. It has no
   head SHA, head repository or base: the payload does not carry them, and the consumer reads the pull request.
   `DefaultBranch` and `RepoPrivate` come from the repository object as for the other pull kinds.
+- `IssueOpened`: `Issue` = `issue.number`, `Author` = `issue.user.login`, `AuthorType` = `issue.user.type` verbatim,
+  `Body` = `issue.body`; no pull request or head fields.
 - Installation kinds: `Repo` is `""`, `RepoPrivate` false, no pull request fields. Consumers list repositories
   through the API; the repository arrays of these payloads are not surfaced.
 - `Ignored`: `Kind`, `DeliveryID`, and `InstallationID` when the body was parsed and has one; nothing else.
@@ -106,6 +110,7 @@ const (
     PullClosed         EventKind = "pull_closed"
     ReviewChanged      EventKind = "review_changed"      // submitted, edited, dismissed
     PullCommented      EventKind = "pull_commented"      // a comment created on a pull request
+    IssueOpened        EventKind = "issue_opened"        // an issue opened; never a pull request
     DefaultBranchPush  EventKind = "default_branch_push"
     BranchPush         EventKind = "branch_push"         // a push to a branch other than the default branch
     InstallationAdded  EventKind = "installation_added"  // created, or repositories added
@@ -134,9 +139,10 @@ type Event struct {
     PusherType     string   // push kinds only: the payload's pusher_type ("user", or a deploy key); "" when absent
     ChangedPaths   []string // default_branch_push only
     CommentID      int64    // pull_commented only
-    Author         string   // pull_commented only: the comment's author login
-    AuthorType     string   // pull_commented only: "User" or "Bot"; "" when absent
-    Body           string   // pull_commented only: the comment text
+    Issue          int      // issue_opened only: the issue number
+    Author         string   // pull_commented and issue_opened: the comment's or the issue's author login
+    AuthorType     string   // pull_commented and issue_opened: "User" or "Bot"; "" when absent
+    Body           string   // pull_commented and issue_opened: the comment text or the issue body
     GroupReason    string   // merge_group_destroyed only: "merged", "dequeued", "invalidated" or what GitHub sends
 }
 ```
@@ -163,7 +169,7 @@ const (
 
 `BranchPush` is the kind for a push to a branch other than the default branch. `PullOpened` is the kind for a pull request that needs a first look. `PullSynchronized` is the kind for a new
 head SHA. `PullClosed` is the kind for a closed or merged pull request. `ReviewChanged` is the kind for any
-review change. `PullCommented` is the kind for a new comment on a pull request. `DefaultBranchPush` is the kind for a push to the default branch. `InstallationAdded` is the
+review change. `PullCommented` is the kind for a new comment on a pull request. `IssueOpened` is the kind for a new issue. `DefaultBranchPush` is the kind for a push to the default branch. `InstallationAdded` is the
 kind for a new installation or added repositories. `InstallationRemoved` is the kind for an uninstall.
 `ReposRemoved` is the kind for repositories taken out of an installation. `MergeGroupRequested` is the kind for a
 merge group commit GitHub built and wants checked. `MergeGroupDestroyed` is the kind for a merge group that was merged,
@@ -183,7 +189,7 @@ the `http.Request`, this package owns what the headers are called.
 - `Parse` must be called only after `VerifyAny` succeeded on the same `body`. It is pure: no I/O, no clock, no state.
 - `Parse` errors on: empty `deliveryID`; malformed JSON for a known event type; a mapped kind whose identity is
   incomplete (`installation.id` ≤ 0; empty or slash-less `repository.full_name` for repository kinds;
-  `pull_request.number` ≤ 0; a head SHA that is not 40 lowercase hex; for `PullCommented`: `issue.number` ≤ 0, `comment.id` ≤ 0 or an empty `comment.user.login`; no head SHA is read; for the merge group kinds, a `merge_group.head_sha` that is not 40 lowercase hex). An error means "answer `400`, do nothing".
+  `pull_request.number` ≤ 0; a head SHA that is not 40 lowercase hex; for `PullCommented`: `issue.number` ≤ 0, `comment.id` ≤ 0 or an empty `comment.user.login`; for `IssueOpened`: `issue.number` ≤ 0 or an empty `issue.user.login`; no head SHA is read for either; for the merge group kinds, a `merge_group.head_sha` that is not 40 lowercase hex). An error means "answer `400`, do nothing".
 - A `push` needs `repository.full_name` with a slash before it is classified: the repository object names the
   default branch. Without it `Parse` errors, even for a push that would map to `Ignored` (a tag, a deletion). This
   is the one case where an ignorable delivery of a known type is an error.
@@ -220,7 +226,8 @@ home of `Event`, so nothing is restated for the consumers below.
 - **Balanced?**: Yes
 - **Shared knowledge**: `Event`, `EventKind`. `gate` reacts to `PullOpened`, `PullSynchronized` (pending check or
   fork refusal, fork = `HeadRepo != Repo`; pending decision requests of the pull request go stale), `PullClosed` (the same),
-  `PullCommented` (a decision request in the comment), `ReviewChanged` (re-run, and a re-check of the queued merge groups at and behind the pull request), `MergeGroupRequested` (pending `archfit/gate` on the group commit, required mode only), `MergeGroupDestroyed` (a reason other than `merged`: correct a pending or decided group check), `BranchPush` and `DefaultBranchPush` (record `Pusher` as
+  `PullCommented` (a request line, or a decision request in the comment), `IssueOpened` (a request issue the CLI
+  opened), `PullClosed` (also drops the pull request from the Archfit 4 pull index), `ReviewChanged` (re-run, and a re-check of the queued merge groups at and behind the pull request), `MergeGroupRequested` (pending `archfit/gate` on the group commit, required mode only), `MergeGroupDestroyed` (a reason other than `merged`: correct a pending or decided group check), `BranchPush` and `DefaultBranchPush` (record `Pusher` as
   the pusher of `HeadSHA`, then re-evaluate the open pull request on that head). It builds its repository reference from
   `InstallationID` and `Repo`, which is why both must come from the signed body.
 
@@ -319,6 +326,11 @@ Payload fixtures are trimmed copies of real GitHub deliveries under `testdata/`,
   payloads without installation, repository, issue number, comment ID, author or comment.
   **Expected behavior**: `PullCommented` with the comment fields for the first; `Ignored` for the issue and for every action
   but `created`; an error and a zero kind for each incomplete payload, with no payload text in the error.
+- **Test name**: `TestIssuesOpenedFixture`, `TestIssuesMapping`, `TestIssuesRejectsIncompleteIdentity`
+  **Scenario**: a real-shaped issue a worker opened with a request line; `opened`, `edited`, `reopened`, `closed`, and
+  `opened` with `issue.pull_request`; payloads without installation, repository, issue number or author.
+  **Expected behavior**: `IssueOpened` with the issue fields; `Ignored` for every other action and for a pull request;
+  an error for each incomplete payload, with no payload text in the error.
 - **Test name**: `TestUnknownEventTypeIsIgnoredNotError`
   **Scenario**: event types `star`, `workflow_run`, `check_run`, with valid JSON, with `{}` and with non-JSON bodies.
   **Expected behavior**: `Kind == Ignored`, `nil` error in all rows; the body is not parsed.
