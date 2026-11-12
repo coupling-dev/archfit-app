@@ -489,7 +489,7 @@ the e-mail is `ARCHFIT_INVOKER` and is verified, and the token is not expired.
 | `POST /auth/logout`                                                                                                | GitHub OAuth session and CSRF token                                           |
 | `GET /assets/{path}`, `GET /licenses.txt` and `GET /schema/policy.json`                                            | None                                                                          |
 | `GET /api/session` and `GET /api/repos`                                                                            | GitHub OAuth session                                                          |
-| `GET /r/{o}/{n}`, `/graph`, `/policy`, `/pull/{number}`, `/pull/{number}/graph` and `/data-sharing`                | GitHub OAuth session. The same shell for every repository; no repository data |
+| `GET /r/{o}/{n}`, `/graph`, `/policy`, `/pull/{number}`, `/pull/{number}/graph`, `/data-sharing`, `/passkeys` and `/requests/{number}` | GitHub OAuth session. The same shell for every repository; no repository data |
 | `GET /api/repos/{o}/{n}/overview`, `/findings`, `/graph`, `/policy`, `/pulls/{number}` and `/pulls/{number}/graph` | Session with repository `read` permission                                     |
 | `GET /api/repos/{o}/{n}/requests/{number}` and `/requests/{number}/preview`                                         | Session with repository `read` permission                                     |
 | `POST /api/repos/{o}/{n}/requests/{number}/answer/digest` and `/requests/{number}/answer`                          | Session with repository `read` permission, JSON body, CSRF token header; an owner named in the policy, and a passkey step-up for an answer that loosens it |

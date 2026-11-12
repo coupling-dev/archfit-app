@@ -7,15 +7,16 @@
 ## Purpose
 
 UI is the browser surface of Archfit: sign-in, the organization overview, repository status and
-onboarding actions, the YAML policy editor with drafts as pull requests, the read-only graph, the
-explicit AI request, the Data sharing page and the entitlement banner. It holds no state of its own: every
+onboarding actions, the request page where an owner answers with a passkey, the passkey page, the read-only graph,
+the Data sharing page and the entitlement banner. It holds no state of its own: every
 page is derived from GitHub and the control-plane modules at request time. Without it customers
-could still work GitHub-first, but onboarding, schema-guided editing and consent would have no home.
+could still work GitHub-first, but onboarding, answers to requests and consent would have no home.
 
 ## Functional Responsibilities
 
 - Serve the web app (`web/`, Svelte 5 built by Vite, embedded from `spa/`) for the overview, the repository page,
-  the pull request page, both graph pages, the decisions page, Data sharing and the policy editor, and its JSON API under `/api/`. ui
+  the pull request page, both graph pages, the request page, the passkey page and Data sharing, and its JSON API under
+  `/api/`. ui
   renders no HTML of its own: an error page is the same shell with the error's status and sentence.
 - Authenticate every request through `session` and authorize every repository API call at the needed permission. A
   repository page is the shell, the same for every repository, and needs only a session.
@@ -28,12 +29,11 @@ could still work GitHub-first, but onboarding, schema-guided editing and consent
 - Repository status: onboarding `Progress`, actions to start onboarding or dispatch discovery, entitlement banner; once
   a report came in, a watch line on the default branch, the pull requests that wait for an update after the target moved
   and the decision requests that wait for an owner.
-- Decisions: a read-only inbox of the decision requests of unattended agents and of the pull requests that change the
-  protected policy. The buttons are on the pull request page; nothing here decides.
-- Policy editor: load the policy into a CodeMirror 6 editor (YAML, line numbers, folding, history, search), check it
-  on the server (when loaded, on Check, and before every save) and list its problems by line, above the editor and as
-  marks in it, save as a commit on a draft branch through `proposal` bound to the head SHA that was loaded, show the
-  draft state and its way to the merge (saved → checked → ready → owner approves → merged), mark ready for review.
+- Request page: one request with its record, balance, modules, the preview of each answer and earlier answers
+  (`requests.go`), and the owner's answer with the passkey step-up (`answers.go`, `passkey.go`). The passkey page lists,
+  registers and removes the user's own passkeys.
+- Decisions and the policy editor: their APIs stay until M2 task 26 removes them; no page reads them since M2 task 24
+  removed the Decisions page, the editor, its AI assist and the owner actions of the pull request page.
 - Graph: fetch the latest report artifact, decode it, build the view through `graph`, answer it as JSON, mark it stale.
   The web app draws it.
 - Pull request graph: the same admitted report as the pull request page. Link origin aggregates current finding
@@ -41,10 +41,9 @@ could still work GitHub-first, but onboarding, schema-guided editing and consent
 - Repository findings: the latest default-branch report's findings in the groups and words of the PR comment, for the
   overview's counters and list.
 - Pull request page: the result/report of one head, plus an architecture-decision banner based on the current protected settings and changed paths even when the report is absent. It shows the exact settings source, owners/teams, one-any authority, advisory/required mode, signed-in user's ability/refusal, objections, history and exact-head actions. Request changes, withdrawal and override require reasons that are mirrored on the PR; a GitHub-origin override authorizes Archfit only and leaves native GitHub review/branch requirements independent. The unattended-agent decision-request flow remains separate.
-- Assist: turn the request into an `assist.Request`, show the outcome or the pending customer run.
 - Data sharing: per managed feature, what leaves the customer's environment, who allowed it and when, and the
   preconditions it still needs; allow and revoke `source_processing` and `managed_llm` consent (repository administrators
-  only). The editor says why managed mode is off and gives an administrator an inline Allow, the same write as this page.
+  only).
 
 ## Subdomain Classification
 
@@ -138,8 +137,11 @@ as one that does not exist, and the app shows that answer as the error page, wit
 - `GET /r/{o}/{n}/graph` [session] — the shell for the repository graph.
 - `GET /r/{o}/{n}/pull/{number}/graph` [session] — the shell for the pull request graph; the same `404` rule for the number.
 - `GET /r/{o}/{n}/data-sharing` [session] — the shell, for the Data sharing page; its API needs admin.
-- `GET /r/{o}/{n}/policy` [session] — the shell, for the policy editor; the app reads `?branch=` and `?since=` from its
-  own URL and a `#L<n>` hash selects that line.
+- `GET /r/{o}/{n}/requests/{number}` [session] — the shell for the request page; the same `404` rule for the number as
+  the pull request page.
+- `GET /r/{o}/{n}/passkeys` [session] — the shell for the passkey page.
+- `GET /r/{o}/{n}/policy` and `GET /r/{o}/{n}/decisions` [session] — the shell; the app has no page there since M2 task
+  24 (its "Not found"), and M2 task 26 removes the routes.
 - `GET /admin` [session, operator] — the shell, for the admin page; `404` for any signed-in user who is not an operator.
 - `GET /r/{o}/{n}/consent` [session] — `308` to `/r/{o}/{n}/data-sharing`, from the path alone: the same answer for
   every repository, so it confirms nothing.
