@@ -125,6 +125,7 @@ type payload struct {
 	Reason     string `json:"reason"`
 	PusherType string `json:"pusher_type"`
 	Ref        string `json:"ref"`
+	Before     string `json:"before"`
 	After      string `json:"after"`
 	Deleted    bool   `json:"deleted"`
 	Forced     bool   `json:"forced"`
@@ -216,6 +217,9 @@ func Parse(eventType, deliveryID string, body []byte) (Event, error) {
 		if kind == DefaultBranchPush {
 			ev.BaseRef = p.Repository.DefaultBranch
 			ev.ChangedPaths = p.changedPaths()
+			if isSHA(p.Before) && strings.Trim(p.Before, "0") != "" {
+				ev.Before = p.Before // all zeros: the push created the branch
+			}
 		}
 	default:
 		if p.PullRequest.Number <= 0 {

@@ -176,3 +176,31 @@ func TestBranchPushCarriesPusherType(t *testing.T) {
 		})
 	}
 }
+
+func TestDefaultBranchPushCarriesBefore(t *testing.T) {
+	tests := []struct {
+		name   string
+		before any
+		want   string
+	}{
+		{"the previous commit", shaB, shaB},
+		{"a created branch", "0000000000000000000000000000000000000000", ""},
+		{"absent", nil, ""},
+		{"not a commit", "main", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload := pushPayload("refs/heads/main", "main")
+			if tt.before != nil {
+				set(payload, "before", tt.before)
+			}
+			if ev := mustParse(t, "push", payload); ev.Before != tt.want {
+				t.Errorf("Before = %q, want %q", ev.Before, tt.want)
+			}
+		})
+	}
+	feature := set(pushPayload("refs/heads/feature/x", "main"), "before", shaB)
+	if ev := mustParse(t, "push", feature); ev.Before != "" {
+		t.Errorf("a branch push carries Before %q", ev.Before)
+	}
+}

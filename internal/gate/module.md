@@ -1312,6 +1312,7 @@ type Event struct {
     Pusher         string   // push kinds only: the login that moved the branch; never a git author or committer
     PusherType     string   // push kinds only: the payload's pusher_type ("user", or a deploy key); "" when absent
     ChangedPaths   []string // default_branch_push only
+    Before         string   // default_branch_push only: the commit before the push; "" when the push created the branch
     GroupReason    string   // merge_group_destroyed only: "merged", "dequeued", "invalidated" or what GitHub sends
 }
 ```

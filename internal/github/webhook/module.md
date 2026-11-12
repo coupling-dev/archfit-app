@@ -65,7 +65,8 @@ delivery ID header are not covered by the signature; only the body is.
   `HeadRepo` = `pull_request.head.repo.full_name`, `BaseRef` = `pull_request.base.ref`. A deleted fork has
   `head.repo: null`; `HeadRepo` is then `""`, which differs from `Repo`, so it still reads as a fork.
 - `DefaultBranchPush`: `HeadSHA` = `after`, `BaseRef` = the default branch name, `HeadRepo` = `Repo`, `PullRequest` 0,
-  `Branch` = `ref` without `refs/heads/`, `Pusher` = `sender.login`.
+  `Branch` = `ref` without `refs/heads/`, `Pusher` = `sender.login`, `Before` = `before` (`""` when it is all zeros, the
+  push created the branch, or not a commit SHA): the gate judges the policy change of the push against it.
 - `BranchPush`: as `DefaultBranchPush` for `HeadSHA`, `HeadRepo`, `PullRequest`, `Branch` and `Pusher`; `BaseRef` is `""`
   and `ChangedPaths` is `nil`. `Pusher` is the actor GitHub names for the push; it is never a git author or
   committer, which a pusher can set freely. A missing `sender` leaves `Pusher` empty. `PusherType` is the payload's
@@ -138,6 +139,7 @@ type Event struct {
     Pusher         string   // push kinds only: the login that moved the branch; never a git author or committer
     PusherType     string   // push kinds only: the payload's pusher_type ("user", or a deploy key); "" when absent
     ChangedPaths   []string // default_branch_push only
+    Before         string   // default_branch_push only: the commit before the push; "" when the push created the branch
     CommentID      int64    // pull_commented only
     Issue          int      // issue_opened only: the issue number
     Author         string   // pull_commented and issue_opened: the comment's or the issue's author login
@@ -304,6 +306,9 @@ Payload fixtures are trimmed copies of real GitHub deliveries under `testdata/`,
 - **Test name**: `TestBranchPushFields`
   **Scenario**: a push to `feature/x` with a sender, not the default branch.
   **Expected behavior**: `Kind == BranchPush`; `HeadSHA`, `HeadRepo == Repo`, `Branch == "feature/x"`, `Pusher` from `sender.login`; `BaseRef` and `ChangedPaths` empty.
+- **Test name**: `TestDefaultBranchPushCarriesBefore`
+  **Scenario**: a default-branch push with `before` a commit, all zeros, absent, not a SHA; a feature-branch push.
+  **Expected behavior**: `Before` is the commit, then `""` three times; the feature-branch push has `""`.
 - **Test name**: `TestBranchPushCarriesPusherType`
   **Scenario**: a push to a feature branch with `pusher_type` absent, `"user"` and `"deploy_key"`.
   **Expected behavior**: `PusherType` is `""`, `"user"`, `"deploy_key"`; `Pusher` is the sender in all three.
