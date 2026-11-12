@@ -41,6 +41,7 @@ var (
 	ErrNotPolicyOwner = proposals.ErrNotOwner
 	ErrNeedsPasskey   = proposals.ErrNeedsPasskey
 	ErrAnswerBusy     = proposals.ErrBusy
+	ErrProposalFull   = proposals.ErrFull
 )
 
 // AnswerDigest is the change digest of answer a to request number of t's repository.

@@ -436,3 +436,15 @@ func TestAFullProposalTakesNoAnswerUntilItMerges(t *testing.T) {
 		t.Errorf("a refused answer wrote %v or used the token %v", got, w.redeemed)
 	}
 }
+
+func TestAnExceptionOfAnOnlyRuleHasNoTo(t *testing.T) {
+	w := newWorld(t)
+	w.hub.push(fakeBase, policyPath, testPolicy+"  - id: no-docker\n    only:\n      use: github.com/docker/docker\n      in: [pkg_net]\n"+
+		"    why: One adapter owns the Docker API.\n")
+	w.request(431, "no-docker", "pkg_tc", "github.com/docker/docker")
+	out := w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.ApproveUntil, Until: "2026-12-31"}, false)
+	want := "exceptions:\n  - rule: no-docker  # request #431\n    from: pkg_tc\n    expires: 2026-12-31\n"
+	if got := w.hub.file(fakeBase, policyPath); out.State != requests.PullMerged || !strings.Contains(got, want) {
+		t.Errorf("outcome %+v, policy on main:\n%s", out, got)
+	}
+}

@@ -95,7 +95,7 @@ func (s *Service) Digest(ctx context.Context, r api.Repo, number int, a requests
 func (s *Service) Answer(ctx context.Context, r api.Repo, in Input) (Outcome, error)
 func IsProposalPull(ctx context.Context, s store.Store, r api.Repo, pull int) (bool, error) // an open proposal's pull request
 
-var ErrNotOwner, ErrNeedsPasskey, ErrBusy error
+var ErrNotOwner, ErrNeedsPasskey, ErrBusy, ErrFull error
 ```
 
 An error from `Answer` means no record changed (the request is still open; a token may have been used). The digest is
@@ -120,8 +120,9 @@ An error from `Answer` means no record changed (the request is still open; a tok
 
 - Fail closed: `archfit/gate` is set only when every D13 condition holds, read from GitHub after the write.
 - One answer per request: the request moves from `open` to `answered` in the swap that records the approval.
-- A proposal holds at most 9 approvals (`records.ErrFull`); its pinned head and digest change only with an approval,
-  in one swap.
+- A proposal holds at most 9 approvals: an answer that would write a tenth line is `ErrFull` before the step-up and
+  any write, so the full proposal keeps its head and check and can merge. Its pinned head and digest change only with
+  an approval, in one swap.
 - No log line holds a token, a passkey id or owner text; errors carry GitHub's method, route and status.
 - **Release-blocking follow-up for tasks 20 and 21** (manager, 2026-11-12): an answered request leaves the request
   index at once, so while a proposal waits ("merge later", or a refused merge) a pull request that fails on the same
@@ -150,7 +151,8 @@ an `archfit/gate` success on the head (design appendix D.2), and the memory Stor
   answers and a new expected digest; a push to the branch: a rewrite that drops it),
   `TestAChangeThatNoLongerAppliesIsVoidAndItsRequestOpensAgain`, `TestAPullRequestClosedWithoutAMergeVoidsItsProposal`,
   `TestAMergedProposalWaitsForItsPushAndANewOneOpens`, `TestTwoAnswersAtOnceGoIntoOnePullRequest`,
-  `TestNoPolicyOnTheDefaultBranch`.
+  `TestNoPolicyOnTheDefaultBranch`, `TestAFullProposalTakesNoAnswerUntilItMerges`,
+  `TestAnExceptionOfAnOnlyRuleHasNoTo`.
 - `TestTheCheckIsSetOnlyWhenEveryD13ConditionHolds`: the branch at another commit, another file, another digest, a
   pull request from another repository, into another branch, closed.
 - `TestTheLease`: a held lease is `ErrBusy` with no write; an expired one is taken over and released; a release never

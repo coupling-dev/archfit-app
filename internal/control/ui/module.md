@@ -235,7 +235,8 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   or `refused` (GitHub did not merge; the pull request stays open); no `pull_request` when the answer writes no policy
   line. The signed-in user is the owner; a body names no user or repository. Refusals: a login the policy does not name
   `403 not_policy_owner`; a loosening answer without a step-up `403 needs_step_up`; a token used, expired or for another
-  change `403 token`; another answer of the repository being written `409 answer_busy`; and the request page's (`404`,
+  change `403 token`; another answer of the repository being written `409 answer_busy`; a policy pull request
+  that holds 9 answers `409 proposal_full`; and the request page's (`404`,
   `409 request_closed`, `422 answer`, `409 by_hand`, `409 no_policy`). After any refusal nothing was recorded.
 - `GET /api/repos/{o}/{n}/overview` [read] — default-branch state, open pull requests with their result, setup steps,
   onboarding progress, entitlement banner, history links, and whether the user may start onboarding or discovery.

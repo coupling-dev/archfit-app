@@ -237,7 +237,7 @@ type Answers interface {
 // Owned by gate/proposals.
 type AnswerInput = proposals.Input; type AnswerOwner = proposals.Owner; type AnswerOutcome = proposals.Outcome
 const ProposalBranch = proposals.Branch // "archfit/policy"
-var ErrNotPolicyOwner, ErrNeedsPasskey, ErrAnswerBusy // gate/proposals' errors
+var ErrNotPolicyOwner, ErrNeedsPasskey, ErrAnswerBusy, ErrProposalFull // gate/proposals' errors
 ```
 
 `AnswerDigest` and `Answer` ask `Admitted` first, then run `gate/proposals` (`t.Repo` names the repository); the façade

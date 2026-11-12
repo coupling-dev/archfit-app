@@ -105,6 +105,7 @@ func TestAnswerAPIRefusals(t *testing.T) {
 		{"no step-up", gate.ErrNeedsPasskey, http.StatusForbidden},
 		{"a used token", passkey.ErrToken, http.StatusForbidden},
 		{"busy", gate.ErrAnswerBusy, http.StatusConflict},
+		{"a full policy pull request", gate.ErrProposalFull, http.StatusConflict},
 		{"answered already", gate.ErrClosedRequest, http.StatusConflict},
 		{"an incomplete answer", gate.ErrAnswer, http.StatusUnprocessableEntity},
 		{"by hand", gate.ErrByHand, http.StatusConflict},
