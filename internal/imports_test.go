@@ -12,6 +12,9 @@ const (
 	modulePath = "github.com/alexei-led/archfit-app"
 	internal   = modulePath + "/internal/"
 	yamlModule = "go.yaml.in/yaml/"
+	// webauthnModule is go-webauthn, the passkey verifier of M2 D9: control/passkey alone imports it.
+	webauthnModule = "github.com/go-webauthn/webauthn/"
+	passkeyPkg     = internal + "control/passkey"
 )
 
 // goList runs `go list` at the module root and returns its non-empty output lines.
@@ -139,9 +142,10 @@ func TestAllowedImportMatrix(t *testing.T) {
 		{"gate", func(p string) bool { return under(p, "gate") }, func(_, imp string) bool {
 			return under(imp, "wire") || under(imp, "github") || imp == internal+"store" || under(imp, "gate")
 		}},
-		{"control", func(p string) bool { return under(p, "control") }, func(_, imp string) bool {
+		{"control", func(p string) bool { return under(p, "control") }, func(pkg, imp string) bool {
 			return under(imp, "wire") || under(imp, "github") || imp == internal+"store" ||
-				imp == internal+"gate" || under(imp, "control")
+				imp == internal+"gate" || under(imp, "control") ||
+				(pkg == passkeyPkg && strings.HasPrefix(imp, webauthnModule))
 		}},
 		{"app", func(p string) bool { return under(p, "app") }, func(string, string) bool { return true }},
 	}
@@ -205,9 +209,20 @@ func TestAllowedImportMatrix(t *testing.T) {
 
 func TestOnlyPlatformSeamsTouchPlatformSDKs(t *testing.T) {
 	g := importGraph(t)
+	// The third-party closure of control/passkey: go-webauthn and what it imports.
+	passkeyDeps := map[string]bool{}
+	for _, p := range closure(t, "./internal/control/passkey") {
+		if !strings.HasPrefix(p, modulePath) && !strings.HasPrefix(p, yamlModule) {
+			passkeyDeps[p] = true
+		}
+	}
+	if !passkeyDeps[webauthnModule+"webauthn"] {
+		t.Fatalf("control/passkey does not reach %swebauthn: the go-webauthn rule checks nothing", webauthnModule)
+	}
 	for pkg := range g.thirdParty {
-		if !strings.HasPrefix(pkg, yamlModule) {
-			t.Errorf("third-party package %s is in the build; docs/tech-stack.md allows one YAML parser only", pkg)
+		if !strings.HasPrefix(pkg, yamlModule) && !passkeyDeps[pkg] {
+			t.Errorf("third-party package %s is in the build; docs/tech-stack.md allows one YAML parser, and go-webauthn "+
+				"with its own imports through control/passkey only", pkg)
 		}
 	}
 	yamlImporters := []string{}
@@ -218,6 +233,12 @@ func TestOnlyPlatformSeamsTouchPlatformSDKs(t *testing.T) {
 			}
 			if strings.HasPrefix(imp, yamlModule) {
 				yamlImporters = append(yamlImporters, pkg)
+				continue
+			}
+			if strings.HasPrefix(imp, webauthnModule) {
+				if pkg != passkeyPkg {
+					t.Errorf("%s imports %s: go-webauthn belongs to control/passkey only", pkg, imp)
+				}
 				continue
 			}
 			// Any other SDK belongs to a Store, Sandbox or Provider implementation package.
