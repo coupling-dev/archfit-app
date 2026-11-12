@@ -19,19 +19,27 @@ Rows marked **[default]** need an owner decision before launch.
 | Infrastructure  | OpenTofu 1.8+ (Terraform-compatible), `google` provider pinned, stacks `data` and `runtime` under [`infra/`](../infra/README.md) |
 | Logging         | `log/slog` writes JSON to stdout. Logs contain IDs, digests, outcomes, and timings                                               |
 | HTTP            | `net/http` with Go 1.22+ `ServeMux` patterns                                                                                     |
-| Crypto          | Standard library RS256 JWT, JWKS, HMAC-SHA256, AES-GCM cookies, and SHA-256 digests                                              |
+| Crypto          | Standard library RS256 JWT, JWKS, HMAC-SHA256, AES-GCM cookies, and SHA-256 digests. Passkeys: go-webauthn (Dependencies)        |
 | Embedded data   | `go:embed` stores schemas, the locked manifest, the Anthropic price table, templates, and assets                                 |
 
 ## Dependencies
 
-The only third-party module is:
+The App imports two third-party modules:
 
 | Module                      | Used in                        | Purpose                                 |
 | --------------------------- | ------------------------------ | --------------------------------------- |
 | `go.yaml.in/yaml/v3` v3.0.x | `wire/settings`, `wire/policy`, `wire/policy3` | Strict YAML decoding with `KnownFields`; `wire/policy3` also inserts answers into a policy by node position |
+| `github.com/go-webauthn/webauthn` v0.18.2 | `control/passkey` only | WebAuthn registration and assertion for the passkey of an answer (M2 D9) |
 
-The App has no GitHub SDK, JWT library, JSON Schema library, assertion library, or LLM SDK.
-GitHub, OIDC, Anthropic, Firestore, and metadata-server clients use `net/http`.
+go-webauthn, because a hand-written WebAuthn, CBOR and COSE verifier would be security code the App owns forever
+(M2 D9). v0.18.2 is its latest release (2026-09-19, BSD-3-Clause); `govulncheck` finds nothing the App reaches through
+it. Its own imports enter the build only through `control/passkey`: CBOR (`fxamacker/cbor`, `x448/float16`), TPM
+(`google/go-tpm`), MessagePack (`tinylib/msgp`, `philhofer/fwd`), `go-viper/mapstructure`, `google/uuid`,
+`go-webauthn/x`, `golang.org/x/crypto`, `golang.org/x/sys`, and `golang-jwt/jwt` for its metadata service, which the
+App does not configure. `internal/imports_test.go` fails when any of them is imported elsewhere.
+
+Apart from go-webauthn's own imports, the App has no GitHub SDK, JWT library, JSON Schema library, assertion library,
+or LLM SDK. GitHub, OIDC, Anthropic, Firestore, and metadata-server clients use `net/http`.
 
 ## Testing
 
@@ -48,6 +56,7 @@ The tests use the standard `testing` package and table-driven cases with `t.Run`
 | Firestore             | An `httptest` fake of the REST subset. CI also runs the driver tests against the Firestore emulator   |
 | Fixtures              | `internal/wire/testdata/` with `.expect.json` files                                                   |
 | Import rules          | Root tests run `go list -deps` against the allowed import matrix                                      |
+| Passkey               | A software authenticator on go-webauthn's CBOR and COSE encoders, and the W3C WebAuthn level 3 test vectors; never a real key |
 | Fuzzing               | `testing.F` covers strict `envelope`, `report`, `settings`, and `policy` decoders **[default]**       |
 
 ## Frontend

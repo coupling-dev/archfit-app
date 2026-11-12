@@ -28,7 +28,7 @@ its index could drift apart.
   repository's approved digest set, in one swap; the same commit again is a no-op success.
 
 Not provided: GitHub calls, verdicts, the request line, the policy writer, passkeys. The passkey and challenge keys
-(`v4/passkey/<github-user-id>`, `v4/challenge/<id>`) belong to `control/passkey` (M2 task 18), because `control`
+(`v4/passkey/<github-user-id>`, `v4/challenge/<github-user-id>`) belong to `control/passkey` (M2 task 18), because `control`
 cannot import `gate/*`.
 
 ## Subdomain Classification

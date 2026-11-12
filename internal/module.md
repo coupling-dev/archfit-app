@@ -50,6 +50,7 @@ The system as a whole is a **core** product. Per area:
 | `control/onboarding`, `control/ui`, `control/assist` | Core-adjacent product surface                           | High                                                                  | Adoption UX; product.md leaves usability targets open                             |
 | `control/account`                                    | Supporting — needed, not differentiating                | Moderate                                                              | Trial and commercial terms are **[default]** and expected to change before launch |
 | `control/proposal`                                   | Supporting                                              | Low                                                                   | Branch-plus-draft-PR mechanics are stable GitHub behavior                         |
+| `control/passkey`                                    | Generic — WebAuthn, done by go-webauthn (M2 D9)          | Low                                                                   | Parameters fixed by M2 D9; the stored passkey is the App's own type               |
 | `wire`                                               | Published language between three repositories           | Moderate                                                              | Changes only with a versioned engine or Action release                            |
 | `github`, `store`, `gcptoken`                        | Generic — solved problems                               | Low functional, moderate implementation                               | Wrapped behind contracts                                                          |
 | `app`                                                | Supporting                                              | Low                                                                   | Wiring only                                                                       |
@@ -188,6 +189,7 @@ internal/                         Archfit App (root)
     ├── onboarding/               two-PR customer flow, managed discovery behind Sandbox
     ├── assist/                   explicit AI requests; owns the LLM Provider seam
     │   └── anthropic/            Provider implementation
+    ├── passkey/                  WebAuthn passkeys of owners and the step-up of an answer (go-webauthn)
     └── ui/                       the embedded web app, its JSON API, sign-in
         ├── session/              OAuth login, signed cookies, permission checks
         └── graph/                read-only graph view model
@@ -305,6 +307,8 @@ Distance scale and thresholds are those of the Fractal Design skill. Depths: roo
 | control/assist/anthropic → control/assist (`Provider`)                      | Contract                          | control/assist | 1    | 1        | Moderate   | Yes       | —                                                |
 | control/proposal → github/api                                               | Contract                          | root           | 2    | 2        | Low        | Yes       | —                                                |
 | control/ui → control/{account,onboarding,assist,proposal}                   | Contract                          | control        | 1    | 1        | High       | Yes       | —                                                |
+| control/ui → control/passkey                                                | Contract                          | control        | 1    | 1        | Low        | Yes       | —                                                |
+| control/passkey → store, github/api, wire/{policy3,policy}                  | Contract                          | root           | 2    | 2        | Low        | Yes       | go-webauthn is its only third-party import       |
 | control/ui → control/ui/{session,graph}                                     | Functional (composition)          | control/ui     | 1    | 1        | High       | Yes       | —                                                |
 | control/ui → wire/{policy,settings,report}, github/api                      | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
 | control/ui/session → github/auth, github/api                                | Contract                          | root           | 3    | 3        | Low        | Yes       | —                                                |
@@ -428,7 +432,8 @@ draft are gone. What the real engine changed in this design:
   green. A rate limit on the changed-file list, which only filters annotations, comes after the gate check is written
   with its decided conclusion; the retry adds the annotations.
 - Origin is presentation only; enforcement is never filtered to introduced findings. No repository score.
-- Standard library first. Expected third-party dependencies: one YAML parser, nothing else until `docs/tech-stack.md` says so.
+- Standard library first. Expected third-party dependencies: one YAML parser and go-webauthn in `control/passkey` (M2 D9),
+  nothing else until `docs/tech-stack.md` says so.
 - Targets **[default]**: feedback within 60 seconds of upload at p95; missed events repaired within one sweep interval.
 
 ## Test Specification
@@ -443,7 +448,7 @@ draft are gone. What the real engine changed in this design:
   **Expected behavior**: every import is within the group's allowed set; `wire/*` and `store` import no other internal package.
 - **Test name**: `TestOnlyPlatformSeamsTouchPlatformSDKs`
   **Scenario**: list third-party imports per package.
-  **Expected behavior**: only `wire/settings`, `wire/policy` and `wire/policy3` import YAML; cloud, KV, or LLM SDKs appear only in `Store`, `Sandbox`, or `Provider` implementation packages.
+  **Expected behavior**: only `wire/settings`, `wire/policy` and `wire/policy3` import YAML; only `control/passkey` imports go-webauthn, and no other third-party package is in the build but go-webauthn's own imports; cloud, KV, or LLM SDKs appear only in `Store`, `Sandbox`, or `Provider` implementation packages.
 
 ### Integration Contract Tests
 
