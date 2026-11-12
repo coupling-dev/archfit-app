@@ -418,3 +418,21 @@ func mapsEqual(a, b map[string]string) bool {
 	}
 	return true
 }
+
+func TestAFullProposalTakesNoAnswerUntilItMerges(t *testing.T) {
+	w := newWorld(t)
+	mods := []string{"pkg_util", "pkg_db"}
+	for i := range records.MaxApprovals {
+		n := 500 + i
+		w.request(n, "coupling", "pkg_tc", mods[i%2]+"-"+strconv.Itoa(i))
+		w.mustAnswer(olivia, n, requests.Answer{Kind: policy3.Reject, Instead: "No " + strconv.Itoa(i) + "."}, true)
+	}
+	w.request(431, "graph", "pkg_tc", "pkg_util")
+	writes := len(w.hub.writes())
+	if _, err := w.answer(olivia, 431, requests.Answer{Kind: policy3.Approve}, false); !errors.Is(err, ErrFull) {
+		t.Fatalf("err = %v, want ErrFull", err)
+	}
+	if got := w.hub.writes()[writes:]; len(got) != 0 || len(w.redeemed) != 0 {
+		t.Errorf("a refused answer wrote %v or used the token %v", got, w.redeemed)
+	}
+}

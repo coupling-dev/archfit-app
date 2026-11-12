@@ -43,6 +43,9 @@ var (
 	ErrNotOwner = errors.New("proposals: not an owner named in the policy")
 	// ErrNeedsPasskey refuses an answer that loosens the policy without a passkey step-up.
 	ErrNeedsPasskey = errors.New("proposals: the answer loosens the policy and needs a passkey")
+	// ErrFull refuses an answer that writes a line while the open proposal holds records.MaxApprovals answers: it
+	// merges first.
+	ErrFull = errors.New("proposals: the policy pull request holds the most answers it can")
 	// errRefused is a D13 condition that does not hold, so archfit/gate is not set.
 	errRefused = errors.New("proposals: the pull request is not the App's proposal as recorded")
 )
@@ -181,14 +184,17 @@ func (s *Service) answer(ctx context.Context, r api.Repo, in Input) (Outcome, er
 	if err != nil {
 		return Outcome{}, err
 	}
+	id := records.NewID()
+	out := Outcome{Approval: id}
+	joins := !bytes.Equal(want, file)
+	if joins && cur != nil && len(cur.rec.Approvals) >= records.MaxApprovals {
+		// Refused before the step-up and the branch write: a full proposal must merge before it takes another answer.
+		return Outcome{}, ErrFull
+	}
 	approval, err := s.approval(ctx, in, change)
 	if err != nil {
 		return Outcome{}, err
 	}
-
-	id := records.NewID()
-	out := Outcome{Approval: id}
-	joins := !bytes.Equal(want, file)
 	var pin *records.Pin
 	if joins {
 		if pin, err = s.write(ctx, r, cur, tip, want, append(kept, approved{id: id, rec: approval, change: change})); err != nil {
