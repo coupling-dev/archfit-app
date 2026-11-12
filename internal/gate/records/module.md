@@ -67,7 +67,7 @@ Keys: `Prefix` (`v4/`), `RepoKey`, `RequestKey`, `RequestIndexKey`, `ApprovalKey
 | Key | Value | `schema` | Holds |
 | --- | --- | --- | --- |
 | `v4/repo/<repo>` | `Repo` | `archfit-app.repo.v1` | approved digest; outside the flow (digest, issue); drift issue; expiry issues (exception key → issue) |
-| `v4/request/<repo>/<issue>` | `Request` | `archfit-app.request.v1` | key, reason, numbers (verified, balance), waiting pull requests, state `open`, `answered` or `closed` |
+| `v4/request/<repo>/<issue>` | `Request` | `archfit-app.request.v1` | key, reason, numbers (verified, balance), waiting pull requests, state `open`, `answered` or `closed`; rule, path, modules, expiry date and record, so the issue body can be rendered again |
 | `v4/approval/<repo>/<id>` | `Approval` | `archfit-app.approval.v1` | kind, request, change (raw JSON, owned by the policy writer), owner, credential, time, proposal (set once), state `open` or `void` |
 | `v4/proposal/<repo>/<id>` | `Proposal` | `archfit-app.proposal.v1` | ordered approval ids (at most `MaxApprovals` = 9), pull request, head SHA, expected digest, state `open`, `merged` or `void`, consuming commit |
 | `v4/pull/<repo>/<pr>` | `Pull` | `archfit-app.pull.v1` | head SHA, run id, run attempt, payload digest, status, error keys (M2 D6; no result bytes) |
@@ -107,7 +107,9 @@ again and retry.
 - **Shared knowledge**: `Tenant`, `Get`, `ErrNotFound`, `Update`, `ErrConflict`, and the limits of
   `CompareAndSwapAll` (10 keys, 64 KiB values). The Firestore driver makes each swap atomic across App instances.
 
-Later milestone 2 modules (ingest, requests, answers, approvals, the sweep) read and write through this module;
+`gate/requests` (M2 task 16) writes the requests and the request index: a request is stored with its index entry
+in one `Indexed` swap, and the pull request joins it in another. Later milestone 2 modules (answers, approvals, the
+sweep) read and write through this module;
 `control` reaches it only through the `gate` façade.
 
 ## Constraints and Invariants
@@ -116,7 +118,8 @@ Later milestone 2 modules (ingest, requests, answers, approvals, the sweep) read
 - A record and its index change in the same `CompareAndSwapAll`; an open record is in its index and a closed one is not.
 - An approval joins at most one proposal, and is consumed at most once, by that proposal's merge commit.
 - A proposal is merged by exactly one commit; that commit's digest is the repository's approved digest.
-- No result bytes, report or source are stored (M2 D6).
+- No result bytes, report or source are stored (M2 D6). A request keeps the record its issue shows: check output of
+  the asked errors, at most 30,000 bytes, never source.
 - Errors never quote a stored value.
 
 ## Test Specification
