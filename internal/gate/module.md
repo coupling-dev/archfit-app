@@ -17,6 +17,10 @@ separate, testable steps. Without this module a report is a self-reported file a
   identity against the locked manifest and the workflow path against settings, decide, publish, answer. After a
   published push to the default branch, keep the branch's repair issue (`gate/feedback`'s `Repairer`): a notification
   that never changes the answer.
+- Serve envelope 2 (Archfit 4) on the same route: `UploadHandler` sends an upload whose envelope header says
+  `archfit.upload-envelope.v2` to the envelope 2 path (`upload4.go`), everything else to the path above. That path
+  decides the status, stores the pull record and answers; it publishes no check yet (M2 task 15). See
+  [Envelope 2 upload](#envelope-2-upload).
 - React to verified webhook events: publish a protected-path decision banner/check and best-effort reviewer requests on a new head, then refresh required or advisory state when an owner decision or native review changes. A lost approval/objection may withdraw a prior result; a new report is still required before a fresh success. Reconcile queued groups that use the changed PR.
 - Gate the merge queue of the default branch: serve the upload of a merge group report on the group commit, create its
   pending required check on `merge_group` `checks_requested`, correct that check when the group is destroyed or a queued
@@ -424,6 +428,56 @@ only filters annotations, leaves the gate check with the decided conclusion; the
 stops the pass with `Summary.RateLimited`. In `HandleEvent` it is returned, also from `RunRepo` and `Recheck`, so the webhook queue
 retries the delivery.
 The handler works under a 50 second deadline **[default]**, inside the 60 second feedback target.
+
+### Envelope 2 upload
+
+Action 4 posts envelope 2 (`wire/envelope`, `archfit.upload-envelope.v2`) with the result JSON v1 to `POST /v1/reports`.
+`UploadHandler` reads only the `schema_version` of the `X-Archfit-Envelope` header to choose the path; the envelope 1
+path is unchanged and refuses any other header as before. Envelope 1 and envelope 2 are never accepted side by side
+after the release: task 25 removes envelope 1.
+
+Steps, in order:
+
+1. `ingest.ReceiveV2` (`gate/ingest`, "Envelope 2"): authentication, the fixed workflow file
+   `.github/workflows/archfit.yaml` (M2 D15), the latest attempt of the latest run of the head, the binding, and the
+   result tied to the envelope. A `*Rejection` is the whole answer; nothing is stored.
+2. Rules, each read from GitHub at the default branch's tip `T` now (`Repos.BranchHead`, `Repos.File`,
+   `Commits.Compare`), never from the envelope alone. A failed rule adds a record (a `result.Unknown`: cause, what,
+   why, next) and a reason code; any record makes the status `unknown`. Else the status is the result's (`pass`,
+   `fail`, `unknown`).
+
+| Rule | Reason code | Next step in the record |
+| --- | --- | --- |
+| an ingest `Problem` | `envelope_mismatch`, `unsupported_event`, `fork`, `result_invalid` | run the check again; open the pull request against the default branch; push the branch to this repository; pin archfit-action to a commit the App lists |
+| the engine identity (version, image digest, platform) is a manifest 4 row (`manifest.EngineApproved`) | `unknown_engine` | pin archfit-action to a commit the App lists |
+| `T` has a schema 3 policy (`.archfit.yaml` that `policy3.Decode` reads) | `first_policy` | an administrator approves the first policy in the App (task 23) |
+| `target_sha` is `T` or behind it (`Compare(target_sha, T)` is `identical` or `ahead`; a commit GitHub does not know is not) | `target_not_on_branch` | run the check again |
+| `policy_digest` is the digest of `.archfit.yaml` at `target_sha` (a policy from the head fails here) | `policy_not_target` | restore the policy from the default branch |
+| the digest at `target_sha` is the digest at `T` | `policy_changed` | the check runs again |
+| `.github/workflows/archfit.yaml` at the run's commit (`Binding4.RunSHA`, the test merge commit of a pull request) is `T`'s (same blob), or differs only in the `alexei-led/archfit-action@<ref>` refs and their ` # …` comments, each new ref a commit manifest 4 lists (`manifest.ActionApproved`) | `workflow_changed` | update the branch; if the pull request changes the workflow, an owner approves it in the App (task 23) |
+
+The policy rules are skipped on a first policy, and the `target_sha` digest rules after `target_not_on_branch`. The
+workflow rule always runs: a pull request runs its own workflow file, so a changed one could upload a forged `pass`
+(design 9.2). A tag ref is never a pin bump here. A pull request whose test merge commit is older than a non-ref
+change of the workflow on `T` reads `unknown` until its branch is updated.
+
+3. The pull record (M2 D6, `records.Pull` at `PullKey` with its `PullIndexKey` entry, one `records.Indexed` swap):
+   pull request uploads only. It holds the run id and attempt, the payload digest, the status the App gave, and the
+   result's error keys only when no rule failed. A record of a newer run, or a newer attempt of the same run, is never
+   replaced: run ids grow, so a late upload of an older head cannot win. Push and merge group uploads store nothing
+   here (task 22 owns push results).
+4. The answer.
+
+| Situation | Status | Body |
+| --- | --- | --- |
+| Decided and stored | 200 | `{"status": "pass" \| "fail" \| "unknown", "reason": "<first reason code>"}`; no `reason` without a record |
+| `*Rejection` of `ReceiveV2` | `Rejection.Status` | `{"error": "<Rejection.Code>"}` |
+| `api.ErrRateLimited` after `ReceiveV2` | 503 with `Retry-After: 60` | `{"error": "rate_limited"}` |
+| Any other error (a GitHub read, the Store) | 503 | `{"error": "unavailable"}` |
+
+A 200 means "decided", not "passed". Until the first engine 4 release is pinned in manifest 4, every envelope 2 upload
+is `unknown` with `unknown_engine`. The log line `gate upload` carries `envelope: 2`, identifiers, the status and the
+reason codes; no path, policy, result or token.
 
 ## Integrations
 
@@ -849,7 +903,8 @@ func Withdrawal(t Target, current CheckState, tr Trusted) *Publication
 ### gate/records (child)
 
 - **Counterpart**: internal/gate/records
-- **Direction**: gate depends on records (no caller yet: milestone 2 tasks 14, 16, 19, 20 and 22 add them)
+- **Direction**: gate depends on records (the envelope 2 upload writes the pull record; milestone 2 tasks 16, 19, 20
+  and 22 add more callers)
 - **Strength**: contract
 - **LCA / Rank / Distance**: gate / 1 / 1
 - **Volatility**: high
@@ -893,6 +948,29 @@ func Lookup(id Identity) (Entry, bool)
 // Current returns the entry new workflows are generated against (linux/amd64).
 func Current() Entry
 ```
+
+The envelope 2 upload uses manifest 4 instead: `EngineApproved(Identity)` (exact match, any empty field is a miss),
+`ActionApproved(commit)` (a full commit SHA only) and `ActionRepository`. Manifest 4 ships empty, so every envelope 2
+upload is `unknown_engine` until the release tasks pin the first engine 4 row.
+
+<!-- contract: ActionRepository, EngineApproved, ActionApproved — restated from internal/wire/manifest/module.md -->
+```go
+const ActionRepository = "alexei-led/archfit-action"
+func EngineApproved(id Identity) bool
+func ActionApproved(commit string) bool
+```
+
+### wire/policy3 and wire/result
+
+- **Counterpart**: internal/wire/policy3, internal/wire/result
+- **Direction**: gate depends on both (the envelope 2 upload)
+- **Strength**: contract
+- **LCA / Rank / Distance**: root / 2 / 2
+- **Volatility**: high (the engine owns both contracts)
+- **Balanced?**: yes
+- **Shared knowledge**: `policy3.Decode` says whether the default branch has a schema 3 policy; `policy3.Digest` is the
+  digest compared with the envelope. The App's records are `result.Unknown` values, so they print with
+  `result.Record`; `result.Status` names the status. The gate never parses the policy for a verdict.
 
 ### wire/report
 
@@ -1337,8 +1415,10 @@ type Swap struct {
 the comment links to the App's pull request page), `feedback.NewRepairer(d.GitHub, d.GitHub, d.GitHub, d.GitHub, d.Store, d.Now)`, and
 `sweep.New(d.GitHub, d.GitHub, d.GitHub, resolver, publisher, d.Admissions, d.Sweep)`. `verdict` has no constructor.
 `NewReceiver` is `ingest.New` with the same argument pattern. A nil `Deps.Now` means `time.Now` **[default]**.
-`New` delegates to the unexported `compose`, which takes the seven `github/api` roles (`Repos`, `Pulls`, `Actions`,
-`Checks`, `Comments`, `Issues`, `MergeQueues`) as one interface, and
+`compose` also builds the envelope 2 path: `ingest.NewV2` over the same roles plus `WorkflowRuns`, then
+`Repos`, `Commits` and the Store for its rules and its pull record.
+`New` delegates to the unexported `compose`, which takes the nine `github/api` roles (`Repos`, `Pulls`, `Actions`,
+`Checks`, `Comments`, `Issues`, `MergeQueues`, `WorkflowRuns`, `Commits`) as one interface, and
 `compose` to `newGate`, which takes the children as interfaces; both exist so that tests can replace GitHub or a child.
 
 | Child      | Contributes                                                                                              | Depends on siblings                                           |
@@ -1804,3 +1884,15 @@ are driven only as far as they go without GitHub. Child internals are tested in 
 - **Test name**: `TestARetargetedPullRequestDecidesNothing`
   **Scenario**: the pull request is retargeted to a branch whose settings name another owner; that writer, then a real owner, approve and decline; the page lists it.
   **Expected behavior**: `ErrNotOwner` for the writer; `ErrDecisionStale` for the owner with `stale (base branch changed)`; `CanDecide` false for both.
+- **Test name**: `TestUpload4AcceptsAPullRequest`, `TestUpload4AcceptsAPushAndAMergeGroup`
+  **Scenario**: envelope 2 of the engine goldens `pass` and `deny` on a pull request; a push to the default branch; a merge group.
+  **Expected behavior**: 200 with the result's status; the pull record (run, attempt, payload digest, status, error keys) and its index entry for the pull request only; no check or comment write.
+- **Test name**: `TestUpload4GivesUnknown`, `TestUpload4FirstPolicy`, `TestUpload4KeepsNoErrorKeysOfAResultItOverrides`
+  **Scenario**: a wrong policy digest; a policy from the head; a policy that changed since the run; `target_sha` off the default branch or unknown to GitHub; an unknown engine, and the shipped manifest 4; an envelope that disagrees with GitHub; a base other than the default branch; an unreadable result; no policy or a version 2 policy on the default branch, also with the workflow added; a `fail` from an edited workflow.
+  **Expected behavior**: 200 `unknown` with the rule's reason code first; the pull record stored `unknown` with no error keys; the first policy keeps the run and payload digest.
+- **Test name**: `TestUpload4WorkflowFile`
+  **Scenario**: a pull request that edits the workflow and uploads a forged `pass`; a ref-only Action bump to a manifest 4 commit, with and without its comment; a bump to an unlisted commit, to a tag, with another edit, glued to a `#`; the workflow removed; a test merge commit older than a ref bump on the default branch.
+  **Expected behavior**: `unknown` `workflow_changed` for every change but the ref-only bumps, which `pass`; the record says to update the branch or have an owner approve.
+- **Test name**: `TestUpload4KeepsTheNewestRecord`, `TestUpload4RejectionsStoreNothing`, `TestUpload4AnswersAFailedReadWithARetry`, `TestUploadHandlerKeepsEnvelope1OnItsPath`, `TestUpload4LogsIdentifiersOnly`
+  **Scenario**: records written out of order; a moved head; a rate limit and a failed read; an envelope 1 upload; the log of a `fail`.
+  **Expected behavior**: a newer run or attempt is never replaced; nothing stored for a rejection or a failed read (503, `Retry-After` for the rate limit); envelope 1 answers a conclusion; the log has identifiers and the status, no rule, path, policy or token.

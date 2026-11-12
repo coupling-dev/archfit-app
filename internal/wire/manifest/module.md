@@ -18,6 +18,7 @@ identity could compare as equal to another unknown.
 - `Lookup`: exact match of a claimed `Identity` against the rows.
 - `Current`: the row new workflows are generated against.
 - `EngineVersions`: the engine releases the rows approve.
+- Manifest 4 (Archfit 4): `EngineApproved` and `ActionApproved` over `manifest4.json`. See [Manifest 4](#manifest-4).
 - Nothing else. It does not read reports, compare profiles, or decide outcomes.
 
 ## Subdomain Classification
@@ -133,6 +134,51 @@ Semantics not visible in the signatures:
   `Lookup` on the whole identity stays the only approval. The parent `wire` tests read it to tie every approved
   release to the report decoder, to a real capture and, through `Current`, to the policy schema pin.
 
+## Manifest 4
+
+Manifest 4 lists the Archfit 4 engines the App approves for envelope 2 uploads (M2 task 14). It sits beside the v1 file
+until task 25 removes v1. It has no measurement profile: Archfit 4 stores no measurement that depends on one.
+
+```json
+{
+  "version": 2,
+  "engines": [
+    {
+      "engine_version": "v4.0.0",
+      "images": {"linux/amd64": "sha256:<64 hex>", "linux/arm64": "sha256:<64 hex>"},
+      "action_commits": ["<40 hex archfit-action commit>"]
+    }
+  ]
+}
+```
+
+Rules, checked at package initialization (an invalid file panics): `version` is 2; `engines` is present (an empty list
+approves nothing); strict keys; `engine_version` is `v4.MINOR.PATCH` or `v4.MINOR.PATCH-rc.N` (prereleases, M2 D16),
+once per file; `images` names at least one of `linux/amd64` and `linux/arm64`, each with a `sha256:` digest; at least
+one Action commit, each 40 lowercase hex, once per engine. A digest or commit whose hex part is one repeated character
+(all zeros among them) is refused: manifest 4 has no placeholders, because a placeholder would approve a made-up
+identity. Errors name the engine, the field and the rule, never a value.
+
+**It ships empty.** No engine 4 image and no Action 4 commit exist yet, so until the release tasks (29, 30, and the
+pin before the rehearsal) add the first row, every envelope 2 upload is `unknown` with `unknown_engine`.
+
+```go
+// ActionRepository is the repository of the Action that runs an approved engine in a workflow.
+const ActionRepository = "alexei-led/archfit-action"
+
+// EngineApproved reports whether manifest 4 approves the claimed identity: the exact engine version, image digest
+// and platform of one row. Any empty field is a miss.
+func EngineApproved(id Identity) bool
+
+// ActionApproved reports whether commit is an archfit-action commit manifest 4 lists. A tag or branch never matches.
+func ActionApproved(commit string) bool
+```
+
+The gate uses `EngineApproved` for the envelope's engine identity and `ActionApproved` for the one workflow change that
+needs no owner: a pin bump of `alexei-led/archfit-action@<ref>` to a listed commit. Like v1, nothing at run time adds
+or changes a row. Tests: `TestEmbeddedManifest4IsValidAndEmpty`, `TestManifest4ValidationRules`,
+`TestEngineApprovedExactMatch`, `TestActionApproved`, `TestManifest4HasNoRuntimeOverride`.
+
 ## Integrations
 
 This module imports only the standard library. It depends on no internal module. The entries below are its
@@ -237,8 +283,8 @@ tolerates the distance of separate repositories and release cycles.
   **Expected behavior**: all miss.
 - **Test name**: `TestNoRuntimeOverride`
   **Scenario**: set environment variables such as `ARCHFIT_MANIFEST` and `ARCHFIT_IMAGE_DIGEST`, then look up an unlisted identity.
-  **Expected behavior**: miss; the package API is exactly `Lookup`, `Current`, `EngineVersions`, `Entry` and `Identity`, and
-  none of them adds or replaces rows.
+  **Expected behavior**: miss; the package API is exactly `Lookup`, `Current`, `EngineVersions`, `Entry`, `Identity`,
+  and the manifest 4 `ActionRepository`, `EngineApproved` and `ActionApproved`; none of them adds or replaces rows.
 - **Test name**: `TestPackageImportsStdlibOnly`
   **Scenario**: `go list -deps` for the package.
   **Expected behavior**: no internal package, no third-party package, no `net`, `os`, or `log` package.
