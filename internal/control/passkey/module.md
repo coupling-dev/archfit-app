@@ -24,7 +24,8 @@ the answer redeems. Verification is `go-webauthn`'s (M2 D9): the App never parse
 - Refuse an assertion whose sign counter does not grow when it is not zero. go-webauthn only flags it
   (`CloneWarning`).
 - List the user's passkeys; remove one with a step-up token for `remove` and that passkey. Removing the last one opens
-  the same issue as a registration, deletes the record, and the user's next registration needs no passkey.
+  a removal issue, assigned like the registration issue to the user and the owners, deletes the record, and the
+  user's next registration needs no passkey.
 - Provide the two ports over GitHub: `NewOwners` (the owners of the policy on the default branch) and `NewIssues`
   (open the issue as the App, then assign it).
 
@@ -62,8 +63,10 @@ changes no stored value, because the stored passkey is the App's own type.
   moved in between fails the step. So a response is never applied twice.
 - The token: 32 random bytes in base64url. Only its SHA-256 is stored; the comparison is constant-time.
 - Before the first policy: no `.archfit.yaml` on the default branch, or an Archfit 3 (version 2) one, which the
-  onboarding pull request converts. A file that is neither schema 3 nor Archfit 3 is `ErrPolicy`. The Archfit 3 check
-  goes with `wire/policy` (M2 task 25).
+  onboarding pull request converts. Archfit 3 means a text `policy.Diagnose` accepts in full, its schema's
+  `version: 2` included; `policy.Validate` checks only key names and would take a schema 3 file without `owners`. A
+  file that is neither schema 3 nor Archfit 3 is `ErrPolicy`. The Archfit 3 check goes with `wire/policy` (M2 task
+  25).
 
 ## Public Contract
 
@@ -157,7 +160,7 @@ func NewIssues(issues issueCreator, triage api.IssueTriage) Issues // api.Issues
 ### internal/store, internal/github/api, internal/wire/policy3, internal/wire/policy
 
 - **Direction**: passkey depends on them: the Store and `Update`; `Repo`, `RepoRef`, `File`, `CreateIssue`,
-  `IssueTriage`; `policy3.Decode` for the owners; `policy.Validate` to recognise an Archfit 3 policy.
+  `IssueTriage`; `policy3.Decode` for the owners; `policy.Diagnose` to recognise an Archfit 3 policy.
 - **Strength**: contract. **LCA / Rank / Distance**: root / 2 / 2. **Balanced?**: yes, contract coupling tolerates the
   distance.
 
@@ -181,6 +184,13 @@ func NewIssues(issues issueCreator, triage api.IssueTriage) Issues // api.Issues
 - Logs carry the user id, repository id, installation id, step and outcome. Never a token, challenge, user handle,
   passkey id or public key.
 - Inherited: control-plane code. Nothing on the gate path calls it.
+
+Stated limit (design 9.5): a passkey belongs to the installation, but its registration issue goes to the owners of the
+repository it was registered in. A user who is an administrator of a repository without a policy and an owner of
+another can register in the first; the issue is assigned to that user, and the owners of the second repository are
+not told until an answer records the owner and the passkey (M2 task 19). The notice exists so the person whose
+browser registered the passkey learns of it, and that person is always assigned. Announcing in every repository the
+passkey acts in would put a GitHub read and an issue on the step-up path without blocking anything.
 
 ## Test Specification
 

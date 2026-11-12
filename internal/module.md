@@ -448,7 +448,7 @@ draft are gone. What the real engine changed in this design:
   **Expected behavior**: every import is within the group's allowed set; `wire/*` and `store` import no other internal package.
 - **Test name**: `TestOnlyPlatformSeamsTouchPlatformSDKs`
   **Scenario**: list third-party imports per package.
-  **Expected behavior**: only `wire/settings`, `wire/policy` and `wire/policy3` import YAML; only `control/passkey` imports go-webauthn, and no other third-party package is in the build but go-webauthn's own imports; cloud, KV, or LLM SDKs appear only in `Store`, `Sandbox`, or `Provider` implementation packages.
+  **Expected behavior**: only `wire/settings`, `wire/policy` and `wire/policy3` import YAML; only `control/passkey` imports go-webauthn, no other package imports one of go-webauthn's own imports, and no other third-party package is in the build; cloud, KV, or LLM SDKs appear only in `Store`, `Sandbox`, or `Provider` implementation packages.
 
 ### Integration Contract Tests
 

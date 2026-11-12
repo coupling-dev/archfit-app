@@ -42,8 +42,10 @@ func (o policyOwners) Owners(ctx context.Context, r api.Repo) ([]string, bool, e
 	if f, err := policy3.Decode(raw); err == nil {
 		return f.Owners, true, nil
 	}
-	// The Archfit 3 reader goes with Archfit 3 (M2 task 25); this check goes with it.
-	if policy.Validate(raw) == nil {
+	// An Archfit 3 policy is one its schema accepts in full, version 2 included: policy.Validate checks only key names,
+	// so a schema 3 file without owners would pass it. The Archfit 3 reader goes with Archfit 3 (M2 task 25); this
+	// check goes with it.
+	if policy.Diagnose(raw) == nil {
 		return nil, false, nil
 	}
 	return nil, false, ErrPolicy

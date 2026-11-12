@@ -241,6 +241,11 @@ func TestOnlyPlatformSeamsTouchPlatformSDKs(t *testing.T) {
 				}
 				continue
 			}
+			// go-webauthn's own imports are in the build for it alone, also for a store driver.
+			if passkeyDeps[imp] {
+				t.Errorf("%s imports %s: go-webauthn's own imports are in the build for control/passkey only", pkg, imp)
+				continue
+			}
 			// Any other SDK belongs to a Store, Sandbox or Provider implementation package.
 			parent := pkg[:strings.LastIndex(pkg, "/")]
 			if parent != internal+"store" && parent != internal+"control/onboarding" && parent != internal+"control/assist" {

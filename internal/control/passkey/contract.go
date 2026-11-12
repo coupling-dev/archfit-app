@@ -84,8 +84,9 @@ type Passkeys interface {
 	Redeem(ctx context.Context, r api.Repo, userID int64, token string, p Purpose) (passkeyID string, err error)
 	// List returns the user's passkeys, oldest first.
 	List(ctx context.Context, r api.Repo, userID int64) ([]Passkey, error)
-	// Remove deletes one passkey with a step-up token for ActionRemove and that passkey. Removing the last one opens
-	// the same issue as a registration; the user's next registration then needs no passkey.
+	// Remove deletes one passkey with a step-up token for ActionRemove and that passkey. Removing the last one opens a
+	// removal issue, assigned like the registration issue to the user and the owners; the user's next registration
+	// then needs no passkey.
 	Remove(ctx context.Context, r api.Repo, u User, passkeyID, token string) error
 }
 
