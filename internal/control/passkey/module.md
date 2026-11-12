@@ -29,7 +29,7 @@ the answer redeems. Verification is `go-webauthn`'s (M2 D9): the App never parse
 - Provide the two ports over GitHub: `NewOwners` (the owners of the policy on the default branch) and `NewIssues`
   (open the issue as the App, then assign it).
 
-Not provided: the answers (`control/answers`, M2 task 19), the pages (M2 task 24), discoverable login, attestation
+Not provided: the answers (`control/answers`), the pages (M2 task 24), discoverable login, attestation
 trust (no metadata service), a passkey name.
 
 ## Subdomain Classification
@@ -154,7 +154,9 @@ func NewIssues(issues issueCreator, triage api.IssueTriage) Issues // api.Issues
 
 ### internal/control/answers (sibling, M2 task 19)
 
-- **Direction**: answers will depend on passkey: `Redeem` with the Purpose of the answer it records.
+- **Direction**: answers depends on passkey: `Redeem` with the Purpose of the answer it records (`Action` the answer
+  kind, `Request` the request number, `Digest` the change digest the gate computes), called by the gate only for an
+  answer that loosens the policy, after every other check.
 - **Strength**: contract. **LCA / Rank / Distance**: control / 1 / 1.
 
 ### internal/store, internal/github/api, internal/wire/policy3, internal/wire/policy

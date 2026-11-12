@@ -93,6 +93,7 @@ type Outcome struct { Approval string; PullRequest int; State, Merge string } //
 
 func (s *Service) Digest(ctx context.Context, r api.Repo, number int, a requests.Answer) (string, error)
 func (s *Service) Answer(ctx context.Context, r api.Repo, in Input) (Outcome, error)
+func IsProposalPull(ctx context.Context, s store.Store, r api.Repo, pull int) (bool, error) // an open proposal's pull request
 
 var ErrNotOwner, ErrNeedsPasskey, ErrBusy error
 ```

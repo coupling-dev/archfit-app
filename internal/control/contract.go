@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
+	"github.com/alexei-led/archfit-app/internal/control/answers"
 	"github.com/alexei-led/archfit-app/internal/control/assist"
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/control/passkey"
@@ -42,12 +43,15 @@ type Deps struct {
 	DecisionQueue gate.DecisionQueue
 	// RequestViews reads a request and the preview of each answer for the request page: the gate façade. It reads only.
 	RequestViews gate.RequestViews
-	Operators    []int64
-	Sandbox      Sandbox
-	Provider     Provider
-	CookieKey    []byte
-	BaseURL      string
-	Now          func() time.Time
+	// Answers records an owner's answer and carries it to the default branch: the gate façade. control/answers adds
+	// the passkey.
+	Answers   gate.Answers
+	Operators []int64
+	Sandbox   Sandbox
+	Provider  Provider
+	CookieKey []byte
+	BaseURL   string
+	Now       func() time.Time
 }
 
 // tenantLister is the only Store method the façade calls itself.
@@ -96,7 +100,8 @@ func New(d Deps) (*Control, error) {
 		return nil, fmt.Errorf("control: passkey: %w", err)
 	}
 	page, err := ui.New(ui.Deps{
-		OAuth: d.OAuth, CookieKey: d.CookieKey, BaseURL: d.BaseURL, GitHub: d.GitHub,
+		Answers: answers.New(d.Answers, passkeys),
+		OAuth:   d.OAuth, CookieKey: d.CookieKey, BaseURL: d.BaseURL, GitHub: d.GitHub,
 		Account: acct, Consents: consents, Onboarding: onb, Assist: asst, Proposals: proposals,
 		Admissions: d.Admissions, Approvals: d.Approvals, Decisions: d.Decisions, DecisionQueue: d.DecisionQueue, RequestViews: d.RequestViews, Passkeys: passkeys, Operators: d.Operators, Now: d.Now,
 	})
@@ -157,6 +162,8 @@ func (d Deps) validate() error {
 		return errors.New("control: nil DecisionQueue")
 	case d.RequestViews == nil:
 		return errors.New("control: nil RequestViews")
+	case d.Answers == nil:
+		return errors.New("control: nil Answers")
 	case len(d.CookieKey) != cookieKeyLen:
 		return fmt.Errorf("control: CookieKey must be %d bytes", cookieKeyLen)
 	case d.BaseURL == "":

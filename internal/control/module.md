@@ -2,7 +2,7 @@
 
 **Path**: internal/control/
 **Parent**: internal/ (Archfit App root)
-**Submodules**: account, proposal, onboarding, assist, passkey, ui
+**Submodules**: account, proposal, onboarding, assist, passkey, answers, ui
 
 ## Purpose
 
@@ -27,6 +27,8 @@ the gate would still verify reports, but nobody could onboard, edit a policy, st
 - Pass the gate's decision queue seam (`DecisionQueue`) to `ui`, whose overview and decisions page list the decision
   requests that wait for an owner. It reads only.
 - Pass the gate's request page seam (`RequestViews`) to `ui`: a request and the preview of each answer. It reads only.
+- Build `answers` from the gate's answer seam (`Answers`) and `passkey`, and pass it to `ui`: an owner's answer to a
+  request, with the passkey step-up of an answer that loosens the policy (M2 task 19).
 - Build `passkey` with its two GitHub ports (the owners of the target policy, the registration issue) and pass it to
   `ui`. The worker role does not build it.
 - Re-publish the two platform seams, `Sandbox` and `Provider`, so `app` and platform packages cite one place.
@@ -66,6 +68,9 @@ type Deps struct {
     DecisionQueue DecisionQueue
     // RequestViews reads a request and the preview of each answer for the request page: the gate façade. It reads only.
     RequestViews RequestViews
+    // Answers records an owner's answer and carries it to the default branch: the gate façade. control/answers adds
+    // the passkey.
+    Answers Answers
     Operators []int64
     Sandbox    Sandbox
     Provider   Provider
@@ -199,6 +204,7 @@ type Completion struct {
 | `internal/control/onboarding/` | `control` constructs, mounts | Functional | control / 1 / 1       | High       | Yes       |
 | `internal/control/assist/`     | `control` constructs         | Functional | control / 1 / 1       | High       | Yes       |
 | `internal/control/passkey/`    | `control` constructs         | Functional | control / 1 / 1       | Low        | Yes       |
+| `internal/control/answers/`    | `control` constructs         | Functional | control / 1 / 1       | High       | Yes       |
 | `internal/control/ui/`         | `control` constructs, mounts | Functional | control / 1 / 1       | High       | Yes       |
 
 Shared knowledge: the constructors and the few methods the façade calls.

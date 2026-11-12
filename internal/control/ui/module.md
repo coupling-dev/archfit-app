@@ -106,6 +106,7 @@ type Deps struct {
     Decisions  Decisions   // decision requests of unattended agents: listed, declined, approved by an owner
     DecisionQueue DecisionQueue // decision requests that wait for an owner: read only
     Passkeys   Passkeys    // the signed-in user's passkeys and the step-up of an answer (control/passkey)
+    Answers    Answers     // an owner's answer to a request, with the passkey (control/answers)
     Operators  []int64     // GitHub user IDs that approve installations on /admin
     Now        func() time.Time
 }
@@ -224,6 +225,18 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   needs the passkey; `pulls` are the open pull requests waiting on the request or holding an error it clears (`left` 0:
   the answer leaves none). `until` defaults to the date the worker asked for. An incomplete answer is `422`, a request
   that is not open, no policy, or an answer the writer cannot place is `409`.
+- `POST /api/repos/{o}/{n}/requests/{number}/answer/digest` [read] — body `{answer, until?, instead?}`; answers
+  `{digest}`, the change digest of that answer (`control/answers.Digest`). The page makes the passkey step-up
+  (`POST …/passkeys/step-up`) with `action` the answer, `request` the number and that `digest`, for an answer that
+  loosens the policy (approve, approve-until).
+- `POST /api/repos/{o}/{n}/requests/{number}/answer` [read; the owner rule of the policy on the default branch decides]
+  — body `{answer, until?, instead?, merge_later?, token?}`, the token of that step-up for approve and approve-until;
+  answers `{pull_request?, state?, merge?, notice}` (M2 task 19, `control/answers.Answer`). `state` is `merged`, `later`
+  or `refused` (GitHub did not merge; the pull request stays open); no `pull_request` when the answer writes no policy
+  line. The signed-in user is the owner; a body names no user or repository. Refusals: a login the policy does not name
+  `403 not_policy_owner`; a loosening answer without a step-up `403 needs_step_up`; a token used, expired or for another
+  change `403 token`; another answer of the repository being written `409 answer_busy`; and the request page's (`404`,
+  `409 request_closed`, `422 answer`, `409 by_hand`, `409 no_policy`). After any refusal nothing was recorded.
 - `GET /api/repos/{o}/{n}/overview` [read] — default-branch state, open pull requests with their result, setup steps,
   onboarding progress, entitlement banner, history links, and whether the user may start onboarding or discovery.
   After a report: `main_sha` (short) and `main_at` (RFC 3339) of the check the state is read from, `pulls_to_update`
@@ -1872,7 +1885,12 @@ gate's and tested there. The clock is injected.
   **Expected behavior**: the purpose of the body reaches passkey without a repository; each sentinel answers its
   status and sentence; no error's own text reaches the answer.
 - The passkey routes are rows of the route table, so `TestRoutesAndMinimumPermissions`, `TestCSRFRequiredOnEveryPost`
-  and the cross-installation tests cover them.
+  and the cross-installation tests cover them. So are the two answer routes.
+- **Test name**: `TestAnswerDigestAPI`, `TestAnswerAPIPassesTheAnswerTheUserAndTheToken`, `TestAnswerAPIRefusals`
+  **Scenario**: a digest; an answer with each outcome (merged, later, refused, no line); each refusal of the gate and
+  the passkey; no permission; no CSRF token; a request that is not a number.
+  **Expected behavior**: the answer, the token and the session's user reach `control/answers`; the notice for each
+  outcome uses no "Not used" word; each refusal answers its status; nothing is answered without access or the token.
 
 - **Test name**: `TestAdminIsNotFoundForNonOperators`
   **Scenario**: a signed-in user who is not an operator calls `/admin`, the list API, approve and revoke, and reads `/api/session`.

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/alexei-led/archfit-app/internal/gate/proposals"
+	asks "github.com/alexei-led/archfit-app/internal/gate/requests"
 )
 
 // Answers takes in an owner's answer to a request (design 9.2, 10.4; M2 task 19): approve, approve until a date, or
@@ -26,6 +27,13 @@ type (
 
 // ProposalBranch is the App's policy branch (M2 D13).
 const ProposalBranch = proposals.Branch
+
+// The states of the policy pull request in an AnswerOutcome, owned by gate/requests.
+const (
+	AnswerMerged  = asks.PullMerged
+	AnswerLater   = asks.PullLater
+	AnswerRefused = asks.PullRefused
+)
 
 // The refusals of an answer, besides the request page's (ErrNoRequest, ErrClosedRequest, ErrAnswer, ErrNoPolicy,
 // ErrByHand) and the passkey's, which Redeem returns as they are.
