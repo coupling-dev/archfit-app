@@ -388,7 +388,7 @@ func TestNoRuntimeOverride(t *testing.T) {
 	}
 
 	exported := exportedDecls(t)
-	want := []string{"func Current", "func EngineVersions", "func Lookup", "type Entry", "type Identity"}
+	want := []string{"const ActionRepository", "func ActionApproved", "func Current", "func EngineApproved", "func EngineVersions", "func Lookup", "type Entry", "type Identity"}
 	if strings.Join(exported, ",") != strings.Join(want, ",") {
 		t.Errorf("exported API = %v, want %v", exported, want)
 	}
