@@ -53,8 +53,10 @@ func TestAnswerRecordsTheApprovalTheRequestAndANewProposalInOneSwap(t *testing.T
 		p.State != records.StateOpen {
 		t.Errorf("proposal = %+v", p)
 	}
-	if x := loadIndex(t, s, records.RequestIndexKey(repoName), records.SchemaRequestIndex); len(x.Entries) != 0 {
-		t.Errorf("the answered request is still in the request index: %v", x.Entries)
+	// Until its proposal is consumed the answered request covers its key: a failing pull request waits on it.
+	if x := loadIndex(t, s, records.RequestIndexKey(repoName), records.SchemaRequestIndex); !slices.Equal(x.Entries,
+		[]records.Entry{{Key: requestKey, ID: "431"}}) {
+		t.Errorf("request index = %v, want the answered request kept", x.Entries)
 	}
 	if id, ok := (&records.Index{Entries: loadIndex(t, s, records.ProposalIndexKey(repoName), records.SchemaProposalIndex).Entries}).Lookup("12"); !ok || id != "p1" {
 		t.Errorf("proposal index entry of #12 = %q, %v", id, ok)
@@ -87,6 +89,9 @@ func TestAnswerWithoutAProposal(t *testing.T) {
 	}
 	if req := load[records.Request](t, s, records.RequestKey(repoName, 431)); req.State != records.StateAnswered {
 		t.Errorf("request state = %q", req.State)
+	}
+	if x := loadIndex(t, s, records.RequestIndexKey(repoName), records.SchemaRequestIndex); len(x.Entries) != 0 {
+		t.Errorf("an answer that joins no proposal left its request in the index: %v", x.Entries)
 	}
 }
 

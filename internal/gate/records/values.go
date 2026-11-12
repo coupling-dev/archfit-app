@@ -20,6 +20,7 @@ const (
 	SchemaPull          = "archfit-app.pull.v1"
 	SchemaPullIndex     = "archfit-app.pull-index.v1"
 	SchemaRepos         = "archfit-app.repos.v1"
+	SchemaPolicyPush    = "archfit-app.policy-push.v1"
 )
 
 // States of requests, approvals and proposals.
@@ -136,6 +137,15 @@ type Proposal struct {
 	Commit         string   `json:"commit,omitempty"` // the consuming merge commit
 }
 
+// PolicyPush is the judgement of one default-branch push that changed the policy, at PolicyPushKey: the policy digest
+// it brought and the proposal it consumed, "" when it was outside the flow. It is written once, in the swap that
+// records the judgement, so a delivery of the same push again, even after later pushes, is judged the same way.
+type PolicyPush struct {
+	Schema   string `json:"schema"`
+	Digest   string `json:"digest"`
+	Proposal string `json:"proposal,omitempty"`
+}
+
 // Pull is the pull record of M2 D6 at PullKey: the latest verified upload of the pull request's head. No result
 // bytes are stored; the result is read back from the run's artifact and checked against PayloadDigest.
 type Pull struct {
@@ -164,11 +174,16 @@ func (v *Request) stamp() string  { v.Schema = SchemaRequest; return v.Schema }
 func (v *Approval) stamp() string { v.Schema = SchemaApproval; return v.Schema }
 func (v *Proposal) stamp() string { v.Schema = SchemaProposal; return v.Schema }
 func (v *Pull) stamp() string     { v.Schema = SchemaPull; return v.Schema }
+func (v *PolicyPush) stamp() string {
+	v.Schema = SchemaPolicyPush
+	return v.Schema
+}
 
-func (*Repo) check() error     { return nil }
-func (*Request) check() error  { return nil }
-func (*Approval) check() error { return nil }
-func (*Pull) check() error     { return nil }
+func (*Repo) check() error       { return nil }
+func (*Request) check() error    { return nil }
+func (*Approval) check() error   { return nil }
+func (*Pull) check() error       { return nil }
+func (*PolicyPush) check() error { return nil }
 
 func (v *Proposal) check() error {
 	if len(v.Approvals) > MaxApprovals {

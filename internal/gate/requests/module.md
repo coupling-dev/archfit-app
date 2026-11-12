@@ -39,7 +39,7 @@ who asked still sees `fail`.
   permission, take the key from the reported answer. A deny rule that answers it, or an open request with the key:
   one note and the issue is closed. Else the issue is the request, stored "as reported" (numbers unverified), labeled
   and assigned. Any other refusal: one reply, the issue stays.
-- Derive `waiting` (`Cover`): a `fail` whose errors all ask an owner and whose keys are all open requests is
+- Derive `waiting` (`Cover`): a `fail` whose errors all ask an owner and whose keys are all in the request index is
   `waiting`; the status line names the requests (`archfit: waiting, request #431`) and each error's next step is
   `wait for an owner: #431`. Every other result stays as it is.
 - On a verified upload the gate calls `OpenIndex`, `Cover` and `Wait`: the pull request joins the requests that cover
@@ -143,7 +143,10 @@ without a second note; a reply may be posted again.
 ## Constraints and Invariants
 
 - A request and its index entry change in one swap; a pull request joins with another. An open request is in the
-  index under its key, once.
+  index under its key, once. So is an answered request whose approval joined a proposal, until that proposal is
+  consumed (`gate/records` `Answer` and `Consume`, M2 task 20): its key still covers a failing pull request, which
+  waits on it and joins its `Waiting` (the re-check after the consume reads it), and a new request line, or a CLI
+  issue, for the key opens no second issue. A request that no longer covers its key takes no pull request.
 - The App publishes `waiting` only from a result whose digest matches the pull record, and only while the pull record
   is still the one read: head, run, attempt, payload digest and status (`Publication4.Current`). A newer upload, or
   the same run decided again (say `unknown` after a policy changed), makes it stale and the newest record is read
@@ -157,6 +160,8 @@ without a second note; a reply may be posted again.
 
 ## Test Specification
 
+- `TestWaitJoinsARequestWhileItCoversItsKey`: an answered request whose proposal is open takes the pull request; one
+  answered without a proposal and one whose proposal was consumed take none.
 - `TestCover`, `TestCoverMatchesTheWaitingGolden`, `TestRequestNames`: every status, partial coverage, a fix-the-code
   error whose key is open, two requests, the status line and record of `wire/result`'s `waiting.txt`.
 - `TestNoCommentOfTheAppIsARequest` (owner and engine text with LF, CRLF and a bare CR before the command),

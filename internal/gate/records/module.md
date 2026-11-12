@@ -27,8 +27,12 @@ its index could drift apart.
 - Record an owner's answer in one swap (`Answer`, M2 task 19): the new approval, its request answered, and the
   approval joining its proposal (created when new) pinned to the head and digest. Void an approval whose change no
   longer applies, opening its request again (`Void`), and void a proposal (`VoidProposal`).
-- Consume a proposal once (`Consume`): open to merged with the merge commit, its index entry removed and the
-  repository's approved digest set, in one swap; the same commit again is a no-op success.
+- Consume a proposal once (`Consume`, M2 task 20): open to merged with the merge commit, its index entry removed, the
+  repository's approved digest set, the requests of its approvals out of the request index, and the push recorded,
+  in one swap; the same commit again is a no-op success.
+- Record a default-branch push whose policy no approval made (`Outside`): the repository is "policy changed outside
+  the flow" (design 7.1) until an owner confirms or reverts it (M2 task 23), and the issue opened for it
+  (`OutsideIssue`).
 
 Not provided: GitHub calls, verdicts, the request line, the policy writer, passkeys. The passkey and challenge keys
 (`v4/passkey/<github-user-id>`, `v4/challenge/<github-user-id>`) belong to `control/passkey` (M2 task 18), because `control`
@@ -53,6 +57,14 @@ add fields to the `v1` values before the release. After the release a field chan
   | `v4/pull-index/<repo>` | `archfit-app.pull-index.v1` | pull request (`PullEntry`) | head SHA |
   | `v4/repos` | `archfit-app.repos.v1` | repository full name | (empty) |
 
+- **An answered request covers its key until its proposal is consumed** (manager, 2026-11-12, release-blocking for
+  tasks 20 and 21). An answer that joins a proposal keeps its request in the request index (state `answered`), so
+  while the proposal waits ("merge later", a refused merge) a pull request failing on that key waits on it and no
+  second request opens for the key. `Consume` takes it out; `Void` opens it again under the same entry. An answer that
+  joins no proposal (the default branch already says it, or it writes no line) leaves the index at once.
+- **A policy push is judged once.** `Consume` and `Outside` write `v4/policy-push/<repo>/<commit>` in the swap that
+  records their judgement, so a push delivered again, late or after later pushes (the queue delivers at least once,
+  in any order), finds it and is judged the same way. The value is never deleted: one small value per policy push.
 - An index value holds at most what fits in 64 KiB (about 800 entries); `Encode` returns `ErrTooLarge` past it. The
   open sets of one repository are far smaller.
 - An unchanged index is only checked, never rewritten, so an index that was never needed stays missing.
@@ -65,7 +77,7 @@ add fields to the `v1` values before the release. After the release a field chan
 ## Public Contract
 
 Keys: `Prefix` (`v4/`), `RepoKey`, `RequestKey`, `RequestIndexKey`, `ApprovalKey`, `ProposalKey`, `ProposalIndexKey`,
-`ProposalLeaseKey`, `PullKey`, `PullIndexKey`, `ReposKey`, `PullEntry`, `NewID`. `ProposalLeaseKey`
+`ProposalLeaseKey`, `PolicyPushKey`, `PullKey`, `PullIndexKey`, `ReposKey`, `PullEntry`, `NewID`. `ProposalLeaseKey`
 (`v4/proposal-lease/<repo>`) holds a lease, not a record: `gate/proposals` owns its value and holds it while an answer
 writes the repository's proposal.
 
@@ -75,6 +87,7 @@ writes the repository's proposal.
 | `v4/request/<repo>/<issue>` | `Request` | `archfit-app.request.v1` | key, reason, numbers (verified, balance), waiting pull requests, state `open`, `answered` or `closed`; rule, path, modules, expiry date and record, so the issue body can be rendered again; the pull requests the body lists |
 | `v4/approval/<repo>/<id>` | `Approval` | `archfit-app.approval.v1` | kind, request, change (raw JSON, owned by the policy writer), owner (user id and login), credential, time, proposal (set once), state `open` or `void` |
 | `v4/proposal/<repo>/<id>` | `Proposal` | `archfit-app.proposal.v1` | ordered approval ids (at most `MaxApprovals` = 9), pull request, head SHA, expected digest, state `open`, `merged` or `void`, consuming commit |
+| `v4/policy-push/<repo>/<commit>` | `PolicyPush` | `archfit-app.policy-push.v1` | the policy digest of a default-branch push that changed the policy, and the proposal it consumed (none: outside the flow) |
 | `v4/pull/<repo>/<pr>` | `Pull` | `archfit-app.pull.v1` | head SHA, run id, run attempt, payload digest, status, error keys and the request key of each error ("" when it has none), for the preview (M2 D6; no result bytes) |
 
 Functions, all under one installation tenant:
@@ -91,13 +104,25 @@ Functions, all under one installation tenant:
   longer matches. The same join again only pins again (after a branch rewrite); an approval of another proposal is
   `ErrJoined`; a void approval or a proposal that is not open is `ErrMoved`; a full proposal is `ErrFull`; a missing
   record is `ErrNoRecord`.
-- `Consume(ctx, s, t, repo, proposalID, commit, digest) error`: see Functional Responsibilities. The same commit with
-  the same digest again is `nil`. A proposal that is void, merged by another commit, without a pull request, or
-  expecting another digest (also once merged) is `ErrMoved`; a missing one is `ErrNoRecord`. The rule is decided again after every lost swap, so of concurrent callers with different commits
-  exactly one wins, and callers with the same commit all succeed.
+- `Consume(ctx, s, t, repo, proposalID, commit, digest) error`: in one swap of 5 keys, the proposal `merged` with
+  `commit`, its proposal index entry removed, the repository's `ApprovedDigest` set to `digest`, the requests of its
+  approvals removed from the request index, and `PolicyPush{digest, proposalID}` at `PolicyPushKey(commit)`. The
+  approvals are read before the swap (they would add up to 9 keys); a proposal that gained one meanwhile is read again,
+  at most 3 times, then `store.ErrConflict`. While the repository is outside the flow the approved digest stays: the
+  merged policy also carries the change no approval made, so it is not approved (a revert of task 23 restores the
+  approved bytes). The same commit with the same digest again is `nil`. A proposal that is void, merged by another
+  commit, without a pull request, or expecting another digest (also once merged), or a push recorded with another
+  judgement, is `ErrMoved`; a missing one is `ErrNoRecord`. The rule is decided again after every lost swap, so of
+  concurrent callers with different commits exactly one wins, and callers with the same commit all succeed.
+- `Outside(ctx, s, t, repo, commit, digest) (Repo, marked bool, error)`: in one swap, `Repo.OutsideFlow.Digest` set to
+  `digest` (an issue already recorded is kept) and `PolicyPush{digest}` at `PolicyPushKey(commit)`. A push already
+  recorded outside the flow changes nothing (`marked` false); one recorded as a consume is `ErrMoved`.
+- `OutsideIssue(ctx, s, t, repo, issue) (int, error)`: records `issue` as the issue of the state when none is
+  recorded, and returns the recorded one (another delivery's, when it was first). A repository not outside the flow
+  is `ErrMoved`.
 - `Answer(ctx, s, t, repo, approvalID, a Approval, pin *Pin) error`: in one swap of up to 5 keys, the new approval
-  (`ErrExists` when the id is in use), its request (`a.Request`) moved from `open` to `answered` and out of the request
-  index (`ErrAnswered` when not open), and, with a `Pin{Proposal, PullRequest, HeadSHA, Digest}`, the approval joining
+  (`ErrExists` when the id is in use), its request (`a.Request`) moved from `open` to `answered` (`ErrAnswered` when not
+  open), out of the request index without a pin and kept in it with one, and, with a `Pin{Proposal, PullRequest, HeadSHA, Digest}`, the approval joining
   that proposal and the proposal pinned as `Join` pins it. A proposal that does not exist yet is created `open` on
   `PullRequest` with its proposal index entry (`ErrExists` when another proposal holds that pull request). A merged or
   void proposal is `ErrMoved`, a full one `ErrFull`. So no answer is written without its request and its proposal: a
@@ -135,6 +160,7 @@ sweep) read and write through this module;
 
 - Only keys under `v4/` are read or written.
 - A record and its index change in the same `CompareAndSwapAll`; an open record is in its index and a closed one is not.
+  An answered request is in the request index while the proposal its approval joined is open.
 - An approval joins at most one proposal, and is consumed at most once, by that proposal's merge commit.
 - A proposal is merged by exactly one commit; that commit's digest is the repository's approved digest.
 - No result bytes, report or source are stored (M2 D6). A request keeps the record its issue shows: check output of
@@ -155,16 +181,22 @@ sweep) read and write through this module;
   another proposal, a void approval, a merged proposal, a full proposal; a refused join changes nothing.
 - `TestAMergeOfAnOlderHeadCannotConsumeAJoinedApproval`: after a join, the digest before it is `ErrMoved` and the
   pinned digest consumes.
-- `TestConsume`, `TestConsumeRefuses`: success with the index entry removed and the repository kept otherwise; another
-  digest; the same commit again changes no byte; another commit; the same commit with another digest; a void
-  proposal; no pull request; no proposal; an empty commit.
+- `TestConsume`, `TestConsumeRefuses`: success with the proposal index entry and the requests of its approvals
+  removed (another proposal's answered request and an open one stay), the push recorded and the repository kept
+  otherwise; another digest; the same commit again changes no byte; another commit; the same commit with another
+  digest; a void proposal; no pull request; no proposal; an empty commit; a push recorded outside the flow.
+- `TestAConsumeOutsideTheFlowKeepsTheApprovedDigest`, `TestAConsumeReadsAnApprovalThatJoinedMeanwhile` (an answer joins
+  at the same digest between the read and the swap: both requests leave the index).
+- `TestOutside`: the state and the push recorded; the issue recorded once, a second one returns the first; the same
+  push again changes no byte; a later push keeps the issue; a consumed push is `ErrMoved`; `OutsideIssue` inside the
+  flow is `ErrMoved`.
 - On the memory store and on the Firestore emulator (`FIRESTORE_EMULATOR_HOST`, run by the CI emulator job):
   `TestAConsumeWinsOnce` (two commits, one wins, the other `ErrMoved`),
   `TestTheSameCommitConsumesConcurrentlyWithoutError`, `TestAnApprovalJoinsOneProposalOnly` (two proposals race for
   one approval), `TestAnIndexStaysInStepUnderConcurrentWriters` (20 writers open requests and answer half; the index
   equals the open records).
-- `TestAnswerRecordsTheApprovalTheRequestAndANewProposalInOneSwap`, `TestAnswerJoinsAnOpenProposalAndPinsIt`,
-  `TestAnswerWithoutAProposal`, `TestAnswerRefusesAndWritesNothing` (an answered request, no request, an id in use, a
+- `TestAnswerRecordsTheApprovalTheRequestAndANewProposalInOneSwap` (the answered request keeps its index entry),
+  `TestAnswerJoinsAnOpenProposalAndPinsIt`, `TestAnswerWithoutAProposal` (the request leaves the index), `TestAnswerRefusesAndWritesNothing` (an answered request, no request, an id in use, a
   merged or full proposal, a new proposal without a pull request, a pull request another proposal holds, an empty
   digest), `TestVoidReopensTheRequest`, `TestVoidLeavesTheRequestAnsweredWhenAnotherHoldsItsKey`, `TestVoidProposal`;
   on both backends, `TestARequestIsAnsweredOnce` (two answers race; one wins, the other is `ErrAnswered`).

@@ -43,6 +43,11 @@ func ProposalIndexKey(fullName string) string { return "v4/proposal-index/" + re
 // records change together, and two answers must not interleave (gate/proposals).
 func ProposalLeaseKey(fullName string) string { return "v4/proposal-lease/" + repo(fullName) }
 
+// PolicyPushKey holds how the App judged a default-branch push that changed the policy (PolicyPush), by its commit.
+func PolicyPushKey(fullName, commit string) string {
+	return "v4/policy-push/" + repo(fullName) + "/" + commit
+}
+
 // PullKey holds the pull record of a pull request (Pull).
 func PullKey(fullName string, pr int) string {
 	return "v4/pull/" + repo(fullName) + "/" + strconv.Itoa(pr)

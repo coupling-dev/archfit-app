@@ -22,8 +22,9 @@ type Pin struct {
 }
 
 // Answer records an owner's answer in one CompareAndSwapAll, so nothing of it can be written without the rest: the new
-// approval a at approvalID, its request moved from open to answered and out of the request index, and, when pin is set,
-// the approval joining that proposal pinned to its head and digest, as Join does. A proposal that does not exist yet is
+// approval a at approvalID, its request moved from open to answered, and, when pin is set, the approval joining that
+// proposal pinned to its head and digest, as Join does. Without pin the request leaves the request index at once; with
+// pin it stays there until the proposal is consumed (Consume) or the approval is voided (Void). A proposal that does not exist yet is
 // created open on pin.PullRequest with its index entry. A request that is not open is ErrAnswered; an approval id in
 // use is ErrExists; a proposal that is not open is ErrMoved, and a full one ErrFull.
 func Answer(ctx context.Context, s store.Store, t store.Tenant, fullName, approvalID string, a Approval, pin *Pin) error {
@@ -54,7 +55,9 @@ func Answer(ctx context.Context, s store.Store, t store.Tenant, fullName, approv
 			return nil, err
 		}
 		before := slices.Clone(requests.Entries)
-		if id, ok := requests.Lookup(req.Key); ok && id == strconv.Itoa(a.Request) {
+		// A request whose approval joins a proposal keeps its index entry: until the proposal is consumed (Consume
+		// removes it) its key still makes a failing pull request wait on it, and no second request opens for it.
+		if id, ok := requests.Lookup(req.Key); ok && id == strconv.Itoa(a.Request) && pin == nil {
 			requests.Remove(req.Key)
 		}
 		requestIndex, err := writeIndex(cur[2], before, requests)

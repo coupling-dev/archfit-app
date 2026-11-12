@@ -3,6 +3,7 @@ package records_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strconv"
@@ -187,12 +188,31 @@ func TestAnApprovalJoinsOneProposalOnly(t *testing.T) {
 	})
 }
 
+// answeredIn opens request issue with key and answers it with approval id, joining proposal at digest.
+func answeredIn(t *testing.T, s store.Store, proposal, id string, issue int, key, digest string) {
+	t.Helper()
+	ctx := context.Background()
+	if err := openRequest(ctx, s, issue, key); err != nil {
+		t.Fatal(err)
+	}
+	a := records.Approval{Kind: records.KindApprove, Request: issue, Change: json.RawMessage(`{}`), Owner: 99, At: at}
+	if err := records.Answer(ctx, s, tenant, repoName, id, a, &records.Pin{Proposal: proposal, HeadSHA: "h", Digest: digest}); err != nil {
+		t.Fatalf("answer %d: %v", issue, err)
+	}
+}
+
 func TestConsume(t *testing.T) {
 	ctx := context.Background()
 	s := store.NewMemory()
 	put(t, s, records.RepoKey(repoName), &records.Repo{ApprovedDigest: "old", DriftIssue: 3})
 	openProposal(t, s, "p1", 50, "new")
 	openProposal(t, s, "p2", 51, "other")
+	answeredIn(t, s, "p1", "a1", 431, "graph a b", "new")
+	answeredIn(t, s, "p1", "a2", 432, "graph c d", "new")
+	answeredIn(t, s, "p2", "a3", 433, "graph e f", "other")
+	if err := openRequest(ctx, s, 434, "graph g h"); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := records.Consume(ctx, s, tenant, repoName, "p1", "c1", "wrong"); !errors.Is(err, records.ErrMoved) {
 		t.Errorf("Consume with another digest = %v, want ErrMoved", err)
@@ -211,20 +231,22 @@ func TestConsume(t *testing.T) {
 		[]records.Entry{{Key: "51", ID: "p2"}}) {
 		t.Errorf("proposal index %v, want only p2", x.Entries)
 	}
-
-	snapshot := func() []string {
-		var out []string
-		for _, k := range []string{records.ProposalKey(repoName, "p1"), records.ProposalIndexKey(repoName), records.RepoKey(repoName)} {
-			v, _ := s.Get(ctx, tenant, k)
-			out = append(out, string(v))
-		}
-		return out
+	// The requests of the consumed approvals stop covering their keys; another proposal's and an open one's stay.
+	if x := loadIndex(t, s, records.RequestIndexKey(repoName), records.SchemaRequestIndex); !reflect.DeepEqual(x.Entries,
+		[]records.Entry{{Key: "graph e f", ID: "433"}, {Key: "graph g h", ID: "434"}}) {
+		t.Errorf("request index %v, want #433 and #434", x.Entries)
 	}
-	before := snapshot()
+	if push := load[records.PolicyPush](t, s, records.PolicyPushKey(repoName, "c1")); push.Digest != "new" || push.Proposal != "p1" {
+		t.Errorf("policy push = %+v, want new by p1", push)
+	}
+
+	keys := []string{records.ProposalKey(repoName, "p1"), records.ProposalIndexKey(repoName), records.RepoKey(repoName),
+		records.RequestIndexKey(repoName), records.PolicyPushKey(repoName, "c1")}
+	before := snapshot(t, s, keys...)
 	if err := records.Consume(ctx, s, tenant, repoName, "p1", "c1", "new"); err != nil {
 		t.Errorf("the same commit again = %v, want nil", err)
 	}
-	if !reflect.DeepEqual(before, snapshot()) {
+	if !reflect.DeepEqual(before, snapshot(t, s, keys...)) {
 		t.Error("the same commit again changed a key")
 	}
 	if err := records.Consume(ctx, s, tenant, repoName, "p1", "c2", "new"); !errors.Is(err, records.ErrMoved) {
@@ -233,8 +255,55 @@ func TestConsume(t *testing.T) {
 	if err := records.Consume(ctx, s, tenant, repoName, "p1", "c1", "other"); !errors.Is(err, records.ErrMoved) {
 		t.Errorf("the same commit with another digest = %v, want ErrMoved", err)
 	}
-	if !reflect.DeepEqual(before, snapshot()) {
+	if !reflect.DeepEqual(before, snapshot(t, s, keys...)) {
 		t.Error("a refused consume changed a key")
+	}
+}
+
+func TestAConsumeOutsideTheFlowKeepsTheApprovedDigest(t *testing.T) {
+	ctx := context.Background()
+	s := store.NewMemory()
+	put(t, s, records.RepoKey(repoName), &records.Repo{ApprovedDigest: "old",
+		OutsideFlow: &records.OutsideFlow{Digest: "unapproved", Issue: 9}})
+	openProposal(t, s, "p1", 50, "new")
+	if err := records.Consume(ctx, s, tenant, repoName, "p1", "c1", "new"); err != nil {
+		t.Fatal(err)
+	}
+	r := load[records.Repo](t, s, records.RepoKey(repoName))
+	if r.ApprovedDigest != "old" || r.OutsideFlow == nil || *r.OutsideFlow != (records.OutsideFlow{Digest: "unapproved", Issue: 9}) {
+		t.Errorf("repo = %+v, want the approved digest and the state kept", r)
+	}
+	if p := load[records.Proposal](t, s, records.ProposalKey(repoName, "p1")); p.State != records.StateMerged {
+		t.Errorf("proposal %q, want merged: its approvals are used", p.State)
+	}
+}
+
+// joinOnSwap is a Store double whose first swap is preceded by an answer joining p1 at the same digest: the
+// approvals Consume read are then not all of the proposal's.
+type joinOnSwap struct {
+	store.Store
+	t      *testing.T
+	joined bool
+}
+
+func (j *joinOnSwap) CompareAndSwapAll(ctx context.Context, t store.Tenant, swaps []store.Swap) (bool, error) {
+	if !j.joined {
+		j.joined = true
+		answeredIn(j.t, j.Store, "p1", "a2", 432, "graph c d", "d")
+	}
+	return j.Store.CompareAndSwapAll(ctx, t, swaps)
+}
+
+func TestAConsumeReadsAnApprovalThatJoinedMeanwhile(t *testing.T) {
+	ctx := context.Background()
+	mem := store.NewMemory()
+	openProposal(t, mem, "p1", 50, "d")
+	answeredIn(t, mem, "p1", "a1", 431, "graph a b", "d")
+	if err := records.Consume(ctx, &joinOnSwap{Store: mem, t: t}, tenant, repoName, "p1", "c1", "d"); err != nil {
+		t.Fatal(err)
+	}
+	if x := loadIndex(t, mem, records.RequestIndexKey(repoName), records.SchemaRequestIndex); len(x.Entries) != 0 {
+		t.Errorf("request index %v, want both answered requests out", x.Entries)
 	}
 }
 
@@ -284,6 +353,73 @@ func TestConsumeRefuses(t *testing.T) {
 	}
 	if err := records.Consume(ctx, store.NewMemory(), tenant, repoName, "p1", "", "d"); err == nil {
 		t.Error("Consume with an empty commit = nil, want an error")
+	}
+
+	t.Run("a push judged outside the flow", func(t *testing.T) {
+		s := store.NewMemory()
+		openProposal(t, s, "p1", 50, "d")
+		if _, _, err := records.Outside(ctx, s, tenant, repoName, "c1", "d"); err != nil {
+			t.Fatal(err)
+		}
+		if err := records.Consume(ctx, s, tenant, repoName, "p1", "c1", "d"); !errors.Is(err, records.ErrMoved) {
+			t.Errorf("Consume = %v, want ErrMoved", err)
+		}
+		if p := load[records.Proposal](t, s, records.ProposalKey(repoName, "p1")); p.State != records.StateOpen {
+			t.Errorf("proposal %q, want open", p.State)
+		}
+	})
+}
+
+func TestOutside(t *testing.T) {
+	ctx := context.Background()
+	s := store.NewMemory()
+	put(t, s, records.RepoKey(repoName), &records.Repo{ApprovedDigest: "a", DriftIssue: 3})
+
+	r, marked, err := records.Outside(ctx, s, tenant, repoName, "c1", "x")
+	if err != nil || !marked || r.OutsideFlow == nil || *r.OutsideFlow != (records.OutsideFlow{Digest: "x"}) {
+		t.Fatalf("Outside = %+v, %v, %v", r, marked, err)
+	}
+	if got := load[records.Repo](t, s, records.RepoKey(repoName)); got.ApprovedDigest != "a" || got.DriftIssue != 3 ||
+		*got.OutsideFlow != (records.OutsideFlow{Digest: "x"}) {
+		t.Errorf("repo = %+v", got)
+	}
+	if push := load[records.PolicyPush](t, s, records.PolicyPushKey(repoName, "c1")); push != (records.PolicyPush{
+		Schema: records.SchemaPolicyPush, Digest: "x"}) {
+		t.Errorf("policy push = %+v", push)
+	}
+
+	if issue, err := records.OutsideIssue(ctx, s, tenant, repoName, 70); err != nil || issue != 70 {
+		t.Errorf("OutsideIssue = %d, %v; want 70", issue, err)
+	}
+	if issue, err := records.OutsideIssue(ctx, s, tenant, repoName, 71); err != nil || issue != 70 {
+		t.Errorf("a second issue = %d, %v; want the first, 70", issue, err)
+	}
+
+	keys := []string{records.RepoKey(repoName), records.PolicyPushKey(repoName, "c1")}
+	before := snapshot(t, s, keys...)
+	if r, marked, err := records.Outside(ctx, s, tenant, repoName, "c1", "x"); err != nil || marked || r.OutsideFlow.Issue != 70 {
+		t.Errorf("the same push again = %+v, %v, %v; want unmarked, issue 70", r, marked, err)
+	}
+	if !reflect.DeepEqual(before, snapshot(t, s, keys...)) {
+		t.Error("the same push again changed a key")
+	}
+
+	r, marked, err = records.Outside(ctx, s, tenant, repoName, "c2", "y")
+	if err != nil || !marked || *r.OutsideFlow != (records.OutsideFlow{Digest: "y", Issue: 70}) {
+		t.Errorf("a later push = %+v, %v, %v; want digest y and the issue kept", r, marked, err)
+	}
+
+	openProposal(t, s, "p1", 50, "d")
+	if err := records.Consume(ctx, s, tenant, repoName, "p1", "c3", "d"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := records.Outside(ctx, s, tenant, repoName, "c3", "d"); !errors.Is(err, records.ErrMoved) {
+		t.Errorf("Outside of a consumed push = %v, want ErrMoved", err)
+	}
+
+	fresh := store.NewMemory()
+	if _, err := records.OutsideIssue(ctx, fresh, tenant, repoName, 70); !errors.Is(err, records.ErrMoved) {
+		t.Errorf("OutsideIssue of a repository inside the flow = %v, want ErrMoved", err)
 	}
 }
 
@@ -421,6 +557,8 @@ func TestArchfit3KeysAreNeitherReadNorWritten(t *testing.T) {
 		records.Join(ctx, s, tenant, repoName, "a1", "p1", "h2", "d2"),
 		records.Consume(ctx, s, tenant, repoName, "p1", "c1", "d2"),
 		records.Consume(ctx, s, tenant, repoName, "p1", "c1", "d2"),
+		func() error { _, _, err := records.Outside(ctx, s, tenant, repoName, "c9", "d9"); return err }(),
+		func() error { _, err := records.OutsideIssue(ctx, s, tenant, repoName, 9); return err }(),
 		records.Load(ctx, s, tenant, records.PullKey(repoName, 5), &records.Pull{}),
 		openRequest(ctx, s, 432, "graph c d"),
 		records.Answer(ctx, s, tenant, repoName, "a2", records.Approval{Kind: records.KindApprove, Request: 432},

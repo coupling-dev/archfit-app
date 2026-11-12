@@ -67,7 +67,12 @@ func newWorld(t *testing.T) *world {
 // request stores request number open, as task 16 does, and its open issue.
 func (w *world) request(number int, rule, from, to string) {
 	w.t.Helper()
-	key := rule + " " + from + " " + to
+	w.requestKeyed(number, rule+" "+from+" "+to, rule, from, to)
+}
+
+// requestKeyed stores open request number under key, which request derives from the rule and the modules.
+func (w *world) requestKeyed(number int, key, rule, from, to string) {
+	w.t.Helper()
 	req := records.Request{Key: key, Reason: "why", Rule: rule, From: from, To: to, State: records.StateOpen}
 	if rule == "unowned" {
 		req.Key, req.Path, req.From, req.To = "unowned "+from, from, "", ""
