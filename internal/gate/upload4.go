@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/gate/ingest"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
 	"github.com/alexei-led/archfit-app/internal/gate/records"
+	asks "github.com/alexei-led/archfit-app/internal/gate/requests"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/store"
 	"github.com/alexei-led/archfit-app/internal/wire/envelope"
@@ -88,6 +90,11 @@ type decision4 struct {
 	Reasons  []reason4 // in rule order
 	Advisory bool      // the default branch's policy has no gate: required, so a fail does not block
 	Tip      string    // the default branch's head every rule read; the decision holds while it is the head
+	// Coverable is a fail of a pull request in required mode that the App accepted as it is: open requests decide
+	// whether it is waiting. Covered are those requests; Waiting is the result shown then.
+	Coverable bool
+	Covered   []int
+	Waiting   *result.Result
 }
 
 // reason4 is one record the App adds, with its stable code.
@@ -124,6 +131,9 @@ func (g *Gate) serveUpload4(w http.ResponseWriter, req *http.Request) {
 	var d decision4
 	if err == nil {
 		d, err = g.v4.decide(ctx, u)
+	}
+	if err == nil {
+		d, err = g.v4.cover(ctx, u, d)
 	}
 	if err == nil {
 		err = g.v4.storePull(ctx, u, d)
@@ -201,6 +211,36 @@ func (v *upload4) decide(ctx context.Context, u ingest.Upload4) (decision4, erro
 		return decision4{Status: result.StatusUnknown, Reasons: reasons, Advisory: advisory, Tip: tip}, nil
 	}
 	return decision4{Status: u.Result.Status, Advisory: advisory, Tip: tip}, nil
+}
+
+// cover derives the status waiting (design 7.1, M2 task 16): a fail whose errors all ask an owner and are all in open
+// requests is waiting, and the pull request joins those requests in the store. Only a pull request into the default
+// branch in required mode is covered: waiting is in progress, which blocks a merge, and advisory mode never blocks.
+func (v *upload4) cover(ctx context.Context, u ingest.Upload4, d decision4) (decision4, error) {
+	b := u.Binding
+	d.Coverable = b.PullRequest != 0 && !d.Advisory && len(d.Reasons) == 0 && u.Result != nil && d.Status == result.StatusFail
+	if !d.Coverable {
+		return d, nil
+	}
+	ids, shown, err := v.covered(ctx, u)
+	if err != nil || len(ids) == 0 {
+		return d, err
+	}
+	if err := asks.Wait(ctx, v.store, b.Repo, b.PullRequest, ids); err != nil {
+		return decision4{}, err
+	}
+	d.Status, d.Covered, d.Waiting = result.StatusWaiting, ids, &shown
+	return d, nil
+}
+
+// covered reads the open requests and derives the result's status from them.
+func (v *upload4) covered(ctx context.Context, u ingest.Upload4) ([]int, result.Result, error) {
+	open, err := asks.OpenIndex(ctx, v.store, u.Binding.Repo)
+	if err != nil {
+		return nil, result.Result{}, err
+	}
+	shown, ids := asks.Cover(*u.Result, open)
+	return ids, shown, nil
 }
 
 // checkPolicy requires target_sha on the default branch and the policy digest of the run to be the digest at
@@ -381,6 +421,9 @@ func (d decision4) publishes() bool {
 // shown is the result the check and the comment show: the App's own records when a rule failed, so nothing of a result
 // the App did not accept is shown; else the engine's result with the status the App gave it.
 func (d decision4) shown(r *result.Result) result.Result {
+	if d.Waiting != nil {
+		return *d.Waiting
+	}
 	if len(d.Reasons) > 0 || r == nil {
 		s := result.Result{Status: result.StatusUnknown, Summary: summaryUnknown}
 		for _, x := range d.Reasons {
@@ -396,7 +439,8 @@ func (d decision4) shown(r *result.Result) result.Result {
 // publish writes the check of the upload's head and, for a pull request, its comment. Inside the head's lease it reads
 // the default branch's head again: when it moved, the decision may be stale, nothing is written and the upload answers
 // 503, so the Action's retry decides from the new head. An upload of the same run decided earlier then never replaces
-// one decided later.
+// one decided later. A coverable fail also reads the open requests again: a request line that opened or joined one
+// since the decision makes it stale the same way, so a fail never lands after the waiting that request set.
 func (v *upload4) publish(ctx context.Context, u ingest.Upload4, d decision4) error {
 	b := u.Binding
 	return v.publisher.Publish4(ctx, feedback.Publication4{
@@ -411,7 +455,11 @@ func (v *upload4) publish(ctx context.Context, u ingest.Upload4, d decision4) er
 			if err != nil {
 				return false, fmt.Errorf("gate: read the default branch head: %w", err)
 			}
-			return tip == d.Tip, nil
+			if tip != d.Tip || !d.Coverable {
+				return tip == d.Tip, nil
+			}
+			ids, _, err := v.covered(ctx, u)
+			return slices.Equal(ids, d.Covered), err
 		},
 	})
 }

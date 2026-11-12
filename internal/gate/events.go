@@ -9,6 +9,7 @@ import (
 
 	"github.com/alexei-led/archfit-app/internal/gate/feedback"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
+	asks "github.com/alexei-led/archfit-app/internal/gate/requests"
 	"github.com/alexei-led/archfit-app/internal/gate/sweep"
 	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -78,9 +79,14 @@ func (g *Gate) react(ctx context.Context, e webhook.Event) (string, error) {
 		if err := g.requests.Closed(ctx, eventTarget(e), g.now()); err != nil {
 			return reactionDecisionStale, fmt.Errorf("gate: close decision requests: %w", err)
 		}
-		return reactionDecisionStale, nil
+		return reactionDecisionStale, g.pullClosed(ctx, e)
 	case webhook.PullCommented:
+		if asks.IsRequest(e.Body) {
+			return g.requestCommented(ctx, e)
+		}
 		return g.commented(ctx, e)
+	case webhook.IssueOpened:
+		return g.requestFiled(ctx, e)
 	case webhook.ReviewChanged:
 		if otherBase(e.DefaultBranch, e.BaseRef) {
 			return reactionOtherBase, nil

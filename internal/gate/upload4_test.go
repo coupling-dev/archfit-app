@@ -110,6 +110,7 @@ func (w *world4) send4(s *spec4) answer {
 	}
 	s.body = body
 	s.env.PayloadDigest = envelope.PayloadDigest(body)
+	w.gh.artifacts[s.env.RunID] = body // the run keeps the bytes it uploaded (M2 D6)
 	if s.rawEnvelope, err = json.Marshal(s.env); err != nil {
 		w.t.Fatal(err)
 	}
@@ -760,6 +761,7 @@ func (w *world4) decide(s *spec4) decided {
 	body, _ := json.Marshal(s.result)
 	s.body = body
 	s.env.PayloadDigest = envelope.PayloadDigest(body)
+	w.gh.artifacts[s.env.RunID] = body // the run keeps the bytes it uploaded (M2 D6)
 	s.rawEnvelope, _ = json.Marshal(s.env)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()

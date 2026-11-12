@@ -47,6 +47,8 @@ type fakeGitHub struct {
 	unassignable  map[string]bool             // logins GitHub refuses to assign
 	queue         map[string][]api.QueueEntry // branchKey → merge queue entries
 	compares      map[string]api.Comparison   // "full name|base|head"
+	artifacts     map[int64][]byte            // run ID → the one file of its result artifact
+	permissions   map[string]string           // "full name|login" → admin, write or read; none when absent
 	nextID        int64
 
 	fail        map[string]error // method name → injected error
@@ -92,6 +94,9 @@ func newFakeGitHub() *fakeGitHub {
 		issues:   map[string][]fakeIssue{},
 		fail:     map[string]error{},
 		compares: map[string]api.Comparison{},
+
+		artifacts:   map[int64][]byte{},
+		permissions: map[string]string{},
 
 		unassignable: map[string]bool{},
 	}
@@ -348,10 +353,46 @@ func (f *fakeGitHub) LatestRun(_ context.Context, r api.RepoRef, _ string, _ api
 	return api.WorkflowRun{}, cmpErr(f.enter("LatestRun", r), api.ErrNotFound)
 }
 
-func (f *fakeGitHub) Artifact(_ context.Context, r api.RepoRef, _ int64, _ string, _ int64) ([]byte, error) {
+func (f *fakeGitHub) Artifact(_ context.Context, r api.RepoRef, runID int64, name string, _ int64) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return nil, cmpErr(f.enter("Artifact", r), api.ErrNotFound)
+	if err := f.enter("Artifact", r); err != nil {
+		return nil, err
+	}
+	raw, ok := f.artifacts[runID]
+	if !ok || name != "archfit-result" {
+		return nil, api.ErrNotFound
+	}
+	return raw, nil
+}
+
+func (f *fakeGitHub) CollaboratorPermission(_ context.Context, r api.RepoRef, login string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter("CollaboratorPermission", r); err != nil {
+		return "", err
+	}
+	if p, ok := f.permissions[r.FullName+"|"+login]; ok {
+		return p, nil
+	}
+	return "none", nil
+}
+
+// SetAssigneesAndLabels replaces the issue's sets; an unassignable login is dropped, as GitHub does.
+func (f *fakeGitHub) SetAssigneesAndLabels(_ context.Context, r api.RepoRef, number int, assignees, labels []string) ([]string, []string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter("SetAssigneesAndLabels", r); err != nil {
+		return nil, nil, err
+	}
+	var kept []string
+	for _, a := range assignees {
+		if !f.unassignable[a] {
+			kept = append(kept, a)
+		}
+	}
+	err := f.editIssue(r.FullName, number, func(i *fakeIssue) { i.Assignees, i.Labels = kept, slices.Clone(labels) })
+	return kept, labels, err
 }
 
 func (f *fakeGitHub) CheckRuns(_ context.Context, r api.RepoRef, headSHA, name string) ([]api.CheckRun, error) {
@@ -455,12 +496,15 @@ func (f *fakeGitHub) UpdateComment(_ context.Context, r api.RepoRef, id int64, b
 // issue numbers clear of the pull requests the tests open.
 const firstIssue = 1000
 
-// fakeIssue is an issue the App opened.
+// fakeIssue is an issue the App opened, or one a worker opened (ByWorker).
 type fakeIssue struct {
 	api.Issue
-	Title    string
-	Assignee string
-	Open     bool
+	Title     string
+	Assignee  string
+	Assignees []string
+	Labels    []string
+	Open      bool
+	ByWorker  bool
 }
 
 func (f *fakeGitHub) AppIssues(_ context.Context, r api.RepoRef) ([]api.Issue, error) {
@@ -471,7 +515,7 @@ func (f *fakeGitHub) AppIssues(_ context.Context, r api.RepoRef) ([]api.Issue, e
 	}
 	out := []api.Issue{}
 	for _, i := range f.issues[r.FullName] {
-		if i.Open {
+		if i.Open && !i.ByWorker {
 			out = append(out, i.Issue)
 		}
 	}
@@ -488,7 +532,7 @@ func (f *fakeGitHub) CreateIssue(_ context.Context, r api.RepoRef, i api.NewIssu
 	if f.unassignable[i.Assignee] {
 		return api.Issue{}, api.ErrUnprocessable
 	}
-	issue := fakeIssue{Issue: api.Issue{Number: firstIssue + len(f.issues[r.FullName]), Body: i.Body}, Title: i.Title, Assignee: i.Assignee, Open: true}
+	issue := fakeIssue{Issue: api.Issue{Number: f.nextIssue(r.FullName), Body: i.Body}, Title: i.Title, Assignee: i.Assignee, Open: true}
 	f.issues[r.FullName] = append(f.issues[r.FullName], issue)
 	return issue.Issue, nil
 }
@@ -509,6 +553,11 @@ func (f *fakeGitHub) CloseIssue(_ context.Context, r api.RepoRef, number int) er
 		return err
 	}
 	return f.editIssue(r.FullName, number, func(i *fakeIssue) { i.Open = false })
+}
+
+// nextIssue is the next issue number of fullName. The caller holds the lock.
+func (f *fakeGitHub) nextIssue(fullName string) int {
+	return firstIssue + len(f.issues[fullName])
 }
 
 // editIssue edits the issue number of fullName. The caller holds the lock.
@@ -575,6 +624,8 @@ const (
 	decisionKeyPrefix        = "decision/" // gate/decisions' request records
 	pullRecordKeyPrefix      = "v4/pull/"  // the envelope 2 pull records (M2 D6)
 	pullIndexKeyPrefix       = "v4/pull-index/"
+	requestKeyPrefix         = "v4/request/" // the requests of M2 task 16
+	requestIndexKeyPrefix    = "v4/request-index/"
 )
 
 // isRecord reports whether key is a pusher or an approval record of gate/inputs, a request record of gate/decisions,
@@ -582,11 +633,17 @@ const (
 func isRecord(key string) bool {
 	return strings.HasPrefix(key, pusherKeyPrefix) || strings.HasPrefix(key, approvalKeyPrefix) ||
 		strings.HasPrefix(key, ownerDecisionKeyPrefix) || strings.HasPrefix(key, reviewerRequestKeyPrefix) ||
-		strings.HasPrefix(key, decisionKeyPrefix) || isPullRecord(key)
+		strings.HasPrefix(key, decisionKeyPrefix) || isV4Record(key)
 }
 
-func isPullRecord(key string) bool {
-	return strings.HasPrefix(key, pullRecordKeyPrefix) || strings.HasPrefix(key, pullIndexKeyPrefix)
+// isV4Record is a pull record or a request of Archfit 4, or their index.
+func isV4Record(key string) bool {
+	for _, prefix := range []string{pullRecordKeyPrefix, pullIndexKeyPrefix, requestKeyPrefix, requestIndexKeyPrefix} {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // guardStore proves the gate path writes nothing but publication leases and the records of gate/inputs: every other
@@ -655,13 +712,14 @@ func (s *guardStore) CompareAndSwap(ctx context.Context, t store.Tenant, key str
 	return s.inner.CompareAndSwap(ctx, t, key, old, value)
 }
 
-// CompareAndSwapAll is allowed for request records and envelope 2 pull records only, every key of the call.
+// CompareAndSwapAll is allowed for decision request records and Archfit 4 pull and request records only, every key of
+// the call.
 func (s *guardStore) CompareAndSwapAll(ctx context.Context, t store.Tenant, swaps []store.Swap) (bool, error) {
 	s.mu.Lock()
 	for _, sw := range swaps {
-		if !strings.HasPrefix(sw.Key, decisionKeyPrefix) && !isPullRecord(sw.Key) {
+		if !strings.HasPrefix(sw.Key, decisionKeyPrefix) && !isV4Record(sw.Key) {
 			s.mu.Unlock()
-			panic("gate path wrote to the Store: CompareAndSwapAll outside the decision and pull records")
+			panic("gate path wrote to the Store: CompareAndSwapAll outside the decision, pull and request records")
 		}
 		s.recordTenants, s.recordKeys = append(s.recordTenants, t), append(s.recordKeys, sw.Key)
 	}

@@ -2,7 +2,7 @@
 
 **Path**: internal/gate/
 **Parent**: internal/ (Archfit App root)
-**Submodules**: ingest, inputs, verdict, feedback, sweep, decisions, records
+**Submodules**: ingest, inputs, verdict, feedback, sweep, decisions, records, requests
 
 ## Purpose
 
@@ -20,7 +20,13 @@ separate, testable steps. Without this module a report is a self-reported file a
 - Serve envelope 2 (Archfit 4) on the same route: `UploadHandler` sends an upload whose envelope header says
   `archfit.upload-envelope.v2` to the envelope 2 path (`upload4.go`), everything else to the path above. That path
   decides the status, stores the pull record, publishes `archfit/gate` and the pull request's comment through
-  `gate/feedback`'s `Publisher4` (M2 task 15), and answers. See [Envelope 2 upload](#envelope-2-upload).
+  `gate/feedback`'s `Publisher4` (M2 task 15), and answers. See [Envelope 2 upload](#envelope-2-upload). A `fail` of a
+  pull request in required mode whose errors all ask an owner and are all in open requests is `waiting`, naming the
+  requests (`gate/requests`' `Cover`, M2 task 16); the open requests are read again inside the head's lease.
+- Take in requests (M2 task 16, `gate/requests`): a `/archfit request <why>` comment on a pull request opens or joins
+  request issues and sets the check to `waiting`; an issue the CLI opened from a `can` answer becomes a request "as
+  reported". A closed pull request leaves the Archfit 4 pull index. A comment with a request line goes this way; any
+  other comment keeps the Archfit 3 decision-request path until task 26.
 - React to verified webhook events: publish a protected-path decision banner/check and best-effort reviewer requests on a new head, then refresh required or advisory state when an owner decision or native review changes. A lost approval/objection may withdraw a prior result; a new report is still required before a fresh success. Reconcile queued groups that use the changed PR.
 - Gate the merge queue of the default branch: serve the upload of a merge group report on the group commit, create its
   pending required check on `merge_group` `checks_requested`, correct that check when the group is destroyed or a queued
@@ -461,20 +467,25 @@ workflow rule always runs: a pull request runs its own workflow file, so a chang
 (design 9.2). A tag ref is never a pin bump here. A pull request whose test merge commit is older than a non-ref
 change of the workflow on `T` reads `unknown` until its branch is updated.
 
-3. The pull record (M2 D6, `records.Pull` at `PullKey` with its `PullIndexKey` entry, one `records.Indexed` swap):
+3. The status `waiting` (M2 task 16, `gate/requests`): a pull request upload into the default branch, in required
+   mode, whose result the App accepted as a `fail`, is `waiting` when every error asks an owner and its request key is
+   an open request (`OpenIndex`, `Cover`). The result shown names the requests (`archfit: waiting, request #431`, each
+   next step `wait for an owner: #431`), and the pull request joins them in the store (`Wait`). An advisory policy
+   never waits: `waiting` is `in_progress`, which blocks a merge.
+4. The pull record (M2 D6, `records.Pull` at `PullKey` with its `PullIndexKey` entry, one `records.Indexed` swap):
    pull request uploads only. It holds the run id and attempt, the payload digest, the status the App gave, and the
    result's error keys only when no rule failed. A record of a newer run, or a newer attempt of the same run, is never
    replaced: run ids grow, so a late upload of an older head cannot win. Push and merge group uploads store nothing
    here (task 22 owns push results).
-4. The check and the comment (`feedback.Publisher4`, M2 task 15; see `gate/feedback`, "Archfit 4 publication"):
+5. The check and the comment (`feedback.Publisher4`, M2 task 15; see `gate/feedback`, "Archfit 4 publication"):
    `archfit/gate` on the head and, for a pull request, its one comment. The result shown is the engine's with the
    App's status, or, when a rule failed, only the App's records under `archfit: unknown, no verdict`, so a forged
    `pass` is never shown. `gate: required` in the default branch's policy makes a `fail` a failure; without it the
    `fail` is neutral. An upload with `unsupported_event` or `envelope_mismatch` publishes nothing: the App does not
    judge it for the default branch, and a run of another base has a higher run id than the pull request into the
    default branch on the same commit, which a re-run of that pull request keeps below. Inside the head's lease the
-   default branch's head is read again; when it moved, nothing is written and the upload answers 503, so the Action's
-   retry decides again. The commit keeps the check it had when nothing is published:
+   default branch's head is read again, and for a coverable `fail` the open requests too; when either moved, nothing is
+   written and the upload answers 503, so the Action's retry decides again. The commit keeps the check it had when nothing is published:
 
    | Before, on the commit | After a pull request into another base, or an upload that does not match its run |
    | --- | --- |
@@ -484,11 +495,11 @@ change of the workflow on `T` reads `unknown` until its branch is updated.
 
    Two pull requests into the default branch on one commit share the check: it shows the newest run, and each keeps
    its own comment. No `archfit/state` check is written.
-5. The answer.
+6. The answer.
 
 | Situation | Status | Body |
 | --- | --- | --- |
-| Decided, stored and published | 200 | `{"status": "pass" \| "fail" \| "unknown", "reason": "<first reason code>"}`; no `reason` without a record |
+| Decided, stored and published | 200 | `{"status": "pass" \| "fail" \| "waiting" \| "unknown", "reason": "<first reason code>"}`; no `reason` without a record |
 | `*Rejection` of `ReceiveV2` | `Rejection.Status` | `{"error": "<Rejection.Code>"}` |
 | `api.ErrRateLimited` after `ReceiveV2` | 503 with `Retry-After: 60` | `{"error": "rate_limited"}` |
 | Any other error (a GitHub read or write, the Store) | 503 | `{"error": "unavailable"}`; the pull record is kept per run and attempt, so the Action's retry stores and publishes again |
@@ -935,6 +946,19 @@ func Withdrawal(t Target, current CheckState, tr Trusted) *Publication
   `Encode`, `Decode`, `Load`, `Indexed`, `Join`, `Consume`, and the errors `ErrNoRecord`, `ErrMoved`, `ErrJoined`,
   `ErrFull`, `ErrExists`, `ErrTooLarge`. The child owns the Archfit 4 state and its swap rules; the façade will decide
   when a record changes. It reads and writes no Archfit 3 key.
+
+### gate/requests (child)
+
+- **Counterpart**: internal/gate/requests
+- **Direction**: gate depends on requests
+- **Strength**: functional (composition)
+- **LCA / Rank / Distance**: gate / 1 / 1
+- **Volatility**: high
+- **Balanced?**: yes
+- **Shared knowledge**: `Service` (`Comment`, `Filed`), built with the same `Publisher4` as the envelope 2 upload so
+  both take one head lease; `IsRequest`; `OpenIndex`, `Cover`, `Wait` for the upload's status step; `PullClosed`.
+  The façade file is `requests.go`; the package name is imported as `asks`, because the gate's `requests` type is the
+  Archfit 3 decision intake.
 
 ### wire/manifest
 
@@ -1529,11 +1553,12 @@ Special targets, all through the same flow:
 | `PullOpened`, `PullSynchronized` | A payload base that is not the payload's default branch (`otherBase`): nothing is decided or published for it, but the head may be shared with a pull request into the default branch, whose checks it would show. One `OpenPulls` listing finds the open pull requests into the default branch whose head is `HeadSHA`; for each, `Reconcile` runs `sweep.SharedHeadPublication` inside the head's lease (reaction `shared_head`): when the check is Pending or a success and a fresh listing still shows the shared head, `shared_head` is published over it (over a pending check with the zero receipt, which any later upload replaces). Because it waits for the lease, it runs either before an in-flight upload, which then lists again inside its lease and answers 503, or after it, and withdraws the success. Only failures of these units (the listing, the check read, the lease) are returned, so the queue retries; no other pull request of the repository is read. A base changed after opening sends no event (`edited` is not mapped): the hourly sweep, rule 5d, is the net. Otherwise `Resolve`. `!SettingsFound` → nothing. Fork → `Publish(sweep.Without(ReasonForkUnsupported, target, trusted, Receipt{}))`: a zero-run receipt carrying the base digests. Else `Settings.Gate == GateRequired` → `publisher.Pending(target)`. Advisory → nothing. `PullSynchronized` also runs `decisions.HeadMoved`: each pending decision request of the pull whose head is not the pull request's head, read now (not the event's), becomes `stale (head moved)`; the two results are joined. |
 | `MergeGroupRequested`            | `otherBase` (the event's `BaseRef` is not its `DefaultBranch`) or an empty `DefaultBranch` → nothing (reaction `other_base`): only the default branch's queue is gated. Otherwise the target is the group commit (`MergeGroup`, `PullRequest` 0, `BaseRef` = the default branch) and only the settings are resolved (`MergeGroup` unset for this `Resolve`): `!SettingsFound` → nothing (`not_onboarded`); `Settings.Gate == GateRequired` → `publisher.Pending(target)` on the group commit (reaction `pending`); advisory → nothing. A group whose upload never arrives stays pending until GitHub's status check timeout fails it; the hourly sweep does not scan merge groups. |
 | `MergeGroupDestroyed`            | `otherBase`, an empty `DefaultBranch`, or `GroupReason == "merged"` (the result stands) → nothing. Otherwise `Reconcile(groupTarget, …)` (reaction `group_checked`): inside the lease, no gate check → nothing; else `Resolve` of the group, then `sweep.GroupWithdrawal(target, current, trusted)`. A group no longer in the queue resolves `unverified`, so a pending or decided check becomes `action_required` `merge_group_unverified`. Never a success. |
-| `PullCommented`                  | Decision request intake (below). A comment without the `<!-- archfit:decision-request -->` marker → nothing, no API call. |
+| `PullCommented`                  | A comment with a request line (`asks.IsRequest`) → `gate/requests`' `Comment` (M2 task 16; reactions `request_*`). Otherwise decision request intake (below). A comment without the `<!-- archfit:decision-request -->` marker → nothing, no API call. |
+| `IssueOpened`                    | `gate/requests`' `Filed`: an issue the CLI opened with a request line becomes a request, is closed with a note, or gets one reply. |
 | `ReviewChanged`                  | `Reconcile(target, …)`: inside the lease, a withdrawn approval → `sweep.Withdrawal` (below); reason `owner_approval_missing` and `!verdict.Unapproved(trusted)` **[default: no re-run while an approval is missing]** → `sweep.Rerun`. Then (not for a pull request into another base) `MergeQueues.MergeQueue(default branch)`: the entries from this pull request's own entry to the end of the queue are the groups that hold it; each gets the `MergeGroupDestroyed` reconciliation (`group_checked`). Not queued → nothing more. `ErrQueueForbidden` → nothing more (no group result can exist without the permission). Any other queue or group error is returned and the queue retries the delivery; one group's error does not stop the others.                           |
 | `BranchPush`                     | `resolver.RecordPusher(target, Pusher)` first, for attribution (the record approves nothing); a failed write is returned and the queue retries. Then the newest pull request of this repository whose head is `Branch` (`Pulls.PullByHead`): when it is open and its head is `HeadSHA`, run the `ReviewChanged` reaction on it. A push whose `PusherType` is present and not `"user"` (a deploy key) records nothing and logs `gate pusher not recorded` with the delivery id, never the key; the re-evaluation and the sweep still run. No such pull request, a closed one or another head → nothing more. A pull request from a fork is never found. |
 | `DefaultBranchPush`              | `RecordPusher` and the pull request lookup as for `BranchPush`; then `ChangedPaths` empty (= unknown), or `inputs.MayBeProtected(path)` for any changed path → `sweeper.RunRepo(ctx, repo, now)` in the request. Otherwise `sweeper.Recheck(ctx, repo, HeadSHA, now)` in the request: sweep rule 5c alone, which the full pass of `RunRepo` includes.                                                                                                   |
-| `PullClosed`                     | `decisions.Closed`: every pending decision request of the pull becomes `stale (pull request closed)`, unless the pull request is open now (a delayed delivery after a reopen).                                                                                                                                                            |
+| `PullClosed`                     | `decisions.Closed`: every pending decision request of the pull becomes `stale (pull request closed)`, unless the pull request is open now (a delayed delivery after a reopen). Then `asks.PullClosed` drops the pull request from the Archfit 4 pull index (its pull record stays).                                                                                                                                                            |
 | installation kinds, `Ignored`    | nothing; `control` handles installations.                                                                                                                                                                                                                        |
 
 Decision request intake (`PullCommented`). The block is untrusted: only the comment's text is read from it. Order: the
