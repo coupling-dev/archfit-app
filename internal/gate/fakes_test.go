@@ -564,6 +564,51 @@ func (f *fakeGitHub) ReopenIssue(_ context.Context, r api.RepoRef, number int) e
 	return f.editIssue(r.FullName, number, func(i *fakeIssue) { i.Open = true })
 }
 
+// errNoBranches is the answer of the branch, pull request and merge writes: the gate tests answer only with answers
+// that write no policy line. gate/proposals tests the whole flow over its own fake.
+var errNoBranches = errors.New("fake: the gate fake writes no branch, pull request or merge")
+
+func (f *fakeGitHub) refuse(method string, r api.RepoRef) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter(method, r); err != nil {
+		return err
+	}
+	return errNoBranches
+}
+
+func (f *fakeGitHub) EnsureBranch(_ context.Context, r api.RepoRef, _, _ string) error {
+	return f.refuse("EnsureBranch", r)
+}
+
+func (f *fakeGitHub) Commit(_ context.Context, r api.RepoRef, _, _ string, _ []api.FileChange) (string, error) {
+	return "", f.refuse("Commit", r)
+}
+
+func (f *fakeGitHub) CommitOn(_ context.Context, r api.RepoRef, _, _, _ string, _ []api.FileChange, _ bool) (string, error) {
+	return "", f.refuse("CommitOn", r)
+}
+
+func (f *fakeGitHub) EnsurePull(_ context.Context, r api.RepoRef, _ api.NewPull) (api.Pull, error) {
+	return api.Pull{}, f.refuse("EnsurePull", r)
+}
+
+func (f *fakeGitHub) UpdatePullBody(_ context.Context, r api.RepoRef, _ int, _ string) error {
+	return f.refuse("UpdatePullBody", r)
+}
+
+func (f *fakeGitHub) MarkReady(_ context.Context, r api.RepoRef, _ int) error {
+	return f.refuse("MarkReady", r)
+}
+
+func (f *fakeGitHub) MergePull(_ context.Context, r api.RepoRef, _ int, _ string) (string, error) {
+	return "", f.refuse("MergePull", r)
+}
+
+func (f *fakeGitHub) UpdateBranch(_ context.Context, r api.RepoRef, _ int, _ string) error {
+	return f.refuse("UpdateBranch", r)
+}
+
 // nextIssue is the next issue number of fullName. The caller holds the lock.
 func (f *fakeGitHub) nextIssue(fullName string) int {
 	return firstIssue + len(f.issues[fullName])
@@ -635,6 +680,7 @@ const (
 	pullIndexKeyPrefix       = "v4/pull-index/"
 	requestKeyPrefix         = "v4/request/" // the requests of M2 task 16
 	requestIndexKeyPrefix    = "v4/request-index/"
+	answerKeyPrefixes        = "v4/approval/ v4/proposal/ v4/proposal-index/ v4/proposal-lease/" // M2 task 19
 )
 
 // isRecord reports whether key is a pusher or an approval record of gate/inputs, a request record of gate/decisions,
@@ -647,7 +693,8 @@ func isRecord(key string) bool {
 
 // isV4Record is a pull record or a request of Archfit 4, or their index.
 func isV4Record(key string) bool {
-	for _, prefix := range []string{pullRecordKeyPrefix, pullIndexKeyPrefix, requestKeyPrefix, requestIndexKeyPrefix} {
+	for _, prefix := range append([]string{pullRecordKeyPrefix, pullIndexKeyPrefix, requestKeyPrefix, requestIndexKeyPrefix},
+		strings.Fields(answerKeyPrefixes)...) {
 		if strings.HasPrefix(key, prefix) {
 			return true
 		}
@@ -721,8 +768,8 @@ func (s *guardStore) CompareAndSwap(ctx context.Context, t store.Tenant, key str
 	return s.inner.CompareAndSwap(ctx, t, key, old, value)
 }
 
-// CompareAndSwapAll is allowed for decision request records and Archfit 4 pull and request records only, every key of
-// the call.
+// CompareAndSwapAll is allowed for decision request records and Archfit 4 pull, request, approval and proposal records
+// and the proposal lease only, every key of the call.
 func (s *guardStore) CompareAndSwapAll(ctx context.Context, t store.Tenant, swaps []store.Swap) (bool, error) {
 	s.mu.Lock()
 	for _, sw := range swaps {

@@ -16,6 +16,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/gate/feedback"
 	"github.com/alexei-led/archfit-app/internal/gate/ingest"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
+	"github.com/alexei-led/archfit-app/internal/gate/proposals"
 	"github.com/alexei-led/archfit-app/internal/gate/records"
 	asks "github.com/alexei-led/archfit-app/internal/gate/requests"
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -139,7 +140,11 @@ func (g *Gate) serveUpload4(w http.ResponseWriter, req *http.Request) {
 		err = g.v4.storePull(ctx, u, d)
 	}
 	if err == nil && d.publishes() {
-		err = g.v4.publish(ctx, u, d)
+		// The App's policy pull request gets archfit/gate from the App alone (M2 D13).
+		var own bool
+		if own, err = proposals.IsProposalPull(ctx, g.v4.store, u.Binding.Repo, u.Binding.PullRequest); err == nil && !own {
+			err = g.v4.publish(ctx, u, d)
+		}
 	}
 
 	status, body := http.StatusOK, any(nil)

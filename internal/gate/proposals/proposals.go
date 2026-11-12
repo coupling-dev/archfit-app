@@ -543,3 +543,21 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 		return nil
 	}
 }
+
+// IsProposalPull reports whether pull is the pull request of an open proposal of r. The App sets archfit/gate there
+// itself (M2 D13), so an upload for it is stored and sets no verdict: its result is unknown, because the pull request
+// changes the policy.
+func IsProposalPull(ctx context.Context, s store.Store, r api.Repo, pull int) (bool, error) {
+	if pull <= 0 {
+		return false, nil
+	}
+	index := records.Index{Schema: records.SchemaProposalIndex}
+	switch err := records.Load(ctx, s, tenant(r), records.ProposalIndexKey(r.FullName), &index); {
+	case errors.Is(err, records.ErrNoRecord):
+		return false, nil
+	case err != nil:
+		return false, fmt.Errorf("proposals: read the proposal index: %w", err)
+	}
+	_, ok := index.Lookup(records.PullEntry(pull))
+	return ok, nil
+}
