@@ -12,6 +12,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/store"
 	"github.com/alexei-led/archfit-app/internal/wire/manifest"
 	"github.com/alexei-led/archfit-app/internal/wire/report"
+	"github.com/alexei-led/archfit-app/internal/wire/result"
 )
 
 // Receipt is what a published gate check says about itself. It is stored only in GitHub:
@@ -102,6 +103,36 @@ type Decision func(ctx context.Context, current CheckState) (*Publication, error
 // appURL is the App's base URL without a trailing slash (ARCHFIT_BASE_URL); the PR comment links to the App's pull
 // request page under it. "" writes no link.
 func New(checks api.Checks, comments api.Comments, pulls api.Pulls, s store.Store, appURL string, now func() time.Time) Publisher {
+	return &serialized{
+		next:  &publisher{checks: checks, comments: comments, pulls: pulls, appURL: appURL, now: now},
+		store: s,
+		now:   now,
+		wait:  pollWait,
+	}
+}
+
+// Publication4 is the feedback of one Archfit 4 (envelope 2) upload: archfit/gate on the head and, for a pull request,
+// its comment. The run, the attempt and the digest name it, as the receipt of the check.
+type Publication4 struct {
+	Target     inputs.Target // Repo, PullRequest (0 for a push or a merge group) and HeadSHA
+	RunID      int64
+	RunAttempt int
+	Digest     string        // the payload digest of the upload
+	Advisory   bool          // the policy's gate is advisory: a fail shows as neutral, with the same records
+	Result     result.Result // Status is the status the App gave; the status line and the records are shown as given
+}
+
+// Publisher4 publishes Archfit 4 results. It writes no archfit/state check.
+type Publisher4 interface {
+	// Publish4 writes archfit/gate on p's head and, for a pull request, the one comment, in place, inside the head's
+	// publication lease. It never overwrites the check or the comment of a newer run or attempt, and skips the comment
+	// of a head that is no longer the pull request's.
+	Publish4(ctx context.Context, p Publication4) error
+}
+
+// New4 returns a Publisher4 that is safe for concurrent use: it holds the same per-head lease in s as New's Publisher,
+// so a v1 publication and an Archfit 4 one never interleave on one head. appURL is as for New.
+func New4(checks api.Checks, comments api.Comments, pulls api.Pulls, s store.Store, appURL string, now func() time.Time) Publisher4 {
 	return &serialized{
 		next:  &publisher{checks: checks, comments: comments, pulls: pulls, appURL: appURL, now: now},
 		store: s,

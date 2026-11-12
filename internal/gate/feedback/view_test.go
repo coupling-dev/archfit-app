@@ -1,0 +1,272 @@
+package feedback
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/alexei-led/archfit-app/internal/wire/result"
+	"github.com/alexei-led/archfit-app/internal/wire/wording"
+)
+
+// The three comments of design 12.5, as the design prints them.
+const (
+	designRule = "## Archfit: fail, 1 error\n\n" +
+		"`pkg/chaos/netem/netem.go:8` **no-chaos-to-runtime** pkg_chaos must not depend on pkg_runtime\n" +
+		"- why: A direct import ties a chaos action to one runtime.\n" +
+		"- instead: Add a method to container.Client.\n\n" +
+		"**Author:** fix the code and push.\n"
+	designAsk = "## Archfit: fail, 1 error\n\n" +
+		"`pkg/tc/netem.go:12` **graph** pkg_tc -> pkg_util is not an allowed dependency\n" +
+		"- balance: 9/10 (min 7)\n\n" +
+		"**Author:** reply `/archfit request <why you need it>`. Do not copy the code.\n" +
+		"**Owner:** nothing to do until a request exists.\n"
+	designWaiting = "## Archfit: waiting, request #431\n\n" +
+		"`pkg/tc/netem.go:12` **graph** pkg_tc -> pkg_util is not an allowed dependency\n" +
+		"- balance: 9/10 (min 7)\n\n" +
+		"**Author:** nothing to do. This check runs again when #431 is answered.\n" +
+		"**Owner:** answer #431.\n"
+)
+
+// engineResult reads a vendored engine result golden of wire/result.
+func engineResult(t *testing.T, name string) result.Result {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "wire", "result", "testdata", "result", name+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := result.Decode(raw)
+	if err != nil {
+		t.Fatalf("%s: %v", name, err)
+	}
+	return r
+}
+
+// The design's graph examples leave out the engine's why; everything else is the vendored result.
+func TestCommentsOfDesign12_5(t *testing.T) {
+	noWhy := func(r result.Result) result.Result {
+		r.Errors[0].Why = ""
+		return r
+	}
+	for name, tc := range map[string]struct {
+		result result.Result
+		want   string
+	}{
+		"a rule the code must follow":       {engineResult(t, "deny"), designRule},
+		"a dependency only an owner allows": {noWhy(engineResult(t, "graph")), designAsk},
+		"after the request":                 {noWhy(engineResult(t, "waiting")), designWaiting},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := newView(tc.result).comment(maxBody); got != tc.want {
+				t.Errorf("comment:\n--- got\n%s--- want\n%s", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestViewGoldens writes, for each state, the comment and the check as testdata/golden4/<case>.{comment.md,check.md}.
+func TestViewGoldens(t *testing.T) {
+	for _, tc := range []struct {
+		name, result string
+		advisory     bool
+	}{
+		{"pass", "pass", false},
+		{"fail-fix", "deny", false},
+		{"fail-advisory", "deny", true},
+		{"fail-ask", "graph", false},
+		{"fail-copy", "duplication", false},
+		{"fail-expired-exception", "expired_exception", false},
+		{"waiting", "waiting", false},
+		{"unknown", "policy_differs", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := newView(engineResult(t, tc.result))
+			golden4(t, tc.name+".comment.md", v.comment(maxBody))
+			golden4(t, tc.name+".check.md", checkText(v, tc.advisory))
+		})
+	}
+}
+
+// checkText is a check run as a reader sees it: its state, title, summary and annotations.
+func checkText(v view, advisory bool) string {
+	status, conclusion := checkState(v.result.Status, advisory)
+	var b strings.Builder
+	fmt.Fprintf(&b, "status: %s\nconclusion: %s\ntitle: %s\n\n%s\n", status, conclusion, v.title(), v.summary())
+	for _, a := range v.annotations() {
+		fmt.Fprintf(&b, "\nannotation %s:%d %s\n%s\n", a.Path, a.Line, a.Level, a.Message)
+	}
+	return b.String()
+}
+
+func golden4(t *testing.T, name, got string) {
+	t.Helper()
+	path := filepath.Join("testdata", "golden4", name)
+	if *update {
+		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
+			t.Fatalf("write golden: %v", err)
+		}
+		return
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read golden (run with -update to create): %v", err)
+	}
+	if got != string(want) {
+		t.Errorf("%s differs from its golden file; run with -update and review the diff:\n--- got\n%s", name, got)
+	}
+}
+
+func TestGoldensOfArchfit4UseNoNotUsedWord(t *testing.T) {
+	entries, err := os.ReadDir(filepath.Join("testdata", "golden4"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("no golden to check")
+	}
+	for _, e := range entries {
+		raw, err := os.ReadFile(filepath.Join("testdata", "golden4", e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if found := wording.NotUsedIn(string(raw)); len(found) > 0 {
+			t.Errorf("%s uses %q", e.Name(), found)
+		}
+	}
+	for _, line := range []string{authorFix, authorAsk, authorEach, ownerAsk, designRule, designAsk, designWaiting} {
+		if found := wording.NotUsedIn(line); len(found) > 0 {
+			t.Errorf("%q uses %q", line, found)
+		}
+	}
+}
+
+func TestCheckStateOfEachStatus(t *testing.T) {
+	for _, tc := range []struct {
+		status                 result.Status
+		advisory               bool
+		wantStatus, wantResult string
+	}{
+		{result.StatusPass, false, "completed", "success"},
+		{result.StatusPass, true, "completed", "success"},
+		{result.StatusFail, false, "completed", "failure"},
+		{result.StatusFail, true, "completed", "neutral"},
+		{result.StatusWaiting, false, "in_progress", ""},
+		{result.StatusWaiting, true, "in_progress", ""},
+		{result.StatusUnknown, false, "completed", "action_required"},
+		{result.StatusUnknown, true, "completed", "action_required"},
+		{result.Status("other"), true, "completed", "action_required"},
+		{result.Status(""), false, "completed", "action_required"},
+	} {
+		status, conclusion := checkState(tc.status, tc.advisory)
+		if status != tc.wantStatus || conclusion != tc.wantResult {
+			t.Errorf("checkState(%q, advisory %v) = %s %s, want %s %s", tc.status, tc.advisory, status, conclusion, tc.wantStatus, tc.wantResult)
+		}
+	}
+}
+
+func TestAuthorAndOwnerLines(t *testing.T) {
+	fix := result.Next{Kind: "fix", Text: "fix the code"}
+	ask := result.Next{Kind: "command", Text: `archfit request -m "<why you need it>"`}
+	wait := func(n int) result.Next {
+		return result.Next{Kind: "wait", Text: fmt.Sprintf("wait for an owner: #%d", n)}
+	}
+	errs := func(steps ...result.Next) []result.Error {
+		out := make([]result.Error, len(steps))
+		for i, n := range steps {
+			out[i] = result.Error{Path: "a.go", Line: i + 1, Rule: "graph", What: "x", Next: n}
+		}
+		return out
+	}
+	for name, tc := range map[string]struct {
+		r                   result.Result
+		author, owner, show string
+	}{
+		"pass": {result.Result{Status: "pass"}, "", "", ""},
+		"a fix and a request": {result.Result{Status: "fail", Errors: errs(fix, ask)},
+			authorAsk, ownerAsk, "- next: fix the code"},
+		"a fix and an expired exception": {result.Result{Status: "fail", Errors: errs(fix, wait(431))},
+			authorFix, "answer #431.", "- next: wait for an owner: #431"},
+		"two requests": {result.Result{Status: "waiting", Errors: errs(wait(431), wait(432), wait(431))},
+			"nothing to do. This check runs again when #431 and #432 are answered.", "answer #431 and #432.", ""},
+		"three requests": {result.Result{Status: "waiting", Errors: errs(wait(3), wait(2), wait(1))},
+			"nothing to do. This check runs again when #3, #2 and #1 are answered.", "answer #3, #2 and #1.", ""},
+		"a copy keeps its own step": {result.Result{Status: "fail", Errors: errs(result.Next{Kind: "command", Text: `use pkg_util, or run: archfit request -m "<why>"`})},
+			authorAsk, ownerAsk, "- next: `use pkg_util, or run: archfit request -m \"<why>\"`"},
+		"unknown keeps every step": {result.Result{Status: "unknown", Unknown: []result.Unknown{{Cause: "tool", What: "x", Next: result.Next{Kind: "wait", Text: "the check runs again"}}}},
+			authorEach, "", "- next: the check runs again"},
+		"a step no line names": {result.Result{Status: "fail", Errors: errs(result.Next{Kind: "restore", Text: "git checkout origin/main -- .archfit.yaml"})},
+			authorEach, "", "- next: `git checkout origin/main -- .archfit.yaml`"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			v := newView(tc.r)
+			if v.author != tc.author || v.owner != tc.owner {
+				t.Errorf("author %q owner %q, want %q %q", v.author, v.owner, tc.author, tc.owner)
+			}
+			body := v.comment(maxBody)
+			if tc.show != "" && !strings.Contains(body, tc.show+"\n") {
+				t.Errorf("comment does not show %q:\n%s", tc.show, body)
+			}
+			if tc.r.Status == "pass" && (strings.Contains(body, "**Author:**") || strings.Contains(body, "**Owner:**")) {
+				t.Errorf("a pass names a step:\n%s", body)
+			}
+		})
+	}
+}
+
+// Producer text never escapes its place: no HTML, no comment marker, no code span or fence it can close, one line.
+func TestProducerTextStaysInert(t *testing.T) {
+	r := result.Result{Status: "fail", Summary: "archfit: fail, 1 error", Errors: []result.Error{{
+		Path: "a`b/<!--x-->.go", Line: 3, Rule: "no<b>bold</b>", What: "two\nlines <!-- archfit:comment -->",
+		Why: "```\n# heading", Next: result.Next{Kind: "command", Text: "run `x` and ```y```"},
+	}}}
+	v := newView(r)
+	body := v.comment(maxBody)
+	for _, bad := range []string{"<!-- archfit", "<b>", "\n# heading", "two\nlines"} {
+		if strings.Contains(body, bad) {
+			t.Errorf("comment carries %q:\n%s", bad, body)
+		}
+	}
+	mustContain(t, body, "``a`b/<!--x-->.go:3``", "**no&lt;b>bold&lt;/b>**", "- next: ```` run `x` and ```y``` ````")
+	summary := v.summary()
+	if !strings.HasPrefix(summary, "````text\n") || !strings.HasSuffix(summary, "\n````") {
+		t.Errorf("summary fence does not outrun the record's backticks:\n%s", summary)
+	}
+}
+
+func TestOverlongOutputKeepsTheStatusLine(t *testing.T) {
+	long := strings.Repeat("x", 2000)
+	r := result.Result{Status: "fail", Summary: "archfit: fail, 200 errors"}
+	for i := range 200 {
+		r.Errors = append(r.Errors, result.Error{Path: "a.go", Line: i + 1, Rule: "graph", What: long, Next: result.Next{Kind: "fix", Text: "fix the code"}})
+	}
+	v := newView(r)
+	for name, out := range map[string]string{"summary": v.summary(), "comment": v.comment(maxBody)} {
+		if len(out) > maxBody {
+			t.Errorf("%s is %d bytes, over %d", name, len(out), maxBody)
+		}
+		if !strings.Contains(out, " more not shown)") {
+			t.Errorf("%s does not say records were left out", name)
+		}
+	}
+	mustContain(t, v.summary(), "archfit: fail, 200 errors\n```")
+	mustContain(t, v.comment(maxBody), "**Author:** fix the code and push.\n")
+	if n := len(v.annotations()); n != annotationCap {
+		t.Errorf("%d annotations, want the cap %d", n, annotationCap)
+	}
+}
+
+func TestAnnotationsOnlyForErrorsWithALine(t *testing.T) {
+	v := newView(engineResult(t, "expired_exception"))
+	if a := v.annotations(); len(a) != 0 {
+		t.Errorf("an error of the policy file without a line has annotations: %+v", a)
+	}
+	v = newView(engineResult(t, "graph"))
+	want := []api.Annotation{{Path: "pkg/tc/netem.go", Line: 12, Level: "failure",
+		Message: "pkg/tc/netem.go:12: graph: pkg_tc -> pkg_util is not an allowed dependency\n  why: a new dependency between modules needs an owner\n  balance: 9/10 (min 7)\n  next: archfit request -m \"<why you need it>\"     (do not copy the code)"}}
+	if got := v.annotations(); len(got) != 1 || got[0] != want[0] {
+		t.Errorf("annotations = %+v, want %+v", got, want)
+	}
+}
