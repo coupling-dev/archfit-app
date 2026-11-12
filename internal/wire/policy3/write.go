@@ -22,15 +22,26 @@ var ErrLayout = errors.New("policy layout the writer does not edit")
 // node tree gives the positions: the line and column of each key, so the inserted lines
 // copy the indentation of their neighbours. Every edit is an insertion: the old file is
 // the new file with the inserted text cut out, so no other byte changes, and so the digest
-// changes exactly when the answer is written.
+// changes exactly when the answer is written. One edit is not: a depends_on written as a
+// flow list on its key's line, [a, b], becomes a block list the first time an answer adds
+// to it, so that each entry can carry its own line comment (milestone 3 D8). Its entries
+// keep their text and its comment stays on the key's line.
+//
+// Each edit takes a note: the text of the line comment, such as "request #431", that ends
+// the first line of the entry the answer adds. The policy page links that line to its
+// request. An empty note writes no comment.
 //
 // Each edit decodes its own output and compares it with the old policy plus the answer. A
 // value that would not read back as written (a name with a flow character, a layout the
 // positions misread) is an error, never a different policy.
 
-// AddDependsOn adds dependency to the depends_on of module. When the policy already
-// allows it, the file comes back unchanged.
-func AddDependsOn(file []byte, module, dependency string) ([]byte, error) {
+// AddDependsOn adds dependency to the depends_on of module, as one entry of a block list
+// that ends with the note. When the policy already allows it, the file comes back unchanged.
+func AddDependsOn(file []byte, module, dependency, note string) ([]byte, error) {
+	comment, err := lineComment(note)
+	if err != nil {
+		return nil, err
+	}
 	old, err := Decode(file)
 	if err != nil {
 		return nil, err
@@ -62,14 +73,14 @@ func AddDependsOn(file []byte, module, dependency string) ([]byte, error) {
 	var out []byte
 	switch depKey, deps := entry(node, "depends_on"); {
 	case deps == nil:
-		first := node.Content[0]
+		indent := node.Content[0].Column - 1
 		line := d.blockEnd(modKey.Line, modKey.Column-1, false)
-		out = d.insertAfter(line, spaces(first.Column-1)+"depends_on: ["+item+"]")
+		out = d.insertAfter(line, spaces(indent)+"depends_on:", spaces(indent+2)+"- "+item+comment)
 	case deps.Kind == yaml.SequenceNode && deps.Style&yaml.FlowStyle != 0:
-		out, err = d.appendFlow(deps, item)
+		out, err = d.blockFlow(depKey, deps, item+comment)
 	default:
 		out, err = d.appendItem(depKey, deps, func(dash, field int) []string {
-			return itemLines(dash, field, []string{item})
+			return itemLines(dash, field, []string{item}, comment)
 		})
 	}
 	if err != nil {
@@ -82,11 +93,16 @@ func AddDependsOn(file []byte, module, dependency string) ([]byte, error) {
 	})
 }
 
-// AddException adds an exception to the policy. The reason (why) is the caller's and names
-// the request, as "Request #431 is open." does. An exception for the rule unowned or for a
-// custom only rule has no to: an only rule names its library itself. A to there is an error,
-// never dropped. expires is a date, YYYY-MM-DD, or empty for an exception with no date.
-func AddException(file []byte, e Exception) ([]byte, error) {
+// AddException adds an exception to the policy, its first line ending with the note. The
+// reason (why) is the caller's and names the request, as "Request #431 is open." does. An
+// exception for the rule unowned or for a custom only rule has no to: an only rule names its
+// library itself. A to there is an error, never dropped. expires is a date, YYYY-MM-DD, or
+// empty for an exception with no date.
+func AddException(file []byte, e Exception, note string) ([]byte, error) {
+	comment, err := lineComment(note)
+	if err != nil {
+		return nil, err
+	}
 	if e.Expires != "" {
 		if _, err := time.Parse(dateLayout, e.Expires); err != nil {
 			return nil, fmt.Errorf("expires %q is not a date: use YYYY-MM-DD", e.Expires)
@@ -104,29 +120,34 @@ func AddException(file []byte, e Exception) ([]byte, error) {
 		fields = append(fields, "expires: "+e.Expires)
 	}
 	fields = append(fields, "why: "+q[3])
-	return addToList(file, "exceptions", fields, func(f *File) {
+	return addToList(file, "exceptions", fields, comment, func(f *File) {
 		f.Exceptions = append(slices.Clone(f.Exceptions), e)
 	})
 }
 
 // AddDenyRule adds a custom deny rule from one module or path to another, with the reason
-// and what to do instead. It answers later requests for the same dependency (design 6.3).
-func AddDenyRule(file []byte, id, from, to, why, instead string) ([]byte, error) {
+// and what to do instead, its first line ending with the note. It answers later requests for
+// the same dependency (design 6.3).
+func AddDenyRule(file []byte, id, from, to, why, instead, note string) ([]byte, error) {
+	comment, err := lineComment(note)
+	if err != nil {
+		return nil, err
+	}
 	q, err := quoted(id, from, to, why, instead)
 	if err != nil {
 		return nil, err
 	}
 	fields := []string{"id: " + q[0], "deny:", "  from: " + q[1], "  to: " + q[2], "why: " + q[3], "instead: " + q[4]}
-	return addToList(file, "rules", fields, func(f *File) {
+	return addToList(file, "rules", fields, comment, func(f *File) {
 		f.Rules = append(slices.Clone(f.Rules), Rule{
 			ID: id, Deny: &Deny{From: Names{from}, To: Names{to}}, Why: why, Instead: instead,
 		})
 	})
 }
 
-// addToList appends one item, with the given fields, to the top-level list key. A missing
-// key is added at the end of the file.
-func addToList(file []byte, key string, fields []string, mutate func(*File)) ([]byte, error) {
+// addToList appends one item, with the given fields, to the top-level list key; comment ends
+// its first line. A missing key is added at the end of the file.
+func addToList(file []byte, key string, fields []string, comment string, mutate func(*File)) ([]byte, error) {
 	if _, err := Decode(file); err != nil {
 		return nil, err
 	}
@@ -137,11 +158,11 @@ func addToList(file []byte, key string, fields []string, mutate func(*File)) ([]
 	var out []byte
 	switch k, seq := entry(d.root, key); {
 	case seq == nil:
-		out = d.insertAfter(len(d.starts), append([]string{key + ":"}, itemLines(2, 4, fields)...)...)
+		out = d.insertAfter(len(d.starts), append([]string{key + ":"}, itemLines(2, 4, fields, comment)...)...)
 	case !d.startsLine(k):
 		return nil, fmt.Errorf("%w: %s is not a block list", ErrLayout, key)
 	default:
-		out, err = d.appendItem(k, seq, func(dash, field int) []string { return itemLines(dash, field, fields) })
+		out, err = d.appendItem(k, seq, func(dash, field int) []string { return itemLines(dash, field, fields, comment) })
 	}
 	if err != nil {
 		return nil, err
@@ -192,18 +213,31 @@ func scalar(s string) (string, error) {
 	return text, nil
 }
 
-// itemLines writes the fields of one list item: the first after the dash, the others
-// at the same indent as the first.
-func itemLines(dash, field int, fields []string) []string {
+// itemLines writes the fields of one list item: the first after the dash and followed by
+// comment, the others at the same indent as the first.
+func itemLines(dash, field int, fields []string, comment string) []string {
 	lines := make([]string, len(fields))
 	for i, f := range fields {
 		if i == 0 {
-			lines[i] = spaces(dash) + "-" + spaces(field-dash-1) + f
+			lines[i] = spaces(dash) + "-" + spaces(field-dash-1) + f + comment
 			continue
 		}
 		lines[i] = spaces(field) + f
 	}
 	return lines
+}
+
+// lineComment returns the comment that ends the first line of an added entry: two spaces, a
+// hash and the note, or "" for an empty note. A note with a line break would end the comment
+// early and is an error.
+func lineComment(note string) (string, error) {
+	if note == "" {
+		return "", nil
+	}
+	if strings.ContainsAny(note, "\r\n\u0085  ") {
+		return "", fmt.Errorf("the note %q is not one line", note)
+	}
+	return "  # " + note, nil
 }
 
 func spaces(n int) string { return strings.Repeat(" ", n) }
@@ -368,18 +402,45 @@ func (d *doc) appendItem(key, seq *yaml.Node, lines func(dash, field int) []stri
 	return d.insertAfter(last, lines(dash, field)...), nil
 }
 
-// appendFlow adds an item to a flow list written on one line: [a, b] becomes [a, b, c].
-func (d *doc) appendFlow(seq *yaml.Node, item string) ([]byte, error) {
+// blockFlow rewrites a flow list written on its key's line as a block list and adds item as
+// its last entry: "key: [a, b]  # c" becomes "key:  # c", "- a", "- b" and "- item", the
+// dashes two spaces deeper than the key. Each entry keeps its text as written.
+func (d *doc) blockFlow(key, seq *yaml.Node, item string) ([]byte, error) {
+	if seq.Line != key.Line {
+		return nil, fmt.Errorf("%w: %s is a flow list on its own line", ErrLayout, key.Value)
+	}
 	line := d.text(seq.Line)
-	open := d.starts[seq.Line-1] + byteOffset(line, seq.Column)
-	if open >= len(d.data) || d.data[open] != '[' {
+	open := byteOffset(line, seq.Column)
+	if open >= len(line) || line[open] != '[' {
 		return nil, fmt.Errorf("%w: cannot find the start of a flow list", ErrLayout)
 	}
-	closing := -1
-	depth, quote := 0, byte(0)
-scan:
-	for i := open; i < d.starts[seq.Line-1]+len(line); i++ {
-		c := d.data[i]
+	closing, entries := flowEntries(line, open)
+	if closing < 0 {
+		return nil, fmt.Errorf("%w: a flow list that spans several lines", ErrLayout)
+	}
+	tail := line[closing+1:]
+	if rest := strings.TrimSpace(tail); rest != "" && !strings.HasPrefix(rest, "#") {
+		return nil, fmt.Errorf("%w: text after the flow list of %s", ErrLayout, key.Value)
+	}
+	dash := spaces(key.Column + 1)
+	lines := []string{strings.TrimRight(line[:open], " \t") + tail}
+	for _, e := range entries {
+		if e == "" {
+			return nil, fmt.Errorf("%w: an empty entry in the flow list of %s", ErrLayout, key.Value)
+		}
+		lines = append(lines, dash+"- "+e)
+	}
+	return d.replaceLine(seq.Line, append(lines, dash+"- "+item)...), nil
+}
+
+// flowEntries scans the flow list that opens at line[open] and returns the index of its
+// closing bracket, or -1 when it does not close on this line, and the text of each entry,
+// trimmed. Commas inside quotes or nested brackets do not split; a trailing comma adds no
+// entry.
+func flowEntries(line string, open int) (closing int, entries []string) {
+	depth, quote, start := 0, byte(0), open+1
+	for i := open; i < len(line); i++ {
+		c := line[i]
 		switch {
 		case quote != 0:
 			if c == '\\' && quote == '"' {
@@ -389,34 +450,33 @@ scan:
 			}
 		case c == '"' || c == '\'':
 			quote = c
-		case c == '[':
+		case c == '[' || c == '{':
 			depth++
-		case c == ']':
+		case c == ',' && depth == 1:
+			entries = append(entries, strings.TrimSpace(line[start:i]))
+			start = i + 1
+		case c == ']' || c == '}':
 			depth--
 			if depth == 0 {
-				closing = i
-				break scan
+				if last := strings.TrimSpace(line[start:i]); last != "" {
+					entries = append(entries, last)
+				}
+				return i, entries
 			}
 		}
 	}
-	if closing < 0 {
-		return nil, fmt.Errorf("%w: a flow list that spans several lines", ErrLayout)
-	}
-	at := closing
-	for at > open+1 && d.data[at-1] == ' ' {
-		at--
-	}
-	insert := ", " + item
-	switch d.data[at-1] {
-	case '[':
-		insert = item
-	case ',':
-		insert = " " + item
-	}
-	out := make([]byte, 0, len(d.data)+len(insert))
-	out = append(out, d.data[:at]...)
-	out = append(out, insert...)
-	return append(out, d.data[at:]...), nil
+	return -1, nil
+}
+
+// replaceLine replaces the text of line n, counted from 1, with lines; its line end stays.
+func (d *doc) replaceLine(n int, lines ...string) []byte {
+	start := d.starts[n-1]
+	end := start + len(d.text(n))
+	block := strings.Join(lines, d.eol)
+	out := make([]byte, 0, len(d.data)+len(block))
+	out = append(out, d.data[:start]...)
+	out = append(out, block...)
+	return append(out, d.data[end:]...)
 }
 
 // byteOffset converts a column, counted in characters from 1, into a byte offset in the line.

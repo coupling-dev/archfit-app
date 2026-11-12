@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
+	"github.com/alexei-led/archfit-app/internal/control/answers"
 	"github.com/alexei-led/archfit-app/internal/control/assist"
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/control/passkey"
@@ -35,6 +36,7 @@ type Deps struct {
 	DecisionQueue gate.DecisionQueue // decision requests of unattended agents that wait for an owner: read only
 	Passkeys      passkey.Passkeys   // the signed-in user's passkeys and the step-up of an answer
 	RequestViews  gate.RequestViews  // the request page: a request and the preview of each answer, read only
+	Answers       answers.Answers    // the request page: an owner's answer, with the passkey
 	Operators     []int64            // GitHub user IDs that approve installations on /admin
 	Now           func() time.Time
 }
@@ -93,6 +95,7 @@ type server struct {
 	decisionQueue gate.DecisionQueue
 	passkeys      passkey.Passkeys
 	requests      gate.RequestViews
+	answers       answers.Answers
 	operators     []int64
 	now           func() time.Time
 	baseURL       string
@@ -127,6 +130,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 		decisionQueue: d.DecisionQueue,
 		passkeys:      d.Passkeys,
 		requests:      d.RequestViews,
+		answers:       d.Answers,
 		operators:     d.Operators,
 		now:           d.Now,
 		baseURL:       d.BaseURL,
@@ -207,6 +211,10 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("POST /api/repos/{o}/{n}/assist", s.apiRepo(permWrite, s.apiAssist))
 	mux.Handle("GET /api/repos/{o}/{n}/requests/{number}", s.apiRepo(permRead, s.apiRequest))
 	mux.Handle("GET /api/repos/{o}/{n}/requests/{number}/preview", s.apiRepo(permRead, s.apiRequestPreview))
+	// The answer routes need read: who answers is the owner rule of the policy on the default branch, which the gate
+	// applies, and an answer that loosens the policy needs the owner's passkey.
+	mux.Handle("POST /api/repos/{o}/{n}/requests/{number}/answer/digest", s.apiRepo(permRead, s.apiAnswerDigest))
+	mux.Handle("POST /api/repos/{o}/{n}/requests/{number}/answer", s.apiRepo(permRead, s.apiAnswer))
 	// The passkey routes need read: who registers is the passkey rule (an owner, or an administrator before the first
 	// policy), and a step-up or a removal is the user's own passkey.
 	mux.Handle("GET /api/repos/{o}/{n}/passkeys", s.apiRepo(permRead, s.apiPasskeys))

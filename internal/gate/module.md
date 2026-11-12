@@ -43,6 +43,11 @@ separate, testable steps. Without this module a report is a self-reported file a
   policy diff, whether it needs the passkey, the open pull requests it touches by their stored request keys). It writes
   nothing and runs no analysis. `PolicyEdit` writes an answer's change (`AnswerChange`) into a policy: the edit the
   preview shows is the edit the answer writes (task 19).
+- For the App's request page only (`Answers`, M2 task 19): take in an owner's answer to a request (approve, approve until
+  a date, reject with `instead`) and carry it to the default branch through the App's policy pull request on
+  `archfit/policy` (`gate/proposals`): the approval recorded, the branch written with the other open answers,
+  `archfit/gate` set on that pull request when M2 D13 holds, and the merge unless the owner chose to merge later.
+  `AnswerDigest` is the change digest the owner's passkey step-up is bound to.
 - For the App's pull request page only (`FirstScreen`, `RecoveryStep`): word a published result with the code that
   words the comment, so the page's first screen is the comment's. Pure functions of what the check recorded.
 - For the App's pull request page only (`Decisions`): list the decision requests of a pull request, and let an
@@ -222,6 +227,22 @@ var ErrNoRequest, ErrClosedRequest, ErrAnswer, ErrNoPolicy, ErrByHand // gate/re
 func PolicyEdit(file []byte, c AnswerChange, comment string) ([]byte, error)
 func RequestComment(number int) string // "request #431": with it, PolicyEdit writes the edit the preview shows
 ```
+
+```go
+// Answers takes in an owner's answer to a request (M2 task 19). *Gate implements it.
+type Answers interface {
+    AnswerDigest(ctx context.Context, t Target, number int, a RequestAnswer) (string, error)
+    Answer(ctx context.Context, t Target, in AnswerInput) (AnswerOutcome, error)
+}
+// Owned by gate/proposals.
+type AnswerInput = proposals.Input; type AnswerOwner = proposals.Owner; type AnswerOutcome = proposals.Outcome
+var ErrNotPolicyOwner, ErrNeedsPasskey, ErrAnswerBusy, ErrProposalFull // gate/proposals' errors
+```
+
+`AnswerDigest` and `Answer` ask `Admitted` first, then run `gate/proposals` (`t.Repo` names the repository); the façade
+file is `answers.go`. `Answer` takes the passkey as `AnswerInput.Redeem`, which `control/answers` sets, so the gate
+never imports `control`. An error from `Answer` means the answer was not recorded; what it found on its way (a
+policy pull request closed without a merge, an approval that no longer applies) may have been recorded void.
 
 `RequestView` and `RequestPreview` ask `Admitted` first, then read the request and pull records from the Store and the
 policy at the default branch's tip from GitHub (`t.Repo` names the repository). `RequestPreview` judges an
@@ -506,7 +527,10 @@ change of the workflow on `T` reads `unknown` until its branch is updated.
    `archfit/gate` on the head and, for a pull request, its one comment. The result shown is the engine's with the
    App's status, or, when a rule failed, only the App's records under `archfit: unknown, no verdict`, so a forged
    `pass` is never shown. `gate: required` in the default branch's policy makes a `fail` a failure; without it the
-   `fail` is neutral. An upload with `unsupported_event` or `envelope_mismatch` publishes nothing: the App does not
+   `fail` is neutral. An upload for the pull request of an open proposal (`proposals.IsProposalPull`: its proposal
+   index entry) publishes nothing either (M2 D13): the App sets `archfit/gate` on its own policy pull request, and the
+   Action's result there is `unknown`, because the pull request changes the policy. Its pull record is kept.
+   An upload with `unsupported_event` or `envelope_mismatch` publishes nothing: the App does not
    judge it for the default branch, and a run of another base has a higher run id than the pull request into the
    default branch on the same commit, which a re-run of that pull request keeps below. Inside the head's lease the
    default branch's head is read again, and for a coverable `fail` the open requests too; when either moved, nothing is
@@ -986,6 +1010,18 @@ func Withdrawal(t Target, current CheckState, tr Trusted) *Publication
   `preview.go`). The façade file of the intake is `requests.go`; the package name is imported as `asks`, because the gate's `requests` type is the
   Archfit 3 decision intake.
 
+### gate/proposals (child)
+
+- **Counterpart**: internal/gate/proposals
+- **Direction**: gate depends on proposals
+- **Strength**: functional (composition)
+- **LCA / Rank / Distance**: gate / 1 / 1
+- **Volatility**: high
+- **Balanced?**: yes
+- **Shared knowledge**: `Service` (`Digest`, `Answer`), built with the gate's GitHub client (it adds the roles
+  `api.Changes` and `api.Merges`) and Store; `IsProposalPull` for the envelope 2 upload's publish step; the answer
+  types and errors re-exported for `Answers` (façade file `answers.go`).
+
 ### wire/manifest
 
 - **Counterpart**: internal/wire/manifest
@@ -1464,7 +1500,7 @@ type Swap struct {
 - **internal/app**: contract (constructor, handlers), root / 1 / 1, low, balanced. Calls `New`, mounts
   `UploadHandler`, calls `HandleEvent` before `control.HandleEvent`, calls `Sweep` from `/internal/sweep`,
   passes `NewReceiver(...)` to `control`, builds the `Admissions` for `Deps.Admissions` and `NewReceiver`, and passes
-  the `*Gate` to `control` as its `Approvals` its `Decisions`, its `DecisionQueue` and its `RequestViews`.
+  the `*Gate` to `control` as its `Approvals` its `Decisions`, its `DecisionQueue`, its `RequestViews` and its `Answers`.
 - **internal/control/account**: contract, root / 2 / 2, moderate, balanced. Writes the JSON of `Entitlement`
   under `EntitlementKey`, and writes and deletes the JSON of `Admission` under `AdmissionKey`. The gate owns the
   records so that it never imports billing or operator code.
@@ -1477,7 +1513,9 @@ type Swap struct {
   Also (through `control.Deps.DecisionQueue`, the same `*Gate`) calls `PendingDecisions` for the overview and the decisions
   page, and `FirstScreen` and `RecoveryStep` for the pull request page and the overview's re-run rows. Through
   `control.Deps.RequestViews` it calls `RequestView` and `RequestPreview` for the request page, read access only.
-  Nothing on the upload (OIDC) path holds `Approvals`, `Decisions`, `DecisionQueue` or `RequestViews`.
+  Through `control.Deps.Answers` and `control/answers` it calls `AnswerDigest` and `Answer`, with the passkey's
+  `Redeem`. Nothing on the upload (OIDC) path holds `Approvals`, `Decisions`, `DecisionQueue`, `RequestViews` or
+  `Answers`.
 
 ## Internal Design
 
@@ -1973,3 +2011,9 @@ are driven only as far as they go without GitHub. Child internals are tested in 
 - **Test name**: `TestUpload4KeepsTheNewestRecord`, `TestUpload4RejectionsStoreNothing`, `TestUpload4AnswersAFailedReadWithARetry`, `TestUploadHandlerKeepsEnvelope1OnItsPath`, `TestUpload4LogsIdentifiersOnly`
   **Scenario**: records written out of order; a moved head; a rate limit and a failed read; an envelope 1 upload; the log of a `fail`.
   **Expected behavior**: a newer run or attempt is never replaced; nothing stored for a rejection or a failed read (503, `Retry-After` for the rate limit); envelope 1 answers a conclusion; the log has identifiers and the status, no rule, path, policy or token.
+- **Test name**: `TestAnUploadOfThePolicyPullRequestSetsNoVerdict`
+  **Scenario**: an envelope 2 upload for the pull request of an open proposal (M2 D13); one for another pull request.
+  **Expected behavior**: 200; the pull record stored; no `archfit/gate` and no comment on the policy pull request; the other gets its check.
+- **Test name**: `TestAnAnswerIsTakenForAnAdmittedInstallationOnly`, `TestAnAnswerThroughTheGate`
+  **Scenario**: `AnswerDigest` and `Answer` for an installation no operator approved; a real request line, then its digest, an answer by the worker, and an owner's reject whose branch write GitHub refuses.
+  **Expected behavior**: `errNotAdmitted` and no GitHub call; a `sha256:` digest; `ErrNotPolicyOwner`; the write's error with the request still open and its issue open. `gate/proposals` tests the whole flow.

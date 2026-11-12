@@ -1,6 +1,8 @@
 {
   "kind": "approve",
   "loosens": true,
+  "note": "request #431",
+  "reformats": true,
   "module": "app",
   "dependency": "lib"
 }

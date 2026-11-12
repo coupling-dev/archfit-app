@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -16,27 +17,55 @@ import (
 
 var update = flag.Bool("update", false, "write each writer golden out.yaml from the current output; read the diff before you commit it")
 
-// answerFile is the answer.json of a writer golden: the kind of the answer and its fields.
+// answerFile is the answer.json of a writer golden: the kind of the answer, its fields and
+// its note. Then is a second answer written on the output of the first. Reformats marks an
+// answer that rewrites a flow list as a block list, so its output is not an insertion.
 type answerFile struct {
 	Kind       policy3.Answer                               `json:"kind"`
 	Loosens    bool                                         `json:"loosens"`
+	Note       string                                       `json:"note"`
+	Reformats  bool                                         `json:"reformats"`
 	Module     string                                       `json:"module"`
 	Dependency string                                       `json:"dependency"`
 	Exception  *policy3.Exception                           `json:"exception"`
 	Rule       *struct{ ID, From, To, Why, Instead string } `json:"rule"`
+	Then       *answerFile                                  `json:"then"`
 }
 
 func (a answerFile) apply(in []byte) ([]byte, error) {
+	out, err := a.applyOne(in)
+	if err != nil || a.Then == nil {
+		return out, err
+	}
+	return a.Then.apply(out)
+}
+
+func (a answerFile) applyOne(in []byte) ([]byte, error) {
 	switch a.Kind {
 	case policy3.Approve:
-		return policy3.AddDependsOn(in, a.Module, a.Dependency)
+		return policy3.AddDependsOn(in, a.Module, a.Dependency, a.Note)
 	case policy3.ApproveUntil:
-		return policy3.AddException(in, *a.Exception)
+		return policy3.AddException(in, *a.Exception, a.Note)
 	case policy3.Reject:
-		return policy3.AddDenyRule(in, a.Rule.ID, a.Rule.From, a.Rule.To, a.Rule.Why, a.Rule.Instead)
+		return policy3.AddDenyRule(in, a.Rule.ID, a.Rule.From, a.Rule.To, a.Rule.Why, a.Rule.Instead, a.Note)
 	case policy3.Confirm:
 	}
 	return nil, fmt.Errorf("answer %q writes nothing", a.Kind)
+}
+
+// lostLines counts the lines of old that edited does not keep, in order. A flow list
+// rewrite loses exactly one: the line of the flow list.
+func lostLines(old, edited []byte) int {
+	have, lost := strings.Split(string(edited), "\n"), 0
+	for line := range strings.SplitSeq(string(old), "\n") {
+		at := slices.Index(have, line)
+		if at < 0 {
+			lost++
+			continue
+		}
+		have = have[at+1:]
+	}
+	return lost
 }
 
 func readCase(t *testing.T, dir string) (in []byte, answer answerFile) {
@@ -100,7 +129,12 @@ func TestWriterGoldens(t *testing.T) {
 			if _, err := policy3.Decode(got); err != nil {
 				t.Errorf("the output does not decode: %v", err)
 			}
-			if !isInsertion(in, got) {
+			switch {
+			case answer.Reformats:
+				if lost := lostLines(in, got); lost != 1 {
+					t.Errorf("a flow list rewrite changed %d lines of the old file; it may change only the flow list's", lost)
+				}
+			case !isInsertion(in, got):
 				t.Error("the writer changed a byte of the old file; an edit may only insert")
 			}
 			if same := bytes.Equal(got, in); same != (policy3.Digest(got) == policy3.Digest(in)) {
@@ -190,128 +224,121 @@ func TestWriterRefuses(t *testing.T) {
 	}{
 		{
 			name:    "an unknown module",
-			do:      func() ([]byte, error) { return policy3.AddDependsOn([]byte(base), "nope", "lib") },
+			do:      func() ([]byte, error) { return policy3.AddDependsOn([]byte(base), "nope", "lib", "") },
 			wantErr: `module "nope" is not in the policy`,
 		},
 		{
 			name:    "an unknown dependency",
-			do:      func() ([]byte, error) { return policy3.AddDependsOn([]byte(base), "app", "nope") },
+			do:      func() ([]byte, error) { return policy3.AddDependsOn([]byte(base), "app", "nope", "") },
 			wantErr: `module "nope" is not in the policy`,
 		},
 		{
 			name:    "a policy that does not decode",
-			do:      func() ([]byte, error) { return policy3.AddDependsOn([]byte("version: 3\n"), "app", "lib") },
+			do:      func() ([]byte, error) { return policy3.AddDependsOn([]byte("version: 3\n"), "app", "lib", "") },
 			wantErr: "owners: required",
 		},
 		{
 			name: "a module written as a flow mapping",
 			do: func() ([]byte, error) {
-				return policy3.AddDependsOn([]byte("version: 3\nowners: [o]\nmodules:\n  app: {paths: [cmd/**]}\n  lib: {paths: [lib/**]}\n"), "app", "lib")
+				return policy3.AddDependsOn([]byte("version: 3\nowners: [o]\nmodules:\n  app: {paths: [cmd/**]}\n  lib: {paths: [lib/**]}\n"), "app", "lib", "")
 			},
 			wantErr: "not a block mapping", layout: true,
 		},
 		{
 			name: "a flow list over several lines",
 			do: func() ([]byte, error) {
-				return policy3.AddDependsOn([]byte(base+"  db:\n    paths: [db/**]\n  cli:\n    paths: [x/**]\n    depends_on: [lib,\n      app]\n"), "cli", "db")
+				return policy3.AddDependsOn([]byte(base+"  db:\n    paths: [db/**]\n  cli:\n    paths: [x/**]\n    depends_on: [lib,\n      app]\n"), "cli", "db", "")
 			},
 			wantErr: "several lines", layout: true,
 		},
 		{
 			name: "an empty flow list of exceptions",
 			do: func() ([]byte, error) {
-				return policy3.AddException([]byte(base+"exceptions: []\n"), policy3.Exception{Rule: "graph", From: "app", To: "lib", Why: "w"})
+				return policy3.AddException([]byte(base+"exceptions: []\n"), policy3.Exception{Rule: "graph", From: "app", To: "lib", Why: "w"}, "")
 			},
 			wantErr: "not a block list", layout: true,
 		},
 		{
-			name: "a module name a flow list would split",
-			do: func() ([]byte, error) {
-				return policy3.AddDependsOn([]byte(base+"  \"a, b\":\n    paths: [x/**]\n"), "app", "a, b")
-			},
-			wantErr: "more than the answer",
-		},
-		{
 			name: "a date that is not a date",
 			do: func() ([]byte, error) {
-				return policy3.AddException([]byte(base), policy3.Exception{Rule: "graph", From: "app", To: "lib", Expires: "19-11-2026", Why: "w"})
+				return policy3.AddException([]byte(base), policy3.Exception{Rule: "graph", From: "app", To: "lib", Expires: "19-11-2026", Why: "w"}, "")
 			},
 			wantErr: `expires "19-11-2026" is not a date`,
 		},
 		{
 			name: "a CR line break without LF, which the YAML reader counts and the writer does not",
 			do: func() ([]byte, error) {
-				return policy3.AddDependsOn([]byte(strings.ReplaceAll(base, "\n", "\r")), "app", "lib")
+				return policy3.AddDependsOn([]byte(strings.ReplaceAll(base, "\n", "\r")), "app", "lib", "")
 			},
 			wantErr: "CR line break", layout: true,
 		},
 		{
 			name: "a NEL line break",
 			do: func() ([]byte, error) {
-				return policy3.AddDependsOn([]byte(strings.ReplaceAll(base, "\n", "\u0085")), "app", "lib")
+				return policy3.AddDependsOn([]byte(strings.ReplaceAll(base, "\n", "\u0085")), "app", "lib", "")
 			},
 			wantErr: "NEL, LS or PS", layout: true,
 		},
 		{
 			name: "a merge key at the root, so modules is not under its own key",
 			do: func() ([]byte, error) {
-				return policy3.AddDependsOn([]byte("version: 3\nowners: [o]\n<<: {modules: {app: {paths: [app/**]}, lib: {paths: [lib/**]}}}\n"), "app", "lib")
+				return policy3.AddDependsOn([]byte("version: 3\nowners: [o]\n<<: {modules: {app: {paths: [app/**]}, lib: {paths: [lib/**]}}}\n"), "app", "lib", "")
 			},
 			wantErr: "merge key", layout: true,
 		},
 		{
 			name: "an alias",
 			do: func() ([]byte, error) {
-				return policy3.AddDependsOn([]byte("version: 3\nowners: [o]\nmodules:\n  app:\n    paths: &p [cmd/**]\n  lib:\n    paths: *p\n"), "app", "lib")
+				return policy3.AddDependsOn([]byte("version: 3\nowners: [o]\nmodules:\n  app:\n    paths: &p [cmd/**]\n  lib:\n    paths: *p\n"), "app", "lib", "")
 			},
 			wantErr: "alias", layout: true,
 		},
 		{
 			name: "a document end marker, after which an appended key would not be the policy's",
 			do: func() ([]byte, error) {
-				return policy3.AddException([]byte(base+"...\n"), policy3.Exception{Rule: "graph", From: "app", To: "lib", Why: "w"})
+				return policy3.AddException([]byte(base+"...\n"), policy3.Exception{Rule: "graph", From: "app", To: "lib", Why: "w"}, "")
 			},
 			wantErr: "document end marker", layout: true,
 		},
 		{
 			name: "a document end marker with a comment",
 			do: func() ([]byte, error) {
-				return policy3.AddException([]byte(base+"... # end\n"), policy3.Exception{Rule: "graph", From: "app", To: "lib", Why: "w"})
+				return policy3.AddException([]byte(base+"... # end\n"), policy3.Exception{Rule: "graph", From: "app", To: "lib", Why: "w"}, "")
 			},
 			wantErr: "document end marker", layout: true,
 		},
 		{
 			name: "a second document that starts with a comment",
 			do: func() ([]byte, error) {
-				return policy3.AddDenyRule([]byte(base+"--- # next\nother: 1\n"), "no-app-to-lib", "app", "lib", "w", "i")
+				return policy3.AddDenyRule([]byte(base+"--- # next\nother: 1\n"), "no-app-to-lib", "app", "lib", "w", "i", "")
 			},
 			wantErr: "second document", layout: true,
 		},
 		{
 			name: "a second document",
 			do: func() ([]byte, error) {
-				return policy3.AddDenyRule([]byte(base+"---\nother: 1\n"), "no-app-to-lib", "app", "lib", "w", "i")
+				return policy3.AddDenyRule([]byte(base+"---\nother: 1\n"), "no-app-to-lib", "app", "lib", "w", "i", "")
 			},
 			wantErr: "second document", layout: true,
 		},
 		{
 			name: "a reason on two lines",
 			do: func() ([]byte, error) {
-				return policy3.AddException([]byte(base), policy3.Exception{Rule: "graph", From: "app", To: "lib", Why: "one\ntwo"})
+				return policy3.AddException([]byte(base), policy3.Exception{Rule: "graph", From: "app", To: "lib", Why: "one\ntwo"}, "")
 			},
 			wantErr: "cannot be written on one line",
 		},
 		{
 			name: "an exception with no target",
 			do: func() ([]byte, error) {
-				return policy3.AddException([]byte(base), policy3.Exception{Rule: "graph", From: "app", Why: "w"})
+				return policy3.AddException([]byte(base), policy3.Exception{Rule: "graph", From: "app", Why: "w"}, "")
 			},
 			wantErr: "exceptions[0].to: required",
 		},
 		{
 			name: "an unowned exception with a target",
 			do: func() ([]byte, error) {
-				return policy3.AddException([]byte(base), policy3.Exception{Rule: "unowned", From: "x/**", To: "lib", Why: "w"})
+				return policy3.AddException([]byte(base), policy3.Exception{Rule: "unowned", From: "x/**", To: "lib", Why: "w"}, "")
 			},
 			wantErr: "unowned has no target module",
 		},
@@ -319,14 +346,27 @@ func TestWriterRefuses(t *testing.T) {
 			name: "an exception of an only rule with a target",
 			do: func() ([]byte, error) {
 				return policy3.AddException([]byte(base+"rules:\n  - id: no-docker\n    only: {use: github.com/docker/docker, in: [lib]}\n    why: w\n"),
-					policy3.Exception{Rule: "no-docker", From: "app", To: "lib", Why: "w"})
+					policy3.Exception{Rule: "no-docker", From: "app", To: "lib", Why: "w"}, "")
 			},
 			wantErr: "no-docker is an only rule, which names its library itself: remove to",
 		},
 		{
+			name:    "a note on two lines",
+			do:      func() ([]byte, error) { return policy3.AddDependsOn([]byte(base), "app", "lib", "request #1\nx: 1") },
+			wantErr: "is not one line",
+		},
+		{
+			name: "a flow list on its own line",
+			do: func() ([]byte, error) {
+				return policy3.AddDependsOn([]byte(base+"  cli:\n    paths: [x/**]\n    depends_on:\n      [lib]\n"), "cli", "app", "")
+			},
+			wantErr: "depends_on is a flow list on its own line",
+			layout:  true,
+		},
+		{
 			name: "a deny rule with no reason",
 			do: func() ([]byte, error) {
-				return policy3.AddDenyRule([]byte(base), "no-app-to-lib", "app", "lib", "", "Use a port.")
+				return policy3.AddDenyRule([]byte(base), "no-app-to-lib", "app", "lib", "", "Use a port.", "")
 			},
 			wantErr: "rules[0].why: empty string: give a value or remove the key",
 		},
@@ -347,14 +387,63 @@ func TestWriterRefuses(t *testing.T) {
 	}
 }
 
-// A document start marker on the first line is not a second document.
-func TestWriterAcceptsALeadingDocumentStart(t *testing.T) {
-	in := "---\nversion: 3\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n  lib:\n    paths: [lib/**]\n"
-	got, err := policy3.AddDependsOn([]byte(in), "app", "lib")
+// A block list keeps a name with a comma as one entry, where a flow list would split it.
+func TestWriterKeepsANameWithACommaWhole(t *testing.T) {
+	in := "version: 3\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n    depends_on: [lib]\n  lib:\n    paths: [lib/**]\n" +
+		"  \"a, b\":\n    paths: [x/**]\n"
+	got, err := policy3.AddDependsOn([]byte(in), "app", "a, b", "request #1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := strings.Replace(in, "    paths: [cmd/**]\n", "    paths: [cmd/**]\n    depends_on: [lib]\n", 1); string(got) != want {
+	f, err := policy3.Decode(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deps := f.Modules["app"].DependsOn; !slices.Equal(deps, []string{"lib", "a, b"}) {
+		t.Errorf("depends_on = %q, want [lib, a, b] with a, b as one name:\n%s", deps, got)
+	}
+}
+
+// A flow list becomes a block list: each entry keeps its text, the comment stays on the key's
+// line, and only the added entry carries the note.
+func TestFlowListBecomesABlockList(t *testing.T) {
+	head := "version: 3\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n"
+	tail := "  lib:\n    paths: [lib/**]\n  \"x, y\":\n    paths: [x/**]\n  db:\n    paths: [db/**]\n"
+	tests := map[string]struct{ list, want string }{
+		"a quoted entry with a comma": {
+			list: "    depends_on: [\"x, y\", db]\n",
+			want: "    depends_on:\n      - \"x, y\"\n      - db\n      - lib  # request #9\n",
+		},
+		"a trailing comma": {
+			list: "    depends_on: [db, ]\n",
+			want: "    depends_on:\n      - db\n      - lib  # request #9\n",
+		},
+		"an empty list with a comment": {
+			list: "    depends_on: []  # none yet\n",
+			want: "    depends_on:  # none yet\n      - lib  # request #9\n",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, err := policy3.AddDependsOn([]byte(head+tt.list+tail), "app", "lib", "request #9")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := head + tt.want + tail; string(got) != want {
+				t.Errorf("got\n%s\nwant\n%s", got, want)
+			}
+		})
+	}
+}
+
+// A document start marker on the first line is not a second document.
+func TestWriterAcceptsALeadingDocumentStart(t *testing.T) {
+	in := "---\nversion: 3\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n  lib:\n    paths: [lib/**]\n"
+	got, err := policy3.AddDependsOn([]byte(in), "app", "lib", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := strings.Replace(in, "    paths: [cmd/**]\n", "    paths: [cmd/**]\n    depends_on:\n      - lib\n", 1); string(got) != want {
 		t.Errorf("got\n%s\nwant\n%s", got, want)
 	}
 }

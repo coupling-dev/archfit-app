@@ -738,6 +738,63 @@ func TestChangesContract(t *testing.T) {
 		}
 	})
 
+	t.Run("CommitOn", func(t *testing.T) {
+		env, repo := setup(t)
+		tip := repo.refs["main"]
+		policy := []FileChange{{Path: ".archfit.yaml", Content: []byte("version: 3\n")}}
+
+		created, err := env.c.CommitOn(ctx, repoA, "archfit/policy", tip, "answer #1", policy, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if repo.refs["archfit/policy"] != created || repo.commits[created].parents[0] != tip ||
+			string(repo.fileAt("archfit/policy", ".archfit.yaml")) != "version: 3\n" ||
+			string(repo.fileAt("archfit/policy", "README.md")) != "readme" {
+			t.Errorf("a missing branch: head %q, commit %+v", repo.refs["archfit/policy"], repo.commits[created])
+		}
+
+		next := []FileChange{{Path: ".archfit.yaml", Content: []byte("version: 3\n# two\n")}}
+		forward, err := env.c.CommitOn(ctx, repoA, "archfit/policy", created, "answer #2", next, false)
+		if err != nil || repo.refs["archfit/policy"] != forward || repo.commits[forward].parents[0] != created {
+			t.Errorf("a fast-forward: %q, %v; head %q", forward, err, repo.refs["archfit/policy"])
+		}
+
+		_, err = env.c.CommitOn(ctx, repoA, "archfit/policy", created, "stale", policy, false)
+		if Status(err) != http.StatusUnprocessableEntity || !errors.Is(err, ErrUnprocessable) {
+			t.Errorf("a fast-forward from a parent the branch left: err = %v, want GitHub's 422 as ErrUnprocessable", err)
+		}
+		if repo.refs["archfit/policy"] != forward {
+			t.Error("a refused fast-forward moved the branch")
+		}
+
+		rewritten, err := env.c.CommitOn(ctx, repoA, "archfit/policy", tip, "rewrite", next, true)
+		if err != nil || repo.refs["archfit/policy"] != rewritten || repo.commits[rewritten].parents[0] != tip {
+			t.Errorf("a forced move: %q, %v; head %q", rewritten, err, repo.refs["archfit/policy"])
+		}
+		if want := []bool{false, false, true}; !slices.Equal(repo.forced, want) {
+			t.Errorf("force flags = %v, want %v", repo.forced, want)
+		}
+
+		env.gh.reset()
+		same, err := env.c.CommitOn(ctx, repoA, "archfit/policy", rewritten, "no change", next, false)
+		if err != nil || same != rewritten || env.gh.count("POST", "/repos/o/r/git/commits") != 0 {
+			t.Errorf("content the parent holds: %q, %v; want the parent and no commit", same, err)
+		}
+
+		env.gh.reset()
+		for name, parent := range map[string]string{"an empty parent": "", "a branch name": "main"} {
+			if _, err := env.c.CommitOn(ctx, repoA, "archfit/policy", parent, "m", policy, true); !errors.Is(err, errNotCommitSHA) {
+				t.Errorf("%s: err = %v, want errNotCommitSHA", name, err)
+			}
+		}
+		if _, err := env.c.CommitOn(ctx, repoA, "archfit/policy", tip, "m", nil, true); err == nil {
+			t.Error("no files: want error")
+		}
+		if len(env.gh.requests()) != 0 {
+			t.Error("a refused call sent a request")
+		}
+	})
+
 	t.Run("EnsurePull", func(t *testing.T) {
 		env, repo := setup(t)
 		repo.refs["archfit/setup"], repo.refs["raced"] = repo.refs["main"], repo.refs["main"]

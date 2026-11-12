@@ -98,6 +98,14 @@ func (f *fakeGit) Commit(_ context.Context, _ api.RepoRef, branch, _ string, fil
 	return sha, nil
 }
 
+// CommitOn is not used by proposal; the fake refuses it so a call shows up in a test.
+func (f *fakeGit) CommitOn(context.Context, api.RepoRef, string, string, string, []api.FileChange, bool) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, "CommitOn")
+	return "", errors.New("fake: proposal never calls CommitOn")
+}
+
 func (f *fakeGit) EnsurePull(_ context.Context, r api.RepoRef, p api.NewPull) (api.Pull, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

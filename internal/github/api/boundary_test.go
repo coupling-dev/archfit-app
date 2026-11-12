@@ -203,6 +203,9 @@ func repoRefCalls(c *Client, r RepoRef) map[string]func(context.Context) (bool, 
 		"Issues.CloseIssue": func(ctx context.Context) (bool, error) {
 			return false, c.CloseIssue(ctx, r, 9)
 		},
+		"Issues.ReopenIssue": func(ctx context.Context) (bool, error) {
+			return false, c.ReopenIssue(ctx, r, 9)
+		},
 		"Actions.Run": func(ctx context.Context) (bool, error) {
 			wr, err := c.Run(ctx, r, 55)
 			return wr.ID != 0, err
@@ -226,6 +229,10 @@ func repoRefCalls(c *Client, r RepoRef) map[string]func(context.Context) (bool, 
 		},
 		"Changes.Commit": func(ctx context.Context) (bool, error) {
 			sha, err := c.Commit(ctx, r, "main", "msg", []FileChange{{Path: "a", Content: []byte("b")}})
+			return sha != "", err
+		},
+		"Changes.CommitOn": func(ctx context.Context) (bool, error) {
+			sha, err := c.CommitOn(ctx, r, "archfit/policy", testSHA1, "msg", []FileChange{{Path: "a", Content: []byte("b")}}, true)
 			return sha != "", err
 		},
 		"Changes.EnsurePull": func(ctx context.Context) (bool, error) {
@@ -333,6 +340,10 @@ func TestErrorsCarryNoSecretsOrContent(t *testing.T) {
 			"Artifact": func(ctx context.Context) error { _, err := c.Artifact(ctx, ref, 55, pathMark, 1<<20); return err },
 			"Commit": func(ctx context.Context) error {
 				_, err := c.Commit(ctx, ref, branchMark, bodyMark, []FileChange{{Path: pathMark, Content: []byte(bodyMark)}})
+				return err
+			},
+			"CommitOn": func(ctx context.Context) error {
+				_, err := c.CommitOn(ctx, ref, branchMark, testSHA1, bodyMark, []FileChange{{Path: pathMark, Content: []byte(bodyMark)}}, true)
 				return err
 			},
 			"CreateIssue": func(ctx context.Context) error {

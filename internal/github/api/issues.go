@@ -136,6 +136,15 @@ func (c *Client) SetAssigneesAndLabels(ctx context.Context, r RepoRef, number in
 
 // CloseIssue reads the issue first: the issues endpoint closes a pull request as well, and api never closes one.
 func (c *Client) CloseIssue(ctx context.Context, r RepoRef, number int) error {
+	return c.setIssueState(ctx, r, number, "closed")
+}
+
+func (c *Client) ReopenIssue(ctx context.Context, r RepoRef, number int) error {
+	return c.setIssueState(ctx, r, number, "open")
+}
+
+// setIssueState closes or reopens the issue number. A number that names a pull request is an error, and nothing changes.
+func (c *Client) setIssueState(ctx context.Context, r RepoRef, number int, state string) error {
 	cr, base, err := r.target()
 	if err != nil {
 		return err
@@ -150,6 +159,6 @@ func (c *Client) CloseIssue(ctx context.Context, r RepoRef, number int) error {
 		return k.errorf("a pull request, not an issue")
 	}
 	k = call{cred: cr, method: http.MethodPatch, route: "/repos/{r}/issues/{n}",
-		url: apiURL(path, nil), body: map[string]string{"state": "closed"}}
+		url: apiURL(path, nil), body: map[string]string{"state": state}}
 	return c.send(ctx, k, nil)
 }

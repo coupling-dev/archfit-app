@@ -8,7 +8,7 @@ exceptions:
   from: app
   to: app
   why: Migration in progress.
-- rule: unowned
+- rule: unowned  # request #7
   from: scripts/**
   why: 'Request #7 is open.'
 # The list ends here.

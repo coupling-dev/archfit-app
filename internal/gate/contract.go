@@ -11,6 +11,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/gate/feedback"
 	"github.com/alexei-led/archfit-app/internal/gate/ingest"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
+	"github.com/alexei-led/archfit-app/internal/gate/proposals"
 	asks "github.com/alexei-led/archfit-app/internal/gate/requests" // gate's own requests type is Archfit 3's
 	"github.com/alexei-led/archfit-app/internal/gate/sweep"
 	"github.com/alexei-led/archfit-app/internal/gate/verdict"
@@ -47,8 +48,9 @@ type Gate struct {
 	comments   api.Comments
 	admissions admitter
 	now        func() time.Time
-	v4         *upload4      // the envelope 2 upload path
-	asks       *asks.Service // request lines: issues and the status waiting (M2 task 16)
+	v4         *upload4           // the envelope 2 upload path
+	asks       *asks.Service      // request lines: issues and the status waiting (M2 task 16)
+	proposals  *proposals.Service // owners' answers and the policy pull request (M2 task 19)
 }
 
 // admitter is the one method of Admissions every gate path asks before it does anything for an installation.
@@ -70,6 +72,8 @@ type github interface {
 	api.Commits
 	api.IssueTriage
 	api.Collaborators
+	api.Changes
+	api.Merges
 }
 
 func New(d Deps) *Gate {
@@ -90,6 +94,7 @@ func compose(gh github, v oidc.Verifier, s store.Store, adm admitter, audience s
 	publisher4 := feedback.New4(gh, gh, gh, s, audience, now)
 	g.v4 = newUpload4(ingest.NewV2(gh, gh, gh, gh, gh, v, audience, adm), gh, gh, s, publisher4)
 	g.asks = asks.New(gh, s, publisher4)
+	g.proposals = proposals.New(gh, s, now)
 	return g
 }
 

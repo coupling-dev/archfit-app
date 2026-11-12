@@ -7,7 +7,7 @@ modules:
             - cmd/**
         depends_on:
             - lib
-            - store
+            - store  # request #431
         # The store came later.
     lib:
         paths:

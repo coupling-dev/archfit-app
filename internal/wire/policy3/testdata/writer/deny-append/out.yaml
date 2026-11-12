@@ -14,7 +14,7 @@ rules:
   - id: fan-out-through-runner
     note: Chaos actions fan out through RunOnContainers.
     why: One place checks the target limit before injection.
-  - id: no-tc-to-util
+  - id: no-tc-to-util  # request #431
     deny:
       from: pkg_tc
       to: pkg_util

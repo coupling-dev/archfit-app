@@ -15,7 +15,7 @@ exceptions:
     from: store
     to: app
     why: Migration in progress.
-  - rule: no-docker
+  - rule: no-docker  # request #431
     from: app
     expires: 2026-11-19
     why: 'Request #431 is open.'

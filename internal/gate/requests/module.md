@@ -62,8 +62,8 @@ who asked still sees `fail`.
   `graph` adds the dependency to `depends_on`; approve on any other rule adds an exception without a date;
   approve-until adds an exception with `expires` (`unowned`: from the path; an `only` rule: no `to`); reject adds a
   `deny` rule `request-<N>` with the owner's `instead`; a reject of a copy, of unowned code or of an `only` rule writes
-  no line. A comment, `RequestComment(431)` = `request #431`, ends each line the edit writes; a line the writer only
-  ends with a newline (a policy without a final newline) is not one of them.
+  no line. A comment, `RequestComment(431)` = `request #431`, ends the first line of the entry the edit writes: `Edit`
+  passes it to the policy writer as its note (M2 task 19), which also turns a `depends_on` flow list into a block list.
 
 Not provided: the answers (task 19), the pages (task 24).
 
@@ -175,7 +175,7 @@ without a second note; a reply may be posted again.
   earlier answers, one already allowed, and none without a policy; the diff of approve, approve until the worker's date
   and another, and reject with `instead`; each refusal, including a date not ahead or too far and a worker's date now
   past; the pull requests an approve and a reject touch, and what an exception for a copy, an `only` rule and another
-  rule clears; `Edit` for each answer of each rule; the comment on each written line (LF, CRLF, no final newline);
+  rule clears; `Edit` for each answer of each rule; the comment on the written entry (LF, CRLF, no final newline);
   `Diff` cases. In `internal/gate`
   (`preview_test.go`): the view and the preview after a real request line and two uploads, and an installation not
   admitted.

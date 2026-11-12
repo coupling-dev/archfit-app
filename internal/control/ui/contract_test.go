@@ -75,6 +75,8 @@ func repoRoutes(fullName string) []route {
 		{http.MethodPost, api + "/passkeys/step-up", permRead, nil, stepUpJSON{Action: "approve", Request: 431}},
 		{http.MethodPost, api + "/passkeys/step-up/finish", permRead, nil, passkeyCredentialJSON{Credential: json.RawMessage(`{"id":"x"}`)}},
 		{http.MethodPost, api + "/passkeys/" + fakePasskeyID + "/remove", permRead, nil, passkeyTokenJSON{Token: fakeToken}},
+		{http.MethodPost, api + "/requests/431/answer/digest", permRead, nil, answerJSON{Answer: "approve"}},
+		{http.MethodPost, api + "/requests/431/answer", permRead, nil, answerJSON{Answer: "reject", Instead: "Use the port."}},
 	}
 }
 

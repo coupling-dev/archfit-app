@@ -24,6 +24,9 @@ its index could drift apart.
   record goes through an index key, never a scan.
 - Change a record and its index together in one `CompareAndSwapAll` (`Indexed`, over `store.Update`).
 - Let an approval join one proposal, once, and pin the proposal to the head and digest that carry it (`Join`).
+- Record an owner's answer in one swap (`Answer`, M2 task 19): the new approval, its request answered, and the
+  approval joining its proposal (created when new) pinned to the head and digest. Void an approval whose change no
+  longer applies, opening its request again (`Void`), and void a proposal (`VoidProposal`).
 - Consume a proposal once (`Consume`): open to merged with the merge commit, its index entry removed and the
   repository's approved digest set, in one swap; the same commit again is a no-op success.
 
@@ -62,13 +65,15 @@ add fields to the `v1` values before the release. After the release a field chan
 ## Public Contract
 
 Keys: `Prefix` (`v4/`), `RepoKey`, `RequestKey`, `RequestIndexKey`, `ApprovalKey`, `ProposalKey`, `ProposalIndexKey`,
-`PullKey`, `PullIndexKey`, `ReposKey`, `PullEntry`, `NewID`.
+`ProposalLeaseKey`, `PullKey`, `PullIndexKey`, `ReposKey`, `PullEntry`, `NewID`. `ProposalLeaseKey`
+(`v4/proposal-lease/<repo>`) holds a lease, not a record: `gate/proposals` owns its value and holds it while an answer
+writes the repository's proposal.
 
 | Key | Value | `schema` | Holds |
 | --- | --- | --- | --- |
 | `v4/repo/<repo>` | `Repo` | `archfit-app.repo.v1` | approved digest; outside the flow (digest, issue); drift issue; expiry issues (exception key → issue) |
 | `v4/request/<repo>/<issue>` | `Request` | `archfit-app.request.v1` | key, reason, numbers (verified, balance), waiting pull requests, state `open`, `answered` or `closed`; rule, path, modules, expiry date and record, so the issue body can be rendered again; the pull requests the body lists |
-| `v4/approval/<repo>/<id>` | `Approval` | `archfit-app.approval.v1` | kind, request, change (raw JSON, owned by the policy writer), owner, credential, time, proposal (set once), state `open` or `void` |
+| `v4/approval/<repo>/<id>` | `Approval` | `archfit-app.approval.v1` | kind, request, change (raw JSON, owned by the policy writer), owner (user id and login), credential, time, proposal (set once), state `open` or `void` |
 | `v4/proposal/<repo>/<id>` | `Proposal` | `archfit-app.proposal.v1` | ordered approval ids (at most `MaxApprovals` = 9), pull request, head SHA, expected digest, state `open`, `merged` or `void`, consuming commit |
 | `v4/pull/<repo>/<pr>` | `Pull` | `archfit-app.pull.v1` | head SHA, run id, run attempt, payload digest, status, error keys and the request key of each error ("" when it has none), for the preview (M2 D6; no result bytes) |
 
@@ -90,6 +95,20 @@ Functions, all under one installation tenant:
   the same digest again is `nil`. A proposal that is void, merged by another commit, without a pull request, or
   expecting another digest (also once merged) is `ErrMoved`; a missing one is `ErrNoRecord`. The rule is decided again after every lost swap, so of concurrent callers with different commits
   exactly one wins, and callers with the same commit all succeed.
+- `Answer(ctx, s, t, repo, approvalID, a Approval, pin *Pin) error`: in one swap of up to 5 keys, the new approval
+  (`ErrExists` when the id is in use), its request (`a.Request`) moved from `open` to `answered` and out of the request
+  index (`ErrAnswered` when not open), and, with a `Pin{Proposal, PullRequest, HeadSHA, Digest}`, the approval joining
+  that proposal and the proposal pinned as `Join` pins it. A proposal that does not exist yet is created `open` on
+  `PullRequest` with its proposal index entry (`ErrExists` when another proposal holds that pull request). A merged or
+  void proposal is `ErrMoved`, a full one `ErrFull`. So no answer is written without its request and its proposal: a
+  merge of a head the App wrote before the swap cannot match an expected digest that names an unrecorded answer.
+- `Void(ctx, s, t, repo, approvalID) (request int, reopened bool, err error)`: the approval becomes `void`, leaves its
+  proposal's list (so a proposal's capacity counts only approvals that still apply), and its `answered` request is
+  `open` again with its index entry, in one swap of up to 4 keys; when another open request holds the key now, the
+  request stays `answered` (`reopened` false). Again is no change.
+- `VoidProposal(ctx, s, t, repo, proposalID) error`: `open` to `void` and out of the proposal index; again is no
+  change; a merged proposal is `ErrMoved`. Its approvals are voided first: while it is indexed, a later reader finds it
+  and finishes a cleanup that stopped half way.
 
 Every write goes through `store.Update`; after 5 lost swaps it returns `store.ErrConflict`, and the caller may read
 again and retry.
@@ -144,5 +163,10 @@ sweep) read and write through this module;
   `TestTheSameCommitConsumesConcurrentlyWithoutError`, `TestAnApprovalJoinsOneProposalOnly` (two proposals race for
   one approval), `TestAnIndexStaysInStepUnderConcurrentWriters` (20 writers open requests and answer half; the index
   equals the open records).
+- `TestAnswerRecordsTheApprovalTheRequestAndANewProposalInOneSwap`, `TestAnswerJoinsAnOpenProposalAndPinsIt`,
+  `TestAnswerWithoutAProposal`, `TestAnswerRefusesAndWritesNothing` (an answered request, no request, an id in use, a
+  merged or full proposal, a new proposal without a pull request, a pull request another proposal holds, an empty
+  digest), `TestVoidReopensTheRequest`, `TestVoidLeavesTheRequestAnsweredWhenAnotherHoldsItsKey`, `TestVoidProposal`;
+  on both backends, `TestARequestIsAnsweredOnce` (two answers race; one wins, the other is `ErrAnswered`).
 - `TestArchfit3KeysAreNeitherReadNorWritten`: every Archfit 3 key of `store/module.md` seeded; every helper runs;
   only `v4/` keys are touched and the Archfit 3 bytes are unchanged.

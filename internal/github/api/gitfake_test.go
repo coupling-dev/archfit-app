@@ -49,9 +49,10 @@ type fakeRepo struct {
 	blobs   map[string][]byte
 	pulls   []map[string]any
 
-	raceRef      bool // the next ref creation loses a race: the ref appears, the answer is 422
-	racePull     bool // the same for the next pull creation
-	moveOnCommit bool // someone else pushes to the branch while a commit is being made
+	raceRef      bool   // the next ref creation loses a race: the ref appears, the answer is 422
+	racePull     bool   // the same for the next pull creation
+	moveOnCommit bool   // someone else pushes to the branch while a commit is being made
+	forced       []bool // the force flag of each ref update, in order
 	graphqlCalls int
 	graphqlBody  map[string]any
 }
@@ -201,12 +202,15 @@ func (f *fakeRepo) routes(mux *http.ServeMux) {
 	}))
 	mux.HandleFunc("PATCH /repos/o/r/git/refs/heads/{branch...}", locked(func(w http.ResponseWriter, r *http.Request) {
 		body := readJSON(f.t, r)
-		if force, ok := body["force"].(bool); !ok || force {
-			f.t.Errorf("ref update force = %v, want an explicit false", body["force"])
+		force, ok := body["force"].(bool)
+		if !ok {
+			f.t.Errorf("ref update force = %v, want an explicit bool", body["force"])
 		}
+		f.forced = append(f.forced, force)
 		sha := body["sha"].(string)
 		parents := f.commits[sha].parents
-		if len(parents) != 1 || parents[0] != f.refs[r.PathValue("branch")] {
+		current := f.refs[r.PathValue("branch")]
+		if !force && sha != current && (len(parents) != 1 || parents[0] != current) {
 			w.WriteHeader(http.StatusUnprocessableEntity)
 			return
 		}

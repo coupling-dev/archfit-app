@@ -22,7 +22,9 @@ reads schema 3 only.
   their list or range, bad dates, missing required keys and a rule without exactly one form are errors. The value
   checks list every problem, one per line, with its key path.
 - `Digest`: `sha256:` and the lowercase hex SHA-256 of the exact file bytes. The engine's `policy.digest` is the same.
-- `AddDependsOn`, `AddException`, `AddDenyRule`: the three edits of an answer. Each inserts text and nothing else.
+- `AddDependsOn`, `AddException`, `AddDenyRule`: the three edits of an answer. Each inserts text and nothing else,
+  except that a `depends_on` flow list becomes a block list the first time an answer adds to it. Each takes a note,
+  the line comment (`# request #431`) that ends the first line of the entry it adds (milestone 3 D8).
 - `Loosens`: whether an answer loosens the policy, by its kind alone (D10).
 - Vendor the engine's `archfit.schema.json` and its valid and invalid policy fixtures under `testdata`, pinned by
   `SCHEMA_SOURCE`.
@@ -48,8 +50,12 @@ the pin to a tag; moderate after.
 - Why the writer inserts text instead of encoding the document: a YAML encoder rewrites indentation, quoting and blank
   lines, so the digest would change with bytes the answer did not touch. The node tree gives the line and column of
   each key; the inserted lines copy the indentation of their neighbours.
-- The layouts the writer edits: a module that is a block mapping; `depends_on` absent, a flow list on one line, or a
-  block list; `exceptions` and `rules` absent (appended at the end of the file) or a block list, with its dashes
+- Why a flow list becomes a block list: each entry an answer adds carries its own line comment, which the policy page
+  of milestone 3 reads to link the line to its request (M3 D8). The rewrite keeps each entry's text as written and
+  the comment after the list on the key's line; only the added entry carries the note. A new `depends_on` is a block
+  list from the start.
+- The layouts the writer edits: a module that is a block mapping; `depends_on` absent, a flow list on its key's line,
+  or a block list; `exceptions` and `rules` absent (appended at the end of the file) or a block list, with its dashes
   indented or at the key's indent. Line ends (LF or CRLF) and a missing final newline stay as they are. Any other layout
   is `ErrLayout`: the owner edits the file by hand. That includes a line break other than LF or CRLF, a document end
   marker (`...`, with or without a comment) or a second document (a `---` on the first line is fine), and an anchor, an alias or a merge key. `Decode`
@@ -60,9 +66,9 @@ the pin to a tag; moderate after.
 ```go
 func Decode(data []byte) (File, error)
 func Digest(file []byte) string
-func AddDependsOn(file []byte, module, dependency string) ([]byte, error)
-func AddException(file []byte, e Exception) ([]byte, error)
-func AddDenyRule(file []byte, id, from, to, why, instead string) ([]byte, error)
+func AddDependsOn(file []byte, module, dependency, note string) ([]byte, error)
+func AddException(file []byte, e Exception, note string) ([]byte, error)
+func AddDenyRule(file []byte, id, from, to, why, instead, note string) ([]byte, error)
 func Loosens(kind Answer) (bool, error)
 var ErrLayout error
 ```
@@ -74,6 +80,9 @@ var ErrLayout error
 - `AddException` takes `Why`; the caller words it so that it names the request, as `Request #431 is open.` does. `Expires` is
   a date or empty. The rule `unowned` and a custom `only` rule have no `To`; a `To` there is an error.
 - `AddDenyRule` writes `deny` with one `from` and one `to`, a `why` and an `instead`.
+- `note` is the text of the line comment, two spaces and `# ` before it, at the end of the first line of the added
+  entry: the `depends_on` entry, the exception's dash line, the rule's dash line. `""` writes no comment; a note with a
+  line break is an error. `gate/requests.Edit` passes `request #<n>`.
 - Each edit decodes its own output and compares it with the old policy plus the answer. A value that would not read
   back as written, or an answer the policy does not allow, is an error, never a different policy.
 - `Loosens`: `approve`, `approve-until` and `confirm` loosen; `reject` tightens; any other kind is an error. The kinds
@@ -82,8 +91,8 @@ var ErrLayout error
 ## Integrations
 
 Imports the standard library and `go.yaml.in/yaml/v3`; no internal package. Consumers, in later tasks: ingest (task 14)
-uses `Decode` and `Digest`; answers (task 19) and the outside-the-flow confirmation (task 20) use the writers and
-`Loosens`. External counterpart: the engine, which owns the schema; this package vendors its file and fixtures.
+uses `Decode` and `Digest`; `gate/requests.Edit` (task 17) calls the writers with the request's note, for the preview and
+for the answers of task 19, which also use `Loosens`. External counterpart: the engine, which owns the schema; this package vendors its file and fixtures.
 Contract strength, root / 2 / 2: balanced.
 
 ## Change Vectors
@@ -96,8 +105,8 @@ Contract strength, root / 2 / 2: balanced.
 ## Constraints and Invariants
 
 - `Decode` accepts every valid engine fixture and rejects every invalid one. A file the two disagree on is a bug here.
-- The output of an edit decodes, differs from the input by one inserted piece of text, and has the digest of its own
-  bytes. The digest of a file changes exactly when one of its bytes changes.
+- The output of an edit decodes, differs from the input by one inserted piece of text (or, for a `depends_on` flow
+  list, by that one line rewritten as a block list), and has the digest of its own bytes. The digest of a file changes exactly when one of its bytes changes.
 - No I/O, no clock, no logging, no globals besides the closed value lists.
 - Reasons, names and dates are written on one line; a value with a line break is an error.
 
@@ -113,9 +122,13 @@ Contract strength, root / 2 / 2: balanced.
 - `TestDigestChangesOnlyWhenBytesChange`, `TestWriterNoChangeKeepsTheDigest`.
 - `TestWriterGoldens`: each directory under `testdata/writer` holds `in.yaml`, `answer.json` and `out.yaml`. The output
   equals the golden, decodes, is an insertion of the input, and the kind in `answer.json` has the stated `Loosens`.
-  Run `go test ./internal/wire/policy3 -run TestWriterGoldens -update` only after reading the diff.
+  An `answer.json` holds the note, `reformats` for a flow list rewrite (then exactly one line of the input changes),
+  and `then`, a second answer written on the output of the first (`depends-on-flow-list-twice`: two answers add to the
+  same flow list). Run `go test ./internal/wire/policy3 -run TestWriterGoldens -update` only after reading the diff.
 - `TestWriterKeepsLineEndingsAndFinalNewline`, `TestWriterAcceptsALeadingDocumentStart`, `TestWriterRefuses` (unknown
-  module, a layout it does not edit, including a bare CR or NEL break, a merge key, an alias, a document end marker and a
-  second document; a value a flow list would split, a bad date, a reason on two lines, an invalid result, a `to` on an
-  exception of an only rule).
+  module, a layout it does not edit, including a bare CR or NEL break, a merge key, an alias, a document end marker, a
+  second document and a flow list on its own line; a bad date, a reason on two lines, a note on two lines, an invalid
+  result, a `to` on an exception of an only rule).
+- `TestFlowListBecomesABlockList` (a quoted entry with a comma, a trailing comma, an empty list with a comment),
+  `TestWriterKeepsANameWithACommaWhole`.
 - `TestLoosens`, `TestSourcePinsEveryVendoredFile`, `TestTypesHaveTheKeysOfTheSchema`.

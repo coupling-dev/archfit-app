@@ -17,7 +17,7 @@ exceptions:
     to: pkg_tc
     expires: 2026-12-31
     why: "Request #12 is open."
-  - rule: duplication
+  - rule: duplication  # request #431
     from: pkg_tc
     to: pkg_util
     expires: 2026-11-19

@@ -1,6 +1,7 @@
 {
   "kind": "approve",
   "loosens": true,
+  "note": "request #431",
   "module": "pkg_chaos",
   "dependency": "pkg_util"
 }

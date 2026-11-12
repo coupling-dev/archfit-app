@@ -1,6 +1,7 @@
 {
   "kind": "reject",
   "loosens": false,
+  "note": "request #12",
   "rule": {
     "id": "no-tc-to-util",
     "from": "pkg_tc",

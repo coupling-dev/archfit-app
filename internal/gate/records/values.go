@@ -117,6 +117,7 @@ type Approval struct {
 	// Change is what the approval does to the policy or binds to (head SHA, digests). The policy writer owns its shape.
 	Change     json.RawMessage `json:"change"`
 	Owner      int64           `json:"owner"`                // GitHub user id
+	Login      string          `json:"login,omitempty"`      // the owner's login when they answered, for the pull request body
 	Credential string          `json:"credential,omitempty"` // the passkey credential; empty for a reject
 	At         time.Time       `json:"at"`
 	// Proposal is set once, when the approval joins a proposal; the approval is consumed when that proposal is merged.
