@@ -83,6 +83,57 @@ func (c *Client) UpdateIssueBody(ctx context.Context, r RepoRef, number int, bod
 	return c.send(ctx, k, nil)
 }
 
+// SetAssigneesAndLabels reads the issue first, as CloseIssue does: the issues endpoint edits a pull request as well.
+func (c *Client) SetAssigneesAndLabels(ctx context.Context, r RepoRef, number int, assignees, labels []string) (gotAssignees, gotLabels []string, err error) {
+	if number <= 0 {
+		return nil, nil, errPullNumber
+	}
+	cr, base, err := r.target()
+	if err != nil {
+		return nil, nil, err
+	}
+	path := base + "/issues/" + strconv.Itoa(number)
+	var j issueJSON
+	k := call{cred: cr, method: http.MethodGet, route: "/repos/{r}/issues/{n}", url: apiURL(path, nil)}
+	if err := c.send(ctx, k, &j); err != nil {
+		return nil, nil, err
+	}
+	if j.PullRequest != nil {
+		return nil, nil, k.errorf("a pull request, not an issue")
+	}
+	// nil is sent as [], which clears the set: a missing key would keep it.
+	if assignees == nil {
+		assignees = []string{}
+	}
+	if labels == nil {
+		labels = []string{}
+	}
+	var got struct {
+		Assignees []struct {
+			Login string `json:"login"`
+		} `json:"assignees"`
+		Labels []struct {
+			Name string `json:"name"`
+		} `json:"labels"`
+	}
+	k = call{cred: cr, method: http.MethodPatch, route: "/repos/{r}/issues/{n}", url: apiURL(path, nil),
+		body: map[string][]string{"assignees": assignees, "labels": labels}}
+	if err := c.send(ctx, k, &got); err != nil {
+		if isStatus(err, http.StatusUnprocessableEntity) {
+			return nil, nil, fmt.Errorf("%w: %w", ErrUnprocessable, err)
+		}
+		return nil, nil, err
+	}
+	gotAssignees, gotLabels = []string{}, []string{}
+	for _, a := range got.Assignees {
+		gotAssignees = append(gotAssignees, a.Login)
+	}
+	for _, l := range got.Labels {
+		gotLabels = append(gotLabels, l.Name)
+	}
+	return gotAssignees, gotLabels, nil
+}
+
 // CloseIssue reads the issue first: the issues endpoint closes a pull request as well, and api never closes one.
 func (c *Client) CloseIssue(ctx context.Context, r RepoRef, number int) error {
 	cr, base, err := r.target()

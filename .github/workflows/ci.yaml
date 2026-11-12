@@ -48,8 +48,9 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run ci
 
-  # The Test job skips the emulator cases. This job runs store/storetest and the cross-client races against the
-  # official Firestore emulator, so the driver is checked against real Firestore semantics, not only the fake.
+  # The Test job skips the emulator cases. This job runs store/storetest, the cross-client races and the gate/records
+  # races (consume, join, index) against the official Firestore emulator, so the driver and its callers are checked
+  # against real Firestore semantics, not only the fake.
   firestore-emulator:
     name: Store on the Firestore emulator
     runs-on: ubuntu-24.04
@@ -74,7 +75,7 @@ jobs:
           done
           docker logs firestore
           exit 1
-      - run: go test -race -count=1 -timeout=15m -v ./internal/store/firestore/
+      - run: go test -race -count=1 -timeout=15m -v ./internal/store/firestore/ ./internal/gate/records/
       - name: Emulator logs
         if: failure()
         run: docker logs firestore

@@ -1,0 +1,777 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/alexei-led/archfit/main/archfit.schema.json",
+  "$defs": {
+    "Analyzer": {
+      "properties": {
+        "enabled": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "const": "auto"
+            }
+          ],
+          "description": "Turns the analyzer on (true) or off (false). Only true turns on an analyzer that is off by default."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "Analyzer is an optional analyzer with no settings besides enabled."
+    },
+    "Analyzers": {
+      "properties": {
+        "syntax": {
+          "$ref": "#/$defs/Analyzer",
+          "description": "The ast-grep syntax pass. The report uses it for function size. Absent: off."
+        },
+        "cargo_modules": {
+          "$ref": "#/$defs/Analyzer",
+          "description": "Reads the module graph inside Rust crates. It compiles the crate. Absent: off."
+        },
+        "roslyn": {
+          "$ref": "#/$defs/TimedAnalyzer",
+          "description": "Reads the .NET type graph with the Roslyn helper. Absent: on where the helper is installed."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "Analyzers holds the optional analyzers."
+    },
+    "Builtin": {
+      "properties": {
+        "graph": {
+          "type": "string",
+          "enum": [
+            "deny",
+            "ask",
+            "off"
+          ],
+          "minLength": 1,
+          "description": "A dependency between two modules must be an allowed dependency. Absent: ask.",
+          "default": "ask"
+        },
+        "coupling": {
+          "type": "string",
+          "enum": [
+            "deny",
+            "ask",
+            "off"
+          ],
+          "minLength": 1,
+          "description": "New knowledge across a module boundary needs a balance of at least min_balance. Absent: deny.",
+          "default": "deny"
+        },
+        "duplication": {
+          "type": "string",
+          "enum": [
+            "deny",
+            "ask",
+            "off"
+          ],
+          "minLength": 1,
+          "description": "Knowledge that another module already owns is not copied. Absent: ask.",
+          "default": "ask"
+        },
+        "cycle": {
+          "type": "string",
+          "enum": [
+            "deny",
+            "ask",
+            "off"
+          ],
+          "minLength": 1,
+          "description": "No new cycle between modules. Absent: deny.",
+          "default": "deny"
+        },
+        "layers": {
+          "type": "string",
+          "enum": [
+            "deny",
+            "ask",
+            "off"
+          ],
+          "minLength": 1,
+          "description": "Dependencies follow the layer order. Absent: deny.",
+          "default": "deny"
+        },
+        "unowned": {
+          "type": "string",
+          "enum": [
+            "deny",
+            "ask",
+            "off"
+          ],
+          "minLength": 1,
+          "description": "New production code belongs to a module. Absent: deny.",
+          "default": "deny"
+        },
+        "min_balance": {
+          "type": "integer",
+          "maximum": 10,
+          "minimum": 1,
+          "description": "The lowest balance the coupling rule accepts, from 1 to 10. Absent: 7.",
+          "default": 7
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "Builtin holds the modes of the built-in rules and the minimum balance."
+    },
+    "Coverage": {
+      "if": {
+        "properties": {
+          "enabled": {
+            "const": true
+          }
+        },
+        "required": [
+          "enabled"
+        ]
+      },
+      "then": {
+        "properties": {
+          "sources": {
+            "minItems": 1
+          }
+        },
+        "required": [
+          "sources"
+        ]
+      },
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Makes the report read the sources. It needs at least one source. Absent: false.",
+          "default": false
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/CoverageSource"
+          },
+          "type": "array",
+          "description": "The coverage files."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "Coverage names coverage files for the report."
+    },
+    "CoverageSource": {
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The path of the coverage file, relative to the repository root."
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "go-coverprofile",
+            "lcov",
+            "coverage-py-json",
+            "llvm-cov-json",
+            "cobertura"
+          ],
+          "minLength": 1,
+          "description": "The format of the file. Absent: auto, found from the content.",
+          "default": "auto"
+        },
+        "sidecar_path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The file that records the source hashes. Absent: \u003cpath\u003e.sidecar.json."
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The largest file the report reads. Absent: 67108864 (64 MiB).",
+          "default": 67108864
+        },
+        "max_facts": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The largest number of coverage facts the report keeps. Absent: 1000000.",
+          "default": 1000000
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "path"
+      ],
+      "description": "CoverageSource is one coverage file."
+    },
+    "Deny": {
+      "properties": {
+        "from": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": "array",
+              "minItems": 1
+            }
+          ],
+          "description": "A module name or a path glob, or a list of them."
+        },
+        "to": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": "array",
+              "minItems": 1
+            }
+          ],
+          "description": "A module name or a path glob, or a list of them."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "from",
+        "to"
+      ],
+      "description": "Deny names the source and the target of a forbidden dependency."
+    },
+    "DotNetLanguage": {
+      "properties": {
+        "enabled": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "const": "auto"
+            }
+          ],
+          "description": "Turns the extractor on or off. Absent: auto, which reads the language when its files exist."
+        },
+        "projects": {
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": "array",
+          "description": "The .slnx, .sln, .slnf or .csproj files to read, relative to the repository root. Absent: the first .slnx or .sln at the root, else every .csproj outside obj/, bin/ and excluded paths."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "DotNetLanguage configures the .NET extractor."
+    },
+    "Exception": {
+      "if": {
+        "properties": {
+          "rule": {
+            "const": "unowned"
+          }
+        },
+        "required": [
+          "rule"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "to"
+          ]
+        }
+      },
+      "else": {
+        "required": [
+          "to"
+        ]
+      },
+      "properties": {
+        "rule": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The id of a built-in or custom rule."
+        },
+        "from": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The module the errors come from. For unowned, the glob of the code no module owns."
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The module the errors reach. Required for every rule except unowned, which has no target."
+        },
+        "expires": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "format": "date",
+          "description": "The last day the exception holds, as YYYY-MM-DD. After it, while the code still breaks the rule, every change fails. Absent: no date."
+        },
+        "why": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The reason for the exception."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "rule",
+        "from",
+        "why"
+      ],
+      "description": "Exception permits errors of one rule in one place, with a reason and usually a date."
+    },
+    "GoLanguage": {
+      "properties": {
+        "enabled": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "const": "auto"
+            }
+          ],
+          "description": "Turns the extractor on or off. Absent: auto, which reads the language when its files exist."
+        },
+        "modules": {
+          "$ref": "#/$defs/GoModules",
+          "description": "Selects go.work members. Absent: every member."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "GoLanguage configures the Go extractor."
+    },
+    "GoModules": {
+      "properties": {
+        "include": {
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": "array",
+          "description": "Keeps only the members that match. Absent: every member."
+        },
+        "exclude": {
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": "array",
+          "description": "Drops the members that match, after include. Absent: none."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "GoModules selects go.work members by globs relative to the repository root."
+    },
+    "Language": {
+      "properties": {
+        "enabled": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "const": "auto"
+            }
+          ],
+          "description": "Turns the extractor on or off. Absent: auto, which reads the language when its files exist."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "Language is a language extractor with no settings besides enabled."
+    },
+    "Languages": {
+      "properties": {
+        "go": {
+          "$ref": "#/$defs/GoLanguage",
+          "description": "The Go extractor."
+        },
+        "typescript": {
+          "$ref": "#/$defs/Language",
+          "description": "The TypeScript and JavaScript extractor."
+        },
+        "python": {
+          "$ref": "#/$defs/PythonLanguage",
+          "description": "The Python extractor."
+        },
+        "rust": {
+          "$ref": "#/$defs/RustLanguage",
+          "description": "The Rust extractor."
+        },
+        "dotnet": {
+          "$ref": "#/$defs/DotNetLanguage",
+          "description": "The .NET extractor."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "Languages holds one block per language extractor."
+    },
+    "Module": {
+      "properties": {
+        "paths": {
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": "array",
+          "minItems": 1,
+          "description": "Globs of the files that belong to the module."
+        },
+        "public": {
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": "array",
+          "minItems": 1,
+          "description": "Globs other modules may use. Absent: the whole module is public. Add public to protect its inside."
+        },
+        "volatility": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "minLength": 1,
+          "description": "How often the module is expected to change. Absent: taken from subdomain (core is high; supporting and generic are low), otherwise high."
+        },
+        "subdomain": {
+          "type": "string",
+          "enum": [
+            "core",
+            "supporting",
+            "generic"
+          ],
+          "minLength": 1,
+          "description": "The business role of the module. It sets the volatility only when volatility is absent. Absent: no business role is recorded."
+        },
+        "layer": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A name from layers. Absent: the module has no layer."
+        },
+        "depends_on": {
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": "array",
+          "description": "The modules this module may depend on. Absent: the module may depend on no other module."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "paths"
+      ],
+      "description": "Module is a named set of paths with a public part, a volatility and the modules it may depend on."
+    },
+    "Only": {
+      "properties": {
+        "use": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A library import path or a package set: network, process or database."
+        },
+        "in": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": "array",
+              "minItems": 1
+            }
+          ],
+          "description": "The module, or a list of modules, that may use it."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "use",
+        "in"
+      ],
+      "description": "Only names a library or package set and the modules that may use it."
+    },
+    "PythonLanguage": {
+      "properties": {
+        "enabled": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "const": "auto"
+            }
+          ],
+          "description": "Turns the extractor on or off. Absent: auto, which reads the language when its files exist."
+        },
+        "package": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The top-level importable package, such as myapp. Absent: found from the layout, src first."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "PythonLanguage configures the Python extractor."
+    },
+    "Rule": {
+      "oneOf": [
+        {
+          "required": [
+            "deny"
+          ],
+          "title": "deny"
+        },
+        {
+          "required": [
+            "only"
+          ],
+          "title": "only"
+        },
+        {
+          "required": [
+            "note"
+          ],
+          "title": "note"
+        }
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The rule's short name, as in a linter. It appears in every error."
+        },
+        "deny": {
+          "$ref": "#/$defs/Deny",
+          "description": "Forbids a dependency from these modules or paths to those. It needs instead."
+        },
+        "only": {
+          "$ref": "#/$defs/Only",
+          "description": "Keeps a library, or a named package set (network, process, database), in the listed modules."
+        },
+        "note": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A rule nothing checks today, written down. It shows as \"not checked\"."
+        },
+        "why": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The reason for the rule."
+        },
+        "instead": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What to do instead. Required for deny."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "why"
+      ],
+      "dependentRequired": {
+        "deny": [
+          "instead"
+        ]
+      },
+      "description": "Rule is a custom rule: exactly one of deny, only or note, with its reason."
+    },
+    "RustLanguage": {
+      "properties": {
+        "enabled": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "const": "auto"
+            }
+          ],
+          "description": "Turns the extractor on or off. Absent: auto, which reads the language when its files exist."
+        },
+        "manifest": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The path of Cargo.toml. Absent: the root manifest."
+        },
+        "features": {
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": "array",
+          "description": "The cargo features to turn on. Absent: the default features."
+        },
+        "include_dev_deps": {
+          "type": "boolean",
+          "description": "Adds dev-dependencies as crate dependencies. Absent: false.",
+          "default": false
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "RustLanguage configures the Rust extractor."
+    },
+    "TimedAnalyzer": {
+      "properties": {
+        "enabled": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "const": "auto"
+            }
+          ],
+          "description": "Turns the analyzer on (true) or off (false)."
+        },
+        "timeout": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "description": "A Go duration, such as 5m. Absent or zero: the analyzer's own limit."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "TimedAnalyzer is an optional analyzer with a time limit."
+    }
+  },
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 3,
+      "description": "The policy schema version. Always 3."
+    },
+    "owners": {
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "type": "array",
+      "minItems": 1,
+      "description": "GitHub logins of the people who write the policy and answer requests."
+    },
+    "gate": {
+      "type": "string",
+      "enum": [
+        "advisory",
+        "required"
+      ],
+      "minLength": 1,
+      "description": "Whether the check blocks a pull request. Absent: advisory, so the check reports and does not block.",
+      "default": "advisory"
+    },
+    "layers": {
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "type": "array",
+      "uniqueItems": true,
+      "description": "Layer names, inner first. Absent: no layer rule."
+    },
+    "modules": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Module"
+      },
+      "type": "object",
+      "minProperties": 1,
+      "description": "The modules: named sets of paths, keyed by module name."
+    },
+    "builtin": {
+      "$ref": "#/$defs/Builtin",
+      "description": "Changes the modes of the built-in rules. Absent: the defaults of each rule apply."
+    },
+    "rules": {
+      "items": {
+        "$ref": "#/$defs/Rule"
+      },
+      "type": "array",
+      "description": "The custom rules. Absent: none; the built-in rules still apply."
+    },
+    "exceptions": {
+      "items": {
+        "$ref": "#/$defs/Exception"
+      },
+      "type": "array",
+      "description": "Permissions to break one rule in one place. Absent: none."
+    },
+    "generated": {
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "type": "array",
+      "description": "Globs of generated code, which the rules skip. Absent: only listed paths are out; a file name that looks generated is not enough."
+    },
+    "tests": {
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "type": "array",
+      "description": "Globs of test code, which the rules skip. Absent: only listed paths are out."
+    },
+    "exclude": {
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "type": "array",
+      "description": "Globs of paths that no extractor reads, such as vendored or fixture trees. Absent: only the built-in exclusions apply."
+    },
+    "languages": {
+      "$ref": "#/$defs/Languages",
+      "description": "The settings of each language extractor."
+    },
+    "analyzers": {
+      "$ref": "#/$defs/Analyzers",
+      "description": "The settings of the optional analyzers."
+    },
+    "coverage": {
+      "$ref": "#/$defs/Coverage",
+      "description": "Coverage files that your CI writes. The report reads them; Archfit never runs tests."
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "version",
+    "owners",
+    "modules"
+  ],
+  "title": "Archfit policy (schema 3)",
+  "description": "The Archfit policy, .archfit.yaml: modules, allowed dependencies, rules and exceptions. Archfit 4 reads it. Archfit 3 reads version 2 and uses the schema of tag v3.4.0."
+}

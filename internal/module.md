@@ -180,6 +180,7 @@ internal/                         Archfit App (root)
 │   ├── verdict/                  pure decision: facts → conclusion and reasons
 │   ├── feedback/                 check runs, the PR comment, receipts, idempotency
 │   ├── decisions/                decision requests of unattended agents: records, status comments, stale rules
+│   ├── records/                  Archfit 4 state under v4/: keys, values, indexes, join and consume
 │   └── sweep/                    reconciliation of open PRs
 └── control/                      control plane (never on the gate path)
     ├── account/                  entitlements, consent records, LLM budget (all KV state)
@@ -210,7 +211,7 @@ Root fan-out is eight, three above the 4±1 guidance; see Minor issues below.
 
 | Package group          | May import                                                                  |
 | ---------------------- | --------------------------------------------------------------------------- |
-| `wire/*`               | standard library, one YAML library (in `wire/settings`, `wire/policy` only) |
+| `wire/*`               | standard library, one YAML library (in `wire/settings`, `wire/policy`, `wire/policy3` only) |
 | `store`                | standard library                                                            |
 | `store/<driver>`       | standard library, `store`                                                   |
 | `gcptoken`             | standard library                                                            |
@@ -277,6 +278,7 @@ Distance scale and thresholds are those of the Fractal Design skill. Depths: roo
 | gate → gate/{ingest,inputs,verdict,feedback,sweep,decisions}                | Functional (composition)          | gate           | 1    | 1        | High       | Yes       | —                                                |
 | gate/sweep → gate/decisions (`Revalidate`); gate/decisions → gate/inputs    | Contract                          | gate           | 1    | 1        | High       | Yes       | —                                                |
 | gate/decisions → wire/decision, wire/policy, github/api, store              | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
+| gate/records → store (`Get`, `Update`)                                      | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
 | gate/verdict → gate/ingest (`Problem`), gate/inputs (`Trusted`)             | Model                             | gate           | 1    | 1        | High       | Yes       | —                                                |
 | gate/feedback → gate/verdict (`Outcome`), gate/inputs (`Target`, `Trusted`) | Model                             | gate           | 1    | 1        | High       | Yes       | —                                                |
 | gate/sweep → gate/inputs, gate/feedback, gate/verdict                       | Contract                          | gate           | 1    | 1        | High       | Yes       | —                                                |
@@ -402,7 +404,7 @@ draft are gone. What the real engine changed in this design:
 
 - Adding a module under `gate` or `control` without touching the other branch.
 - Replacing the KV, queue, sandbox, or LLM platform: a new implementation package plus one line in `app`.
-- A new engine version: `wire/report`, `wire/policy`, `wire/manifest`, `wire/result` and their fixtures.
+- A new engine version: `wire/report`, `wire/policy`, `wire/manifest`, `wire/result`, `wire/policy3` and their fixtures.
 - Splitting `gate` into its own deployment later: the import rule already guarantees it builds alone.
 - A billing provider: inside `control/account`; the `Entitlement` record stays.
 
@@ -441,7 +443,7 @@ draft are gone. What the real engine changed in this design:
   **Expected behavior**: every import is within the group's allowed set; `wire/*` and `store` import no other internal package.
 - **Test name**: `TestOnlyPlatformSeamsTouchPlatformSDKs`
   **Scenario**: list third-party imports per package.
-  **Expected behavior**: only `wire/settings` and `wire/policy` import YAML; cloud, KV, or LLM SDKs appear only in `Store`, `Sandbox`, or `Provider` implementation packages.
+  **Expected behavior**: only `wire/settings`, `wire/policy` and `wire/policy3` import YAML; cloud, KV, or LLM SDKs appear only in `Store`, `Sandbox`, or `Provider` implementation packages.
 
 ### Integration Contract Tests
 

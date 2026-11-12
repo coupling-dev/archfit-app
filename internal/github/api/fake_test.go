@@ -296,3 +296,15 @@ func linkHeader(path string, page int) string {
 }
 
 var repoA = RepoRef{InstallationID: 1, FullName: "o/r"}
+
+const (
+	testSHA1 = "1111111111111111111111111111111111111111"
+	testSHA2 = "2222222222222222222222222222222222222222"
+	testSHA3 = "3333333333333333333333333333333333333333"
+	testSHA4 = "4444444444444444444444444444444444444444"
+	testSHA5 = "5555555555555555555555555555555555555555"
+	mergeSHA = "abcdefabcdefabcdefabcdefabcdefabcdefabcd"
+)
+
+// badSHAs are expected head SHAs that must never reach GitHub: an empty one would let GitHub act on any head.
+var badSHAs = []string{"", "abc123", "main", "ABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCD", testSHA1 + "0"}
