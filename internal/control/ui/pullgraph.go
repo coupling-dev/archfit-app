@@ -57,13 +57,13 @@ func (s *server) apiPullGraph(r *http.Request, sc scope) (any, error) {
 	return body, nil
 }
 
-// escapeRef escapes each segment of a ref for a URL path: a branch name may hold "#" or "?", and "/" separates segments
-// on GitHub as it does in the name.
 // policyBlob is the policy file of repo at ref on GitHub; a module's line is its "#L<line>".
 func policyBlob(repo, ref string) string {
 	return "https://github.com/" + repo + "/blob/" + escapeRef(ref) + "/" + policy.PolicyPath
 }
 
+// escapeRef escapes each segment of a ref for a URL path: a branch name may hold "#" or "?", and "/" separates segments
+// on GitHub as it does in the name.
 func escapeRef(ref string) string {
 	parts := strings.Split(ref, "/")
 	for i, p := range parts {

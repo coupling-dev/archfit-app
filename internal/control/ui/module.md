@@ -63,7 +63,7 @@ pilot; product.md leaves usability targets open.
   when it mounts, and a read no page takes is dropped quietly. Until an answer comes, the frame and a grey skeleton of
   each section (`components/Skeleton.svelte`, CSS only, still under reduced motion). A `404` from the read that fills a
   page replaces the page with the error page's "This page cannot be shown" and no repository tabs (`explainLoad`,
-  `lib/gate.ts`); a write's `404` stays a sentence on the page, so a form or the editor keeps what the user typed.
+  `lib/gate.ts`); a write's `404` stays a sentence on the page, so a form keeps what the user typed.
 - The CSRF scheme: `hex(HMAC-SHA256(key = User.Token, "archfit-csrf"))` **[default]**, stateless and per session. The
   web app reads it from `/api/session` and sends it as the `X-CSRF-Token` header; the one form left, Sign out, sends
   it as the `csrf` field.
@@ -197,7 +197,8 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   the PR comment's rule; `added` counts the links whose origin is `added`. `policy_href` is the policy file on GitHub
   at the ref whose text is the report's policy (the head, else the base branch). The same `404` rule.
 - `GET /api/repos/{o}/{n}/graph` [read] — `{unavailable, view, stale_reason, policy_href, branch}`: the latest
-  default-branch report against the policy on that branch. No link carries an origin.
+  default-branch report against the policy on that branch. `policy_href` is the policy file on GitHub at the open
+  draft's head, else the default branch. No link carries an origin.
 - `GET /api/repos/{o}/{n}/findings` [read] — `{unavailable, branch, no_baseline, attention_reason, …}`: the latest
   default-branch report's findings in the pull request page's groups, without origins. `attention_reason`, only for
   the verdict `needs_attention`, follows the engine's rule in its order: active advisories, required rules not
@@ -411,7 +412,7 @@ func New(c Config, o OAuth, u Users, repos Repos, now func() time.Time) (Session
 - **Volatility**: high
 - **Balanced?**: yes — parent and child
 - **Shared knowledge**: ui supplies a decoded `Report` and the policy text, gets a `View`, serializes it as JSON into
-  the page, links each node to `/r/{o}/{n}/policy#L<PolicyLine>` when the line is not 0, shows the stale banner
+  the page, links each node to the policy file on GitHub (`policy_href#L<PolicyLine>`) when the line is not 0, shows the stale banner
   when `Stale`, and the incomplete banner (`id="incomplete"`) when `Incomplete`. The web app uses a link's `Status`
   as its CSS class and prints it, an accepted one with its `Accepted` ("accepted violation", "accepted advisory").
 
@@ -1804,7 +1805,7 @@ gate's and tested there. The clock is injected.
 - **Test name**: `TestGraphPageBuildsFromArtifact`
   **Scenario**: the blocked wire fixture (`hard_gates: fail`, no baseline) as the `archfit-report` artifact of the latest default-branch run.
   **Expected behavior**: the shell answers `200`; the graph API's `view` equals `graph.Build(report, policy)`;
-  `policy_href` is the editor; not stale; `incomplete`; marker strings placed in fields the decoder drops
+  `policy_href` is the policy file on GitHub at the default branch; not stale; `incomplete`; marker strings placed in fields the decoder drops
   (a `matched_by` key outside `MatchedByKeys`, measurement, task declarations) appear nowhere in the answer.
 - **Test name**: `TestGraphPageShowsTheEngineSeamPolicy`
   **Scenario**: the unmodified capture `real-seam-policy` of the shared wire corpus as the `archfit-report` artifact.

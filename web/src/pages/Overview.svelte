@@ -195,7 +195,7 @@
                 >{body.decisions_pending} decision {body.decisions_pending === 1 ? 'request waits' : 'requests wait'} for an
                 owner.</strong
               >
-              An agent cannot approve its own request: an architecture owner decides on the pull request page.
+              An agent cannot approve its own request.
             </p>
             <ul class="plain" aria-label="Decision requests that wait for an owner">
               {#each body.decisions as d (d.href + d.finding + d.created)}

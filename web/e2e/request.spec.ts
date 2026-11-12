@@ -228,7 +228,7 @@ test('request: Approve until a date sends the date and "merge later", and the pr
   });
 });
 
-test('request: Reject sends what to do instead and needs no passkey', async ({ page }) => {
+test('request: Reject sends what to do instead and "merge later", and needs no passkey', async ({ page }) => {
   const { handlers, reads } = owner({
     pull_request: 77,
     state: 'merged',
@@ -244,10 +244,16 @@ test('request: Reject sends what to do instead and needs no passkey', async ({ p
   );
   await expect(page.getByRole('region', { name: 'Preview' })).toContainText('Tightens the policy: no passkey needed.');
   expect(reads).toContain('?answer=reject&instead=Add+a+retry+method+to+container.Client.');
+  // Merge later holds the policy pull request open for a reject too: the server merges at once without it.
+  await box.getByLabel(/Merge later/).check();
   await box.getByRole('button', { name: 'Reject' }).click();
   await expect(box.locator('.flash.success')).toBeVisible();
   expect(paths(writes)).toEqual([`${req}/answer`]);
-  expect(writes[0].postDataJSON()).toEqual({ answer: 'reject', instead: 'Add a retry method to container.Client.' });
+  expect(writes[0].postDataJSON()).toEqual({
+    answer: 'reject',
+    instead: 'Add a retry method to container.Client.',
+    merge_later: true,
+  });
 });
 
 test('request: a refused step-up is the server sentence, nothing is answered, and the answers stay', async ({

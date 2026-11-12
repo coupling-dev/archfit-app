@@ -96,7 +96,7 @@
       answer: kind,
       ...(kind === 'approve-until' ? { until } : {}),
       ...(kind === 'reject' ? { instead: instead.trim() } : {}),
-      ...(loosens(kind) && mergeLater ? { merge_later: true } : {}),
+      ...(mergeLater ? { merge_later: true } : {}),
     };
     try {
       let token = '';

@@ -45,7 +45,7 @@ export interface DecisionRow {
   requester: string; // whoever commented; never an approval
   head: string; // short
   created: string; // RFC 3339
-  href: string; // the pull request page, where an owner decides
+  href: string; // the pull request page
 }
 
 export interface Step {
@@ -275,12 +275,6 @@ export interface ScreenLine {
 export type Pull = PullHead &
   Findings & { approval?: Approval; first_screen?: ScreenLine[] };
 
-// Approved answers the Approve button: the approval read again.
-export interface Approved {
-  approval: Approval | null;
-  notice: string;
-}
-
 // RepoFindings is the latest report of the default branch, for the overview.
 export type RepoFindings = Findings & {
   unavailable: string;
@@ -318,13 +312,6 @@ export interface DataSharing {
   owner: string;
   features: SharedFeature[];
   notice?: string;
-}
-
-export interface Check {
-  name: string;
-  state: string;
-  tone: Tone;
-  reason: string;
 }
 
 // Installation is one account that installed the App, as the operators' page lists it.
@@ -497,7 +484,7 @@ export function explain(e: ApiError, here: string, go: (url: string) => void = (
 // explainLoad is explain for the read that fills a page. Its 404 (a repository that does not exist or the user cannot
 // see, a pull request that is not one) replaces the whole page, as the server's error page did, and so does the 403 of
 // an account waiting for approval, with the Waiting page. Never for a write: a write's 404 stays a sentence on the
-// page, so a form or the editor keeps what the user typed.
+// page, so a form keeps what the user typed.
 export function explainLoad(e: ApiError, here: string, go?: (url: string) => void): string {
   if (e.waiting) {
     waiting.set(e.waiting);
