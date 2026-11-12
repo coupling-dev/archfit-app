@@ -11,6 +11,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/wire/envelope"
 	"github.com/alexei-led/archfit-app/internal/wire/manifest"
 	"github.com/alexei-led/archfit-app/internal/wire/report"
+	"github.com/alexei-led/archfit-app/internal/wire/result"
 )
 
 // Binding is the authoritative identity of an upload, resolved from OIDC claims and the GitHub API.
@@ -90,4 +91,44 @@ type Admitter interface {
 
 func New(repos api.Repos, pulls api.Pulls, actions api.Actions, queues api.MergeQueues, v oidc.Verifier, audience string, admit Admitter) Receiver {
 	return &receiver{repos: repos, pulls: pulls, actions: actions, queues: queues, verifier: v, audience: audience, admit: admit}
+}
+
+// WorkflowPath is the only workflow file whose envelope 2 uploads the App accepts (M2 D15).
+const WorkflowPath = ".github/workflows/archfit.yaml"
+
+// Binding4 is the authoritative identity of an envelope 2 upload, resolved from the OIDC claims and the GitHub API.
+type Binding4 struct {
+	Repo        api.Repo // resolved by the App, never from the envelope
+	Event       string   // the run's event as GitHub states it
+	PullRequest int      // 0 unless a pull request GitHub associates with the run's head
+	HeadSHA     string   // the run's head: the pull request head, the pushed commit or the merge group commit
+	// RunSHA is the commit whose workflow file the run executed, from the token: the test merge commit for a pull
+	// request (a re-run keeps the first one), the head for a push or a merge group.
+	RunSHA     string
+	Fork       bool
+	RunID      int64
+	RunAttempt int
+}
+
+// Upload4 is one envelope 2 upload, authenticated and bound to GitHub's data. Problems never reject the request;
+// the gate makes the status unknown for each.
+type Upload4 struct {
+	Binding  Binding4
+	Envelope envelope.EnvelopeV2 // self-reported: the fields GitHub states were compared, the rest the gate checks
+	Payload  []byte              // the exact bytes payload_digest names
+	Result   *result.Result      // nil when ProblemReportInvalid
+	Problems []Problem
+}
+
+// Receiver4 authenticates and binds an envelope 2 upload.
+type Receiver4 interface {
+	// ReceiveV2 returns a *Rejection when no tenant could be authenticated, the workflow file is not WorkflowPath, or
+	// the upload is stale: an older attempt, an older run of the head, a moved pull request head, or a merge group the
+	// queue no longer lists (409).
+	ReceiveV2(ctx context.Context, req *http.Request) (Upload4, error)
+}
+
+// NewV2 returns the envelope 2 receiver. It shares the authentication steps of New.
+func NewV2(repos api.Repos, pulls api.Pulls, actions api.Actions, runs api.WorkflowRuns, queues api.MergeQueues, v oidc.Verifier, audience string, admit Admitter) Receiver4 {
+	return &receiver{repos: repos, pulls: pulls, actions: actions, runs: runs, queues: queues, verifier: v, audience: audience, admit: admit}
 }
