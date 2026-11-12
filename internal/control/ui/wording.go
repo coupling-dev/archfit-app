@@ -3,11 +3,13 @@ package ui
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
 	"github.com/alexei-led/archfit-app/internal/control/assist"
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
+	"github.com/alexei-led/archfit-app/internal/control/passkey"
 	"github.com/alexei-led/archfit-app/internal/control/proposal"
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
 	"github.com/alexei-led/archfit-app/internal/gate"
@@ -105,6 +107,23 @@ var sentinels = []struct {
 		"Decision history is full. Nothing was saved. Close this PR if its approval must be withdrawn; open a replacement for a fresh owner decision."},
 	{gate.ErrDigestsChanged, http.StatusConflict, "digests_changed",
 		"The protected files changed since this page was loaded. Nothing was approved. Reload the page and review them again."},
+	{passkey.ErrNotOwner, http.StatusForbidden, "not_owner",
+		"Only an owner named in the policy, or a repository administrator before the first policy, can register a passkey here."},
+	{passkey.ErrNeedsPasskey, http.StatusConflict, "needs_passkey",
+		"You already have a passkey. Confirm with it first: a new passkey needs an existing one."},
+	{passkey.ErrNoPasskey, http.StatusConflict, "no_passkey", "Register a passkey first."},
+	{passkey.ErrCeremony, http.StatusBadRequest, "ceremony",
+		"The passkey check failed or took more than 5 minutes. Nothing was changed. Try again."},
+	{passkey.ErrCounter, http.StatusForbidden, "counter",
+		"This passkey's counter went back, so the passkey may have been copied. Nothing was changed. Use another passkey."},
+	{passkey.ErrToken, http.StatusForbidden, "token",
+		"The passkey confirmation was used, is older than 5 minutes, or is for another action. Confirm again."},
+	{passkey.ErrTooMany, http.StatusConflict, "too_many",
+		"You have " + strconv.Itoa(passkey.MaxPasskeys) + " passkeys, the most allowed. Remove one first."},
+	{passkey.ErrUnknown, http.StatusNotFound, "not_found", "Not found."},
+	{passkey.ErrInvalid, http.StatusUnprocessableEntity, "invalid", "The request is not valid."},
+	{passkey.ErrPolicy, http.StatusConflict, "policy",
+		"The policy on the default branch is not valid, so Archfit cannot tell who the owners are. Fix .archfit.yaml first."},
 }
 
 // explain maps any error to its status, log outcome and sentence. Unknown errors are upstream failures.
