@@ -491,6 +491,7 @@ the e-mail is `ARCHFIT_INVOKER` and is verified, and the token is not expired.
 | `GET /api/session` and `GET /api/repos`                                                                            | GitHub OAuth session                                                          |
 | `GET /r/{o}/{n}`, `/graph`, `/policy`, `/pull/{number}`, `/pull/{number}/graph` and `/data-sharing`                | GitHub OAuth session. The same shell for every repository; no repository data |
 | `GET /api/repos/{o}/{n}/overview`, `/findings`, `/graph`, `/policy`, `/pulls/{number}` and `/pulls/{number}/graph` | Session with repository `read` permission                                     |
+| `GET /api/repos/{o}/{n}/requests/{number}` and `/requests/{number}/preview`                                         | Session with repository `read` permission                                     |
 | `POST /api/repos/{o}/{n}/policy/check`                                                                             | Session with repository `read` permission, JSON body, CSRF token header       |
 | `POST /api/repos/{o}/{n}/policy`, `/policy/ready` and `/assist`                                                    | Session with repository `write` permission, JSON body, CSRF token header      |
 | `POST /api/repos/{o}/{n}/onboarding` and `/discover`                                                               | Session with repository `admin` permission, JSON body, CSRF token header      |

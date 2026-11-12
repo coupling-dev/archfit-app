@@ -40,12 +40,14 @@ type Deps struct {
 	// DecisionQueue lists the decision requests of unattended agents that wait for an owner, for the overview and the
 	// decisions page: the gate façade. It reads only.
 	DecisionQueue gate.DecisionQueue
-	Operators     []int64
-	Sandbox       Sandbox
-	Provider      Provider
-	CookieKey     []byte
-	BaseURL       string
-	Now           func() time.Time
+	// RequestViews reads a request and the preview of each answer for the request page: the gate façade. It reads only.
+	RequestViews gate.RequestViews
+	Operators    []int64
+	Sandbox      Sandbox
+	Provider     Provider
+	CookieKey    []byte
+	BaseURL      string
+	Now          func() time.Time
 }
 
 // tenantLister is the only Store method the façade calls itself.
@@ -96,7 +98,7 @@ func New(d Deps) (*Control, error) {
 	page, err := ui.New(ui.Deps{
 		OAuth: d.OAuth, CookieKey: d.CookieKey, BaseURL: d.BaseURL, GitHub: d.GitHub,
 		Account: acct, Consents: consents, Onboarding: onb, Assist: asst, Proposals: proposals,
-		Admissions: d.Admissions, Approvals: d.Approvals, Decisions: d.Decisions, DecisionQueue: d.DecisionQueue, Passkeys: passkeys, Operators: d.Operators, Now: d.Now,
+		Admissions: d.Admissions, Approvals: d.Approvals, Decisions: d.Decisions, DecisionQueue: d.DecisionQueue, RequestViews: d.RequestViews, Passkeys: passkeys, Operators: d.Operators, Now: d.Now,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("control: ui: %w", err)
@@ -153,6 +155,8 @@ func (d Deps) validate() error {
 		return errors.New("control: nil Decisions")
 	case d.DecisionQueue == nil:
 		return errors.New("control: nil DecisionQueue")
+	case d.RequestViews == nil:
+		return errors.New("control: nil RequestViews")
 	case len(d.CookieKey) != cookieKeyLen:
 		return fmt.Errorf("control: CookieKey must be %d bytes", cookieKeyLen)
 	case d.BaseURL == "":
