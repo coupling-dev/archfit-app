@@ -1,6 +1,7 @@
 {
   "kind": "approve-until",
   "loosens": true,
+  "note": "request #431",
   "exception": {
     "rule": "no-docker",
     "from": "app",

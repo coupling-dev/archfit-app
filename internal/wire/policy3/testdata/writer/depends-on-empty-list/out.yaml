@@ -3,6 +3,7 @@ owners: [alexei-led]
 modules:
   app:
     paths: [cmd/**]
-    depends_on: [lib]
+    depends_on:
+      - lib  # request #431
   lib:
     paths: [lib/**]

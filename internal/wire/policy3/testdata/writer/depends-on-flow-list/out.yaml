@@ -3,7 +3,10 @@ owners: [alexei-led]
 modules:
   pkg_chaos:
     paths: [pkg/chaos/**]
-    depends_on: [pkg_container, pkg_util, pkg_tc]   # reviewed 2026-10-01
+    depends_on:   # reviewed 2026-10-01
+      - pkg_container
+      - pkg_util
+      - pkg_tc  # request #431
   pkg_container:
     paths: [pkg/container/**]
   pkg_tc:

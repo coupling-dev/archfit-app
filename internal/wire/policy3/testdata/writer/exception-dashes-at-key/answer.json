@@ -1,6 +1,7 @@
 {
   "kind": "approve-until",
   "loosens": true,
+  "note": "request #7",
   "exception": {
     "rule": "unowned",
     "from": "scripts/**",
