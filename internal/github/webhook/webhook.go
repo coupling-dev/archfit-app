@@ -17,6 +17,7 @@ const (
 	PullClosed          EventKind = "pull_closed"
 	ReviewChanged       EventKind = "review_changed" // submitted, edited, dismissed
 	PullCommented       EventKind = "pull_commented" // a comment created on a pull request
+	IssueOpened         EventKind = "issue_opened"   // an issue opened; never a pull request
 	DefaultBranchPush   EventKind = "default_branch_push"
 	BranchPush          EventKind = "branch_push"          // a push to a branch other than the default branch
 	InstallationAdded   EventKind = "installation_added"   // created, or repositories added
@@ -45,9 +46,10 @@ type Event struct {
 	PusherType     string   // push kinds only: the payload's pusher_type ("user", or a deploy key); "" when absent
 	ChangedPaths   []string // default_branch_push only
 	CommentID      int64    // pull_commented only: the comment's ID
-	Author         string   // pull_commented only: the login that wrote the comment
-	AuthorType     string   // pull_commented only: the account type, "User" or "Bot"; "" when absent
-	Body           string   // pull_commented only: the comment text
+	Issue          int      // issue_opened only: the issue number
+	Author         string   // pull_commented and issue_opened: the login that wrote the comment or the issue
+	AuthorType     string   // pull_commented and issue_opened: the account type, "User" or "Bot"; "" when absent
+	Body           string   // pull_commented and issue_opened: the comment text or the issue body
 	GroupReason    string   // merge_group_destroyed only: "merged", "dequeued", "invalidated" or what GitHub sends
 }
 

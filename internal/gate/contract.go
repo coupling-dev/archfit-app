@@ -11,6 +11,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/gate/feedback"
 	"github.com/alexei-led/archfit-app/internal/gate/ingest"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
+	asks "github.com/alexei-led/archfit-app/internal/gate/requests" // gate's own requests type is Archfit 3's
 	"github.com/alexei-led/archfit-app/internal/gate/sweep"
 	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -46,7 +47,8 @@ type Gate struct {
 	comments   api.Comments
 	admissions admitter
 	now        func() time.Time
-	v4         *upload4 // the envelope 2 upload path
+	v4         *upload4      // the envelope 2 upload path
+	asks       *asks.Service // request lines: issues and the status waiting (M2 task 16)
 }
 
 // admitter is the one method of Admissions every gate path asks before it does anything for an installation.
@@ -66,6 +68,8 @@ type github interface {
 	api.MergeQueues
 	api.WorkflowRuns
 	api.Commits
+	api.IssueTriage
+	api.Collaborators
 }
 
 func New(d Deps) *Gate {
@@ -82,7 +86,10 @@ func compose(gh github, v oidc.Verifier, s store.Store, adm admitter, audience s
 	publisher := feedback.New(gh, gh, gh, s, audience, now) // the audience is the App's base URL
 	g := newGate(newReceiver(gh, v, audience, adm), resolver, reqs, publisher, feedback.NewRepairer(gh, gh, gh, gh, s, now),
 		sweep.New(gh, gh, gh, resolver, publisher, adm, reqs, c), gh, gh, gh, gh, gh, adm, now)
-	g.v4 = newUpload4(ingest.NewV2(gh, gh, gh, gh, gh, v, audience, adm), gh, gh, s, feedback.New4(gh, gh, gh, s, audience, now))
+	// One Archfit 4 publisher, so an upload and a request line take the same head lease.
+	publisher4 := feedback.New4(gh, gh, gh, s, audience, now)
+	g.v4 = newUpload4(ingest.NewV2(gh, gh, gh, gh, gh, v, audience, adm), gh, gh, s, publisher4)
+	g.asks = asks.New(gh, s, publisher4)
 	return g
 }
 

@@ -166,7 +166,7 @@ func TestParseMapping(t *testing.T) {
 		{"installation_repositories", "added", InstallationAdded},
 		{"installation_repositories", "removed", ReposRemoved},
 		{"ping", "", Ignored},
-		{"issues", "opened", Ignored},
+		{"issues", "labeled", Ignored},
 		{"", "opened", Ignored},
 	}
 	for _, tt := range tests {

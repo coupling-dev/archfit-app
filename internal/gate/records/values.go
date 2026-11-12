@@ -80,7 +80,20 @@ type Request struct {
 	Reason  string  `json:"reason"`
 	Numbers Numbers `json:"numbers"`
 	Waiting []int   `json:"waiting,omitempty"` // pull requests waiting on this request
-	State   string  `json:"state"`
+	// Listed are the pull requests the issue body lists. An upload joins a pull request in the store alone, so the body
+	// can lag Waiting until a request line renders it again.
+	Listed []int  `json:"listed,omitempty"`
+	State  string `json:"state"`
+	// What the issue asks, as wire/request's Issue names it: the rule, the path of unowned code, the two modules
+	// otherwise. With Expires and Record they let the App render the issue body again when a pull request joins.
+	Rule    string `json:"rule,omitempty"`
+	Path    string `json:"path,omitempty"`
+	From    string `json:"from,omitempty"`
+	To      string `json:"to,omitempty"`
+	Expires string `json:"expires,omitempty"` // the date the worker asked for, YYYY-MM-DD
+	// Record is the record the issue shows: the asked errors as the check prints them, or the reported `can` answer.
+	// It is check output, never source.
+	Record string `json:"record,omitempty"`
 }
 
 // Numbers are a request's figures: verified from a stored result, or "as reported" by the CLI.

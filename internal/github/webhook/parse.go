@@ -12,6 +12,7 @@ const (
 	typePullRequest       = "pull_request"
 	typePullRequestReview = "pull_request_review"
 	typeIssueComment      = "issue_comment"
+	typeIssues            = "issues"
 	typePush              = "push"
 	typeInstallation      = "installation"
 	typeInstallationRepos = "installation_repositories"
@@ -34,6 +35,7 @@ var (
 	errNoPullRequest  = errors.New("webhook: payload has no pull request number")
 	errBadHeadSHA     = errors.New("webhook: payload has no valid head SHA")
 	errNoComment      = errors.New("webhook: payload has no comment ID or author")
+	errNoIssue        = errors.New("webhook: payload has no issue number or author")
 )
 
 // actionKinds is the Mapping table for every known event type except push, which has no action.
@@ -51,7 +53,10 @@ var actionKinds = map[string]map[string]EventKind{
 		"dismissed": ReviewChanged,
 	},
 	typeIssueComment: {
-		"created": PullCommented, // only on a pull request: payload.kind checks issue.pull_request
+		"created": PullCommented, // only on a pull request: payload.kind checks issue.pull_request; an edit is not read
+	},
+	typeIssues: {
+		"opened": IssueOpened, // never a pull request: payload.kind checks issue.pull_request
 	},
 	typeMergeGroup: {
 		"checks_requested": MergeGroupRequested,
@@ -95,7 +100,12 @@ type payload struct {
 	} `json:"pull_request"`
 	Issue struct {
 		Number      int       `json:"number"`
+		Body        string    `json:"body"`
 		PullRequest *struct{} `json:"pull_request"` // present only when the issue is a pull request
+		User        struct {
+			Login string `json:"login"`
+			Type  string `json:"type"`
+		} `json:"user"`
 	} `json:"issue"`
 	Comment struct {
 		ID   int64  `json:"id"`
@@ -182,6 +192,13 @@ func Parse(eventType, deliveryID string, body []byte) (Event, error) {
 		ev.CommentID, ev.Author, ev.AuthorType, ev.Body = p.Comment.ID, p.Comment.User.Login, p.Comment.User.Type, p.Comment.Body
 		return ev, nil
 	}
+	if kind == IssueOpened {
+		if p.Issue.Number <= 0 || p.Issue.User.Login == "" {
+			return Event{}, errNoIssue
+		}
+		ev.Issue, ev.Author, ev.AuthorType, ev.Body = p.Issue.Number, p.Issue.User.Login, p.Issue.User.Type, p.Issue.Body
+		return ev, nil
+	}
 	switch kind {
 	case MergeGroupRequested, MergeGroupDestroyed:
 		// The group commit is a commit of this repository; base_ref names the queue's branch. Membership is read from
@@ -232,6 +249,9 @@ func (p *payload) kind(eventType string) EventKind {
 	if kind, ok := actionKinds[eventType][p.Action]; ok {
 		if kind == PullCommented && p.Issue.PullRequest == nil {
 			return Ignored // a comment on a plain issue
+		}
+		if kind == IssueOpened && p.Issue.PullRequest != nil {
+			return Ignored
 		}
 		return kind
 	}

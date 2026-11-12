@@ -280,6 +280,13 @@ type IssueTriage interface {
 	SetAssigneesAndLabels(ctx context.Context, r RepoRef, number int, assignees, labels []string) (gotAssignees, gotLabels []string, err error)
 }
 
+// Collaborators reads what a person may do in a repository, with the installation token.
+type Collaborators interface {
+	// CollaboratorPermission returns "admin", "write", "read" or "none" for login on the repository; a login GitHub
+	// does not know is "none".
+	CollaboratorPermission(ctx context.Context, r RepoRef, login string) (string, error)
+}
+
 // Comparison is what changed from one commit to another, as GitHub's compare states it.
 type Comparison struct {
 	Status string   // "ahead" | "behind" | "identical" | "diverged": head relative to base; any other is an error
