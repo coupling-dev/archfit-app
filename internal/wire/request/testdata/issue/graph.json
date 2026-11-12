@@ -1,0 +1,11 @@
+{
+  "rule": "graph",
+  "from": "pkg_tc",
+  "to": "pkg_util",
+  "reason": "netem needs the shared retry helper",
+  "record": "pkg/tc/netem.go:12: graph: pkg_tc -> pkg_util is not an allowed dependency\n  why: a new dependency between modules needs an owner\n  balance: 9/10 (min 7)\n  next: wait for an owner: #431\n",
+  "pulls": [
+    12,
+    15
+  ]
+}

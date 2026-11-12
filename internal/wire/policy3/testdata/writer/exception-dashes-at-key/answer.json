@@ -1,0 +1,9 @@
+{
+  "kind": "approve-until",
+  "loosens": true,
+  "exception": {
+    "rule": "unowned",
+    "from": "scripts/**",
+    "why": "Request #7 is open."
+  }
+}

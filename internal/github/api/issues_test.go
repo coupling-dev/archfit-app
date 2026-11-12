@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"reflect"
 	"strings"
@@ -149,5 +150,99 @@ func TestIssuesFailuresAreErrors(t *testing.T) {
 				t.Errorf("Status = %d, want %d", Status(err), tt.status)
 			}
 		})
+	}
+}
+
+func TestIssueTriageContract(t *testing.T) {
+	ctx := context.Background()
+	env := muxEnv(t, func(mux *http.ServeMux) {
+		mux.HandleFunc("GET /repos/o/r/issues/{n}", func(w http.ResponseWriter, r *http.Request) {
+			switch r.PathValue("n") {
+			case "10":
+				writeJSON(w, http.StatusOK, map[string]any{"number": 10, "pull_request": map[string]any{"url": "x"}})
+			case "13":
+				writeJSON(w, http.StatusNotFound, map[string]any{"message": "Not Found"})
+			default:
+				writeJSON(w, http.StatusOK, map[string]any{"number": 9, "user": map[string]any{"login": "worker"}})
+			}
+		})
+		mux.HandleFunc("PATCH /repos/o/r/issues/{n}", func(w http.ResponseWriter, r *http.Request) {
+			switch r.PathValue("n") {
+			case "11":
+				writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"message": "Validation Failed"})
+				return
+			case "12":
+				writeJSON(w, http.StatusForbidden, map[string]any{"message": "Resource not accessible by integration"})
+				return
+			}
+			var sent struct{ Assignees, Labels []string }
+			_ = json.NewDecoder(r.Body).Decode(&sent)
+			// GitHub drops an assignee it cannot assign without an error.
+			assignees := []map[string]any{}
+			for _, login := range sent.Assignees {
+				if login != "mallory" {
+					assignees = append(assignees, map[string]any{"login": login})
+				}
+			}
+			labels := []map[string]any{}
+			for _, name := range sent.Labels {
+				labels = append(labels, map[string]any{"name": name})
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"number": 9, "assignees": assignees, "labels": labels})
+		})
+	})
+
+	users, labels, err := env.c.SetAssigneesAndLabels(ctx, repoA, 9, []string{"alice", "mallory"}, []string{"archfit-request"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(users, []string{"alice"}) || !reflect.DeepEqual(labels, []string{"archfit-request"}) {
+		t.Errorf("got assignees %v, labels %v; want what GitHub holds: [alice], [archfit-request]", users, labels)
+	}
+	reqs := env.gh.requests()
+	patch := findRequest(t, reqs, "PATCH", "/repos/o/r/issues/9")
+	if want := map[string]any{"assignees": []any{"alice", "mallory"}, "labels": []any{"archfit-request"}}; !reflect.DeepEqual(decodeBody(t, patch), want) {
+		t.Errorf("patch body = %s", patch.Body)
+	}
+	if get := findRequest(t, reqs, "GET", "/repos/o/r/issues/9"); get.Auth != inst1 || patch.Auth != inst1 {
+		t.Errorf("Authorization = %q, %q", get.Auth, patch.Auth)
+	}
+
+	env.gh.reset()
+	users, labels, err = env.c.SetAssigneesAndLabels(ctx, repoA, 9, nil, nil)
+	if err != nil || users == nil || labels == nil || len(users)+len(labels) != 0 {
+		t.Errorf("clear = %v, %v, %v; want two empty sets", users, labels, err)
+	}
+	patch = findRequest(t, env.gh.requests(), "PATCH", "/repos/o/r/issues/9")
+	if want := map[string]any{"assignees": []any{}, "labels": []any{}}; !reflect.DeepEqual(decodeBody(t, patch), want) {
+		t.Errorf("nil sets sent as %s, want [] to clear them", patch.Body)
+	}
+
+	env.gh.reset()
+	_, _, err = env.c.SetAssigneesAndLabels(ctx, repoA, 10, []string{"alice"}, nil)
+	wantPlainErr(t, "a pull request", err)
+	if n := env.gh.count("PATCH", "/repos/o/r/issues/10"); n != 0 {
+		t.Errorf("a pull request was patched %d times", n)
+	}
+
+	_, _, err = env.c.SetAssigneesAndLabels(ctx, repoA, 11, []string{"alice"}, nil)
+	wantErrIs(t, "422", err, ErrUnprocessable)
+	if Status(err) != http.StatusUnprocessableEntity {
+		t.Errorf("Status = %d, want 422", Status(err))
+	}
+	_, _, err = env.c.SetAssigneesAndLabels(ctx, repoA, 12, []string{"alice"}, nil)
+	wantPlainErr(t, "403", err)
+	if Status(err) != http.StatusForbidden {
+		t.Errorf("Status = %d, want 403", Status(err))
+	}
+	_, _, err = env.c.SetAssigneesAndLabels(ctx, repoA, 13, []string{"alice"}, nil)
+	wantErrIs(t, "a missing issue", err, ErrNotFound)
+
+	env.gh.reset()
+	if _, _, err := env.c.SetAssigneesAndLabels(ctx, repoA, 0, nil, nil); err == nil {
+		t.Error("issue number 0: want error")
+	}
+	if reqs := env.gh.requests(); len(reqs) != 0 {
+		t.Errorf("guard sent %v", reqs)
 	}
 }

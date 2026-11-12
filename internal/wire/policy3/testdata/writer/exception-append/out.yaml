@@ -1,0 +1,24 @@
+version: 3
+owners: [alexei-led]
+modules:
+  pkg_tc:
+    paths: [pkg/tc/**]
+  pkg_util:
+    paths: [pkg/util/**]
+exceptions:
+  # Known copies, from the first policy.
+  - rule: graph
+    from: pkg_util
+    to: pkg_tc
+    why: Migration in progress.
+
+  - rule: duplication
+    from: pkg_util
+    to: pkg_tc
+    expires: 2026-12-31
+    why: "Request #12 is open."
+  - rule: duplication
+    from: pkg_tc
+    to: pkg_util
+    expires: 2026-11-19
+    why: 'Request #431 is open.'

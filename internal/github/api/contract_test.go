@@ -908,3 +908,145 @@ func TestCheckAppProvesTheKeyOnEveryCall(t *testing.T) {
 		t.Errorf("error %q quotes the response body", err)
 	}
 }
+
+func TestHeadRunsContract(t *testing.T) {
+	ctx := context.Background()
+	const runs = "/repos/o/r/actions/workflows/archfit.yaml/runs"
+	created := time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC)
+	runJSON := func(id int, attempt int, at time.Time) map[string]any {
+		return map[string]any{"id": id, "run_attempt": attempt, "event": "pull_request", "head_sha": testSHA1,
+			"status": "completed", "conclusion": "failure", "path": ".github/workflows/archfit.yaml",
+			"created_at": at.Format(time.RFC3339), "head_repository": map[string]any{"full_name": "o/r"},
+			"pull_requests": []map[string]any{{"number": 2}}}
+	}
+	env := muxEnv(t, func(mux *http.ServeMux) {
+		mux.HandleFunc("GET "+runs, func(w http.ResponseWriter, r *http.Request) {
+			q := r.URL.Query()
+			switch {
+			case q.Get("head_sha") == testSHA1 && q.Get("page") == "":
+				w.Header().Set("Link", linkHeader(runs+"?head_sha="+testSHA1, 2))
+				writeJSON(w, http.StatusOK, map[string]any{"total_count": 3, "workflow_runs": []any{
+					runJSON(12, 2, created.Add(time.Hour)), runJSON(11, 1, created.Add(time.Minute))}})
+			case q.Get("head_sha") == testSHA1 && q.Get("page") == "2":
+				writeJSON(w, http.StatusOK, map[string]any{"total_count": 3, "workflow_runs": []any{runJSON(10, 4, created)}})
+			default:
+				writeJSON(w, http.StatusOK, map[string]any{"total_count": 0, "workflow_runs": []any{}})
+			}
+		})
+		mux.HandleFunc("GET /repos/o/r/actions/workflows/busy.yaml/runs", func(w http.ResponseWriter, r *http.Request) {
+			pagedAny(w, r, maxItems+1)
+		})
+		mux.HandleFunc("GET /repos/o/r/actions/workflows/full.yaml/runs", func(w http.ResponseWriter, r *http.Request) {
+			pagedAny(w, r, maxItems)
+		})
+		mux.HandleFunc("GET /repos/o/r/actions/workflows/missing.yaml/runs", func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, http.StatusNotFound, map[string]any{"message": "Not Found"})
+		})
+	})
+
+	got, err := env.c.HeadRuns(ctx, repoA, ".github/workflows/archfit.yaml", testSHA1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 || got[0].ID != 12 || got[1].ID != 11 || got[2].ID != 10 {
+		t.Fatalf("HeadRuns = %+v, want runs 12, 11, 10 across two pages", got)
+	}
+	want := WorkflowRun{ID: 10, Attempt: 4, Event: "pull_request", HeadSHA: testSHA1, HeadRepo: "o/r",
+		WorkflowPath: ".github/workflows/archfit.yaml", Status: "completed", Conclusion: "failure", PullRequests: []int{2},
+		CreatedAt: created}
+	if !reflect.DeepEqual(got[2], want) {
+		t.Errorf("run = %+v\nwant  %+v", got[2], want)
+	}
+	for _, r := range env.gh.requests() {
+		if r.Path == runs && (r.Query.Get("head_sha") != testSHA1 || r.Query.Get("per_page") != "100" || r.Auth != inst1) {
+			t.Errorf("runs request: query %v, Authorization %q", r.Query, r.Auth)
+		}
+	}
+
+	got, err = env.c.HeadRuns(ctx, repoA, ".github/workflows/archfit.yaml", testSHA2)
+	if err != nil || got == nil || len(got) != 0 {
+		t.Errorf("HeadRuns without runs = %v, %v; want an empty list", got, err)
+	}
+	_, err = env.c.HeadRuns(ctx, repoA, ".github/workflows/busy.yaml", testSHA3)
+	wantPlainErr(t, "more runs than the cap", err)
+	_, err = env.c.HeadRuns(ctx, repoA, ".github/workflows/full.yaml", testSHA3)
+	wantPlainErr(t, "exactly 1 000 runs: GitHub's search cap, maybe a cut list", err)
+	_, err = env.c.HeadRuns(ctx, repoA, ".github/workflows/missing.yaml", testSHA1)
+	wantErrIs(t, "unknown workflow", err, ErrNotFound)
+
+	env.gh.reset()
+	for _, sha := range badSHAs {
+		if _, err := env.c.HeadRuns(ctx, repoA, ".github/workflows/archfit.yaml", sha); err == nil {
+			t.Errorf("HeadRuns head %q: want error", sha)
+		}
+	}
+	if reqs := env.gh.requests(); len(reqs) != 0 {
+		t.Errorf("guards sent %v", reqs)
+	}
+}
+
+func TestCheckRunAnnotationBatches(t *testing.T) {
+	ctx := context.Background()
+	env := muxEnv(t, func(mux *http.ServeMux) {
+		mux.HandleFunc("POST /repos/o/r/check-runs", func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, http.StatusCreated, map[string]any{"id": 99})
+		})
+		mux.HandleFunc("PATCH /repos/o/r/check-runs/99", func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, http.StatusOK, map[string]any{"id": 99})
+		})
+	})
+	all := make([]Annotation, 120)
+	for i := range all {
+		all[i] = Annotation{Path: "a.go", Line: i + 1, Level: "failure", Message: fmt.Sprintf("m%d", i)}
+	}
+	run := CheckRun{Name: "archfit/gate", HeadSHA: testSHA1, Status: "completed", Conclusion: "failure",
+		Title: "fail, 120 errors", Summary: "the record", Annotations: all[:50]}
+	created, err := env.c.CreateCheckRun(ctx, repoA, run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, batch := range [][]Annotation{all[50:100], all[100:]} {
+		created.Annotations = batch
+		if err := env.c.UpdateCheckRun(ctx, repoA, created); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	reqs := env.gh.requests()
+	var sent []string
+	var sizes []int
+	for _, r := range reqs {
+		if r.Path == "/app" {
+			continue
+		}
+		output := decodeBody(t, r)["output"].(map[string]any)
+		if output["title"] != run.Title || output["summary"] != run.Summary {
+			t.Errorf("%s: output %v lacks the title and summary", r, output)
+		}
+		batch := output["annotations"].([]any)
+		sizes = append(sizes, len(batch))
+		for _, a := range batch {
+			sent = append(sent, a.(map[string]any)["message"].(string))
+		}
+	}
+	if !reflect.DeepEqual(sizes, []int{50, 50, 20}) {
+		t.Errorf("batches = %v, want 50, 50, 20", sizes)
+	}
+	for i, m := range sent {
+		if m != fmt.Sprintf("m%d", i) {
+			t.Fatalf("annotation %d = %s: order or content changed", i, m)
+		}
+	}
+	if len(sent) != len(all) {
+		t.Errorf("annotations sent = %d, want %d", len(sent), len(all))
+	}
+
+	env.gh.reset()
+	run.Annotations = all[:51]
+	if _, err := env.c.CreateCheckRun(ctx, repoA, run); err == nil {
+		t.Error("51 annotations in one request: want error")
+	}
+	if reqs := env.gh.requests(); len(reqs) != 0 {
+		t.Errorf("an oversized batch sent %v", reqs)
+	}
+}

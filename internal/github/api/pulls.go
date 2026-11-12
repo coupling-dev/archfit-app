@@ -173,10 +173,6 @@ func (c *Client) ChangedFiles(ctx context.Context, r RepoRef, number int) (paths
 	if err != nil {
 		return nil, false, err
 	}
-	type fileJSON struct {
-		Filename         string `json:"filename"`
-		PreviousFilename string `json:"previous_filename"`
-	}
 	k := call{cred: cr, method: http.MethodGet, route: "/repos/{r}/pulls/{n}/files",
 		url: pagedURL(base+"/pulls/"+strconv.Itoa(number)+"/files", nil)}
 	files, more, err := listPages[fileJSON](ctx, c, k, "", maxItems)
@@ -188,8 +184,19 @@ func (c *Client) ChangedFiles(ctx context.Context, r RepoRef, number int) (paths
 	if err != nil {
 		return nil, false, err
 	}
+	return uniquePaths(files), more || pull.ChangedFiles > len(files), nil
+}
+
+// fileJSON is one changed file of a pull request or a compare.
+type fileJSON struct {
+	Filename         string `json:"filename"`
+	PreviousFilename string `json:"previous_filename"`
+}
+
+// uniquePaths lists every name of the files once, a rename's old name too: renaming a file away is a change to it.
+func uniquePaths(files []fileJSON) []string {
 	seen := map[string]bool{}
-	paths = []string{}
+	paths := []string{}
 	for _, f := range files {
 		for _, p := range []string{f.Filename, f.PreviousFilename} {
 			if p != "" && !seen[p] {
@@ -198,7 +205,7 @@ func (c *Client) ChangedFiles(ctx context.Context, r RepoRef, number int) (paths
 			}
 		}
 	}
-	return paths, more || pull.ChangedFiles > len(files), nil
+	return paths
 }
 
 func (c *Client) Reviews(ctx context.Context, r RepoRef, number int) ([]Review, error) {
