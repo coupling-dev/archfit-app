@@ -59,8 +59,8 @@ func (g *Gate) RequestPreview(ctx context.Context, t Target, number int, a Reque
 	return g.asks.Preview(ctx, t.Repo, number, a)
 }
 
-// PolicyEdit writes an answer's change into a policy file, each written line ending with "# comment" when comment is
-// set: the edit the preview shows is the edit the answer writes.
+// PolicyEdit writes an answer's change into a policy file, the first line of the entry it writes ending with
+// "# comment" when comment is set: the edit the preview shows is the edit the answer writes.
 func PolicyEdit(file []byte, c AnswerChange, comment string) ([]byte, error) {
 	return asks.Edit(file, c, comment)
 }

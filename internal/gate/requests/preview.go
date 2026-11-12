@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -95,8 +94,8 @@ func ChangeOf(number int, req records.Request, a Answer) (Change, error) {
 // graph and an exception without a date for any other rule; approve-until adds an exception with the date; reject
 // adds a deny rule with instead. A reject of a copy, of unowned code or of an only rule writes no line, and the file
 // comes back unchanged, as it does for a dependency the policy already allows. An exception for unowned code names the
-// path; one for an only rule has no to. A comment, such as "request #431", ends each line the change writes. A writer
-// error wraps ErrByHand.
+// path; one for an only rule has no to. A comment, such as "request #431", ends the first line of the entry the change
+// writes (the writer's note, milestone 3 D8). A writer error wraps ErrByHand.
 func Edit(file []byte, c Change, comment string) ([]byte, error) {
 	if strings.ContainsAny(comment, "\r\n") {
 		return nil, fmt.Errorf("%w: a comment on two lines", ErrAnswer)
@@ -117,52 +116,29 @@ func Edit(file []byte, c Change, comment string) ([]byte, error) {
 	switch c.Kind {
 	case policy3.Approve:
 		if c.Rule == ruleGraph {
-			out, err = policy3.AddDependsOn(file, c.From, c.To)
+			out, err = policy3.AddDependsOn(file, c.From, c.To, comment)
 		} else {
-			out, err = policy3.AddException(file, exception)
+			out, err = policy3.AddException(file, exception, comment)
 		}
 	case policy3.ApproveUntil:
 		exception.Expires = c.Until
-		out, err = policy3.AddException(file, exception)
+		out, err = policy3.AddException(file, exception, comment)
 	case policy3.Reject:
 		if c.Rule == ruleDuplication || c.Rule == ruleUnowned || onlyRule(pol, c.Rule) || c.From == "" || c.To == "" {
 			return file, nil
 		}
-		out, err = policy3.AddDenyRule(file, "request-"+n, c.From, c.To, "Rejected in request #"+n+".", c.Instead)
+		out, err = policy3.AddDenyRule(file, "request-"+n, c.From, c.To, "Rejected in request #"+n+".", c.Instead, comment)
 	default:
 		return nil, fmt.Errorf("%w: unknown answer %q", ErrAnswer, c.Kind)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrByHand, err)
 	}
-	if comment == "" {
-		return out, nil
-	}
-	return annotate(file, out, comment)
+	return out, nil
 }
 
 func onlyRule(pol policy3.File, id string) bool {
 	return slices.ContainsFunc(pol.Rules, func(r policy3.Rule) bool { return r.ID == id && r.Only != nil })
-}
-
-// annotate ends each line edited changes against old with "# comment", and checks that the comment changes no value.
-func annotate(old, edited []byte, comment string) ([]byte, error) {
-	before, after := lines(old), lines(edited)
-	head, tail := common(before, after)
-	for i := head; i < len(after)-tail; i++ {
-		body, eol := cutEOL(after[i])
-		after[i] = body + " # " + comment + eol
-	}
-	out := []byte(strings.Join(after, ""))
-	want, err := policy3.Decode(edited)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrByHand, err)
-	}
-	got, err := policy3.Decode(out)
-	if err != nil || !reflect.DeepEqual(got, want) {
-		return nil, fmt.Errorf("%w: the comment would change the policy", ErrByHand)
-	}
-	return out, nil
 }
 
 // lines splits text after each LF, keeping the line ends; a last line without one is kept as it is.

@@ -239,12 +239,14 @@ func TestPreviewOfEachAnswer(t *testing.T) {
 	}{
 		{name: "approve", answer: Answer{Kind: policy3.Approve}, loosens: true, diff: `--- a/.archfit.yaml
 +++ b/.archfit.yaml
-@@ -5,7 +5,7 @@
+@@ -5,7 +5,9 @@
      paths: [pkg/tc/**]
      layer: adapters
      volatility: high
 -    depends_on: [pkg_net]
-+    depends_on: [pkg_net, pkg_util]
++    depends_on:
++      - pkg_net
++      - pkg_util
    pkg_util:
      paths: [pkg/util/**]
      subdomain: generic
@@ -397,7 +399,7 @@ func TestEditWritesEachAnswerOfEachRule(t *testing.T) {
 		want string // the lines the edit adds or changes, "" when the file stays the same
 	}{
 		{name: "approve graph", c: Change{Request: 4, Kind: policy3.Approve, Rule: "graph", From: "pkg_tc", To: "pkg_util"},
-			want: "    depends_on: [pkg_net, pkg_util]\n"},
+			want: "    depends_on:\n      - pkg_net\n      - pkg_util\n"},
 		{name: "approve a dependency already allowed", c: Change{Request: 4, Kind: policy3.Approve, Rule: "graph", From: "pkg_tc", To: "pkg_net"}},
 		{name: "approve another rule", c: Change{Request: 4, Kind: policy3.Approve, Rule: "layers", From: "pkg_util", To: "pkg_net"},
 			want: "  - rule: layers\n    from: pkg_util\n    to: pkg_net\n    why: 'Approved in request #4.'\n"},
@@ -429,15 +431,14 @@ func changed(old, edited string) string {
 	return strings.Join(b[head:len(b)-tail], "")
 }
 
-func TestEditEndsEachWrittenLineWithTheComment(t *testing.T) {
+func TestEditEndsTheWrittenEntryWithTheComment(t *testing.T) {
 	c := Change{Request: 431, Kind: policy3.Reject, Rule: "graph", From: "pkg_tc", To: "pkg_util", Instead: "Keep tc apart."}
 	out, err := Edit([]byte(previewPolicy), c, "request #431")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "  - id: request-431 # request #431\n    deny: # request #431\n      from: pkg_tc # request #431\n" +
-		"      to: pkg_util # request #431\n    why: 'Rejected in request #431.' # request #431\n" +
-		"    instead: Keep tc apart. # request #431\n"
+	want := "  - id: request-431  # request #431\n    deny:\n      from: pkg_tc\n" +
+		"      to: pkg_util\n    why: 'Rejected in request #431.'\n    instead: Keep tc apart.\n"
 	if got := changed(previewPolicy, string(out)); got != want {
 		t.Errorf("changed lines =\n%s\nwant\n%s", got, want)
 	}
@@ -451,7 +452,7 @@ func TestEditEndsEachWrittenLineWithTheComment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := changed(crlf, string(out)); got != "    depends_on: [pkg_net, pkg_util] # request #2\r\n" {
+	if got := changed(crlf, string(out)); got != "    depends_on:\r\n      - pkg_net\r\n      - pkg_util  # request #2\r\n" {
 		t.Errorf("CRLF line = %q", got)
 	}
 
