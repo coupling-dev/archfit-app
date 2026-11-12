@@ -45,8 +45,23 @@ who asked still sees `fail`.
 - On a verified upload the gate calls `OpenIndex`, `Cover` and `Wait`: the pull request joins the requests that cover
   it, in the store only, so the upload stays within its deadline.
 - Drop a closed pull request from the pull index (`PullClosed`).
+- Show a request to its owner (`Service.View`, M2 task 17, design 10.4, 12.3, 19): the reason, the record with its
+  balance, verified or "as reported", and from the policy at the default branch's tip the two modules (layer,
+  volatility, subdomain, `depends_on`), whether the dependency is already allowed, and the earlier answers: the `deny`
+  rules and the exceptions that name both modules, either way. Every answer in effect is a policy line; its request
+  link comes with the `# request #N` line comment of task 19 (milestone 3 D8).
+- Preview one answer to an open request (`Service.Preview`): the policy change as a unified diff of `Edit` against the
+  tip's bytes, the tip's digest, whether the answer needs the passkey (`policy3.Loosens`), and the open pull requests
+  (pull index) it touches: those waiting on the request, and, for approve and approve-until, those whose stored request
+  keys hold the request's key, with the count of errors it clears and leaves. Approve-until takes the worker's date
+  when the owner gives none. The App runs no analysis.
+- Map an answer to its policy edit, once (`ChangeOf`, `Edit`), for the preview and for the answer (task 19): approve on
+  `graph` adds the dependency to `depends_on`; approve on any other rule adds an exception without a date;
+  approve-until adds an exception with `expires` (`unowned`: from the path; an `only` rule: no `to`); reject adds a
+  `deny` rule `request-<N>` with the owner's `instead`; a reject of a copy, of unowned code or of an `only` rule writes
+  no line. A comment, such as `request #431`, ends each line the edit writes.
 
-Not provided: the answers (task 19), the balance and the preview (task 17), the pages (task 24).
+Not provided: the answers (task 19), the pages (task 24).
 
 ## Subdomain Classification
 
@@ -90,6 +105,20 @@ func Cover(r result.Result, open *records.Index) (shown result.Result, ids []int
 func OpenIndex(ctx context.Context, s store.Store, r api.Repo) (*records.Index, error)
 func Wait(ctx context.Context, s store.Store, r api.Repo, pull int, ids []int) error
 func PullClosed(ctx context.Context, s store.Store, r api.Repo, pull int) error
+
+type Answer struct { Kind policy3.Answer; Until, Instead string }
+type Change struct { Request int; Kind policy3.Answer; Rule, Path, From, To, Until, Instead string } // JSON, kept by an approval
+type View struct { /* Number, State, Reason, Rule, Path, From, To, Expires, Record, Numbers, Policy, Modules, Allowed, Earlier */ }
+type Module struct { Name, Layer, Volatility, Subdomain string; DependsOn []string }
+type Earlier struct { Kind /* EarlierDeny, EarlierException */, Rule, From, To, Why, Instead, Expires string }
+type Preview struct { Answer Answer; Change Change; Diff, PolicyDigest string; Loosens bool; Pulls []PullEffect }
+type PullEffect struct { Number int; Status string; Waits bool; Clears, Left int }
+var ErrNoRequest, ErrClosedRequest, ErrAnswer, ErrNoPolicy, ErrByHand error
+func (s *Service) View(ctx context.Context, r api.Repo, number int) (View, error)
+func (s *Service) Preview(ctx context.Context, r api.Repo, number int, a Answer) (Preview, error)
+func ChangeOf(number int, req records.Request, a Answer) (Change, error)
+func Edit(file []byte, c Change, comment string) ([]byte, error)
+func Diff(path string, old, edited []byte) string
 ```
 
 Reactions: `none`, `request_ignored`, `request_refused`, `request_asked`, `request_answered`, `request_filed`. An error
@@ -137,3 +166,9 @@ without a second note; a reply may be posted again.
   without a line writes nothing; ten requests per line; a new push stays waiting and a new error fails; advisory
   never waits; an upload decided before a request is stale; a CLI issue as reported, then confirmed by a pull request;
   a CLI issue closed or refused; a closed pull request leaves the pull index.
+- In `preview_test.go`, over a fake GitHub and the memory Store: a verified and an "as reported" request; a request with
+  earlier answers, one already allowed, and none without a policy; the diff of approve, approve until the worker's date
+  and another, and reject with `instead`; each refusal; the pull requests an approve and a reject touch; `Edit` for
+  each answer of each rule; the comment on each written line (LF and CRLF); `Diff` cases. In `internal/gate`
+  (`preview_test.go`): the view and the preview after a real request line and two uploads, and an installation not
+  admitted.
