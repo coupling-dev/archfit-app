@@ -288,12 +288,14 @@ what keeps it balanced.
 
 ## Internal Design
 
-Six independent leaves. There is no flow between them and no composition in the parent.
+Eight independent leaves. There is no flow between them and no composition in the parent.
 
 | Child      | Contributes                                                  | Third-party imports |
 | ---------- | ------------------------------------------------------------ | ------------------- |
 | `envelope` | what the producer states about an upload; the payload digest | none                |
+| `decision` | the decision request an unattended agent files (Archfit 3)   | none                |
 | `report`   | the no-source payload boundary                               | none                |
+| `result`   | the engine's result JSON and text record (Archfit 4)         | none                |
 | `settings` | the App-owned file on the protected ref                      | one YAML library    |
 | `policy`   | the App's read-only view of engine-owned files               | one YAML library    |
 | `manifest` | approved engine, image, profile and Action identities        | none                |
@@ -309,7 +311,7 @@ Rules between children:
   `envelope` and `report`; SHA-256 hex formatting exists in `envelope` (prefixed) and `policy` (bare). Each is a few
   lines, and the two digests have different formats and meanings.
 - `doc.go` in the parent states the placement rule and the versioning rule for Go readers.
-- Fan-out is six, one over the 4±1 guidance: the leaves share nothing, so the count adds no coupling.
+- Fan-out is eight, over the 4±1 guidance: the leaves share nothing, so the count adds no coupling.
 
 ## Change Vectors
 
@@ -317,7 +319,7 @@ Rules between children:
   unless a version constant is added.
 - A new envelope version for the Action: `envelope` only.
 - A new settings field: `settings` only.
-- A sixth contract (for example a versioned discovery result or an AI-request transport, plan T04): a new child here.
+- A new contract (for example a versioned discovery result or an AI-request transport, plan T04): a new child here.
 - Generating transport types from schemas instead of writing them by hand: inside each child.
 
 ## Constraints and Invariants
