@@ -33,6 +33,7 @@ func TestParseComment(t *testing.T) {
 		{name: "a date without zeros", body: "/archfit request why --expires 2026-12-1", reject: request.KindDate},
 		{name: "a word after the flag", body: "/archfit request why --expires tomorrow", reject: request.KindDate},
 		{name: "a lone flag at the end", body: "/archfit request why --expires", reject: request.KindDate},
+		{name: "a reason ending in the pair is read as the flag, so the CLI refuses such a reason", body: "/archfit request kept until --expires 2026-12-01", want: request.Line{Reason: "kept until", Expires: "2026-12-01"}},
 		{name: "the flag inside the reason", body: "/archfit request why --expires 2026-12-10 not", want: request.Line{Reason: "why --expires 2026-12-10 not"}},
 		{name: "the flag with an equals sign is text", body: "/archfit request why --expires=2026-12-10", want: request.Line{Reason: "why --expires=2026-12-10"}},
 		{name: "the reason is checked before the date", body: "/archfit request --expires 2020-01-01", reject: request.KindNoReason},

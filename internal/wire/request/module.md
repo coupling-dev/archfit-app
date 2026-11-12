@@ -35,7 +35,8 @@ with an engine release that vendors its goldens.
   ```text
   comment-line = "/archfit request" SP reason [ SP "--expires" SP date ]
   cli          = "archfit request" [ " -m " shell-quoted-reason ] [ " --expires " date ]
-  reason       = 1 to 500 characters of one line, trimmed
+  reason       = 1 to 500 characters of one line, trimmed, whose last word is not "--expires"
+                 and whose second-to-last word is not "--expires"
   date         = YYYY-MM-DD, after the App's date, at most 365 days ahead
   issue-form   = comment-line NL NL fence "text" NL record fence NL
   ```
@@ -44,6 +45,8 @@ with an engine release that vendors its goldens.
   or the end of the line, is the request; other lines are ignored. Lines end at LF, CRLF or CR, as in Markdown. The
   flag is the pair that ends the line: when the second-to-last word is `--expires`, the last word must be a date, and
   a lone `--expires` at the end is a bad date; earlier `--expires` text stays in the reason **[default]**.
+  A line cannot tell a reason ending in `--expires` or `--expires <word>` from the flag, so the grammar excludes
+  such a reason and the CLI refuses it before it posts; the App reads that ending as the flag.
   Characters are Unicode code points. The App's date is the caller's `today`, by its own year, month and day.
 - Reading an issue: the first line that is not blank must be the request line, so the body the App renders (which
   starts with **Reason**) is never read as one. The record is the first closed `text` block after the line,

@@ -7,11 +7,14 @@
 //
 //	comment-line = "/archfit request" SP reason [ SP "--expires" SP date ]
 //	cli          = "archfit request" [ " -m " shell-quoted-reason ] [ " --expires " date ]
-//	reason       = 1 to 500 characters of one line, trimmed
+//	reason       = 1 to 500 characters of one line, trimmed, whose last word is not "--expires"
+//	               and whose second-to-last word is not "--expires"
 //	date         = YYYY-MM-DD, after the App's date, at most 365 days ahead
 //
 // The cli form is the command a worker types; the App never reads it. With an open pull request the CLI posts the
-// canonical comment line as a comment: "/archfit request " reason, then " --expires " date when one is given.
+// canonical comment line as a comment: "/archfit request " reason, then " --expires " date when one is given. A
+// line cannot tell such a reason from the flag, so the CLI refuses a reason that ends with "--expires" or with
+// "--expires" and one more word; the App reads that ending as the flag.
 //
 // ParseComment reads a pull-request comment. The first line that starts with "/archfit request", at the start of
 // the line and followed by white space or the end of the line, is the request; every other line is ignored, so a
