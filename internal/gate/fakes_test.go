@@ -2,6 +2,8 @@ package gate
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -44,6 +46,7 @@ type fakeGitHub struct {
 	issues        map[string][]fakeIssue      // by full name, the App's issues
 	unassignable  map[string]bool             // logins GitHub refuses to assign
 	queue         map[string][]api.QueueEntry // branchKey → merge queue entries
+	compares      map[string]api.Comparison   // "full name|base|head"
 	nextID        int64
 
 	fail        map[string]error // method name → injected error
@@ -88,6 +91,7 @@ func newFakeGitHub() *fakeGitHub {
 		heads:    map[string]string{},
 		issues:   map[string][]fakeIssue{},
 		fail:     map[string]error{},
+		compares: map[string]api.Comparison{},
 
 		unassignable: map[string]bool{},
 	}
@@ -165,7 +169,38 @@ func (f *fakeGitHub) File(_ context.Context, r api.RepoRef, ref, path string) ([
 	if !ok {
 		return nil, "", api.ErrNotFound
 	}
-	return slices.Clone(raw), "blob", nil
+	sum := sha256.Sum256(raw) // the same bytes give the same blob, as in git
+	return slices.Clone(raw), hex.EncodeToString(sum[:20]), nil
+}
+
+// HeadRuns lists the runs of the workflow file whose head is headSHA.
+func (f *fakeGitHub) HeadRuns(_ context.Context, r api.RepoRef, workflowPath, headSHA string) ([]api.WorkflowRun, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter("HeadRuns", r); err != nil {
+		return nil, err
+	}
+	var out []api.WorkflowRun
+	for _, run := range f.runs {
+		if run.HeadSHA == headSHA && run.WorkflowPath == workflowPath {
+			out = append(out, run)
+		}
+	}
+	return out, nil
+}
+
+// Compare answers what compares holds for "full name|base|head"; anything else is a commit GitHub does not know.
+func (f *fakeGitHub) Compare(_ context.Context, r api.RepoRef, base, head string) (api.Comparison, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter("Compare", r); err != nil {
+		return api.Comparison{}, err
+	}
+	c, ok := f.compares[r.FullName+"|"+base+"|"+head]
+	if !ok {
+		return api.Comparison{}, api.ErrNotFound
+	}
+	return c, nil
 }
 
 func (f *fakeGitHub) BranchHead(_ context.Context, r api.RepoRef, branch string) (string, error) {
@@ -538,13 +573,20 @@ const (
 	ownerDecisionKeyPrefix   = "owner-decision/"
 	reviewerRequestKeyPrefix = "review-request/"
 	decisionKeyPrefix        = "decision/" // gate/decisions' request records
+	pullRecordKeyPrefix      = "v4/pull/"  // the envelope 2 pull records (M2 D6)
+	pullIndexKeyPrefix       = "v4/pull-index/"
 )
 
-// isRecord reports whether key is a pusher or an approval record of gate/inputs, or a request record of gate/decisions.
+// isRecord reports whether key is a pusher or an approval record of gate/inputs, a request record of gate/decisions,
+// or an envelope 2 pull record or its index.
 func isRecord(key string) bool {
 	return strings.HasPrefix(key, pusherKeyPrefix) || strings.HasPrefix(key, approvalKeyPrefix) ||
 		strings.HasPrefix(key, ownerDecisionKeyPrefix) || strings.HasPrefix(key, reviewerRequestKeyPrefix) ||
-		strings.HasPrefix(key, decisionKeyPrefix)
+		strings.HasPrefix(key, decisionKeyPrefix) || isPullRecord(key)
+}
+
+func isPullRecord(key string) bool {
+	return strings.HasPrefix(key, pullRecordKeyPrefix) || strings.HasPrefix(key, pullIndexKeyPrefix)
 }
 
 // guardStore proves the gate path writes nothing but publication leases and the records of gate/inputs: every other
@@ -613,13 +655,13 @@ func (s *guardStore) CompareAndSwap(ctx context.Context, t store.Tenant, key str
 	return s.inner.CompareAndSwap(ctx, t, key, old, value)
 }
 
-// CompareAndSwapAll is allowed for request records only, every key of the call.
+// CompareAndSwapAll is allowed for request records and envelope 2 pull records only, every key of the call.
 func (s *guardStore) CompareAndSwapAll(ctx context.Context, t store.Tenant, swaps []store.Swap) (bool, error) {
 	s.mu.Lock()
 	for _, sw := range swaps {
-		if !strings.HasPrefix(sw.Key, decisionKeyPrefix) {
+		if !strings.HasPrefix(sw.Key, decisionKeyPrefix) && !isPullRecord(sw.Key) {
 			s.mu.Unlock()
-			panic("gate path wrote to the Store: CompareAndSwapAll outside the decision records")
+			panic("gate path wrote to the Store: CompareAndSwapAll outside the decision and pull records")
 		}
 		s.recordTenants, s.recordKeys = append(s.recordTenants, t), append(s.recordKeys, sw.Key)
 	}

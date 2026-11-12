@@ -24,6 +24,8 @@ speak for any pull request.
   stale; after that, record every defect as a `Problem` so the gate can publish it.
 - Refuse an upload of an installation no operator approved, before the run is read.
 - Serve every upload kind (`report`, `discovery`, `baseline`) with exactly the same provenance checks.
+- Receive envelope 2 (Archfit 4, `ReceiveV2`): the same authentication, the fixed workflow file, the latest run of
+  the head, and a result JSON v1 payload tied to the envelope. See [Envelope 2](#envelope-2).
 
 ## Subdomain Classification
 
@@ -223,6 +225,61 @@ the protected ref. They are as trustworthy as the report itself (customer-attest
 
 `Upload.Digest` is the computed digest. `Upload.Payload` is always the verified body. `Upload.Problems`
 is de-duplicated and in the constant declaration order.
+
+## Envelope 2
+
+Envelope 2 (`archfit.upload-envelope.v2`, M2 task 14) is the Archfit 4 upload. It arrives on `POST /v1/reports` in
+the same `X-Archfit-Envelope` header; the gate sends it here by its `schema_version`. The body is the engine's result
+JSON v1. Task 25 removes envelope 1 and `Receive`.
+
+```go
+// WorkflowPath is the only workflow file whose envelope 2 uploads the App accepts (M2 D15).
+const WorkflowPath = ".github/workflows/archfit.yaml"
+
+type Binding4 struct {
+    Repo        Repo   // resolved by the App, never from the envelope
+    Event       string // the run's event as GitHub states it
+    PullRequest int    // 0 unless a pull request GitHub associates with the run's head
+    HeadSHA     string // the run's head: the pull request head, the pushed commit or the merge group commit
+    RunSHA      string // Claims.SHA: the commit whose workflow file ran (the test merge commit of a pull request)
+    Fork        bool
+    RunID       int64
+    RunAttempt  int
+}
+
+type Upload4 struct {
+    Binding  Binding4
+    Envelope envelope.EnvelopeV2 // self-reported: the fields GitHub states are compared here, the rest in gate
+    Payload  []byte              // the exact bytes payload_digest names
+    Result   *result.Result      // nil when ProblemReportInvalid
+    Problems []Problem
+}
+
+type Receiver4 interface {
+    ReceiveV2(ctx context.Context, req *http.Request) (Upload4, error)
+}
+
+func NewV2(repos Repos, pulls Pulls, actions Actions, runs WorkflowRuns, queues MergeQueues, v Verifier, audience string, admit Admitter) Receiver4
+```
+
+### ReceiveV2, step by step
+
+| #   | Check                                                                                         | Failure                                         |
+| --- | --------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| 1   | Method is `POST`; body ≤ `report.MaxBytes`                                                    | 400 `method_not_allowed`; 413 `payload_too_large` |
+| 2   | Header present; `envelope.DecodeV2(header, body)`, which also checks `payload_digest`         | 400 `envelope_missing`, `envelope_invalid`      |
+| 3   | Token, repository, installation, admission, run, event, run SHA, latest attempt: steps 5 to 12 of `Receive` | as there                          |
+| 4   | The run's own workflow (`run.WorkflowPath`) and the path of `Claims.JobWorkflowRef` are `WorkflowPath`, and `Claims.JobWorkflowRef` ends with `@` + `Claims.Ref`: archfit.yaml ran as the top-level workflow at the run's ref, never as a reusable workflow called from another file or ref | 403 `workflow_path` |
+| 5   | Binding: a `pull_request` run resolves its pull request as step 14 of `Receive`; the pull request is open and its base is the default branch. A `push` is on the default branch (`Claims.Ref`). A `merge_group` commit is an entry of the default branch's queue (step 13a). Any other event is unsupported. | 409 `stale_head`, `stale_group`; `ProblemEnvelopeMismatch`, `ProblemUnsupportedEvent`, `ProblemFork` |
+| 6   | Latest run of the head: `WorkflowRuns.HeadRuns(WorkflowPath, run.HeadSHA)` has no run of the same event that is newer (creation time, which a re-run keeps, then run id). For a pull request, a run GitHub associates only with other pull requests does not count. | 409 `stale_run` |
+| 7   | Envelope = GitHub: `event`, `pull_request`, `head_sha` (the run head), `run_id`, `run_attempt`, `target_ref` = `refs/heads/<default branch>` | `ProblemEnvelopeMismatch` |
+| 8   | `result.Decode(body)`; `status` is not `waiting` (only the App sets it)                       | `ProblemReportInvalid`, `Result` nil            |
+| 9   | Result = envelope: `policy.digest` = `policy_digest`; `head` = `head_sha`; `engine` = `engine_version` without its leading `v` | `ProblemEnvelopeMismatch` |
+
+Rate limits and other GitHub errors are as for `Receive` (429 `rate_limited`, else a plain error: 503). A payload
+digest mismatch is 400 `envelope_invalid`, refused before the token is read. `merge_base_sha`, `target_sha`,
+`policy_digest` and the engine identity have no GitHub source here: `gate` checks `target_sha` and the policy against
+the default branch, and the identity against manifest 4. The log line is the one of `Receive`, with `envelope: 2`.
 
 ## Integrations
 
@@ -518,7 +575,7 @@ type Pulls interface {
 }
 ```
 
-<!-- contract: Actions, WorkflowRun — restated from internal/github/api/module.md -->
+<!-- contract: Actions, WorkflowRun, WorkflowRuns — restated from internal/github/api/module.md -->
 ```go
 type WorkflowRun struct {
     ID           int64
@@ -529,7 +586,8 @@ type WorkflowRun struct {
     WorkflowPath string // e.g. ".github/workflows/archfit.yaml"
     Status       string
     Conclusion   string
-    PullRequests []int // PR numbers GitHub associates with the run
+    PullRequests []int     // PR numbers GitHub associates with the run
+    CreatedAt    time.Time // when the run was created; a re-run keeps it
 }
 
 // RunFilter narrows LatestRun. Each non-empty field is sent as the GitHub query parameter of the same name.
@@ -547,6 +605,12 @@ type Actions interface {
     LatestRun(ctx context.Context, r RepoRef, workflowPath string, f RunFilter) (WorkflowRun, error)
     // Artifact downloads the named artifact of a run, capped at maxBytes.
     Artifact(ctx context.Context, r RepoRef, runID int64, name string, maxBytes int64) ([]byte, error)
+}
+
+// WorkflowRuns lists a workflow's runs for one head commit.
+type WorkflowRuns interface {
+    // HeadRuns returns every run of the workflow whose head is headSHA, a 40-hex commit SHA; none is an empty list.
+    HeadRuns(ctx context.Context, r RepoRef, workflowPath, headSHA string) ([]WorkflowRun, error)
 }
 ```
 
@@ -644,6 +708,24 @@ requests built with `httptest.NewRequest`. No network.
 - **Test name**: `TestWorkflowPathBinding`
   **Scenario**: `job_workflow_ref` in the same repository; in another repository (reusable workflow).
   **Expected behavior**: the path; `""`.
+
+- **Test name**: `TestReceiveV2AcceptsEachEvent`, `TestReceiveV2IgnoresRunsThatAreNotNewer`
+  **Scenario**: envelope 2 of a pull request, a push and a merge group; older runs, runs of another event and runs of
+  another pull request on the same head.
+  **Expected behavior**: bound with no problem; the decoded envelope, the exact payload and the result.
+- **Test name**: `TestReceiveV2RefusesStaleRuns`, `TestReceiveV2RefusesTheEnvelopeBeforeTheToken`,
+  `TestReceiveV2RefusesAMergeGroupTheQueueDoesNotList`
+  **Scenario**: an older attempt; a newer run of the head (with and without a pull request association, and at the
+  same creation time with a higher id); a moved head; another workflow file; a reusable workflow of another
+  repository; archfit.yaml at another ref or called from another top-level workflow; an unreadable run
+  list; a payload digest mismatch; an envelope 1; no envelope; a `GET`; a merge group the queue does not list.
+  **Expected behavior**: the step table's status and code, the zero `Upload4`, and no token read for the envelope rows.
+- **Test name**: `TestReceiveV2Problems`
+  **Scenario**: one envelope or result field at a time disagrees (head, pull request, event, run id, attempt,
+  `target_ref`, policy digest, result head, engine, an engine version without `v`); an unreadable result; a result that
+  says `waiting`; a closed pull request; a base other than the default branch; no pull request; a fork; a push to
+  another branch; a `workflow_dispatch` run.
+  **Expected behavior**: the listed `Problem`s; `Result` nil for an unreadable result.
 
 ### Integration Contract Tests
 

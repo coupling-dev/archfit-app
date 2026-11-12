@@ -19,10 +19,14 @@ type facts struct {
 	runnerEnvironment  string
 	digest             string
 	policyChangeUnread bool // the envelope carried a policy_change that report.DecodePolicyChange refused
+	v2                 bool // an envelope 2 upload
 }
 
 func (f *facts) log(ctx context.Context, kind envelope.Kind, problems []Problem, err error, elapsed time.Duration) {
 	level, attrs := slog.LevelInfo, []slog.Attr{slog.String("kind", string(kind))}
+	if f.v2 {
+		attrs = append(attrs, slog.Int("envelope", 2))
+	}
 	var rej *Rejection
 	switch {
 	case errors.As(err, &rej):

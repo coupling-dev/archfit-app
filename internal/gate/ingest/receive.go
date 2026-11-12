@@ -48,6 +48,7 @@ type receiver struct {
 	repos    api.Repos
 	pulls    api.Pulls
 	actions  api.Actions
+	runs     api.WorkflowRuns // envelope 2 only
 	queues   api.MergeQueues
 	verifier oidc.Verifier
 	audience string
@@ -98,7 +99,7 @@ func (r *receiver) receive(ctx context.Context, req *http.Request, kind envelope
 	f.repositoryID, f.runID, f.runAttempt = claims.RepositoryID, claims.RunID, claims.RunAttempt
 	f.runnerEnvironment = claims.RunnerEnvironment
 
-	repo, run, err := r.tenant(ctx, env, claims)
+	repo, run, err := r.tenant(ctx, env.Repository, claims)
 	if err != nil {
 		return Upload{}, err
 	}
@@ -188,10 +189,11 @@ func (r *receiver) verify(ctx context.Context, req *http.Request) (oidc.Claims, 
 
 // tenant authenticates the tenant (steps 7 to 12): the repository and the run come from
 // the verified claims and the GitHub API only.
-func (r *receiver) tenant(ctx context.Context, env envelope.Envelope, claims oidc.Claims) (api.Repo, api.WorkflowRun, error) {
+// repository is the envelope's claim; it must be the token's.
+func (r *receiver) tenant(ctx context.Context, repository string, claims oidc.Claims) (api.Repo, api.WorkflowRun, error) {
 	fail := func(err error) (api.Repo, api.WorkflowRun, error) { return api.Repo{}, api.WorkflowRun{}, err }
 
-	if claims.Repository != env.Repository {
+	if claims.Repository != repository {
 		return fail(reject(http.StatusForbidden, codeRepositoryMismatch))
 	}
 	repo, err := r.repos.ResolveRepo(ctx, claims.Repository)
