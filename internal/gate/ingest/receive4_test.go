@@ -217,6 +217,16 @@ func TestReceiveV2RefusesStaleRuns(t *testing.T) {
 		{"a reusable workflow of another repository", func(s *v2Scenario) {
 			s.claims.JobWorkflowRef = otherTenant + "/" + workflowPath + "@refs/heads/main"
 		}, http.StatusForbidden, codeWorkflowPath},
+		{"archfit.yaml called from another workflow at another ref", func(s *v2Scenario) {
+			s.run.WorkflowPath = ".github/workflows/x.yaml"
+			s.claims.JobWorkflowRef = repoName + "/" + workflowPath + "@refs/heads/evil"
+		}, http.StatusForbidden, codeWorkflowPath},
+		{"archfit.yaml at another ref of the same run", func(s *v2Scenario) {
+			s.claims.JobWorkflowRef = repoName + "/" + workflowPath + "@refs/heads/evil"
+		}, http.StatusForbidden, codeWorkflowPath},
+		{"archfit.yaml called from another top-level workflow at the run's ref", func(s *v2Scenario) {
+			s.run.WorkflowPath = ".github/workflows/x.yaml"
+		}, http.StatusForbidden, codeWorkflowPath},
 		{"the run list cannot be read", func(s *v2Scenario) { s.runsErr = api.ErrRateLimited }, http.StatusTooManyRequests, codeRateLimited},
 	}
 	for _, tt := range tests {
@@ -305,7 +315,10 @@ func TestReceiveV2Problems(t *testing.T) {
 			p.HeadRepo = "mallory/shop"
 			s.pulls[prNumber] = p
 		}, []Problem{ProblemFork}},
-		{"push to another branch", pushScenarioV2, func(s *v2Scenario) { s.claims.Ref = "refs/heads/release" }, []Problem{ProblemUnsupportedEvent}},
+		{"push to another branch", pushScenarioV2, func(s *v2Scenario) {
+			s.claims.Ref = "refs/heads/release"
+			s.claims.JobWorkflowRef = repoName + "/" + workflowPath + "@refs/heads/release"
+		}, []Problem{ProblemUnsupportedEvent}},
 		{"a workflow_dispatch run", pushScenarioV2, func(s *v2Scenario) {
 			s.run.Event, s.claims.EventName = eventDispatch, eventDispatch
 			s.runs = []api.WorkflowRun{s.run}
@@ -339,10 +352,11 @@ func TestReceiveV2RefusesAMergeGroupTheQueueDoesNotList(t *testing.T) {
 func TestReceiveV2LogsIdentifiersOnly(t *testing.T) {
 	s := prScenarioV2(t)
 	s.result["summary"] = "archfit: pass LEAK-RESULT"
+	before := len(logs.String())
 	if _, err := s.receiveV2(t); err != nil {
 		t.Fatal(err)
 	}
-	out := logs.String()
+	out := logs.String()[before:]
 	for _, leak := range []string{"LEAK-RESULT", testToken, s.rawEnvelope} {
 		if strings.Contains(out, leak) {
 			t.Errorf("the log carries %q", leak)

@@ -58,9 +58,11 @@ func (r *receiver) receiveV2(ctx context.Context, req *http.Request, f *facts) (
 		return Upload4{}, err
 	}
 	f.installationID = repo.InstallationID
-	// Only the fixed workflow file uploads envelope 2 (M2 D15). A reusable workflow of another repository has no
-	// path here. Nothing is bound or published for another file.
-	if oidc.WorkflowPath(claims.JobWorkflowRef, repo.FullName) != WorkflowPath {
+	// Only the fixed workflow file uploads envelope 2 (M2 D15), as the run's own top-level workflow at the run's ref.
+	// A job of another workflow that calls archfit.yaml as a reusable workflow, from this repository at another ref
+	// or from another repository, never qualifies: the file it ran is not the one the gate compares at RunSHA.
+	if run.WorkflowPath != WorkflowPath || oidc.WorkflowPath(claims.JobWorkflowRef, repo.FullName) != WorkflowPath ||
+		!strings.HasSuffix(claims.JobWorkflowRef, "@"+claims.Ref) {
 		return Upload4{}, reject(http.StatusForbidden, codeWorkflowPath)
 	}
 

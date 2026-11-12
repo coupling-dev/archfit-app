@@ -269,7 +269,7 @@ func NewV2(repos Repos, pulls Pulls, actions Actions, runs WorkflowRuns, queues 
 | 1   | Method is `POST`; body ≤ `report.MaxBytes`                                                    | 400 `method_not_allowed`; 413 `payload_too_large` |
 | 2   | Header present; `envelope.DecodeV2(header, body)`, which also checks `payload_digest`         | 400 `envelope_missing`, `envelope_invalid`      |
 | 3   | Token, repository, installation, admission, run, event, run SHA, latest attempt: steps 5 to 12 of `Receive` | as there                          |
-| 4   | `oidc.WorkflowPath(Claims.JobWorkflowRef)` is `WorkflowPath`                                  | 403 `workflow_path`                             |
+| 4   | The run's own workflow (`run.WorkflowPath`) and the path of `Claims.JobWorkflowRef` are `WorkflowPath`, and `Claims.JobWorkflowRef` ends with `@` + `Claims.Ref`: archfit.yaml ran as the top-level workflow at the run's ref, never as a reusable workflow called from another file or ref | 403 `workflow_path` |
 | 5   | Binding: a `pull_request` run resolves its pull request as step 14 of `Receive`; the pull request is open and its base is the default branch. A `push` is on the default branch (`Claims.Ref`). A `merge_group` commit is an entry of the default branch's queue (step 13a). Any other event is unsupported. | 409 `stale_head`, `stale_group`; `ProblemEnvelopeMismatch`, `ProblemUnsupportedEvent`, `ProblemFork` |
 | 6   | Latest run of the head: `WorkflowRuns.HeadRuns(WorkflowPath, run.HeadSHA)` has no run of the same event that is newer (creation time, which a re-run keeps, then run id). For a pull request, a run GitHub associates only with other pull requests does not count. | 409 `stale_run` |
 | 7   | Envelope = GitHub: `event`, `pull_request`, `head_sha` (the run head), `run_id`, `run_attempt`, `target_ref` = `refs/heads/<default branch>` | `ProblemEnvelopeMismatch` |
@@ -716,7 +716,8 @@ requests built with `httptest.NewRequest`. No network.
 - **Test name**: `TestReceiveV2RefusesStaleRuns`, `TestReceiveV2RefusesTheEnvelopeBeforeTheToken`,
   `TestReceiveV2RefusesAMergeGroupTheQueueDoesNotList`
   **Scenario**: an older attempt; a newer run of the head (with and without a pull request association, and at the
-  same creation time with a higher id); a moved head; another workflow file; a reusable workflow; an unreadable run
+  same creation time with a higher id); a moved head; another workflow file; a reusable workflow of another
+  repository; archfit.yaml at another ref or called from another top-level workflow; an unreadable run
   list; a payload digest mismatch; an envelope 1; no envelope; a `GET`; a merge group the queue does not list.
   **Expected behavior**: the step table's status and code, the zero `Upload4`, and no token read for the envelope rows.
 - **Test name**: `TestReceiveV2Problems`
