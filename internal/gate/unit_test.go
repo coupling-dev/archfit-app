@@ -1,6 +1,7 @@
 package gate
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -316,6 +317,7 @@ type pipelineFakes struct {
 	repairer  *fakeRepairer
 	sweeper   *fakeSweeper
 	actions   *fakeActions
+	gh        *fakeGitHub
 	gate      *Gate
 }
 
@@ -325,6 +327,7 @@ func newPipelineFakes() *pipelineFakes {
 		sweeper: &fakeSweeper{}, actions: &fakeActions{},
 	}
 	gh := newFakeGitHub()
+	f.gh = gh
 	f.gate = newGate(f.receiver, f.resolver, decisions.New(store.NewMemory(), gh, gh, func() time.Time { return testStart }), f.publisher, f.repairer, f.sweeper, f.actions, gh, gh, gh, gh, &fakeAdmitter{refused: map[int64]bool{}}, func() time.Time { return testStart })
 	f.gate.approvals = approvals.New(gh, store.NewMemory())
 	return f
@@ -731,21 +734,36 @@ func TestHandleEventRules(t *testing.T) {
 		trusted inputs.Trusted
 		run     api.WorkflowRun
 		reran   bool
+		tip     string // the default branch's head; "" is the receipt's base
 	}{
-		{"receipt without a run", noRun, granted, api.WorkflowRun{Status: runCompleted}, false},
-		{"completed run at the receipt's attempt", missing, granted, api.WorkflowRun{Status: runCompleted, Attempt: 2}, true},
-		{"run in progress", missing, granted, api.WorkflowRun{Status: runInProgress, Attempt: 2}, false},
-		{"newer attempt already ran", missing, granted, api.WorkflowRun{Status: runCompleted, Attempt: 3}, false},
-		{"approval still missing", missing, inputs.Trusted{SettingsFound: true, Approval: inputs.ApprovalMissing}, api.WorkflowRun{Status: runCompleted, Attempt: 2}, false},
-		{"approval no longer needed", missing, inputs.Trusted{SettingsFound: true, Approval: inputs.ApprovalNotRequired}, api.WorkflowRun{Status: runCompleted, Attempt: 2}, true},
-		{"another receipt reason", feedback.CheckState{Exists: true, Receipt: feedback.Receipt{RunID: 9, RunAttempt: 2, Reason: verdict.ReasonPolicyMismatch}}, granted, api.WorkflowRun{Status: runCompleted, Attempt: 2}, false},
-		{"pending check", feedback.CheckState{Exists: true, Pending: true}, granted, api.WorkflowRun{Status: runCompleted}, false},
-		{"no check", feedback.CheckState{}, granted, api.WorkflowRun{Status: runCompleted}, false},
+		{"receipt without a run", noRun, granted, api.WorkflowRun{Status: runCompleted}, false, ""},
+		{"completed run at the receipt's attempt", missing, granted, api.WorkflowRun{Status: runCompleted, Attempt: 2}, true, ""},
+		{"run in progress", missing, granted, api.WorkflowRun{Status: runInProgress, Attempt: 2}, false, ""},
+		{"newer attempt already ran", missing, granted, api.WorkflowRun{Status: runCompleted, Attempt: 3}, false, ""},
+		{"approval still missing", missing, inputs.Trusted{SettingsFound: true, Approval: inputs.ApprovalMissing}, api.WorkflowRun{Status: runCompleted, Attempt: 2}, false, ""},
+		{"approval no longer needed", missing, inputs.Trusted{SettingsFound: true, Approval: inputs.ApprovalNotRequired}, api.WorkflowRun{Status: runCompleted, Attempt: 2}, true, ""},
+		{"another receipt reason", feedback.CheckState{Exists: true, Receipt: feedback.Receipt{RunID: 9, RunAttempt: 2, Reason: verdict.ReasonPolicyMismatch}}, granted, api.WorkflowRun{Status: runCompleted, Attempt: 2}, false, ""},
+		{"pending check", feedback.CheckState{Exists: true, Pending: true}, granted, api.WorkflowRun{Status: runCompleted}, false, ""},
+		{"no check", feedback.CheckState{}, granted, api.WorkflowRun{Status: runCompleted}, false, ""},
+		{"a run 30 days old", missing, granted, api.WorkflowRun{Status: runCompleted, Attempt: 2, CreatedAt: testStart.Add(-30 * 24 * time.Hour)}, false, ""},
+		{"a target that moved in more than the policy", missing, granted, api.WorkflowRun{Status: runCompleted, Attempt: 2}, false, "moved"},
 	}
 	for _, tc := range rerun {
 		t.Run("review: "+tc.name, func(t *testing.T) {
 			f := newPipelineFakes()
-			f.publisher.state, f.resolver.trusted, f.actions.run = tc.state, tc.trusted, tc.run
+			// The run of the event's head, measured on the receipt's base (design 10.5).
+			run := tc.run
+			run.HeadSHA, run.WorkflowPath = "head", testWorkflow
+			if run.CreatedAt.IsZero() {
+				run.CreatedAt = testStart.Add(-time.Hour)
+			}
+			state := tc.state
+			if state.Receipt.RunID != 0 {
+				state.Receipt.BaseSHA = "base"
+			}
+			tip := cmp.Or(tc.tip, "base")
+			f.gh.heads[branchKey(shopName, "")] = tip
+			f.publisher.state, f.resolver.trusted, f.actions.run = state, tc.trusted, run
 			if err := f.gate.HandleEvent(ctx, pullEvent(webhook.ReviewChanged)); err != nil {
 				t.Fatal(err)
 			}
@@ -845,7 +863,12 @@ func TestHandleEventRules(t *testing.T) {
 		}},
 		{"rerun", webhook.ReviewChanged, func(f *pipelineFakes) {
 			f.publisher.state, f.resolver.trusted, f.actions.rerunErr = missing, granted, boom
-			f.actions.run = api.WorkflowRun{Status: runCompleted, Attempt: 2}
+			f.publisher.state.Receipt.BaseSHA, f.gh.heads[branchKey(shopName, "")] = "base", "base"
+			f.actions.run = api.WorkflowRun{Status: runCompleted, Attempt: 2, HeadSHA: "head", WorkflowPath: testWorkflow, CreatedAt: testStart}
+		}},
+		{"pull request base read for the re-run guard", webhook.ReviewChanged, func(f *pipelineFakes) {
+			f.publisher.state, f.resolver.trusted, f.gh.fail["Pull"] = missing, granted, boom // a receipt without a base
+			f.actions.run = api.WorkflowRun{Status: runCompleted, Attempt: 2, HeadSHA: "head", WorkflowPath: testWorkflow, CreatedAt: testStart}
 		}},
 		{"repository sweep", webhook.DefaultBranchPush, func(f *pipelineFakes) { f.sweeper.err = boom }},
 		{"withdrawal", webhook.ReviewChanged, func(f *pipelineFakes) {

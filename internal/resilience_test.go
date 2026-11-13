@@ -162,6 +162,8 @@ func TestSuspensionIsNeitherArchitectureFailureNorSuccess(t *testing.T) {
 	}
 
 	s.clock.add(38 * day) // trial (30 days) and grace (7 days) are over; nobody granted anything
+	// The run that uploads now started now: GitHub re-runs no run older than 30 days (design 10.5).
+	w.edit(demoRepo, func(rp *repo) { rp.runs[demoRun].Created = s.clock.Now().Add(-time.Hour) })
 	got := s.upload(demoUpload(f))
 	if got.Status != http.StatusOK || got.Conclusion != "action_required" || got.Reason != "subscription_suspended" {
 		t.Fatalf("after trial and grace the upload answered %+v; want action_required subscription_suspended", got)
@@ -315,13 +317,14 @@ func TestSweepRepairsMissedEvents(t *testing.T) {
 		if err := s.ctl.Grant(context.Background(), demoInstallation, s.clock.Now().Add(30*day)); err != nil {
 			t.Fatal(err)
 		}
+		// The only run is 38 days old: GitHub re-runs none after 30 days (design 10.5), so the gate names a new run.
 		before := w.checkRuns(demoRepo)
-		if sum := s.sweep(); sum.Rerun != 1 {
-			t.Errorf("summary = %+v; want one re-run after the grant", sum)
+		if sum := s.sweep(); sum.Rerun != 0 || len(w.rerunsOf(demoRepo)) != 0 {
+			t.Errorf("summary = %+v, re-runs %v; want no re-run of a 38-day-old run", sum, w.rerunsOf(demoRepo))
 		}
 		assertNoNewGreen(t, before, w.checkRuns(demoRepo))
-		if c := w.check(demoRepo, demoHead, checkGate); c.Conclusion == "success" {
-			t.Error("restoration turned the gate green without a fresh report")
+		if c := w.check(demoRepo, demoHead, checkGate); c.Conclusion != "action_required" || c.receipt(t).Reason != "missing_upload" {
+			t.Errorf("archfit/gate = %s %+v; want action_required missing_upload", c.Conclusion, c.receipt(t))
 		}
 	})
 }
